@@ -9,7 +9,6 @@ import { Sidebar } from './components/layout/Sidebar'
 import { ProjectSelector } from './components/ProjectSelector'
 import { EmptyProjectView } from './components/EmptyProjectView'
 import { PlanPanel } from './components/plan/PlanPanel'
-import { ExecutionPanel } from './components/execution/ExecutionPanel'
 import { Spinner, SpinnerWithText } from './components/shared/Spinner'
 
 // Centered spinner for loading states
@@ -106,14 +105,9 @@ function ProjectSessionView() {
     <>
       <Sidebar projectId={projectId!} />
       
-      {/* Main content area */}
+      {/* Main content area - single unified chat panel */}
       <div className="flex-1 bg-bg-primary">
-        {(session.phase === 'idle' || session.phase === 'planning') && (
-          <PlanPanel />
-        )}
-        {(session.phase === 'executing' || session.phase === 'validating' || session.phase === 'completed') && (
-          <ExecutionPanel />
-        )}
+        <PlanPanel />
       </div>
     </>
   )

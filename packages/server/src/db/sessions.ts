@@ -2,7 +2,7 @@ import type Database from 'better-sqlite3'
 import type {
   Session,
   SessionSummary,
-  SessionPhase,
+  SessionMode,
   Message,
   MessageSegment,
   Criterion,
@@ -24,15 +24,17 @@ export function createSession(projectId: string, workdir: string, title?: string
   const id = crypto.randomUUID()
   
   db.prepare(`
-    INSERT INTO sessions (id, project_id, workdir, phase, created_at, updated_at, title)
-    VALUES (?, ?, ?, 'idle', ?, ?, ?)
+    INSERT INTO sessions (id, project_id, workdir, phase, mode, is_running, created_at, updated_at, title)
+    VALUES (?, ?, ?, 'idle', 'planner', 0, ?, ?, ?)
   `).run(id, projectId, workdir, now, now, title ?? null)
   
   return {
     id,
     projectId,
     workdir,
-    phase: 'idle',
+    mode: 'planner',
+    isRunning: false,
+    summary: null,
     createdAt: now,
     updatedAt: now,
     messages: [],
@@ -66,7 +68,9 @@ export function getSession(id: string): Session | null {
     id: row.id,
     projectId: row.project_id,
     workdir: row.workdir,
-    phase: row.phase as SessionPhase,
+    mode: (row.mode ?? 'planner') as SessionMode,
+    isRunning: Boolean(row.is_running),
+    summary: row.summary ?? null,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
     messages,
@@ -81,13 +85,31 @@ export function getSession(id: string): Session | null {
   }
 }
 
-export function updateSessionPhase(id: string, phase: SessionPhase): void {
+export function updateSessionMode(id: string, mode: SessionMode): void {
   const db = getDatabase()
   const now = new Date().toISOString()
   
   db.prepare(`
-    UPDATE sessions SET phase = ?, updated_at = ? WHERE id = ?
-  `).run(phase, now, id)
+    UPDATE sessions SET mode = ?, updated_at = ? WHERE id = ?
+  `).run(mode, now, id)
+}
+
+export function updateSessionRunning(id: string, isRunning: boolean): void {
+  const db = getDatabase()
+  const now = new Date().toISOString()
+  
+  db.prepare(`
+    UPDATE sessions SET is_running = ?, updated_at = ? WHERE id = ?
+  `).run(isRunning ? 1 : 0, now, id)
+}
+
+export function updateSessionSummary(id: string, summary: string): void {
+  const db = getDatabase()
+  const now = new Date().toISOString()
+  
+  db.prepare(`
+    UPDATE sessions SET summary = ?, updated_at = ? WHERE id = ?
+  `).run(summary, now, id)
 }
 
 export function updateSessionMetadata(
@@ -132,7 +154,8 @@ export function listSessions(): SessionSummary[] {
       s.id,
       s.project_id,
       s.workdir,
-      s.phase,
+      s.mode,
+      s.is_running,
       s.created_at,
       s.updated_at,
       s.title,
@@ -147,7 +170,8 @@ export function listSessions(): SessionSummary[] {
     projectId: row.project_id,
     title: row.title ?? undefined,
     workdir: row.workdir,
-    phase: row.phase as SessionPhase,
+    mode: (row.mode ?? 'planner') as SessionMode,
+    isRunning: Boolean(row.is_running),
     createdAt: row.created_at,
     updatedAt: row.updated_at,
     criteriaCount: row.criteria_count,
@@ -164,7 +188,8 @@ export function listSessionsByProject(projectId: string, projectWorkdir: string)
       s.id,
       s.project_id,
       s.workdir,
-      s.phase,
+      s.mode,
+      s.is_running,
       s.created_at,
       s.updated_at,
       s.title,
@@ -180,7 +205,8 @@ export function listSessionsByProject(projectId: string, projectWorkdir: string)
     projectId: row.project_id,
     title: row.title ?? undefined,
     workdir: row.workdir,
-    phase: row.phase as SessionPhase,
+    mode: (row.mode ?? 'planner') as SessionMode,
+    isRunning: Boolean(row.is_running),
     createdAt: row.created_at,
     updatedAt: row.updated_at,
     criteriaCount: row.criteria_count,
@@ -467,7 +493,10 @@ interface SessionRow {
   id: string
   project_id: string
   workdir: string
-  phase: string
+  phase: string  // Legacy, kept for compatibility
+  mode: string
+  is_running: number
+  summary: string | null
   created_at: string
   updated_at: string
   title: string | null

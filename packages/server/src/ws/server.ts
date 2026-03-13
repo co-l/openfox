@@ -1,15 +1,10 @@
 import { WebSocketServer, WebSocket } from 'ws'
 import type { Server } from 'node:http'
-import type { ServerMessage, AgentEvent } from '@openfox/shared/protocol'
-import { createServerMessage } from '@openfox/shared/protocol'
+import type { ServerMessage } from '@openfox/shared/protocol'
 import type { Config } from '../config.js'
 import type { LLMClient } from '../llm/types.js'
 import type { ToolRegistry } from '../tools/index.js'
 import { sessionManager } from '../session/index.js'
-import { plannerChat, acceptCriteria } from '../planner/index.js'
-import { runAgent } from '../agent/index.js'
-import { validate } from '../validator/index.js'
-import { provideAnswer } from '../tools/index.js'
 import { logger } from '../utils/logger.js'
 import {
   createProject,
@@ -26,16 +21,23 @@ import {
   createSessionListMessage,
   createProjectStateMessage,
   createProjectListMessage,
+  createChatDeltaMessage,
+  createChatThinkingMessage,
+  createChatToolCallMessage,
+  createChatToolResultMessage,
+  createChatDoneMessage,
+  createChatErrorMessage,
+  createModeChangedMessage,
+  createCriteriaUpdatedMessage,
   isProjectCreatePayload,
   isProjectLoadPayload,
   isProjectUpdatePayload,
   isProjectDeletePayload,
   isSessionCreatePayload,
   isSessionLoadPayload,
-  isPlanMessagePayload,
-  isPlanEditCriteriaPayload,
-  isAgentIntervenePayload,
-  isCriterionHumanVerifyPayload,
+  isChatSendPayload,
+  isModeSwitchPayload,
+  isCriteriaEditPayload,
 } from './protocol.js'
 
 // Track active agent AbortControllers by sessionId
@@ -64,7 +66,7 @@ export function createWebSocketServer(
     
     for (const [ws, client] of clients) {
       if (client.sessionId === sessionId && ws.readyState === WebSocket.OPEN) {
-        if (event.type === 'session_updated' || event.type === 'phase_changed') {
+        if (event.type === 'session_updated' || event.type === 'mode_changed') {
           const session = sessionManager.getSession(sessionId)
           if (session) {
             ws.send(serializeServerMessage(createSessionStateMessage(session)))
@@ -118,7 +120,7 @@ export function createWebSocketServer(
 async function handleClientMessage(
   ws: WebSocket,
   client: ClientConnection,
-  message: import('@openfox/shared/protocol').ClientMessage,
+  message: { id: string; type: string; payload: unknown },
   config: Config,
   llmClient: LLMClient,
   toolRegistry: ToolRegistry
@@ -130,22 +132,18 @@ async function handleClientMessage(
   }
   
   switch (message.type) {
-    // ========================================================================
-    // Project handlers
-    // ========================================================================
+    // =========================================================================
+    // Project Management
+    // =========================================================================
     
     case 'project.create': {
       if (!isProjectCreatePayload(message.payload)) {
-        send(createErrorMessage('INVALID_PAYLOAD', 'Invalid payload for project.create', message.id))
+        send(createErrorMessage('INVALID_PAYLOAD', 'Invalid project.create payload', message.id))
         return
       }
       
-      try {
-        const project = createProject(message.payload.name, message.payload.workdir)
-        send(createProjectStateMessage(project, message.id))
-      } catch (error) {
-        send(createErrorMessage('PROJECT_CREATE_FAILED', error instanceof Error ? error.message : 'Failed to create project', message.id))
-      }
+      const project = createProject(message.payload.name, message.payload.workdir)
+      send(createProjectStateMessage(project, message.id))
       break
     }
     
@@ -157,13 +155,13 @@ async function handleClientMessage(
     
     case 'project.load': {
       if (!isProjectLoadPayload(message.payload)) {
-        send(createErrorMessage('INVALID_PAYLOAD', 'Invalid payload for project.load', message.id))
+        send(createErrorMessage('INVALID_PAYLOAD', 'Invalid project.load payload', message.id))
         return
       }
       
       const project = getProject(message.payload.projectId)
       if (!project) {
-        send(createErrorMessage('PROJECT_NOT_FOUND', 'Project not found', message.id))
+        send(createErrorMessage('NOT_FOUND', 'Project not found', message.id))
         return
       }
       
@@ -173,59 +171,59 @@ async function handleClientMessage(
     
     case 'project.update': {
       if (!isProjectUpdatePayload(message.payload)) {
-        send(createErrorMessage('INVALID_PAYLOAD', 'Invalid payload for project.update', message.id))
+        send(createErrorMessage('INVALID_PAYLOAD', 'Invalid project.update payload', message.id))
         return
       }
       
-      try {
-        const project = updateProject(message.payload.projectId, { name: message.payload.name })
-        send(createProjectStateMessage(project, message.id))
-      } catch (error) {
-        send(createErrorMessage('PROJECT_UPDATE_FAILED', error instanceof Error ? error.message : 'Failed to update project', message.id))
+      const updated = updateProject(message.payload.projectId, message.payload.name)
+      if (!updated) {
+        send(createErrorMessage('NOT_FOUND', 'Project not found', message.id))
+        return
       }
+      
+      send(createProjectStateMessage(updated, message.id))
       break
     }
     
     case 'project.delete': {
       if (!isProjectDeletePayload(message.payload)) {
-        send(createErrorMessage('INVALID_PAYLOAD', 'Invalid payload for project.delete', message.id))
+        send(createErrorMessage('INVALID_PAYLOAD', 'Invalid project.delete payload', message.id))
         return
       }
       
       deleteProject(message.payload.projectId)
-      send(createServerMessage('project.deleted', { projectId: message.payload.projectId }, message.id))
+      send({ type: 'project.deleted', payload: { projectId: message.payload.projectId }, id: message.id })
       break
     }
     
-    // ========================================================================
-    // Session handlers
-    // ========================================================================
+    // =========================================================================
+    // Session Management
+    // =========================================================================
     
     case 'session.create': {
       if (!isSessionCreatePayload(message.payload)) {
-        send(createErrorMessage('INVALID_PAYLOAD', 'Invalid payload for session.create', message.id))
+        send(createErrorMessage('INVALID_PAYLOAD', 'Invalid session.create payload', message.id))
         return
       }
       
-      try {
-        const session = sessionManager.createSession(message.payload.projectId, message.payload.title)
-        client.sessionId = session.id
-        send(createSessionStateMessage(session, message.id))
-      } catch (error) {
-        send(createErrorMessage('SESSION_CREATE_FAILED', error instanceof Error ? error.message : 'Failed to create session', message.id))
-      }
+      const session = sessionManager.createSession(
+        message.payload.projectId,
+        message.payload.title
+      )
+      client.sessionId = session.id
+      send(createSessionStateMessage(session, message.id))
       break
     }
     
     case 'session.load': {
       if (!isSessionLoadPayload(message.payload)) {
-        send(createErrorMessage('INVALID_PAYLOAD', 'Invalid payload for session.load', message.id))
+        send(createErrorMessage('INVALID_PAYLOAD', 'Invalid session.load payload', message.id))
         return
       }
       
       const session = sessionManager.getSession(message.payload.sessionId)
       if (!session) {
-        send(createErrorMessage('SESSION_NOT_FOUND', 'Session not found', message.id))
+        send(createErrorMessage('NOT_FOUND', 'Session not found', message.id))
         return
       }
       
@@ -242,223 +240,158 @@ async function handleClientMessage(
     
     case 'session.delete': {
       if (!isSessionLoadPayload(message.payload)) {
-        send(createErrorMessage('INVALID_PAYLOAD', 'Invalid payload for session.delete', message.id))
+        send(createErrorMessage('INVALID_PAYLOAD', 'Invalid session.delete payload', message.id))
         return
       }
       
       sessionManager.deleteSession(message.payload.sessionId)
-      send(createServerMessage('session.deleted', { sessionId: message.payload.sessionId }, message.id))
+      send({ type: 'session.deleted', payload: { sessionId: message.payload.sessionId }, id: message.id })
       break
     }
     
-    case 'plan.message': {
+    // =========================================================================
+    // Unified Chat (replaces plan.message, agent.start, etc.)
+    // =========================================================================
+    
+    case 'chat.send': {
       if (!client.sessionId) {
         send(createErrorMessage('NO_SESSION', 'No active session', message.id))
         return
       }
       
-      if (!isPlanMessagePayload(message.payload)) {
-        send(createErrorMessage('INVALID_PAYLOAD', 'Invalid payload for plan.message', message.id))
+      if (!isChatSendPayload(message.payload)) {
+        send(createErrorMessage('INVALID_PAYLOAD', 'Invalid chat.send payload', message.id))
         return
       }
       
-      // Stream planner response
-      for await (const event of plannerChat(client.sessionId, message.payload.content, llmClient, toolRegistry)) {
-        switch (event.type) {
-          case 'text_delta':
-            send(createServerMessage('plan.delta', { content: event.content, isThinking: false }))
-            break
-          case 'tool_call':
-            send(createServerMessage('plan.tool_call', { tool: event.tool, args: event.args }))
-            break
-          case 'tool_result':
-            send(createServerMessage('plan.tool_result', { tool: event.tool, result: event.result }))
-            break
-          case 'thinking_delta':
-            send(createServerMessage('plan.delta', { content: event.content, isThinking: true }))
-            break
-          case 'criteria_set':
-            // LLM called set_acceptance_criteria tool
-            send(createServerMessage('plan.criteria', { criteria: event.criteria }))
-            break
-          case 'done':
-            send(createServerMessage('plan.done', {}, message.id))
-            // Send updated session state so client gets the new messages with tool calls
-            const updatedSession = sessionManager.getSession(client.sessionId!)
-            if (updatedSession) {
-              send(createSessionStateMessage(updatedSession))
-            }
-            break
-          case 'error':
-            send(createErrorMessage('PLANNER_ERROR', event.error, message.id))
-            break
-        }
-      }
+      const session = sessionManager.requireSession(client.sessionId)
+      
+      // Add user message
+      sessionManager.addMessage(client.sessionId, {
+        role: 'user',
+        content: message.payload.content,
+        tokenCount: Math.ceil(message.payload.content.length / 4),
+      })
+      
+      // Mark session as running
+      sessionManager.setRunning(client.sessionId, true)
+      
+      // TODO: Implement mode-aware chat handling
+      // For now, just acknowledge and mark as done
+      send({ type: 'ack', payload: {}, id: message.id })
+      
+      // Placeholder: Send a simple response
+      send(createChatDeltaMessage('Chat handling not yet implemented. Mode: ' + session.mode))
+      send(createChatDoneMessage('complete'))
+      
+      sessionManager.setRunning(client.sessionId, false)
       break
     }
     
-    case 'plan.edit_criteria': {
+    case 'chat.stop': {
       if (!client.sessionId) {
         send(createErrorMessage('NO_SESSION', 'No active session', message.id))
         return
       }
       
-      if (!isPlanEditCriteriaPayload(message.payload)) {
-        send(createErrorMessage('INVALID_PAYLOAD', 'Invalid payload for plan.edit_criteria', message.id))
+      // Abort any running agent
+      const controller = activeAgents.get(client.sessionId)
+      if (controller) {
+        controller.abort()
+        activeAgents.delete(client.sessionId)
+      }
+      
+      sessionManager.setRunning(client.sessionId, false)
+      send(createChatDoneMessage('stopped'))
+      send({ type: 'ack', payload: {}, id: message.id })
+      break
+    }
+    
+    case 'chat.continue': {
+      if (!client.sessionId) {
+        send(createErrorMessage('NO_SESSION', 'No active session', message.id))
+        return
+      }
+      
+      // TODO: Implement continue logic
+      send({ type: 'ack', payload: {}, id: message.id })
+      break
+    }
+    
+    // =========================================================================
+    // Mode Switching
+    // =========================================================================
+    
+    case 'mode.switch': {
+      if (!client.sessionId) {
+        send(createErrorMessage('NO_SESSION', 'No active session', message.id))
+        return
+      }
+      
+      if (!isModeSwitchPayload(message.payload)) {
+        send(createErrorMessage('INVALID_PAYLOAD', 'Invalid mode.switch payload', message.id))
+        return
+      }
+      
+      const session = sessionManager.setMode(client.sessionId, message.payload.mode)
+      send(createModeChangedMessage(message.payload.mode, false))
+      send(createSessionStateMessage(session, message.id))
+      break
+    }
+    
+    case 'mode.accept': {
+      if (!client.sessionId) {
+        send(createErrorMessage('NO_SESSION', 'No active session', message.id))
+        return
+      }
+      
+      const session = sessionManager.requireSession(client.sessionId)
+      
+      if (session.criteria.length === 0) {
+        send(createErrorMessage('NO_CRITERIA', 'Cannot accept: no criteria defined', message.id))
+        return
+      }
+      
+      // TODO: Generate summary from conversation
+      const summary = 'Task summary generation not yet implemented.'
+      sessionManager.setSummary(client.sessionId, summary)
+      
+      // Switch to builder mode
+      sessionManager.setMode(client.sessionId, 'builder')
+      
+      // Emit events
+      send(createModeChangedMessage('builder', false, 'Criteria accepted'))
+      
+      const updatedSession = sessionManager.requireSession(client.sessionId)
+      send(createSessionStateMessage(updatedSession, message.id))
+      
+      // TODO: Auto-start builder
+      break
+    }
+    
+    // =========================================================================
+    // Criteria Editing
+    // =========================================================================
+    
+    case 'criteria.edit': {
+      if (!client.sessionId) {
+        send(createErrorMessage('NO_SESSION', 'No active session', message.id))
+        return
+      }
+      
+      if (!isCriteriaEditPayload(message.payload)) {
+        send(createErrorMessage('INVALID_PAYLOAD', 'Invalid criteria.edit payload', message.id))
         return
       }
       
       sessionManager.setCriteria(client.sessionId, message.payload.criteria)
-      send(createServerMessage('plan.criteria', { criteria: message.payload.criteria }, message.id))
+      send(createCriteriaUpdatedMessage(message.payload.criteria))
+      send({ type: 'ack', payload: {}, id: message.id })
       break
     }
     
-    case 'plan.accept': {
-      if (!client.sessionId) {
-        send(createErrorMessage('NO_SESSION', 'No active session', message.id))
-        return
-      }
-      
-      await acceptCriteria(client.sessionId)
-      const session = sessionManager.requireSession(client.sessionId)
-      send(createSessionStateMessage(session, message.id))
-      break
+    default: {
+      send(createErrorMessage('UNKNOWN_MESSAGE', `Unknown message type: ${message.type}`, message.id))
     }
-    
-    case 'agent.start': {
-      if (!client.sessionId) {
-        send(createErrorMessage('NO_SESSION', 'No active session', message.id))
-        return
-      }
-      
-      // Create AbortController and track it
-      const controller = new AbortController()
-      const sessionId = client.sessionId
-      activeAgents.set(sessionId, controller)
-      
-      // Run agent (this is async but we don't await - events are streamed)
-      runAgent({
-        sessionId,
-        llmClient,
-        toolRegistry,
-        config,
-        signal: controller.signal,
-        onEvent: (event: AgentEvent) => {
-          send(createServerMessage('agent.event', { event }))
-        },
-      }).catch((error) => {
-        logger.error('Agent error', { error })
-        send(createServerMessage('agent.event', {
-          event: {
-            type: 'error',
-            error: error instanceof Error ? error.message : 'Unknown error',
-            recoverable: false,
-          },
-        }))
-      }).finally(() => {
-        activeAgents.delete(sessionId)
-      })
-      
-      send(createServerMessage('ack', {}, message.id))
-      break
-    }
-    
-    case 'agent.stop': {
-      if (!client.sessionId) {
-        send(createErrorMessage('NO_SESSION', 'No active session', message.id))
-        return
-      }
-      
-      const controller = activeAgents.get(client.sessionId)
-      if (controller) {
-        logger.info('Stopping agent', { sessionId: client.sessionId })
-        controller.abort()
-        activeAgents.delete(client.sessionId)
-        send(createServerMessage('ack', {}, message.id))
-      } else {
-        send(createErrorMessage('NO_AGENT', 'No agent running for this session', message.id))
-      }
-      break
-    }
-    
-    case 'agent.intervene': {
-      if (!client.sessionId) {
-        send(createErrorMessage('NO_SESSION', 'No active session', message.id))
-        return
-      }
-      
-      if (!isAgentIntervenePayload(message.payload)) {
-        send(createErrorMessage('INVALID_PAYLOAD', 'Invalid payload for agent.intervene', message.id))
-        return
-      }
-      
-      // This would need the callId from the ask_user event
-      // For now, add the response as a user message and resume
-      sessionManager.addMessage(client.sessionId, {
-        role: 'user',
-        content: message.payload.response,
-        tokenCount: Math.ceil(message.payload.response.length / 4),
-      })
-      
-      // Resume agent
-      runAgent({
-        sessionId: client.sessionId,
-        llmClient,
-        toolRegistry,
-        config,
-        onEvent: (event: AgentEvent) => {
-          send(createServerMessage('agent.event', { event }))
-        },
-      }).catch((error) => {
-        logger.error('Agent error', { error })
-      })
-      
-      send(createServerMessage('ack', {}, message.id))
-      break
-    }
-    
-    case 'validate.start': {
-      if (!client.sessionId) {
-        send(createErrorMessage('NO_SESSION', 'No active session', message.id))
-        return
-      }
-      
-      const result = await validate({
-        sessionId: client.sessionId,
-        llmClient,
-      })
-      
-      send(createServerMessage('validation.result', { result }, message.id))
-      
-      // Send updated session state
-      const session = sessionManager.requireSession(client.sessionId)
-      send(createSessionStateMessage(session))
-      break
-    }
-    
-    case 'criterion.human_verify': {
-      if (!client.sessionId) {
-        send(createErrorMessage('NO_SESSION', 'No active session', message.id))
-        return
-      }
-      
-      if (!isCriterionHumanVerifyPayload(message.payload)) {
-        send(createErrorMessage('INVALID_PAYLOAD', 'Invalid payload for criterion.human_verify', message.id))
-        return
-      }
-      
-      const status = message.payload.passed
-        ? { type: 'passed' as const, verifiedAt: new Date().toISOString(), verifiedBy: 'human' as const }
-        : { type: 'failed' as const, reason: message.payload.reason ?? 'Failed human verification', failedAt: new Date().toISOString() }
-      
-      sessionManager.updateCriterionStatus(client.sessionId, message.payload.criterionId, status)
-      
-      const session = sessionManager.requireSession(client.sessionId)
-      send(createSessionStateMessage(session, message.id))
-      break
-    }
-    
-    default:
-      send(createErrorMessage('UNKNOWN_MESSAGE_TYPE', `Unknown message type: ${message.type}`, message.id))
   }
 }

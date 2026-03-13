@@ -127,5 +127,36 @@ function runMigrations(db: Database.Database): void {
     CREATE INDEX IF NOT EXISTS idx_sessions_project ON sessions(project_id)
   `)
   
+  // Migration: Add mode, is_running, summary columns if they don't exist
+  // And migrate phase to mode
+  const columns = db.prepare(`PRAGMA table_info(sessions)`).all() as { name: string }[]
+  const columnNames = columns.map(c => c.name)
+  
+  if (!columnNames.includes('mode')) {
+    logger.info('Migrating sessions table: adding mode column')
+    db.exec(`ALTER TABLE sessions ADD COLUMN mode TEXT NOT NULL DEFAULT 'planner'`)
+    // Migrate existing phase values to mode
+    db.exec(`
+      UPDATE sessions SET mode = CASE
+        WHEN phase = 'idle' THEN 'planner'
+        WHEN phase = 'planning' THEN 'planner'
+        WHEN phase = 'executing' THEN 'builder'
+        WHEN phase = 'validating' THEN 'verifier'
+        WHEN phase = 'completed' THEN 'planner'
+        ELSE 'planner'
+      END
+    `)
+  }
+  
+  if (!columnNames.includes('is_running')) {
+    logger.info('Migrating sessions table: adding is_running column')
+    db.exec(`ALTER TABLE sessions ADD COLUMN is_running INTEGER NOT NULL DEFAULT 0`)
+  }
+  
+  if (!columnNames.includes('summary')) {
+    logger.info('Migrating sessions table: adding summary column')
+    db.exec(`ALTER TABLE sessions ADD COLUMN summary TEXT`)
+  }
+  
   logger.info('Database migrations completed')
 }

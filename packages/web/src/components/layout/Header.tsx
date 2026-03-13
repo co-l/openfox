@@ -39,13 +39,13 @@ export function Header() {
               {session.metadata.title ?? session.id.slice(0, 8)}
             </span>
             <span className={`px-2 py-0.5 text-xs rounded ${
-              session.phase === 'planning' ? 'bg-accent-primary/20 text-accent-primary' :
-              session.phase === 'executing' ? 'bg-accent-warning/20 text-accent-warning' :
-              session.phase === 'validating' ? 'bg-purple-500/20 text-purple-400' :
-              session.phase === 'completed' ? 'bg-accent-success/20 text-accent-success' :
+              session.mode === 'planner' ? 'bg-accent-primary/20 text-accent-primary' :
+              session.mode === 'builder' ? 'bg-accent-warning/20 text-accent-warning' :
+              session.mode === 'verifier' ? 'bg-purple-500/20 text-purple-400' :
               'bg-bg-tertiary text-text-muted'
             }`}>
-              {session.phase}
+              {session.mode}
+              {session.isRunning && ' •'}
             </span>
           </>
         )}

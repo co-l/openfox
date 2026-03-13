@@ -12,10 +12,10 @@ export function PlanPanel() {
   
   const session = useSessionStore(state => state.currentSession)
   const isStreaming = useSessionStore(state => state.isStreaming)
-  const planStreamEvents = useSessionStore(state => state.planStreamEvents)
+  const chatStreamEvents = useSessionStore(state => state.chatStreamEvents)
   const error = useSessionStore(state => state.error)
   
-  const sendMessage = useSessionStore(state => state.sendPlanMessage)
+  const sendMessage = useSessionStore(state => state.sendMessage)
   const clearError = useSessionStore(state => state.clearError)
   
   const scrollToBottom = () => {
@@ -24,7 +24,7 @@ export function PlanPanel() {
   
   useEffect(() => {
     scrollToBottom()
-  }, [session?.messages, planStreamEvents])
+  }, [session?.messages, chatStreamEvents])
   
   // Auto-focus textarea on mount
   useEffect(() => {
@@ -45,7 +45,7 @@ export function PlanPanel() {
     }
   }
   
-  const isPlanning = session?.phase === 'planning' || session?.phase === 'idle'
+  const isPlanning = session?.mode === 'planner'
   
   return (
     <SessionLayout criteriaEditable={isPlanning}>
@@ -57,8 +57,8 @@ export function PlanPanel() {
             <ChatMessage key={message.id} message={message} />
           ))}
         
-        {isStreaming && planStreamEvents.length > 0 && (
-          <AssistantMessage events={planStreamEvents} isStreaming />
+        {isStreaming && chatStreamEvents.length > 0 && (
+          <AssistantMessage events={chatStreamEvents} isStreaming />
         )}
         
         {error && (
@@ -84,33 +84,36 @@ export function PlanPanel() {
         <div ref={messagesEndRef} />
       </div>
       
-      {isPlanning && (
-        <form onSubmit={handleSubmit} className="p-4 border-t border-border">
-          <div className="flex gap-2">
-            <textarea
-              ref={textareaRef}
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              onKeyDown={handleKeyDown}
-              placeholder="Describe what you want to build..."
-              className="flex-1 bg-bg-tertiary border border-border rounded-lg p-3 text-text-primary placeholder-text-muted resize-none focus:outline-none focus:ring-2 focus:ring-accent-primary/50"
-              rows={3}
-              disabled={isStreaming}
-            />
-            <Button
-              type="submit"
-              variant="primary"
-              disabled={!input.trim() || isStreaming}
-              className="self-end"
-            >
-              Send
-            </Button>
-          </div>
-          <div className="text-xs text-text-muted mt-1">
-            Press Cmd+Enter to send
-          </div>
-        </form>
-      )}
+      {/* Chat input - always visible, user can send messages in any mode */}
+      <form onSubmit={handleSubmit} className="p-4 border-t border-border">
+        <div className="flex gap-2">
+          <textarea
+            ref={textareaRef}
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            onKeyDown={handleKeyDown}
+            placeholder={
+              isPlanning 
+                ? "Describe what you want to build..." 
+                : "Send a message to intervene..."
+            }
+            className="flex-1 bg-bg-tertiary border border-border rounded-lg p-3 text-text-primary placeholder-text-muted resize-none focus:outline-none focus:ring-2 focus:ring-accent-primary/50"
+            rows={3}
+            disabled={isStreaming}
+          />
+          <Button
+            type="submit"
+            variant="primary"
+            disabled={!input.trim() || isStreaming}
+            className="self-end"
+          >
+            Send
+          </Button>
+        </div>
+        <div className="text-xs text-text-muted mt-1">
+          Press Cmd+Enter to send
+        </div>
+      </form>
     </SessionLayout>
   )
 }

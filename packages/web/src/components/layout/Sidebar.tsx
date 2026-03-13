@@ -18,7 +18,7 @@ export function Sidebar({ projectId }: SidebarProps) {
   const createSession = useSessionStore(state => state.createSession)
   const deleteSession = useSessionStore(state => state.deleteSession)
   const listSessions = useSessionStore(state => state.listSessions)
-  const stopExecution = useSessionStore(state => state.stopExecution)
+  const stopGeneration = useSessionStore(state => state.stopGeneration)
   
   const currentProject = useProjectStore(state => state.currentProject)
   const maxContext = useConfigStore(state => state.maxContext)
@@ -59,10 +59,10 @@ export function Sidebar({ projectId }: SidebarProps) {
   }
   
   const handleStop = () => {
-    stopExecution()
+    stopGeneration()
   }
   
-  const isExecuting = currentSession?.phase === 'executing'
+  const isRunning = currentSession?.isRunning
   
   return (
     <aside className="w-60 bg-bg-secondary border-r border-border flex flex-col">
@@ -106,15 +106,16 @@ export function Sidebar({ projectId }: SidebarProps) {
                   
                   <div className="flex items-center justify-between mt-1">
                     <span className={`text-xs px-1.5 py-0.5 rounded ${
-                      session.phase === 'completed'
-                        ? 'bg-accent-success/20 text-accent-success'
-                        : session.phase === 'executing'
+                      session.mode === 'verifier'
+                        ? 'bg-purple-500/20 text-purple-400'
+                        : session.mode === 'builder'
                         ? 'bg-accent-warning/20 text-accent-warning'
-                        : session.phase === 'planning'
+                        : session.mode === 'planner'
                         ? 'bg-accent-primary/20 text-accent-primary'
                         : 'bg-bg-tertiary text-text-muted'
                     }`}>
-                      {session.phase}
+                      {session.mode}
+                      {session.isRunning && ' •'}
                     </span>
                     
                     <button
@@ -168,8 +169,8 @@ export function Sidebar({ projectId }: SidebarProps) {
         </div>
       )}
       
-      {/* Stop Button - only visible when executing */}
-      {isExecuting && (
+      {/* Stop Button - only visible when running */}
+      {isRunning && (
         <div className="p-3 border-t border-border">
           <Button
             variant="secondary"
@@ -179,7 +180,7 @@ export function Sidebar({ projectId }: SidebarProps) {
             <svg className="w-4 h-4 mr-2" fill="currentColor" viewBox="0 0 24 24">
               <rect x="6" y="6" width="12" height="12" rx="1" />
             </svg>
-            Stop Execution
+            Stop
           </Button>
         </div>
       )}

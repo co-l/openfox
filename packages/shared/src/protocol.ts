@@ -2,8 +2,10 @@ import type {
   Project,
   Session,
   SessionSummary,
+  SessionMode,
   Criterion,
   Message,
+  Todo,
   ValidationResult,
   Diagnostic,
   ToolCall,
@@ -16,25 +18,26 @@ import type {
 // ============================================================================
 
 export type ClientMessageType =
+  // Project management
   | 'project.create'
   | 'project.list'
   | 'project.load'
   | 'project.update'
   | 'project.delete'
+  // Session management
   | 'session.create'
   | 'session.load'
   | 'session.list'
   | 'session.delete'
-  | 'plan.message'
-  | 'plan.accept'
-  | 'plan.edit_criteria'
-  | 'agent.start'
-  | 'agent.pause'
-  | 'agent.resume'
-  | 'agent.intervene'
-  | 'agent.stop'
-  | 'validate.start'
-  | 'criterion.human_verify'
+  // Unified chat (replaces plan.message, agent.start, etc.)
+  | 'chat.send'           // Send a message (works in any mode)
+  | 'chat.stop'           // Stop current generation
+  | 'chat.continue'       // Continue generation (after user interruption)
+  // Mode switching
+  | 'mode.switch'         // Switch to a different mode
+  | 'mode.accept'         // Accept criteria and switch to builder (generates summary)
+  // Criteria editing (from UI)
+  | 'criteria.edit'
 
 export interface ClientMessage<T = unknown> {
   id: string
@@ -73,22 +76,18 @@ export interface SessionLoadPayload {
   sessionId: string
 }
 
-export interface PlanMessagePayload {
+// Chat payloads (unified)
+export interface ChatSendPayload {
   content: string
 }
 
-export interface PlanEditCriteriaPayload {
+export interface ModeSwitchPayload {
+  mode: SessionMode
+}
+
+// Criteria payloads
+export interface CriteriaEditPayload {
   criteria: Criterion[]
-}
-
-export interface AgentIntervenePayload {
-  response: string
-}
-
-export interface CriterionHumanVerifyPayload {
-  criterionId: string
-  passed: boolean
-  reason?: string
 }
 
 // ============================================================================
@@ -96,19 +95,28 @@ export interface CriterionHumanVerifyPayload {
 // ============================================================================
 
 export type ServerMessageType =
+  // Project events
   | 'project.state'
   | 'project.list'
   | 'project.deleted'
+  // Session events
   | 'session.state'
   | 'session.list'
   | 'session.deleted'
-  | 'plan.delta'
-  | 'plan.tool_call'
-  | 'plan.tool_result'
-  | 'plan.criteria'
-  | 'plan.done'
-  | 'agent.event'
-  | 'validation.result'
+  // Unified chat events (replaces plan.delta, agent.event, etc.)
+  | 'chat.delta'          // Text streaming
+  | 'chat.thinking'       // Thinking block content
+  | 'chat.tool_call'      // Tool being called
+  | 'chat.tool_result'    // Tool result
+  | 'chat.todo'           // Todo list update (displayed in chat)
+  | 'chat.summary'        // Summary block (displayed in chat)
+  | 'chat.done'           // Current generation complete
+  | 'chat.error'          // Error during generation
+  // Mode events
+  | 'mode.changed'        // Mode was changed
+  // Criteria events
+  | 'criteria.updated'    // Criteria changed
+  // Other
   | 'lsp.diagnostics'
   | 'error'
   | 'ack'
@@ -143,33 +151,63 @@ export interface SessionListPayload {
   sessions: SessionSummary[]
 }
 
-export interface PlanDeltaPayload {
+// Chat payloads (unified streaming)
+export interface ChatDeltaPayload {
   content: string
-  isThinking?: boolean
 }
 
-export interface PlanCriteriaPayload {
-  criteria: Criterion[]
+export interface ChatThinkingPayload {
+  content: string
 }
 
-export interface PlanToolCallPayload {
+export interface ChatToolCallPayload {
+  callId: string
   tool: string
   args: Record<string, unknown>
 }
 
-export interface PlanToolResultPayload {
+export interface ChatToolResultPayload {
+  callId: string
   tool: string
-  result: string
+  result: ToolResult
 }
 
-export interface AgentEventPayload {
-  event: AgentEvent
+export interface ChatTodoPayload {
+  todos: Todo[]
 }
 
-export interface ValidationResultPayload {
-  result: ValidationResult
+export interface ChatSummaryPayload {
+  summary: string
 }
 
+export interface ChatDonePayload {
+  reason: 'complete' | 'stopped' | 'error' | 'waiting_for_user'
+  stats?: {
+    model: string
+    prefillSpeed: number
+    generationSpeed: number
+  }
+}
+
+export interface ChatErrorPayload {
+  error: string
+  recoverable: boolean
+}
+
+// Mode payloads
+export interface ModeChangedPayload {
+  mode: SessionMode
+  auto: boolean  // Was this an automatic switch?
+  reason?: string
+}
+
+// Criteria payloads
+export interface CriteriaUpdatedPayload {
+  criteria: Criterion[]
+  changedId?: string  // Which criterion changed, if specific
+}
+
+// Other payloads
 export interface LspDiagnosticsPayload {
   path: string
   diagnostics: Diagnostic[]
@@ -182,99 +220,21 @@ export interface ErrorPayload {
 }
 
 // ============================================================================
-// Agent Events
+// Chat Events (unified streaming events)
 // ============================================================================
 
-export type AgentEvent =
-  | AgentThinkingEvent
-  | AgentToolCallEvent
-  | AgentToolResultEvent
-  | AgentToolErrorEvent
-  | AgentCriterionUpdateEvent
-  | AgentContextCompactionEvent
-  | AgentStuckEvent
-  | AgentDoneEvent
-  | AgentErrorEvent
-  | AgentAskUserEvent
-  | AgentTextDeltaEvent
-  | AgentAbortedEvent
+// All chat events use the server message types above (chat.delta, chat.tool_call, etc.)
+// These are sent via ServerMessage with the corresponding payload types.
 
-export interface AgentThinkingEvent {
-  type: 'thinking'
-  content: string
-}
-
-export interface AgentTextDeltaEvent {
-  type: 'text_delta'
-  content: string
-}
-
-export interface AgentToolCallEvent {
-  type: 'tool_call'
-  callId: string
-  tool: string
-  args: Record<string, unknown>
-}
-
-export interface AgentToolResultEvent {
-  type: 'tool_result'
-  callId: string
-  tool: string
-  result: ToolResult
-}
-
-export interface AgentToolErrorEvent {
-  type: 'tool_error'
-  callId: string
-  tool: string
-  error: string
-  willRetry: boolean
-}
-
-export interface AgentCriterionUpdateEvent {
-  type: 'criterion_update'
-  criterionId: string
-  status: CriterionStatus
-}
-
-export interface AgentContextCompactionEvent {
-  type: 'context_compaction'
+// Special events that may trigger mode changes or UI updates:
+export interface ContextCompactionEvent {
   beforeTokens: number
   afterTokens: number
 }
 
-export interface AgentStuckEvent {
-  type: 'stuck'
-  reason: string
-  failedAttempts: number
-  criterionId?: string
-}
-
-export interface AgentDoneEvent {
-  type: 'done'
-  allCriteriaPassed: boolean
-  summary: string
-  stats?: {
-    model: string
-    prefillSpeed: number  // tokens/sec
-    generationSpeed: number  // tokens/sec
-  }
-}
-
-export interface AgentErrorEvent {
-  type: 'error'
-  error: string
-  recoverable: boolean
-}
-
-export interface AgentAskUserEvent {
-  type: 'ask_user'
+export interface AskUserEvent {
   question: string
   callId: string
-}
-
-export interface AgentAbortedEvent {
-  type: 'aborted'
 }
 
 // ============================================================================

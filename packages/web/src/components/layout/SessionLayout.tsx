@@ -17,7 +17,7 @@ export function SessionLayout({
 }: SessionLayoutProps) {
   const session = useSessionStore(state => state.currentSession)
   const editCriteria = useSessionStore(state => state.editCriteria)
-  const acceptCriteria = useSessionStore(state => state.acceptCriteria)
+  const acceptAndBuild = useSessionStore(state => state.acceptAndBuild)
   
   return (
     <div className="flex h-full">
@@ -32,7 +32,7 @@ export function SessionLayout({
           criteria={session?.criteria ?? []}
           editable={criteriaEditable}
           onUpdate={editCriteria}
-          onAccept={acceptCriteria}
+          onAccept={acceptAndBuild}
         />
         {validationStatus}
       </div>

@@ -2,35 +2,37 @@ import { create } from 'zustand'
 import type {
   Session,
   SessionSummary,
+  SessionMode,
   Criterion,
+  Todo,
+  ToolResult,
 } from '@openfox/shared'
 import type {
   ServerMessage,
-  AgentEvent,
-  PlanDeltaPayload,
-  PlanCriteriaPayload,
-  PlanToolCallPayload,
-  PlanToolResultPayload,
   SessionStatePayload,
   SessionListPayload,
-  AgentEventPayload,
-  ValidationResultPayload,
+  ChatDeltaPayload,
+  ChatThinkingPayload,
+  ChatToolCallPayload,
+  ChatToolResultPayload,
+  ChatTodoPayload,
+  ChatSummaryPayload,
+  ChatDonePayload,
+  ChatErrorPayload,
+  ModeChangedPayload,
+  CriteriaUpdatedPayload,
 } from '@openfox/shared/protocol'
+import { wsClient } from '../lib/ws'
 
-interface PlanToolEvent {
-  type: 'call' | 'result'
-  tool: string
-  args?: Record<string, unknown>
-  result?: string
-}
-
-// Streaming events in order (text segments + tool events)
-export type PlanStreamEvent = 
+// Unified streaming events (all modes use the same structure)
+export type ChatStreamEvent = 
   | { type: 'text'; content: string }
   | { type: 'thinking'; content: string }
-  | { type: 'tool_call'; tool: string; args: Record<string, unknown> }
-  | { type: 'tool_result'; tool: string; result: string }
-import { wsClient } from '../lib/ws'
+  | { type: 'tool_call'; callId: string; tool: string; args: Record<string, unknown> }
+  | { type: 'tool_result'; callId: string; tool: string; result: ToolResult }
+  | { type: 'todo'; todos: Todo[] }
+  | { type: 'summary'; summary: string }
+  | { type: 'error'; error: string; recoverable: boolean }
 
 interface SessionState {
   // Connection
@@ -41,44 +43,40 @@ interface SessionState {
   sessions: SessionSummary[]
   currentSession: Session | null
   
-  // Streaming state
+  // Streaming state (unified for all modes)
   streamingText: string
   streamingThinking: string
   isStreaming: boolean
+  chatStreamEvents: ChatStreamEvent[]
+  
+  // Current todos (displayed in chat)
+  currentTodos: Todo[]
   
   // Error state
   error: { code: string; message: string } | null
-  
-  // Planning tool calls (legacy, kept for compatibility)
-  planToolEvents: PlanToolEvent[]
-  
-  // Ordered stream events (text + tools interlaced)
-  planStreamEvents: PlanStreamEvent[]
-  
-  // Agent events
-  agentEvents: AgentEvent[]
   
   // Actions
   connect: () => Promise<void>
   disconnect: () => void
   
+  // Session management
   createSession: (projectId: string, title?: string) => void
   loadSession: (sessionId: string) => void
   listSessions: () => void
   deleteSession: (sessionId: string) => void
   clearSession: () => void
-  stopExecution: () => void
   
-  sendPlanMessage: (content: string) => void
+  // Unified chat (works in any mode)
+  sendMessage: (content: string) => void
+  stopGeneration: () => void
+  continueGeneration: () => void
+  
+  // Mode switching
+  switchMode: (mode: SessionMode) => void
+  acceptAndBuild: () => void  // Accept criteria, generate summary, switch to builder
+  
+  // Criteria (from UI)
   editCriteria: (criteria: Criterion[]) => void
-  acceptCriteria: () => void
-  
-  startAgent: () => void
-  pauseAgent: () => void
-  intervene: (response: string) => void
-  
-  startValidation: () => void
-  humanVerify: (criterionId: string, passed: boolean, reason?: string) => void
   
   clearError: () => void
   
@@ -96,9 +94,8 @@ export const useSessionStore = create<SessionState>((set, get) => ({
   streamingText: '',
   streamingThinking: '',
   isStreaming: false,
-  planToolEvents: [],
-  planStreamEvents: [],
-  agentEvents: [],
+  chatStreamEvents: [],
+  currentTodos: [],
   
   connect: async () => {
     if (get().connected || get().connecting) return
@@ -132,7 +129,13 @@ export const useSessionStore = create<SessionState>((set, get) => ({
   },
   
   loadSession: (sessionId) => {
-    set({ agentEvents: [], planStreamEvents: [], streamingText: '', streamingThinking: '', isStreaming: false })
+    set({ 
+      chatStreamEvents: [], 
+      streamingText: '', 
+      streamingThinking: '', 
+      isStreaming: false,
+      currentTodos: [],
+    })
     wsClient.send('session.load', { sessionId })
   },
   
@@ -147,19 +150,15 @@ export const useSessionStore = create<SessionState>((set, get) => ({
   clearSession: () => {
     set({ 
       currentSession: null, 
-      agentEvents: [], 
-      planToolEvents: [],
+      chatStreamEvents: [],
       streamingText: '',
       streamingThinking: '',
       isStreaming: false,
+      currentTodos: [],
     })
   },
   
-  stopExecution: () => {
-    wsClient.send('agent.stop', {})
-  },
-  
-  sendPlanMessage: (content) => {
+  sendMessage: (content) => {
     // Optimistically add user message so it appears immediately
     const userMessage = {
       id: `temp-${Date.now()}`,
@@ -172,42 +171,39 @@ export const useSessionStore = create<SessionState>((set, get) => ({
       streamingText: '',
       streamingThinking: '',
       isStreaming: true,
-      planToolEvents: [],
-      planStreamEvents: [],
+      chatStreamEvents: [],
       currentSession: state.currentSession
         ? { ...state.currentSession, messages: [...state.currentSession.messages, userMessage] }
         : null,
     }))
-    wsClient.send('plan.message', { content })
+    wsClient.send('chat.send', { content })
+  },
+  
+  stopGeneration: () => {
+    wsClient.send('chat.stop', {})
+  },
+  
+  continueGeneration: () => {
+    set({ isStreaming: true, chatStreamEvents: [] })
+    wsClient.send('chat.continue', {})
+  },
+  
+  switchMode: (mode) => {
+    wsClient.send('mode.switch', { mode })
+  },
+  
+  acceptAndBuild: () => {
+    // This will:
+    // 1. Generate summary from conversation
+    // 2. Display summary in chat
+    // 3. Switch to builder mode
+    // 4. Auto-start builder
+    set({ isStreaming: true, chatStreamEvents: [] })
+    wsClient.send('mode.accept', {})
   },
   
   editCriteria: (criteria) => {
-    wsClient.send('plan.edit_criteria', { criteria })
-  },
-  
-  acceptCriteria: () => {
-    wsClient.send('plan.accept', {})
-  },
-  
-  startAgent: () => {
-    set({ agentEvents: [] })
-    wsClient.send('agent.start', {})
-  },
-  
-  pauseAgent: () => {
-    wsClient.send('agent.pause', {})
-  },
-  
-  intervene: (response) => {
-    wsClient.send('agent.intervene', { response })
-  },
-  
-  startValidation: () => {
-    wsClient.send('validate.start', {})
-  },
-  
-  humanVerify: (criterionId, passed, reason) => {
-    wsClient.send('criterion.human_verify', { criterionId, passed, reason })
+    wsClient.send('criteria.edit', { criteria })
   },
   
   clearError: () => {
@@ -233,93 +229,101 @@ export const useSessionStore = create<SessionState>((set, get) => ({
         break
       }
       
-      case 'plan.delta': {
-        const payload = message.payload as PlanDeltaPayload
-        if (payload.isThinking) {
-          set(state => {
-            const events = [...state.planStreamEvents]
-            const last = events[events.length - 1]
-            if (last?.type === 'thinking') {
-              events[events.length - 1] = { ...last, content: last.content + payload.content }
-            } else {
-              events.push({ type: 'thinking', content: payload.content })
-            }
-            return { streamingThinking: state.streamingThinking + payload.content, planStreamEvents: events }
-          })
-        } else {
-          set(state => {
-            const events = [...state.planStreamEvents]
-            const last = events[events.length - 1]
-            if (last?.type === 'text') {
-              events[events.length - 1] = { ...last, content: last.content + payload.content }
-            } else {
-              events.push({ type: 'text', content: payload.content })
-            }
-            return { streamingText: state.streamingText + payload.content, planStreamEvents: events }
-          })
-        }
+      case 'chat.delta': {
+        const payload = message.payload as ChatDeltaPayload
+        set(state => {
+          const events = [...state.chatStreamEvents]
+          const last = events[events.length - 1]
+          if (last?.type === 'text') {
+            events[events.length - 1] = { ...last, content: last.content + payload.content }
+          } else {
+            events.push({ type: 'text', content: payload.content })
+          }
+          return { 
+            streamingText: state.streamingText + payload.content, 
+            chatStreamEvents: events,
+          }
+        })
         break
       }
       
-      case 'plan.criteria': {
-        const payload = message.payload as PlanCriteriaPayload
+      case 'chat.thinking': {
+        const payload = message.payload as ChatThinkingPayload
+        set(state => {
+          const events = [...state.chatStreamEvents]
+          const last = events[events.length - 1]
+          if (last?.type === 'thinking') {
+            events[events.length - 1] = { ...last, content: last.content + payload.content }
+          } else {
+            events.push({ type: 'thinking', content: payload.content })
+          }
+          return { 
+            streamingThinking: state.streamingThinking + payload.content, 
+            chatStreamEvents: events,
+          }
+        })
+        break
+      }
+      
+      case 'chat.tool_call': {
+        const payload = message.payload as ChatToolCallPayload
         set(state => ({
+          chatStreamEvents: [...state.chatStreamEvents, {
+            type: 'tool_call' as const,
+            callId: payload.callId,
+            tool: payload.tool,
+            args: payload.args,
+          }],
+        }))
+        break
+      }
+      
+      case 'chat.tool_result': {
+        const payload = message.payload as ChatToolResultPayload
+        set(state => ({
+          chatStreamEvents: [...state.chatStreamEvents, {
+            type: 'tool_result' as const,
+            callId: payload.callId,
+            tool: payload.tool,
+            result: payload.result,
+          }],
+        }))
+        break
+      }
+      
+      case 'chat.todo': {
+        const payload = message.payload as ChatTodoPayload
+        set(state => ({
+          currentTodos: payload.todos,
+          chatStreamEvents: [...state.chatStreamEvents, {
+            type: 'todo' as const,
+            todos: payload.todos,
+          }],
+        }))
+        break
+      }
+      
+      case 'chat.summary': {
+        const payload = message.payload as ChatSummaryPayload
+        set(state => ({
+          chatStreamEvents: [...state.chatStreamEvents, {
+            type: 'summary' as const,
+            summary: payload.summary,
+          }],
+          // Also update session summary
           currentSession: state.currentSession
-            ? { ...state.currentSession, criteria: payload.criteria }
+            ? { ...state.currentSession, summary: payload.summary }
             : null,
         }))
         break
       }
       
-      case 'plan.tool_call': {
-        const payload = message.payload as PlanToolCallPayload
-        set(state => ({
-          planToolEvents: [...state.planToolEvents, {
-            type: 'call' as const,
-            tool: payload.tool,
-            args: payload.args,
-          }],
-          planStreamEvents: [...state.planStreamEvents, {
-            type: 'tool_call' as const,
-            tool: payload.tool,
-            args: payload.args,
-          }],
-        }))
-        break
-      }
-      
-      case 'plan.tool_result': {
-        const payload = message.payload as PlanToolResultPayload
-        set(state => ({
-          planToolEvents: [...state.planToolEvents, {
-            type: 'result' as const,
-            tool: payload.tool,
-            result: payload.result,
-          }],
-          planStreamEvents: [...state.planStreamEvents, {
-            type: 'tool_result' as const,
-            tool: payload.tool,
-            result: payload.result,
-          }],
-        }))
-        break
-      }
-      
-      case 'plan.done': {
-        // Don't clear planStreamEvents - keep the beautiful interlaced view
-        // Just mark streaming as done
+      case 'chat.done': {
+        const payload = message.payload as ChatDonePayload
         set({ isStreaming: false })
-        break
-      }
-      
-      case 'agent.event': {
-        const payload = message.payload as AgentEventPayload
-        set(state => ({
-          agentEvents: [...state.agentEvents, payload.event],
-        }))
         
-        // Handle completion or abort
-        if (payload.event.type === 'done' || payload.event.type === 'aborted') {
+        // Reload session to get latest state
+        if (payload.reason === 'complete') {
           const session = get().currentSession
           if (session) {
             get().loadSession(session.id)
@@ -328,9 +332,38 @@ export const useSessionStore = create<SessionState>((set, get) => ({
         break
       }
       
-      case 'validation.result': {
-        const payload = message.payload as ValidationResultPayload
-        console.log('Validation result:', payload.result)
+      case 'chat.error': {
+        const payload = message.payload as ChatErrorPayload
+        set(state => ({
+          chatStreamEvents: [...state.chatStreamEvents, {
+            type: 'error' as const,
+            error: payload.error,
+            recoverable: payload.recoverable,
+          }],
+        }))
+        if (!payload.recoverable) {
+          set({ isStreaming: false })
+        }
+        break
+      }
+      
+      case 'mode.changed': {
+        const payload = message.payload as ModeChangedPayload
+        set(state => ({
+          currentSession: state.currentSession
+            ? { ...state.currentSession, mode: payload.mode }
+            : null,
+        }))
+        break
+      }
+      
+      case 'criteria.updated': {
+        const payload = message.payload as CriteriaUpdatedPayload
+        set(state => ({
+          currentSession: state.currentSession
+            ? { ...state.currentSession, criteria: payload.criteria }
+            : null,
+        }))
         break
       }
       
@@ -345,6 +378,11 @@ export const useSessionStore = create<SessionState>((set, get) => ({
   },
   
   clearStreamingState: () => {
-    set({ streamingText: '', streamingThinking: '', isStreaming: false, planStreamEvents: [] })
+    set({ 
+      streamingText: '', 
+      streamingThinking: '', 
+      isStreaming: false, 
+      chatStreamEvents: [],
+    })
   },
 }))

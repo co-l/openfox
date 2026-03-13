@@ -1,5 +1,5 @@
 import type { Message, MessageSegment } from '@openfox/shared'
-import type { PlanStreamEvent } from '../../stores/session'
+import type { ChatStreamEvent } from '../../stores/session'
 import { Markdown } from '../shared/Markdown'
 import { ThinkingBlock } from '../shared/ThinkingBlock'
 import { ToolCallDisplay } from '../shared/ToolCallDisplay'
@@ -7,13 +7,13 @@ import { StreamingCursor } from '../shared/StreamingCursor'
 
 interface AssistantMessageProps {
   // Either streaming events OR a saved message
-  events?: PlanStreamEvent[]
+  events?: ChatStreamEvent[]
   message?: Message
   isStreaming?: boolean
 }
 
 // Convert a saved Message to events format for unified rendering
-function messageToEvents(message: Message): PlanStreamEvent[] {
+function messageToEvents(message: Message): ChatStreamEvent[] {
   // If message has segments, use them for accurate ordering
   if (message.segments && message.segments.length > 0) {
     return segmentsToEvents(message.segments, message.toolCalls ?? [])
@@ -21,7 +21,7 @@ function messageToEvents(message: Message): PlanStreamEvent[] {
   
   // Fallback for legacy messages without segments:
   // Approximate with thinking -> text -> tool calls
-  const events: PlanStreamEvent[] = []
+  const events: ChatStreamEvent[] = []
   
   if (message.thinkingContent) {
     events.push({ type: 'thinking', content: message.thinkingContent })
@@ -35,13 +35,15 @@ function messageToEvents(message: Message): PlanStreamEvent[] {
     for (const tc of message.toolCalls) {
       events.push({ 
         type: 'tool_call', 
+        callId: tc.id,
         tool: tc.name, 
         args: tc.arguments 
       })
       events.push({
         type: 'tool_result',
+        callId: tc.id,
         tool: tc.name,
-        result: 'completed'
+        result: { success: true, durationMs: 0, truncated: false }
       })
     }
   }
@@ -53,8 +55,8 @@ function messageToEvents(message: Message): PlanStreamEvent[] {
 function segmentsToEvents(
   segments: MessageSegment[],
   toolCalls: Message['toolCalls']
-): PlanStreamEvent[] {
-  const events: PlanStreamEvent[] = []
+): ChatStreamEvent[] {
+  const events: ChatStreamEvent[] = []
   const toolCallMap = new Map(toolCalls?.map(tc => [tc.id, tc]) ?? [])
   
   for (const segment of segments) {
@@ -72,13 +74,15 @@ function segmentsToEvents(
         if (tc) {
           events.push({
             type: 'tool_call',
+            callId: tc.id,
             tool: tc.name,
             args: tc.arguments,
           })
           events.push({
             type: 'tool_result',
+            callId: tc.id,
             tool: tc.name,
-            result: 'completed',
+            result: { success: true, durationMs: 0, truncated: false },
           })
         }
         break
@@ -119,9 +123,9 @@ export function AssistantMessage({ events, message, isStreaming = false }: Assis
         break
         
       case 'tool_call': {
-        // Check if next event is the result for this tool
+        // Check if next event is the result for this tool (match by callId)
         const nextEvent = displayEvents[i + 1]
-        const hasResult = nextEvent?.type === 'tool_result' && nextEvent.tool === event.tool
+        const hasResult = nextEvent?.type === 'tool_result' && nextEvent.callId === event.callId
         
         renderedEvents.push(
           <ToolCallDisplay 
@@ -148,6 +152,51 @@ export function AssistantMessage({ events, message, isStreaming = false }: Assis
             status="success"
             variant="compact"
           />
+        )
+        break
+      
+      case 'todo':
+        // Todo updates displayed in chat
+        renderedEvents.push(
+          <div key={i} className="bg-bg-tertiary rounded-lg p-3 text-sm">
+            <div className="font-medium text-text-secondary mb-2">Task List</div>
+            <ul className="space-y-1">
+              {event.todos.map((todo, idx) => (
+                <li key={idx} className="flex items-center gap-2">
+                  <span className={`w-2 h-2 rounded-full ${
+                    todo.status === 'completed' ? 'bg-accent-success' :
+                    todo.status === 'in_progress' ? 'bg-accent-warning' :
+                    'bg-text-muted'
+                  }`} />
+                  <span className={todo.status === 'completed' ? 'text-text-muted line-through' : ''}>
+                    {todo.content}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )
+        break
+      
+      case 'summary':
+        // Summary block displayed prominently
+        renderedEvents.push(
+          <div key={i} className="bg-accent-primary/10 border border-accent-primary/30 rounded-lg p-4">
+            <div className="font-medium text-accent-primary mb-2">Task Summary</div>
+            <div className="text-text-primary">{event.summary}</div>
+          </div>
+        )
+        break
+      
+      case 'error':
+        renderedEvents.push(
+          <div key={i} className={`rounded-lg p-3 ${
+            event.recoverable 
+              ? 'bg-accent-warning/10 border border-accent-warning/30' 
+              : 'bg-accent-error/10 border border-accent-error/30'
+          }`}>
+            <div className="text-sm">{event.error}</div>
+          </div>
         )
         break
     }

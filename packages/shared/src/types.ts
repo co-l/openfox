@@ -14,18 +14,15 @@ export interface Project {
 // Session Types
 // ============================================================================
 
-export type SessionPhase = 
-  | 'idle' 
-  | 'planning' 
-  | 'executing' 
-  | 'validating' 
-  | 'completed'
+export type SessionMode = 'planner' | 'builder' | 'verifier'
 
 export interface Session {
   id: string
   projectId: string
   workdir: string
-  phase: SessionPhase
+  mode: SessionMode
+  isRunning: boolean  // Is the agent actively working?
+  summary: string | null  // Generated when switching to builder, used by verifier
   createdAt: string
   updatedAt: string
   messages: Message[]
@@ -46,7 +43,8 @@ export interface SessionSummary {
   projectId: string
   title?: string
   workdir: string
-  phase: SessionPhase
+  mode: SessionMode
+  isRunning: boolean
   createdAt: string
   updatedAt: string
   criteriaCount: number
@@ -107,6 +105,16 @@ export type ToolName =
   | 'glob'
   | 'grep'
   | 'ask_user'
+  // Criteria tools
+  | 'add_criterion'
+  | 'update_criterion'
+  | 'remove_criterion'
+  | 'get_criteria'
+  | 'complete_criterion'  // Builder marks criterion done
+  | 'pass_criterion'      // Verifier confirms criterion
+  | 'fail_criterion'      // Verifier rejects criterion
+  // Task tracking
+  | 'todo_write'
 
 // ============================================================================
 // Criterion Types
@@ -122,14 +130,25 @@ export interface Criterion {
 export type CriterionStatus =
   | { type: 'pending' }
   | { type: 'in_progress' }
-  | { type: 'passed'; verifiedAt: string }
-  | { type: 'failed'; reason: string; failedAt: string }
+  | { type: 'completed'; completedAt: string; reason?: string }  // Builder marked done, awaiting verification
+  | { type: 'passed'; verifiedAt: string; reason?: string }       // Verifier confirmed
+  | { type: 'failed'; reason: string; failedAt: string }          // Verifier rejected
 
 export interface CriterionAttempt {
   attemptNumber: number
   status: 'passed' | 'failed'
   timestamp: string
   details?: string
+}
+
+// ============================================================================
+// Todo Types (for builder task tracking)
+// ============================================================================
+
+export interface Todo {
+  content: string
+  status: 'pending' | 'in_progress' | 'completed'
+  priority: 'high' | 'medium' | 'low'
 }
 
 // ============================================================================

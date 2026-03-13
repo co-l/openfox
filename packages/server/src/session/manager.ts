@@ -1,7 +1,7 @@
 import type {
   Session,
   SessionSummary,
-  SessionPhase,
+  SessionMode,
   Message,
   Criterion,
   ExecutionState,
@@ -9,7 +9,9 @@ import type {
 import {
   createSession as dbCreateSession,
   getSession as dbGetSession,
-  updateSessionPhase,
+  updateSessionMode,
+  updateSessionRunning,
+  updateSessionSummary,
   updateSessionMetadata,
   listSessions as dbListSessions,
   listSessionsByProject as dbListSessionsByProject,
@@ -28,8 +30,7 @@ import {
   clearExecutionState,
 } from '../db/sessions.js'
 import { getProject } from '../db/projects.js'
-import { assertTransition, checkPhaseRequirements } from './state.js'
-import { SessionNotFoundError, InvalidPhaseTransitionError } from '../utils/errors.js'
+import { SessionNotFoundError } from '../utils/errors.js'
 import { logger } from '../utils/logger.js'
 import { EventEmitter, type Unsubscribe } from '../utils/async.js'
 
@@ -41,7 +42,7 @@ export type SessionEvent =
   | { type: 'session_created'; session: Session }
   | { type: 'session_updated'; session: Session }
   | { type: 'session_deleted'; sessionId: string }
-  | { type: 'phase_changed'; sessionId: string; from: SessionPhase; to: SessionPhase }
+  | { type: 'mode_changed'; sessionId: string; from: SessionMode; to: SessionMode }
   | { type: 'message_added'; sessionId: string; message: Message }
   | { type: 'criteria_updated'; sessionId: string; criteria: Criterion[] }
   | { type: 'criterion_status_changed'; sessionId: string; criterionId: string; status: Criterion['status'] }
@@ -118,57 +119,66 @@ class SessionManagerImpl {
     this.emit({ type: 'session_deleted', sessionId: id })
   }
   
-  // Phase transitions
+  // Mode management (simpler than old phase system)
   
-  transition(sessionId: string, toPhase: SessionPhase): Session {
+  setMode(sessionId: string, toMode: SessionMode): Session {
     const session = this.requireSession(sessionId)
-    const fromPhase = session.phase
+    const fromMode = session.mode
     
-    logger.info('Transitioning session phase', { sessionId, from: fromPhase, to: toPhase })
-    
-    // Check if transition is valid
-    assertTransition(fromPhase, toPhase)
-    
-    // Check requirements
-    const requirements = checkPhaseRequirements(toPhase, {
-      messageCount: session.messages.length,
-      criteriaCount: session.criteria.length,
-      criteriaAddressed: session.criteria.filter(c => 
-        c.status.type === 'passed' || c.status.type === 'failed'
-      ).length,
-      validationPassed: session.criteria.every(c => c.status.type === 'passed'),
-    })
-    
-    if (!requirements.canEnter) {
-      throw new InvalidPhaseTransitionError(fromPhase, toPhase + `: ${requirements.reason}`)
+    if (fromMode === toMode) {
+      return session
     }
     
-    // Perform transition
-    updateSessionPhase(sessionId, toPhase)
+    logger.info('Changing session mode', { sessionId, from: fromMode, to: toMode })
     
-    // Initialize execution state if entering executing phase
-    if (toPhase === 'executing' && fromPhase !== 'validating') {
+    updateSessionMode(sessionId, toMode)
+    
+    // Initialize execution state if entering builder mode
+    if (toMode === 'builder' && fromMode !== 'verifier') {
       const now = new Date().toISOString()
       const state: ExecutionState = {
         iteration: (session.executionState?.iteration ?? 0) + 1,
-        modifiedFiles: [],
+        modifiedFiles: session.executionState?.modifiedFiles ?? [],
         consecutiveFailures: 0,
-        currentTokenCount: 0,
-        compactionCount: 0,
+        currentTokenCount: session.executionState?.currentTokenCount ?? 0,
+        compactionCount: session.executionState?.compactionCount ?? 0,
         startedAt: now,
         lastActivityAt: now,
       }
       dbSetExecutionState(sessionId, state)
     }
     
-    // Clear execution state if going to idle or completed
-    if (toPhase === 'idle' || toPhase === 'completed') {
-      clearExecutionState(sessionId)
-    }
-    
     const updatedSession = this.requireSession(sessionId)
     
-    this.emit({ type: 'phase_changed', sessionId, from: fromPhase, to: toPhase })
+    this.emit({ type: 'mode_changed', sessionId, from: fromMode, to: toMode })
+    this.emit({ type: 'session_updated', session: updatedSession })
+    
+    return updatedSession
+  }
+  
+  setRunning(sessionId: string, isRunning: boolean): Session {
+    const session = this.requireSession(sessionId)
+    
+    if (session.isRunning === isRunning) {
+      return session
+    }
+    
+    logger.info('Setting session running state', { sessionId, isRunning })
+    
+    updateSessionRunning(sessionId, isRunning)
+    
+    const updatedSession = this.requireSession(sessionId)
+    this.emit({ type: 'session_updated', session: updatedSession })
+    
+    return updatedSession
+  }
+  
+  setSummary(sessionId: string, summary: string): Session {
+    logger.info('Setting session summary', { sessionId, summaryLength: summary.length })
+    
+    updateSessionSummary(sessionId, summary)
+    
+    const updatedSession = this.requireSession(sessionId)
     this.emit({ type: 'session_updated', session: updatedSession })
     
     return updatedSession
@@ -182,12 +192,6 @@ class SessionManagerImpl {
     const savedMessage = dbAddMessage(sessionId, message)
     
     this.emit({ type: 'message_added', sessionId, message: savedMessage })
-    
-    // If this is the first user message and we're idle, transition to planning
-    const session = this.requireSession(sessionId)
-    if (session.phase === 'idle' && message.role === 'user') {
-      this.transition(sessionId, 'planning')
-    }
     
     return savedMessage
   }

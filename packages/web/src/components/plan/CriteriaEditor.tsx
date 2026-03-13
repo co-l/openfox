@@ -49,6 +49,8 @@ export function CriteriaEditor({ criteria, editable, onUpdate, onAccept }: Crite
     switch (status.type) {
       case 'passed':
         return <span className="text-accent-success text-base">✓</span>
+      case 'completed':
+        return <span className="text-purple-400 text-base">◉</span>
       case 'failed':
         return <span className="text-accent-error text-base">✗</span>
       case 'in_progress':
@@ -142,7 +144,7 @@ export function CriteriaEditor({ criteria, editable, onUpdate, onAccept }: Crite
             onClick={onAccept}
             disabled={criteria.length === 0}
           >
-            Accept & Start Execution
+            Switch to Builder
           </Button>
         </div>
       )}

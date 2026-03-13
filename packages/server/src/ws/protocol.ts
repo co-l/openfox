@@ -7,18 +7,27 @@ import type {
   ProjectDeletePayload,
   SessionCreatePayload,
   SessionLoadPayload,
-  PlanMessagePayload,
-  PlanEditCriteriaPayload,
-  AgentIntervenePayload,
-  CriterionHumanVerifyPayload,
+  ChatSendPayload,
+  ModeSwitchPayload,
+  CriteriaEditPayload,
   ProjectStatePayload,
   ProjectListPayload,
   SessionStatePayload,
   SessionListPayload,
+  ChatDeltaPayload,
+  ChatThinkingPayload,
+  ChatToolCallPayload,
+  ChatToolResultPayload,
+  ChatTodoPayload,
+  ChatSummaryPayload,
+  ChatDonePayload,
+  ChatErrorPayload,
+  ModeChangedPayload,
+  CriteriaUpdatedPayload,
   ErrorPayload,
 } from '@openfox/shared/protocol'
 import { isClientMessage, createServerMessage } from '@openfox/shared/protocol'
-import type { Project } from '@openfox/shared'
+import type { Project, Session, SessionSummary, SessionMode, Criterion, Todo, ToolResult } from '@openfox/shared'
 
 export function parseClientMessage(data: string): ClientMessage | null {
   try {
@@ -36,24 +45,73 @@ export function serializeServerMessage(message: ServerMessage): string {
   return JSON.stringify(message)
 }
 
+// Error message
 export function createErrorMessage(code: string, message: string, correlationId?: string): ServerMessage<ErrorPayload> {
   return createServerMessage('error', { code, message }, correlationId)
 }
 
-export function createSessionStateMessage(session: import('@openfox/shared').Session, correlationId?: string): ServerMessage<SessionStatePayload> {
+// Session messages
+export function createSessionStateMessage(session: Session, correlationId?: string): ServerMessage<SessionStatePayload> {
   return createServerMessage('session.state', { session }, correlationId)
 }
 
-export function createSessionListMessage(sessions: import('@openfox/shared').SessionSummary[], correlationId?: string): ServerMessage<SessionListPayload> {
+export function createSessionListMessage(sessions: SessionSummary[], correlationId?: string): ServerMessage<SessionListPayload> {
   return createServerMessage('session.list', { sessions }, correlationId)
 }
 
+// Project messages
 export function createProjectStateMessage(project: Project, correlationId?: string): ServerMessage<ProjectStatePayload> {
   return createServerMessage('project.state', { project }, correlationId)
 }
 
 export function createProjectListMessage(projects: Project[], correlationId?: string): ServerMessage<ProjectListPayload> {
   return createServerMessage('project.list', { projects }, correlationId)
+}
+
+// Chat messages
+export function createChatDeltaMessage(content: string): ServerMessage<ChatDeltaPayload> {
+  return createServerMessage('chat.delta', { content })
+}
+
+export function createChatThinkingMessage(content: string): ServerMessage<ChatThinkingPayload> {
+  return createServerMessage('chat.thinking', { content })
+}
+
+export function createChatToolCallMessage(callId: string, tool: string, args: Record<string, unknown>): ServerMessage<ChatToolCallPayload> {
+  return createServerMessage('chat.tool_call', { callId, tool, args })
+}
+
+export function createChatToolResultMessage(callId: string, tool: string, result: ToolResult): ServerMessage<ChatToolResultPayload> {
+  return createServerMessage('chat.tool_result', { callId, tool, result })
+}
+
+export function createChatTodoMessage(todos: Todo[]): ServerMessage<ChatTodoPayload> {
+  return createServerMessage('chat.todo', { todos })
+}
+
+export function createChatSummaryMessage(summary: string): ServerMessage<ChatSummaryPayload> {
+  return createServerMessage('chat.summary', { summary })
+}
+
+export function createChatDoneMessage(
+  reason: 'complete' | 'stopped' | 'error' | 'waiting_for_user',
+  stats?: ChatDonePayload['stats']
+): ServerMessage<ChatDonePayload> {
+  return createServerMessage('chat.done', { reason, stats })
+}
+
+export function createChatErrorMessage(error: string, recoverable: boolean): ServerMessage<ChatErrorPayload> {
+  return createServerMessage('chat.error', { error, recoverable })
+}
+
+// Mode messages
+export function createModeChangedMessage(mode: SessionMode, auto: boolean, reason?: string): ServerMessage<ModeChangedPayload> {
+  return createServerMessage('mode.changed', { mode, auto, reason })
+}
+
+// Criteria messages
+export function createCriteriaUpdatedMessage(criteria: Criterion[], changedId?: string): ServerMessage<CriteriaUpdatedPayload> {
+  return createServerMessage('criteria.updated', { criteria, changedId })
 }
 
 // Type guards for payloads
@@ -84,18 +142,15 @@ export function isSessionLoadPayload(payload: unknown): payload is SessionLoadPa
   return typeof payload === 'object' && payload !== null && 'sessionId' in payload
 }
 
-export function isPlanMessagePayload(payload: unknown): payload is PlanMessagePayload {
+// Chat payloads
+export function isChatSendPayload(payload: unknown): payload is ChatSendPayload {
   return typeof payload === 'object' && payload !== null && 'content' in payload
 }
 
-export function isPlanEditCriteriaPayload(payload: unknown): payload is PlanEditCriteriaPayload {
+export function isModeSwitchPayload(payload: unknown): payload is ModeSwitchPayload {
+  return typeof payload === 'object' && payload !== null && 'mode' in payload
+}
+
+export function isCriteriaEditPayload(payload: unknown): payload is CriteriaEditPayload {
   return typeof payload === 'object' && payload !== null && 'criteria' in payload
-}
-
-export function isAgentIntervenePayload(payload: unknown): payload is AgentIntervenePayload {
-  return typeof payload === 'object' && payload !== null && 'response' in payload
-}
-
-export function isCriterionHumanVerifyPayload(payload: unknown): payload is CriterionHumanVerifyPayload {
-  return typeof payload === 'object' && payload !== null && 'criterionId' in payload && 'passed' in payload
 }
