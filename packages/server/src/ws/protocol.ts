@@ -1,17 +1,24 @@
 import type {
   ClientMessage,
   ServerMessage,
+  ProjectCreatePayload,
+  ProjectLoadPayload,
+  ProjectUpdatePayload,
+  ProjectDeletePayload,
   SessionCreatePayload,
   SessionLoadPayload,
   PlanMessagePayload,
   PlanEditCriteriaPayload,
   AgentIntervenePayload,
   CriterionHumanVerifyPayload,
+  ProjectStatePayload,
+  ProjectListPayload,
   SessionStatePayload,
   SessionListPayload,
   ErrorPayload,
 } from '@openfox/shared/protocol'
 import { isClientMessage, createServerMessage } from '@openfox/shared/protocol'
+import type { Project } from '@openfox/shared'
 
 export function parseClientMessage(data: string): ClientMessage | null {
   try {
@@ -41,9 +48,36 @@ export function createSessionListMessage(sessions: import('@openfox/shared').Ses
   return createServerMessage('session.list', { sessions }, correlationId)
 }
 
+export function createProjectStateMessage(project: Project, correlationId?: string): ServerMessage<ProjectStatePayload> {
+  return createServerMessage('project.state', { project }, correlationId)
+}
+
+export function createProjectListMessage(projects: Project[], correlationId?: string): ServerMessage<ProjectListPayload> {
+  return createServerMessage('project.list', { projects }, correlationId)
+}
+
 // Type guards for payloads
+
+// Project payloads
+export function isProjectCreatePayload(payload: unknown): payload is ProjectCreatePayload {
+  return typeof payload === 'object' && payload !== null && 'name' in payload && 'workdir' in payload
+}
+
+export function isProjectLoadPayload(payload: unknown): payload is ProjectLoadPayload {
+  return typeof payload === 'object' && payload !== null && 'projectId' in payload
+}
+
+export function isProjectUpdatePayload(payload: unknown): payload is ProjectUpdatePayload {
+  return typeof payload === 'object' && payload !== null && 'projectId' in payload && 'name' in payload
+}
+
+export function isProjectDeletePayload(payload: unknown): payload is ProjectDeletePayload {
+  return typeof payload === 'object' && payload !== null && 'projectId' in payload
+}
+
+// Session payloads
 export function isSessionCreatePayload(payload: unknown): payload is SessionCreatePayload {
-  return typeof payload === 'object' && payload !== null && 'workdir' in payload
+  return typeof payload === 'object' && payload !== null && 'projectId' in payload
 }
 
 export function isSessionLoadPayload(payload: unknown): payload is SessionLoadPayload {

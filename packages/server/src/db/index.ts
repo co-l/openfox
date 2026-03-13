@@ -37,10 +37,22 @@ export function closeDatabase(): void {
 function runMigrations(db: Database.Database): void {
   logger.info('Running database migrations')
   
-  // Create sessions table
+  // Create projects table
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS projects (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      workdir TEXT NOT NULL UNIQUE,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    )
+  `)
+  
+  // Create sessions table with project_id
   db.exec(`
     CREATE TABLE IF NOT EXISTS sessions (
       id TEXT PRIMARY KEY,
+      project_id TEXT NOT NULL,
       workdir TEXT NOT NULL,
       phase TEXT NOT NULL DEFAULT 'idle',
       created_at TEXT NOT NULL,
@@ -48,7 +60,8 @@ function runMigrations(db: Database.Database): void {
       title TEXT,
       total_tokens_used INTEGER DEFAULT 0,
       total_tool_calls INTEGER DEFAULT 0,
-      iteration_count INTEGER DEFAULT 0
+      iteration_count INTEGER DEFAULT 0,
+      FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE
     )
   `)
   
@@ -68,6 +81,7 @@ function runMigrations(db: Database.Database): void {
       token_count INTEGER DEFAULT 0,
       is_compacted INTEGER DEFAULT 0,
       original_message_ids TEXT,
+      segments TEXT,
       FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE
     )
   `)
@@ -78,7 +92,6 @@ function runMigrations(db: Database.Database): void {
       id TEXT PRIMARY KEY,
       session_id TEXT NOT NULL,
       description TEXT NOT NULL,
-      verification TEXT NOT NULL,
       status TEXT NOT NULL,
       attempts TEXT DEFAULT '[]',
       sort_order INTEGER DEFAULT 0,
@@ -109,6 +122,9 @@ function runMigrations(db: Database.Database): void {
   `)
   db.exec(`
     CREATE INDEX IF NOT EXISTS idx_criteria_session ON criteria(session_id)
+  `)
+  db.exec(`
+    CREATE INDEX IF NOT EXISTS idx_sessions_project ON sessions(project_id)
   `)
   
   logger.info('Database migrations completed')

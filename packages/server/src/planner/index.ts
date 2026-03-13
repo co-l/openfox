@@ -1,14 +1,11 @@
-import type { Criterion, CriterionVerification, ToolCall } from '@openfox/shared'
+import type { Criterion, ToolCall } from '@openfox/shared'
 import type { LLMClient, LLMMessage } from '../llm/types.js'
 import type { ToolRegistry } from '../tools/index.js'
 import { sessionManager } from '../session/index.js'
 import { buildPlanningMessages, PLANNING_TOOLS } from './prompts.js'
+import { streamWithSegments } from '../llm/streaming.js'
 import { logger } from '../utils/logger.js'
 import { estimateTokens } from '../context/tokenizer.js'
-import { exec } from 'node:child_process'
-import { promisify } from 'node:util'
-
-const execAsync = promisify(exec)
 
 export type PlannerEvent =
   | { type: 'text_delta'; content: string }
@@ -34,8 +31,12 @@ export async function* plannerChat(
     tokenCount: estimateTokens(userMessage),
   })
   
-  // Build initial messages
+  // Planning tools (read-only)
+  const planningTools = PLANNING_TOOLS
+  
+  // Build initial messages with dynamic system prompt
   let messages = buildPlanningMessages(
+    planningTools,
     session.messages
       .filter(m => m.role === 'user' || m.role === 'assistant' || m.role === 'tool')
       .map(m => ({ 
@@ -47,66 +48,72 @@ export async function* plannerChat(
       .concat([{ role: 'user', content: userMessage }])
   )
   
-  // Planning tools (read-only)
-  const planningTools = PLANNING_TOOLS
-  
   // Loop to handle tool calls
   let iteration = 0
   const maxIterations = 10
   
+  // Only these tools are allowed in planning mode
+  const allowedPlanningTools = [
+    'read_file', 'glob', 'grep',
+    'get_criteria', 'add_criterion', 'update_criterion', 'remove_criterion'
+  ]
+  
   while (iteration < maxIterations) {
     iteration++
     
-    let fullContent = ''
-    let thinkingContent = ''
-    let toolCalls: ToolCall[] = []
+    // Stream LLM response with segment tracking
+    const stream = streamWithSegments(llmClient, {
+      messages,
+      tools: planningTools,
+      toolChoice: 'auto',
+    })
     
-    try {
-      for await (const event of llmClient.stream({ 
-        messages,
-        tools: planningTools,
-        toolChoice: 'auto',
-      })) {
-        switch (event.type) {
-          case 'text_delta':
-            fullContent += event.content
-            yield { type: 'text_delta', content: event.content }
-            break
-          
-          case 'thinking_delta':
-            thinkingContent += event.content
-            yield { type: 'thinking_delta', content: event.content }
-            break
-          
-          case 'done':
-            toolCalls = event.response.toolCalls ?? []
-            
-            // Save assistant message
-            sessionManager.addMessage(sessionId, {
-              role: 'assistant',
-              content: fullContent,
-              thinkingContent: thinkingContent || undefined,
-              toolCalls: toolCalls.length > 0 ? toolCalls : undefined,
-              tokenCount: event.response.usage.completionTokens,
-            })
-            
-            // Update token count
-            sessionManager.incrementTokenCount(
-              sessionId,
-              event.response.usage.promptTokens + event.response.usage.completionTokens
-            )
-            break
-          
-          case 'error':
-            yield { type: 'error', error: event.error }
-            return
-        }
+    let streamResult: Awaited<ReturnType<typeof stream.next>>['value'] = null
+    
+    // Forward streaming events and get final result
+    while (true) {
+      const { value, done } = await stream.next()
+      
+      if (done) {
+        streamResult = value
+        break
       }
-    } catch (error) {
-      logger.error('Planner chat error', { error })
-      yield { type: 'error', error: error instanceof Error ? error.message : 'Unknown error' }
+      
+      // Forward event to caller
+      switch (value.type) {
+        case 'text_delta':
+          yield { type: 'text_delta', content: value.content }
+          break
+        case 'thinking_delta':
+          yield { type: 'thinking_delta', content: value.content }
+          break
+        case 'error':
+          yield { type: 'error', error: value.error }
+          return
+      }
+    }
+    
+    // Check if streaming failed
+    if (!streamResult) {
+      yield { type: 'error', error: 'Stream ended without result' }
       return
     }
+    
+    const { content, thinkingContent, toolCalls, response, segments } = streamResult
+    
+    // Save assistant message with segments for proper ordering on reload
+    sessionManager.addMessage(sessionId, {
+      role: 'assistant',
+      content,
+      thinkingContent: thinkingContent || undefined,
+      toolCalls: toolCalls.length > 0 ? toolCalls : undefined,
+      tokenCount: response.usage.completionTokens,
+      segments,
+    })
+    
+    // Update context size (for compaction decisions) and cumulative usage (for metrics)
+    sessionManager.setCurrentContextSize(sessionId, response.usage.promptTokens)
+    sessionManager.addTokensUsed(sessionId, response.usage.promptTokens + response.usage.completionTokens)
     
     // If no tool calls, we're done
     if (toolCalls.length === 0) {
@@ -121,30 +128,36 @@ export async function* plannerChat(
       yield { type: 'tool_call', tool: toolCall.name, args: toolCall.arguments }
       
       let resultContent: string
+      let updatedCriteria: Criterion[] | null = null
       
-      // Handle set_acceptance_criteria specially
-      if (toolCall.name === 'set_acceptance_criteria') {
-        const criteriaResult = await handleSetCriteria(
-          sessionId,
-          toolCall.arguments as { criteria: CriteriaInput[] },
-          session.workdir
-        )
-        resultContent = criteriaResult.message
-        
-        if (criteriaResult.success && criteriaResult.criteria) {
-          yield { type: 'criteria_set', criteria: criteriaResult.criteria }
-        }
+      // Guard: reject tools not in the allowed list
+      if (!allowedPlanningTools.includes(toolCall.name)) {
+        resultContent = `Error: Tool "${toolCall.name}" is not available in planning mode. Only exploration tools (read_file, glob, grep) and criteria tools (get_criteria, add_criterion, update_criterion, remove_criterion) are allowed. Do NOT attempt to edit files during planning.`
+        logger.warn('Planner attempted forbidden tool', { tool: toolCall.name, sessionId })
       } else {
-        // Regular tool execution via registry
-        const result = await toolRegistry.execute(
-          toolCall.name,
-          toolCall.arguments,
-          { workdir: session.workdir, sessionId }
-        )
+        // Handle criteria tools
+        const criteriaResult = handleCriteriaTool(sessionId, toolCall.name, toolCall.arguments)
         
-        resultContent = result.success 
-          ? (result.output ?? 'Success')
-          : `Error: ${result.error}`
+        if (criteriaResult !== null) {
+          resultContent = criteriaResult.message
+          updatedCriteria = criteriaResult.criteria
+        } else {
+          // Regular tool execution via registry (read_file, glob, grep)
+          const result = await toolRegistry.execute(
+            toolCall.name,
+            toolCall.arguments,
+            { workdir: session.workdir, sessionId }
+          )
+          
+          resultContent = result.success 
+            ? (result.output ?? 'Success')
+            : `Error: ${result.error}`
+        }
+      }
+      
+      // Emit criteria update if changed
+      if (updatedCriteria !== null) {
+        yield { type: 'criteria_set', criteria: updatedCriteria }
       }
       
       yield { type: 'tool_result', tool: toolCall.name, result: resultContent.slice(0, 500) }
@@ -171,7 +184,7 @@ export async function* plannerChat(
       ...messages,
       {
         role: 'assistant' as const,
-        content: fullContent,
+        content,
         toolCalls,
       },
       ...toolMessages,
@@ -181,151 +194,118 @@ export async function* plannerChat(
   yield { type: 'done' }
 }
 
-// Types for criteria input from tool call
-interface CriteriaInput {
-  id: string
-  description: string
-  verification: {
-    type: 'auto' | 'model' | 'human'
-    command?: string
-  }
-}
+// ============================================================================
+// Criteria Tool Handlers
+// ============================================================================
 
-interface SetCriteriaResult {
-  success: boolean
+interface CriteriaToolResult {
   message: string
-  criteria?: Criterion[]
+  criteria: Criterion[] | null
 }
 
 /**
- * Handle the set_acceptance_criteria tool call.
- * Validates criteria and optionally checks that auto-verification commands exist.
+ * Handle criteria CRUD tools. Returns null if not a criteria tool.
  */
-async function handleSetCriteria(
+function handleCriteriaTool(
   sessionId: string,
-  args: { criteria: CriteriaInput[] },
-  workdir: string
-): Promise<SetCriteriaResult> {
-  const { criteria: inputCriteria } = args
+  toolName: string,
+  args: Record<string, unknown>
+): CriteriaToolResult | null {
+  const session = sessionManager.requireSession(sessionId)
   
-  if (!Array.isArray(inputCriteria) || inputCriteria.length === 0) {
-    return {
-      success: false,
-      message: 'Error: criteria must be a non-empty array',
-    }
-  }
-  
-  const errors: string[] = []
-  const warnings: string[] = []
-  
-  // Validate each criterion
-  for (const c of inputCriteria) {
-    if (!c.id || typeof c.id !== 'string') {
-      errors.push(`Criterion missing valid id`)
-    }
-    if (!c.description || typeof c.description !== 'string') {
-      errors.push(`Criterion ${c.id}: missing description`)
-    }
-    if (!c.verification || !['auto', 'model', 'human'].includes(c.verification.type)) {
-      errors.push(`Criterion ${c.id}: verification.type must be 'auto', 'model', or 'human'`)
-    }
-    if (c.verification?.type === 'auto' && !c.verification.command) {
-      errors.push(`Criterion ${c.id}: auto verification requires a command`)
-    }
-  }
-  
-  if (errors.length > 0) {
-    return {
-      success: false,
-      message: `Validation errors:\n${errors.join('\n')}`,
-    }
-  }
-  
-  // For auto criteria, check if the command looks valid
-  for (const c of inputCriteria) {
-    if (c.verification.type === 'auto' && c.verification.command) {
-      const validation = await validateCommand(c.verification.command, workdir)
-      if (!validation.valid) {
-        warnings.push(`Criterion ${c.id}: ${validation.warning}`)
-      }
-    }
-  }
-  
-  // Build criteria objects
-  const criteria: Criterion[] = inputCriteria.map((c, i) => ({
-    id: c.id || `criterion-${i + 1}`,
-    description: c.description,
-    verification: normalizeVerification(c.verification),
-    status: { type: 'pending' as const },
-    attempts: [],
-  }))
-  
-  // Save to session
-  sessionManager.setCriteria(sessionId, criteria)
-  
-  let message = `Acceptance criteria set (${criteria.length} criteria)`
-  if (warnings.length > 0) {
-    message += `\n\nWarnings:\n${warnings.join('\n')}`
-  }
-  message += '\n\nThe user can now review and edit the criteria before accepting.'
-  
-  return {
-    success: true,
-    message,
-    criteria,
-  }
-}
-
-/**
- * Validate that an auto-verification command looks reasonable.
- * Checks if npm scripts exist, common commands are available, etc.
- */
-async function validateCommand(
-  command: string,
-  workdir: string
-): Promise<{ valid: boolean; warning?: string }> {
-  const trimmed = command.trim()
-  
-  // Check for npm/yarn/pnpm script commands
-  const npmScriptMatch = trimmed.match(/^(npm|yarn|pnpm)\s+(run\s+)?(\w+)/)
-  if (npmScriptMatch) {
-    const scriptName = npmScriptMatch[3]
-    try {
-      const { stdout } = await execAsync('cat package.json', { cwd: workdir })
-      const pkg = JSON.parse(stdout)
-      if (!pkg.scripts?.[scriptName]) {
-        return {
-          valid: false,
-          warning: `npm script "${scriptName}" not found in package.json`,
-        }
-      }
-    } catch {
-      // package.json doesn't exist or isn't readable
+  switch (toolName) {
+    case 'get_criteria': {
+      const criteria = session.criteria
       return {
-        valid: false,
-        warning: `Could not verify npm script "${scriptName}" - package.json not found`,
+        message: criteria.length === 0
+          ? 'No criteria defined yet.'
+          : JSON.stringify(criteria.map(c => ({
+              id: c.id,
+              description: c.description,
+            })), null, 2),
+        criteria: null, // No change, don't emit event
       }
     }
+    
+    case 'add_criterion': {
+      const { id, description } = args as { id: string; description: string }
+      
+      // Validate required fields
+      if (!id || typeof id !== 'string') {
+        return { message: 'Error: id is required', criteria: null }
+      }
+      if (!description || typeof description !== 'string') {
+        return { message: 'Error: description is required', criteria: null }
+      }
+      
+      // Check for duplicate ID
+      if (session.criteria.find(c => c.id === id)) {
+        return { message: `Error: criterion with id "${id}" already exists`, criteria: null }
+      }
+      
+      const criterion: Criterion = {
+        id,
+        description,
+        status: { type: 'pending' },
+        attempts: [],
+      }
+      
+      const criteria = sessionManager.addCriterion(sessionId, criterion)
+      return {
+        message: `Added criterion "${id}". Current criteria:\n${formatCriteriaList(criteria)}`,
+        criteria,
+      }
+    }
+    
+    case 'update_criterion': {
+      const { id, description } = args as { id: string; description?: string }
+      
+      if (!id) {
+        return { message: 'Error: id is required', criteria: null }
+      }
+      
+      if (!session.criteria.find(c => c.id === id)) {
+        return { message: `Error: criterion "${id}" not found`, criteria: null }
+      }
+      
+      if (!description) {
+        return { message: 'Error: description is required for update', criteria: null }
+      }
+      
+      const criteria = sessionManager.updateCriterionFull(sessionId, id, { description })
+      return {
+        message: `Updated criterion "${id}". Current criteria:\n${formatCriteriaList(criteria)}`,
+        criteria,
+      }
+    }
+    
+    case 'remove_criterion': {
+      const { id } = args as { id: string }
+      
+      if (!id) {
+        return { message: 'Error: id is required', criteria: null }
+      }
+      
+      if (!session.criteria.find(c => c.id === id)) {
+        return { message: `Error: criterion "${id}" not found`, criteria: null }
+      }
+      
+      const criteria = sessionManager.removeCriterion(sessionId, id)
+      return {
+        message: criteria.length === 0
+          ? `Removed criterion "${id}". No criteria remaining.`
+          : `Removed criterion "${id}". Current criteria:\n${formatCriteriaList(criteria)}`,
+        criteria,
+      }
+    }
+    
+    default:
+      return null
   }
-  
-  // Basic sanity check - command shouldn't be empty or just whitespace
-  if (!trimmed) {
-    return { valid: false, warning: 'Command is empty' }
-  }
-  
-  return { valid: true }
 }
 
-function normalizeVerification(v: { type: string; command?: string }): CriterionVerification {
-  switch (v.type) {
-    case 'auto':
-      return { type: 'auto', command: v.command ?? 'echo "Manual verification needed"' }
-    case 'human':
-      return { type: 'human' }
-    case 'model':
-    default:
-      return { type: 'model' }
-  }
+function formatCriteriaList(criteria: Criterion[]): string {
+  return criteria.map(c => `- ${c.id}: ${c.description}`).join('\n')
 }
 
 export async function acceptCriteria(sessionId: string): Promise<void> {

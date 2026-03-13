@@ -1,10 +1,10 @@
 import type {
+  Project,
   Session,
   SessionSummary,
   Criterion,
   Message,
   ValidationResult,
-  VllmMetrics,
   Diagnostic,
   ToolCall,
   ToolResult,
@@ -16,6 +16,11 @@ import type {
 // ============================================================================
 
 export type ClientMessageType =
+  | 'project.create'
+  | 'project.list'
+  | 'project.load'
+  | 'project.update'
+  | 'project.delete'
   | 'session.create'
   | 'session.load'
   | 'session.list'
@@ -27,7 +32,7 @@ export type ClientMessageType =
   | 'agent.pause'
   | 'agent.resume'
   | 'agent.intervene'
-  | 'agent.cancel'
+  | 'agent.stop'
   | 'validate.start'
   | 'criterion.human_verify'
 
@@ -38,8 +43,29 @@ export interface ClientMessage<T = unknown> {
 }
 
 // Payload types for client messages
-export interface SessionCreatePayload {
+
+// Project payloads
+export interface ProjectCreatePayload {
+  name: string
   workdir: string
+}
+
+export interface ProjectLoadPayload {
+  projectId: string
+}
+
+export interface ProjectUpdatePayload {
+  projectId: string
+  name: string
+}
+
+export interface ProjectDeletePayload {
+  projectId: string
+}
+
+// Session payloads
+export interface SessionCreatePayload {
+  projectId: string
   title?: string
 }
 
@@ -70,6 +96,9 @@ export interface CriterionHumanVerifyPayload {
 // ============================================================================
 
 export type ServerMessageType =
+  | 'project.state'
+  | 'project.list'
+  | 'project.deleted'
   | 'session.state'
   | 'session.list'
   | 'session.deleted'
@@ -80,7 +109,6 @@ export type ServerMessageType =
   | 'plan.done'
   | 'agent.event'
   | 'validation.result'
-  | 'metrics.update'
   | 'lsp.diagnostics'
   | 'error'
   | 'ack'
@@ -92,6 +120,21 @@ export interface ServerMessage<T = unknown> {
 }
 
 // Payload types for server messages
+
+// Project payloads
+export interface ProjectStatePayload {
+  project: Project
+}
+
+export interface ProjectListPayload {
+  projects: Project[]
+}
+
+export interface ProjectDeletedPayload {
+  projectId: string
+}
+
+// Session payloads
 export interface SessionStatePayload {
   session: Session
 }
@@ -127,16 +170,6 @@ export interface ValidationResultPayload {
   result: ValidationResult
 }
 
-export interface MetricsUpdatePayload {
-  metrics: VllmMetrics
-  derived: {
-    prefillSpeed: number
-    generationSpeed: number
-    contextPercent: number
-    cacheHealth: 'good' | 'pressure' | 'critical'
-  }
-}
-
 export interface LspDiagnosticsPayload {
   path: string
   diagnostics: Diagnostic[]
@@ -164,6 +197,7 @@ export type AgentEvent =
   | AgentErrorEvent
   | AgentAskUserEvent
   | AgentTextDeltaEvent
+  | AgentAbortedEvent
 
 export interface AgentThinkingEvent {
   type: 'thinking'
@@ -220,6 +254,11 @@ export interface AgentDoneEvent {
   type: 'done'
   allCriteriaPassed: boolean
   summary: string
+  stats?: {
+    model: string
+    prefillSpeed: number  // tokens/sec
+    generationSpeed: number  // tokens/sec
+  }
 }
 
 export interface AgentErrorEvent {
@@ -232,6 +271,10 @@ export interface AgentAskUserEvent {
   type: 'ask_user'
   question: string
   callId: string
+}
+
+export interface AgentAbortedEvent {
+  type: 'aborted'
 }
 
 // ============================================================================

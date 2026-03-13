@@ -1,10 +1,12 @@
 import type { Criterion, CriterionStatus, ToolCall, ToolResult } from '@openfox/shared'
 import type { AgentEvent } from '@openfox/shared/protocol'
-import type { LLMClient, LLMMessage } from '../llm/types.js'
+import type { LLMMessage } from '../llm/types.js'
+import type { LLMClientWithModel } from '../llm/client.js'
 import type { ToolRegistry } from '../tools/index.js'
 import type { Config } from '../config.js'
 import { sessionManager } from '../session/index.js'
 import { buildAgentSystemPrompt } from './prompts.js'
+import { streamWithSegments, type StreamTiming } from '../llm/streaming.js'
 import { AskUserInterrupt } from '../tools/index.js'
 import { estimateTokens } from '../context/tokenizer.js'
 import { shouldCompact, getCompactionTarget, compactMessages } from '../context/index.js'
@@ -12,22 +14,38 @@ import { logger } from '../utils/logger.js'
 
 export interface AgentRunnerOptions {
   sessionId: string
-  llmClient: LLMClient
+  llmClient: LLMClientWithModel
   toolRegistry: ToolRegistry
   config: Config
+  signal?: AbortSignal
   onEvent: (event: AgentEvent) => void
 }
 
 export async function runAgent(options: AgentRunnerOptions): Promise<void> {
-  const { sessionId, llmClient, toolRegistry, config, onEvent } = options
+  const { sessionId, llmClient, toolRegistry, config, signal, onEvent } = options
   
   let session = sessionManager.requireSession(sessionId)
   let iteration = 0
   const maxIterations = config.agent.maxIterations * session.criteria.length
+  let lastTiming: StreamTiming | null = null
+  
+  // Helper to build stats for done event
+  const buildStats = () => lastTiming ? {
+    model: llmClient.getModel(),
+    prefillSpeed: lastTiming.prefillTps,
+    generationSpeed: lastTiming.tps,
+  } : undefined
   
   logger.info('Starting agent run', { sessionId, criteria: session.criteria.length })
   
   while (iteration < maxIterations) {
+    // Check for abort at start of each iteration
+    if (signal?.aborted) {
+      logger.info('Agent aborted', { sessionId, iteration })
+      onEvent({ type: 'aborted' })
+      return
+    }
+    
     iteration++
     session = sessionManager.requireSession(sessionId)
     
@@ -39,6 +57,7 @@ export async function runAgent(options: AgentRunnerOptions): Promise<void> {
         type: 'done',
         allCriteriaPassed: true,
         summary: 'All acceptance criteria have been satisfied.',
+        stats: buildStats(),
       })
       sessionManager.transition(sessionId, 'validating')
       return
@@ -114,62 +133,61 @@ export async function runAgent(options: AgentRunnerOptions): Promise<void> {
         }),
     ]
     
-    // Stream LLM response
-    let fullContent = ''
-    let thinkingContent = ''
-    let toolCalls: ToolCall[] = []
+    // Stream LLM response with segment tracking
+    const stream = streamWithSegments(llmClient, {
+      messages,
+      tools: toolRegistry.definitions,
+      toolChoice: 'auto',
+    })
     
-    try {
-      for await (const event of llmClient.stream({
-        messages,
-        tools: toolRegistry.definitions,
-        toolChoice: 'auto',
-      })) {
-        switch (event.type) {
-          case 'text_delta':
-            fullContent += event.content
-            onEvent({ type: 'text_delta', content: event.content })
-            break
-          
-          case 'thinking_delta':
-            thinkingContent += event.content
-            onEvent({ type: 'thinking', content: event.content })
-            break
-          
-          case 'done':
-            toolCalls = event.response.toolCalls ?? []
-            
-            // Update token count
-            sessionManager.incrementTokenCount(
-              sessionId,
-              event.response.usage.promptTokens + event.response.usage.completionTokens
-            )
-            break
-          
-          case 'error':
-            onEvent({ type: 'error', error: event.error, recoverable: true })
-            sessionManager.recordToolFailure(sessionId, 'llm', event.error)
-            continue
-        }
+    let streamResult: Awaited<ReturnType<typeof stream.next>>['value'] = null
+    let streamError = false
+    
+    // Forward streaming events and get final result
+    while (true) {
+      const { value, done } = await stream.next()
+      
+      if (done) {
+        streamResult = value
+        break
       }
-    } catch (error) {
-      logger.error('LLM stream error', { error })
-      onEvent({
-        type: 'error',
-        error: error instanceof Error ? error.message : 'Unknown error',
-        recoverable: true,
-      })
-      sessionManager.recordToolFailure(sessionId, 'llm', String(error))
+      
+      switch (value.type) {
+        case 'text_delta':
+          onEvent({ type: 'text_delta', content: value.content })
+          break
+        case 'thinking_delta':
+          onEvent({ type: 'thinking', content: value.content })
+          break
+        case 'error':
+          onEvent({ type: 'error', error: value.error, recoverable: true })
+          sessionManager.recordToolFailure(sessionId, 'llm', value.error)
+          streamError = true
+          break
+      }
+    }
+    
+    // Handle stream errors
+    if (streamError || !streamResult) {
+      logger.error('LLM stream error', { sessionId })
       continue
     }
     
-    // Save assistant message
+    const { content: fullContent, thinkingContent, toolCalls, response, segments, timing } = streamResult
+    lastTiming = timing
+    
+    // Update context size (for compaction decisions) and cumulative usage (for metrics)
+    sessionManager.setCurrentContextSize(sessionId, response.usage.promptTokens)
+    sessionManager.addTokensUsed(sessionId, response.usage.promptTokens + response.usage.completionTokens)
+    
+    // Save assistant message with segments for proper ordering on reload
     sessionManager.addMessage(sessionId, {
       role: 'assistant',
       content: fullContent,
       thinkingContent: thinkingContent || undefined,
       toolCalls: toolCalls.length > 0 ? toolCalls : undefined,
       tokenCount: estimateTokens(fullContent),
+      segments,
     })
     
     // Check for completion signal
@@ -179,6 +197,7 @@ export async function runAgent(options: AgentRunnerOptions): Promise<void> {
         type: 'done',
         allCriteriaPassed: true,
         summary: 'Agent reports all criteria complete. Starting validation.',
+        stats: buildStats(),
       })
       sessionManager.transition(sessionId, 'validating')
       return
@@ -189,6 +208,13 @@ export async function runAgent(options: AgentRunnerOptions): Promise<void> {
       sessionManager.resetToolFailures(sessionId)
       
       for (const toolCall of toolCalls) {
+        // Check for abort before each tool execution
+        if (signal?.aborted) {
+          logger.info('Agent aborted during tool execution', { sessionId })
+          onEvent({ type: 'aborted' })
+          return
+        }
+        
         onEvent({
           type: 'tool_call',
           callId: toolCall.id,

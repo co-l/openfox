@@ -38,7 +38,6 @@ export function CriteriaEditor({ criteria, editable, onUpdate, onAccept }: Crite
     const newCriterion: Criterion = {
       id: `criterion-${Date.now()}`,
       description: 'New criterion',
-      verification: { type: 'model' },
       status: { type: 'pending' },
       attempts: [],
     }
@@ -49,35 +48,21 @@ export function CriteriaEditor({ criteria, editable, onUpdate, onAccept }: Crite
   const getStatusIcon = (status: Criterion['status']) => {
     switch (status.type) {
       case 'passed':
-        return <span className="text-accent-success">✓</span>
+        return <span className="text-accent-success text-base">✓</span>
       case 'failed':
-        return <span className="text-accent-error">✗</span>
+        return <span className="text-accent-error text-base">✗</span>
       case 'in_progress':
-        return <span className="text-accent-warning animate-pulse">●</span>
+        return <span className="text-accent-warning text-base animate-pulse">●</span>
       default:
-        return <span className="text-text-muted">○</span>
+        return <span className="text-text-muted text-base">○</span>
     }
-  }
-  
-  const getVerificationBadge = (verification: Criterion['verification']) => {
-    const colors = {
-      auto: 'bg-accent-success/20 text-accent-success',
-      model: 'bg-accent-primary/20 text-accent-primary',
-      human: 'bg-accent-warning/20 text-accent-warning',
-    }
-    
-    return (
-      <span className={`text-xs px-1.5 py-0.5 rounded ${colors[verification.type]}`}>
-        {verification.type}
-      </span>
-    )
   }
   
   return (
     <div className="flex flex-col h-full">
-      <div className="flex items-center justify-between mb-3">
-        <h3 className="text-sm font-semibold text-text-secondary">Acceptance Criteria</h3>
-        <span className="text-xs text-text-muted">
+      <div className="flex items-center justify-between mb-4">
+        <h3 className="text-lg font-semibold text-text-primary">Acceptance Criteria</h3>
+        <span className="text-sm text-text-muted">
           {criteria.filter(c => c.status.type === 'passed').length}/{criteria.length} done
         </span>
       </div>
@@ -103,7 +88,7 @@ export function CriteriaEditor({ criteria, editable, onUpdate, onAccept }: Crite
                       value={editValue}
                       onChange={(e) => setEditValue(e.target.value)}
                       className="w-full bg-bg-secondary border border-border rounded p-2 text-sm resize-none"
-                      rows={2}
+                      rows={3}
                       autoFocus
                     />
                     <div className="flex gap-2 mt-2">
@@ -117,26 +102,23 @@ export function CriteriaEditor({ criteria, editable, onUpdate, onAccept }: Crite
                   </div>
                 ) : (
                   <div className="flex-1">
-                    <p className="text-sm">{criterion.description}</p>
-                    <div className="flex items-center gap-2 mt-1">
-                      {getVerificationBadge(criterion.verification)}
-                      {editable && (
-                        <>
-                          <button
-                            className="text-xs text-text-muted hover:text-text-primary"
-                            onClick={() => startEdit(criterion)}
-                          >
-                            Edit
-                          </button>
-                          <button
-                            className="text-xs text-accent-error/70 hover:text-accent-error"
-                            onClick={() => removeCriterion(criterion.id)}
-                          >
-                            Remove
-                          </button>
-                        </>
-                      )}
-                    </div>
+                    <p className="text-sm leading-relaxed">{criterion.description}</p>
+                    {editable && (
+                      <div className="flex items-center gap-3 mt-1.5">
+                        <button
+                          className="text-xs text-text-muted hover:text-text-primary"
+                          onClick={() => startEdit(criterion)}
+                        >
+                          Edit
+                        </button>
+                        <button
+                          className="text-xs text-accent-error/70 hover:text-accent-error"
+                          onClick={() => removeCriterion(criterion.id)}
+                        >
+                          Remove
+                        </button>
+                      </div>
+                    )}
                   </div>
                 )}
               </div>

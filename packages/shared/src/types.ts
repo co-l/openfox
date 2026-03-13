@@ -1,4 +1,16 @@
 // ============================================================================
+// Project Types
+// ============================================================================
+
+export interface Project {
+  id: string
+  name: string
+  workdir: string
+  createdAt: string
+  updatedAt: string
+}
+
+// ============================================================================
 // Session Types
 // ============================================================================
 
@@ -11,6 +23,7 @@ export type SessionPhase =
 
 export interface Session {
   id: string
+  projectId: string
   workdir: string
   phase: SessionPhase
   createdAt: string
@@ -30,6 +43,7 @@ export interface SessionMetadata {
 
 export interface SessionSummary {
   id: string
+  projectId: string
   title?: string
   workdir: string
   phase: SessionPhase
@@ -45,6 +59,12 @@ export interface SessionSummary {
 
 export type MessageRole = 'user' | 'assistant' | 'system' | 'tool'
 
+// Segment types for preserving streaming order
+export type MessageSegment =
+  | { type: 'text'; content: string }
+  | { type: 'thinking'; content: string }
+  | { type: 'tool_call'; toolCallId: string }
+
 export interface Message {
   id: string
   role: MessageRole
@@ -58,6 +78,7 @@ export interface Message {
   tokenCount: number
   isCompacted?: boolean
   originalMessageIds?: string[]
+  segments?: MessageSegment[]  // Preserves streaming order: text/thinking chunks + tool call refs
 }
 
 // ============================================================================
@@ -93,21 +114,15 @@ export type ToolName =
 
 export interface Criterion {
   id: string
-  description: string
-  verification: CriterionVerification
+  description: string  // Self-contained contract, includes how to verify
   status: CriterionStatus
   attempts: CriterionAttempt[]
 }
 
-export type CriterionVerification =
-  | { type: 'auto'; command: string }
-  | { type: 'model' }
-  | { type: 'human' }
-
 export type CriterionStatus =
   | { type: 'pending' }
   | { type: 'in_progress' }
-  | { type: 'passed'; verifiedAt: string; verifiedBy: 'auto' | 'model' | 'human' }
+  | { type: 'passed'; verifiedAt: string }
   | { type: 'failed'; reason: string; failedAt: string }
 
 export interface CriterionAttempt {
@@ -147,35 +162,6 @@ export interface CriterionValidation {
   status: 'pass' | 'fail'
   reasoning: string
   issues: string[]
-}
-
-// ============================================================================
-// Metrics Types
-// ============================================================================
-
-export interface VllmMetrics {
-  numRequestsRunning: number
-  numRequestsWaiting: number
-  timeToFirstTokenSeconds: number
-  timePerOutputTokenSeconds: number
-  e2eRequestLatencySeconds: number
-  promptTokensTotal: number
-  generationTokensTotal: number
-  gpuCacheUsagePercent: number
-  cpuCacheUsagePercent: number
-  numPreemptionsTotal: number
-}
-
-export interface DerivedMetrics {
-  prefillTimeMs: number
-  prefillSpeed: number
-  generationSpeed: number
-  contextUsage: {
-    current: number
-    max: number
-    percent: number
-  }
-  cacheHealth: 'good' | 'pressure' | 'critical'
 }
 
 // ============================================================================

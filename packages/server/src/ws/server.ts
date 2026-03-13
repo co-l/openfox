@@ -12,11 +12,24 @@ import { validate } from '../validator/index.js'
 import { provideAnswer } from '../tools/index.js'
 import { logger } from '../utils/logger.js'
 import {
+  createProject,
+  getProject,
+  listProjects,
+  updateProject,
+  deleteProject,
+} from '../db/projects.js'
+import {
   parseClientMessage,
   serializeServerMessage,
   createErrorMessage,
   createSessionStateMessage,
   createSessionListMessage,
+  createProjectStateMessage,
+  createProjectListMessage,
+  isProjectCreatePayload,
+  isProjectLoadPayload,
+  isProjectUpdatePayload,
+  isProjectDeletePayload,
   isSessionCreatePayload,
   isSessionLoadPayload,
   isPlanMessagePayload,
@@ -24,6 +37,9 @@ import {
   isAgentIntervenePayload,
   isCriterionHumanVerifyPayload,
 } from './protocol.js'
+
+// Track active agent AbortControllers by sessionId
+const activeAgents = new Map<string, AbortController>()
 
 interface ClientConnection {
   ws: WebSocket
@@ -114,15 +130,90 @@ async function handleClientMessage(
   }
   
   switch (message.type) {
+    // ========================================================================
+    // Project handlers
+    // ========================================================================
+    
+    case 'project.create': {
+      if (!isProjectCreatePayload(message.payload)) {
+        send(createErrorMessage('INVALID_PAYLOAD', 'Invalid payload for project.create', message.id))
+        return
+      }
+      
+      try {
+        const project = createProject(message.payload.name, message.payload.workdir)
+        send(createProjectStateMessage(project, message.id))
+      } catch (error) {
+        send(createErrorMessage('PROJECT_CREATE_FAILED', error instanceof Error ? error.message : 'Failed to create project', message.id))
+      }
+      break
+    }
+    
+    case 'project.list': {
+      const projects = listProjects()
+      send(createProjectListMessage(projects, message.id))
+      break
+    }
+    
+    case 'project.load': {
+      if (!isProjectLoadPayload(message.payload)) {
+        send(createErrorMessage('INVALID_PAYLOAD', 'Invalid payload for project.load', message.id))
+        return
+      }
+      
+      const project = getProject(message.payload.projectId)
+      if (!project) {
+        send(createErrorMessage('PROJECT_NOT_FOUND', 'Project not found', message.id))
+        return
+      }
+      
+      send(createProjectStateMessage(project, message.id))
+      break
+    }
+    
+    case 'project.update': {
+      if (!isProjectUpdatePayload(message.payload)) {
+        send(createErrorMessage('INVALID_PAYLOAD', 'Invalid payload for project.update', message.id))
+        return
+      }
+      
+      try {
+        const project = updateProject(message.payload.projectId, { name: message.payload.name })
+        send(createProjectStateMessage(project, message.id))
+      } catch (error) {
+        send(createErrorMessage('PROJECT_UPDATE_FAILED', error instanceof Error ? error.message : 'Failed to update project', message.id))
+      }
+      break
+    }
+    
+    case 'project.delete': {
+      if (!isProjectDeletePayload(message.payload)) {
+        send(createErrorMessage('INVALID_PAYLOAD', 'Invalid payload for project.delete', message.id))
+        return
+      }
+      
+      deleteProject(message.payload.projectId)
+      send(createServerMessage('project.deleted', { projectId: message.payload.projectId }, message.id))
+      break
+    }
+    
+    // ========================================================================
+    // Session handlers
+    // ========================================================================
+    
     case 'session.create': {
       if (!isSessionCreatePayload(message.payload)) {
         send(createErrorMessage('INVALID_PAYLOAD', 'Invalid payload for session.create', message.id))
         return
       }
       
-      const session = sessionManager.createSession(message.payload.workdir, message.payload.title)
-      client.sessionId = session.id
-      send(createSessionStateMessage(session, message.id))
+      try {
+        const session = sessionManager.createSession(message.payload.projectId, message.payload.title)
+        client.sessionId = session.id
+        send(createSessionStateMessage(session, message.id))
+      } catch (error) {
+        send(createErrorMessage('SESSION_CREATE_FAILED', error instanceof Error ? error.message : 'Failed to create session', message.id))
+      }
       break
     }
     
@@ -192,6 +283,11 @@ async function handleClientMessage(
             break
           case 'done':
             send(createServerMessage('plan.done', {}, message.id))
+            // Send updated session state so client gets the new messages with tool calls
+            const updatedSession = sessionManager.getSession(client.sessionId!)
+            if (updatedSession) {
+              send(createSessionStateMessage(updatedSession))
+            }
             break
           case 'error':
             send(createErrorMessage('PLANNER_ERROR', event.error, message.id))
@@ -235,12 +331,18 @@ async function handleClientMessage(
         return
       }
       
+      // Create AbortController and track it
+      const controller = new AbortController()
+      const sessionId = client.sessionId
+      activeAgents.set(sessionId, controller)
+      
       // Run agent (this is async but we don't await - events are streamed)
       runAgent({
-        sessionId: client.sessionId,
+        sessionId,
         llmClient,
         toolRegistry,
         config,
+        signal: controller.signal,
         onEvent: (event: AgentEvent) => {
           send(createServerMessage('agent.event', { event }))
         },
@@ -253,9 +355,29 @@ async function handleClientMessage(
             recoverable: false,
           },
         }))
+      }).finally(() => {
+        activeAgents.delete(sessionId)
       })
       
       send(createServerMessage('ack', {}, message.id))
+      break
+    }
+    
+    case 'agent.stop': {
+      if (!client.sessionId) {
+        send(createErrorMessage('NO_SESSION', 'No active session', message.id))
+        return
+      }
+      
+      const controller = activeAgents.get(client.sessionId)
+      if (controller) {
+        logger.info('Stopping agent', { sessionId: client.sessionId })
+        controller.abort()
+        activeAgents.delete(client.sessionId)
+        send(createServerMessage('ack', {}, message.id))
+      } else {
+        send(createErrorMessage('NO_AGENT', 'No agent running for this session', message.id))
+      }
       break
     }
     

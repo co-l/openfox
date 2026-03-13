@@ -1,7 +1,9 @@
 import { useRef, useEffect, useMemo } from 'react'
 import type { AgentEvent } from '@openfox/shared/protocol'
-import { ToolCall } from './ToolCall'
 import { Markdown } from '../shared/Markdown'
+import { ThinkingBlock } from '../shared/ThinkingBlock'
+import { ToolCallDisplay } from '../shared/ToolCallDisplay'
+import { StreamingCursor } from '../shared/StreamingCursor'
 
 interface AgentStreamProps {
   events: AgentEvent[]
@@ -117,22 +119,13 @@ export function AgentStream({ events }: AgentStreamProps) {
               return (
                 <div key={group.key} className="text-text-primary">
                   <Markdown content={group.content} />
-                  {group.isStreaming && (
-                    <span className="animate-pulse text-accent-primary">|</span>
-                  )}
+                  {group.isStreaming && <StreamingCursor variant="pipe" />}
                 </div>
               )
             }
             
             if (group.type === 'thinking') {
-              return (
-                <div key={group.key} className="text-text-muted text-sm italic">
-                  <span className="text-purple-400">thinking:</span>
-                  <div className="ml-2 mt-1">
-                    <Markdown content={group.content} />
-                  </div>
-                </div>
-              )
+              return <ThinkingBlock key={group.key} content={group.content} variant="labeled" />
             }
             
             const event = group.event
@@ -140,12 +133,23 @@ export function AgentStream({ events }: AgentStreamProps) {
               case 'tool_call': {
                 const toolData = toolCallMap.get(event.callId)
                 if (!toolData) return null
+                
+                const status = toolData.error 
+                  ? 'error' 
+                  : toolData.result 
+                    ? (toolData.result.result.success ? 'success' : 'error')
+                    : 'pending'
+                
                 return (
-                  <ToolCall
+                  <ToolCallDisplay
                     key={group.key}
-                    call={toolData.call}
-                    result={toolData.result}
-                    error={toolData.error}
+                    tool={event.tool}
+                    args={event.args}
+                    status={status}
+                    variant="expandable"
+                    result={toolData.result?.result.output ?? undefined}
+                    error={toolData.error?.error ?? toolData.result?.result.error ?? undefined}
+                    durationMs={toolData.result?.result.durationMs}
                   />
                 )
               }
@@ -186,15 +190,30 @@ export function AgentStream({ events }: AgentStreamProps) {
               
               case 'done':
                 return (
-                  <div key={group.key} className={`rounded-lg p-3 ${
-                    event.allCriteriaPassed 
-                      ? 'bg-accent-success/10 border border-accent-success'
-                      : 'bg-accent-warning/10 border border-accent-warning'
-                  }`}>
-                    <div className={event.allCriteriaPassed ? 'text-accent-success' : 'text-accent-warning'}>
-                      {event.allCriteriaPassed ? '✓ All Criteria Complete' : 'Execution Paused'}
+                  <div key={group.key}>
+                    <div className={`rounded-lg p-3 ${
+                      event.allCriteriaPassed 
+                        ? 'bg-accent-success/10 border border-accent-success'
+                        : 'bg-accent-warning/10 border border-accent-warning'
+                    }`}>
+                      <div className={event.allCriteriaPassed ? 'text-accent-success' : 'text-accent-warning'}>
+                        {event.allCriteriaPassed ? '✓ All Criteria Complete' : 'Execution Paused'}
+                      </div>
+                      <div className="text-text-secondary text-sm mt-1">{event.summary}</div>
                     </div>
-                    <div className="text-text-secondary text-sm mt-1">{event.summary}</div>
+                    
+                    {/* Stats line */}
+                    {event.stats && (
+                      <div className="flex items-center justify-center gap-2 text-xs text-text-muted mt-4">
+                        <span className="flex-1 h-px bg-border" />
+                        <span>{event.stats.model}</span>
+                        <span className="text-text-muted/50">·</span>
+                        <span>prefill {event.stats.prefillSpeed.toLocaleString()} t/s</span>
+                        <span className="text-text-muted/50">·</span>
+                        <span>generation {event.stats.generationSpeed.toLocaleString()} t/s</span>
+                        <span className="flex-1 h-px bg-border" />
+                      </div>
+                    )}
                   </div>
                 )
               

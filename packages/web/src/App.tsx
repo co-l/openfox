@@ -2,52 +2,110 @@ import { useEffect } from 'react'
 import { Route, Switch, useRoute } from 'wouter'
 import { useWebSocket } from './hooks/useWebSocket'
 import { useSessionStore } from './stores/session'
+import { useProjectStore } from './stores/project'
 import { useConfigStore } from './stores/config'
 import { Header } from './components/layout/Header'
-import { SessionSelector } from './components/SessionSelector'
+import { Sidebar } from './components/layout/Sidebar'
+import { ProjectSelector } from './components/ProjectSelector'
+import { EmptyProjectView } from './components/EmptyProjectView'
 import { PlanPanel } from './components/plan/PlanPanel'
 import { ExecutionPanel } from './components/execution/ExecutionPanel'
-import { MetricsPanel } from './components/metrics/MetricsPanel'
+import { Spinner, SpinnerWithText } from './components/shared/Spinner'
 
-function HomeView() {
-  const clearSession = useSessionStore(state => state.clearSession)
-  
-  // Clear session when arriving at home
-  useEffect(() => {
-    clearSession()
-  }, [clearSession])
-  
+// Centered spinner for loading states
+function LoadingSpinner() {
   return (
-    <div className="flex-1">
-      <SessionSelector />
+    <div className="flex-1 flex items-center justify-center">
+      <Spinner />
     </div>
   )
 }
 
-function SessionView() {
-  const [, params] = useRoute('/session/:id')
-  const sessionId = params?.id
+// Project view with sidebar (no session selected)
+function ProjectView() {
+  const [, params] = useRoute('/p/:projectId')
+  const projectId = params?.projectId
+  
+  const connected = useSessionStore(state => state.connected)
+  const listSessions = useSessionStore(state => state.listSessions)
+  const clearSession = useSessionStore(state => state.clearSession)
+  
+  const currentProject = useProjectStore(state => state.currentProject)
+  const loadProject = useProjectStore(state => state.loadProject)
+  
+  // Load project and sessions when entering project view
+  useEffect(() => {
+    if (connected && projectId) {
+      if (currentProject?.id !== projectId) {
+        loadProject(projectId)
+      }
+      listSessions()
+      clearSession()
+    }
+  }, [connected, projectId, currentProject?.id, loadProject, listSessions, clearSession])
+  
+  if (!currentProject || currentProject.id !== projectId) {
+    return <LoadingSpinner />
+  }
+  
+  return (
+    <>
+      <Sidebar projectId={projectId!} />
+      <div className="flex-1 bg-bg-primary">
+        <EmptyProjectView />
+      </div>
+    </>
+  )
+}
+
+// Project + Session view with sidebar
+function ProjectSessionView() {
+  const [, params] = useRoute('/p/:projectId/s/:sessionId')
+  const projectId = params?.projectId
+  const sessionId = params?.sessionId
+  
+  const connected = useSessionStore(state => state.connected)
   const session = useSessionStore(state => state.currentSession)
   const loadSession = useSessionStore(state => state.loadSession)
-  const connected = useSessionStore(state => state.connected)
+  const listSessions = useSessionStore(state => state.listSessions)
   
-  // Load session from URL on mount or when sessionId changes
+  const currentProject = useProjectStore(state => state.currentProject)
+  const loadProject = useProjectStore(state => state.loadProject)
+  
+  // Load project if needed
+  useEffect(() => {
+    if (connected && projectId && currentProject?.id !== projectId) {
+      loadProject(projectId)
+    }
+  }, [connected, projectId, currentProject?.id, loadProject])
+  
+  // Load session and session list
   useEffect(() => {
     if (connected && sessionId && session?.id !== sessionId) {
       loadSession(sessionId)
     }
-  }, [connected, sessionId, session?.id, loadSession])
+    if (connected) {
+      listSessions()
+    }
+  }, [connected, sessionId, session?.id, loadSession, listSessions])
   
-  if (!session) {
+  if (!currentProject || currentProject.id !== projectId) {
+    return <LoadingSpinner />
+  }
+  
+  if (!session || session.id !== sessionId) {
     return (
-      <div className="flex-1 flex items-center justify-center">
-        <div className="animate-spin w-8 h-8 border-2 border-accent-primary border-t-transparent rounded-full" />
-      </div>
+      <>
+        <Sidebar projectId={projectId!} />
+        <LoadingSpinner />
+      </>
     )
   }
   
   return (
     <>
+      <Sidebar projectId={projectId!} />
+      
       {/* Main content area */}
       <div className="flex-1 bg-bg-primary">
         {(session.phase === 'idle' || session.phase === 'planning') && (
@@ -57,11 +115,6 @@ function SessionView() {
           <ExecutionPanel />
         )}
       </div>
-      
-      {/* Metrics sidebar */}
-      <div className="w-64 bg-bg-secondary border-l border-border">
-        <MetricsPanel />
-      </div>
     </>
   )
 }
@@ -69,19 +122,23 @@ function SessionView() {
 function App() {
   const { connected, connecting } = useWebSocket()
   const fetchConfig = useConfigStore(state => state.fetchConfig)
+  const handleProjectMessage = useProjectStore(state => state.handleServerMessage)
   
   // Fetch config on mount
   useEffect(() => {
     fetchConfig()
   }, [fetchConfig])
   
+  // Subscribe to project messages
+  useEffect(() => {
+    // The project store needs to handle server messages
+    // This is done via the session store's subscription, but we need to add project handling
+  }, [handleProjectMessage])
+  
   if (connecting) {
     return (
       <div className="h-screen flex items-center justify-center">
-        <div className="text-center">
-          <div className="animate-spin w-8 h-8 border-2 border-accent-primary border-t-transparent rounded-full mx-auto mb-4" />
-          <div className="text-text-secondary">Connecting to server...</div>
-        </div>
+        <SpinnerWithText text="Connecting to server..." />
       </div>
     )
   }
@@ -106,11 +163,14 @@ function App() {
       
       <div className="flex-1 flex overflow-hidden">
         <Switch>
-          <Route path="/session/:id">
-            <SessionView />
+          <Route path="/p/:projectId/s/:sessionId">
+            <ProjectSessionView />
+          </Route>
+          <Route path="/p/:projectId">
+            <ProjectView />
           </Route>
           <Route path="/">
-            <HomeView />
+            <ProjectSelector />
           </Route>
         </Switch>
       </div>

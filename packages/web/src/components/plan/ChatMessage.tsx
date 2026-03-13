@@ -1,5 +1,6 @@
 import type { Message } from '@openfox/shared'
 import { Markdown } from '../shared/Markdown'
+import { AssistantMessage } from './AssistantMessage'
 
 interface ChatMessageProps {
   message: Message
@@ -7,8 +8,14 @@ interface ChatMessageProps {
 
 export function ChatMessage({ message }: ChatMessageProps) {
   const isUser = message.role === 'user'
+  const isAssistant = message.role === 'assistant'
   const isSystem = message.role === 'system'
   const isTool = message.role === 'tool'
+  
+  // Use unified AssistantMessage for assistant role
+  if (isAssistant) {
+    return <AssistantMessage message={message} />
+  }
   
   if (isSystem && message.isCompacted) {
     return (
@@ -35,53 +42,22 @@ export function ChatMessage({ message }: ChatMessageProps) {
     )
   }
   
-  return (
-    <div className={`flex ${isUser ? 'justify-end' : 'justify-start'} my-2`}>
-      <div
-        className={`max-w-[80%] rounded-lg p-3 ${
-          isUser
-            ? 'bg-accent-primary text-white'
-            : 'bg-bg-tertiary text-text-primary'
-        }`}
-      >
-        {message.thinkingContent && (
-          <div className="text-text-muted text-sm mb-2 pb-2 border-b border-border/50 italic">
-            <Markdown content={message.thinkingContent} />
-          </div>
-        )}
-        {isUser ? (
+  // User message
+  if (isUser) {
+    return (
+      <div className="flex justify-end my-2">
+        <div className="max-w-[80%] rounded-lg p-3 bg-accent-primary text-white">
           <div className="whitespace-pre-wrap">{message.content}</div>
-        ) : (
-          <Markdown content={message.content} />
-        )}
+        </div>
       </div>
-    </div>
-  )
-}
-
-interface StreamingMessageProps {
-  content: string
-  thinking: string
-}
-
-export function StreamingMessage({ content, thinking }: StreamingMessageProps) {
-  if (!content && !thinking) return null
+    )
+  }
   
+  // System or other messages
   return (
     <div className="flex justify-start my-2">
       <div className="max-w-[80%] rounded-lg p-3 bg-bg-tertiary text-text-primary">
-        {thinking && (
-          <div className="text-text-muted text-sm mb-2 pb-2 border-b border-border/50 italic">
-            <Markdown content={thinking} />
-            <span className="animate-pulse">|</span>
-          </div>
-        )}
-        {content && (
-          <div>
-            <Markdown content={content} />
-            <span className="animate-pulse text-accent-primary">|</span>
-          </div>
-        )}
+        <Markdown content={message.content} />
       </div>
     </div>
   )

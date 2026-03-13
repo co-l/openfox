@@ -12,6 +12,7 @@ import {
   updateSessionPhase,
   updateSessionMetadata,
   listSessions as dbListSessions,
+  listSessionsByProject as dbListSessionsByProject,
   deleteSession as dbDeleteSession,
   addMessage as dbAddMessage,
   getMessages,
@@ -19,10 +20,14 @@ import {
   setCriteria as dbSetCriteria,
   getCriteria,
   updateCriterion as dbUpdateCriterion,
+  addCriterion as dbAddCriterion,
+  updateCriterionFull as dbUpdateCriterionFull,
+  removeCriterion as dbRemoveCriterion,
   setExecutionState as dbSetExecutionState,
   getExecutionState,
   clearExecutionState,
 } from '../db/sessions.js'
+import { getProject } from '../db/projects.js'
 import { assertTransition, checkPhaseRequirements } from './state.js'
 import { SessionNotFoundError, InvalidPhaseTransitionError } from '../utils/errors.js'
 import { logger } from '../utils/logger.js'
@@ -57,9 +62,21 @@ class SessionManagerImpl {
   
   // Lifecycle
   
-  createSession(workdir: string, title?: string): Session {
-    logger.info('Creating session', { workdir, title })
-    const session = dbCreateSession(workdir, title)
+  createSession(projectId: string, title?: string): Session {
+    const project = getProject(projectId)
+    if (!project) {
+      throw new Error(`Project not found: ${projectId}`)
+    }
+    
+    // Auto-generate title if not provided: "Session N"
+    let sessionTitle = title
+    if (!sessionTitle) {
+      const existingSessions = dbListSessionsByProject(projectId, project.workdir)
+      sessionTitle = `Session ${existingSessions.length + 1}`
+    }
+    
+    logger.info('Creating session', { projectId, workdir: project.workdir, title: sessionTitle })
+    const session = dbCreateSession(projectId, project.workdir, sessionTitle)
     
     this.emit({ type: 'session_created', session })
     
@@ -80,6 +97,14 @@ class SessionManagerImpl {
   
   listSessions(): SessionSummary[] {
     return dbListSessions()
+  }
+  
+  listSessionsByProject(projectId: string): SessionSummary[] {
+    const project = getProject(projectId)
+    if (!project) {
+      return []
+    }
+    return dbListSessionsByProject(projectId, project.workdir)
   }
   
   deleteSession(id: string): void {
@@ -198,6 +223,56 @@ class SessionManagerImpl {
     this.emit({ type: 'criteria_updated', sessionId, criteria })
   }
   
+  addCriterion(sessionId: string, criterion: Criterion): Criterion[] {
+    this.requireSession(sessionId)
+    
+    dbAddCriterion(sessionId, criterion)
+    
+    // Reload to get updated list
+    const criteria = getCriteria(sessionId)
+    this.emit({ type: 'criteria_updated', sessionId, criteria })
+    
+    return criteria
+  }
+  
+  updateCriterionFull(
+    sessionId: string,
+    criterionId: string,
+    updates: Partial<Pick<Criterion, 'description'>>
+  ): Criterion[] {
+    const session = this.requireSession(sessionId)
+    
+    // Check criterion exists
+    if (!session.criteria.find(c => c.id === criterionId)) {
+      throw new Error(`Criterion not found: ${criterionId}`)
+    }
+    
+    dbUpdateCriterionFull(sessionId, criterionId, updates)
+    
+    // Reload to get updated list
+    const criteria = getCriteria(sessionId)
+    this.emit({ type: 'criteria_updated', sessionId, criteria })
+    
+    return criteria
+  }
+  
+  removeCriterion(sessionId: string, criterionId: string): Criterion[] {
+    const session = this.requireSession(sessionId)
+    
+    // Check criterion exists
+    if (!session.criteria.find(c => c.id === criterionId)) {
+      throw new Error(`Criterion not found: ${criterionId}`)
+    }
+    
+    dbRemoveCriterion(sessionId, criterionId)
+    
+    // Reload to get updated list
+    const criteria = getCriteria(sessionId)
+    this.emit({ type: 'criteria_updated', sessionId, criteria })
+    
+    return criteria
+  }
+  
   updateCriterionStatus(
     sessionId: string,
     criterionId: string,
@@ -282,6 +357,28 @@ class SessionManagerImpl {
     })
   }
   
+  /**
+   * Set the current context window size (prompt tokens from last LLM call).
+   * This is used for compaction decisions.
+   */
+  setCurrentContextSize(sessionId: string, promptTokens: number): void {
+    this.updateExecutionState(sessionId, { currentTokenCount: promptTokens })
+  }
+  
+  /**
+   * Add to the cumulative token usage (for billing/metrics).
+   * This tracks total tokens consumed across all LLM calls.
+   */
+  addTokensUsed(sessionId: string, tokens: number): void {
+    const session = this.requireSession(sessionId)
+    updateSessionMetadata(sessionId, {
+      totalTokensUsed: session.metadata.totalTokensUsed + tokens,
+    })
+  }
+  
+  /**
+   * @deprecated Use setCurrentContextSize() and addTokensUsed() separately
+   */
   incrementTokenCount(sessionId: string, tokens: number): void {
     const session = this.requireSession(sessionId)
     const currentTokenCount = (session.executionState?.currentTokenCount ?? 0) + tokens

@@ -4,9 +4,9 @@ import type {
   SessionSummary,
   SessionPhase,
   Message,
+  MessageSegment,
   Criterion,
   ExecutionState,
-  CriterionVerification,
   CriterionStatus,
   ToolCall,
   ToolResult,
@@ -18,18 +18,19 @@ import { getDatabase } from './index.js'
 // Session Operations
 // ============================================================================
 
-export function createSession(workdir: string, title?: string): Session {
+export function createSession(projectId: string, workdir: string, title?: string): Session {
   const db = getDatabase()
   const now = new Date().toISOString()
   const id = crypto.randomUUID()
   
   db.prepare(`
-    INSERT INTO sessions (id, workdir, phase, created_at, updated_at, title)
-    VALUES (?, ?, 'idle', ?, ?, ?)
-  `).run(id, workdir, now, now, title ?? null)
+    INSERT INTO sessions (id, project_id, workdir, phase, created_at, updated_at, title)
+    VALUES (?, ?, ?, 'idle', ?, ?, ?)
+  `).run(id, projectId, workdir, now, now, title ?? null)
   
   return {
     id,
+    projectId,
     workdir,
     phase: 'idle',
     createdAt: now,
@@ -63,6 +64,7 @@ export function getSession(id: string): Session | null {
   
   return {
     id: row.id,
+    projectId: row.project_id,
     workdir: row.workdir,
     phase: row.phase as SessionPhase,
     createdAt: row.created_at,
@@ -128,6 +130,7 @@ export function listSessions(): SessionSummary[] {
   const rows = db.prepare(`
     SELECT 
       s.id,
+      s.project_id,
       s.workdir,
       s.phase,
       s.created_at,
@@ -141,6 +144,40 @@ export function listSessions(): SessionSummary[] {
   
   return rows.map(row => ({
     id: row.id,
+    projectId: row.project_id,
+    title: row.title ?? undefined,
+    workdir: row.workdir,
+    phase: row.phase as SessionPhase,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+    criteriaCount: row.criteria_count,
+    criteriaCompleted: row.criteria_completed,
+  }))
+}
+
+export function listSessionsByProject(projectId: string, projectWorkdir: string): SessionSummary[] {
+  const db = getDatabase()
+  
+  // Get sessions where workdir starts with projectWorkdir (includes subdirectories)
+  const rows = db.prepare(`
+    SELECT 
+      s.id,
+      s.project_id,
+      s.workdir,
+      s.phase,
+      s.created_at,
+      s.updated_at,
+      s.title,
+      (SELECT COUNT(*) FROM criteria WHERE session_id = s.id) as criteria_count,
+      (SELECT COUNT(*) FROM criteria WHERE session_id = s.id AND status LIKE '%"type":"passed"%') as criteria_completed
+    FROM sessions s
+    WHERE s.project_id = ? OR s.workdir LIKE ? || '%'
+    ORDER BY s.updated_at DESC
+  `).all(projectId, projectWorkdir) as SessionSummaryRow[]
+  
+  return rows.map(row => ({
+    id: row.id,
+    projectId: row.project_id,
     title: row.title ?? undefined,
     workdir: row.workdir,
     phase: row.phase as SessionPhase,
@@ -169,8 +206,8 @@ export function addMessage(sessionId: string, message: Omit<Message, 'id' | 'tim
     INSERT INTO messages (
       id, session_id, role, content, tool_calls, thinking_content,
       tool_call_id, tool_name, tool_result, timestamp, token_count,
-      is_compacted, original_message_ids
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      is_compacted, original_message_ids, segments
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
     id,
     sessionId,
@@ -184,7 +221,8 @@ export function addMessage(sessionId: string, message: Omit<Message, 'id' | 'tim
     timestamp,
     message.tokenCount,
     message.isCompacted ? 1 : 0,
-    message.originalMessageIds ? JSON.stringify(message.originalMessageIds) : null
+    message.originalMessageIds ? JSON.stringify(message.originalMessageIds) : null,
+    message.segments ? JSON.stringify(message.segments) : null
   )
   
   // Update session updated_at
@@ -219,6 +257,9 @@ export function getMessages(sessionId: string): Message[] {
     originalMessageIds: row.original_message_ids 
       ? JSON.parse(row.original_message_ids) as string[]
       : undefined,
+    segments: row.segments
+      ? JSON.parse(row.segments) as MessageSegment[]
+      : undefined,
   }))
 }
 
@@ -242,8 +283,8 @@ export function setCriteria(sessionId: string, criteria: Criterion[]): void {
   
   // Insert new criteria
   const insert = db.prepare(`
-    INSERT INTO criteria (id, session_id, description, verification, status, attempts, sort_order)
-    VALUES (?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO criteria (id, session_id, description, status, attempts, sort_order)
+    VALUES (?, ?, ?, ?, ?, ?)
   `)
   
   for (let i = 0; i < criteria.length; i++) {
@@ -252,7 +293,6 @@ export function setCriteria(sessionId: string, criteria: Criterion[]): void {
       c.id,
       sessionId,
       c.description,
-      JSON.stringify(c.verification),
       JSON.stringify(c.status),
       JSON.stringify(c.attempts),
       i
@@ -274,7 +314,6 @@ export function getCriteria(sessionId: string): Criterion[] {
   return rows.map(row => ({
     id: row.id,
     description: row.description,
-    verification: JSON.parse(row.verification) as CriterionVerification,
     status: JSON.parse(row.status) as CriterionStatus,
     attempts: JSON.parse(row.attempts) as CriterionAttempt[],
   }))
@@ -308,6 +347,58 @@ export function updateCriterion(
   `).run(...values)
   
   // Update session updated_at
+  const now = new Date().toISOString()
+  db.prepare('UPDATE sessions SET updated_at = ? WHERE id = ?').run(now, sessionId)
+}
+
+export function addCriterion(sessionId: string, criterion: Criterion): void {
+  const db = getDatabase()
+  
+  // Get current max sort_order
+  const maxRow = db.prepare(
+    'SELECT MAX(sort_order) as max_order FROM criteria WHERE session_id = ?'
+  ).get(sessionId) as { max_order: number | null } | undefined
+  
+  const sortOrder = (maxRow?.max_order ?? -1) + 1
+  
+  db.prepare(`
+    INSERT INTO criteria (id, session_id, description, status, attempts, sort_order)
+    VALUES (?, ?, ?, ?, ?, ?)
+  `).run(
+    criterion.id,
+    sessionId,
+    criterion.description,
+    JSON.stringify(criterion.status),
+    JSON.stringify(criterion.attempts),
+    sortOrder
+  )
+  
+  const now = new Date().toISOString()
+  db.prepare('UPDATE sessions SET updated_at = ? WHERE id = ?').run(now, sessionId)
+}
+
+export function updateCriterionFull(
+  sessionId: string,
+  criterionId: string,
+  updates: Partial<Pick<Criterion, 'description'>>
+): void {
+  const db = getDatabase()
+  
+  if (updates.description === undefined) return
+  
+  db.prepare(`
+    UPDATE criteria SET description = ? WHERE session_id = ? AND id = ?
+  `).run(updates.description, sessionId, criterionId)
+  
+  const now = new Date().toISOString()
+  db.prepare('UPDATE sessions SET updated_at = ? WHERE id = ?').run(now, sessionId)
+}
+
+export function removeCriterion(sessionId: string, criterionId: string): void {
+  const db = getDatabase()
+  
+  db.prepare('DELETE FROM criteria WHERE session_id = ? AND id = ?').run(sessionId, criterionId)
+  
   const now = new Date().toISOString()
   db.prepare('UPDATE sessions SET updated_at = ? WHERE id = ?').run(now, sessionId)
 }
@@ -374,6 +465,7 @@ export function clearExecutionState(sessionId: string): void {
 
 interface SessionRow {
   id: string
+  project_id: string
   workdir: string
   phase: string
   created_at: string
@@ -403,13 +495,13 @@ interface MessageRow {
   token_count: number
   is_compacted: number
   original_message_ids: string | null
+  segments: string | null
 }
 
 interface CriterionRow {
   id: string
   session_id: string
   description: string
-  verification: string
   status: string
   attempts: string
   sort_order: number

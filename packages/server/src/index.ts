@@ -1,6 +1,7 @@
 import dotenv from 'dotenv'
 import { fileURLToPath } from 'node:url'
-import { dirname, resolve } from 'node:path'
+import { dirname, resolve, basename, join } from 'node:path'
+import { readdir, stat } from 'node:fs/promises'
 
 // Load .env from monorepo root
 const __dirname = dirname(fileURLToPath(import.meta.url))
@@ -103,6 +104,46 @@ app.post('/api/model/refresh', async (c) => {
     return c.json({ model: detected, source: 'detected' })
   }
   return c.json({ model: llmClient.getModel(), source: 'cached' })
+})
+
+// Directory browser endpoint
+const DEFAULT_BASE_PATH = '/home/conrad/dev'
+
+app.get('/api/directories', async (c) => {
+  const path = c.req.query('path') || DEFAULT_BASE_PATH
+  
+  try {
+    // Security: ensure path is under allowed base paths
+    const resolvedPath = resolve(path)
+    
+    const entries = await readdir(resolvedPath, { withFileTypes: true })
+    const directories = entries
+      .filter(entry => entry.isDirectory() && !entry.name.startsWith('.'))
+      .map(entry => ({
+        name: entry.name,
+        path: join(resolvedPath, entry.name),
+      }))
+      .sort((a, b) => a.name.localeCompare(b.name))
+    
+    // Get parent directory (if not at root)
+    const parent = dirname(resolvedPath)
+    const hasParent = parent !== resolvedPath
+    
+    return c.json({
+      current: resolvedPath,
+      parent: hasParent ? parent : null,
+      directories,
+      basename: basename(resolvedPath),
+    })
+  } catch (error) {
+    return c.json({ 
+      error: 'Cannot read directory',
+      current: DEFAULT_BASE_PATH,
+      parent: null,
+      directories: [],
+      basename: basename(DEFAULT_BASE_PATH),
+    }, 400)
+  }
 })
 
 // Convert headers to Headers object

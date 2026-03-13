@@ -23,6 +23,13 @@ interface PlanToolEvent {
   args?: Record<string, unknown>
   result?: string
 }
+
+// Streaming events in order (text segments + tool events)
+export type PlanStreamEvent = 
+  | { type: 'text'; content: string }
+  | { type: 'thinking'; content: string }
+  | { type: 'tool_call'; tool: string; args: Record<string, unknown> }
+  | { type: 'tool_result'; tool: string; result: string }
 import { wsClient } from '../lib/ws'
 
 interface SessionState {
@@ -39,8 +46,14 @@ interface SessionState {
   streamingThinking: string
   isStreaming: boolean
   
-  // Planning tool calls
+  // Error state
+  error: { code: string; message: string } | null
+  
+  // Planning tool calls (legacy, kept for compatibility)
   planToolEvents: PlanToolEvent[]
+  
+  // Ordered stream events (text + tools interlaced)
+  planStreamEvents: PlanStreamEvent[]
   
   // Agent events
   agentEvents: AgentEvent[]
@@ -49,11 +62,12 @@ interface SessionState {
   connect: () => Promise<void>
   disconnect: () => void
   
-  createSession: (workdir: string, title?: string) => void
+  createSession: (projectId: string, title?: string) => void
   loadSession: (sessionId: string) => void
   listSessions: () => void
   deleteSession: (sessionId: string) => void
   clearSession: () => void
+  stopExecution: () => void
   
   sendPlanMessage: (content: string) => void
   editCriteria: (criteria: Criterion[]) => void
@@ -66,6 +80,8 @@ interface SessionState {
   startValidation: () => void
   humanVerify: (criterionId: string, passed: boolean, reason?: string) => void
   
+  clearError: () => void
+  
   // Internal
   handleServerMessage: (message: ServerMessage) => void
   clearStreamingState: () => void
@@ -76,10 +92,12 @@ export const useSessionStore = create<SessionState>((set, get) => ({
   connecting: false,
   sessions: [],
   currentSession: null,
+  error: null,
   streamingText: '',
   streamingThinking: '',
   isStreaming: false,
   planToolEvents: [],
+  planStreamEvents: [],
   agentEvents: [],
   
   connect: async () => {
@@ -109,12 +127,12 @@ export const useSessionStore = create<SessionState>((set, get) => ({
     set({ connected: false })
   },
   
-  createSession: (workdir, title) => {
-    wsClient.send('session.create', { workdir, title })
+  createSession: (projectId, title) => {
+    wsClient.send('session.create', { projectId, title })
   },
   
   loadSession: (sessionId) => {
-    set({ agentEvents: [] })
+    set({ agentEvents: [], planStreamEvents: [], streamingText: '', streamingThinking: '', isStreaming: false })
     wsClient.send('session.load', { sessionId })
   },
   
@@ -137,8 +155,29 @@ export const useSessionStore = create<SessionState>((set, get) => ({
     })
   },
   
+  stopExecution: () => {
+    wsClient.send('agent.stop', {})
+  },
+  
   sendPlanMessage: (content) => {
-    set({ streamingText: '', streamingThinking: '', isStreaming: true, planToolEvents: [] })
+    // Optimistically add user message so it appears immediately
+    const userMessage = {
+      id: `temp-${Date.now()}`,
+      role: 'user' as const,
+      content,
+      timestamp: new Date().toISOString(),
+      tokenCount: 0,
+    }
+    set(state => ({
+      streamingText: '',
+      streamingThinking: '',
+      isStreaming: true,
+      planToolEvents: [],
+      planStreamEvents: [],
+      currentSession: state.currentSession
+        ? { ...state.currentSession, messages: [...state.currentSession.messages, userMessage] }
+        : null,
+    }))
     wsClient.send('plan.message', { content })
   },
   
@@ -171,6 +210,10 @@ export const useSessionStore = create<SessionState>((set, get) => ({
     wsClient.send('criterion.human_verify', { criterionId, passed, reason })
   },
   
+  clearError: () => {
+    set({ error: null })
+  },
+  
   handleServerMessage: (message) => {
     switch (message.type) {
       case 'session.state': {
@@ -193,9 +236,27 @@ export const useSessionStore = create<SessionState>((set, get) => ({
       case 'plan.delta': {
         const payload = message.payload as PlanDeltaPayload
         if (payload.isThinking) {
-          set(state => ({ streamingThinking: state.streamingThinking + payload.content }))
+          set(state => {
+            const events = [...state.planStreamEvents]
+            const last = events[events.length - 1]
+            if (last?.type === 'thinking') {
+              events[events.length - 1] = { ...last, content: last.content + payload.content }
+            } else {
+              events.push({ type: 'thinking', content: payload.content })
+            }
+            return { streamingThinking: state.streamingThinking + payload.content, planStreamEvents: events }
+          })
         } else {
-          set(state => ({ streamingText: state.streamingText + payload.content }))
+          set(state => {
+            const events = [...state.planStreamEvents]
+            const last = events[events.length - 1]
+            if (last?.type === 'text') {
+              events[events.length - 1] = { ...last, content: last.content + payload.content }
+            } else {
+              events.push({ type: 'text', content: payload.content })
+            }
+            return { streamingText: state.streamingText + payload.content, planStreamEvents: events }
+          })
         }
         break
       }
@@ -218,6 +279,11 @@ export const useSessionStore = create<SessionState>((set, get) => ({
             tool: payload.tool,
             args: payload.args,
           }],
+          planStreamEvents: [...state.planStreamEvents, {
+            type: 'tool_call' as const,
+            tool: payload.tool,
+            args: payload.args,
+          }],
         }))
         break
       }
@@ -230,17 +296,19 @@ export const useSessionStore = create<SessionState>((set, get) => ({
             tool: payload.tool,
             result: payload.result,
           }],
+          planStreamEvents: [...state.planStreamEvents, {
+            type: 'tool_result' as const,
+            tool: payload.tool,
+            result: payload.result,
+          }],
         }))
         break
       }
       
       case 'plan.done': {
-        get().clearStreamingState()
-        // Refresh session to get the new message
-        const session = get().currentSession
-        if (session) {
-          get().loadSession(session.id)
-        }
+        // Don't clear planStreamEvents - keep the beautiful interlaced view
+        // Just mark streaming as done
+        set({ isStreaming: false })
         break
       }
       
@@ -250,8 +318,8 @@ export const useSessionStore = create<SessionState>((set, get) => ({
           agentEvents: [...state.agentEvents, payload.event],
         }))
         
-        // Handle completion
-        if (payload.event.type === 'done') {
+        // Handle completion or abort
+        if (payload.event.type === 'done' || payload.event.type === 'aborted') {
           const session = get().currentSession
           if (session) {
             get().loadSession(session.id)
@@ -267,7 +335,9 @@ export const useSessionStore = create<SessionState>((set, get) => ({
       }
       
       case 'error': {
-        console.error('Server error:', message.payload)
+        const payload = message.payload as { code: string; message: string }
+        console.error('Server error:', payload)
+        set({ error: { code: payload.code, message: payload.message } })
         get().clearStreamingState()
         break
       }
@@ -275,6 +345,6 @@ export const useSessionStore = create<SessionState>((set, get) => ({
   },
   
   clearStreamingState: () => {
-    set({ streamingText: '', streamingThinking: '', isStreaming: false })
+    set({ streamingText: '', streamingThinking: '', isStreaming: false, planStreamEvents: [] })
   },
 }))

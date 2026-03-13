@@ -1,44 +1,67 @@
 import type { LLMToolDefinition, LLMMessage } from '../llm/types.js'
 import type { ToolCall } from '@openfox/shared'
 
-export const PLANNING_SYSTEM_PROMPT = `You are an expert software architect helping to plan a coding task.
+/**
+ * Build the planning system prompt with dynamically injected tools.
+ */
+export function buildPlanningSystemPrompt(tools: LLMToolDefinition[]): string {
+  const toolList = tools
+    .map(t => `- **${t.function.name}**: ${t.function.description}`)
+    .join('\n')
+
+  return `You are a planning assistant. Your ONLY job is to help refine the user's request and define acceptance criteria.
+
+## CRITICAL: THIS IS PLANNING ONLY
+
+You are in the **planning phase**. You must NOT:
+- Write or modify any code
+- Implement solutions
+- Make changes to the codebase
+
+A separate execution agent will handle implementation AFTER planning is complete.
+
+Your goal: Turn a vague request into a clear, well-defined set of acceptance criteria.
 
 ## YOUR WORKFLOW
 
-1. **Understand requirements** - Chat with the user, ask clarifying questions
-2. **Explore the codebase** - Use read_file, glob, grep to understand current state
-3. **Define acceptance criteria** - When ready, call set_acceptance_criteria
+1. **Understand** - Ask clarifying questions about what the user wants
+2. **Explore** - Use read-only tools to understand the codebase context
+3. **Propose** - Present acceptance criteria to the user for approval
+4. **Refine** - Iterate based on user feedback
+5. **Finalize** - Once approved, formally create the criteria
 
-## EXPLORATION TOOLS
-- read_file: Read file contents
-- glob: Find files by pattern  
-- grep: Search for patterns in files
+## AVAILABLE TOOLS
 
-Use these proactively to understand project structure, existing patterns, and what needs to change.
+${toolList}
 
-## ACCEPTANCE CRITERIA TOOL
-When you have enough context, call set_acceptance_criteria with clear, verifiable criteria.
+## HOW TO PROPOSE CRITERIA
 
-Each criterion needs:
-- **description**: Specific, self-contained, verifiable requirement
-- **verification.type**: 
-  - "auto" - Can verify with a shell command (test, build, lint)
-  - "model" - Requires code review to verify
-  - "human" - Requires user confirmation
-- **verification.command**: For "auto" type, the exact command to run
+Present criteria clearly in conversation and ASK for approval:
 
-Example good criteria:
-- "All tests pass: npm test exits with code 0" (auto, command: "npm test")
-- "TypeScript compiles without errors" (auto, command: "npm run build")
-- "Login endpoint returns JWT token on success" (model)
-- "UI matches provided mockup" (human)
+"Based on my exploration, here are the proposed acceptance criteria:
 
-## GUIDELINES
-- Explore before assuming - read package.json, existing tests, etc.
-- Ask if requirements are ambiguous
-- Make criteria specific and testable
-- You can call set_acceptance_criteria multiple times to refine
-- The user can edit criteria before accepting`
+1. **tests-pass**: All unit tests pass (\`npm test\` exits 0)
+2. **api-returns-jwt**: Login endpoint returns a valid JWT on success
+
+Do these look good? Should I add, remove, or modify any?"
+
+IMPORTANT: Do NOT call add_criterion until the user approves your proposal.
+
+## CRITERIA FORMAT
+
+- **id**: Short semantic identifier (e.g., "tests-pass", "api-returns-jwt")
+- **description**: Specific, verifiable requirement including HOW to verify it
+
+Good: "Login endpoint returns 200 with valid JWT when given correct credentials"
+Bad: "Login should work"
+
+## REMEMBER
+
+- You are planning, NOT implementing
+- Ask questions when requirements are unclear
+- Always get user approval before creating criteria
+- Use get_criteria to see current state (user may have edited in the UI)`
+}
 
 // Planning phase tools
 export const PLANNING_TOOLS: LLMToolDefinition[] = [
@@ -46,7 +69,7 @@ export const PLANNING_TOOLS: LLMToolDefinition[] = [
     type: 'function',
     function: {
       name: 'read_file',
-      description: 'Read the contents of a file. Returns the file content with line numbers.',
+      description: 'Read file contents with line numbers. Use offset/limit for large files.',
       parameters: {
         type: 'object',
         properties: {
@@ -71,13 +94,13 @@ export const PLANNING_TOOLS: LLMToolDefinition[] = [
     type: 'function',
     function: {
       name: 'glob',
-      description: 'Find files matching a glob pattern. Returns list of matching file paths.',
+      description: 'Find files matching a glob pattern (e.g., "**/*.ts", "src/**/*.{js,jsx}").',
       parameters: {
         type: 'object',
         properties: {
           pattern: {
             type: 'string',
-            description: 'Glob pattern (e.g., "**/*.ts", "src/**/*.{js,jsx}")',
+            description: 'Glob pattern to match files',
           },
           cwd: {
             type: 'string',
@@ -92,7 +115,7 @@ export const PLANNING_TOOLS: LLMToolDefinition[] = [
     type: 'function',
     function: {
       name: 'grep',
-      description: 'Search for a pattern in files. Returns matching lines with file paths and line numbers.',
+      description: 'Search for a regex pattern in files. Returns matching lines with file paths and line numbers.',
       parameters: {
         type: 'object',
         properties: {
@@ -116,53 +139,80 @@ export const PLANNING_TOOLS: LLMToolDefinition[] = [
   {
     type: 'function',
     function: {
-      name: 'set_acceptance_criteria',
-      description: 'Set the acceptance criteria for the task. Call this when you have gathered enough context from the conversation and codebase exploration. Each criterion should be specific and verifiable.',
+      name: 'get_criteria',
+      description: 'Get the current acceptance criteria list, including any user edits. Always call this before modifying criteria.',
+      parameters: {
+        type: 'object',
+        properties: {},
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'add_criterion',
+      description: 'Add a new acceptance criterion.',
       parameters: {
         type: 'object',
         properties: {
-          criteria: {
-            type: 'array',
-            description: 'List of acceptance criteria',
-            items: {
-              type: 'object',
-              properties: {
-                id: {
-                  type: 'string',
-                  description: 'Unique identifier (e.g., "criterion-1")',
-                },
-                description: {
-                  type: 'string',
-                  description: 'Clear, specific, verifiable requirement',
-                },
-                verification: {
-                  type: 'object',
-                  description: 'How to verify this criterion',
-                  properties: {
-                    type: {
-                      type: 'string',
-                      enum: ['auto', 'model', 'human'],
-                      description: 'auto=shell command, model=code review, human=user confirmation',
-                    },
-                    command: {
-                      type: 'string',
-                      description: 'Shell command for auto verification (e.g., "npm test")',
-                    },
-                  },
-                  required: ['type'],
-                },
-              },
-              required: ['id', 'description', 'verification'],
-            },
+          id: {
+            type: 'string',
+            description: 'Unique semantic identifier (e.g., "tests-pass", "api-returns-jwt")',
+          },
+          description: {
+            type: 'string',
+            description: 'Self-contained, verifiable requirement. Include how to verify it.',
           },
         },
-        required: ['criteria'],
+        required: ['id', 'description'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'update_criterion',
+      description: 'Update an existing criterion by ID.',
+      parameters: {
+        type: 'object',
+        properties: {
+          id: {
+            type: 'string',
+            description: 'ID of the criterion to update',
+          },
+          description: {
+            type: 'string',
+            description: 'New description',
+          },
+        },
+        required: ['id'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'remove_criterion',
+      description: 'Remove a criterion by ID.',
+      parameters: {
+        type: 'object',
+        properties: {
+          id: {
+            type: 'string',
+            description: 'ID of the criterion to remove',
+          },
+        },
+        required: ['id'],
       },
     },
   },
 ]
 
+/**
+ * Build LLM messages array from conversation history.
+ */
 export function buildPlanningMessages(
+  tools: LLMToolDefinition[],
   conversationHistory: Array<{ 
     role: string
     content: string
@@ -170,8 +220,10 @@ export function buildPlanningMessages(
     toolCallId?: string
   }>
 ): LLMMessage[] {
+  const systemPrompt = buildPlanningSystemPrompt(tools)
+  
   const messages: LLMMessage[] = [
-    { role: 'system', content: PLANNING_SYSTEM_PROMPT },
+    { role: 'system', content: systemPrompt },
   ]
   
   for (const m of conversationHistory) {
@@ -182,11 +234,14 @@ export function buildPlanningMessages(
         toolCallId: m.toolCallId,
       })
     } else if (m.role === 'assistant') {
-      messages.push({
+      const msg: LLMMessage = {
         role: 'assistant',
         content: m.content,
-        toolCalls: m.toolCalls,
-      })
+      }
+      if (m.toolCalls && m.toolCalls.length > 0) {
+        msg.toolCalls = m.toolCalls
+      }
+      messages.push(msg)
     } else if (m.role === 'user') {
       messages.push({
         role: 'user',

@@ -18,26 +18,23 @@ export async function validate(options: ValidatorOptions): Promise<ValidationRes
   
   logger.info('Starting validation', { sessionId, criteria: session.criteria.length })
   
-  // First, run auto-verification for criteria with commands
-  const autoCriteria = session.criteria.filter(c => c.verification.type === 'auto')
-  for (const criterion of autoCriteria) {
-    if (criterion.verification.type === 'auto') {
-      const passed = await runAutoVerification(
-        criterion.verification.command,
-        session.workdir
-      )
-      
-      if (passed) {
-        sessionManager.updateCriterionStatus(sessionId, criterion.id, {
-          type: 'passed',
-          verifiedAt: new Date().toISOString(),
-          verifiedBy: 'auto',
-        })
-      }
+  // Get criteria that need verification (not already passed)
+  const pendingCriteria = session.criteria.filter(c => c.status.type !== 'passed')
+  
+  if (pendingCriteria.length === 0) {
+    // All criteria already passed
+    return {
+      allPassed: true,
+      results: session.criteria.map(c => ({
+        criterionId: c.id,
+        status: 'pass' as const,
+        reasoning: 'Previously verified',
+        issues: [],
+      })),
     }
   }
   
-  // Get modified files content
+  // Get modified files content for context
   const modifiedFiles = session.executionState?.modifiedFiles ?? []
   const fileContents = new Map<string, string>()
   
@@ -51,35 +48,8 @@ export async function validate(options: ValidatorOptions): Promise<ValidationRes
     }
   }
   
-  // Get criteria that need model verification
-  const refreshedSession = sessionManager.requireSession(sessionId)
-  const needsModelVerification = refreshedSession.criteria.filter(
-    c => c.status.type !== 'passed' && c.verification.type === 'model'
-  )
-  
-  if (needsModelVerification.length === 0 && autoCriteria.length === refreshedSession.criteria.length) {
-    // All criteria either passed auto-verification or don't exist
-    const allPassed = refreshedSession.criteria.every(c => c.status.type === 'passed')
-    return {
-      allPassed,
-      results: refreshedSession.criteria.map(c => ({
-        criterionId: c.id,
-        status: c.status.type === 'passed' ? 'pass' : 'fail',
-        reasoning: c.status.type === 'passed' 
-          ? 'Passed auto-verification' 
-          : 'Did not pass auto-verification',
-        issues: c.status.type === 'failed' && c.status.type === 'failed' 
-          ? [c.status.reason] 
-          : [],
-      })),
-    }
-  }
-  
-  // Use LLM for model-verified criteria (fresh context!)
-  const prompt = buildValidationPrompt(
-    refreshedSession.criteria.filter(c => c.status.type !== 'passed'),
-    fileContents
-  )
+  // Use LLM to verify all pending criteria based on their descriptions
+  const prompt = buildValidationPrompt(pendingCriteria, fileContents)
   
   const response = await llmClient.complete({
     messages: [{ role: 'user', content: prompt }],
@@ -110,14 +80,12 @@ export async function validate(options: ValidatorOptions): Promise<ValidationRes
     logger.error('Failed to parse validation results', { error, content: response.content })
     
     // Assume all fail if we can't parse
-    results = refreshedSession.criteria
-      .filter(c => c.status.type !== 'passed')
-      .map(c => ({
-        criterionId: c.id,
-        status: 'fail' as const,
-        reasoning: 'Failed to parse validation response',
-        issues: ['Validation error'],
-      }))
+    results = pendingCriteria.map(c => ({
+      criterionId: c.id,
+      status: 'fail' as const,
+      reasoning: 'Failed to parse validation response',
+      issues: ['Validation error'],
+    }))
   }
   
   // Update criterion statuses
@@ -129,19 +97,17 @@ export async function validate(options: ValidatorOptions): Promise<ValidationRes
     sessionManager.updateCriterionStatus(sessionId, result.criterionId, status)
   }
   
-  // Include auto-verified results
+  // Build final results including already-passed criteria
   const finalSession = sessionManager.requireSession(sessionId)
   const allResults: CriterionValidation[] = finalSession.criteria.map(c => {
     const modelResult = results.find(r => r.criterionId === c.id)
     if (modelResult) return modelResult
     
-    // Auto-verified criterion
+    // Already-passed criterion
     return {
       criterionId: c.id,
-      status: c.status.type === 'passed' ? 'pass' as const : 'fail' as const,
-      reasoning: c.status.type === 'passed' 
-        ? 'Passed auto-verification'
-        : (c.status.type === 'failed' ? c.status.reason : 'Not verified'),
+      status: 'pass' as const,
+      reasoning: 'Previously verified',
       issues: [],
     }
   })
@@ -157,30 +123,6 @@ export async function validate(options: ValidatorOptions): Promise<ValidationRes
   }
   
   return { allPassed, results: allResults }
-}
-
-async function runAutoVerification(command: string, workdir: string): Promise<boolean> {
-  try {
-    const { spawn } = await import('node:child_process')
-    
-    return new Promise((resolve) => {
-      const proc = spawn('sh', ['-c', command], {
-        cwd: workdir,
-        stdio: ['ignore', 'pipe', 'pipe'],
-        timeout: 60_000,
-      })
-      
-      proc.on('close', (code) => {
-        resolve(code === 0)
-      })
-      
-      proc.on('error', () => {
-        resolve(false)
-      })
-    })
-  } catch {
-    return false
-  }
 }
 
 export { buildValidationPrompt } from './prompts.js'

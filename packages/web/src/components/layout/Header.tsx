@@ -1,10 +1,12 @@
 import { Link } from 'wouter'
 import { useSessionStore } from '../../stores/session'
+import { useProjectStore } from '../../stores/project'
 import { useConfigStore } from '../../stores/config'
 
 export function Header() {
   const connected = useSessionStore(state => state.connected)
   const session = useSessionStore(state => state.currentSession)
+  const project = useProjectStore(state => state.currentProject)
   const model = useConfigStore(state => state.model)
   const refreshModel = useConfigStore(state => state.refreshModel)
   
@@ -19,6 +21,17 @@ export function Header() {
         <Link href="/" className="text-accent-primary font-semibold text-lg hover:underline">
           OpenFox
         </Link>
+        {project && (
+          <>
+            <span className="text-text-muted">/</span>
+            <Link 
+              href={`/p/${project.id}`}
+              className="text-text-secondary hover:text-text-primary hover:underline"
+            >
+              {project.name}
+            </Link>
+          </>
+        )}
         {session && (
           <>
             <span className="text-text-muted">/</span>

@@ -1,23 +1,22 @@
 import { useState, useRef, useEffect } from 'react'
 import { useSessionStore } from '../../stores/session'
-import { ChatMessage, StreamingMessage } from './ChatMessage'
-import { CriteriaEditor } from './CriteriaEditor'
+import { SessionLayout } from '../layout/SessionLayout'
+import { ChatMessage } from './ChatMessage'
+import { AssistantMessage } from './AssistantMessage'
 import { Button } from '../shared/Button'
-import { PlanToolCalls } from './PlanToolCalls'
 
 export function PlanPanel() {
   const [input, setInput] = useState('')
   const messagesEndRef = useRef<HTMLDivElement>(null)
+  const textareaRef = useRef<HTMLTextAreaElement>(null)
   
   const session = useSessionStore(state => state.currentSession)
-  const streamingText = useSessionStore(state => state.streamingText)
-  const streamingThinking = useSessionStore(state => state.streamingThinking)
   const isStreaming = useSessionStore(state => state.isStreaming)
-  const planToolEvents = useSessionStore(state => state.planToolEvents)
+  const planStreamEvents = useSessionStore(state => state.planStreamEvents)
+  const error = useSessionStore(state => state.error)
   
   const sendMessage = useSessionStore(state => state.sendPlanMessage)
-  const editCriteria = useSessionStore(state => state.editCriteria)
-  const acceptCriteria = useSessionStore(state => state.acceptCriteria)
+  const clearError = useSessionStore(state => state.clearError)
   
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -25,7 +24,12 @@ export function PlanPanel() {
   
   useEffect(() => {
     scrollToBottom()
-  }, [session?.messages, streamingText])
+  }, [session?.messages, planStreamEvents])
+  
+  // Auto-focus textarea on mount
+  useEffect(() => {
+    textareaRef.current?.focus()
+  }, [session?.id])
   
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
@@ -44,65 +48,69 @@ export function PlanPanel() {
   const isPlanning = session?.phase === 'planning' || session?.phase === 'idle'
   
   return (
-    <div className="flex h-full">
+    <SessionLayout criteriaEditable={isPlanning}>
       {/* Chat Area */}
-      <div className="flex-1 flex flex-col">
-        <div className="flex-1 overflow-y-auto p-4">
-          {session?.messages
-            .filter(m => m.role !== 'tool' || m.toolResult?.success === false)
-            .map(message => (
-              <ChatMessage key={message.id} message={message} />
-            ))}
-          
-          {isStreaming && (
-            <>
-              {planToolEvents.length > 0 && (
-                <PlanToolCalls events={planToolEvents} />
-              )}
-              <StreamingMessage content={streamingText} thinking={streamingThinking} />
-            </>
-          )}
-          
-          <div ref={messagesEndRef} />
-        </div>
+      <div className="flex-1 overflow-y-auto p-4">
+        {session?.messages
+          .filter(m => m.role !== 'tool' || m.toolResult?.success === false)
+          .map(message => (
+            <ChatMessage key={message.id} message={message} />
+          ))}
         
-        {isPlanning && (
-          <form onSubmit={handleSubmit} className="p-4 border-t border-border">
-            <div className="flex gap-2">
-              <textarea
-                value={input}
-                onChange={(e) => setInput(e.target.value)}
-                onKeyDown={handleKeyDown}
-                placeholder="Describe what you want to build..."
-                className="flex-1 bg-bg-tertiary border border-border rounded-lg p-3 text-text-primary placeholder-text-muted resize-none focus:outline-none focus:ring-2 focus:ring-accent-primary/50"
-                rows={3}
-                disabled={isStreaming}
-              />
-              <Button
-                type="submit"
-                variant="primary"
-                disabled={!input.trim() || isStreaming}
-                className="self-end"
-              >
-                Send
-              </Button>
-            </div>
-            <div className="text-xs text-text-muted mt-1">
-              Press Cmd+Enter to send
-            </div>
-          </form>
+        {isStreaming && planStreamEvents.length > 0 && (
+          <AssistantMessage events={planStreamEvents} isStreaming />
         )}
+        
+        {error && (
+          <div className="bg-red-500/10 border border-red-500/50 rounded-lg p-4 my-2">
+            <div className="flex items-start justify-between gap-2">
+              <div>
+                <div className="text-red-400 font-medium">{error.code}</div>
+                <div className="text-red-300 text-sm mt-1">{error.message}</div>
+              </div>
+              <button
+                onClick={clearError}
+                className="text-red-400 hover:text-red-300 p-1"
+                aria-label="Dismiss error"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+          </div>
+        )}
+        
+        <div ref={messagesEndRef} />
       </div>
       
-      {/* Criteria Panel */}
-      <div className="w-80 border-l border-border p-4">
-        <CriteriaEditor
-          criteria={session?.criteria ?? []}
-          editable={isPlanning}
-          onUpdate={editCriteria}
-          onAccept={acceptCriteria}
-        />
-      </div>
-    </div>
+      {isPlanning && (
+        <form onSubmit={handleSubmit} className="p-4 border-t border-border">
+          <div className="flex gap-2">
+            <textarea
+              ref={textareaRef}
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              onKeyDown={handleKeyDown}
+              placeholder="Describe what you want to build..."
+              className="flex-1 bg-bg-tertiary border border-border rounded-lg p-3 text-text-primary placeholder-text-muted resize-none focus:outline-none focus:ring-2 focus:ring-accent-primary/50"
+              rows={3}
+              disabled={isStreaming}
+            />
+            <Button
+              type="submit"
+              variant="primary"
+              disabled={!input.trim() || isStreaming}
+              className="self-end"
+            >
+              Send
+            </Button>
+          </div>
+          <div className="text-xs text-text-muted mt-1">
+            Press Cmd+Enter to send
+          </div>
+        </form>
+      )}
+    </SessionLayout>
   )
 }

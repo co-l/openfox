@@ -12,10 +12,12 @@ import type {
 import type { ToolCall } from '@openfox/shared'
 import { logger } from '../utils/logger.js'
 import { LLMError } from '../utils/errors.js'
+import { getModelProfile, type ModelProfile } from './profiles.js'
 
 export interface LLMClientWithModel extends LLMClient {
   getModel(): string
   setModel(model: string): void
+  getProfile(): ModelProfile
 }
 
 export function createLLMClient(config: Config): LLMClientWithModel {
@@ -26,32 +28,55 @@ export function createLLMClient(config: Config): LLMClientWithModel {
   })
   
   let model = config.vllm.model
+  let profile = getModelProfile(model)
   
   return {
     getModel() {
       return model
     },
     
+    getProfile() {
+      return profile
+    },
+    
     setModel(newModel: string) {
-      logger.info('Switching model', { from: model, to: newModel })
+      const newProfile = getModelProfile(newModel)
+      logger.info('Switching model', { 
+        from: model, 
+        to: newModel,
+        profile: newProfile.name,
+        temperature: newProfile.temperature,
+        supportsReasoning: newProfile.supportsReasoning,
+      })
       model = newModel
+      profile = newProfile
     },
     async complete(request: LLMCompletionRequest): Promise<LLMCompletionResponse> {
       logger.debug('LLM complete request', { 
         messageCount: request.messages.length,
         hasTools: !!request.tools?.length,
+        profile: profile.name,
       })
       
       try {
-        const response = await openai.chat.completions.create({
+        // Build request with profile defaults
+        const createParams: OpenAI.ChatCompletionCreateParamsNonStreaming = {
           model,
           messages: convertMessages(request.messages),
           tools: request.tools ? convertTools(request.tools) : undefined,
           tool_choice: request.toolChoice as OpenAI.ChatCompletionToolChoiceOptionParam | undefined,
-          temperature: request.temperature ?? 0.7,
-          max_tokens: request.maxTokens ?? 4096,
+          temperature: request.temperature ?? profile.temperature,
+          max_tokens: request.maxTokens ?? profile.defaultMaxTokens,
+          top_p: profile.topP,
           stream: false,
-        })
+        }
+        
+        // Add top_k if supported (vLLM extension)
+        if (profile.topK !== undefined) {
+          (createParams as Record<string, unknown>)['top_k'] = profile.topK
+        }
+        
+        const response = await openai.chat.completions.create(createParams)
         
         const choice = response.choices[0]
         if (!choice) {
@@ -67,17 +92,21 @@ export function createLLMClient(config: Config): LLMClientWithModel {
         }
         
         let content = message.content ?? ''
-        let thinkingContent = message.reasoning_content ?? message.reasoning ?? ''
+        let thinkingContent = ''
         
-        // Special case: qwen3-coder-next outputs everything to reasoning field
-        // Treat reasoning as standard content for this model
-        if (model.includes('qwen3-coder-next')) {
-          if (thinkingContent.trim()) {
+        // Only process reasoning if model supports it
+        if (profile.supportsReasoning) {
+          thinkingContent = message.reasoning_content ?? message.reasoning ?? ''
+          
+          // If model outputs reasoning as content (broken config), handle it
+          if (profile.reasoningAsContent && thinkingContent.trim()) {
             content = thinkingContent
             thinkingContent = ''
           }
-        } else if (!content.trim() && thinkingContent.trim()) {
-          // Fallback: if content is empty but reasoning has content, use reasoning as content
+        }
+        
+        // Fallback: if content is empty but reasoning has content, use reasoning as content
+        if (!content.trim() && thinkingContent.trim()) {
           content = thinkingContent
           thinkingContent = ''
         }
@@ -111,19 +140,29 @@ export function createLLMClient(config: Config): LLMClientWithModel {
       logger.debug('LLM stream request', {
         messageCount: request.messages.length,
         hasTools: !!request.tools?.length,
+        profile: profile.name,
       })
       
       try {
-        const stream = await openai.chat.completions.create({
+        // Build request with profile defaults
+        const createParams: OpenAI.ChatCompletionCreateParamsStreaming = {
           model,
           messages: convertMessages(request.messages),
           tools: request.tools ? convertTools(request.tools) : undefined,
           tool_choice: request.toolChoice as OpenAI.ChatCompletionToolChoiceOptionParam | undefined,
-          temperature: request.temperature ?? 0.7,
-          max_tokens: request.maxTokens ?? 4096,
+          temperature: request.temperature ?? profile.temperature,
+          max_tokens: request.maxTokens ?? profile.defaultMaxTokens,
+          top_p: profile.topP,
           stream: true,
           stream_options: { include_usage: true },
-        })
+        }
+        
+        // Add top_k if supported (vLLM extension)
+        if (profile.topK !== undefined) {
+          (createParams as Record<string, unknown>)['top_k'] = profile.topK
+        }
+        
+        const stream = await openai.chat.completions.create(createParams)
         
         let fullContent = ''
         let fullThinking = ''
@@ -165,14 +204,14 @@ export function createLLMClient(config: Config): LLMClientWithModel {
           // Handle reasoning/thinking delta (vLLM reasoning parser output)
           const reasoning = delta.reasoning_content ?? delta.reasoning
           if (reasoning) {
-            // Special case: qwen3-coder-next outputs everything to reasoning field
-            // Treat reasoning as standard content for this model
-            if (model.includes('qwen3-coder-next')) {
-              fullContent += reasoning
-              yield { type: 'text_delta', content: reasoning }
-            } else {
+            // Only emit thinking if model supports reasoning
+            if (profile.supportsReasoning && !profile.reasoningAsContent) {
               fullThinking += reasoning
               yield { type: 'thinking_delta', content: reasoning }
+            } else {
+              // Model doesn't support reasoning or outputs it as content
+              fullContent += reasoning
+              yield { type: 'text_delta', content: reasoning }
             }
           }
           
