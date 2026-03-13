@@ -1,4 +1,4 @@
-import type { ToolResult } from '@openfox/shared'
+import type { ToolResult, SessionMode } from '@openfox/shared'
 import type { Tool, ToolRegistry, ToolContext } from './types.js'
 import { readFileTool } from './read.js'
 import { writeFileTool } from './write.js'
@@ -7,22 +7,51 @@ import { runCommandTool } from './shell.js'
 import { globTool } from './glob.js'
 import { grepTool } from './grep.js'
 import { askUserTool, AskUserInterrupt, provideAnswer, cancelQuestion } from './ask.js'
-import { ToolExecutionError } from '../utils/errors.js'
+import { completeCriterionTool, passCriterionTool, failCriterionTool } from './criterion.js'
+import { todoWriteTool, setTodoUpdateCallback, getTodos, clearTodos } from './todo.js'
 import { logger } from '../utils/logger.js'
 
-// All available tools
-const tools: Tool[] = [
+// ============================================================================
+// Tool Sets by Mode
+// ============================================================================
+
+// Read-only tools available in all modes
+const readOnlyTools: Tool[] = [
   readFileTool,
+  globTool,
+  grepTool,
+]
+
+// Planner mode: read-only exploration
+// Note: criteria tools are handled separately via tool call interception
+const plannerTools: Tool[] = [
+  ...readOnlyTools,
+]
+
+// Builder mode: full write access + criterion completion + task tracking
+const builderTools: Tool[] = [
+  ...readOnlyTools,
   writeFileTool,
   editFileTool,
   runCommandTool,
-  globTool,
-  grepTool,
   askUserTool,
+  completeCriterionTool,
+  todoWriteTool,
 ]
 
-// Create the registry
-export function createToolRegistry(): ToolRegistry {
+// Verifier mode: read + run commands (for testing) + criterion pass/fail
+const verifierTools: Tool[] = [
+  ...readOnlyTools,
+  runCommandTool,
+  passCriterionTool,
+  failCriterionTool,
+]
+
+// ============================================================================
+// Registry Creation
+// ============================================================================
+
+function createRegistryFromTools(tools: Tool[]): ToolRegistry {
   const toolMap = new Map<string, Tool>()
   
   for (const tool of tools) {
@@ -80,6 +109,33 @@ export function createToolRegistry(): ToolRegistry {
   }
 }
 
+// Create mode-specific registries
+const plannerRegistry = createRegistryFromTools(plannerTools)
+const builderRegistry = createRegistryFromTools(builderTools)
+const verifierRegistry = createRegistryFromTools(verifierTools)
+
+/**
+ * Get the tool registry for a specific mode
+ */
+export function getToolRegistryForMode(mode: SessionMode): ToolRegistry {
+  switch (mode) {
+    case 'planner':
+      return plannerRegistry
+    case 'builder':
+      return builderRegistry
+    case 'verifier':
+      return verifierRegistry
+  }
+}
+
+/**
+ * Create a generic tool registry (all tools) - for backward compatibility
+ */
+export function createToolRegistry(): ToolRegistry {
+  return builderRegistry
+}
+
 // Re-export types and utilities
 export type { Tool, ToolRegistry, ToolContext } from './types.js'
 export { AskUserInterrupt, provideAnswer, cancelQuestion } from './ask.js'
+export { setTodoUpdateCallback, getTodos, clearTodos } from './todo.js'

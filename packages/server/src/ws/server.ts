@@ -5,6 +5,7 @@ import type { Config } from '../config.js'
 import type { LLMClient } from '../llm/types.js'
 import type { ToolRegistry } from '../tools/index.js'
 import { sessionManager } from '../session/index.js'
+import { handleChat, generateSummary } from '../chat/index.js'
 import { logger } from '../utils/logger.js'
 import {
   createProject,
@@ -264,8 +265,6 @@ async function handleClientMessage(
         return
       }
       
-      const session = sessionManager.requireSession(client.sessionId)
-      
       // Add user message
       sessionManager.addMessage(client.sessionId, {
         role: 'user',
@@ -276,15 +275,32 @@ async function handleClientMessage(
       // Mark session as running
       sessionManager.setRunning(client.sessionId, true)
       
-      // TODO: Implement mode-aware chat handling
-      // For now, just acknowledge and mark as done
+      // Create AbortController for this chat
+      const controller = new AbortController()
+      const sessionId = client.sessionId
+      activeAgents.set(sessionId, controller)
+      
+      // Acknowledge immediately
       send({ type: 'ack', payload: {}, id: message.id })
       
-      // Placeholder: Send a simple response
-      send(createChatDeltaMessage('Chat handling not yet implemented. Mode: ' + session.mode))
-      send(createChatDoneMessage('complete'))
+      // Run chat asynchronously
+      handleChat({
+        sessionId,
+        llmClient,
+        signal: controller.signal,
+        onMessage: send,
+      }).catch((error) => {
+        logger.error('Chat error', { error })
+        send(createChatErrorMessage(
+          error instanceof Error ? error.message : 'Unknown error',
+          false
+        ))
+        send(createChatDoneMessage('error'))
+      }).finally(() => {
+        activeAgents.delete(sessionId)
+        sessionManager.setRunning(sessionId, false)
+      })
       
-      sessionManager.setRunning(client.sessionId, false)
       break
     }
     
@@ -313,8 +329,50 @@ async function handleClientMessage(
         return
       }
       
-      // TODO: Implement continue logic
+      const session = sessionManager.requireSession(client.sessionId)
+      
+      // Don't continue if already running
+      if (session.isRunning) {
+        send(createErrorMessage('ALREADY_RUNNING', 'Chat is already running', message.id))
+        return
+      }
+      
+      // Don't continue in planner mode (planner only responds to user messages)
+      if (session.mode === 'planner') {
+        send(createErrorMessage('INVALID_MODE', 'Cannot continue in planner mode', message.id))
+        return
+      }
+      
+      const sessionId = client.sessionId
+      
+      // Acknowledge immediately
       send({ type: 'ack', payload: {}, id: message.id })
+      
+      // Mark session as running
+      sessionManager.setRunning(sessionId, true)
+      
+      // Create AbortController
+      const controller = new AbortController()
+      activeAgents.set(sessionId, controller)
+      
+      // Continue chat
+      handleChat({
+        sessionId,
+        llmClient,
+        signal: controller.signal,
+        onMessage: send,
+      }).catch((error) => {
+        logger.error('Continue error', { error })
+        send(createChatErrorMessage(
+          error instanceof Error ? error.message : 'Unknown error',
+          false
+        ))
+        send(createChatDoneMessage('error'))
+      }).finally(() => {
+        activeAgents.delete(sessionId)
+        sessionManager.setRunning(sessionId, false)
+      })
+      
       break
     }
     
@@ -352,20 +410,55 @@ async function handleClientMessage(
         return
       }
       
-      // TODO: Generate summary from conversation
-      const summary = 'Task summary generation not yet implemented.'
-      sessionManager.setSummary(client.sessionId, summary)
+      const sessionId = client.sessionId
       
-      // Switch to builder mode
-      sessionManager.setMode(client.sessionId, 'builder')
+      // Acknowledge immediately
+      send({ type: 'ack', payload: {}, id: message.id })
       
-      // Emit events
-      send(createModeChangedMessage('builder', false, 'Criteria accepted'))
+      // Generate summary asynchronously
+      ;(async () => {
+        try {
+          // Generate summary from conversation
+          const summary = await generateSummary(sessionId, llmClient)
+          sessionManager.setSummary(sessionId, summary)
+          
+          // Send summary to client
+          send({ type: 'chat.summary', payload: { summary } })
+          
+          // Switch to builder mode
+          sessionManager.setMode(sessionId, 'builder')
+          send(createModeChangedMessage('builder', false, 'Criteria accepted'))
+          
+          const updatedSession = sessionManager.requireSession(sessionId)
+          send(createSessionStateMessage(updatedSession))
+          
+          // Mark session as running
+          sessionManager.setRunning(sessionId, true)
+          
+          // Create AbortController for builder
+          const controller = new AbortController()
+          activeAgents.set(sessionId, controller)
+          
+          // Auto-start builder
+          await handleChat({
+            sessionId,
+            llmClient,
+            signal: controller.signal,
+            onMessage: send,
+          })
+        } catch (error) {
+          logger.error('mode.accept error', { error })
+          send(createChatErrorMessage(
+            error instanceof Error ? error.message : 'Unknown error',
+            false
+          ))
+          send(createChatDoneMessage('error'))
+        } finally {
+          activeAgents.delete(sessionId)
+          sessionManager.setRunning(sessionId, false)
+        }
+      })()
       
-      const updatedSession = sessionManager.requireSession(client.sessionId)
-      send(createSessionStateMessage(updatedSession, message.id))
-      
-      // TODO: Auto-start builder
       break
     }
     
