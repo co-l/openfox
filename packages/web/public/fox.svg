@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
+  <defs>
+    <linearGradient id="foxGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#f97316"/>
+      <stop offset="100%" style="stop-color:#ea580c"/>
+    </linearGradient>
+  </defs>
+  <!-- Fox head -->
+  <path d="M50 15 L20 45 L25 75 L50 85 L75 75 L80 45 Z" fill="url(#foxGrad)"/>
+  <!-- Ears -->
+  <path d="M20 45 L15 20 L35 35 Z" fill="url(#foxGrad)"/>
+  <path d="M80 45 L85 20 L65 35 Z" fill="url(#foxGrad)"/>
+  <!-- Inner ears -->
+  <path d="M22 42 L20 28 L32 38 Z" fill="#fed7aa"/>
+  <path d="M78 42 L80 28 L68 38 Z" fill="#fed7aa"/>
+  <!-- Face -->
+  <ellipse cx="50" cy="70" rx="15" ry="10" fill="#fff"/>
+  <!-- Eyes -->
+  <circle cx="38" cy="50" r="5" fill="#1e293b"/>
+  <circle cx="62" cy="50" r="5" fill="#1e293b"/>
+  <circle cx="39" cy="49" r="2" fill="#fff"/>
+  <circle cx="63" cy="49" r="2" fill="#fff"/>
+  <!-- Nose -->
+  <ellipse cx="50" cy="65" rx="4" ry="3" fill="#1e293b"/>
+</svg>
