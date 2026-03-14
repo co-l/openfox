@@ -23,6 +23,7 @@ import type {
   ChatProgressPayload,
   ChatFormatRetryPayload,
   ChatMessagePayload,
+  ChatMessageUpdatedPayload,
   ChatDonePayload,
   ChatErrorPayload,
   ModeChangedPayload,
@@ -112,6 +113,13 @@ export function createChatFormatRetryMessage(
 
 export function createChatMessageMessage(message: Message): ServerMessage<ChatMessagePayload> {
   return createServerMessage('chat.message', { message })
+}
+
+export function createChatMessageUpdatedMessage(
+  messageId: string,
+  updates: ChatMessageUpdatedPayload['updates']
+): ServerMessage<ChatMessageUpdatedPayload> {
+  return createServerMessage('chat.message_updated', { messageId, updates })
 }
 
 export function createChatDoneMessage(

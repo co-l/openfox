@@ -29,6 +29,7 @@ import {
   createChatToolCallMessage,
   createChatToolResultMessage,
   createChatMessageMessage,
+  createChatMessageUpdatedMessage,
   createChatDoneMessage,
   createChatErrorMessage,
   createChatProgressMessage,
@@ -78,6 +79,10 @@ export function createWebSocketServer(
             const messages = getMessages(sessionId)
             ws.send(serializeServerMessage(createSessionStateMessage(session, messages)))
           }
+        }
+        // Forward message updates to clients (e.g., isStreaming changes)
+        if (event.type === 'message_updated') {
+          ws.send(serializeServerMessage(createChatMessageUpdatedMessage(event.messageId, event.updates)))
         }
       }
     }

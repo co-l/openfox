@@ -114,6 +114,7 @@ export type ServerMessageType =
   | 'chat.progress'       // Progress update (e.g., "Generating summary...")
   | 'chat.format_retry'   // Model used wrong format (XML tools), retrying
   | 'chat.message'        // Full message added (system-generated, etc.)
+  | 'chat.message_updated' // Message updated (e.g., isStreaming changed)
   | 'chat.done'           // Current generation complete
   | 'chat.error'          // Error during generation
   // Mode events
@@ -202,6 +203,11 @@ export interface ChatFormatRetryPayload {
 
 export interface ChatMessagePayload {
   message: Message
+}
+
+export interface ChatMessageUpdatedPayload {
+  messageId: string
+  updates: Partial<Pick<Message, 'content' | 'thinkingContent' | 'toolCalls' | 'isStreaming' | 'stats'>>
 }
 
 export interface ChatDonePayload {

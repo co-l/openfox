@@ -20,6 +20,7 @@ import type {
   ChatProgressPayload,
   ChatFormatRetryPayload,
   ChatMessagePayload,
+  ChatMessageUpdatedPayload,
   ChatDonePayload,
   ChatErrorPayload,
   ModeChangedPayload,
@@ -222,21 +223,32 @@ export const useSessionStore = create<SessionState>((set, get) => ({
           if (state.messages.some(m => m.id === payload.message.id)) {
             return state
           }
-          
-          // If new message is streaming, mark previous streaming messages as not streaming
-          // This handles tool loops where server updates isStreaming but client doesn't see it
-          const updatedMessages = payload.message.isStreaming
-            ? state.messages.map(m => m.isStreaming ? { ...m, isStreaming: false } : m)
-            : state.messages
-          
           return {
-            messages: [...updatedMessages, payload.message],
+            messages: [...state.messages, payload.message],
             // Track streaming message if it's marked as streaming
             streamingMessageId: payload.message.isStreaming 
               ? payload.message.id 
               : state.streamingMessageId,
           }
         })
+        break
+      }
+      
+      case 'chat.message_updated': {
+        // Server updated a message (e.g., isStreaming changed after tool loop iteration)
+        const payload = message.payload as ChatMessageUpdatedPayload
+        set(state => ({
+          messages: state.messages.map(m => 
+            m.id === payload.messageId
+              ? { ...m, ...payload.updates }
+              : m
+          ),
+          // Clear streaming if the updated message was streaming and is now not
+          streamingMessageId: 
+            state.streamingMessageId === payload.messageId && payload.updates.isStreaming === false
+              ? null
+              : state.streamingMessageId,
+        }))
         break
       }
       
