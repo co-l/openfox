@@ -116,16 +116,14 @@ export function PlanPanel() {
         onWheel={handleWheel}
         className="flex-1 overflow-y-auto p-4"
       >
-        {displayMessages.map((message, index) => {
-          const isLast = index === displayMessages.length - 1
-          
+        {displayMessages.map((message) => {
           if (message.role === 'assistant') {
             return (
               <AssistantMessage 
                 key={message.id}
                 message={message}
                 isStreaming={message.isStreaming ?? false}
-                showStats={isLast}
+                showStats={true}
               />
             )
           }
