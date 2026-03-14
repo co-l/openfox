@@ -19,7 +19,7 @@ import {
   addMessage as dbAddMessage,
   getMessages,
   deleteMessages,
-  updateLastMessageStats as dbUpdateLastMessageStats,
+  updateMessageStats as dbUpdateMessageStats,
   updateMessage as dbUpdateMessage,
   setCriteria as dbSetCriteria,
   getCriteria,
@@ -199,9 +199,9 @@ class SessionManagerImpl {
     return savedMessage
   }
   
-  updateLastMessageStats(sessionId: string, stats: Message['stats']): void {
+  updateMessageStats(sessionId: string, messageId: string, stats: Message['stats']): void {
     this.requireSession(sessionId)
-    dbUpdateLastMessageStats(sessionId, stats)
+    dbUpdateMessageStats(sessionId, messageId, stats)
   }
   
   updateMessage(

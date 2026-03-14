@@ -326,7 +326,7 @@ async function runPlannerChat(
   const stats = turnMetrics.buildStats(llmClient.getModel(), 'planner')
   
   // Update the message with stats
-  sessionManager.updateLastMessageStats(sessionId, stats)
+  sessionManager.updateMessageStats(sessionId, messageId, stats)
   
   onMessage(createChatDoneMessage(messageId, 'complete', stats))
 }
@@ -374,9 +374,9 @@ async function runBuilderLoop(options: ChatOptions): Promise<void> {
       onMessage(createModeChangedMessage('verifier', true, 'All criteria completed'))
       
       // Send stats for builder turn
-      const stats = turnMetrics.buildStats(llmClient.getModel(), 'builder')
-      sessionManager.updateLastMessageStats(sessionId, stats)
       if (currentMessageId) {
+        const stats = turnMetrics.buildStats(llmClient.getModel(), 'builder')
+        sessionManager.updateMessageStats(sessionId, currentMessageId, stats)
         onMessage(createChatDoneMessage(currentMessageId, 'complete', stats))
       }
       
@@ -581,13 +581,12 @@ async function runBuilderLoop(options: ChatOptions): Promise<void> {
     break
   }
   
-  // Final response - build aggregated stats
-  const stats = turnMetrics.buildStats(llmClient.getModel(), 'builder')
-  sessionManager.updateLastMessageStats(sessionId, stats)
-  
-  if (currentMessageId) {
-    onMessage(createChatDoneMessage(currentMessageId, 'complete', stats))
-  }
+    // Final response - build aggregated stats
+    const stats = turnMetrics.buildStats(llmClient.getModel(), 'builder')
+    if (currentMessageId) {
+      sessionManager.updateMessageStats(sessionId, currentMessageId, stats)
+      onMessage(createChatDoneMessage(currentMessageId, 'complete', stats))
+    }
 }
 
 /**
@@ -799,8 +798,8 @@ async function runVerifierLoop(options: ChatOptions): Promise<void> {
     
     // Send stats for this verifier turn before switching
     const stats = turnMetrics.buildStats(llmClient.getModel(), 'verifier')
-    sessionManager.updateLastMessageStats(sessionId, stats)
     if (currentMessageId) {
+      sessionManager.updateMessageStats(sessionId, currentMessageId, stats)
       onMessage(createChatDoneMessage(currentMessageId, 'complete', stats))
     }
     
@@ -823,8 +822,8 @@ async function runVerifierLoop(options: ChatOptions): Promise<void> {
   // All passed!
   logger.info('All criteria verified', { sessionId })
   const stats = turnMetrics.buildStats(llmClient.getModel(), 'verifier')
-  sessionManager.updateLastMessageStats(sessionId, stats)
   if (currentMessageId) {
+    sessionManager.updateMessageStats(sessionId, currentMessageId, stats)
     onMessage(createChatDoneMessage(currentMessageId, 'complete', stats))
   }
 }

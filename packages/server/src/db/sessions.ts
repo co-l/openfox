@@ -307,19 +307,12 @@ export function deleteMessages(sessionId: string, messageIds: string[]): void {
   `).run(sessionId, ...messageIds)
 }
 
-export function updateLastMessageStats(sessionId: string, stats: Message['stats']): void {
+export function updateMessageStats(sessionId: string, messageId: string, stats: Message['stats']): void {
   const db = getDatabase()
-  
-  // Get the last message ID for this session
-  const lastMessage = db.prepare(`
-    SELECT id FROM messages WHERE session_id = ? ORDER BY timestamp DESC LIMIT 1
-  `).get(sessionId) as { id: string } | undefined
-  
-  if (!lastMessage) return
   
   db.prepare(`
     UPDATE messages SET stats = ? WHERE id = ?
-  `).run(JSON.stringify(stats), lastMessage.id)
+  `).run(JSON.stringify(stats), messageId)
 }
 
 export function updateMessage(
