@@ -1,4 +1,4 @@
-import type { ToolResult, SessionMode } from '@openfox/shared'
+import type { ToolResult, ToolMode } from '@openfox/shared'
 import type { Tool, ToolRegistry, ToolContext } from './types.js'
 import { readFileTool } from './read.js'
 import { writeFileTool } from './write.js'
@@ -121,7 +121,7 @@ const verifierRegistry = createRegistryFromTools(verifierTools)
 /**
  * Get the tool registry for a specific mode
  */
-export function getToolRegistryForMode(mode: SessionMode): ToolRegistry {
+export function getToolRegistryForMode(mode: ToolMode): ToolRegistry {
   switch (mode) {
     case 'planner':
       return plannerRegistry

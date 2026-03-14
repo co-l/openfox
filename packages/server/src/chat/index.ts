@@ -1,4 +1,4 @@
-import type { Session, SessionMode, ToolCall, Todo, MessageStats, Message } from '@openfox/shared'
+import type { Session, SessionMode, ToolMode, ToolCall, Todo, MessageStats, Message } from '@openfox/shared'
 import type { ServerMessage } from '@openfox/shared/protocol'
 import type { LLMClientWithModel } from '../llm/client.js'
 import { sessionManager } from '../session/index.js'
@@ -65,7 +65,7 @@ class TurnMetrics {
   }
   
   /** Build final stats object */
-  buildStats(model: string, mode: SessionMode): MessageStats {
+  buildStats(model: string, mode: ToolMode): MessageStats {
     const totalTime = (performance.now() - this.startTime) / 1000
     // Keep 1 decimal place precision for speeds
     const roundTo1 = (n: number) => Math.round(n * 10) / 10
@@ -112,9 +112,6 @@ export async function handleChat(options: ChatOptions): Promise<void> {
         break
       case 'builder':
         await runBuilderLoop(options)
-        break
-      case 'verifier':
-        await runVerifierLoop(options)
         break
     }
   } catch (error) {
@@ -392,22 +389,39 @@ async function runBuilderLoop(options: ChatOptions): Promise<void> {
     )
     
     if (allCompleted && session.criteria.length > 0) {
-      logger.info('All criteria completed, switching to verifier', { sessionId })
+      logger.info('All criteria completed, running verification sub-agent', { sessionId })
       
-      // Switch to verifier mode
-      sessionManager.setMode(sessionId, 'verifier')
-      onMessage(createModeChangedMessage('verifier', true, 'All criteria completed'))
-      
-      // Send stats for builder turn
+      // Send stats for builder turn before verification
       if (currentMessageId) {
         const stats = turnMetrics.buildStats(llmClient.getModel(), 'builder')
         sessionManager.updateMessageStats(sessionId, currentMessageId, stats)
         onMessage(createChatDoneMessage(currentMessageId, 'complete', stats))
       }
       
-      // Auto-start verifier
-      await runVerifierLoop(options)
-      return
+      // Run verification as inline sub-agent
+      const verificationResult = await runVerificationSubAgent(options)
+      
+      if (verificationResult.allPassed) {
+        // All verified! We're done.
+        logger.info('All criteria verified successfully', { sessionId })
+        return
+      }
+      
+      // Verification failed - inject failure context and continue builder loop
+      logger.info('Verification failed, continuing builder', { sessionId, failed: verificationResult.failed.length })
+      
+      const failureMsg = sessionManager.addMessage(sessionId, {
+        role: 'user',
+        content: `Verification found ${verificationResult.failed.length} failing criteria:\n${verificationResult.failed.map(f => `- ${f.id}: ${f.reason}`).join('\n')}`,
+        tokenCount: 50,
+        isSystemGenerated: true,
+        messageKind: 'correction',
+      })
+      onMessage(createChatMessageMessage(failureMsg))
+      
+      // Refresh session and continue builder loop
+      session = sessionManager.requireSession(sessionId)
+      continue
     }
     
     // If retrying due to XML format error, inject correction prompt
@@ -618,18 +632,26 @@ async function runBuilderLoop(options: ChatOptions): Promise<void> {
 }
 
 /**
- * Verifier mode: Check all completed criteria
- * Uses TurnMetrics to track aggregated metrics across the turn
- * 
- * Server-authoritative streaming: Creates assistant message BEFORE streaming,
- * sends deltas with messageId, client just renders messages array.
- * 
- * Note: Verifier uses its own local message context (not persisted to session messages)
- * since it runs with fresh context. Only the final result is persisted.
+ * Verification result returned by the sub-agent
  */
-async function runVerifierLoop(options: ChatOptions): Promise<void> {
+interface VerificationResult {
+  allPassed: boolean
+  failed: Array<{ id: string; reason: string }>
+}
+
+/**
+ * Verification sub-agent: Check all completed criteria
+ * Runs as an inline sub-agent within the builder, with fresh context.
+ * All messages are tagged with subAgentId for UI grouping.
+ * 
+ * Returns verification results instead of switching modes.
+ */
+async function runVerificationSubAgent(
+  options: ChatOptions
+): Promise<VerificationResult> {
   const { sessionId, llmClient, signal, onMessage } = options
   const turnMetrics = new TurnMetrics()
+  const subAgentId = crypto.randomUUID()
   
   let session = sessionManager.requireSession(sessionId)
   
@@ -637,10 +659,41 @@ async function runVerifierLoop(options: ChatOptions): Promise<void> {
   const toVerify = session.criteria.filter(c => c.status.type === 'completed')
   if (toVerify.length === 0) {
     logger.info('Nothing to verify', { sessionId })
-    // No message was created, so we can't send a done with messageId
-    // This is an edge case - verifier was called with nothing to verify
-    return
+    return { allPassed: true, failed: [] }
   }
+  
+  // Extract context for verifier (shown to user AND sent to LLM)
+  const summary = session.summary ?? 'No summary available'
+  const modifiedFiles = session.executionState?.modifiedFiles ?? []
+  
+  // Build criteria list for display
+  const criteriaList = session.criteria
+    .map(c => {
+      const status = c.status.type === 'passed' ? '[PASSED]'
+        : c.status.type === 'completed' ? '[NEEDS VERIFICATION]'
+        : c.status.type === 'failed' ? '[FAILED]'
+        : '[NOT COMPLETED]'
+      return `- **${c.id}** ${status}: ${c.description}`
+    })
+    .join('\n')
+  
+  // Build visible context message (everything the LLM will see in system prompt)
+  const contextContent = `## Task Summary
+${summary}
+
+## Criteria
+${criteriaList}
+
+## Modified Files
+${modifiedFiles.length > 0 ? modifiedFiles.map(f => `- ${f}`).join('\n') : '(none)'}`
+  
+  logger.info('Verifier sub-agent starting', { 
+    sessionId, 
+    subAgentId,
+    summaryLength: summary.length,
+    modifiedFilesCount: modifiedFiles.length,
+    criteriaCount: session.criteria.length,
+  })
   
   // Add context reset separator (verifier uses fresh context)
   const resetMsg = sessionManager.addMessage(sessionId, {
@@ -649,8 +702,22 @@ async function runVerifierLoop(options: ChatOptions): Promise<void> {
     tokenCount: 2,
     isSystemGenerated: true,
     messageKind: 'context-reset',
+    subAgentId,
+    subAgentType: 'verifier',
   })
   onMessage(createChatMessageMessage(resetMsg))
+  
+  // Add visible context message showing what the verifier knows
+  const contextMsg = sessionManager.addMessage(sessionId, {
+    role: 'user',
+    content: contextContent,
+    tokenCount: estimateTokens(contextContent),
+    isSystemGenerated: true,
+    messageKind: 'auto-prompt',
+    subAgentId,
+    subAgentType: 'verifier',
+  })
+  onMessage(createChatMessageMessage(contextMsg))
   
   // Add verifier kickoff prompt
   const kickoffMsg = sessionManager.addMessage(sessionId, {
@@ -659,20 +726,20 @@ async function runVerifierLoop(options: ChatOptions): Promise<void> {
     tokenCount: estimateTokens(VERIFIER_KICKOFF_PROMPT),
     isSystemGenerated: true,
     messageKind: 'auto-prompt',
+    subAgentId,
+    subAgentType: 'verifier',
   })
   onMessage(createChatMessageMessage(kickoffMsg))
   
   const toolRegistry = getToolRegistryForMode('verifier')
-  const systemPrompt = buildVerifierPrompt(
-    session.criteria,
-    toolRegistry.definitions,
-    session.summary ?? 'No summary available',
-    session.executionState?.modifiedFiles ?? []
-  )
   
-  // Verifier gets fresh context (only system prompt + kickoff)
+  // System prompt is now static (just instructions + tool list)
+  const systemPrompt = buildVerifierPrompt(toolRegistry.definitions)
+  
+  // Verifier gets fresh context (system prompt + context + kickoff)
   const llmMessages: Array<{ role: 'system' | 'user' | 'assistant' | 'tool'; content: string; toolCalls?: ToolCall[]; toolCallId?: string }> = [
     { role: 'system', content: systemPrompt },
+    { role: 'user', content: contextContent },
     { role: 'user', content: VERIFIER_KICKOFF_PROMPT },
   ]
   
@@ -688,7 +755,7 @@ async function runVerifierLoop(options: ChatOptions): Promise<void> {
         sessionManager.updateMessage(sessionId, currentMessageId, { isStreaming: false, partial: true })
         onMessage(createChatDoneMessage(currentMessageId, 'stopped'))
       }
-      return
+      return { allPassed: false, failed: [] }  // Aborted
     }
     
     iteration++
@@ -709,6 +776,8 @@ async function runVerifierLoop(options: ChatOptions): Promise<void> {
       content: '',
       tokenCount: 0,
       isStreaming: true,
+      subAgentId,
+      subAgentType: 'verifier',
     })
     currentMessageId = assistantMsg.id
     onMessage(createChatMessageMessage(assistantMsg))
@@ -725,7 +794,7 @@ async function runVerifierLoop(options: ChatOptions): Promise<void> {
       if (signal?.aborted) {
         sessionManager.updateMessage(sessionId, currentMessageId, { isStreaming: false, partial: true })
         onMessage(createChatDoneMessage(currentMessageId, 'stopped'))
-        return
+        return { allPassed: false, failed: [] }  // Aborted
       }
       
       const { value, done } = await stream.next()
@@ -756,7 +825,7 @@ async function runVerifierLoop(options: ChatOptions): Promise<void> {
           } else {
             onMessage(createChatErrorMessage('Model repeatedly used XML tool format after 10 retries', false))
             onMessage(createChatDoneMessage(currentMessageId, 'error'))
-            return
+            return { allPassed: false, failed: [] }  // Error
           }
         }
         case 'error':
@@ -777,7 +846,7 @@ async function runVerifierLoop(options: ChatOptions): Promise<void> {
     
     if (!result) {
       onMessage(createChatDoneMessage(currentMessageId, 'error'))
-      return
+      return { allPassed: false, failed: [] }  // Error
     }
     
     const { content, toolCalls, response, timing } = result
@@ -837,45 +906,30 @@ async function runVerifierLoop(options: ChatOptions): Promise<void> {
     break
   }
   
-  // Check results
+  // Check results and return
   session = sessionManager.requireSession(sessionId)
-  const failed = session.criteria.filter(c => c.status.type === 'failed')
+  const failed = session.criteria
+    .filter(c => c.status.type === 'failed')
+    .map(c => ({ 
+      id: c.id, 
+      reason: c.status.type === 'failed' ? c.status.reason : 'unknown' 
+    }))
   
-  if (failed.length > 0) {
-    logger.info('Verification failed, returning to builder', { sessionId, failed: failed.length })
-    
-    // Send stats for this verifier turn before switching
-    const stats = turnMetrics.buildStats(llmClient.getModel(), 'verifier')
-    if (currentMessageId) {
-      sessionManager.updateMessageStats(sessionId, currentMessageId, stats)
-      onMessage(createChatDoneMessage(currentMessageId, 'complete', stats))
-    }
-    
-    // Add failure context to main session messages
-    const failureMsg = sessionManager.addMessage(sessionId, {
-      role: 'user',
-      content: `Verification found ${failed.length} failing criteria:\n${failed.map(c => `- ${c.id}: ${c.status.type === 'failed' ? c.status.reason : 'unknown'}`).join('\n')}`,
-      tokenCount: 50,
-      isSystemGenerated: true,
-      messageKind: 'correction',
-    })
-    onMessage(createChatMessageMessage(failureMsg))
-    
-    // Switch back to builder
-    sessionManager.setMode(sessionId, 'builder')
-    onMessage(createModeChangedMessage('builder', true, `${failed.length} criteria failed verification`))
-    
-    // Builder will be a new turn
-    return
-  }
-  
-  // All passed!
-  logger.info('All criteria verified', { sessionId })
+  // Send stats for the verifier sub-agent
   const stats = turnMetrics.buildStats(llmClient.getModel(), 'verifier')
   if (currentMessageId) {
     sessionManager.updateMessageStats(sessionId, currentMessageId, stats)
     onMessage(createChatDoneMessage(currentMessageId, 'complete', stats))
   }
+  
+  if (failed.length > 0) {
+    logger.info('Verification failed', { sessionId, failed: failed.length })
+    return { allPassed: false, failed }
+  }
+  
+  // All passed!
+  logger.info('All criteria verified', { sessionId })
+  return { allPassed: true, failed: [] }
 }
 
 /**

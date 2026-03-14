@@ -136,8 +136,8 @@ class SessionManagerImpl {
     
     updateSessionMode(sessionId, toMode)
     
-    // Initialize execution state if entering builder mode
-    if (toMode === 'builder' && fromMode !== 'verifier') {
+    // Initialize execution state if entering builder mode from planner
+    if (toMode === 'builder' && fromMode === 'planner') {
       const now = new Date().toISOString()
       const state: ExecutionState = {
         iteration: (session.executionState?.iteration ?? 0) + 1,

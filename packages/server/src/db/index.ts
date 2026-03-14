@@ -130,6 +130,20 @@ function runMigrations(db: Database.Database): void {
     // Column already exists
   }
   
+  // Migration: add sub_agent_id column if missing
+  try {
+    db.exec(`ALTER TABLE messages ADD COLUMN sub_agent_id TEXT`)
+  } catch {
+    // Column already exists
+  }
+  
+  // Migration: add sub_agent_type column if missing
+  try {
+    db.exec(`ALTER TABLE messages ADD COLUMN sub_agent_type TEXT`)
+  } catch {
+    // Column already exists
+  }
+  
   // Create criteria table
   db.exec(`
     CREATE TABLE IF NOT EXISTS criteria (

@@ -117,43 +117,25 @@ Files modified this session: ${filesModified}
 // Verifier Mode Prompt
 // ============================================================================
 
-export function buildVerifierPrompt(
-  criteria: Criterion[],
-  tools: LLMToolDefinition[],
-  summary: string,
-  modifiedFiles: string[]
-): string {
-  const criteriaList = criteria
-    .map((c, i) => {
-      const status = c.status.type === 'passed' ? '[ALREADY VERIFIED]'
-        : c.status.type === 'completed' ? '[NEEDS VERIFICATION]'
-        : c.status.type === 'failed' ? '[PREVIOUSLY FAILED]'
-        : '[NOT COMPLETED]'
-      return `${i + 1}. **${c.id}** ${status} ${c.description}`
-    })
-    .join('\n')
-  
+export function buildVerifierPrompt(tools: LLMToolDefinition[]): string {
   const toolList = tools
     .map(t => `- ${t.function.name}: ${t.function.description}`)
     .join('\n')
 
   return `You are a code reviewer performing independent verification.
 
-## TASK SUMMARY
-${summary}
-
-## ACCEPTANCE CRITERIA TO VERIFY
-${criteriaList}
-
-## MODIFIED FILES
-${modifiedFiles.length > 0 ? modifiedFiles.join('\n') : 'No files modified'}
+The user will provide:
+- Task summary
+- Criteria to verify (with status markers)
+- Modified files
 
 ## YOUR TASK
 
-For each criterion marked [NEEDS VERIFICATION], independently verify:
-1. Read the relevant code/files
-2. Run tests or commands if applicable
-3. Determine if the implementation satisfies the requirement
+For each criterion marked [NEEDS VERIFICATION]:
+1. Consider the task summary and criterion description
+2. If the criterion requires code changes, read the modified files and verify the implementation
+3. If the criterion is conceptual or doesn't require code (e.g., test/placeholder criteria), verify based on the description alone
+4. Run tests or commands only if applicable to the criterion
 
 Then call:
 - \`pass_criterion\` if the criterion is satisfied
@@ -163,10 +145,13 @@ Then call:
 ${toolList}
 
 ## IMPORTANT
-- Be thorough but fair
+- Start by analyzing what each criterion actually requires
+- For trivial or non-code criteria, pass them immediately without exploring the codebase
+- For code-related criteria, focus on the modified files provided
+- Be thorough but efficient - don't explore unnecessarily
 - Only fail criteria that genuinely don't meet the requirement
 - Provide clear, actionable feedback when failing
-- Don't re-verify criteria already marked [ALREADY VERIFIED]`
+- Don't re-verify criteria already marked [PASSED]`
 }
 
 // ============================================================================

@@ -14,7 +14,10 @@ export interface Project {
 // Session Types
 // ============================================================================
 
-export type SessionMode = 'planner' | 'builder' | 'verifier'
+export type SessionMode = 'planner' | 'builder'
+
+// Tool mode includes 'verifier' for the verification sub-agent (which uses distinct tools but runs inline within builder)
+export type ToolMode = SessionMode | 'verifier'
 
 export interface Session {
   id: string
@@ -65,7 +68,7 @@ export type MessageSegment =
 
 export interface MessageStats {
   model: string
-  mode: SessionMode
+  mode: ToolMode  // Which system prompt was used (planner, builder, verifier)
   totalTime: number         // wall clock time (seconds)
   toolTime: number          // time spent in tool execution (seconds)
   prefillTokens: number     // total prompt tokens across all LLM calls
@@ -93,6 +96,8 @@ export interface Message {
   isSystemGenerated?: boolean  // true for auto-injected messages (retry prompts, etc.)
   isStreaming?: boolean        // true while assistant is still generating
   messageKind?: 'correction' | 'auto-prompt' | 'context-reset'  // Visual styling hint for system-generated messages
+  subAgentId?: string          // If set, this message belongs to a sub-agent process
+  subAgentType?: 'verifier'    // Type of sub-agent (extensible for future)
 }
 
 // ============================================================================

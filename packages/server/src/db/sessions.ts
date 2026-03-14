@@ -232,8 +232,9 @@ export function addMessage(sessionId: string, message: Omit<Message, 'id' | 'tim
     INSERT INTO messages (
       id, session_id, role, content, tool_calls, thinking_content,
       tool_call_id, tool_name, tool_result, timestamp, token_count,
-      is_compacted, original_message_ids, segments, stats, partial, is_system_generated, is_streaming, message_kind
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      is_compacted, original_message_ids, segments, stats, partial, is_system_generated, is_streaming, message_kind,
+      sub_agent_id, sub_agent_type
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
     id,
     sessionId,
@@ -253,7 +254,9 @@ export function addMessage(sessionId: string, message: Omit<Message, 'id' | 'tim
     message.partial ? 1 : 0,
     message.isSystemGenerated ? 1 : 0,
     message.isStreaming ? 1 : 0,
-    message.messageKind ?? null
+    message.messageKind ?? null,
+    message.subAgentId ?? null,
+    message.subAgentType ?? null
   )
   
   // Update session updated_at
@@ -298,6 +301,8 @@ export function getMessages(sessionId: string): Message[] {
     isSystemGenerated: row.is_system_generated === 1 ? true : undefined,
     isStreaming: row.is_streaming === 1 ? true : undefined,
     messageKind: row.message_kind as Message['messageKind'] ?? undefined,
+    subAgentId: row.sub_agent_id ?? undefined,
+    subAgentType: row.sub_agent_type as Message['subAgentType'] ?? undefined,
   }))
 }
 
@@ -604,6 +609,8 @@ interface MessageRow {
   is_system_generated: number
   is_streaming: number
   message_kind: string | null
+  sub_agent_id: string | null
+  sub_agent_type: string | null
 }
 
 interface CriterionRow {

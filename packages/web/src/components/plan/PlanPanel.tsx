@@ -4,8 +4,53 @@ import type { Message } from '@openfox/shared'
 import { SessionLayout } from '../layout/SessionLayout'
 import { ChatMessage } from './ChatMessage'
 import { AssistantMessage } from './AssistantMessage'
+import { SubAgentContainer } from './SubAgentContainer'
 import { ModeSwitch } from './ModeSwitch'
 import { Button } from '../shared/Button'
+
+// Display item: either a single message or a grouped sub-agent run
+type DisplayItem = 
+  | { type: 'message'; message: Message }
+  | { type: 'subagent'; subAgentId: string; subAgentType: 'verifier'; messages: Message[] }
+
+// Group messages into display items, collapsing consecutive sub-agent messages
+function groupMessages(messages: Message[]): DisplayItem[] {
+  const items: DisplayItem[] = []
+  let currentGroup: { subAgentId: string; subAgentType: 'verifier'; messages: Message[] } | null = null
+  
+  for (const msg of messages) {
+    // Skip tool messages - they're displayed within assistant messages
+    if (msg.role === 'tool') continue
+    
+    if (msg.subAgentId && msg.subAgentType) {
+      // Part of a sub-agent run
+      if (currentGroup && currentGroup.subAgentId === msg.subAgentId) {
+        // Add to existing group
+        currentGroup.messages.push(msg)
+      } else {
+        // Start new group
+        if (currentGroup) {
+          items.push({ type: 'subagent', ...currentGroup })
+        }
+        currentGroup = { subAgentId: msg.subAgentId, subAgentType: msg.subAgentType, messages: [msg] }
+      }
+    } else {
+      // Regular message - flush any pending group
+      if (currentGroup) {
+        items.push({ type: 'subagent', ...currentGroup })
+        currentGroup = null
+      }
+      items.push({ type: 'message', message: msg })
+    }
+  }
+  
+  // Flush final group
+  if (currentGroup) {
+    items.push({ type: 'subagent', ...currentGroup })
+  }
+  
+  return items
+}
 
 export function PlanPanel() {
   const [input, setInput] = useState('')
@@ -25,11 +70,9 @@ export function PlanPanel() {
   const acceptAndBuild = useSessionStore(state => state.acceptAndBuild)
   const stopGeneration = useSessionStore(state => state.stopGeneration)
   
-  // Filter and organize messages for display
-  // Tool messages are nested within their parent assistant messages
-  const displayMessages = useMemo((): Message[] => {
-    // Filter out tool messages - they're displayed within assistant messages
-    return messages.filter(m => m.role !== 'tool')
+  // Group messages for display, collapsing sub-agent messages into containers
+  const displayItems = useMemo((): DisplayItem[] => {
+    return groupMessages(messages)
   }, [messages])
   
   const scrollToBottom = useCallback(() => {
@@ -62,7 +105,7 @@ export function PlanPanel() {
     if (!userScrolledUp) {
       scrollToBottom()
     }
-  }, [displayMessages, userScrolledUp, scrollToBottom])
+  }, [displayItems, userScrolledUp, scrollToBottom])
   
   // Reset scroll state when streaming stops
   useEffect(() => {
@@ -105,7 +148,9 @@ export function PlanPanel() {
   const hasCriteria = (session?.criteria.length ?? 0) > 0
   
   // Show "Start Building" when in planner with criteria and assistant has responded
-  const hasAssistantResponse = displayMessages.some(m => m.role === 'assistant')
+  const hasAssistantResponse = displayItems.some(item => 
+    item.type === 'message' && item.message.role === 'assistant'
+  )
   const showStartBuilding = isPlanning && hasCriteria && !isStreaming && hasAssistantResponse
   
   return (
@@ -116,7 +161,21 @@ export function PlanPanel() {
         onWheel={handleWheel}
         className="flex-1 overflow-y-auto p-4"
       >
-        {displayMessages.map((message) => {
+        {displayItems.map((item) => {
+          if (item.type === 'subagent') {
+            // Check if any message in the group is streaming
+            const groupIsStreaming = item.messages.some(m => m.isStreaming)
+            return (
+              <SubAgentContainer
+                key={item.subAgentId}
+                messages={item.messages}
+                subAgentType={item.subAgentType}
+                isStreaming={groupIsStreaming}
+              />
+            )
+          }
+          
+          const message = item.message
           if (message.role === 'assistant') {
             return (
               <AssistantMessage 

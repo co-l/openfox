@@ -4,7 +4,6 @@ import { useSessionStore, useIsStreaming } from '../../stores/session'
 const modes: { mode: SessionMode; label: string; activeClass: string }[] = [
   { mode: 'planner', label: 'Planner', activeClass: 'bg-purple-500 text-white' },
   { mode: 'builder', label: 'Builder', activeClass: 'bg-blue-500 text-white' },
-  { mode: 'verifier', label: 'Verifier', activeClass: 'bg-green-500 text-white' },
 ]
 
 export function ModeSwitch() {

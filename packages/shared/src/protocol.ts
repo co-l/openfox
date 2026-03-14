@@ -3,6 +3,7 @@ import type {
   Session,
   SessionSummary,
   SessionMode,
+  ToolMode,
   Criterion,
   Message,
   Todo,
@@ -215,7 +216,7 @@ export interface ChatDonePayload {
   reason: 'complete' | 'stopped' | 'error' | 'waiting_for_user'
   stats?: {
     model: string
-    mode: SessionMode
+    mode: ToolMode  // Which system prompt was used (planner, builder, verifier)
     totalTime: number
     toolTime: number
     prefillTokens: number
