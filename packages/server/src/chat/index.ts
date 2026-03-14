@@ -1,6 +1,6 @@
 import type { Session, SessionMode, ToolCall, Todo } from '@openfox/shared'
-import type { LLMClient } from '../llm/types.js'
 import type { ServerMessage } from '@openfox/shared/protocol'
+import type { LLMClientWithModel } from '../llm/client.js'
 import { sessionManager } from '../session/index.js'
 import { getToolRegistryForMode, setTodoUpdateCallback, AskUserInterrupt } from '../tools/index.js'
 import { streamWithSegments, type StreamTiming } from '../llm/streaming.js'
@@ -23,9 +23,18 @@ import {
 
 export interface ChatOptions {
   sessionId: string
-  llmClient: LLMClient
+  llmClient: LLMClientWithModel
   signal?: AbortSignal
   onMessage: (msg: ServerMessage) => void
+}
+
+// Helper to build stats from timing
+function buildStats(llmClient: LLMClientWithModel, timing: StreamTiming | null) {
+  return timing ? {
+    model: llmClient.getModel(),
+    prefillSpeed: timing.prefillTps,
+    generationSpeed: timing.tps,
+  } : undefined
 }
 
 /**
@@ -79,11 +88,12 @@ export async function handleChat(options: ChatOptions): Promise<void> {
 
 /**
  * Planner mode: Single response to help define criteria
+ * Returns timing from the last LLM call for stats
  */
-async function runPlannerChat(options: ChatOptions): Promise<void> {
+async function runPlannerChat(options: ChatOptions): Promise<StreamTiming | null> {
   const { sessionId, llmClient, signal, onMessage } = options
   
-  const session = sessionManager.requireSession(sessionId)
+  let session = sessionManager.requireSession(sessionId)
   const toolRegistry = getToolRegistryForMode('planner')
   
   const systemPrompt = buildPlannerPrompt(toolRegistry.definitions)
@@ -110,7 +120,7 @@ async function runPlannerChat(options: ChatOptions): Promise<void> {
   while (true) {
     if (signal?.aborted) {
       onMessage(createChatDoneMessage('stopped'))
-      return
+      return null
     }
     
     const { value, done } = await stream.next()
@@ -136,12 +146,12 @@ async function runPlannerChat(options: ChatOptions): Promise<void> {
   
   if (!result) {
     onMessage(createChatDoneMessage('error'))
-    return
+    return null
   }
   
-  const { content, thinkingContent, toolCalls, response, segments } = result
+  const { content, thinkingContent, toolCalls, response, segments, timing } = result
   
-  // Save assistant message
+  // Save assistant message with stats
   sessionManager.addMessage(sessionId, {
     role: 'assistant',
     content,
@@ -149,9 +159,10 @@ async function runPlannerChat(options: ChatOptions): Promise<void> {
     toolCalls: toolCalls.length > 0 ? toolCalls : undefined,
     tokenCount: response.usage.completionTokens,
     segments,
+    stats: buildStats(llmClient, timing),
   })
   
-  // Execute any tool calls (planner can use read-only tools)
+  // Execute any tool calls (planner has read + criteria tools)
   if (toolCalls.length > 0) {
     for (const toolCall of toolCalls) {
       onMessage(createChatToolCallMessage(toolCall.id, toolCall.name, toolCall.arguments))
@@ -173,30 +184,40 @@ async function runPlannerChat(options: ChatOptions): Promise<void> {
         toolResult: result,
         tokenCount: estimateTokens(result.output ?? result.error ?? ''),
       })
+      
+      // Check if criteria changed (planner can add/update/remove criteria)
+      const updatedSession = sessionManager.requireSession(sessionId)
+      if (JSON.stringify(updatedSession.criteria) !== JSON.stringify(session.criteria)) {
+        onMessage(createCriteriaUpdatedMessage(updatedSession.criteria))
+        session = updatedSession
+      }
     }
     
     // Continue with another response if we had tool calls
-    await runPlannerChat(options)
-    return
+    // Return the timing from the recursive call (most recent)
+    return await runPlannerChat(options)
   }
   
-  onMessage(createChatDoneMessage('complete'))
+  onMessage(createChatDoneMessage('complete', buildStats(llmClient, timing)))
+  return timing
 }
 
 /**
  * Builder mode: Loop until all criteria completed or stuck
+ * Returns timing from the last LLM call for stats
  */
-async function runBuilderLoop(options: ChatOptions): Promise<void> {
+async function runBuilderLoop(options: ChatOptions): Promise<StreamTiming | null> {
   const { sessionId, llmClient, signal, onMessage } = options
   
   let session = sessionManager.requireSession(sessionId)
   let iteration = 0
   const maxIterations = 50 // Safety limit
+  let lastTiming: StreamTiming | null = null
   
   while (iteration < maxIterations) {
     if (signal?.aborted) {
       onMessage(createChatDoneMessage('stopped'))
-      return
+      return null
     }
     
     iteration++
@@ -214,9 +235,8 @@ async function runBuilderLoop(options: ChatOptions): Promise<void> {
       sessionManager.setMode(sessionId, 'verifier')
       onMessage(createModeChangedMessage('verifier', true, 'All criteria completed'))
       
-      // Run verifier
-      await runVerifierLoop(options)
-      return
+      // Run verifier (it will send its own done message)
+      return await runVerifierLoop(options)
     }
     
     const toolRegistry = getToolRegistryForMode('builder')
@@ -252,7 +272,7 @@ async function runBuilderLoop(options: ChatOptions): Promise<void> {
     while (true) {
       if (signal?.aborted) {
         onMessage(createChatDoneMessage('stopped'))
-        return
+        return null
       }
       
       const { value, done } = await stream.next()
@@ -277,12 +297,13 @@ async function runBuilderLoop(options: ChatOptions): Promise<void> {
     
     if (!result) {
       onMessage(createChatDoneMessage('error'))
-      return
+      return null
     }
     
     const { content, thinkingContent, toolCalls, response, segments, timing } = result
+    lastTiming = timing
     
-    // Save assistant message
+    // Save assistant message with stats
     sessionManager.addMessage(sessionId, {
       role: 'assistant',
       content,
@@ -290,6 +311,7 @@ async function runBuilderLoop(options: ChatOptions): Promise<void> {
       toolCalls: toolCalls.length > 0 ? toolCalls : undefined,
       tokenCount: response.usage.completionTokens,
       segments,
+      stats: buildStats(llmClient, timing),
     })
     
     // Execute tool calls
@@ -297,7 +319,7 @@ async function runBuilderLoop(options: ChatOptions): Promise<void> {
       for (const toolCall of toolCalls) {
         if (signal?.aborted) {
           onMessage(createChatDoneMessage('stopped'))
-          return
+          return null
         }
         
         onMessage(createChatToolCallMessage(toolCall.id, toolCall.name, toolCall.arguments))
@@ -356,23 +378,26 @@ async function runBuilderLoop(options: ChatOptions): Promise<void> {
     break
   }
   
-  onMessage(createChatDoneMessage('complete'))
+  onMessage(createChatDoneMessage('complete', buildStats(llmClient, lastTiming)))
+  return lastTiming
 }
 
 /**
  * Verifier mode: Check all completed criteria
+ * Returns timing from the last LLM call for stats
  */
-async function runVerifierLoop(options: ChatOptions): Promise<void> {
+async function runVerifierLoop(options: ChatOptions): Promise<StreamTiming | null> {
   const { sessionId, llmClient, signal, onMessage } = options
   
   let session = sessionManager.requireSession(sessionId)
+  let lastTiming: StreamTiming | null = null
   
   // Check if there's anything to verify
   const toVerify = session.criteria.filter(c => c.status.type === 'completed')
   if (toVerify.length === 0) {
     logger.info('Nothing to verify', { sessionId })
     onMessage(createChatDoneMessage('complete'))
-    return
+    return null
   }
   
   const toolRegistry = getToolRegistryForMode('verifier')
@@ -395,7 +420,7 @@ async function runVerifierLoop(options: ChatOptions): Promise<void> {
   while (iteration < maxIterations) {
     if (signal?.aborted) {
       onMessage(createChatDoneMessage('stopped'))
-      return
+      return null
     }
     
     iteration++
@@ -411,7 +436,7 @@ async function runVerifierLoop(options: ChatOptions): Promise<void> {
     while (true) {
       if (signal?.aborted) {
         onMessage(createChatDoneMessage('stopped'))
-        return
+        return null
       }
       
       const { value, done } = await stream.next()
@@ -436,10 +461,11 @@ async function runVerifierLoop(options: ChatOptions): Promise<void> {
     
     if (!result) {
       onMessage(createChatDoneMessage('error'))
-      return
+      return null
     }
     
-    const { content, toolCalls } = result
+    const { content, toolCalls, timing } = result
+    lastTiming = timing
     
     // Add assistant message to verifier context
     messages.push({
@@ -500,18 +526,14 @@ async function runVerifierLoop(options: ChatOptions): Promise<void> {
     sessionManager.setMode(sessionId, 'builder')
     onMessage(createModeChangedMessage('builder', true, `${failed.length} criteria failed verification`))
     
-    // Continue building
-    await runBuilderLoop(options)
-    return
+    // Continue building (it will send its own done message)
+    return await runBuilderLoop(options)
   }
   
   // All passed!
   logger.info('All criteria verified', { sessionId })
-  onMessage(createChatDoneMessage('complete', {
-    model: 'unknown', // TODO: Get from llmClient
-    prefillSpeed: 0,
-    generationSpeed: 0,
-  }))
+  onMessage(createChatDoneMessage('complete', buildStats(llmClient, lastTiming)))
+  return lastTiming
 }
 
 /**

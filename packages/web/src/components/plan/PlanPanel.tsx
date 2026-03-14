@@ -57,8 +57,8 @@ export function PlanPanel() {
             <ChatMessage key={message.id} message={message} />
           ))}
         
-        {isStreaming && chatStreamEvents.length > 0 && (
-          <AssistantMessage events={chatStreamEvents} isStreaming />
+        {chatStreamEvents.length > 0 && (
+          <AssistantMessage events={chatStreamEvents} isStreaming={isStreaming} />
         )}
         
         {error && (

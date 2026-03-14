@@ -33,6 +33,7 @@ export type ChatStreamEvent =
   | { type: 'todo'; todos: Todo[] }
   | { type: 'summary'; summary: string }
   | { type: 'error'; error: string; recoverable: boolean }
+  | { type: 'stats'; model: string; prefillSpeed: number; generationSpeed: number }
 
 interface SessionState {
   // Connection
@@ -129,13 +130,17 @@ export const useSessionStore = create<SessionState>((set, get) => ({
   },
   
   loadSession: (sessionId) => {
-    set({ 
-      chatStreamEvents: [], 
-      streamingText: '', 
-      streamingThinking: '', 
-      isStreaming: false,
-      currentTodos: [],
-    })
+    const currentSession = get().currentSession
+    // Only clear stream state if loading a different session
+    if (!currentSession || currentSession.id !== sessionId) {
+      set({ 
+        chatStreamEvents: [], 
+        streamingText: '', 
+        streamingThinking: '', 
+        isStreaming: false,
+        currentTodos: [],
+      })
+    }
     wsClient.send('session.load', { sessionId })
   },
   
@@ -320,6 +325,19 @@ export const useSessionStore = create<SessionState>((set, get) => ({
       
       case 'chat.done': {
         const payload = message.payload as ChatDonePayload
+        
+        // Add stats event if present
+        if (payload.stats) {
+          set(state => ({
+            chatStreamEvents: [...state.chatStreamEvents, {
+              type: 'stats' as const,
+              model: payload.stats!.model,
+              prefillSpeed: payload.stats!.prefillSpeed,
+              generationSpeed: payload.stats!.generationSpeed,
+            }],
+          }))
+        }
+        
         set({ isStreaming: false })
         
         // Reload session to get latest state

@@ -8,6 +8,7 @@ import { globTool } from './glob.js'
 import { grepTool } from './grep.js'
 import { askUserTool, AskUserInterrupt, provideAnswer, cancelQuestion } from './ask.js'
 import { completeCriterionTool, passCriterionTool, failCriterionTool } from './criterion.js'
+import { getCriteriaTool, addCriterionTool, updateCriterionTool, removeCriterionTool } from './planner-criteria.js'
 import { todoWriteTool, setTodoUpdateCallback, getTodos, clearTodos } from './todo.js'
 import { logger } from '../utils/logger.js'
 
@@ -22,10 +23,13 @@ const readOnlyTools: Tool[] = [
   grepTool,
 ]
 
-// Planner mode: read-only exploration
-// Note: criteria tools are handled separately via tool call interception
+// Planner mode: read-only exploration + criteria management
 const plannerTools: Tool[] = [
   ...readOnlyTools,
+  getCriteriaTool,
+  addCriterionTool,
+  updateCriterionTool,
+  removeCriterionTool,
 ]
 
 // Builder mode: full write access + criterion completion + task tracking

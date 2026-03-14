@@ -16,7 +16,17 @@ interface AssistantMessageProps {
 function messageToEvents(message: Message): ChatStreamEvent[] {
   // If message has segments, use them for accurate ordering
   if (message.segments && message.segments.length > 0) {
-    return segmentsToEvents(message.segments, message.toolCalls ?? [])
+    const events = segmentsToEvents(message.segments, message.toolCalls ?? [])
+    // Add stats at the end if present
+    if (message.stats) {
+      events.push({
+        type: 'stats',
+        model: message.stats.model,
+        prefillSpeed: message.stats.prefillSpeed,
+        generationSpeed: message.stats.generationSpeed,
+      })
+    }
+    return events
   }
   
   // Fallback for legacy messages without segments:
@@ -46,6 +56,16 @@ function messageToEvents(message: Message): ChatStreamEvent[] {
         result: { success: true, durationMs: 0, truncated: false }
       })
     }
+  }
+  
+  // Add stats at the end if present
+  if (message.stats) {
+    events.push({
+      type: 'stats',
+      model: message.stats.model,
+      prefillSpeed: message.stats.prefillSpeed,
+      generationSpeed: message.stats.generationSpeed,
+    })
   }
   
   return events
@@ -196,6 +216,17 @@ export function AssistantMessage({ events, message, isStreaming = false }: Assis
               : 'bg-accent-error/10 border border-accent-error/30'
           }`}>
             <div className="text-sm">{event.error}</div>
+          </div>
+        )
+        break
+      
+      case 'stats':
+        // Stats bar at end of response
+        renderedEvents.push(
+          <div key={i} className="flex items-center gap-4 text-xs text-text-muted mt-2 pt-2 border-t border-border">
+            <span className="text-text-secondary">{event.model}</span>
+            <span>pp: {event.prefillSpeed.toFixed(0)} tok/s</span>
+            <span>tg: {event.generationSpeed.toFixed(1)} tok/s</span>
           </div>
         )
         break

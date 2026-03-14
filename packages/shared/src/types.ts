@@ -63,6 +63,12 @@ export type MessageSegment =
   | { type: 'thinking'; content: string }
   | { type: 'tool_call'; toolCallId: string }
 
+export interface MessageStats {
+  model: string
+  prefillSpeed: number    // tokens/second
+  generationSpeed: number // tokens/second
+}
+
 export interface Message {
   id: string
   role: MessageRole
@@ -77,6 +83,7 @@ export interface Message {
   isCompacted?: boolean
   originalMessageIds?: string[]
   segments?: MessageSegment[]  // Preserves streaming order: text/thinking chunks + tool call refs
+  stats?: MessageStats         // LLM performance stats for this response
 }
 
 // ============================================================================
