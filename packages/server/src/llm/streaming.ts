@@ -178,8 +178,8 @@ export async function* streamWithSegments(
     timing: {
       ttft,
       completionTime,
-      tps: completionTime > 0 ? Math.round(completionTokens / completionTime) : 0,
-      prefillTps: ttft > 0 ? Math.round(promptTokens / ttft) : 0,
+      tps: completionTime > 0 ? completionTokens / completionTime : 0,
+      prefillTps: ttft > 0 ? promptTokens / ttft : 0,
     },
   }
 }

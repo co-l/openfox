@@ -5,6 +5,7 @@ import type { Config } from '../config.js'
 import type { LLMClient } from '../llm/types.js'
 import type { ToolRegistry } from '../tools/index.js'
 import { sessionManager } from '../session/index.js'
+import { sessionEvents } from '../session/events.js'
 import { handleChat, generateSummary } from '../chat/index.js'
 import { logger } from '../utils/logger.js'
 import {
@@ -48,6 +49,7 @@ const activeAgents = new Map<string, AbortController>()
 interface ClientConnection {
   ws: WebSocket
   sessionId: string | null
+  eventUnsubscribe: (() => void) | null  // Unsubscribe from session events
 }
 
 export function createWebSocketServer(
@@ -80,7 +82,7 @@ export function createWebSocketServer(
   
   wss.on('connection', (ws) => {
     logger.info('WebSocket client connected')
-    clients.set(ws, { ws, sessionId: null })
+    clients.set(ws, { ws, sessionId: null, eventUnsubscribe: null })
     
     ws.on('message', async (data) => {
       const message = parseClientMessage(data.toString())
@@ -108,6 +110,8 @@ export function createWebSocketServer(
     
     ws.on('close', () => {
       logger.info('WebSocket client disconnected')
+      const client = clients.get(ws)
+      client?.eventUnsubscribe?.()  // Unsubscribe from session events
       clients.delete(ws)
     })
     
@@ -229,8 +233,35 @@ async function handleClientMessage(
         return
       }
       
+      // Unsubscribe from previous session events if any
+      client.eventUnsubscribe?.()
+      client.eventUnsubscribe = null
+      
       client.sessionId = session.id
       send(createSessionStateMessage(session, message.id))
+      
+      // If session is running, replay missed events and subscribe to future events
+      if (session.isRunning) {
+        const fromSeq = message.payload.lastEventSeq ?? 0
+        
+        // Replay missed events
+        const missedEvents = sessionEvents.getEvents(session.id, fromSeq)
+        for (const { event, seq } of missedEvents) {
+          // Add seq to event for frontend tracking
+          send({ ...event, seq })
+        }
+        
+        logger.info('Replayed missed events', { 
+          sessionId: session.id, 
+          fromSeq, 
+          replayedCount: missedEvents.length 
+        })
+        
+        // Subscribe to future events
+        client.eventUnsubscribe = sessionEvents.subscribe(session.id, (event, seq) => {
+          send({ ...event, seq })
+        })
+      }
       break
     }
     
@@ -284,22 +315,29 @@ async function handleClientMessage(
       // Acknowledge immediately
       send({ type: 'ack', payload: {}, id: message.id })
       
-      // Run chat asynchronously
+      // Subscribe this client to session events (unsubscribe from previous if any)
+      client.eventUnsubscribe?.()
+      client.eventUnsubscribe = sessionEvents.subscribe(sessionId, (event, seq) => {
+        send({ ...event, seq })
+      })
+      
+      // Run chat asynchronously with events going through queue
       handleChat({
         sessionId,
         llmClient,
         signal: controller.signal,
-        onMessage: send,
+        onMessage: (event) => sessionEvents.push(sessionId, event),
       }).catch((error) => {
         logger.error('Chat error', { error })
-        send(createChatErrorMessage(
+        sessionEvents.push(sessionId, createChatErrorMessage(
           error instanceof Error ? error.message : 'Unknown error',
           false
         ))
-        send(createChatDoneMessage('error'))
+        sessionEvents.push(sessionId, createChatDoneMessage('error'))
       }).finally(() => {
         activeAgents.delete(sessionId)
         sessionManager.setRunning(sessionId, false)
+        sessionEvents.scheduleCleanup(sessionId)
       })
       
       break
@@ -311,15 +349,23 @@ async function handleClientMessage(
         return
       }
       
+      const sessionId = client.sessionId
+      
       // Abort any running agent
-      const controller = activeAgents.get(client.sessionId)
+      const controller = activeAgents.get(sessionId)
       if (controller) {
         controller.abort()
-        activeAgents.delete(client.sessionId)
+        activeAgents.delete(sessionId)
       }
       
-      sessionManager.setRunning(client.sessionId, false)
-      send(createChatDoneMessage('stopped'))
+      sessionManager.setRunning(sessionId, false)
+      
+      // Broadcast stopped via queue so all subscribers see it
+      sessionEvents.push(sessionId, createChatDoneMessage('stopped'))
+      
+      // Schedule cleanup after brief delay
+      sessionEvents.scheduleCleanup(sessionId)
+      
       send({ type: 'ack', payload: {}, id: message.id })
       break
     }
@@ -356,22 +402,29 @@ async function handleClientMessage(
       const controller = new AbortController()
       activeAgents.set(sessionId, controller)
       
-      // Continue chat
+      // Subscribe this client to session events (unsubscribe from previous if any)
+      client.eventUnsubscribe?.()
+      client.eventUnsubscribe = sessionEvents.subscribe(sessionId, (event, seq) => {
+        send({ ...event, seq })
+      })
+      
+      // Continue chat with events going through queue
       handleChat({
         sessionId,
         llmClient,
         signal: controller.signal,
-        onMessage: send,
+        onMessage: (event) => sessionEvents.push(sessionId, event),
       }).catch((error) => {
         logger.error('Continue error', { error })
-        send(createChatErrorMessage(
+        sessionEvents.push(sessionId, createChatErrorMessage(
           error instanceof Error ? error.message : 'Unknown error',
           false
         ))
-        send(createChatDoneMessage('error'))
+        sessionEvents.push(sessionId, createChatDoneMessage('error'))
       }).finally(() => {
         activeAgents.delete(sessionId)
         sessionManager.setRunning(sessionId, false)
+        sessionEvents.scheduleCleanup(sessionId)
       })
       
       break
@@ -416,28 +469,37 @@ async function handleClientMessage(
       // Acknowledge immediately
       send({ type: 'ack', payload: {}, id: message.id })
       
+      // Subscribe this client to session events (unsubscribe from previous if any)
+      client.eventUnsubscribe?.()
+      client.eventUnsubscribe = sessionEvents.subscribe(sessionId, (event, seq) => {
+        send({ ...event, seq })
+      })
+      
+      // Helper to push events through queue
+      const pushEvent = (event: ServerMessage) => sessionEvents.push(sessionId, event)
+      
       // Generate summary asynchronously
       ;(async () => {
         try {
           // Progress: generating summary
-          send(createChatProgressMessage('Generating task summary...', 'summary'))
+          pushEvent(createChatProgressMessage('Generating task summary...', 'summary'))
           
           // Generate summary from conversation
           const summary = await generateSummary(sessionId, llmClient)
           sessionManager.setSummary(sessionId, summary)
           
           // Send summary to client
-          send({ type: 'chat.summary', payload: { summary } })
+          pushEvent({ type: 'chat.summary', payload: { summary } })
           
           // Progress: switching mode
-          send(createChatProgressMessage('Switching to builder mode...', 'mode_switch'))
+          pushEvent(createChatProgressMessage('Switching to builder mode...', 'mode_switch'))
           
           // Switch to builder mode
           sessionManager.setMode(sessionId, 'builder')
-          send(createModeChangedMessage('builder', false, 'Criteria accepted'))
+          pushEvent(createModeChangedMessage('builder', false, 'Criteria accepted'))
           
           const updatedSession = sessionManager.requireSession(sessionId)
-          send(createSessionStateMessage(updatedSession))
+          pushEvent(createSessionStateMessage(updatedSession))
           
           // Mark session as running
           sessionManager.setRunning(sessionId, true)
@@ -447,25 +509,26 @@ async function handleClientMessage(
           activeAgents.set(sessionId, controller)
           
           // Progress: starting implementation
-          send(createChatProgressMessage('Starting implementation...', 'starting'))
+          pushEvent(createChatProgressMessage('Starting implementation...', 'starting'))
           
           // Auto-start builder
           await handleChat({
             sessionId,
             llmClient,
             signal: controller.signal,
-            onMessage: send,
+            onMessage: pushEvent,
           })
         } catch (error) {
           logger.error('mode.accept error', { error })
-          send(createChatErrorMessage(
+          pushEvent(createChatErrorMessage(
             error instanceof Error ? error.message : 'Unknown error',
             false
           ))
-          send(createChatDoneMessage('error'))
+          pushEvent(createChatDoneMessage('error'))
         } finally {
           activeAgents.delete(sessionId)
           sessionManager.setRunning(sessionId, false)
+          sessionEvents.scheduleCleanup(sessionId)
         }
       })()
       

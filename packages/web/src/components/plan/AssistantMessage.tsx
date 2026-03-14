@@ -267,7 +267,7 @@ export function AssistantMessage({ events, message, isStreaming = false, showSta
           : event.mode === 'builder' ? 'text-blue-400' 
           : 'text-green-400'
         const formatTokens = (n: number) => n >= 1000 ? `${(n / 1000).toFixed(1)}k` : n.toString()
-        const formatSpeed = (n: number) => n >= 1000 ? `${(n / 1000).toFixed(1)}k` : n.toFixed(0)
+        const formatSpeed = (n: number) => n >= 1000 ? `${(n / 1000).toFixed(1)}k` : n.toFixed(1)
         
         // Fallbacks for old messages without new stats fields
         const totalTime = event.totalTime ?? 0

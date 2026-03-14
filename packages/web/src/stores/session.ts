@@ -57,6 +57,9 @@ interface SessionState {
   isStreaming: boolean
   chatStreamEvents: ChatStreamEvent[]
   
+  // Event sequence tracking (for reconnection)
+  lastEventSeq: number
+  
   // Current todos (displayed in chat)
   currentTodos: Todo[]
   
@@ -102,6 +105,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
   streamingThinking: '',
   isStreaming: false,
   chatStreamEvents: [],
+  lastEventSeq: 0,
   currentTodos: [],
   
   connect: async () => {
@@ -145,6 +149,8 @@ export const useSessionStore = create<SessionState>((set, get) => ({
   
   loadSession: (sessionId) => {
     const currentSession = get().currentSession
+    const lastEventSeq = get().lastEventSeq
+    
     // Only clear stream state if loading a different session
     if (!currentSession || currentSession.id !== sessionId) {
       set({ 
@@ -153,9 +159,14 @@ export const useSessionStore = create<SessionState>((set, get) => ({
         streamingThinking: '', 
         isStreaming: false,
         currentTodos: [],
+        lastEventSeq: 0,
       })
+      // New session, no events to resume from
+      wsClient.send('session.load', { sessionId })
+    } else {
+      // Same session, try to resume from last known event
+      wsClient.send('session.load', { sessionId, lastEventSeq })
     }
-    wsClient.send('session.load', { sessionId })
   },
   
   listSessions: () => {
@@ -174,6 +185,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
       streamingThinking: '',
       isStreaming: false,
       currentTodos: [],
+      lastEventSeq: 0,
     })
   },
   
@@ -230,6 +242,12 @@ export const useSessionStore = create<SessionState>((set, get) => ({
   },
   
   handleServerMessage: (message) => {
+    // Track event sequence for reconnection
+    const seq = (message as { seq?: number }).seq
+    if (typeof seq === 'number') {
+      set({ lastEventSeq: seq })
+    }
+    
     switch (message.type) {
       case 'session.state': {
         const payload = message.payload as SessionStatePayload

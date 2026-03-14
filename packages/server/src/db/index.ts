@@ -17,6 +17,13 @@ export function initDatabase(config: Config): Database.Database {
   
   runMigrations(db)
   
+  // Reset any stale running states from previous server runs
+  // Sessions cannot actually be running when server starts
+  const result = db.prepare(`UPDATE sessions SET is_running = 0 WHERE is_running = 1`).run()
+  if (result.changes > 0) {
+    logger.info('Reset stale running states', { count: result.changes })
+  }
+  
   return db
 }
 

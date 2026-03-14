@@ -74,6 +74,7 @@ export interface SessionCreatePayload {
 
 export interface SessionLoadPayload {
   sessionId: string
+  lastEventSeq?: number  // Resume from this sequence number (for reconnection)
 }
 
 // Chat payloads (unified)
