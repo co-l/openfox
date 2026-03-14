@@ -66,6 +66,8 @@ class TurnMetrics {
   /** Build final stats object */
   buildStats(model: string, mode: SessionMode): MessageStats {
     const totalTime = (performance.now() - this.startTime) / 1000
+    // Keep 1 decimal place precision for speeds
+    const roundTo1 = (n: number) => Math.round(n * 10) / 10
     return {
       model,
       mode,
@@ -73,11 +75,11 @@ class TurnMetrics {
       toolTime: this.totalToolTime,
       prefillTokens: this.totalPrefillTokens,
       prefillSpeed: this.totalPrefillTime > 0 
-        ? Math.round(this.totalPrefillTokens / this.totalPrefillTime) 
+        ? roundTo1(this.totalPrefillTokens / this.totalPrefillTime) 
         : 0,
       generationTokens: this.totalGenTokens,
       generationSpeed: this.totalGenTime > 0 
-        ? Math.round(this.totalGenTokens / this.totalGenTime) 
+        ? roundTo1(this.totalGenTokens / this.totalGenTime) 
         : 0,
     }
   }

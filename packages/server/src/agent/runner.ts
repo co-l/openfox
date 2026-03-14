@@ -42,15 +42,16 @@ export async function runAgent(options: AgentRunnerOptions): Promise<void> {
   let totalToolTime = 0
   
   // Helper to build stats for done event
+  const roundTo1 = (n: number) => Math.round(n * 10) / 10
   const buildStats = () => ({
     model: llmClient.getModel(),
     mode: session.mode,
     totalTime: (performance.now() - startTime) / 1000,
     toolTime: totalToolTime,
     prefillTokens: totalPrefillTokens,
-    prefillSpeed: totalPrefillTime > 0 ? Math.round(totalPrefillTokens / totalPrefillTime) : 0,
+    prefillSpeed: totalPrefillTime > 0 ? roundTo1(totalPrefillTokens / totalPrefillTime) : 0,
     generationTokens: totalGenTokens,
-    generationSpeed: totalGenTime > 0 ? Math.round(totalGenTokens / totalGenTime) : 0,
+    generationSpeed: totalGenTime > 0 ? roundTo1(totalGenTokens / totalGenTime) : 0,
   })
   
   logger.info('Starting agent run', { sessionId, criteria: session.criteria.length })
