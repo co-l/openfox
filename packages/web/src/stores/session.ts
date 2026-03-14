@@ -28,7 +28,7 @@ import type {
   CriteriaUpdatedPayload,
 } from '@openfox/shared/protocol'
 import { wsClient, type ConnectionStatus } from '../lib/ws'
-import { playNotification, playAchievement } from '../lib/sound'
+import { playNotification, playAchievement, playIntervention } from '../lib/sound'
 
 // Track subscription to prevent duplicates
 let isSubscribed = false
@@ -395,8 +395,9 @@ export const useSessionStore = create<SessionState>((set, get) => ({
       case 'phase.changed': {
         const payload = message.payload as PhaseChangedPayload
         const currentPhase = get().currentSession?.phase
-        // Only play sound if phase actually changed to 'done' (not if already 'done')
-        const shouldPlaySound = payload.phase === 'done' && currentPhase !== 'done'
+        // Only play sounds if phase actually changed (not if already in that phase)
+        const shouldPlayAchievement = payload.phase === 'done' && currentPhase !== 'done'
+        const shouldPlayIntervention = payload.phase === 'blocked' && currentPhase !== 'blocked'
         
         set(state => ({
           currentSession: state.currentSession
@@ -410,8 +411,12 @@ export const useSessionStore = create<SessionState>((set, get) => ({
           ),
         }))
         // Play achievement sound when phase becomes 'done' (only once)
-        if (shouldPlaySound) {
+        if (shouldPlayAchievement) {
           playAchievement()
+        }
+        // Play intervention sound when phase becomes 'blocked' (only once)
+        if (shouldPlayIntervention) {
+          playIntervention()
         }
         break
       }

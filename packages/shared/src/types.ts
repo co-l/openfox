@@ -20,7 +20,7 @@ export type SessionMode = 'planner' | 'builder'
 export type ToolMode = SessionMode | 'verifier'
 
 // Workflow phase shown to user (more granular than mode)
-export type SessionPhase = 'plan' | 'build' | 'verification' | 'done'
+export type SessionPhase = 'plan' | 'build' | 'verification' | 'blocked' | 'done'
 
 export interface Session {
   id: string

@@ -345,6 +345,19 @@ class SessionManagerImpl {
     dbUpdateCriterion(sessionId, criterionId, { attempts })
   }
   
+  /**
+   * Reset verification attempts on all criteria (used when user intervenes after blocked state)
+   */
+  resetAllCriteriaAttempts(sessionId: string): void {
+    const session = this.requireSession(sessionId)
+    
+    for (const criterion of session.criteria) {
+      if (criterion.attempts.length > 0) {
+        dbUpdateCriterion(sessionId, criterion.id, { attempts: [] })
+      }
+    }
+  }
+  
   // Execution state
   
   updateExecutionState(sessionId: string, updates: Partial<ExecutionState>): void {

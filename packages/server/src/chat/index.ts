@@ -416,7 +416,35 @@ async function runBuilderLoop(options: ChatOptions): Promise<void> {
         return
       }
       
-      // Verification failed - inject failure context and continue builder loop
+      // Verification failed - check if any criterion has hit max attempts
+      session = sessionManager.requireSession(sessionId)
+      const MAX_VERIFICATION_ATTEMPTS = 4
+      const blockedCriteria = session.criteria.filter(c => 
+        c.status.type === 'failed' && 
+        c.attempts.filter(a => a.status === 'failed').length >= MAX_VERIFICATION_ATTEMPTS
+      )
+      
+      if (blockedCriteria.length > 0) {
+        // Hit retry limit - need user intervention
+        logger.info('Verification retry limit reached, blocking', { 
+          sessionId, 
+          blockedCriteria: blockedCriteria.map(c => c.id) 
+        })
+        sessionManager.setPhase(sessionId, 'blocked')
+        onMessage(createPhaseChangedMessage('blocked'))
+        
+        const blockedMsg = sessionManager.addMessage(sessionId, {
+          role: 'user',
+          content: `Verification failed ${MAX_VERIFICATION_ATTEMPTS} times for: ${blockedCriteria.map(c => c.id).join(', ')}. Please review and decide how to proceed.`,
+          tokenCount: 30,
+          isSystemGenerated: true,
+          messageKind: 'correction',
+        })
+        onMessage(createChatMessageMessage(blockedMsg))
+        return  // Exit loop, wait for user intervention
+      }
+      
+      // Under retry limit - inject failure context and continue builder loop
       logger.info('Verification failed, continuing builder', { sessionId, failed: verificationResult.failed.length })
       
       // Set phase back to build
@@ -432,8 +460,6 @@ async function runBuilderLoop(options: ChatOptions): Promise<void> {
       })
       onMessage(createChatMessageMessage(failureMsg))
       
-      // Refresh session and continue builder loop
-      session = sessionManager.requireSession(sessionId)
       continue
     }
     

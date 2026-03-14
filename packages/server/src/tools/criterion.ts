@@ -128,6 +128,14 @@ export const passCriterionTool: Tool = {
       
       sessionManager.updateCriterionStatus(context.sessionId, id, status)
       
+      // Record the verification attempt
+      sessionManager.addCriterionAttempt(context.sessionId, id, {
+        attemptNumber: criterion.attempts.length + 1,
+        status: 'passed',
+        timestamp: new Date().toISOString(),
+        ...(reason && { details: reason }),
+      })
+      
       return {
         success: true,
         output: `Criterion "${id}" verified as PASSED.${reason ? ` Verification: ${reason}` : ''}`,
@@ -198,6 +206,14 @@ export const failCriterionTool: Tool = {
       }
       
       sessionManager.updateCriterionStatus(context.sessionId, id, status)
+      
+      // Record the verification attempt
+      sessionManager.addCriterionAttempt(context.sessionId, id, {
+        attemptNumber: criterion.attempts.length + 1,
+        status: 'failed',
+        timestamp: new Date().toISOString(),
+        details: reason,
+      })
       
       return {
         success: true,

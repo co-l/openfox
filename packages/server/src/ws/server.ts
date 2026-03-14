@@ -311,6 +311,15 @@ async function handleClientMessage(
         return
       }
       
+      // Check if session is blocked - user intervention resets it
+      const currentSession = sessionManager.requireSession(client.sessionId)
+      if (currentSession.phase === 'blocked') {
+        logger.info('User intervention - resetting blocked state', { sessionId: client.sessionId })
+        sessionManager.setPhase(client.sessionId, 'build')
+        sessionManager.resetAllCriteriaAttempts(client.sessionId)
+        send(createPhaseChangedMessage('build'))
+      }
+      
       // Add user message and notify client (server-authoritative)
       const userMessage = sessionManager.addMessage(client.sessionId, {
         role: 'user',
