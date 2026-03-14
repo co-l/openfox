@@ -226,6 +226,16 @@ export function AssistantMessage({ events, message, isStreaming = false, showSta
         )
         break
       
+      case 'progress':
+        // Animated progress indicator
+        renderedEvents.push(
+          <div key={i} className="flex items-center gap-2 text-text-secondary text-sm py-2">
+            <span className="inline-block w-4 h-4 border-2 border-accent-primary border-t-transparent rounded-full animate-spin" />
+            <span>{event.message}</span>
+          </div>
+        )
+        break
+      
       case 'error':
         renderedEvents.push(
           <div key={i} className={`rounded-lg p-3 ${

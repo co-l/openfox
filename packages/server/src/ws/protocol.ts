@@ -20,6 +20,7 @@ import type {
   ChatToolResultPayload,
   ChatTodoPayload,
   ChatSummaryPayload,
+  ChatProgressPayload,
   ChatDonePayload,
   ChatErrorPayload,
   ModeChangedPayload,
@@ -91,6 +92,13 @@ export function createChatTodoMessage(todos: Todo[]): ServerMessage<ChatTodoPayl
 
 export function createChatSummaryMessage(summary: string): ServerMessage<ChatSummaryPayload> {
   return createServerMessage('chat.summary', { summary })
+}
+
+export function createChatProgressMessage(
+  message: string,
+  phase?: 'summary' | 'mode_switch' | 'starting'
+): ServerMessage<ChatProgressPayload> {
+  return createServerMessage('chat.progress', { message, phase })
 }
 
 export function createChatDoneMessage(

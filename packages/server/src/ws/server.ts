@@ -28,6 +28,7 @@ import {
   createChatToolResultMessage,
   createChatDoneMessage,
   createChatErrorMessage,
+  createChatProgressMessage,
   createModeChangedMessage,
   createCriteriaUpdatedMessage,
   isProjectCreatePayload,
@@ -418,12 +419,18 @@ async function handleClientMessage(
       // Generate summary asynchronously
       ;(async () => {
         try {
+          // Progress: generating summary
+          send(createChatProgressMessage('Generating task summary...', 'summary'))
+          
           // Generate summary from conversation
           const summary = await generateSummary(sessionId, llmClient)
           sessionManager.setSummary(sessionId, summary)
           
           // Send summary to client
           send({ type: 'chat.summary', payload: { summary } })
+          
+          // Progress: switching mode
+          send(createChatProgressMessage('Switching to builder mode...', 'mode_switch'))
           
           // Switch to builder mode
           sessionManager.setMode(sessionId, 'builder')
@@ -438,6 +445,9 @@ async function handleClientMessage(
           // Create AbortController for builder
           const controller = new AbortController()
           activeAgents.set(sessionId, controller)
+          
+          // Progress: starting implementation
+          send(createChatProgressMessage('Starting implementation...', 'starting'))
           
           // Auto-start builder
           await handleChat({

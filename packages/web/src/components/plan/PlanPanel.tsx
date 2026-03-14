@@ -166,7 +166,7 @@ export function PlanPanel() {
             <Button
               variant="primary"
               onClick={acceptAndBuild}
-              className="bg-purple-600 hover:bg-purple-700 px-6"
+              className="bg-blue-600 hover:bg-blue-700 px-6"
             >
               ▶ Start Building
             </Button>

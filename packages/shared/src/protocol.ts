@@ -110,6 +110,7 @@ export type ServerMessageType =
   | 'chat.tool_result'    // Tool result
   | 'chat.todo'           // Todo list update (displayed in chat)
   | 'chat.summary'        // Summary block (displayed in chat)
+  | 'chat.progress'       // Progress update (e.g., "Generating summary...")
   | 'chat.done'           // Current generation complete
   | 'chat.error'          // Error during generation
   // Mode events
@@ -178,6 +179,11 @@ export interface ChatTodoPayload {
 
 export interface ChatSummaryPayload {
   summary: string
+}
+
+export interface ChatProgressPayload {
+  message: string
+  phase?: 'summary' | 'mode_switch' | 'starting'
 }
 
 export interface ChatDonePayload {

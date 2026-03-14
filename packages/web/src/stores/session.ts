@@ -17,6 +17,7 @@ import type {
   ChatToolResultPayload,
   ChatTodoPayload,
   ChatSummaryPayload,
+  ChatProgressPayload,
   ChatDonePayload,
   ChatErrorPayload,
   ModeChangedPayload,
@@ -36,6 +37,7 @@ export type ChatStreamEvent =
   | { type: 'tool_result'; callId: string; tool: string; result: ToolResult }
   | { type: 'todo'; todos: Todo[] }
   | { type: 'summary'; summary: string }
+  | { type: 'progress'; message: string; phase?: 'summary' | 'mode_switch' | 'starting' }
   | { type: 'error'; error: string; recoverable: boolean }
   | { type: 'stats'; model: string; mode: SessionMode; totalTime: number; toolTime: number; prefillTokens: number; prefillSpeed: number; generationTokens: number; generationSpeed: number }
 
@@ -329,6 +331,18 @@ export const useSessionStore = create<SessionState>((set, get) => ({
           currentSession: state.currentSession
             ? { ...state.currentSession, summary: payload.summary }
             : null,
+        }))
+        break
+      }
+      
+      case 'chat.progress': {
+        const payload = message.payload as ChatProgressPayload
+        set(state => ({
+          chatStreamEvents: [...state.chatStreamEvents, {
+            type: 'progress' as const,
+            message: payload.message,
+            phase: payload.phase,
+          }],
         }))
         break
       }
