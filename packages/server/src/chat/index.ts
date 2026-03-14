@@ -1,4 +1,4 @@
-import type { Session, SessionMode, ToolCall, Todo, MessageStats } from '@openfox/shared'
+import type { Session, SessionMode, ToolCall, Todo, MessageStats, Message } from '@openfox/shared'
 import type { ServerMessage } from '@openfox/shared/protocol'
 import type { LLMClientWithModel } from '../llm/client.js'
 import { sessionManager } from '../session/index.js'
@@ -20,7 +20,6 @@ import {
   createChatMessageMessage,
   createModeChangedMessage,
   createCriteriaUpdatedMessage,
-  createSessionStateMessage,
 } from '../ws/protocol.js'
 
 // Constants for XML tool format retry
@@ -33,6 +32,8 @@ export interface ChatOptions {
   signal?: AbortSignal
   onMessage: (msg: ServerMessage) => void
 }
+
+
 
 /**
  * Tracks aggregated metrics across a full turn (multiple LLM calls + tool executions)
@@ -116,7 +117,14 @@ export async function handleChat(options: ChatOptions): Promise<void> {
   } catch (error) {
     if (error instanceof AskUserInterrupt) {
       // User intervention requested - pause execution
-      onMessage(createChatDoneMessage('waiting_for_user'))
+      // Create a system message to notify user and get a messageId
+      const waitMsg = sessionManager.addMessage(sessionId, {
+        role: 'system',
+        content: 'Waiting for user input...',
+        tokenCount: 5,
+      })
+      onMessage(createChatMessageMessage(waitMsg))
+      onMessage(createChatDoneMessage(waitMsg.id, 'waiting_for_user'))
       return
     }
     
@@ -125,7 +133,14 @@ export async function handleChat(options: ChatOptions): Promise<void> {
       error instanceof Error ? error.message : 'Unknown error',
       false
     ))
-    onMessage(createChatDoneMessage('error'))
+    // Create error message to get a messageId for done event
+    const errorMsg = sessionManager.addMessage(sessionId, {
+      role: 'system',
+      content: `Error: ${error instanceof Error ? error.message : 'Unknown error'}`,
+      tokenCount: 10,
+    })
+    onMessage(createChatMessageMessage(errorMsg))
+    onMessage(createChatDoneMessage(errorMsg.id, 'error'))
   } finally {
     sessionManager.setRunning(sessionId, false)
   }
@@ -134,11 +149,15 @@ export async function handleChat(options: ChatOptions): Promise<void> {
 /**
  * Planner mode: Single response to help define criteria
  * Uses TurnMetrics to track aggregated metrics across recursive calls
+ * 
+ * Server-authoritative streaming: Creates assistant message BEFORE streaming,
+ * sends deltas with messageId, client just renders messages array.
  */
 async function runPlannerChat(
   options: ChatOptions, 
   metrics?: TurnMetrics,
-  formatRetryCount = 0
+  formatRetryCount = 0,
+  assistantMessageId?: string
 ): Promise<void> {
   const { sessionId, llmClient, signal, onMessage } = options
   const turnMetrics = metrics ?? new TurnMetrics()
@@ -162,42 +181,44 @@ async function runPlannerChat(
   
   const systemPrompt = buildPlannerPrompt(toolRegistry.definitions)
   
-  const messages = [
+  const llmMessages = [
     { role: 'system' as const, content: systemPrompt },
     ...session.messages.map(m => ({
       role: m.role as 'user' | 'assistant' | 'system' | 'tool',
       content: m.content,
-      toolCalls: m.toolCalls,
-      toolCallId: m.toolCallId,
+      ...(m.toolCalls && { toolCalls: m.toolCalls }),
+      ...(m.toolCallId && { toolCallId: m.toolCallId }),
     })),
   ]
   
+  // Create assistant message BEFORE streaming starts (server-authoritative)
+  // Reuse existing messageId on recursive calls (tool loops)
+  let messageId = assistantMessageId
+  if (!messageId) {
+    const assistantMsg = sessionManager.addMessage(sessionId, {
+      role: 'assistant',
+      content: '',
+      tokenCount: 0,
+      isStreaming: true,
+    })
+    messageId = assistantMsg.id
+    onMessage(createChatMessageMessage(assistantMsg))
+  }
+  
   // Stream response
   const stream = streamWithSegments(llmClient, {
-    messages,
+    messages: llmMessages,
     tools: toolRegistry.definitions,
     toolChoice: 'auto',
   })
   
   let result: Awaited<ReturnType<typeof stream.next>>['value'] = null
   
-  // Track accumulated content for partial message on abort
-  let accumulatedContent = ''
-  let accumulatedThinking = ''
-  
   while (true) {
     if (signal?.aborted) {
-      // Save partial message if we have any content
-      if (accumulatedContent || accumulatedThinking) {
-        sessionManager.addMessage(sessionId, {
-          role: 'assistant',
-          content: accumulatedContent,
-          thinkingContent: accumulatedThinking || undefined,
-          tokenCount: 0,
-          partial: true,
-        })
-      }
-      onMessage(createChatDoneMessage('stopped'))
+      // Mark message as no longer streaming (partial content preserved)
+      sessionManager.updateMessage(sessionId, messageId, { isStreaming: false, partial: true })
+      onMessage(createChatDoneMessage(messageId, 'stopped'))
       return
     }
     
@@ -208,15 +229,13 @@ async function runPlannerChat(
       break
     }
     
-    // Forward streaming events and accumulate content
+    // Forward streaming events with messageId
     switch (value.type) {
       case 'text_delta':
-        accumulatedContent += value.content
-        onMessage(createChatDeltaMessage(value.content))
+        onMessage(createChatDeltaMessage(messageId, value.content))
         break
       case 'thinking_delta':
-        accumulatedThinking += value.content
-        onMessage(createChatThinkingMessage(value.content))
+        onMessage(createChatThinkingMessage(messageId, value.content))
         break
       case 'xml_tool_abort': {
         // Model used XML tool format - retry
@@ -226,13 +245,11 @@ async function runPlannerChat(
             sessionId, 
             attempt: newRetryCount 
           })
-          return await runPlannerChat(options, turnMetrics, newRetryCount)
+          onMessage(createChatFormatRetryMessage(newRetryCount, MAX_FORMAT_RETRIES))
+          return await runPlannerChat(options, turnMetrics, newRetryCount, messageId)
         } else {
-          onMessage(createChatErrorMessage(
-            'Model repeatedly used XML tool format after 10 retries',
-            false
-          ))
-          onMessage(createChatDoneMessage('error'))
+          onMessage(createChatErrorMessage('Model repeatedly used XML tool format after 10 retries', false))
+          onMessage(createChatDoneMessage(messageId, 'error'))
           return
         }
       }
@@ -243,7 +260,7 @@ async function runPlannerChat(
   }
   
   if (!result) {
-    onMessage(createChatDoneMessage('error'))
+    onMessage(createChatDoneMessage(messageId, 'error'))
     return
   }
   
@@ -252,20 +269,20 @@ async function runPlannerChat(
   // Track LLM metrics
   turnMetrics.addLLMCall(timing, response.usage.promptTokens, response.usage.completionTokens)
   
-  // Save assistant message (stats will be on final message only)
-  sessionManager.addMessage(sessionId, {
-    role: 'assistant',
+  // Update assistant message with final content
+  sessionManager.updateMessage(sessionId, messageId, {
     content,
-    thinkingContent: thinkingContent || undefined,
-    toolCalls: toolCalls.length > 0 ? toolCalls : undefined,
+    ...(thinkingContent && { thinkingContent }),
+    ...(toolCalls.length > 0 && { toolCalls }),
     tokenCount: response.usage.completionTokens,
     segments,
+    isStreaming: false,
   })
   
   // Execute any tool calls (planner has read + criteria tools)
   if (toolCalls.length > 0) {
     for (const toolCall of toolCalls) {
-      onMessage(createChatToolCallMessage(toolCall.id, toolCall.name, toolCall.arguments))
+      onMessage(createChatToolCallMessage(messageId, toolCall.id, toolCall.name, toolCall.arguments))
       
       const result = await toolRegistry.execute(
         toolCall.name,
@@ -276,10 +293,10 @@ async function runPlannerChat(
       // Track tool execution time
       turnMetrics.addToolTime(result.durationMs)
       
-      onMessage(createChatToolResultMessage(toolCall.id, toolCall.name, result))
+      onMessage(createChatToolResultMessage(messageId, toolCall.id, toolCall.name, result))
       
-      // Save tool result
-      sessionManager.addMessage(sessionId, {
+      // Save tool result as separate message for LLM context
+      const toolMsg = sessionManager.addMessage(sessionId, {
         role: 'tool',
         content: result.success ? (result.output ?? 'Success') : `Error: ${result.error}`,
         toolCallId: toolCall.id,
@@ -287,6 +304,7 @@ async function runPlannerChat(
         toolResult: result,
         tokenCount: estimateTokens(result.output ?? result.error ?? ''),
       })
+      onMessage(createChatMessageMessage(toolMsg))
       
       // Check if criteria changed (planner can add/update/remove criteria)
       const updatedSession = sessionManager.requireSession(sessionId)
@@ -298,22 +316,25 @@ async function runPlannerChat(
     
     // Continue with another response if we had tool calls
     // Pass metrics through to accumulate across recursive calls
-    // Reset format retry count since we succeeded
+    // Create NEW assistant message for next response
     return await runPlannerChat(options, turnMetrics, 0)
   }
   
-  // Final response - build and send aggregated stats
+  // Final response - build aggregated stats
   const stats = turnMetrics.buildStats(llmClient.getModel(), 'planner')
   
-  // Update the last message with stats
+  // Update the message with stats
   sessionManager.updateLastMessageStats(sessionId, stats)
   
-  onMessage(createChatDoneMessage('complete', stats))
+  onMessage(createChatDoneMessage(messageId, 'complete', stats))
 }
 
 /**
  * Builder mode: Loop until all criteria completed or stuck
  * Uses TurnMetrics to track aggregated metrics across the turn
+ * 
+ * Server-authoritative streaming: Creates assistant message BEFORE streaming,
+ * sends deltas with messageId, client just renders messages array.
  */
 async function runBuilderLoop(options: ChatOptions): Promise<void> {
   const { sessionId, llmClient, signal, onMessage } = options
@@ -323,10 +344,15 @@ async function runBuilderLoop(options: ChatOptions): Promise<void> {
   let iteration = 0
   const maxIterations = 50 // Safety limit
   let formatRetryCount = 0
+  // Track current assistant message ID across iterations
+  let currentMessageId: string | undefined
   
   while (iteration < maxIterations) {
     if (signal?.aborted) {
-      onMessage(createChatDoneMessage('stopped'))
+      if (currentMessageId) {
+        sessionManager.updateMessage(sessionId, currentMessageId, { isStreaming: false, partial: true })
+        onMessage(createChatDoneMessage(currentMessageId, 'stopped'))
+      }
       return
     }
     
@@ -345,10 +371,12 @@ async function runBuilderLoop(options: ChatOptions): Promise<void> {
       sessionManager.setMode(sessionId, 'verifier')
       onMessage(createModeChangedMessage('verifier', true, 'All criteria completed'))
       
-      // Run verifier - send stats now since it's a new turn
+      // Send stats for builder turn
       const stats = turnMetrics.buildStats(llmClient.getModel(), 'builder')
       sessionManager.updateLastMessageStats(sessionId, stats)
-      onMessage(createChatDoneMessage('complete', stats))
+      if (currentMessageId) {
+        onMessage(createChatDoneMessage(currentMessageId, 'complete', stats))
+      }
       
       // Verifier will be a new turn
       return
@@ -375,7 +403,7 @@ async function runBuilderLoop(options: ChatOptions): Promise<void> {
       session.executionState?.modifiedFiles ?? []
     )
     
-    const messages = [
+    const llmMessages = [
       { role: 'system' as const, content: systemPrompt },
       ...session.messages
         .filter(m => !m.isCompacted || m.role === 'system')
@@ -384,37 +412,34 @@ async function runBuilderLoop(options: ChatOptions): Promise<void> {
           content: m.role === 'tool' && m.toolResult
             ? (m.toolResult.success ? (m.toolResult.output ?? 'Success') : `Error: ${m.toolResult.error}`)
             : m.content,
-          toolCalls: m.toolCalls,
-          toolCallId: m.toolCallId,
+          ...(m.toolCalls && { toolCalls: m.toolCalls }),
+          ...(m.toolCallId && { toolCallId: m.toolCallId }),
         })),
     ]
     
+    // Create assistant message BEFORE streaming starts (server-authoritative)
+    const assistantMsg = sessionManager.addMessage(sessionId, {
+      role: 'assistant',
+      content: '',
+      tokenCount: 0,
+      isStreaming: true,
+    })
+    currentMessageId = assistantMsg.id
+    onMessage(createChatMessageMessage(assistantMsg))
+    
     // Stream response
     const stream = streamWithSegments(llmClient, {
-      messages,
+      messages: llmMessages,
       tools: toolRegistry.definitions,
       toolChoice: 'auto',
     })
     
     let result: Awaited<ReturnType<typeof stream.next>>['value'] = null
     
-    // Track accumulated content for partial message on abort
-    let accumulatedContent = ''
-    let accumulatedThinking = ''
-    
     while (true) {
       if (signal?.aborted) {
-        // Save partial message if we have any content
-        if (accumulatedContent || accumulatedThinking) {
-          sessionManager.addMessage(sessionId, {
-            role: 'assistant',
-            content: accumulatedContent,
-            thinkingContent: accumulatedThinking || undefined,
-            tokenCount: 0,
-            partial: true,
-          })
-        }
-        onMessage(createChatDoneMessage('stopped'))
+        sessionManager.updateMessage(sessionId, currentMessageId, { isStreaming: false, partial: true })
+        onMessage(createChatDoneMessage(currentMessageId, 'stopped'))
         return
       }
       
@@ -425,15 +450,13 @@ async function runBuilderLoop(options: ChatOptions): Promise<void> {
         break
       }
       
-      // Forward streaming events and accumulate content
+      // Forward streaming events with messageId
       switch (value.type) {
         case 'text_delta':
-          accumulatedContent += value.content
-          onMessage(createChatDeltaMessage(value.content))
+          onMessage(createChatDeltaMessage(currentMessageId, value.content))
           break
         case 'thinking_delta':
-          accumulatedThinking += value.content
-          onMessage(createChatThinkingMessage(value.content))
+          onMessage(createChatThinkingMessage(currentMessageId, value.content))
           break
         case 'xml_tool_abort': {
           // Model used XML tool format - retry this iteration
@@ -443,13 +466,11 @@ async function runBuilderLoop(options: ChatOptions): Promise<void> {
               sessionId, 
               attempt: formatRetryCount 
             })
+            onMessage(createChatFormatRetryMessage(formatRetryCount, MAX_FORMAT_RETRIES))
             break  // Exit inner while loop, continue outer loop
           } else {
-            onMessage(createChatErrorMessage(
-              'Model repeatedly used XML tool format after 10 retries',
-              false
-            ))
-            onMessage(createChatDoneMessage('error'))
+            onMessage(createChatErrorMessage('Model repeatedly used XML tool format after 10 retries', false))
+            onMessage(createChatDoneMessage(currentMessageId, 'error'))
             return
           }
         }
@@ -470,7 +491,7 @@ async function runBuilderLoop(options: ChatOptions): Promise<void> {
     }
     
     if (!result) {
-      onMessage(createChatDoneMessage('error'))
+      onMessage(createChatDoneMessage(currentMessageId, 'error'))
       return
     }
     
@@ -479,25 +500,25 @@ async function runBuilderLoop(options: ChatOptions): Promise<void> {
     // Track LLM metrics
     turnMetrics.addLLMCall(timing, response.usage.promptTokens, response.usage.completionTokens)
     
-    // Save assistant message (stats will be on final message only)
-    sessionManager.addMessage(sessionId, {
-      role: 'assistant',
+    // Update assistant message with final content
+    sessionManager.updateMessage(sessionId, currentMessageId, {
       content,
-      thinkingContent: thinkingContent || undefined,
-      toolCalls: toolCalls.length > 0 ? toolCalls : undefined,
+      ...(thinkingContent && { thinkingContent }),
+      ...(toolCalls.length > 0 && { toolCalls }),
       tokenCount: response.usage.completionTokens,
       segments,
+      isStreaming: false,
     })
     
     // Execute tool calls
     if (toolCalls.length > 0) {
       for (const toolCall of toolCalls) {
         if (signal?.aborted) {
-          onMessage(createChatDoneMessage('stopped'))
+          onMessage(createChatDoneMessage(currentMessageId, 'stopped'))
           return
         }
         
-        onMessage(createChatToolCallMessage(toolCall.id, toolCall.name, toolCall.arguments))
+        onMessage(createChatToolCallMessage(currentMessageId, toolCall.id, toolCall.name, toolCall.arguments))
         
         const result = await toolRegistry.execute(
           toolCall.name,
@@ -508,10 +529,10 @@ async function runBuilderLoop(options: ChatOptions): Promise<void> {
         // Track tool execution time
         turnMetrics.addToolTime(result.durationMs)
         
-        onMessage(createChatToolResultMessage(toolCall.id, toolCall.name, result))
+        onMessage(createChatToolResultMessage(currentMessageId, toolCall.id, toolCall.name, result))
         
-        // Save tool result
-        sessionManager.addMessage(sessionId, {
+        // Save tool result as separate message for LLM context
+        const toolMsg = sessionManager.addMessage(sessionId, {
           role: 'tool',
           content: result.success ? (result.output ?? 'Success') : `Error: ${result.error}`,
           toolCallId: toolCall.id,
@@ -519,6 +540,7 @@ async function runBuilderLoop(options: ChatOptions): Promise<void> {
           toolResult: result,
           tokenCount: estimateTokens(result.output ?? result.error ?? ''),
         })
+        onMessage(createChatMessageMessage(toolMsg))
         
         // Track modified files
         if (result.success && ['write_file', 'edit_file'].includes(toolCall.name)) {
@@ -533,7 +555,7 @@ async function runBuilderLoop(options: ChatOptions): Promise<void> {
         }
       }
       
-      // Continue loop
+      // Continue loop - will create new assistant message next iteration
       continue
     }
     
@@ -545,26 +567,36 @@ async function runBuilderLoop(options: ChatOptions): Promise<void> {
     
     if (pendingCriteria.length > 0) {
       // Add a nudge message
-      sessionManager.addMessage(sessionId, {
+      const nudgeMsg = sessionManager.addMessage(sessionId, {
         role: 'user',
         content: `Continue working on the remaining criteria. ${pendingCriteria.length} criteria still pending.`,
         tokenCount: 20,
       })
+      onMessage(createChatMessageMessage(nudgeMsg))
       continue
     }
     
     break
   }
   
-  // Final response - build and send aggregated stats
+  // Final response - build aggregated stats
   const stats = turnMetrics.buildStats(llmClient.getModel(), 'builder')
   sessionManager.updateLastMessageStats(sessionId, stats)
-  onMessage(createChatDoneMessage('complete', stats))
+  
+  if (currentMessageId) {
+    onMessage(createChatDoneMessage(currentMessageId, 'complete', stats))
+  }
 }
 
 /**
  * Verifier mode: Check all completed criteria
  * Uses TurnMetrics to track aggregated metrics across the turn
+ * 
+ * Server-authoritative streaming: Creates assistant message BEFORE streaming,
+ * sends deltas with messageId, client just renders messages array.
+ * 
+ * Note: Verifier uses its own local message context (not persisted to session messages)
+ * since it runs with fresh context. Only the final result is persisted.
  */
 async function runVerifierLoop(options: ChatOptions): Promise<void> {
   const { sessionId, llmClient, signal, onMessage } = options
@@ -576,7 +608,8 @@ async function runVerifierLoop(options: ChatOptions): Promise<void> {
   const toVerify = session.criteria.filter(c => c.status.type === 'completed')
   if (toVerify.length === 0) {
     logger.info('Nothing to verify', { sessionId })
-    onMessage(createChatDoneMessage('complete'))
+    // No message was created, so we can't send a done with messageId
+    // This is an edge case - verifier was called with nothing to verify
     return
   }
   
@@ -589,18 +622,23 @@ async function runVerifierLoop(options: ChatOptions): Promise<void> {
   )
   
   // Verifier gets fresh context (only system prompt with summary)
-  const messages = [
-    { role: 'system' as const, content: systemPrompt },
-    { role: 'user' as const, content: 'Please verify each criterion marked [NEEDS VERIFICATION].' },
+  const llmMessages: Array<{ role: 'system' | 'user' | 'assistant' | 'tool'; content: string; toolCalls?: ToolCall[]; toolCallId?: string }> = [
+    { role: 'system', content: systemPrompt },
+    { role: 'user', content: 'Please verify each criterion marked [NEEDS VERIFICATION].' },
   ]
   
   let iteration = 0
   const maxIterations = 20
   let formatRetryCount = 0
+  // Track current assistant message ID
+  let currentMessageId: string | undefined
   
   while (iteration < maxIterations) {
     if (signal?.aborted) {
-      onMessage(createChatDoneMessage('stopped'))
+      if (currentMessageId) {
+        sessionManager.updateMessage(sessionId, currentMessageId, { isStreaming: false, partial: true })
+        onMessage(createChatDoneMessage(currentMessageId, 'stopped'))
+      }
       return
     }
     
@@ -608,39 +646,36 @@ async function runVerifierLoop(options: ChatOptions): Promise<void> {
     
     // If retrying due to XML format error, inject correction prompt
     if (formatRetryCount > 0) {
-      messages.push({
-        role: 'user' as const,
+      llmMessages.push({
+        role: 'user',
         content: FORMAT_CORRECTION_PROMPT,
       })
       onMessage(createChatFormatRetryMessage(formatRetryCount, MAX_FORMAT_RETRIES))
       formatRetryCount = 0  // Reset after injecting
     }
     
+    // Create assistant message BEFORE streaming starts (server-authoritative)
+    const assistantMsg = sessionManager.addMessage(sessionId, {
+      role: 'assistant',
+      content: '',
+      tokenCount: 0,
+      isStreaming: true,
+    })
+    currentMessageId = assistantMsg.id
+    onMessage(createChatMessageMessage(assistantMsg))
+    
     const stream = streamWithSegments(llmClient, {
-      messages,
+      messages: llmMessages,
       tools: toolRegistry.definitions,
       toolChoice: 'auto',
     })
     
     let result: Awaited<ReturnType<typeof stream.next>>['value'] = null
     
-    // Track accumulated content for partial message on abort
-    let accumulatedContent = ''
-    let accumulatedThinking = ''
-    
     while (true) {
       if (signal?.aborted) {
-        // Save partial message if we have any content
-        if (accumulatedContent || accumulatedThinking) {
-          sessionManager.addMessage(sessionId, {
-            role: 'assistant',
-            content: accumulatedContent,
-            thinkingContent: accumulatedThinking || undefined,
-            tokenCount: 0,
-            partial: true,
-          })
-        }
-        onMessage(createChatDoneMessage('stopped'))
+        sessionManager.updateMessage(sessionId, currentMessageId, { isStreaming: false, partial: true })
+        onMessage(createChatDoneMessage(currentMessageId, 'stopped'))
         return
       }
       
@@ -651,15 +686,13 @@ async function runVerifierLoop(options: ChatOptions): Promise<void> {
         break
       }
       
-      // Forward streaming events and accumulate content
+      // Forward streaming events with messageId
       switch (value.type) {
         case 'text_delta':
-          accumulatedContent += value.content
-          onMessage(createChatDeltaMessage(value.content))
+          onMessage(createChatDeltaMessage(currentMessageId, value.content))
           break
         case 'thinking_delta':
-          accumulatedThinking += value.content
-          onMessage(createChatThinkingMessage(value.content))
+          onMessage(createChatThinkingMessage(currentMessageId, value.content))
           break
         case 'xml_tool_abort': {
           // Model used XML tool format - retry this iteration
@@ -669,13 +702,11 @@ async function runVerifierLoop(options: ChatOptions): Promise<void> {
               sessionId, 
               attempt: formatRetryCount 
             })
+            onMessage(createChatFormatRetryMessage(formatRetryCount, MAX_FORMAT_RETRIES))
             break  // Exit inner while loop, continue outer loop
           } else {
-            onMessage(createChatErrorMessage(
-              'Model repeatedly used XML tool format after 10 retries',
-              false
-            ))
-            onMessage(createChatDoneMessage('error'))
+            onMessage(createChatErrorMessage('Model repeatedly used XML tool format after 10 retries', false))
+            onMessage(createChatDoneMessage(currentMessageId, 'error'))
             return
           }
         }
@@ -696,7 +727,7 @@ async function runVerifierLoop(options: ChatOptions): Promise<void> {
     }
     
     if (!result) {
-      onMessage(createChatDoneMessage('error'))
+      onMessage(createChatDoneMessage(currentMessageId, 'error'))
       return
     }
     
@@ -705,17 +736,25 @@ async function runVerifierLoop(options: ChatOptions): Promise<void> {
     // Track LLM metrics
     turnMetrics.addLLMCall(timing, response.usage.promptTokens, response.usage.completionTokens)
     
-    // Add assistant message to verifier context
-    messages.push({
-      role: 'assistant' as const,
+    // Update assistant message with final content
+    sessionManager.updateMessage(sessionId, currentMessageId, {
       content,
-      toolCalls: toolCalls.length > 0 ? toolCalls : undefined,
-    } as any)
+      ...(toolCalls.length > 0 && { toolCalls }),
+      tokenCount: response.usage.completionTokens,
+      isStreaming: false,
+    })
+    
+    // Add assistant message to verifier LLM context
+    llmMessages.push({
+      role: 'assistant',
+      content,
+      ...(toolCalls.length > 0 && { toolCalls }),
+    })
     
     // Execute tool calls
     if (toolCalls.length > 0) {
       for (const toolCall of toolCalls) {
-        onMessage(createChatToolCallMessage(toolCall.id, toolCall.name, toolCall.arguments))
+        onMessage(createChatToolCallMessage(currentMessageId, toolCall.id, toolCall.name, toolCall.arguments))
         
         const result = await toolRegistry.execute(
           toolCall.name,
@@ -726,14 +765,14 @@ async function runVerifierLoop(options: ChatOptions): Promise<void> {
         // Track tool execution time
         turnMetrics.addToolTime(result.durationMs)
         
-        onMessage(createChatToolResultMessage(toolCall.id, toolCall.name, result))
+        onMessage(createChatToolResultMessage(currentMessageId, toolCall.id, toolCall.name, result))
         
-        // Add tool result to verifier context
-        messages.push({
-          role: 'tool' as const,
+        // Add tool result to verifier LLM context
+        llmMessages.push({
+          role: 'tool',
           content: result.success ? (result.output ?? 'Success') : `Error: ${result.error}`,
           toolCallId: toolCall.id,
-        } as any)
+        })
         
         // Check if criteria changed
         const updatedSession = sessionManager.requireSession(sessionId)
@@ -758,14 +797,18 @@ async function runVerifierLoop(options: ChatOptions): Promise<void> {
     
     // Send stats for this verifier turn before switching
     const stats = turnMetrics.buildStats(llmClient.getModel(), 'verifier')
-    onMessage(createChatDoneMessage('complete', stats))
+    sessionManager.updateLastMessageStats(sessionId, stats)
+    if (currentMessageId) {
+      onMessage(createChatDoneMessage(currentMessageId, 'complete', stats))
+    }
     
     // Add failure context to main session messages
-    sessionManager.addMessage(sessionId, {
+    const failureMsg = sessionManager.addMessage(sessionId, {
       role: 'system',
       content: `Verification found ${failed.length} failing criteria:\n${failed.map(c => `- ${c.id}: ${c.status.type === 'failed' ? c.status.reason : 'unknown'}`).join('\n')}`,
       tokenCount: 50,
     })
+    onMessage(createChatMessageMessage(failureMsg))
     
     // Switch back to builder
     sessionManager.setMode(sessionId, 'builder')
@@ -778,7 +821,10 @@ async function runVerifierLoop(options: ChatOptions): Promise<void> {
   // All passed!
   logger.info('All criteria verified', { sessionId })
   const stats = turnMetrics.buildStats(llmClient.getModel(), 'verifier')
-  onMessage(createChatDoneMessage('complete', stats))
+  sessionManager.updateLastMessageStats(sessionId, stats)
+  if (currentMessageId) {
+    onMessage(createChatDoneMessage(currentMessageId, 'complete', stats))
+  }
 }
 
 /**
@@ -787,7 +833,7 @@ async function runVerifierLoop(options: ChatOptions): Promise<void> {
  */
 export async function generateSummary(
   sessionId: string,
-  llmClient: LLMClient
+  llmClient: LLMClientWithModel
 ): Promise<string> {
   const session = sessionManager.requireSession(sessionId)
   
@@ -800,8 +846,8 @@ export async function generateSummary(
     ...session.messages.map(m => ({
       role: m.role as 'user' | 'assistant' | 'system' | 'tool',
       content: m.content,
-      toolCalls: m.toolCalls,
-      toolCallId: m.toolCallId,
+      ...(m.toolCalls && { toolCalls: m.toolCalls }),
+      ...(m.toolCallId && { toolCallId: m.toolCallId }),
     })),
     { role: 'user' as const, content: SUMMARY_REQUEST_PROMPT },
   ]

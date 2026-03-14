@@ -1,5 +1,5 @@
 import type { SessionMode } from '@openfox/shared'
-import { useSessionStore } from '../../stores/session'
+import { useSessionStore, useIsStreaming } from '../../stores/session'
 
 const modes: { mode: SessionMode; label: string; activeClass: string }[] = [
   { mode: 'planner', label: 'Planner', activeClass: 'bg-purple-500 text-white' },
@@ -10,7 +10,7 @@ const modes: { mode: SessionMode; label: string; activeClass: string }[] = [
 export function ModeSwitch() {
   const currentMode = useSessionStore(state => state.currentSession?.mode)
   const switchMode = useSessionStore(state => state.switchMode)
-  const isStreaming = useSessionStore(state => state.isStreaming)
+  const isStreaming = useIsStreaming()
 
   if (!currentMode) return null
 

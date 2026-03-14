@@ -232,8 +232,8 @@ export function addMessage(sessionId: string, message: Omit<Message, 'id' | 'tim
     INSERT INTO messages (
       id, session_id, role, content, tool_calls, thinking_content,
       tool_call_id, tool_name, tool_result, timestamp, token_count,
-      is_compacted, original_message_ids, segments, stats, partial, is_system_generated
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      is_compacted, original_message_ids, segments, stats, partial, is_system_generated, is_streaming
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
     id,
     sessionId,
@@ -251,7 +251,8 @@ export function addMessage(sessionId: string, message: Omit<Message, 'id' | 'tim
     message.segments ? JSON.stringify(message.segments) : null,
     message.stats ? JSON.stringify(message.stats) : null,
     message.partial ? 1 : 0,
-    message.isSystemGenerated ? 1 : 0
+    message.isSystemGenerated ? 1 : 0,
+    message.isStreaming ? 1 : 0
   )
   
   // Update session updated_at
@@ -294,6 +295,7 @@ export function getMessages(sessionId: string): Message[] {
       : undefined,
     partial: row.partial === 1,
     isSystemGenerated: row.is_system_generated === 1 ? true : undefined,
+    isStreaming: row.is_streaming === 1 ? true : undefined,
   }))
 }
 
@@ -318,6 +320,60 @@ export function updateLastMessageStats(sessionId: string, stats: Message['stats'
   db.prepare(`
     UPDATE messages SET stats = ? WHERE id = ?
   `).run(JSON.stringify(stats), lastMessage.id)
+}
+
+export function updateMessage(
+  sessionId: string, 
+  messageId: string, 
+  updates: Partial<Omit<Message, 'id' | 'timestamp' | 'role'>>
+): void {
+  const db = getDatabase()
+  
+  // Build dynamic UPDATE query based on provided fields
+  const setClauses: string[] = []
+  const values: unknown[] = []
+  
+  if (updates.content !== undefined) {
+    setClauses.push('content = ?')
+    values.push(updates.content)
+  }
+  if (updates.thinkingContent !== undefined) {
+    setClauses.push('thinking_content = ?')
+    values.push(updates.thinkingContent)
+  }
+  if (updates.toolCalls !== undefined) {
+    setClauses.push('tool_calls = ?')
+    values.push(JSON.stringify(updates.toolCalls))
+  }
+  if (updates.tokenCount !== undefined) {
+    setClauses.push('token_count = ?')
+    values.push(updates.tokenCount)
+  }
+  if (updates.segments !== undefined) {
+    setClauses.push('segments = ?')
+    values.push(JSON.stringify(updates.segments))
+  }
+  if (updates.stats !== undefined) {
+    setClauses.push('stats = ?')
+    values.push(JSON.stringify(updates.stats))
+  }
+  if (updates.isStreaming !== undefined) {
+    setClauses.push('is_streaming = ?')
+    values.push(updates.isStreaming ? 1 : 0)
+  }
+  if (updates.partial !== undefined) {
+    setClauses.push('partial = ?')
+    values.push(updates.partial ? 1 : 0)
+  }
+  
+  if (setClauses.length === 0) return
+  
+  values.push(sessionId, messageId)
+  
+  db.prepare(`
+    UPDATE messages SET ${setClauses.join(', ')} 
+    WHERE session_id = ? AND id = ?
+  `).run(...values)
 }
 
 // ============================================================================
@@ -551,6 +607,7 @@ interface MessageRow {
   stats: string | null
   partial: number
   is_system_generated: number
+  is_streaming: number
 }
 
 interface CriterionRow {

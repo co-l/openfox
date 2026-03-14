@@ -1,5 +1,6 @@
-import { useState, useRef, useEffect, useCallback } from 'react'
-import { useSessionStore } from '../../stores/session'
+import { useState, useRef, useEffect, useCallback, useMemo } from 'react'
+import { useSessionStore, useIsStreaming } from '../../stores/session'
+import type { Message } from '@openfox/shared'
 import { SessionLayout } from '../layout/SessionLayout'
 import { ChatMessage } from './ChatMessage'
 import { AssistantMessage } from './AssistantMessage'
@@ -14,14 +15,22 @@ export function PlanPanel() {
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   
   const session = useSessionStore(state => state.currentSession)
-  const isStreaming = useSessionStore(state => state.isStreaming)
-  const chatStreamEvents = useSessionStore(state => state.chatStreamEvents)
+  const messages = useSessionStore(state => state.messages)
   const error = useSessionStore(state => state.error)
+  
+  const isStreaming = useIsStreaming()
   
   const sendMessage = useSessionStore(state => state.sendMessage)
   const clearError = useSessionStore(state => state.clearError)
   const acceptAndBuild = useSessionStore(state => state.acceptAndBuild)
   const stopGeneration = useSessionStore(state => state.stopGeneration)
+  
+  // Filter and organize messages for display
+  // Tool messages are nested within their parent assistant messages
+  const displayMessages = useMemo((): Message[] => {
+    // Filter out tool messages - they're displayed within assistant messages
+    return messages.filter(m => m.role !== 'tool')
+  }, [messages])
   
   const scrollToBottom = useCallback(() => {
     const container = scrollContainerRef.current
@@ -36,10 +45,8 @@ export function PlanPanel() {
     if (!container) return
     
     if (e.deltaY < 0) {
-      // User scrolled up - detach
       setUserScrolledUp(true)
     } else if (e.deltaY > 0 && userScrolledUp) {
-      // User scrolled down while detached - check if near bottom after scroll completes
       requestAnimationFrame(() => {
         const threshold = 150
         const distanceFromBottom = container.scrollHeight - container.scrollTop - container.clientHeight
@@ -55,7 +62,7 @@ export function PlanPanel() {
     if (!userScrolledUp) {
       scrollToBottom()
     }
-  }, [session?.messages, chatStreamEvents, userScrolledUp, scrollToBottom])
+  }, [displayMessages, userScrolledUp, scrollToBottom])
   
   // Reset scroll state when streaming stops
   useEffect(() => {
@@ -96,30 +103,10 @@ export function PlanPanel() {
   
   const isPlanning = session?.mode === 'planner'
   const hasCriteria = (session?.criteria.length ?? 0) > 0
-  const lastMessage = session?.messages[session.messages.length - 1]
-  const lastMessageIsAssistant = lastMessage?.role === 'assistant'
   
-  // Show "Start Building" button when:
-  // - In planner mode
-  // - Has criteria
-  // - Not streaming
-  // - Last message is from assistant (hides when user sends new message)
-  const showStartBuilding = isPlanning && hasCriteria && !isStreaming && lastMessageIsAssistant
-  
-  // Filter messages for display
-  const displayMessages = session?.messages
-    .filter(m => m.role !== 'tool' || m.toolResult?.success === false) ?? []
-  
-  // Determine which assistant messages should show stats
-  // (only the last assistant message before a user message or end of conversation)
-  const isLastAssistantBeforeUser = (index: number) => {
-    const msg = displayMessages[index]
-    if (msg?.role !== 'assistant') return false
-    
-    // Check if next message is user or this is the last message
-    const nextMsg = displayMessages[index + 1]
-    return !nextMsg || nextMsg.role === 'user'
-  }
+  // Show "Start Building" when in planner with criteria and assistant has responded
+  const hasAssistantResponse = displayMessages.some(m => m.role === 'assistant')
+  const showStartBuilding = isPlanning && hasCriteria && !isStreaming && hasAssistantResponse
   
   return (
     <SessionLayout>
@@ -129,17 +116,29 @@ export function PlanPanel() {
         onWheel={handleWheel}
         className="flex-1 overflow-y-auto p-4"
       >
-        {displayMessages.map((message, index) => (
-          <ChatMessage 
-            key={message.id} 
-            message={message} 
-            isLastAssistantMessage={isLastAssistantBeforeUser(index)}
-          />
-        ))}
-        
-        {chatStreamEvents.length > 0 && (
-          <AssistantMessage events={chatStreamEvents} isStreaming={isStreaming} />
-        )}
+        {displayMessages.map((message, index) => {
+          const isLast = index === displayMessages.length - 1
+          
+          if (message.role === 'assistant') {
+            return (
+              <AssistantMessage 
+                key={message.id}
+                message={message}
+                isStreaming={message.isStreaming ?? false}
+                showStats={isLast}
+              />
+            )
+          }
+          
+          // User or system messages
+          return (
+            <ChatMessage 
+              key={message.id} 
+              message={message} 
+              isLastAssistantMessage={false}
+            />
+          )
+        })}
         
         {error && (
           <div className="bg-red-500/10 border border-red-500/50 rounded-lg p-4 my-2">
@@ -176,7 +175,7 @@ export function PlanPanel() {
         <div ref={messagesEndRef} />
       </div>
       
-      {/* Chat input - always visible, user can send messages in any mode */}
+      {/* Chat input */}
       <form onSubmit={handleSubmit} className="p-4 border-t border-border">
         <div className="mb-3">
           <ModeSwitch />

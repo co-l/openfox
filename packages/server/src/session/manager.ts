@@ -20,6 +20,7 @@ import {
   getMessages,
   deleteMessages,
   updateLastMessageStats as dbUpdateLastMessageStats,
+  updateMessage as dbUpdateMessage,
   setCriteria as dbSetCriteria,
   getCriteria,
   updateCriterion as dbUpdateCriterion,
@@ -45,6 +46,7 @@ export type SessionEvent =
   | { type: 'session_deleted'; sessionId: string }
   | { type: 'mode_changed'; sessionId: string; from: SessionMode; to: SessionMode }
   | { type: 'message_added'; sessionId: string; message: Message }
+  | { type: 'message_updated'; sessionId: string; messageId: string; updates: Partial<Omit<Message, 'id' | 'timestamp' | 'role'>> }
   | { type: 'criteria_updated'; sessionId: string; criteria: Criterion[] }
   | { type: 'criterion_status_changed'; sessionId: string; criterionId: string; status: Criterion['status'] }
   | { type: 'execution_state_changed'; sessionId: string; state: ExecutionState | null }
@@ -200,6 +202,16 @@ class SessionManagerImpl {
   updateLastMessageStats(sessionId: string, stats: Message['stats']): void {
     this.requireSession(sessionId)
     dbUpdateLastMessageStats(sessionId, stats)
+  }
+  
+  updateMessage(
+    sessionId: string, 
+    messageId: string, 
+    updates: Partial<Omit<Message, 'id' | 'timestamp' | 'role'>>
+  ): void {
+    this.requireSession(sessionId)
+    dbUpdateMessage(sessionId, messageId, updates)
+    this.emit({ type: 'message_updated', sessionId, messageId, updates })
   }
   
   compactMessages(sessionId: string, messageIds: string[], summary: string): Message {

@@ -5,7 +5,7 @@ import type {
   SessionMode,
   Criterion,
   Todo,
-  ToolResult,
+  Message,
 } from '@openfox/shared'
 import type {
   ServerMessage,
@@ -31,19 +31,6 @@ import { playNotification } from '../lib/sound'
 // Track subscription to prevent duplicates
 let isSubscribed = false
 
-// Unified streaming events (all modes use the same structure)
-export type ChatStreamEvent = 
-  | { type: 'text'; content: string }
-  | { type: 'thinking'; content: string }
-  | { type: 'tool_call'; callId: string; tool: string; args: Record<string, unknown> }
-  | { type: 'tool_result'; callId: string; tool: string; result: ToolResult }
-  | { type: 'todo'; todos: Todo[] }
-  | { type: 'summary'; summary: string }
-  | { type: 'progress'; message: string; phase?: 'summary' | 'mode_switch' | 'starting' }
-  | { type: 'format_retry'; attempt: number; maxAttempts: number }
-  | { type: 'error'; error: string; recoverable: boolean }
-  | { type: 'stats'; model: string; mode: SessionMode; totalTime: number; toolTime: number; prefillTokens: number; prefillSpeed: number; generationTokens: number; generationSpeed: number }
-
 interface SessionState {
   // Connection
   connectionStatus: ConnectionStatus
@@ -52,14 +39,12 @@ interface SessionState {
   sessions: SessionSummary[]
   currentSession: Session | null
   
-  // Streaming state (unified for all modes)
-  streamingText: string
-  streamingThinking: string
-  isStreaming: boolean
-  chatStreamEvents: ChatStreamEvent[]
+  // Messages: server-authoritative, includes streaming state
+  // Each message has isStreaming flag to indicate if it's being streamed
+  messages: Message[]
   
-  // Event sequence tracking (for reconnection)
-  lastEventSeq: number
+  // Track which message is currently streaming (for applying deltas)
+  streamingMessageId: string | null
   
   // Current todos (displayed in chat)
   currentTodos: Todo[]
@@ -85,7 +70,7 @@ interface SessionState {
   
   // Mode switching
   switchMode: (mode: SessionMode) => void
-  acceptAndBuild: () => void  // Accept criteria, generate summary, switch to builder
+  acceptAndBuild: () => void
   
   // Criteria (from UI)
   editCriteria: (criteria: Criterion[]) => void
@@ -94,32 +79,25 @@ interface SessionState {
   
   // Internal
   handleServerMessage: (message: ServerMessage) => void
-  clearStreamingState: () => void
 }
 
 export const useSessionStore = create<SessionState>((set, get) => ({
   connectionStatus: 'disconnected',
   sessions: [],
   currentSession: null,
-  error: null,
-  streamingText: '',
-  streamingThinking: '',
-  isStreaming: false,
-  chatStreamEvents: [],
-  lastEventSeq: 0,
+  messages: [],
+  streamingMessageId: null,
   currentTodos: [],
+  error: null,
   
   connect: async () => {
     const status = get().connectionStatus
     if (status === 'connected' || status === 'reconnecting') return
     
-    // Prevent double connection attempts
     set({ connectionStatus: 'reconnecting' })
     
-    // Register status callback before connecting
     wsClient.onStatusChange((newStatus) => {
       set({ connectionStatus: newStatus })
-      // Reload session list when reconnected
       if (newStatus === 'connected') {
         get().listSessions()
       }
@@ -128,7 +106,6 @@ export const useSessionStore = create<SessionState>((set, get) => ({
     try {
       await wsClient.connect()
       
-      // Subscribe once
       if (!isSubscribed) {
         isSubscribed = true
         wsClient.subscribe(get().handleServerMessage)
@@ -150,24 +127,16 @@ export const useSessionStore = create<SessionState>((set, get) => ({
   
   loadSession: (sessionId) => {
     const currentSession = get().currentSession
-    const lastEventSeq = get().lastEventSeq
     
-    // Only clear stream state if loading a different session
+    // Clear state when loading a different session
     if (!currentSession || currentSession.id !== sessionId) {
       set({ 
-        chatStreamEvents: [], 
-        streamingText: '', 
-        streamingThinking: '', 
-        isStreaming: false,
+        messages: [],
+        streamingMessageId: null,
         currentTodos: [],
-        lastEventSeq: 0,
       })
-      // New session, no events to resume from
-      wsClient.send('session.load', { sessionId })
-    } else {
-      // Same session, try to resume from last known event
-      wsClient.send('session.load', { sessionId, lastEventSeq })
     }
+    wsClient.send('session.load', { sessionId })
   },
   
   listSessions: () => {
@@ -181,33 +150,15 @@ export const useSessionStore = create<SessionState>((set, get) => ({
   clearSession: () => {
     set({ 
       currentSession: null, 
-      chatStreamEvents: [],
-      streamingText: '',
-      streamingThinking: '',
-      isStreaming: false,
+      messages: [],
+      streamingMessageId: null,
       currentTodos: [],
-      lastEventSeq: 0,
     })
   },
   
   sendMessage: (content) => {
-    // Optimistically add user message so it appears immediately
-    const userMessage = {
-      id: `temp-${Date.now()}`,
-      role: 'user' as const,
-      content,
-      timestamp: new Date().toISOString(),
-      tokenCount: 0,
-    }
-    set(state => ({
-      streamingText: '',
-      streamingThinking: '',
-      isStreaming: true,
-      chatStreamEvents: [],
-      currentSession: state.currentSession
-        ? { ...state.currentSession, messages: [...state.currentSession.messages, userMessage] }
-        : null,
-    }))
+    // No optimistic update needed - server will send chat.message with user message
+    set({ streamingMessageId: null })
     wsClient.send('chat.send', { content })
   },
   
@@ -216,7 +167,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
   },
   
   continueGeneration: () => {
-    set({ isStreaming: true, chatStreamEvents: [] })
+    set({ streamingMessageId: null })
     wsClient.send('chat.continue', {})
   },
   
@@ -225,12 +176,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
   },
   
   acceptAndBuild: () => {
-    // This will:
-    // 1. Generate summary from conversation
-    // 2. Display summary in chat
-    // 3. Switch to builder mode
-    // 4. Auto-start builder
-    set({ isStreaming: true, chatStreamEvents: [] })
+    set({ streamingMessageId: null })
     wsClient.send('mode.accept', {})
   },
   
@@ -243,16 +189,17 @@ export const useSessionStore = create<SessionState>((set, get) => ({
   },
   
   handleServerMessage: (message) => {
-    // Track event sequence for reconnection
-    const seq = (message as { seq?: number }).seq
-    if (typeof seq === 'number') {
-      set({ lastEventSeq: seq })
-    }
-    
     switch (message.type) {
       case 'session.state': {
         const payload = message.payload as SessionStatePayload
-        set({ currentSession: payload.session })
+        // Server sends complete state: session + messages
+        // This is the source of truth on load/reconnect
+        set({ 
+          currentSession: payload.session,
+          messages: payload.messages,
+          // If any message is streaming, track it
+          streamingMessageId: payload.messages.find(m => m.isStreaming)?.id ?? null,
+        })
         break
       }
       
@@ -267,88 +214,100 @@ export const useSessionStore = create<SessionState>((set, get) => ({
         break
       }
       
-      case 'chat.delta': {
-        const payload = message.payload as ChatDeltaPayload
+      case 'chat.message': {
+        // Server created a new message (user message or assistant message before streaming)
+        const payload = message.payload as ChatMessagePayload
         set(state => {
-          const events = [...state.chatStreamEvents]
-          const last = events[events.length - 1]
-          if (last?.type === 'text') {
-            events[events.length - 1] = { ...last, content: last.content + payload.content }
-          } else {
-            events.push({ type: 'text', content: payload.content })
+          // Don't add duplicates
+          if (state.messages.some(m => m.id === payload.message.id)) {
+            return state
           }
-          return { 
-            streamingText: state.streamingText + payload.content, 
-            chatStreamEvents: events,
+          return {
+            messages: [...state.messages, payload.message],
+            // Track streaming message if it's marked as streaming
+            streamingMessageId: payload.message.isStreaming 
+              ? payload.message.id 
+              : state.streamingMessageId,
           }
         })
+        break
+      }
+      
+      case 'chat.delta': {
+        // Append text content to the message with this messageId
+        const payload = message.payload as ChatDeltaPayload
+        set(state => ({
+          messages: state.messages.map(m => 
+            m.id === payload.messageId
+              ? { ...m, content: m.content + payload.content }
+              : m
+          ),
+          streamingMessageId: payload.messageId,
+        }))
         break
       }
       
       case 'chat.thinking': {
+        // Append thinking content to the message with this messageId
         const payload = message.payload as ChatThinkingPayload
-        set(state => {
-          const events = [...state.chatStreamEvents]
-          const last = events[events.length - 1]
-          if (last?.type === 'thinking') {
-            events[events.length - 1] = { ...last, content: last.content + payload.content }
-          } else {
-            events.push({ type: 'thinking', content: payload.content })
-          }
-          return { 
-            streamingThinking: state.streamingThinking + payload.content, 
-            chatStreamEvents: events,
-          }
-        })
+        set(state => ({
+          messages: state.messages.map(m => 
+            m.id === payload.messageId
+              ? { ...m, thinkingContent: (m.thinkingContent ?? '') + payload.content }
+              : m
+          ),
+          streamingMessageId: payload.messageId,
+        }))
         break
       }
       
       case 'chat.tool_call': {
+        // Add tool call to the message with this messageId
         const payload = message.payload as ChatToolCallPayload
         set(state => ({
-          chatStreamEvents: [...state.chatStreamEvents, {
-            type: 'tool_call' as const,
-            callId: payload.callId,
-            tool: payload.tool,
-            args: payload.args,
-          }],
+          messages: state.messages.map(m => 
+            m.id === payload.messageId
+              ? { 
+                  ...m, 
+                  toolCalls: [
+                    ...(m.toolCalls ?? []),
+                    { id: payload.callId, name: payload.tool, arguments: payload.args }
+                  ]
+                }
+              : m
+          ),
         }))
         break
       }
       
       case 'chat.tool_result': {
+        // Tool results come as separate chat.message events (tool role messages)
+        // This event is just for real-time display - can track in message's toolCalls
         const payload = message.payload as ChatToolResultPayload
         set(state => ({
-          chatStreamEvents: [...state.chatStreamEvents, {
-            type: 'tool_result' as const,
-            callId: payload.callId,
-            tool: payload.tool,
-            result: payload.result,
-          }],
+          messages: state.messages.map(m => {
+            if (m.id !== payload.messageId) return m
+            // Update the tool call with result
+            const toolCalls = m.toolCalls?.map(tc => 
+              tc.id === payload.callId
+                ? { ...tc, result: payload.result }
+                : tc
+            )
+            return { ...m, toolCalls }
+          }),
         }))
         break
       }
       
       case 'chat.todo': {
         const payload = message.payload as ChatTodoPayload
-        set(state => ({
-          currentTodos: payload.todos,
-          chatStreamEvents: [...state.chatStreamEvents, {
-            type: 'todo' as const,
-            todos: payload.todos,
-          }],
-        }))
+        set({ currentTodos: payload.todos })
         break
       }
       
       case 'chat.summary': {
         const payload = message.payload as ChatSummaryPayload
         set(state => ({
-          chatStreamEvents: [...state.chatStreamEvents, {
-            type: 'summary' as const,
-            summary: payload.summary,
-          }],
-          // Also update session summary
           currentSession: state.currentSession
             ? { ...state.currentSession, summary: payload.summary }
             : null,
@@ -357,96 +316,48 @@ export const useSessionStore = create<SessionState>((set, get) => ({
       }
       
       case 'chat.progress': {
+        // Progress messages are transient - could add to a separate state if needed
+        // For now, just log
         const payload = message.payload as ChatProgressPayload
-        set(state => ({
-          chatStreamEvents: [...state.chatStreamEvents, {
-            type: 'progress' as const,
-            message: payload.message,
-            phase: payload.phase,
-          }],
-        }))
+        console.log('Progress:', payload.message, payload.phase)
         break
       }
       
       case 'chat.format_retry': {
+        // Format retry - could show in UI
         const payload = message.payload as ChatFormatRetryPayload
-        set(state => ({
-          chatStreamEvents: [...state.chatStreamEvents, {
-            type: 'format_retry' as const,
-            attempt: payload.attempt,
-            maxAttempts: payload.maxAttempts,
-          }],
-        }))
-        break
-      }
-      
-      case 'chat.message': {
-        // Message was added to session (e.g., system-generated correction)
-        // Append to local session messages to show immediately
-        const payload = message.payload as ChatMessagePayload
-        set(state => {
-          if (!state.currentSession) return state
-          // Check if message already exists (avoid duplicates on reconnect)
-          if (state.currentSession.messages.some(m => m.id === payload.message.id)) {
-            return state
-          }
-          return {
-            currentSession: {
-              ...state.currentSession,
-              messages: [...state.currentSession.messages, payload.message],
-            },
-          }
-        })
+        console.log('Format retry:', payload.attempt, '/', payload.maxAttempts)
         break
       }
       
       case 'chat.done': {
         const payload = message.payload as ChatDonePayload
         
-        // Add stats event if present
-        if (payload.stats) {
-          set(state => ({
-            chatStreamEvents: [...state.chatStreamEvents, {
-              type: 'stats' as const,
-              model: payload.stats!.model,
-              mode: payload.stats!.mode,
-              totalTime: payload.stats!.totalTime,
-              toolTime: payload.stats!.toolTime,
-              prefillTokens: payload.stats!.prefillTokens,
-              prefillSpeed: payload.stats!.prefillSpeed,
-              generationTokens: payload.stats!.generationTokens,
-              generationSpeed: payload.stats!.generationSpeed,
-            }],
-          }))
-        }
+        // Mark the message as no longer streaming and add stats if present
+        set(state => ({
+          messages: state.messages.map(m => 
+            m.id === payload.messageId
+              ? { ...m, isStreaming: false, stats: payload.stats ?? m.stats }
+              : m
+          ),
+          streamingMessageId: null,
+          // Update session running state
+          currentSession: state.currentSession
+            ? { ...state.currentSession, isRunning: false }
+            : null,
+        }))
         
-        set({ isStreaming: false })
-        
-        // Reload session to get latest state (clears stream events since message is now saved)
-        if (payload.reason === 'complete' || payload.reason === 'stopped') {
-          if (payload.reason === 'complete') {
-            playNotification()
-          }
-          set({ chatStreamEvents: [] })
-          const session = get().currentSession
-          if (session) {
-            get().loadSession(session.id)
-          }
+        if (payload.reason === 'complete') {
+          playNotification()
         }
         break
       }
       
       case 'chat.error': {
         const payload = message.payload as ChatErrorPayload
-        set(state => ({
-          chatStreamEvents: [...state.chatStreamEvents, {
-            type: 'error' as const,
-            error: payload.error,
-            recoverable: payload.recoverable,
-          }],
-        }))
+        console.error('Chat error:', payload.error, 'recoverable:', payload.recoverable)
         if (!payload.recoverable) {
-          set({ isStreaming: false })
+          set({ streamingMessageId: null })
         }
         break
       }
@@ -474,19 +385,24 @@ export const useSessionStore = create<SessionState>((set, get) => ({
       case 'error': {
         const payload = message.payload as { code: string; message: string }
         console.error('Server error:', payload)
-        set({ error: { code: payload.code, message: payload.message } })
-        get().clearStreamingState()
+        set({ 
+          error: { code: payload.code, message: payload.message },
+          streamingMessageId: null,
+        })
         break
       }
     }
   },
-  
-  clearStreamingState: () => {
-    set({ 
-      streamingText: '', 
-      streamingThinking: '', 
-      isStreaming: false, 
-      chatStreamEvents: [],
-    })
-  },
 }))
+
+// Helper selector: is any message currently streaming?
+export function useIsStreaming() {
+  return useSessionStore(state => state.streamingMessageId !== null)
+}
+
+// Helper selector: get the currently streaming message
+export function useStreamingMessage() {
+  const messages = useSessionStore(state => state.messages)
+  const streamingMessageId = useSessionStore(state => state.streamingMessageId)
+  return messages.find(m => m.id === streamingMessageId) ?? null
+}

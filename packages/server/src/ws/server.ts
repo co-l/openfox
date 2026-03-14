@@ -15,6 +15,7 @@ import {
   updateProject,
   deleteProject,
 } from '../db/projects.js'
+import { getMessages } from '../db/sessions.js'
 import {
   parseClientMessage,
   serializeServerMessage,
@@ -27,6 +28,7 @@ import {
   createChatThinkingMessage,
   createChatToolCallMessage,
   createChatToolResultMessage,
+  createChatMessageMessage,
   createChatDoneMessage,
   createChatErrorMessage,
   createChatProgressMessage,
@@ -73,7 +75,8 @@ export function createWebSocketServer(
         if (event.type === 'session_updated' || event.type === 'mode_changed') {
           const session = sessionManager.getSession(sessionId)
           if (session) {
-            ws.send(serializeServerMessage(createSessionStateMessage(session)))
+            const messages = getMessages(sessionId)
+            ws.send(serializeServerMessage(createSessionStateMessage(session, messages)))
           }
         }
       }
@@ -217,7 +220,8 @@ async function handleClientMessage(
         message.payload.title
       )
       client.sessionId = session.id
-      send(createSessionStateMessage(session, message.id))
+      // New session has no events yet
+      send(createSessionStateMessage(session, [], message.id))
       break
     }
     
@@ -238,7 +242,9 @@ async function handleClientMessage(
       client.eventUnsubscribe = null
       
       client.sessionId = session.id
-      send(createSessionStateMessage(session, message.id))
+      // Fetch all messages for this session (server-authoritative)
+      const messages = getMessages(session.id)
+      send(createSessionStateMessage(session, messages, message.id))
       
       // If session is running, replay missed events and subscribe to future events
       if (session.isRunning) {
@@ -297,8 +303,8 @@ async function handleClientMessage(
         return
       }
       
-      // Add user message
-      sessionManager.addMessage(client.sessionId, {
+      // Add user message and notify client (server-authoritative)
+      const userMessage = sessionManager.addMessage(client.sessionId, {
         role: 'user',
         content: message.payload.content,
         tokenCount: Math.ceil(message.payload.content.length / 4),
@@ -321,6 +327,9 @@ async function handleClientMessage(
         send({ ...event, seq })
       })
       
+      // Send the user message immediately so client has it in its messages array
+      sessionEvents.push(sessionId, createChatMessageMessage(userMessage))
+      
       // Run chat asynchronously with events going through queue
       handleChat({
         sessionId,
@@ -329,11 +338,18 @@ async function handleClientMessage(
         onMessage: (event) => sessionEvents.push(sessionId, event),
       }).catch((error) => {
         logger.error('Chat error', { error })
+        // Create an error message so we have a messageId for the done event
+        const errorMsg = sessionManager.addMessage(sessionId, {
+          role: 'system',
+          content: `Error: ${error instanceof Error ? error.message : 'Unknown error'}`,
+          tokenCount: 10,
+        })
+        sessionEvents.push(sessionId, createChatMessageMessage(errorMsg))
         sessionEvents.push(sessionId, createChatErrorMessage(
           error instanceof Error ? error.message : 'Unknown error',
           false
         ))
-        sessionEvents.push(sessionId, createChatDoneMessage('error'))
+        sessionEvents.push(sessionId, createChatDoneMessage(errorMsg.id, 'error'))
       }).finally(() => {
         activeAgents.delete(sessionId)
         sessionManager.setRunning(sessionId, false)
@@ -360,8 +376,14 @@ async function handleClientMessage(
       
       sessionManager.setRunning(sessionId, false)
       
-      // Broadcast stopped via queue so all subscribers see it
-      sessionEvents.push(sessionId, createChatDoneMessage('stopped'))
+      // Create stop message to get a messageId for the done event
+      const stopMsg = sessionManager.addMessage(sessionId, {
+        role: 'system',
+        content: 'Chat stopped by user',
+        tokenCount: 5,
+      })
+      sessionEvents.push(sessionId, createChatMessageMessage(stopMsg))
+      sessionEvents.push(sessionId, createChatDoneMessage(stopMsg.id, 'stopped'))
       
       // Schedule cleanup after brief delay
       sessionEvents.scheduleCleanup(sessionId)
@@ -416,11 +438,18 @@ async function handleClientMessage(
         onMessage: (event) => sessionEvents.push(sessionId, event),
       }).catch((error) => {
         logger.error('Continue error', { error })
+        // Create error message so we have a messageId for the done event
+        const errorMsg = sessionManager.addMessage(sessionId, {
+          role: 'system',
+          content: `Error: ${error instanceof Error ? error.message : 'Unknown error'}`,
+          tokenCount: 10,
+        })
+        sessionEvents.push(sessionId, createChatMessageMessage(errorMsg))
         sessionEvents.push(sessionId, createChatErrorMessage(
           error instanceof Error ? error.message : 'Unknown error',
           false
         ))
-        sessionEvents.push(sessionId, createChatDoneMessage('error'))
+        sessionEvents.push(sessionId, createChatDoneMessage(errorMsg.id, 'error'))
       }).finally(() => {
         activeAgents.delete(sessionId)
         sessionManager.setRunning(sessionId, false)
@@ -447,7 +476,8 @@ async function handleClientMessage(
       
       const session = sessionManager.setMode(client.sessionId, message.payload.mode)
       send(createModeChangedMessage(message.payload.mode, false))
-      send(createSessionStateMessage(session, message.id))
+      const messages = getMessages(session.id)
+      send(createSessionStateMessage(session, messages, message.id))
       break
     }
     
@@ -499,7 +529,8 @@ async function handleClientMessage(
           pushEvent(createModeChangedMessage('builder', false, 'Criteria accepted'))
           
           const updatedSession = sessionManager.requireSession(sessionId)
-          pushEvent(createSessionStateMessage(updatedSession))
+          const updatedMessages = getMessages(sessionId)
+          pushEvent(createSessionStateMessage(updatedSession, updatedMessages))
           
           // Mark session as running
           sessionManager.setRunning(sessionId, true)
@@ -520,11 +551,18 @@ async function handleClientMessage(
           })
         } catch (error) {
           logger.error('mode.accept error', { error })
+          // Create error message so we have a messageId for the done event
+          const errorMsg = sessionManager.addMessage(sessionId, {
+            role: 'system',
+            content: `Error: ${error instanceof Error ? error.message : 'Unknown error'}`,
+            tokenCount: 10,
+          })
+          pushEvent(createChatMessageMessage(errorMsg))
           pushEvent(createChatErrorMessage(
             error instanceof Error ? error.message : 'Unknown error',
             false
           ))
-          pushEvent(createChatDoneMessage('error'))
+          pushEvent(createChatDoneMessage(errorMsg.id, 'error'))
         } finally {
           activeAgents.delete(sessionId)
           sessionManager.setRunning(sessionId, false)

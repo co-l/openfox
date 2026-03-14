@@ -54,8 +54,8 @@ export function createErrorMessage(code: string, message: string, correlationId?
 }
 
 // Session messages
-export function createSessionStateMessage(session: Session, correlationId?: string): ServerMessage<SessionStatePayload> {
-  return createServerMessage('session.state', { session }, correlationId)
+export function createSessionStateMessage(session: Session, messages: Message[], correlationId?: string): ServerMessage<SessionStatePayload> {
+  return createServerMessage('session.state', { session, messages }, correlationId)
 }
 
 export function createSessionListMessage(sessions: SessionSummary[], correlationId?: string): ServerMessage<SessionListPayload> {
@@ -71,21 +71,21 @@ export function createProjectListMessage(projects: Project[], correlationId?: st
   return createServerMessage('project.list', { projects }, correlationId)
 }
 
-// Chat messages
-export function createChatDeltaMessage(content: string): ServerMessage<ChatDeltaPayload> {
-  return createServerMessage('chat.delta', { content })
+// Chat messages - all include messageId to identify which message to update
+export function createChatDeltaMessage(messageId: string, content: string): ServerMessage<ChatDeltaPayload> {
+  return createServerMessage('chat.delta', { messageId, content })
 }
 
-export function createChatThinkingMessage(content: string): ServerMessage<ChatThinkingPayload> {
-  return createServerMessage('chat.thinking', { content })
+export function createChatThinkingMessage(messageId: string, content: string): ServerMessage<ChatThinkingPayload> {
+  return createServerMessage('chat.thinking', { messageId, content })
 }
 
-export function createChatToolCallMessage(callId: string, tool: string, args: Record<string, unknown>): ServerMessage<ChatToolCallPayload> {
-  return createServerMessage('chat.tool_call', { callId, tool, args })
+export function createChatToolCallMessage(messageId: string, callId: string, tool: string, args: Record<string, unknown>): ServerMessage<ChatToolCallPayload> {
+  return createServerMessage('chat.tool_call', { messageId, callId, tool, args })
 }
 
-export function createChatToolResultMessage(callId: string, tool: string, result: ToolResult): ServerMessage<ChatToolResultPayload> {
-  return createServerMessage('chat.tool_result', { callId, tool, result })
+export function createChatToolResultMessage(messageId: string, callId: string, tool: string, result: ToolResult): ServerMessage<ChatToolResultPayload> {
+  return createServerMessage('chat.tool_result', { messageId, callId, tool, result })
 }
 
 export function createChatTodoMessage(todos: Todo[]): ServerMessage<ChatTodoPayload> {
@@ -115,10 +115,11 @@ export function createChatMessageMessage(message: Message): ServerMessage<ChatMe
 }
 
 export function createChatDoneMessage(
+  messageId: string,
   reason: 'complete' | 'stopped' | 'error' | 'waiting_for_user',
   stats?: ChatDonePayload['stats']
 ): ServerMessage<ChatDonePayload> {
-  return createServerMessage('chat.done', { reason, stats })
+  return createServerMessage('chat.done', { messageId, reason, stats })
 }
 
 export function createChatErrorMessage(error: string, recoverable: boolean): ServerMessage<ChatErrorPayload> {

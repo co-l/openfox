@@ -116,6 +116,13 @@ function runMigrations(db: Database.Database): void {
     // Column already exists
   }
   
+  // Migration: add is_streaming column if missing
+  try {
+    db.exec(`ALTER TABLE messages ADD COLUMN is_streaming INTEGER DEFAULT 0`)
+  } catch {
+    // Column already exists
+  }
+  
   // Create criteria table
   db.exec(`
     CREATE TABLE IF NOT EXISTS criteria (
@@ -187,6 +194,27 @@ function runMigrations(db: Database.Database): void {
     logger.info('Migrating sessions table: adding summary column')
     db.exec(`ALTER TABLE sessions ADD COLUMN summary TEXT`)
   }
+  
+  // Create turn_events table for event sourcing
+  // Events are the source of truth for assistant turns
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS turn_events (
+      id TEXT PRIMARY KEY,
+      session_id TEXT NOT NULL,
+      turn_id TEXT NOT NULL,
+      seq INTEGER NOT NULL,
+      event_type TEXT NOT NULL,
+      payload TEXT NOT NULL,
+      timestamp TEXT NOT NULL,
+      FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE,
+      UNIQUE(session_id, turn_id, seq)
+    )
+  `)
+  
+  db.exec(`
+    CREATE INDEX IF NOT EXISTS idx_turn_events_session_turn 
+    ON turn_events(session_id, turn_id, seq)
+  `)
   
   logger.info('Database migrations completed')
 }

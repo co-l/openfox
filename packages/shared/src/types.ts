@@ -91,6 +91,7 @@ export interface Message {
   stats?: MessageStats         // LLM performance stats for this response
   partial?: boolean            // true if message was interrupted mid-stream
   isSystemGenerated?: boolean  // true for auto-injected messages (retry prompts, etc.)
+  isStreaming?: boolean        // true while assistant is still generating
 }
 
 // ============================================================================

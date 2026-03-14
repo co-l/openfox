@@ -149,6 +149,7 @@ export interface ProjectDeletedPayload {
 // Session payloads
 export interface SessionStatePayload {
   session: Session
+  messages: Message[]  // All messages for this session
 }
 
 export interface SessionListPayload {
@@ -156,21 +157,26 @@ export interface SessionListPayload {
 }
 
 // Chat payloads (unified streaming)
+// All streaming payloads include messageId to identify which message to update
 export interface ChatDeltaPayload {
+  messageId: string
   content: string
 }
 
 export interface ChatThinkingPayload {
+  messageId: string
   content: string
 }
 
 export interface ChatToolCallPayload {
+  messageId: string
   callId: string
   tool: string
   args: Record<string, unknown>
 }
 
 export interface ChatToolResultPayload {
+  messageId: string
   callId: string
   tool: string
   result: ToolResult
@@ -199,6 +205,7 @@ export interface ChatMessagePayload {
 }
 
 export interface ChatDonePayload {
+  messageId: string
   reason: 'complete' | 'stopped' | 'error' | 'waiting_for_user'
   stats?: {
     model: string
