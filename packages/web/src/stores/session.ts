@@ -19,6 +19,7 @@ import type {
   ChatSummaryPayload,
   ChatProgressPayload,
   ChatFormatRetryPayload,
+  ChatMessagePayload,
   ChatDonePayload,
   ChatErrorPayload,
   ModeChangedPayload,
@@ -376,6 +377,26 @@ export const useSessionStore = create<SessionState>((set, get) => ({
             maxAttempts: payload.maxAttempts,
           }],
         }))
+        break
+      }
+      
+      case 'chat.message': {
+        // Message was added to session (e.g., system-generated correction)
+        // Append to local session messages to show immediately
+        const payload = message.payload as ChatMessagePayload
+        set(state => {
+          if (!state.currentSession) return state
+          // Check if message already exists (avoid duplicates on reconnect)
+          if (state.currentSession.messages.some(m => m.id === payload.message.id)) {
+            return state
+          }
+          return {
+            currentSession: {
+              ...state.currentSession,
+              messages: [...state.currentSession.messages, payload.message],
+            },
+          }
+        })
         break
       }
       

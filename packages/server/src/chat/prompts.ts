@@ -170,12 +170,7 @@ ${toolList}
 }
 
 // ============================================================================
-// Summary Generation Prompt
+// Summary Request Prompt (appended to conversation to hit KV cache)
 // ============================================================================
 
-export const SUMMARY_GENERATION_PROMPT = `Based on this conversation, write a concise 2-3 sentence summary of what the user wants to accomplish.
-
-This summary will be shown to the user and used later for verification.
-Focus on the WHAT and WHY, not the HOW.
-
-Write only the summary, no preamble.`
+export const SUMMARY_REQUEST_PROMPT = `Write a 2-3 sentence summary of what the user wants to accomplish. Focus on WHAT and WHY, not HOW. Output only the summary, no preamble.`

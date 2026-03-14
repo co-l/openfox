@@ -22,6 +22,7 @@ import type {
   ChatSummaryPayload,
   ChatProgressPayload,
   ChatFormatRetryPayload,
+  ChatMessagePayload,
   ChatDonePayload,
   ChatErrorPayload,
   ModeChangedPayload,
@@ -29,7 +30,7 @@ import type {
   ErrorPayload,
 } from '@openfox/shared/protocol'
 import { isClientMessage, createServerMessage } from '@openfox/shared/protocol'
-import type { Project, Session, SessionSummary, SessionMode, Criterion, Todo, ToolResult } from '@openfox/shared'
+import type { Project, Session, SessionSummary, SessionMode, Criterion, Todo, ToolResult, Message } from '@openfox/shared'
 
 export function parseClientMessage(data: string): ClientMessage | null {
   try {
@@ -107,6 +108,10 @@ export function createChatFormatRetryMessage(
   maxAttempts: number
 ): ServerMessage<ChatFormatRetryPayload> {
   return createServerMessage('chat.format_retry', { attempt, maxAttempts })
+}
+
+export function createChatMessageMessage(message: Message): ServerMessage<ChatMessagePayload> {
+  return createServerMessage('chat.message', { message })
 }
 
 export function createChatDoneMessage(

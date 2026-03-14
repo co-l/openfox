@@ -113,6 +113,7 @@ export type ServerMessageType =
   | 'chat.summary'        // Summary block (displayed in chat)
   | 'chat.progress'       // Progress update (e.g., "Generating summary...")
   | 'chat.format_retry'   // Model used wrong format (XML tools), retrying
+  | 'chat.message'        // Full message added (system-generated, etc.)
   | 'chat.done'           // Current generation complete
   | 'chat.error'          // Error during generation
   // Mode events
@@ -191,6 +192,10 @@ export interface ChatProgressPayload {
 export interface ChatFormatRetryPayload {
   attempt: number
   maxAttempts: number
+}
+
+export interface ChatMessagePayload {
+  message: Message
 }
 
 export interface ChatDonePayload {

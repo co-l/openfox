@@ -4,7 +4,7 @@ import type { LLMClientWithModel } from '../llm/client.js'
 import { sessionManager } from '../session/index.js'
 import { getToolRegistryForMode, setTodoUpdateCallback, AskUserInterrupt } from '../tools/index.js'
 import { streamWithSegments, type StreamTiming } from '../llm/streaming.js'
-import { buildPlannerPrompt, buildBuilderPrompt, buildVerifierPrompt, SUMMARY_GENERATION_PROMPT } from './prompts.js'
+import { buildPlannerPrompt, buildBuilderPrompt, buildVerifierPrompt, SUMMARY_REQUEST_PROMPT } from './prompts.js'
 import { estimateTokens } from '../context/tokenizer.js'
 import { logger } from '../utils/logger.js'
 import {
@@ -17,6 +17,7 @@ import {
   createChatDoneMessage,
   createChatErrorMessage,
   createChatFormatRetryMessage,
+  createChatMessageMessage,
   createModeChangedMessage,
   createCriteriaUpdatedMessage,
   createSessionStateMessage,
@@ -146,13 +147,14 @@ async function runPlannerChat(
   
   // If retrying due to XML format error, inject correction prompt
   if (formatRetryCount > 0) {
-    sessionManager.addMessage(sessionId, {
+    const correctionMsg = sessionManager.addMessage(sessionId, {
       role: 'user',
       content: FORMAT_CORRECTION_PROMPT,
       tokenCount: estimateTokens(FORMAT_CORRECTION_PROMPT),
       isSystemGenerated: true,
     })
     session = sessionManager.requireSession(sessionId)
+    onMessage(createChatMessageMessage(correctionMsg))
     onMessage(createChatFormatRetryMessage(formatRetryCount, MAX_FORMAT_RETRIES))
   }
   
@@ -354,13 +356,14 @@ async function runBuilderLoop(options: ChatOptions): Promise<void> {
     
     // If retrying due to XML format error, inject correction prompt
     if (formatRetryCount > 0) {
-      sessionManager.addMessage(sessionId, {
+      const correctionMsg = sessionManager.addMessage(sessionId, {
         role: 'user',
         content: FORMAT_CORRECTION_PROMPT,
         tokenCount: estimateTokens(FORMAT_CORRECTION_PROMPT),
         isSystemGenerated: true,
       })
       session = sessionManager.requireSession(sessionId)
+      onMessage(createChatMessageMessage(correctionMsg))
       onMessage(createChatFormatRetryMessage(formatRetryCount, MAX_FORMAT_RETRIES))
       formatRetryCount = 0  // Reset after injecting
     }
@@ -780,6 +783,7 @@ async function runVerifierLoop(options: ChatOptions): Promise<void> {
 
 /**
  * Generate a summary from the conversation
+ * Uses same planner prompt to hit vLLM KV cache from conversation
  */
 export async function generateSummary(
   sessionId: string,
@@ -787,22 +791,21 @@ export async function generateSummary(
 ): Promise<string> {
   const session = sessionManager.requireSession(sessionId)
   
-  const conversationText = session.messages
-    .filter(m => m.role === 'user' || m.role === 'assistant')
-    .slice(-20) // Last 20 messages
-    .map(m => `${m.role}: ${m.content.slice(0, 500)}`)
-    .join('\n\n')
+  // Use planner prompt to hit KV cache from conversation
+  const toolRegistry = getToolRegistryForMode('planner')
+  const systemPrompt = buildPlannerPrompt(toolRegistry.definitions)
   
-  const criteriaText = session.criteria
-    .map(c => `- ${c.id}: ${c.description}`)
-    .join('\n')
+  const messages = [
+    { role: 'system' as const, content: systemPrompt },
+    ...session.messages.map(m => ({
+      role: m.role as 'user' | 'assistant' | 'system' | 'tool',
+      content: m.content,
+      toolCalls: m.toolCalls,
+      toolCallId: m.toolCallId,
+    })),
+    { role: 'user' as const, content: SUMMARY_REQUEST_PROMPT },
+  ]
   
-  const response = await llmClient.complete({
-    messages: [
-      { role: 'system', content: SUMMARY_GENERATION_PROMPT },
-      { role: 'user', content: `Conversation:\n${conversationText}\n\nAcceptance Criteria:\n${criteriaText}` },
-    ],
-  })
-  
+  const response = await llmClient.complete({ messages })
   return response.content.trim()
 }
