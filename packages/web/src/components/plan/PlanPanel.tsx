@@ -146,12 +146,14 @@ export function PlanPanel() {
   
   const isPlanning = session?.mode === 'planner'
   const hasCriteria = (session?.criteria.length ?? 0) > 0
+  const isDone = session?.phase === 'done'
   
   // Show "Start Building" when in planner with criteria and assistant has responded
+  // Don't show if already done (all criteria verified)
   const hasAssistantResponse = displayItems.some(item => 
     item.type === 'message' && item.message.role === 'assistant'
   )
-  const showStartBuilding = isPlanning && hasCriteria && !isStreaming && hasAssistantResponse
+  const showStartBuilding = isPlanning && hasCriteria && !isStreaming && hasAssistantResponse && !isDone
   
   return (
     <SessionLayout>

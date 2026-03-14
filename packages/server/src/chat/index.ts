@@ -20,6 +20,7 @@ import {
   createChatFormatRetryMessage,
   createChatMessageMessage,
   createModeChangedMessage,
+  createPhaseChangedMessage,
   createCriteriaUpdatedMessage,
 } from '../ws/protocol.js'
 
@@ -383,12 +384,14 @@ async function runBuilderLoop(options: ChatOptions): Promise<void> {
     iteration++
     session = sessionManager.requireSession(sessionId)
     
-    // Check if all criteria are completed
-    const allCompleted = session.criteria.every(c => 
+    // Check if all criteria are completed (awaiting verification)
+    // Only run verification if there are criteria with 'completed' status (not yet verified)
+    const needsVerification = session.criteria.some(c => c.status.type === 'completed')
+    const allCompletedOrPassed = session.criteria.every(c => 
       c.status.type === 'completed' || c.status.type === 'passed'
     )
     
-    if (allCompleted && session.criteria.length > 0) {
+    if (needsVerification && allCompletedOrPassed && session.criteria.length > 0) {
       logger.info('All criteria completed, running verification sub-agent', { sessionId })
       
       // Send stats for builder turn before verification
@@ -398,17 +401,27 @@ async function runBuilderLoop(options: ChatOptions): Promise<void> {
         onMessage(createChatDoneMessage(currentMessageId, 'complete', stats))
       }
       
+      // Set phase to verification
+      sessionManager.setPhase(sessionId, 'verification')
+      onMessage(createPhaseChangedMessage('verification'))
+      
       // Run verification as inline sub-agent
       const verificationResult = await runVerificationSubAgent(options)
       
       if (verificationResult.allPassed) {
         // All verified! We're done.
         logger.info('All criteria verified successfully', { sessionId })
+        sessionManager.setPhase(sessionId, 'done')
+        onMessage(createPhaseChangedMessage('done'))
         return
       }
       
       // Verification failed - inject failure context and continue builder loop
       logger.info('Verification failed, continuing builder', { sessionId, failed: verificationResult.failed.length })
+      
+      // Set phase back to build
+      sessionManager.setPhase(sessionId, 'build')
+      onMessage(createPhaseChangedMessage('build'))
       
       const failureMsg = sessionManager.addMessage(sessionId, {
         role: 'user',

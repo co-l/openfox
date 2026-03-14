@@ -216,6 +216,13 @@ function runMigrations(db: Database.Database): void {
     db.exec(`ALTER TABLE sessions ADD COLUMN summary TEXT`)
   }
   
+  // Note: The old 'phase' column was for the state machine (idle/planning/executing/etc.)
+  // This new 'workflow_phase' column is for UI display (plan/build/verification/done)
+  if (!columnNames.includes('workflow_phase')) {
+    logger.info('Migrating sessions table: adding workflow_phase column')
+    db.exec(`ALTER TABLE sessions ADD COLUMN workflow_phase TEXT NOT NULL DEFAULT 'plan'`)
+  }
+  
   // Create turn_events table for event sourcing
   // Events are the source of truth for assistant turns
   db.exec(`

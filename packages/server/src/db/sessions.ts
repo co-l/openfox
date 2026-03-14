@@ -3,6 +3,7 @@ import type {
   Session,
   SessionSummary,
   SessionMode,
+  SessionPhase,
   Message,
   MessageSegment,
   Criterion,
@@ -24,8 +25,8 @@ export function createSession(projectId: string, workdir: string, title?: string
   const id = crypto.randomUUID()
   
   db.prepare(`
-    INSERT INTO sessions (id, project_id, workdir, phase, mode, is_running, created_at, updated_at, title)
-    VALUES (?, ?, ?, 'idle', 'planner', 0, ?, ?, ?)
+    INSERT INTO sessions (id, project_id, workdir, phase, mode, workflow_phase, is_running, created_at, updated_at, title)
+    VALUES (?, ?, ?, 'idle', 'planner', 'plan', 0, ?, ?, ?)
   `).run(id, projectId, workdir, now, now, title ?? null)
   
   return {
@@ -33,6 +34,7 @@ export function createSession(projectId: string, workdir: string, title?: string
     projectId,
     workdir,
     mode: 'planner',
+    phase: 'plan',
     isRunning: false,
     summary: null,
     createdAt: now,
@@ -69,6 +71,7 @@ export function getSession(id: string): Session | null {
     projectId: row.project_id,
     workdir: row.workdir,
     mode: (row.mode ?? 'planner') as SessionMode,
+    phase: (row.workflow_phase ?? 'plan') as SessionPhase,
     isRunning: Boolean(row.is_running),
     summary: row.summary ?? null,
     createdAt: row.created_at,
@@ -92,6 +95,15 @@ export function updateSessionMode(id: string, mode: SessionMode): void {
   db.prepare(`
     UPDATE sessions SET mode = ?, updated_at = ? WHERE id = ?
   `).run(mode, now, id)
+}
+
+export function updateSessionPhase(id: string, phase: SessionPhase): void {
+  const db = getDatabase()
+  const now = new Date().toISOString()
+  
+  db.prepare(`
+    UPDATE sessions SET workflow_phase = ?, updated_at = ? WHERE id = ?
+  `).run(phase, now, id)
 }
 
 export function updateSessionRunning(id: string, isRunning: boolean): void {
@@ -155,6 +167,7 @@ export function listSessions(): SessionSummary[] {
       s.project_id,
       s.workdir,
       s.mode,
+      s.workflow_phase,
       s.is_running,
       s.created_at,
       s.updated_at,
@@ -171,6 +184,7 @@ export function listSessions(): SessionSummary[] {
     title: row.title ?? undefined,
     workdir: row.workdir,
     mode: (row.mode ?? 'planner') as SessionMode,
+    phase: (row.workflow_phase ?? 'plan') as SessionPhase,
     isRunning: Boolean(row.is_running),
     createdAt: row.created_at,
     updatedAt: row.updated_at,
@@ -189,6 +203,7 @@ export function listSessionsByProject(projectId: string, projectWorkdir: string)
       s.project_id,
       s.workdir,
       s.mode,
+      s.workflow_phase,
       s.is_running,
       s.created_at,
       s.updated_at,
@@ -206,6 +221,7 @@ export function listSessionsByProject(projectId: string, projectWorkdir: string)
     title: row.title ?? undefined,
     workdir: row.workdir,
     mode: (row.mode ?? 'planner') as SessionMode,
+    phase: (row.workflow_phase ?? 'plan') as SessionPhase,
     isRunning: Boolean(row.is_running),
     createdAt: row.created_at,
     updatedAt: row.updated_at,
@@ -574,6 +590,7 @@ interface SessionRow {
   workdir: string
   phase: string  // Legacy, kept for compatibility
   mode: string
+  workflow_phase: string  // UI phase: plan/build/verification/done
   is_running: number
   summary: string | null
   created_at: string
@@ -587,6 +604,7 @@ interface SessionRow {
 interface SessionSummaryRow extends SessionRow {
   criteria_count: number
   criteria_completed: number
+  workflow_phase: string  // From SessionRow, but make explicit
 }
 
 interface MessageRow {

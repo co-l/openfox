@@ -27,11 +27,12 @@ import type {
   ChatDonePayload,
   ChatErrorPayload,
   ModeChangedPayload,
+  PhaseChangedPayload,
   CriteriaUpdatedPayload,
   ErrorPayload,
 } from '@openfox/shared/protocol'
 import { isClientMessage, createServerMessage } from '@openfox/shared/protocol'
-import type { Project, Session, SessionSummary, SessionMode, Criterion, Todo, ToolResult, Message } from '@openfox/shared'
+import type { Project, Session, SessionSummary, SessionMode, SessionPhase, Criterion, Todo, ToolResult, Message } from '@openfox/shared'
 
 export function parseClientMessage(data: string): ClientMessage | null {
   try {
@@ -137,6 +138,11 @@ export function createChatErrorMessage(error: string, recoverable: boolean): Ser
 // Mode messages
 export function createModeChangedMessage(mode: SessionMode, auto: boolean, reason?: string): ServerMessage<ModeChangedPayload> {
   return createServerMessage('mode.changed', { mode, auto, reason })
+}
+
+// Phase messages
+export function createPhaseChangedMessage(phase: SessionPhase): ServerMessage<PhaseChangedPayload> {
+  return createServerMessage('phase.changed', { phase })
 }
 
 // Criteria messages

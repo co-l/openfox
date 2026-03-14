@@ -3,6 +3,7 @@ import type {
   Session,
   SessionSummary,
   SessionMode,
+  SessionPhase,
   ToolMode,
   Criterion,
   Message,
@@ -120,6 +121,8 @@ export type ServerMessageType =
   | 'chat.error'          // Error during generation
   // Mode events
   | 'mode.changed'        // Mode was changed
+  // Phase events
+  | 'phase.changed'       // Workflow phase changed (plan/build/verification/done)
   // Criteria events
   | 'criteria.updated'    // Criteria changed
   // Other
@@ -236,6 +239,11 @@ export interface ModeChangedPayload {
   mode: SessionMode
   auto: boolean  // Was this an automatic switch?
   reason?: string
+}
+
+// Phase payloads
+export interface PhaseChangedPayload {
+  phase: SessionPhase
 }
 
 // Criteria payloads

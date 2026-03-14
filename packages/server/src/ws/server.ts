@@ -34,6 +34,7 @@ import {
   createChatDoneMessage,
   createChatErrorMessage,
   createModeChangedMessage,
+  createPhaseChangedMessage,
   createCriteriaUpdatedMessage,
   isProjectCreatePayload,
   isProjectLoadPayload,
@@ -538,9 +539,11 @@ async function handleClientMessage(
           const summary = await streamSummaryResponse(sessionId, llmClient, pushEvent)
           sessionManager.setSummary(sessionId, summary)
           
-          // Switch to builder mode
+          // Switch to builder mode and phase
           sessionManager.setMode(sessionId, 'builder')
+          sessionManager.setPhase(sessionId, 'build')
           pushEvent(createModeChangedMessage('builder', false, 'Criteria accepted'))
+          pushEvent(createPhaseChangedMessage('build'))
           
           // Mark session as running
           sessionManager.setRunning(sessionId, true)

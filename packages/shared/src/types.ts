@@ -19,11 +19,15 @@ export type SessionMode = 'planner' | 'builder'
 // Tool mode includes 'verifier' for the verification sub-agent (which uses distinct tools but runs inline within builder)
 export type ToolMode = SessionMode | 'verifier'
 
+// Workflow phase shown to user (more granular than mode)
+export type SessionPhase = 'plan' | 'build' | 'verification' | 'done'
+
 export interface Session {
   id: string
   projectId: string
   workdir: string
   mode: SessionMode
+  phase: SessionPhase  // Current workflow phase
   isRunning: boolean  // Is the agent actively working?
   summary: string | null  // Generated when switching to builder, used by verifier
   createdAt: string
@@ -47,6 +51,7 @@ export interface SessionSummary {
   title?: string
   workdir: string
   mode: SessionMode
+  phase: SessionPhase  // Current workflow phase
   isRunning: boolean
   createdAt: string
   updatedAt: string

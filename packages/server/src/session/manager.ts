@@ -2,6 +2,7 @@ import type {
   Session,
   SessionSummary,
   SessionMode,
+  SessionPhase,
   Message,
   Criterion,
   ExecutionState,
@@ -10,6 +11,7 @@ import {
   createSession as dbCreateSession,
   getSession as dbGetSession,
   updateSessionMode,
+  updateSessionPhase,
   updateSessionRunning,
   updateSessionSummary,
   updateSessionMetadata,
@@ -45,6 +47,7 @@ export type SessionEvent =
   | { type: 'session_updated'; session: Session }
   | { type: 'session_deleted'; sessionId: string }
   | { type: 'mode_changed'; sessionId: string; from: SessionMode; to: SessionMode }
+  | { type: 'phase_changed'; sessionId: string; phase: SessionPhase }
   | { type: 'message_added'; sessionId: string; message: Message }
   | { type: 'message_updated'; sessionId: string; messageId: string; updates: Partial<Omit<Message, 'id' | 'timestamp' | 'role'>> }
   | { type: 'criteria_updated'; sessionId: string; criteria: Criterion[] }
@@ -154,6 +157,25 @@ class SessionManagerImpl {
     const updatedSession = this.requireSession(sessionId)
     
     this.emit({ type: 'mode_changed', sessionId, from: fromMode, to: toMode })
+    this.emit({ type: 'session_updated', session: updatedSession })
+    
+    return updatedSession
+  }
+  
+  setPhase(sessionId: string, phase: SessionPhase): Session {
+    const session = this.requireSession(sessionId)
+    
+    if (session.phase === phase) {
+      return session
+    }
+    
+    logger.info('Changing session phase', { sessionId, from: session.phase, to: phase })
+    
+    updateSessionPhase(sessionId, phase)
+    
+    const updatedSession = this.requireSession(sessionId)
+    
+    this.emit({ type: 'phase_changed', sessionId, phase })
     this.emit({ type: 'session_updated', session: updatedSession })
     
     return updatedSession

@@ -24,10 +24,11 @@ import type {
   ChatDonePayload,
   ChatErrorPayload,
   ModeChangedPayload,
+  PhaseChangedPayload,
   CriteriaUpdatedPayload,
 } from '@openfox/shared/protocol'
 import { wsClient, type ConnectionStatus } from '../lib/ws'
-import { playNotification } from '../lib/sound'
+import { playNotification, playAchievement } from '../lib/sound'
 
 // Track subscription to prevent duplicates
 let isSubscribed = false
@@ -388,6 +389,30 @@ export const useSessionStore = create<SessionState>((set, get) => ({
             ? { ...state.currentSession, mode: payload.mode }
             : null,
         }))
+        break
+      }
+      
+      case 'phase.changed': {
+        const payload = message.payload as PhaseChangedPayload
+        const currentPhase = get().currentSession?.phase
+        // Only play sound if phase actually changed to 'done' (not if already 'done')
+        const shouldPlaySound = payload.phase === 'done' && currentPhase !== 'done'
+        
+        set(state => ({
+          currentSession: state.currentSession
+            ? { ...state.currentSession, phase: payload.phase }
+            : null,
+          // Also update the sessions list for the sidebar
+          sessions: state.sessions.map(s => 
+            s.id === state.currentSession?.id 
+              ? { ...s, phase: payload.phase }
+              : s
+          ),
+        }))
+        // Play achievement sound when phase becomes 'done' (only once)
+        if (shouldPlaySound) {
+          playAchievement()
+        }
         break
       }
       
