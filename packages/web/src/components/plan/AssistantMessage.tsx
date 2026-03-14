@@ -236,6 +236,18 @@ export function AssistantMessage({ events, message, isStreaming = false, showSta
         )
         break
       
+      case 'format_retry':
+        // Format retry indicator (model used XML instead of JSON)
+        renderedEvents.push(
+          <div key={i} className="flex items-center gap-2 text-amber-400 text-sm py-2 bg-amber-500/10 border border-amber-500/30 rounded-lg px-3">
+            <svg className="w-4 h-4 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+            </svg>
+            <span>Retrying (wrong format) - attempt {event.attempt}/{event.maxAttempts}</span>
+          </div>
+        )
+        break
+      
       case 'error':
         renderedEvents.push(
           <div key={i} className={`rounded-lg p-3 ${

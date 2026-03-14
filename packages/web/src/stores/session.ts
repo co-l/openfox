@@ -18,6 +18,7 @@ import type {
   ChatTodoPayload,
   ChatSummaryPayload,
   ChatProgressPayload,
+  ChatFormatRetryPayload,
   ChatDonePayload,
   ChatErrorPayload,
   ModeChangedPayload,
@@ -38,6 +39,7 @@ export type ChatStreamEvent =
   | { type: 'todo'; todos: Todo[] }
   | { type: 'summary'; summary: string }
   | { type: 'progress'; message: string; phase?: 'summary' | 'mode_switch' | 'starting' }
+  | { type: 'format_retry'; attempt: number; maxAttempts: number }
   | { type: 'error'; error: string; recoverable: boolean }
   | { type: 'stats'; model: string; mode: SessionMode; totalTime: number; toolTime: number; prefillTokens: number; prefillSpeed: number; generationTokens: number; generationSpeed: number }
 
@@ -342,6 +344,18 @@ export const useSessionStore = create<SessionState>((set, get) => ({
             type: 'progress' as const,
             message: payload.message,
             phase: payload.phase,
+          }],
+        }))
+        break
+      }
+      
+      case 'chat.format_retry': {
+        const payload = message.payload as ChatFormatRetryPayload
+        set(state => ({
+          chatStreamEvents: [...state.chatStreamEvents, {
+            type: 'format_retry' as const,
+            attempt: payload.attempt,
+            maxAttempts: payload.maxAttempts,
           }],
         }))
         break

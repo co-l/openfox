@@ -16,10 +16,15 @@ import {
   createChatSummaryMessage,
   createChatDoneMessage,
   createChatErrorMessage,
+  createChatFormatRetryMessage,
   createModeChangedMessage,
   createCriteriaUpdatedMessage,
   createSessionStateMessage,
 } from '../ws/protocol.js'
+
+// Constants for XML tool format retry
+const MAX_FORMAT_RETRIES = 10
+const FORMAT_CORRECTION_PROMPT = `IMPORTANT: You MUST use the JSON function calling API. Do NOT output XML tags like <tool_call>, <function=>, or <parameter=>. Your previous attempt was stopped because you used the wrong format. Use the proper tool_calls format.`
 
 export interface ChatOptions {
   sessionId: string
@@ -129,11 +134,28 @@ export async function handleChat(options: ChatOptions): Promise<void> {
  * Planner mode: Single response to help define criteria
  * Uses TurnMetrics to track aggregated metrics across recursive calls
  */
-async function runPlannerChat(options: ChatOptions, metrics?: TurnMetrics): Promise<void> {
+async function runPlannerChat(
+  options: ChatOptions, 
+  metrics?: TurnMetrics,
+  formatRetryCount = 0
+): Promise<void> {
   const { sessionId, llmClient, signal, onMessage } = options
   const turnMetrics = metrics ?? new TurnMetrics()
   
   let session = sessionManager.requireSession(sessionId)
+  
+  // If retrying due to XML format error, inject correction prompt
+  if (formatRetryCount > 0) {
+    sessionManager.addMessage(sessionId, {
+      role: 'user',
+      content: FORMAT_CORRECTION_PROMPT,
+      tokenCount: estimateTokens(FORMAT_CORRECTION_PROMPT),
+      isSystemGenerated: true,
+    })
+    session = sessionManager.requireSession(sessionId)
+    onMessage(createChatFormatRetryMessage(formatRetryCount, MAX_FORMAT_RETRIES))
+  }
+  
   const toolRegistry = getToolRegistryForMode('planner')
   
   const systemPrompt = buildPlannerPrompt(toolRegistry.definitions)
@@ -194,6 +216,24 @@ async function runPlannerChat(options: ChatOptions, metrics?: TurnMetrics): Prom
         accumulatedThinking += value.content
         onMessage(createChatThinkingMessage(value.content))
         break
+      case 'xml_tool_abort': {
+        // Model used XML tool format - retry
+        const newRetryCount = formatRetryCount + 1
+        if (newRetryCount <= MAX_FORMAT_RETRIES) {
+          logger.warn('XML tool format detected in planner, retrying', { 
+            sessionId, 
+            attempt: newRetryCount 
+          })
+          return await runPlannerChat(options, turnMetrics, newRetryCount)
+        } else {
+          onMessage(createChatErrorMessage(
+            'Model repeatedly used XML tool format after 10 retries',
+            false
+          ))
+          onMessage(createChatDoneMessage('error'))
+          return
+        }
+      }
       case 'error':
         onMessage(createChatErrorMessage(value.error, true))
         break
@@ -256,7 +296,8 @@ async function runPlannerChat(options: ChatOptions, metrics?: TurnMetrics): Prom
     
     // Continue with another response if we had tool calls
     // Pass metrics through to accumulate across recursive calls
-    return await runPlannerChat(options, turnMetrics)
+    // Reset format retry count since we succeeded
+    return await runPlannerChat(options, turnMetrics, 0)
   }
   
   // Final response - build and send aggregated stats
@@ -279,6 +320,7 @@ async function runBuilderLoop(options: ChatOptions): Promise<void> {
   let session = sessionManager.requireSession(sessionId)
   let iteration = 0
   const maxIterations = 50 // Safety limit
+  let formatRetryCount = 0
   
   while (iteration < maxIterations) {
     if (signal?.aborted) {
@@ -308,6 +350,19 @@ async function runBuilderLoop(options: ChatOptions): Promise<void> {
       
       // Verifier will be a new turn
       return
+    }
+    
+    // If retrying due to XML format error, inject correction prompt
+    if (formatRetryCount > 0) {
+      sessionManager.addMessage(sessionId, {
+        role: 'user',
+        content: FORMAT_CORRECTION_PROMPT,
+        tokenCount: estimateTokens(FORMAT_CORRECTION_PROMPT),
+        isSystemGenerated: true,
+      })
+      session = sessionManager.requireSession(sessionId)
+      onMessage(createChatFormatRetryMessage(formatRetryCount, MAX_FORMAT_RETRIES))
+      formatRetryCount = 0  // Reset after injecting
     }
     
     const toolRegistry = getToolRegistryForMode('builder')
@@ -377,10 +432,38 @@ async function runBuilderLoop(options: ChatOptions): Promise<void> {
           accumulatedThinking += value.content
           onMessage(createChatThinkingMessage(value.content))
           break
+        case 'xml_tool_abort': {
+          // Model used XML tool format - retry this iteration
+          formatRetryCount++
+          if (formatRetryCount <= MAX_FORMAT_RETRIES) {
+            logger.warn('XML tool format detected in builder, retrying', { 
+              sessionId, 
+              attempt: formatRetryCount 
+            })
+            break  // Exit inner while loop, continue outer loop
+          } else {
+            onMessage(createChatErrorMessage(
+              'Model repeatedly used XML tool format after 10 retries',
+              false
+            ))
+            onMessage(createChatDoneMessage('error'))
+            return
+          }
+        }
         case 'error':
           onMessage(createChatErrorMessage(value.error, true))
           break
       }
+      
+      // If we got xml_tool_abort, break out to retry
+      if (value.type === 'xml_tool_abort' && formatRetryCount <= MAX_FORMAT_RETRIES) {
+        break
+      }
+    }
+    
+    // If we broke out due to xml_tool_abort, continue to next iteration
+    if (!result && formatRetryCount > 0 && formatRetryCount <= MAX_FORMAT_RETRIES) {
+      continue
     }
     
     if (!result) {
@@ -510,6 +593,7 @@ async function runVerifierLoop(options: ChatOptions): Promise<void> {
   
   let iteration = 0
   const maxIterations = 20
+  let formatRetryCount = 0
   
   while (iteration < maxIterations) {
     if (signal?.aborted) {
@@ -518,6 +602,16 @@ async function runVerifierLoop(options: ChatOptions): Promise<void> {
     }
     
     iteration++
+    
+    // If retrying due to XML format error, inject correction prompt
+    if (formatRetryCount > 0) {
+      messages.push({
+        role: 'user' as const,
+        content: FORMAT_CORRECTION_PROMPT,
+      })
+      onMessage(createChatFormatRetryMessage(formatRetryCount, MAX_FORMAT_RETRIES))
+      formatRetryCount = 0  // Reset after injecting
+    }
     
     const stream = streamWithSegments(llmClient, {
       messages,
@@ -564,10 +658,38 @@ async function runVerifierLoop(options: ChatOptions): Promise<void> {
           accumulatedThinking += value.content
           onMessage(createChatThinkingMessage(value.content))
           break
+        case 'xml_tool_abort': {
+          // Model used XML tool format - retry this iteration
+          formatRetryCount++
+          if (formatRetryCount <= MAX_FORMAT_RETRIES) {
+            logger.warn('XML tool format detected in verifier, retrying', { 
+              sessionId, 
+              attempt: formatRetryCount 
+            })
+            break  // Exit inner while loop, continue outer loop
+          } else {
+            onMessage(createChatErrorMessage(
+              'Model repeatedly used XML tool format after 10 retries',
+              false
+            ))
+            onMessage(createChatDoneMessage('error'))
+            return
+          }
+        }
         case 'error':
           onMessage(createChatErrorMessage(value.error, true))
           break
       }
+      
+      // If we got xml_tool_abort, break out to retry
+      if (value.type === 'xml_tool_abort' && formatRetryCount <= MAX_FORMAT_RETRIES) {
+        break
+      }
+    }
+    
+    // If we broke out due to xml_tool_abort, continue to next iteration
+    if (!result && formatRetryCount > 0 && formatRetryCount <= MAX_FORMAT_RETRIES) {
+      continue
     }
     
     if (!result) {

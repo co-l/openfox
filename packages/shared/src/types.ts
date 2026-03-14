@@ -90,6 +90,7 @@ export interface Message {
   segments?: MessageSegment[]  // Preserves streaming order: text/thinking chunks + tool call refs
   stats?: MessageStats         // LLM performance stats for this response
   partial?: boolean            // true if message was interrupted mid-stream
+  isSystemGenerated?: boolean  // true for auto-injected messages (retry prompts, etc.)
 }
 
 // ============================================================================

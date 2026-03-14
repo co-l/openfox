@@ -76,7 +76,9 @@ export function createLLMClient(config: Config): LLMClientWithModel {
           (createParams as Record<string, unknown>)['top_k'] = profile.topK
         }
         
-        const response = await openai.chat.completions.create(createParams)
+        const response = await openai.chat.completions.create(createParams, {
+          signal: request.signal,
+        })
         
         const choice = response.choices[0]
         if (!choice) {
@@ -162,7 +164,9 @@ export function createLLMClient(config: Config): LLMClientWithModel {
           (createParams as Record<string, unknown>)['top_k'] = profile.topK
         }
         
-        const stream = await openai.chat.completions.create(createParams)
+        const stream = await openai.chat.completions.create(createParams, {
+          signal: request.signal,
+        })
         
         let fullContent = ''
         let fullThinking = ''

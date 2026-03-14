@@ -74,6 +74,21 @@ export function ChatMessage({ message, isLastAssistantMessage = false }: ChatMes
   
   // User message
   if (isUser) {
+    // System-generated user messages (like retry prompts)
+    if (message.isSystemGenerated) {
+      return (
+        <div className="flex justify-end items-start gap-2 my-2">
+          <div className="max-w-[80%] rounded-lg p-3 bg-amber-500/10 border border-amber-500/30">
+            <span className="text-xs text-amber-400 block mb-1">System Correction</span>
+            <div className="text-amber-200 italic whitespace-pre-wrap text-sm">
+              {message.content}
+            </div>
+          </div>
+        </div>
+      )
+    }
+    
+    // Normal user message
     return (
       <div className="flex justify-end items-start gap-2 my-2 group">
         <CopyButton text={message.content} />

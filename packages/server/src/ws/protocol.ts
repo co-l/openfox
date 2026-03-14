@@ -21,6 +21,7 @@ import type {
   ChatTodoPayload,
   ChatSummaryPayload,
   ChatProgressPayload,
+  ChatFormatRetryPayload,
   ChatDonePayload,
   ChatErrorPayload,
   ModeChangedPayload,
@@ -99,6 +100,13 @@ export function createChatProgressMessage(
   phase?: 'summary' | 'mode_switch' | 'starting'
 ): ServerMessage<ChatProgressPayload> {
   return createServerMessage('chat.progress', { message, phase })
+}
+
+export function createChatFormatRetryMessage(
+  attempt: number,
+  maxAttempts: number
+): ServerMessage<ChatFormatRetryPayload> {
+  return createServerMessage('chat.format_retry', { attempt, maxAttempts })
 }
 
 export function createChatDoneMessage(

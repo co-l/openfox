@@ -1,6 +1,13 @@
 import type { MessageSegment, ToolCall } from '@openfox/shared'
 import type { LLMClient, LLMCompletionRequest, LLMStreamEvent, LLMCompletionResponse } from './types.js'
 
+// XML patterns that indicate wrong tool format (model outputting XML instead of JSON function calls)
+const XML_TOOL_PATTERNS = ['<tool_call>', '<function=', '</tool_call>', '<parameter=']
+
+function hasXmlToolPattern(text: string): boolean {
+  return XML_TOOL_PATTERNS.some(p => text.includes(p))
+}
+
 /**
  * Streaming event with segment tracking.
  * Same as LLMStreamEvent but adds segment context.
@@ -10,6 +17,7 @@ export type StreamEvent =
   | { type: 'thinking_delta'; content: string }
   | { type: 'done'; response: LLMCompletionResponse }
   | { type: 'error'; error: string }
+  | { type: 'xml_tool_abort' }
 
 /**
  * Timing metrics for a streaming LLM call.
@@ -44,6 +52,14 @@ export async function* streamWithSegments(
   client: LLMClient,
   request: LLMCompletionRequest
 ): AsyncGenerator<StreamEvent, StreamResult | null> {
+  // Create internal abort controller for XML detection
+  const xmlAbortController = new AbortController()
+  
+  // Combine with any external signal (e.g., user abort)
+  const combinedSignal = request.signal
+    ? AbortSignal.any([request.signal, xmlAbortController.signal])
+    : xmlAbortController.signal
+  
   let content = ''
   let thinkingContent = ''
   let response: LLMCompletionResponse | null = null
@@ -73,7 +89,7 @@ export async function* streamWithSegments(
   }
   
   try {
-    for await (const event of client.stream(request)) {
+    for await (const event of client.stream({ ...request, signal: combinedSignal })) {
       switch (event.type) {
         case 'text_delta':
           // Track first token time
@@ -84,6 +100,14 @@ export async function* streamWithSegments(
           flushThinking()
           content += event.content
           currentTextSegment += event.content
+          
+          // Check for XML tool syntax - abort immediately to save tokens
+          if (hasXmlToolPattern(content)) {
+            xmlAbortController.abort()
+            yield { type: 'xml_tool_abort' }
+            return null
+          }
+          
           yield { type: 'text_delta', content: event.content }
           break
           
@@ -96,6 +120,14 @@ export async function* streamWithSegments(
           flushText()
           thinkingContent += event.content
           currentThinkingSegment += event.content
+          
+          // Check for XML tool syntax in thinking too
+          if (hasXmlToolPattern(thinkingContent)) {
+            xmlAbortController.abort()
+            yield { type: 'xml_tool_abort' }
+            return null
+          }
+          
           yield { type: 'thinking_delta', content: event.content }
           break
           
@@ -113,6 +145,10 @@ export async function* streamWithSegments(
       }
     }
   } catch (error) {
+    // AbortError is expected when we abort for XML detection
+    if (error instanceof Error && error.name === 'AbortError') {
+      return null
+    }
     yield { type: 'error', error: error instanceof Error ? error.message : 'Unknown error' }
     return null
   }

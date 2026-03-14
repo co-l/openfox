@@ -24,6 +24,7 @@ export interface LLMCompletionRequest {
   temperature?: number
   maxTokens?: number
   stream?: boolean
+  signal?: AbortSignal
 }
 
 export interface LLMCompletionResponse {

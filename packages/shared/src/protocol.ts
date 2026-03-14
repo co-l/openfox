@@ -111,6 +111,7 @@ export type ServerMessageType =
   | 'chat.todo'           // Todo list update (displayed in chat)
   | 'chat.summary'        // Summary block (displayed in chat)
   | 'chat.progress'       // Progress update (e.g., "Generating summary...")
+  | 'chat.format_retry'   // Model used wrong format (XML tools), retrying
   | 'chat.done'           // Current generation complete
   | 'chat.error'          // Error during generation
   // Mode events
@@ -186,6 +187,11 @@ export interface ChatProgressPayload {
   phase?: 'summary' | 'mode_switch' | 'starting'
 }
 
+export interface ChatFormatRetryPayload {
+  attempt: number
+  maxAttempts: number
+}
+
 export interface ChatDonePayload {
   reason: 'complete' | 'stopped' | 'error' | 'waiting_for_user'
   stats?: {
@@ -247,6 +253,21 @@ export interface AskUserEvent {
   question: string
   callId: string
 }
+
+// Agent events (used by runAgent in agent/runner.ts)
+export type AgentEvent =
+  | { type: 'aborted' }
+  | { type: 'text_delta'; content: string }
+  | { type: 'thinking'; content: string }
+  | { type: 'error'; error: string; recoverable: boolean }
+  | { type: 'context_compaction'; beforeTokens: number; afterTokens: number }
+  | { type: 'done'; allCriteriaPassed: boolean; summary: string; stats: ChatDonePayload['stats'] }
+  | { type: 'stuck'; reason: string; failedAttempts: number }
+  | { type: 'tool_call'; callId: string; tool: string; args: Record<string, unknown> }
+  | { type: 'tool_result'; callId: string; tool: string; result: ToolResult }
+  | { type: 'tool_error'; callId: string; tool: string; error: string; willRetry: boolean }
+  | { type: 'ask_user'; question: string; callId: string }
+  | { type: 'format_retry'; attempt: number; maxAttempts: number }
 
 // ============================================================================
 // Helper Functions

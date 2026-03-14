@@ -102,6 +102,13 @@ function runMigrations(db: Database.Database): void {
     // Column already exists
   }
   
+  // Migration: add is_system_generated column if missing
+  try {
+    db.exec(`ALTER TABLE messages ADD COLUMN is_system_generated INTEGER DEFAULT 0`)
+  } catch {
+    // Column already exists
+  }
+  
   // Create criteria table
   db.exec(`
     CREATE TABLE IF NOT EXISTS criteria (

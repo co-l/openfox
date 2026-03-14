@@ -12,6 +12,10 @@ import { estimateTokens } from '../context/tokenizer.js'
 import { shouldCompact, getCompactionTarget, compactMessages } from '../context/index.js'
 import { logger } from '../utils/logger.js'
 
+// Constants for XML tool format retry
+const MAX_FORMAT_RETRIES = 10
+const FORMAT_CORRECTION_PROMPT = `IMPORTANT: You MUST use the JSON function calling API. Do NOT output XML tags like <tool_call>, <function=>, or <parameter=>. Your previous attempt was stopped because you used the wrong format. Use the proper tool_calls format.`
+
 export interface AgentRunnerOptions {
   sessionId: string
   llmClient: LLMClientWithModel
@@ -27,6 +31,7 @@ export async function runAgent(options: AgentRunnerOptions): Promise<void> {
   let session = sessionManager.requireSession(sessionId)
   let iteration = 0
   const maxIterations = config.agent.maxIterations * session.criteria.length
+  let formatRetryCount = 0
   
   // Track aggregated metrics
   const startTime = performance.now()
@@ -116,6 +121,19 @@ export async function runAgent(options: AgentRunnerOptions): Promise<void> {
       }
     }
     
+    // If retrying due to XML format error, inject correction prompt
+    if (formatRetryCount > 0) {
+      sessionManager.addMessage(sessionId, {
+        role: 'user',
+        content: FORMAT_CORRECTION_PROMPT,
+        tokenCount: estimateTokens(FORMAT_CORRECTION_PROMPT),
+        isSystemGenerated: true,
+      })
+      session = sessionManager.requireSession(sessionId)
+      onEvent({ type: 'format_retry', attempt: formatRetryCount, maxAttempts: MAX_FORMAT_RETRIES })
+      formatRetryCount = 0  // Reset after injecting
+    }
+    
     // Build messages for LLM
     const systemPrompt = buildAgentSystemPrompt(
       session.criteria,
@@ -194,12 +212,37 @@ export async function runAgent(options: AgentRunnerOptions): Promise<void> {
           accumulatedThinking += value.content
           onEvent({ type: 'thinking', content: value.content })
           break
+        case 'xml_tool_abort': {
+          // Model used XML tool format - retry this iteration
+          formatRetryCount++
+          if (formatRetryCount <= MAX_FORMAT_RETRIES) {
+            logger.warn('XML tool format detected in agent, retrying', { 
+              sessionId, 
+              attempt: formatRetryCount 
+            })
+            break  // Exit inner while loop, continue outer loop
+          } else {
+            onEvent({ type: 'error', error: 'Model repeatedly used XML tool format after 10 retries', recoverable: false })
+            onEvent({ type: 'done', allCriteriaPassed: false, summary: 'Failed due to model format issues', stats: buildStats() })
+            return
+          }
+        }
         case 'error':
           onEvent({ type: 'error', error: value.error, recoverable: true })
           sessionManager.recordToolFailure(sessionId, 'llm', value.error)
           streamError = true
           break
       }
+      
+      // If we got xml_tool_abort, break out to retry
+      if (value.type === 'xml_tool_abort' && formatRetryCount <= MAX_FORMAT_RETRIES) {
+        break
+      }
+    }
+    
+    // If we broke out due to xml_tool_abort, continue to next iteration
+    if (!streamResult && formatRetryCount > 0 && formatRetryCount <= MAX_FORMAT_RETRIES) {
+      continue
     }
     
     // Handle stream errors
