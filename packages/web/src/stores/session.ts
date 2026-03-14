@@ -222,8 +222,15 @@ export const useSessionStore = create<SessionState>((set, get) => ({
           if (state.messages.some(m => m.id === payload.message.id)) {
             return state
           }
+          
+          // If new message is streaming, mark previous streaming messages as not streaming
+          // This handles tool loops where server updates isStreaming but client doesn't see it
+          const updatedMessages = payload.message.isStreaming
+            ? state.messages.map(m => m.isStreaming ? { ...m, isStreaming: false } : m)
+            : state.messages
+          
           return {
-            messages: [...state.messages, payload.message],
+            messages: [...updatedMessages, payload.message],
             // Track streaming message if it's marked as streaming
             streamingMessageId: payload.message.isStreaming 
               ? payload.message.id 
