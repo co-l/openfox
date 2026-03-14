@@ -4,7 +4,7 @@ import { useProjectStore } from '../../stores/project'
 import { useConfigStore } from '../../stores/config'
 
 export function Header() {
-  const connected = useSessionStore(state => state.connected)
+  const connectionStatus = useSessionStore(state => state.connectionStatus)
   const session = useSessionStore(state => state.currentSession)
   const project = useProjectStore(state => state.currentProject)
   const model = useConfigStore(state => state.model)
@@ -38,15 +38,6 @@ export function Header() {
             <span className="text-text-secondary">
               {session.metadata.title ?? session.id.slice(0, 8)}
             </span>
-            <span className={`px-2 py-0.5 text-xs rounded ${
-              session.mode === 'planner' ? 'bg-accent-primary/20 text-accent-primary' :
-              session.mode === 'builder' ? 'bg-accent-warning/20 text-accent-warning' :
-              session.mode === 'verifier' ? 'bg-purple-500/20 text-purple-400' :
-              'bg-bg-tertiary text-text-muted'
-            }`}>
-              {session.mode}
-              {session.isRunning && ' •'}
-            </span>
           </>
         )}
       </div>
@@ -69,9 +60,15 @@ export function Header() {
         
         {/* Connection status */}
         <div className="flex items-center gap-2">
-          <div className={`w-2 h-2 rounded-full ${connected ? 'bg-accent-success' : 'bg-accent-error'}`} />
+          <div className={`w-2 h-2 rounded-full ${
+            connectionStatus === 'connected' ? 'bg-accent-success' :
+            connectionStatus === 'reconnecting' ? 'bg-accent-warning animate-pulse' :
+            'bg-accent-error'
+          }`} />
           <span className="text-sm text-text-secondary">
-            {connected ? 'Connected' : 'Disconnected'}
+            {connectionStatus === 'connected' ? 'Connected' :
+             connectionStatus === 'reconnecting' ? 'Reconnecting...' :
+             'Disconnected'}
           </span>
         </div>
       </div>

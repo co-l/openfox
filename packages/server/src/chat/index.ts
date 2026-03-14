@@ -1,4 +1,4 @@
-import type { Session, SessionMode, ToolCall, Todo } from '@openfox/shared'
+import type { Session, SessionMode, ToolCall, Todo, MessageStats } from '@openfox/shared'
 import type { ServerMessage } from '@openfox/shared/protocol'
 import type { LLMClientWithModel } from '../llm/client.js'
 import { sessionManager } from '../session/index.js'
@@ -28,13 +28,52 @@ export interface ChatOptions {
   onMessage: (msg: ServerMessage) => void
 }
 
-// Helper to build stats from timing
-function buildStats(llmClient: LLMClientWithModel, timing: StreamTiming | null) {
-  return timing ? {
-    model: llmClient.getModel(),
-    prefillSpeed: timing.prefillTps,
-    generationSpeed: timing.tps,
-  } : undefined
+/**
+ * Tracks aggregated metrics across a full turn (multiple LLM calls + tool executions)
+ */
+class TurnMetrics {
+  private startTime: number
+  private totalPrefillTokens = 0
+  private totalPrefillTime = 0  // seconds
+  private totalGenTokens = 0
+  private totalGenTime = 0      // seconds
+  private totalToolTime = 0     // seconds
+  
+  constructor() {
+    this.startTime = performance.now()
+  }
+  
+  /** Add metrics from an LLM call */
+  addLLMCall(timing: StreamTiming, promptTokens: number, completionTokens: number) {
+    this.totalPrefillTokens += promptTokens
+    this.totalPrefillTime += timing.ttft
+    this.totalGenTokens += completionTokens
+    this.totalGenTime += timing.completionTime
+  }
+  
+  /** Add tool execution time (in milliseconds) */
+  addToolTime(durationMs: number) {
+    this.totalToolTime += durationMs / 1000
+  }
+  
+  /** Build final stats object */
+  buildStats(model: string, mode: SessionMode): MessageStats {
+    const totalTime = (performance.now() - this.startTime) / 1000
+    return {
+      model,
+      mode,
+      totalTime,
+      toolTime: this.totalToolTime,
+      prefillTokens: this.totalPrefillTokens,
+      prefillSpeed: this.totalPrefillTime > 0 
+        ? Math.round(this.totalPrefillTokens / this.totalPrefillTime) 
+        : 0,
+      generationTokens: this.totalGenTokens,
+      generationSpeed: this.totalGenTime > 0 
+        ? Math.round(this.totalGenTokens / this.totalGenTime) 
+        : 0,
+    }
+  }
 }
 
 /**
@@ -88,10 +127,11 @@ export async function handleChat(options: ChatOptions): Promise<void> {
 
 /**
  * Planner mode: Single response to help define criteria
- * Returns timing from the last LLM call for stats
+ * Uses TurnMetrics to track aggregated metrics across recursive calls
  */
-async function runPlannerChat(options: ChatOptions): Promise<StreamTiming | null> {
+async function runPlannerChat(options: ChatOptions, metrics?: TurnMetrics): Promise<void> {
   const { sessionId, llmClient, signal, onMessage } = options
+  const turnMetrics = metrics ?? new TurnMetrics()
   
   let session = sessionManager.requireSession(sessionId)
   const toolRegistry = getToolRegistryForMode('planner')
@@ -117,10 +157,24 @@ async function runPlannerChat(options: ChatOptions): Promise<StreamTiming | null
   
   let result: Awaited<ReturnType<typeof stream.next>>['value'] = null
   
+  // Track accumulated content for partial message on abort
+  let accumulatedContent = ''
+  let accumulatedThinking = ''
+  
   while (true) {
     if (signal?.aborted) {
+      // Save partial message if we have any content
+      if (accumulatedContent || accumulatedThinking) {
+        sessionManager.addMessage(sessionId, {
+          role: 'assistant',
+          content: accumulatedContent,
+          thinkingContent: accumulatedThinking || undefined,
+          tokenCount: 0,
+          partial: true,
+        })
+      }
       onMessage(createChatDoneMessage('stopped'))
-      return null
+      return
     }
     
     const { value, done } = await stream.next()
@@ -130,12 +184,14 @@ async function runPlannerChat(options: ChatOptions): Promise<StreamTiming | null
       break
     }
     
-    // Forward streaming events
+    // Forward streaming events and accumulate content
     switch (value.type) {
       case 'text_delta':
+        accumulatedContent += value.content
         onMessage(createChatDeltaMessage(value.content))
         break
       case 'thinking_delta':
+        accumulatedThinking += value.content
         onMessage(createChatThinkingMessage(value.content))
         break
       case 'error':
@@ -146,12 +202,15 @@ async function runPlannerChat(options: ChatOptions): Promise<StreamTiming | null
   
   if (!result) {
     onMessage(createChatDoneMessage('error'))
-    return null
+    return
   }
   
   const { content, thinkingContent, toolCalls, response, segments, timing } = result
   
-  // Save assistant message with stats
+  // Track LLM metrics
+  turnMetrics.addLLMCall(timing, response.usage.promptTokens, response.usage.completionTokens)
+  
+  // Save assistant message (stats will be on final message only)
   sessionManager.addMessage(sessionId, {
     role: 'assistant',
     content,
@@ -159,7 +218,6 @@ async function runPlannerChat(options: ChatOptions): Promise<StreamTiming | null
     toolCalls: toolCalls.length > 0 ? toolCalls : undefined,
     tokenCount: response.usage.completionTokens,
     segments,
-    stats: buildStats(llmClient, timing),
   })
   
   // Execute any tool calls (planner has read + criteria tools)
@@ -172,6 +230,9 @@ async function runPlannerChat(options: ChatOptions): Promise<StreamTiming | null
         toolCall.arguments,
         { workdir: session.workdir, sessionId }
       )
+      
+      // Track tool execution time
+      turnMetrics.addToolTime(result.durationMs)
       
       onMessage(createChatToolResultMessage(toolCall.id, toolCall.name, result))
       
@@ -194,30 +255,35 @@ async function runPlannerChat(options: ChatOptions): Promise<StreamTiming | null
     }
     
     // Continue with another response if we had tool calls
-    // Return the timing from the recursive call (most recent)
-    return await runPlannerChat(options)
+    // Pass metrics through to accumulate across recursive calls
+    return await runPlannerChat(options, turnMetrics)
   }
   
-  onMessage(createChatDoneMessage('complete', buildStats(llmClient, timing)))
-  return timing
+  // Final response - build and send aggregated stats
+  const stats = turnMetrics.buildStats(llmClient.getModel(), 'planner')
+  
+  // Update the last message with stats
+  sessionManager.updateLastMessageStats(sessionId, stats)
+  
+  onMessage(createChatDoneMessage('complete', stats))
 }
 
 /**
  * Builder mode: Loop until all criteria completed or stuck
- * Returns timing from the last LLM call for stats
+ * Uses TurnMetrics to track aggregated metrics across the turn
  */
-async function runBuilderLoop(options: ChatOptions): Promise<StreamTiming | null> {
+async function runBuilderLoop(options: ChatOptions): Promise<void> {
   const { sessionId, llmClient, signal, onMessage } = options
+  const turnMetrics = new TurnMetrics()
   
   let session = sessionManager.requireSession(sessionId)
   let iteration = 0
   const maxIterations = 50 // Safety limit
-  let lastTiming: StreamTiming | null = null
   
   while (iteration < maxIterations) {
     if (signal?.aborted) {
       onMessage(createChatDoneMessage('stopped'))
-      return null
+      return
     }
     
     iteration++
@@ -235,8 +301,13 @@ async function runBuilderLoop(options: ChatOptions): Promise<StreamTiming | null
       sessionManager.setMode(sessionId, 'verifier')
       onMessage(createModeChangedMessage('verifier', true, 'All criteria completed'))
       
-      // Run verifier (it will send its own done message)
-      return await runVerifierLoop(options)
+      // Run verifier - send stats now since it's a new turn
+      const stats = turnMetrics.buildStats(llmClient.getModel(), 'builder')
+      sessionManager.updateLastMessageStats(sessionId, stats)
+      onMessage(createChatDoneMessage('complete', stats))
+      
+      // Verifier will be a new turn
+      return
     }
     
     const toolRegistry = getToolRegistryForMode('builder')
@@ -269,10 +340,24 @@ async function runBuilderLoop(options: ChatOptions): Promise<StreamTiming | null
     
     let result: Awaited<ReturnType<typeof stream.next>>['value'] = null
     
+    // Track accumulated content for partial message on abort
+    let accumulatedContent = ''
+    let accumulatedThinking = ''
+    
     while (true) {
       if (signal?.aborted) {
+        // Save partial message if we have any content
+        if (accumulatedContent || accumulatedThinking) {
+          sessionManager.addMessage(sessionId, {
+            role: 'assistant',
+            content: accumulatedContent,
+            thinkingContent: accumulatedThinking || undefined,
+            tokenCount: 0,
+            partial: true,
+          })
+        }
         onMessage(createChatDoneMessage('stopped'))
-        return null
+        return
       }
       
       const { value, done } = await stream.next()
@@ -282,11 +367,14 @@ async function runBuilderLoop(options: ChatOptions): Promise<StreamTiming | null
         break
       }
       
+      // Forward streaming events and accumulate content
       switch (value.type) {
         case 'text_delta':
+          accumulatedContent += value.content
           onMessage(createChatDeltaMessage(value.content))
           break
         case 'thinking_delta':
+          accumulatedThinking += value.content
           onMessage(createChatThinkingMessage(value.content))
           break
         case 'error':
@@ -297,13 +385,15 @@ async function runBuilderLoop(options: ChatOptions): Promise<StreamTiming | null
     
     if (!result) {
       onMessage(createChatDoneMessage('error'))
-      return null
+      return
     }
     
     const { content, thinkingContent, toolCalls, response, segments, timing } = result
-    lastTiming = timing
     
-    // Save assistant message with stats
+    // Track LLM metrics
+    turnMetrics.addLLMCall(timing, response.usage.promptTokens, response.usage.completionTokens)
+    
+    // Save assistant message (stats will be on final message only)
     sessionManager.addMessage(sessionId, {
       role: 'assistant',
       content,
@@ -311,7 +401,6 @@ async function runBuilderLoop(options: ChatOptions): Promise<StreamTiming | null
       toolCalls: toolCalls.length > 0 ? toolCalls : undefined,
       tokenCount: response.usage.completionTokens,
       segments,
-      stats: buildStats(llmClient, timing),
     })
     
     // Execute tool calls
@@ -319,7 +408,7 @@ async function runBuilderLoop(options: ChatOptions): Promise<StreamTiming | null
       for (const toolCall of toolCalls) {
         if (signal?.aborted) {
           onMessage(createChatDoneMessage('stopped'))
-          return null
+          return
         }
         
         onMessage(createChatToolCallMessage(toolCall.id, toolCall.name, toolCall.arguments))
@@ -329,6 +418,9 @@ async function runBuilderLoop(options: ChatOptions): Promise<StreamTiming | null
           toolCall.arguments,
           { workdir: session.workdir, sessionId }
         )
+        
+        // Track tool execution time
+        turnMetrics.addToolTime(result.durationMs)
         
         onMessage(createChatToolResultMessage(toolCall.id, toolCall.name, result))
         
@@ -378,26 +470,28 @@ async function runBuilderLoop(options: ChatOptions): Promise<StreamTiming | null
     break
   }
   
-  onMessage(createChatDoneMessage('complete', buildStats(llmClient, lastTiming)))
-  return lastTiming
+  // Final response - build and send aggregated stats
+  const stats = turnMetrics.buildStats(llmClient.getModel(), 'builder')
+  sessionManager.updateLastMessageStats(sessionId, stats)
+  onMessage(createChatDoneMessage('complete', stats))
 }
 
 /**
  * Verifier mode: Check all completed criteria
- * Returns timing from the last LLM call for stats
+ * Uses TurnMetrics to track aggregated metrics across the turn
  */
-async function runVerifierLoop(options: ChatOptions): Promise<StreamTiming | null> {
+async function runVerifierLoop(options: ChatOptions): Promise<void> {
   const { sessionId, llmClient, signal, onMessage } = options
+  const turnMetrics = new TurnMetrics()
   
   let session = sessionManager.requireSession(sessionId)
-  let lastTiming: StreamTiming | null = null
   
   // Check if there's anything to verify
   const toVerify = session.criteria.filter(c => c.status.type === 'completed')
   if (toVerify.length === 0) {
     logger.info('Nothing to verify', { sessionId })
     onMessage(createChatDoneMessage('complete'))
-    return null
+    return
   }
   
   const toolRegistry = getToolRegistryForMode('verifier')
@@ -420,7 +514,7 @@ async function runVerifierLoop(options: ChatOptions): Promise<StreamTiming | nul
   while (iteration < maxIterations) {
     if (signal?.aborted) {
       onMessage(createChatDoneMessage('stopped'))
-      return null
+      return
     }
     
     iteration++
@@ -433,10 +527,24 @@ async function runVerifierLoop(options: ChatOptions): Promise<StreamTiming | nul
     
     let result: Awaited<ReturnType<typeof stream.next>>['value'] = null
     
+    // Track accumulated content for partial message on abort
+    let accumulatedContent = ''
+    let accumulatedThinking = ''
+    
     while (true) {
       if (signal?.aborted) {
+        // Save partial message if we have any content
+        if (accumulatedContent || accumulatedThinking) {
+          sessionManager.addMessage(sessionId, {
+            role: 'assistant',
+            content: accumulatedContent,
+            thinkingContent: accumulatedThinking || undefined,
+            tokenCount: 0,
+            partial: true,
+          })
+        }
         onMessage(createChatDoneMessage('stopped'))
-        return null
+        return
       }
       
       const { value, done } = await stream.next()
@@ -446,11 +554,14 @@ async function runVerifierLoop(options: ChatOptions): Promise<StreamTiming | nul
         break
       }
       
+      // Forward streaming events and accumulate content
       switch (value.type) {
         case 'text_delta':
+          accumulatedContent += value.content
           onMessage(createChatDeltaMessage(value.content))
           break
         case 'thinking_delta':
+          accumulatedThinking += value.content
           onMessage(createChatThinkingMessage(value.content))
           break
         case 'error':
@@ -461,11 +572,13 @@ async function runVerifierLoop(options: ChatOptions): Promise<StreamTiming | nul
     
     if (!result) {
       onMessage(createChatDoneMessage('error'))
-      return null
+      return
     }
     
-    const { content, toolCalls, timing } = result
-    lastTiming = timing
+    const { content, toolCalls, response, timing } = result
+    
+    // Track LLM metrics
+    turnMetrics.addLLMCall(timing, response.usage.promptTokens, response.usage.completionTokens)
     
     // Add assistant message to verifier context
     messages.push({
@@ -484,6 +597,9 @@ async function runVerifierLoop(options: ChatOptions): Promise<StreamTiming | nul
           toolCall.arguments,
           { workdir: session.workdir, sessionId }
         )
+        
+        // Track tool execution time
+        turnMetrics.addToolTime(result.durationMs)
         
         onMessage(createChatToolResultMessage(toolCall.id, toolCall.name, result))
         
@@ -515,6 +631,10 @@ async function runVerifierLoop(options: ChatOptions): Promise<StreamTiming | nul
   if (failed.length > 0) {
     logger.info('Verification failed, returning to builder', { sessionId, failed: failed.length })
     
+    // Send stats for this verifier turn before switching
+    const stats = turnMetrics.buildStats(llmClient.getModel(), 'verifier')
+    onMessage(createChatDoneMessage('complete', stats))
+    
     // Add failure context to main session messages
     sessionManager.addMessage(sessionId, {
       role: 'system',
@@ -526,14 +646,14 @@ async function runVerifierLoop(options: ChatOptions): Promise<StreamTiming | nul
     sessionManager.setMode(sessionId, 'builder')
     onMessage(createModeChangedMessage('builder', true, `${failed.length} criteria failed verification`))
     
-    // Continue building (it will send its own done message)
-    return await runBuilderLoop(options)
+    // Builder will be a new turn
+    return
   }
   
   // All passed!
   logger.info('All criteria verified', { sessionId })
-  onMessage(createChatDoneMessage('complete', buildStats(llmClient, lastTiming)))
-  return lastTiming
+  const stats = turnMetrics.buildStats(llmClient.getModel(), 'verifier')
+  onMessage(createChatDoneMessage('complete', stats))
 }
 
 /**

@@ -22,7 +22,11 @@ import type {
   ModeChangedPayload,
   CriteriaUpdatedPayload,
 } from '@openfox/shared/protocol'
-import { wsClient } from '../lib/ws'
+import { wsClient, type ConnectionStatus } from '../lib/ws'
+import { playNotification } from '../lib/sound'
+
+// Track subscription to prevent duplicates
+let isSubscribed = false
 
 // Unified streaming events (all modes use the same structure)
 export type ChatStreamEvent = 
@@ -33,12 +37,11 @@ export type ChatStreamEvent =
   | { type: 'todo'; todos: Todo[] }
   | { type: 'summary'; summary: string }
   | { type: 'error'; error: string; recoverable: boolean }
-  | { type: 'stats'; model: string; prefillSpeed: number; generationSpeed: number }
+  | { type: 'stats'; model: string; mode: SessionMode; totalTime: number; toolTime: number; prefillTokens: number; prefillSpeed: number; generationTokens: number; generationSpeed: number }
 
 interface SessionState {
   // Connection
-  connected: boolean
-  connecting: boolean
+  connectionStatus: ConnectionStatus
   
   // Sessions
   sessions: SessionSummary[]
@@ -87,8 +90,7 @@ interface SessionState {
 }
 
 export const useSessionStore = create<SessionState>((set, get) => ({
-  connected: false,
-  connecting: false,
+  connectionStatus: 'disconnected',
   sessions: [],
   currentSession: null,
   error: null,
@@ -99,30 +101,38 @@ export const useSessionStore = create<SessionState>((set, get) => ({
   currentTodos: [],
   
   connect: async () => {
-    if (get().connected || get().connecting) return
+    const status = get().connectionStatus
+    if (status === 'connected' || status === 'reconnecting') return
     
-    set({ connecting: true })
+    // Prevent double connection attempts
+    set({ connectionStatus: 'reconnecting' })
+    
+    // Register status callback before connecting
+    wsClient.onStatusChange((newStatus) => {
+      set({ connectionStatus: newStatus })
+      // Reload session list when reconnected
+      if (newStatus === 'connected') {
+        get().listSessions()
+      }
+    })
     
     try {
       await wsClient.connect()
       
-      wsClient.subscribe((message) => {
-        get().handleServerMessage(message)
-      })
-      
-      set({ connected: true, connecting: false })
-      
-      // Load session list on connect
-      get().listSessions()
+      // Subscribe once
+      if (!isSubscribed) {
+        isSubscribed = true
+        wsClient.subscribe(get().handleServerMessage)
+      }
     } catch (error) {
       console.error('Failed to connect:', error)
-      set({ connecting: false })
+      set({ connectionStatus: 'disconnected' })
     }
   },
   
   disconnect: () => {
     wsClient.disconnect()
-    set({ connected: false })
+    set({ connectionStatus: 'disconnected' })
   },
   
   createSession: (projectId, title) => {
@@ -332,7 +342,12 @@ export const useSessionStore = create<SessionState>((set, get) => ({
             chatStreamEvents: [...state.chatStreamEvents, {
               type: 'stats' as const,
               model: payload.stats!.model,
+              mode: payload.stats!.mode,
+              totalTime: payload.stats!.totalTime,
+              toolTime: payload.stats!.toolTime,
+              prefillTokens: payload.stats!.prefillTokens,
               prefillSpeed: payload.stats!.prefillSpeed,
+              generationTokens: payload.stats!.generationTokens,
               generationSpeed: payload.stats!.generationSpeed,
             }],
           }))
@@ -340,8 +355,12 @@ export const useSessionStore = create<SessionState>((set, get) => ({
         
         set({ isStreaming: false })
         
-        // Reload session to get latest state
-        if (payload.reason === 'complete') {
+        // Reload session to get latest state (clears stream events since message is now saved)
+        if (payload.reason === 'complete' || payload.reason === 'stopped') {
+          if (payload.reason === 'complete') {
+            playNotification()
+          }
+          set({ chatStreamEvents: [] })
           const session = get().currentSession
           if (session) {
             get().loadSession(session.id)

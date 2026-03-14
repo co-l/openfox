@@ -4,20 +4,12 @@ import { CriteriaEditor } from '../plan/CriteriaEditor'
 
 interface SessionLayoutProps {
   children: ReactNode
-  criteriaEditable?: boolean
-  validationStatus?: ReactNode
 }
 
-const CRITERIA_SIDEBAR_CLASSES = 'w-[640px] min-w-[640px] shrink-0 border-l border-border p-4 overflow-y-auto'
+const CRITERIA_SIDEBAR_CLASSES = 'w-[400px] min-w-[400px] shrink-0 border-l border-border p-4 overflow-y-auto'
 
-export function SessionLayout({ 
-  children, 
-  criteriaEditable = false,
-  validationStatus 
-}: SessionLayoutProps) {
+export function SessionLayout({ children }: SessionLayoutProps) {
   const session = useSessionStore(state => state.currentSession)
-  const editCriteria = useSessionStore(state => state.editCriteria)
-  const acceptAndBuild = useSessionStore(state => state.acceptAndBuild)
   
   return (
     <div className="flex h-full">
@@ -28,13 +20,7 @@ export function SessionLayout({
       
       {/* Criteria Sidebar */}
       <div className={CRITERIA_SIDEBAR_CLASSES}>
-        <CriteriaEditor
-          criteria={session?.criteria ?? []}
-          editable={criteriaEditable}
-          onUpdate={editCriteria}
-          onAccept={acceptAndBuild}
-        />
-        {validationStatus}
+        <CriteriaEditor criteria={session?.criteria ?? []} />
       </div>
     </div>
   )

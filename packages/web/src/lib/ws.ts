@@ -1,38 +1,57 @@
 import type { ClientMessage, ServerMessage, ClientMessageType } from '@openfox/shared/protocol'
 import { isServerMessage } from '@openfox/shared/protocol'
 
+export type ConnectionStatus = 'connected' | 'disconnected' | 'reconnecting'
 type MessageHandler = (message: ServerMessage) => void
+type StatusHandler = (status: ConnectionStatus) => void
 
 class WebSocketClient {
   private ws: WebSocket | null = null
   private handlers = new Set<MessageHandler>()
-  private reconnectAttempts = 0
-  private maxReconnectAttempts = 5
-  private reconnectDelay = 1000
+  private statusHandler: StatusHandler | null = null
   private url: string
+  private isReconnecting = false
+  private connectingPromise: Promise<void> | null = null
   
   constructor(url: string) {
     this.url = url
   }
   
+  onStatusChange(handler: StatusHandler): void {
+    this.statusHandler = handler
+  }
+  
   connect(): Promise<void> {
-    return new Promise((resolve, reject) => {
+    // Already connected
+    if (this.ws?.readyState === WebSocket.OPEN) {
+      return Promise.resolve()
+    }
+    
+    // Connection in progress - return existing promise
+    if (this.connectingPromise) {
+      return this.connectingPromise
+    }
+    
+    this.connectingPromise = new Promise((resolve, reject) => {
       try {
         this.ws = new WebSocket(this.url)
         
         this.ws.onopen = () => {
-          console.log('WebSocket connected')
-          this.reconnectAttempts = 0
+          this.isReconnecting = false
+          this.connectingPromise = null
+          this.statusHandler?.('connected')
           resolve()
         }
         
         this.ws.onclose = () => {
-          console.log('WebSocket disconnected')
+          this.connectingPromise = null
+          this.statusHandler?.('disconnected')
           this.attemptReconnect()
         }
         
         this.ws.onerror = (error) => {
           console.error('WebSocket error:', error)
+          this.connectingPromise = null
           reject(error)
         }
         
@@ -47,30 +66,29 @@ class WebSocketClient {
           }
         }
       } catch (error) {
+        this.connectingPromise = null
         reject(error)
       }
     })
+    
+    return this.connectingPromise
   }
   
   private attemptReconnect(): void {
-    if (this.reconnectAttempts >= this.maxReconnectAttempts) {
-      console.error('Max reconnection attempts reached')
-      return
-    }
-    
-    this.reconnectAttempts++
-    const delay = this.reconnectDelay * Math.pow(2, this.reconnectAttempts - 1)
-    
-    console.log(`Attempting reconnection in ${delay}ms (attempt ${this.reconnectAttempts})`)
+    if (this.isReconnecting) return
+    this.isReconnecting = true
+    this.statusHandler?.('reconnecting')
     
     setTimeout(() => {
+      this.isReconnecting = false
       this.connect().catch(() => {
-        // Error handled in connect
+        // Will trigger onclose -> attemptReconnect again
       })
-    }, delay)
+    }, 5000)
   }
   
   disconnect(): void {
+    this.isReconnecting = false
     if (this.ws) {
       this.ws.close()
       this.ws = null

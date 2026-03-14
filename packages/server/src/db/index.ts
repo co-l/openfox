@@ -82,9 +82,25 @@ function runMigrations(db: Database.Database): void {
       is_compacted INTEGER DEFAULT 0,
       original_message_ids TEXT,
       segments TEXT,
+      stats TEXT,
+      partial INTEGER DEFAULT 0,
       FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE
     )
   `)
+  
+  // Migration: add stats column if missing
+  try {
+    db.exec(`ALTER TABLE messages ADD COLUMN stats TEXT`)
+  } catch {
+    // Column already exists
+  }
+  
+  // Migration: add partial column if missing
+  try {
+    db.exec(`ALTER TABLE messages ADD COLUMN partial INTEGER DEFAULT 0`)
+  } catch {
+    // Column already exists
+  }
   
   // Create criteria table
   db.exec(`

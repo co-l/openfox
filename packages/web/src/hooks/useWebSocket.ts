@@ -5,8 +5,7 @@ import { wsClient } from '../lib/ws'
 
 export function useWebSocket() {
   const connect = useSessionStore(state => state.connect)
-  const connected = useSessionStore(state => state.connected)
-  const connecting = useSessionStore(state => state.connecting)
+  const connectionStatus = useSessionStore(state => state.connectionStatus)
   const handleProjectMessage = useProjectStore(state => state.handleServerMessage)
   
   useEffect(() => {
@@ -15,11 +14,11 @@ export function useWebSocket() {
   
   // Subscribe project store to server messages
   useEffect(() => {
-    if (connected) {
+    if (connectionStatus === 'connected') {
       const unsubscribe = wsClient.subscribe(handleProjectMessage)
       return unsubscribe
     }
-  }, [connected, handleProjectMessage])
+  }, [connectionStatus, handleProjectMessage])
   
-  return { connected, connecting }
+  return { connectionStatus }
 }

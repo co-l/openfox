@@ -232,8 +232,8 @@ export function addMessage(sessionId: string, message: Omit<Message, 'id' | 'tim
     INSERT INTO messages (
       id, session_id, role, content, tool_calls, thinking_content,
       tool_call_id, tool_name, tool_result, timestamp, token_count,
-      is_compacted, original_message_ids, segments
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      is_compacted, original_message_ids, segments, stats, partial
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
     id,
     sessionId,
@@ -248,7 +248,9 @@ export function addMessage(sessionId: string, message: Omit<Message, 'id' | 'tim
     message.tokenCount,
     message.isCompacted ? 1 : 0,
     message.originalMessageIds ? JSON.stringify(message.originalMessageIds) : null,
-    message.segments ? JSON.stringify(message.segments) : null
+    message.segments ? JSON.stringify(message.segments) : null,
+    message.stats ? JSON.stringify(message.stats) : null,
+    message.partial ? 1 : 0
   )
   
   // Update session updated_at
@@ -286,6 +288,10 @@ export function getMessages(sessionId: string): Message[] {
     segments: row.segments
       ? JSON.parse(row.segments) as MessageSegment[]
       : undefined,
+    stats: row.stats
+      ? JSON.parse(row.stats) as Message['stats']
+      : undefined,
+    partial: row.partial === 1,
   }))
 }
 
@@ -295,6 +301,21 @@ export function deleteMessages(sessionId: string, messageIds: string[]): void {
   db.prepare(`
     DELETE FROM messages WHERE session_id = ? AND id IN (${placeholders})
   `).run(sessionId, ...messageIds)
+}
+
+export function updateLastMessageStats(sessionId: string, stats: Message['stats']): void {
+  const db = getDatabase()
+  
+  // Get the last message ID for this session
+  const lastMessage = db.prepare(`
+    SELECT id FROM messages WHERE session_id = ? ORDER BY timestamp DESC LIMIT 1
+  `).get(sessionId) as { id: string } | undefined
+  
+  if (!lastMessage) return
+  
+  db.prepare(`
+    UPDATE messages SET stats = ? WHERE id = ?
+  `).run(JSON.stringify(stats), lastMessage.id)
 }
 
 // ============================================================================
@@ -525,6 +546,8 @@ interface MessageRow {
   is_compacted: number
   original_message_ids: string | null
   segments: string | null
+  stats: string | null
+  partial: number
 }
 
 interface CriterionRow {

@@ -25,7 +25,7 @@ function ProjectView() {
   const [, params] = useRoute('/p/:projectId')
   const projectId = params?.projectId
   
-  const connected = useSessionStore(state => state.connected)
+  const connectionStatus = useSessionStore(state => state.connectionStatus)
   const listSessions = useSessionStore(state => state.listSessions)
   const clearSession = useSessionStore(state => state.clearSession)
   
@@ -34,14 +34,14 @@ function ProjectView() {
   
   // Load project and sessions when entering project view
   useEffect(() => {
-    if (connected && projectId) {
+    if (connectionStatus === 'connected' && projectId) {
       if (currentProject?.id !== projectId) {
         loadProject(projectId)
       }
       listSessions()
       clearSession()
     }
-  }, [connected, projectId, currentProject?.id, loadProject, listSessions, clearSession])
+  }, [connectionStatus, projectId, currentProject?.id, loadProject, listSessions, clearSession])
   
   if (!currentProject || currentProject.id !== projectId) {
     return <LoadingSpinner />
@@ -63,7 +63,7 @@ function ProjectSessionView() {
   const projectId = params?.projectId
   const sessionId = params?.sessionId
   
-  const connected = useSessionStore(state => state.connected)
+  const connectionStatus = useSessionStore(state => state.connectionStatus)
   const session = useSessionStore(state => state.currentSession)
   const loadSession = useSessionStore(state => state.loadSession)
   const listSessions = useSessionStore(state => state.listSessions)
@@ -73,20 +73,20 @@ function ProjectSessionView() {
   
   // Load project if needed
   useEffect(() => {
-    if (connected && projectId && currentProject?.id !== projectId) {
+    if (connectionStatus === 'connected' && projectId && currentProject?.id !== projectId) {
       loadProject(projectId)
     }
-  }, [connected, projectId, currentProject?.id, loadProject])
+  }, [connectionStatus, projectId, currentProject?.id, loadProject])
   
   // Load session and session list
   useEffect(() => {
-    if (connected && sessionId && session?.id !== sessionId) {
+    if (connectionStatus === 'connected' && sessionId && session?.id !== sessionId) {
       loadSession(sessionId)
     }
-    if (connected) {
+    if (connectionStatus === 'connected') {
       listSessions()
     }
-  }, [connected, sessionId, session?.id, loadSession, listSessions])
+  }, [connectionStatus, sessionId, session?.id, loadSession, listSessions])
   
   if (!currentProject || currentProject.id !== projectId) {
     return <LoadingSpinner />
@@ -114,7 +114,7 @@ function ProjectSessionView() {
 }
 
 function App() {
-  const { connected, connecting } = useWebSocket()
+  const { connectionStatus } = useWebSocket()
   const fetchConfig = useConfigStore(state => state.fetchConfig)
   const handleProjectMessage = useProjectStore(state => state.handleServerMessage)
   
@@ -129,24 +129,11 @@ function App() {
     // This is done via the session store's subscription, but we need to add project handling
   }, [handleProjectMessage])
   
-  if (connecting) {
+  // Block UI until connected
+  if (connectionStatus !== 'connected') {
     return (
       <div className="h-screen flex items-center justify-center">
-        <SpinnerWithText text="Connecting to server..." />
-      </div>
-    )
-  }
-  
-  if (!connected) {
-    return (
-      <div className="h-screen flex items-center justify-center">
-        <div className="text-center">
-          <div className="text-accent-error text-4xl mb-4">!</div>
-          <div className="text-text-primary mb-2">Connection Failed</div>
-          <div className="text-text-secondary text-sm">
-            Make sure the OpenFox server is running on port 3000
-          </div>
-        </div>
+        <SpinnerWithText text={connectionStatus === 'reconnecting' ? 'Reconnecting...' : 'Connecting to server...'} />
       </div>
     )
   }

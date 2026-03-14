@@ -1,50 +1,10 @@
-import { useState } from 'react'
 import type { Criterion } from '@openfox/shared'
-import { Button } from '../shared/Button'
 
 interface CriteriaEditorProps {
   criteria: Criterion[]
-  editable: boolean
-  onUpdate: (criteria: Criterion[]) => void
-  onAccept: () => void
 }
 
-export function CriteriaEditor({ criteria, editable, onUpdate, onAccept }: CriteriaEditorProps) {
-  const [editingId, setEditingId] = useState<string | null>(null)
-  const [editValue, setEditValue] = useState('')
-  
-  const startEdit = (criterion: Criterion) => {
-    setEditingId(criterion.id)
-    setEditValue(criterion.description)
-  }
-  
-  const saveEdit = () => {
-    if (!editingId) return
-    
-    onUpdate(
-      criteria.map(c =>
-        c.id === editingId ? { ...c, description: editValue } : c
-      )
-    )
-    setEditingId(null)
-    setEditValue('')
-  }
-  
-  const removeCriterion = (id: string) => {
-    onUpdate(criteria.filter(c => c.id !== id))
-  }
-  
-  const addCriterion = () => {
-    const newCriterion: Criterion = {
-      id: `criterion-${Date.now()}`,
-      description: 'New criterion',
-      status: { type: 'pending' },
-      attempts: [],
-    }
-    onUpdate([...criteria, newCriterion])
-    startEdit(newCriterion)
-  }
-  
+export function CriteriaEditor({ criteria }: CriteriaEditorProps) {
   const getStatusIcon = (status: Criterion['status']) => {
     switch (status.type) {
       case 'passed':
@@ -83,71 +43,12 @@ export function CriteriaEditor({ criteria, editable, onUpdate, onAccept }: Crite
               <div className="flex items-start gap-2">
                 <span className="text-text-muted text-sm">{index + 1}.</span>
                 {getStatusIcon(criterion.status)}
-                
-                {editingId === criterion.id ? (
-                  <div className="flex-1">
-                    <textarea
-                      value={editValue}
-                      onChange={(e) => setEditValue(e.target.value)}
-                      className="w-full bg-bg-secondary border border-border rounded p-2 text-sm resize-none"
-                      rows={3}
-                      autoFocus
-                    />
-                    <div className="flex gap-2 mt-2">
-                      <Button size="sm" variant="primary" onClick={saveEdit}>
-                        Save
-                      </Button>
-                      <Button size="sm" onClick={() => setEditingId(null)}>
-                        Cancel
-                      </Button>
-                    </div>
-                  </div>
-                ) : (
-                  <div className="flex-1">
-                    <p className="text-sm leading-relaxed">{criterion.description}</p>
-                    {editable && (
-                      <div className="flex items-center gap-3 mt-1.5">
-                        <button
-                          className="text-xs text-text-muted hover:text-text-primary"
-                          onClick={() => startEdit(criterion)}
-                        >
-                          Edit
-                        </button>
-                        <button
-                          className="text-xs text-accent-error/70 hover:text-accent-error"
-                          onClick={() => removeCriterion(criterion.id)}
-                        >
-                          Remove
-                        </button>
-                      </div>
-                    )}
-                  </div>
-                )}
+                <p className="flex-1 text-sm leading-relaxed">{criterion.description}</p>
               </div>
             </div>
           ))
         )}
       </div>
-      
-      {editable && (
-        <div className="mt-3 pt-3 border-t border-border space-y-2">
-          <Button
-            size="sm"
-            className="w-full"
-            onClick={addCriterion}
-          >
-            + Add Criterion
-          </Button>
-          <Button
-            variant="primary"
-            className="w-full"
-            onClick={onAccept}
-            disabled={criteria.length === 0}
-          >
-            Switch to Builder
-          </Button>
-        </div>
-      )}
     </div>
   )
 }

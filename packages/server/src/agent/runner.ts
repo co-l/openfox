@@ -27,14 +27,26 @@ export async function runAgent(options: AgentRunnerOptions): Promise<void> {
   let session = sessionManager.requireSession(sessionId)
   let iteration = 0
   const maxIterations = config.agent.maxIterations * session.criteria.length
-  let lastTiming: StreamTiming | null = null
+  
+  // Track aggregated metrics
+  const startTime = performance.now()
+  let totalPrefillTokens = 0
+  let totalPrefillTime = 0
+  let totalGenTokens = 0
+  let totalGenTime = 0
+  let totalToolTime = 0
   
   // Helper to build stats for done event
-  const buildStats = () => lastTiming ? {
+  const buildStats = () => ({
     model: llmClient.getModel(),
-    prefillSpeed: lastTiming.prefillTps,
-    generationSpeed: lastTiming.tps,
-  } : undefined
+    mode: session.mode,
+    totalTime: (performance.now() - startTime) / 1000,
+    toolTime: totalToolTime,
+    prefillTokens: totalPrefillTokens,
+    prefillSpeed: totalPrefillTime > 0 ? Math.round(totalPrefillTokens / totalPrefillTime) : 0,
+    generationTokens: totalGenTokens,
+    generationSpeed: totalGenTime > 0 ? Math.round(totalGenTokens / totalGenTime) : 0,
+  })
   
   logger.info('Starting agent run', { sessionId, criteria: session.criteria.length })
   
@@ -143,8 +155,28 @@ export async function runAgent(options: AgentRunnerOptions): Promise<void> {
     let streamResult: Awaited<ReturnType<typeof stream.next>>['value'] = null
     let streamError = false
     
+    // Track accumulated content for partial message on abort
+    let accumulatedContent = ''
+    let accumulatedThinking = ''
+    
     // Forward streaming events and get final result
     while (true) {
+      if (signal?.aborted) {
+        // Save partial message if we have any content
+        if (accumulatedContent || accumulatedThinking) {
+          sessionManager.addMessage(sessionId, {
+            role: 'assistant',
+            content: accumulatedContent,
+            thinkingContent: accumulatedThinking || undefined,
+            tokenCount: 0,
+            partial: true,
+          })
+        }
+        logger.info('Agent aborted during streaming', { sessionId, iteration })
+        onEvent({ type: 'aborted' })
+        return
+      }
+      
       const { value, done } = await stream.next()
       
       if (done) {
@@ -152,11 +184,14 @@ export async function runAgent(options: AgentRunnerOptions): Promise<void> {
         break
       }
       
+      // Forward streaming events and accumulate content
       switch (value.type) {
         case 'text_delta':
+          accumulatedContent += value.content
           onEvent({ type: 'text_delta', content: value.content })
           break
         case 'thinking_delta':
+          accumulatedThinking += value.content
           onEvent({ type: 'thinking', content: value.content })
           break
         case 'error':
@@ -174,7 +209,12 @@ export async function runAgent(options: AgentRunnerOptions): Promise<void> {
     }
     
     const { content: fullContent, thinkingContent, toolCalls, response, segments, timing } = streamResult
-    lastTiming = timing
+    
+    // Accumulate LLM metrics
+    totalPrefillTokens += response.usage.promptTokens
+    totalPrefillTime += timing.ttft
+    totalGenTokens += response.usage.completionTokens
+    totalGenTime += timing.completionTime
     
     // Update context size (for compaction decisions) and cumulative usage (for metrics)
     sessionManager.setCurrentContextSize(sessionId, response.usage.promptTokens)
@@ -233,6 +273,9 @@ export async function runAgent(options: AgentRunnerOptions): Promise<void> {
               sessionId,
             }
           )
+          
+          // Track tool execution time
+          totalToolTime += result.durationMs / 1000
           
           // Save tool result message
           sessionManager.addMessage(sessionId, {

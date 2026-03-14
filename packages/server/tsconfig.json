@@ -5,8 +5,5 @@
     "rootDir": "src",
     "types": ["node"]
   },
-  "include": ["src/**/*"],
-  "references": [
-    { "path": "../shared" }
-  ]
+  "include": ["src/**/*"]
 }

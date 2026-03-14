@@ -10,19 +10,25 @@ interface AssistantMessageProps {
   events?: ChatStreamEvent[]
   message?: Message
   isStreaming?: boolean
+  showStats?: boolean
 }
 
 // Convert a saved Message to events format for unified rendering
-function messageToEvents(message: Message): ChatStreamEvent[] {
+function messageToEvents(message: Message, showStats: boolean): ChatStreamEvent[] {
   // If message has segments, use them for accurate ordering
   if (message.segments && message.segments.length > 0) {
     const events = segmentsToEvents(message.segments, message.toolCalls ?? [])
-    // Add stats at the end if present
-    if (message.stats) {
+    // Add stats at the end if present and showStats is true
+    if (showStats && message.stats) {
       events.push({
         type: 'stats',
         model: message.stats.model,
+        mode: message.stats.mode,
+        totalTime: message.stats.totalTime,
+        toolTime: message.stats.toolTime,
+        prefillTokens: message.stats.prefillTokens,
         prefillSpeed: message.stats.prefillSpeed,
+        generationTokens: message.stats.generationTokens,
         generationSpeed: message.stats.generationSpeed,
       })
     }
@@ -58,12 +64,17 @@ function messageToEvents(message: Message): ChatStreamEvent[] {
     }
   }
   
-  // Add stats at the end if present
-  if (message.stats) {
+  // Add stats at the end if present and showStats is true
+  if (showStats && message.stats) {
     events.push({
       type: 'stats',
       model: message.stats.model,
+      mode: message.stats.mode,
+      totalTime: message.stats.totalTime,
+      toolTime: message.stats.toolTime,
+      prefillTokens: message.stats.prefillTokens,
       prefillSpeed: message.stats.prefillSpeed,
+      generationTokens: message.stats.generationTokens,
       generationSpeed: message.stats.generationSpeed,
     })
   }
@@ -113,9 +124,9 @@ function segmentsToEvents(
   return events
 }
 
-export function AssistantMessage({ events, message, isStreaming = false }: AssistantMessageProps) {
+export function AssistantMessage({ events, message, isStreaming = false, showStats = true }: AssistantMessageProps) {
   // Convert message to events if provided
-  const displayEvents = events ?? (message ? messageToEvents(message) : [])
+  const displayEvents = events ?? (message ? messageToEvents(message, showStats) : [])
   
   if (displayEvents.length === 0) return null
   
@@ -146,14 +157,18 @@ export function AssistantMessage({ events, message, isStreaming = false }: Assis
         // Check if next event is the result for this tool (match by callId)
         const nextEvent = displayEvents[i + 1]
         const hasResult = nextEvent?.type === 'tool_result' && nextEvent.callId === event.callId
+        const toolResult = hasResult ? nextEvent.result : undefined
         
         renderedEvents.push(
           <ToolCallDisplay 
             key={i} 
             tool={event.tool} 
             args={event.args}
-            status={hasResult ? 'success' : 'pending'}
-            variant="compact"
+            status={hasResult ? (toolResult?.success ? 'success' : 'error') : 'pending'}
+            variant="expandable"
+            result={toolResult?.output}
+            error={toolResult?.error}
+            durationMs={toolResult?.durationMs}
           />
         )
         
@@ -169,8 +184,11 @@ export function AssistantMessage({ events, message, isStreaming = false }: Assis
             key={i} 
             tool={event.tool} 
             args={{}}
-            status="success"
-            variant="compact"
+            status={event.result.success ? 'success' : 'error'}
+            variant="expandable"
+            result={event.result.output}
+            error={event.result.error}
+            durationMs={event.result.durationMs}
           />
         )
         break
@@ -220,25 +238,66 @@ export function AssistantMessage({ events, message, isStreaming = false }: Assis
         )
         break
       
-      case 'stats':
-        // Stats bar at end of response
+      case 'stats': {
+        // Beautiful centered stats line with full metrics
+        const shortModel = event.model.split('/').pop()?.split('-').slice(0, 2).join('-') ?? event.model
+        const modeColor = event.mode === 'planner' ? 'text-purple-400' 
+          : event.mode === 'builder' ? 'text-blue-400' 
+          : 'text-green-400'
+        const formatTokens = (n: number) => n >= 1000 ? `${(n / 1000).toFixed(1)}k` : n.toString()
+        const formatSpeed = (n: number) => n >= 1000 ? `${(n / 1000).toFixed(1)}k` : n.toFixed(0)
+        
+        // Fallbacks for old messages without new stats fields
+        const totalTime = event.totalTime ?? 0
+        const toolTime = event.toolTime ?? 0
+        const prefillTokens = event.prefillTokens ?? 0
+        const prefillSpeed = event.prefillSpeed ?? 0
+        const generationTokens = event.generationTokens ?? 0
+        const generationSpeed = event.generationSpeed ?? 0
+        
         renderedEvents.push(
-          <div key={i} className="flex items-center gap-4 text-xs text-text-muted mt-2 pt-2 border-t border-border">
-            <span className="text-text-secondary">{event.model}</span>
-            <span>pp: {event.prefillSpeed.toFixed(0)} tok/s</span>
-            <span>tg: {event.generationSpeed.toFixed(1)} tok/s</span>
+          <div key={i} className="flex items-center justify-center gap-2 text-xs text-text-muted mt-4">
+            <span className="flex-1 h-px bg-border" />
+            <span className="text-text-secondary">{shortModel}</span>
+            <span className="text-text-muted">·</span>
+            <span className={modeColor}>{event.mode}</span>
+            <span className="text-text-muted">·</span>
+            <span>{totalTime.toFixed(1)}s</span>
+            {toolTime > 0 && (
+              <>
+                <span className="text-text-muted">·</span>
+                <span>{toolTime.toFixed(1)}s tools</span>
+              </>
+            )}
+            <span className="text-text-muted">·</span>
+            <span>{formatTokens(prefillTokens)} @ {formatSpeed(prefillSpeed)} pp</span>
+            <span className="text-text-muted">·</span>
+            <span>{formatTokens(generationTokens)} @ {formatSpeed(generationSpeed)} tg</span>
+            <span className="flex-1 h-px bg-border" />
           </div>
         )
         break
+      }
     }
     
     i++
   }
   
+  // Check if this is a partial (interrupted) message
+  const isPartial = message?.partial === true
+  
   return (
     <div className="mb-4 space-y-2">
       {renderedEvents}
       {isStreaming && <StreamingCursor />}
+      {isPartial && (
+        <div className="flex items-center gap-2 text-xs text-accent-warning mt-2">
+          <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+          </svg>
+          <span>Interrupted</span>
+        </div>
+      )}
     </div>
   )
 }

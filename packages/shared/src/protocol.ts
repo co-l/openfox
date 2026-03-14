@@ -184,7 +184,12 @@ export interface ChatDonePayload {
   reason: 'complete' | 'stopped' | 'error' | 'waiting_for_user'
   stats?: {
     model: string
+    mode: SessionMode
+    totalTime: number
+    toolTime: number
+    prefillTokens: number
     prefillSpeed: number
+    generationTokens: number
     generationSpeed: number
   }
 }

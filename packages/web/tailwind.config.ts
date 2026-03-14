@@ -22,7 +22,7 @@ export default {
           warning: '#d29922',
           error: '#f85149',
         },
-        border: '#30363d',
+        border: '#282e36',
       },
       fontFamily: {
         mono: ['JetBrains Mono', 'Fira Code', 'Consolas', 'monospace'],

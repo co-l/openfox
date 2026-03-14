@@ -19,6 +19,7 @@ import {
   addMessage as dbAddMessage,
   getMessages,
   deleteMessages,
+  updateLastMessageStats as dbUpdateLastMessageStats,
   setCriteria as dbSetCriteria,
   getCriteria,
   updateCriterion as dbUpdateCriterion,
@@ -194,6 +195,11 @@ class SessionManagerImpl {
     this.emit({ type: 'message_added', sessionId, message: savedMessage })
     
     return savedMessage
+  }
+  
+  updateLastMessageStats(sessionId: string, stats: Message['stats']): void {
+    this.requireSession(sessionId)
+    dbUpdateLastMessageStats(sessionId, stats)
   }
   
   compactMessages(sessionId: string, messageIds: string[], summary: string): Message {

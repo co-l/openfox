@@ -65,8 +65,13 @@ export type MessageSegment =
 
 export interface MessageStats {
   model: string
-  prefillSpeed: number    // tokens/second
-  generationSpeed: number // tokens/second
+  mode: SessionMode
+  totalTime: number         // wall clock time (seconds)
+  toolTime: number          // time spent in tool execution (seconds)
+  prefillTokens: number     // total prompt tokens across all LLM calls
+  prefillSpeed: number      // aggregate tokens/second
+  generationTokens: number  // total completion tokens
+  generationSpeed: number   // aggregate tokens/second
 }
 
 export interface Message {
@@ -84,6 +89,7 @@ export interface Message {
   originalMessageIds?: string[]
   segments?: MessageSegment[]  // Preserves streaming order: text/thinking chunks + tool call refs
   stats?: MessageStats         // LLM performance stats for this response
+  partial?: boolean            // true if message was interrupted mid-stream
 }
 
 // ============================================================================
