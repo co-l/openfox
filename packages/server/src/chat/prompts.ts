@@ -129,7 +129,7 @@ export function buildVerifierPrompt(
         : c.status.type === 'completed' ? '[NEEDS VERIFICATION]'
         : c.status.type === 'failed' ? '[PREVIOUSLY FAILED]'
         : '[NOT COMPLETED]'
-      return `${i + 1}. ${status} ${c.description}`
+      return `${i + 1}. **${c.id}** ${status} ${c.description}`
     })
     .join('\n')
   
@@ -174,3 +174,12 @@ ${toolList}
 // ============================================================================
 
 export const SUMMARY_REQUEST_PROMPT = `Write a 2-3 sentence summary of what the user wants to accomplish. Focus on WHAT and WHY, not HOW. Output only the summary, no preamble.`
+
+// ============================================================================
+// Kickoff Prompts (visible auto-prompts when starting builder/verifier)
+// ============================================================================
+
+export const BUILDER_KICKOFF_PROMPT = (criteriaCount: number) =>
+  `Implement the task and make sure you fulfil the ${criteriaCount} criteria.`
+
+export const VERIFIER_KICKOFF_PROMPT = 'Verify each criterion marked [NEEDS VERIFICATION]. Read the code, run tests if applicable, then call pass_criterion or fail_criterion for each.'

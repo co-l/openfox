@@ -6,7 +6,7 @@ import type { LLMClient } from '../llm/types.js'
 import type { ToolRegistry } from '../tools/index.js'
 import { sessionManager } from '../session/index.js'
 import { sessionEvents } from '../session/events.js'
-import { handleChat, generateSummary } from '../chat/index.js'
+import { handleChat, streamSummaryResponse, SUMMARY_REQUEST_PROMPT } from '../chat/index.js'
 import { estimateTokens } from '../context/tokenizer.js'
 import { logger } from '../utils/logger.js'
 import {
@@ -347,9 +347,11 @@ async function handleClientMessage(
         logger.error('Chat error', { error })
         // Create an error message so we have a messageId for the done event
         const errorMsg = sessionManager.addMessage(sessionId, {
-          role: 'system',
+          role: 'user',
           content: `Error: ${error instanceof Error ? error.message : 'Unknown error'}`,
           tokenCount: 10,
+          isSystemGenerated: true,
+          messageKind: 'correction',
         })
         sessionEvents.push(sessionId, createChatMessageMessage(errorMsg))
         sessionEvents.push(sessionId, createChatErrorMessage(
@@ -385,9 +387,11 @@ async function handleClientMessage(
       
       // Create stop message to get a messageId for the done event
       const stopMsg = sessionManager.addMessage(sessionId, {
-        role: 'system',
+        role: 'user',
         content: 'Chat stopped by user',
         tokenCount: 5,
+        isSystemGenerated: true,
+        messageKind: 'auto-prompt',
       })
       sessionEvents.push(sessionId, createChatMessageMessage(stopMsg))
       sessionEvents.push(sessionId, createChatDoneMessage(stopMsg.id, 'stopped'))
@@ -447,9 +451,11 @@ async function handleClientMessage(
         logger.error('Continue error', { error })
         // Create error message so we have a messageId for the done event
         const errorMsg = sessionManager.addMessage(sessionId, {
-          role: 'system',
+          role: 'user',
           content: `Error: ${error instanceof Error ? error.message : 'Unknown error'}`,
           tokenCount: 10,
+          isSystemGenerated: true,
+          messageKind: 'correction',
         })
         sessionEvents.push(sessionId, createChatMessageMessage(errorMsg))
         sessionEvents.push(sessionId, createChatErrorMessage(
@@ -515,40 +521,26 @@ async function handleClientMessage(
       // Helper to push events through queue
       const pushEvent = (event: ServerMessage) => sessionEvents.push(sessionId, event)
       
-      // Generate summary asynchronously
+      // Generate summary and start builder asynchronously
       ;(async () => {
         try {
-          // Progress: generating summary (as system message so it's visible)
-          const progressMsg1 = sessionManager.addMessage(sessionId, {
-            role: 'system',
-            content: 'Generating task summary...',
-            tokenCount: 5,
+          // Add summary request prompt as visible user message (auto-prompt style)
+          const summaryRequestMsg = sessionManager.addMessage(sessionId, {
+            role: 'user',
+            content: SUMMARY_REQUEST_PROMPT,
+            tokenCount: estimateTokens(SUMMARY_REQUEST_PROMPT),
+            isSystemGenerated: true,
+            messageKind: 'auto-prompt',
           })
-          pushEvent(createChatMessageMessage(progressMsg1))
+          pushEvent(createChatMessageMessage(summaryRequestMsg))
           
-          // Generate summary from conversation
-          const summary = await generateSummary(sessionId, llmClient)
+          // Stream summary response (creates assistant message and streams)
+          const summary = await streamSummaryResponse(sessionId, llmClient, pushEvent)
           sessionManager.setSummary(sessionId, summary)
-          
-          // Create summary message (visible in chat and persisted)
-          const summaryMsg = sessionManager.addMessage(sessionId, {
-            role: 'system',
-            content: `## Task Summary\n\n${summary}`,
-            tokenCount: estimateTokens(summary),
-          })
-          pushEvent(createChatMessageMessage(summaryMsg))
           
           // Switch to builder mode
           sessionManager.setMode(sessionId, 'builder')
           pushEvent(createModeChangedMessage('builder', false, 'Criteria accepted'))
-          
-          // Progress: starting implementation
-          const progressMsg2 = sessionManager.addMessage(sessionId, {
-            role: 'system',
-            content: 'Starting implementation...',
-            tokenCount: 5,
-          })
-          pushEvent(createChatMessageMessage(progressMsg2))
           
           // Mark session as running
           sessionManager.setRunning(sessionId, true)
@@ -566,11 +558,13 @@ async function handleClientMessage(
           })
         } catch (error) {
           logger.error('mode.accept error', { error })
-          // Create error message so we have a messageId for the done event
+          // Create error message as visible user message (auto-prompt style)
           const errorMsg = sessionManager.addMessage(sessionId, {
-            role: 'system',
+            role: 'user',
             content: `Error: ${error instanceof Error ? error.message : 'Unknown error'}`,
             tokenCount: 10,
+            isSystemGenerated: true,
+            messageKind: 'auto-prompt',
           })
           pushEvent(createChatMessageMessage(errorMsg))
           pushEvent(createChatErrorMessage(

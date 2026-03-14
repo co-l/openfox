@@ -232,8 +232,8 @@ export function addMessage(sessionId: string, message: Omit<Message, 'id' | 'tim
     INSERT INTO messages (
       id, session_id, role, content, tool_calls, thinking_content,
       tool_call_id, tool_name, tool_result, timestamp, token_count,
-      is_compacted, original_message_ids, segments, stats, partial, is_system_generated, is_streaming
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      is_compacted, original_message_ids, segments, stats, partial, is_system_generated, is_streaming, message_kind
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
     id,
     sessionId,
@@ -252,7 +252,8 @@ export function addMessage(sessionId: string, message: Omit<Message, 'id' | 'tim
     message.stats ? JSON.stringify(message.stats) : null,
     message.partial ? 1 : 0,
     message.isSystemGenerated ? 1 : 0,
-    message.isStreaming ? 1 : 0
+    message.isStreaming ? 1 : 0,
+    message.messageKind ?? null
   )
   
   // Update session updated_at
@@ -296,6 +297,7 @@ export function getMessages(sessionId: string): Message[] {
     partial: row.partial === 1,
     isSystemGenerated: row.is_system_generated === 1 ? true : undefined,
     isStreaming: row.is_streaming === 1 ? true : undefined,
+    messageKind: row.message_kind as Message['messageKind'] ?? undefined,
   }))
 }
 
@@ -601,6 +603,7 @@ interface MessageRow {
   partial: number
   is_system_generated: number
   is_streaming: number
+  message_kind: string | null
 }
 
 interface CriterionRow {

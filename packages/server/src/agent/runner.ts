@@ -129,6 +129,7 @@ export async function runAgent(options: AgentRunnerOptions): Promise<void> {
         content: FORMAT_CORRECTION_PROMPT,
         tokenCount: estimateTokens(FORMAT_CORRECTION_PROMPT),
         isSystemGenerated: true,
+        messageKind: 'correction',
       })
       session = sessionManager.requireSession(sessionId)
       onEvent({ type: 'format_retry', attempt: formatRetryCount, maxAttempts: MAX_FORMAT_RETRIES })
@@ -404,6 +405,8 @@ export async function runAgent(options: AgentRunnerOptions): Promise<void> {
         role: 'user',
         content: 'Continue working on the acceptance criteria. Use the available tools to make progress. When finished, output "ALL CRITERIA COMPLETE".',
         tokenCount: 50,
+        isSystemGenerated: true,
+        messageKind: 'correction',
       })
     }
   }

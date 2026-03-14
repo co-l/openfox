@@ -92,6 +92,7 @@ export interface Message {
   partial?: boolean            // true if message was interrupted mid-stream
   isSystemGenerated?: boolean  // true for auto-injected messages (retry prompts, etc.)
   isStreaming?: boolean        // true while assistant is still generating
+  messageKind?: 'correction' | 'auto-prompt' | 'context-reset'  // Visual styling hint for system-generated messages
 }
 
 // ============================================================================

@@ -72,15 +72,38 @@ export function ChatMessage({ message, isLastAssistantMessage = false }: ChatMes
     )
   }
   
+  // Context reset separator (full-width divider for fresh context)
+  if (message.messageKind === 'context-reset') {
+    return (
+      <div className="flex items-center gap-4 my-6 text-text-muted text-xs uppercase tracking-wide">
+        <div className="flex-1 border-t border-border" />
+        <span>{message.content}</span>
+        <div className="flex-1 border-t border-border" />
+      </div>
+    )
+  }
+  
   // User message
   if (isUser) {
-    // System-generated user messages (like retry prompts)
+    // System-generated user messages
     if (message.isSystemGenerated) {
+      const isAutoPrompt = message.messageKind === 'auto-prompt'
+      
       return (
         <div className="flex justify-end items-start gap-2 my-2">
-          <div className="max-w-[80%] rounded-lg p-3 bg-amber-500/10 border border-amber-500/30">
-            <span className="text-xs text-amber-400 block mb-1">System Correction</span>
-            <div className="text-amber-200 italic whitespace-pre-wrap text-sm">
+          <div className={`max-w-[80%] rounded-lg p-3 border ${
+            isAutoPrompt 
+              ? 'bg-slate-500/10 border-slate-500/30' 
+              : 'bg-amber-500/10 border-amber-500/30'
+          }`}>
+            <span className={`text-xs block mb-1 ${
+              isAutoPrompt ? 'text-slate-400' : 'text-amber-400'
+            }`}>
+              {isAutoPrompt ? 'Auto' : 'System Correction'}
+            </span>
+            <div className={`whitespace-pre-wrap text-sm ${
+              isAutoPrompt ? 'text-slate-200' : 'text-amber-200 italic'
+            }`}>
               {message.content}
             </div>
           </div>

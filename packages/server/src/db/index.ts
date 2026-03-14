@@ -123,6 +123,13 @@ function runMigrations(db: Database.Database): void {
     // Column already exists
   }
   
+  // Migration: add message_kind column if missing
+  try {
+    db.exec(`ALTER TABLE messages ADD COLUMN message_kind TEXT`)
+  } catch {
+    // Column already exists
+  }
+  
   // Create criteria table
   db.exec(`
     CREATE TABLE IF NOT EXISTS criteria (

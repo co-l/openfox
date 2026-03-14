@@ -4,7 +4,8 @@ import type { LLMClientWithModel } from '../llm/client.js'
 import { sessionManager } from '../session/index.js'
 import { getToolRegistryForMode, setTodoUpdateCallback, AskUserInterrupt } from '../tools/index.js'
 import { streamWithSegments, type StreamTiming } from '../llm/streaming.js'
-import { buildPlannerPrompt, buildBuilderPrompt, buildVerifierPrompt, SUMMARY_REQUEST_PROMPT } from './prompts.js'
+import { buildPlannerPrompt, buildBuilderPrompt, buildVerifierPrompt, SUMMARY_REQUEST_PROMPT, BUILDER_KICKOFF_PROMPT, VERIFIER_KICKOFF_PROMPT } from './prompts.js'
+export { SUMMARY_REQUEST_PROMPT }
 import { estimateTokens } from '../context/tokenizer.js'
 import { logger } from '../utils/logger.js'
 import {
@@ -121,9 +122,11 @@ export async function handleChat(options: ChatOptions): Promise<void> {
       // User intervention requested - pause execution
       // Create a system message to notify user and get a messageId
       const waitMsg = sessionManager.addMessage(sessionId, {
-        role: 'system',
+        role: 'user',
         content: 'Waiting for user input...',
         tokenCount: 5,
+        isSystemGenerated: true,
+        messageKind: 'auto-prompt',
       })
       onMessage(createChatMessageMessage(waitMsg))
       onMessage(createChatDoneMessage(waitMsg.id, 'waiting_for_user'))
@@ -137,9 +140,11 @@ export async function handleChat(options: ChatOptions): Promise<void> {
     ))
     // Create error message to get a messageId for done event
     const errorMsg = sessionManager.addMessage(sessionId, {
-      role: 'system',
+      role: 'user',
       content: `Error: ${error instanceof Error ? error.message : 'Unknown error'}`,
       tokenCount: 10,
+      isSystemGenerated: true,
+      messageKind: 'correction',
     })
     onMessage(createChatMessageMessage(errorMsg))
     onMessage(createChatDoneMessage(errorMsg.id, 'error'))
@@ -186,7 +191,7 @@ async function runPlannerChat(
   const llmMessages = [
     { role: 'system' as const, content: systemPrompt },
     ...session.messages.map(m => ({
-      role: m.role as 'user' | 'assistant' | 'system' | 'tool',
+      role: m.role as 'user' | 'assistant' | 'tool',
       content: m.content,
       ...(m.toolCalls && { toolCalls: m.toolCalls }),
       ...(m.toolCallId && { toolCallId: m.toolCallId }),
@@ -349,6 +354,26 @@ async function runBuilderLoop(options: ChatOptions): Promise<void> {
   // Track current assistant message ID across iterations
   let currentMessageId: string | undefined
   
+  // Add kickoff prompt on first entry (not on re-entry from verifier failure)
+  const hasBuilderKickoff = session.messages.some(m => 
+    m.isSystemGenerated && m.messageKind === 'auto-prompt' && 
+    m.content.includes('fulfil the') && m.content.includes('criteria')
+  )
+  
+  if (!hasBuilderKickoff) {
+    const kickoffContent = BUILDER_KICKOFF_PROMPT(session.criteria.length)
+    const kickoffMsg = sessionManager.addMessage(sessionId, {
+      role: 'user',
+      content: kickoffContent,
+      tokenCount: estimateTokens(kickoffContent),
+      isSystemGenerated: true,
+      messageKind: 'auto-prompt',
+    })
+    onMessage(createChatMessageMessage(kickoffMsg))
+    // Refresh session after adding message
+    session = sessionManager.requireSession(sessionId)
+  }
+  
   while (iteration < maxIterations) {
     if (signal?.aborted) {
       if (currentMessageId) {
@@ -380,7 +405,8 @@ async function runBuilderLoop(options: ChatOptions): Promise<void> {
         onMessage(createChatDoneMessage(currentMessageId, 'complete', stats))
       }
       
-      // Verifier will be a new turn
+      // Auto-start verifier
+      await runVerifierLoop(options)
       return
     }
     
@@ -408,9 +434,9 @@ async function runBuilderLoop(options: ChatOptions): Promise<void> {
     const llmMessages = [
       { role: 'system' as const, content: systemPrompt },
       ...session.messages
-        .filter(m => !m.isCompacted || m.role === 'system')
+        .filter(m => !m.isCompacted)
         .map(m => ({
-          role: m.role as 'user' | 'assistant' | 'system' | 'tool',
+          role: m.role as 'user' | 'assistant' | 'tool',
           content: m.role === 'tool' && m.toolResult
             ? (m.toolResult.success ? (m.toolResult.output ?? 'Success') : `Error: ${m.toolResult.error}`)
             : m.content,
@@ -573,6 +599,8 @@ async function runBuilderLoop(options: ChatOptions): Promise<void> {
         role: 'user',
         content: `Continue working on the remaining criteria. ${pendingCriteria.length} criteria still pending.`,
         tokenCount: 20,
+        isSystemGenerated: true,
+        messageKind: 'correction',
       })
       onMessage(createChatMessageMessage(nudgeMsg))
       continue
@@ -614,6 +642,26 @@ async function runVerifierLoop(options: ChatOptions): Promise<void> {
     return
   }
   
+  // Add context reset separator (verifier uses fresh context)
+  const resetMsg = sessionManager.addMessage(sessionId, {
+    role: 'user',
+    content: 'Fresh Context',
+    tokenCount: 2,
+    isSystemGenerated: true,
+    messageKind: 'context-reset',
+  })
+  onMessage(createChatMessageMessage(resetMsg))
+  
+  // Add verifier kickoff prompt
+  const kickoffMsg = sessionManager.addMessage(sessionId, {
+    role: 'user',
+    content: VERIFIER_KICKOFF_PROMPT,
+    tokenCount: estimateTokens(VERIFIER_KICKOFF_PROMPT),
+    isSystemGenerated: true,
+    messageKind: 'auto-prompt',
+  })
+  onMessage(createChatMessageMessage(kickoffMsg))
+  
   const toolRegistry = getToolRegistryForMode('verifier')
   const systemPrompt = buildVerifierPrompt(
     session.criteria,
@@ -622,10 +670,10 @@ async function runVerifierLoop(options: ChatOptions): Promise<void> {
     session.executionState?.modifiedFiles ?? []
   )
   
-  // Verifier gets fresh context (only system prompt with summary)
+  // Verifier gets fresh context (only system prompt + kickoff)
   const llmMessages: Array<{ role: 'system' | 'user' | 'assistant' | 'tool'; content: string; toolCalls?: ToolCall[]; toolCallId?: string }> = [
     { role: 'system', content: systemPrompt },
-    { role: 'user', content: 'Please verify each criterion marked [NEEDS VERIFICATION].' },
+    { role: 'user', content: VERIFIER_KICKOFF_PROMPT },
   ]
   
   let iteration = 0
@@ -805,9 +853,11 @@ async function runVerifierLoop(options: ChatOptions): Promise<void> {
     
     // Add failure context to main session messages
     const failureMsg = sessionManager.addMessage(sessionId, {
-      role: 'system',
+      role: 'user',
       content: `Verification found ${failed.length} failing criteria:\n${failed.map(c => `- ${c.id}: ${c.status.type === 'failed' ? c.status.reason : 'unknown'}`).join('\n')}`,
       tokenCount: 50,
+      isSystemGenerated: true,
+      messageKind: 'correction',
     })
     onMessage(createChatMessageMessage(failureMsg))
     
@@ -829,30 +879,94 @@ async function runVerifierLoop(options: ChatOptions): Promise<void> {
 }
 
 /**
- * Generate a summary from the conversation
+ * Stream a summary response from the conversation
  * Uses same planner prompt to hit vLLM KV cache from conversation
+ * The summary request prompt should already be added to session.messages by the caller
  */
-export async function generateSummary(
+export async function streamSummaryResponse(
   sessionId: string,
-  llmClient: LLMClientWithModel
+  llmClient: LLMClientWithModel,
+  onMessage: (msg: ServerMessage) => void
 ): Promise<string> {
   const session = sessionManager.requireSession(sessionId)
+  const turnMetrics = new TurnMetrics()
   
   // Use planner prompt to hit KV cache from conversation
   const toolRegistry = getToolRegistryForMode('planner')
   const systemPrompt = buildPlannerPrompt(toolRegistry.definitions)
   
-  const messages = [
+  // Build messages from session (summary prompt already included)
+  const llmMessages = [
     { role: 'system' as const, content: systemPrompt },
     ...session.messages.map(m => ({
-      role: m.role as 'user' | 'assistant' | 'system' | 'tool',
+      role: m.role as 'user' | 'assistant' | 'tool',
       content: m.content,
       ...(m.toolCalls && { toolCalls: m.toolCalls }),
       ...(m.toolCallId && { toolCallId: m.toolCallId }),
     })),
-    { role: 'user' as const, content: SUMMARY_REQUEST_PROMPT },
   ]
   
-  const response = await llmClient.complete({ messages })
-  return response.content.trim()
+  // Create assistant message for streaming
+  const assistantMsg = sessionManager.addMessage(sessionId, {
+    role: 'assistant',
+    content: '',
+    tokenCount: 0,
+    isStreaming: true,
+  })
+  onMessage(createChatMessageMessage(assistantMsg))
+  
+  // Stream response (no tools for summary)
+  const stream = streamWithSegments(llmClient, {
+    messages: llmMessages,
+  })
+  
+  let result: Awaited<ReturnType<typeof stream.next>>['value'] = null
+  
+  while (true) {
+    const { value, done } = await stream.next()
+    
+    if (done) {
+      result = value
+      break
+    }
+    
+    // Forward streaming events
+    switch (value.type) {
+      case 'text_delta':
+        onMessage(createChatDeltaMessage(assistantMsg.id, value.content))
+        break
+      case 'thinking_delta':
+        onMessage(createChatThinkingMessage(assistantMsg.id, value.content))
+        break
+      case 'error':
+        onMessage(createChatErrorMessage(value.error, true))
+        break
+    }
+  }
+  
+  if (!result) {
+    sessionManager.updateMessage(sessionId, assistantMsg.id, { isStreaming: false })
+    onMessage(createChatDoneMessage(assistantMsg.id, 'error'))
+    throw new Error('Failed to generate summary')
+  }
+  
+  const { content, thinkingContent, response, timing } = result
+  
+  // Track metrics
+  turnMetrics.addLLMCall(timing, response.usage.promptTokens, response.usage.completionTokens)
+  
+  // Update assistant message with final content
+  sessionManager.updateMessage(sessionId, assistantMsg.id, {
+    content,
+    ...(thinkingContent && { thinkingContent }),
+    tokenCount: response.usage.completionTokens,
+    isStreaming: false,
+  })
+  
+  // Send done event with stats
+  const stats = turnMetrics.buildStats(llmClient.getModel(), 'planner')
+  sessionManager.updateMessageStats(sessionId, assistantMsg.id, stats)
+  onMessage(createChatDoneMessage(assistantMsg.id, 'complete', stats))
+  
+  return content.trim()
 }
