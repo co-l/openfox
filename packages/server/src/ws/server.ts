@@ -7,6 +7,7 @@ import type { ToolRegistry } from '../tools/index.js'
 import { sessionManager } from '../session/index.js'
 import { sessionEvents } from '../session/events.js'
 import { handleChat, generateSummary } from '../chat/index.js'
+import { estimateTokens } from '../context/tokenizer.js'
 import { logger } from '../utils/logger.js'
 import {
   createProject,
@@ -32,7 +33,6 @@ import {
   createChatMessageUpdatedMessage,
   createChatDoneMessage,
   createChatErrorMessage,
-  createChatProgressMessage,
   createModeChangedMessage,
   createCriteriaUpdatedMessage,
   isProjectCreatePayload,
@@ -73,7 +73,9 @@ export function createWebSocketServer(
     
     for (const [ws, client] of clients) {
       if (client.sessionId === sessionId && ws.readyState === WebSocket.OPEN) {
-        if (event.type === 'session_updated' || event.type === 'mode_changed') {
+        // Only broadcast session.state for session_updated (not mode_changed)
+        // mode_changed is handled via the event queue to maintain ordering during streaming
+        if (event.type === 'session_updated') {
           const session = sessionManager.getSession(sessionId)
           if (session) {
             const messages = getMessages(sessionId)
@@ -516,26 +518,37 @@ async function handleClientMessage(
       // Generate summary asynchronously
       ;(async () => {
         try {
-          // Progress: generating summary
-          pushEvent(createChatProgressMessage('Generating task summary...', 'summary'))
+          // Progress: generating summary (as system message so it's visible)
+          const progressMsg1 = sessionManager.addMessage(sessionId, {
+            role: 'system',
+            content: 'Generating task summary...',
+            tokenCount: 5,
+          })
+          pushEvent(createChatMessageMessage(progressMsg1))
           
           // Generate summary from conversation
           const summary = await generateSummary(sessionId, llmClient)
           sessionManager.setSummary(sessionId, summary)
           
-          // Send summary to client
-          pushEvent({ type: 'chat.summary', payload: { summary } })
-          
-          // Progress: switching mode
-          pushEvent(createChatProgressMessage('Switching to builder mode...', 'mode_switch'))
+          // Create summary message (visible in chat and persisted)
+          const summaryMsg = sessionManager.addMessage(sessionId, {
+            role: 'system',
+            content: `## Task Summary\n\n${summary}`,
+            tokenCount: estimateTokens(summary),
+          })
+          pushEvent(createChatMessageMessage(summaryMsg))
           
           // Switch to builder mode
           sessionManager.setMode(sessionId, 'builder')
           pushEvent(createModeChangedMessage('builder', false, 'Criteria accepted'))
           
-          const updatedSession = sessionManager.requireSession(sessionId)
-          const updatedMessages = getMessages(sessionId)
-          pushEvent(createSessionStateMessage(updatedSession, updatedMessages))
+          // Progress: starting implementation
+          const progressMsg2 = sessionManager.addMessage(sessionId, {
+            role: 'system',
+            content: 'Starting implementation...',
+            tokenCount: 5,
+          })
+          pushEvent(createChatMessageMessage(progressMsg2))
           
           // Mark session as running
           sessionManager.setRunning(sessionId, true)
@@ -543,9 +556,6 @@ async function handleClientMessage(
           // Create AbortController for builder
           const controller = new AbortController()
           activeAgents.set(sessionId, controller)
-          
-          // Progress: starting implementation
-          pushEvent(createChatProgressMessage('Starting implementation...', 'starting'))
           
           // Auto-start builder
           await handleChat({
