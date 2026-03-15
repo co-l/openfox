@@ -514,7 +514,7 @@ export function updateCriterion(
   db.prepare('UPDATE sessions SET updated_at = ? WHERE id = ?').run(now, sessionId)
 }
 
-export function addCriterion(sessionId: string, criterion: Criterion): void {
+export function addCriterion(sessionId: string, criterion: Criterion): { success: true; actualId: string } | { success: false; error: string } {
   const db = getDatabase()
   
   // Get current max sort_order
@@ -524,20 +524,36 @@ export function addCriterion(sessionId: string, criterion: Criterion): void {
   
   const sortOrder = (maxRow?.max_order ?? -1) + 1
   
-  db.prepare(`
-    INSERT INTO criteria (id, session_id, description, status, attempts, sort_order)
-    VALUES (?, ?, ?, ?, ?, ?)
-  `).run(
-    criterion.id,
-    sessionId,
-    criterion.description,
-    JSON.stringify(criterion.status),
-    JSON.stringify(criterion.attempts),
-    sortOrder
-  )
+  // Try inserting with the given ID, adding suffix on conflict
+  let actualId = criterion.id
+  let attempts = 0
+  const maxAttempts = 10
   
-  const now = new Date().toISOString()
-  db.prepare('UPDATE sessions SET updated_at = ? WHERE id = ?').run(now, sessionId)
+  while (attempts < maxAttempts) {
+    const result = db.prepare(`
+      INSERT OR IGNORE INTO criteria (id, session_id, description, status, attempts, sort_order)
+      VALUES (?, ?, ?, ?, ?, ?)
+    `).run(
+      actualId,
+      sessionId,
+      criterion.description,
+      JSON.stringify(criterion.status),
+      JSON.stringify(criterion.attempts),
+      sortOrder
+    )
+    
+    if (result.changes > 0) {
+      const now = new Date().toISOString()
+      db.prepare('UPDATE sessions SET updated_at = ? WHERE id = ?').run(now, sessionId)
+      return { success: true, actualId }
+    }
+    
+    // ID conflict - add/increment suffix
+    attempts++
+    actualId = `${criterion.id}-${attempts}`
+  }
+  
+  return { success: false, error: `Could not add criterion after ${maxAttempts} attempts` }
 }
 
 export function updateCriterionFull(

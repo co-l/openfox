@@ -71,11 +71,7 @@ export const addCriterionTool: Tool = {
       return { success: false, error: 'description is required', durationMs: 0, truncated: false }
     }
     
-    const session = sessionManager.requireSession(context.sessionId)
-    
-    if (session.criteria.find(c => c.id === id)) {
-      return { success: false, error: `criterion with id "${id}" already exists`, durationMs: 0, truncated: false }
-    }
+    sessionManager.requireSession(context.sessionId)
     
     const criterion: Criterion = {
       id,
@@ -84,10 +80,19 @@ export const addCriterionTool: Tool = {
       attempts: [],
     }
     
-    const criteria = sessionManager.addCriterion(context.sessionId, criterion)
+    const result = sessionManager.addCriterion(context.sessionId, criterion)
+    
+    if ('error' in result) {
+      return { success: false, error: result.error, durationMs: 0, truncated: false }
+    }
+    
+    const idNote = result.actualId !== id 
+      ? ` (requested ID "${id}" was in use, using "${result.actualId}" instead)`
+      : ''
+    
     return {
       success: true,
-      output: `Added criterion "${id}". Current criteria:\n${formatCriteriaList(criteria)}`,
+      output: `Added criterion "${result.actualId}"${idNote}. Current criteria:\n${formatCriteriaList(result.criteria)}`,
       durationMs: 0,
       truncated: false,
     }

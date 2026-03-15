@@ -370,16 +370,19 @@ class SessionManagerImpl {
     this.emit({ type: 'criteria_updated', sessionId, criteria })
   }
   
-  addCriterion(sessionId: string, criterion: Criterion): Criterion[] {
+  addCriterion(sessionId: string, criterion: Criterion): { criteria: Criterion[]; actualId: string } | { error: string } {
     this.requireSession(sessionId)
     
-    dbAddCriterion(sessionId, criterion)
+    const result = dbAddCriterion(sessionId, criterion)
+    if (!result.success) {
+      return { error: result.error }
+    }
     
     // Reload to get updated list
     const criteria = getCriteria(sessionId)
     this.emit({ type: 'criteria_updated', sessionId, criteria })
     
-    return criteria
+    return { criteria, actualId: result.actualId }
   }
   
   updateCriterionFull(

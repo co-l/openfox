@@ -50,7 +50,9 @@ export async function setup(): Promise<void> {
   console.log('\n🚀 Starting OpenFox server...')
   
   // Start the server with test configuration
-  serverProcess = spawn('npm', ['run', 'dev'], {
+  // Use npx tsx directly (not tsx watch) to avoid auto-restarts on file changes
+  // Use detached: true to create a process group for clean shutdown
+  serverProcess = spawn('npx', ['tsx', 'src/index.ts'], {
     cwd: new URL('../packages/server', import.meta.url).pathname,
     env: {
       ...process.env,
@@ -60,6 +62,7 @@ export async function setup(): Promise<void> {
       OPENFOX_LOG_LEVEL: 'warn',
     },
     stdio: ['ignore', 'pipe', 'pipe'],
+    detached: true,
   })
   
   // Log server output for debugging
@@ -88,16 +91,29 @@ export async function setup(): Promise<void> {
 }
 
 export async function teardown(): Promise<void> {
-  if (serverProcess) {
+  if (serverProcess && serverProcess.pid) {
     console.log('\n🛑 Stopping OpenFox server...')
-    serverProcess.kill('SIGTERM')
+    
+    // Kill the entire process group (tsx watch spawns child processes)
+    try {
+      process.kill(-serverProcess.pid, 'SIGTERM')
+    } catch {
+      // Process group might not exist, try direct kill
+      serverProcess.kill('SIGTERM')
+    }
     
     // Wait for graceful shutdown
     await new Promise<void>((resolve) => {
       const timeout = setTimeout(() => {
-        serverProcess?.kill('SIGKILL')
+        try {
+          if (serverProcess?.pid) {
+            process.kill(-serverProcess.pid, 'SIGKILL')
+          }
+        } catch {
+          serverProcess?.kill('SIGKILL')
+        }
         resolve()
-      }, 5000)
+      }, 3000)
       
       serverProcess?.on('exit', () => {
         clearTimeout(timeout)

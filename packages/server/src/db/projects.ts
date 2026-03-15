@@ -62,7 +62,7 @@ export function listProjects(): Project[] {
   return rows.map(rowToProject)
 }
 
-export function updateProject(id: string, updates: { name?: string; customInstructions?: string | null }): Project {
+export function updateProject(id: string, updates: { name?: string; customInstructions?: string | null }): Project | null {
   const db = getDatabase()
   const now = new Date().toISOString()
   
@@ -81,16 +81,16 @@ export function updateProject(id: string, updates: { name?: string; customInstru
   
   values.push(id)
   
-  db.prepare(`
+  const result = db.prepare(`
     UPDATE projects SET ${sets.join(', ')} WHERE id = ?
   `).run(...values)
   
-  const project = getProject(id)
-  if (!project) {
-    throw new Error(`Project not found: ${id}`)
+  // Check if any row was updated
+  if (result.changes === 0) {
+    return null
   }
   
-  return project
+  return getProject(id)
 }
 
 export function deleteProject(id: string): void {
