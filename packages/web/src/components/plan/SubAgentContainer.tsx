@@ -23,9 +23,23 @@ const HEADER_COLORS: Record<string, string> = {
  * Uses the same AssistantMessage and ChatMessage components as the main chat.
  */
 export function SubAgentContainer({ messages, subAgentType, isStreaming }: SubAgentContainerProps) {
+  const containerRef = useRef<HTMLDivElement>(null)
   const scrollContainerRef = useRef<HTMLDivElement>(null)
   const [userScrolledUp, setUserScrolledUp] = useState(false)
   const [expanded, setExpanded] = useState(false)
+  
+  // Scroll container into view when expanding
+  const handleToggleExpand = useCallback(() => {
+    const willExpand = !expanded
+    setExpanded(willExpand)
+    
+    if (willExpand) {
+      // Wait for height transition (200ms) to complete, then scroll into view
+      setTimeout(() => {
+        containerRef.current?.scrollIntoView({ block: 'start', behavior: 'smooth' })
+      }, 220)
+    }
+  }, [expanded])
   
   const scrollToBottom = useCallback(() => {
     const container = scrollContainerRef.current
@@ -73,15 +87,19 @@ export function SubAgentContainer({ messages, subAgentType, isStreaming }: SubAg
   const displayMessages = messages.filter(m => m.role !== 'tool')
   
   return (
-    <div className="my-2 border border-border rounded overflow-hidden bg-bg-secondary">
-      <div className={`px-2 py-1 text-xs font-medium border-b ${headerColor}`}>
-        {label}
-      </div>
+    <div ref={containerRef} className="my-2 border border-border rounded overflow-hidden bg-bg-secondary">
+      <button
+        className={`w-full flex items-center justify-between px-2 py-1 text-xs font-medium border-b ${headerColor} hover:opacity-80 transition-opacity`}
+        onClick={handleToggleExpand}
+      >
+        <span>{label}</span>
+        <span className="text-[10px]">{expanded ? '▼' : '▶'}</span>
+      </button>
       
       <div 
         ref={scrollContainerRef}
         onWheel={handleWheel}
-        className="max-h-32 overflow-y-auto p-2"
+        className={`${expanded ? 'max-h-[calc(100vh-10rem)]' : 'max-h-32'} overflow-y-auto p-2 transition-[max-height] duration-200`}
       >
         {displayMessages.map((message) => {
           if (message.role === 'assistant') {
