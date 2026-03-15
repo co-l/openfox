@@ -76,23 +76,13 @@ function getLanguageFromPath(filePath?: string): string {
   return extensionToLanguage[ext] ?? 'text'
 }
 
-// Custom style overrides for diff highlighting
-const removedStyle: React.CSSProperties = {
+// Custom style overrides for diff highlighting (minimal - use Tailwind for layout)
+const codeStyle: React.CSSProperties = {
   margin: 0,
-  padding: '2px 8px',
+  padding: 0,
   borderRadius: 0,
   fontSize: '0.75rem',
-  background: 'rgba(248, 81, 73, 0.15)',
-  borderLeft: '3px solid rgb(248, 81, 73)',
-}
-
-const addedStyle: React.CSSProperties = {
-  margin: 0,
-  padding: '2px 8px',
-  borderRadius: 0,
-  fontSize: '0.75rem',
-  background: 'rgba(63, 185, 80, 0.15)',
-  borderLeft: '3px solid rgb(63, 185, 80)',
+  background: 'transparent',
 }
 
 export function DiffView({ oldString, newString, filePath }: DiffViewProps) {
@@ -114,53 +104,49 @@ export function DiffView({ oldString, newString, filePath }: DiffViewProps) {
   }
   
   return (
-    <div className="rounded overflow-hidden border border-border">
+    <div className="rounded overflow-hidden border border-border grid grid-cols-[3px_1.5rem_1fr]">
       {/* Removed content */}
       {hasOld && (
-        <div className="relative">
-          <div className="absolute left-0 top-0 bottom-0 w-6 bg-red-500/10 flex items-start justify-center pt-1 text-red-400 text-xs font-mono">
+        <>
+          <div className="bg-red-500 row-span-1" />
+          <div className="bg-red-500/10 py-1 text-red-400 text-xs font-mono text-center">
             {oldLines.map((_, i) => (
-              <span key={i} className="block leading-[1.35rem]">-</span>
+              <div key={i} className="leading-[1.35rem]">-</div>
             ))}
           </div>
-          <div className="pl-6">
+          <div className="bg-red-500/10 py-0.5 pr-2 line-through decoration-red-500/50">
             <SyntaxHighlighter
               style={oneDark}
               language={language}
               PreTag="div"
-              customStyle={removedStyle}
-              codeTagProps={{
-                style: {
-                  textDecoration: 'line-through',
-                  textDecorationColor: 'rgba(248, 81, 73, 0.5)',
-                }
-              }}
+              customStyle={codeStyle}
             >
               {oldString}
             </SyntaxHighlighter>
           </div>
-        </div>
+        </>
       )}
       
       {/* Added content */}
       {hasNew && (
-        <div className="relative">
-          <div className="absolute left-0 top-0 bottom-0 w-6 bg-green-500/10 flex items-start justify-center pt-1 text-green-400 text-xs font-mono">
+        <>
+          <div className="bg-green-500 row-span-1" />
+          <div className="bg-green-500/10 py-1 text-green-400 text-xs font-mono text-center">
             {newLines.map((_, i) => (
-              <span key={i} className="block leading-[1.35rem]">+</span>
+              <div key={i} className="leading-[1.35rem]">+</div>
             ))}
           </div>
-          <div className="pl-6">
+          <div className="bg-green-500/10 py-0.5 pr-2">
             <SyntaxHighlighter
               style={oneDark}
               language={language}
               PreTag="div"
-              customStyle={addedStyle}
+              customStyle={codeStyle}
             >
               {newString}
             </SyntaxHighlighter>
           </div>
-        </div>
+        </>
       )}
     </div>
   )
@@ -184,18 +170,19 @@ export function FilePreview({ content, filePath, maxLines = 20 }: FilePreviewPro
   
   return (
     <div className="rounded overflow-hidden border border-border">
-      <div className="relative">
-        <div className="absolute left-0 top-0 bottom-0 w-6 bg-green-500/10 flex items-start justify-center pt-1 text-green-400 text-xs font-mono">
+      <div className="grid grid-cols-[3px_1.5rem_1fr]">
+        <div className="bg-green-500" />
+        <div className="bg-green-500/10 py-1 text-green-400 text-xs font-mono text-center">
           {displayContent.split('\n').map((_, i) => (
-            <span key={i} className="block leading-[1.35rem]">+</span>
+            <div key={i} className="leading-[1.35rem]">+</div>
           ))}
         </div>
-        <div className="pl-6">
+        <div className="bg-green-500/10 py-0.5 pr-2">
           <SyntaxHighlighter
             style={oneDark}
             language={language}
             PreTag="div"
-            customStyle={addedStyle}
+            customStyle={codeStyle}
           >
             {displayContent}
           </SyntaxHighlighter>
