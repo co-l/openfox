@@ -172,7 +172,7 @@ async function runPlannerChat(
       const toolResult = await toolRegistry.execute(
         toolCall.name,
         toolCall.arguments,
-        { workdir: session.workdir, sessionId }
+        { workdir: session.workdir, sessionId, lspManager: sessionManager.getLspManager(sessionId) }
       )
       
       // Track tool execution time
@@ -256,7 +256,7 @@ async function runBuilderTurn(
       const toolResult = await toolRegistry.execute(
         toolCall.name,
         toolCall.arguments,
-        { workdir: session.workdir, sessionId }
+        { workdir: session.workdir, sessionId, lspManager: sessionManager.getLspManager(sessionId) }
       )
       
       // Track tool execution time

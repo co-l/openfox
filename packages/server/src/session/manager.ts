@@ -44,6 +44,7 @@ import { logger } from '../utils/logger.js'
 import { EventEmitter, type Unsubscribe } from '../utils/async.js'
 import { calculateContextTokens, isInDangerZone, canCompact } from '../context/index.js'
 import { loadConfig } from '../config.js'
+import { getLspManager as getOrCreateLspManager, shutdownLspManager, type LspManager } from '../lsp/index.js'
 
 // ============================================================================
 // Event Types
@@ -123,6 +124,12 @@ class SessionManagerImpl {
   
   deleteSession(id: string): void {
     logger.info('Deleting session', { id })
+    
+    // Shutdown LSP manager for this session (async, but we don't wait)
+    shutdownLspManager(id).catch(err => {
+      logger.error('Error shutting down LSP manager', { sessionId: id, error: err })
+    })
+    
     dbDeleteSession(id)
     
     if (this.activeSessionId === id) {
@@ -130,6 +137,15 @@ class SessionManagerImpl {
     }
     
     this.emit({ type: 'session_deleted', sessionId: id })
+  }
+  
+  /**
+   * Get the LSP manager for a session.
+   * Creates one if it doesn't exist (lazy initialization).
+   */
+  getLspManager(sessionId: string): LspManager {
+    const session = this.requireSession(sessionId)
+    return getOrCreateLspManager(sessionId, session.workdir)
   }
   
   // Mode management (simpler than old phase system)

@@ -1,7 +1,8 @@
 import { writeFile, mkdir } from 'node:fs/promises'
 import { resolve, isAbsolute, dirname } from 'node:path'
-import type { ToolResult } from '@openfox/shared'
+import type { ToolResult, Diagnostic } from '@openfox/shared'
 import type { Tool, ToolContext } from './types.js'
+import { formatDiagnosticsForLLM } from './diagnostics.js'
 
 export const writeFileTool: Tool = {
   name: 'write_file',
@@ -47,11 +48,21 @@ export const writeFileTool: Tool = {
       const lineCount = content.split('\n').length
       const byteCount = Buffer.byteLength(content, 'utf-8')
       
+      let output = `Successfully wrote ${lineCount} lines (${byteCount} bytes) to ${path}`
+      let diagnostics: Diagnostic[] = []
+      
+      // Get LSP diagnostics if available
+      if (context.lspManager) {
+        diagnostics = await context.lspManager.notifyFileChange(fullPath, content)
+        output += formatDiagnosticsForLLM(diagnostics)
+      }
+      
       return {
         success: true,
-        output: `Successfully wrote ${lineCount} lines (${byteCount} bytes) to ${path}`,
+        output,
         durationMs: Date.now() - startTime,
         truncated: false,
+        ...(diagnostics.length > 0 && { diagnostics }),
       }
     } catch (error) {
       return {

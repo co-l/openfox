@@ -140,6 +140,7 @@ export interface ToolResult {
   error?: string
   durationMs: number
   truncated: boolean
+  diagnostics?: Diagnostic[]  // LSP diagnostics for file operations
 }
 
 export type ToolName = 

@@ -1,10 +1,12 @@
 import type { ToolResult } from '@openfox/shared'
 import type { LLMToolDefinition } from '../llm/types.js'
+import type { LspManagerInterface } from '../lsp/types.js'
 
 export interface ToolContext {
   workdir: string
   sessionId: string
   onProgress?: (message: string) => void
+  lspManager?: LspManagerInterface  // Optional LSP manager for file diagnostics
 }
 
 export interface Tool {

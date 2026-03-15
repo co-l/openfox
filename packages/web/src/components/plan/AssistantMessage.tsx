@@ -117,6 +117,7 @@ export function AssistantMessage({ message, isStreaming = false, showStats = tru
                 result={result?.output}
                 error={result?.error}
                 durationMs={result?.durationMs}
+                diagnostics={result?.diagnostics}
               />
             )
           }

@@ -146,7 +146,7 @@ export async function* plannerChat(
           const result = await toolRegistry.execute(
             toolCall.name,
             toolCall.arguments,
-            { workdir: session.workdir, sessionId }
+            { workdir: session.workdir, sessionId, lspManager: sessionManager.getLspManager(sessionId) }
           )
           
           resultContent = result.success 

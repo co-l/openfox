@@ -1,7 +1,8 @@
 import { readFile, writeFile } from 'node:fs/promises'
 import { resolve, isAbsolute } from 'node:path'
-import type { ToolResult } from '@openfox/shared'
+import type { ToolResult, Diagnostic } from '@openfox/shared'
 import type { Tool, ToolContext } from './types.js'
+import { formatDiagnosticsForLLM } from './diagnostics.js'
 
 export const editFileTool: Tool = {
   name: 'edit_file',
@@ -94,11 +95,21 @@ export const editFileTool: Tool = {
       // Write file
       await writeFile(fullPath, newContent, 'utf-8')
       
+      let output = `Successfully replaced ${replaceAll ? occurrences : 1} occurrence(s) in ${path}`
+      let diagnostics: Diagnostic[] = []
+      
+      // Get LSP diagnostics if available
+      if (context.lspManager) {
+        diagnostics = await context.lspManager.notifyFileChange(fullPath, newContent)
+        output += formatDiagnosticsForLLM(diagnostics)
+      }
+      
       return {
         success: true,
-        output: `Successfully replaced ${replaceAll ? occurrences : 1} occurrence(s) in ${path}`,
+        output,
         durationMs: Date.now() - startTime,
         truncated: false,
+        ...(diagnostics.length > 0 && { diagnostics }),
       }
     } catch (error) {
       return {

@@ -1,6 +1,8 @@
 import { useState } from 'react'
+import type { Diagnostic } from '@openfox/shared'
 import { ToolIcon } from './ToolIcon'
 import { DiffView, FilePreview } from './DiffView'
+import { DiagnosticsView } from './DiagnosticsView'
 import { formatToolArgs, formatToolArgsFull } from '../../lib/formatToolArgs'
 
 type ToolStatus = 'pending' | 'success' | 'error'
@@ -14,6 +16,7 @@ interface ToolCallDisplayProps {
   result?: string
   error?: string
   durationMs?: number
+  diagnostics?: Diagnostic[]  // LSP diagnostics for file operations
 }
 
 const statusConfig = {
@@ -42,6 +45,7 @@ export function ToolCallDisplay({
   result,
   error,
   durationMs,
+  diagnostics,
 }: ToolCallDisplayProps) {
   // Auto-expand file operations so diffs are immediately visible
   const isFileOperation = tool === 'edit_file' || tool === 'write_file'
@@ -84,19 +88,29 @@ export function ToolCallDisplay({
         <div className="p-2 bg-bg-secondary border-t border-border space-y-2">
           {/* Specialized rendering for file edit operations */}
           {tool === 'edit_file' && status === 'success' && (
-            <DiffView
-              oldString={String(args.old_string ?? '')}
-              newString={String(args.new_string ?? '')}
-              filePath={String(args.path ?? '')}
-            />
+            <>
+              <DiffView
+                oldString={String(args.old_string ?? '')}
+                newString={String(args.new_string ?? '')}
+                filePath={String(args.path ?? '')}
+              />
+              {diagnostics && diagnostics.length > 0 && (
+                <DiagnosticsView diagnostics={diagnostics} />
+              )}
+            </>
           )}
           
           {/* Specialized rendering for file write operations */}
           {tool === 'write_file' && status === 'success' && (
-            <FilePreview
-              content={String(args.content ?? '')}
-              filePath={String(args.path ?? '')}
-            />
+            <>
+              <FilePreview
+                content={String(args.content ?? '')}
+                filePath={String(args.path ?? '')}
+              />
+              {diagnostics && diagnostics.length > 0 && (
+                <DiagnosticsView diagnostics={diagnostics} />
+              )}
+            </>
           )}
           
           {/* Show arguments for non-file operations or errors */}
