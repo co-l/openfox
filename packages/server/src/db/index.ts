@@ -253,6 +253,11 @@ function runMigrations(db: Database.Database): void {
     db.exec(`ALTER TABLE execution_state ADD COLUMN message_count_at_last_update INTEGER DEFAULT 0`)
   }
   
+  if (!execStateColumnNames.includes('read_files')) {
+    logger.info('Migrating execution_state table: adding read_files column')
+    db.exec(`ALTER TABLE execution_state ADD COLUMN read_files TEXT DEFAULT '{}'`)
+  }
+  
   // Create context_windows table
   db.exec(`
     CREATE TABLE IF NOT EXISTS context_windows (

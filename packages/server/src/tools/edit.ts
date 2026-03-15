@@ -4,6 +4,8 @@ import type { ToolResult, Diagnostic } from '@openfox/shared'
 import type { Tool, ToolContext } from './types.js'
 import { formatDiagnosticsForLLM } from './diagnostics.js'
 import { requestPathAccess } from './path-security.js'
+import { validateFileForWrite, computeFileHash } from './file-tracker.js'
+import { sessionManager } from '../session/index.js'
 
 export const editFileTool: Tool = {
   name: 'edit_file',
@@ -61,6 +63,18 @@ export const editFileTool: Tool = {
         )
       }
       
+      // Validate file was read before editing
+      const readFiles = sessionManager.getReadFiles(context.sessionId)
+      const validation = await validateFileForWrite(fullPath, readFiles)
+      if (!validation.valid) {
+        return {
+          success: false,
+          error: validation.error?.message ?? 'File validation failed',
+          durationMs: Date.now() - startTime,
+          truncated: false,
+        }
+      }
+      
       // Read file
       let content: string
       try {
@@ -115,6 +129,12 @@ export const editFileTool: Tool = {
       if (context.lspManager) {
         diagnostics = await context.lspManager.notifyFileChange(fullPath, newContent)
         output += formatDiagnosticsForLLM(diagnostics)
+      }
+      
+      // Update file hash after edit so subsequent edits don't require re-reading
+      const newHash = await computeFileHash(fullPath)
+      if (newHash) {
+        sessionManager.updateFileHash(context.sessionId, fullPath, newHash)
       }
       
       return {

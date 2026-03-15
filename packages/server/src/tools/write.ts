@@ -4,6 +4,8 @@ import type { ToolResult, Diagnostic } from '@openfox/shared'
 import type { Tool, ToolContext } from './types.js'
 import { formatDiagnosticsForLLM } from './diagnostics.js'
 import { requestPathAccess } from './path-security.js'
+import { validateFileForWrite, computeFileHash } from './file-tracker.js'
+import { sessionManager } from '../session/index.js'
 
 export const writeFileTool: Tool = {
   name: 'write_file',
@@ -51,6 +53,18 @@ export const writeFileTool: Tool = {
         )
       }
       
+      // Validate file was read before writing (only for existing files)
+      const readFiles = sessionManager.getReadFiles(context.sessionId)
+      const validation = await validateFileForWrite(fullPath, readFiles)
+      if (!validation.valid) {
+        return {
+          success: false,
+          error: validation.error?.message ?? 'File validation failed',
+          durationMs: Date.now() - startTime,
+          truncated: false,
+        }
+      }
+      
       // Ensure parent directory exists
       const dir = dirname(fullPath)
       await mkdir(dir, { recursive: true })
@@ -68,6 +82,12 @@ export const writeFileTool: Tool = {
       if (context.lspManager) {
         diagnostics = await context.lspManager.notifyFileChange(fullPath, content)
         output += formatDiagnosticsForLLM(diagnostics)
+      }
+      
+      // Update file hash after write so subsequent writes don't require re-reading
+      const newHash = await computeFileHash(fullPath)
+      if (newHash) {
+        sessionManager.updateFileHash(context.sessionId, fullPath, newHash)
       }
       
       return {

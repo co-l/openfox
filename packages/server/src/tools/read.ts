@@ -5,6 +5,8 @@ import type { Tool, ToolContext } from './types.js'
 import { OUTPUT_LIMITS } from './types.js'
 import { ToolExecutionError } from '../utils/errors.js'
 import { requestPathAccess } from './path-security.js'
+import { computeFileHash } from './file-tracker.js'
+import { sessionManager } from '../session/index.js'
 
 export const readFileTool: Tool = {
   name: 'read_file',
@@ -107,6 +109,12 @@ export const readFileTool: Tool = {
       if (output.length > OUTPUT_LIMITS.read_file.maxBytes) {
         output = output.slice(0, OUTPUT_LIMITS.read_file.maxBytes)
         output += '\n\n[Output truncated due to size limit]'
+      }
+      
+      // Record file read with content hash for write validation
+      const contentHash = await computeFileHash(fullPath)
+      if (contentHash) {
+        sessionManager.recordFileRead(context.sessionId, fullPath, contentHash)
       }
       
       return {

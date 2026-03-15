@@ -216,9 +216,16 @@ export interface Todo {
 // Execution State
 // ============================================================================
 
+// File read tracking entry - stores hash at time of read
+export interface FileReadEntry {
+  hash: string      // SHA-256 hash of file content when read
+  readAt: string    // ISO timestamp of when file was read
+}
+
 export interface ExecutionState {
   iteration: number
   modifiedFiles: string[]
+  readFiles: Record<string, FileReadEntry>  // path → hash/timestamp for read-before-write validation
   consecutiveFailures: number
   lastFailedTool?: string
   lastFailureReason?: string

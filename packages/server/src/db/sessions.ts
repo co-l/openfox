@@ -8,6 +8,7 @@ import type {
   MessageSegment,
   Criterion,
   ExecutionState,
+  FileReadEntry,
   CriterionStatus,
   ToolCall,
   ToolResult,
@@ -574,14 +575,15 @@ export function setExecutionState(sessionId: string, state: ExecutionState): voi
   
   db.prepare(`
     INSERT OR REPLACE INTO execution_state (
-      session_id, iteration, modified_files, consecutive_failures,
+      session_id, iteration, modified_files, read_files, consecutive_failures,
       last_failed_tool, last_failure_reason, current_token_count,
       message_count_at_last_update, compaction_count, started_at, last_activity_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
     sessionId,
     state.iteration,
     JSON.stringify(state.modifiedFiles),
+    JSON.stringify(state.readFiles),
     state.consecutiveFailures,
     state.lastFailedTool ?? null,
     state.lastFailureReason ?? null,
@@ -607,6 +609,7 @@ export function getExecutionState(sessionId: string): ExecutionState | null {
   return stripUndefined<ExecutionState>({
     iteration: row.iteration,
     modifiedFiles: JSON.parse(row.modified_files) as string[],
+    readFiles: JSON.parse(row.read_files ?? '{}') as Record<string, FileReadEntry>,
     consecutiveFailures: row.consecutive_failures,
     lastFailedTool: row.last_failed_tool ?? undefined,
     lastFailureReason: row.last_failure_reason ?? undefined,
@@ -827,6 +830,7 @@ interface ExecutionStateRow {
   session_id: string
   iteration: number
   modified_files: string
+  read_files: string
   consecutive_failures: number
   last_failed_tool: string | null
   last_failure_reason: string | null

@@ -168,6 +168,7 @@ class SessionManagerImpl {
       const state: ExecutionState = {
         iteration: (session.executionState?.iteration ?? 0) + 1,
         modifiedFiles: session.executionState?.modifiedFiles ?? [],
+        readFiles: session.executionState?.readFiles ?? {},
         consecutiveFailures: 0,
         currentTokenCount: session.executionState?.currentTokenCount ?? 0,
         messageCountAtLastUpdate: session.executionState?.messageCountAtLastUpdate ?? 0,
@@ -468,6 +469,7 @@ class SessionManagerImpl {
     const currentState = session.executionState ?? {
       iteration: 1,
       modifiedFiles: [],
+      readFiles: {},
       consecutiveFailures: 0,
       currentTokenCount: 0,
       messageCountAtLastUpdate: 0,
@@ -494,6 +496,56 @@ class SessionManagerImpl {
     if (!modifiedFiles.includes(filePath)) {
       this.updateExecutionState(sessionId, {
         modifiedFiles: [...modifiedFiles, filePath],
+      })
+    }
+  }
+  
+  /**
+   * Record that a file was read by the agent.
+   * Stores the content hash for later validation before writes.
+   */
+  recordFileRead(sessionId: string, filePath: string, contentHash: string): void {
+    const session = this.requireSession(sessionId)
+    const readFiles = session.executionState?.readFiles ?? {}
+    
+    this.updateExecutionState(sessionId, {
+      readFiles: {
+        ...readFiles,
+        [filePath]: {
+          hash: contentHash,
+          readAt: new Date().toISOString(),
+        },
+      },
+    })
+  }
+  
+  /**
+   * Get the read files map for a session.
+   * Used by tools to validate before writing.
+   */
+  getReadFiles(sessionId: string): Record<string, import('@openfox/shared').FileReadEntry> {
+    const session = this.requireSession(sessionId)
+    return session.executionState?.readFiles ?? {}
+  }
+  
+  /**
+   * Update the hash for a file after the agent writes to it.
+   * This allows subsequent writes without re-reading.
+   */
+  updateFileHash(sessionId: string, filePath: string, contentHash: string): void {
+    const session = this.requireSession(sessionId)
+    const readFiles = session.executionState?.readFiles ?? {}
+    
+    // Only update if the file was previously read
+    if (readFiles[filePath]) {
+      this.updateExecutionState(sessionId, {
+        readFiles: {
+          ...readFiles,
+          [filePath]: {
+            hash: contentHash,
+            readAt: readFiles[filePath].readAt, // Keep original read time
+          },
+        },
       })
     }
   }
