@@ -41,6 +41,7 @@ export function GlobalSettingsModal({ isOpen, onClose }: GlobalSettingsModalProp
   const handleSave = () => {
     setSetting(SETTINGS_KEYS.GLOBAL_INSTRUCTIONS, localValue)
     setIsDirty(false)
+    onClose()
   }
   
   const handleCancel = () => {
