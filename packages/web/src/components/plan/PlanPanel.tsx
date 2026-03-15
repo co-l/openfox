@@ -302,7 +302,7 @@ export function PlanPanel() {
         <div ref={messagesEndRef} />
       </div>
       
-      <form onSubmit={handleSubmit} className="p-2 border-t border-border">
+      <form onSubmit={handleSubmit} className="p-4 border-t border-border">
         <div className="mb-1">
           <ModeSwitch />
         </div>
