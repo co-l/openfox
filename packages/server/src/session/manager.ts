@@ -183,8 +183,10 @@ class SessionManagerImpl {
     
     const updatedSession = this.requireSession(sessionId)
     
+    // Note: Don't emit session_updated here - it causes session.state to be sent
+    // before phase.changed, breaking sound triggers on the frontend.
+    // The dedicated phase.changed event is sent via sessionEvents.push() by callers.
     this.emit({ type: 'phase_changed', sessionId, phase })
-    this.emit({ type: 'session_updated', session: updatedSession })
     
     return updatedSession
   }
