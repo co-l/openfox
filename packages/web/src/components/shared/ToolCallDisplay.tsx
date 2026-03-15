@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { ToolIcon } from './ToolIcon'
+import { DiffView, FilePreview } from './DiffView'
 import { formatToolArgs, formatToolArgsFull } from '../../lib/formatToolArgs'
 
 type ToolStatus = 'pending' | 'success' | 'error'
@@ -42,7 +43,9 @@ export function ToolCallDisplay({
   error,
   durationMs,
 }: ToolCallDisplayProps) {
-  const [expanded, setExpanded] = useState(false)
+  // Auto-expand file operations so diffs are immediately visible
+  const isFileOperation = tool === 'edit_file' || tool === 'write_file'
+  const [expanded, setExpanded] = useState(isFileOperation)
   const config = statusConfig[status]
   
   // Compact variant - single line, no expansion
@@ -78,15 +81,36 @@ export function ToolCallDisplay({
       </button>
       
       {expanded && (
-        <div className="p-2 bg-bg-secondary border-t border-border">
-          <div className="mb-1.5">
-            <div className="text-[10px] text-text-muted mb-0.5">Arguments:</div>
-            <pre className="text-xs bg-bg-primary p-1.5 rounded overflow-x-auto">
-              {formatToolArgsFull(args)}
-            </pre>
-          </div>
+        <div className="p-2 bg-bg-secondary border-t border-border space-y-2">
+          {/* Specialized rendering for file edit operations */}
+          {tool === 'edit_file' && status === 'success' && (
+            <DiffView
+              oldString={String(args.old_string ?? '')}
+              newString={String(args.new_string ?? '')}
+              filePath={String(args.path ?? '')}
+            />
+          )}
           
-          {status === 'success' && result !== undefined && (
+          {/* Specialized rendering for file write operations */}
+          {tool === 'write_file' && status === 'success' && (
+            <FilePreview
+              content={String(args.content ?? '')}
+              filePath={String(args.path ?? '')}
+            />
+          )}
+          
+          {/* Show arguments for non-file operations or errors */}
+          {(tool !== 'edit_file' && tool !== 'write_file') || status !== 'success' ? (
+            <div>
+              <div className="text-[10px] text-text-muted mb-0.5">Arguments:</div>
+              <pre className="text-xs bg-bg-primary p-1.5 rounded overflow-x-auto">
+                {formatToolArgsFull(args)}
+              </pre>
+            </div>
+          ) : null}
+          
+          {/* Show result for non-file operations */}
+          {status === 'success' && result !== undefined && tool !== 'edit_file' && tool !== 'write_file' && (
             <div>
               <div className="text-[10px] text-text-muted mb-0.5">
                 Result{durationMs !== undefined && ` (${durationMs}ms)`}:
@@ -94,6 +118,13 @@ export function ToolCallDisplay({
               <pre className="text-xs bg-bg-primary p-1.5 rounded overflow-x-auto max-h-32">
                 {result || 'No output'}
               </pre>
+            </div>
+          )}
+          
+          {/* Duration badge for file operations */}
+          {status === 'success' && (tool === 'edit_file' || tool === 'write_file') && durationMs !== undefined && (
+            <div className="text-[10px] text-text-muted">
+              Completed in {durationMs}ms
             </div>
           )}
           

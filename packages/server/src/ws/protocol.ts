@@ -33,7 +33,46 @@ import type {
   ErrorPayload,
 } from '@openfox/shared/protocol'
 import { isClientMessage, createServerMessage } from '@openfox/shared/protocol'
-import type { Project, Session, SessionSummary, SessionMode, SessionPhase, Criterion, Todo, ToolResult, Message, ContextState } from '@openfox/shared'
+import type { Project, Session, SessionSummary, SessionMode, SessionPhase, Criterion, Todo, ToolResult, Message, ContextState, ToolCall } from '@openfox/shared'
+
+/**
+ * Enrich messages by attaching tool results to their parent toolCalls.
+ * This ensures frontend receives consistent data shape whether streaming or loading from DB.
+ * 
+ * Tool results are stored in separate 'tool' role messages, but for display purposes
+ * the frontend expects results attached to the toolCall objects on assistant messages.
+ */
+function enrichMessagesWithToolResults(messages: Message[]): Message[] {
+  // Build toolCallId → toolResult lookup from tool messages
+  const resultMap = new Map<string, ToolResult>()
+  for (const msg of messages) {
+    if (msg.role === 'tool' && msg.toolCallId && msg.toolResult) {
+      resultMap.set(msg.toolCallId, msg.toolResult)
+    }
+  }
+  
+  // If no tool results, return as-is
+  if (resultMap.size === 0) return messages
+  
+  // Attach results to toolCalls on assistant messages
+  return messages.map(msg => {
+    if (msg.role !== 'assistant' || !msg.toolCalls?.length) return msg
+    
+    // Check if any toolCalls need enrichment
+    const needsEnrichment = msg.toolCalls.some(tc => !tc.result && resultMap.has(tc.id))
+    if (!needsEnrichment) return msg
+    
+    return {
+      ...msg,
+      toolCalls: msg.toolCalls.map((tc): ToolCall => {
+        if (tc.result) return tc
+        const result = resultMap.get(tc.id)
+        // Only add result if it exists (satisfies exactOptionalPropertyTypes)
+        return result ? { ...tc, result } : tc
+      })
+    }
+  })
+}
 
 export function parseClientMessage(data: string): ClientMessage | null {
   try {
@@ -58,7 +97,9 @@ export function createErrorMessage(code: string, message: string, correlationId?
 
 // Session messages
 export function createSessionStateMessage(session: Session, messages: Message[], correlationId?: string): ServerMessage<SessionStatePayload> {
-  return createServerMessage('session.state', { session, messages }, correlationId)
+  // Enrich messages so toolCalls have their results attached
+  const enrichedMessages = enrichMessagesWithToolResults(messages)
+  return createServerMessage('session.state', { session, messages: enrichedMessages }, correlationId)
 }
 
 export function createSessionListMessage(sessions: SessionSummary[], correlationId?: string): ServerMessage<SessionListPayload> {

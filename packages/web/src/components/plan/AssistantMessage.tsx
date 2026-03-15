@@ -106,8 +106,7 @@ export function AssistantMessage({ message, isStreaming = false, showStats = tru
             
           case 'tool_call': {
             const tc = element.toolCall
-            // Tool result is stored directly on the toolCall if available
-            const result = (tc as ToolCall & { result?: { success: boolean; output?: string; error?: string; durationMs: number } }).result
+            const result = tc.result
             return (
               <ToolCallDisplay 
                 key={i} 

@@ -131,6 +131,7 @@ export interface ToolCall {
   id: string
   name: string
   arguments: Record<string, unknown>
+  result?: ToolResult  // Attached after execution (during streaming or enriched on load)
 }
 
 export interface ToolResult {
