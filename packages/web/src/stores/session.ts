@@ -75,6 +75,9 @@ interface SessionState {
   stopGeneration: () => void
   continueGeneration: () => void
   
+  // Runner (auto-loop)
+  launchRunner: () => void
+  
   // Mode switching
   switchMode: (mode: SessionMode) => void
   acceptAndBuild: () => void
@@ -182,6 +185,11 @@ export const useSessionStore = create<SessionState>((set, get) => ({
   continueGeneration: () => {
     set({ streamingMessageId: null })
     wsClient.send('chat.continue', {})
+  },
+  
+  launchRunner: () => {
+    set({ streamingMessageId: null })
+    wsClient.send('runner.launch', {})
   },
   
   switchMode: (mode) => {

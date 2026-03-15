@@ -91,7 +91,7 @@ export async function validate(options: ValidatorOptions): Promise<ValidationRes
   // Update criterion statuses
   for (const result of results) {
     const status: Criterion['status'] = result.status === 'pass'
-      ? { type: 'passed', verifiedAt: new Date().toISOString(), verifiedBy: 'model' }
+      ? { type: 'passed', verifiedAt: new Date().toISOString() }
       : { type: 'failed', reason: result.issues.join('; ') || result.reasoning, failedAt: new Date().toISOString() }
     
     sessionManager.updateCriterionStatus(sessionId, result.criterionId, status)
@@ -114,12 +114,12 @@ export async function validate(options: ValidatorOptions): Promise<ValidationRes
   
   const allPassed = allResults.every(r => r.status === 'pass')
   
-  // Transition based on results
+  // Update phase based on results
   if (allPassed) {
-    sessionManager.transition(sessionId, 'completed')
+    sessionManager.setPhase(sessionId, 'done')
   } else {
-    // Go back to executing
-    sessionManager.transition(sessionId, 'executing')
+    // Go back to building
+    sessionManager.setPhase(sessionId, 'build')
   }
   
   return { allPassed, results: allResults }

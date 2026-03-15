@@ -87,6 +87,7 @@ export function PlanPanel() {
   const clearError = useSessionStore(state => state.clearError)
   const acceptAndBuild = useSessionStore(state => state.acceptAndBuild)
   const stopGeneration = useSessionStore(state => state.stopGeneration)
+  const launchRunner = useSessionStore(state => state.launchRunner)
   
   // Group messages for display, collapsing sub-agent messages into containers
   const displayItems = useMemo((): DisplayItem[] => {
@@ -169,8 +170,7 @@ export function PlanPanel() {
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
     if (!input.trim() || isStreaming) return
-    
-    // Reset scroll state when user sends a message
+
     setUserScrolledUp(false)
     
     sendMessage(input)
@@ -184,8 +184,13 @@ export function PlanPanel() {
   }
   
   const isPlanning = session?.mode === 'planner'
+  const isBuilding = session?.mode === 'builder'
   const hasCriteria = (session?.criteria.length ?? 0) > 0
   const isDone = session?.phase === 'done'
+  
+  // Count pending criteria (not passed)
+  const pendingCriteria = session?.criteria.filter(c => c.status.type !== 'passed') ?? []
+  const hasPendingCriteria = pendingCriteria.length > 0
   
   // Show "Start Building" when in planner with criteria and assistant has responded
   // Don't show if already done (all criteria verified)
@@ -193,6 +198,9 @@ export function PlanPanel() {
     item.type === 'message' && item.message.role === 'assistant'
   )
   const showStartBuilding = isPlanning && hasCriteria && !isStreaming && hasAssistantResponse && !isDone
+  
+  // Show Launch button in builder mode when there are pending criteria
+  const showLaunchButton = isBuilding && hasPendingCriteria && !isStreaming && !isDone
   
   return (
     <SessionLayout>
@@ -309,16 +317,30 @@ export function PlanPanel() {
           />
           <div className="flex flex-col gap-1.5 self-end">
             {!isStreaming ? (
-              <button
-                type="submit"
-                disabled={!input.trim()}
-                className="flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg bg-accent-primary text-sm text-white font-medium hover:bg-accent-primary/80 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-              >
-                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
-                </svg>
-                Send
-              </button>
+              <>
+                <button
+                  type="submit"
+                  disabled={!input.trim()}
+                  className="flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg bg-accent-primary text-sm text-white font-medium hover:bg-accent-primary/80 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                >
+                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
+                  </svg>
+                  Send
+                </button>
+                {showLaunchButton && (
+                  <button
+                    type="button"
+                    onClick={launchRunner}
+                    className="flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg bg-accent-success text-sm text-white font-medium hover:bg-accent-success/80 transition-colors"
+                  >
+                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                    </svg>
+                    Launch
+                  </button>
+                )}
+              </>
             ) : (
               <button
                 type="button"

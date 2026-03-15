@@ -42,8 +42,8 @@ export async function* plannerChat(
       .map(m => ({ 
         role: m.role, 
         content: m.content,
-        toolCalls: m.toolCalls,
-        toolCallId: m.toolCallId,
+        ...(m.toolCalls ? { toolCalls: m.toolCalls } : {}),
+        ...(m.toolCallId ? { toolCallId: m.toolCallId } : {}),
       }))
       .concat([{ role: 'user', content: userMessage }])
   )
@@ -105,8 +105,8 @@ export async function* plannerChat(
     sessionManager.addMessage(sessionId, {
       role: 'assistant',
       content,
-      thinkingContent: thinkingContent || undefined,
-      toolCalls: toolCalls.length > 0 ? toolCalls : undefined,
+      ...(thinkingContent ? { thinkingContent } : {}),
+      ...(toolCalls.length > 0 ? { toolCalls } : {}),
       tokenCount: response.usage.completionTokens,
       segments,
     })
@@ -315,6 +315,6 @@ export async function acceptCriteria(sessionId: string): Promise<void> {
     throw new Error('Cannot accept: no criteria defined')
   }
   
-  // Transition to executing phase
-  sessionManager.transition(sessionId, 'executing')
+  // Transition to builder mode
+  sessionManager.setMode(sessionId, 'builder')
 }

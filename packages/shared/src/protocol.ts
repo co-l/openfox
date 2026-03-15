@@ -43,6 +43,8 @@ export type ClientMessageType =
   | 'criteria.edit'
   // Context management
   | 'context.compact'     // Manually trigger context compaction
+  // Runner (auto-loop)
+  | 'runner.launch'       // Start the auto-loop runner (build → verify → done)
 
 export interface ClientMessage<T = unknown> {
   id: string
@@ -139,6 +141,7 @@ export interface ServerMessage<T = unknown> {
   id?: string // Correlation ID if response to client message
   type: ServerMessageType
   payload: T
+  seq?: number // Sequence number for event replay/subscription
 }
 
 // Payload types for server messages

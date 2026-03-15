@@ -52,7 +52,7 @@ export const completeCriterionTool: Tool = {
       const status: CriterionStatus = {
         type: 'completed',
         completedAt: new Date().toISOString(),
-        reason,
+        ...(reason ? { reason } : {}),
       }
       
       sessionManager.updateCriterionStatus(context.sessionId, id, status)
@@ -123,7 +123,7 @@ export const passCriterionTool: Tool = {
       const status: CriterionStatus = {
         type: 'passed',
         verifiedAt: new Date().toISOString(),
-        reason,
+        ...(reason ? { reason } : {}),
       }
       
       sessionManager.updateCriterionStatus(context.sessionId, id, status)

@@ -154,6 +154,7 @@ class SessionManagerImpl {
         modifiedFiles: session.executionState?.modifiedFiles ?? [],
         consecutiveFailures: 0,
         currentTokenCount: session.executionState?.currentTokenCount ?? 0,
+        messageCountAtLastUpdate: session.executionState?.messageCountAtLastUpdate ?? 0,
         compactionCount: session.executionState?.compactionCount ?? 0,
         startedAt: now,
         lastActivityAt: now,
@@ -491,11 +492,19 @@ class SessionManagerImpl {
   }
   
   resetToolFailures(sessionId: string): void {
-    this.updateExecutionState(sessionId, {
+    const session = this.requireSession(sessionId)
+    if (!session.executionState) return
+    
+    // Destructure to remove the failure tracking properties, then rebuild state
+    const { lastFailedTool: _tool, lastFailureReason: _reason, ...rest } = session.executionState
+    const newState: ExecutionState = {
+      ...rest,
       consecutiveFailures: 0,
-      lastFailedTool: undefined,
-      lastFailureReason: undefined,
-    })
+      lastActivityAt: new Date().toISOString(),
+    }
+    
+    dbSetExecutionState(sessionId, newState)
+    this.emit({ type: 'execution_state_changed', sessionId, state: newState })
   }
   
   /**

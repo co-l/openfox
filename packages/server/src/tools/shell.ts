@@ -106,7 +106,7 @@ export const runCommandTool: Tool = {
       return {
         success: result.exitCode === 0,
         output,
-        error: result.exitCode !== 0 ? `Command exited with code ${result.exitCode}` : undefined,
+        ...(result.exitCode !== 0 ? { error: `Command exited with code ${result.exitCode}` } : {}),
         durationMs: Date.now() - startTime,
         truncated,
       }

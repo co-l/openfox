@@ -420,14 +420,14 @@ async function runBuilderLoop(options: ChatOptions): Promise<void> {
     }
     
     // No tool calls - check if we should auto-continue
-    const pendingCriteria = session.criteria.filter(c => 
-      c.status.type === 'pending' || c.status.type === 'in_progress'
-    )
+    // Keep going until ALL criteria are passed (verified), not just completed
+    const allPassed = session.criteria.every(c => c.status.type === 'passed')
     
-    if (pendingCriteria.length > 0) {
+    if (!allPassed && session.criteria.length > 0) {
+      const remaining = session.criteria.filter(c => c.status.type !== 'passed')
       const nudgeMsg = sessionManager.addMessage(sessionId, {
         role: 'user',
-        content: `Continue working on the remaining criteria. ${pendingCriteria.length} criteria still pending.`,
+        content: `Continue working on the acceptance criteria. ${remaining.length} criteria remaining.`,
         tokenCount: 20,
         isSystemGenerated: true,
         messageKind: 'correction',

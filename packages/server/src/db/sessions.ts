@@ -16,6 +16,17 @@ import type {
 } from '@openfox/shared'
 import { getDatabase } from './index.js'
 
+/**
+ * Remove undefined values from an object at runtime.
+ * Required for exactOptionalPropertyTypes compatibility.
+ * Returns the object cast to the target type.
+ */
+function stripUndefined<T>(obj: Record<string, unknown>): T {
+  return Object.fromEntries(
+    Object.entries(obj).filter(([, v]) => v !== undefined)
+  ) as T
+}
+
 // ============================================================================
 // Session Operations
 // ============================================================================
@@ -59,7 +70,7 @@ export function createSession(projectId: string, workdir: string, title?: string
     contextWindows: [firstContextWindow],
     executionState: null,
     metadata: {
-      title,
+      ...(title ? { title } : {}),
       totalTokensUsed: 0,
       totalToolCalls: 0,
       iterationCount: 0,
@@ -98,7 +109,7 @@ export function getSession(id: string): Session | null {
     contextWindows,
     executionState,
     metadata: {
-      title: row.title ?? undefined,
+      ...(row.title ? { title: row.title } : {}),
       totalTokensUsed: row.total_tokens_used,
       totalToolCalls: row.total_tool_calls,
       iterationCount: row.iteration_count,
@@ -199,7 +210,7 @@ export function listSessions(): SessionSummary[] {
   return rows.map(row => ({
     id: row.id,
     projectId: row.project_id,
-    title: row.title ?? undefined,
+    ...(row.title ? { title: row.title } : {}),
     workdir: row.workdir,
     mode: (row.mode ?? 'planner') as SessionMode,
     phase: (row.workflow_phase ?? 'plan') as SessionPhase,
@@ -236,7 +247,7 @@ export function listSessionsByProject(projectId: string, projectWorkdir: string)
   return rows.map(row => ({
     id: row.id,
     projectId: row.project_id,
-    title: row.title ?? undefined,
+    ...(row.title ? { title: row.title } : {}),
     workdir: row.workdir,
     mode: (row.mode ?? 'planner') as SessionMode,
     phase: (row.workflow_phase ?? 'plan') as SessionPhase,
@@ -312,7 +323,7 @@ export function getMessages(sessionId: string): Message[] {
     SELECT * FROM messages WHERE session_id = ? ORDER BY timestamp ASC
   `).all(sessionId) as MessageRow[]
   
-  return rows.map(row => ({
+  return rows.map(row => stripUndefined<Message>({
     id: row.id,
     role: row.role as Message['role'],
     content: row.content,
@@ -585,7 +596,7 @@ export function getExecutionState(sessionId: string): ExecutionState | null {
     return null
   }
   
-  return {
+  return stripUndefined<ExecutionState>({
     iteration: row.iteration,
     modifiedFiles: JSON.parse(row.modified_files) as string[],
     consecutiveFailures: row.consecutive_failures,
@@ -596,7 +607,7 @@ export function getExecutionState(sessionId: string): ExecutionState | null {
     compactionCount: row.compaction_count,
     startedAt: row.started_at,
     lastActivityAt: row.last_activity_at,
-  }
+  })
 }
 
 export function clearExecutionState(sessionId: string): void {
@@ -615,7 +626,7 @@ export function getContextWindows(sessionId: string): ContextWindow[] {
     SELECT * FROM context_windows WHERE session_id = ? ORDER BY sequence_number ASC
   `).all(sessionId) as ContextWindowRow[]
   
-  return rows.map(row => ({
+  return rows.map(row => stripUndefined<ContextWindow>({
     id: row.id,
     sessionId: row.session_id,
     sequenceNumber: row.sequence_number,
@@ -642,7 +653,7 @@ export function getCurrentContextWindow(sessionId: string): ContextWindow | null
     return null
   }
   
-  return {
+  return stripUndefined<ContextWindow>({
     id: row.id,
     sessionId: row.session_id,
     sequenceNumber: row.sequence_number,
@@ -651,7 +662,7 @@ export function getCurrentContextWindow(sessionId: string): ContextWindow | null
     summaryTokenCount: row.summary_token_count ?? undefined,
     closedAt: row.closed_at ?? undefined,
     tokenCountAtClose: row.token_count_at_close ?? undefined,
-  }
+  })
 }
 
 export function createContextWindow(
@@ -669,14 +680,14 @@ export function createContextWindow(
     VALUES (?, ?, ?, ?, ?, ?)
   `).run(id, sessionId, sequenceNumber, now, summaryOfPrevious ?? null, summaryTokenCount ?? null)
   
-  return {
+  return stripUndefined<ContextWindow>({
     id,
     sessionId,
     sequenceNumber,
     createdAt: now,
     summaryOfPrevious,
     summaryTokenCount,
-  }
+  })
 }
 
 export function closeContextWindow(windowId: string, tokenCountAtClose: number): void {
@@ -695,7 +706,7 @@ export function getMessagesForWindow(sessionId: string, contextWindowId: string)
     SELECT * FROM messages WHERE session_id = ? AND context_window_id = ? ORDER BY timestamp ASC
   `).all(sessionId, contextWindowId) as MessageRow[]
   
-  return rows.map(row => ({
+  return rows.map(row => stripUndefined<Message>({
     id: row.id,
     role: row.role as Message['role'],
     content: row.content,

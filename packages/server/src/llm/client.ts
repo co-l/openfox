@@ -1,5 +1,5 @@
 import OpenAI from 'openai'
-import type { ChatCompletionMessageParam, ChatCompletionTool } from 'openai/resources/chat/completions'
+import type { ChatCompletionMessageParam, ChatCompletionTool, ChatCompletionToolChoiceOption } from 'openai/resources/chat/completions'
 import type { Config } from '../config.js'
 import type {
   LLMClient,
@@ -63,8 +63,8 @@ export function createLLMClient(config: Config): LLMClientWithModel {
         const createParams: OpenAI.ChatCompletionCreateParamsNonStreaming = {
           model,
           messages: convertMessages(request.messages),
-          tools: request.tools ? convertTools(request.tools) : undefined,
-          tool_choice: request.toolChoice as OpenAI.ChatCompletionToolChoiceOptionParam | undefined,
+          ...(request.tools ? { tools: convertTools(request.tools) } : {}),
+          ...(request.toolChoice ? { tool_choice: request.toolChoice as ChatCompletionToolChoiceOption } : {}),
           temperature: request.temperature ?? profile.temperature,
           max_tokens: request.maxTokens ?? profile.defaultMaxTokens,
           top_p: profile.topP,
@@ -73,7 +73,7 @@ export function createLLMClient(config: Config): LLMClientWithModel {
         
         // Add top_k if supported (vLLM extension)
         if (profile.topK !== undefined) {
-          (createParams as Record<string, unknown>)['top_k'] = profile.topK
+          (createParams as unknown as Record<string, unknown>)['top_k'] = profile.topK
         }
         
         const response = await openai.chat.completions.create(createParams, {
@@ -113,15 +113,17 @@ export function createLLMClient(config: Config): LLMClientWithModel {
           thinkingContent = ''
         }
         
+        const toolCalls = message.tool_calls?.map(tc => ({
+          id: tc.id,
+          name: tc.function.name,
+          arguments: JSON.parse(tc.function.arguments) as Record<string, unknown>,
+        }))
+        
         return {
           id: response.id,
           content,
-          thinkingContent: thinkingContent || undefined,
-          toolCalls: message.tool_calls?.map(tc => ({
-            id: tc.id,
-            name: tc.function.name,
-            arguments: JSON.parse(tc.function.arguments) as Record<string, unknown>,
-          })),
+          ...(thinkingContent ? { thinkingContent } : {}),
+          ...(toolCalls && toolCalls.length > 0 ? { toolCalls } : {}),
           finishReason: mapFinishReason(choice.finish_reason),
           usage: {
             promptTokens: response.usage?.prompt_tokens ?? 0,
@@ -150,8 +152,8 @@ export function createLLMClient(config: Config): LLMClientWithModel {
         const createParams: OpenAI.ChatCompletionCreateParamsStreaming = {
           model,
           messages: convertMessages(request.messages),
-          tools: request.tools ? convertTools(request.tools) : undefined,
-          tool_choice: request.toolChoice as OpenAI.ChatCompletionToolChoiceOptionParam | undefined,
+          ...(request.tools ? { tools: convertTools(request.tools) } : {}),
+          ...(request.toolChoice ? { tool_choice: request.toolChoice as ChatCompletionToolChoiceOption } : {}),
           temperature: request.temperature ?? profile.temperature,
           max_tokens: request.maxTokens ?? profile.defaultMaxTokens,
           top_p: profile.topP,
@@ -161,7 +163,7 @@ export function createLLMClient(config: Config): LLMClientWithModel {
         
         // Add top_k if supported (vLLM extension)
         if (profile.topK !== undefined) {
-          (createParams as Record<string, unknown>)['top_k'] = profile.topK
+          (createParams as unknown as Record<string, unknown>)['top_k'] = profile.topK
         }
         
         const stream = await openai.chat.completions.create(createParams, {
@@ -243,11 +245,11 @@ export function createLLMClient(config: Config): LLMClientWithModel {
               }
               
               yield {
-                type: 'tool_call_delta',
+                type: 'tool_call_delta' as const,
                 index: tc.index,
-                id: tc.id ?? undefined,
-                name: tc.function?.name ?? undefined,
-                arguments: tc.function?.arguments ?? undefined,
+                ...(tc.id ? { id: tc.id } : {}),
+                ...(tc.function?.name ? { name: tc.function.name } : {}),
+                ...(tc.function?.arguments ? { arguments: tc.function.arguments } : {}),
               }
             }
           }
@@ -282,8 +284,8 @@ export function createLLMClient(config: Config): LLMClientWithModel {
           response: {
             id: responseId,
             content: finalContent,
-            thinkingContent: finalThinking || undefined,
-            toolCalls: parsedToolCalls.length > 0 ? parsedToolCalls : undefined,
+            ...(finalThinking ? { thinkingContent: finalThinking } : {}),
+            ...(parsedToolCalls.length > 0 ? { toolCalls: parsedToolCalls } : {}),
             finishReason,
             usage,
           },

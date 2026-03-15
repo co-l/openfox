@@ -2,12 +2,13 @@ import { WebSocketServer, WebSocket } from 'ws'
 import type { Server } from 'node:http'
 import type { ServerMessage } from '@openfox/shared/protocol'
 import type { Config } from '../config.js'
-import type { LLMClient } from '../llm/types.js'
+import type { LLMClientWithModel } from '../llm/client.js'
 import type { ToolRegistry } from '../tools/index.js'
 import { sessionManager } from '../session/index.js'
 import { sessionEvents } from '../session/events.js'
 import { handleChat } from '../chat/index.js'
-import { streamLLMResponse, buildStatsFromResult } from '../chat/stream.js'
+import { runOrchestrator } from '../runner/index.js'
+import { streamLLMResponse } from '../chat/stream.js'
 import { buildPlannerPrompt, SUMMARY_REQUEST_PROMPT, COMPACTION_PROMPT } from '../chat/prompts.js'
 import { getToolRegistryForMode } from '../tools/index.js'
 import { estimateTokens } from '../context/tokenizer.js'
@@ -63,7 +64,7 @@ interface ClientConnection {
 export function createWebSocketServer(
   httpServer: Server,
   config: Config,
-  llmClient: LLMClient,
+  llmClient: LLMClientWithModel,
   toolRegistry: ToolRegistry
 ): WebSocketServer {
   const wss = new WebSocketServer({ server: httpServer, path: '/ws' })
@@ -149,7 +150,7 @@ async function handleClientMessage(
   client: ClientConnection,
   message: { id: string; type: string; payload: unknown },
   config: Config,
-  llmClient: LLMClient,
+  llmClient: LLMClientWithModel,
   toolRegistry: ToolRegistry
 ): Promise<void> {
   const send = (msg: ServerMessage) => {
@@ -202,7 +203,7 @@ async function handleClientMessage(
         return
       }
       
-      const updated = updateProject(message.payload.projectId, message.payload.name)
+      const updated = updateProject(message.payload.projectId, { name: message.payload.name })
       if (!updated) {
         send(createErrorMessage('NOT_FOUND', 'Project not found', message.id))
         return
@@ -569,11 +570,6 @@ async function handleClientMessage(
           })
           sessionManager.setSummary(sessionId, result.content)
           
-          // Build and send stats for the summary message
-          const stats = buildStatsFromResult(result, config.vllm.model, 'planner')
-          sessionManager.updateMessageStats(sessionId, result.messageId, stats)
-          pushEvent(createChatDoneMessage(result.messageId, 'complete', stats))
-          
           // Switch to builder mode and phase
           sessionManager.setMode(sessionId, 'builder')
           sessionManager.setPhase(sessionId, 'build')
@@ -689,13 +685,10 @@ async function handleClientMessage(
             onEvent: send,
           })
           
-          // 3. Mark response as compaction summary and add stats
-          const stats = buildStatsFromResult(result, config.vllm.model, 'planner')
+          // 3. Mark response as compaction summary
           sessionManager.updateMessage(sessionId, result.messageId, {
             isCompactionSummary: true,
-            stats,
           })
-          send(createChatDoneMessage(result.messageId, 'complete', stats))
           
           // 4. Close current window and create new one
           sessionManager.compactContext(sessionId, result.content, tokensBefore)
@@ -722,6 +715,89 @@ async function handleClientMessage(
           ))
         }
       })()
+      
+      break
+    }
+    
+    // =========================================================================
+    // Runner (Auto-Loop)
+    // =========================================================================
+    
+    case 'runner.launch': {
+      if (!client.sessionId) {
+        send(createErrorMessage('NO_SESSION', 'No active session', message.id))
+        return
+      }
+      
+      const session = sessionManager.requireSession(client.sessionId)
+      
+      // Only allow launching from builder mode
+      if (session.mode !== 'builder') {
+        send(createErrorMessage('INVALID_MODE', 'Runner can only be launched in builder mode', message.id))
+        return
+      }
+      
+      // Check if there are pending criteria
+      const pendingCriteria = session.criteria.filter(c => c.status.type !== 'passed')
+      if (pendingCriteria.length === 0) {
+        send(createErrorMessage('NO_WORK', 'No pending criteria to work on', message.id))
+        return
+      }
+      
+      // Check if session is blocked - user intervention resets it
+      if (session.phase === 'blocked') {
+        logger.info('User launched runner - resetting blocked state', { sessionId: client.sessionId })
+        sessionManager.setPhase(client.sessionId, 'build')
+        sessionManager.resetAllCriteriaAttempts(client.sessionId)
+        send(createPhaseChangedMessage('build'))
+      }
+      
+      const sessionId = client.sessionId
+      
+      // Mark session as running
+      sessionManager.setRunning(sessionId, true)
+      
+      // Create AbortController for this run
+      const controller = new AbortController()
+      activeAgents.set(sessionId, controller)
+      
+      // Acknowledge immediately
+      send({ type: 'ack', payload: {}, id: message.id })
+      
+      // Subscribe this client to session events
+      client.eventUnsubscribe?.()
+      client.eventUnsubscribe = sessionEvents.subscribe(sessionId, (event, seq) => {
+        send({ ...event, seq })
+      })
+      
+      // Run orchestrator asynchronously
+      logger.info('Runner launching', { sessionId, pendingCriteria: pendingCriteria.length })
+      
+      runOrchestrator({
+        sessionId,
+        llmClient,
+        signal: controller.signal,
+        onMessage: (event) => sessionEvents.push(sessionId, event),
+      }).catch((error) => {
+        logger.error('Runner error', { error, sessionId })
+        const errorMsg = sessionManager.addMessage(sessionId, {
+          role: 'user',
+          content: `Runner error: ${error instanceof Error ? error.message : 'Unknown error'}`,
+          tokenCount: 20,
+          isSystemGenerated: true,
+          messageKind: 'correction',
+        })
+        sessionEvents.push(sessionId, createChatMessageMessage(errorMsg))
+        sessionEvents.push(sessionId, createChatErrorMessage(
+          error instanceof Error ? error.message : 'Unknown error',
+          false
+        ))
+        sessionEvents.push(sessionId, createChatDoneMessage(errorMsg.id, 'error'))
+      }).finally(() => {
+        activeAgents.delete(sessionId)
+        sessionManager.setRunning(sessionId, false)
+        sessionEvents.scheduleCleanup(sessionId)
+      })
       
       break
     }

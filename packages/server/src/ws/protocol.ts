@@ -103,7 +103,7 @@ export function createChatProgressMessage(
   message: string,
   phase?: 'summary' | 'mode_switch' | 'starting'
 ): ServerMessage<ChatProgressPayload> {
-  return createServerMessage('chat.progress', { message, phase })
+  return createServerMessage('chat.progress', { message, ...(phase ? { phase } : {}) })
 }
 
 export function createChatFormatRetryMessage(
@@ -129,7 +129,7 @@ export function createChatDoneMessage(
   reason: 'complete' | 'stopped' | 'error' | 'waiting_for_user',
   stats?: ChatDonePayload['stats']
 ): ServerMessage<ChatDonePayload> {
-  return createServerMessage('chat.done', { messageId, reason, stats })
+  return createServerMessage('chat.done', { messageId, reason, ...(stats ? { stats } : {}) })
 }
 
 export function createChatErrorMessage(error: string, recoverable: boolean): ServerMessage<ChatErrorPayload> {
@@ -138,7 +138,7 @@ export function createChatErrorMessage(error: string, recoverable: boolean): Ser
 
 // Mode messages
 export function createModeChangedMessage(mode: SessionMode, auto: boolean, reason?: string): ServerMessage<ModeChangedPayload> {
-  return createServerMessage('mode.changed', { mode, auto, reason })
+  return createServerMessage('mode.changed', { mode, auto, ...(reason ? { reason } : {}) })
 }
 
 // Phase messages
@@ -148,7 +148,7 @@ export function createPhaseChangedMessage(phase: SessionPhase): ServerMessage<Ph
 
 // Criteria messages
 export function createCriteriaUpdatedMessage(criteria: Criterion[], changedId?: string): ServerMessage<CriteriaUpdatedPayload> {
-  return createServerMessage('criteria.updated', { criteria, changedId })
+  return createServerMessage('criteria.updated', { criteria, ...(changedId ? { changedId } : {}) })
 }
 
 // Context messages
