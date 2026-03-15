@@ -98,7 +98,7 @@ export async function runBuilderStep(options: BuilderStepOptions): Promise<StepR
       const toolResult = await toolRegistry.execute(
         toolCall.name,
         toolCall.arguments,
-        { workdir: session.workdir, sessionId, lspManager: sessionManager.getLspManager(sessionId) }
+        { workdir: session.workdir, sessionId, lspManager: sessionManager.getLspManager(sessionId), onEvent: onMessage }
       )
       
       totalToolTime += toolResult.durationMs

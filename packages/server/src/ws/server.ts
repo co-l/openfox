@@ -10,7 +10,7 @@ import { handleChat } from '../chat/index.js'
 import { runOrchestrator } from '../runner/index.js'
 import { streamLLMResponse } from '../chat/stream.js'
 import { buildPlannerPrompt, SUMMARY_REQUEST_PROMPT, COMPACTION_PROMPT } from '../chat/prompts.js'
-import { getToolRegistryForMode } from '../tools/index.js'
+import { getToolRegistryForMode, providePathConfirmation, addAllowedPaths } from '../tools/index.js'
 import { estimateTokens } from '../context/tokenizer.js'
 import { logger } from '../utils/logger.js'
 import {
@@ -50,6 +50,7 @@ import {
   isChatSendPayload,
   isModeSwitchPayload,
   isCriteriaEditPayload,
+  isPathConfirmPayload,
 } from './protocol.js'
 
 // Track active agent AbortControllers by sessionId
@@ -800,6 +801,42 @@ async function handleClientMessage(
         sessionEvents.scheduleCleanup(sessionId)
       })
       
+      break
+    }
+    
+    // =========================================================================
+    // Path Confirmation
+    // =========================================================================
+    
+    case 'path.confirm': {
+      if (!client.sessionId) {
+        send(createErrorMessage('NO_SESSION', 'No active session', message.id))
+        return
+      }
+      
+      if (!isPathConfirmPayload(message.payload)) {
+        send(createErrorMessage('INVALID_PAYLOAD', 'Invalid path.confirm payload', message.id))
+        return
+      }
+      
+      const { callId, approved } = message.payload
+      const result = providePathConfirmation(callId, approved)
+      
+      if (!result.found) {
+        send(createErrorMessage('NOT_FOUND', 'No pending path confirmation with that ID', message.id))
+        return
+      }
+      
+      logger.info('Path confirmation response', { 
+        sessionId: client.sessionId, 
+        callId, 
+        approved 
+      })
+      
+      // Just acknowledge - the Promise resolution will resume tool execution automatically.
+      // If approved: paths were added to allowlist, tool continues.
+      // If denied: requestPathAccess throws PathAccessDeniedError, handled by existing error catch.
+      send({ type: 'ack', payload: {}, id: message.id })
       break
     }
     

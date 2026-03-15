@@ -4,6 +4,7 @@ import type { ToolResult } from '@openfox/shared'
 import type { Tool, ToolContext } from './types.js'
 import { OUTPUT_LIMITS } from './types.js'
 import { ToolExecutionError } from '../utils/errors.js'
+import { requestPathAccess } from './path-security.js'
 
 export const readFileTool: Tool = {
   name: 'read_file',
@@ -46,6 +47,18 @@ export const readFileTool: Tool = {
       
       // Resolve path
       const fullPath = isAbsolute(path) ? path : resolve(context.workdir, path)
+      
+      // Check sandbox - request confirmation for paths outside workdir
+      if (context.onEvent) {
+        await requestPathAccess(
+          [fullPath],
+          context.workdir,
+          context.sessionId,
+          crypto.randomUUID(),
+          'read_file',
+          context.onEvent
+        )
+      }
       
       // Check if file exists
       try {

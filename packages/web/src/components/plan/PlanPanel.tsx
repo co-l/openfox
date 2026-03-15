@@ -8,6 +8,7 @@ import { AssistantMessage } from './AssistantMessage'
 import { SubAgentContainer } from './SubAgentContainer'
 import { ModeSwitch } from './ModeSwitch'
 import { Button } from '../shared/Button'
+import { PathConfirmationDialog } from '../shared/PathConfirmationDialog'
 
 // Display item: either a single message, a grouped sub-agent run, or a context window divider
 type DisplayItem = 
@@ -80,6 +81,7 @@ export function PlanPanel() {
   const session = useSessionStore(state => state.currentSession)
   const messages = useSessionStore(state => state.messages)
   const error = useSessionStore(state => state.error)
+  const pendingPathConfirmation = useSessionStore(state => state.pendingPathConfirmation)
   
   const isStreaming = useIsStreaming()
   
@@ -204,6 +206,9 @@ export function PlanPanel() {
   
   return (
     <SessionLayout>
+      {pendingPathConfirmation && (
+        <PathConfirmationDialog confirmation={pendingPathConfirmation} />
+      )}
       <ContextHeader />
       
       <div 

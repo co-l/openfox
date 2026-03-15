@@ -7,6 +7,11 @@ import { runCommandTool } from './shell.js'
 import { globTool } from './glob.js'
 import { grepTool } from './grep.js'
 import { askUserTool, AskUserInterrupt, provideAnswer, cancelQuestion } from './ask.js'
+import {
+  PathAccessDeniedError,
+  providePathConfirmation,
+  cancelPathConfirmation,
+} from './path-security.js'
 import { completeCriterionTool, passCriterionTool, failCriterionTool } from './criterion.js'
 import { getCriteriaTool, addCriterionTool, updateCriterionTool, removeCriterionTool } from './planner-criteria.js'
 import { todoWriteTool, setTodoUpdateCallback, getTodos, clearTodos } from './todo.js'
@@ -95,8 +100,12 @@ function createRegistryFromTools(tools: Tool[]): ToolRegistry {
         
         return result
       } catch (error) {
-        // Re-throw AskUserInterrupt - it's not a real error
+        // Re-throw interrupts - they're not real errors, they pause execution
         if (error instanceof AskUserInterrupt) {
+          throw error
+        }
+        // PathAccessDeniedError: user denied path access, abort the run
+        if (error instanceof PathAccessDeniedError) {
           throw error
         }
         
@@ -143,3 +152,11 @@ export function createToolRegistry(): ToolRegistry {
 export type { Tool, ToolRegistry, ToolContext } from './types.js'
 export { AskUserInterrupt, provideAnswer, cancelQuestion } from './ask.js'
 export { setTodoUpdateCallback, getTodos, clearTodos } from './todo.js'
+export {
+  PathAccessDeniedError,
+  providePathConfirmation,
+  cancelPathConfirmation,
+  addAllowedPaths,
+  clearAllowedPaths,
+  requestPathAccess,
+} from './path-security.js'

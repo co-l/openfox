@@ -26,6 +26,8 @@ import type {
   ChatMessageUpdatedPayload,
   ChatDonePayload,
   ChatErrorPayload,
+  ChatPathConfirmationPayload,
+  PathConfirmPayload,
   ModeChangedPayload,
   PhaseChangedPayload,
   CriteriaUpdatedPayload,
@@ -177,6 +179,16 @@ export function createChatErrorMessage(error: string, recoverable: boolean): Ser
   return createServerMessage('chat.error', { error, recoverable })
 }
 
+// Path confirmation messages
+export function createChatPathConfirmationMessage(
+  callId: string,
+  tool: string,
+  paths: string[],
+  workdir: string
+): ServerMessage<ChatPathConfirmationPayload> {
+  return createServerMessage('chat.path_confirmation', { callId, tool, paths, workdir })
+}
+
 // Mode messages
 export function createModeChangedMessage(mode: SessionMode, auto: boolean, reason?: string): ServerMessage<ModeChangedPayload> {
   return createServerMessage('mode.changed', { mode, auto, ...(reason ? { reason } : {}) })
@@ -236,4 +248,9 @@ export function isModeSwitchPayload(payload: unknown): payload is ModeSwitchPayl
 
 export function isCriteriaEditPayload(payload: unknown): payload is CriteriaEditPayload {
   return typeof payload === 'object' && payload !== null && 'criteria' in payload
+}
+
+// Path confirmation payloads
+export function isPathConfirmPayload(payload: unknown): payload is PathConfirmPayload {
+  return typeof payload === 'object' && payload !== null && 'callId' in payload && 'approved' in payload
 }

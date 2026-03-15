@@ -3,6 +3,7 @@ import { resolve, isAbsolute, relative } from 'node:path'
 import type { ToolResult } from '@openfox/shared'
 import type { Tool, ToolContext } from './types.js'
 import { OUTPUT_LIMITS } from './types.js'
+import { requestPathAccess } from './path-security.js'
 
 export const globTool: Tool = {
   name: 'glob',
@@ -39,6 +40,18 @@ export const globTool: Tool = {
       const baseDir = cwd 
         ? (isAbsolute(cwd) ? cwd : resolve(context.workdir, cwd))
         : context.workdir
+      
+      // Check sandbox - request confirmation for paths outside workdir
+      if (context.onEvent) {
+        await requestPathAccess(
+          [baseDir],
+          context.workdir,
+          context.sessionId,
+          crypto.randomUUID(),
+          'glob',
+          context.onEvent
+        )
+      }
       
       // Execute glob
       const files = await fg(pattern, {

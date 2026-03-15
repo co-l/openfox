@@ -45,6 +45,8 @@ export type ClientMessageType =
   | 'context.compact'     // Manually trigger context compaction
   // Runner (auto-loop)
   | 'runner.launch'       // Start the auto-loop runner (build → verify → done)
+  // Path confirmation
+  | 'path.confirm'        // User response to path confirmation request
 
 export interface ClientMessage<T = unknown> {
   id: string
@@ -124,6 +126,7 @@ export type ServerMessageType =
   | 'chat.message_updated' // Message updated (e.g., isStreaming changed)
   | 'chat.done'           // Current generation complete
   | 'chat.error'          // Error during generation
+  | 'chat.path_confirmation' // Request user confirmation for outside-workdir path access
   // Mode events
   | 'mode.changed'        // Mode was changed
   // Phase events
@@ -240,6 +243,20 @@ export interface ChatDonePayload {
 export interface ChatErrorPayload {
   error: string
   recoverable: boolean
+}
+
+// Path confirmation payloads
+export interface ChatPathConfirmationPayload {
+  callId: string
+  tool: string
+  paths: string[]       // The outside-workdir paths requiring confirmation
+  workdir: string       // For context in UI
+}
+
+// Client payload for path confirmation response
+export interface PathConfirmPayload {
+  callId: string
+  approved: boolean
 }
 
 // Mode payloads

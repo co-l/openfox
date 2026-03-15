@@ -3,6 +3,10 @@ import { resolve, isAbsolute } from 'node:path'
 import type { ToolResult } from '@openfox/shared'
 import type { Tool, ToolContext } from './types.js'
 import { OUTPUT_LIMITS } from './types.js'
+import {
+  extractAbsolutePathsFromCommand,
+  requestPathAccess,
+} from './path-security.js'
 
 const DANGEROUS_PATTERNS = [
   /rm\s+(-rf?|--recursive)\s+[\/~]/,
@@ -69,6 +73,29 @@ export const runCommandTool: Tool = {
       const workingDir = cwd 
         ? (isAbsolute(cwd) ? cwd : resolve(context.workdir, cwd))
         : context.workdir
+      
+      // Check sandbox - collect all paths that need checking
+      const pathsToCheck: string[] = [workingDir]
+      
+      // Extract absolute paths from command (including ~ expansion)
+      const commandPaths = extractAbsolutePathsFromCommand(command)
+      for (const cmdPath of commandPaths) {
+        // Resolve relative to the working directory
+        const resolved = isAbsolute(cmdPath) ? cmdPath : resolve(workingDir, cmdPath)
+        pathsToCheck.push(resolved)
+      }
+      
+      // Check all paths - request confirmation for paths outside workdir
+      if (context.onEvent) {
+        await requestPathAccess(
+          pathsToCheck,
+          context.workdir,
+          context.sessionId,
+          crypto.randomUUID(),
+          'run_command',
+          context.onEvent
+        )
+      }
       
       // Execute command
       const result = await executeCommand(command, workingDir, timeout, context.onProgress)

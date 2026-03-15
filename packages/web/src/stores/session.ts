@@ -24,6 +24,7 @@ import type {
   ChatMessageUpdatedPayload,
   ChatDonePayload,
   ChatErrorPayload,
+  ChatPathConfirmationPayload,
   ModeChangedPayload,
   PhaseChangedPayload,
   CriteriaUpdatedPayload,
@@ -34,6 +35,14 @@ import { playNotification, playAchievement, playIntervention } from '../lib/soun
 
 // Track subscription to prevent duplicates
 let isSubscribed = false
+
+// Pending path confirmation request from server
+export interface PendingPathConfirmation {
+  callId: string
+  tool: string
+  paths: string[]
+  workdir: string
+}
 
 interface SessionState {
   // Connection
@@ -55,6 +64,9 @@ interface SessionState {
   
   // Context state (for header display)
   contextState: ContextState | null
+  
+  // Pending path confirmation (outside-workdir access request)
+  pendingPathConfirmation: PendingPathConfirmation | null
   
   // Error state
   error: { code: string; message: string } | null
@@ -88,6 +100,9 @@ interface SessionState {
   // Context management
   compactContext: () => void
   
+  // Path confirmation
+  confirmPath: (callId: string, approved: boolean) => void
+  
   clearError: () => void
   
   // Internal
@@ -102,6 +117,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
   streamingMessageId: null,
   currentTodos: [],
   contextState: null,
+  pendingPathConfirmation: null,
   error: null,
   
   connect: async () => {
@@ -207,6 +223,11 @@ export const useSessionStore = create<SessionState>((set, get) => ({
   
   compactContext: () => {
     wsClient.send('context.compact', {})
+  },
+  
+  confirmPath: (callId, approved) => {
+    wsClient.send('path.confirm', { callId, approved })
+    set({ pendingPathConfirmation: null })
   },
   
   clearError: () => {
@@ -402,6 +423,19 @@ export const useSessionStore = create<SessionState>((set, get) => ({
         if (!payload.recoverable) {
           set({ streamingMessageId: null })
         }
+        break
+      }
+      
+      case 'chat.path_confirmation': {
+        const payload = message.payload as ChatPathConfirmationPayload
+        set({
+          pendingPathConfirmation: {
+            callId: payload.callId,
+            tool: payload.tool,
+            paths: payload.paths,
+            workdir: payload.workdir,
+          },
+        })
         break
       }
       

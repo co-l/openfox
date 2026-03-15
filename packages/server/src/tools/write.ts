@@ -3,6 +3,7 @@ import { resolve, isAbsolute, dirname } from 'node:path'
 import type { ToolResult, Diagnostic } from '@openfox/shared'
 import type { Tool, ToolContext } from './types.js'
 import { formatDiagnosticsForLLM } from './diagnostics.js'
+import { requestPathAccess } from './path-security.js'
 
 export const writeFileTool: Tool = {
   name: 'write_file',
@@ -37,6 +38,18 @@ export const writeFileTool: Tool = {
       
       // Resolve path
       const fullPath = isAbsolute(path) ? path : resolve(context.workdir, path)
+      
+      // Check sandbox - request confirmation for paths outside workdir
+      if (context.onEvent) {
+        await requestPathAccess(
+          [fullPath],
+          context.workdir,
+          context.sessionId,
+          crypto.randomUUID(),
+          'write_file',
+          context.onEvent
+        )
+      }
       
       // Ensure parent directory exists
       const dir = dirname(fullPath)

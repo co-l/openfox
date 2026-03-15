@@ -1,4 +1,5 @@
 import type { ToolResult } from '@openfox/shared'
+import type { ServerMessage } from '@openfox/shared/protocol'
 import type { LLMToolDefinition } from '../llm/types.js'
 import type { LspManagerInterface } from '../lsp/types.js'
 
@@ -6,6 +7,7 @@ export interface ToolContext {
   workdir: string
   sessionId: string
   onProgress?: (message: string) => void
+  onEvent?: (event: ServerMessage) => void  // For sending events to client (e.g., path confirmation)
   lspManager?: LspManagerInterface  // Optional LSP manager for file diagnostics
 }
 

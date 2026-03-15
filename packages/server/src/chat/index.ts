@@ -3,7 +3,12 @@ import type { ServerMessage } from '@openfox/shared/protocol'
 import type { LLMClientWithModel } from '../llm/client.js'
 import type { StreamTiming } from '../llm/streaming.js'
 import { sessionManager } from '../session/index.js'
-import { getToolRegistryForMode, setTodoUpdateCallback, AskUserInterrupt } from '../tools/index.js'
+import {
+  getToolRegistryForMode,
+  setTodoUpdateCallback,
+  AskUserInterrupt,
+  PathAccessDeniedError,
+} from '../tools/index.js'
 import { buildPlannerPrompt, buildBuilderPrompt } from './prompts.js'
 import { streamLLMResponse } from './stream.js'
 import { computeAggregatedStats } from './stats.js'
@@ -114,6 +119,29 @@ export async function handleChat(options: ChatOptions): Promise<void> {
       return
     }
     
+    if (error instanceof PathAccessDeniedError) {
+      // User denied path access - abort with clear error
+      logger.warn('Path access denied by user', {
+        sessionId,
+        tool: error.tool,
+        paths: error.paths,
+      })
+      onMessage(createChatErrorMessage(
+        `Execution aborted: Access denied to paths outside workdir:\n${error.paths.join('\n')}`,
+        false  // not recoverable
+      ))
+      const errorMsg = sessionManager.addMessage(sessionId, {
+        role: 'user',
+        content: `Access denied to: ${error.paths.join(', ')}`,
+        tokenCount: 10,
+        isSystemGenerated: true,
+        messageKind: 'correction',
+      })
+      onMessage(createChatMessageMessage(errorMsg))
+      onMessage(createChatDoneMessage(errorMsg.id, 'error'))
+      return
+    }
+    
     logger.error('Chat error', { sessionId, mode, error })
     onMessage(createChatErrorMessage(
       error instanceof Error ? error.message : 'Unknown error',
@@ -172,7 +200,7 @@ async function runPlannerChat(
       const toolResult = await toolRegistry.execute(
         toolCall.name,
         toolCall.arguments,
-        { workdir: session.workdir, sessionId, lspManager: sessionManager.getLspManager(sessionId) }
+        { workdir: session.workdir, sessionId, lspManager: sessionManager.getLspManager(sessionId), onEvent: onMessage }
       )
       
       // Track tool execution time
@@ -256,7 +284,7 @@ async function runBuilderTurn(
       const toolResult = await toolRegistry.execute(
         toolCall.name,
         toolCall.arguments,
-        { workdir: session.workdir, sessionId, lspManager: sessionManager.getLspManager(sessionId) }
+        { workdir: session.workdir, sessionId, lspManager: sessionManager.getLspManager(sessionId), onEvent: onMessage }
       )
       
       // Track tool execution time

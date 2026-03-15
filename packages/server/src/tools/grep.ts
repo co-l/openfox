@@ -4,6 +4,7 @@ import { resolve, isAbsolute } from 'node:path'
 import type { ToolResult } from '@openfox/shared'
 import type { Tool, ToolContext } from './types.js'
 import { OUTPUT_LIMITS } from './types.js'
+import { requestPathAccess } from './path-security.js'
 
 export const grepTool: Tool = {
   name: 'grep',
@@ -45,6 +46,18 @@ export const grepTool: Tool = {
       const baseDir = cwd 
         ? (isAbsolute(cwd) ? cwd : resolve(context.workdir, cwd))
         : context.workdir
+      
+      // Check sandbox - request confirmation for paths outside workdir
+      if (context.onEvent) {
+        await requestPathAccess(
+          [baseDir],
+          context.workdir,
+          context.sessionId,
+          crypto.randomUUID(),
+          'grep',
+          context.onEvent
+        )
+      }
       
       // Create regex
       let regex: RegExp
