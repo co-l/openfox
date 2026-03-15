@@ -8,7 +8,7 @@
  * - Handles XML tool format retry universally
  */
 
-import type { ToolCall, MessageSegment } from '@openfox/shared'
+import type { ToolCall, MessageSegment, MessageStats, ToolMode } from '@openfox/shared'
 import type { ServerMessage } from '@openfox/shared/protocol'
 import type { LLMClientWithModel } from '../llm/client.js'
 import type { LLMToolDefinition } from '../llm/types.js'
@@ -54,6 +54,24 @@ export interface StreamResult {
   segments: MessageSegment[]
   usage: { promptTokens: number; completionTokens: number }
   timing: StreamTiming
+}
+
+/**
+ * Build MessageStats from a StreamResult for single-call flows (summary, compaction).
+ * For multi-call flows with tools, use TurnMetrics in chat/index.ts instead.
+ */
+export function buildStatsFromResult(result: StreamResult, model: string, mode: ToolMode): MessageStats {
+  const roundTo1 = (n: number) => Math.round(n * 10) / 10
+  return {
+    model,
+    mode,
+    totalTime: result.timing.ttft + result.timing.completionTime,
+    toolTime: 0,
+    prefillTokens: result.usage.promptTokens,
+    prefillSpeed: result.timing.ttft > 0 ? roundTo1(result.usage.promptTokens / result.timing.ttft) : 0,
+    generationTokens: result.usage.completionTokens,
+    generationSpeed: result.timing.completionTime > 0 ? roundTo1(result.usage.completionTokens / result.timing.completionTime) : 0,
+  }
 }
 
 /**

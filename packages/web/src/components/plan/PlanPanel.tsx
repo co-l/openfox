@@ -170,6 +170,9 @@ export function PlanPanel() {
     e.preventDefault()
     if (!input.trim() || isStreaming) return
     
+    // Reset scroll state when user sends a message
+    setUserScrolledUp(false)
+    
     sendMessage(input)
     setInput('')
   }

@@ -7,7 +7,7 @@ import type { ToolRegistry } from '../tools/index.js'
 import { sessionManager } from '../session/index.js'
 import { sessionEvents } from '../session/events.js'
 import { handleChat } from '../chat/index.js'
-import { streamLLMResponse } from '../chat/stream.js'
+import { streamLLMResponse, buildStatsFromResult } from '../chat/stream.js'
 import { buildPlannerPrompt, SUMMARY_REQUEST_PROMPT, COMPACTION_PROMPT } from '../chat/prompts.js'
 import { getToolRegistryForMode } from '../tools/index.js'
 import { estimateTokens } from '../context/tokenizer.js'
@@ -569,6 +569,11 @@ async function handleClientMessage(
           })
           sessionManager.setSummary(sessionId, result.content)
           
+          // Build and send stats for the summary message
+          const stats = buildStatsFromResult(result, config.vllm.model, 'planner')
+          sessionManager.updateMessageStats(sessionId, result.messageId, stats)
+          pushEvent(createChatDoneMessage(result.messageId, 'complete', stats))
+          
           // Switch to builder mode and phase
           sessionManager.setMode(sessionId, 'builder')
           sessionManager.setPhase(sessionId, 'build')
@@ -684,10 +689,13 @@ async function handleClientMessage(
             onEvent: send,
           })
           
-          // 3. Mark response as compaction summary
+          // 3. Mark response as compaction summary and add stats
+          const stats = buildStatsFromResult(result, config.vllm.model, 'planner')
           sessionManager.updateMessage(sessionId, result.messageId, {
             isCompactionSummary: true,
+            stats,
           })
+          send(createChatDoneMessage(result.messageId, 'complete', stats))
           
           // 4. Close current window and create new one
           sessionManager.compactContext(sessionId, result.content, tokensBefore)
