@@ -166,6 +166,11 @@ export function createLLMClient(config: Config): LLMClientWithModel {
           (createParams as unknown as Record<string, unknown>)['top_k'] = profile.topK
         }
         
+        // Disable thinking if requested (vLLM extension)
+        if (request.enableThinking === false) {
+          (createParams as unknown as Record<string, unknown>)['chat_template_kwargs'] = { enable_thinking: false }
+        }
+        
         const stream = await openai.chat.completions.create(createParams, {
           signal: request.signal,
         })

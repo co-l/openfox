@@ -559,7 +559,7 @@ async function handleClientMessage(
           })
           pushEvent(createChatMessageMessage(summaryRequestMsg))
           
-          // Stream summary response using core function (no tools)
+          // Stream summary response using core function (no tools, no thinking)
           const toolRegistry = getToolRegistryForMode('planner')
           const systemPrompt = buildPlannerPrompt(toolRegistry.definitions)
           const result = await streamLLMResponse({
@@ -567,6 +567,7 @@ async function handleClientMessage(
             systemPrompt,
             llmClient,
             onEvent: pushEvent,
+            enableThinking: false,
           })
           sessionManager.setSummary(sessionId, result.content)
           

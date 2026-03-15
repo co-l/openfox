@@ -156,7 +156,7 @@ ${modifiedFiles.length > 0 ? modifiedFiles.map(f => `- ${f}`).join('\n') : '(non
     
     iteration++
     
-    // Stream LLM response with fresh context
+    // Stream LLM response with fresh context (no thinking for verifier)
     let result
     try {
       result = await streamLLMResponse({
@@ -170,6 +170,7 @@ ${modifiedFiles.length > 0 ? modifiedFiles.map(f => `- ${f}`).join('\n') : '(non
         customMessages,
         subAgentId,
         subAgentType: 'verifier',
+        enableThinking: false,
       })
     } catch (error) {
       throw error

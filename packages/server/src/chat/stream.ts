@@ -45,6 +45,8 @@ export interface StreamOptions {
   subAgentId?: string
   /** Optional: sub-agent type to tag the created assistant message */
   subAgentType?: 'verifier'
+  /** Optional: disable thinking/reasoning for this call (default: true) */
+  enableThinking?: boolean
 }
 
 export interface StreamResult {
@@ -72,7 +74,7 @@ async function streamLLMResponseInternal(
   formatRetryCount: number,
   existingMessageId?: string
 ): Promise<StreamResult> {
-  const { sessionId, systemPrompt, llmClient, tools, toolChoice, signal, onEvent, customMessages, subAgentId, subAgentType } = options
+  const { sessionId, systemPrompt, llmClient, tools, toolChoice, signal, onEvent, customMessages, subAgentId, subAgentType, enableThinking } = options
 
   // If retrying due to XML format error, inject correction prompt
   if (formatRetryCount > 0) {
@@ -130,6 +132,7 @@ async function streamLLMResponseInternal(
     messages: llmMessages,
     ...(tools && { tools }),
     ...(tools && { toolChoice: toolChoice ?? 'auto' }),
+    ...(enableThinking === false && { enableThinking: false }),
   })
 
   let result: Awaited<ReturnType<typeof stream.next>>['value'] = null
