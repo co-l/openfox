@@ -108,13 +108,13 @@ export function DiffView({ oldString, newString, filePath }: DiffViewProps) {
       {/* Removed content */}
       {hasOld && (
         <>
-          <div className="bg-red-500 row-span-1" />
-          <div className="bg-red-500/10 py-1 text-red-400 text-xs font-mono text-center">
+          <div className="bg-red-400/60" />
+          <div className="bg-red-950/30 py-1 text-red-400/70 text-xs font-mono text-center">
             {oldLines.map((_, i) => (
               <div key={i} className="leading-[1.35rem]">-</div>
             ))}
           </div>
-          <div className="bg-red-500/10 py-0.5 pr-2 line-through decoration-red-500/50">
+          <div className="bg-red-950/30 py-0.5 pr-2 line-through decoration-red-400/30">
             <SyntaxHighlighter
               style={oneDark}
               language={language}
@@ -130,13 +130,13 @@ export function DiffView({ oldString, newString, filePath }: DiffViewProps) {
       {/* Added content */}
       {hasNew && (
         <>
-          <div className="bg-green-500 row-span-1" />
-          <div className="bg-green-500/10 py-1 text-green-400 text-xs font-mono text-center">
+          <div className="bg-green-400/60" />
+          <div className="bg-green-950/30 py-1 text-green-400/70 text-xs font-mono text-center">
             {newLines.map((_, i) => (
               <div key={i} className="leading-[1.35rem]">+</div>
             ))}
           </div>
-          <div className="bg-green-500/10 py-0.5 pr-2">
+          <div className="bg-green-950/30 py-0.5 pr-2">
             <SyntaxHighlighter
               style={oneDark}
               language={language}
@@ -171,13 +171,13 @@ export function FilePreview({ content, filePath, maxLines = 20 }: FilePreviewPro
   return (
     <div className="rounded overflow-hidden border border-border">
       <div className="grid grid-cols-[3px_1.5rem_1fr]">
-        <div className="bg-green-500" />
-        <div className="bg-green-500/10 py-1 text-green-400 text-xs font-mono text-center">
+        <div className="bg-green-400/60" />
+        <div className="bg-green-950/30 py-1 text-green-400/70 text-xs font-mono text-center">
           {displayContent.split('\n').map((_, i) => (
             <div key={i} className="leading-[1.35rem]">+</div>
           ))}
         </div>
-        <div className="bg-green-500/10 py-0.5 pr-2">
+        <div className="bg-green-950/30 py-0.5 pr-2">
           <SyntaxHighlighter
             style={oneDark}
             language={language}
