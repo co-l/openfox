@@ -34,11 +34,11 @@
 
 @layer components {
   .panel {
-    @apply bg-bg-secondary border border-border rounded-lg;
+    @apply bg-bg-secondary border border-border rounded;
   }
   
   .btn {
-    @apply px-3 py-1.5 rounded-md text-sm font-medium transition-colors;
+    @apply px-3 py-1.5 rounded text-sm font-medium transition-colors;
   }
   
   .btn-primary {
@@ -54,7 +54,7 @@
   }
   
   .input {
-    @apply bg-bg-tertiary border border-border rounded-md px-2 py-1.5 text-sm placeholder-text-muted focus:outline-none focus:ring-2 focus:ring-accent-primary/50 focus:border-accent-primary;
+    @apply bg-bg-tertiary border border-border rounded px-2 py-1.5 text-sm placeholder-text-muted focus:outline-none focus:ring-2 focus:ring-accent-primary/50 focus:border-accent-primary;
   }
   
   .feed-item {

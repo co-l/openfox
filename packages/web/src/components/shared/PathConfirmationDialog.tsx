@@ -18,7 +18,7 @@ export function PathConfirmationDialog({ confirmation }: PathConfirmationDialogP
   
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60">
-      <div className="bg-bg-secondary border border-border rounded-lg shadow-xl max-w-lg w-full mx-4 overflow-hidden">
+      <div className="bg-bg-secondary border border-border rounded shadow-xl max-w-lg w-full mx-4 overflow-hidden">
         {/* Header */}
         <div className="px-4 py-3 border-b border-border bg-amber-500/10">
           <div className="flex items-center gap-2">

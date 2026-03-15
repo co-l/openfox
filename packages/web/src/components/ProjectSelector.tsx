@@ -152,7 +152,7 @@ export function ProjectSelector() {
         </div>
         
         {showNew ? (
-          <div className="bg-bg-secondary border border-border rounded-lg overflow-hidden">
+          <div className="bg-bg-secondary border border-border rounded overflow-hidden">
             {/* Header */}
             <div className="p-4 border-b border-border">
               <h2 className="text-lg font-semibold mb-3">Select Project Directory</h2>
@@ -307,7 +307,7 @@ export function ProjectSelector() {
             </Button>
             
             {projects.length > 0 && (
-              <div className="bg-bg-secondary border border-border rounded-lg overflow-hidden">
+              <div className="bg-bg-secondary border border-border rounded overflow-hidden">
                 <div className="p-3 border-b border-border">
                   <h2 className="font-semibold text-sm text-text-secondary">
                     Projects

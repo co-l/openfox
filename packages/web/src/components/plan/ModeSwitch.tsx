@@ -14,7 +14,7 @@ export function ModeSwitch() {
   if (!currentMode) return null
 
   return (
-    <div className="inline-flex rounded-lg overflow-hidden border border-border bg-bg-secondary">
+    <div className="inline-flex rounded overflow-hidden border border-border bg-bg-secondary">
       {modes.map(({ mode, label, activeClass }) => {
         const isActive = currentMode === mode
         return (

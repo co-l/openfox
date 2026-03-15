@@ -127,7 +127,7 @@ interface SectionProps {
 
 function Section({ title, expanded, onToggle, badge, children }: SectionProps) {
   return (
-    <div className="border border-border rounded-lg overflow-hidden">
+    <div className="border border-border rounded overflow-hidden">
       <button
         onClick={onToggle}
         className="w-full flex items-center justify-between p-3 bg-bg-tertiary/50 hover:bg-bg-tertiary transition-colors"

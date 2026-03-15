@@ -7,7 +7,7 @@ interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
 
 export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
   ({ variant = 'secondary', size = 'md', className = '', children, ...props }, ref) => {
-    const baseClasses = 'rounded-md font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed'
+    const baseClasses = 'rounded font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed'
     
     const variantClasses = {
       primary: 'bg-accent-primary/25 text-white hover:bg-accent-primary/40',

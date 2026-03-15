@@ -45,7 +45,7 @@ export function Modal({ isOpen, onClose, title, children, size = 'md' }: ModalPr
       />
       
       {/* Modal */}
-      <div className={`relative w-full ${sizeClasses[size]} mx-4 bg-bg-secondary border border-border rounded-lg shadow-xl`}>
+      <div className={`relative w-full ${sizeClasses[size]} mx-4 bg-bg-secondary border border-border rounded shadow-xl`}>
         {/* Header */}
         <div className="flex items-center justify-between px-4 py-3 border-b border-border">
           <h2 className="text-lg font-semibold text-text-primary">{title}</h2>

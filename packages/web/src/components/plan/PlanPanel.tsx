@@ -303,7 +303,7 @@ export function PlanPanel() {
       </div>
       
       <form onSubmit={handleSubmit} className="p-4 border-t border-border bg-gradient-to-t from-bg-secondary/50 to-transparent">
-        <div className={`flex items-end gap-3 p-3 rounded-xl border ${isStreaming ? 'border-accent-warning/30 bg-accent-warning/5' : 'border-border bg-bg-tertiary/50'} transition-colors`}>
+        <div className={`flex items-end gap-3 p-3 rounded border ${isStreaming ? 'border-accent-warning/30 bg-accent-warning/5' : 'border-border bg-bg-tertiary/50'} transition-colors`}>
           <textarea
             ref={textareaRef}
             value={input}
@@ -323,7 +323,7 @@ export function PlanPanel() {
                 <button
                   type="button"
                   onClick={launchRunner}
-                  className="px-4 py-1.5 rounded-lg bg-accent-success/20 text-sm text-accent-success font-medium hover:bg-accent-success/30 transition-colors"
+                  className="px-4 py-1.5 rounded bg-accent-success/20 text-sm text-accent-success font-medium hover:bg-accent-success/30 transition-colors"
                 >
                   Launch
                 </button>
@@ -331,7 +331,7 @@ export function PlanPanel() {
               <button
                 type="submit"
                 disabled={!input.trim()}
-                className="px-4 py-1.5 rounded-lg bg-accent-primary/20 text-sm text-accent-primary font-medium hover:bg-accent-primary/30 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                className="px-4 py-1.5 rounded bg-accent-primary/20 text-sm text-accent-primary font-medium hover:bg-accent-primary/30 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
               >
                 Send
               </button>
@@ -340,7 +340,7 @@ export function PlanPanel() {
             <button
               type="button"
               onClick={stopGeneration}
-              className="px-4 py-1.5 rounded-lg bg-accent-error/20 text-sm text-accent-error font-medium hover:bg-accent-error/30 transition-colors animate-pulse"
+              className="px-4 py-1.5 rounded bg-accent-error/20 text-sm text-accent-error font-medium hover:bg-accent-error/30 transition-colors animate-pulse"
             >
               Stop
             </button>

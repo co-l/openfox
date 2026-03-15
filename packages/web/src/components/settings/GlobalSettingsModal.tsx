@@ -63,7 +63,7 @@ export function GlobalSettingsModal({ isOpen, onClose }: GlobalSettingsModalProp
             value={localValue}
             onChange={handleChange}
             placeholder="Enter global instructions that apply to all projects..."
-            className="w-full h-64 px-3 py-2 bg-bg-tertiary border border-border rounded-lg text-text-primary placeholder-text-muted text-sm font-mono resize-none focus:outline-none focus:ring-1 focus:ring-accent-primary"
+            className="w-full h-64 px-3 py-2 bg-bg-tertiary border border-border rounded text-text-primary placeholder-text-muted text-sm font-mono resize-none focus:outline-none focus:ring-1 focus:ring-accent-primary"
             disabled={isLoading}
           />
         </div>

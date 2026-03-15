@@ -63,7 +63,7 @@ export function ProjectSettingsModal({ isOpen, onClose, project }: ProjectSettin
             value={localValue}
             onChange={handleChange}
             placeholder="Enter project-specific instructions..."
-            className="w-full h-64 px-3 py-2 bg-bg-tertiary border border-border rounded-lg text-text-primary placeholder-text-muted text-sm font-mono resize-none focus:outline-none focus:ring-1 focus:ring-accent-primary"
+            className="w-full h-64 px-3 py-2 bg-bg-tertiary border border-border rounded text-text-primary placeholder-text-muted text-sm font-mono resize-none focus:outline-none focus:ring-1 focus:ring-accent-primary"
             disabled={saving}
           />
         </div>

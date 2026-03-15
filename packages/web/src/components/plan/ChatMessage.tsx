@@ -69,7 +69,7 @@ function UserMessage({ message }: UserMessageProps) {
           </button>
           
           {showMenu && (
-            <div className="absolute right-0 top-full mt-1 bg-bg-secondary border border-border rounded-lg shadow-xl z-50 py-1 min-w-36">
+            <div className="absolute right-0 top-full mt-1 bg-bg-secondary border border-border rounded shadow-xl z-50 py-1 min-w-36">
               <button
                 onClick={handleCopy}
                 className="w-full px-3 py-1.5 text-left text-sm text-text-primary hover:bg-bg-tertiary flex items-center gap-2"
