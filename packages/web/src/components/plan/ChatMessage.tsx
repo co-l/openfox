@@ -113,7 +113,7 @@ function UserMessage({ message }: UserMessageProps) {
           ? isAutoPrompt 
             ? 'bg-slate-500/10 border border-slate-500/30' 
             : 'bg-amber-500/10 border border-amber-500/30'
-          : 'bg-accent-primary text-white'
+          : 'bg-accent-primary/15 text-white'
       }`}>
         {isSystemGenerated && (
           <span className={`text-[10px] block mb-0.5 ${

@@ -59,17 +59,17 @@ export function Sidebar({ projectId }: SidebarProps) {
   
   return (
     <aside className="w-[200px] bg-bg-secondary border-r border-border flex flex-col">
-      <div className="p-2 border-b border-border flex gap-2">
+      <div className="p-4 border-b border-border flex gap-2">
         <Button
           variant="primary"
-          className="flex-1 text-xs px-2 py-1"
+          className="flex-1 text-sm"
           onClick={handleNewSession}
         >
-          + New
+          + New Session
         </Button>
         <button
           onClick={() => setShowSettings(true)}
-          className="p-1 rounded hover:bg-bg-tertiary text-text-muted hover:text-text-primary transition-colors"
+          className="flex-shrink-0 p-1 rounded hover:bg-bg-tertiary text-text-muted hover:text-text-primary transition-colors"
           title="Project Settings"
         >
           <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -90,7 +90,7 @@ export function Sidebar({ projectId }: SidebarProps) {
       
       <div className="flex-1 overflow-y-auto">
         {projectSessions.length === 0 ? (
-          <div className="p-2 text-center text-text-muted text-xs">
+          <div className="p-4 text-center text-text-muted text-xs">
             No sessions
           </div>
         ) : (
@@ -101,7 +101,7 @@ export function Sidebar({ projectId }: SidebarProps) {
                 <div
                   key={session.id}
                   onClick={() => handleSelectSession(session.id)}
-                  className={`w-full p-2 text-left hover:bg-bg-tertiary/50 transition-colors group cursor-pointer ${
+                  className={`w-full px-4 py-3 text-left hover:bg-bg-tertiary/50 transition-colors group cursor-pointer ${
                     isActive ? 'bg-bg-tertiary' : ''
                   }`}
                 >
@@ -150,20 +150,14 @@ export function Sidebar({ projectId }: SidebarProps) {
                     
                     <button
                       onClick={(e) => handleDeleteSession(session.id, e)}
-                      className="opacity-0 group-hover:opacity-100 text-accent-error/70 hover:text-accent-error p-0.5 transition-opacity"
+                      className="opacity-0 group-hover:opacity-100 p-1 rounded hover:bg-accent-error/20 text-text-muted hover:text-accent-error transition-all"
                       title="Delete"
                     >
-                      <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
                       </svg>
                     </button>
                   </div>
-                  
-                  {session.criteriaCount > 0 && (
-                    <div className="text-[10px] text-text-muted mt-0.5">
-                      {session.criteriaCompleted}/{session.criteriaCount}
-                    </div>
-                  )}
                 </div>
               )
             })}

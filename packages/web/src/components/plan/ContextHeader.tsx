@@ -43,10 +43,10 @@ export function ContextHeader() {
   const isRunning = currentSession.isRunning
   
   return (
-    <div className="flex-shrink-0 px-2 py-1.5 border-b border-border bg-bg-secondary/50">
-      <div className="flex items-center gap-2">
-        <div className="flex items-center gap-1.5 text-xs">
-          <span className="text-text-muted">Ctx:</span>
+    <div className="flex-shrink-0 px-4 py-1.5 border-b border-border bg-bg-secondary/50">
+      <div className="flex items-center justify-end gap-2">
+        <div className="flex items-center gap-1.5 text-sm">
+          <span className="text-text-muted">Context:</span>
           <span className={getTextColor(percent, dangerZone)}>
             {formatTokens(currentTokens)} / {formatTokens(maxTokens)}
           </span>
@@ -74,7 +74,7 @@ export function ContextHeader() {
         
         <Button
           variant="secondary"
-          size="sm"
+          size="md"
           onClick={compactContext}
           disabled={isRunning}
           title={isRunning ? 'Cannot compact while running' : 'Compact context'}

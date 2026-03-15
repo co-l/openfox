@@ -51,8 +51,8 @@ export function Header() {
           className="flex items-center gap-1 px-1.5 py-0.5 rounded hover:bg-bg-tertiary transition-colors group"
           title={model ?? 'Click to refresh model'}
         >
-          <span className="text-[10px] text-text-muted">Model:</span>
-          <span className="text-xs text-accent-primary truncate max-w-32">
+          <span className="text-sm text-text-muted">Model:</span>
+          <span className="text-sm text-accent-primary">
             {shortModelName}
           </span>
           <span className="text-text-muted opacity-0 group-hover:opacity-100 transition-opacity">
@@ -78,7 +78,7 @@ export function Header() {
             connectionStatus === 'reconnecting' ? 'bg-accent-warning animate-pulse' :
             'bg-accent-error'
           }`} />
-          <span className="text-xs text-text-secondary">
+          <span className="text-sm text-text-secondary">
             {connectionStatus === 'connected' ? 'Connected' :
              connectionStatus === 'reconnecting' ? 'Reconnecting...' :
              'Disconnected'}

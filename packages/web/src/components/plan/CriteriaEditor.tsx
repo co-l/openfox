@@ -24,14 +24,14 @@ export function CriteriaEditor({ criteria }: CriteriaEditorProps) {
     <div className="flex flex-col h-full">
       <div className="flex items-center justify-between mb-2">
         <h3 className="text-sm font-semibold text-text-primary">Criteria</h3>
-        <span className="text-[10px] text-text-muted">
+        <span className="text-sm text-text-muted">
           {criteria.filter(c => c.status.type === 'passed').length}/{criteria.length}
         </span>
       </div>
       
       <div className="flex-1 overflow-y-auto space-y-1">
         {criteria.length === 0 ? (
-          <div className="text-text-muted text-xs text-center py-2">
+          <div className="text-text-muted text-sm text-center py-2">
             No criteria yet
           </div>
         ) : (
@@ -41,9 +41,9 @@ export function CriteriaEditor({ criteria }: CriteriaEditorProps) {
               className="bg-bg-tertiary rounded p-2 border border-border"
             >
               <div className="flex items-start gap-1.5">
-                <span className="text-text-muted text-xs">{index + 1}.</span>
+                <span className="text-text-muted text-sm">{index + 1}.</span>
                 {getStatusIcon(criterion.status)}
-                <p className="flex-1 text-xs leading-tight">{criterion.description}</p>
+                <p className="flex-1 text-sm leading-tight">{criterion.description}</p>
               </div>
             </div>
           ))

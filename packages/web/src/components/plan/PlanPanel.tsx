@@ -302,11 +302,8 @@ export function PlanPanel() {
         <div ref={messagesEndRef} />
       </div>
       
-      <form onSubmit={handleSubmit} className="p-4 border-t border-border">
-        <div className="mb-1">
-          <ModeSwitch />
-        </div>
-        <div className="flex gap-1.5">
+      <form onSubmit={handleSubmit} className="p-4 border-t border-border bg-gradient-to-t from-bg-secondary/50 to-transparent">
+        <div className={`flex items-end gap-3 p-3 rounded-xl border ${isStreaming ? 'border-accent-warning/30 bg-accent-warning/5' : 'border-border bg-bg-tertiary/50'} transition-colors`}>
           <textarea
             ref={textareaRef}
             value={input}
@@ -314,54 +311,44 @@ export function PlanPanel() {
             onKeyDown={handleKeyDown}
             placeholder={
               isPlanning 
-                ? "Describe what to build..." 
+                ? "What would you like to build?" 
                 : "Send a message..."
             }
-            className="flex-1 bg-bg-tertiary border border-border rounded-lg p-2 text-sm placeholder:text-xs resize-y overflow-y-auto focus:outline-none focus:ring-2 focus:ring-accent-primary/50"
-            style={{ minHeight: '60px', maxHeight: '200px' }}
+            className="flex-1 bg-transparent text-sm placeholder:text-text-muted resize-none overflow-y-auto focus:outline-none"
+            style={{ minHeight: '24px', maxHeight: '200px' }}
           />
-          <div className="flex flex-col gap-1.5 self-end">
-            {!isStreaming ? (
-              <>
+          {!isStreaming ? (
+            <div className="flex items-center gap-2">
+              {showLaunchButton && (
                 <button
-                  type="submit"
-                  disabled={!input.trim()}
-                  className="flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg bg-accent-primary text-sm text-white font-medium hover:bg-accent-primary/80 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                  type="button"
+                  onClick={launchRunner}
+                  className="px-4 py-1.5 rounded-lg bg-accent-success/20 text-sm text-accent-success font-medium hover:bg-accent-success/30 transition-colors"
                 >
-                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
-                  </svg>
-                  Send
+                  Launch
                 </button>
-                {showLaunchButton && (
-                  <button
-                    type="button"
-                    onClick={launchRunner}
-                    className="flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg bg-accent-success text-sm text-white font-medium hover:bg-accent-success/80 transition-colors"
-                  >
-                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
-                    </svg>
-                    Launch
-                  </button>
-                )}
-              </>
-            ) : (
+              )}
               <button
-                type="button"
-                onClick={stopGeneration}
-                className="flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg bg-accent-error text-sm text-white font-medium hover:bg-accent-error/80 transition-colors"
+                type="submit"
+                disabled={!input.trim()}
+                className="px-4 py-1.5 rounded-lg bg-accent-primary/20 text-sm text-accent-primary font-medium hover:bg-accent-primary/30 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
               >
-                <svg className="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 24 24">
-                  <rect x="6" y="6" width="12" height="12" rx="2" />
-                </svg>
-                Stop
+                Send
               </button>
-            )}
-          </div>
+            </div>
+          ) : (
+            <button
+              type="button"
+              onClick={stopGeneration}
+              className="px-4 py-1.5 rounded-lg bg-accent-error/20 text-sm text-accent-error font-medium hover:bg-accent-error/30 transition-colors animate-pulse"
+            >
+              Stop
+            </button>
+          )}
         </div>
-        <div className="text-[10px] text-text-muted mt-0.5">
-          {isStreaming ? 'Press Escape to stop' : 'Cmd+Enter to send'}
+        <div className="mt-3 flex items-center justify-between">
+          <ModeSwitch />
+          <span className="text-sm text-text-muted">Ctrl+Enter to send</span>
         </div>
       </form>
     </SessionLayout>

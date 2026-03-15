@@ -6,7 +6,7 @@ interface SessionLayoutProps {
   children: ReactNode
 }
 
-const CRITERIA_SIDEBAR_CLASSES = 'w-[320px] min-w-[320px] shrink-0 border-l border-border p-2 overflow-y-auto'
+const CRITERIA_SIDEBAR_CLASSES = 'w-[320px] min-w-[320px] shrink-0 border-l border-border p-4 overflow-y-auto'
 
 export function SessionLayout({ children }: SessionLayoutProps) {
   const session = useSessionStore(state => state.currentSession)

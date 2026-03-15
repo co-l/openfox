@@ -23,7 +23,7 @@ export function ModeSwitch() {
             onClick={() => !isActive && switchMode(mode)}
             disabled={isStreaming}
             className={`
-              px-2 py-1 text-xs font-medium transition-colors
+              px-3 py-1.5 text-sm font-medium transition-colors
               ${isActive 
                 ? activeClass 
                 : 'text-text-muted hover:text-text-primary hover:bg-bg-tertiary cursor-pointer'
