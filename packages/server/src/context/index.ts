@@ -7,4 +7,4 @@ export {
   DANGER_ZONE_THRESHOLD,
   MANUAL_COMPACT_TARGET,
 } from './tokenizer.js'
-export { compactMessages, shouldCompact, getCompactionTarget, type CompactionResult } from './compactor.js'
+export { shouldCompact, getCompactionTarget } from './compactor.js'

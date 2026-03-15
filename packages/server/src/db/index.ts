@@ -253,5 +253,58 @@ function runMigrations(db: Database.Database): void {
     db.exec(`ALTER TABLE execution_state ADD COLUMN message_count_at_last_update INTEGER DEFAULT 0`)
   }
   
+  // Create context_windows table
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS context_windows (
+      id TEXT PRIMARY KEY,
+      session_id TEXT NOT NULL,
+      sequence_number INTEGER NOT NULL,
+      created_at TEXT NOT NULL,
+      summary_of_previous TEXT,
+      summary_token_count INTEGER,
+      closed_at TEXT,
+      token_count_at_close INTEGER,
+      FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE,
+      UNIQUE(session_id, sequence_number)
+    )
+  `)
+  
+  db.exec(`
+    CREATE INDEX IF NOT EXISTS idx_context_windows_session 
+    ON context_windows(session_id, sequence_number)
+  `)
+  
+  // Migration: Add context_window_id and is_compaction_summary columns to messages
+  const msgColumns = db.prepare(`PRAGMA table_info(messages)`).all() as { name: string }[]
+  const msgColumnNames = msgColumns.map(c => c.name)
+  
+  if (!msgColumnNames.includes('context_window_id')) {
+    logger.info('Migrating messages table: adding context_window_id column')
+    db.exec(`ALTER TABLE messages ADD COLUMN context_window_id TEXT`)
+    
+    // Create context window #1 for each existing session and assign all messages
+    const sessions = db.prepare(`SELECT id FROM sessions`).all() as { id: string }[]
+    const now = new Date().toISOString()
+    
+    for (const session of sessions) {
+      const windowId = crypto.randomUUID()
+      db.prepare(`
+        INSERT INTO context_windows (id, session_id, sequence_number, created_at)
+        VALUES (?, ?, 1, ?)
+      `).run(windowId, session.id, now)
+      
+      db.prepare(`
+        UPDATE messages SET context_window_id = ? WHERE session_id = ?
+      `).run(windowId, session.id)
+    }
+    
+    logger.info('Migrated existing sessions to context windows model', { sessionCount: sessions.length })
+  }
+  
+  if (!msgColumnNames.includes('is_compaction_summary')) {
+    logger.info('Migrating messages table: adding is_compaction_summary column')
+    db.exec(`ALTER TABLE messages ADD COLUMN is_compaction_summary INTEGER DEFAULT 0`)
+  }
+  
   logger.info('Database migrations completed')
 }

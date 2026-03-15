@@ -168,3 +168,15 @@ export const BUILDER_KICKOFF_PROMPT = (criteriaCount: number) =>
   `Implement the task and make sure you fulfil the ${criteriaCount} criteria.`
 
 export const VERIFIER_KICKOFF_PROMPT = 'Verify each criterion marked [NEEDS VERIFICATION]. Read the code, run tests if applicable, then call pass_criterion or fail_criterion for each.'
+
+// ============================================================================
+// Compaction Prompt (summarize conversation history for context window reset)
+// ============================================================================
+
+export const COMPACTION_PROMPT = `Summarize the conversation history concisely, preserving:
+1. All file modifications made (file paths and what changed)
+2. All errors encountered and how they were resolved
+3. Current progress on each task
+4. Any important decisions or learnings
+
+Be thorough but concise. Output as a structured summary.`

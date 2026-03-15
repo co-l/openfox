@@ -9,19 +9,36 @@ import { SubAgentContainer } from './SubAgentContainer'
 import { ModeSwitch } from './ModeSwitch'
 import { Button } from '../shared/Button'
 
-// Display item: either a single message or a grouped sub-agent run
+// Display item: either a single message, a grouped sub-agent run, or a context window divider
 type DisplayItem = 
   | { type: 'message'; message: Message }
   | { type: 'subagent'; subAgentId: string; subAgentType: 'verifier'; messages: Message[] }
+  | { type: 'context-divider'; windowSequence: number }
 
 // Group messages into display items, collapsing consecutive sub-agent messages
+// and inserting context window dividers when contextWindowId changes
 function groupMessages(messages: Message[]): DisplayItem[] {
   const items: DisplayItem[] = []
   let currentGroup: { subAgentId: string; subAgentType: 'verifier'; messages: Message[] } | null = null
+  let lastContextWindowId: string | undefined
+  let windowSequence = 1
   
   for (const msg of messages) {
     // Skip tool messages - they're displayed within assistant messages
     if (msg.role === 'tool') continue
+    
+    // Detect context window boundary - insert divider when window changes
+    // Only insert if we've seen a previous window (not for the first window)
+    if (msg.contextWindowId && lastContextWindowId && msg.contextWindowId !== lastContextWindowId) {
+      // Flush any pending sub-agent group before the divider
+      if (currentGroup) {
+        items.push({ type: 'subagent', ...currentGroup })
+        currentGroup = null
+      }
+      windowSequence++
+      items.push({ type: 'context-divider', windowSequence })
+    }
+    lastContextWindowId = msg.contextWindowId
     
     if (msg.subAgentId && msg.subAgentType) {
       // Part of a sub-agent run
@@ -166,6 +183,21 @@ export function PlanPanel() {
         className="flex-1 overflow-y-auto p-2"
       >
         {displayItems.map((item) => {
+          if (item.type === 'context-divider') {
+            return (
+              <div 
+                key={`divider-${item.windowSequence}`}
+                className="flex items-center gap-2 my-3 px-2"
+              >
+                <div className="flex-1 border-t border-border" />
+                <span className="text-[10px] text-text-muted font-medium px-2">
+                  Earlier context summarized
+                </span>
+                <div className="flex-1 border-t border-border" />
+              </div>
+            )
+          }
+          
           if (item.type === 'subagent') {
             // Check if any message in the group is streaming
             const groupIsStreaming = item.messages.some(m => m.isStreaming)

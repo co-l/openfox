@@ -12,6 +12,7 @@ import type {
   ToolCall,
   ToolResult,
   CriterionAttempt,
+  ContextWindow,
 } from '@openfox/shared'
 import { getDatabase } from './index.js'
 
@@ -29,6 +30,20 @@ export function createSession(projectId: string, workdir: string, title?: string
     VALUES (?, ?, ?, 'idle', 'planner', 'plan', 0, ?, ?, ?)
   `).run(id, projectId, workdir, now, now, title ?? null)
   
+  // Create the first context window for this session
+  const contextWindowId = crypto.randomUUID()
+  db.prepare(`
+    INSERT INTO context_windows (id, session_id, sequence_number, created_at)
+    VALUES (?, ?, 1, ?)
+  `).run(contextWindowId, id, now)
+  
+  const firstContextWindow: ContextWindow = {
+    id: contextWindowId,
+    sessionId: id,
+    sequenceNumber: 1,
+    createdAt: now,
+  }
+  
   return {
     id,
     projectId,
@@ -41,6 +56,7 @@ export function createSession(projectId: string, workdir: string, title?: string
     updatedAt: now,
     messages: [],
     criteria: [],
+    contextWindows: [firstContextWindow],
     executionState: null,
     metadata: {
       title,
@@ -64,6 +80,7 @@ export function getSession(id: string): Session | null {
   
   const messages = getMessages(id)
   const criteria = getCriteria(id)
+  const contextWindows = getContextWindows(id)
   const executionState = getExecutionState(id)
   
   return {
@@ -78,6 +95,7 @@ export function getSession(id: string): Session | null {
     updatedAt: row.updated_at,
     messages,
     criteria,
+    contextWindows,
     executionState,
     metadata: {
       title: row.title ?? undefined,
@@ -249,8 +267,8 @@ export function addMessage(sessionId: string, message: Omit<Message, 'id' | 'tim
       id, session_id, role, content, tool_calls, thinking_content,
       tool_call_id, tool_name, tool_result, timestamp, token_count,
       is_compacted, original_message_ids, segments, stats, partial, is_system_generated, is_streaming, message_kind,
-      sub_agent_id, sub_agent_type
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      sub_agent_id, sub_agent_type, context_window_id, is_compaction_summary
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
     id,
     sessionId,
@@ -272,7 +290,9 @@ export function addMessage(sessionId: string, message: Omit<Message, 'id' | 'tim
     message.isStreaming ? 1 : 0,
     message.messageKind ?? null,
     message.subAgentId ?? null,
-    message.subAgentType ?? null
+    message.subAgentType ?? null,
+    message.contextWindowId,
+    message.isCompactionSummary ? 1 : 0
   )
   
   // Update session updated_at
@@ -296,6 +316,7 @@ export function getMessages(sessionId: string): Message[] {
     id: row.id,
     role: row.role as Message['role'],
     content: row.content,
+    contextWindowId: row.context_window_id,
     toolCalls: row.tool_calls ? JSON.parse(row.tool_calls) as ToolCall[] : undefined,
     thinkingContent: row.thinking_content ?? undefined,
     toolCallId: row.tool_call_id ?? undefined,
@@ -317,6 +338,7 @@ export function getMessages(sessionId: string): Message[] {
     isSystemGenerated: row.is_system_generated === 1 ? true : undefined,
     isStreaming: row.is_streaming === 1 ? true : undefined,
     messageKind: row.message_kind as Message['messageKind'] ?? undefined,
+    isCompactionSummary: row.is_compaction_summary === 1 ? true : undefined,
     subAgentId: row.sub_agent_id ?? undefined,
     subAgentType: row.sub_agent_type as Message['subAgentType'] ?? undefined,
   }))
@@ -583,6 +605,129 @@ export function clearExecutionState(sessionId: string): void {
 }
 
 // ============================================================================
+// Context Window Operations
+// ============================================================================
+
+export function getContextWindows(sessionId: string): ContextWindow[] {
+  const db = getDatabase()
+  
+  const rows = db.prepare(`
+    SELECT * FROM context_windows WHERE session_id = ? ORDER BY sequence_number ASC
+  `).all(sessionId) as ContextWindowRow[]
+  
+  return rows.map(row => ({
+    id: row.id,
+    sessionId: row.session_id,
+    sequenceNumber: row.sequence_number,
+    createdAt: row.created_at,
+    summaryOfPrevious: row.summary_of_previous ?? undefined,
+    summaryTokenCount: row.summary_token_count ?? undefined,
+    closedAt: row.closed_at ?? undefined,
+    tokenCountAtClose: row.token_count_at_close ?? undefined,
+  }))
+}
+
+export function getCurrentContextWindow(sessionId: string): ContextWindow | null {
+  const db = getDatabase()
+  
+  // Current window is the one with highest sequence_number and no closed_at
+  const row = db.prepare(`
+    SELECT * FROM context_windows 
+    WHERE session_id = ? AND closed_at IS NULL
+    ORDER BY sequence_number DESC
+    LIMIT 1
+  `).get(sessionId) as ContextWindowRow | undefined
+  
+  if (!row) {
+    return null
+  }
+  
+  return {
+    id: row.id,
+    sessionId: row.session_id,
+    sequenceNumber: row.sequence_number,
+    createdAt: row.created_at,
+    summaryOfPrevious: row.summary_of_previous ?? undefined,
+    summaryTokenCount: row.summary_token_count ?? undefined,
+    closedAt: row.closed_at ?? undefined,
+    tokenCountAtClose: row.token_count_at_close ?? undefined,
+  }
+}
+
+export function createContextWindow(
+  sessionId: string,
+  sequenceNumber: number,
+  summaryOfPrevious?: string,
+  summaryTokenCount?: number
+): ContextWindow {
+  const db = getDatabase()
+  const id = crypto.randomUUID()
+  const now = new Date().toISOString()
+  
+  db.prepare(`
+    INSERT INTO context_windows (id, session_id, sequence_number, created_at, summary_of_previous, summary_token_count)
+    VALUES (?, ?, ?, ?, ?, ?)
+  `).run(id, sessionId, sequenceNumber, now, summaryOfPrevious ?? null, summaryTokenCount ?? null)
+  
+  return {
+    id,
+    sessionId,
+    sequenceNumber,
+    createdAt: now,
+    summaryOfPrevious,
+    summaryTokenCount,
+  }
+}
+
+export function closeContextWindow(windowId: string, tokenCountAtClose: number): void {
+  const db = getDatabase()
+  const now = new Date().toISOString()
+  
+  db.prepare(`
+    UPDATE context_windows SET closed_at = ?, token_count_at_close = ? WHERE id = ?
+  `).run(now, tokenCountAtClose, windowId)
+}
+
+export function getMessagesForWindow(sessionId: string, contextWindowId: string): Message[] {
+  const db = getDatabase()
+  
+  const rows = db.prepare(`
+    SELECT * FROM messages WHERE session_id = ? AND context_window_id = ? ORDER BY timestamp ASC
+  `).all(sessionId, contextWindowId) as MessageRow[]
+  
+  return rows.map(row => ({
+    id: row.id,
+    role: row.role as Message['role'],
+    content: row.content,
+    contextWindowId: row.context_window_id,
+    toolCalls: row.tool_calls ? JSON.parse(row.tool_calls) as ToolCall[] : undefined,
+    thinkingContent: row.thinking_content ?? undefined,
+    toolCallId: row.tool_call_id ?? undefined,
+    toolName: row.tool_name ?? undefined,
+    toolResult: row.tool_result ? JSON.parse(row.tool_result) as ToolResult : undefined,
+    timestamp: row.timestamp,
+    tokenCount: row.token_count,
+    isCompacted: row.is_compacted === 1,
+    originalMessageIds: row.original_message_ids 
+      ? JSON.parse(row.original_message_ids) as string[]
+      : undefined,
+    segments: row.segments
+      ? JSON.parse(row.segments) as MessageSegment[]
+      : undefined,
+    stats: row.stats
+      ? JSON.parse(row.stats) as Message['stats']
+      : undefined,
+    partial: row.partial === 1,
+    isSystemGenerated: row.is_system_generated === 1 ? true : undefined,
+    isStreaming: row.is_streaming === 1 ? true : undefined,
+    messageKind: row.message_kind as Message['messageKind'] ?? undefined,
+    isCompactionSummary: row.is_compaction_summary === 1 ? true : undefined,
+    subAgentId: row.sub_agent_id ?? undefined,
+    subAgentType: row.sub_agent_type as Message['subAgentType'] ?? undefined,
+  }))
+}
+
+// ============================================================================
 // Row Types
 // ============================================================================
 
@@ -614,6 +759,7 @@ interface MessageRow {
   session_id: string
   role: string
   content: string
+  context_window_id: string
   tool_calls: string | null
   thinking_content: string | null
   tool_call_id: string | null
@@ -629,8 +775,20 @@ interface MessageRow {
   is_system_generated: number
   is_streaming: number
   message_kind: string | null
+  is_compaction_summary: number
   sub_agent_id: string | null
   sub_agent_type: string | null
+}
+
+interface ContextWindowRow {
+  id: string
+  session_id: string
+  sequence_number: number
+  created_at: string
+  summary_of_previous: string | null
+  summary_token_count: number | null
+  closed_at: string | null
+  token_count_at_close: number | null
 }
 
 interface CriterionRow {

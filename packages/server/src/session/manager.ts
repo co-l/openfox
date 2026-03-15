@@ -21,6 +21,7 @@ import {
   deleteSession as dbDeleteSession,
   addMessage as dbAddMessage,
   getMessages,
+  getMessagesForWindow,
   deleteMessages,
   updateMessageStats as dbUpdateMessageStats,
   updateMessage as dbUpdateMessage,
@@ -33,6 +34,9 @@ import {
   setExecutionState as dbSetExecutionState,
   getExecutionState,
   clearExecutionState,
+  getCurrentContextWindow,
+  createContextWindow,
+  closeContextWindow,
 } from '../db/sessions.js'
 import { getProject } from '../db/projects.js'
 import { SessionNotFoundError } from '../utils/errors.js'
@@ -217,7 +221,16 @@ class SessionManagerImpl {
   addMessage(sessionId: string, message: Omit<Message, 'id' | 'timestamp'>): Message {
     this.requireSession(sessionId)
     
-    const savedMessage = dbAddMessage(sessionId, message)
+    // Auto-assign current context window ID if not provided
+    let messageWithWindow = message
+    if (!message.contextWindowId) {
+      const currentWindow = getCurrentContextWindow(sessionId)
+      if (currentWindow) {
+        messageWithWindow = { ...message, contextWindowId: currentWindow.id }
+      }
+    }
+    
+    const savedMessage = dbAddMessage(sessionId, messageWithWindow)
     
     this.emit({ type: 'message_added', sessionId, message: savedMessage })
     
@@ -239,6 +252,73 @@ class SessionManagerImpl {
     this.emit({ type: 'message_updated', sessionId, messageId, updates })
   }
   
+  /**
+   * Compact context using the context windows model.
+   * 
+   * The caller should have already:
+   * 1. Added compaction prompt as a user message (in current window)
+   * 2. Streamed the summary response (in current window, with isCompactionSummary)
+   * 
+   * This function:
+   * - Closes the current context window (preserves all messages including summary)
+   * - Creates a new empty context window for future messages
+   * - Resets token tracking for the new window
+   * 
+   * @param sessionId - The session to compact
+   * @param summary - The summary content (for storing in window metadata)
+   * @param tokenCountAtClose - Token count when closing the window
+   */
+  compactContext(sessionId: string, summary: string, tokenCountAtClose: number): void {
+    const session = this.requireSession(sessionId)
+    
+    // Get current context window
+    const currentWindow = getCurrentContextWindow(sessionId)
+    if (!currentWindow) {
+      throw new Error('No current context window to compact')
+    }
+    
+    // Estimate summary tokens
+    const summaryTokenCount = Math.ceil(summary.length / 4)
+    
+    // Close current window
+    closeContextWindow(currentWindow.id, tokenCountAtClose)
+    
+    // Create new context window with next sequence number
+    // The summary is stored as metadata for reference
+    createContextWindow(
+      sessionId,
+      currentWindow.sequenceNumber + 1,
+      summary,
+      summaryTokenCount
+    )
+    
+    // Update execution state - new window starts fresh
+    const execState = session.executionState
+    this.updateExecutionState(sessionId, {
+      currentTokenCount: 0,
+      messageCountAtLastUpdate: 0,
+      compactionCount: (execState?.compactionCount ?? 0) + 1,
+    })
+    
+    const updatedSession = this.requireSession(sessionId)
+    this.emit({ type: 'session_updated', session: updatedSession })
+  }
+  
+  /**
+   * Get messages for the current context window only (for LLM context building).
+   * Returns empty array if no current window exists.
+   */
+  getCurrentWindowMessages(sessionId: string): Message[] {
+    const currentWindow = getCurrentContextWindow(sessionId)
+    if (!currentWindow) {
+      return []
+    }
+    return getMessagesForWindow(sessionId, currentWindow.id)
+  }
+  
+  /**
+   * @deprecated Use compactContext() with the new context windows model
+   */
   compactMessages(sessionId: string, messageIds: string[], summary: string): Message {
     this.requireSession(sessionId)
     
@@ -468,6 +548,7 @@ class SessionManagerImpl {
   
   /**
    * Get the current context state for a session.
+   * Only counts tokens in the CURRENT context window (after any compaction).
    * Uses real token count from LLM if available and fresh, otherwise estimates.
    */
   getContextState(sessionId: string): ContextState {
@@ -476,25 +557,28 @@ class SessionManagerImpl {
     const maxTokens = config.context.maxTokens
     const execState = session.executionState
     
+    // Get messages for current window only
+    const currentWindowMessages = this.getCurrentWindowMessages(sessionId)
+    const currentMessageCount = currentWindowMessages.length
+    
     let currentTokens: number
     
-    // Use real token count if we have it and it's fresh (message count matches)
+    // Use real token count if we have it and it's fresh (message count matches current window)
     const realTokenCount = execState?.currentTokenCount ?? 0
     const messageCountAtUpdate = execState?.messageCountAtLastUpdate ?? 0
-    const currentMessageCount = session.messages.length
     const isFresh = realTokenCount > 0 && messageCountAtUpdate === currentMessageCount
     
     if (isFresh) {
       // Real count from last LLM call is still valid
       currentTokens = realTokenCount
-    } else if (realTokenCount > 0 && messageCountAtUpdate > 0) {
+    } else if (realTokenCount > 0 && messageCountAtUpdate > 0 && messageCountAtUpdate <= currentMessageCount) {
       // We have a real count but messages were added since - estimate the delta
-      const newMessages = session.messages.slice(messageCountAtUpdate)
+      const newMessages = currentWindowMessages.slice(messageCountAtUpdate)
       const deltaTokens = calculateContextTokens(newMessages)
       currentTokens = realTokenCount + deltaTokens
     } else {
-      // No real count available - full estimation
-      currentTokens = calculateContextTokens(session.messages)
+      // No real count available - full estimation of current window only
+      currentTokens = calculateContextTokens(currentWindowMessages)
     }
     
     return {

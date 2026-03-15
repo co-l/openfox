@@ -6,7 +6,10 @@ import type { LLMClient } from '../llm/types.js'
 import type { ToolRegistry } from '../tools/index.js'
 import { sessionManager } from '../session/index.js'
 import { sessionEvents } from '../session/events.js'
-import { handleChat, streamSummaryResponse, SUMMARY_REQUEST_PROMPT } from '../chat/index.js'
+import { handleChat } from '../chat/index.js'
+import { streamLLMResponse } from '../chat/stream.js'
+import { buildPlannerPrompt, SUMMARY_REQUEST_PROMPT, COMPACTION_PROMPT } from '../chat/prompts.js'
+import { getToolRegistryForMode } from '../tools/index.js'
 import { estimateTokens } from '../context/tokenizer.js'
 import { logger } from '../utils/logger.js'
 import {
@@ -47,7 +50,6 @@ import {
   isModeSwitchPayload,
   isCriteriaEditPayload,
 } from './protocol.js'
-import { compactMessages, MANUAL_COMPACT_TARGET } from '../context/index.js'
 
 // Track active agent AbortControllers by sessionId
 const activeAgents = new Map<string, AbortController>()
@@ -556,9 +558,16 @@ async function handleClientMessage(
           })
           pushEvent(createChatMessageMessage(summaryRequestMsg))
           
-          // Stream summary response (creates assistant message and streams)
-          const summary = await streamSummaryResponse(sessionId, llmClient, pushEvent)
-          sessionManager.setSummary(sessionId, summary)
+          // Stream summary response using core function (no tools)
+          const toolRegistry = getToolRegistryForMode('planner')
+          const systemPrompt = buildPlannerPrompt(toolRegistry.definitions)
+          const result = await streamLLMResponse({
+            sessionId,
+            systemPrompt,
+            llmClient,
+            onEvent: pushEvent,
+          })
+          sessionManager.setSummary(sessionId, result.content)
           
           // Switch to builder mode and phase
           sessionManager.setMode(sessionId, 'builder')
@@ -646,12 +655,8 @@ async function handleClientMessage(
         return
       }
       
-      // Check if there's enough context to compact
       const contextState = sessionManager.getContextState(sessionId)
-      if (!contextState.canCompact) {
-        send(createErrorMessage('NOTHING_TO_COMPACT', 'Not enough context to compact', message.id))
-        return
-      }
+      const tokensBefore = contextState.currentTokens
       
       // Acknowledge immediately
       send({ type: 'ack', payload: {}, id: message.id })
@@ -659,37 +664,48 @@ async function handleClientMessage(
       // Perform compaction asynchronously
       ;(async () => {
         try {
-          const result = await compactMessages(
-            session.messages,
-            session.criteria,
-            MANUAL_COMPACT_TARGET,
-            llmClient
-          )
+          // 1. Add compaction prompt as visible user message (auto-prompt style)
+          const compactPromptMsg = sessionManager.addMessage(sessionId, {
+            role: 'user',
+            content: COMPACTION_PROMPT,
+            tokenCount: estimateTokens(COMPACTION_PROMPT),
+            isSystemGenerated: true,
+            messageKind: 'auto-prompt',
+          })
+          send(createChatMessageMessage(compactPromptMsg))
           
-          if (result) {
-            // Apply compaction
-            sessionManager.compactMessages(sessionId, result.removedMessageIds, result.summary)
-            sessionManager.updateExecutionState(sessionId, {
-              currentTokenCount: result.tokensAfter,
-              compactionCount: (session.executionState?.compactionCount ?? 0) + 1,
-            })
-            
-            logger.info('Manual compaction complete', {
-              sessionId,
-              tokensBefore: result.tokensBefore,
-              tokensAfter: result.tokensAfter,
-              messagesRemoved: result.removedMessageIds.length,
-            })
-            
-            // Send updated context state
-            const newContextState = sessionManager.getContextState(sessionId)
-            send(createContextStateMessage(newContextState))
-            
-            // Send updated session state so client sees the compacted messages
-            const updatedSession = sessionManager.requireSession(sessionId)
-            const messages = getMessages(sessionId)
-            send(createSessionStateMessage(updatedSession, messages))
-          }
+          // 2. Stream compaction response using core function (no tools)
+          const toolRegistry = getToolRegistryForMode('planner')
+          const systemPrompt = buildPlannerPrompt(toolRegistry.definitions)
+          const result = await streamLLMResponse({
+            sessionId,
+            systemPrompt,
+            llmClient,
+            onEvent: send,
+          })
+          
+          // 3. Mark response as compaction summary
+          sessionManager.updateMessage(sessionId, result.messageId, {
+            isCompactionSummary: true,
+          })
+          
+          // 4. Close current window and create new one
+          sessionManager.compactContext(sessionId, result.content, tokensBefore)
+          
+          logger.info('Manual compaction complete', {
+            sessionId,
+            tokensBefore,
+            summaryTokens: result.usage.completionTokens,
+          })
+          
+          // Send updated context state
+          const newContextState = sessionManager.getContextState(sessionId)
+          send(createContextStateMessage(newContextState))
+          
+          // Send updated session state so client sees all messages
+          const updatedSession = sessionManager.requireSession(sessionId)
+          const messages = getMessages(sessionId)
+          send(createSessionStateMessage(updatedSession, messages))
         } catch (error) {
           logger.error('Compaction failed', { error, sessionId })
           send(createChatErrorMessage(

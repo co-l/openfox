@@ -34,8 +34,24 @@ export interface Session {
   updatedAt: string
   messages: Message[]
   criteria: Criterion[]
+  contextWindows: ContextWindow[]  // Context windows for this session
   executionState: ExecutionState | null
   metadata: SessionMetadata
+}
+
+// ============================================================================
+// Context Window Types
+// ============================================================================
+
+export interface ContextWindow {
+  id: string
+  sessionId: string
+  sequenceNumber: number          // 1, 2, 3... for ordering
+  createdAt: string
+  summaryOfPrevious?: string      // LLM-generated summary of previous window (null for first)
+  summaryTokenCount?: number      // Token count of the summary
+  closedAt?: string               // When this window was compacted (null if current)
+  tokenCountAtClose?: number      // Final token count when closed
 }
 
 export interface SessionMetadata {
@@ -86,6 +102,7 @@ export interface Message {
   id: string
   role: MessageRole
   content: string
+  contextWindowId?: string       // Which context window this message belongs to (auto-assigned if omitted)
   toolCalls?: ToolCall[]
   thinkingContent?: string
   toolCallId?: string
@@ -101,6 +118,7 @@ export interface Message {
   isSystemGenerated?: boolean  // true for auto-injected messages (retry prompts, etc.)
   isStreaming?: boolean        // true while assistant is still generating
   messageKind?: 'correction' | 'auto-prompt' | 'context-reset'  // Visual styling hint for system-generated messages
+  isCompactionSummary?: boolean  // true if this is the summary message after compaction
   subAgentId?: string          // If set, this message belongs to a sub-agent process
   subAgentType?: 'verifier'    // Type of sub-agent (extensible for future)
 }

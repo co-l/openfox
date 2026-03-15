@@ -38,7 +38,7 @@ export function ContextHeader() {
     return null
   }
   
-  const { currentTokens, maxTokens, compactionCount, dangerZone, canCompact } = contextState
+  const { currentTokens, maxTokens, compactionCount, dangerZone } = contextState
   const percent = Math.round((currentTokens / maxTokens) * 100)
   const isRunning = currentSession.isRunning
   
@@ -76,14 +76,8 @@ export function ContextHeader() {
           variant="secondary"
           size="sm"
           onClick={compactContext}
-          disabled={!canCompact || isRunning}
-          title={
-            isRunning 
-              ? 'Cannot compact while running' 
-              : !canCompact 
-              ? 'Not enough context' 
-              : 'Compact context'
-          }
+          disabled={isRunning}
+          title={isRunning ? 'Cannot compact while running' : 'Compact context'}
           className={dangerZone ? 'border-accent-error text-accent-error hover:bg-accent-error/10' : ''}
         >
           Compact
