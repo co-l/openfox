@@ -88,11 +88,11 @@ export const Markdown = memo(function Markdown({ content, className = '' }: Mark
         },
         
         h3({ children }) {
-          return <h3 className="text-xs font-bold mb-1.5 mt-1.5 first:mt-0 text-sky-400">{children}</h3>
+          return <h3 className="text-sm font-bold mb-1.5 mt-1.5 first:mt-0 text-sky-400">{children}</h3>
         },
         
         h4({ children }) {
-          return <h4 className="text-xs font-bold mb-1.5 mt-1.5 first:mt-0 text-sky-400">{children}</h4>
+          return <h4 className="text-sm font-bold mb-1.5 mt-1.5 first:mt-0 text-sky-400">{children}</h4>
         },
         
         strong({ children }) {
