@@ -87,7 +87,7 @@ export function SubAgentContainer({ messages, subAgentType, isStreaming }: SubAg
   const displayMessages = messages.filter(m => m.role !== 'tool')
   
   return (
-    <div ref={containerRef} className="mb-4 border border-border rounded overflow-hidden bg-bg-secondary">
+    <div ref={containerRef} className="feed-item border border-border rounded overflow-hidden bg-bg-secondary">
       <button
         className={`w-full flex items-center justify-between px-2 py-1 text-xs font-medium border-b ${headerColor} hover:opacity-80 transition-opacity`}
         onClick={handleToggleExpand}

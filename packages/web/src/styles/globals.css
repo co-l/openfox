@@ -52,4 +52,8 @@
   .input {
     @apply bg-bg-tertiary border border-border rounded-md px-2 py-1.5 text-sm placeholder-text-muted focus:outline-none focus:ring-2 focus:ring-accent-primary/50 focus:border-accent-primary;
   }
+  
+  .feed-item {
+    @apply mb-4;
+  }
 }

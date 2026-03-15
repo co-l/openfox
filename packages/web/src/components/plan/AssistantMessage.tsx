@@ -91,7 +91,7 @@ export function AssistantMessage({ message, isStreaming = false, showStats = tru
   if (elements.length === 0 && !isStreaming) return null
   
   return (
-    <div className="mb-4 space-y-1">
+    <div className="feed-item">
       {elements.map((element, i) => {
         switch (element.type) {
           case 'thinking':
@@ -132,7 +132,7 @@ export function AssistantMessage({ message, isStreaming = false, showStats = tru
             const formatSpeed = (n: number) => n >= 1000 ? `${(n / 1000).toFixed(1)}k` : n.toFixed(1)
             
             return (
-              <div key={i} className="flex items-center justify-center gap-1.5 text-[10px] text-text-muted mt-2">
+              <div key={i} className="flex items-center justify-center gap-1.5 text-[10px] text-text-muted mt-3">
                 <span className="flex-1 h-px bg-border" />
                 <span className="text-text-secondary">{shortModel}</span>
                 <span className="text-text-muted">·</span>
