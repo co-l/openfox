@@ -583,8 +583,8 @@ async function handleClientMessage(
           const controller = new AbortController()
           activeAgents.set(sessionId, controller)
           
-          // Auto-start builder
-          await handleChat({
+          // Auto-start orchestrator (full state machine with verification)
+          await runOrchestrator({
             sessionId,
             llmClient,
             signal: controller.signal,

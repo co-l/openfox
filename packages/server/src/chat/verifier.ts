@@ -5,7 +5,7 @@
  * Uses fresh context (not the full conversation) for efficient verification.
  */
 
-import type { ToolCall, MessageStats } from '@openfox/shared'
+import type { ToolCall } from '@openfox/shared'
 import type { ServerMessage } from '@openfox/shared/protocol'
 import type { LLMClientWithModel } from '../llm/client.js'
 import type { StepResult } from '../runner/types.js'
@@ -13,6 +13,7 @@ import { sessionManager } from '../session/index.js'
 import { getToolRegistryForMode } from '../tools/index.js'
 import { buildVerifierPrompt, VERIFIER_KICKOFF_PROMPT } from './prompts.js'
 import { streamLLMResponse } from './stream.js'
+import { computeAggregatedStats } from './stats.js'
 import { estimateTokens } from '../context/tokenizer.js'
 import { logger } from '../utils/logger.js'
 import {
@@ -234,20 +235,17 @@ ${modifiedFiles.length > 0 ? modifiedFiles.map(f => `- ${f}`).join('\n') : '(non
       reason: c.status.type === 'failed' ? c.status.reason : 'unknown' 
     }))
   
-  // Build and send stats
-  const totalTime = (performance.now() - startTime) / 1000
-  const roundTo1 = (n: number) => Math.round(n * 10) / 10
-  
-  const stats: MessageStats = {
+  // Build and send stats (aggregated from multiple LLM calls)
+  const stats = computeAggregatedStats({
     model: llmClient.getModel(),
     mode: 'verifier',
-    totalTime,
-    toolTime: totalToolTime / 1000,
-    prefillTokens: totalPrefillTokens,
-    prefillSpeed: totalPrefillTime > 0 ? roundTo1(totalPrefillTokens / totalPrefillTime) : 0,
-    generationTokens: totalGenTokens,
-    generationSpeed: totalGenTime > 0 ? roundTo1(totalGenTokens / totalGenTime) : 0,
-  }
+    totalPrefillTokens,
+    totalGenTokens,
+    totalPrefillTime,
+    totalGenTime,
+    totalToolTime: totalToolTime / 1000,
+    totalTime: (performance.now() - startTime) / 1000,
+  })
   
   if (currentMessageId) {
     sessionManager.updateMessageStats(sessionId, currentMessageId, stats)

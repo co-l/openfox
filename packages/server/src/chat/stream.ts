@@ -8,7 +8,7 @@
  * - Handles XML tool format retry universally
  */
 
-import type { ToolCall, MessageSegment } from '@openfox/shared'
+import type { ToolCall, MessageSegment, ToolMode } from '@openfox/shared'
 import type { ServerMessage } from '@openfox/shared/protocol'
 import type { LLMClientWithModel } from '../llm/client.js'
 import type { LLMToolDefinition } from '../llm/types.js'
@@ -17,6 +17,7 @@ import { sessionManager } from '../session/index.js'
 import { streamWithSegments } from '../llm/streaming.js'
 import { estimateTokens } from '../context/tokenizer.js'
 import { logger } from '../utils/logger.js'
+import { computeMessageStats } from './stats.js'
 import {
   createChatDeltaMessage,
   createChatThinkingMessage,
@@ -189,7 +190,16 @@ async function streamLLMResponseInternal(
   sessionManager.setCurrentContextSize(sessionId, response.usage.promptTokens)
   sessionManager.addTokensUsed(sessionId, response.usage.promptTokens + response.usage.completionTokens)
 
-  // Update assistant message with final content
+  // Compute stats (mode from subAgentType or session)
+  const mode: ToolMode = subAgentType ?? sessionManager.requireSession(sessionId).mode
+  const stats = computeMessageStats({
+    model: llmClient.getModel(),
+    mode,
+    timing,
+    usage: response.usage,
+  })
+
+  // Update assistant message with final content and stats
   sessionManager.updateMessage(sessionId, messageId, {
     content,
     ...(thinkingContent && { thinkingContent }),
@@ -197,6 +207,7 @@ async function streamLLMResponseInternal(
     tokenCount: response.usage.completionTokens,
     segments,
     isStreaming: false,
+    stats,
   })
 
   return {

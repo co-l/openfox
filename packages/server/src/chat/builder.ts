@@ -5,17 +5,16 @@
  * Does not loop - the orchestrator handles looping.
  */
 
-import type { ToolCall, MessageStats } from '@openfox/shared'
+import type { ToolCall } from '@openfox/shared'
 import type { ServerMessage } from '@openfox/shared/protocol'
 import type { LLMClientWithModel } from '../llm/client.js'
-import type { StreamTiming } from '../llm/streaming.js'
 import type { StepResult } from '../runner/types.js'
 import { sessionManager } from '../session/index.js'
 import { getToolRegistryForMode } from '../tools/index.js'
 import { buildBuilderPrompt, BUILDER_KICKOFF_PROMPT } from './prompts.js'
 import { streamLLMResponse } from './stream.js'
+import { computeMessageStats } from './stats.js'
 import { estimateTokens } from '../context/tokenizer.js'
-import { logger } from '../utils/logger.js'
 import {
   createChatToolCallMessage,
   createChatToolResultMessage,
@@ -132,20 +131,15 @@ export async function runBuilderStep(options: BuilderStepOptions): Promise<StepR
     }
   }
   
-  // Build and send stats
-  const totalTime = (performance.now() - startTime) / 1000
-  const roundTo1 = (n: number) => Math.round(n * 10) / 10
-  
-  const stats: MessageStats = {
+  // Build and send final stats (updates initial stats from streamLLMResponse with tool time)
+  const stats = computeMessageStats({
     model: llmClient.getModel(),
     mode: 'builder',
-    totalTime,
+    timing: result.timing,
+    usage: result.usage,
     toolTime: totalToolTime / 1000,
-    prefillTokens: result.usage.promptTokens,
-    prefillSpeed: result.timing.ttft > 0 ? roundTo1(result.usage.promptTokens / result.timing.ttft) : 0,
-    generationTokens: result.usage.completionTokens,
-    generationSpeed: result.timing.completionTime > 0 ? roundTo1(result.usage.completionTokens / result.timing.completionTime) : 0,
-  }
+    totalTimeOverride: (performance.now() - startTime) / 1000,
+  })
   
   sessionManager.updateMessageStats(sessionId, result.messageId, stats)
   onMessage(createChatDoneMessage(result.messageId, 'complete', stats))

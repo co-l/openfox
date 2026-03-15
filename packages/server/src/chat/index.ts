@@ -6,6 +6,7 @@ import { sessionManager } from '../session/index.js'
 import { getToolRegistryForMode, setTodoUpdateCallback, AskUserInterrupt } from '../tools/index.js'
 import { buildPlannerPrompt, buildBuilderPrompt, buildVerifierPrompt, BUILDER_KICKOFF_PROMPT, VERIFIER_KICKOFF_PROMPT } from './prompts.js'
 import { streamLLMResponse } from './stream.js'
+import { computeAggregatedStats } from './stats.js'
 import { estimateTokens } from '../context/tokenizer.js'
 import { logger } from '../utils/logger.js'
 import {
@@ -60,23 +61,16 @@ class TurnMetrics {
   
   /** Build final stats object */
   buildStats(model: string, mode: ToolMode): MessageStats {
-    const totalTime = (performance.now() - this.startTime) / 1000
-    // Keep 1 decimal place precision for speeds
-    const roundTo1 = (n: number) => Math.round(n * 10) / 10
-    return {
+    return computeAggregatedStats({
       model,
       mode,
-      totalTime,
-      toolTime: this.totalToolTime,
-      prefillTokens: this.totalPrefillTokens,
-      prefillSpeed: this.totalPrefillTime > 0 
-        ? roundTo1(this.totalPrefillTokens / this.totalPrefillTime) 
-        : 0,
-      generationTokens: this.totalGenTokens,
-      generationSpeed: this.totalGenTime > 0 
-        ? roundTo1(this.totalGenTokens / this.totalGenTime) 
-        : 0,
-    }
+      totalPrefillTokens: this.totalPrefillTokens,
+      totalGenTokens: this.totalGenTokens,
+      totalPrefillTime: this.totalPrefillTime,
+      totalGenTime: this.totalGenTime,
+      totalToolTime: this.totalToolTime,
+      totalTime: (performance.now() - this.startTime) / 1000,
+    })
   }
 }
 
@@ -100,12 +94,14 @@ export async function handleChat(options: ChatOptions): Promise<void> {
   
   try {
     // Run the appropriate handler based on mode
+    // Note: runBuilderTurn is single-turn chat (Send button)
+    // runBuilderLoop is used by runner.launch for the full state machine
     switch (mode) {
       case 'planner':
         await runPlannerChat(options)
         break
       case 'builder':
-        await runBuilderLoop(options)
+        await runBuilderTurn(options)
         break
     }
   } catch (error) {
@@ -225,8 +221,99 @@ async function runPlannerChat(
 }
 
 /**
+ * Builder mode: Single-turn chat with tool support
+ * Used by "Send" button - just responds to user message, no verification or auto-loop.
+ * Uses TurnMetrics to track aggregated metrics across recursive calls.
+ */
+async function runBuilderTurn(
+  options: ChatOptions,
+  metrics?: TurnMetrics
+): Promise<void> {
+  const { sessionId, llmClient, signal, onMessage } = options
+  const turnMetrics = metrics ?? new TurnMetrics()
+  
+  let session = sessionManager.requireSession(sessionId)
+  
+  const toolRegistry = getToolRegistryForMode('builder')
+  const systemPrompt = buildBuilderPrompt(
+    session.criteria,
+    toolRegistry.definitions,
+    session.executionState?.modifiedFiles ?? []
+  )
+  
+  // Stream LLM response using core function (handles XML retry internally)
+  const result = await streamLLMResponse({
+    sessionId,
+    systemPrompt,
+    llmClient,
+    tools: toolRegistry.definitions,
+    toolChoice: 'auto',
+    signal,
+    onEvent: onMessage,
+  })
+  
+  // Track LLM metrics
+  turnMetrics.addLLMCall(result.timing, result.usage.promptTokens, result.usage.completionTokens)
+  
+  // Execute any tool calls
+  if (result.toolCalls.length > 0) {
+    for (const toolCall of result.toolCalls) {
+      onMessage(createChatToolCallMessage(result.messageId, toolCall.id, toolCall.name, toolCall.arguments))
+      
+      const toolResult = await toolRegistry.execute(
+        toolCall.name,
+        toolCall.arguments,
+        { workdir: session.workdir, sessionId }
+      )
+      
+      // Track tool execution time
+      turnMetrics.addToolTime(toolResult.durationMs)
+      
+      onMessage(createChatToolResultMessage(result.messageId, toolCall.id, toolCall.name, toolResult))
+      
+      // Save tool result as separate message for LLM context
+      const toolMsg = sessionManager.addMessage(sessionId, {
+        role: 'tool',
+        content: toolResult.success ? (toolResult.output ?? 'Success') : `Error: ${toolResult.error}`,
+        toolCallId: toolCall.id,
+        toolName: toolCall.name,
+        toolResult,
+        tokenCount: estimateTokens(toolResult.output ?? toolResult.error ?? ''),
+      })
+      onMessage(createChatMessageMessage(toolMsg))
+      
+      // Track modified files
+      if (toolResult.success && ['write_file', 'edit_file'].includes(toolCall.name)) {
+        const path = toolCall.arguments['path'] as string
+        sessionManager.addModifiedFile(sessionId, path)
+      }
+      
+      // Check if criteria changed
+      const updatedSession = sessionManager.requireSession(sessionId)
+      if (JSON.stringify(updatedSession.criteria) !== JSON.stringify(session.criteria)) {
+        onMessage(createCriteriaUpdatedMessage(updatedSession.criteria))
+        session = updatedSession
+      }
+    }
+    
+    // Continue with another response if we had tool calls
+    // Pass metrics through to accumulate across recursive calls
+    return await runBuilderTurn(options, turnMetrics)
+  }
+  
+  // Final response - build aggregated stats
+  const stats = turnMetrics.buildStats(llmClient.getModel(), 'builder')
+  
+  // Update the message with stats
+  sessionManager.updateMessageStats(sessionId, result.messageId, stats)
+  
+  onMessage(createChatDoneMessage(result.messageId, 'complete', stats))
+}
+
+/**
  * Builder mode: Loop until all criteria completed or stuck
- * Uses TurnMetrics to track aggregated metrics across the turn
+ * Used by "Launch" button - full state machine with verification.
+ * Uses TurnMetrics to track aggregated metrics across the turn.
  * Uses core streamLLMResponse for LLM interaction.
  */
 async function runBuilderLoop(options: ChatOptions): Promise<void> {
