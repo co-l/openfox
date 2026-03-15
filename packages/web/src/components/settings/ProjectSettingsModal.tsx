@@ -55,7 +55,7 @@ export function ProjectSettingsModal({ isOpen, onClose, project }: ProjectSettin
           <label className="block text-sm font-medium text-text-primary mb-2">
             Project Instructions
           </label>
-          <p className="text-xs text-text-muted mb-2">
+          <p className="text-sm text-text-muted mb-2">
             These instructions are injected into prompts when working in this project.
             They are applied after global instructions but before AGENTS.md files.
           </p>

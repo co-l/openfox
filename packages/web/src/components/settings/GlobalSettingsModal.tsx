@@ -57,7 +57,7 @@ export function GlobalSettingsModal({ isOpen, onClose }: GlobalSettingsModalProp
           <label className="block text-sm font-medium text-text-primary mb-2">
             Global Instructions
           </label>
-          <p className="text-xs text-text-muted mb-2">
+          <p className="text-sm text-text-muted mb-2">
             These instructions are injected into every prompt, regardless of project.
           </p>
           <textarea
