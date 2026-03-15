@@ -132,10 +132,28 @@ export function PlanPanel() {
     }
   }, [isStreaming])
   
+  // Auto-resize textarea based on content, up to 200px max
+  const resizeTextarea = useCallback(() => {
+    const textarea = textareaRef.current
+    if (!textarea) return
+    
+    // Reset height to auto to get correct scrollHeight
+    textarea.style.height = 'auto'
+    // Calculate new height based on content
+    const newHeight = Math.min(200, textarea.scrollHeight)
+    textarea.style.height = `${newHeight}px`
+  }, [])
+
   // Auto-focus textarea on mount
   useEffect(() => {
     textareaRef.current?.focus()
-  }, [session?.id])
+    resizeTextarea()
+  }, [session?.id, resizeTextarea])
+
+  // Resize textarea when input changes
+  useEffect(() => {
+    resizeTextarea()
+  }, [input, resizeTextarea])
   
   // Escape key to stop generation
   useEffect(() => {
@@ -283,8 +301,8 @@ export function PlanPanel() {
                 ? "Describe what to build..." 
                 : "Send a message..."
             }
-            className="flex-1 bg-bg-tertiary border border-border rounded-lg p-2 text-sm placeholder:text-xs resize-none focus:outline-none focus:ring-2 focus:ring-accent-primary/50"
-            rows={2}
+            className="flex-1 bg-bg-tertiary border border-border rounded-lg p-2 text-sm placeholder:text-xs resize-y overflow-y-auto focus:outline-none focus:ring-2 focus:ring-accent-primary/50"
+            style={{ minHeight: '60px', maxHeight: '200px' }}
           />
           <div className="flex flex-col gap-1.5 self-end">
             {!isStreaming ? (
