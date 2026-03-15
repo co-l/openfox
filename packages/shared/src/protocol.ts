@@ -47,6 +47,9 @@ export type ClientMessageType =
   | 'runner.launch'       // Start the auto-loop runner (build → verify → done)
   // Path confirmation
   | 'path.confirm'        // User response to path confirmation request
+  // Settings management
+  | 'settings.get'        // Get a setting value
+  | 'settings.set'        // Set a setting value
 
 export interface ClientMessage<T = unknown> {
   id: string
@@ -68,7 +71,8 @@ export interface ProjectLoadPayload {
 
 export interface ProjectUpdatePayload {
   projectId: string
-  name: string
+  name?: string
+  customInstructions?: string | null  // null to clear
 }
 
 export interface ProjectDeletePayload {
@@ -98,6 +102,21 @@ export interface ModeSwitchPayload {
 // Criteria payloads
 export interface CriteriaEditPayload {
   criteria: Criterion[]
+}
+
+// Settings payloads
+export interface SettingsGetPayload {
+  key: string
+}
+
+export interface SettingsSetPayload {
+  key: string
+  value: string
+}
+
+export interface SettingsValuePayload {
+  key: string
+  value: string | null
 }
 
 // ============================================================================
@@ -135,6 +154,8 @@ export type ServerMessageType =
   | 'criteria.updated'    // Criteria changed
   // Context events
   | 'context.state'       // Context window state update
+  // Settings events
+  | 'settings.value'      // Setting value response
   // Other
   | 'lsp.diagnostics'
   | 'error'
@@ -222,7 +243,7 @@ export interface ChatMessagePayload {
 
 export interface ChatMessageUpdatedPayload {
   messageId: string
-  updates: Partial<Pick<Message, 'content' | 'thinkingContent' | 'toolCalls' | 'isStreaming' | 'stats'>>
+  updates: Partial<Pick<Message, 'content' | 'thinkingContent' | 'toolCalls' | 'isStreaming' | 'stats' | 'promptContext'>>
 }
 
 export interface ChatDonePayload {

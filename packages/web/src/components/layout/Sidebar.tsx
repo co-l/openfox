@@ -1,8 +1,9 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useLocation } from 'wouter'
 import { useSessionStore } from '../../stores/session'
 import { useProjectStore } from '../../stores/project'
 import { Button } from '../shared/Button'
+import { ProjectSettingsModal } from '../settings/ProjectSettingsModal'
 
 interface SidebarProps {
   projectId: string
@@ -11,6 +12,7 @@ interface SidebarProps {
 export function Sidebar({ projectId }: SidebarProps) {
   const [, navigate] = useLocation()
   const pendingNewSession = useRef(false)
+  const [showSettings, setShowSettings] = useState(false)
   
   const sessions = useSessionStore(state => state.sessions)
   const currentSession = useSessionStore(state => state.currentSession)
@@ -57,15 +59,34 @@ export function Sidebar({ projectId }: SidebarProps) {
   
   return (
     <aside className="w-[200px] bg-bg-secondary border-r border-border flex flex-col">
-      <div className="p-2 border-b border-border">
+      <div className="p-2 border-b border-border flex gap-2">
         <Button
           variant="primary"
-          className="w-full text-xs px-2 py-1"
+          className="flex-1 text-xs px-2 py-1"
           onClick={handleNewSession}
         >
           + New
         </Button>
+        <button
+          onClick={() => setShowSettings(true)}
+          className="p-1 rounded hover:bg-bg-tertiary text-text-muted hover:text-text-primary transition-colors"
+          title="Project Settings"
+        >
+          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+          </svg>
+        </button>
       </div>
+      
+      {/* Project Settings Modal */}
+      {currentProject && (
+        <ProjectSettingsModal
+          isOpen={showSettings}
+          onClose={() => setShowSettings(false)}
+          project={currentProject}
+        />
+      )}
       
       <div className="flex-1 overflow-y-auto">
         {projectSessions.length === 0 ? (

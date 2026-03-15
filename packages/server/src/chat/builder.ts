@@ -5,7 +5,7 @@
  * Does not loop - the orchestrator handles looping.
  */
 
-import type { ToolCall } from '@openfox/shared'
+import type { ToolCall, PromptContext, InjectedFile } from '@openfox/shared'
 import type { ServerMessage } from '@openfox/shared/protocol'
 import type { LLMClientWithModel } from '../llm/client.js'
 import type { StepResult } from '../runner/types.js'
@@ -15,6 +15,7 @@ import { buildBuilderPrompt, BUILDER_KICKOFF_PROMPT } from './prompts.js'
 import { streamLLMResponse } from './stream.js'
 import { computeMessageStats } from './stats.js'
 import { estimateTokens } from '../context/tokenizer.js'
+import { getAllInstructions } from '../context/instructions.js'
 import {
   createChatToolCallMessage,
   createChatToolResultMessage,
@@ -59,12 +60,29 @@ export async function runBuilderStep(options: BuilderStepOptions): Promise<StepR
     session = sessionManager.requireSession(sessionId)
   }
   
+  // Load all instructions (re-read each step so user can edit mid-session)
+  const { content: instructions, files: instructionFiles } = await getAllInstructions(session.workdir, session.projectId)
+  
   const toolRegistry = getToolRegistryForMode('builder')
   const systemPrompt = buildBuilderPrompt(
     session.criteria,
     toolRegistry.definitions,
-    session.executionState?.modifiedFiles ?? []
+    session.executionState?.modifiedFiles ?? [],
+    instructions || undefined
   )
+  
+  // Get the user message that triggered this response and attach prompt context
+  const currentWindowMessages = sessionManager.getCurrentWindowMessages(sessionId)
+  const lastUserMessage = [...currentWindowMessages].reverse().find(m => m.role === 'user')
+  
+  if (lastUserMessage) {
+    const promptContext: PromptContext = {
+      systemPrompt,
+      injectedFiles: instructionFiles.map(f => ({ path: f.path, content: f.content ?? '', source: f.source })) as InjectedFile[],
+      userMessage: lastUserMessage.content,
+    }
+    sessionManager.updateMessage(sessionId, lastUserMessage.id, { promptContext })
+  }
   
   // Stream LLM response
   let result

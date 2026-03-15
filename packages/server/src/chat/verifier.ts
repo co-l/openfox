@@ -5,7 +5,7 @@
  * Uses fresh context (not the full conversation) for efficient verification.
  */
 
-import type { ToolCall } from '@openfox/shared'
+import type { ToolCall, PromptContext, InjectedFile } from '@openfox/shared'
 import type { ServerMessage } from '@openfox/shared/protocol'
 import type { LLMClientWithModel } from '../llm/client.js'
 import type { StepResult } from '../runner/types.js'
@@ -15,6 +15,7 @@ import { buildVerifierPrompt, VERIFIER_KICKOFF_PROMPT } from './prompts.js'
 import { streamLLMResponse } from './stream.js'
 import { computeAggregatedStats } from './stats.js'
 import { estimateTokens } from '../context/tokenizer.js'
+import { getAllInstructions } from '../context/instructions.js'
 import { logger } from '../utils/logger.js'
 import {
   createChatToolCallMessage,
@@ -128,8 +129,19 @@ ${modifiedFiles.length > 0 ? modifiedFiles.map(f => `- ${f}`).join('\n') : '(non
   })
   onMessage(createChatMessageMessage(kickoffMsg))
   
+  // Load all instructions (re-read each step so user can edit mid-session)
+  const { content: instructions, files: instructionFiles } = await getAllInstructions(session.workdir, session.projectId)
+  
   const toolRegistry = getToolRegistryForMode('verifier')
-  const systemPrompt = buildVerifierPrompt(toolRegistry.definitions)
+  const systemPrompt = buildVerifierPrompt(toolRegistry.definitions, instructions || undefined)
+  
+  // Attach prompt context to the kickoff message for inspection
+  const promptContext: PromptContext = {
+    systemPrompt,
+    injectedFiles: instructionFiles.map(f => ({ path: f.path, content: f.content ?? '', source: f.source })) as InjectedFile[],
+    userMessage: VERIFIER_KICKOFF_PROMPT,
+  }
+  sessionManager.updateMessage(sessionId, kickoffMsg.id, { promptContext })
   
   // Verifier uses fresh context
   const customMessages: Array<{ role: 'user' | 'assistant' | 'tool'; content: string; toolCalls?: ToolCall[]; toolCallId?: string }> = [

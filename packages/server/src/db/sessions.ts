@@ -278,8 +278,8 @@ export function addMessage(sessionId: string, message: Omit<Message, 'id' | 'tim
       id, session_id, role, content, tool_calls, thinking_content,
       tool_call_id, tool_name, tool_result, timestamp, token_count,
       is_compacted, original_message_ids, segments, stats, partial, is_system_generated, is_streaming, message_kind,
-      sub_agent_id, sub_agent_type, context_window_id, is_compaction_summary
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      sub_agent_id, sub_agent_type, context_window_id, is_compaction_summary, prompt_context
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
     id,
     sessionId,
@@ -303,7 +303,8 @@ export function addMessage(sessionId: string, message: Omit<Message, 'id' | 'tim
     message.subAgentId ?? null,
     message.subAgentType ?? null,
     message.contextWindowId,
-    message.isCompactionSummary ? 1 : 0
+    message.isCompactionSummary ? 1 : 0,
+    message.promptContext ? JSON.stringify(message.promptContext) : null
   )
   
   // Update session updated_at
@@ -352,6 +353,9 @@ export function getMessages(sessionId: string): Message[] {
     isCompactionSummary: row.is_compaction_summary === 1 ? true : undefined,
     subAgentId: row.sub_agent_id ?? undefined,
     subAgentType: row.sub_agent_type as Message['subAgentType'] ?? undefined,
+    promptContext: row.prompt_context
+      ? JSON.parse(row.prompt_context) as Message['promptContext']
+      : undefined,
   }))
 }
 
@@ -413,6 +417,10 @@ export function updateMessage(
   if (updates.partial !== undefined) {
     setClauses.push('partial = ?')
     values.push(updates.partial ? 1 : 0)
+  }
+  if (updates.promptContext !== undefined) {
+    setClauses.push('prompt_context = ?')
+    values.push(JSON.stringify(updates.promptContext))
   }
   
   if (setClauses.length === 0) return
@@ -735,6 +743,9 @@ export function getMessagesForWindow(sessionId: string, contextWindowId: string)
     isCompactionSummary: row.is_compaction_summary === 1 ? true : undefined,
     subAgentId: row.sub_agent_id ?? undefined,
     subAgentType: row.sub_agent_type as Message['subAgentType'] ?? undefined,
+    promptContext: row.prompt_context
+      ? JSON.parse(row.prompt_context) as Message['promptContext']
+      : undefined,
   }))
 }
 
@@ -789,6 +800,7 @@ interface MessageRow {
   is_compaction_summary: number
   sub_agent_id: string | null
   sub_agent_type: string | null
+  prompt_context: string | null
 }
 
 interface ContextWindowRow {

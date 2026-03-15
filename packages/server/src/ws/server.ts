@@ -12,6 +12,7 @@ import { streamLLMResponse } from '../chat/stream.js'
 import { buildPlannerPrompt, SUMMARY_REQUEST_PROMPT, COMPACTION_PROMPT } from '../chat/prompts.js'
 import { getToolRegistryForMode, providePathConfirmation, addAllowedPaths } from '../tools/index.js'
 import { estimateTokens } from '../context/tokenizer.js'
+import { getAllInstructions } from '../context/instructions.js'
 import { logger } from '../utils/logger.js'
 import {
   createProject,
@@ -20,6 +21,7 @@ import {
   updateProject,
   deleteProject,
 } from '../db/projects.js'
+import { getSetting, setSetting } from '../db/settings.js'
 import { getMessages } from '../db/sessions.js'
 import {
   parseClientMessage,
@@ -51,6 +53,9 @@ import {
   isModeSwitchPayload,
   isCriteriaEditPayload,
   isPathConfirmPayload,
+  isSettingsGetPayload,
+  isSettingsSetPayload,
+  createSettingsValueMessage,
 } from './protocol.js'
 
 // Track active agent AbortControllers by sessionId
@@ -204,7 +209,15 @@ async function handleClientMessage(
         return
       }
       
-      const updated = updateProject(message.payload.projectId, { name: message.payload.name })
+      const updates: { name?: string; customInstructions?: string | null } = {}
+      if (message.payload.name !== undefined) {
+        updates.name = message.payload.name
+      }
+      if (message.payload.customInstructions !== undefined) {
+        updates.customInstructions = message.payload.customInstructions
+      }
+      
+      const updated = updateProject(message.payload.projectId, updates)
       if (!updated) {
         send(createErrorMessage('NOT_FOUND', 'Project not found', message.id))
         return
@@ -222,6 +235,32 @@ async function handleClientMessage(
       
       deleteProject(message.payload.projectId)
       send({ type: 'project.deleted', payload: { projectId: message.payload.projectId }, id: message.id })
+      break
+    }
+    
+    // =========================================================================
+    // Settings Management
+    // =========================================================================
+    
+    case 'settings.get': {
+      if (!isSettingsGetPayload(message.payload)) {
+        send(createErrorMessage('INVALID_PAYLOAD', 'Invalid settings.get payload', message.id))
+        return
+      }
+      
+      const value = getSetting(message.payload.key)
+      send(createSettingsValueMessage(message.payload.key, value, message.id))
+      break
+    }
+    
+    case 'settings.set': {
+      if (!isSettingsSetPayload(message.payload)) {
+        send(createErrorMessage('INVALID_PAYLOAD', 'Invalid settings.set payload', message.id))
+        return
+      }
+      
+      setSetting(message.payload.key, message.payload.value)
+      send(createSettingsValueMessage(message.payload.key, message.payload.value, message.id))
       break
     }
     
@@ -561,8 +600,10 @@ async function handleClientMessage(
           pushEvent(createChatMessageMessage(summaryRequestMsg))
           
           // Stream summary response using core function (no tools, no thinking)
+          const session = sessionManager.requireSession(sessionId)
+          const { content: instructions } = await getAllInstructions(session.workdir, session.projectId)
           const toolRegistry = getToolRegistryForMode('planner')
-          const systemPrompt = buildPlannerPrompt(toolRegistry.definitions)
+          const systemPrompt = buildPlannerPrompt(toolRegistry.definitions, instructions || undefined)
           const result = await streamLLMResponse({
             sessionId,
             systemPrompt,
@@ -678,8 +719,10 @@ async function handleClientMessage(
           send(createChatMessageMessage(compactPromptMsg))
           
           // 2. Stream compaction response using core function (no tools)
+          const session = sessionManager.requireSession(sessionId)
+          const { content: instructions } = await getAllInstructions(session.workdir, session.projectId)
           const toolRegistry = getToolRegistryForMode('planner')
-          const systemPrompt = buildPlannerPrompt(toolRegistry.definitions)
+          const systemPrompt = buildPlannerPrompt(toolRegistry.definitions, instructions || undefined)
           const result = await streamLLMResponse({
             sessionId,
             systemPrompt,

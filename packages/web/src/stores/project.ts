@@ -16,7 +16,7 @@ interface ProjectState {
   listProjects: () => void
   createProject: (name: string, workdir: string) => void
   loadProject: (projectId: string) => void
-  updateProject: (projectId: string, name: string) => void
+  updateProject: (projectId: string, updates: { name?: string; customInstructions?: string | null }) => void
   deleteProject: (projectId: string) => void
   clearProject: () => void
   
@@ -40,8 +40,8 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
     wsClient.send('project.load', { projectId })
   },
   
-  updateProject: (projectId, name) => {
-    wsClient.send('project.update', { projectId, name })
+  updateProject: (projectId, updates) => {
+    wsClient.send('project.update', { projectId, ...updates })
   },
   
   deleteProject: (projectId) => {

@@ -25,6 +25,7 @@ const HEADER_COLORS: Record<string, string> = {
 export function SubAgentContainer({ messages, subAgentType, isStreaming }: SubAgentContainerProps) {
   const scrollContainerRef = useRef<HTMLDivElement>(null)
   const [userScrolledUp, setUserScrolledUp] = useState(false)
+  const [expanded, setExpanded] = useState(false)
   
   const scrollToBottom = useCallback(() => {
     const container = scrollContainerRef.current

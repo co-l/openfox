@@ -1,4 +1,4 @@
-import type { Session, SessionMode, ToolMode, ToolCall, Todo, MessageStats, Message } from '@openfox/shared'
+import type { Session, SessionMode, ToolMode, ToolCall, Todo, MessageStats, Message, PromptContext, InjectedFile } from '@openfox/shared'
 import type { ServerMessage } from '@openfox/shared/protocol'
 import type { LLMClientWithModel } from '../llm/client.js'
 import type { StreamTiming } from '../llm/streaming.js'
@@ -13,6 +13,7 @@ import { buildPlannerPrompt, buildBuilderPrompt } from './prompts.js'
 import { streamLLMResponse } from './stream.js'
 import { computeAggregatedStats } from './stats.js'
 import { estimateTokens } from '../context/tokenizer.js'
+import { getAllInstructions } from '../context/instructions.js'
 import { logger } from '../utils/logger.js'
 import {
   createChatToolCallMessage,
@@ -168,15 +169,39 @@ export async function handleChat(options: ChatOptions): Promise<void> {
  */
 async function runPlannerChat(
   options: ChatOptions, 
-  metrics?: TurnMetrics
+  metrics?: TurnMetrics,
+  cachedInstructionData?: { content: string; files: InjectedFile[] }
 ): Promise<void> {
   const { sessionId, llmClient, signal, onMessage } = options
   const turnMetrics = metrics ?? new TurnMetrics()
   
   let session = sessionManager.requireSession(sessionId)
   
+  // Load all instructions (re-read each turn so user can edit mid-session)
+  const instructionData = cachedInstructionData ?? await (async () => {
+    const { content, files } = await getAllInstructions(session.workdir, session.projectId)
+    return {
+      content,
+      files: files.map(f => ({ path: f.path, content: f.content ?? '', source: f.source })) as InjectedFile[],
+    }
+  })()
+  
   const toolRegistry = getToolRegistryForMode('planner')
-  const systemPrompt = buildPlannerPrompt(toolRegistry.definitions)
+  const systemPrompt = buildPlannerPrompt(toolRegistry.definitions, instructionData.content || undefined)
+  
+  // Get the user message that triggered this response (last user message)
+  const currentWindowMessages = sessionManager.getCurrentWindowMessages(sessionId)
+  const lastUserMessage = [...currentWindowMessages].reverse().find(m => m.role === 'user')
+  
+  // Build prompt context and attach to user message (only on first call, not recursive)
+  if (!metrics && lastUserMessage) {
+    const promptContext: PromptContext = {
+      systemPrompt,
+      injectedFiles: instructionData.files,
+      userMessage: lastUserMessage.content,
+    }
+    sessionManager.updateMessage(sessionId, lastUserMessage.id, { promptContext })
+  }
   
   // Stream LLM response using core function (handles XML retry internally)
   const result = await streamLLMResponse({
@@ -228,8 +253,8 @@ async function runPlannerChat(
     }
     
     // Continue with another response if we had tool calls
-    // Pass metrics through to accumulate across recursive calls
-    return await runPlannerChat(options, turnMetrics)
+    // Pass metrics and instructions through to accumulate across recursive calls
+    return await runPlannerChat(options, turnMetrics, instructionData)
   }
   
   // Final response - build aggregated stats
@@ -248,19 +273,44 @@ async function runPlannerChat(
  */
 async function runBuilderTurn(
   options: ChatOptions,
-  metrics?: TurnMetrics
+  metrics?: TurnMetrics,
+  cachedInstructionData?: { content: string; files: InjectedFile[] }
 ): Promise<void> {
   const { sessionId, llmClient, signal, onMessage } = options
   const turnMetrics = metrics ?? new TurnMetrics()
   
   let session = sessionManager.requireSession(sessionId)
   
+  // Load all instructions (re-read each turn so user can edit mid-session)
+  const instructionData = cachedInstructionData ?? await (async () => {
+    const { content, files } = await getAllInstructions(session.workdir, session.projectId)
+    return {
+      content,
+      files: files.map(f => ({ path: f.path, content: f.content ?? '', source: f.source })) as InjectedFile[],
+    }
+  })()
+  
   const toolRegistry = getToolRegistryForMode('builder')
   const systemPrompt = buildBuilderPrompt(
     session.criteria,
     toolRegistry.definitions,
-    session.executionState?.modifiedFiles ?? []
+    session.executionState?.modifiedFiles ?? [],
+    instructionData.content || undefined
   )
+  
+  // Get the user message that triggered this response
+  const currentWindowMessages = sessionManager.getCurrentWindowMessages(sessionId)
+  const lastUserMessage = [...currentWindowMessages].reverse().find(m => m.role === 'user')
+  
+  // Build prompt context and attach to user message (only on first call, not recursive)
+  if (!metrics && lastUserMessage) {
+    const promptContext: PromptContext = {
+      systemPrompt,
+      injectedFiles: instructionData.files,
+      userMessage: lastUserMessage.content,
+    }
+    sessionManager.updateMessage(sessionId, lastUserMessage.id, { promptContext })
+  }
   
   // Stream LLM response using core function (handles XML retry internally)
   const result = await streamLLMResponse({
@@ -318,8 +368,8 @@ async function runBuilderTurn(
     }
     
     // Continue with another response if we had tool calls
-    // Pass metrics through to accumulate across recursive calls
-    return await runBuilderTurn(options, turnMetrics)
+    // Pass metrics and instructions through to accumulate across recursive calls
+    return await runBuilderTurn(options, turnMetrics, instructionData)
   }
   
   // Final response - build aggregated stats

@@ -62,16 +62,21 @@ export function listProjects(): Project[] {
   return rows.map(rowToProject)
 }
 
-export function updateProject(id: string, updates: { name?: string }): Project {
+export function updateProject(id: string, updates: { name?: string; customInstructions?: string | null }): Project {
   const db = getDatabase()
   const now = new Date().toISOString()
   
   const sets: string[] = ['updated_at = ?']
-  const values: string[] = [now]
+  const values: (string | null)[] = [now]
   
   if (updates.name !== undefined) {
     sets.push('name = ?')
     values.push(updates.name)
+  }
+  
+  if (updates.customInstructions !== undefined) {
+    sets.push('custom_instructions = ?')
+    values.push(updates.customInstructions)
   }
   
   values.push(id)
@@ -102,6 +107,7 @@ interface ProjectRow {
   id: string
   name: string
   workdir: string
+  custom_instructions: string | null
   created_at: string
   updated_at: string
 }
@@ -111,6 +117,7 @@ function rowToProject(row: ProjectRow): Project {
     id: row.id,
     name: row.name,
     workdir: row.workdir,
+    ...(row.custom_instructions ? { customInstructions: row.custom_instructions } : {}),
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   }

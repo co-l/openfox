@@ -6,6 +6,7 @@ export interface Project {
   id: string
   name: string
   workdir: string
+  customInstructions?: string  // Project-specific instructions injected into prompts
   createdAt: string
   updatedAt: string
 }
@@ -98,6 +99,19 @@ export interface MessageStats {
   generationSpeed: number   // aggregate tokens/second
 }
 
+// Metadata about what was sent to the LLM for this response
+export interface PromptContext {
+  systemPrompt: string           // Full system prompt sent to LLM
+  injectedFiles: InjectedFile[]  // AGENTS.md, global/project instructions, etc.
+  userMessage: string            // The user message that triggered this response
+}
+
+export interface InjectedFile {
+  path: string                   // File path or identifier
+  content: string                // File content
+  source: 'agents-md' | 'global' | 'project'  // Where the file came from
+}
+
 export interface Message {
   id: string
   role: MessageRole
@@ -121,6 +135,7 @@ export interface Message {
   isCompactionSummary?: boolean  // true if this is the summary message after compaction
   subAgentId?: string          // If set, this message belongs to a sub-agent process
   subAgentType?: 'verifier'    // Type of sub-agent (extensible for future)
+  promptContext?: PromptContext  // What was sent to LLM for this response (assistant messages only)
 }
 
 // ============================================================================

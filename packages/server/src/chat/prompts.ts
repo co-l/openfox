@@ -5,10 +5,14 @@ import type { LLMToolDefinition } from '../llm/types.js'
 // Planner Mode Prompt
 // ============================================================================
 
-export function buildPlannerPrompt(tools: LLMToolDefinition[]): string {
+export function buildPlannerPrompt(tools: LLMToolDefinition[], customInstructions?: string): string {
   const toolList = tools
     .map(t => `- **${t.function.name}**: ${t.function.description}`)
     .join('\n')
+
+  const instructionsSection = customInstructions 
+    ? `\n\n## CUSTOM INSTRUCTIONS\n\n${customInstructions}`
+    : ''
 
   return `You are a planning assistant. Your job is to help refine the user's request and define acceptance criteria.
 
@@ -55,7 +59,7 @@ Bad: "Login should work"
 
 - You are planning, NOT implementing
 - Ask questions when requirements are unclear
-- Always get user approval before finalizing criteria`
+- Always get user approval before finalizing criteria${instructionsSection}`
 }
 
 // ============================================================================
@@ -65,7 +69,8 @@ Bad: "Login should work"
 export function buildBuilderPrompt(
   criteria: Criterion[],
   tools: LLMToolDefinition[],
-  modifiedFiles: string[]
+  modifiedFiles: string[],
+  customInstructions?: string
 ): string {
   const criteriaList = criteria
     .map((c, i) => {
@@ -85,6 +90,10 @@ export function buildBuilderPrompt(
   const filesModified = modifiedFiles.length > 0
     ? modifiedFiles.join(', ')
     : 'none yet'
+  
+  const instructionsSection = customInstructions 
+    ? `\n\n## CUSTOM INSTRUCTIONS\n\n${customInstructions}`
+    : ''
 
   return `You are an expert software engineer. Your task is to satisfy the acceptance criteria below.
 
@@ -110,17 +119,21 @@ Files modified this session: ${filesModified}
 - Make minimal, focused changes
 - Always test your changes when possible
 - Call \`complete_criterion\` for each criterion as you finish it
-- If stuck on a criterion after 3 attempts, ask the user for help`
+- If stuck on a criterion after 3 attempts, ask the user for help${instructionsSection}`
 }
 
 // ============================================================================
 // Verifier Mode Prompt
 // ============================================================================
 
-export function buildVerifierPrompt(tools: LLMToolDefinition[]): string {
+export function buildVerifierPrompt(tools: LLMToolDefinition[], customInstructions?: string): string {
   const toolList = tools
     .map(t => `- ${t.function.name}: ${t.function.description}`)
     .join('\n')
+  
+  const instructionsSection = customInstructions 
+    ? `\n\n## CUSTOM INSTRUCTIONS\n\n${customInstructions}`
+    : ''
 
   return `You are a code reviewer performing independent verification.
 
@@ -151,7 +164,7 @@ ${toolList}
 - Be thorough but efficient - don't explore unnecessarily
 - Only fail criteria that genuinely don't meet the requirement
 - Provide clear, actionable feedback when failing
-- Don't re-verify criteria already marked [PASSED]`
+- Don't re-verify criteria already marked [PASSED]${instructionsSection}`
 }
 
 // ============================================================================

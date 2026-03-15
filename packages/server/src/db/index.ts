@@ -306,5 +306,29 @@ function runMigrations(db: Database.Database): void {
     db.exec(`ALTER TABLE messages ADD COLUMN is_compaction_summary INTEGER DEFAULT 0`)
   }
   
+  // Create settings table for global configuration (e.g., global instructions)
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS settings (
+      key TEXT PRIMARY KEY,
+      value TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    )
+  `)
+  
+  // Migration: Add custom_instructions column to projects table
+  const projectColumns = db.prepare(`PRAGMA table_info(projects)`).all() as { name: string }[]
+  const projectColumnNames = projectColumns.map(c => c.name)
+  
+  if (!projectColumnNames.includes('custom_instructions')) {
+    logger.info('Migrating projects table: adding custom_instructions column')
+    db.exec(`ALTER TABLE projects ADD COLUMN custom_instructions TEXT`)
+  }
+  
+  // Migration: Add prompt_context column to messages table for storing what was sent to LLM
+  if (!msgColumnNames.includes('prompt_context')) {
+    logger.info('Migrating messages table: adding prompt_context column')
+    db.exec(`ALTER TABLE messages ADD COLUMN prompt_context TEXT`)
+  }
+  
   logger.info('Database migrations completed')
 }

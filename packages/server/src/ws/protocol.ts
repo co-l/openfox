@@ -33,6 +33,9 @@ import type {
   CriteriaUpdatedPayload,
   ContextStatePayload,
   ErrorPayload,
+  SettingsGetPayload,
+  SettingsSetPayload,
+  SettingsValuePayload,
 } from '@openfox/shared/protocol'
 import { isClientMessage, createServerMessage } from '@openfox/shared/protocol'
 import type { Project, Session, SessionSummary, SessionMode, SessionPhase, Criterion, Todo, ToolResult, Message, ContextState, ToolCall } from '@openfox/shared'
@@ -221,7 +224,7 @@ export function isProjectLoadPayload(payload: unknown): payload is ProjectLoadPa
 }
 
 export function isProjectUpdatePayload(payload: unknown): payload is ProjectUpdatePayload {
-  return typeof payload === 'object' && payload !== null && 'projectId' in payload && 'name' in payload
+  return typeof payload === 'object' && payload !== null && 'projectId' in payload
 }
 
 export function isProjectDeletePayload(payload: unknown): payload is ProjectDeletePayload {
@@ -253,4 +256,17 @@ export function isCriteriaEditPayload(payload: unknown): payload is CriteriaEdit
 // Path confirmation payloads
 export function isPathConfirmPayload(payload: unknown): payload is PathConfirmPayload {
   return typeof payload === 'object' && payload !== null && 'callId' in payload && 'approved' in payload
+}
+
+// Settings payloads
+export function isSettingsGetPayload(payload: unknown): payload is SettingsGetPayload {
+  return typeof payload === 'object' && payload !== null && 'key' in payload
+}
+
+export function isSettingsSetPayload(payload: unknown): payload is SettingsSetPayload {
+  return typeof payload === 'object' && payload !== null && 'key' in payload && 'value' in payload
+}
+
+export function createSettingsValueMessage(key: string, value: string | null, correlationId?: string): ServerMessage {
+  return createServerMessage<SettingsValuePayload>('settings.value', { key, value }, correlationId)
 }
