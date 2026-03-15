@@ -118,6 +118,20 @@ Real-time communication via typed messages (`@openfox/shared/protocol`):
 - Client: `session.create`, `chat.send`, `mode.switch`
 - Server: `session.state`, `chat.delta`, `chat.tool_call`
 
+## Design Principles
+
+### Dumb Client, Smart Server
+
+The web client must be as simple as possible - it renders what the server sends without complex data transformations, joins, or lookups. The server is the single source of truth and normalizes data before sending.
+
+**Rationale:** Other UIs (CLI, mobile, VS Code extension) will be built around the server. Business logic and data shaping belong in the server, not duplicated across clients.
+
+### Streaming/Fetch Parity
+
+Data streamed during real-time operations must be identical in shape to data fetched later (e.g., on page reload). The frontend should use the same rendering code regardless of how data arrived.
+
+**Rationale:** If streaming attaches `toolCall.result` inline, then `session.state` must also have `toolCall.result` attached. No conditional frontend logic to reconcile different data shapes.
+
 ## File Structure
 
 ```
