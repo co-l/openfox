@@ -13,6 +13,7 @@ import type {
   ToolCall,
   ToolResult,
   CriterionStatus,
+  ContextState,
 } from './types.js'
 
 // ============================================================================
@@ -40,6 +41,8 @@ export type ClientMessageType =
   | 'mode.accept'         // Accept criteria and switch to builder (generates summary)
   // Criteria editing (from UI)
   | 'criteria.edit'
+  // Context management
+  | 'context.compact'     // Manually trigger context compaction
 
 export interface ClientMessage<T = unknown> {
   id: string
@@ -125,6 +128,8 @@ export type ServerMessageType =
   | 'phase.changed'       // Workflow phase changed (plan/build/verification/done)
   // Criteria events
   | 'criteria.updated'    // Criteria changed
+  // Context events
+  | 'context.state'       // Context window state update
   // Other
   | 'lsp.diagnostics'
   | 'error'
@@ -250,6 +255,11 @@ export interface PhaseChangedPayload {
 export interface CriteriaUpdatedPayload {
   criteria: Criterion[]
   changedId?: string  // Which criterion changed, if specific
+}
+
+// Context payloads
+export interface ContextStatePayload {
+  context: ContextState
 }
 
 // Other payloads

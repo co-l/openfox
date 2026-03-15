@@ -187,10 +187,23 @@ export interface ExecutionState {
   consecutiveFailures: number
   lastFailedTool?: string
   lastFailureReason?: string
-  currentTokenCount: number
+  currentTokenCount: number         // Real token count from last LLM call
+  messageCountAtLastUpdate: number  // Message count when currentTokenCount was set
   compactionCount: number
   startedAt: string
   lastActivityAt: string
+}
+
+// ============================================================================
+// Context State (for UI display)
+// ============================================================================
+
+export interface ContextState {
+  currentTokens: number    // Current context window usage
+  maxTokens: number        // Maximum context window size
+  compactionCount: number  // Number of times context has been compacted
+  dangerZone: boolean      // True if approaching max (< 20K remaining)
+  canCompact: boolean      // True if there's enough context to compact
 }
 
 // ============================================================================

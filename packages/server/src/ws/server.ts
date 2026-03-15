@@ -36,6 +36,7 @@ import {
   createModeChangedMessage,
   createPhaseChangedMessage,
   createCriteriaUpdatedMessage,
+  createContextStateMessage,
   isProjectCreatePayload,
   isProjectLoadPayload,
   isProjectUpdatePayload,
@@ -46,6 +47,7 @@ import {
   isModeSwitchPayload,
   isCriteriaEditPayload,
 } from './protocol.js'
+import { compactMessages, MANUAL_COMPACT_TARGET } from '../context/index.js'
 
 // Track active agent AbortControllers by sessionId
 const activeAgents = new Map<string, AbortController>()
@@ -86,6 +88,12 @@ export function createWebSocketServer(
         // Forward message updates to clients (e.g., isStreaming changes)
         if (event.type === 'message_updated') {
           ws.send(serializeServerMessage(createChatMessageUpdatedMessage(event.messageId, event.updates)))
+        }
+        
+        // Send context state updates when execution state changes
+        if (event.type === 'execution_state_changed') {
+          const contextState = sessionManager.getContextState(sessionId)
+          ws.send(serializeServerMessage(createContextStateMessage(contextState)))
         }
       }
     }
@@ -253,6 +261,10 @@ async function handleClientMessage(
       // Fetch all messages for this session (server-authoritative)
       const messages = getMessages(session.id)
       send(createSessionStateMessage(session, messages, message.id))
+      
+      // Send context state
+      const contextState = sessionManager.getContextState(session.id)
+      send(createContextStateMessage(contextState))
       
       // If session is running, replay missed events and subscribe to future events
       if (session.isRunning) {
@@ -612,6 +624,81 @@ async function handleClientMessage(
       sessionManager.setCriteria(client.sessionId, message.payload.criteria)
       send(createCriteriaUpdatedMessage(message.payload.criteria))
       send({ type: 'ack', payload: {}, id: message.id })
+      break
+    }
+    
+    // =========================================================================
+    // Context Management
+    // =========================================================================
+    
+    case 'context.compact': {
+      if (!client.sessionId) {
+        send(createErrorMessage('NO_SESSION', 'No active session', message.id))
+        return
+      }
+      
+      const session = sessionManager.requireSession(client.sessionId)
+      const sessionId = client.sessionId
+      
+      // Check if session is running
+      if (session.isRunning) {
+        send(createErrorMessage('SESSION_RUNNING', 'Cannot compact while session is running', message.id))
+        return
+      }
+      
+      // Check if there's enough context to compact
+      const contextState = sessionManager.getContextState(sessionId)
+      if (!contextState.canCompact) {
+        send(createErrorMessage('NOTHING_TO_COMPACT', 'Not enough context to compact', message.id))
+        return
+      }
+      
+      // Acknowledge immediately
+      send({ type: 'ack', payload: {}, id: message.id })
+      
+      // Perform compaction asynchronously
+      ;(async () => {
+        try {
+          const result = await compactMessages(
+            session.messages,
+            session.criteria,
+            MANUAL_COMPACT_TARGET,
+            llmClient
+          )
+          
+          if (result) {
+            // Apply compaction
+            sessionManager.compactMessages(sessionId, result.removedMessageIds, result.summary)
+            sessionManager.updateExecutionState(sessionId, {
+              currentTokenCount: result.tokensAfter,
+              compactionCount: (session.executionState?.compactionCount ?? 0) + 1,
+            })
+            
+            logger.info('Manual compaction complete', {
+              sessionId,
+              tokensBefore: result.tokensBefore,
+              tokensAfter: result.tokensAfter,
+              messagesRemoved: result.removedMessageIds.length,
+            })
+            
+            // Send updated context state
+            const newContextState = sessionManager.getContextState(sessionId)
+            send(createContextStateMessage(newContextState))
+            
+            // Send updated session state so client sees the compacted messages
+            const updatedSession = sessionManager.requireSession(sessionId)
+            const messages = getMessages(sessionId)
+            send(createSessionStateMessage(updatedSession, messages))
+          }
+        } catch (error) {
+          logger.error('Compaction failed', { error, sessionId })
+          send(createChatErrorMessage(
+            `Compaction failed: ${error instanceof Error ? error.message : 'Unknown error'}`,
+            true
+          ))
+        }
+      })()
+      
       break
     }
     

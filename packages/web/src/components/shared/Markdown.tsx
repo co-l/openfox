@@ -30,7 +30,7 @@ export const Markdown = memo(function Markdown({ content, className = '' }: Mark
             if (isInline) {
               return (
                 <code
-                  className="bg-bg-tertiary px-1.5 py-0.5 rounded text-accent-secondary font-mono text-sm"
+                  className="bg-bg-tertiary px-1 py-0.5 rounded text-accent-secondary font-mono text-xs"
                   {...props}
                 >
                   {children}
@@ -42,8 +42,8 @@ export const Markdown = memo(function Markdown({ content, className = '' }: Mark
             const codeString = String(children).replace(/\n$/, '')
             
             return (
-              <div className="relative group my-2">
-                <div className="absolute top-0 right-0 px-2 py-1 text-xs text-text-muted bg-bg-tertiary rounded-bl">
+              <div className="relative group my-1.5">
+                <div className="absolute top-0 right-0 px-1.5 py-0.5 text-[10px] text-text-muted bg-bg-tertiary rounded-bl">
                   {language}
                 </div>
                 <SyntaxHighlighter
@@ -52,8 +52,8 @@ export const Markdown = memo(function Markdown({ content, className = '' }: Mark
                   PreTag="div"
                   customStyle={{
                     margin: 0,
-                    borderRadius: '0.5rem',
-                    fontSize: '0.875rem',
+                    borderRadius: '0.375rem',
+                    fontSize: '0.75rem',
                   } as React.CSSProperties}
                 >
                   {codeString}
@@ -64,35 +64,35 @@ export const Markdown = memo(function Markdown({ content, className = '' }: Mark
         
         // Style other elements
         p({ children }) {
-          return <p className="mb-2 last:mb-0">{children}</p>
+          return <p className="mb-1.5 last:mb-0 leading-tight">{children}</p>
         },
         
         ul({ children }) {
-          return <ul className="list-disc list-inside mb-2 space-y-1">{children}</ul>
+          return <ul className="list-disc list-inside mb-1.5 space-y-0.5">{children}</ul>
         },
         
         ol({ children }) {
-          return <ol className="list-decimal list-inside mb-2 space-y-1">{children}</ol>
+          return <ol className="list-decimal list-inside mb-1.5 space-y-0.5">{children}</ol>
         },
         
         li({ children }) {
-          return <li className="text-text-primary">{children}</li>
+          return <li className="text-text-primary text-sm">{children}</li>
         },
         
         h1({ children }) {
-          return <h1 className="text-xl font-bold mb-2 mt-4 first:mt-0 text-sky-400">{children}</h1>
+          return <h1 className="text-base font-bold mb-1.5 mt-2 first:mt-0 text-sky-400">{children}</h1>
         },
         
         h2({ children }) {
-          return <h2 className="text-lg font-bold mb-2 mt-3 first:mt-0 text-sky-400">{children}</h2>
+          return <h2 className="text-sm font-bold mb-1.5 mt-2 first:mt-0 text-sky-400">{children}</h2>
         },
         
         h3({ children }) {
-          return <h3 className="text-base font-bold mb-2 mt-2 first:mt-0 text-sky-400">{children}</h3>
+          return <h3 className="text-xs font-bold mb-1.5 mt-1.5 first:mt-0 text-sky-400">{children}</h3>
         },
         
         h4({ children }) {
-          return <h4 className="text-sm font-bold mb-2 mt-2 first:mt-0 text-sky-400">{children}</h4>
+          return <h4 className="text-xs font-bold mb-1.5 mt-1.5 first:mt-0 text-sky-400">{children}</h4>
         },
         
         strong({ children }) {
@@ -103,7 +103,7 @@ export const Markdown = memo(function Markdown({ content, className = '' }: Mark
           return (
             <a
               href={href}
-              className="text-accent-primary hover:underline"
+              className="text-accent-primary hover:underline text-sm"
               target="_blank"
               rel="noopener noreferrer"
             >
@@ -114,7 +114,7 @@ export const Markdown = memo(function Markdown({ content, className = '' }: Mark
         
         blockquote({ children }) {
           return (
-            <blockquote className="border-l-4 border-accent-primary pl-4 my-2 text-text-secondary italic">
+            <blockquote className="border-l-2 border-accent-primary pl-2 my-1.5 text-text-secondary italic text-sm">
               {children}
             </blockquote>
           )
@@ -122,7 +122,7 @@ export const Markdown = memo(function Markdown({ content, className = '' }: Mark
         
         table({ children }) {
           return (
-            <div className="overflow-x-auto my-2">
+            <div className="overflow-x-auto my-1.5">
               <table className="min-w-full border border-border">{children}</table>
             </div>
           )
@@ -130,18 +130,18 @@ export const Markdown = memo(function Markdown({ content, className = '' }: Mark
         
         th({ children }) {
           return (
-            <th className="border border-border bg-bg-tertiary px-3 py-2 text-left font-semibold">
+            <th className="border border-border bg-bg-tertiary px-2 py-1 text-left font-semibold text-sm">
               {children}
             </th>
           )
         },
         
         td({ children }) {
-          return <td className="border border-border px-3 py-2">{children}</td>
+          return <td className="border border-border px-2 py-1 text-sm">{children}</td>
         },
         
         hr() {
-          return <hr className="border-border my-4" />
+          return <hr className="border-border my-2" />
         },
         
         // Task list items (GFM)
@@ -151,7 +151,7 @@ export const Markdown = memo(function Markdown({ content, className = '' }: Mark
               type="checkbox"
               checked={checked}
               disabled
-              className="mr-2"
+              className="mr-1.5 w-3.5 h-3.5"
               {...props}
             />
           )

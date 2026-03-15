@@ -2,6 +2,7 @@ import { useState, useRef, useEffect, useCallback, useMemo } from 'react'
 import { useSessionStore, useIsStreaming } from '../../stores/session'
 import type { Message } from '@openfox/shared'
 import { SessionLayout } from '../layout/SessionLayout'
+import { ContextHeader } from './ContextHeader'
 import { ChatMessage } from './ChatMessage'
 import { AssistantMessage } from './AssistantMessage'
 import { SubAgentContainer } from './SubAgentContainer'
@@ -157,11 +158,12 @@ export function PlanPanel() {
   
   return (
     <SessionLayout>
-      {/* Chat Area */}
+      <ContextHeader />
+      
       <div 
         ref={scrollContainerRef}
         onWheel={handleWheel}
-        className="flex-1 overflow-y-auto p-4"
+        className="flex-1 overflow-y-auto p-2"
       >
         {displayItems.map((item) => {
           if (item.type === 'subagent') {
@@ -200,18 +202,18 @@ export function PlanPanel() {
         })}
         
         {error && (
-          <div className="bg-red-500/10 border border-red-500/50 rounded-lg p-4 my-2">
+          <div className="bg-red-500/10 border border-red-500/50 rounded p-2 my-1">
             <div className="flex items-start justify-between gap-2">
               <div>
-                <div className="text-red-400 font-medium">{error.code}</div>
-                <div className="text-red-300 text-sm mt-1">{error.message}</div>
+                <div className="text-red-400 text-sm font-medium">{error.code}</div>
+                <div className="text-red-300 text-xs mt-0.5">{error.message}</div>
               </div>
               <button
                 onClick={clearError}
-                className="text-red-400 hover:text-red-300 p-1"
+                className="text-red-400 hover:text-red-300 p-0.5"
                 aria-label="Dismiss error"
               >
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
                 </svg>
               </button>
@@ -220,13 +222,13 @@ export function PlanPanel() {
         )}
         
         {showStartBuilding && (
-          <div className="flex justify-center my-6">
+          <div className="flex justify-center my-2">
             <Button
               variant="primary"
               onClick={acceptAndBuild}
-              className="bg-blue-600 hover:bg-blue-700 px-6"
+              className="bg-blue-600 hover:bg-blue-700 px-4 py-1 text-sm"
             >
-              ▶ Start Building
+              ▶ Start
             </Button>
           </div>
         )}
@@ -234,12 +236,11 @@ export function PlanPanel() {
         <div ref={messagesEndRef} />
       </div>
       
-      {/* Chat input */}
-      <form onSubmit={handleSubmit} className="p-4 border-t border-border">
-        <div className="mb-3">
+      <form onSubmit={handleSubmit} className="p-2 border-t border-border">
+        <div className="mb-1">
           <ModeSwitch />
         </div>
-        <div className="flex gap-2">
+        <div className="flex gap-1.5">
           <textarea
             ref={textareaRef}
             value={input}
@@ -247,21 +248,20 @@ export function PlanPanel() {
             onKeyDown={handleKeyDown}
             placeholder={
               isPlanning 
-                ? "Describe what you want to build..." 
-                : "Send a message to intervene..."
+                ? "Describe what to build..." 
+                : "Send a message..."
             }
-            className="flex-1 bg-bg-tertiary border border-border rounded-lg p-3 text-text-primary placeholder-text-muted resize-none focus:outline-none focus:ring-2 focus:ring-accent-primary/50"
-            rows={3}
-            disabled={isStreaming}
+            className="flex-1 bg-bg-tertiary border border-border rounded-lg p-2 text-sm placeholder:text-xs resize-none focus:outline-none focus:ring-2 focus:ring-accent-primary/50"
+            rows={2}
           />
-          <div className="flex flex-col gap-2 self-end">
+          <div className="flex flex-col gap-1.5 self-end">
             {!isStreaming ? (
               <button
                 type="submit"
                 disabled={!input.trim()}
-                className="flex items-center justify-center gap-2 px-4 py-2 rounded-lg bg-accent-primary text-white font-medium hover:bg-accent-primary/80 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                className="flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg bg-accent-primary text-sm text-white font-medium hover:bg-accent-primary/80 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
               >
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
                 </svg>
                 Send
@@ -270,9 +270,9 @@ export function PlanPanel() {
               <button
                 type="button"
                 onClick={stopGeneration}
-                className="flex items-center justify-center gap-2 px-4 py-2 rounded-lg bg-accent-error text-white font-medium hover:bg-accent-error/80 transition-colors"
+                className="flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg bg-accent-error text-sm text-white font-medium hover:bg-accent-error/80 transition-colors"
               >
-                <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
+                <svg className="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 24 24">
                   <rect x="6" y="6" width="12" height="12" rx="2" />
                 </svg>
                 Stop
@@ -280,8 +280,8 @@ export function PlanPanel() {
             )}
           </div>
         </div>
-        <div className="text-xs text-text-muted mt-1">
-          {isStreaming ? 'Press Escape to stop' : 'Press Cmd+Enter to send'}
+        <div className="text-[10px] text-text-muted mt-0.5">
+          {isStreaming ? 'Press Escape to stop' : 'Cmd+Enter to send'}
         </div>
       </form>
     </SessionLayout>

@@ -72,17 +72,15 @@ export function SubAgentContainer({ messages, subAgentType, isStreaming }: SubAg
   const displayMessages = messages.filter(m => m.role !== 'tool')
   
   return (
-    <div className="my-4 border border-border rounded-lg overflow-hidden bg-bg-secondary">
-      {/* Header */}
-      <div className={`px-3 py-1.5 text-xs font-medium border-b ${headerColor}`}>
+    <div className="my-2 border border-border rounded overflow-hidden bg-bg-secondary">
+      <div className={`px-2 py-1 text-xs font-medium border-b ${headerColor}`}>
         {label}
       </div>
       
-      {/* Scrollable content area - max-height 192px (12rem) */}
       <div 
         ref={scrollContainerRef}
         onWheel={handleWheel}
-        className="max-h-48 overflow-y-auto p-3"
+        className="max-h-32 overflow-y-auto p-2"
       >
         {displayMessages.map((message) => {
           if (message.role === 'assistant') {

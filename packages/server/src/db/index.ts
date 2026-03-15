@@ -244,5 +244,14 @@ function runMigrations(db: Database.Database): void {
     ON turn_events(session_id, turn_id, seq)
   `)
   
+  // Migration: Add message_count_at_last_update column to execution_state
+  const execStateColumns = db.prepare(`PRAGMA table_info(execution_state)`).all() as { name: string }[]
+  const execStateColumnNames = execStateColumns.map(c => c.name)
+  
+  if (!execStateColumnNames.includes('message_count_at_last_update')) {
+    logger.info('Migrating execution_state table: adding message_count_at_last_update column')
+    db.exec(`ALTER TABLE execution_state ADD COLUMN message_count_at_last_update INTEGER DEFAULT 0`)
+  }
+  
   logger.info('Database migrations completed')
 }

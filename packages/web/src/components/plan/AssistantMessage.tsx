@@ -91,7 +91,7 @@ export function AssistantMessage({ message, isStreaming = false, showStats = tru
   if (elements.length === 0 && !isStreaming) return null
   
   return (
-    <div className="mb-4 space-y-2">
+    <div className="mb-2 space-y-1">
       {elements.map((element, i) => {
         switch (element.type) {
           case 'thinking':
@@ -99,7 +99,7 @@ export function AssistantMessage({ message, isStreaming = false, showStats = tru
             
           case 'text':
             return (
-              <div key={i} className="prose prose-invert max-w-none">
+              <div key={i} className="prose prose-sm prose-invert max-w-none">
                 <Markdown content={element.content} />
               </div>
             )
@@ -132,7 +132,7 @@ export function AssistantMessage({ message, isStreaming = false, showStats = tru
             const formatSpeed = (n: number) => n >= 1000 ? `${(n / 1000).toFixed(1)}k` : n.toFixed(1)
             
             return (
-              <div key={i} className="flex items-center justify-center gap-2 text-xs text-text-muted mt-4">
+              <div key={i} className="flex items-center justify-center gap-1.5 text-[10px] text-text-muted mt-2">
                 <span className="flex-1 h-px bg-border" />
                 <span className="text-text-secondary">{shortModel}</span>
                 <span className="text-text-muted">·</span>
@@ -156,16 +156,16 @@ export function AssistantMessage({ message, isStreaming = false, showStats = tru
         }
       })}
       
-      {isStreaming && <StreamingCursor />}
-      
-      {message.partial && (
-        <div className="flex items-center gap-2 text-xs text-accent-warning mt-2">
-          <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-          </svg>
-          <span>Interrupted</span>
-        </div>
-      )}
+        {isStreaming && <StreamingCursor />}
+        
+        {message.partial && (
+          <div className="flex items-center gap-1.5 text-[10px] text-accent-warning mt-1">
+            <svg className="w-2.5 h-2.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+            </svg>
+            <span>Interrupted</span>
+          </div>
+        )}
     </div>
   )
 }

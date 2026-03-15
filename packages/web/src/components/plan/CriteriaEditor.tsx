@@ -8,42 +8,42 @@ export function CriteriaEditor({ criteria }: CriteriaEditorProps) {
   const getStatusIcon = (status: Criterion['status']) => {
     switch (status.type) {
       case 'passed':
-        return <span className="text-accent-success text-base">✓</span>
+        return <span className="text-accent-success text-sm">✓</span>
       case 'completed':
-        return <span className="text-purple-400 text-base">◉</span>
+        return <span className="text-purple-400 text-sm">◉</span>
       case 'failed':
-        return <span className="text-accent-error text-base">✗</span>
+        return <span className="text-accent-error text-sm">✗</span>
       case 'in_progress':
-        return <span className="text-accent-warning text-base animate-pulse">●</span>
+        return <span className="text-accent-warning text-sm animate-pulse">●</span>
       default:
-        return <span className="text-text-muted text-base">○</span>
+        return <span className="text-text-muted text-sm">○</span>
     }
   }
   
   return (
     <div className="flex flex-col h-full">
-      <div className="flex items-center justify-between mb-4">
-        <h3 className="text-lg font-semibold text-text-primary">Acceptance Criteria</h3>
-        <span className="text-sm text-text-muted">
-          {criteria.filter(c => c.status.type === 'passed').length}/{criteria.length} done
+      <div className="flex items-center justify-between mb-2">
+        <h3 className="text-sm font-semibold text-text-primary">Criteria</h3>
+        <span className="text-[10px] text-text-muted">
+          {criteria.filter(c => c.status.type === 'passed').length}/{criteria.length}
         </span>
       </div>
       
-      <div className="flex-1 overflow-y-auto space-y-2">
+      <div className="flex-1 overflow-y-auto space-y-1">
         {criteria.length === 0 ? (
-          <div className="text-text-muted text-sm text-center py-4">
-            No criteria yet. Start chatting to generate them.
+          <div className="text-text-muted text-xs text-center py-2">
+            No criteria yet
           </div>
         ) : (
           criteria.map((criterion, index) => (
             <div
               key={criterion.id}
-              className="bg-bg-tertiary rounded-lg p-3 border border-border"
+              className="bg-bg-tertiary rounded p-2 border border-border"
             >
-              <div className="flex items-start gap-2">
-                <span className="text-text-muted text-sm">{index + 1}.</span>
+              <div className="flex items-start gap-1.5">
+                <span className="text-text-muted text-xs">{index + 1}.</span>
                 {getStatusIcon(criterion.status)}
-                <p className="flex-1 text-sm leading-relaxed">{criterion.description}</p>
+                <p className="flex-1 text-xs leading-tight">{criterion.description}</p>
               </div>
             </div>
           ))

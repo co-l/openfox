@@ -271,8 +271,10 @@ async function runPlannerChat(
   
   const { content, thinkingContent, toolCalls, response, segments, timing } = result
   
-  // Track LLM metrics
+  // Track LLM metrics and update context size
   turnMetrics.addLLMCall(timing, response.usage.promptTokens, response.usage.completionTokens)
+  sessionManager.setCurrentContextSize(sessionId, response.usage.promptTokens)
+  sessionManager.addTokensUsed(sessionId, response.usage.promptTokens + response.usage.completionTokens)
   
   // Update assistant message with final content
   sessionManager.updateMessage(sessionId, messageId, {
@@ -578,8 +580,10 @@ async function runBuilderLoop(options: ChatOptions): Promise<void> {
     
     const { content, thinkingContent, toolCalls, response, segments, timing } = result
     
-    // Track LLM metrics
+    // Track LLM metrics and update context size
     turnMetrics.addLLMCall(timing, response.usage.promptTokens, response.usage.completionTokens)
+    sessionManager.setCurrentContextSize(sessionId, response.usage.promptTokens)
+    sessionManager.addTokensUsed(sessionId, response.usage.promptTokens + response.usage.completionTokens)
     
     // Update assistant message with final content
     sessionManager.updateMessage(sessionId, currentMessageId, {
@@ -890,8 +894,10 @@ ${modifiedFiles.length > 0 ? modifiedFiles.map(f => `- ${f}`).join('\n') : '(non
     
     const { content, toolCalls, response, timing } = result
     
-    // Track LLM metrics
+    // Track LLM metrics and update context size
     turnMetrics.addLLMCall(timing, response.usage.promptTokens, response.usage.completionTokens)
+    sessionManager.setCurrentContextSize(sessionId, response.usage.promptTokens)
+    sessionManager.addTokensUsed(sessionId, response.usage.promptTokens + response.usage.completionTokens)
     
     // Update assistant message with final content
     sessionManager.updateMessage(sessionId, currentMessageId, {
@@ -1045,8 +1051,10 @@ export async function streamSummaryResponse(
   
   const { content, thinkingContent, response, timing } = result
   
-  // Track metrics
+  // Track metrics and update context size
   turnMetrics.addLLMCall(timing, response.usage.promptTokens, response.usage.completionTokens)
+  sessionManager.setCurrentContextSize(sessionId, response.usage.promptTokens)
+  sessionManager.addTokensUsed(sessionId, response.usage.promptTokens + response.usage.completionTokens)
   
   // Update assistant message with final content
   sessionManager.updateMessage(sessionId, assistantMsg.id, {

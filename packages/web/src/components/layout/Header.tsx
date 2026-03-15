@@ -16,9 +16,9 @@ export function Header() {
     : 'detecting...'
   
   return (
-    <header className="h-12 bg-bg-secondary border-b border-border flex items-center justify-between px-4">
-      <div className="flex items-center gap-3">
-        <Link href="/" className="text-accent-primary font-semibold text-lg hover:underline">
+    <header className="h-8 bg-bg-secondary border-b border-border flex items-center justify-between px-2">
+      <div className="flex items-center gap-2">
+        <Link href="/" className="text-accent-primary font-semibold text-base hover:underline">
           OpenFox
         </Link>
         {project && (
@@ -26,7 +26,7 @@ export function Header() {
             <span className="text-text-muted">/</span>
             <Link 
               href={`/p/${project.id}`}
-              className="text-text-secondary hover:text-text-primary hover:underline"
+              className="text-text-secondary hover:text-text-primary hover:underline text-sm"
             >
               {project.name}
             </Link>
@@ -35,22 +35,21 @@ export function Header() {
         {session && (
           <>
             <span className="text-text-muted">/</span>
-            <span className="text-text-secondary">
+            <span className="text-text-secondary text-sm">
               {session.metadata.title ?? session.id.slice(0, 8)}
             </span>
           </>
         )}
       </div>
       
-      <div className="flex items-center gap-4">
-        {/* Model indicator */}
+      <div className="flex items-center gap-3">
         <button
           onClick={() => refreshModel()}
-          className="flex items-center gap-2 px-2 py-1 rounded hover:bg-bg-tertiary transition-colors group"
+          className="flex items-center gap-1 px-1.5 py-0.5 rounded hover:bg-bg-tertiary transition-colors group"
           title={model ?? 'Click to refresh model'}
         >
-          <span className="text-xs text-text-muted">Model:</span>
-          <span className="text-sm text-accent-primary truncate max-w-48">
+          <span className="text-[10px] text-text-muted">Model:</span>
+          <span className="text-xs text-accent-primary truncate max-w-32">
             {shortModelName}
           </span>
           <span className="text-text-muted opacity-0 group-hover:opacity-100 transition-opacity">
@@ -58,14 +57,13 @@ export function Header() {
           </span>
         </button>
         
-        {/* Connection status */}
-        <div className="flex items-center gap-2">
-          <div className={`w-2 h-2 rounded-full ${
+        <div className="flex items-center gap-1.5">
+          <div className={`w-1.5 h-1.5 rounded-full ${
             connectionStatus === 'connected' ? 'bg-accent-success' :
             connectionStatus === 'reconnecting' ? 'bg-accent-warning animate-pulse' :
             'bg-accent-error'
           }`} />
-          <span className="text-sm text-text-secondary">
+          <span className="text-xs text-text-secondary">
             {connectionStatus === 'connected' ? 'Connected' :
              connectionStatus === 'reconnecting' ? 'Reconnecting...' :
              'Disconnected'}

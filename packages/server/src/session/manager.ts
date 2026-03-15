@@ -6,6 +6,7 @@ import type {
   Message,
   Criterion,
   ExecutionState,
+  ContextState,
 } from '@openfox/shared'
 import {
   createSession as dbCreateSession,
@@ -37,6 +38,8 @@ import { getProject } from '../db/projects.js'
 import { SessionNotFoundError } from '../utils/errors.js'
 import { logger } from '../utils/logger.js'
 import { EventEmitter, type Unsubscribe } from '../utils/async.js'
+import { calculateContextTokens, isInDangerZone, canCompact } from '../context/index.js'
+import { loadConfig } from '../config.js'
 
 // ============================================================================
 // Event Types
@@ -368,6 +371,7 @@ class SessionManagerImpl {
       modifiedFiles: [],
       consecutiveFailures: 0,
       currentTokenCount: 0,
+      messageCountAtLastUpdate: 0,
       compactionCount: 0,
       startedAt: new Date().toISOString(),
       lastActivityAt: new Date().toISOString(),
@@ -416,10 +420,14 @@ class SessionManagerImpl {
   
   /**
    * Set the current context window size (prompt tokens from last LLM call).
-   * This is used for compaction decisions.
+   * This is used for compaction decisions. Also tracks message count for staleness detection.
    */
   setCurrentContextSize(sessionId: string, promptTokens: number): void {
-    this.updateExecutionState(sessionId, { currentTokenCount: promptTokens })
+    const session = this.requireSession(sessionId)
+    this.updateExecutionState(sessionId, {
+      currentTokenCount: promptTokens,
+      messageCountAtLastUpdate: session.messages.length,
+    })
   }
   
   /**
@@ -454,6 +462,48 @@ class SessionManagerImpl {
     updateSessionMetadata(sessionId, {
       totalToolCalls: session.metadata.totalToolCalls + 1,
     })
+  }
+  
+  // Context state
+  
+  /**
+   * Get the current context state for a session.
+   * Uses real token count from LLM if available and fresh, otherwise estimates.
+   */
+  getContextState(sessionId: string): ContextState {
+    const session = this.requireSession(sessionId)
+    const config = loadConfig()
+    const maxTokens = config.context.maxTokens
+    const execState = session.executionState
+    
+    let currentTokens: number
+    
+    // Use real token count if we have it and it's fresh (message count matches)
+    const realTokenCount = execState?.currentTokenCount ?? 0
+    const messageCountAtUpdate = execState?.messageCountAtLastUpdate ?? 0
+    const currentMessageCount = session.messages.length
+    const isFresh = realTokenCount > 0 && messageCountAtUpdate === currentMessageCount
+    
+    if (isFresh) {
+      // Real count from last LLM call is still valid
+      currentTokens = realTokenCount
+    } else if (realTokenCount > 0 && messageCountAtUpdate > 0) {
+      // We have a real count but messages were added since - estimate the delta
+      const newMessages = session.messages.slice(messageCountAtUpdate)
+      const deltaTokens = calculateContextTokens(newMessages)
+      currentTokens = realTokenCount + deltaTokens
+    } else {
+      // No real count available - full estimation
+      currentTokens = calculateContextTokens(session.messages)
+    }
+    
+    return {
+      currentTokens,
+      maxTokens,
+      compactionCount: execState?.compactionCount ?? 0,
+      dangerZone: isInDangerZone(currentTokens, maxTokens),
+      canCompact: canCompact(currentTokens, maxTokens),
+    }
   }
   
   // Active session

@@ -6,6 +6,7 @@ import type {
   Criterion,
   Todo,
   Message,
+  ContextState,
 } from '@openfox/shared'
 import type {
   ServerMessage,
@@ -26,6 +27,7 @@ import type {
   ModeChangedPayload,
   PhaseChangedPayload,
   CriteriaUpdatedPayload,
+  ContextStatePayload,
 } from '@openfox/shared/protocol'
 import { wsClient, type ConnectionStatus } from '../lib/ws'
 import { playNotification, playAchievement, playIntervention } from '../lib/sound'
@@ -50,6 +52,9 @@ interface SessionState {
   
   // Current todos (displayed in chat)
   currentTodos: Todo[]
+  
+  // Context state (for header display)
+  contextState: ContextState | null
   
   // Error state
   error: { code: string; message: string } | null
@@ -77,6 +82,9 @@ interface SessionState {
   // Criteria (from UI)
   editCriteria: (criteria: Criterion[]) => void
   
+  // Context management
+  compactContext: () => void
+  
   clearError: () => void
   
   // Internal
@@ -90,6 +98,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
   messages: [],
   streamingMessageId: null,
   currentTodos: [],
+  contextState: null,
   error: null,
   
   connect: async () => {
@@ -136,6 +145,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
         messages: [],
         streamingMessageId: null,
         currentTodos: [],
+        contextState: null,
       })
     }
     wsClient.send('session.load', { sessionId })
@@ -155,6 +165,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
       messages: [],
       streamingMessageId: null,
       currentTodos: [],
+      contextState: null,
     })
   },
   
@@ -184,6 +195,10 @@ export const useSessionStore = create<SessionState>((set, get) => ({
   
   editCriteria: (criteria) => {
     wsClient.send('criteria.edit', { criteria })
+  },
+  
+  compactContext: () => {
+    wsClient.send('context.compact', {})
   },
   
   clearError: () => {
@@ -428,6 +443,12 @@ export const useSessionStore = create<SessionState>((set, get) => ({
             ? { ...state.currentSession, criteria: payload.criteria }
             : null,
         }))
+        break
+      }
+      
+      case 'context.state': {
+        const payload = message.payload as ContextStatePayload
+        set({ contextState: payload.context })
         break
       }
       

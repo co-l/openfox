@@ -8,9 +8,9 @@ interface ThinkingBlockProps {
 export function ThinkingBlock({ content, variant = 'default' }: ThinkingBlockProps) {
   if (variant === 'labeled') {
     return (
-      <div className="text-text-muted text-sm italic">
+      <div className="text-text-muted text-xs italic">
         <span className="text-purple-400">thinking:</span>
-        <div className="ml-2 mt-1">
+        <div className="ml-1.5 mt-0.5">
           <Markdown content={content} />
         </div>
       </div>
@@ -18,7 +18,7 @@ export function ThinkingBlock({ content, variant = 'default' }: ThinkingBlockPro
   }
   
   return (
-    <div className="text-text-muted text-sm italic bg-bg-tertiary/50 rounded p-2 whitespace-pre-wrap">
+    <div className="text-text-muted text-xs italic bg-bg-tertiary/50 rounded p-1.5 whitespace-pre-wrap">
       {content}
     </div>
   )

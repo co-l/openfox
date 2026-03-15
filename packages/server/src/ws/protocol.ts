@@ -29,10 +29,11 @@ import type {
   ModeChangedPayload,
   PhaseChangedPayload,
   CriteriaUpdatedPayload,
+  ContextStatePayload,
   ErrorPayload,
 } from '@openfox/shared/protocol'
 import { isClientMessage, createServerMessage } from '@openfox/shared/protocol'
-import type { Project, Session, SessionSummary, SessionMode, SessionPhase, Criterion, Todo, ToolResult, Message } from '@openfox/shared'
+import type { Project, Session, SessionSummary, SessionMode, SessionPhase, Criterion, Todo, ToolResult, Message, ContextState } from '@openfox/shared'
 
 export function parseClientMessage(data: string): ClientMessage | null {
   try {
@@ -148,6 +149,11 @@ export function createPhaseChangedMessage(phase: SessionPhase): ServerMessage<Ph
 // Criteria messages
 export function createCriteriaUpdatedMessage(criteria: Criterion[], changedId?: string): ServerMessage<CriteriaUpdatedPayload> {
   return createServerMessage('criteria.updated', { criteria, changedId })
+}
+
+// Context messages
+export function createContextStateMessage(context: ContextState): ServerMessage<ContextStatePayload> {
+  return createServerMessage('context.state', { context })
 }
 
 // Type guards for payloads

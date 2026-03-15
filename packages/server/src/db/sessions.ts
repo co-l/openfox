@@ -535,8 +535,8 @@ export function setExecutionState(sessionId: string, state: ExecutionState): voi
     INSERT OR REPLACE INTO execution_state (
       session_id, iteration, modified_files, consecutive_failures,
       last_failed_tool, last_failure_reason, current_token_count,
-      compaction_count, started_at, last_activity_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      message_count_at_last_update, compaction_count, started_at, last_activity_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
     sessionId,
     state.iteration,
@@ -545,6 +545,7 @@ export function setExecutionState(sessionId: string, state: ExecutionState): voi
     state.lastFailedTool ?? null,
     state.lastFailureReason ?? null,
     state.currentTokenCount,
+    state.messageCountAtLastUpdate,
     state.compactionCount,
     state.startedAt,
     state.lastActivityAt
@@ -569,6 +570,7 @@ export function getExecutionState(sessionId: string): ExecutionState | null {
     lastFailedTool: row.last_failed_tool ?? undefined,
     lastFailureReason: row.last_failure_reason ?? undefined,
     currentTokenCount: row.current_token_count,
+    messageCountAtLastUpdate: row.message_count_at_last_update ?? 0,
     compactionCount: row.compaction_count,
     startedAt: row.started_at,
     lastActivityAt: row.last_activity_at,
@@ -648,6 +650,7 @@ interface ExecutionStateRow {
   last_failed_tool: string | null
   last_failure_reason: string | null
   current_token_count: number
+  message_count_at_last_update: number
   compaction_count: number
   started_at: string
   last_activity_at: string

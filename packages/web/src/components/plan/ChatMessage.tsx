@@ -20,15 +20,15 @@ function CopyButton({ text }: { text: string }) {
   return (
     <button
       onClick={handleCopy}
-      className="opacity-0 group-hover:opacity-100 transition-opacity p-1 rounded hover:bg-white/20"
-      title="Copy message"
+      className="opacity-0 group-hover:opacity-100 transition-opacity p-0.5 rounded hover:bg-white/20"
+      title="Copy"
     >
       {copied ? (
-        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
         </svg>
       ) : (
-        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
         </svg>
       )}
@@ -49,9 +49,9 @@ export function ChatMessage({ message, isLastAssistantMessage = false }: ChatMes
   
   if (isSystem && message.isCompacted) {
     return (
-      <div className="bg-bg-tertiary/50 border border-border rounded-lg p-3 my-2">
-        <div className="text-text-muted text-sm mb-1">[Compacted History]</div>
-        <div className="text-text-secondary text-sm whitespace-pre-wrap">
+      <div className="bg-bg-tertiary/50 border border-border rounded p-2 my-1">
+        <div className="text-text-muted text-xs mb-0.5">[Compacted]</div>
+        <div className="text-text-secondary text-xs whitespace-pre-wrap">
           {message.content.replace('[COMPACTED HISTORY]\n', '')}
         </div>
       </div>
@@ -60,11 +60,25 @@ export function ChatMessage({ message, isLastAssistantMessage = false }: ChatMes
   
   if (isTool) {
     return (
-      <div className="bg-bg-tertiary/30 border-l-2 border-accent-primary rounded-r-lg p-3 my-2">
-        <div className="text-accent-primary text-sm mb-1">
+      <div className="bg-bg-tertiary/30 border-l-2 border-accent-primary rounded-r p-2 my-1">
+        <div className="text-accent-primary text-xs mb-0.5">
           Tool: {message.toolName}
         </div>
-        <pre className="text-text-secondary text-sm whitespace-pre-wrap overflow-x-auto max-h-48">
+        <pre className="text-text-secondary text-xs whitespace-pre-wrap overflow-x-auto max-h-32">
+          {message.content.slice(0, 500)}
+          {message.content.length > 500 && '...'}
+        </pre>
+      </div>
+    )
+  }
+  
+  if (isTool) {
+    return (
+      <div className="bg-bg-tertiary/30 border-l-2 border-accent-primary rounded-r p-2 my-1">
+        <div className="text-accent-primary text-xs mb-0.5">
+          Tool: {message.toolName}
+        </div>
+        <pre className="text-text-secondary text-xs whitespace-pre-wrap overflow-x-auto max-h-32">
           {message.content.slice(0, 500)}
           {message.content.length > 500 && '...'}
         </pre>
@@ -85,23 +99,22 @@ export function ChatMessage({ message, isLastAssistantMessage = false }: ChatMes
   
   // User message
   if (isUser) {
-    // System-generated user messages
     if (message.isSystemGenerated) {
       const isAutoPrompt = message.messageKind === 'auto-prompt'
       
       return (
-        <div className="flex justify-end items-start gap-2 my-2">
-          <div className={`max-w-[80%] rounded-lg p-3 border ${
+        <div className="flex justify-end items-start gap-1.5 my-1">
+          <div className={`max-w-[75%] rounded border p-2 ${
             isAutoPrompt 
               ? 'bg-slate-500/10 border-slate-500/30' 
               : 'bg-amber-500/10 border-amber-500/30'
           }`}>
-            <span className={`text-xs block mb-1 ${
+            <span className={`text-[10px] block mb-0.5 ${
               isAutoPrompt ? 'text-slate-400' : 'text-amber-400'
             }`}>
-              {isAutoPrompt ? 'Auto' : 'System Correction'}
+              {isAutoPrompt ? 'Auto' : 'System'}
             </span>
-            <div className={`whitespace-pre-wrap text-sm ${
+            <div className={`whitespace-pre-wrap text-xs ${
               isAutoPrompt ? 'text-slate-200' : 'text-amber-200 italic'
             }`}>
               {message.content}
@@ -111,21 +124,19 @@ export function ChatMessage({ message, isLastAssistantMessage = false }: ChatMes
       )
     }
     
-    // Normal user message
     return (
-      <div className="flex justify-end items-start gap-2 my-2 group">
+      <div className="flex justify-end items-start gap-1.5 my-1 group">
         <CopyButton text={message.content} />
-        <div className="max-w-[80%] rounded-lg p-3 bg-accent-primary text-white">
-          <div className="whitespace-pre-wrap">{message.content}</div>
+        <div className="max-w-[75%] rounded p-2 bg-accent-primary text-white">
+          <div className="whitespace-pre-wrap text-sm">{message.content}</div>
         </div>
       </div>
     )
   }
   
-  // System or other messages
   return (
-    <div className="flex justify-start my-2">
-      <div className="max-w-[80%] rounded-lg p-3 bg-bg-tertiary text-text-primary">
+    <div className="flex justify-start my-1">
+      <div className="max-w-[75%] rounded p-2 bg-bg-tertiary text-text-primary">
         <Markdown content={message.content} />
       </div>
     </div>

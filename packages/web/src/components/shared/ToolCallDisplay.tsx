@@ -48,7 +48,7 @@ export function ToolCallDisplay({
   // Compact variant - single line, no expansion
   if (variant === 'compact') {
     return (
-      <div className="flex items-center gap-2 text-sm bg-bg-tertiary rounded px-3 py-2">
+      <div className="flex items-center gap-1.5 text-xs bg-bg-tertiary rounded px-2 py-1.5">
         <ToolIcon tool={tool} />
         <span className="text-accent-primary font-medium">{tool}</span>
         <span className="text-text-muted truncate flex-1">
@@ -61,38 +61,37 @@ export function ToolCallDisplay({
     )
   }
   
-  // Expandable variant - clickable with details
   return (
-    <div className="border border-border rounded-lg overflow-hidden my-2">
+    <div className="border border-border rounded overflow-hidden my-1">
       <button
-        className="w-full flex items-center gap-2 p-3 bg-bg-tertiary hover:bg-bg-tertiary/80 text-left"
+        className="w-full flex items-center gap-1.5 p-2 bg-bg-tertiary hover:bg-bg-tertiary/80 text-left"
         onClick={() => setExpanded(!expanded)}
       >
         <span className={`${config.color} ${config.animate ? 'animate-pulse' : ''}`}>
           {config.icon}
         </span>
-        <span className="font-mono text-accent-primary">{tool}</span>
-        <span className="text-text-muted text-sm flex-1 truncate">
+        <span className="font-mono text-accent-primary text-sm">{tool}</span>
+        <span className="text-text-muted text-xs flex-1 truncate">
           {formatToolArgs(tool, args)}
         </span>
-        <span className="text-text-muted">{expanded ? '▼' : '▶'}</span>
+        <span className="text-text-muted text-xs">{expanded ? '▼' : '▶'}</span>
       </button>
       
       {expanded && (
-        <div className="p-3 bg-bg-secondary border-t border-border">
-          <div className="mb-2">
-            <div className="text-xs text-text-muted mb-1">Arguments:</div>
-            <pre className="text-sm bg-bg-primary p-2 rounded overflow-x-auto">
+        <div className="p-2 bg-bg-secondary border-t border-border">
+          <div className="mb-1.5">
+            <div className="text-[10px] text-text-muted mb-0.5">Arguments:</div>
+            <pre className="text-xs bg-bg-primary p-1.5 rounded overflow-x-auto">
               {formatToolArgsFull(args)}
             </pre>
           </div>
           
           {status === 'success' && result !== undefined && (
             <div>
-              <div className="text-xs text-text-muted mb-1">
+              <div className="text-[10px] text-text-muted mb-0.5">
                 Result{durationMs !== undefined && ` (${durationMs}ms)`}:
               </div>
-              <pre className="text-sm bg-bg-primary p-2 rounded overflow-x-auto max-h-48">
+              <pre className="text-xs bg-bg-primary p-1.5 rounded overflow-x-auto max-h-32">
                 {result || 'No output'}
               </pre>
             </div>
@@ -100,8 +99,8 @@ export function ToolCallDisplay({
           
           {status === 'error' && error && (
             <div>
-              <div className="text-xs text-accent-error mb-1">Error:</div>
-              <pre className="text-sm bg-bg-primary p-2 rounded text-accent-error">
+              <div className="text-[10px] text-accent-error mb-0.5">Error:</div>
+              <pre className="text-xs bg-bg-primary p-1.5 rounded text-accent-error">
                 {error}
               </pre>
             </div>
