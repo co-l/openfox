@@ -16,6 +16,7 @@ interface UserMessageProps {
 function UserMessage({ message }: UserMessageProps) {
   const [showMenu, setShowMenu] = useState(false)
   const [showInspector, setShowInspector] = useState(false)
+  const [copied, setCopied] = useState(false)
   const menuRef = useRef<HTMLDivElement>(null)
   
   const hasPromptContext = !!message.promptContext
@@ -33,18 +34,32 @@ function UserMessage({ message }: UserMessageProps) {
     return () => document.removeEventListener('mousedown', handleClickOutside)
   }, [showMenu])
   
+  const handleCopy = async () => {
+    await navigator.clipboard.writeText(message.content)
+    setCopied(true)
+    setShowMenu(false)
+    setTimeout(() => setCopied(false), 1500)
+  }
+  
   const isAutoPrompt = message.messageKind === 'auto-prompt'
   const isSystemGenerated = message.isSystemGenerated
   
   return (
-    <div className="flex justify-end items-start gap-1.5 feed-item group">
-      {/* Three-dot menu for prompt inspection */}
-      {hasPromptContext && (
-        <div ref={menuRef} className="relative opacity-0 group-hover:opacity-100 transition-opacity">
+    <div className="flex justify-end items-start gap-1.5 feed-item">
+      {/* Copy feedback checkmark */}
+      {copied && (
+        <svg className="w-4 h-4 text-accent-success" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+        </svg>
+      )}
+      
+      {/* Three-dot menu */}
+      {!isSystemGenerated && (
+        <div ref={menuRef} className="relative">
           <button
             onClick={() => setShowMenu(!showMenu)}
             className="p-1 rounded hover:bg-bg-tertiary text-text-muted hover:text-text-primary"
-            title="Inspect prompt"
+            title="Message options"
           >
             <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
               <circle cx="12" cy="5" r="2" />
@@ -56,18 +71,29 @@ function UserMessage({ message }: UserMessageProps) {
           {showMenu && (
             <div className="absolute right-0 top-full mt-1 bg-bg-secondary border border-border rounded-lg shadow-xl z-50 py-1 min-w-36">
               <button
-                onClick={() => {
-                  setShowInspector(true)
-                  setShowMenu(false)
-                }}
+                onClick={handleCopy}
                 className="w-full px-3 py-1.5 text-left text-sm text-text-primary hover:bg-bg-tertiary flex items-center gap-2"
               >
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
                 </svg>
-                Inspect prompt
+                Copy
               </button>
+              {hasPromptContext && (
+                <button
+                  onClick={() => {
+                    setShowInspector(true)
+                    setShowMenu(false)
+                  }}
+                  className="w-full px-3 py-1.5 text-left text-sm text-text-primary hover:bg-bg-tertiary flex items-center gap-2"
+                >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                  </svg>
+                  Inspect
+                </button>
+              )}
             </div>
           )}
         </div>
@@ -81,8 +107,6 @@ function UserMessage({ message }: UserMessageProps) {
           promptContext={message.promptContext}
         />
       )}
-      
-      {!isSystemGenerated && <CopyButton text={message.content} />}
       
       <div className={`max-w-[75%] rounded p-2 ${
         isSystemGenerated
@@ -98,43 +122,15 @@ function UserMessage({ message }: UserMessageProps) {
             {isAutoPrompt ? 'Auto' : 'System'}
           </span>
         )}
-        <div className={`whitespace-pre-wrap ${
+        <div className={`whitespace-pre-wrap text-sm ${
           isSystemGenerated
-            ? `text-xs ${isAutoPrompt ? 'text-slate-200' : 'text-amber-200 italic'}`
-            : 'text-sm'
+            ? `${isAutoPrompt ? 'text-slate-200' : 'text-amber-200 italic'}`
+            : ''
         }`}>
           {message.content}
         </div>
       </div>
     </div>
-  )
-}
-
-function CopyButton({ text }: { text: string }) {
-  const [copied, setCopied] = useState(false)
-  
-  const handleCopy = async () => {
-    await navigator.clipboard.writeText(text)
-    setCopied(true)
-    setTimeout(() => setCopied(false), 1500)
-  }
-  
-  return (
-    <button
-      onClick={handleCopy}
-      className="opacity-0 group-hover:opacity-100 transition-opacity p-0.5 rounded hover:bg-white/20"
-      title="Copy"
-    >
-      {copied ? (
-        <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-        </svg>
-      ) : (
-        <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
-        </svg>
-      )}
-    </button>
   )
 }
 
