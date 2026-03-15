@@ -214,14 +214,14 @@ export function PlanPanel() {
       <div 
         ref={scrollContainerRef}
         onWheel={handleWheel}
-        className="flex-1 overflow-y-auto p-2"
+        className="flex-1 overflow-y-auto p-4"
       >
         {displayItems.map((item) => {
           if (item.type === 'context-divider') {
             return (
               <div 
                 key={`divider-${item.windowSequence}`}
-                className="flex items-center gap-2 my-3 px-2"
+                className="flex items-center gap-2 mb-4 px-2"
               >
                 <div className="flex-1 border-t border-border" />
                 <span className="text-[10px] text-text-muted font-medium px-2">
@@ -268,7 +268,7 @@ export function PlanPanel() {
         })}
         
         {error && (
-          <div className="bg-red-500/10 border border-red-500/50 rounded p-2 my-1">
+          <div className="bg-red-500/10 border border-red-500/50 rounded p-2 mb-4">
             <div className="flex items-start justify-between gap-2">
               <div>
                 <div className="text-red-400 text-sm font-medium">{error.code}</div>
@@ -288,7 +288,7 @@ export function PlanPanel() {
         )}
         
         {showStartBuilding && (
-          <div className="flex justify-center my-2">
+          <div className="flex justify-center mb-4">
             <Button
               variant="primary"
               onClick={acceptAndBuild}

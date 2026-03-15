@@ -37,7 +37,7 @@ function UserMessage({ message }: UserMessageProps) {
   const isSystemGenerated = message.isSystemGenerated
   
   return (
-    <div className="flex justify-end items-start gap-1.5 my-1 group">
+    <div className="flex justify-end items-start gap-1.5 mb-4 group">
       {/* Three-dot menu for prompt inspection */}
       {hasPromptContext && (
         <div ref={menuRef} className="relative opacity-0 group-hover:opacity-100 transition-opacity">
@@ -151,7 +151,7 @@ export function ChatMessage({ message, isLastAssistantMessage = false }: ChatMes
   
   if (isSystem && message.isCompacted) {
     return (
-      <div className="bg-bg-tertiary/50 border border-border rounded p-2 my-1">
+      <div className="bg-bg-tertiary/50 border border-border rounded p-2 mb-4">
         <div className="text-text-muted text-xs mb-0.5">[Compacted]</div>
         <div className="text-text-secondary text-xs whitespace-pre-wrap">
           {message.content.replace('[COMPACTED HISTORY]\n', '')}
@@ -162,7 +162,7 @@ export function ChatMessage({ message, isLastAssistantMessage = false }: ChatMes
   
   if (isTool) {
     return (
-      <div className="bg-bg-tertiary/30 border-l-2 border-accent-primary rounded-r p-2 my-1">
+      <div className="bg-bg-tertiary/30 border-l-2 border-accent-primary rounded-r p-2 mb-4">
         <div className="text-accent-primary text-xs mb-0.5">
           Tool: {message.toolName}
         </div>
@@ -176,7 +176,7 @@ export function ChatMessage({ message, isLastAssistantMessage = false }: ChatMes
   
   if (isTool) {
     return (
-      <div className="bg-bg-tertiary/30 border-l-2 border-accent-primary rounded-r p-2 my-1">
+      <div className="bg-bg-tertiary/30 border-l-2 border-accent-primary rounded-r p-2 mb-4">
         <div className="text-accent-primary text-xs mb-0.5">
           Tool: {message.toolName}
         </div>
@@ -191,7 +191,7 @@ export function ChatMessage({ message, isLastAssistantMessage = false }: ChatMes
   // Context reset separator (full-width divider for fresh context)
   if (message.messageKind === 'context-reset') {
     return (
-      <div className="flex items-center gap-4 my-6 text-text-muted text-xs uppercase tracking-wide">
+      <div className="flex items-center gap-4 mb-6 text-text-muted text-xs uppercase tracking-wide">
         <div className="flex-1 border-t border-border" />
         <span>{message.content}</span>
         <div className="flex-1 border-t border-border" />
@@ -205,7 +205,7 @@ export function ChatMessage({ message, isLastAssistantMessage = false }: ChatMes
   }
   
   return (
-    <div className="flex justify-start my-1">
+    <div className="flex justify-start mb-4">
       <div className="max-w-[75%] rounded p-2 bg-bg-tertiary text-text-primary">
         <Markdown content={message.content} />
       </div>

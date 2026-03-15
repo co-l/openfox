@@ -91,7 +91,7 @@ export function AssistantMessage({ message, isStreaming = false, showStats = tru
   if (elements.length === 0 && !isStreaming) return null
   
   return (
-    <div className="mb-2 space-y-1">
+    <div className="mb-4 space-y-1">
       {elements.map((element, i) => {
         switch (element.type) {
           case 'thinking':
