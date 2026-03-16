@@ -72,6 +72,9 @@ export interface TestClient {
   
   /** Check if connected */
   isConnected(): boolean
+  
+  /** Answer a pending path confirmation (for e2e tests) */
+  answerPathConfirmation(callId: string, approved: boolean): Promise<void>
 }
 
 // ============================================================================
@@ -476,6 +479,25 @@ export async function createTestClient(options: TestClientOptions = {}): Promise
     
     isConnected(): boolean {
       return connected && ws.readyState === WebSocket.OPEN
+    },
+    
+    async answerPathConfirmation(callId: string, approved: boolean): Promise<void> {
+      return new Promise((resolve, reject) => {
+        const id = crypto.randomUUID()
+        const message: ClientMessage = {
+          id,
+          type: 'path.confirm',
+          payload: { callId, approved },
+        }
+        
+        const timeout = setTimeout(() => {
+          ws.send(JSON.stringify(message))
+          resolve()
+        }, 100)
+        
+        ws.send(JSON.stringify(message))
+        setTimeout(resolve, 500) // Give server time to process
+      })
     },
   }
 }

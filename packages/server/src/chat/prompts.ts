@@ -5,7 +5,7 @@ import type { LLMToolDefinition } from '../llm/types.js'
 // Planner Mode Prompt
 // ============================================================================
 
-export function buildPlannerPrompt(tools: LLMToolDefinition[], customInstructions?: string): string {
+export function buildPlannerPrompt(workdir: string, tools: LLMToolDefinition[], customInstructions?: string): string {
   const toolList = tools
     .map(t => `- **${t.function.name}**: ${t.function.description}`)
     .join('\n')
@@ -15,6 +15,10 @@ export function buildPlannerPrompt(tools: LLMToolDefinition[], customInstruction
     : ''
 
   return `You are a planning assistant. Your job is to help refine the user's request and define acceptance criteria.
+
+## ENVIRONMENT
+Working directory: ${workdir}
+Platform: ${process.platform} (${process.arch})
 
 ## CRITICAL: THIS IS PLANNING ONLY
 
@@ -67,6 +71,7 @@ Bad: "Login should work"
 // ============================================================================
 
 export function buildBuilderPrompt(
+  workdir: string,
   criteria: Criterion[],
   tools: LLMToolDefinition[],
   modifiedFiles: string[],
@@ -97,6 +102,10 @@ export function buildBuilderPrompt(
 
   return `You are an expert software engineer. Your task is to satisfy the acceptance criteria below.
 
+## ENVIRONMENT
+Working directory: ${workdir}
+Platform: ${process.platform} (${process.arch})
+
 ## ACCEPTANCE CRITERIA (CONTRACT)
 ${criteriaList}
 
@@ -126,7 +135,7 @@ Files modified this session: ${filesModified}
 // Verifier Mode Prompt
 // ============================================================================
 
-export function buildVerifierPrompt(tools: LLMToolDefinition[], customInstructions?: string): string {
+export function buildVerifierPrompt(workdir: string, tools: LLMToolDefinition[], customInstructions?: string): string {
   const toolList = tools
     .map(t => `- ${t.function.name}: ${t.function.description}`)
     .join('\n')
@@ -136,6 +145,10 @@ export function buildVerifierPrompt(tools: LLMToolDefinition[], customInstructio
     : ''
 
   return `You are a code reviewer performing independent verification.
+
+## ENVIRONMENT
+Working directory: ${workdir}
+Platform: ${process.platform} (${process.arch})
 
 The user will provide:
 - Task summary

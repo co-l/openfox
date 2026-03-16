@@ -135,6 +135,14 @@ describe('Runner/Orchestrator', () => {
       // Accept
       await client.send('mode.accept', {})
       
+      // Auto-deny any path confirmation requests (for paths outside workdir)
+      client.waitFor('chat.path_confirmation').then(async () => {
+        await client.answerPathConfirmation(
+          (client.allEvents().find(e => e.type === 'chat.path_confirmation')?.payload as any).callId,
+          false
+        )
+      }).catch(() => {}) // Ignore timeout
+      
       // Should eventually reach blocked or done (LLM may give up gracefully)
       await collectUntilPhase(client, 'blocked', 180_000)
         .catch(() => collectUntilPhase(client, 'done', 10_000))

@@ -162,13 +162,19 @@ export const AssistantMessage = memo(function AssistantMessage({ message, showSt
               return <TodoListDisplay key={i} todos={todos} />
             }
             
+            // Determine status - check for interrupted marker in output
+            const isInterrupted = result?.output?.includes('[interrupted by user]')
+            const status = result 
+              ? (isInterrupted ? 'interrupted' : (result.success ? 'success' : 'error'))
+              : 'pending'
+            
             // Default: standard tool call display
             return (
               <ToolCallDisplay 
                 key={i} 
                 tool={tc.name} 
                 args={tc.arguments}
-                status={result ? (result.success ? 'success' : 'error') : 'pending'}
+                status={status}
                 variant="expandable"
                 result={result?.output}
                 error={result?.error}

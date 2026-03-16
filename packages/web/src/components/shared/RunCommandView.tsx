@@ -10,7 +10,7 @@ interface RunCommandViewProps {
   timeout: number  // in ms
   startedAt?: number  // timestamp when command started
   streamingOutput?: StreamingChunk[]
-  status: 'pending' | 'success' | 'error'
+  status: 'pending' | 'success' | 'error' | 'interrupted'
   result?: string  // final output (shown after completion)
   error?: string
   durationMs?: number
@@ -78,6 +78,9 @@ export const RunCommandView = memo(function RunCommandView({
           {status === 'pending' && (
             <span className="animate-pulse text-accent-warning">running</span>
           )}
+          {status === 'interrupted' && (
+            <span className="text-red-400">interrupted</span>
+          )}
           <span className={status === 'pending' ? 'text-text-secondary' : 'text-text-muted'}>
             {elapsedSec.toFixed(1)}s / {timeoutSec}s
           </span>
@@ -113,10 +116,21 @@ export const RunCommandView = memo(function RunCommandView({
               </span>
             ))
           ) : (
-            // Render final output
-            <span className={hasStderr ? 'text-accent-warning' : 'text-text-primary'}>
-              {displayOutput || (status === 'pending' ? 'Waiting for output...' : 'No output')}
-            </span>
+            // Render final output, highlighting interrupted marker
+            <>
+              {displayOutput.includes('[interrupted by user]') ? (
+                <>
+                  <span className={hasStderr ? 'text-accent-warning' : 'text-text-primary'}>
+                    {displayOutput.replace('[interrupted by user]', '')}
+                  </span>
+                  <span className="text-red-400 font-medium">[interrupted by user]</span>
+                </>
+              ) : (
+                <span className={hasStderr ? 'text-accent-warning' : 'text-text-primary'}>
+                  {displayOutput || (status === 'pending' ? 'Waiting for output...' : 'No output')}
+                </span>
+              )}
+            </>
           )}
         </pre>
       )}

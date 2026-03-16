@@ -6,7 +6,7 @@ import { DiagnosticsView } from './DiagnosticsView'
 import { RunCommandView } from './RunCommandView'
 import { formatToolArgs, formatToolArgsFull } from '../../lib/formatToolArgs'
 
-type ToolStatus = 'pending' | 'success' | 'error'
+type ToolStatus = 'pending' | 'success' | 'error' | 'interrupted'
 
 interface StreamingChunk {
   stream: 'stdout' | 'stderr'
@@ -43,6 +43,11 @@ const statusConfig = {
   error: {
     icon: '✗',
     color: 'text-accent-error',
+    animate: false,
+  },
+  interrupted: {
+    icon: '✗',
+    color: 'text-red-400',
     animate: false,
   },
 }

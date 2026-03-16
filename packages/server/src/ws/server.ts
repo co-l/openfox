@@ -416,6 +416,10 @@ async function handleClientMessage(
         signal: controller.signal,
         onMessage: (event) => sessionEvents.push(sessionId, event),
       }).catch((error) => {
+        // Don't create error message for controlled abort - tool results already have the marker
+        if (error instanceof Error && error.message === 'Aborted') {
+          return
+        }
         logger.error('Chat error', { error })
         // Create an error message so we have a messageId for the done event
         const errorMsg = sessionManager.addMessage(sessionId, {
@@ -457,16 +461,10 @@ async function handleClientMessage(
       
       sessionManager.setRunning(sessionId, false)
       
-      // Create stop message to get a messageId for the done event
-      const stopMsg = sessionManager.addMessage(sessionId, {
-        role: 'user',
-        content: 'Chat stopped by user',
-        tokenCount: 5,
-        isSystemGenerated: true,
-        messageKind: 'auto-prompt',
-      })
-      sessionEvents.push(sessionId, createChatMessageMessage(stopMsg))
-      sessionEvents.push(sessionId, createChatDoneMessage(stopMsg.id, 'stopped'))
+      // Don't create a separate "stopped" message - the tool results will include
+      // [interrupted by user] marker which is sufficient for AI context.
+      // Just emit done event with empty messageId (client handles this)
+      sessionEvents.push(sessionId, createChatDoneMessage('', 'stopped'))
       
       // Schedule cleanup after brief delay
       sessionEvents.scheduleCleanup(sessionId)
@@ -520,6 +518,10 @@ async function handleClientMessage(
         signal: controller.signal,
         onMessage: (event) => sessionEvents.push(sessionId, event),
       }).catch((error) => {
+        // Don't create error message for controlled abort - tool results already have the marker
+        if (error instanceof Error && error.message === 'Aborted') {
+          return
+        }
         logger.error('Continue error', { error })
         // Create error message so we have a messageId for the done event
         const errorMsg = sessionManager.addMessage(sessionId, {
@@ -610,7 +612,7 @@ async function handleClientMessage(
           const session = sessionManager.requireSession(sessionId)
           const { content: instructions } = await getAllInstructions(session.workdir, session.projectId)
           const toolRegistry = getToolRegistryForMode('planner')
-          const systemPrompt = buildPlannerPrompt(toolRegistry.definitions, instructions || undefined)
+          const systemPrompt = buildPlannerPrompt(session.workdir, toolRegistry.definitions, instructions || undefined)
           const result = await streamLLMResponse({
             sessionId,
             systemPrompt,
@@ -740,7 +742,7 @@ async function handleClientMessage(
           const session = sessionManager.requireSession(sessionId)
           const { content: instructions } = await getAllInstructions(session.workdir, session.projectId)
           const toolRegistry = getToolRegistryForMode('planner')
-          const systemPrompt = buildPlannerPrompt(toolRegistry.definitions, instructions || undefined)
+          const systemPrompt = buildPlannerPrompt(session.workdir, toolRegistry.definitions, instructions || undefined)
           const result = await streamLLMResponse({
             sessionId,
             systemPrompt,
@@ -852,6 +854,10 @@ async function handleClientMessage(
         signal: controller.signal,
         onMessage: (event) => sessionEvents.push(sessionId, event),
       }).catch((error) => {
+        // Don't create error message for controlled abort - tool results already have the marker
+        if (error instanceof Error && error.message === 'Aborted') {
+          return
+        }
         logger.error('Runner error', { error, sessionId })
         const errorMsg = sessionManager.addMessage(sessionId, {
           role: 'user',

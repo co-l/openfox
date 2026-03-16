@@ -135,7 +135,7 @@ ${modifiedFiles.length > 0 ? modifiedFiles.map(f => `- ${f}`).join('\n') : '(non
   const { content: instructions, files: instructionFiles } = await getAllInstructions(session.workdir, session.projectId)
   
   const toolRegistry = getToolRegistryForMode('verifier')
-  const systemPrompt = buildVerifierPrompt(toolRegistry.definitions, instructions || undefined)
+  const systemPrompt = buildVerifierPrompt(session.workdir, toolRegistry.definitions, instructions || undefined)
   
   // Attach prompt context to the kickoff message for inspection
   const promptContext: PromptContext = {

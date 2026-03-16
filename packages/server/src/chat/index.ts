@@ -188,7 +188,7 @@ async function runPlannerChat(
   })()
   
   const toolRegistry = getToolRegistryForMode('planner')
-  const systemPrompt = buildPlannerPrompt(toolRegistry.definitions, instructionData.content || undefined)
+  const systemPrompt = buildPlannerPrompt(session.workdir, toolRegistry.definitions, instructionData.content || undefined)
   
   // Get the user message that triggered this response (last user message)
   const currentWindowMessages = sessionManager.getCurrentWindowMessages(sessionId)
@@ -296,6 +296,7 @@ async function runBuilderTurn(
   
   const toolRegistry = getToolRegistryForMode('builder')
   const systemPrompt = buildBuilderPrompt(
+    session.workdir,
     session.criteria,
     toolRegistry.definitions,
     session.executionState?.modifiedFiles ?? [],

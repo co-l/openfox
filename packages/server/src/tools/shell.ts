@@ -130,10 +130,14 @@ export const runCommandTool: Tool = {
         truncated = true
       }
       
+      // Check if this was an interrupted command (marker in output, exit code 130)
+      const wasInterrupted = output.includes('[interrupted by user]')
+      
       return {
         success: result.exitCode === 0,
         output,
-        ...(result.exitCode !== 0 ? { error: `Command exited with code ${result.exitCode}` } : {}),
+        // Don't set error for interrupted commands - the marker is sufficient
+        ...(result.exitCode !== 0 && !wasInterrupted ? { error: `Command exited with code ${result.exitCode}` } : {}),
         durationMs: Date.now() - startTime,
         truncated,
       }
@@ -216,8 +220,15 @@ function executeCommand(
       }
       
       if (aborted) {
-        // Aborted by signal - reject with clear error
-        reject(new Error('Command aborted'))
+        // Return partial output with interrupted marker (not an error)
+        let output = stdout.trim()
+        if (output) output += '\n\n'
+        output += '[interrupted by user]'
+        resolve({
+          stdout: output,
+          stderr: stderr.trim(),
+          exitCode: 130, // Standard SIGINT exit code
+        })
         return
       }
       

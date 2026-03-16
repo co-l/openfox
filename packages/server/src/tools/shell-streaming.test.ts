@@ -161,7 +161,7 @@ echo "line 3"
     expect(result.output).toContain('test')
   })
 
-  it('kills running command when signal is aborted', async () => {
+  it('returns partial output with interrupted marker when aborted', async () => {
     const controller = new AbortController()
     const contextWithSignal: ToolContext = {
       workdir: tempDir,
@@ -169,25 +169,27 @@ echo "line 3"
       signal: controller.signal,
     }
 
-    // Start command: sleep 4s then echo "hi"
+    // Start command: echo immediately, then sleep
     const resultPromise = runCommandTool.execute(
-      { command: 'sleep 4; echo hi' },
+      { command: 'echo "partial output"; sleep 4; echo "never reached"' },
       contextWithSignal
     )
 
-    // Abort after 2 seconds
-    await new Promise(r => setTimeout(r, 2000))
+    // Wait for echo to complete, then abort
+    await new Promise(r => setTimeout(r, 500))
     controller.abort()
 
     const result = await resultPromise
 
-    // Wait 2 more seconds to prove command isn't still running
-    await new Promise(r => setTimeout(r, 2000))
-
-    // Output should NOT contain "hi" - command was killed before sleep finished
-    expect(result.output ?? '').not.toContain('hi')
+    // Should have partial output with interrupted marker
+    expect(result.output).toContain('partial output')
+    expect(result.output).toContain('[interrupted by user]')
+    // Should NOT have the post-sleep output
+    expect(result.output).not.toContain('never reached')
+    // Exit code 130 = SIGINT, so success is false
     expect(result.success).toBe(false)
-    expect(result.error).toContain('aborted')
+    // No error field - this is a controlled interruption, not an error
+    expect(result.error).toBeUndefined()
   }, 10000)
 })
 

@@ -89,6 +89,7 @@ export async function runBuilderStep(options: BuilderStepOptions): Promise<StepR
     const { content: instructions, files: instructionFiles } = await getAllInstructions(session.workdir, session.projectId)
     
     const systemPrompt = buildBuilderPrompt(
+      session.workdir,
       session.criteria,
       toolRegistry.definitions,
       session.executionState?.modifiedFiles ?? [],
