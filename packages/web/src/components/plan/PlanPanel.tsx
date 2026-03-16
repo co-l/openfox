@@ -128,12 +128,7 @@ export function PlanPanel() {
     }
   }, [displayItems, userScrolledUp, scrollToBottom])
   
-  // Reset scroll state when streaming stops
-  useEffect(() => {
-    if (!isStreaming) {
-      setUserScrolledUp(false)
-    }
-  }, [isStreaming])
+
   
   // Auto-resize textarea based on content, up to 200px max
   const resizeTextarea = useCallback(() => {
