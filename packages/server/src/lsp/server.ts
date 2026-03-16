@@ -1,4 +1,5 @@
 import { spawn, type ChildProcess } from 'node:child_process'
+import { extname } from 'node:path'
 import { createMessageConnection, StreamMessageReader, StreamMessageWriter } from 'vscode-jsonrpc/node.js'
 import type { MessageConnection } from 'vscode-jsonrpc'
 import type { Diagnostic } from '@openfox/shared'
@@ -284,17 +285,33 @@ export class LspServer {
     }
     
     const uri = `file://${path}`
+    const languageId = this.getLanguageIdForFile(path)
     
     this.openDocuments.set(path, { version: 1, content })
     
     await this.connection.sendNotification(LSP.didOpen, {
       textDocument: {
         uri,
-        languageId: this.config.id,
+        languageId,
         version: 1,
         text: content,
       },
     })
+  }
+  
+  /**
+   * Get the correct LSP languageId for a file path.
+   * Uses extension-specific mapping if available, otherwise falls back to config id.
+   */
+  private getLanguageIdForFile(path: string): string {
+    if (this.config.languageIds) {
+      const ext = extname(path).toLowerCase()
+      const languageId = this.config.languageIds[ext]
+      if (languageId) {
+        return languageId
+      }
+    }
+    return this.config.id
   }
   
   async didChange(path: string, content: string): Promise<void> {

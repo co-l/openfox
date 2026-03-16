@@ -14,6 +14,14 @@ export const LANGUAGES: LanguageConfig[] = [
     serverCommand: 'typescript-language-server',
     serverArgs: ['--stdio'],
     rootPatterns: ['tsconfig.json', 'jsconfig.json', 'package.json'],
+    languageIds: {
+      '.ts': 'typescript',
+      '.tsx': 'typescriptreact',
+      '.js': 'javascript',
+      '.jsx': 'javascriptreact',
+      '.mjs': 'javascript',
+      '.cjs': 'javascript',
+    },
   },
   
   // Python

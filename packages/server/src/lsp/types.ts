@@ -12,6 +12,8 @@ export interface LanguageConfig {
   serverArgs: string[]
   rootPatterns: string[]  // Files that indicate project root for this language
   initOptions?: Record<string, unknown>
+  /** Map file extension to LSP languageId (e.g., '.tsx' -> 'typescriptreact') */
+  languageIds?: Record<string, string>
 }
 
 // ============================================================================
