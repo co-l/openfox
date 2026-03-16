@@ -13,7 +13,7 @@ import { sessionManager } from '../session/index.js'
 import { getToolRegistryForMode } from '../tools/index.js'
 import { buildBuilderPrompt, BUILDER_KICKOFF_PROMPT } from './prompts.js'
 import { streamLLMResponse } from './stream.js'
-import { computeMessageStats } from './stats.js'
+import { computeAggregatedStats } from './stats.js'
 import { estimateTokens } from '../context/tokenizer.js'
 import { getAllInstructions } from '../context/instructions.js'
 import {
@@ -70,6 +70,8 @@ export async function runBuilderStep(options: BuilderStepOptions): Promise<StepR
   let totalToolTime = 0
   let totalPromptTokens = 0
   let totalCompletionTokens = 0
+  let totalPrefillTime = 0
+  let totalGenTime = 0
   let lastMessageId = ''
   let lastContent = ''
   let lastTiming: StepResult['timing'] | null = null
@@ -124,9 +126,11 @@ export async function runBuilderStep(options: BuilderStepOptions): Promise<StepR
       throw error
     }
     
-    // Track cumulative usage
+    // Track cumulative usage and timing
     totalPromptTokens += result.usage.promptTokens
     totalCompletionTokens += result.usage.completionTokens
+    totalPrefillTime += result.timing.ttft
+    totalGenTime += result.timing.completionTime
     lastMessageId = result.messageId
     lastContent = result.content
     lastTiming = result.timing
@@ -134,13 +138,15 @@ export async function runBuilderStep(options: BuilderStepOptions): Promise<StepR
     // If no tool calls, model has naturally stopped - exit loop
     // Emit stats for this builder step (PROMPT -> WORK -> stats+sound pattern)
     if (result.toolCalls.length === 0) {
-      const stats = computeMessageStats({
+      const stats = computeAggregatedStats({
         model: llmClient.getModel(),
         mode: 'builder',
-        timing: result.timing,
-        usage: { promptTokens: totalPromptTokens, completionTokens: totalCompletionTokens },
-        toolTime: totalToolTime / 1000,
-        totalTimeOverride: (performance.now() - startTime) / 1000,
+        totalPrefillTokens: totalPromptTokens,
+        totalGenTokens: totalCompletionTokens,
+        totalPrefillTime,
+        totalGenTime,
+        totalToolTime: totalToolTime / 1000,
+        totalTime: (performance.now() - startTime) / 1000,
       })
       sessionManager.updateMessageStats(sessionId, result.messageId, stats)
       onMessage(createChatDoneMessage(result.messageId, 'complete', stats))
