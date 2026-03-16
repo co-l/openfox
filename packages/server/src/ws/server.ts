@@ -30,6 +30,7 @@ import {
   createErrorMessage,
   createSessionStateMessage,
   createSessionListMessage,
+  createSessionRunningMessage,
   createProjectStateMessage,
   createProjectListMessage,
   createChatDeltaMessage,
@@ -104,6 +105,11 @@ export function createWebSocketServer(
         if (event.type === 'execution_state_changed') {
           const contextState = sessionManager.getContextState(sessionId)
           ws.send(serializeServerMessage(createContextStateMessage(contextState)))
+        }
+        
+        // Broadcast running state changes in real-time
+        if (event.type === 'running_changed') {
+          ws.send(serializeServerMessage(createSessionRunningMessage(event.isRunning)))
         }
       }
     }

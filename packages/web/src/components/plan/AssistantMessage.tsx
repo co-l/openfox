@@ -3,11 +3,9 @@ import type { Message, MessageSegment, ToolCall } from '@openfox/shared'
 import { Markdown } from '../shared/Markdown'
 import { ThinkingBlock } from '../shared/ThinkingBlock'
 import { ToolCallDisplay } from '../shared/ToolCallDisplay'
-import { StreamingCursor } from '../shared/StreamingCursor'
 
 interface AssistantMessageProps {
   message: Message
-  isStreaming?: boolean
   showStats?: boolean
 }
 
@@ -86,10 +84,10 @@ function segmentsToElements(
   return elements
 }
 
-export const AssistantMessage = memo(function AssistantMessage({ message, isStreaming = false, showStats = true }: AssistantMessageProps) {
+export const AssistantMessage = memo(function AssistantMessage({ message, showStats = true }: AssistantMessageProps) {
   const elements = messageToElements(message, showStats)
   
-  if (elements.length === 0 && !isStreaming) return null
+  if (elements.length === 0) return null
   
   return (
     <div className="feed-item">
@@ -159,8 +157,6 @@ export const AssistantMessage = memo(function AssistantMessage({ message, isStre
           }
         }
       })}
-      
-        {isStreaming && <StreamingCursor />}
         
         {message.partial && (
           <div className="flex items-center gap-1.5 text-[10px] text-accent-warning mt-1">

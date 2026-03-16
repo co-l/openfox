@@ -99,7 +99,7 @@ export const SubAgentContainer = memo(function SubAgentContainer({ messages, sub
       <div 
         ref={scrollContainerRef}
         onWheel={handleWheel}
-        className={`${expanded ? 'max-h-[calc(100vh-10rem)]' : 'max-h-32'} overflow-y-auto p-2 transition-[max-height] duration-200`}
+        className={`${expanded ? 'max-h-[calc(100vh-10rem)]' : 'max-h-80'} overflow-y-auto p-2 transition-[max-height] duration-200`}
       >
         {displayMessages.map((message) => {
           if (message.role === 'assistant') {
@@ -107,7 +107,6 @@ export const SubAgentContainer = memo(function SubAgentContainer({ messages, sub
               <AssistantMessage 
                 key={message.id}
                 message={message}
-                isStreaming={message.isStreaming ?? false}
                 showStats={true}
               />
             )

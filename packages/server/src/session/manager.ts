@@ -56,6 +56,7 @@ export type SessionEvent =
   | { type: 'session_deleted'; sessionId: string }
   | { type: 'mode_changed'; sessionId: string; from: SessionMode; to: SessionMode }
   | { type: 'phase_changed'; sessionId: string; phase: SessionPhase }
+  | { type: 'running_changed'; sessionId: string; isRunning: boolean }
   | { type: 'message_added'; sessionId: string; message: Message }
   | { type: 'message_updated'; sessionId: string; messageId: string; updates: Partial<Omit<Message, 'id' | 'timestamp' | 'role'>> }
   | { type: 'criteria_updated'; sessionId: string; criteria: Criterion[] }
@@ -221,6 +222,7 @@ class SessionManagerImpl {
     
     const updatedSession = this.requireSession(sessionId)
     this.emit({ type: 'session_updated', session: updatedSession })
+    this.emit({ type: 'running_changed', sessionId, isRunning })
     
     return updatedSession
   }

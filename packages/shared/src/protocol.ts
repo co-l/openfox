@@ -132,6 +132,7 @@ export type ServerMessageType =
   | 'session.state'
   | 'session.list'
   | 'session.deleted'
+  | 'session.running'    // Real-time running state change
   // Unified chat events (replaces plan.delta, agent.event, etc.)
   | 'chat.delta'          // Text streaming
   | 'chat.thinking'       // Thinking block content
@@ -192,6 +193,10 @@ export interface SessionStatePayload {
 
 export interface SessionListPayload {
   sessions: SessionSummary[]
+}
+
+export interface SessionRunningPayload {
+  isRunning: boolean
 }
 
 // Chat payloads (unified streaming)

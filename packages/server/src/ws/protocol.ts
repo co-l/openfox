@@ -14,6 +14,7 @@ import type {
   ProjectListPayload,
   SessionStatePayload,
   SessionListPayload,
+  SessionRunningPayload,
   ChatDeltaPayload,
   ChatThinkingPayload,
   ChatToolCallPayload,
@@ -110,6 +111,10 @@ export function createSessionStateMessage(session: Session, messages: Message[],
 
 export function createSessionListMessage(sessions: SessionSummary[], correlationId?: string): ServerMessage<SessionListPayload> {
   return createServerMessage('session.list', { sessions }, correlationId)
+}
+
+export function createSessionRunningMessage(isRunning: boolean): ServerMessage<SessionRunningPayload> {
+  return createServerMessage('session.running', { isRunning })
 }
 
 // Project messages

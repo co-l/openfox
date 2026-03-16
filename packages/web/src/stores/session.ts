@@ -12,6 +12,7 @@ import type {
   ServerMessage,
   SessionStatePayload,
   SessionListPayload,
+  SessionRunningPayload,
   ChatDeltaPayload,
   ChatThinkingPayload,
   ChatToolCallPayload,
@@ -261,6 +262,16 @@ export const useSessionStore = create<SessionState>((set, get) => ({
         break
       }
       
+      case 'session.running': {
+        const payload = message.payload as SessionRunningPayload
+        set(state => ({
+          currentSession: state.currentSession
+            ? { ...state.currentSession, isRunning: payload.isRunning }
+            : null,
+        }))
+        break
+      }
+      
       case 'chat.message': {
         // Server created a new message (user message or assistant message before streaming)
         const payload = message.payload as ChatMessagePayload
@@ -421,6 +432,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
         const payload = message.payload as ChatDonePayload
         
         // Mark the message as no longer streaming and add stats if present
+        // Note: isRunning is now updated via session.running event, not here
         set(state => ({
           messages: state.messages.map(m => 
             m.id === payload.messageId
@@ -428,10 +440,6 @@ export const useSessionStore = create<SessionState>((set, get) => ({
               : m
           ),
           streamingMessageId: null,
-          // Update session running state
-          currentSession: state.currentSession
-            ? { ...state.currentSession, isRunning: false }
-            : null,
         }))
         
         if (payload.reason === 'complete') {
@@ -530,14 +538,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
   },
 }))
 
-// Helper selector: is any message currently streaming?
-export function useIsStreaming() {
-  return useSessionStore(state => state.streamingMessageId !== null)
-}
-
-// Helper selector: get the currently streaming message
-export function useStreamingMessage() {
-  const messages = useSessionStore(state => state.messages)
-  const streamingMessageId = useSessionStore(state => state.streamingMessageId)
-  return messages.find(m => m.id === streamingMessageId) ?? null
+// Helper selector: is the session currently running (agent active)?
+export function useIsRunning() {
+  return useSessionStore(state => state.currentSession?.isRunning ?? false)
 }

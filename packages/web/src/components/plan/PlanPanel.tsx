@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useCallback, useMemo } from 'react'
-import { useSessionStore, useIsStreaming } from '../../stores/session'
+import { useSessionStore, useIsRunning } from '../../stores/session'
 import type { Message } from '@openfox/shared'
 import { SessionLayout } from '../layout/SessionLayout'
 import { ContextHeader } from './ContextHeader'
@@ -9,6 +9,7 @@ import { SubAgentContainer } from './SubAgentContainer'
 import { ModeSwitch } from './ModeSwitch'
 import { Button } from '../shared/Button'
 import { PathConfirmationDialog } from '../shared/PathConfirmationDialog'
+import { RunningIndicator } from '../shared/RunningIndicator'
 
 // Display item: either a single message, a grouped sub-agent run, or a context window divider
 type DisplayItem = 
@@ -83,7 +84,7 @@ export function PlanPanel() {
   const error = useSessionStore(state => state.error)
   const pendingPathConfirmation = useSessionStore(state => state.pendingPathConfirmation)
   
-  const isStreaming = useIsStreaming()
+  const isRunning = useIsRunning()
   
   const sendMessage = useSessionStore(state => state.sendMessage)
   const clearError = useSessionStore(state => state.clearError)
@@ -156,17 +157,17 @@ export function PlanPanel() {
   // Escape key to stop generation
   useEffect(() => {
     const handleEscape = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && isStreaming) {
+      if (e.key === 'Escape' && isRunning) {
         stopGeneration()
       }
     }
     window.addEventListener('keydown', handleEscape)
     return () => window.removeEventListener('keydown', handleEscape)
-  }, [isStreaming, stopGeneration])
+  }, [isRunning, stopGeneration])
   
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
-    if (!input.trim() || isStreaming) return
+    if (!input.trim() || isRunning) return
 
     setUserScrolledUp(false)
     
@@ -194,10 +195,10 @@ export function PlanPanel() {
   const hasAssistantResponse = displayItems.some(item => 
     item.type === 'message' && item.message.role === 'assistant'
   )
-  const showStartBuilding = isPlanning && hasCriteria && !isStreaming && hasAssistantResponse && !isDone
+  const showStartBuilding = isPlanning && hasCriteria && !isRunning && hasAssistantResponse && !isDone
   
   // Show Launch button in builder mode when there are pending criteria
-  const showLaunchButton = isBuilding && hasPendingCriteria && !isStreaming && !isDone
+  const showLaunchButton = isBuilding && hasPendingCriteria && !isRunning && !isDone
   
   return (
     <SessionLayout>
@@ -246,7 +247,6 @@ export function PlanPanel() {
               <AssistantMessage 
                 key={message.id}
                 message={message}
-                isStreaming={message.isStreaming ?? false}
                 showStats={true}
               />
             )
@@ -294,11 +294,13 @@ export function PlanPanel() {
           </div>
         )}
         
+        {isRunning && <RunningIndicator />}
+        
         <div ref={messagesEndRef} />
       </div>
       
       <form onSubmit={handleSubmit} className="p-4 border-t border-border bg-gradient-to-t from-bg-secondary/50 to-transparent">
-        <div className={`flex items-end gap-3 p-3 rounded border ${isStreaming ? 'border-accent-warning/30 bg-accent-warning/5' : 'border-border bg-bg-tertiary/50'} transition-colors`}>
+        <div className={`flex items-end gap-3 p-3 rounded border ${isRunning ? 'border-accent-warning/30 bg-accent-warning/5' : 'border-border bg-bg-tertiary/50'} transition-colors`}>
           <textarea
             ref={textareaRef}
             value={input}
@@ -312,7 +314,7 @@ export function PlanPanel() {
             className="flex-1 bg-transparent text-sm placeholder:text-text-muted resize-none overflow-y-auto focus:outline-none"
             style={{ minHeight: '24px', maxHeight: '200px' }}
           />
-          {!isStreaming ? (
+          {!isRunning ? (
             <div className="flex items-center gap-2">
               {showLaunchButton && (
                 <button
