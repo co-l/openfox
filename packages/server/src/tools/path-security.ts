@@ -25,6 +25,48 @@ const SAFE_PATHS = new Set([
 /** Directories that are always allowed (in addition to workdir) */
 const ALLOWED_ROOTS = ['/tmp', '/var/tmp']
 
+/**
+ * Patterns for files that may contain secrets and require confirmation
+ * regardless of whether they're inside the workdir.
+ * 
+ * Note: .env.example is excluded as it typically contains placeholder values.
+ */
+const SENSITIVE_FILE_PATTERNS: RegExp[] = [
+  // Dotenv files (but not .envrc, .env-example, .env.example)
+  /^\.env$/,                              // .env
+  /^\.env\.(?!example)[a-zA-Z0-9_.-]+$/,  // .env.local, .env.production (not .env.example)
+  
+  // Credential files
+  /^credentials\.json$/i,
+  /^secrets?\.(?:json|ya?ml|toml)$/i,
+  
+  // Private keys
+  /\.pem$/i,
+  /\.key$/i,
+  /^id_rsa/,
+  /^id_ed25519/,
+  /^id_ecdsa/,
+  /^id_dsa/,
+  
+  // Auth configs
+  /^\.netrc$/,
+]
+
+/**
+ * Check if a path points to a sensitive file that may contain secrets.
+ * Checks the basename of the path against known sensitive patterns.
+ * 
+ * @param path - The path to check (can be relative or absolute)
+ * @returns true if the file matches a sensitive pattern
+ */
+export function isSensitivePath(path: string): boolean {
+  // Extract basename from path
+  const basename = path.split('/').pop() ?? ''
+  if (!basename) return false
+  
+  return SENSITIVE_FILE_PATTERNS.some(pattern => pattern.test(basename))
+}
+
 // ===========================================================================
 // Session Allowlist (paths approved by user)
 // ===========================================================================
@@ -257,6 +299,62 @@ export function extractAbsolutePathsFromCommand(command: string): string[] {
 }
 
 /**
+ * Extract sensitive file paths from a shell command.
+ * Unlike extractAbsolutePathsFromCommand, this looks for relative paths
+ * that match sensitive file patterns (like .env, credentials.json, etc.).
+ * 
+ * @param command - The shell command to parse
+ * @returns Array of sensitive paths found (deduplicated)
+ */
+export function extractSensitivePathsFromCommand(command: string): string[] {
+  if (!command.trim()) {
+    return []
+  }
+
+  const paths: string[] = []
+
+  // Pattern to match potential file paths (relative or in subdirectories)
+  // Matches: .env, config/.env, "./file", 'file', paths with common extensions
+  // Word boundaries are tricky in shell, so we look for common delimiters
+  
+  // Pattern 1: Quoted strings that might contain sensitive paths
+  const quotedPattern = /["']([^"']+)["']/g
+  let match
+  while ((match = quotedPattern.exec(command)) !== null) {
+    const content = match[1]!
+    if (isSensitivePath(content)) {
+      paths.push(content)
+    }
+  }
+
+  // Pattern 2: Unquoted paths - look for tokens that could be file paths
+  // Split by common shell delimiters and check each token
+  // Remove quoted sections first to avoid double-matching
+  const unquoted = command
+    .replace(/["'][^"']*["']/g, ' ')  // Remove quoted strings
+    .replace(/[|&;><]/g, ' ')          // Replace shell operators with spaces
+  
+  // Split by whitespace and check each token
+  const tokens = unquoted.split(/\s+/).filter(Boolean)
+  
+  for (const token of tokens) {
+    // Skip flags (start with -)
+    if (token.startsWith('-')) continue
+    
+    // Skip URLs
+    if (token.includes('://')) continue
+    
+    // Check if token is or contains a sensitive file
+    if (isSensitivePath(token)) {
+      paths.push(token)
+    }
+  }
+
+  // Deduplicate
+  return [...new Set(paths)]
+}
+
+/**
  * Check if a path is a "safe" device path that doesn't need confirmation
  */
 function isSafePath(path: string): boolean {
@@ -270,7 +368,8 @@ function isSafePath(path: string): boolean {
 
 export interface PathAccessResult {
   needsConfirmation: boolean
-  deniedPaths: string[]
+  deniedPaths: string[]      // Paths outside the sandbox
+  sensitivePaths: string[]   // Paths matching sensitive file patterns (may overlap with deniedPaths)
 }
 
 /**
@@ -287,24 +386,36 @@ export async function checkPathsAccess(
   sessionId?: string
 ): Promise<PathAccessResult> {
   if (paths.length === 0) {
-    return { needsConfirmation: false, deniedPaths: [] }
+    return { needsConfirmation: false, deniedPaths: [], sensitivePaths: [] }
   }
 
   const deniedPaths: string[] = []
+  const sensitivePaths: string[] = []
 
   for (const path of paths) {
     const result = await isPathWithinSandbox(path, workdir, sessionId)
+    
+    // Check if path is outside sandbox
     if (!result.allowed) {
       deniedPaths.push(result.resolvedPath)
+    }
+    
+    // Check if path is sensitive (regardless of sandbox status)
+    // But only if not already in session allowlist
+    if (isSensitivePath(path) && !isPathAllowed(sessionId ?? '', path)) {
+      // Use the resolved path for consistency
+      sensitivePaths.push(result.resolvedPath)
     }
   }
 
   // Deduplicate
   const uniqueDenied = [...new Set(deniedPaths)]
+  const uniqueSensitive = [...new Set(sensitivePaths)]
 
   return {
-    needsConfirmation: uniqueDenied.length > 0,
+    needsConfirmation: uniqueDenied.length > 0 || uniqueSensitive.length > 0,
     deniedPaths: uniqueDenied,
+    sensitivePaths: uniqueSensitive,
   }
 }
 
@@ -313,8 +424,8 @@ export async function checkPathsAccess(
 // ===========================================================================
 
 /**
- * Request access to paths outside the sandbox.
- * If paths are not allowed, sends a confirmation event to the client and suspends
+ * Request access to paths outside the sandbox or sensitive files.
+ * If paths require confirmation, sends a confirmation event to the client and suspends
  * tool execution until the user responds.
  * 
  * @param paths - Array of paths to check
@@ -341,17 +452,27 @@ export async function requestPathAccess(
     return
   }
   
+  // Combine all paths that need confirmation (may overlap)
+  const allPathsNeedingConfirmation = [...new Set([...result.deniedPaths, ...result.sensitivePaths])]
+  
+  // Determine reason based on which arrays have entries
+  const hasDenied = result.deniedPaths.length > 0
+  const hasSensitive = result.sensitivePaths.length > 0
+  const reason = hasDenied && hasSensitive ? 'both' as const
+    : hasDenied ? 'outside_workdir' as const
+    : 'sensitive_file' as const
+  
   // Create the confirmation Promise and send event to client
-  const confirmationPromise = registerPathConfirmation(callId, result.deniedPaths, sessionId)
+  const confirmationPromise = registerPathConfirmation(callId, allPathsNeedingConfirmation, sessionId)
   
   // Send path confirmation event to client (this shows the modal)
-  onEvent(createChatPathConfirmationMessage(callId, tool, result.deniedPaths, workdir))
+  onEvent(createChatPathConfirmationMessage(callId, tool, allPathsNeedingConfirmation, workdir, reason))
   
   // Suspend tool execution until user responds
   const approved = await confirmationPromise
   
   if (!approved) {
-    throw new PathAccessDeniedError(result.deniedPaths, tool)
+    throw new PathAccessDeniedError(allPathsNeedingConfirmation, tool)
   }
   
   // If approved, paths have already been added to allowlist by providePathConfirmation

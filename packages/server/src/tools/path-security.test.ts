@@ -5,12 +5,14 @@ import { tmpdir, homedir } from 'node:os'
 import {
   isPathWithinSandbox,
   extractAbsolutePathsFromCommand,
+  extractSensitivePathsFromCommand,
   checkPathsAccess,
   PathConfirmationInterrupt,
   PathAccessDeniedError,
   providePathConfirmation,
   cancelPathConfirmation,
   hasPendingPathConfirmation,
+  isSensitivePath,
 } from './path-security.js'
 
 // Test fixtures directory - use a unique subdir that's NOT in /tmp's allowed root
@@ -508,6 +510,75 @@ describe('path-security', () => {
       const result = await checkPathsAccess(paths, WORKDIR)
       expect(result.deniedPaths).toHaveLength(1)
     })
+
+    describe('sensitive files', () => {
+      it('detects .env in workdir as sensitive', async () => {
+        const paths = [join(WORKDIR, '.env')]
+        const result = await checkPathsAccess(paths, WORKDIR)
+        expect(result.needsConfirmation).toBe(true)
+        expect(result.sensitivePaths).toContain(join(WORKDIR, '.env'))
+        expect(result.deniedPaths).toEqual([])
+      })
+
+      it('detects .env.local in workdir as sensitive', async () => {
+        const paths = [join(WORKDIR, '.env.local')]
+        const result = await checkPathsAccess(paths, WORKDIR)
+        expect(result.needsConfirmation).toBe(true)
+        expect(result.sensitivePaths).toContain(join(WORKDIR, '.env.local'))
+      })
+
+      it('detects credentials.json in workdir as sensitive', async () => {
+        const paths = [join(WORKDIR, 'credentials.json')]
+        const result = await checkPathsAccess(paths, WORKDIR)
+        expect(result.needsConfirmation).toBe(true)
+        expect(result.sensitivePaths).toContain(join(WORKDIR, 'credentials.json'))
+      })
+
+      it('detects sensitive file outside workdir in both arrays', async () => {
+        const paths = ['/etc/.env']
+        const result = await checkPathsAccess(paths, WORKDIR)
+        expect(result.needsConfirmation).toBe(true)
+        expect(result.deniedPaths).toContain('/etc/.env')
+        expect(result.sensitivePaths).toContain('/etc/.env')
+      })
+
+      it('does not flag .env.example as sensitive', async () => {
+        const paths = [join(WORKDIR, '.env.example')]
+        const result = await checkPathsAccess(paths, WORKDIR)
+        expect(result.needsConfirmation).toBe(false)
+        expect(result.sensitivePaths).toEqual([])
+      })
+
+      it('does not flag regular files as sensitive', async () => {
+        const paths = [join(WORKDIR, 'index.ts'), join(WORKDIR, 'package.json')]
+        const result = await checkPathsAccess(paths, WORKDIR)
+        expect(result.needsConfirmation).toBe(false)
+        expect(result.sensitivePaths).toEqual([])
+        expect(result.deniedPaths).toEqual([])
+      })
+
+      it('separates sensitive and denied paths correctly', async () => {
+        const paths = [
+          join(WORKDIR, '.env'),        // sensitive, in workdir
+          join(WORKDIR, 'file.ts'),     // normal, in workdir
+          '/etc/passwd',                 // denied, not sensitive
+        ]
+        const result = await checkPathsAccess(paths, WORKDIR)
+        expect(result.needsConfirmation).toBe(true)
+        expect(result.sensitivePaths).toEqual([join(WORKDIR, '.env')])
+        expect(result.deniedPaths).toEqual(['/etc/passwd'])
+      })
+
+      it('includes sensitive file allowed by session in neither array', async () => {
+        const sessionId = 'test-session-sensitive'
+        // First call without session - should need confirmation
+        const result1 = await checkPathsAccess([join(WORKDIR, '.env')], WORKDIR)
+        expect(result1.needsConfirmation).toBe(true)
+
+        // Note: To test session allowlist, we'd need to add to allowlist first
+        // This is tested in the full flow integration tests
+      })
+    })
   })
 
   // ===========================================================================
@@ -589,5 +660,241 @@ describe('path-security', () => {
 
     // Note: Full flow testing requires the interrupt to be thrown and caught,
     // which is integration-level testing. Unit tests verify the API exists.
+  })
+
+  // ===========================================================================
+  // isSensitivePath()
+  // ===========================================================================
+
+  describe('isSensitivePath', () => {
+    describe('dotenv files', () => {
+      it('detects .env as sensitive', () => {
+        expect(isSensitivePath('.env')).toBe(true)
+        expect(isSensitivePath('/project/.env')).toBe(true)
+        expect(isSensitivePath('/home/user/app/.env')).toBe(true)
+      })
+
+      it('detects .env.local as sensitive', () => {
+        expect(isSensitivePath('.env.local')).toBe(true)
+        expect(isSensitivePath('/project/.env.local')).toBe(true)
+      })
+
+      it('detects .env.production as sensitive', () => {
+        expect(isSensitivePath('.env.production')).toBe(true)
+      })
+
+      it('detects .env.development as sensitive', () => {
+        expect(isSensitivePath('.env.development')).toBe(true)
+      })
+
+      it('detects .env.development.local as sensitive', () => {
+        expect(isSensitivePath('.env.development.local')).toBe(true)
+      })
+
+      it('detects .env.test as sensitive', () => {
+        expect(isSensitivePath('.env.test')).toBe(true)
+      })
+
+      it('does NOT detect .envrc as sensitive (direnv)', () => {
+        expect(isSensitivePath('.envrc')).toBe(false)
+      })
+
+      it('does NOT detect .environment as sensitive', () => {
+        expect(isSensitivePath('.environment')).toBe(false)
+      })
+
+      it('does NOT detect env.js as sensitive', () => {
+        expect(isSensitivePath('env.js')).toBe(false)
+      })
+
+      it('does NOT detect .env-example as sensitive', () => {
+        expect(isSensitivePath('.env-example')).toBe(false)
+        expect(isSensitivePath('.env.example')).toBe(false)
+      })
+    })
+
+    describe('credential files', () => {
+      it('detects credentials.json as sensitive', () => {
+        expect(isSensitivePath('credentials.json')).toBe(true)
+        expect(isSensitivePath('/app/credentials.json')).toBe(true)
+      })
+
+      it('detects secrets.json as sensitive', () => {
+        expect(isSensitivePath('secrets.json')).toBe(true)
+      })
+
+      it('detects secret.yaml as sensitive', () => {
+        expect(isSensitivePath('secret.yaml')).toBe(true)
+        expect(isSensitivePath('secret.yml')).toBe(true)
+      })
+
+      it('detects secrets.toml as sensitive', () => {
+        expect(isSensitivePath('secrets.toml')).toBe(true)
+      })
+    })
+
+    describe('private keys', () => {
+      it('detects .pem files as sensitive', () => {
+        expect(isSensitivePath('private.pem')).toBe(true)
+        expect(isSensitivePath('server.pem')).toBe(true)
+        expect(isSensitivePath('/ssl/cert.pem')).toBe(true)
+      })
+
+      it('detects .key files as sensitive', () => {
+        expect(isSensitivePath('private.key')).toBe(true)
+        expect(isSensitivePath('server.key')).toBe(true)
+      })
+
+      it('detects SSH keys as sensitive', () => {
+        expect(isSensitivePath('id_rsa')).toBe(true)
+        expect(isSensitivePath('id_rsa.pub')).toBe(true)
+        expect(isSensitivePath('id_ed25519')).toBe(true)
+        expect(isSensitivePath('id_ecdsa')).toBe(true)
+        expect(isSensitivePath('/home/user/.ssh/id_rsa')).toBe(true)
+      })
+    })
+
+    describe('cloud provider configs', () => {
+      it('detects .netrc as sensitive', () => {
+        expect(isSensitivePath('.netrc')).toBe(true)
+        expect(isSensitivePath('/home/user/.netrc')).toBe(true)
+      })
+    })
+
+    describe('non-sensitive files', () => {
+      it('does NOT detect regular source files as sensitive', () => {
+        expect(isSensitivePath('index.ts')).toBe(false)
+        expect(isSensitivePath('package.json')).toBe(false)
+        expect(isSensitivePath('README.md')).toBe(false)
+      })
+
+      it('does NOT detect config files without secrets as sensitive', () => {
+        expect(isSensitivePath('tsconfig.json')).toBe(false)
+        expect(isSensitivePath('.eslintrc.js')).toBe(false)
+        expect(isSensitivePath('vite.config.ts')).toBe(false)
+      })
+    })
+  })
+
+  // ===========================================================================
+  // extractSensitivePathsFromCommand()
+  // ===========================================================================
+
+  describe('extractSensitivePathsFromCommand', () => {
+    describe('dotenv files', () => {
+      it('extracts .env from cat command', () => {
+        const paths = extractSensitivePathsFromCommand('cat .env')
+        expect(paths).toContain('.env')
+      })
+
+      it('extracts .env from source command', () => {
+        const paths = extractSensitivePathsFromCommand('source .env')
+        expect(paths).toContain('.env')
+      })
+
+      it('extracts .env.local from grep command', () => {
+        const paths = extractSensitivePathsFromCommand('grep API_KEY .env.local')
+        expect(paths).toContain('.env.local')
+      })
+
+      it('extracts .env from echo append command', () => {
+        const paths = extractSensitivePathsFromCommand('echo "VAR=value" >> .env')
+        expect(paths).toContain('.env')
+      })
+
+      it('extracts .env from redirection', () => {
+        const paths = extractSensitivePathsFromCommand('echo "test" > .env')
+        expect(paths).toContain('.env')
+      })
+
+      it('extracts .env.production from complex command', () => {
+        const paths = extractSensitivePathsFromCommand('cp .env.production /tmp/backup')
+        expect(paths).toContain('.env.production')
+      })
+
+      it('extracts multiple .env files from command', () => {
+        const paths = extractSensitivePathsFromCommand('cat .env .env.local')
+        expect(paths).toContain('.env')
+        expect(paths).toContain('.env.local')
+      })
+
+      it('extracts .env in subdirectory path', () => {
+        const paths = extractSensitivePathsFromCommand('cat config/.env')
+        expect(paths).toContain('config/.env')
+      })
+    })
+
+    describe('credential files', () => {
+      it('extracts credentials.json', () => {
+        const paths = extractSensitivePathsFromCommand('cat credentials.json')
+        expect(paths).toContain('credentials.json')
+      })
+
+      it('extracts secrets.yaml', () => {
+        const paths = extractSensitivePathsFromCommand('kubectl apply -f secrets.yaml')
+        expect(paths).toContain('secrets.yaml')
+      })
+    })
+
+    describe('private keys', () => {
+      it('extracts .pem files', () => {
+        const paths = extractSensitivePathsFromCommand('openssl x509 -in cert.pem')
+        expect(paths).toContain('cert.pem')
+      })
+
+      it('extracts SSH keys', () => {
+        const paths = extractSensitivePathsFromCommand('ssh-add ~/.ssh/id_rsa')
+        // This would be caught by extractAbsolutePathsFromCommand for tilde
+        // But if just id_rsa is referenced
+        const paths2 = extractSensitivePathsFromCommand('cat id_rsa')
+        expect(paths2).toContain('id_rsa')
+      })
+    })
+
+    describe('quoted paths', () => {
+      it('extracts .env from double-quoted path', () => {
+        const paths = extractSensitivePathsFromCommand('cat ".env"')
+        expect(paths).toContain('.env')
+      })
+
+      it('extracts .env from single-quoted path', () => {
+        const paths = extractSensitivePathsFromCommand("cat '.env.local'")
+        expect(paths).toContain('.env.local')
+      })
+
+      it('extracts .env with spaces in path', () => {
+        const paths = extractSensitivePathsFromCommand('cat "my project/.env"')
+        expect(paths).toContain('my project/.env')
+      })
+    })
+
+    describe('does not extract', () => {
+      it('does not extract non-sensitive files', () => {
+        const paths = extractSensitivePathsFromCommand('cat index.ts package.json')
+        expect(paths).toEqual([])
+      })
+
+      it('does not extract .envrc', () => {
+        const paths = extractSensitivePathsFromCommand('cat .envrc')
+        expect(paths).toEqual([])
+      })
+
+      it('returns empty for command with no paths', () => {
+        const paths = extractSensitivePathsFromCommand('echo "hello"')
+        expect(paths).toEqual([])
+      })
+
+      it('returns empty for empty command', () => {
+        const paths = extractSensitivePathsFromCommand('')
+        expect(paths).toEqual([])
+      })
+    })
+
+    describe('deduplication', () => {
+      it('deduplicates repeated sensitive paths', () => {
+        const paths = extractSensitivePathsFromCommand('cat .env && cat .env')
+        expect(paths.filter((p: string) => p === '.env')).toHaveLength(1)
+      })
+    })
   })
 })

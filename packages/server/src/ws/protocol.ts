@@ -207,9 +207,10 @@ export function createChatPathConfirmationMessage(
   callId: string,
   tool: string,
   paths: string[],
-  workdir: string
+  workdir: string,
+  reason: ChatPathConfirmationPayload['reason']
 ): ServerMessage<ChatPathConfirmationPayload> {
-  return createServerMessage('chat.path_confirmation', { callId, tool, paths, workdir })
+  return createServerMessage('chat.path_confirmation', { callId, tool, paths, workdir, reason })
 }
 
 // Mode messages

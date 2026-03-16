@@ -45,6 +45,7 @@ export interface PendingPathConfirmation {
   tool: string
   paths: string[]
   workdir: string
+  reason: 'outside_workdir' | 'sensitive_file' | 'both'
 }
 
 interface SessionState {
@@ -500,6 +501,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
             tool: payload.tool,
             paths: payload.paths,
             workdir: payload.workdir,
+            reason: payload.reason,
           },
         })
         break

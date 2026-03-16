@@ -5,6 +5,7 @@ import type { Tool, ToolContext } from './types.js'
 import { OUTPUT_LIMITS } from './types.js'
 import {
   extractAbsolutePathsFromCommand,
+  extractSensitivePathsFromCommand,
   requestPathAccess,
 } from './path-security.js'
 
@@ -85,7 +86,15 @@ export const runCommandTool: Tool = {
         pathsToCheck.push(resolved)
       }
       
-      // Check all paths - request confirmation for paths outside workdir
+      // Extract sensitive file paths from command (like .env, credentials.json)
+      const sensitivePaths = extractSensitivePathsFromCommand(command)
+      for (const sensitivePath of sensitivePaths) {
+        // Resolve relative to the working directory
+        const resolved = isAbsolute(sensitivePath) ? sensitivePath : resolve(workingDir, sensitivePath)
+        pathsToCheck.push(resolved)
+      }
+      
+      // Check all paths - request confirmation for paths outside workdir or sensitive files
       if (context.onEvent) {
         await requestPathAccess(
           pathsToCheck,

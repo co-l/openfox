@@ -287,11 +287,14 @@ export interface ChatErrorPayload {
 }
 
 // Path confirmation payloads
+export type PathConfirmationReason = 'outside_workdir' | 'sensitive_file' | 'both'
+
 export interface ChatPathConfirmationPayload {
   callId: string
   tool: string
-  paths: string[]       // The outside-workdir paths requiring confirmation
+  paths: string[]       // The paths requiring confirmation
   workdir: string       // For context in UI
+  reason: PathConfirmationReason  // Why confirmation is needed
 }
 
 // Client payload for path confirmation response
