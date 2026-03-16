@@ -24,6 +24,7 @@ import {
   createChatDoneMessage,
   createCriteriaUpdatedMessage,
 } from '../ws/protocol.js'
+import { createToolProgressHandler } from './tool-streaming.js'
 
 export interface VerifierStepOptions {
   sessionId: string
@@ -208,10 +209,13 @@ ${modifiedFiles.length > 0 ? modifiedFiles.map(f => `- ${f}`).join('\n') : '(non
       for (const toolCall of result.toolCalls) {
         onMessage(createChatToolCallMessage(currentMessageId, toolCall.id, toolCall.name, toolCall.arguments))
         
+        // Create progress handler for streaming output (run_command only)
+        const onProgress = createToolProgressHandler(currentMessageId, toolCall.id, onMessage)
+        
         const toolResult = await toolRegistry.execute(
           toolCall.name,
           toolCall.arguments,
-          { workdir: session.workdir, sessionId, lspManager: sessionManager.getLspManager(sessionId), onEvent: onMessage }
+          { workdir: session.workdir, sessionId, lspManager: sessionManager.getLspManager(sessionId), onEvent: onMessage, onProgress }
         )
         
         totalToolTime += toolResult.durationMs

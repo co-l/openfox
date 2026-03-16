@@ -172,4 +172,113 @@ describe('Shell Tools', () => {
       expect(runCalls.length).toBeGreaterThanOrEqual(1)
     })
   })
+
+  describe('Output Streaming', () => {
+    it('streams stdout before tool_result', async () => {
+      client.clearEvents()
+      
+      await client.send('chat.send', { 
+        content: 'Run the exact command: echo "streaming test output"' 
+      })
+      
+      const response = await client.waitForChatDone()
+      const allEvents = client.allEvents()
+      
+      // Find the run_command tool call
+      const runCall = response.toolCalls.find(tc => tc.tool === 'run_command')
+      expect(runCall).toBeDefined()
+      
+      // Find chat.tool_output events for this call
+      const outputEvents = allEvents.filter(
+        e => e.type === 'chat.tool_output' && 
+             (e.payload as { callId: string }).callId === runCall!.callId
+      )
+      
+      // Should have at least one output event
+      expect(outputEvents.length).toBeGreaterThan(0)
+      
+      // Output events should come before tool_result
+      const outputIdx = allEvents.indexOf(outputEvents[0]!)
+      const resultEvent = allEvents.find(
+        e => e.type === 'chat.tool_result' && 
+             (e.payload as { callId: string }).callId === runCall!.callId
+      )
+      const resultIdx = allEvents.indexOf(resultEvent!)
+      
+      expect(outputIdx).toBeLessThan(resultIdx)
+    })
+
+    it('streams stderr separately', async () => {
+      client.clearEvents()
+      
+      await client.send('chat.send', { 
+        content: 'Run the exact command: echo "stdout" && echo "stderr" >&2' 
+      })
+      
+      const response = await client.waitForChatDone()
+      const allEvents = client.allEvents()
+      
+      const runCall = response.toolCalls.find(tc => tc.tool === 'run_command')
+      expect(runCall).toBeDefined()
+      
+      // Find output events
+      const outputEvents = allEvents.filter(
+        e => e.type === 'chat.tool_output' && 
+             (e.payload as { callId: string }).callId === runCall!.callId
+      )
+      
+      // Should have stdout and stderr events
+      const stdoutEvents = outputEvents.filter(
+        e => (e.payload as { stream: string }).stream === 'stdout'
+      )
+      const stderrEvents = outputEvents.filter(
+        e => (e.payload as { stream: string }).stream === 'stderr'
+      )
+      
+      expect(stdoutEvents.length).toBeGreaterThan(0)
+      expect(stderrEvents.length).toBeGreaterThan(0)
+      
+      // Verify content
+      const stdoutContent = stdoutEvents.map(
+        e => (e.payload as { output: string }).output
+      ).join('')
+      const stderrContent = stderrEvents.map(
+        e => (e.payload as { output: string }).output
+      ).join('')
+      
+      expect(stdoutContent).toContain('stdout')
+      expect(stderrContent).toContain('stderr')
+    })
+
+    it('streams output for slow commands', async () => {
+      client.clearEvents()
+      
+      await client.send('chat.send', { 
+        content: 'Run exactly: echo "first" && sleep 0.2 && echo "second"' 
+      })
+      
+      const response = await client.waitForChatDone()
+      const allEvents = client.allEvents()
+      
+      const runCall = response.toolCalls.find(tc => tc.tool === 'run_command')
+      expect(runCall).toBeDefined()
+      
+      // Should have multiple output events (one before sleep, one after)
+      const outputEvents = allEvents.filter(
+        e => e.type === 'chat.tool_output' && 
+             (e.payload as { callId: string }).callId === runCall!.callId
+      )
+      
+      // At minimum, we should have output events
+      expect(outputEvents.length).toBeGreaterThan(0)
+      
+      // Combined content should have both "first" and "second"
+      const allOutput = outputEvents.map(
+        e => (e.payload as { output: string }).output
+      ).join('')
+      
+      expect(allOutput).toContain('first')
+      expect(allOutput).toContain('second')
+    })
+  })
 })

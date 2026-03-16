@@ -3,9 +3,15 @@ import type { Diagnostic, EditContextRegion } from '@openfox/shared'
 import { ToolIcon } from './ToolIcon'
 import { DiffView, FilePreview, EditContextView } from './DiffView'
 import { DiagnosticsView } from './DiagnosticsView'
+import { RunCommandView } from './RunCommandView'
 import { formatToolArgs, formatToolArgsFull } from '../../lib/formatToolArgs'
 
 type ToolStatus = 'pending' | 'success' | 'error'
+
+interface StreamingChunk {
+  stream: 'stdout' | 'stderr'
+  content: string
+}
 
 interface ToolCallDisplayProps {
   tool: string
@@ -18,6 +24,9 @@ interface ToolCallDisplayProps {
   durationMs?: number
   diagnostics?: Diagnostic[]  // LSP diagnostics for file operations
   editContext?: { regions: EditContextRegion[] }  // Edit context with line numbers
+  // For run_command streaming
+  startedAt?: number  // Timestamp when tool started
+  streamingOutput?: StreamingChunk[]  // Real-time output chunks
 }
 
 const statusConfig = {
@@ -48,10 +57,13 @@ export function ToolCallDisplay({
   durationMs,
   diagnostics,
   editContext,
+  startedAt,
+  streamingOutput,
 }: ToolCallDisplayProps) {
-  // Auto-expand file operations so diffs are immediately visible
+  // Auto-expand file operations and running commands so content is immediately visible
   const isFileOperation = tool === 'edit_file' || tool === 'write_file'
-  const [expanded, setExpanded] = useState(isFileOperation)
+  const isRunningCommand = tool === 'run_command' && status === 'pending'
+  const [expanded, setExpanded] = useState(isFileOperation || isRunningCommand)
   const config = statusConfig[status]
   
   // Compact variant - single line, no expansion
@@ -88,6 +100,20 @@ export function ToolCallDisplay({
       
       {expanded && (
         <div className="p-2 bg-bg-secondary border-t border-border space-y-2 min-w-0">
+          {/* Specialized rendering for run_command with streaming output */}
+          {tool === 'run_command' && (
+            <RunCommandView
+              command={String(args.command ?? '')}
+              timeout={(args.timeout as number | undefined) ?? 120_000}
+              startedAt={startedAt}
+              streamingOutput={streamingOutput}
+              status={status}
+              result={result}
+              error={error}
+              durationMs={durationMs}
+            />
+          )}
+          
           {/* Specialized rendering for file edit operations */}
           {tool === 'edit_file' && status === 'success' && (
             <>
@@ -122,26 +148,28 @@ export function ToolCallDisplay({
             </>
           )}
           
-          {/* Show arguments for non-file operations or errors */}
-          {(tool !== 'edit_file' && tool !== 'write_file') || status !== 'success' ? (
-            <div>
-              <div className="text-[10px] text-text-muted mb-0.5">Arguments:</div>
-              <pre className="text-xs bg-bg-primary p-1.5 rounded overflow-x-auto">
-                {formatToolArgsFull(args)}
-              </pre>
-            </div>
-          ) : null}
-          
-          {/* Show result for non-file operations */}
-          {status === 'success' && result !== undefined && tool !== 'edit_file' && tool !== 'write_file' && (
-            <div>
-              <div className="text-[10px] text-text-muted mb-0.5">
-                Result{durationMs !== undefined && ` (${durationMs}ms)`}:
+          {/* Show arguments for other operations or errors */}
+          {tool !== 'edit_file' && tool !== 'write_file' && tool !== 'run_command' && (
+            <>
+              <div>
+                <div className="text-[10px] text-text-muted mb-0.5">Arguments:</div>
+                <pre className="text-xs bg-bg-primary p-1.5 rounded overflow-x-auto">
+                  {formatToolArgsFull(args)}
+                </pre>
               </div>
-              <pre className="text-xs bg-bg-primary p-1.5 rounded overflow-x-auto max-h-32">
-                {result || 'No output'}
-              </pre>
-            </div>
+              
+              {/* Show result for non-specialized operations */}
+              {status === 'success' && result !== undefined && (
+                <div>
+                  <div className="text-[10px] text-text-muted mb-0.5">
+                    Result{durationMs !== undefined && ` (${durationMs}ms)`}:
+                  </div>
+                  <pre className="text-xs bg-bg-primary p-1.5 rounded overflow-x-auto max-h-32">
+                    {result || 'No output'}
+                  </pre>
+                </div>
+              )}
+            </>
           )}
           
           {/* Duration badge for file operations */}
@@ -151,7 +179,8 @@ export function ToolCallDisplay({
             </div>
           )}
           
-          {status === 'error' && error && (
+          {/* Error display for non-run_command (run_command handles its own errors) */}
+          {status === 'error' && error && tool !== 'run_command' && (
             <div>
               <div className="text-[10px] text-accent-error mb-0.5">Error:</div>
               <pre className="text-xs bg-bg-primary p-1.5 rounded text-accent-error">

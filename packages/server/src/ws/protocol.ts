@@ -17,6 +17,7 @@ import type {
   ChatDeltaPayload,
   ChatThinkingPayload,
   ChatToolCallPayload,
+  ChatToolOutputPayload,
   ChatToolResultPayload,
   ChatTodoPayload,
   ChatSummaryPayload,
@@ -135,6 +136,15 @@ export function createChatToolCallMessage(messageId: string, callId: string, too
 
 export function createChatToolResultMessage(messageId: string, callId: string, tool: string, result: ToolResult): ServerMessage<ChatToolResultPayload> {
   return createServerMessage('chat.tool_result', { messageId, callId, tool, result })
+}
+
+export function createChatToolOutputMessage(
+  messageId: string,
+  callId: string,
+  output: string,
+  stream: 'stdout' | 'stderr'
+): ServerMessage<ChatToolOutputPayload> {
+  return createServerMessage('chat.tool_output', { messageId, callId, output, stream })
 }
 
 export function createChatTodoMessage(todos: Todo[]): ServerMessage<ChatTodoPayload> {

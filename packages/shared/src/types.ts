@@ -147,6 +147,8 @@ export interface ToolCall {
   name: string
   arguments: Record<string, unknown>
   result?: ToolResult  // Attached after execution (during streaming or enriched on load)
+  startedAt?: number   // Timestamp when tool started (for timeout display, transient)
+  streamingOutput?: Array<{ stream: 'stdout' | 'stderr'; content: string }>  // Real-time output (transient, run_command only)
 }
 
 /** A single line of context around an edit */

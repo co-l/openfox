@@ -119,6 +119,8 @@ export function AssistantMessage({ message, isStreaming = false, showStats = tru
                 durationMs={result?.durationMs}
                 diagnostics={result?.diagnostics}
                 editContext={result?.editContext}
+                startedAt={tc.startedAt}
+                streamingOutput={tc.streamingOutput}
               />
             )
           }

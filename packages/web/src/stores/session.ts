@@ -15,6 +15,7 @@ import type {
   ChatDeltaPayload,
   ChatThinkingPayload,
   ChatToolCallPayload,
+  ChatToolOutputPayload,
   ChatToolResultPayload,
   ChatTodoPayload,
   ChatSummaryPayload,
@@ -335,11 +336,33 @@ export const useSessionStore = create<SessionState>((set, get) => ({
                   ...m, 
                   toolCalls: [
                     ...(m.toolCalls ?? []),
-                    { id: payload.callId, name: payload.tool, arguments: payload.args }
+                    { id: payload.callId, name: payload.tool, arguments: payload.args, startedAt: Date.now() }
                   ]
                 }
               : m
           ),
+        }))
+        break
+      }
+      
+      case 'chat.tool_output': {
+        // Append streaming output to the tool call (run_command only)
+        const payload = message.payload as ChatToolOutputPayload
+        set(state => ({
+          messages: state.messages.map(m => {
+            if (m.id !== payload.messageId) return m
+            const toolCalls = m.toolCalls?.map(tc => {
+              if (tc.id !== payload.callId) return tc
+              return {
+                ...tc,
+                streamingOutput: [
+                  ...(tc.streamingOutput ?? []),
+                  { stream: payload.stream, content: payload.output }
+                ]
+              }
+            })
+            return { ...m, toolCalls }
+          }),
         }))
         break
       }

@@ -136,6 +136,7 @@ export type ServerMessageType =
   | 'chat.delta'          // Text streaming
   | 'chat.thinking'       // Thinking block content
   | 'chat.tool_call'      // Tool being called
+  | 'chat.tool_output'    // Streaming tool output (stdout/stderr for run_command)
   | 'chat.tool_result'    // Tool result
   | 'chat.todo'           // Todo list update (displayed in chat)
   | 'chat.summary'        // Summary block (displayed in chat)
@@ -217,6 +218,13 @@ export interface ChatToolResultPayload {
   callId: string
   tool: string
   result: ToolResult
+}
+
+export interface ChatToolOutputPayload {
+  messageId: string
+  callId: string
+  output: string
+  stream: 'stdout' | 'stderr'
 }
 
 export interface ChatTodoPayload {

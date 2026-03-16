@@ -1,0 +1,166 @@
+import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { runCommandTool } from './shell.js'
+import type { ToolContext } from './types.js'
+import { mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+
+describe('shell tool streaming', () => {
+  let tempDir: string
+  let context: ToolContext
+
+  beforeEach(async () => {
+    tempDir = await mkdtemp(join(tmpdir(), 'shell-test-'))
+    context = {
+      workdir: tempDir,
+      sessionId: 'test-session',
+    }
+  })
+
+  afterEach(async () => {
+    await rm(tempDir, { recursive: true, force: true })
+  })
+
+  it('calls onProgress for each stdout chunk', async () => {
+    const onProgress = vi.fn()
+    context.onProgress = onProgress
+
+    await runCommandTool.execute(
+      { command: 'echo "line1" && echo "line2"' },
+      context
+    )
+
+    // Should have called onProgress at least once for stdout
+    expect(onProgress).toHaveBeenCalled()
+    
+    // All calls should have [stdout] prefix
+    const stdoutCalls = onProgress.mock.calls.filter(
+      (call) => (call[0] as string).startsWith('[stdout]')
+    )
+    expect(stdoutCalls.length).toBeGreaterThan(0)
+    
+    // Combined output should contain both lines
+    const allOutput = stdoutCalls.map(c => c[0]).join('')
+    expect(allOutput).toContain('line1')
+    expect(allOutput).toContain('line2')
+  })
+
+  it('calls onProgress for stderr chunks', async () => {
+    const onProgress = vi.fn()
+    context.onProgress = onProgress
+
+    await runCommandTool.execute(
+      { command: 'echo "error message" >&2' },
+      context
+    )
+
+    // Should have called onProgress with stderr prefix
+    const stderrCalls = onProgress.mock.calls.filter(
+      (call) => (call[0] as string).startsWith('[stderr]')
+    )
+    expect(stderrCalls.length).toBeGreaterThan(0)
+    
+    const allOutput = stderrCalls.map(c => c[0]).join('')
+    expect(allOutput).toContain('error message')
+  })
+
+  it('distinguishes stdout and stderr in separate calls', async () => {
+    const onProgress = vi.fn()
+    context.onProgress = onProgress
+
+    await runCommandTool.execute(
+      { command: 'echo "out" && echo "err" >&2' },
+      context
+    )
+
+    const stdoutCalls = onProgress.mock.calls.filter(
+      (call) => (call[0] as string).startsWith('[stdout]')
+    )
+    const stderrCalls = onProgress.mock.calls.filter(
+      (call) => (call[0] as string).startsWith('[stderr]')
+    )
+
+    expect(stdoutCalls.length).toBeGreaterThan(0)
+    expect(stderrCalls.length).toBeGreaterThan(0)
+    
+    expect(stdoutCalls.map(c => c[0]).join('')).toContain('out')
+    expect(stderrCalls.map(c => c[0]).join('')).toContain('err')
+  })
+
+  it('streams output before completion for slow commands', async () => {
+    const progressTimes: number[] = []
+    const onProgress = vi.fn(() => {
+      progressTimes.push(Date.now())
+    })
+    context.onProgress = onProgress
+
+    const startTime = Date.now()
+    
+    // Command that outputs, waits, then outputs again
+    await runCommandTool.execute(
+      { command: 'echo "first" && sleep 0.1 && echo "second"', timeout: 5000 },
+      context
+    )
+    
+    const endTime = Date.now()
+    
+    // Should have received progress before command completed
+    expect(onProgress).toHaveBeenCalled()
+    
+    // The first progress call should have happened before the sleep completed
+    // (total time > 100ms due to sleep, first call should be < 100ms from start)
+    if (progressTimes.length > 0) {
+      const firstProgressTime = progressTimes[0]! - startTime
+      expect(firstProgressTime).toBeLessThan(100) // First output before sleep
+    }
+  })
+
+  it('preserves newlines in output chunks', async () => {
+    const onProgress = vi.fn()
+    context.onProgress = onProgress
+
+    // Create a script that outputs multiple lines
+    const scriptPath = join(tempDir, 'multiline.sh')
+    await writeFile(scriptPath, `#!/bin/bash
+echo "line 1"
+echo "line 2"
+echo "line 3"
+`)
+    
+    await runCommandTool.execute(
+      { command: `bash ${scriptPath}` },
+      context
+    )
+
+    // Get all stdout output
+    const allOutput = onProgress.mock.calls
+      .filter((call) => (call[0] as string).startsWith('[stdout]'))
+      .map(c => (c[0] as string).replace('[stdout] ', ''))
+      .join('')
+    
+    // Should contain all lines (may be in one chunk or multiple)
+    expect(allOutput).toContain('line 1')
+    expect(allOutput).toContain('line 2')
+    expect(allOutput).toContain('line 3')
+  })
+
+  it('does not call onProgress when not provided', async () => {
+    // Context without onProgress
+    const plainContext: ToolContext = {
+      workdir: tempDir,
+      sessionId: 'test-session',
+    }
+
+    // Should not throw
+    const result = await runCommandTool.execute(
+      { command: 'echo "test"' },
+      plainContext
+    )
+
+    expect(result.success).toBe(true)
+    expect(result.output).toContain('test')
+  })
+})
+
+// Separate import for afterEach
+import { afterEach } from 'vitest'

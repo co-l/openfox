@@ -24,6 +24,7 @@ import {
   createChatMessageMessage,
   createCriteriaUpdatedMessage,
 } from '../ws/protocol.js'
+import { createToolProgressHandler } from './tool-streaming.js'
 
 export interface ChatOptions {
   sessionId: string
@@ -222,10 +223,13 @@ async function runPlannerChat(
     for (const toolCall of result.toolCalls) {
       onMessage(createChatToolCallMessage(result.messageId, toolCall.id, toolCall.name, toolCall.arguments))
       
+      // Create progress handler for streaming output (run_command only)
+      const onProgress = createToolProgressHandler(result.messageId, toolCall.id, onMessage)
+      
       const toolResult = await toolRegistry.execute(
         toolCall.name,
         toolCall.arguments,
-        { workdir: session.workdir, sessionId, lspManager: sessionManager.getLspManager(sessionId), onEvent: onMessage }
+        { workdir: session.workdir, sessionId, lspManager: sessionManager.getLspManager(sessionId), onEvent: onMessage, onProgress }
       )
       
       // Track tool execution time
@@ -331,10 +335,13 @@ async function runBuilderTurn(
     for (const toolCall of result.toolCalls) {
       onMessage(createChatToolCallMessage(result.messageId, toolCall.id, toolCall.name, toolCall.arguments))
       
+      // Create progress handler for streaming output (run_command only)
+      const onProgress = createToolProgressHandler(result.messageId, toolCall.id, onMessage)
+      
       const toolResult = await toolRegistry.execute(
         toolCall.name,
         toolCall.arguments,
-        { workdir: session.workdir, sessionId, lspManager: sessionManager.getLspManager(sessionId), onEvent: onMessage }
+        { workdir: session.workdir, sessionId, lspManager: sessionManager.getLspManager(sessionId), onEvent: onMessage, onProgress }
       )
       
       // Track tool execution time
