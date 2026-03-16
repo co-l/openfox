@@ -15,6 +15,7 @@ function hasXmlToolPattern(text: string): boolean {
 export type StreamEvent =
   | { type: 'text_delta'; content: string }
   | { type: 'thinking_delta'; content: string }
+  | { type: 'tool_call_delta'; index: number; id?: string; name?: string; arguments?: string }
   | { type: 'done'; response: LLMCompletionResponse }
   | { type: 'error'; error: string }
   | { type: 'xml_tool_abort' }
@@ -72,20 +73,20 @@ export async function* streamWithSegments(
   const startTime = performance.now()
   let firstTokenTime: number | null = null
   
-  // Flush accumulated text to segments
+  // Flush accumulated text to segments (skip whitespace-only)
   const flushText = () => {
-    if (currentTextSegment) {
+    if (currentTextSegment.trim()) {
       segments.push({ type: 'text', content: currentTextSegment })
-      currentTextSegment = ''
     }
+    currentTextSegment = ''
   }
   
-  // Flush accumulated thinking to segments
+  // Flush accumulated thinking to segments (skip whitespace-only)
   const flushThinking = () => {
-    if (currentThinkingSegment) {
+    if (currentThinkingSegment.trim()) {
       segments.push({ type: 'thinking', content: currentThinkingSegment })
-      currentThinkingSegment = ''
     }
+    currentThinkingSegment = ''
   }
   
   try {
@@ -129,6 +130,17 @@ export async function* streamWithSegments(
           }
           
           yield { type: 'thinking_delta', content: event.content }
+          break
+          
+        case 'tool_call_delta':
+          // Forward tool call delta events for early UI feedback
+          yield {
+            type: 'tool_call_delta',
+            index: event.index,
+            ...(event.id !== undefined ? { id: event.id } : {}),
+            ...(event.name !== undefined ? { name: event.name } : {}),
+            ...(event.arguments !== undefined ? { arguments: event.arguments } : {}),
+          }
           break
           
         case 'done':
