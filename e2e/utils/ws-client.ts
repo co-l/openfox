@@ -109,6 +109,13 @@ function logMessage(msg: ServerMessage): void {
       break
     }
     
+    case 'chat.thinking': {
+      const p = msg.payload as { content?: string }
+      if (p.content) streamingThinking += p.content
+      // Don't log individual thinking events - will be flushed with tool calls or chat.done
+      break
+    }
+    
     case 'chat.tool_call': {
       // Flush any accumulated content first
       if (streamingContent) {
