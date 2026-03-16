@@ -4,6 +4,9 @@
  * Coordinates the build → verify → done/blocked cycle.
  * Uses decideNextAction() to determine what to do next,
  * then calls the appropriate worker function.
+ * 
+ * Each worker (builder, verifier) handles its own stats emission
+ * following the PROMPT -> WORK -> stats+sound pattern.
  */
 
 import type { ServerMessage } from '@openfox/shared/protocol'
@@ -18,7 +21,7 @@ import {
   createPhaseChangedMessage,
 } from '../ws/protocol.js'
 
-// Import worker functions (will be extracted from chat/index.ts)
+// Import worker functions
 import { runBuilderStep } from '../chat/builder.js'
 import { runVerifierStep } from '../chat/verifier.js'
 
@@ -92,7 +95,7 @@ export async function runOrchestrator(options: OrchestratorOptions): Promise<Orc
         sessionManager.setPhase(sessionId, 'verification')
         onMessage(createPhaseChangedMessage('verification'))
         
-        // Run one verification step
+        // Run verification step (emits its own stats+chat.done)
         await runVerifierStep({
           sessionId,
           llmClient,
@@ -120,7 +123,7 @@ export async function runOrchestrator(options: OrchestratorOptions): Promise<Orc
           onMessage(createChatMessageMessage(nudgeMsg))
         }
         
-        // Run one builder step
+        // Run builder step (emits its own stats+chat.done)
         await runBuilderStep({
           sessionId,
           llmClient,

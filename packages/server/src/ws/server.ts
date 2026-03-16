@@ -9,6 +9,7 @@ import { sessionEvents } from '../session/events.js'
 import { handleChat } from '../chat/index.js'
 import { runOrchestrator } from '../runner/index.js'
 import { streamLLMResponse } from '../chat/stream.js'
+import { computeMessageStats } from '../chat/stats.js'
 import { buildPlannerPrompt, SUMMARY_REQUEST_PROMPT, COMPACTION_PROMPT } from '../chat/prompts.js'
 import { getToolRegistryForMode, providePathConfirmation, addAllowedPaths } from '../tools/index.js'
 import { estimateTokens } from '../context/tokenizer.js'
@@ -611,6 +612,17 @@ async function handleClientMessage(
             onEvent: pushEvent,
             enableThinking: false,
           })
+          
+          // Emit stats for summary generation (PROMPT -> WORK -> stats+sound pattern)
+          const summaryStats = computeMessageStats({
+            model: llmClient.getModel(),
+            mode: 'planner',
+            timing: result.timing,
+            usage: result.usage,
+          })
+          sessionManager.updateMessageStats(sessionId, result.messageId, summaryStats)
+          pushEvent(createChatDoneMessage(result.messageId, 'complete', summaryStats))
+          
           sessionManager.setSummary(sessionId, result.content)
           
           // Switch to builder mode and phase
@@ -729,6 +741,16 @@ async function handleClientMessage(
             llmClient,
             onEvent: send,
           })
+          
+          // Emit stats for compaction (PROMPT -> WORK -> stats+sound pattern)
+          const compactionStats = computeMessageStats({
+            model: llmClient.getModel(),
+            mode: 'planner',
+            timing: result.timing,
+            usage: result.usage,
+          })
+          sessionManager.updateMessageStats(sessionId, result.messageId, compactionStats)
+          send(createChatDoneMessage(result.messageId, 'complete', compactionStats))
           
           // 3. Mark response as compaction summary
           sessionManager.updateMessage(sessionId, result.messageId, {

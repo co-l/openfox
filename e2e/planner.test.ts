@@ -13,7 +13,7 @@ import {
   type TestClient, 
   type TestProject 
 } from './utils/index.js'
-import type { Criterion } from '@openfox/shared'
+import type { Criterion, Message } from '@openfox/shared'
 
 describe('Planner Mode', () => {
   let client: TestClient
@@ -245,6 +245,49 @@ Use add_criterion for each one.`
       // Some models emit thinking, others don't
       // We just verify no errors occur
       assertNoErrors(events)
+    })
+  })
+
+  describe('Stats Bar', () => {
+    it('attaches stats to only ONE message after chat with tool calls', async () => {
+      // This chat will require at least one tool call (read_file)
+      // then a follow-up response, creating multiple assistant messages
+      await client.send('chat.send', { 
+        content: 'Read package.json and tell me the project version.' 
+      })
+      
+      const events = await collectChatEvents(client)
+      assertNoErrors(events)
+      
+      // Verify we had tool calls (meaning multiple LLM turns)
+      const toolCalls = events.get('chat.tool_call')
+      expect(toolCalls.length).toBeGreaterThan(0)
+      
+      // Count assistant messages that have stats attached
+      const messageEvents = events.get('chat.message')
+      const assistantMessagesWithStats = messageEvents
+        .map(e => (e.payload as { message: Message }).message)
+        .filter(m => m.role === 'assistant' && m.stats !== undefined)
+      
+      // Should have exactly ONE assistant message with stats (the final one)
+      expect(assistantMessagesWithStats.length).toBe(1)
+    })
+
+    it('emits exactly one chat.done with complete reason per conversation turn', async () => {
+      await client.send('chat.send', { 
+        content: 'Read package.json and summarize it.' 
+      })
+      
+      const events = await collectChatEvents(client)
+      assertNoErrors(events)
+      
+      // Should have exactly ONE chat.done with 'complete' reason
+      const doneEvents = events.get('chat.done')
+      const completeEvents = doneEvents.filter(e => 
+        (e.payload as { reason: string }).reason === 'complete'
+      )
+      
+      expect(completeEvents.length).toBe(1)
     })
   })
 })

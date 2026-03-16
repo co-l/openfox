@@ -232,4 +232,71 @@ describe('Runner/Orchestrator', () => {
       }
     }, 120_000)
   })
+
+  describe('Stats and Notifications', () => {
+    it('emits exactly ONE chat.done with complete during entire runner execution', async () => {
+      // Add criterion that will require work
+      await client.send('chat.send', { 
+        content: 'Add criterion ID "doc-exists": "src/math.ts has a comment". Use add_criterion.' 
+      })
+      await client.waitForChatDone()
+      
+      // Clear events before runner starts
+      client.clearEvents()
+      
+      // Accept and run
+      await client.send('mode.accept', {})
+      
+      // Wait for completion
+      await collectUntilPhase(client, 'done', 180_000)
+        .catch(() => collectUntilPhase(client, 'blocked', 10_000))
+      
+      // Count chat.done events with 'complete' reason
+      const events = client.allEvents()
+      const completeDones = events.filter(e => 
+        e.type === 'chat.done' && 
+        (e.payload as { reason: string }).reason === 'complete'
+      )
+      
+      // Should have exactly ONE chat.done with 'complete' for the entire run
+      // (not one per iteration of the builder loop)
+      expect(completeDones.length).toBe(1)
+      
+      // That single event should have aggregated stats
+      const stats = (completeDones[0]!.payload as { stats?: object }).stats
+      expect(stats).toBeDefined()
+    }, 200_000)
+
+    it('does not emit intermediate chat.done with complete during multi-iteration run', async () => {
+      // Add criterion that requires multiple tool calls
+      await client.send('chat.send', { 
+        content: 'Add criterion: "src/math.ts exports a multiply function". Use add_criterion.' 
+      })
+      await client.waitForChatDone()
+      
+      // Clear events
+      client.clearEvents()
+      
+      // Accept and run
+      await client.send('mode.accept', {})
+      
+      // Wait for completion
+      await collectUntilPhase(client, 'done', 180_000)
+        .catch(() => collectUntilPhase(client, 'blocked', 10_000))
+      
+      const events = client.allEvents()
+      
+      // Count tool calls to verify we had multiple iterations
+      const toolCalls = events.filter(e => e.type === 'chat.tool_call')
+      
+      // If there were tool calls (multiple LLM turns), there should still be only 1 chat.done
+      if (toolCalls.length > 0) {
+        const completeDones = events.filter(e => 
+          e.type === 'chat.done' && 
+          (e.payload as { reason: string }).reason === 'complete'
+        )
+        expect(completeDones.length).toBe(1)
+      }
+    }, 200_000)
+  })
 })

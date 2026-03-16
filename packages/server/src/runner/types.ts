@@ -47,6 +47,7 @@ export interface StepResult {
   content: string
   timing: StreamTiming
   usage: { promptTokens: number; completionTokens: number }
+  toolTime: number  // Total tool execution time in milliseconds
 }
 
 // ============================================================================

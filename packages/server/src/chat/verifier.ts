@@ -59,6 +59,7 @@ export async function runVerifierStep(options: VerifierStepOptions): Promise<Ste
       content: '',
       timing: { ttft: 0, completionTime: 0, tps: 0, prefillTps: 0 },
       usage: { promptTokens: 0, completionTokens: 0 },
+      toolTime: 0,
       allPassed: true,
       failed: [],
     }
@@ -252,19 +253,18 @@ ${modifiedFiles.length > 0 ? modifiedFiles.map(f => `- ${f}`).join('\n') : '(non
       reason: c.status.type === 'failed' ? c.status.reason : 'unknown' 
     }))
   
-  // Build and send stats (aggregated from multiple LLM calls)
-  const stats = computeAggregatedStats({
-    model: llmClient.getModel(),
-    mode: 'verifier',
-    totalPrefillTokens,
-    totalGenTokens,
-    totalPrefillTime,
-    totalGenTime,
-    totalToolTime: totalToolTime / 1000,
-    totalTime: (performance.now() - startTime) / 1000,
-  })
-  
+  // Emit stats for this verifier step (PROMPT -> WORK -> stats+sound pattern)
   if (currentMessageId) {
+    const stats = computeAggregatedStats({
+      model: llmClient.getModel(),
+      mode: 'verifier',
+      totalPrefillTokens,
+      totalGenTokens,
+      totalPrefillTime,
+      totalGenTime,
+      totalToolTime: totalToolTime / 1000,
+      totalTime: (performance.now() - startTime) / 1000,
+    })
     sessionManager.updateMessageStats(sessionId, currentMessageId, stats)
     onMessage(createChatDoneMessage(currentMessageId, 'complete', stats))
   }
@@ -286,6 +286,7 @@ ${modifiedFiles.length > 0 ? modifiedFiles.map(f => `- ${f}`).join('\n') : '(non
       prefillTps: totalPrefillTokens / (totalPrefillTime || 1),
     },
     usage: { promptTokens: totalPrefillTokens, completionTokens: totalGenTokens },
+    toolTime: totalToolTime,
     allPassed: failed.length === 0,
     failed,
   }

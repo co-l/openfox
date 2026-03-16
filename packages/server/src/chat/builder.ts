@@ -132,14 +132,14 @@ export async function runBuilderStep(options: BuilderStepOptions): Promise<StepR
     lastTiming = result.timing
     
     // If no tool calls, model has naturally stopped - exit loop
+    // Emit stats for this builder step (PROMPT -> WORK -> stats+sound pattern)
     if (result.toolCalls.length === 0) {
-      // Send final stats for this message
       const stats = computeMessageStats({
         model: llmClient.getModel(),
         mode: 'builder',
         timing: result.timing,
-        usage: result.usage,
-        toolTime: 0,
+        usage: { promptTokens: totalPromptTokens, completionTokens: totalCompletionTokens },
+        toolTime: totalToolTime / 1000,
         totalTimeOverride: (performance.now() - startTime) / 1000,
       })
       sessionManager.updateMessageStats(sessionId, result.messageId, stats)
@@ -198,18 +198,8 @@ export async function runBuilderStep(options: BuilderStepOptions): Promise<StepR
       }
     }
     
-    // Update stats for this iteration's message (with tool time)
-    const iterationStats = computeMessageStats({
-      model: llmClient.getModel(),
-      mode: 'builder',
-      timing: result.timing,
-      usage: result.usage,
-      toolTime: iterationToolTime / 1000,
-    })
-    sessionManager.updateMessageStats(sessionId, result.messageId, iterationStats)
-    onMessage(createChatDoneMessage(result.messageId, 'complete', iterationStats))
-    
     // Loop continues - model will see tool results and decide what to do next
+    // (stats and chat.done handled by orchestrator at the end of entire run)
   }
   
   return {
@@ -218,5 +208,6 @@ export async function runBuilderStep(options: BuilderStepOptions): Promise<StepR
     content: lastContent,
     timing: lastTiming!,
     usage: { promptTokens: totalPromptTokens, completionTokens: totalCompletionTokens },
+    toolTime: totalToolTime,
   }
 }
