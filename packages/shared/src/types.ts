@@ -328,6 +328,8 @@ export interface Config {
     baseUrl: string
     model: string
     timeout: number
+    /** Disable thinking/reasoning globally (for e2e tests) */
+    disableThinking?: boolean
   }
   context: {
     maxTokens: number

@@ -29,6 +29,7 @@ export function createLLMClient(config: Config): LLMClientWithModel {
   
   let model = config.vllm.model
   let profile = getModelProfile(model)
+  const disableThinking = config.vllm.disableThinking ?? false
   
   return {
     getModel() {
@@ -166,8 +167,8 @@ export function createLLMClient(config: Config): LLMClientWithModel {
           (createParams as unknown as Record<string, unknown>)['top_k'] = profile.topK
         }
         
-        // Disable thinking if requested (vLLM extension)
-        if (request.enableThinking === false) {
+        // Disable thinking if requested or globally disabled via config (vLLM extension)
+        if (request.enableThinking === false || disableThinking) {
           (createParams as unknown as Record<string, unknown>)['chat_template_kwargs'] = { enable_thinking: false }
         }
         

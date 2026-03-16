@@ -10,6 +10,7 @@ const envSchema = z.object({
   OPENFOX_WORKDIR: z.string().default(process.cwd()),
   OPENFOX_DB_PATH: z.string().default('./openfox.db'),
   OPENFOX_LOG_LEVEL: z.enum(['debug', 'info', 'warn', 'error']).default('info'),
+  OPENFOX_DISABLE_THINKING: z.coerce.boolean().default(false),
 })
 
 export function loadConfig(): Config {
@@ -20,6 +21,7 @@ export function loadConfig(): Config {
       baseUrl: env.OPENFOX_VLLM_URL,
       model: env.OPENFOX_MODEL_NAME,
       timeout: 300_000, // 5 minutes
+      disableThinking: env.OPENFOX_DISABLE_THINKING,
     },
     context: {
       maxTokens: env.OPENFOX_MAX_CONTEXT,

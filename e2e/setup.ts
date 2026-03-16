@@ -78,6 +78,7 @@ export async function setup(): Promise<void> {
       OPENFOX_DB_PATH: ':memory:',
       OPENFOX_VLLM_URL: VLLM_URL,
       OPENFOX_LOG_LEVEL: 'warn',
+      OPENFOX_DISABLE_THINKING: 'true',
     },
     stdio: ['ignore', 'pipe', 'pipe'],
     detached: true,
