@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useCallback, useMemo } from 'react'
 import { useSessionStore, useIsRunning } from '../../stores/session'
-import type { Message } from '@openfox/shared'
+import type { Message, ToolCall } from '@openfox/shared'
 import { SessionLayout } from '../layout/SessionLayout'
 import { ContextHeader } from './ContextHeader'
 import { ChatMessage } from './ChatMessage'
@@ -10,20 +10,46 @@ import { ModeSwitch } from './ModeSwitch'
 import { Button } from '../shared/Button'
 import { PathConfirmationDialog } from '../shared/PathConfirmationDialog'
 import { RunningIndicator } from '../shared/RunningIndicator'
+import { CriteriaGroupDisplay, isCriterionTool } from '../shared/CriteriaGroupDisplay'
 
-// Display item: either a single message, a grouped sub-agent run, or a context window divider
+// Display item: either a single message, a grouped sub-agent run, criteria batch, or a context window divider
 type DisplayItem = 
   | { type: 'message'; message: Message }
   | { type: 'subagent'; subAgentId: string; subAgentType: 'verifier'; messages: Message[] }
+  | { type: 'criteria-batch'; toolCalls: ToolCall[] }
   | { type: 'context-divider'; windowSequence: number }
 
-// Group messages into display items, collapsing consecutive sub-agent messages
-// and inserting context window dividers when contextWindowId changes
+// Check if a message contains only criterion tool calls (no text content)
+function isCriteriaOnlyMessage(msg: Message): boolean {
+  if (msg.role !== 'assistant') return false
+  if (msg.content?.trim()) return false  // Has text content
+  if (msg.thinkingContent?.trim()) return false  // Has thinking content
+  if (!msg.toolCalls || msg.toolCalls.length === 0) return false  // No tool calls
+  return msg.toolCalls.every(tc => isCriterionTool(tc.name))
+}
+
+// Group messages into display items, collapsing consecutive sub-agent messages,
+// consecutive criteria-only messages, and inserting context window dividers
 function groupMessages(messages: Message[]): DisplayItem[] {
   const items: DisplayItem[] = []
-  let currentGroup: { subAgentId: string; subAgentType: 'verifier'; messages: Message[] } | null = null
+  let currentSubAgentGroup: { subAgentId: string; subAgentType: 'verifier'; messages: Message[] } | null = null
+  let criteriaBuffer: ToolCall[] = []
   let lastContextWindowId: string | undefined
   let windowSequence = 1
+  
+  const flushCriteriaBuffer = () => {
+    if (criteriaBuffer.length > 0) {
+      items.push({ type: 'criteria-batch', toolCalls: [...criteriaBuffer] })
+      criteriaBuffer = []
+    }
+  }
+  
+  const flushSubAgentGroup = () => {
+    if (currentSubAgentGroup) {
+      items.push({ type: 'subagent', ...currentSubAgentGroup })
+      currentSubAgentGroup = null
+    }
+  }
   
   for (const msg of messages) {
     // Skip tool messages - they're displayed within assistant messages
@@ -32,42 +58,48 @@ function groupMessages(messages: Message[]): DisplayItem[] {
     // Detect context window boundary - insert divider when window changes
     // Only insert if we've seen a previous window (not for the first window)
     if (msg.contextWindowId && lastContextWindowId && msg.contextWindowId !== lastContextWindowId) {
-      // Flush any pending sub-agent group before the divider
-      if (currentGroup) {
-        items.push({ type: 'subagent', ...currentGroup })
-        currentGroup = null
-      }
+      // Flush any pending groups before the divider
+      flushCriteriaBuffer()
+      flushSubAgentGroup()
       windowSequence++
       items.push({ type: 'context-divider', windowSequence })
     }
     lastContextWindowId = msg.contextWindowId
     
+    // Check if this is a criteria-only message
+    if (isCriteriaOnlyMessage(msg)) {
+      // Flush sub-agent group first (criteria can't be part of sub-agent)
+      flushSubAgentGroup()
+      // Add all tool calls from this message to the buffer
+      for (const tc of msg.toolCalls!) {
+        criteriaBuffer.push(tc)
+      }
+      continue
+    }
+    
+    // Not a criteria-only message - flush criteria buffer
+    flushCriteriaBuffer()
+    
     if (msg.subAgentId && msg.subAgentType) {
       // Part of a sub-agent run
-      if (currentGroup && currentGroup.subAgentId === msg.subAgentId) {
+      if (currentSubAgentGroup && currentSubAgentGroup.subAgentId === msg.subAgentId) {
         // Add to existing group
-        currentGroup.messages.push(msg)
+        currentSubAgentGroup.messages.push(msg)
       } else {
         // Start new group
-        if (currentGroup) {
-          items.push({ type: 'subagent', ...currentGroup })
-        }
-        currentGroup = { subAgentId: msg.subAgentId, subAgentType: msg.subAgentType, messages: [msg] }
+        flushSubAgentGroup()
+        currentSubAgentGroup = { subAgentId: msg.subAgentId, subAgentType: msg.subAgentType, messages: [msg] }
       }
     } else {
       // Regular message - flush any pending group
-      if (currentGroup) {
-        items.push({ type: 'subagent', ...currentGroup })
-        currentGroup = null
-      }
+      flushSubAgentGroup()
       items.push({ type: 'message', message: msg })
     }
   }
   
-  // Flush final group
-  if (currentGroup) {
-    items.push({ type: 'subagent', ...currentGroup })
-  }
+  // Flush final groups
+  flushCriteriaBuffer()
+  flushSubAgentGroup()
   
   return items
 }
@@ -238,6 +270,14 @@ export function PlanPanel() {
                 subAgentType={item.subAgentType}
                 isStreaming={groupIsStreaming}
               />
+            )
+          }
+          
+          if (item.type === 'criteria-batch') {
+            return (
+              <div key={`criteria-${item.toolCalls[0]?.id ?? 'batch'}`} className="feed-item">
+                <CriteriaGroupDisplay toolCalls={item.toolCalls} criteria={session?.criteria} />
+              </div>
             )
           }
           

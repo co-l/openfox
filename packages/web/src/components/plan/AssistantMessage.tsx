@@ -1,8 +1,11 @@
 import { memo } from 'react'
-import type { Message, MessageSegment, ToolCall } from '@openfox/shared'
+import type { Message, MessageSegment, ToolCall, Todo } from '@openfox/shared'
 import { Markdown } from '../shared/Markdown'
 import { ThinkingBlock } from '../shared/ThinkingBlock'
 import { ToolCallDisplay } from '../shared/ToolCallDisplay'
+import { TodoListDisplay } from '../shared/TodoListDisplay'
+import { CriteriaGroupDisplay, isCriterionTool } from '../shared/CriteriaGroupDisplay'
+import { useSessionStore } from '../../stores/session'
 
 interface AssistantMessageProps {
   message: Message
@@ -14,7 +17,33 @@ type DisplayElement =
   | { type: 'thinking'; content: string }
   | { type: 'text'; content: string }
   | { type: 'tool_call'; toolCall: ToolCall }
+  | { type: 'criteria_group'; toolCalls: ToolCall[] }
   | { type: 'stats'; stats: NonNullable<Message['stats']> }
+
+// Group consecutive criterion tool calls into a single criteria_group element
+function groupConsecutiveCriteria(elements: DisplayElement[]): DisplayElement[] {
+  const result: DisplayElement[] = []
+  let criteriaBuffer: ToolCall[] = []
+  
+  const flushBuffer = () => {
+    if (criteriaBuffer.length > 0) {
+      result.push({ type: 'criteria_group', toolCalls: criteriaBuffer })
+      criteriaBuffer = []
+    }
+  }
+  
+  for (const element of elements) {
+    if (element.type === 'tool_call' && isCriterionTool(element.toolCall.name)) {
+      criteriaBuffer.push(element.toolCall)
+    } else {
+      flushBuffer()
+      result.push(element)
+    }
+  }
+  
+  flushBuffer()
+  return result
+}
 
 // Convert message to display elements in correct order
 function messageToElements(message: Message, showStats: boolean): DisplayElement[] {
@@ -85,7 +114,9 @@ function segmentsToElements(
 }
 
 export const AssistantMessage = memo(function AssistantMessage({ message, showStats = true }: AssistantMessageProps) {
-  const elements = messageToElements(message, showStats)
+  const criteria = useSessionStore(state => state.currentSession?.criteria)
+  const rawElements = messageToElements(message, showStats)
+  const elements = groupConsecutiveCriteria(rawElements)
   
   if (elements.length === 0) return null
   
@@ -106,6 +137,14 @@ export const AssistantMessage = memo(function AssistantMessage({ message, showSt
           case 'tool_call': {
             const tc = element.toolCall
             const result = tc.result
+            
+            // Special: todo_write → inline todo list
+            if (tc.name === 'todo_write') {
+              const todos = (tc.arguments['todos'] ?? []) as Todo[]
+              return <TodoListDisplay key={i} todos={todos} />
+            }
+            
+            // Default: standard tool call display
             return (
               <ToolCallDisplay 
                 key={i} 
@@ -123,6 +162,9 @@ export const AssistantMessage = memo(function AssistantMessage({ message, showSt
               />
             )
           }
+          
+          case 'criteria_group':
+            return <CriteriaGroupDisplay key={i} toolCalls={element.toolCalls} criteria={criteria} />
             
           case 'stats': {
             const stats = element.stats

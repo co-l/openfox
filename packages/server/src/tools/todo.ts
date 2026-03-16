@@ -47,13 +47,8 @@ export const todoWriteTool: Tool = {
                   enum: ['pending', 'in_progress', 'completed'],
                   description: 'Current status of the task',
                 },
-                priority: {
-                  type: 'string',
-                  enum: ['high', 'medium', 'low'],
-                  description: 'Priority level of the task',
-                },
               },
-              required: ['content', 'status', 'priority'],
+              required: ['content', 'status'],
             },
           },
         },
@@ -79,10 +74,10 @@ export const todoWriteTool: Tool = {
       }
       
       for (const todo of todos) {
-        if (!todo.content || !todo.status || !todo.priority) {
+        if (!todo.content || !todo.status) {
           return {
             success: false,
-            error: 'Each todo must have content, status, and priority',
+            error: 'Each todo must have content and status',
             durationMs: Date.now() - startTime,
             truncated: false,
           }
@@ -91,14 +86,6 @@ export const todoWriteTool: Tool = {
           return {
             success: false,
             error: `Invalid status: ${todo.status}. Must be pending, in_progress, or completed`,
-            durationMs: Date.now() - startTime,
-            truncated: false,
-          }
-        }
-        if (!['high', 'medium', 'low'].includes(todo.priority)) {
-          return {
-            success: false,
-            error: `Invalid priority: ${todo.priority}. Must be high, medium, or low`,
             durationMs: Date.now() - startTime,
             truncated: false,
           }
