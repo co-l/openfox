@@ -23,6 +23,8 @@ import type { Session, Project, Message, ToolCall, ToolResult, MessageStats } fr
 export interface TestClientOptions {
   url?: string
   timeout?: number
+  /** Log all WebSocket messages to console */
+  verbose?: boolean
 }
 
 export interface ChatResponse {
@@ -73,12 +75,139 @@ export interface TestClient {
 }
 
 // ============================================================================
+// Verbose Logging
+// ============================================================================
+
+const COLORS = {
+  reset: '\x1b[0m',
+  dim: '\x1b[2m',
+  bold: '\x1b[1m',
+  cyan: '\x1b[36m',
+  yellow: '\x1b[33m',
+  green: '\x1b[32m',
+  magenta: '\x1b[35m',
+  red: '\x1b[31m',
+  blue: '\x1b[34m',
+}
+
+// Accumulate streaming content
+let streamingContent = ''
+let streamingThinking = ''
+
+function logMessage(msg: ServerMessage): void {
+  const type = msg.type
+  
+  switch (type) {
+    case 'chat.delta': {
+      const p = msg.payload as { content?: string; thinkingContent?: string }
+      if (p.content) streamingContent += p.content
+      if (p.thinkingContent) streamingThinking += p.thinkingContent
+      // Don't log individual deltas - too noisy
+      break
+    }
+    
+    case 'chat.tool_call': {
+      // Flush any accumulated content first
+      if (streamingContent) {
+        console.log(`\n${COLORS.bold}${COLORS.blue}── Agent Message ──${COLORS.reset}`)
+        console.log(streamingContent.trim())
+        streamingContent = ''
+      }
+      if (streamingThinking) {
+        console.log(`\n${COLORS.dim}── Thinking ──${COLORS.reset}`)
+        console.log(`${COLORS.dim}${streamingThinking.trim()}${COLORS.reset}`)
+        streamingThinking = ''
+      }
+      
+      const p = msg.payload as { tool: string; args: Record<string, unknown> }
+      console.log(`\n${COLORS.yellow}▶ ${p.tool}${COLORS.reset}`)
+      console.log(`${COLORS.dim}${JSON.stringify(p.args, null, 2)}${COLORS.reset}`)
+      break
+    }
+    
+    case 'chat.tool_result': {
+      const p = msg.payload as { tool: string; result: { success: boolean; output?: string; error?: string } }
+      const status = p.result.success 
+        ? `${COLORS.green}✓ success${COLORS.reset}` 
+        : `${COLORS.red}✗ failed${COLORS.reset}`
+      console.log(`${COLORS.yellow}◀ ${p.tool}${COLORS.reset} ${status}`)
+      const output = p.result.output ?? p.result.error ?? ''
+      if (output) {
+        // Show first 500 chars of output
+        const preview = output.length > 500 ? output.slice(0, 500) + '\n... (truncated)' : output
+        console.log(`${COLORS.dim}${preview}${COLORS.reset}`)
+      }
+      break
+    }
+    
+    case 'chat.done': {
+      // Flush any remaining content
+      if (streamingContent) {
+        console.log(`\n${COLORS.bold}${COLORS.blue}── Agent Message ──${COLORS.reset}`)
+        console.log(streamingContent.trim())
+        streamingContent = ''
+      }
+      if (streamingThinking) {
+        console.log(`\n${COLORS.dim}── Thinking ──${COLORS.reset}`)
+        console.log(`${COLORS.dim}${streamingThinking.trim()}${COLORS.reset}`)
+        streamingThinking = ''
+      }
+      
+      const p = msg.payload as { reason: string; stats?: { totalTokens?: number; durationMs?: number } }
+      const tokens = p.stats?.totalTokens ? ` | ${p.stats.totalTokens} tokens` : ''
+      const duration = p.stats?.durationMs ? ` | ${(p.stats.durationMs / 1000).toFixed(1)}s` : ''
+      console.log(`\n${COLORS.green}── Done (${p.reason}${tokens}${duration}) ──${COLORS.reset}\n`)
+      break
+    }
+    
+    case 'criteria.updated': {
+      const p = msg.payload as { criteria: Array<{ id: string; status: { type: string } }> }
+      const summary = p.criteria.map(c => {
+        const icon = c.status.type === 'passed' ? '✓' : c.status.type === 'failed' ? '✗' : '○'
+        return `${icon} ${c.id}`
+      }).join('  ')
+      console.log(`${COLORS.magenta}[criteria] ${summary}${COLORS.reset}`)
+      break
+    }
+    
+    case 'phase.changed': {
+      const p = msg.payload as { phase: string }
+      console.log(`${COLORS.bold}${COLORS.magenta}══ Phase: ${p.phase.toUpperCase()} ══${COLORS.reset}`)
+      break
+    }
+    
+    case 'mode.changed': {
+      const p = msg.payload as { mode: string }
+      console.log(`${COLORS.cyan}[mode] ${p.mode}${COLORS.reset}`)
+      break
+    }
+    
+    case 'error': {
+      const p = msg.payload as { code: string; message: string }
+      console.log(`${COLORS.red}[ERROR] ${p.code}: ${p.message}${COLORS.reset}`)
+      break
+    }
+    
+    case 'session.state':
+    case 'project.state':
+    case 'context.state':
+      // Skip noisy state messages
+      break
+    
+    default: {
+      console.log(`${COLORS.dim}[${type}]${COLORS.reset}`)
+    }
+  }
+}
+
+// ============================================================================
 // Implementation
 // ============================================================================
 
 export async function createTestClient(options: TestClientOptions = {}): Promise<TestClient> {
   const url = options.url ?? process.env['OPENFOX_TEST_WS_URL'] ?? 'ws://localhost:3999/ws'
   const defaultTimeout = options.timeout ?? 30_000
+  const verbose = options.verbose ?? process.env['OPENFOX_TEST_VERBOSE'] === 'true'
   
   const ws = new WebSocket(url)
   const events: ServerMessage[] = []
@@ -120,6 +249,11 @@ export async function createTestClient(options: TestClientOptions = {}): Promise
     try {
       const msg = JSON.parse(data.toString()) as ServerMessage
       events.push(msg)
+      
+      // Verbose logging
+      if (verbose) {
+        logMessage(msg)
+      }
       
       // Update session/project state from state messages
       if (msg.type === 'session.state') {

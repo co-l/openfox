@@ -229,9 +229,9 @@ Description: "A multiply function exists in src/math.ts that takes two numbers a
       await client.send('session.create', { projectId })
       await client.send('mode.switch', { mode: 'builder' })
       
-      // Ask to do something that will fail initially
+      // Ask to do something that will fail initially (use path inside workdir to avoid confirmation modal)
       await client.send('chat.send', { 
-        content: 'Try to read a file at /nonexistent/path/file.txt and then read src/math.ts instead.' 
+        content: 'Try to read a file at src/nonexistent-file.txt and then read src/math.ts instead.' 
       })
       
       const events = await collectChatEvents(client)
