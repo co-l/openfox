@@ -181,3 +181,19 @@ npx vitest run src/tools/myfeature.test.ts  # Should fail
 # 3. Run test again - should pass
 npx vitest run src/tools/myfeature.test.ts
 ```
+
+## E2E Tests
+
+E2E tests require a running vLLM server. The test setup auto-loads configuration from the root `.env` file (including `OPENFOX_VLLM_URL`).
+
+```bash
+cd e2e
+npx vitest run                    # Run all e2e tests
+npx vitest run protocol.test.ts   # Run specific test file
+```
+
+The setup automatically:
+- Loads `.env` from repository root
+- Kills any leftover process on the test port (3999)
+- Auto-detects the model from vLLM
+- Cleans up on ctrl+c or test completion
