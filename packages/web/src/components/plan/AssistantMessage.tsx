@@ -118,6 +118,7 @@ export function AssistantMessage({ message, isStreaming = false, showStats = tru
                 error={result?.error}
                 durationMs={result?.durationMs}
                 diagnostics={result?.diagnostics}
+                editContext={result?.editContext}
               />
             )
           }

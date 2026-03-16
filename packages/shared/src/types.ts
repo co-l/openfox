@@ -149,6 +149,34 @@ export interface ToolCall {
   result?: ToolResult  // Attached after execution (during streaming or enriched on load)
 }
 
+/** A single line of context around an edit */
+export interface EditContextLine {
+  lineNumber: number  // 1-indexed
+  content: string
+}
+
+/** A single edit within a region (for replace_all with multiple matches) */
+export interface EditContextEdit {
+  startLine: number   // 1-indexed line where old content starts
+  endLine: number     // 1-indexed line where old content ends (inclusive)
+  oldContent: string
+  newContent: string
+}
+
+/** 
+ * A region of the file showing context around one or more edits.
+ * Multiple edits are merged when their contexts overlap.
+ */
+export interface EditContextRegion {
+  beforeContext: EditContextLine[]
+  afterContext: EditContextLine[]
+  startLine: number   // First edit's start line
+  endLine: number     // Last edit's end line
+  oldContent: string  // First edit's old content (for single edit compat)
+  newContent: string  // First edit's new content (for single edit compat)
+  edits: EditContextEdit[]  // All edits in this region
+}
+
 export interface ToolResult {
   success: boolean
   output?: string
@@ -156,6 +184,9 @@ export interface ToolResult {
   durationMs: number
   truncated: boolean
   diagnostics?: Diagnostic[]  // LSP diagnostics for file operations
+  editContext?: {
+    regions: EditContextRegion[]
+  }
 }
 
 export type ToolName = 

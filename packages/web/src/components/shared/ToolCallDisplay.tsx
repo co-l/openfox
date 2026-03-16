@@ -1,7 +1,7 @@
 import { useState } from 'react'
-import type { Diagnostic } from '@openfox/shared'
+import type { Diagnostic, EditContextRegion } from '@openfox/shared'
 import { ToolIcon } from './ToolIcon'
-import { DiffView, FilePreview } from './DiffView'
+import { DiffView, FilePreview, EditContextView } from './DiffView'
 import { DiagnosticsView } from './DiagnosticsView'
 import { formatToolArgs, formatToolArgsFull } from '../../lib/formatToolArgs'
 
@@ -17,6 +17,7 @@ interface ToolCallDisplayProps {
   error?: string
   durationMs?: number
   diagnostics?: Diagnostic[]  // LSP diagnostics for file operations
+  editContext?: { regions: EditContextRegion[] }  // Edit context with line numbers
 }
 
 const statusConfig = {
@@ -46,6 +47,7 @@ export function ToolCallDisplay({
   error,
   durationMs,
   diagnostics,
+  editContext,
 }: ToolCallDisplayProps) {
   // Auto-expand file operations so diffs are immediately visible
   const isFileOperation = tool === 'edit_file' || tool === 'write_file'
@@ -89,11 +91,18 @@ export function ToolCallDisplay({
           {/* Specialized rendering for file edit operations */}
           {tool === 'edit_file' && status === 'success' && (
             <>
-              <DiffView
-                oldString={String(args.old_string ?? '')}
-                newString={String(args.new_string ?? '')}
-                filePath={String(args.path ?? '')}
-              />
+              {editContext && editContext.regions.length > 0 ? (
+                <EditContextView
+                  regions={editContext.regions}
+                  filePath={String(args.path ?? '')}
+                />
+              ) : (
+                <DiffView
+                  oldString={String(args.old_string ?? '')}
+                  newString={String(args.new_string ?? '')}
+                  filePath={String(args.path ?? '')}
+                />
+              )}
               {diagnostics && diagnostics.length > 0 && (
                 <DiagnosticsView diagnostics={diagnostics} />
               )}

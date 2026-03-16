@@ -1,11 +1,12 @@
 import { readFile, writeFile } from 'node:fs/promises'
 import { resolve, isAbsolute } from 'node:path'
-import type { ToolResult, Diagnostic } from '@openfox/shared'
+import type { ToolResult, Diagnostic, EditContextRegion } from '@openfox/shared'
 import type { Tool, ToolContext } from './types.js'
 import { formatDiagnosticsForLLM } from './diagnostics.js'
 import { requestPathAccess } from './path-security.js'
 import { validateFileForWrite, computeFileHash } from './file-tracker.js'
 import { sessionManager } from '../session/index.js'
+import { extractEditContext } from './edit-context.js'
 
 export const editFileTool: Tool = {
   name: 'edit_file',
@@ -114,6 +115,31 @@ export const editFileTool: Tool = {
         }
       }
       
+      // Extract edit context BEFORE making the replacement
+      const contextResult = extractEditContext(content, oldString, newString, replaceAll)
+      
+      // Convert to shared types
+      const editContextRegions: EditContextRegion[] = contextResult.regions.map(region => ({
+        beforeContext: region.beforeContext.map(line => ({
+          lineNumber: line.lineNumber,
+          content: line.content,
+        })),
+        afterContext: region.afterContext.map(line => ({
+          lineNumber: line.lineNumber,
+          content: line.content,
+        })),
+        startLine: region.startLine,
+        endLine: region.endLine,
+        oldContent: region.oldContent,
+        newContent: region.newContent,
+        edits: region.edits.map(edit => ({
+          startLine: edit.startLine,
+          endLine: edit.endLine,
+          oldContent: edit.oldContent,
+          newContent: edit.newContent,
+        })),
+      }))
+      
       // Perform replacement
       const newContent = replaceAll 
         ? content.replaceAll(oldString, newString)
@@ -143,6 +169,7 @@ export const editFileTool: Tool = {
         durationMs: Date.now() - startTime,
         truncated: false,
         ...(diagnostics.length > 0 && { diagnostics }),
+        ...(editContextRegions.length > 0 && { editContext: { regions: editContextRegions } }),
       }
     } catch (error) {
       return {

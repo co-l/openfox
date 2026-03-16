@@ -1,10 +1,17 @@
 import { useMemo } from 'react'
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter'
 import { oneDark } from 'react-syntax-highlighter/dist/esm/styles/prism'
+import type { EditContextRegion } from '@openfox/shared'
 
 interface DiffViewProps {
   oldString: string
   newString: string
+  filePath?: string
+}
+
+/** Props for the new context-aware diff view */
+interface EditContextViewProps {
+  regions: EditContextRegion[]
   filePath?: string
 }
 
@@ -194,6 +201,183 @@ export function FilePreview({ content, filePath, maxLines = 20 }: FilePreviewPro
           ... {lines.length - maxLines} more lines
         </div>
       )}
+    </div>
+  )
+}
+
+/**
+ * Renders edit context with line numbers, showing:
+ * - Context lines before (muted)
+ * - Old content (red, strikethrough) with line numbers
+ * - New content (green) with line numbers
+ * - Context lines after (muted)
+ * 
+ * Supports multiple edits per region (for replace_all with overlapping contexts).
+ */
+export function EditContextView({ regions, filePath }: EditContextViewProps) {
+  const language = useMemo(() => getLanguageFromPath(filePath), [filePath])
+  
+  if (regions.length === 0) {
+    return (
+      <div className="text-xs text-text-muted italic p-2">
+        No changes
+      </div>
+    )
+  }
+  
+  return (
+    <div className="space-y-2">
+      {regions.map((region, regionIndex) => (
+        <EditRegionView
+          key={regionIndex}
+          region={region}
+          language={language}
+        />
+      ))}
+    </div>
+  )
+}
+
+interface EditRegionViewProps {
+  region: EditContextRegion
+  language: string
+}
+
+function EditRegionView({ region, language }: EditRegionViewProps) {
+  // Build the display items: context lines, edits (with intermediate context), trailing context
+  const items = buildDisplayItems(region)
+  
+  // Calculate max line number width for consistent alignment
+  const maxLineNum = Math.max(
+    ...region.beforeContext.map(l => l.lineNumber),
+    ...region.afterContext.map(l => l.lineNumber),
+    ...region.edits.flatMap(e => [e.startLine, e.endLine]),
+  )
+  const lineNumWidth = String(maxLineNum).length
+  
+  return (
+    <div className="rounded overflow-hidden border border-border font-mono text-sm">
+      {items.map((item, i) => (
+        <DisplayItemRow
+          key={i}
+          item={item}
+          language={language}
+          lineNumWidth={lineNumWidth}
+        />
+      ))}
+    </div>
+  )
+}
+
+type DisplayItem =
+  | { type: 'context'; lineNumber: number; content: string }
+  | { type: 'removed'; lineNumber: number; content: string }
+  | { type: 'added'; lineNumber: number; content: string }
+
+/**
+ * Build display items from a region, interleaving context and edits correctly.
+ */
+function buildDisplayItems(region: EditContextRegion): DisplayItem[] {
+  const items: DisplayItem[] = []
+  
+  // Before context
+  for (const line of region.beforeContext) {
+    items.push({ type: 'context', lineNumber: line.lineNumber, content: line.content })
+  }
+  
+  // Edits - for multiple edits in a merged region
+  for (const edit of region.edits) {
+    // Show removed lines
+    const oldLines = edit.oldContent.split('\n')
+    for (let i = 0; i < oldLines.length; i++) {
+      items.push({
+        type: 'removed',
+        lineNumber: edit.startLine + i,
+        content: oldLines[i]!,
+      })
+    }
+    
+    // Show added lines (use same starting line number for the "replacement")
+    const newLines = edit.newContent.split('\n')
+    for (let i = 0; i < newLines.length; i++) {
+      items.push({
+        type: 'added',
+        lineNumber: edit.startLine + i,
+        content: newLines[i]!,
+      })
+    }
+  }
+  
+  // After context
+  for (const line of region.afterContext) {
+    items.push({ type: 'context', lineNumber: line.lineNumber, content: line.content })
+  }
+  
+  return items
+}
+
+interface DisplayItemRowProps {
+  item: DisplayItem
+  language: string
+  lineNumWidth: number
+}
+
+function DisplayItemRow({ item, language, lineNumWidth }: DisplayItemRowProps) {
+  const lineNumStr = String(item.lineNumber).padStart(lineNumWidth, ' ')
+  
+  const bgClass = item.type === 'context' 
+    ? 'bg-bg-secondary'
+    : item.type === 'removed'
+    ? 'bg-red-950/30'
+    : 'bg-green-950/30'
+  
+  const indicatorClass = item.type === 'context'
+    ? 'text-text-muted'
+    : item.type === 'removed'
+    ? 'text-red-400/70'
+    : 'text-green-400/70'
+  
+  const indicator = item.type === 'context' ? ' ' : item.type === 'removed' ? '-' : '+'
+  
+  const lineClass = item.type === 'removed' 
+    ? 'line-through decoration-red-400/30' 
+    : ''
+  
+  const accentClass = item.type === 'context'
+    ? 'bg-transparent'
+    : item.type === 'removed'
+    ? 'bg-red-400/60'
+    : 'bg-green-400/60'
+  
+  return (
+    <div className={`grid grid-cols-[3px_auto_1.25rem_1fr] ${bgClass}`}>
+      {/* Color accent bar */}
+      <div className={accentClass} />
+      
+      {/* Line number */}
+      <div className="px-2 text-text-muted text-right select-none leading-[1.5rem]">
+        {lineNumStr}
+      </div>
+      
+      {/* +/- indicator */}
+      <div className={`text-center select-none leading-[1.5rem] ${indicatorClass}`}>
+        {indicator}
+      </div>
+      
+      {/* Code content */}
+      <div className={`pr-2 overflow-x-auto min-w-0 ${lineClass}`}>
+        <SyntaxHighlighter
+          style={oneDark}
+          language={language}
+          PreTag="span"
+          customStyle={{
+            ...codeStyle,
+            display: 'inline',
+          }}
+        >
+          {item.content || ' '}
+        </SyntaxHighlighter>
+      </div>
     </div>
   )
 }
