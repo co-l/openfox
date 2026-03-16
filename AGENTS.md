@@ -192,6 +192,24 @@ npx vitest run                    # Run all e2e tests
 npx vitest run protocol.test.ts   # Run specific test file
 ```
 
+### Verbose Mode
+
+Enable detailed logging of WebSocket messages, tool calls, agent thinking, and phase transitions:
+
+```bash
+cd e2e
+OPENFOX_TEST_VERBOSE=true npx vitest run
+```
+
+The verbose mode shows:
+- ▶ Tool calls with arguments
+- ◀ Tool results with status
+- Real-time agent thinking/output
+- Criteria evaluations
+- Phase transitions
+- Mode switches
+- Errors with full details
+
 The setup automatically:
 - Loads `.env` from repository root
 - Kills any leftover process on the test port (3999)
