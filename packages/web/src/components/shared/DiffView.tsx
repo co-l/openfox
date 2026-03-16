@@ -1,4 +1,4 @@
-import { useMemo } from 'react'
+import { memo, useMemo } from 'react'
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter'
 import { oneDark } from 'react-syntax-highlighter/dist/esm/styles/prism'
 import type { EditContextRegion } from '@openfox/shared'
@@ -93,7 +93,13 @@ const codeStyle: React.CSSProperties = {
   background: 'transparent',
 }
 
-export function DiffView({ oldString, newString, filePath }: DiffViewProps) {
+// Static inline variant to avoid creating new objects on every render
+const inlineCodeStyle: React.CSSProperties = {
+  ...codeStyle,
+  display: 'inline',
+}
+
+export const DiffView = memo(function DiffView({ oldString, newString, filePath }: DiffViewProps) {
   const language = useMemo(() => getLanguageFromPath(filePath), [filePath])
   
   const oldLines = oldString.split('\n')
@@ -158,7 +164,7 @@ export function DiffView({ oldString, newString, filePath }: DiffViewProps) {
       )}
     </div>
   )
-}
+})
 
 // Preview component for write_file (shows new content only)
 interface FilePreviewProps {
@@ -167,7 +173,7 @@ interface FilePreviewProps {
   maxLines?: number
 }
 
-export function FilePreview({ content, filePath, maxLines = 20 }: FilePreviewProps) {
+export const FilePreview = memo(function FilePreview({ content, filePath, maxLines = 20 }: FilePreviewProps) {
   const language = useMemo(() => getLanguageFromPath(filePath), [filePath])
   
   const lines = content.split('\n')
@@ -203,7 +209,7 @@ export function FilePreview({ content, filePath, maxLines = 20 }: FilePreviewPro
       )}
     </div>
   )
-}
+})
 
 /**
  * Renders edit context with line numbers, showing:
@@ -214,7 +220,7 @@ export function FilePreview({ content, filePath, maxLines = 20 }: FilePreviewPro
  * 
  * Supports multiple edits per region (for replace_all with overlapping contexts).
  */
-export function EditContextView({ regions, filePath }: EditContextViewProps) {
+export const EditContextView = memo(function EditContextView({ regions, filePath }: EditContextViewProps) {
   const language = useMemo(() => getLanguageFromPath(filePath), [filePath])
   
   if (regions.length === 0) {
@@ -236,14 +242,14 @@ export function EditContextView({ regions, filePath }: EditContextViewProps) {
       ))}
     </div>
   )
-}
+})
 
 interface EditRegionViewProps {
   region: EditContextRegion
   language: string
 }
 
-function EditRegionView({ region, language }: EditRegionViewProps) {
+const EditRegionView = memo(function EditRegionView({ region, language }: EditRegionViewProps) {
   // Build the display items: context lines, edits (with intermediate context), trailing context
   const items = buildDisplayItems(region)
   
@@ -267,7 +273,7 @@ function EditRegionView({ region, language }: EditRegionViewProps) {
       ))}
     </div>
   )
-}
+})
 
 type DisplayItem =
   | { type: 'context'; lineNumber: number; content: string }
@@ -322,7 +328,7 @@ interface DisplayItemRowProps {
   lineNumWidth: number
 }
 
-function DisplayItemRow({ item, language, lineNumWidth }: DisplayItemRowProps) {
+const DisplayItemRow = memo(function DisplayItemRow({ item, language, lineNumWidth }: DisplayItemRowProps) {
   const lineNumStr = String(item.lineNumber).padStart(lineNumWidth, ' ')
   
   const bgClass = item.type === 'context' 
@@ -370,14 +376,11 @@ function DisplayItemRow({ item, language, lineNumWidth }: DisplayItemRowProps) {
           style={oneDark}
           language={language}
           PreTag="span"
-          customStyle={{
-            ...codeStyle,
-            display: 'inline',
-          }}
+          customStyle={inlineCodeStyle}
         >
           {item.content || ' '}
         </SyntaxHighlighter>
       </div>
     </div>
   )
-}
+})

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { memo, useEffect, useRef, useState } from 'react'
 
 interface StreamingChunk {
   stream: 'stdout' | 'stderr'
@@ -19,7 +19,7 @@ interface RunCommandViewProps {
 /**
  * Displays a running shell command with streaming output and timeout indicator.
  */
-export function RunCommandView({
+export const RunCommandView = memo(function RunCommandView({
   command,
   timeout,
   startedAt,
@@ -136,7 +136,7 @@ export function RunCommandView({
       )}
     </div>
   )
-}
+})
 
 /**
  * Truncate long commands for display in header

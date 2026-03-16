@@ -1,3 +1,4 @@
+import { memo } from 'react'
 import type { Diagnostic } from '@openfox/shared'
 
 interface DiagnosticsViewProps {
@@ -31,7 +32,7 @@ const severityConfig = {
   },
 }
 
-export function DiagnosticsView({ diagnostics }: DiagnosticsViewProps) {
+export const DiagnosticsView = memo(function DiagnosticsView({ diagnostics }: DiagnosticsViewProps) {
   if (diagnostics.length === 0) return null
   
   const errors = diagnostics.filter(d => d.severity === 'error')
@@ -91,4 +92,4 @@ export function DiagnosticsView({ diagnostics }: DiagnosticsViewProps) {
       </div>
     </div>
   )
-}
+})

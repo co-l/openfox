@@ -1,3 +1,4 @@
+import { memo } from 'react'
 import { Markdown } from './Markdown'
 
 interface ThinkingBlockProps {
@@ -5,7 +6,7 @@ interface ThinkingBlockProps {
   variant?: 'default' | 'labeled'
 }
 
-export function ThinkingBlock({ content, variant = 'default' }: ThinkingBlockProps) {
+export const ThinkingBlock = memo(function ThinkingBlock({ content, variant = 'default' }: ThinkingBlockProps) {
   if (variant === 'labeled') {
     return (
       <div className="text-text-muted text-sm italic feed-item">
@@ -22,4 +23,4 @@ export function ThinkingBlock({ content, variant = 'default' }: ThinkingBlockPro
       {content}
     </div>
   )
-}
+})

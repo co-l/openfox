@@ -1,3 +1,4 @@
+import { memo } from 'react'
 import type { Message, MessageSegment, ToolCall } from '@openfox/shared'
 import { Markdown } from '../shared/Markdown'
 import { ThinkingBlock } from '../shared/ThinkingBlock'
@@ -85,7 +86,7 @@ function segmentsToElements(
   return elements
 }
 
-export function AssistantMessage({ message, isStreaming = false, showStats = true }: AssistantMessageProps) {
+export const AssistantMessage = memo(function AssistantMessage({ message, isStreaming = false, showStats = true }: AssistantMessageProps) {
   const elements = messageToElements(message, showStats)
   
   if (elements.length === 0 && !isStreaming) return null
@@ -171,4 +172,4 @@ export function AssistantMessage({ message, isStreaming = false, showStats = tru
         )}
     </div>
   )
-}
+})

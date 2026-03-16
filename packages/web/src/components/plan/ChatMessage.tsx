@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from 'react'
+import { memo, useState, useRef, useEffect } from 'react'
 import type { Message } from '@openfox/shared'
 import { Markdown } from '../shared/Markdown'
 import { AssistantMessage } from './AssistantMessage'
@@ -134,7 +134,7 @@ function UserMessage({ message }: UserMessageProps) {
   )
 }
 
-export function ChatMessage({ message, isLastAssistantMessage = false }: ChatMessageProps) {
+export const ChatMessage = memo(function ChatMessage({ message, isLastAssistantMessage = false }: ChatMessageProps) {
   const isUser = message.role === 'user'
   const isAssistant = message.role === 'assistant'
   const isSystem = message.role === 'system'
@@ -207,4 +207,4 @@ export function ChatMessage({ message, isLastAssistantMessage = false }: ChatMes
       </div>
     </div>
   )
-}
+})

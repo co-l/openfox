@@ -1,4 +1,4 @@
-import { useRef, useEffect, useState, useCallback } from 'react'
+import { memo, useRef, useEffect, useState, useCallback } from 'react'
 import type { Message } from '@openfox/shared'
 import { AssistantMessage } from './AssistantMessage'
 import { ChatMessage } from './ChatMessage'
@@ -22,7 +22,7 @@ const HEADER_COLORS: Record<string, string> = {
  * Groups consecutive messages from the same subAgentId into a single card.
  * Uses the same AssistantMessage and ChatMessage components as the main chat.
  */
-export function SubAgentContainer({ messages, subAgentType, isStreaming }: SubAgentContainerProps) {
+export const SubAgentContainer = memo(function SubAgentContainer({ messages, subAgentType, isStreaming }: SubAgentContainerProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const scrollContainerRef = useRef<HTMLDivElement>(null)
   const [userScrolledUp, setUserScrolledUp] = useState(false)
@@ -125,4 +125,4 @@ export function SubAgentContainer({ messages, subAgentType, isStreaming }: SubAg
       </div>
     </div>
   )
-}
+})

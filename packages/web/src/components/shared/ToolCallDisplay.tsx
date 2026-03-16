@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { memo, useState } from 'react'
 import type { Diagnostic, EditContextRegion } from '@openfox/shared'
 import { ToolIcon } from './ToolIcon'
 import { DiffView, FilePreview, EditContextView } from './DiffView'
@@ -47,7 +47,7 @@ const statusConfig = {
   },
 }
 
-export function ToolCallDisplay({
+export const ToolCallDisplay = memo(function ToolCallDisplay({
   tool,
   args,
   status,
@@ -192,4 +192,4 @@ export function ToolCallDisplay({
       )}
     </div>
   )
-}
+})
