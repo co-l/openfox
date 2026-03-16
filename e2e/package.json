@@ -11,6 +11,7 @@
     "@openfox/shared": "*",
     "@types/node": "^22.13.4",
     "@types/ws": "^8.5.14",
+    "dotenv": "^16.4.7",
     "typescript": "^5.7.3",
     "vitest": "^3.0.5",
     "ws": "^8.18.1"

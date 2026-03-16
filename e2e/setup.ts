@@ -1,18 +1,32 @@
 /**
  * Global setup for E2E tests.
  * 
+ * - Loads environment from root .env file
  * - Verifies vLLM server is reachable
  * - Starts the OpenFox server on a test port
  * - Exports the server URL for tests to use
  */
 
-import { spawn, type ChildProcess } from 'node:child_process'
+import { spawn, execSync, type ChildProcess } from 'node:child_process'
 import { setTimeout as sleep } from 'node:timers/promises'
+import { config } from 'dotenv'
+
+// Load .env from repository root
+config({ path: new URL('../.env', import.meta.url).pathname })
 
 const VLLM_URL = process.env['OPENFOX_VLLM_URL'] ?? 'http://localhost:8000/v1'
 const TEST_PORT = process.env['OPENFOX_TEST_PORT'] ?? '3999'
 
 let serverProcess: ChildProcess | null = null
+
+// Kill any process using the test port (cleanup from previous interrupted runs)
+function killProcessOnPort(port: string): void {
+  try {
+    execSync(`lsof -ti:${port} | xargs -r kill -9 2>/dev/null`, { stdio: 'ignore' })
+  } catch {
+    // No process to kill, that's fine
+  }
+}
 
 async function checkVllmHealth(): Promise<boolean> {
   try {
@@ -39,6 +53,10 @@ async function waitForServer(url: string, maxAttempts = 30): Promise<void> {
 }
 
 export async function setup(): Promise<void> {
+  // Clean up any leftover process from previous interrupted runs
+  killProcessOnPort(TEST_PORT)
+  await sleep(500) // Give OS time to release the port
+  
   console.log('\n🔍 Checking vLLM server...')
   
   const vllmHealthy = await checkVllmHealth()
@@ -83,11 +101,29 @@ export async function setup(): Promise<void> {
   // Wait for server to be healthy
   const serverUrl = `http://localhost:${TEST_PORT}`
   await waitForServer(serverUrl)
-  console.log(`✅ OpenFox server running at ${serverUrl}`)
+  
+  // Ensure model is auto-detected (server's initModel runs async)
+  const refreshRes = await fetch(`${serverUrl}/api/model/refresh`, { method: 'POST' })
+  const modelInfo = await refreshRes.json() as { model: string; source: string }
+  console.log(`✅ OpenFox server running at ${serverUrl} (model: ${modelInfo.model})`)
   
   // Store URL for tests to use
   process.env['OPENFOX_TEST_URL'] = serverUrl
   process.env['OPENFOX_TEST_WS_URL'] = `ws://localhost:${TEST_PORT}/ws`
+  
+  // Ensure cleanup on interrupt (ctrl+c)
+  const cleanup = () => {
+    if (serverProcess?.pid) {
+      try {
+        process.kill(-serverProcess.pid, 'SIGKILL')
+      } catch {
+        serverProcess?.kill('SIGKILL')
+      }
+    }
+    killProcessOnPort(TEST_PORT)
+  }
+  process.on('SIGINT', cleanup)
+  process.on('SIGTERM', cleanup)
 }
 
 export async function teardown(): Promise<void> {
