@@ -98,7 +98,7 @@ export const runCommandTool: Tool = {
       }
       
       // Execute command
-      const result = await executeCommand(command, workingDir, timeout, context.onProgress)
+      const result = await executeCommand(command, workingDir, timeout, context.signal, context.onProgress)
       
       // Format output
       let output = ''
@@ -158,9 +158,16 @@ function executeCommand(
   command: string,
   cwd: string,
   timeout: number,
+  signal?: AbortSignal,
   onProgress?: (message: string) => void
 ): Promise<CommandResult> {
   return new Promise((resolve, reject) => {
+    // Check if already aborted before starting
+    if (signal?.aborted) {
+      reject(new Error('Command aborted before execution'))
+      return
+    }
+    
     const proc = spawn('sh', ['-c', command], {
       cwd,
       env: { ...process.env, FORCE_COLOR: '0' },
@@ -170,12 +177,22 @@ function executeCommand(
     let stdout = ''
     let stderr = ''
     let killed = false
+    let aborted = false
     
     const timer = setTimeout(() => {
       killed = true
       proc.kill('SIGKILL')
       reject(new Error(`Command timed out after ${timeout}ms`))
     }, timeout)
+    
+    // Handle abort signal - send SIGINT (like Ctrl+C)
+    const onAbort = () => {
+      if (!killed && !aborted) {
+        aborted = true
+        proc.kill('SIGINT')
+      }
+    }
+    signal?.addEventListener('abort', onAbort)
     
     proc.stdout.on('data', (data: Buffer) => {
       const chunk = data.toString()
@@ -191,17 +208,29 @@ function executeCommand(
     
     proc.on('close', (code) => {
       clearTimeout(timer)
-      if (!killed) {
-        resolve({
-          stdout: stdout.trim(),
-          stderr: stderr.trim(),
-          exitCode: code ?? 1,
-        })
+      signal?.removeEventListener('abort', onAbort)
+      
+      if (killed) {
+        // Already rejected by timeout
+        return
       }
+      
+      if (aborted) {
+        // Aborted by signal - reject with clear error
+        reject(new Error('Command aborted'))
+        return
+      }
+      
+      resolve({
+        stdout: stdout.trim(),
+        stderr: stderr.trim(),
+        exitCode: code ?? 1,
+      })
     })
     
     proc.on('error', (error) => {
       clearTimeout(timer)
+      signal?.removeEventListener('abort', onAbort)
       reject(error)
     })
   })

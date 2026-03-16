@@ -160,6 +160,35 @@ echo "line 3"
     expect(result.success).toBe(true)
     expect(result.output).toContain('test')
   })
+
+  it('kills running command when signal is aborted', async () => {
+    const controller = new AbortController()
+    const contextWithSignal: ToolContext = {
+      workdir: tempDir,
+      sessionId: 'test-session',
+      signal: controller.signal,
+    }
+
+    // Start command: sleep 4s then echo "hi"
+    const resultPromise = runCommandTool.execute(
+      { command: 'sleep 4; echo hi' },
+      contextWithSignal
+    )
+
+    // Abort after 2 seconds
+    await new Promise(r => setTimeout(r, 2000))
+    controller.abort()
+
+    const result = await resultPromise
+
+    // Wait 2 more seconds to prove command isn't still running
+    await new Promise(r => setTimeout(r, 2000))
+
+    // Output should NOT contain "hi" - command was killed before sleep finished
+    expect(result.output ?? '').not.toContain('hi')
+    expect(result.success).toBe(false)
+    expect(result.error).toContain('aborted')
+  }, 10000)
 })
 
 // Separate import for afterEach

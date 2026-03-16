@@ -6,9 +6,10 @@ import type { LspManagerInterface } from '../lsp/types.js'
 export interface ToolContext {
   workdir: string
   sessionId: string
-  onProgress?: (message: string) => void
-  onEvent?: (event: ServerMessage) => void  // For sending events to client (e.g., path confirmation)
-  lspManager?: LspManagerInterface  // Optional LSP manager for file diagnostics
+  signal?: AbortSignal | undefined  // For cancelling long-running operations (e.g., shell commands)
+  onProgress?: ((message: string) => void) | undefined
+  onEvent?: ((event: ServerMessage) => void) | undefined  // For sending events to client (e.g., path confirmation)
+  lspManager?: LspManagerInterface | undefined  // Optional LSP manager for file diagnostics
 }
 
 export interface Tool {

@@ -216,7 +216,7 @@ ${modifiedFiles.length > 0 ? modifiedFiles.map(f => `- ${f}`).join('\n') : '(non
         const toolResult = await toolRegistry.execute(
           toolCall.name,
           toolCall.arguments,
-          { workdir: session.workdir, sessionId, lspManager: sessionManager.getLspManager(sessionId), onEvent: onMessage, onProgress }
+          { workdir: session.workdir, sessionId, signal, lspManager: sessionManager.getLspManager(sessionId), onEvent: onMessage, onProgress }
         )
         
         totalToolTime += toolResult.durationMs
