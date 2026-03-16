@@ -69,7 +69,7 @@ export function ToolCallDisplay({
   }
   
   return (
-    <div className="border border-border rounded overflow-hidden my-1">
+    <div className="border border-border rounded overflow-hidden my-1 min-w-0">
       <button
         className="w-full flex items-center gap-1.5 p-2 bg-bg-tertiary hover:bg-bg-tertiary/80 text-left"
         onClick={() => setExpanded(!expanded)}
@@ -85,7 +85,7 @@ export function ToolCallDisplay({
       </button>
       
       {expanded && (
-        <div className="p-2 bg-bg-secondary border-t border-border space-y-2">
+        <div className="p-2 bg-bg-secondary border-t border-border space-y-2 min-w-0">
           {/* Specialized rendering for file edit operations */}
           {tool === 'edit_file' && status === 'success' && (
             <>

@@ -106,7 +106,7 @@ function ProjectSessionView() {
       <Sidebar projectId={projectId!} />
       
       {/* Main content area - single unified chat panel */}
-      <div className="flex-1 bg-bg-primary">
+      <div className="flex-1 min-w-0 bg-bg-primary">
         <PlanPanel />
       </div>
     </>

@@ -114,7 +114,7 @@ export function DiffView({ oldString, newString, filePath }: DiffViewProps) {
               <div key={i} className="leading-[1.35rem]">-</div>
             ))}
           </div>
-          <div className="bg-red-950/30 py-0.5 pr-2 line-through decoration-red-400/30">
+          <div className="bg-red-950/30 py-0.5 pr-2 line-through decoration-red-400/30 overflow-x-auto min-w-0">
             <SyntaxHighlighter
               style={oneDark}
               language={language}
@@ -136,7 +136,7 @@ export function DiffView({ oldString, newString, filePath }: DiffViewProps) {
               <div key={i} className="leading-[1.35rem]">+</div>
             ))}
           </div>
-          <div className="bg-green-950/30 py-0.5 pr-2">
+          <div className="bg-green-950/30 py-0.5 pr-2 overflow-x-auto min-w-0">
             <SyntaxHighlighter
               style={oneDark}
               language={language}
@@ -177,7 +177,7 @@ export function FilePreview({ content, filePath, maxLines = 20 }: FilePreviewPro
             <div key={i} className="leading-[1.35rem]">+</div>
           ))}
         </div>
-        <div className="bg-green-950/30 py-0.5 pr-2">
+        <div className="bg-green-950/30 py-0.5 pr-2 overflow-x-auto min-w-0">
           <SyntaxHighlighter
             style={oneDark}
             language={language}

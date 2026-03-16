@@ -214,7 +214,7 @@ export function PlanPanel() {
       <div 
         ref={scrollContainerRef}
         onWheel={handleWheel}
-        className="flex-1 overflow-y-auto px-4 pt-4"
+        className="flex-1 min-w-0 overflow-y-auto overflow-x-hidden px-4 pt-4"
       >
         {displayItems.map((item) => {
           if (item.type === 'context-divider') {
