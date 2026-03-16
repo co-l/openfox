@@ -1,8 +1,8 @@
 /**
  * Builder Worker
  * 
- * Executes ONE builder step: LLM call + tool execution.
- * Does not loop - the orchestrator handles looping.
+ * Executes the builder loop: LLM call + tool execution until the model
+ * naturally stops (returns no tool calls). This is the standard agent loop.
  */
 
 import type { ToolCall, PromptContext, InjectedFile } from '@openfox/shared'
@@ -32,8 +32,11 @@ export interface BuilderStepOptions {
 }
 
 /**
- * Execute one builder step: LLM call + tool execution.
- * Returns information about what happened.
+ * Execute the builder loop: LLM calls + tool execution until natural stop.
+ * 
+ * The model "naturally stops" when it returns a response without tool calls.
+ * This is the standard agent loop pattern - we don't interrupt the model
+ * between tool executions.
  */
 export async function runBuilderStep(options: BuilderStepOptions): Promise<StepResult> {
   const { sessionId, llmClient, signal, onMessage } = options
@@ -60,51 +63,93 @@ export async function runBuilderStep(options: BuilderStepOptions): Promise<StepR
     session = sessionManager.requireSession(sessionId)
   }
   
-  // Load all instructions (re-read each step so user can edit mid-session)
-  const { content: instructions, files: instructionFiles } = await getAllInstructions(session.workdir, session.projectId)
-  
   const toolRegistry = getToolRegistryForMode('builder')
-  const systemPrompt = buildBuilderPrompt(
-    session.criteria,
-    toolRegistry.definitions,
-    session.executionState?.modifiedFiles ?? [],
-    instructions || undefined
-  )
   
-  // Get the user message that triggered this response and attach prompt context
-  const currentWindowMessages = sessionManager.getCurrentWindowMessages(sessionId)
-  const lastUserMessage = [...currentWindowMessages].reverse().find(m => m.role === 'user')
-  
-  if (lastUserMessage) {
-    const promptContext: PromptContext = {
-      systemPrompt,
-      injectedFiles: instructionFiles.map(f => ({ path: f.path, content: f.content ?? '', source: f.source })) as InjectedFile[],
-      userMessage: lastUserMessage.content,
-    }
-    sessionManager.updateMessage(sessionId, lastUserMessage.id, { promptContext })
-  }
-  
-  // Stream LLM response
-  let result
-  try {
-    result = await streamLLMResponse({
-      sessionId,
-      systemPrompt,
-      llmClient,
-      tools: toolRegistry.definitions,
-      toolChoice: 'auto',
-      signal,
-      onEvent: onMessage,
-    })
-  } catch (error) {
-    // Aborted or error - rethrow for orchestrator to handle
-    throw error
-  }
-  
+  // Track cumulative stats across the entire agent loop
   let totalToolTime = 0
+  let totalPromptTokens = 0
+  let totalCompletionTokens = 0
+  let lastMessageId = ''
+  let lastContent = ''
+  let lastTiming: StepResult['timing'] | null = null
+  let madeAnyToolCalls = false
   
-  // Execute tool calls
-  if (result.toolCalls.length > 0) {
+  // Agent loop: keep calling LLM until it returns no tool calls
+  while (true) {
+    if (signal?.aborted) {
+      throw new Error('Aborted')
+    }
+    
+    // Refresh session state and rebuild system prompt each iteration
+    // (criteria status may have changed, user may have edited instructions)
+    session = sessionManager.requireSession(sessionId)
+    const { content: instructions, files: instructionFiles } = await getAllInstructions(session.workdir, session.projectId)
+    
+    const systemPrompt = buildBuilderPrompt(
+      session.criteria,
+      toolRegistry.definitions,
+      session.executionState?.modifiedFiles ?? [],
+      instructions || undefined
+    )
+    
+    // Attach prompt context to the last user message (for debugging/inspection)
+    const currentWindowMessages = sessionManager.getCurrentWindowMessages(sessionId)
+    const lastUserMessage = [...currentWindowMessages].reverse().find(m => m.role === 'user')
+    
+    if (lastUserMessage && !madeAnyToolCalls) {
+      // Only attach on first iteration, not after tool results
+      const promptContext: PromptContext = {
+        systemPrompt,
+        injectedFiles: instructionFiles.map(f => ({ path: f.path, content: f.content ?? '', source: f.source })) as InjectedFile[],
+        userMessage: lastUserMessage.content,
+      }
+      sessionManager.updateMessage(sessionId, lastUserMessage.id, { promptContext })
+    }
+    
+    // Stream LLM response
+    let result
+    try {
+      result = await streamLLMResponse({
+        sessionId,
+        systemPrompt,
+        llmClient,
+        tools: toolRegistry.definitions,
+        toolChoice: 'auto',
+        signal,
+        onEvent: onMessage,
+      })
+    } catch (error) {
+      // Aborted or error - rethrow for orchestrator to handle
+      throw error
+    }
+    
+    // Track cumulative usage
+    totalPromptTokens += result.usage.promptTokens
+    totalCompletionTokens += result.usage.completionTokens
+    lastMessageId = result.messageId
+    lastContent = result.content
+    lastTiming = result.timing
+    
+    // If no tool calls, model has naturally stopped - exit loop
+    if (result.toolCalls.length === 0) {
+      // Send final stats for this message
+      const stats = computeMessageStats({
+        model: llmClient.getModel(),
+        mode: 'builder',
+        timing: result.timing,
+        usage: result.usage,
+        toolTime: 0,
+        totalTimeOverride: (performance.now() - startTime) / 1000,
+      })
+      sessionManager.updateMessageStats(sessionId, result.messageId, stats)
+      onMessage(createChatDoneMessage(result.messageId, 'complete', stats))
+      break
+    }
+    
+    // Execute tool calls
+    madeAnyToolCalls = true
+    let iterationToolTime = 0
+    
     for (const toolCall of result.toolCalls) {
       if (signal?.aborted) {
         onMessage(createChatDoneMessage(result.messageId, 'stopped'))
@@ -119,6 +164,7 @@ export async function runBuilderStep(options: BuilderStepOptions): Promise<StepR
         { workdir: session.workdir, sessionId, lspManager: sessionManager.getLspManager(sessionId), onEvent: onMessage }
       )
       
+      iterationToolTime += toolResult.durationMs
       totalToolTime += toolResult.durationMs
       
       onMessage(createChatToolResultMessage(result.messageId, toolCall.id, toolCall.name, toolResult))
@@ -147,26 +193,26 @@ export async function runBuilderStep(options: BuilderStepOptions): Promise<StepR
         session = updatedSession
       }
     }
+    
+    // Update stats for this iteration's message (with tool time)
+    const iterationStats = computeMessageStats({
+      model: llmClient.getModel(),
+      mode: 'builder',
+      timing: result.timing,
+      usage: result.usage,
+      toolTime: iterationToolTime / 1000,
+    })
+    sessionManager.updateMessageStats(sessionId, result.messageId, iterationStats)
+    onMessage(createChatDoneMessage(result.messageId, 'complete', iterationStats))
+    
+    // Loop continues - model will see tool results and decide what to do next
   }
   
-  // Build and send final stats (updates initial stats from streamLLMResponse with tool time)
-  const stats = computeMessageStats({
-    model: llmClient.getModel(),
-    mode: 'builder',
-    timing: result.timing,
-    usage: result.usage,
-    toolTime: totalToolTime / 1000,
-    totalTimeOverride: (performance.now() - startTime) / 1000,
-  })
-  
-  sessionManager.updateMessageStats(sessionId, result.messageId, stats)
-  onMessage(createChatDoneMessage(result.messageId, 'complete', stats))
-  
   return {
-    messageId: result.messageId,
-    hasToolCalls: result.toolCalls.length > 0,
-    content: result.content,
-    timing: result.timing,
-    usage: result.usage,
+    messageId: lastMessageId,
+    hasToolCalls: madeAnyToolCalls,
+    content: lastContent,
+    timing: lastTiming!,
+    usage: { promptTokens: totalPromptTokens, completionTokens: totalCompletionTokens },
   }
 }
