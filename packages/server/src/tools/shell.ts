@@ -176,6 +176,7 @@ function executeCommand(
       cwd,
       env: { ...process.env, FORCE_COLOR: '0' },
       stdio: ['ignore', 'pipe', 'pipe'],
+      detached: true,  // Create new process group so we can kill all children
     })
     
     let stdout = ''
@@ -185,15 +186,26 @@ function executeCommand(
     
     const timer = setTimeout(() => {
       killed = true
-      proc.kill('SIGKILL')
+      // Kill the process group to terminate all children
+      try {
+        process.kill(-proc.pid!, 'SIGKILL')
+      } catch {
+        proc.kill('SIGKILL')
+      }
       reject(new Error(`Command timed out after ${timeout}ms`))
     }, timeout)
     
-    // Handle abort signal - send SIGINT (like Ctrl+C)
+    // Handle abort signal - kill entire process group (like Ctrl+C)
     const onAbort = () => {
       if (!killed && !aborted) {
         aborted = true
-        proc.kill('SIGINT')
+        // Kill the process group (negative PID) to terminate all children
+        try {
+          process.kill(-proc.pid!, 'SIGINT')
+        } catch {
+          // Process may have already exited
+          proc.kill('SIGINT')
+        }
       }
     }
     signal?.addEventListener('abort', onAbort)
