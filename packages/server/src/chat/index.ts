@@ -210,15 +210,32 @@ async function runPlannerChat(
   }
   
   // Stream LLM response using core function (handles XML retry internally)
-  const result = await streamLLMResponse({
-    sessionId,
-    systemPrompt,
-    llmClient,
-    tools: toolRegistry.definitions,
-    toolChoice: 'auto',
-    signal,
-    onEvent: onMessage,
-  })
+  let result
+  try {
+    result = await streamLLMResponse({
+      sessionId,
+      systemPrompt,
+      llmClient,
+      tools: toolRegistry.definitions,
+      toolChoice: 'auto',
+      signal,
+      onEvent: onMessage,
+    })
+  } catch (error) {
+    // On abort, emit partial stats before re-throwing
+    if (error instanceof Error && error.message === 'Aborted') {
+      const stats = turnMetrics.buildStats(llmClient.getModel(), 'planner')
+      // Find the last partial assistant message and emit chat.done with stats
+      const messages = sessionManager.getCurrentWindowMessages(sessionId)
+      const lastAssistant = [...messages].reverse().find(m => m.role === 'assistant' && m.partial)
+      if (lastAssistant) {
+        sessionManager.updateMessageStats(sessionId, lastAssistant.id, stats)
+        onMessage(createChatDoneMessage(lastAssistant.id, 'stopped', stats))
+      }
+      throw error
+    }
+    throw error
+  }
   
   // Track LLM metrics
   turnMetrics.addLLMCall(result.timing, result.usage.promptTokens, result.usage.completionTokens)
@@ -309,7 +326,7 @@ async function runBuilderTurn(
   )
   
   // Get the user message that triggered this response
-  const currentWindowMessages = sessionManager.getCurrentWindowMessages(sessionId)
+  let currentWindowMessages = sessionManager.getCurrentWindowMessages(sessionId)
   const lastUserMessage = [...currentWindowMessages].reverse().find(m => m.role === 'user')
   
   // Build prompt context and attach to user message (only on first call, not recursive)
@@ -323,15 +340,32 @@ async function runBuilderTurn(
   }
   
   // Stream LLM response using core function (handles XML retry internally)
-  const result = await streamLLMResponse({
-    sessionId,
-    systemPrompt,
-    llmClient,
-    tools: toolRegistry.definitions,
-    toolChoice: 'auto',
-    signal,
-    onEvent: onMessage,
-  })
+  let result
+  try {
+    result = await streamLLMResponse({
+      sessionId,
+      systemPrompt,
+      llmClient,
+      tools: toolRegistry.definitions,
+      toolChoice: 'auto',
+      signal,
+      onEvent: onMessage,
+    })
+  } catch (error) {
+    // On abort, emit partial stats before re-throwing
+    if (error instanceof Error && error.message === 'Aborted') {
+      const stats = turnMetrics.buildStats(llmClient.getModel(), 'builder')
+      // Find the last partial assistant message and emit chat.done with stats
+      currentWindowMessages = sessionManager.getCurrentWindowMessages(sessionId)
+      const lastAssistant = [...currentWindowMessages].reverse().find(m => m.role === 'assistant' && m.partial)
+      if (lastAssistant) {
+        sessionManager.updateMessageStats(sessionId, lastAssistant.id, stats)
+        onMessage(createChatDoneMessage(lastAssistant.id, 'stopped', stats))
+      }
+      throw error
+    }
+    throw error
+  }
   
   // Track LLM metrics
   turnMetrics.addLLMCall(result.timing, result.usage.promptTokens, result.usage.completionTokens)

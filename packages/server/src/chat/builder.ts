@@ -80,6 +80,21 @@ export async function runBuilderStep(options: BuilderStepOptions): Promise<StepR
   // Agent loop: keep calling LLM until it returns no tool calls
   while (true) {
     if (signal?.aborted) {
+      // Emit partial stats before aborting
+      const stats = computeAggregatedStats({
+        model: llmClient.getModel(),
+        mode: 'builder',
+        totalPrefillTokens: totalPromptTokens,
+        totalGenTokens: totalCompletionTokens,
+        totalPrefillTime,
+        totalGenTime,
+        totalToolTime: totalToolTime / 1000,
+        totalTime: (performance.now() - startTime) / 1000,
+      })
+      if (lastMessageId) {
+        sessionManager.updateMessageStats(sessionId, lastMessageId, stats)
+        onMessage(createChatDoneMessage(lastMessageId, 'stopped', stats))
+      }
       throw new Error('Aborted')
     }
     
@@ -160,7 +175,19 @@ export async function runBuilderStep(options: BuilderStepOptions): Promise<StepR
     
     for (const toolCall of result.toolCalls) {
       if (signal?.aborted) {
-        onMessage(createChatDoneMessage(result.messageId, 'stopped'))
+        // Emit partial stats before aborting
+        const stats = computeAggregatedStats({
+          model: llmClient.getModel(),
+          mode: 'builder',
+          totalPrefillTokens: totalPromptTokens,
+          totalGenTokens: totalCompletionTokens,
+          totalPrefillTime,
+          totalGenTime,
+          totalToolTime: totalToolTime / 1000,
+          totalTime: (performance.now() - startTime) / 1000,
+        })
+        sessionManager.updateMessageStats(sessionId, result.messageId, stats)
+        onMessage(createChatDoneMessage(result.messageId, 'stopped', stats))
         throw new Error('Aborted')
       }
       

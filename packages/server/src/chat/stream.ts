@@ -145,7 +145,7 @@ async function streamLLMResponseInternal(
   while (true) {
     if (signal?.aborted) {
       sessionManager.updateMessage(sessionId, messageId, { isStreaming: false, partial: true })
-      onEvent(createChatDoneMessage(messageId, 'stopped'))
+      // Don't emit chat.done here - let callers emit it with partial stats
       throw new Error('Aborted')
     }
 
