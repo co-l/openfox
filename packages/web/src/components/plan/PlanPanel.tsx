@@ -2,7 +2,7 @@ import { useState, useRef, useEffect, useCallback, useMemo } from 'react'
 import { useSessionStore, useIsRunning } from '../../stores/session'
 import type { Message, ToolCall } from '@openfox/shared'
 import { SessionLayout } from '../layout/SessionLayout'
-import { ContextHeader } from './ContextHeader'
+import { SessionHeader } from './SessionHeader'
 import { ChatMessage } from './ChatMessage'
 import { AssistantMessage } from './AssistantMessage'
 import { SubAgentContainer } from './SubAgentContainer'
@@ -237,7 +237,7 @@ export function PlanPanel() {
       {pendingPathConfirmation && (
         <PathConfirmationDialog confirmation={pendingPathConfirmation} />
       )}
-      <ContextHeader />
+      <SessionHeader />
       
       <div 
         ref={scrollContainerRef}

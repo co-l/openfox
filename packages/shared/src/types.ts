@@ -99,6 +99,33 @@ export interface MessageStats {
   generationSpeed: number   // aggregate tokens/second
 }
 
+// Single data point for session stats progression charts
+export interface StatsDataPoint {
+  messageId: string
+  timestamp: string
+  mode: ToolMode
+  contextTokens: number      // prefillTokens (≈ context size at this point)
+  prefillSpeed: number       // tok/s
+  generationSpeed: number    // tok/s
+  totalTime: number          // seconds
+  aiTime: number             // totalTime - toolTime (LLM inference only)
+}
+
+// Aggregated session-level stats for benchmarking
+export interface SessionStats {
+  // Aggregates
+  totalTime: number          // Sum of all LLM call times (seconds)
+  aiTime: number             // totalTime - toolTime (seconds)
+  toolTime: number           // Total tool execution time (seconds)
+  prefillTokens: number      // Total prompt tokens
+  generationTokens: number   // Total completion tokens
+  avgPrefillSpeed: number    // Weighted average tok/s
+  avgGenerationSpeed: number // Weighted average tok/s
+  messageCount: number       // Number of assistant messages with stats
+  // Progression data for charts
+  dataPoints: StatsDataPoint[]
+}
+
 // Metadata about what was sent to the LLM for this response
 export interface PromptContext {
   systemPrompt: string           // Full system prompt sent to LLM
