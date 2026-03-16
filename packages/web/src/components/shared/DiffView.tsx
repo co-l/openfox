@@ -81,7 +81,8 @@ const codeStyle: React.CSSProperties = {
   margin: 0,
   padding: 0,
   borderRadius: 0,
-  fontSize: '0.75rem',
+  fontSize: '0.875rem',    // 14px to match text-sm
+  lineHeight: '1.5rem',    // 24px for consistent line alignment
   background: 'transparent',
 }
 
@@ -109,12 +110,12 @@ export function DiffView({ oldString, newString, filePath }: DiffViewProps) {
       {hasOld && (
         <>
           <div className="bg-red-400/60" />
-          <div className="bg-red-950/30 py-1 text-red-400/70 text-xs font-mono text-center">
+          <div className="bg-red-950/30 text-red-400/70 text-sm font-mono text-center">
             {oldLines.map((_, i) => (
-              <div key={i} className="leading-[1.35rem]">-</div>
+              <div key={i} className="leading-[1.5rem]">-</div>
             ))}
           </div>
-          <div className="bg-red-950/30 py-0.5 pr-2 line-through decoration-red-400/30 overflow-x-auto min-w-0">
+          <div className="bg-red-950/30 pr-2 line-through decoration-red-400/30 overflow-x-auto min-w-0">
             <SyntaxHighlighter
               style={oneDark}
               language={language}
@@ -131,12 +132,12 @@ export function DiffView({ oldString, newString, filePath }: DiffViewProps) {
       {hasNew && (
         <>
           <div className="bg-green-400/60" />
-          <div className="bg-green-950/30 py-1 text-green-400/70 text-xs font-mono text-center">
+          <div className="bg-green-950/30 text-green-400/70 text-sm font-mono text-center">
             {newLines.map((_, i) => (
-              <div key={i} className="leading-[1.35rem]">+</div>
+              <div key={i} className="leading-[1.5rem]">+</div>
             ))}
           </div>
-          <div className="bg-green-950/30 py-0.5 pr-2 overflow-x-auto min-w-0">
+          <div className="bg-green-950/30 pr-2 overflow-x-auto min-w-0">
             <SyntaxHighlighter
               style={oneDark}
               language={language}
@@ -172,12 +173,12 @@ export function FilePreview({ content, filePath, maxLines = 20 }: FilePreviewPro
     <div className="rounded overflow-hidden border border-border">
       <div className="grid grid-cols-[3px_1.5rem_1fr]">
         <div className="bg-green-400/60" />
-        <div className="bg-green-950/30 py-1 text-green-400/70 text-xs font-mono text-center">
+        <div className="bg-green-950/30 text-green-400/70 text-sm font-mono text-center">
           {displayContent.split('\n').map((_, i) => (
-            <div key={i} className="leading-[1.35rem]">+</div>
+            <div key={i} className="leading-[1.5rem]">+</div>
           ))}
         </div>
-        <div className="bg-green-950/30 py-0.5 pr-2 overflow-x-auto min-w-0">
+        <div className="bg-green-950/30 pr-2 overflow-x-auto min-w-0">
           <SyntaxHighlighter
             style={oneDark}
             language={language}
