@@ -19,6 +19,7 @@ export function ModeSwitch() {
         const isActive = currentMode === mode
         return (
           <button
+            type="button"
             key={mode}
             onClick={() => !isActive && switchMode(mode)}
             disabled={isRunning}
