@@ -144,6 +144,11 @@ export async function handleChat(options: ChatOptions): Promise<void> {
       return
     }
     
+    // Controlled abort - tool results already have [interrupted by user] marker
+    if (error instanceof Error && error.message === 'Aborted') {
+      return
+    }
+    
     logger.error('Chat error', { sessionId, mode, error })
     onMessage(createChatErrorMessage(
       error instanceof Error ? error.message : 'Unknown error',
