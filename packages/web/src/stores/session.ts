@@ -15,6 +15,7 @@ import type {
   SessionRunningPayload,
   ChatDeltaPayload,
   ChatThinkingPayload,
+  ChatToolPreparingPayload,
   ChatToolCallPayload,
   ChatToolOutputPayload,
   ChatToolResultPayload,
@@ -337,21 +338,55 @@ export const useSessionStore = create<SessionState>((set, get) => ({
         break
       }
       
-      case 'chat.tool_call': {
-        // Add tool call to the message with this messageId
-        const payload = message.payload as ChatToolCallPayload
+      case 'chat.tool_preparing': {
+        // Add preparing tool call indicator (temporary, replaced when full tool call arrives)
+        const payload = message.payload as ChatToolPreparingPayload
         set(state => ({
           messages: state.messages.map(m => 
             m.id === payload.messageId
-              ? { 
-                  ...m, 
-                  toolCalls: [
-                    ...(m.toolCalls ?? []),
-                    { id: payload.callId, name: payload.tool, arguments: payload.args, startedAt: Date.now() }
+              ? {
+                  ...m,
+                  preparingToolCalls: [
+                    ...(m.preparingToolCalls ?? []),
+                    { index: payload.index, name: payload.name }
                   ]
                 }
               : m
           ),
+        }))
+        break
+      }
+      
+      case 'chat.tool_call': {
+        // Add tool call to the message with this messageId
+        // Also remove any matching preparing tool call (by name match, since we don't have index in tool_call)
+        const payload = message.payload as ChatToolCallPayload
+        set(state => ({
+          messages: state.messages.map(m => {
+            if (m.id !== payload.messageId) return m
+            
+            // Remove the first matching preparing tool call by name
+            const preparingToolCalls = m.preparingToolCalls?.filter((ptc, idx) => {
+              // Remove the first match with this name
+              if (ptc.name === payload.tool) {
+                const hasEarlierMatch = m.preparingToolCalls?.slice(0, idx).some(p => p.name === payload.tool)
+                return hasEarlierMatch // Keep if there was an earlier match (only remove first)
+              }
+              return true
+            })
+            
+            return {
+              ...m,
+              toolCalls: [
+                ...(m.toolCalls ?? []),
+                { id: payload.callId, name: payload.tool, arguments: payload.args, startedAt: Date.now() }
+              ],
+              // Only include preparingToolCalls if there are any left
+              ...(preparingToolCalls && preparingToolCalls.length > 0 
+                ? { preparingToolCalls } 
+                : { preparingToolCalls: undefined }),
+            }
+          }),
         }))
         break
       }

@@ -17,6 +17,7 @@ import type {
   SessionRunningPayload,
   ChatDeltaPayload,
   ChatThinkingPayload,
+  ChatToolPreparingPayload,
   ChatToolCallPayload,
   ChatToolOutputPayload,
   ChatToolResultPayload,
@@ -133,6 +134,10 @@ export function createChatDeltaMessage(messageId: string, content: string): Serv
 
 export function createChatThinkingMessage(messageId: string, content: string): ServerMessage<ChatThinkingPayload> {
   return createServerMessage('chat.thinking', { messageId, content })
+}
+
+export function createChatToolPreparingMessage(messageId: string, index: number, name: string): ServerMessage<ChatToolPreparingPayload> {
+  return createServerMessage('chat.tool_preparing', { messageId, index, name })
 }
 
 export function createChatToolCallMessage(messageId: string, callId: string, tool: string, args: Record<string, unknown>): ServerMessage<ChatToolCallPayload> {

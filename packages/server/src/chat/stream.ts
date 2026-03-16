@@ -20,6 +20,7 @@ import { logger } from '../utils/logger.js'
 import {
   createChatDeltaMessage,
   createChatThinkingMessage,
+  createChatToolPreparingMessage,
   createChatDoneMessage,
   createChatErrorMessage,
   createChatFormatRetryMessage,
@@ -135,6 +136,11 @@ async function streamLLMResponseInternal(
   })
 
   let result: Awaited<ReturnType<typeof stream.next>>['value'] = null
+  
+  // Track tool call indices we've emitted preparing events for
+  const seenToolIndices = new Set<number>()
+  // Track accumulated tool names by index (for when name comes in multiple chunks)
+  const toolNames = new Map<number, string>()
 
   while (true) {
     if (signal?.aborted) {
@@ -158,6 +164,21 @@ async function streamLLMResponseInternal(
       case 'thinking_delta':
         onEvent(createChatThinkingMessage(messageId, value.content))
         break
+      case 'tool_call_delta': {
+        // Accumulate tool name if provided
+        if (value.name) {
+          const existingName = toolNames.get(value.index) ?? ''
+          toolNames.set(value.index, existingName + value.name)
+        }
+        
+        // Emit preparing event on first delta for this index (when we have a complete name)
+        const fullName = toolNames.get(value.index)
+        if (!seenToolIndices.has(value.index) && fullName) {
+          seenToolIndices.add(value.index)
+          onEvent(createChatToolPreparingMessage(messageId, value.index, fullName))
+        }
+        break
+      }
       case 'xml_tool_abort': {
         // Model used XML tool format - retry with same message
         const newRetryCount = formatRetryCount + 1

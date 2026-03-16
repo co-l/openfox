@@ -112,12 +112,19 @@ export interface InjectedFile {
   source: 'agents-md' | 'global' | 'project'  // Where the file came from
 }
 
+// Preparing tool call (temporary, replaced by full ToolCall when complete)
+export interface PreparingToolCall {
+  index: number   // Tool call index (for matching when complete)
+  name: string    // Tool name (available early in stream)
+}
+
 export interface Message {
   id: string
   role: MessageRole
   content: string
   contextWindowId?: string       // Which context window this message belongs to (auto-assigned if omitted)
   toolCalls?: ToolCall[]
+  preparingToolCalls?: PreparingToolCall[]  // Tool calls being streamed (transient, frontend only)
   thinkingContent?: string
   toolCallId?: string
   toolName?: string

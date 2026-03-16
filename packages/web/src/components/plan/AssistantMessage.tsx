@@ -1,8 +1,9 @@
 import { memo } from 'react'
-import type { Message, MessageSegment, ToolCall, Todo } from '@openfox/shared'
+import type { Message, MessageSegment, ToolCall, Todo, PreparingToolCall } from '@openfox/shared'
 import { Markdown } from '../shared/Markdown'
 import { ThinkingBlock } from '../shared/ThinkingBlock'
 import { ToolCallDisplay } from '../shared/ToolCallDisplay'
+import { ToolCallPreparing } from '../shared/ToolCallPreparing'
 import { TodoListDisplay } from '../shared/TodoListDisplay'
 import { CriteriaGroupDisplay, isCriterionTool } from '../shared/CriteriaGroupDisplay'
 import { useSessionStore } from '../../stores/session'
@@ -16,6 +17,7 @@ interface AssistantMessageProps {
 type DisplayElement = 
   | { type: 'thinking'; content: string }
   | { type: 'text'; content: string }
+  | { type: 'preparing_tool_call'; preparing: PreparingToolCall }
   | { type: 'tool_call'; toolCall: ToolCall }
   | { type: 'criteria_group'; toolCalls: ToolCall[] }
   | { type: 'stats'; stats: NonNullable<Message['stats']> }
@@ -49,7 +51,7 @@ function groupConsecutiveCriteria(elements: DisplayElement[]): DisplayElement[] 
 function messageToElements(message: Message, showStats: boolean): DisplayElement[] {
   // If message has segments, use them for accurate ordering
   if (message.segments && message.segments.length > 0) {
-    return segmentsToElements(message.segments, message.toolCalls ?? [], message.stats, showStats)
+    return segmentsToElements(message.segments, message.toolCalls ?? [], message.preparingToolCalls ?? [], message.stats, showStats)
   }
   
   // Fallback for messages without segments (legacy or streaming)
@@ -69,6 +71,13 @@ function messageToElements(message: Message, showStats: boolean): DisplayElement
     }
   }
   
+  // Add preparing tool calls (temporary, shown while streaming)
+  if (message.preparingToolCalls) {
+    for (const ptc of message.preparingToolCalls) {
+      elements.push({ type: 'preparing_tool_call', preparing: ptc })
+    }
+  }
+  
   if (showStats && message.stats) {
     elements.push({ type: 'stats', stats: message.stats })
   }
@@ -80,6 +89,7 @@ function messageToElements(message: Message, showStats: boolean): DisplayElement
 function segmentsToElements(
   segments: MessageSegment[],
   toolCalls: ToolCall[],
+  preparingToolCalls: PreparingToolCall[],
   stats: Message['stats'],
   showStats: boolean
 ): DisplayElement[] {
@@ -104,6 +114,11 @@ function segmentsToElements(
         break
       }
     }
+  }
+  
+  // Add preparing tool calls at the end (during streaming)
+  for (const ptc of preparingToolCalls) {
+    elements.push({ type: 'preparing_tool_call', preparing: ptc })
   }
   
   if (showStats && stats) {
@@ -133,6 +148,9 @@ export const AssistantMessage = memo(function AssistantMessage({ message, showSt
                 <Markdown content={element.content} />
               </div>
             )
+          
+          case 'preparing_tool_call':
+            return <ToolCallPreparing key={`preparing-${element.preparing.index}`} name={element.preparing.name} />
             
           case 'tool_call': {
             const tc = element.toolCall

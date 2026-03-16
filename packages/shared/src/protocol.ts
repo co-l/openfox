@@ -136,6 +136,7 @@ export type ServerMessageType =
   // Unified chat events (replaces plan.delta, agent.event, etc.)
   | 'chat.delta'          // Text streaming
   | 'chat.thinking'       // Thinking block content
+  | 'chat.tool_preparing' // Tool call detected, streaming arguments
   | 'chat.tool_call'      // Tool being called
   | 'chat.tool_output'    // Streaming tool output (stdout/stderr for run_command)
   | 'chat.tool_result'    // Tool result
@@ -209,6 +210,12 @@ export interface ChatDeltaPayload {
 export interface ChatThinkingPayload {
   messageId: string
   content: string
+}
+
+export interface ChatToolPreparingPayload {
+  messageId: string
+  index: number      // Tool call index (for multiple parallel calls)
+  name: string       // Tool name (available early in stream)
 }
 
 export interface ChatToolCallPayload {
