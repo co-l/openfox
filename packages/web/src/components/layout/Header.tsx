@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { Link } from 'wouter'
 import { useSessionStore } from '../../stores/session'
 import { useProjectStore } from '../../stores/project'
@@ -11,12 +11,23 @@ export function Header() {
   const session = useSessionStore(state => state.currentSession)
   const project = useProjectStore(state => state.currentProject)
   const model = useConfigStore(state => state.model)
+  const vllmStatus = useConfigStore(state => state.vllmStatus)
   const refreshModel = useConfigStore(state => state.refreshModel)
+  const startAutoRefresh = useConfigStore(state => state.startAutoRefresh)
+  const stopAutoRefresh = useConfigStore(state => state.stopAutoRefresh)
+  
+  // Start auto-refresh on mount
+  useEffect(() => {
+    startAutoRefresh()
+    return () => stopAutoRefresh()
+  }, [startAutoRefresh, stopAutoRefresh])
   
   // Extract short model name for display
   const shortModelName = model
     ? model.split('/').pop()?.replace(/-/g, ' ') ?? model
     : 'detecting...'
+  
+  const isVllmOffline = vllmStatus === 'disconnected'
   
   return (
     <header className="h-8 bg-bg-secondary border-b border-border flex items-center justify-between px-2">
@@ -49,12 +60,18 @@ export function Header() {
         <button
           onClick={() => refreshModel()}
           className="flex items-center gap-1 px-1.5 py-0.5 rounded hover:bg-bg-tertiary transition-colors group"
-          title={model ?? 'Click to refresh model'}
+          title={isVllmOffline ? 'vLLM server is offline. Click to retry.' : (model ?? 'Click to refresh model')}
         >
           <span className="text-sm text-text-muted">Model:</span>
-          <span className="text-sm text-accent-primary">
-            {shortModelName}
-          </span>
+          {isVllmOffline ? (
+            <span className="text-sm text-accent-error animate-pulse">
+              vLLM offline
+            </span>
+          ) : (
+            <span className="text-sm text-accent-primary">
+              {shortModelName}
+            </span>
+          )}
           <span className="text-text-muted opacity-0 group-hover:opacity-100 transition-opacity">
             ↻
           </span>

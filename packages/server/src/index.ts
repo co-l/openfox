@@ -12,7 +12,7 @@ import { cors } from 'hono/cors'
 
 import { loadConfig } from './config.js'
 import { initDatabase, closeDatabase } from './db/index.js'
-import { createLLMClient, detectModel } from './llm/index.js'
+import { createLLMClient, detectModel, getVllmStatus } from './llm/index.js'
 import { createToolRegistry } from './tools/index.js'
 import { createWebSocketServer } from './ws/index.js'
 import { sessionManager } from './session/index.js'
@@ -93,6 +93,7 @@ app.get('/api/config', (c) => {
     model: llmClient.getModel(),
     maxContext: config.context.maxTokens,
     vllmUrl: config.vllm.baseUrl,
+    vllmStatus: getVllmStatus(),
   })
 })
 
@@ -101,9 +102,9 @@ app.post('/api/model/refresh', async (c) => {
   const detected = await detectModel(config.vllm.baseUrl)
   if (detected) {
     llmClient.setModel(detected)
-    return c.json({ model: detected, source: 'detected' })
+    return c.json({ model: detected, source: 'detected', vllmStatus: getVllmStatus() })
   }
-  return c.json({ model: llmClient.getModel(), source: 'cached' })
+  return c.json({ model: llmClient.getModel(), source: 'cached', vllmStatus: getVllmStatus() })
 })
 
 // Directory browser endpoint

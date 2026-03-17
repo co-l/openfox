@@ -14,8 +14,11 @@ export interface ModelsResponse {
   data: VllmModel[]
 }
 
+export type VllmStatus = 'connected' | 'disconnected' | 'unknown'
+
 let cachedModel: string | null = null
 let cachedModelInfo: VllmModel | null = null
+let vllmStatus: VllmStatus = 'unknown'
 let lastFetch = 0
 const CACHE_TTL_MS = 30_000 // 30 seconds
 
@@ -42,6 +45,7 @@ export async function detectModel(vllmBaseUrl: string, retries = 3): Promise<str
           await new Promise(r => setTimeout(r, 1000 * attempt))
           continue
         }
+        vllmStatus = 'disconnected'
         return cachedModel
       }
       
@@ -52,6 +56,7 @@ export async function detectModel(vllmBaseUrl: string, retries = 3): Promise<str
         const model = data.data[0]!
         cachedModel = model.id
         cachedModelInfo = model
+        vllmStatus = 'connected'
         lastFetch = now
         logger.info('Detected vLLM model', { 
           model: cachedModel,
@@ -62,6 +67,7 @@ export async function detectModel(vllmBaseUrl: string, retries = 3): Promise<str
       }
       
       logger.warn('vLLM returned empty models list')
+      vllmStatus = 'disconnected'
       return null
     } catch (error) {
       const errMsg = error instanceof Error ? error.message : String(error)
@@ -74,6 +80,7 @@ export async function detectModel(vllmBaseUrl: string, retries = 3): Promise<str
     }
   }
   
+  vllmStatus = 'disconnected'
   return cachedModel
 }
 
@@ -85,7 +92,13 @@ export function getCachedModel(): string | null {
   return cachedModel
 }
 
+export function getVllmStatus(): VllmStatus {
+  return vllmStatus
+}
+
 export function clearModelCache(): void {
   cachedModel = null
+  cachedModelInfo = null
+  vllmStatus = 'unknown'
   lastFetch = 0
 }
