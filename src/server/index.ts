@@ -16,8 +16,8 @@ import { logger, setLogLevel } from './utils/logger.js'
 const __dirname = dirname(fileURLToPath(import.meta.url))
 
 export async function createServer(config: Config): Promise<void> {
-  // Set log level
-  setLogLevel(config.logging?.level ?? 'info')
+  // Set log level (mode-based default: debug for dev, warn for production)
+  setLogLevel(config.logging?.level, config.mode)
 
   // Initialize database
   initDatabase(config)
@@ -205,6 +205,22 @@ export async function createServer(config: Config): Promise<void> {
   })
   
   app.get('/', async (c) => {
+    try {
+      const content = await readFile(join(webDir, 'index.html'))
+      return c.html(content.toString())
+    } catch {
+      return c.text('Web UI not built. Run `npm run build:web`', 404)
+    }
+  })
+  
+  // Catch-all route for SPA - serve index.html for any unmatched path
+  // Must be after all specific routes (/api/*, /assets/*, /sounds/*, /fox.svg)
+  app.get('*', async (c) => {
+    const path = c.req.path
+    // Skip catch-all for API and static assets
+    if (path.startsWith('/api/') || path.startsWith('/assets/') || path.startsWith('/sounds/') || path === '/fox.svg') {
+      return c.next()
+    }
     try {
       const content = await readFile(join(webDir, 'index.html'))
       return c.html(content.toString())
