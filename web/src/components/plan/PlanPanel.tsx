@@ -208,7 +208,8 @@ export function PlanPanel() {
   }
   
   const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault()
       handleSubmit(e)
     }
   }
@@ -385,7 +386,7 @@ export function PlanPanel() {
         </div>
         <div className="mt-3 flex items-center justify-between">
           <ModeSwitch />
-          <span className="text-sm text-text-muted">Ctrl+Enter to send</span>
+          <span className="text-sm text-text-muted">Enter to send</span>
         </div>
       </form>
     </SessionLayout>
