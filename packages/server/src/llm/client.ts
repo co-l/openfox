@@ -13,23 +13,28 @@ import type { ToolCall } from '@openfox/shared'
 import { logger } from '../utils/logger.js'
 import { LLMError } from '../utils/errors.js'
 import { getModelProfile, type ModelProfile } from './profiles.js'
+import { type Backend, type BackendCapabilities, getBackendCapabilities } from './backend.js'
 
 export interface LLMClientWithModel extends LLMClient {
   getModel(): string
   setModel(model: string): void
   getProfile(): ModelProfile
+  getBackend(): Backend
+  setBackend(backend: Backend): void
 }
 
-export function createLLMClient(config: Config): LLMClientWithModel {
+export function createLLMClient(config: Config, initialBackend: Backend = 'unknown'): LLMClientWithModel {
   const openai = new OpenAI({
-    baseURL: config.vllm.baseUrl,
-    apiKey: 'not-needed', // vLLM doesn't require API key
-    timeout: config.vllm.timeout,
+    baseURL: config.llm.baseUrl,
+    apiKey: 'not-needed', // Most local backends don't require API key
+    timeout: config.llm.timeout,
   })
   
-  let model = config.vllm.model
+  let model = config.llm.model
   let profile = getModelProfile(model)
-  const disableThinking = config.vllm.disableThinking ?? false
+  let backend = initialBackend
+  let capabilities = getBackendCapabilities(backend)
+  const disableThinking = config.llm.disableThinking ?? false
   
   return {
     getModel() {
@@ -38,6 +43,16 @@ export function createLLMClient(config: Config): LLMClientWithModel {
     
     getProfile() {
       return profile
+    },
+    
+    getBackend() {
+      return backend
+    },
+    
+    setBackend(newBackend: Backend) {
+      logger.info('Setting LLM backend', { from: backend, to: newBackend })
+      backend = newBackend
+      capabilities = getBackendCapabilities(newBackend)
     },
     
     setModel(newModel: string) {
@@ -72,8 +87,8 @@ export function createLLMClient(config: Config): LLMClientWithModel {
           stream: false,
         }
         
-        // Add top_k if supported (vLLM extension)
-        if (profile.topK !== undefined) {
+        // Add top_k if backend supports it and profile specifies it
+        if (capabilities.supportsTopK && profile.topK !== undefined) {
           (createParams as unknown as Record<string, unknown>)['top_k'] = profile.topK
         }
         
@@ -86,7 +101,7 @@ export function createLLMClient(config: Config): LLMClientWithModel {
           throw new LLMError('No completion choice returned')
         }
         
-        // Handle vLLM reasoning parser output
+        // Handle reasoning output - different backends return it differently
         const message = choice.message as {
           content?: string | null
           reasoning_content?: string | null
@@ -99,7 +114,15 @@ export function createLLMClient(config: Config): LLMClientWithModel {
         
         // Only process reasoning if model supports it
         if (profile.supportsReasoning) {
-          thinkingContent = message.reasoning_content ?? message.reasoning ?? ''
+          if (capabilities.supportsReasoningField) {
+            // vLLM/SGLang: use reasoning_content field
+            thinkingContent = message.reasoning_content ?? message.reasoning ?? ''
+          } else {
+            // Ollama/llama.cpp: extract <think> tags from content
+            const extracted = extractThinking(content)
+            content = extracted.content
+            thinkingContent = extracted.thinkingContent ?? ''
+          }
           
           // If model outputs reasoning as content (broken config), handle it
           if (profile.reasoningAsContent && thinkingContent.trim()) {
@@ -162,13 +185,13 @@ export function createLLMClient(config: Config): LLMClientWithModel {
           stream_options: { include_usage: true },
         }
         
-        // Add top_k if supported (vLLM extension)
-        if (profile.topK !== undefined) {
+        // Add top_k if backend supports it and profile specifies it
+        if (capabilities.supportsTopK && profile.topK !== undefined) {
           (createParams as unknown as Record<string, unknown>)['top_k'] = profile.topK
         }
         
-        // Disable thinking if requested or globally disabled via config (vLLM extension)
-        if (request.enableThinking === false || disableThinking) {
+        // Disable thinking if requested or globally disabled - only for backends that support it
+        if (capabilities.supportsChatTemplateKwargs && (request.enableThinking === false || disableThinking)) {
           (createParams as unknown as Record<string, unknown>)['chat_template_kwargs'] = { enable_thinking: false }
         }
         
@@ -213,23 +236,29 @@ export function createLLMClient(config: Config): LLMClientWithModel {
             }>
           }
           
-          // Handle reasoning/thinking delta (vLLM reasoning parser output)
-          const reasoning = delta.reasoning_content ?? delta.reasoning
-          if (reasoning) {
-            // Only emit thinking if model supports reasoning
-            if (profile.supportsReasoning && !profile.reasoningAsContent) {
-              fullThinking += reasoning
-              yield { type: 'thinking_delta', content: reasoning }
-            } else {
-              // Model doesn't support reasoning or outputs it as content
-              fullContent += reasoning
-              yield { type: 'text_delta', content: reasoning }
+          // Handle reasoning/thinking delta
+          // vLLM/SGLang: reasoning comes as separate field
+          // Ollama/llama.cpp: reasoning is embedded as <think> tags in content
+          if (capabilities.supportsReasoningField) {
+            const reasoning = delta.reasoning_content ?? delta.reasoning
+            if (reasoning) {
+              // Only emit thinking if model supports reasoning
+              if (profile.supportsReasoning && !profile.reasoningAsContent) {
+                fullThinking += reasoning
+                yield { type: 'thinking_delta', content: reasoning }
+              } else {
+                // Model doesn't support reasoning or outputs it as content
+                fullContent += reasoning
+                yield { type: 'text_delta', content: reasoning }
+              }
             }
           }
           
           // Handle content delta
           if (delta.content) {
             fullContent += delta.content
+            // For backends without reasoning field, we'll extract <think> tags at the end
+            // For now, emit all content as text (thinking will be stripped at end)
             yield { type: 'text_delta', content: delta.content }
           }
           
@@ -261,11 +290,18 @@ export function createLLMClient(config: Config): LLMClientWithModel {
           }
         }
         
-        // If content is empty but we have thinking, use thinking as content
-        // (some models output everything as reasoning)
+        // For backends without reasoning field, extract <think> tags from accumulated content
         let finalContent = fullContent.trim()
         let finalThinking = fullThinking.trim()
         
+        if (!capabilities.supportsReasoningField && profile.supportsReasoning) {
+          const extracted = extractThinking(finalContent)
+          finalContent = extracted.content
+          finalThinking = extracted.thinkingContent ?? ''
+        }
+        
+        // If content is empty but we have thinking, use thinking as content
+        // (some models output everything as reasoning)
         if (!finalContent && finalThinking) {
           finalContent = finalThinking
           finalThinking = ''

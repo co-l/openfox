@@ -1,6 +1,6 @@
 import { logger } from '../utils/logger.js'
 
-export interface VllmModel {
+export interface LlmModel {
   id: string
   object: string
   created: number
@@ -11,41 +11,41 @@ export interface VllmModel {
 
 export interface ModelsResponse {
   object: string
-  data: VllmModel[]
+  data: LlmModel[]
 }
 
-export type VllmStatus = 'connected' | 'disconnected' | 'unknown'
+export type LlmStatus = 'connected' | 'disconnected' | 'unknown'
 
 let cachedModel: string | null = null
-let cachedModelInfo: VllmModel | null = null
-let vllmStatus: VllmStatus = 'unknown'
+let cachedModelInfo: LlmModel | null = null
+let llmStatus: LlmStatus = 'unknown'
 let lastFetch = 0
 const CACHE_TTL_MS = 30_000 // 30 seconds
 
-export async function detectModel(vllmBaseUrl: string, retries = 3): Promise<string | null> {
+export async function detectModel(llmBaseUrl: string, retries = 3): Promise<string | null> {
   // Return cached model if still fresh
   const now = Date.now()
   if (cachedModel && now - lastFetch < CACHE_TTL_MS) {
     return cachedModel
   }
   
-  const url = `${vllmBaseUrl}/models`
+  const url = `${llmBaseUrl}/models`
   
   for (let attempt = 1; attempt <= retries; attempt++) {
     try {
-      logger.debug('Fetching models from vLLM', { url, attempt })
+      logger.debug('Fetching models from LLM server', { url, attempt })
       
       const response = await fetch(url, {
         signal: AbortSignal.timeout(10000),
       })
       
       if (!response.ok) {
-        logger.warn('Failed to fetch models from vLLM', { status: response.status, attempt })
+        logger.warn('Failed to fetch models from LLM server', { status: response.status, attempt })
         if (attempt < retries) {
           await new Promise(r => setTimeout(r, 1000 * attempt))
           continue
         }
-        vllmStatus = 'disconnected'
+        llmStatus = 'disconnected'
         return cachedModel
       }
       
@@ -56,9 +56,9 @@ export async function detectModel(vllmBaseUrl: string, retries = 3): Promise<str
         const model = data.data[0]!
         cachedModel = model.id
         cachedModelInfo = model
-        vllmStatus = 'connected'
+        llmStatus = 'connected'
         lastFetch = now
-        logger.info('Detected vLLM model', { 
+        logger.info('Detected LLM model', { 
           model: cachedModel,
           maxLen: model.max_model_len,
           root: model.root
@@ -66,12 +66,12 @@ export async function detectModel(vllmBaseUrl: string, retries = 3): Promise<str
         return cachedModel
       }
       
-      logger.warn('vLLM returned empty models list')
-      vllmStatus = 'disconnected'
+      logger.warn('LLM server returned empty models list')
+      llmStatus = 'disconnected'
       return null
     } catch (error) {
       const errMsg = error instanceof Error ? error.message : String(error)
-      logger.warn('Could not detect model from vLLM', { error: errMsg, attempt })
+      logger.warn('Could not detect model from LLM server', { error: errMsg, attempt })
       
       if (attempt < retries) {
         await new Promise(r => setTimeout(r, 1000 * attempt))
@@ -80,11 +80,11 @@ export async function detectModel(vllmBaseUrl: string, retries = 3): Promise<str
     }
   }
   
-  vllmStatus = 'disconnected'
+  llmStatus = 'disconnected'
   return cachedModel
 }
 
-export function getModelInfo(): VllmModel | null {
+export function getModelInfo(): LlmModel | null {
   return cachedModelInfo
 }
 
@@ -92,13 +92,13 @@ export function getCachedModel(): string | null {
   return cachedModel
 }
 
-export function getVllmStatus(): VllmStatus {
-  return vllmStatus
+export function getLlmStatus(): LlmStatus {
+  return llmStatus
 }
 
 export function clearModelCache(): void {
   cachedModel = null
   cachedModelInfo = null
-  vllmStatus = 'unknown'
+  llmStatus = 'unknown'
   lastFetch = 0
 }

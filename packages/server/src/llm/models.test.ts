@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest'
-import { detectModel, getVllmStatus, clearModelCache } from './models.js'
+import { detectModel, getLlmStatus, clearModelCache } from './models.js'
 
 describe('models', () => {
   beforeEach(() => {
@@ -11,9 +11,9 @@ describe('models', () => {
     vi.restoreAllMocks()
   })
 
-  describe('getVllmStatus', () => {
+  describe('getLlmStatus', () => {
     it('returns "unknown" before any detection attempt', () => {
-      expect(getVllmStatus()).toBe('unknown')
+      expect(getLlmStatus()).toBe('unknown')
     })
 
     it('returns "connected" after successful model detection', async () => {
@@ -29,7 +29,7 @@ describe('models', () => {
       const model = await detectModel('http://localhost:8000/v1', 1)
       
       expect(model).toBe('test-model')
-      expect(getVllmStatus()).toBe('connected')
+      expect(getLlmStatus()).toBe('connected')
     })
 
     it('returns "disconnected" after all retries fail', async () => {
@@ -38,7 +38,7 @@ describe('models', () => {
       const model = await detectModel('http://localhost:8000/v1', 1)
       
       expect(model).toBeNull()
-      expect(getVllmStatus()).toBe('disconnected')
+      expect(getLlmStatus()).toBe('disconnected')
     })
 
     it('returns "disconnected" when server returns non-ok response', async () => {
@@ -51,7 +51,7 @@ describe('models', () => {
       const model = await detectModel('http://localhost:8000/v1', 1)
       
       expect(model).toBeNull()
-      expect(getVllmStatus()).toBe('disconnected')
+      expect(getLlmStatus()).toBe('disconnected')
     })
 
     it('returns "disconnected" when server returns empty model list', async () => {
@@ -67,7 +67,7 @@ describe('models', () => {
       const model = await detectModel('http://localhost:8000/v1', 1)
       
       expect(model).toBeNull()
-      expect(getVllmStatus()).toBe('disconnected')
+      expect(getLlmStatus()).toBe('disconnected')
     })
   })
 

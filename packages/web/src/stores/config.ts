@@ -1,12 +1,14 @@
 import { create } from 'zustand'
 
-type VllmStatus = 'connected' | 'disconnected' | 'unknown'
+type LlmStatus = 'connected' | 'disconnected' | 'unknown'
+type Backend = 'vllm' | 'sglang' | 'ollama' | 'llamacpp' | 'unknown'
 
 interface ConfigState {
   model: string | null
   maxContext: number
-  vllmUrl: string | null
-  vllmStatus: VllmStatus
+  llmUrl: string | null
+  llmStatus: LlmStatus
+  backend: Backend
   loading: boolean
   error: string | null
   autoRefreshInterval: ReturnType<typeof setInterval> | null
@@ -19,11 +21,26 @@ interface ConfigState {
 
 const AUTO_REFRESH_INTERVAL_MS = 30_000 // 30 seconds
 
+/** Display name for each backend */
+function getBackendDisplayName(backend: Backend): string {
+  switch (backend) {
+    case 'vllm': return 'vLLM'
+    case 'sglang': return 'SGLang'
+    case 'ollama': return 'Ollama'
+    case 'llamacpp': return 'llama.cpp'
+    case 'unknown': return ''
+  }
+}
+
+export { getBackendDisplayName }
+export type { Backend, LlmStatus }
+
 export const useConfigStore = create<ConfigState>((set, get) => ({
   model: null,
   maxContext: 200000,
-  vllmUrl: null,
-  vllmStatus: 'unknown',
+  llmUrl: null,
+  llmStatus: 'unknown',
+  backend: 'unknown',
   loading: false,
   error: null,
   autoRefreshInterval: null,
@@ -38,14 +55,16 @@ export const useConfigStore = create<ConfigState>((set, get) => ({
       const data = await response.json() as { 
         model: string
         maxContext: number
-        vllmUrl: string
-        vllmStatus: VllmStatus 
+        llmUrl: string
+        llmStatus: LlmStatus
+        backend: Backend
       }
       set({
         model: data.model,
         maxContext: data.maxContext,
-        vllmUrl: data.vllmUrl,
-        vllmStatus: data.vllmStatus,
+        llmUrl: data.llmUrl,
+        llmStatus: data.llmStatus,
+        backend: data.backend,
         loading: false,
       })
     } catch (error) {
@@ -65,9 +84,10 @@ export const useConfigStore = create<ConfigState>((set, get) => ({
       const data = await response.json() as { 
         model: string
         source: string
-        vllmStatus: VllmStatus 
+        llmStatus: LlmStatus
+        backend: Backend
       }
-      set({ model: data.model, vllmStatus: data.vllmStatus })
+      set({ model: data.model, llmStatus: data.llmStatus, backend: data.backend })
     } catch (error) {
       console.error('Failed to refresh model:', error)
     }

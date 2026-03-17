@@ -350,11 +350,16 @@ export interface Diagnostic {
 // Config Types
 // ============================================================================
 
+/** Supported LLM inference backends */
+export type LlmBackend = 'vllm' | 'sglang' | 'ollama' | 'llamacpp' | 'unknown'
+
 export interface Config {
-  vllm: {
+  llm: {
     baseUrl: string
     model: string
     timeout: number
+    /** Backend type - 'auto' for auto-detection, or explicit backend name */
+    backend: LlmBackend | 'auto'
     /** Disable thinking/reasoning globally (for e2e tests) */
     disableThinking?: boolean
   }

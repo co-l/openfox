@@ -12,7 +12,7 @@ import { cors } from 'hono/cors'
 
 import { loadConfig } from './config.js'
 import { initDatabase, closeDatabase } from './db/index.js'
-import { createLLMClient, detectModel, getVllmStatus } from './llm/index.js'
+import { createLLMClient, detectModel, getLlmStatus, detectBackend, getBackendDisplayName, type Backend } from './llm/index.js'
 import { createToolRegistry } from './tools/index.js'
 import { createWebSocketServer } from './ws/index.js'
 import { sessionManager } from './session/index.js'
@@ -27,22 +27,35 @@ setLogLevel(process.env['OPENFOX_LOG_LEVEL'] as 'debug' | 'info' | 'warn' | 'err
 // Initialize database
 initDatabase(config)
 
-// Create LLM client
+// Create LLM client (backend will be set after detection)
 const llmClient = createLLMClient(config)
 
-// Auto-detect model from vLLM
-async function initModel(): Promise<void> {
-  const detected = await detectModel(config.vllm.baseUrl)
+// Auto-detect backend and model from LLM server
+async function initLLM(): Promise<void> {
+  // Detect backend if set to auto
+  let backend: Backend = 'unknown'
+  if (config.llm.backend === 'auto') {
+    backend = await detectBackend(config.llm.baseUrl)
+    llmClient.setBackend(backend)
+    logger.info('Auto-detected LLM backend', { backend: getBackendDisplayName(backend) })
+  } else {
+    backend = config.llm.backend
+    llmClient.setBackend(backend)
+    logger.info('Using configured LLM backend', { backend: getBackendDisplayName(backend) })
+  }
+  
+  // Detect model
+  const detected = await detectModel(config.llm.baseUrl)
   if (detected) {
     llmClient.setModel(detected)
-    logger.info('Auto-detected model from vLLM', { model: detected })
+    logger.info('Auto-detected LLM model', { model: detected, backend: getBackendDisplayName(backend) })
   } else {
-    logger.warn('Could not auto-detect model, using config', { model: config.vllm.model })
+    logger.warn('Could not auto-detect model, using config', { model: config.llm.model })
   }
 }
 
-// Run model detection (non-blocking)
-initModel().catch(err => logger.error('Model detection failed', { error: err }))
+// Run LLM initialization (non-blocking)
+initLLM().catch(err => logger.error('LLM initialization failed', { error: err }))
 
 // Create tool registry
 const toolRegistry = createToolRegistry()
@@ -92,19 +105,20 @@ app.get('/api/config', (c) => {
   return c.json({
     model: llmClient.getModel(),
     maxContext: config.context.maxTokens,
-    vllmUrl: config.vllm.baseUrl,
-    vllmStatus: getVllmStatus(),
+    llmUrl: config.llm.baseUrl,
+    llmStatus: getLlmStatus(),
+    backend: llmClient.getBackend(),
   })
 })
 
-// Model refresh endpoint - re-detect model from vLLM
+// Model refresh endpoint - re-detect model from LLM server
 app.post('/api/model/refresh', async (c) => {
-  const detected = await detectModel(config.vllm.baseUrl)
+  const detected = await detectModel(config.llm.baseUrl)
   if (detected) {
     llmClient.setModel(detected)
-    return c.json({ model: detected, source: 'detected', vllmStatus: getVllmStatus() })
+    return c.json({ model: detected, source: 'detected', llmStatus: getLlmStatus(), backend: llmClient.getBackend() })
   }
-  return c.json({ model: llmClient.getModel(), source: 'cached', vllmStatus: getVllmStatus() })
+  return c.json({ model: llmClient.getModel(), source: 'cached', llmStatus: getLlmStatus(), backend: llmClient.getBackend() })
 })
 
 // Directory browser endpoint
@@ -221,8 +235,8 @@ createWebSocketServer(httpServer, config, llmClient, toolRegistry)
 httpServer.listen(config.server.port, config.server.host, () => {
   logger.info(`OpenFox server running at http://${config.server.host}:${config.server.port}`)
   logger.info(`WebSocket available at ws://${config.server.host}:${config.server.port}/ws`)
-  logger.info(`Connected to vLLM at ${config.vllm.baseUrl}`)
-  logger.info(`Model: ${config.vllm.model}`)
+  logger.info(`LLM server at ${config.llm.baseUrl}`)
+  logger.info(`Model: ${config.llm.model}`)
 })
 
 // Graceful shutdown

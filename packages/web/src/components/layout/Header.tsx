@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import { Link } from 'wouter'
 import { useSessionStore } from '../../stores/session'
 import { useProjectStore } from '../../stores/project'
-import { useConfigStore } from '../../stores/config'
+import { useConfigStore, getBackendDisplayName } from '../../stores/config'
 import { GlobalSettingsModal } from '../settings/GlobalSettingsModal'
 
 export function Header() {
@@ -11,7 +11,8 @@ export function Header() {
   const session = useSessionStore(state => state.currentSession)
   const project = useProjectStore(state => state.currentProject)
   const model = useConfigStore(state => state.model)
-  const vllmStatus = useConfigStore(state => state.vllmStatus)
+  const llmStatus = useConfigStore(state => state.llmStatus)
+  const backend = useConfigStore(state => state.backend)
   const refreshModel = useConfigStore(state => state.refreshModel)
   const startAutoRefresh = useConfigStore(state => state.startAutoRefresh)
   const stopAutoRefresh = useConfigStore(state => state.stopAutoRefresh)
@@ -27,7 +28,10 @@ export function Header() {
     ? model.split('/').pop()?.replace(/-/g, ' ') ?? model
     : 'detecting...'
   
-  const isVllmOffline = vllmStatus === 'disconnected'
+  // Backend display name (empty for unknown)
+  const backendName = getBackendDisplayName(backend)
+  
+  const isLlmOffline = llmStatus === 'disconnected'
   
   return (
     <header className="h-8 bg-bg-secondary border-b border-border flex items-center justify-between px-2">
@@ -60,16 +64,19 @@ export function Header() {
         <button
           onClick={() => refreshModel()}
           className="flex items-center gap-1 px-1.5 py-0.5 rounded hover:bg-bg-tertiary transition-colors group"
-          title={isVllmOffline ? 'vLLM server is offline. Click to retry.' : (model ?? 'Click to refresh model')}
+          title={isLlmOffline ? 'LLM server is offline. Click to retry.' : (model ?? 'Click to refresh model')}
         >
           <span className="text-sm text-text-muted">Model:</span>
-          {isVllmOffline ? (
+          {isLlmOffline ? (
             <span className="text-sm text-accent-error animate-pulse">
-              vLLM offline
+              LLM offline
             </span>
           ) : (
             <span className="text-sm text-accent-primary">
               {shortModelName}
+              {backendName && (
+                <span className="text-text-muted ml-1">({backendName})</span>
+              )}
             </span>
           )}
           <span className="text-text-muted opacity-0 group-hover:opacity-100 transition-opacity">
