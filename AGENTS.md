@@ -83,7 +83,7 @@ Prefer pure functions, immutability, and composition. Use Zod for runtime valida
 
 ## Architecture Patterns
 
-### Tool Implementation (`packages/server/src/tools/`)
+### Tool Implementation (`src/server/tools/`)
 
 ```typescript
 export const myTool: Tool = {
@@ -162,6 +162,9 @@ OPENFOX_VLLM_URL=http://localhost:8000/v1
 OPENFOX_MODEL_NAME=qwen3.5-122b-int4-autoround
 OPENFOX_MAX_CONTEXT=200000
 OPENFOX_PORT=3000
+OPENFOX_HOST=0.0.0.0
+OPENFOX_WORKDIR=/home/conrad/dev
+OPENFOX_DB_PATH=./openfox.db
 OPENFOX_LOG_LEVEL=info  # debug, info, warn, error
 ```
 
@@ -171,7 +174,6 @@ When fixing or refactoring: write/update the failing test FIRST, then make it pa
 
 ```bash
 # 1. Write failing test
-cd packages/server
 npx vitest run src/tools/myfeature.test.ts  # Should fail
 
 # 2. Implement feature
