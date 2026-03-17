@@ -1,4 +1,5 @@
 import { memo, useEffect, useRef, useState } from 'react'
+import { ansiToReact } from '../../lib/ansiParser'
 
 interface StreamingChunk {
   stream: 'stdout' | 'stderr'
@@ -61,9 +62,6 @@ export const RunCommandView = memo(function RunCommandView({
     ? streamingOutput?.map(c => c.content).join('') ?? ''
     : result ?? ''
   
-  // Check if there's stderr in streaming output
-  const hasStderr = streamingOutput?.some(c => c.stream === 'stderr')
-  
   return (
     <div className="space-y-2">
       {/* Command header with timeout indicator */}
@@ -106,31 +104,18 @@ export const RunCommandView = memo(function RunCommandView({
           }`}
         >
           {status === 'pending' && streamingOutput ? (
-            // Render streaming chunks with color coding
+            // Render streaming chunks with ANSI color parsing
             streamingOutput.map((chunk, i) => (
               <span 
                 key={i} 
-                className={chunk.stream === 'stderr' ? 'text-accent-warning' : 'text-text-primary'}
+                className={chunk.stream === 'stderr' ? 'text-accent-warning' : ''}
               >
-                {chunk.content}
+                {ansiToReact(chunk.content)}
               </span>
             ))
           ) : (
-            // Render final output, highlighting interrupted marker
-            <>
-              {displayOutput.includes('[interrupted by user]') ? (
-                <>
-                  <span className={hasStderr ? 'text-accent-warning' : 'text-text-primary'}>
-                    {displayOutput.replace('[interrupted by user]', '')}
-                  </span>
-                  <span className="text-red-400 font-medium">[interrupted by user]</span>
-                </>
-              ) : (
-                <span className={hasStderr ? 'text-accent-warning' : 'text-text-primary'}>
-                  {displayOutput || (status === 'pending' ? 'Waiting for output...' : 'No output')}
-                </span>
-              )}
-            </>
+            // Render final output with ANSI color parsing
+            ansiToReact(displayOutput)
           )}
         </pre>
       )}
