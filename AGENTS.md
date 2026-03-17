@@ -4,36 +4,28 @@
 
 ## Project Overview
 
-OpenFox is a local-LLM-first agentic coding assistant. Turborepo monorepo with three packages:
+OpenFox is a local-LLM-first agentic coding assistant. Single-package TypeScript project with:
 
-- `@openfox/server` - Hono HTTP/WebSocket server, LLM client, tools, agent runner
-- `@openfox/shared` - Shared types and WebSocket protocol definitions
-- `@openfox/web` - React 19 + Tailwind frontend with Zustand state management
+- `src/server/` - Hono HTTP/WebSocket server, LLM client, tools, agent runner, LSP integration
+- `src/shared/` - Shared types and WebSocket protocol definitions
+- `src/cli/` - CLI entry points for openfox and openfox-dev
+- `web/` - React 19 + Tailwind frontend with Zustand state management
 
 ## Build, Lint, Test Commands
 
-### Monorepo (from root)
+### From Root
 
 ```bash
-npm run build        # Build all packages (tsup/vite)
+npm run build        # Build with tsup + vite
 npm run dev          # Start dev servers (server + web)
-npm run test         # Run all tests
-npm run lint         # Lint all packages
-npm run typecheck    # TypeScript check all packages
-npm run clean        # Remove dist/ and node_modules/
+npm run test         # Run all tests (vitest)
+npm run typecheck    # TypeScript check
+npm run clean        # Remove dist/
 ```
 
-### Single Package
+### Single Test File
 
 ```bash
-npm run build --filter=@openfox/server
-npm run test --filter=@openfox/server
-```
-
-### Single Test File (server package)
-
-```bash
-cd packages/server
 npx vitest run src/tools/read.test.ts           # Run one test file
 npx vitest run src/tools/read.test.ts -t "name" # Run specific test by name
 npx vitest --watch src/tools/                   # Watch mode for directory
@@ -135,25 +127,30 @@ Data streamed during real-time operations must be identical in shape to data fet
 ## File Structure
 
 ```
-packages/
-  server/src/
-    agent/       # Agent runner and prompts
+src/
+  cli/           # CLI entry points (openfox, openfox-dev)
+  server/
     chat/        # Chat/planning logic
     context/     # Context compaction
     db/          # SQLite persistence
     llm/         # LLM client, streaming, profiles
+    lsp/         # Language Server Protocol integration
+    runner/      # Agent runner and decision logic
     session/     # Session state machine
-    tools/       # Tool implementations (read, write, edit, glob, grep, shell)
+    tools/       # Tool implementations (read, write, edit, glob, grep, shell, ask, todo)
     utils/       # Logger, errors, async helpers
     ws/          # WebSocket server and protocol handler
-  shared/src/
+  shared/
     types.ts     # Core domain types
     protocol.ts  # WebSocket message types
-  web/src/
-    components/  # React components (layout/, plan/, shared/)
+    stats.ts     # Session statistics utilities
+web/
+  src/
+    components/  # React components (layout/, plan/, settings/, shared/)
     hooks/       # Custom hooks
     stores/      # Zustand stores
     lib/         # Utilities (ws client, sound, formatting)
+e2e/             # End-to-end tests
 ```
 
 ## Environment Variables

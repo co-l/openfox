@@ -1,8 +1,30 @@
 import { z } from 'zod'
-import { readFile, writeFile, mkdir } from 'node:fs/promises'
+import { readFile, writeFile, mkdir, access } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import type { Mode } from './main.js'
 import { getGlobalConfigPath } from './paths.js'
+import { detectBackend, detectModel } from '../server/llm/index.js'
+
+const SMART_DEFAULTS = [
+  { url: 'http://localhost:8000/v1', name: 'vLLM' },
+  { url: 'http://localhost:11434', name: 'Ollama' },
+  { url: 'http://localhost:8080', name: 'SGLang/llama.cpp' },
+]
+
+export async function trySmartDefaults(mode: Mode): Promise<{ url: string; backend: string; model: string } | null> {
+  for (const { url, name } of SMART_DEFAULTS) {
+    try {
+      const backend = await detectBackend(url)
+      const model = await detectModel(url)
+      if (backend !== 'unknown' && model) {
+        return { url, backend, model }
+      }
+    } catch {
+      continue  // Fast fail, try next - no retry
+    }
+  }
+  return null
+}
 
 const configSchema = z.object({
   llm: z.object({
