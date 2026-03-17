@@ -22,7 +22,12 @@ let llmStatus: LlmStatus = 'unknown'
 let lastFetch = 0
 const CACHE_TTL_MS = 30_000 // 30 seconds
 
-export async function detectModel(llmBaseUrl: string, retries = 3): Promise<string | null> {
+/**
+ * Detect model from LLM server.
+ * 
+ * @param silent - If true, use debug logging instead of info/warn (for auto-detection)
+ */
+export async function detectModel(llmBaseUrl: string, retries = 3, silent = false): Promise<string | null> {
   // Return cached model if still fresh
   const now = Date.now()
   if (cachedModel && now - lastFetch < CACHE_TTL_MS) {
@@ -33,14 +38,20 @@ export async function detectModel(llmBaseUrl: string, retries = 3): Promise<stri
   
   for (let attempt = 1; attempt <= retries; attempt++) {
     try {
-      logger.debug('Fetching models from LLM server', { url, attempt })
+      if (silent) {
+        logger.debug('Fetching models from LLM server', { url, attempt })
+      }
       
       const response = await fetch(url, {
         signal: AbortSignal.timeout(10000),
       })
       
       if (!response.ok) {
-        logger.warn('Failed to fetch models from LLM server', { status: response.status, attempt })
+        if (silent) {
+          logger.debug('Failed to fetch models from LLM server', { status: response.status, attempt })
+        } else {
+          logger.warn('Failed to fetch models from LLM server', { status: response.status, attempt })
+        }
         if (attempt < retries) {
           await new Promise(r => setTimeout(r, 1000 * attempt))
           continue
@@ -58,20 +69,36 @@ export async function detectModel(llmBaseUrl: string, retries = 3): Promise<stri
         cachedModelInfo = model
         llmStatus = 'connected'
         lastFetch = now
-        logger.info('Detected LLM model', { 
-          model: cachedModel,
-          maxLen: model.max_model_len,
-          root: model.root
-        })
+        if (silent) {
+          logger.debug('Detected LLM model', { 
+            model: cachedModel,
+            maxLen: model.max_model_len,
+            root: model.root
+          })
+        } else {
+          logger.info('Detected LLM model', { 
+            model: cachedModel,
+            maxLen: model.max_model_len,
+            root: model.root
+          })
+        }
         return cachedModel
       }
       
-      logger.warn('LLM server returned empty models list')
+      if (silent) {
+        logger.debug('LLM server returned empty models list')
+      } else {
+        logger.warn('LLM server returned empty models list')
+      }
       llmStatus = 'disconnected'
       return null
     } catch (error) {
       const errMsg = error instanceof Error ? error.message : String(error)
-      logger.warn('Could not detect model from LLM server', { error: errMsg, attempt })
+      if (silent) {
+        logger.debug('Could not detect model from LLM server', { error: errMsg, attempt })
+      } else {
+        logger.warn('Could not detect model from LLM server', { error: errMsg, attempt })
+      }
       
       if (attempt < retries) {
         await new Promise(r => setTimeout(r, 1000 * attempt))

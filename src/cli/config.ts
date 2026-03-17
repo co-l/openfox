@@ -6,24 +6,32 @@ import { getGlobalConfigPath } from './paths.js'
 import { detectBackend, detectModel } from '../server/llm/index.js'
 
 const SMART_DEFAULTS = [
-  { url: 'http://localhost:8000/v1', name: 'vLLM' },
-  { url: 'http://localhost:11434', name: 'Ollama' },
-  { url: 'http://localhost:8080', name: 'SGLang/llama.cpp' },
+  'http://localhost:8000/v1',
+  'http://localhost:11434',
+  'http://localhost:8080',
 ]
 
 export async function trySmartDefaults(mode: Mode): Promise<{ url: string; backend: string; model: string } | null> {
-  for (const { url, name } of SMART_DEFAULTS) {
-    try {
-      const backend = await detectBackend(url)
-      const model = await detectModel(url)
-      if (backend !== 'unknown' && model) {
-        return { url, backend, model }
+  // Try all URLs in parallel, no retries
+  const results = await Promise.all(
+    SMART_DEFAULTS.map(async (url) => {
+      try {
+        const [backend, model] = await Promise.all([
+          detectBackend(url, undefined, true),
+          detectModel(url, 1, true),  // Only 1 retry attempt
+        ])
+        if (backend !== 'unknown' && model) {
+          return { url, backend, model }
+        }
+      } catch {
+        // Silent fail
       }
-    } catch {
-      continue  // Fast fail, try next - no retry
-    }
-  }
-  return null
+      return null
+    })
+  )
+  
+  // Return first successful detection
+  return results.find(r => r !== null) || null
 }
 
 export async function configFileExists(mode: Mode): Promise<boolean> {

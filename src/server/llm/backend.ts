@@ -58,14 +58,21 @@ export function getBackendCapabilities(backend: Backend): BackendCapabilities {
  * 3. SGLang: /get_model_info endpoint exists
  * 4. vLLM: /v1/models works (default for OpenAI-compatible)
  * 5. unknown: nothing responds
+ * 
+ * @param silent - If true, use debug logging instead of info/warn (for auto-detection)
  */
 export async function detectBackend(
   baseUrl: string,
-  explicitBackend?: Backend
+  explicitBackend?: Backend,
+  silent = false
 ): Promise<Backend> {
   // Allow explicit override
   if (explicitBackend && explicitBackend !== 'unknown') {
-    logger.info('Using explicit backend', { backend: explicitBackend })
+    if (silent) {
+      logger.debug('Using explicit backend', { backend: explicitBackend })
+    } else {
+      logger.info('Using explicit backend', { backend: explicitBackend })
+    }
     return explicitBackend
   }
 
@@ -75,35 +82,62 @@ export async function detectBackend(
   try {
     // 1. Check for Ollama
     if (await probeOllama(probeUrl)) {
-      logger.info('Detected Ollama backend', { url: probeUrl })
+      if (silent) {
+        logger.debug('Detected Ollama backend', { url: probeUrl })
+      } else {
+        logger.info('Detected Ollama backend', { url: probeUrl })
+      }
       return 'ollama'
     }
 
     // 2. Check for llama.cpp
     if (await probeLlamaCpp(probeUrl)) {
-      logger.info('Detected llama.cpp backend', { url: probeUrl })
+      if (silent) {
+        logger.debug('Detected llama.cpp backend', { url: probeUrl })
+      } else {
+        logger.info('Detected llama.cpp backend', { url: probeUrl })
+      }
       return 'llamacpp'
     }
 
     // 3. Check for SGLang
     if (await probeSGLang(probeUrl)) {
-      logger.info('Detected SGLang backend', { url: probeUrl })
+      if (silent) {
+        logger.debug('Detected SGLang backend', { url: probeUrl })
+      } else {
+        logger.info('Detected SGLang backend', { url: probeUrl })
+      }
       return 'sglang'
     }
 
     // 4. Check for vLLM (or any OpenAI-compatible)
     if (await probeOpenAI(baseUrl)) {
-      logger.info('Detected vLLM backend (OpenAI-compatible)', { url: baseUrl })
+      if (silent) {
+        logger.debug('Detected vLLM backend (OpenAI-compatible)', { url: baseUrl })
+      } else {
+        logger.info('Detected vLLM backend (OpenAI-compatible)', { url: baseUrl })
+      }
       return 'vllm'
     }
 
-    logger.warn('Could not detect backend, using unknown', { url: baseUrl })
+    if (silent) {
+      logger.debug('Could not detect backend, using unknown', { url: baseUrl })
+    } else {
+      logger.warn('Could not detect backend, using unknown', { url: baseUrl })
+    }
     return 'unknown'
   } catch (error) {
-    logger.warn('Backend detection failed', { 
-      url: baseUrl, 
-      error: error instanceof Error ? error.message : String(error) 
-    })
+    if (silent) {
+      logger.debug('Backend detection failed', { 
+        url: baseUrl, 
+        error: error instanceof Error ? error.message : String(error) 
+      })
+    } else {
+      logger.warn('Backend detection failed', { 
+        url: baseUrl, 
+        error: error instanceof Error ? error.message : String(error) 
+      })
+    }
     return 'unknown'
   }
 }

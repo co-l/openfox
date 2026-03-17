@@ -81,12 +81,15 @@ export async function runCli(options: { mode: Mode }): Promise<void> {
       const configExists = await configFileExists(mode)
       
       if (!configExists) {
-        // First run - try smart defaults, then wizard if needed
+        // First run - show welcome message
+        console.log('Welcome to OpenFox!\n')
+        
+        // Try smart defaults in parallel (silent - no logs)
         const { trySmartDefaults } = await import('./config.js')
         const detected = await trySmartDefaults(mode)
         
         if (detected) {
-          console.log(`✓ Auto-detected ${detected.backend} (${detected.model})`)
+          console.log(`✓ Found ${detected.backend} (${detected.model}) at ${detected.url}`)
           const { saveGlobalConfig } = await import('./config.js')
           await saveGlobalConfig(mode, {
             llm: { url: detected.url, backend: detected.backend as 'auto' | 'vllm' | 'sglang' | 'ollama' | 'llamacpp', model: detected.model, maxContext: 200000, disableThinking: false },
@@ -94,6 +97,7 @@ export async function runCli(options: { mode: Mode }): Promise<void> {
             logging: { level: 'info' as const },
             database: { path: '' },
           })
+          console.log('Configuration saved!\n')
         } else {
           console.log('✗ No LLM server detected\n')
           const { runInitWithSelect } = await import('./init.js')
