@@ -1,28 +1,80 @@
 {
   "name": "openfox",
   "version": "0.1.0",
-  "private": true,
+  "description": "Local-LLM-first agentic coding assistant",
   "type": "module",
-  "workspaces": [
-    "packages/*",
-    "e2e"
+  "bin": {
+    "openfox": "./dist/cli/index.js",
+    "openfox-dev": "./dist/cli/dev.js"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/server/index.d.ts",
+      "import": "./dist/server/index.js"
+    },
+    "./shared": {
+      "types": "./dist/shared/index.d.ts",
+      "import": "./dist/shared/index.js"
+    }
+  },
+  "files": [
+    "dist"
   ],
   "scripts": {
-    "dev": "turbo dev",
-    "build": "turbo build",
-    "test": "turbo test",
-    "test:e2e": "npm test --workspace=@openfox/e2e",
-    "lint": "turbo lint",
-    "typecheck": "turbo typecheck",
-    "clean": "turbo clean && rm -rf node_modules"
+    "dev": "concurrently \"npm run dev:server\" \"npm run dev:web\"",
+    "dev:server": "OPENFOX_DEV=true tsx watch src/cli/dev.ts",
+    "dev:web": "vite --config web/vite.config.ts",
+    "build": "npm run build:server && npm run build:web",
+    "build:server": "tsup",
+    "build:web": "cd web && vite build --outDir ../dist/web",
+    "start": "node dist/cli/index.js",
+    "start:dev": "node dist/cli/dev.js",
+    "test": "vitest",
+    "typecheck": "tsc --noEmit",
+    "clean": "rm -rf dist",
+    "prepublishOnly": "npm run build"
+  },
+  "dependencies": {
+    "@clack/prompts": "^1.1.0",
+    "@fontsource/jetbrains-mono": "^5.2.8",
+    "@hono/node-server": "^1.14.1",
+    "better-sqlite3": "^11.8.1",
+    "fast-glob": "^3.3.3",
+    "hono": "^4.7.4",
+    "html2canvas": "^1.4.1",
+    "open": "^11.0.0",
+    "openai": "^4.85.4",
+    "react-markdown": "^10.1.0",
+    "react-syntax-highlighter": "^16.1.1",
+    "remark-gfm": "^4.0.1",
+    "vscode-jsonrpc": "^8.2.1",
+    "vscode-languageserver-protocol": "^3.17.5",
+    "wouter": "^3.9.0",
+    "ws": "^8.19.0",
+    "zod": "^3.24.2",
+    "zustand": "^5.0.12"
   },
   "devDependencies": {
-    "turbo": "^2.5.0",
+    "@types/better-sqlite3": "^7.6.12",
+    "@types/node": "^22.13.4",
+    "@types/react": "^19.0.8",
+    "@types/react-dom": "^19.0.3",
+    "@types/ws": "^8.5.14",
+    "@vitejs/plugin-react": "^4.3.4",
+    "autoprefixer": "^10.4.20",
+    "concurrently": "^8.2.0",
+    "postcss": "^8.5.1",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "tailwindcss": "^3.4.17",
+    "tsup": "^8.4.0",
+    "tsx": "^4.19.2",
     "typescript": "^5.7.3",
+    "vite": "^6.1.0",
     "vitest": "^4.1.0"
   },
-  "packageManager": "npm@10.9.2",
   "engines": {
     "node": ">=24.0.0"
-  }
+  },
+  "license": "MIT"
 }

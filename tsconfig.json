@@ -13,10 +13,8 @@
     "noUncheckedIndexedAccess": true,
     "exactOptionalPropertyTypes": true,
     "noPropertyAccessFromIndexSignature": true,
-    "allowSyntheticDefaultImports": true,
-    "types": ["node"],
-    "noEmit": true
+    "allowSyntheticDefaultImports": true
   },
-  "include": ["**/*.ts"],
-  "exclude": ["node_modules", "dist"]
+  "include": ["src/**/*.ts"],
+  "exclude": ["node_modules", "dist", "e2e"]
 }
