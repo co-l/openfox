@@ -24,8 +24,13 @@ export interface LLMClientWithModel extends LLMClient {
 }
 
 export function createLLMClient(config: Config, initialBackend: Backend = 'unknown'): LLMClientWithModel {
+  // Ensure baseURL includes /v1 for OpenAI-compatible endpoint
+  const baseURL = config.llm.baseUrl.includes('/v1') 
+    ? config.llm.baseUrl 
+    : `${config.llm.baseUrl}/v1`
+  
   const openai = new OpenAI({
-    baseURL: config.llm.baseUrl,
+    baseURL,
     apiKey: 'not-needed', // Most local backends don't require API key
     timeout: config.llm.timeout,
   })

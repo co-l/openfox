@@ -6,7 +6,7 @@ import { getGlobalConfigPath } from './paths.js'
 import { detectBackend, detectModel } from '../server/llm/index.js'
 
 const SMART_DEFAULTS = [
-  'http://localhost:8000/v1',
+  'http://localhost:8000',
   'http://localhost:11434',
   'http://localhost:8080',
 ]

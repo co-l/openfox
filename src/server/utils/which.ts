@@ -3,22 +3,21 @@ import { join, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 // Get the directory where this module is located
-// In dev: packages/server/src/utils/
-// In prod: wherever @openfox/server is installed
+// In dev: src/server/utils/
+// In prod: dist/server/utils/
 const __dirname = dirname(fileURLToPath(import.meta.url))
 
-// Path to bundled node_modules/.bin (relative to this file)
-// In dev: packages/server/node_modules/.bin
-// In prod: node_modules/@openfox/server/node_modules/.bin or node_modules/.bin
+// Path to bundled node_modules/.bin
+// Uses process.cwd() as the primary source (where user runs the command)
+// Falls back to relative paths from this module location
 function getBundledBinPaths(): string[] {
   const paths: string[] = []
   
-  // Go up from src/utils to package root, then to node_modules/.bin
-  // Works for: packages/server/src/utils -> packages/server/node_modules/.bin
-  paths.push(join(__dirname, '..', '..', 'node_modules', '.bin'))
+  // Primary: use current working directory (where user runs openfox)
+  paths.push(join(process.cwd(), 'node_modules', '.bin'))
   
-  // Also check monorepo root node_modules/.bin (hoisted deps)
-  // Works for: packages/server/src/utils -> node_modules/.bin
+  // Fallback: relative to this module (for edge cases)
+  paths.push(join(__dirname, '..', '..', '..', 'node_modules', '.bin'))
   paths.push(join(__dirname, '..', '..', '..', '..', 'node_modules', '.bin'))
   
   return paths

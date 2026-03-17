@@ -45,7 +45,8 @@ export async function runServe(options: ServeOptions): Promise<void> {
   
   await createServer(merged)
   
-  const url = `http://${merged.server.host}:${merged.server.port}`
+  const displayHost = merged.server.host === '127.0.0.1' ? 'localhost' : merged.server.host
+  const url = `http://${displayHost}:${merged.server.port}`
   
   logger.info(`OpenFox ${mode === 'development' ? '[DEV]' : 'v0.1.0'}`, {
     url,

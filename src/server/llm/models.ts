@@ -34,7 +34,8 @@ export async function detectModel(llmBaseUrl: string, retries = 3, silent = fals
     return cachedModel
   }
   
-  const url = `${llmBaseUrl}/models`
+  // Ensure URL has /v1 for OpenAI-compatible endpoint
+  const url = llmBaseUrl.includes('/v1') ? `${llmBaseUrl}/models` : `${llmBaseUrl}/v1/models`
   
   for (let attempt = 1; attempt <= retries; attempt++) {
     try {

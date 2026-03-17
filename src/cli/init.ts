@@ -4,7 +4,7 @@ import { saveGlobalConfig } from './config.js'
 import type { Mode } from './main.js'
 
 const LLM_OPTIONS = [
-  { value: 'http://localhost:8000/v1', label: 'http://localhost:8000/v1' },
+  { value: 'http://localhost:8000', label: 'http://localhost:8000' },
   { value: 'http://localhost:11434', label: 'http://localhost:11434' },
   { value: 'http://localhost:8080', label: 'http://localhost:8080' },
   { value: 'other', label: 'Other...' },
