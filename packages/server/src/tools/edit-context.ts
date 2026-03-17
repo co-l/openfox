@@ -1,11 +1,11 @@
 /**
  * Edit Context Extraction
  * 
- * Computes context lines (8 before, 8 after) for edit_file operations.
+ * Computes context lines (4 before, 4 after) for edit_file operations.
  * Handles multiple replacements by merging overlapping context regions.
  */
 
-const CONTEXT_LINES = 8
+const CONTEXT_LINES = 4
 
 export interface ContextLine {
   lineNumber: number  // 1-indexed

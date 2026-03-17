@@ -1,6 +1,19 @@
 import { memo, useMemo } from 'react'
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter'
 import { oneDark } from 'react-syntax-highlighter/dist/esm/styles/prism'
+
+// Custom oneDark theme with transparent backgrounds (no ugly grey line backgrounds)
+const oneDarkTransparent = {
+  ...oneDark,
+  'pre[class*="language-"]': {
+    ...(oneDark['pre[class*="language-"]'] as Record<string, unknown>),
+    background: 'transparent',
+  },
+  'code[class*="language-"]': {
+    ...(oneDark['code[class*="language-"]'] as Record<string, unknown>),
+    background: 'transparent',
+  },
+}
 import type { EditContextRegion } from '@openfox/shared'
 
 interface DiffViewProps {
@@ -130,7 +143,7 @@ export const DiffView = memo(function DiffView({ oldString, newString, filePath 
           </div>
           <div className="bg-red-950/30 pr-2 line-through decoration-red-400/30 overflow-x-auto min-w-0">
             <SyntaxHighlighter
-              style={oneDark}
+              style={oneDarkTransparent}
               language={language}
               PreTag="div"
               customStyle={codeStyle}
@@ -152,7 +165,7 @@ export const DiffView = memo(function DiffView({ oldString, newString, filePath 
           </div>
           <div className="bg-green-950/30 pr-2 overflow-x-auto min-w-0">
             <SyntaxHighlighter
-              style={oneDark}
+              style={oneDarkTransparent}
               language={language}
               PreTag="div"
               customStyle={codeStyle}
@@ -193,7 +206,7 @@ export const FilePreview = memo(function FilePreview({ content, filePath, maxLin
         </div>
         <div className="bg-green-950/30 pr-2 overflow-x-auto min-w-0">
           <SyntaxHighlighter
-            style={oneDark}
+            style={oneDarkTransparent}
             language={language}
             PreTag="div"
             customStyle={codeStyle}
@@ -373,7 +386,7 @@ const DisplayItemRow = memo(function DisplayItemRow({ item, language, lineNumWid
       {/* Code content */}
       <div className={`pr-2 overflow-x-auto min-w-0 ${lineClass}`}>
         <SyntaxHighlighter
-          style={oneDark}
+          style={oneDarkTransparent}
           language={language}
           PreTag="span"
           customStyle={inlineCodeStyle}

@@ -24,29 +24,29 @@ line 19
 line 20`
 
   describe('single replacement', () => {
-    it('extracts 8 lines before and after with line numbers', () => {
+    it('extracts 4 lines before and after with line numbers', () => {
       const result = extractEditContext(sampleFile, 'target line', 'new line')
       
       expect(result.regions).toHaveLength(1)
       const region = result.regions[0]!
       
-      // Should have 8 lines of context before
-      expect(region.beforeContext).toHaveLength(8)
-      expect(region.beforeContext[0]).toEqual({ lineNumber: 3, content: 'line 3' })
-      expect(region.beforeContext[7]).toEqual({ lineNumber: 10, content: 'line 10' })
+      // Should have 4 lines of context before
+      expect(region.beforeContext).toHaveLength(4)
+      expect(region.beforeContext[0]).toEqual({ lineNumber: 7, content: 'line 7' })
+      expect(region.beforeContext[3]).toEqual({ lineNumber: 10, content: 'line 10' })
       
       // The edit itself
       expect(region.startLine).toBe(11)
       expect(region.oldContent).toBe('target line')
       expect(region.newContent).toBe('new line')
       
-      // Should have 8 lines of context after
-      expect(region.afterContext).toHaveLength(8)
+      // Should have 4 lines of context after
+      expect(region.afterContext).toHaveLength(4)
       expect(region.afterContext[0]).toEqual({ lineNumber: 12, content: 'line 12' })
-      expect(region.afterContext[7]).toEqual({ lineNumber: 19, content: 'line 19' })
+      expect(region.afterContext[3]).toEqual({ lineNumber: 15, content: 'line 15' })
     })
 
-    it('handles edit at start of file (less than 8 lines before)', () => {
+    it('handles edit at start of file (less than 4 lines before)', () => {
       const content = `first line
 second line
 third line`
@@ -61,7 +61,7 @@ third line`
       expect(region.afterContext[0]).toEqual({ lineNumber: 2, content: 'second line' })
     })
 
-    it('handles edit at end of file (less than 8 lines after)', () => {
+    it('handles edit at end of file (less than 4 lines after)', () => {
       const content = `line 1
 line 2
 last line`
