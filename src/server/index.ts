@@ -191,6 +191,19 @@ export async function createServer(config: Config): Promise<void> {
     }
   })
   
+  app.get('/sounds/*', async (c) => {
+    const path = c.req.path
+    const filename = path.substring(path.lastIndexOf('/') + 1)
+    const filePath = join(webDir, 'sounds', filename)
+    try {
+      await access(filePath)
+      const content = await readFile(filePath)
+      return c.body(content, 200, { 'Content-Type': 'audio/mpeg' })
+    } catch {
+      return c.text('Not found: ' + filename, 404)
+    }
+  })
+  
   app.get('/', async (c) => {
     try {
       const content = await readFile(join(webDir, 'index.html'))
