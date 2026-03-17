@@ -76,23 +76,29 @@ export async function runCli(options: { mode: Mode }): Promise<void> {
       break
     }
     default: {
-      // Try smart defaults first
-      const { trySmartDefaults } = await import('./config.js')
-      const detected = await trySmartDefaults(mode)
+      // Check if config exists - only run wizard on first install
+      const { configFileExists } = await import('./config.js')
+      const configExists = await configFileExists(mode)
       
-      if (detected) {
-        console.log(`✓ Auto-detected ${detected.backend} (${detected.model})`)
-        const { saveGlobalConfig } = await import('./config.js')
-        await saveGlobalConfig(mode, {
-          llm: { url: detected.url, backend: detected.backend as 'auto' | 'vllm' | 'sglang' | 'ollama' | 'llamacpp', model: detected.model, maxContext: 200000, disableThinking: false },
-          server: { port: 3000, host: '127.0.0.1', openBrowser: true },
-          logging: { level: 'info' as const },
-          database: { path: '' },
-        })
-      } else {
-        console.log('✗ No LLM server detected\n')
-        const { runInitWithSelect } = await import('./init.js')
-        await runInitWithSelect(mode)
+      if (!configExists) {
+        // First run - try smart defaults, then wizard if needed
+        const { trySmartDefaults } = await import('./config.js')
+        const detected = await trySmartDefaults(mode)
+        
+        if (detected) {
+          console.log(`✓ Auto-detected ${detected.backend} (${detected.model})`)
+          const { saveGlobalConfig } = await import('./config.js')
+          await saveGlobalConfig(mode, {
+            llm: { url: detected.url, backend: detected.backend as 'auto' | 'vllm' | 'sglang' | 'ollama' | 'llamacpp', model: detected.model, maxContext: 200000, disableThinking: false },
+            server: { port: 3000, host: '127.0.0.1', openBrowser: true },
+            logging: { level: 'info' as const },
+            database: { path: '' },
+          })
+        } else {
+          console.log('✗ No LLM server detected\n')
+          const { runInitWithSelect } = await import('./init.js')
+          await runInitWithSelect(mode)
+        }
       }
       
       const { runServe } = await import('./serve.js')

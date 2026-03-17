@@ -2,7 +2,7 @@ import { createServer } from '../server/index.js'
 import { loadConfig } from '../server/config.js'
 import { logger } from '../server/utils/logger.js'
 import { mergeConfigs } from './config.js'
-import { getDatabasePath } from './paths.js'
+import { getDatabasePath, ensureDataDirExists } from './paths.js'
 import open from 'open'
 import type { Mode } from './main.js'
 
@@ -14,6 +14,9 @@ export interface ServeOptions {
 
 export async function runServe(options: ServeOptions): Promise<void> {
   const { mode, port, openBrowser } = options
+  
+  // Ensure data directory exists before starting server
+  await ensureDataDirExists(mode)
   
   const global = await import('./config.js').then(m => m.loadGlobalConfig(mode))
   const env = loadConfig()

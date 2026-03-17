@@ -1,5 +1,6 @@
 import { homedir, platform } from 'node:os'
 import { join } from 'node:path'
+import { mkdir, access } from 'node:fs/promises'
 import type { Mode } from './main.js'
 
 export function getGlobalConfigDir(mode: Mode): string {
@@ -36,4 +37,13 @@ export function getGlobalDataDir(mode: Mode): string {
 
 export function getDatabasePath(mode: Mode): string {
   return join(getGlobalDataDir(mode), 'sessions.db')
+}
+
+export async function ensureDataDirExists(mode: Mode): Promise<void> {
+  const dataDir = getGlobalDataDir(mode)
+  try {
+    await access(dataDir)
+  } catch {
+    await mkdir(dataDir, { recursive: true })
+  }
 }

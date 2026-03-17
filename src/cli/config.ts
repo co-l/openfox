@@ -26,6 +26,16 @@ export async function trySmartDefaults(mode: Mode): Promise<{ url: string; backe
   return null
 }
 
+export async function configFileExists(mode: Mode): Promise<boolean> {
+  const configPath = getGlobalConfigPath(mode)
+  try {
+    await access(configPath)
+    return true
+  } catch {
+    return false
+  }
+}
+
 const configSchema = z.object({
   llm: z.object({
     url: z.string().url().default('http://localhost:8000/v1'),
