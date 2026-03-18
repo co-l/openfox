@@ -4,6 +4,7 @@ import { cors } from 'hono/cors'
 import { fileURLToPath } from 'node:url'
 import { dirname, resolve, basename, join } from 'node:path'
 import { readdir, readFile, access } from 'node:fs/promises'
+import { createServer as createViteServer, type ViteDevServer } from 'vite'
 
 import type { Config } from '../shared/types.js'
 import { initDatabase, closeDatabase } from './db/index.js'
@@ -148,72 +149,74 @@ export async function createServer(config: Config): Promise<void> {
     }
   })
 
-  // Serve static web UI (built output in dist/web, sibling to server chunks)
-  const webDir = resolve(__dirname, 'web')
-  
-  // Helper to get content type from extension
-  function getContentType(filePath: string): string {
-    const ext = filePath.split('.').pop()?.toLowerCase()
-    const types: Record<string, string> = {
-      js: 'application/javascript',
-      mjs: 'application/javascript',
-      ts: 'application/javascript',
-      tsx: 'application/javascript',
-      jsx: 'application/javascript',
-      css: 'text/css',
-      html: 'text/html',
-      svg: 'image/svg+xml',
-      woff: 'font/woff',
-      woff2: 'font/woff2',
-      png: 'image/png',
-      jpg: 'image/jpeg',
-      jpeg: 'image/jpeg',
-      gif: 'image/gif',
-      ico: 'image/x-icon',
-      json: 'application/json',
-      map: 'application/json',
-      mp3: 'audio/mpeg',
-      wav: 'audio/wav',
-    }
-    return types[ext || ''] || 'application/octet-stream'
-  }
-  
-  // Dev mode: proxy frontend requests to Vite dev server
+  // Serve static web UI
+  const webDir = resolve(__dirname, '../../web')
   const isDev = config.mode === 'development'
   
+  let viteServer: ViteDevServer | undefined
+  
+  // Dev mode: use Vite as middleware
   if (isDev) {
-    logger.info('Dev mode: proxying frontend requests to Vite', { target: 'http://localhost:5173' })
+    logger.info('Dev mode: using Vite middleware')
     
-    // Proxy all non-API requests to Vite, preserving headers
+    // Create Vite server in middleware mode
+    viteServer = await createViteServer({
+      root: webDir,
+      configFile: resolve(__dirname, '../../web/vite.config.ts'),
+      server: { middlewareMode: true },
+      appType: 'spa',
+      logLevel: 'warn',
+    })
+    
+    // Use Vite's transformIndexHtml for HTML files
+    app.get('/', async (c) => {
+      const indexHtml = await readFile(join(webDir, 'index.html'), 'utf-8')
+      const transformed = await viteServer!.transformIndexHtml('/', indexHtml)
+      return c.html(transformed)
+    })
+    
+    // SPA fallback - transform index.html for any path
     app.get('*', async (c) => {
       const path = c.req.path
-      
-      // Skip API routes (handled by earlier routes)
       if (path.startsWith('/api/')) {
         return
       }
-      
-      try {
-        const response = await fetch(`http://localhost:5173${path}`)
-        
-        if (response.status === 404) {
-          // SPA fallback - serve index.html for client-side routing
-          const indexResponse = await fetch('http://localhost:5173/')
-          const content = await indexResponse.text()
-          return c.html(content)
-        }
-        
-        // Preserve Content-Type from Vite (critical for JS modules, CSS, etc.)
-        const contentType = response.headers.get('Content-Type') || 'application/octet-stream'
-        const content = await response.arrayBuffer()
-        return c.body(content, response.status, { 'Content-Type': contentType })
-      } catch (err) {
-        logger.error('Vite proxy error', { path, error: err })
-        return c.text('Vite proxy error', 502)
-      }
+      const indexHtml = await readFile(join(webDir, 'index.html'), 'utf-8')
+      const transformed = await viteServer!.transformIndexHtml(path, indexHtml)
+      return c.html(transformed)
     })
-  } else {
-    // Production mode: serve static files from dist/web
+    
+    logger.info('Vite middleware ready', { port: config.server.port })
+  }
+  
+  // Production mode: serve static files from dist/web
+  if (!isDev) {
+    // Helper to get content type from extension
+    function getContentType(filePath: string): string {
+      const ext = filePath.split('.').pop()?.toLowerCase()
+      const types: Record<string, string> = {
+        js: 'application/javascript',
+        mjs: 'application/javascript',
+        ts: 'application/javascript',
+        tsx: 'application/javascript',
+        jsx: 'application/javascript',
+        css: 'text/css',
+        html: 'text/html',
+        svg: 'image/svg+xml',
+        woff: 'font/woff',
+        woff2: 'font/woff2',
+        png: 'image/png',
+        jpg: 'image/jpeg',
+        jpeg: 'image/jpeg',
+        gif: 'image/gif',
+        ico: 'image/x-icon',
+        json: 'application/json',
+        map: 'application/json',
+        mp3: 'audio/mpeg',
+        wav: 'audio/wav',
+      }
+      return types[ext || ''] || 'application/octet-stream'
+    }
     
     // Serve all static files from web directory
     app.get('/assets/*', async (c) => {
