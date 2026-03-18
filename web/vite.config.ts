@@ -9,12 +9,13 @@ export default defineConfig({
       '@': path.resolve(__dirname, './src'),
     },
   },
-  root: '.',
+  root: path.resolve(__dirname),  // Use web/ directory as root
   build: {
     outDir: '../dist/web',
   },
   server: {
     port: 5173,
+    strictPort: true,  // Fail if port is busy (don't pick random port)
     proxy: {
       '/api': {
         target: 'http://localhost:10369',
