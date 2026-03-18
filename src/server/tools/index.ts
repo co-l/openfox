@@ -6,6 +6,7 @@ import { editFileTool } from './edit.js'
 import { runCommandTool } from './shell.js'
 import { globTool } from './glob.js'
 import { grepTool } from './grep.js'
+import { gitTool } from './git.js'
 import { askUserTool, AskUserInterrupt, provideAnswer, cancelQuestion } from './ask.js'
 import {
   PathAccessDeniedError,
@@ -28,9 +29,10 @@ const readOnlyTools: Tool[] = [
   grepTool,
 ]
 
-// Planner mode: read-only exploration + criteria management
+// Planner mode: read-only exploration + criteria management + git inspection
 const plannerTools: Tool[] = [
   ...readOnlyTools,
+  gitTool,
   getCriteriaTool,
   addCriterionTool,
   updateCriterionTool,
