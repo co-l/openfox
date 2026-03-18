@@ -165,8 +165,23 @@ export async function createServer(config: Config): Promise<void> {
       logLevel: 'warn',
     })
     
-    // Mount Vite middleware - handles /@vite/*, /@react-refresh, /src/*, CSS, etc.
+    // Mount Vite middleware - handles /@vite/*, /@react-refresh, /src/*, etc.
     app.use(viteServer.middlewares)
+    
+    // Handle CSS files explicitly - Vite middleware doesn't catch them
+    app.get('/src/styles/*.css', async (req, res) => {
+      try {
+        const result = await viteServer!.transformRequest(req.path.substring(1))
+        if (!result) {
+          return res.status(404).send('Not found')
+        }
+        res.set('Content-Type', 'text/css')
+        res.send(result.code)
+      } catch (err) {
+        logger.error('CSS transform error', { path: req.path, error: err })
+        res.status(500).send('Transform error')
+      }
+    })
     
     // Static files that Vite doesn't handle (after Vite middleware)
     app.get('/fox.svg', (_req, res) => {
