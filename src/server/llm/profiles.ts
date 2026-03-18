@@ -38,6 +38,17 @@ const DEFAULT_PROFILE: ModelProfile = {
  */
 const MODEL_PROFILES: Array<{ pattern: string; profile: ModelProfile }> = [
   {
+    pattern: 'mistral',
+    profile: {
+      name: 'Mistral',
+      temperature: 0.7,
+      topP: 0.9,
+      supportsReasoning: false,
+      reasoningAsContent: false,
+      defaultMaxTokens: 4096,
+    },
+  },
+  {
     pattern: 'qwen3-coder-next',
     profile: {
       name: 'Qwen3-Coder-Next',

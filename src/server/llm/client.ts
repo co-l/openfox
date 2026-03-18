@@ -195,8 +195,9 @@ export function createLLMClient(config: Config, initialBackend: Backend = 'unkno
           (createParams as unknown as Record<string, unknown>)['top_k'] = profile.topK
         }
         
-        // Disable thinking if requested or globally disabled - only for backends that support it
-        if (capabilities.supportsChatTemplateKwargs && (request.enableThinking === false || disableThinking)) {
+        // Disable thinking if requested or globally disabled - only for backends and models that support it
+        // Models without reasoning capability (e.g., Mistral) don't understand enable_thinking kwarg
+        if (capabilities.supportsChatTemplateKwargs && profile.supportsReasoning && (request.enableThinking === false || disableThinking)) {
           (createParams as unknown as Record<string, unknown>)['chat_template_kwargs'] = { enable_thinking: false }
         }
         
