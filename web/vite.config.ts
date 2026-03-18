@@ -16,15 +16,7 @@ export default defineConfig({
   server: {
     port: 5173,
     strictPort: true,  // Fail if port is busy (don't pick random port)
-    proxy: {
-      '/api': {
-        target: 'http://localhost:10369',
-        changeOrigin: true,
-      },
-      '/ws': {
-        target: 'ws://localhost:10369',
-        ws: true,
-      },
-    },
+    // No proxy needed - users access the Hono server which handles API/WS
+    // directly and proxies frontend requests to Vite in dev mode
   },
 })

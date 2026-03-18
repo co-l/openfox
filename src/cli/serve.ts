@@ -31,7 +31,7 @@ export async function runServe(options: ServeOptions): Promise<void> {
     },
     server: { 
       ...env.server, 
-      port: port ?? env.server.port,  // Use same port for dev and prod (10369)
+      port: port ?? (mode === 'development' ? 10469 : env.server.port),
       host: '127.0.0.1',
       openBrowser: openBrowser ?? global.server.openBrowser,
     },
