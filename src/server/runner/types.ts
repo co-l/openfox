@@ -28,7 +28,7 @@ export interface OrchestratorOptions {
   sessionId: string
   llmClient: LLMClientWithModel
   signal?: AbortSignal
-  /** @deprecated No longer used - events go through EventStore */
+  /** For path confirmation dialogs (sent directly, not through EventStore) */
   onMessage?: (msg: ServerMessage) => void
 }
 

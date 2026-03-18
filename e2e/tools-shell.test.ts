@@ -105,7 +105,7 @@ describe('Shell Tools', () => {
 
     it('captures stderr in error output', async () => {
       await client.send('chat.send', { 
-        content: 'Run the command "cat /nonexistent/file.txt"' 
+        content: 'Run the command "cat nonexistent-file-xyz.txt"' 
       })
       
       const response = await client.waitForChatDone()

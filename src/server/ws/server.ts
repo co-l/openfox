@@ -660,6 +660,7 @@ async function handleClientMessage(
         sessionId,
         llmClient,
         signal: controller.signal,
+        onMessage: send,  // For path confirmation dialogs
       }).catch((error) => {
         // Don't create error message for controlled abort
         if (error instanceof Error && error.message === 'Aborted') {
@@ -821,6 +822,7 @@ async function handleClientMessage(
             sessionId,
             llmClient,
             signal: controller.signal,
+            onMessage: send,  // For path confirmation dialogs
           })
         } catch (error) {
           if (error instanceof Error && error.message === 'Aborted') {
@@ -1056,6 +1058,7 @@ async function handleClientMessage(
         sessionId,
         llmClient,
         signal: controller.signal,
+        onMessage: send,  // For path confirmation dialogs
       }).catch((error) => {
         // Don't create error message for controlled abort
         if (error instanceof Error && error.message === 'Aborted') {
