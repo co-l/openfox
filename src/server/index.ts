@@ -156,6 +156,10 @@ export async function createServer(config: Config): Promise<void> {
     const ext = filePath.split('.').pop()?.toLowerCase()
     const types: Record<string, string> = {
       js: 'application/javascript',
+      mjs: 'application/javascript',
+      ts: 'application/javascript',
+      tsx: 'application/javascript',
+      jsx: 'application/javascript',
       css: 'text/css',
       html: 'text/html',
       svg: 'image/svg+xml',
@@ -163,7 +167,13 @@ export async function createServer(config: Config): Promise<void> {
       woff2: 'font/woff2',
       png: 'image/png',
       jpg: 'image/jpeg',
+      jpeg: 'image/jpeg',
+      gif: 'image/gif',
       ico: 'image/x-icon',
+      json: 'application/json',
+      map: 'application/json',
+      mp3: 'audio/mpeg',
+      wav: 'audio/wav',
     }
     return types[ext || ''] || 'application/octet-stream'
   }
@@ -174,53 +184,33 @@ export async function createServer(config: Config): Promise<void> {
   if (isDev) {
     logger.info('Dev mode: proxying frontend requests to Vite', { target: 'http://localhost:5173' })
     
-    // Proxy root path to Vite
-    app.get('/', async (c) => {
-      const response = await fetch('http://localhost:5173/')
-      const content = await response.text()
-      return c.html(content)
-    })
-    
-    // Proxy assets
-    app.get('/assets/*', async (c) => {
-      const path = c.req.path
-      const response = await fetch(`http://localhost:5173${path}`)
-      const content = await response.arrayBuffer()
-      return c.body(content, 200, { 'Content-Type': getContentType(path) })
-    })
-    
-    // Proxy fox.svg
-    app.get('/fox.svg', async (c) => {
-      const response = await fetch('http://localhost:5173/fox.svg')
-      const content = await response.arrayBuffer()
-      return c.body(content, 200, { 'Content-Type': 'image/svg+xml' })
-    })
-    
-    // Proxy sounds
-    app.get('/sounds/*', async (c) => {
-      const path = c.req.path
-      const response = await fetch(`http://localhost:5173${path}`)
-      const content = await response.arrayBuffer()
-      return c.body(content, 200, { 'Content-Type': 'audio/mpeg' })
-    })
-    
-    // Catch-all for SPA routing - proxy to Vite
+    // Proxy all non-API requests to Vite, preserving headers
     app.get('*', async (c) => {
       const path = c.req.path
-      // Skip catch-all for API
+      
+      // Skip API routes (handled by earlier routes)
       if (path.startsWith('/api/')) {
-        // API routes are handled above, this won't be reached
         return
       }
-      const response = await fetch(`http://localhost:5173${path}`)
-      if (response.status === 404) {
-        // Vite returns 404, try index.html for SPA
-        const indexResponse = await fetch('http://localhost:5173/')
-        const content = await indexResponse.text()
-        return c.html(content)
+      
+      try {
+        const response = await fetch(`http://localhost:5173${path}`)
+        
+        if (response.status === 404) {
+          // SPA fallback - serve index.html for client-side routing
+          const indexResponse = await fetch('http://localhost:5173/')
+          const content = await indexResponse.text()
+          return c.html(content)
+        }
+        
+        // Preserve Content-Type from Vite (critical for JS modules, CSS, etc.)
+        const contentType = response.headers.get('Content-Type') || 'application/octet-stream'
+        const content = await response.arrayBuffer()
+        return c.body(content, response.status, { 'Content-Type': contentType })
+      } catch (err) {
+        logger.error('Vite proxy error', { path, error: err })
+        return c.text('Vite proxy error', 502)
       }
-      const content = await response.text()
-      return c.body(content, 200, { 'Content-Type': getContentType(path) })
     })
   } else {
     // Production mode: serve static files from dist/web
