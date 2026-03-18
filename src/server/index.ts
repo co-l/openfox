@@ -168,16 +168,230 @@ export async function createServer(config: Config): Promise<void> {
       logLevel: 'warn',
     })
     
-    // Use Vite's transformIndexHtml for HTML files
+    // Register routes in order - specific first, catch-all last
+    
+    // 1. Transform index.html through Vite
     app.get('/', async (c) => {
       const indexHtml = await readFile(join(webDir, 'index.html'), 'utf-8')
       const transformed = await viteServer!.transformIndexHtml('/', indexHtml)
       return c.html(transformed)
     })
     
-    // SPA fallback - transform index.html for any path
+    // 2. Static assets
+    app.get('/fox.svg', async (c) => {
+      const content = await readFile(join(webDir, 'fox.svg'))
+      return c.body(content, 200, { 'Content-Type': 'image/svg+xml' })
+    })
+    
+    app.get('/sounds/*', async (c) => {
+      const path = c.req.path
+      const fullPath = join(webDir, path.substring(1))
+      try {
+        const content = await readFile(fullPath)
+        return c.body(content, 200, { 'Content-Type': 'audio/mpeg' })
+      } catch {
+        return c.text('Not found', 404)
+      }
+    })
+    
+    app.get('/assets/*', async (c) => {
+      const path = c.req.path
+      const fullPath = join(webDir, path.substring(1))
+      try {
+        await access(fullPath)
+        const content = await readFile(fullPath)
+        return c.body(content, 200)
+      } catch {
+        return c.text('Not found', 404)
+      }
+    })
+    
+    // 4. Source files (TypeScript/JSX) - use Vite's transformRequest
+    app.get('/src/*', async (c) => {
+      const path = c.req.path
+      const vitePath = path.substring(1)  // Remove leading slash
+      
+      // Check if file exists first
+      const fullPath = join(webDir, vitePath)
+      try {
+        await access(fullPath)
+      } catch {
+        return c.text('File not found', 404)
+      }
+      
+      try {
+        const result = await viteServer!.transformRequest(vitePath)
+        if (!result || !result.code) {
+          logger.warn('Transform returned empty', { path })
+          // Fallback: serve raw file
+          const content = await readFile(fullPath, 'utf-8')
+          return c.body(content, 200, { 'Content-Type': 'application/javascript' })
+        }
+        return c.body(result.code, 200, { 'Content-Type': 'application/javascript' })
+      } catch (err) {
+        logger.error('Transform error', { path, error: err })
+        // Fallback: serve raw file
+        const content = await readFile(fullPath, 'utf-8')
+        return c.body(content, 200, { 'Content-Type': 'application/javascript' })
+      }
+    })
+    
+    // 3. Vite special endpoints - use Vite's transformRequest
+    app.get('/@vite/*', async (c) => {
+      const path = c.req.path
+      const vitePath = path.substring(1)
+      try {
+        const result = await viteServer!.transformRequest(vitePath)
+        if (!result || !result.code) {
+          return c.text('Transform failed', 500)
+        }
+        return c.body(result.code, 200, { 'Content-Type': 'application/javascript' })
+      } catch (err) {
+        logger.error('Vite transform error', { path, error: err })
+        return c.text('Vite error', 500)
+      }
+    })
+    
+    app.get('/@react-refresh', async (c) => {
+      try {
+        const result = await viteServer!.transformRequest('@react-refresh')
+        if (!result || !result.code) {
+          return c.text('Transform failed', 500)
+        }
+        return c.body(result.code, 200, { 'Content-Type': 'application/javascript' })
+      } catch (err) {
+        logger.error('@react-refresh error', { error: err })
+        return c.text('Error', 500)
+      }
+    })
+    
+    // 5. SPA fallback - MUST be last
     app.get('*', async (c) => {
       const path = c.req.path
+      
+      // Skip API routes
+      if (path.startsWith('/api/')) {
+        return
+      }
+      
+      // Transform index.html for SPA routing
+      const indexHtml = await readFile(join(webDir, 'index.html'), 'utf-8')
+      const transformed = await viteServer!.transformIndexHtml(path, indexHtml)
+      return c.html(transformed)
+    })
+    
+    logger.info('Vite middleware ready', { port: config.server.port })
+  }
+    })
+    
+    // Handle /assets/* files
+    app.get('/assets/*', async (c) => {
+      const path = c.req.path
+      const fullPath = join(webDir, path.substring(1))
+      try {
+        await access(fullPath)
+        const content = await readFile(fullPath)
+        return c.body(content, 200)
+      } catch {
+        return c.text('Not found', 404)
+      }
+    })
+    
+    // Handle /src/* files (TypeScript/JSX transformation)
+    app.get('/src/*', async (c) => {
+      const path = c.req.path
+      const vitePath = path.substring(1)  // Remove leading slash for Vite
+      try {
+        const result = await viteServer!.transformRequest(vitePath)
+        if (!result) {
+          logger.warn('No transform result', { path })
+          return c.text('Transform failed', 500)
+        }
+        return c.body(result.code, 200, { 'Content-Type': 'application/javascript' })
+      } catch (err) {
+        logger.error('Transform error', { path, error: err })
+        return c.text('Transform error', 500)
+      }
+    })
+    
+    // Handle Vite's special endpoints (/@vite/*, /@react-refresh)
+    app.get('/@vite/*', async (c) => {
+      const path = c.req.path
+      const vitePath = path.substring(1)  // Remove leading slash for Vite
+      try {
+        const result = await viteServer!.transformRequest(vitePath)
+        if (!result) {
+          return c.text('Transform failed', 500)
+        }
+        return c.body(result.code, 200, { 'Content-Type': 'application/javascript' })
+      } catch (err) {
+        logger.error('Vite transform error', { path, error: err })
+        return c.text('Vite error', 500)
+      }
+    })
+    
+    app.get('/@react-refresh', async (c) => {
+      try {
+        const result = await viteServer!.transformRequest('@react-refresh')
+        if (!result) {
+          return c.text('Transform failed', 500)
+        }
+        return c.body(result.code, 200, { 'Content-Type': 'application/javascript' })
+      } catch (err) {
+        logger.error('@react-refresh error', { error: err })
+        return c.text('Error', 500)
+      }
+    })
+    
+    // Handle Vite's special endpoints (/@vite/*, /@react-refresh)
+    app.get('/@vite/*', async (c) => {
+      const path = c.req.path
+      const vitePath = path.substring(1)  // Remove leading slash for Vite
+      try {
+        const transformed = await viteServer!.transformRequest(vitePath)
+        if (!transformed) {
+          return c.text('Transform failed', 500)
+        }
+        return c.body(transformed.code, 200, { 'Content-Type': 'application/javascript' })
+      } catch (err) {
+        logger.error('Vite transform error', { path, error: err })
+        return c.text('Vite error', 500)
+      }
+    })
+    
+    app.get('/@react-refresh', async (c) => {
+      try {
+        const transformed = await viteServer!.transformRequest('@react-refresh')
+        if (!transformed) {
+          return c.text('Transform failed', 500)
+        }
+        return c.body(transformed.code, 200, { 'Content-Type': 'application/javascript' })
+      } catch (err) {
+        logger.error('@react-refresh error', { error: err })
+        return c.text('Error', 500)
+      }
+    })
+    
+    // SPA fallback - MUST be last, explicitly skip all other handled paths
+    app.get('*', async (c) => {
+      const path = c.req.path
+      
+      // Skip paths that should be handled by specific routes above
+      if (
+        path.startsWith('/api/') ||
+        path.startsWith('/@') ||
+        path.startsWith('/src/') ||
+        path.startsWith('/assets/') ||
+        path === '/fox.svg' ||
+        path.startsWith('/sounds/')
+      ) {
+        // This path should have been handled by a specific route
+        // If we get here, the specific route didn't handle it
+        logger.warn('Catch-all reached for special path', { path })
+        return c.text('Not handled', 404)
+      }
+      
+      // Only handle non-special paths (SPA routing)
       if (path.startsWith('/api/')) {
         return
       }
