@@ -2,24 +2,21 @@ import { defineConfig } from 'vitest/config'
 
 export default defineConfig({
   test: {
-    // Longer timeouts for sequential LLM tests (rate-limited)
-    testTimeout: 60_000,       // 60 seconds per test
-    hookTimeout: 30_000,       // 30 seconds for setup/teardown
+    testTimeout: 2_000,
+    hookTimeout: 10_000,
     
-    // Run tests sequentially to avoid vLLM rate limiting (429 errors)
+    // Run tests serially to avoid shared mock-server cross-talk
     pool: 'forks',
-    maxWorkers: 1,  // Run one test at a time
+    maxWorkers: 1,
     
-    // Global setup to verify vLLM is reachable
+    // Global setup starts mock server
     globalSetup: './setup.ts',
     
-    // Include all test files in this directory
+    // Include all test files
     include: ['./*.test.ts'],
-    
-    // Explicit root
     root: '.',
     
-    // Retry flaky tests once (network issues, etc.)
-    retry: 1,
+    // No retries needed with deterministic mock
+    retry: 0,
   },
 })

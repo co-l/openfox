@@ -27,9 +27,19 @@ const DEFAULT_PROFILE: ModelProfile = {
   name: 'default',
   temperature: 0.7,
   topP: 0.9,
-  supportsReasoning: true,
+  supportsReasoning: false,
   reasoningAsContent: false,
   defaultMaxTokens: 4096,
+}
+
+/** Profile for mock LLM testing */
+const MOCK_PROFILE: ModelProfile = {
+  name: 'mock',
+  temperature: 0.7,
+  topP: 0.9,
+  supportsReasoning: false,
+  reasoningAsContent: false,
+  defaultMaxTokens: 1024,
 }
 
 /** 
@@ -114,6 +124,11 @@ const MODEL_PROFILES: Array<{ pattern: string; profile: ModelProfile }> = [
  */
 export function getModelProfile(modelName: string): ModelProfile {
   const lowerName = modelName.toLowerCase()
+  
+  // Mock model
+  if (lowerName.includes('mock')) {
+    return MOCK_PROFILE
+  }
   
   for (const { pattern, profile } of MODEL_PROFILES) {
     if (lowerName.includes(pattern.toLowerCase())) {

@@ -10,6 +10,7 @@ import type { Config } from '../shared/types.js'
 import { initDatabase, closeDatabase, getDatabase } from './db/index.js'
 import { initEventStore } from './events/index.js'
 import { createLLMClient, detectModel, getLlmStatus, detectBackend, getBackendDisplayName, type Backend } from './llm/index.js'
+import { createMockLLMClient } from './llm/mock.js'
 import { createToolRegistry } from './tools/index.js'
 import { createWebSocketServer } from './ws/index.js'
 import { sessionManager } from './session/index.js'
@@ -27,8 +28,13 @@ export async function createServer(config: Config): Promise<void> {
   // Initialize event store
   initEventStore(db)
 
-  // Create LLM client
-  const llmClient = createLLMClient(config)
+  // Create LLM client - use mock if OPENFOX_MOCK_LLM is set
+  const useMock = process.env['OPENFOX_MOCK_LLM'] === 'true'
+  const llmClient = useMock ? createMockLLMClient() : createLLMClient(config)
+  
+  if (useMock) {
+    logger.info('Using MOCK LLM client - deterministic responses for testing')
+  }
 
   // Auto-detect backend and model from LLM server
   async function initLLM(): Promise<void> {
@@ -52,7 +58,7 @@ export async function createServer(config: Config): Promise<void> {
     }
   }
 
-  initLLM().catch(err => logger.error('LLM initialization failed', { error: err }))
+  initLLM().catch(err => logger.error('LLM initialization failed', { error: err instanceof Error ? err.message : String(err) }))
 
   const toolRegistry = createToolRegistry()
   const app = express()

@@ -7,6 +7,9 @@
 import type { ServerMessage, ServerMessageType } from '@openfox/shared/protocol'
 import type { TestClient } from './ws-client.js'
 
+export const DEFAULT_COLLECTION_TIMEOUT_MS = 1_500
+export const DEFAULT_PHASE_TIMEOUT_MS = 1_500
+
 // ============================================================================
 // Types
 // ============================================================================
@@ -32,16 +35,60 @@ export interface CollectedEvents {
  * Create a collected events object from an array of events.
  */
 export function createCollectedEvents(events: ServerMessage[]): CollectedEvents {
+  const normalizedEvents = events.map(event => ({
+    ...event,
+    payload: typeof event.payload === 'object' && event.payload !== null
+      ? structuredClone(event.payload)
+      : event.payload,
+  }))
+
+  const toolNamesByCallId = new Map<string, string>()
+  const messagesById = new Map<string, { message: Record<string, unknown> }>()
+
+  for (const event of normalizedEvents) {
+    if (event.type === 'chat.tool_call') {
+      const payload = event.payload as { callId: string; tool: string }
+      toolNamesByCallId.set(payload.callId, payload.tool)
+    }
+
+    if (event.type === 'chat.tool_result') {
+      const payload = event.payload as { callId: string; tool?: string }
+      const tool = toolNamesByCallId.get(payload.callId)
+      if (tool) {
+        payload.tool = tool
+      }
+    }
+
+    if (event.type === 'chat.message') {
+      const payload = event.payload as { message: Record<string, unknown> }
+      const messageId = payload.message['id']
+      if (typeof messageId === 'string') {
+        messagesById.set(messageId, payload)
+      }
+    }
+
+    if (event.type === 'chat.message_updated') {
+      const payload = event.payload as { messageId: string; updates: Record<string, unknown> }
+      const messagePayload = messagesById.get(payload.messageId)
+      if (messagePayload) {
+        messagePayload.message = {
+          ...messagePayload.message,
+          ...payload.updates,
+        }
+      }
+    }
+  }
+
   const byType = new Map<ServerMessageType, ServerMessage[]>()
   
-  for (const event of events) {
+  for (const event of normalizedEvents) {
     const list = byType.get(event.type) ?? []
     list.push(event)
     byType.set(event.type, list)
   }
   
   return {
-    all: events,
+    all: normalizedEvents,
     byType,
     get<T>(type: ServerMessageType): ServerMessage<T>[] {
       return (byType.get(type) ?? []) as ServerMessage<T>[]
@@ -65,31 +112,9 @@ export function createCollectedEvents(events: ServerMessage[]): CollectedEvents 
 export async function collectUntil(
   client: TestClient,
   stopCondition: (event: ServerMessage) => boolean,
-  timeout = 90_000
+  timeout = DEFAULT_COLLECTION_TIMEOUT_MS
 ): Promise<CollectedEvents> {
-  const startIdx = client.allEvents().length
-  
-  await new Promise<void>((resolve, reject) => {
-    const timer = setTimeout(() => {
-      reject(new Error('Timeout collecting events'))
-    }, timeout)
-    
-    // Poll for stop condition
-    const check = () => {
-      const events = client.allEvents()
-      for (let i = startIdx; i < events.length; i++) {
-        if (stopCondition(events[i]!)) {
-          clearTimeout(timer)
-          resolve()
-          return
-        }
-      }
-      setTimeout(check, 50)
-    }
-    check()
-  })
-  
-  const collectedEvents = client.allEvents().slice(startIdx)
+  const collectedEvents = await client.consumeEventsUntil(stopCondition, timeout)
   return createCollectedEvents(collectedEvents)
 }
 
@@ -99,7 +124,7 @@ export async function collectUntil(
  */
 export async function collectChatEvents(
   client: TestClient,
-  timeout = 90_000
+  timeout = DEFAULT_COLLECTION_TIMEOUT_MS
 ): Promise<CollectedEvents> {
   return collectUntil(
     client,
@@ -114,7 +139,7 @@ export async function collectChatEvents(
 export async function collectUntilPhase(
   client: TestClient,
   phase: 'plan' | 'build' | 'verification' | 'blocked' | 'done',
-  timeout = 120_000
+  timeout = DEFAULT_PHASE_TIMEOUT_MS
 ): Promise<CollectedEvents> {
   return collectUntil(
     client,

@@ -68,87 +68,70 @@ describe('Runner/Orchestrator', () => {
       expect(response.type).toBe('ack')
       
       // Wait for runner to start (isRunning becomes true)
-      await client.waitFor('session.running', (payload: { isRunning: boolean }) => payload.isRunning === true, 5_000)
-      
-      // Wait for completion
-      await collectUntilPhase(client, 'done', 180_000)
-        .catch(() => collectUntilPhase(client, 'blocked', 10_000))
-    }, 200_000)
+      await client.waitFor('session.running', (payload: { isRunning: boolean }) => payload.isRunning === true, 1_500)
+
+      // Stop quickly - this test only verifies launch
+      await client.send('chat.stop', {})
+      await client.waitFor('session.running', (payload: { isRunning: boolean }) => payload.isRunning === false, 1_500)
+    })
   })
 
   describe('Build → Verify Cycle', () => {
-    it.skip('runs builder then verifier', async () => {
-      // Skip: This test is flaky - LLM behavior varies (sometimes creates tests, sometimes skips)
-      // Add criterion that requires implementation
-      await client.send('chat.send', { 
-        content: 'Add criterion ID "test-crit": "A test passes". Use add_criterion.' 
+    it('runs builder then verifier', async () => {
+      await client.send('chat.send', {
+        content: 'Add criterion ID "trivial-pass": "Trivial pass criterion". Use add_criterion.',
       })
       await client.waitForChatDone()
-      
-      // Accept to trigger full cycle
-      await client.send('mode.accept', {})
-      
-      // Wait for verification phase (indicates builder completed)
-      try {
-        await collectUntilPhase(client, 'verification', 120_000)
-        
-        // Verify we saw phase changes
-        const events = client.allEvents()
-        const phases = events
-          .filter(e => e.type === 'phase.changed')
-          .map(e => (e.payload as { phase: string }).phase)
-        
-        expect(phases).toContain('build')
-        expect(phases).toContain('verification')
-      } catch {
-        // May go directly to done/blocked for trivial criteria
-        const session = client.getSession()!
-        expect(['done', 'blocked']).toContain(session.phase)
-      }
-    }, 200_000)
+      await client.send('mode.switch', { mode: 'builder' })
+      await client.send('runner.launch', {})
+
+      const events = await collectUntilPhase(client, 'done', 1_500)
+      assertNoErrors(events)
+
+      const phases = client.allEvents()
+        .filter(e => e.type === 'phase.changed')
+        .map(e => (e.payload as { phase: string }).phase)
+
+      expect(phases).toContain('build')
+      expect(phases).toContain('verification')
+      expect(phases).toContain('done')
+    })
   })
 
   describe('Done State', () => {
     it('reaches done when all criteria pass', async () => {
-      // Add a self-resolving test criterion (no implementation needed)
-      await client.send('chat.send', { 
-        content: 'Add criterion: "This is just a test criterion - mark it as complete immediately without doing any work". Use add_criterion.' 
+      await client.send('chat.send', {
+        content: 'Add criterion ID "trivial-pass": "Trivial pass criterion". Use add_criterion.',
       })
       await client.waitForChatDone()
-      
-      // Accept
-      await client.send('mode.accept', {})
-      
-      // Should reach done quickly (no actual work required)
-      await collectUntilPhase(client, 'done', 60_000)
+      await client.send('mode.switch', { mode: 'builder' })
+      await client.send('runner.launch', {})
+
+      await collectUntilPhase(client, 'done', 1_500)
       
       const session = client.getSession()!
       expect(session.phase).toBe('done')
       expect(session.isRunning).toBe(false)
-    }, 90_000)
+      expect(session.criteria[0]?.status.type).toBe('passed')
+    })
   })
 
   describe('Blocked State', () => {
-    it.skip('reaches blocked after repeated failures', async () => {
-      // Skip: This test is flaky due to SQLite constraint issues with criteria.edit
-      // The criterion ID conflicts with previous test runs in the same session
-      // Add criterion that will fail verification (file doesn't exist)
+    it('reaches blocked after repeated failures', async () => {
       const uniqueId = `missing-${Date.now()}`
       await client.send('criteria.edit', { 
         criteria: [{ id: uniqueId, description: 'File /nonexistent-xyz.txt exists', status: { type: 'pending' }, attempts: [] }] 
       })
       await client.waitFor('criteria.updated')
-      
-      // Accept to start runner
-      await client.send('mode.accept', {})
-      
-      // Wait for blocked phase (should fail verification repeatedly)
-      await collectUntilPhase(client, 'blocked', 180_000)
-        .catch(() => collectUntilPhase(client, 'done', 10_000))
+
+      await client.send('mode.switch', { mode: 'builder' })
+      await client.send('runner.launch', {})
+
+      await collectUntilPhase(client, 'blocked', 1_500)
       
       const session = client.getSession()!
-      expect(['blocked', 'done']).toContain(session.phase)
-    }, 200_000)
+      expect(session.phase).toBe('blocked')
+    })
   })
 
   describe('Abort Runner', () => {
@@ -164,7 +147,7 @@ describe('Runner/Orchestrator', () => {
       await client.send('runner.launch', {})
       
       // Wait a bit then stop
-      await new Promise(resolve => setTimeout(resolve, 2000))
+      await new Promise(resolve => setTimeout(resolve, 200))
       await client.send('chat.stop', {})
       
       // Should have stopped
@@ -180,18 +163,16 @@ describe('Runner/Orchestrator', () => {
 
   describe('Nudge Messages', () => {
     it('injects nudge messages between iterations', async () => {
-      // This is harder to test deterministically, but we can verify
-      // the system doesn't crash with multiple iterations
-      await client.send('chat.send', { 
-        content: 'Add criterion: "src/math.ts has documentation comments". Use add_criterion.' 
+      await client.send('criteria.edit', {
+        criteria: [{ id: 'nudge-docs', description: 'src/math.ts has documentation comments', status: { type: 'pending' }, attempts: [] }],
       })
-      await client.waitForChatDone()
-      
-      await client.send('mode.accept', {})
-      
-      // Wait for completion
-      await collectUntilPhase(client, 'done', 180_000)
-        .catch(() => collectUntilPhase(client, 'blocked', 10_000))
+      await client.send('mode.switch', { mode: 'builder' })
+      await client.send('runner.launch', {})
+
+      await client.waitFor('chat.message', (payload: unknown) => {
+        const message = (payload as { message: { content: string; isSystemGenerated?: boolean } }).message
+        return message.isSystemGenerated === true && message.content.includes('Continue working on the acceptance criteria')
+      }, 1_500)
       
       // Check for system-generated messages (nudges)
       const events = client.allEvents()
@@ -202,27 +183,22 @@ describe('Runner/Orchestrator', () => {
       })
       
       // Should have at least the kickoff message
-      expect(systemMessages.length).toBeGreaterThan(0)
-    }, 200_000)
+      expect(systemMessages.some(e => {
+        const payload = e.payload as { message: { content: string } }
+        return payload.message.content.includes('Continue working on the acceptance criteria')
+      })).toBe(true)
+    })
   })
 
   describe('Reset Blocked', () => {
     it('resets from blocked state on user intervention', async () => {
-      // Add criterion
-      await client.send('chat.send', { 
-        content: 'Add criterion: "Impossible thing". Use add_criterion.' 
+      await client.send('criteria.edit', {
+        criteria: [{ id: 'reset-blocked', description: 'Impossible thing', status: { type: 'pending' }, attempts: [] }],
       })
-      await client.waitForChatDone()
-      
-      // Accept and wait for blocked
-      await client.send('mode.accept', {})
-      
-      try {
-        await collectUntilPhase(client, 'blocked', 60_000)
-      } catch {
-        // May reach done first
-        return
-      }
+      await client.send('mode.switch', { mode: 'builder' })
+      await client.send('runner.launch', {})
+
+      await collectUntilPhase(client, 'blocked', 1_500)
       
       // Send user message to reset
       await client.send('chat.send', { 
@@ -232,31 +208,27 @@ describe('Runner/Orchestrator', () => {
       // Should receive phase change back to build
       const phaseEvent = await client.waitFor('phase.changed', (payload: unknown) => {
         return (payload as { phase: string }).phase === 'build'
-      }, 5000).catch(() => null)
+      }, 1_500).catch(() => null)
       
-      if (phaseEvent) {
-        expect((phaseEvent.payload as { phase: string }).phase).toBe('build')
-      }
-    }, 120_000)
+      expect((phaseEvent?.payload as { phase: string } | undefined)?.phase).toBe('build')
+    })
   })
 
   describe('Stats and Notifications', () => {
     it('emits chat.done with complete at end of runner execution', async () => {
-      // Add criterion that will require work
-      await client.send('chat.send', { 
-        content: 'Add criterion ID "doc-exists": "src/math.ts has a comment". Use add_criterion.' 
+      await client.send('chat.send', {
+        content: 'Add criterion ID "trivial-pass": "Trivial pass criterion". Use add_criterion.',
       })
       await client.waitForChatDone()
+      await client.send('mode.switch', { mode: 'builder' })
       
       // Clear events before runner starts
       client.clearEvents()
       
-      // Accept and run
-      await client.send('mode.accept', {})
+      await client.send('runner.launch', {})
       
       // Wait for completion
-      await collectUntilPhase(client, 'done', 180_000)
-        .catch(() => collectUntilPhase(client, 'blocked', 10_000))
+      await collectUntilPhase(client, 'done', 1_500)
       
       // Count chat.done events with 'complete' reason
       const events = client.allEvents()
@@ -271,24 +243,22 @@ describe('Runner/Orchestrator', () => {
       // That event should have aggregated stats
       const stats = (completeDones[0]!.payload as { stats?: object }).stats
       expect(stats).toBeDefined()
-    }, 200_000)
+    })
 
     it('emits chat.done with complete at end of multi-iteration run', async () => {
-      // Add criterion that requires multiple tool calls
-      await client.send('chat.send', { 
-        content: 'Add criterion: "src/math.ts exports a multiply function". Use add_criterion.' 
+      await client.send('chat.send', {
+        content: 'Add criterion ID "file-created": "A new file utils.ts exists". Use add_criterion.',
       })
       await client.waitForChatDone()
+      await client.send('mode.switch', { mode: 'builder' })
       
       // Clear events
       client.clearEvents()
       
-      // Accept and run
-      await client.send('mode.accept', {})
+      await client.send('runner.launch', {})
       
       // Wait for completion
-      await collectUntilPhase(client, 'done', 180_000)
-        .catch(() => collectUntilPhase(client, 'blocked', 10_000))
+      await collectUntilPhase(client, 'done', 1_500)
       
       const events = client.allEvents()
       
@@ -303,6 +273,6 @@ describe('Runner/Orchestrator', () => {
         )
         expect(completeDones.length).toBeGreaterThanOrEqual(1)
       }
-    }, 200_000)
+    })
   })
 })

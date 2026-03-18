@@ -74,32 +74,26 @@ Please explore the existing code and propose acceptance criteria using add_crite
       const projectId = client.getProject()!.id
       await client.send('session.create', { projectId })
       
-      // Add a straightforward criterion
+      // Add a straightforward criterion the mock builder can satisfy automatically
       await client.send('chat.send', { 
-        content: `Add this criterion using add_criterion:
-ID: "multiply-exists"  
-Description: "A multiply function exists in src/math.ts that takes two numbers and returns their product"` 
+        content: 'Add criterion ID "file-created": "A new file utils.ts exists". Use add_criterion.' 
       })
       await client.waitForChatDone()
       
-      // Accept criteria - this triggers summary + builder + verifier
+      // Accept criteria - this should run the builder and verifier quickly
       const acceptResponse = await client.send('mode.accept', {})
       expect(acceptResponse.type).toBe('ack')
-      
-      // Wait for the workflow to complete (or get stuck)
-      const events = await collectUntilPhase(client, 'done', 180_000)
-        .catch(() => collectUntilPhase(client, 'blocked', 10_000))
-      
-      // Check final state
+
+      const events = await collectUntilPhase(client, 'done', 1_500)
+      assertNoErrors(events)
+
       const session = client.getSession()!
-      expect(['done', 'blocked']).toContain(session.phase)
-      
-      // If done, verify the file was modified
-      if (session.phase === 'done') {
-        const mathContent = await readFile(join(testDir.path, 'src/math.ts'), 'utf-8')
-        expect(mathContent.toLowerCase()).toContain('multiply')
-      }
-    }, 200_000) // Extra long timeout for full workflow
+      expect(session.mode).toBe('builder')
+      expect(session.phase).toBe('done')
+
+      const utilsContent = await readFile(join(testDir.path, 'src/utils.ts'), 'utf-8')
+      expect(utilsContent).toContain('created')
+    })
   })
 
   describe('Verification Cycle', () => {
@@ -107,55 +101,42 @@ Description: "A multiply function exists in src/math.ts that takes two numbers a
       await client.send('project.create', { name: 'Verify Workflow', workdir: testDir.path })
       const projectId = client.getProject()!.id
       await client.send('session.create', { projectId })
-      
-      // Add a simple verifiable criterion
-      await client.send('chat.send', { 
-        content: `Add criterion ID "file-modified": "The src/math.ts file contains a new function". Use add_criterion.` 
+
+      await client.send('chat.send', {
+        content: 'Add criterion ID "trivial-pass": "Trivial pass criterion". Use add_criterion.',
       })
       await client.waitForChatDone()
-      
-      // Accept and run
-      await client.send('mode.accept', {})
-      
-      // Wait for done or blocked
-      await collectUntilPhase(client, 'done', 180_000)
-        .catch(() => collectUntilPhase(client, 'blocked', 10_000))
+      await client.send('mode.switch', { mode: 'builder' })
+      await client.send('runner.launch', {})
+
+      await collectUntilPhase(client, 'done', 1_500)
       
       const session = client.getSession()!
-      
-      // Check criteria status
       const criterion = session.criteria[0]
-      if (session.phase === 'done' && criterion) {
-        expect(criterion.status.type).toBe('passed')
-      }
-    }, 200_000)
+      expect(session.phase).toBe('done')
+      expect(criterion?.status.type).toBe('passed')
+    })
 
     it('verifier fails and builder retries', async () => {
       await client.send('project.create', { name: 'Retry Workflow', workdir: testDir.path })
       const projectId = client.getProject()!.id
       await client.send('session.create', { projectId })
-      
-      // Add a more specific criterion that might need retries
-      await client.send('chat.send', { 
-        content: `Add criterion: "src/math.ts contains an exported function called 'multiply' that multiplies two numbers". Use add_criterion.` 
+
+      await client.send('chat.send', {
+        content: 'Add criterion ID "verify-fail": "Verifier should fail this criterion". Use add_criterion.',
       })
       await client.waitForChatDone()
+      await client.send('mode.switch', { mode: 'builder' })
+      await client.send('runner.launch', {})
+
+      await collectUntilPhase(client, 'blocked', 1_500)
       
-      // Accept
-      await client.send('mode.accept', {})
-      
-      // Wait for completion
-      await collectUntilPhase(client, 'done', 180_000)
-        .catch(() => collectUntilPhase(client, 'blocked', 10_000))
-      
-      // Even if blocked, the system should have tried
       const session = client.getSession()!
-      
-      // Should have had some builder activity
       const events = client.allEvents()
       const phaseChanges = events.filter(e => e.type === 'phase.changed')
+      expect(session.phase).toBe('blocked')
       expect(phaseChanges.length).toBeGreaterThan(1)
-    }, 200_000)
+    })
   })
 
   describe('Multiple Criteria', () => {
@@ -163,32 +144,26 @@ Description: "A multiply function exists in src/math.ts that takes two numbers a
       await client.send('project.create', { name: 'Multi Criteria', workdir: testDir.path })
       const projectId = client.getProject()!.id
       await client.send('session.create', { projectId })
-      
-      // Add multiple criteria
-      await client.send('chat.send', { 
-        content: `Add these criteria using add_criterion:
-1. ID "criterion-1": "A new file src/utils.ts exists"
-2. ID "criterion-2": "src/utils.ts exports a function"` 
+
+      await client.send('chat.send', {
+        content: 'Add criterion ID "file-created": "A new file utils.ts exists". Use add_criterion.',
       })
       await client.waitForChatDone()
-      
-      const session = client.getSession()!
-      expect(session.criteria.length).toBeGreaterThanOrEqual(2)
-      
-      // Accept and run
-      await client.send('mode.accept', {})
-      
-      // Wait for completion
-      await collectUntilPhase(client, 'done', 180_000)
-        .catch(() => collectUntilPhase(client, 'blocked', 10_000))
-      
-      // Should have processed all criteria
+      await client.send('chat.send', {
+        content: 'Add criterion ID "verify-fail": "Verifier should fail this criterion". Use add_criterion.',
+      })
+      await client.waitForChatDone()
+      await client.send('mode.switch', { mode: 'builder' })
+      await client.send('runner.launch', {})
+
+      await collectUntilPhase(client, 'blocked', 1_500)
+
       const finalSession = client.getSession()!
-      const processed = finalSession.criteria.filter(c => 
-        c.status.type === 'passed' || c.status.type === 'failed'
+      const processed = finalSession.criteria.filter((c: Criterion) => 
+        c.status.type !== 'pending'
       )
       expect(processed.length).toBeGreaterThan(0)
-    }, 200_000)
+    })
   })
 
   describe('Session Persistence', () => {

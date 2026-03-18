@@ -47,7 +47,8 @@ export async function runServe(options: ServeOptions): Promise<void> {
       openBrowser: openBrowser ?? global.server.openBrowser,
     },
     database: {
-      path: getDatabasePath(mode),
+      // Use env OPENFOX_DB_PATH if explicitly set (e.g., ":memory:" for tests), otherwise use standard path
+      path: env.database.path !== './openfox.db' ? env.database.path : getDatabasePath(mode),
     },
     logging: {
       level: global.logging?.level ?? 'info' as const,

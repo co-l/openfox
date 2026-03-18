@@ -145,14 +145,16 @@ function runMigrations(db: Database.Database): void {
   }
   
   // Create criteria table
+  // Note: PRIMARY KEY is (session_id, id) to allow same criterion ID across different sessions
   db.exec(`
     CREATE TABLE IF NOT EXISTS criteria (
-      id TEXT PRIMARY KEY,
+      id TEXT NOT NULL,
       session_id TEXT NOT NULL,
       description TEXT NOT NULL,
       status TEXT NOT NULL,
       attempts TEXT DEFAULT '[]',
       sort_order INTEGER DEFAULT 0,
+      PRIMARY KEY (session_id, id),
       FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE
     )
   `)

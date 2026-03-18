@@ -530,22 +530,41 @@ export function addCriterion(sessionId: string, criterion: Criterion): { success
   const maxAttempts = 10
   
   while (attempts < maxAttempts) {
-    const result = db.prepare(`
-      INSERT OR IGNORE INTO criteria (id, session_id, description, status, attempts, sort_order)
-      VALUES (?, ?, ?, ?, ?, ?)
-    `).run(
-      actualId,
-      sessionId,
-      criterion.description,
-      JSON.stringify(criterion.status),
-      JSON.stringify(criterion.attempts),
-      sortOrder
-    )
+    // First check if this exact (session_id, id) combo exists
+    const existing = db.prepare('SELECT 1 FROM criteria WHERE session_id = ? AND id = ?').get(sessionId, actualId)
+    if (existing) {
+      attempts++
+      actualId = `${criterion.id}-${attempts}`
+      continue
+    }
     
-    if (result.changes > 0) {
-      const now = new Date().toISOString()
-      db.prepare('UPDATE sessions SET updated_at = ? WHERE id = ?').run(now, sessionId)
-      return { success: true, actualId }
+    try {
+      const result = db.prepare(`
+        INSERT INTO criteria (id, session_id, description, status, attempts, sort_order)
+        VALUES (?, ?, ?, ?, ?, ?)
+      `).run(
+        actualId,
+        sessionId,
+        criterion.description,
+        JSON.stringify(criterion.status),
+        JSON.stringify(criterion.attempts),
+        sortOrder
+      )
+      
+      if (result.changes > 0) {
+        const now = new Date().toISOString()
+        db.prepare('UPDATE sessions SET updated_at = ? WHERE id = ?').run(now, sessionId)
+        return { success: true, actualId }
+      }
+    } catch (err) {
+      // If it's a constraint error, try next ID
+      if (err instanceof Error && err.message.includes('UNIQUE constraint')) {
+        attempts++
+        actualId = `${criterion.id}-${attempts}`
+        continue
+      }
+      // Other error - return failure
+      return { success: false, error: err instanceof Error ? err.message : 'Unknown error' }
     }
     
     // ID conflict - add/increment suffix

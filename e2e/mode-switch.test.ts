@@ -36,12 +36,9 @@ describe('Mode Switching', () => {
   describe('Manual Mode Switch', () => {
     it('switches from planner to builder', async () => {
       const response = await client.send('mode.switch', { mode: 'builder' })
-      
-      expect(response.type).toBe('mode.changed')
-      const payload = response.payload as { mode: string; auto: boolean }
-      expect(payload.mode).toBe('builder')
-      expect(payload.auto).toBe(false)
-      
+
+      expect(response.type).toBe('session.state')
+
       const session = client.getSession()!
       expect(session.mode).toBe('builder')
     })
@@ -52,8 +49,9 @@ describe('Mode Switching', () => {
       
       // Then back to planner
       const response = await client.send('mode.switch', { mode: 'planner' })
-      
-      expect(response.type).toBe('mode.changed')
+
+      expect(response.type).toBe('session.state')
+
       const session = client.getSession()!
       expect(session.mode).toBe('planner')
     })
@@ -117,7 +115,7 @@ describe('Mode Switching', () => {
   })
 
   describe('Phase Transitions', () => {
-    it('transitions through plan → build → verification → done', async () => {
+    it('transitions from plan to build after accepting criteria', async () => {
       // Start in plan phase
       let session = client.getSession()!
       expect(session.phase).toBe('plan')
@@ -128,21 +126,20 @@ describe('Mode Switching', () => {
       })
       await client.waitForChatDone()
       
-      // Accept and start runner
+      // Accept criteria and switch into build phase
       await client.send('mode.accept', {})
-      
-      // Should go through build → verification → done
-      // (For a trivial criterion, this should be fast)
-      const events = await collectUntilPhase(client, 'done', 120_000)
+
+      const events = await collectUntilPhase(client, 'build', 1_500)
       assertNoErrors(events)
-      
-      // Verify we saw phase changes
+
+      // Verify we entered build phase
       const phaseEvents = events.get('phase.changed')
       const phases = phaseEvents.map(e => (e.payload as { phase: string }).phase)
-      
+
       expect(phases).toContain('build')
-      // Note: might not see 'verification' if criterion is trivial
-      expect(phases).toContain('done')
+
+      session = client.getSession()!
+      expect(['build', 'verification', 'done']).toContain(session.phase)
     })
 
     it('sets phase to blocked after max failures', async () => {
@@ -154,7 +151,14 @@ describe('Mode Switching', () => {
       
       // Accept and start
       await client.send('mode.accept', {})
-      
+      await client.waitFor('phase.changed', (payload: unknown) => {
+        return (payload as { phase: string }).phase === 'build'
+      })
+      await client.waitFor('session.running', (payload: unknown) => {
+        return (payload as { isRunning: boolean }).isRunning === false
+      })
+      await client.send('runner.launch', {})
+
       // Should eventually get blocked (or done if LLM gives up gracefully)
       const events = await collectUntilPhase(client, 'blocked', 180_000)
         .catch(() => collectUntilPhase(client, 'done', 10_000))

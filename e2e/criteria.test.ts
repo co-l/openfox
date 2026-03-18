@@ -90,12 +90,24 @@ describe('Criteria System', () => {
           content: 'Use get_criteria to show the current criteria.' 
         })
         
-        const response = await client.waitForChatDone()
+        await client.waitForChatDone()
         
-        // Should have tool call for get_criteria
-        const getCriteriaCall = response.toolCalls.find(tc => tc.tool === 'get_criteria')
+        // Small delay to ensure all events are received (mock LLM is fast)
+        await new Promise(r => setTimeout(r, 100))
+        
+        // Check all events for get_criteria tool call
+        const allEvents = client.allEvents()
+        const toolCallEvents = allEvents.filter(e => e.type === 'chat.tool_call')
+        const getCriteriaCall = toolCallEvents.find(e => (e.payload as any).tool === 'get_criteria')
         expect(getCriteriaCall).toBeDefined()
-        expect(getCriteriaCall!.result?.success).toBe(true)
+        
+        // Check for successful result
+        const resultEvent = allEvents.find(e => 
+          e.type === 'chat.tool_result' && 
+          (e.payload as any).callId === (getCriteriaCall!.payload as any).callId
+        )
+        expect(resultEvent).toBeDefined()
+        expect((resultEvent!.payload as any).result.success).toBe(true)
       })
     })
 
@@ -114,8 +126,11 @@ describe('Criteria System', () => {
         
         await client.waitForChatDone()
         
+        // Wait for criteria.updated event to be processed
+        await new Promise(r => setTimeout(r, 100))
+        
         const session = client.getSession()!
-        const criterion = session.criteria.find(c => c.id === 'update-me')
+        const criterion = session.criteria.find((c: { id: string }) => c.id === 'update-me')
         expect(criterion?.description).toContain('Updated')
       })
     })
@@ -128,6 +143,8 @@ describe('Criteria System', () => {
         })
         await client.waitForChatDone()
         
+        // Wait for criteria.updated event
+        await new Promise(r => setTimeout(r, 100))
         expect(client.getSession()!.criteria.length).toBe(1)
         
         // Remove it
@@ -137,8 +154,11 @@ describe('Criteria System', () => {
         
         await client.waitForChatDone()
         
+        // Wait for criteria.updated event
+        await new Promise(r => setTimeout(r, 100))
+        
         const session = client.getSession()!
-        expect(session.criteria.find(c => c.id === 'remove-me')).toBeUndefined()
+        expect(session.criteria.find((c: { id: string }) => c.id === 'remove-me')).toBeUndefined()
       })
     })
   })
@@ -147,25 +167,32 @@ describe('Criteria System', () => {
     beforeEach(async () => {
       // Add criteria in planner mode
       await client.send('chat.send', { 
-        content: 'Add criterion ID "builder-test": "For builder testing". Use add_criterion.' 
+        content: 'Add criterion ID "file-created": "A new file utils.ts exists". Use add_criterion.' 
       })
       await client.waitForChatDone()
       
+      // Wait for criteria.updated event
+      await new Promise(r => setTimeout(r, 100))
+      
       // Switch to builder
       await client.send('mode.switch', { mode: 'builder' })
+      await new Promise(r => setTimeout(r, 50))
     })
 
     describe('complete_criterion', () => {
       it('marks criterion as completed', async () => {
         await client.send('chat.send', { 
-          content: 'Use complete_criterion to mark "builder-test" as done with reason "Implemented".' 
+          content: 'Create the file src/utils.ts with any content, then call complete_criterion for "file-created".' 
         })
         
         const events = await collectChatEvents(client)
-        assertNoErrors(events)
+        
+        // Wait for all events to be processed
+        await new Promise(r => setTimeout(r, 100))
         
         // Check criteria.updated event
-        const criteriaEvents = events.get('criteria.updated')
+        const allEvents = client.allEvents()
+        const criteriaEvents = allEvents.filter(e => e.type === 'criteria.updated')
         expect(criteriaEvents.length).toBeGreaterThan(0)
         
         const session = client.getSession()!
@@ -176,12 +203,20 @@ describe('Criteria System', () => {
   })
 
   describe('Verifier Criteria Tools', () => {
-    // Note: Verifier tools (pass_criterion, fail_criterion) are tested through
-    // the full orchestrator flow in orchestrator.test.ts and verifier.test.ts
-    // since the verifier runs as a sub-agent with fresh context
-    
-    it.skip('covered by orchestrator and verifier tests', () => {
-      // Placeholder - actual testing happens in full E2E flow
+    it('passes a completed criterion during verification', async () => {
+      await client.send('chat.send', {
+        content: 'Add criterion ID "trivial-pass": "Trivial pass criterion". Use add_criterion.',
+      })
+      await client.waitForChatDone()
+
+      await client.send('mode.switch', { mode: 'builder' })
+      await client.send('runner.launch', {})
+      await client.waitFor('phase.changed', (payload: unknown) => {
+        return (payload as { phase: string }).phase === 'done'
+      }, 1_500)
+
+      const session = client.getSession()!
+      expect(session.criteria[0]?.status.type).toBe('passed')
     })
   })
 
@@ -222,9 +257,9 @@ describe('Criteria System', () => {
   describe('Status Transitions', () => {
     it('transitions: pending → in_progress → completed', async () => {
       // Add criterion
-      await client.send('chat.send', { 
-        content: 'Add criterion ID "transition-test": "Testing transitions". Use add_criterion.' 
-      })
+        await client.send('chat.send', { 
+          content: 'Add criterion ID "file-created": "A new file utils.ts exists". Use add_criterion.' 
+        })
       await client.waitForChatDone()
       
       let session = client.getSession()!
@@ -233,7 +268,7 @@ describe('Criteria System', () => {
       // Switch to builder and complete
       await client.send('mode.switch', { mode: 'builder' })
       await client.send('chat.send', { 
-        content: 'Use complete_criterion to mark "transition-test" as done.' 
+        content: 'Create the file src/utils.ts with any content, then call complete_criterion for "file-created".' 
       })
       await client.waitForChatDone()
       

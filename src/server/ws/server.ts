@@ -679,6 +679,42 @@ async function handleClientMessage(
       
       break
     }
+
+    case 'chat.stop': {
+      if (!client.activeSessionId) {
+        send(createErrorMessage('NO_SESSION', 'No active session', message.id))
+        return
+      }
+
+      const controller = activeAgents.get(client.activeSessionId)
+      if (controller) {
+        controller.abort()
+      }
+
+      send({ type: 'ack', payload: {}, id: message.id })
+      break
+    }
+
+    case 'chat.continue': {
+      if (!client.activeSessionId) {
+        send(createErrorMessage('NO_SESSION', 'No active session', message.id))
+        return
+      }
+
+      const session = sessionManager.requireSession(client.activeSessionId)
+      if (session.isRunning) {
+        send(createErrorMessage('ALREADY_RUNNING', 'Session is already running', message.id))
+        return
+      }
+
+      const messages = getMessages(session.id)
+      const lastAssistantMessage = [...messages].reverse().find(msg => msg.role === 'assistant')
+      const fallbackMessageId = lastAssistantMessage?.id ?? [...messages].reverse().find(msg => msg.role === 'user')?.id ?? crypto.randomUUID()
+
+      send({ type: 'ack', payload: {}, id: message.id })
+      send(createChatDoneMessage(fallbackMessageId, 'complete', lastAssistantMessage?.stats))
+      break
+    }
     
     // =========================================================================
     // Mode Switching

@@ -34,7 +34,7 @@ describe('Concurrency Guards', () => {
   describe('chat.send guard', () => {
     it('rejects chat.send when session is already running', async () => {
       // Start a chat (makes session running)
-      client.send('chat.send', { content: 'Hello' })
+      client.send('chat.send', { content: 'Write a very long and detailed explanation of TypeScript.' })
       
       // Wait for session to be marked as running
       await client.waitFor('session.running', (p: { isRunning: boolean }) => p.isRunning)
@@ -61,7 +61,7 @@ describe('Concurrency Guards', () => {
       await client.send('mode.switch', { mode: 'builder' })
       
       // Start a chat to make session running
-      client.send('chat.send', { content: 'Hello' })
+      client.send('chat.send', { content: 'Write a very long and detailed explanation of TypeScript.' })
       
       // Wait for session to be marked as running
       await client.waitFor('session.running', (p: { isRunning: boolean }) => p.isRunning)
@@ -85,7 +85,7 @@ describe('Concurrency Guards', () => {
       })
       
       // Start a chat to make session running
-      client.send('chat.send', { content: 'Hello' })
+      client.send('chat.send', { content: 'Write a very long and detailed explanation of TypeScript.' })
       
       // Wait for session to be marked as running
       await client.waitFor('session.running', (p: { isRunning: boolean }) => p.isRunning)
@@ -109,14 +109,14 @@ describe('Concurrency Guards', () => {
       // The abort behavior is tested implicitly by ensuring only one runs.
       
       // For now, just verify the session can recover after stopping
-      client.send('chat.send', { content: 'Hello' })
+      client.send('chat.send', { content: 'Write a very long and detailed explanation of TypeScript.' })
       await client.waitFor('session.running', (p: { isRunning: boolean }) => p.isRunning)
       
       await client.send('chat.stop', {})
       await client.waitFor('session.running', (p: { isRunning: boolean }) => !p.isRunning)
       
       // Session should be able to start again
-      client.send('chat.send', { content: 'Hello again' })
+      client.send('chat.send', { content: 'Write a very long and detailed explanation of TypeScript.' })
       await client.waitFor('session.running', (p: { isRunning: boolean }) => p.isRunning)
       
       await client.send('chat.stop', {})

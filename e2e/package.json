@@ -4,8 +4,9 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "test:e2e": "vitest run",
-    "test:watch": "vitest"
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:verbose": "OPENFOX_TEST_VERBOSE=true vitest run"
   },
   "devDependencies": {
     "@openfox/shared": "*",

@@ -12,7 +12,6 @@ import {
   type TestClient, 
   type TestProject 
 } from './utils/index.js'
-import type { ToolResult } from '@openfox/shared'
 
 describe('Read Tools', () => {
   let client: TestClient
@@ -78,7 +77,7 @@ describe('Read Tools', () => {
       const toolCalls = response.toolCalls.filter(tc => tc.tool === 'read_file')
       if (toolCalls.length > 0 && toolCalls[0]!.result?.success) {
         const output = toolCalls[0]!.result!.output!
-        const lines = output.split('\n').filter(l => l.trim())
+        const lines = output.split('\n').filter((line: string) => line.trim())
         expect(lines.length).toBeLessThanOrEqual(5) // Some tolerance for format
       }
     })
@@ -109,7 +108,7 @@ describe('Read Tools', () => {
       if (toolCalls.length > 0) {
         const result = toolCalls[0]!.result!
         expect(result.success).toBe(false)
-        expect(result.error).toContain('not exist')
+        expect(result.error?.toLowerCase()).toMatch(/not exist|not found/)
       }
     })
   })

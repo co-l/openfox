@@ -57,6 +57,12 @@ export interface TestClient {
   
   /** Get all events received since connection/last clear */
   allEvents(): ServerMessage[]
+
+  /** Consume the next event slice through a matching stop event */
+  consumeEventsUntil(
+    stopCondition: (event: ServerMessage) => boolean,
+    timeout?: number
+  ): Promise<ServerMessage[]>
   
   /** Clear collected events */
   clearEvents(): void
@@ -76,6 +82,10 @@ export interface TestClient {
   /** Answer a pending path confirmation (for e2e tests) */
   answerPathConfirmation(callId: string, approved: boolean): Promise<void>
 }
+
+export const DEFAULT_WAIT_TIMEOUT_MS = 1_500
+export const DEFAULT_CHAT_TIMEOUT_MS = 1_500
+export const DEFAULT_CONSUME_TIMEOUT_MS = 1_500
 
 // ============================================================================
 // Verbose Logging
@@ -216,7 +226,7 @@ function logMessage(msg: ServerMessage): void {
 
 export async function createTestClient(options: TestClientOptions = {}): Promise<TestClient> {
   const url = options.url ?? process.env['OPENFOX_TEST_WS_URL'] ?? 'ws://localhost:3999/ws'
-  const defaultTimeout = options.timeout ?? 30_000
+  const defaultTimeout = options.timeout ?? DEFAULT_WAIT_TIMEOUT_MS
   const verbose = options.verbose ?? process.env['OPENFOX_TEST_VERBOSE'] === 'true'
   
   const ws = new WebSocket(url)
@@ -235,6 +245,8 @@ export async function createTestClient(options: TestClientOptions = {}): Promise
   let currentSession: Session | null = null
   let currentProject: Project | null = null
   let connected = false
+  let chatCursor = 0
+  let collectionCursor = 0
   
   // Wait for connection
   await new Promise<void>((resolve, reject) => {
@@ -398,16 +410,107 @@ export async function createTestClient(options: TestClientOptions = {}): Promise
     },
     
     waitFor: waitForImpl,
+
+    consumeEventsUntil(
+      stopCondition: (event: ServerMessage) => boolean,
+      timeout = DEFAULT_CONSUME_TIMEOUT_MS
+    ): Promise<ServerMessage[]> {
+      return new Promise((resolve, reject) => {
+        const findStopIndex = (): number => {
+          for (let i = collectionCursor; i < events.length; i++) {
+            if (stopCondition(events[i]!)) {
+              return i
+            }
+          }
+          return -1
+        }
+
+        const existingStopIndex = findStopIndex()
+        if (existingStopIndex >= 0) {
+          const collected = events.slice(collectionCursor, existingStopIndex + 1)
+          collectionCursor = existingStopIndex + 1
+          chatCursor = Math.max(chatCursor, collectionCursor)
+          resolve(collected)
+          return
+        }
+
+        const timer = setTimeout(() => {
+          reject(new Error('Timeout collecting events'))
+        }, timeout)
+
+        const check = (): void => {
+          const stopIndex = findStopIndex()
+          if (stopIndex >= 0) {
+            clearTimeout(timer)
+            const collected = events.slice(collectionCursor, stopIndex + 1)
+            collectionCursor = stopIndex + 1
+            chatCursor = Math.max(chatCursor, collectionCursor)
+            resolve(collected)
+            return
+          }
+
+          if (!connected) {
+            clearTimeout(timer)
+            reject(new Error('WebSocket connection closed'))
+            return
+          }
+
+          setTimeout(check, 10)
+        }
+
+        check()
+      })
+    },
     
-    async waitForChatDone(timeout = 90_000): Promise<ChatResponse> {
-      const startIdx = events.length
-      
-      // Wait for chat.done event
-      const doneEvent = await waitForImpl<ChatDonePayload>('chat.done', undefined, timeout)
+    async waitForChatDone(timeout = DEFAULT_CHAT_TIMEOUT_MS): Promise<ChatResponse> {
+      const findDoneIndex = (): number => {
+        for (let i = chatCursor; i < events.length; i++) {
+          if (events[i]!.type === 'chat.done') {
+            return i
+          }
+        }
+        return -1
+      }
+
+      let doneIndex = findDoneIndex()
+      if (doneIndex < 0) {
+        await new Promise<void>((resolve, reject) => {
+          const timer = setTimeout(() => {
+            reject(new Error('Timeout waiting for chat.done'))
+          }, timeout)
+
+          const check = (): void => {
+            const nextDoneIndex = findDoneIndex()
+            if (nextDoneIndex >= 0) {
+              clearTimeout(timer)
+              resolve()
+              return
+            }
+
+            if (!connected) {
+              clearTimeout(timer)
+              reject(new Error('WebSocket connection closed'))
+              return
+            }
+
+            setTimeout(check, 10)
+          }
+
+          check()
+        })
+
+        doneIndex = findDoneIndex()
+      }
+
+      if (doneIndex < 0) {
+        throw new Error('chat.done received but not found in local event log')
+      }
+
+      const doneEvent = events[doneIndex] as ServerMessage<ChatDonePayload>
       const payload = doneEvent.payload
-      
-      // Collect all chat events since we started waiting
-      const chatEvents = events.slice(startIdx)
+      const chatEvents = events.slice(chatCursor, doneIndex + 1)
+      chatCursor = doneIndex + 1
+      collectionCursor = Math.max(collectionCursor, chatCursor)
       
       // Build response from events
       let content = ''
@@ -464,6 +567,8 @@ export async function createTestClient(options: TestClientOptions = {}): Promise
     
     clearEvents(): void {
       events.length = 0
+      chatCursor = 0
+      collectionCursor = 0
     },
     
     getSession(): Session | null {

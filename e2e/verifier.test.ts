@@ -37,46 +37,31 @@ describe('Verifier Mode', () => {
 
   describe('Verification Triggering', () => {
     it('triggers verification after builder completes criterion', async () => {
-      // Add criterion
-      await client.send('chat.send', { 
-        content: 'Add criterion ID "verify-trigger": "A file exists". Use add_criterion.' 
+      await client.send('chat.send', {
+        content: 'Add criterion ID "trivial-pass": "Trivial pass criterion". Use add_criterion.',
       })
       await client.waitForChatDone()
-      
-      // Accept and wait for verification phase
-      await client.send('mode.accept', {})
-      
-      try {
-        const events = await collectUntilPhase(client, 'verification', 120_000)
-        
-        // Should have verification phase
-        const phaseChanges = events.get('phase.changed')
-        const verificationPhase = phaseChanges.find(e => 
-          (e.payload as { phase: string }).phase === 'verification'
-        )
-        expect(verificationPhase).toBeDefined()
-      } catch {
-        // May skip directly to done/blocked for simple criteria
-        const session = client.getSession()!
-        expect(['done', 'blocked', 'verification']).toContain(session.phase)
-      }
-    }, 150_000)
+      await client.send('mode.switch', { mode: 'builder' })
+      await client.send('runner.launch', {})
+
+      const events = await collectUntilPhase(client, 'verification', 1_500)
+      const verificationPhase = events.get('phase.changed').find(e => {
+        return (e.payload as { phase: string }).phase === 'verification'
+      })
+      expect(verificationPhase).toBeDefined()
+    })
   })
 
   describe('Fresh Context', () => {
     it('verifier uses fresh context with summary', async () => {
-      // Add criterion
-      await client.send('chat.send', { 
-        content: 'Add criterion: "Basic test". Use add_criterion.' 
+      await client.send('chat.send', {
+        content: 'Add criterion ID "trivial-pass": "Trivial pass criterion". Use add_criterion.',
       })
       await client.waitForChatDone()
-      
-      // Accept
-      await client.send('mode.accept', {})
-      
-      // Wait for some activity
-      await collectUntilPhase(client, 'verification', 120_000)
-        .catch(() => collectUntilPhase(client, 'done', 10_000))
+      await client.send('mode.switch', { mode: 'builder' })
+      await client.send('runner.launch', {})
+
+      await collectUntilPhase(client, 'done', 1_500)
       
       // Check for context-reset message
       const events = client.allEvents()
@@ -87,27 +72,22 @@ describe('Verifier Mode', () => {
       })
       
       // Verifier should create context-reset message
-      if (contextResetMsg) {
-        const payload = contextResetMsg.payload as { message: Message }
-        expect(payload.message.subAgentType).toBe('verifier')
-      }
-    }, 150_000)
+      expect(contextResetMsg).toBeDefined()
+      const payload = contextResetMsg!.payload as { message: Message }
+      expect(payload.message.subAgentType).toBe('verifier')
+    })
   })
 
   describe('Sub-Agent Messages', () => {
     it('marks verifier messages with subAgentId', async () => {
-      // Add criterion
-      await client.send('chat.send', { 
-        content: 'Add criterion: "Something to verify". Use add_criterion.' 
+      await client.send('chat.send', {
+        content: 'Add criterion ID "trivial-pass": "Trivial pass criterion". Use add_criterion.',
       })
       await client.waitForChatDone()
-      
-      // Accept
-      await client.send('mode.accept', {})
-      
-      // Wait for completion
-      await collectUntilPhase(client, 'done', 180_000)
-        .catch(() => collectUntilPhase(client, 'blocked', 10_000))
+      await client.send('mode.switch', { mode: 'builder' })
+      await client.send('runner.launch', {})
+
+      await collectUntilPhase(client, 'done', 1_500)
       
       // Check for verifier messages
       const events = client.allEvents()
@@ -118,87 +98,66 @@ describe('Verifier Mode', () => {
       })
       
       // If verification ran, should have verifier messages
-      if (verifierMessages.length > 0) {
-        const msg = verifierMessages[0]!.payload as { message: Message }
-        expect(msg.message.subAgentId).toBeDefined()
-      }
-    }, 200_000)
+      expect(verifierMessages.length).toBeGreaterThan(0)
+      const msg = verifierMessages[0]!.payload as { message: Message }
+      expect(msg.message.subAgentId).toBeDefined()
+    })
   })
 
   describe('Verification Tools', () => {
     describe('pass_criterion', () => {
       it('marks criterion as passed when verification succeeds', async () => {
-        // Pre-create the file that criterion will check
-        await writeFile(
-          join(testDir.path, 'src/verified.ts'),
-          'export const verified = true;'
-        )
-        
-        // Add criterion that will pass
-        await client.send('chat.send', { 
-          content: 'Add criterion: "src/verified.ts exports a verified constant". Use add_criterion.' 
+        await client.send('chat.send', {
+          content: 'Add criterion ID "trivial-pass": "Trivial pass criterion". Use add_criterion.',
         })
         await client.waitForChatDone()
-        
-        // Accept
-        await client.send('mode.accept', {})
-        
-        // Wait for completion
-        await collectUntilPhase(client, 'done', 180_000)
-          .catch(() => collectUntilPhase(client, 'blocked', 10_000))
+        await client.send('mode.switch', { mode: 'builder' })
+        await client.send('runner.launch', {})
+
+        await collectUntilPhase(client, 'done', 1_500)
         
         const session = client.getSession()!
         const criterion = session.criteria[0]
         
-        if (session.phase === 'done' && criterion) {
-          expect(criterion.status.type).toBe('passed')
-        }
-      }, 200_000)
+        expect(session.phase).toBe('done')
+        expect(criterion?.status.type).toBe('passed')
+      })
     })
 
     describe('fail_criterion', () => {
       it('marks criterion as failed and returns to builder', async () => {
-        // Add criterion that will likely fail verification
-        await client.send('chat.send', { 
-          content: 'Add criterion: "src/nonexistent.ts exists and exports MAGIC". Use add_criterion.' 
+        await client.send('chat.send', {
+          content: 'Add criterion ID "verify-fail": "Verifier should fail this criterion". Use add_criterion.',
         })
         await client.waitForChatDone()
-        
-        // Accept
-        await client.send('mode.accept', {})
-        
-        // Wait for something to happen
-        await collectUntilPhase(client, 'done', 180_000)
-          .catch(() => collectUntilPhase(client, 'blocked', 10_000))
+        await client.send('mode.switch', { mode: 'builder' })
+        await client.send('runner.launch', {})
+
+        await collectUntilPhase(client, 'blocked', 1_500)
         
         // Check criteria status
         const session = client.getSession()!
         const criterion = session.criteria[0]
         
         // Either passed (builder created it) or failed (couldn't create)
-        if (criterion) {
-          expect(['passed', 'failed', 'completed', 'pending']).toContain(criterion.status.type)
-        }
-      }, 200_000)
+        expect(criterion?.status.type).toBe('failed')
+      })
     })
   })
 
   describe('Verification without Thinking', () => {
     it('verifier does not emit thinking content', async () => {
-      // Add criterion
-      await client.send('chat.send', { 
-        content: 'Add criterion: "Simple criterion". Use add_criterion.' 
+      await client.send('chat.send', {
+        content: 'Add criterion ID "trivial-pass": "Trivial pass criterion". Use add_criterion.',
       })
       await client.waitForChatDone()
+      await client.send('mode.switch', { mode: 'builder' })
       
       client.clearEvents()
       
-      // Accept
-      await client.send('mode.accept', {})
+      await client.send('runner.launch', {})
       
-      // Wait for completion
-      await collectUntilPhase(client, 'done', 180_000)
-        .catch(() => collectUntilPhase(client, 'blocked', 10_000))
+      await collectUntilPhase(client, 'done', 1_500)
       
       // Check events - verifier thinking should not be present
       const events = client.allEvents()
@@ -207,6 +166,7 @@ describe('Verifier Mode', () => {
       // If there are thinking events, they should be from builder, not verifier
       // (This is hard to verify without message correlation, but we just check it doesn't crash)
       assertNoErrors({ all: events, byType: new Map(), get: () => [], hasEvent: () => false, findEvent: () => undefined })
-    }, 200_000)
+      expect(thinkingEvents.length).toBe(0)
+    })
   })
 })
