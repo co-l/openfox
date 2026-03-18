@@ -17,7 +17,7 @@ import type { TurnEvent, SessionSnapshot, SnapshotMessage, ToolCallWithResult } 
 import { getEventStore } from '../events/index.js'
 import { sessionManager } from '../session/index.js'
 import { getToolRegistryForMode, AskUserInterrupt, PathAccessDeniedError } from '../tools/index.js'
-import { buildPlannerPrompt, buildBuilderPrompt, buildVerifierPrompt, VERIFIER_KICKOFF_PROMPT } from './prompts.js'
+import { buildPlannerPrompt, buildBuilderPrompt, buildVerifierPrompt, BUILDER_KICKOFF_PROMPT, VERIFIER_KICKOFF_PROMPT } from './prompts.js'
 import { streamLLMPure, consumeStreamGenerator, TurnMetrics, createMessageStartEvent, createMessageDoneEvent, createToolCallEvent, createToolResultEvent, createChatDoneEvent, createFormatRetryEvent } from './stream-pure.js'
 import { estimateTokens } from '../context/tokenizer.js'
 import { getAllInstructions } from '../context/instructions.js'
@@ -266,6 +266,27 @@ export async function runBuilderTurn(
   const eventStore = getEventStore()
 
   const session = sessionManager.requireSession(sessionId)
+
+  // Add builder kickoff prompt on first entry (if not already present)
+  // This tells the LLM to start implementing the criteria
+  if (formatRetryCount === 0) {
+    const events = eventStore.getEvents(sessionId)
+    const hasBuilderKickoff = events.some(e => {
+      if (e.type !== 'message.start') return false
+      const data = e.data as { messageKind?: string; content?: string }
+      return data.messageKind === 'auto-prompt' && data.content?.includes('fulfil the')
+    })
+
+    if (!hasBuilderKickoff) {
+      const kickoffMsgId = crypto.randomUUID()
+      const kickoffContent = BUILDER_KICKOFF_PROMPT(session.criteria.length)
+      eventStore.append(sessionId, createMessageStartEvent(kickoffMsgId, 'user', kickoffContent, {
+        isSystemGenerated: true,
+        messageKind: 'auto-prompt',
+      }))
+      eventStore.append(sessionId, { type: 'message.done', data: { messageId: kickoffMsgId } })
+    }
+  }
 
   // Load instructions
   const { content: instructionContent, files } = await getAllInstructions(session.workdir, session.projectId)
