@@ -19,6 +19,7 @@ import { sessionManager } from '../session/index.js'
 import { getToolRegistryForMode, AskUserInterrupt, PathAccessDeniedError } from '../tools/index.js'
 import { buildPlannerPrompt, buildBuilderPrompt, buildVerifierPrompt, BUILDER_KICKOFF_PROMPT, VERIFIER_KICKOFF_PROMPT } from './prompts.js'
 import { streamLLMPure, consumeStreamGenerator, TurnMetrics, createMessageStartEvent, createMessageDoneEvent, createToolCallEvent, createToolResultEvent, createChatDoneEvent, createFormatRetryEvent } from './stream-pure.js'
+import { createToolProgressHandler } from './tool-streaming.js'
 import { estimateTokens } from '../context/tokenizer.js'
 import { getAllInstructions } from '../context/instructions.js'
 import { logger } from '../utils/logger.js'
@@ -143,7 +144,7 @@ async function runPlannerTurn(
   turnMetrics: TurnMetrics,
   formatRetryCount = 0
 ): Promise<void> {
-  const { sessionId, llmClient, signal } = options
+  const { sessionId, llmClient, signal, onMessage } = options
   const eventStore = getEventStore()
 
   const session = sessionManager.requireSession(sessionId)
@@ -227,11 +228,16 @@ async function runPlannerTurn(
     for (const toolCall of result.toolCalls) {
       eventStore.append(sessionId, createToolCallEvent(assistantMsgId, toolCall))
 
+      // Create progress handler for streaming output (run_command only)
+      const onProgress = onMessage ? createToolProgressHandler(assistantMsgId, toolCall.id, onMessage) : undefined
+
       const toolResult = await toolRegistry.execute(toolCall.name, toolCall.arguments, {
         workdir: session.workdir,
         sessionId,
         signal,
         lspManager: sessionManager.getLspManager(sessionId),
+        onEvent: onMessage,
+        onProgress,
       })
 
       turnMetrics.addToolTime(toolResult.durationMs)
@@ -263,7 +269,7 @@ export async function runBuilderTurn(
   turnMetrics: TurnMetrics,
   formatRetryCount = 0
 ): Promise<void> {
-  const { sessionId, llmClient, signal } = options
+  const { sessionId, llmClient, signal, onMessage } = options
   const eventStore = getEventStore()
 
   const session = sessionManager.requireSession(sessionId)
@@ -369,11 +375,16 @@ export async function runBuilderTurn(
     for (const toolCall of result.toolCalls) {
       eventStore.append(sessionId, createToolCallEvent(assistantMsgId, toolCall))
 
+      // Create progress handler for streaming output (run_command only)
+      const onProgress = onMessage ? createToolProgressHandler(assistantMsgId, toolCall.id, onMessage) : undefined
+
       const toolResult = await toolRegistry.execute(toolCall.name, toolCall.arguments, {
         workdir: session.workdir,
         sessionId,
         signal,
         lspManager: sessionManager.getLspManager(sessionId),
+        onEvent: onMessage,
+        onProgress,
       })
 
       turnMetrics.addToolTime(toolResult.durationMs)
@@ -419,7 +430,7 @@ export async function runVerifierTurn(
   options: OrchestratorOptions,
   turnMetrics: TurnMetrics
 ): Promise<VerifierResult> {
-  const { sessionId, llmClient, signal } = options
+  const { sessionId, llmClient, signal, onMessage } = options
   const eventStore = getEventStore()
   const subAgentId = crypto.randomUUID()
 
@@ -568,11 +579,16 @@ ${modifiedFiles.length > 0 ? modifiedFiles.map(f => `- ${f}`).join('\n') : '(non
     for (const toolCall of result.toolCalls) {
       eventStore.append(sessionId, createToolCallEvent(assistantMsgId, toolCall))
 
+      // Create progress handler for streaming output (run_command only)
+      const onProgress = onMessage ? createToolProgressHandler(assistantMsgId, toolCall.id, onMessage) : undefined
+
       const toolResult = await toolRegistry.execute(toolCall.name, toolCall.arguments, {
         workdir: session.workdir,
         sessionId,
         signal,
         lspManager: sessionManager.getLspManager(sessionId),
+        onEvent: onMessage,
+        onProgress,
       })
 
       turnMetrics.addToolTime(toolResult.durationMs)
