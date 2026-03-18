@@ -1,13 +1,15 @@
 import fg from 'fast-glob'
-import { resolve, isAbsolute, relative } from 'node:path'
-import type { ToolResult } from '../../shared/types.js'
-import type { Tool, ToolContext } from './types.js'
 import { OUTPUT_LIMITS } from './types.js'
-import { requestPathAccess, PathAccessDeniedError } from './path-security.js'
+import { createTool } from './tool-helpers.js'
 
-export const globTool: Tool = {
-  name: 'glob',
-  definition: {
+interface GlobArgs {
+  pattern: string
+  cwd?: string
+}
+
+export const globTool = createTool<GlobArgs>(
+  'glob',
+  {
     type: 'function',
     function: {
       name: 'glob',
@@ -28,81 +30,46 @@ export const globTool: Tool = {
       },
     },
   },
-  
-  async execute(args: Record<string, unknown>, context: ToolContext): Promise<ToolResult> {
-    const startTime = Date.now()
+  async (args, context, helpers) => {
+    // Resolve working directory
+    const baseDir = args.cwd 
+      ? helpers.resolvePath(args.cwd)
+      : context.workdir
     
-    try {
-      const pattern = args['pattern'] as string
-      const cwd = args['cwd'] as string | undefined
-      
-      // Resolve working directory
-      const baseDir = cwd 
-        ? (isAbsolute(cwd) ? cwd : resolve(context.workdir, cwd))
-        : context.workdir
-      
-      // Check sandbox - request confirmation for paths outside workdir
-      if (context.onEvent) {
-        await requestPathAccess(
-          [baseDir],
-          context.workdir,
-          context.sessionId,
-          crypto.randomUUID(),
-          'glob',
-          context.onEvent
-        )
-      }
-      
-      // Execute glob
-      const files = await fg(pattern, {
-        cwd: baseDir,
-        onlyFiles: true,
-        ignore: [
-          '**/node_modules/**',
-          '**/.git/**',
-          '**/dist/**',
-          '**/build/**',
-          '**/.next/**',
-          '**/coverage/**',
-        ],
-        followSymbolicLinks: false,
-        suppressErrors: true,
-      })
-      
-      // Sort by most recently modified (need to get stats for this)
-      // For now, just sort alphabetically
-      files.sort()
-      
-      // Apply limit
-      const truncated = files.length > OUTPUT_LIMITS.glob.maxResults
-      const limitedFiles = files.slice(0, OUTPUT_LIMITS.glob.maxResults)
-      
-      // Format output
-      let output = limitedFiles.join('\n')
-      
-      if (truncated) {
-        output += `\n\n[Showing first ${OUTPUT_LIMITS.glob.maxResults} of ${files.length} matches]`
-      } else {
-        output += `\n\n[${files.length} file(s) found]`
-      }
-      
-      return {
-        success: true,
-        output,
-        durationMs: Date.now() - startTime,
-        truncated,
-      }
-    } catch (error) {
-      // Re-throw path access errors for orchestrator to handle with helpful message
-      if (error instanceof PathAccessDeniedError) {
-        throw error
-      }
-      return {
-        success: false,
-        error: error instanceof Error ? error.message : 'Unknown error during glob',
-        durationMs: Date.now() - startTime,
-        truncated: false,
-      }
+    await helpers.checkPathAccess([baseDir])
+    
+    // Execute glob
+    const files = await fg(args.pattern, {
+      cwd: baseDir,
+      onlyFiles: true,
+      ignore: [
+        '**/node_modules/**',
+        '**/.git/**',
+        '**/dist/**',
+        '**/build/**',
+        '**/.next/**',
+        '**/coverage/**',
+      ],
+      followSymbolicLinks: false,
+      suppressErrors: true,
+    })
+    
+    // Sort alphabetically
+    files.sort()
+    
+    // Apply limit
+    const truncated = files.length > OUTPUT_LIMITS.glob.maxResults
+    const limitedFiles = files.slice(0, OUTPUT_LIMITS.glob.maxResults)
+    
+    // Format output
+    let output = limitedFiles.join('\n')
+    
+    if (truncated) {
+      output += `\n\n[Showing first ${OUTPUT_LIMITS.glob.maxResults} of ${files.length} matches]`
+    } else {
+      output += `\n\n[${files.length} file(s) found]`
     }
-  },
-}
+    
+    return helpers.success(output, truncated)
+  }
+)

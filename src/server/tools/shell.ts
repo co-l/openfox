@@ -1,13 +1,10 @@
 import { spawn } from 'node:child_process'
 import { resolve, isAbsolute } from 'node:path'
-import type { ToolResult } from '../../shared/types.js'
-import type { Tool, ToolContext } from './types.js'
 import { OUTPUT_LIMITS } from './types.js'
+import { createTool } from './tool-helpers.js'
 import {
   extractAbsolutePathsFromCommand,
   extractSensitivePathsFromCommand,
-  requestPathAccess,
-  PathAccessDeniedError,
 } from './path-security.js'
 
 const DANGEROUS_PATTERNS = [
@@ -20,9 +17,15 @@ const DANGEROUS_PATTERNS = [
   /:\(\)\s*\{\s*:\s*\|\s*:\s*&\s*\}\s*;/,  // Fork bomb
 ]
 
-export const runCommandTool: Tool = {
-  name: 'run_command',
-  definition: {
+interface RunCommandArgs {
+  command: string
+  cwd?: string
+  timeout?: number
+}
+
+export const runCommandTool = createTool<RunCommandArgs>(
+  'run_command',
+  {
     type: 'function',
     function: {
       name: 'run_command',
@@ -47,124 +50,87 @@ export const runCommandTool: Tool = {
       },
     },
   },
-  
-  async execute(args: Record<string, unknown>, context: ToolContext): Promise<ToolResult> {
-    const startTime = Date.now()
+  async (args, context, helpers) => {
+    const timeout = Math.min(args.timeout ?? 120_000, 300_000)
     
-    try {
-      const command = args['command'] as string
-      const cwd = args['cwd'] as string | undefined
-      const timeout = Math.min(
-        (args['timeout'] as number | undefined) ?? 120_000,
-        300_000
-      )
-      
-      // Check for dangerous commands
-      for (const pattern of DANGEROUS_PATTERNS) {
-        if (pattern.test(command)) {
-          return {
-            success: false,
-            error: `Command appears dangerous and was blocked: ${command}\n\nIf you really need to run this, ask the user for confirmation.`,
-            durationMs: Date.now() - startTime,
-            truncated: false,
-          }
-        }
-      }
-      
-      // Resolve working directory
-      const workingDir = cwd 
-        ? (isAbsolute(cwd) ? cwd : resolve(context.workdir, cwd))
-        : context.workdir
-      
-      // Check sandbox - collect all paths that need checking
-      const pathsToCheck: string[] = [workingDir]
-      
-      // Extract absolute paths from command (including ~ expansion)
-      const commandPaths = extractAbsolutePathsFromCommand(command)
-      for (const cmdPath of commandPaths) {
-        // Resolve relative to the working directory
-        const resolved = isAbsolute(cmdPath) ? cmdPath : resolve(workingDir, cmdPath)
-        pathsToCheck.push(resolved)
-      }
-      
-      // Extract sensitive file paths from command (like .env, credentials.json)
-      const sensitivePaths = extractSensitivePathsFromCommand(command)
-      for (const sensitivePath of sensitivePaths) {
-        // Resolve relative to the working directory
-        const resolved = isAbsolute(sensitivePath) ? sensitivePath : resolve(workingDir, sensitivePath)
-        pathsToCheck.push(resolved)
-      }
-      
-      // Check all paths - request confirmation for paths outside workdir or sensitive files
-      if (context.onEvent) {
-        await requestPathAccess(
-          pathsToCheck,
-          context.workdir,
-          context.sessionId,
-          crypto.randomUUID(),
-          'run_command',
-          context.onEvent
+    // Check for dangerous commands
+    for (const pattern of DANGEROUS_PATTERNS) {
+      if (pattern.test(args.command)) {
+        return helpers.error(
+          `Command appears dangerous and was blocked: ${args.command}\n\nIf you really need to run this, ask the user for confirmation.`
         )
       }
-      
-      // Execute command
-      const result = await executeCommand(command, workingDir, timeout, context.signal, context.onProgress)
-      
-      // Format output
-      let output = ''
-      
-      if (result.stdout) {
-        output += result.stdout
-      }
-      
-      if (result.stderr) {
-        if (output) output += '\n\n'
-        output += `[stderr]\n${result.stderr}`
-      }
-      
-      output += `\n\n[Exit code: ${result.exitCode}]`
-      
-      // Check truncation
-      let truncated = false
-      if (output.length > OUTPUT_LIMITS.run_command.maxBytes) {
-        output = output.slice(0, OUTPUT_LIMITS.run_command.maxBytes)
-        output += '\n\n[Output truncated due to size limit]'
-        truncated = true
-      }
-      
-      const lines = output.split('\n').length
-      if (lines > OUTPUT_LIMITS.run_command.maxLines) {
-        const limitedLines = output.split('\n').slice(0, OUTPUT_LIMITS.run_command.maxLines)
-        output = limitedLines.join('\n')
-        output += '\n\n[Output truncated due to line limit]'
-        truncated = true
-      }
-      
-      // Check if this was an interrupted command (marker in output, exit code 130)
-      const wasInterrupted = output.includes('[interrupted by user]')
-      
-      return {
-        success: result.exitCode === 0,
-        output,
-        // Don't set error for interrupted commands - the marker is sufficient
-        ...(result.exitCode !== 0 && !wasInterrupted ? { error: `Command exited with code ${result.exitCode}` } : {}),
-        durationMs: Date.now() - startTime,
-        truncated,
-      }
-    } catch (error) {
-      // Re-throw path access errors for orchestrator to handle with helpful message
-      if (error instanceof PathAccessDeniedError) {
-        throw error
-      }
-      return {
-        success: false,
-        error: error instanceof Error ? error.message : 'Unknown error executing command',
-        durationMs: Date.now() - startTime,
-        truncated: false,
-      }
     }
-  },
-}
+    
+    // Resolve working directory
+    const workingDir = args.cwd 
+      ? helpers.resolvePath(args.cwd)
+      : context.workdir
+    
+    // Collect all paths that need checking
+    const pathsToCheck: string[] = [workingDir]
+    
+    // Extract absolute paths from command (including ~ expansion)
+    const commandPaths = extractAbsolutePathsFromCommand(args.command)
+    for (const cmdPath of commandPaths) {
+      const resolved = isAbsolute(cmdPath) ? cmdPath : resolve(workingDir, cmdPath)
+      pathsToCheck.push(resolved)
+    }
+    
+    // Extract sensitive file paths from command (like .env, credentials.json)
+    const sensitivePaths = extractSensitivePathsFromCommand(args.command)
+    for (const sensitivePath of sensitivePaths) {
+      const resolved = isAbsolute(sensitivePath) ? sensitivePath : resolve(workingDir, sensitivePath)
+      pathsToCheck.push(resolved)
+    }
+    
+    // Check all paths - request confirmation for paths outside workdir or sensitive files
+    await helpers.checkPathAccess(pathsToCheck)
+    
+    // Execute command
+    const result = await executeCommand(args.command, workingDir, timeout, context.signal, context.onProgress)
+    
+    // Format output
+    let output = ''
+    
+    if (result.stdout) {
+      output += result.stdout
+    }
+    
+    if (result.stderr) {
+      if (output) output += '\n\n'
+      output += `[stderr]\n${result.stderr}`
+    }
+    
+    output += `\n\n[Exit code: ${result.exitCode}]`
+    
+    // Check truncation
+    let truncated = false
+    if (output.length > OUTPUT_LIMITS.run_command.maxBytes) {
+      output = output.slice(0, OUTPUT_LIMITS.run_command.maxBytes)
+      output += '\n\n[Output truncated due to size limit]'
+      truncated = true
+    }
+    
+    const lines = output.split('\n').length
+    if (lines > OUTPUT_LIMITS.run_command.maxLines) {
+      const limitedLines = output.split('\n').slice(0, OUTPUT_LIMITS.run_command.maxLines)
+      output = limitedLines.join('\n')
+      output += '\n\n[Output truncated due to line limit]'
+      truncated = true
+    }
+    
+    // Check if this was an interrupted command (marker in output, exit code 130)
+    const wasInterrupted = output.includes('[interrupted by user]')
+    
+    return helpers.success(output, truncated, {
+      // Mark as not successful if non-zero exit (unless interrupted)
+      success: result.exitCode === 0,
+      // Don't set error for interrupted commands - the marker is sufficient
+      ...(result.exitCode !== 0 && !wasInterrupted ? { error: `Command exited with code ${result.exitCode}` } : {}),
+    })
+  }
+)
 
 interface CommandResult {
   stdout: string
