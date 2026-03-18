@@ -88,6 +88,15 @@ export function createWebSocketServer(
     for (const [ws, client] of clients) {
       // Send events to all clients subscribed to this session (tab model)
       if (client.subscribedSessions.has(sessionId) && ws.readyState === WebSocket.OPEN) {
+        // Only broadcast session.state for session_updated (not mode_changed)
+        // mode_changed is handled via the event queue to maintain ordering during streaming
+        if (event.type === 'session_updated') {
+          const session = sessionManager.getSession(sessionId)
+          if (session) {
+            const messages = getMessages(sessionId)
+            ws.send(serializeServerMessage(createSessionStateMessage(session, messages)))
+          }
+        }
         // Forward message updates to clients (e.g., isStreaming changes)
         if (event.type === 'message_updated') {
           ws.send(serializeServerMessage(createChatMessageUpdatedMessage(event.messageId, event.updates)))
