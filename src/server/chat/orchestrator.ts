@@ -236,14 +236,29 @@ async function runPlannerTurn(
       // Create progress handler for streaming output (run_command only)
       const onProgress = onMessage ? createToolProgressHandler(assistantMsgId, toolCall.id, onMessage) : undefined
 
-      const toolResult = await toolRegistry.execute(toolCall.name, toolCall.arguments, {
-        workdir: session.workdir,
-        sessionId,
-        signal,
-        lspManager: sessionManager.getLspManager(sessionId),
-        onEvent: onMessage,
-        onProgress,
-      })
+      let toolResult: ToolResult
+      try {
+        toolResult = await toolRegistry.execute(toolCall.name, toolCall.arguments, {
+          workdir: session.workdir,
+          sessionId,
+          signal,
+          lspManager: sessionManager.getLspManager(sessionId),
+          onEvent: onMessage,
+          onProgress,
+        })
+      } catch (error) {
+        if (error instanceof PathAccessDeniedError) {
+          // User denied access - return as tool error with helpful message
+          toolResult = {
+            success: false,
+            error: `User denied access to ${error.paths.join(', ')}. If you need this file, explain why and ask for permission.`,
+            durationMs: 0,
+            truncated: false,
+          }
+        } else {
+          throw error  // Re-throw other errors
+        }
+      }
 
       turnMetrics.addToolTime(toolResult.durationMs)
       eventStore.append(sessionId, createToolResultEvent(assistantMsgId, toolCall.id, toolResult))
@@ -383,14 +398,29 @@ export async function runBuilderTurn(
       // Create progress handler for streaming output (run_command only)
       const onProgress = onMessage ? createToolProgressHandler(assistantMsgId, toolCall.id, onMessage) : undefined
 
-      const toolResult = await toolRegistry.execute(toolCall.name, toolCall.arguments, {
-        workdir: session.workdir,
-        sessionId,
-        signal,
-        lspManager: sessionManager.getLspManager(sessionId),
-        onEvent: onMessage,
-        onProgress,
-      })
+      let toolResult: ToolResult
+      try {
+        toolResult = await toolRegistry.execute(toolCall.name, toolCall.arguments, {
+          workdir: session.workdir,
+          sessionId,
+          signal,
+          lspManager: sessionManager.getLspManager(sessionId),
+          onEvent: onMessage,
+          onProgress,
+        })
+      } catch (error) {
+        if (error instanceof PathAccessDeniedError) {
+          // User denied access - return as tool error with helpful message
+          toolResult = {
+            success: false,
+            error: `User denied access to ${error.paths.join(', ')}. If you need this file, explain why and ask for permission.`,
+            durationMs: 0,
+            truncated: false,
+          }
+        } else {
+          throw error  // Re-throw other errors
+        }
+      }
 
       turnMetrics.addToolTime(toolResult.durationMs)
       eventStore.append(sessionId, createToolResultEvent(assistantMsgId, toolCall.id, toolResult))
@@ -587,14 +617,29 @@ ${modifiedFiles.length > 0 ? modifiedFiles.map(f => `- ${f}`).join('\n') : '(non
       // Create progress handler for streaming output (run_command only)
       const onProgress = onMessage ? createToolProgressHandler(assistantMsgId, toolCall.id, onMessage) : undefined
 
-      const toolResult = await toolRegistry.execute(toolCall.name, toolCall.arguments, {
-        workdir: session.workdir,
-        sessionId,
-        signal,
-        lspManager: sessionManager.getLspManager(sessionId),
-        onEvent: onMessage,
-        onProgress,
-      })
+      let toolResult: ToolResult
+      try {
+        toolResult = await toolRegistry.execute(toolCall.name, toolCall.arguments, {
+          workdir: session.workdir,
+          sessionId,
+          signal,
+          lspManager: sessionManager.getLspManager(sessionId),
+          onEvent: onMessage,
+          onProgress,
+        })
+      } catch (error) {
+        if (error instanceof PathAccessDeniedError) {
+          // User denied access - return as tool error with helpful message
+          toolResult = {
+            success: false,
+            error: `User denied access to ${error.paths.join(', ')}. If you need this file, explain why and ask for permission.`,
+            durationMs: 0,
+            truncated: false,
+          }
+        } else {
+          throw error  // Re-throw other errors
+        }
+      }
 
       turnMetrics.addToolTime(toolResult.durationMs)
       eventStore.append(sessionId, createToolResultEvent(assistantMsgId, toolCall.id, toolResult))
