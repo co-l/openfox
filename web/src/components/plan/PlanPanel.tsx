@@ -177,11 +177,35 @@ export function PlanPanel() {
     textarea.style.height = `${newHeight}px`
   }, [])
 
+  // Load draft from localStorage on session change
+  useEffect(() => {
+    if (!session?.id) return
+    const draftKey = `openfox:draft:${session.id}`
+    const savedDraft = localStorage.getItem(draftKey)
+    if (savedDraft !== null) {
+      setInput(savedDraft)
+    }
+  }, [session?.id])
+
   // Auto-focus textarea on mount
   useEffect(() => {
     textareaRef.current?.focus()
     resizeTextarea()
   }, [session?.id, resizeTextarea])
+
+  // Throttled save of draft to localStorage
+  useEffect(() => {
+    if (!session?.id) return
+    const draftKey = `openfox:draft:${session.id}`
+    const timeoutId = setTimeout(() => {
+      if (input) {
+        localStorage.setItem(draftKey, input)
+      } else {
+        localStorage.removeItem(draftKey)
+      }
+    }, 500)
+    return () => clearTimeout(timeoutId)
+  }, [session?.id, input])
 
   // Resize textarea when input changes
   useEffect(() => {
@@ -207,6 +231,11 @@ export function PlanPanel() {
     
     sendMessage(input)
     setInput('')
+    
+    // Clear draft from localStorage after sending
+    if (session?.id) {
+      localStorage.removeItem(`openfox:draft:${session.id}`)
+    }
   }
   
   const handleKeyDown = (e: React.KeyboardEvent) => {
