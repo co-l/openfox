@@ -165,10 +165,10 @@ export async function createServer(config: Config): Promise<void> {
       logLevel: 'warn',
     })
     
-    // Use Vite's middleware - handles all Vite routes (/@vite/*, /@react-refresh, /src/*, etc.)
+    // Mount Vite middleware - handles /@vite/*, /@react-refresh, /src/*, CSS, etc.
     app.use(viteServer.middlewares)
     
-    // Static files that Vite doesn't handle
+    // Static files that Vite doesn't handle (after Vite middleware)
     app.get('/fox.svg', (_req, res) => {
       readFile(join(webDir, 'fox.svg')).then(content => {
         res.set('Content-Type', 'image/svg+xml')
@@ -188,7 +188,7 @@ export async function createServer(config: Config): Promise<void> {
       })
     })
     
-    // SPA fallback for non-API routes
+    // SPA fallback for non-API routes (must be last)
     app.get('*', (req, res) => {
       if (req.path.startsWith('/api/')) {
         return
@@ -209,8 +209,14 @@ export async function createServer(config: Config): Promise<void> {
   if (!isDev) {
     const distWebDir = resolve(__dirname, 'web')
     
-    // Serve static assets
-    app.use('/assets', express.static(join(distWebDir, 'assets')))
+    // Serve static assets with proper caching
+    app.use('/assets', express.static(join(distWebDir, 'assets'), {
+      setHeaders: (res, filepath) => {
+        if (filepath.endsWith('.css')) {
+          res.set('Content-Type', 'text/css')
+        }
+      }
+    }))
     
     // Static files
     app.get('/fox.svg', (_req, res) => {
