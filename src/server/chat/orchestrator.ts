@@ -95,14 +95,19 @@ export async function runChatTurn(options: OrchestratorOptions): Promise<void> {
 
     if (error instanceof PathAccessDeniedError) {
       const errorMsgId = crypto.randomUUID()
+      const reasonText = error.reason === 'sensitive_file' 
+        ? 'sensitive files that may contain secrets'
+        : error.reason === 'both'
+        ? 'files outside the project and sensitive files'
+        : 'files outside the project directory'
       eventStore.append(sessionId, {
         type: 'chat.error',
         data: {
-          error: `Execution aborted: Access denied to paths outside workdir:\n${error.paths.join('\n')}`,
+          error: `User denied access to ${reasonText}.`,
           recoverable: false,
         },
       })
-      eventStore.append(sessionId, createMessageStartEvent(errorMsgId, 'user', `Access denied to: ${error.paths.join(', ')}`, {
+      eventStore.append(sessionId, createMessageStartEvent(errorMsgId, 'user', `Access denied: ${error.paths.join(', ')}. If you need this file, explain why and ask the user for permission.`, {
         isSystemGenerated: true,
         messageKind: 'correction',
       }))

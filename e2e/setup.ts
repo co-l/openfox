@@ -68,10 +68,10 @@ export async function setup(): Promise<void> {
   console.log('\n🚀 Starting OpenFox server...')
   
   // Start the server with test configuration
-  // Use npx tsx directly (not tsx watch) to avoid auto-restarts on file changes
+  // Use tsx directly to avoid auto-restarts on file changes
   // Use detached: true to create a process group for clean shutdown
-  serverProcess = spawn('npx', ['tsx', 'src/index.ts'], {
-    cwd: new URL('../packages/server', import.meta.url).pathname,
+  serverProcess = spawn('tsx', ['src/server/index.ts'], {
+    cwd: new URL('..', import.meta.url).pathname,
     env: {
       ...process.env,
       OPENFOX_PORT: TEST_PORT,

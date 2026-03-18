@@ -472,7 +472,7 @@ export async function requestPathAccess(
   const approved = await confirmationPromise
   
   if (!approved) {
-    throw new PathAccessDeniedError(allPathsNeedingConfirmation, tool)
+    throw new PathAccessDeniedError(allPathsNeedingConfirmation, tool, reason)
   }
   
   // If approved, paths have already been added to allowlist by providePathConfirmation
@@ -482,6 +482,8 @@ export async function requestPathAccess(
 // Error Classes
 // ===========================================================================
 
+export type PathDenialReason = 'outside_workdir' | 'sensitive_file' | 'both'
+
 /**
  * Error thrown when user denies path access.
  * This causes the agent run to abort.
@@ -489,9 +491,15 @@ export async function requestPathAccess(
 export class PathAccessDeniedError extends Error {
   constructor(
     public readonly paths: string[],
-    public readonly tool: string
+    public readonly tool: string,
+    public readonly reason: PathDenialReason = 'outside_workdir'
   ) {
-    super(`Access denied to paths outside workdir: ${paths.join(', ')}`)
+    const reasonText = reason === 'sensitive_file' 
+      ? 'sensitive files (may contain secrets)'
+      : reason === 'both'
+      ? 'paths outside workdir and sensitive files'
+      : 'paths outside workdir'
+    super(`User denied access to ${reasonText}: ${paths.join(', ')}`)
     this.name = 'PathAccessDeniedError'
   }
 }

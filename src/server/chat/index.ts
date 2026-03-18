@@ -127,15 +127,21 @@ export async function handleChat(options: ChatOptions): Promise<void> {
         sessionId,
         tool: error.tool,
         paths: error.paths,
+        reason: error.reason,
       })
+      const reasonText = error.reason === 'sensitive_file' 
+        ? 'sensitive files that may contain secrets'
+        : error.reason === 'both'
+        ? 'files outside the project and sensitive files'
+        : 'files outside the project directory'
       onMessage(createChatErrorMessage(
-        `Execution aborted: Access denied to paths outside workdir:\n${error.paths.join('\n')}`,
+        `User denied access to ${reasonText}.`,
         false  // not recoverable
       ))
       const errorMsg = sessionManager.addMessage(sessionId, {
         role: 'user',
-        content: `Access denied to: ${error.paths.join(', ')}`,
-        tokenCount: 10,
+        content: `Access denied: ${error.paths.join(', ')}. If you need this file, explain why and ask the user for permission.`,
+        tokenCount: 25,
         isSystemGenerated: true,
         messageKind: 'correction',
       })

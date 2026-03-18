@@ -621,8 +621,22 @@ describe('path-security', () => {
 
       expect(error.paths).toEqual(['/etc/passwd'])
       expect(error.tool).toBe('read_file')
+      expect(error.reason).toBe('outside_workdir')  // default
       expect(error.name).toBe('PathAccessDeniedError')
       expect(error.message).toContain('/etc/passwd')
+      expect(error.message).toContain('User denied')
+    })
+
+    it('includes reason in message for sensitive files', () => {
+      const error = new PathAccessDeniedError(
+        ['.env'],
+        'read_file',
+        'sensitive_file'
+      )
+
+      expect(error.reason).toBe('sensitive_file')
+      expect(error.message).toContain('sensitive files')
+      expect(error.message).toContain('.env')
     })
 
     it('includes all paths in message', () => {
