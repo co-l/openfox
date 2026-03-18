@@ -17,11 +17,14 @@ import type { TurnEvent, SessionSnapshot, SnapshotMessage, ToolCallWithResult } 
 import { getEventStore } from '../events/index.js'
 import { sessionManager } from '../session/index.js'
 import { getToolRegistryForMode, AskUserInterrupt, PathAccessDeniedError } from '../tools/index.js'
-import { buildPlannerPrompt, buildBuilderPrompt, buildVerifierPrompt } from './prompts.js'
+import { buildPlannerPrompt, buildBuilderPrompt, buildVerifierPrompt, VERIFIER_KICKOFF_PROMPT } from './prompts.js'
 import { streamLLMPure, consumeStreamGenerator, TurnMetrics, createMessageStartEvent, createMessageDoneEvent, createToolCallEvent, createToolResultEvent, createChatDoneEvent, createFormatRetryEvent } from './stream-pure.js'
 import { estimateTokens } from '../context/tokenizer.js'
 import { getAllInstructions } from '../context/instructions.js'
 import { logger } from '../utils/logger.js'
+
+// Re-export for runner orchestrator
+export { TurnMetrics, createMessageStartEvent, createMessageDoneEvent, createToolCallEvent, createToolResultEvent, createChatDoneEvent }
 
 // ============================================================================
 // Constants
@@ -215,11 +218,11 @@ async function runPlannerTurn(
   // Track metrics
   turnMetrics.addLLMCall(result.timing, result.usage.promptTokens, result.usage.completionTokens)
 
-  // Emit message done
-  eventStore.append(sessionId, createMessageDoneEvent(assistantMsgId, { segments: result.segments }))
-
-  // Execute tool calls
+  // Execute tool calls (if any)
   if (result.toolCalls.length > 0) {
+    // Emit message done WITHOUT stats (intermediate message)
+    eventStore.append(sessionId, createMessageDoneEvent(assistantMsgId, { segments: result.segments }))
+    
     for (const toolCall of result.toolCalls) {
       eventStore.append(sessionId, createToolCallEvent(assistantMsgId, toolCall))
 
@@ -244,8 +247,9 @@ async function runPlannerTurn(
     return runPlannerTurn(options, turnMetrics)
   }
 
-  // Final response - emit chat.done
+  // Final response - emit message.done WITH stats and chat.done
   const stats = turnMetrics.buildStats(llmClient.getModel(), 'planner')
+  eventStore.append(sessionId, createMessageDoneEvent(assistantMsgId, { segments: result.segments, stats }))
   eventStore.append(sessionId, createChatDoneEvent(assistantMsgId, 'complete', stats))
 }
 
@@ -253,7 +257,7 @@ async function runPlannerTurn(
 // Builder Turn
 // ============================================================================
 
-async function runBuilderTurn(
+export async function runBuilderTurn(
   options: OrchestratorOptions,
   turnMetrics: TurnMetrics,
   formatRetryCount = 0
@@ -334,11 +338,11 @@ async function runBuilderTurn(
   // Track metrics
   turnMetrics.addLLMCall(result.timing, result.usage.promptTokens, result.usage.completionTokens)
 
-  // Emit message done
-  eventStore.append(sessionId, createMessageDoneEvent(assistantMsgId, { segments: result.segments }))
-
-  // Execute tool calls
+  // Execute tool calls (if any)
   if (result.toolCalls.length > 0) {
+    // Emit message done WITHOUT stats (intermediate message)
+    eventStore.append(sessionId, createMessageDoneEvent(assistantMsgId, { segments: result.segments }))
+    
     for (const toolCall of result.toolCalls) {
       eventStore.append(sessionId, createToolCallEvent(assistantMsgId, toolCall))
 
@@ -369,9 +373,219 @@ async function runBuilderTurn(
     return runBuilderTurn(options, turnMetrics)
   }
 
-  // Final response - emit chat.done
+  // Final response - emit message.done WITH stats and chat.done
   const stats = turnMetrics.buildStats(llmClient.getModel(), 'builder')
+  eventStore.append(sessionId, createMessageDoneEvent(assistantMsgId, { segments: result.segments, stats }))
   eventStore.append(sessionId, createChatDoneEvent(assistantMsgId, 'complete', stats))
+}
+
+// ============================================================================
+// Verifier Turn (Fresh Context)
+// ============================================================================
+
+export interface VerifierResult {
+  allPassed: boolean
+  failed: Array<{ id: string; reason: string }>
+}
+
+/**
+ * Run a verifier turn with fresh context.
+ * Unlike builder/planner, verifier uses only summary + criteria, not full conversation.
+ */
+export async function runVerifierTurn(
+  options: OrchestratorOptions,
+  turnMetrics: TurnMetrics
+): Promise<VerifierResult> {
+  const { sessionId, llmClient, signal } = options
+  const eventStore = getEventStore()
+  const subAgentId = crypto.randomUUID()
+
+  let session = sessionManager.requireSession(sessionId)
+
+  // Check if there's anything to verify
+  const toVerify = session.criteria.filter(c => c.status.type === 'completed')
+  if (toVerify.length === 0) {
+    logger.debug('Nothing to verify', { sessionId })
+    return { allPassed: true, failed: [] }
+  }
+
+  // Build fresh context for verifier
+  const summary = session.summary ?? 'No summary available'
+  const modifiedFiles = session.executionState?.modifiedFiles ?? []
+
+  const criteriaList = session.criteria
+    .map(c => {
+      const status = c.status.type === 'passed' ? '[PASSED]'
+        : c.status.type === 'completed' ? '[NEEDS VERIFICATION]'
+        : c.status.type === 'failed' ? '[FAILED]'
+        : '[NOT COMPLETED]'
+      return `- **${c.id}** ${status}: ${c.description}`
+    })
+    .join('\n')
+
+  const contextContent = `## Task Summary
+${summary}
+
+## Criteria
+${criteriaList}
+
+## Modified Files
+${modifiedFiles.length > 0 ? modifiedFiles.map(f => `- ${f}`).join('\n') : '(none)'}`
+
+  logger.debug('Verifier starting', { sessionId, subAgentId, criteriaCount: session.criteria.length })
+
+  // Emit context reset marker (visible in UI)
+  const resetMsgId = crypto.randomUUID()
+  eventStore.append(sessionId, createMessageStartEvent(resetMsgId, 'user', 'Fresh Context', {
+    isSystemGenerated: true,
+    messageKind: 'context-reset',
+    subAgentId,
+    subAgentType: 'verifier',
+  }))
+  eventStore.append(sessionId, { type: 'message.done', data: { messageId: resetMsgId } })
+
+  // Emit context content
+  const contextMsgId = crypto.randomUUID()
+  eventStore.append(sessionId, createMessageStartEvent(contextMsgId, 'user', contextContent, {
+    isSystemGenerated: true,
+    messageKind: 'auto-prompt',
+    subAgentId,
+    subAgentType: 'verifier',
+  }))
+  eventStore.append(sessionId, { type: 'message.done', data: { messageId: contextMsgId } })
+
+  // Emit verifier kickoff prompt
+  const kickoffMsgId = crypto.randomUUID()
+  eventStore.append(sessionId, createMessageStartEvent(kickoffMsgId, 'user', VERIFIER_KICKOFF_PROMPT, {
+    isSystemGenerated: true,
+    messageKind: 'auto-prompt',
+    subAgentId,
+    subAgentType: 'verifier',
+  }))
+  eventStore.append(sessionId, { type: 'message.done', data: { messageId: kickoffMsgId } })
+
+  // Load instructions
+  const { content: instructionContent } = await getAllInstructions(session.workdir, session.projectId)
+
+  const toolRegistry = getToolRegistryForMode('verifier')
+  const systemPrompt = buildVerifierPrompt(session.workdir, toolRegistry.definitions, instructionContent || undefined)
+
+  // Build fresh context messages (not from EventStore - verifier has isolated context)
+  let customMessages: Array<{
+    role: 'user' | 'assistant' | 'tool'
+    content: string
+    toolCalls?: ToolCall[]
+    toolCallId?: string
+  }> = [
+    { role: 'user', content: contextContent },
+    { role: 'user', content: VERIFIER_KICKOFF_PROMPT },
+  ]
+
+  const maxIterations = 20
+  let lastAssistantMsgId = ''
+
+  for (let iteration = 0; iteration < maxIterations; iteration++) {
+    if (signal?.aborted) {
+      throw new Error('Aborted')
+    }
+
+    // Create assistant message
+    const assistantMsgId = crypto.randomUUID()
+    lastAssistantMsgId = assistantMsgId
+    eventStore.append(sessionId, createMessageStartEvent(assistantMsgId, 'assistant', undefined, {
+      subAgentId,
+      subAgentType: 'verifier',
+    }))
+
+    // Stream LLM response (no thinking for verifier)
+    const streamGen = streamLLMPure({
+      messageId: assistantMsgId,
+      systemPrompt,
+      llmClient,
+      messages: customMessages,
+      tools: toolRegistry.definitions,
+      toolChoice: 'auto',
+      signal,
+      enableThinking: false,
+    })
+
+    const result = await consumeStreamGenerator(streamGen, event => {
+      eventStore.append(sessionId, event)
+    })
+
+    if (result.aborted) {
+      const stats = turnMetrics.buildStats(llmClient.getModel(), 'verifier')
+      eventStore.append(sessionId, createMessageDoneEvent(assistantMsgId, { stats, partial: true }))
+      eventStore.append(sessionId, createChatDoneEvent(assistantMsgId, 'stopped', stats))
+      throw new Error('Aborted')
+    }
+
+    turnMetrics.addLLMCall(result.timing, result.usage.promptTokens, result.usage.completionTokens)
+
+    // Add assistant response to custom context
+    customMessages.push({
+      role: 'assistant',
+      content: result.content,
+      ...(result.toolCalls.length > 0 && { toolCalls: result.toolCalls }),
+    })
+
+    // If no tool calls, verifier is done
+    if (result.toolCalls.length === 0) {
+      const stats = turnMetrics.buildStats(llmClient.getModel(), 'verifier')
+      eventStore.append(sessionId, createMessageDoneEvent(assistantMsgId, { segments: result.segments, stats }))
+      eventStore.append(sessionId, createChatDoneEvent(assistantMsgId, 'complete', stats))
+      break
+    }
+
+    // Emit message done (intermediate, no stats)
+    eventStore.append(sessionId, createMessageDoneEvent(assistantMsgId, { segments: result.segments }))
+
+    // Execute tool calls
+    for (const toolCall of result.toolCalls) {
+      eventStore.append(sessionId, createToolCallEvent(assistantMsgId, toolCall))
+
+      const toolResult = await toolRegistry.execute(toolCall.name, toolCall.arguments, {
+        workdir: session.workdir,
+        sessionId,
+        signal,
+        lspManager: sessionManager.getLspManager(sessionId),
+      })
+
+      turnMetrics.addToolTime(toolResult.durationMs)
+      eventStore.append(sessionId, createToolResultEvent(assistantMsgId, toolCall.id, toolResult))
+
+      // Add tool result to custom context
+      customMessages.push({
+        role: 'tool',
+        content: toolResult.success ? (toolResult.output ?? 'Success') : `Error: ${toolResult.error}`,
+        toolCallId: toolCall.id,
+      })
+
+      // Check criteria changes
+      const updatedSession = sessionManager.requireSession(sessionId)
+      if (JSON.stringify(updatedSession.criteria) !== JSON.stringify(session.criteria)) {
+        eventStore.append(sessionId, { type: 'criteria.set', data: { criteria: updatedSession.criteria } })
+        session = updatedSession
+      }
+    }
+  }
+
+  // Check results
+  session = sessionManager.requireSession(sessionId)
+  const failed = session.criteria
+    .filter(c => c.status.type === 'failed')
+    .map(c => ({
+      id: c.id,
+      reason: c.status.type === 'failed' ? c.status.reason : 'unknown',
+    }))
+
+  if (failed.length > 0) {
+    logger.warn('Verification failed', { sessionId, failed: failed.length })
+  } else {
+    logger.debug('All criteria verified', { sessionId })
+  }
+
+  return { allPassed: failed.length === 0, failed }
 }
 
 // ============================================================================
@@ -379,8 +593,8 @@ async function runBuilderTurn(
 // ============================================================================
 
 /**
- * Build context messages for LLM from current session state.
- * This reads from the old sessionManager for now - will be replaced with EventStore.
+ * Build context messages for LLM from EventStore.
+ * Folds events into messages suitable for LLM context.
  */
 function buildContextMessages(sessionId: string): Array<{
   role: 'user' | 'assistant' | 'tool'
@@ -388,9 +602,83 @@ function buildContextMessages(sessionId: string): Array<{
   toolCalls?: ToolCall[]
   toolCallId?: string
 }> {
-  const messages = sessionManager.getCurrentWindowMessages(sessionId)
+  const eventStore = getEventStore()
+  const events = eventStore.getEvents(sessionId)
+  
+  // If no events in EventStore, fall back to old system
+  if (events.length === 0) {
+    const messages = sessionManager.getCurrentWindowMessages(sessionId)
+    return messages.map(m => ({
+      role: m.role as 'user' | 'assistant' | 'tool',
+      content: m.content,
+      ...(m.toolCalls && { toolCalls: m.toolCalls }),
+      ...(m.toolCallId && { toolCallId: m.toolCallId }),
+    }))
+  }
+  
+  // Build messages from events
+  const messages: Array<{
+    id: string
+    role: 'user' | 'assistant' | 'tool'
+    content: string
+    toolCalls?: ToolCall[]
+    toolCallId?: string
+  }> = []
+  
+  const messageMap = new Map<string, typeof messages[0]>()
+  
+  for (const event of events) {
+    switch (event.type) {
+      case 'message.start': {
+        const data = event.data as { messageId: string; role: 'user' | 'assistant' | 'system'; content?: string }
+        if (data.role !== 'system') { // Skip system messages for LLM context
+          const msg = {
+            id: data.messageId,
+            role: data.role as 'user' | 'assistant',
+            content: data.content ?? '',
+          }
+          messageMap.set(data.messageId, msg)
+          messages.push(msg)
+        }
+        break
+      }
+      
+      case 'message.delta': {
+        const data = event.data as { messageId: string; content: string }
+        const msg = messageMap.get(data.messageId)
+        if (msg) {
+          msg.content += data.content
+        }
+        break
+      }
+      
+      case 'tool.call': {
+        const data = event.data as { messageId: string; toolCall: ToolCall }
+        const msg = messageMap.get(data.messageId)
+        if (msg) {
+          if (!msg.toolCalls) msg.toolCalls = []
+          msg.toolCalls.push(data.toolCall)
+        }
+        break
+      }
+      
+      case 'tool.result': {
+        const data = event.data as { messageId: string; toolCallId: string; result: ToolResult }
+        // Create a tool result message
+        const toolMsg = {
+          id: `tool-${data.toolCallId}`,
+          role: 'tool' as const,
+          content: data.result.success ? (data.result.output ?? 'Success') : `Error: ${data.result.error}`,
+          toolCallId: data.toolCallId,
+        }
+        messages.push(toolMsg)
+        break
+      }
+    }
+  }
+  
   return messages.map(m => ({
-    role: m.role as 'user' | 'assistant' | 'tool',
+    role: m.role,
     content: m.content,
     ...(m.toolCalls && { toolCalls: m.toolCalls }),
     ...(m.toolCallId && { toolCallId: m.toolCallId }),

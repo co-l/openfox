@@ -310,13 +310,16 @@ export function storedEventToServerMessage(event: StoredEvent): ServerMessage | 
     case 'message.start': {
       const data = event.data as Extract<TurnEvent, { type: 'message.start' }>['data']
       // Create a minimal Message object for chat.message
+      // User messages have content upfront and are not streaming
+      // Assistant messages start streaming (content builds up via deltas)
+      const isUserOrSystem = data.role === 'user' || data.role === 'system'
       const message: Message = {
         id: data.messageId,
         role: data.role,
         content: data.content ?? '',
         timestamp: new Date(event.timestamp).toISOString(),
         tokenCount: 0,
-        isStreaming: true,
+        isStreaming: !isUserOrSystem, // Only assistant messages stream
         ...(data.contextWindowId ? { contextWindowId: data.contextWindowId } : {}),
         ...(data.subAgentId ? { subAgentId: data.subAgentId } : {}),
         ...(data.subAgentType ? { subAgentType: data.subAgentType } : {}),
@@ -338,11 +341,12 @@ export function storedEventToServerMessage(event: StoredEvent): ServerMessage | 
 
     case 'message.done': {
       const data = event.data as Extract<TurnEvent, { type: 'message.done' }>['data']
-      // This maps to chat.message_updated with isStreaming: false
-      return createChatMessageUpdatedMessage(data.messageId, {
-        isStreaming: false,
-        ...(data.stats ? { stats: data.stats } : {}),
-      })
+      // This maps to chat.message_updated with isStreaming: false and optionally stats
+      const updates: { isStreaming: false; stats?: typeof data.stats } = { isStreaming: false }
+      if (data.stats) {
+        updates.stats = data.stats
+      }
+      return createChatMessageUpdatedMessage(data.messageId, updates)
     }
 
     case 'tool.preparing': {

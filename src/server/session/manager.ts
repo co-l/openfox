@@ -7,6 +7,7 @@ import type {
   Criterion,
   ExecutionState,
   ContextState,
+  FileReadEntry,
 } from '../../shared/types.js'
 import {
   createSession as dbCreateSession,
@@ -528,7 +529,7 @@ class SessionManagerImpl {
    * Get the read files map for a session.
    * Used by tools to validate before writing.
    */
-  getReadFiles(sessionId: string): Record<string, import('@openfox/shared').FileReadEntry> {
+  getReadFiles(sessionId: string): Record<string, FileReadEntry> {
     const session = this.requireSession(sessionId)
     return session.executionState?.readFiles ?? {}
   }

@@ -1,29 +1,23 @@
 /**
- * Runner Orchestrator
+ * Runner Orchestrator (EventStore Version)
  * 
  * Coordinates the build → verify → done/blocked cycle.
  * Uses decideNextAction() to determine what to do next,
  * then calls the appropriate worker function.
  * 
- * Each worker (builder, verifier) handles its own stats emission
- * following the PROMPT -> WORK -> stats+sound pattern.
+ * All events are appended to EventStore - no onMessage callback needed.
  */
 
-import type { ServerMessage } from '../../shared/protocol.js'
 import type { OrchestratorOptions, OrchestratorResult } from './types.js'
 import { RUNNER_CONFIG } from './types.js'
 import { decideNextAction } from './decision.js'
 import { sessionManager } from '../session/index.js'
-import { estimateTokens } from '../context/tokenizer.js'
+import { getEventStore } from '../events/index.js'
 import { logger } from '../utils/logger.js'
-import {
-  createChatMessageMessage,
-  createPhaseChangedMessage,
-} from '../ws/protocol.js'
 
-// Import worker functions
-import { runBuilderStep } from '../chat/builder.js'
-import { runVerifierStep } from '../chat/verifier.js'
+// Import from chat orchestrator (EventStore-based)
+import { runBuilderTurn, runVerifierTurn, TurnMetrics, createMessageStartEvent } from '../chat/orchestrator.js'
+import type { LLMClientWithModel } from '../llm/client.js'
 
 /**
  * Run the orchestrator loop until done, blocked, or aborted.
@@ -32,7 +26,8 @@ import { runVerifierStep } from '../chat/verifier.js'
  * It keeps calling builder/verifier until all criteria pass.
  */
 export async function runOrchestrator(options: OrchestratorOptions): Promise<OrchestratorResult> {
-  const { sessionId, llmClient, signal, onMessage } = options
+  const { sessionId, llmClient, signal } = options
+  const eventStore = getEventStore()
   const startTime = performance.now()
   let iterations = 0
   
@@ -60,7 +55,7 @@ export async function runOrchestrator(options: OrchestratorOptions): Promise<Orc
     switch (action.type) {
       case 'DONE': {
         sessionManager.setPhase(sessionId, 'done')
-        onMessage(createPhaseChangedMessage('done'))
+        eventStore.append(sessionId, { type: 'phase.changed', data: { phase: 'done' } })
         logger.debug('Orchestrator complete', { sessionId, iterations })
         return {
           finalAction: action,
@@ -71,17 +66,15 @@ export async function runOrchestrator(options: OrchestratorOptions): Promise<Orc
       
       case 'BLOCKED': {
         sessionManager.setPhase(sessionId, 'blocked')
-        onMessage(createPhaseChangedMessage('blocked'))
+        eventStore.append(sessionId, { type: 'phase.changed', data: { phase: 'blocked' } })
         
         // Inject message explaining why blocked
-        const blockedMsg = sessionManager.addMessage(sessionId, {
-          role: 'user',
-          content: `Runner blocked: ${action.reason}`,
-          tokenCount: estimateTokens(action.reason),
+        const blockedMsgId = crypto.randomUUID()
+        eventStore.append(sessionId, createMessageStartEvent(blockedMsgId, 'user', `Runner blocked: ${action.reason}`, {
           isSystemGenerated: true,
           messageKind: 'correction',
-        })
-        onMessage(createChatMessageMessage(blockedMsg))
+        }))
+        eventStore.append(sessionId, { type: 'message.done', data: { messageId: blockedMsgId } })
         
         logger.warn('Orchestrator blocked', { sessionId, iterations, reason: action.reason })
         return {
@@ -93,15 +86,11 @@ export async function runOrchestrator(options: OrchestratorOptions): Promise<Orc
       
       case 'RUN_VERIFIER': {
         sessionManager.setPhase(sessionId, 'verification')
-        onMessage(createPhaseChangedMessage('verification'))
+        eventStore.append(sessionId, { type: 'phase.changed', data: { phase: 'verification' } })
         
-        // Run verification step (emits its own stats+chat.done)
-        await runVerifierStep({
-          sessionId,
-          llmClient,
-          onMessage,
-          ...(signal ? { signal } : {}),
-        })
+        // Run verification step
+        const turnMetrics = new TurnMetrics()
+        await runVerifierTurn({ sessionId, llmClient, ...(signal ? { signal } : {}) }, turnMetrics)
         
         // Loop continues to check result
         break
@@ -109,27 +98,21 @@ export async function runOrchestrator(options: OrchestratorOptions): Promise<Orc
       
       case 'RUN_BUILDER': {
         sessionManager.setPhase(sessionId, 'build')
-        onMessage(createPhaseChangedMessage('build'))
+        eventStore.append(sessionId, { type: 'phase.changed', data: { phase: 'build' } })
         
         // Inject nudge message if this is a retry (not first iteration)
         if (iterations > 1) {
-          const nudgeMsg = sessionManager.addMessage(sessionId, {
-            role: 'user',
-            content: `Continue working on the acceptance criteria. ${action.reason}.`,
-            tokenCount: 30,
+          const nudgeMsgId = crypto.randomUUID()
+          eventStore.append(sessionId, createMessageStartEvent(nudgeMsgId, 'user', `Continue working on the acceptance criteria. ${action.reason}.`, {
             isSystemGenerated: true,
             messageKind: 'correction',
-          })
-          onMessage(createChatMessageMessage(nudgeMsg))
+          }))
+          eventStore.append(sessionId, { type: 'message.done', data: { messageId: nudgeMsgId } })
         }
         
-        // Run builder step (emits its own stats+chat.done)
-        await runBuilderStep({
-          sessionId,
-          llmClient,
-          onMessage,
-          ...(signal ? { signal } : {}),
-        })
+        // Run builder step
+        const turnMetrics = new TurnMetrics()
+        await runBuilderTurn({ sessionId, llmClient, ...(signal ? { signal } : {}) }, turnMetrics)
         
         // Loop continues to check if more work needed
         break
@@ -142,16 +125,14 @@ export async function runOrchestrator(options: OrchestratorOptions): Promise<Orc
   const maxIterAction = { type: 'BLOCKED' as const, reason: 'Max iterations reached', blockedCriteria: [] }
   
   sessionManager.setPhase(sessionId, 'blocked')
-  onMessage(createPhaseChangedMessage('blocked'))
+  eventStore.append(sessionId, { type: 'phase.changed', data: { phase: 'blocked' } })
   
-  const msg = sessionManager.addMessage(sessionId, {
-    role: 'user',
-    content: `Runner stopped: Maximum iterations (${RUNNER_CONFIG.maxIterations}) reached`,
-    tokenCount: 20,
+  const maxIterMsgId = crypto.randomUUID()
+  eventStore.append(sessionId, createMessageStartEvent(maxIterMsgId, 'user', `Runner stopped: Maximum iterations (${RUNNER_CONFIG.maxIterations}) reached`, {
     isSystemGenerated: true,
     messageKind: 'correction',
-  })
-  onMessage(createChatMessageMessage(msg))
+  }))
+  eventStore.append(sessionId, { type: 'message.done', data: { messageId: maxIterMsgId } })
   
   return {
     finalAction: maxIterAction,

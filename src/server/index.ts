@@ -86,8 +86,8 @@ export async function createServer(config: Config): Promise<void> {
     res.json({ session })
   })
 
-  app.delete('/api/sessions/:id', (_req, res) => {
-    sessionManager.deleteSession(req.params.id)
+  app.delete('/api/sessions/:id', (req, res) => {
+    sessionManager.deleteSession(req.params['id'] as string)
     res.json({ success: true })
   })
 
@@ -116,7 +116,7 @@ export async function createServer(config: Config): Promise<void> {
   const DEFAULT_BASE_PATH = process.cwd()
 
   app.get('/api/directories', async (req, res) => {
-    const path = req.query.path as string || DEFAULT_BASE_PATH
+    const path = req.query['path'] as string || DEFAULT_BASE_PATH
     
     try {
       const resolvedPath = resolve(path)

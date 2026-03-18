@@ -5,12 +5,11 @@ import type { Config } from '../config.js'
 import type { LLMClientWithModel } from '../llm/client.js'
 import type { ToolRegistry } from '../tools/index.js'
 import { sessionManager } from '../session/index.js'
-import { sessionEvents } from '../session/events.js'
 import { getEventStore, type StoredEvent, type TurnEvent, type SnapshotMessage, type SessionSnapshot } from '../events/index.js'
 import type { Message } from '../../shared/types.js'
 import { handleChat } from '../chat/index.js'
-import { runChatTurn } from '../chat/orchestrator.js'
-import { createMessageStartEvent } from '../chat/stream-pure.js'
+import { runChatTurn, TurnMetrics, createMessageStartEvent, createMessageDoneEvent, createChatDoneEvent } from '../chat/orchestrator.js'
+import { streamLLMPure, consumeStreamGenerator } from '../chat/stream-pure.js'
 import { runOrchestrator } from '../runner/index.js'
 import { streamLLMResponse } from '../chat/stream.js'
 import { computeMessageStats } from '../chat/stats.js'
@@ -83,13 +82,15 @@ function buildMessagesFromEvents(events: StoredEvent[]): Message[] {
     switch (event.type) {
       case 'message.start': {
         const data = event.data as Extract<TurnEvent, { type: 'message.start' }>['data']
+        // User/system messages have content upfront and are not streaming
+        const isUserOrSystem = data.role === 'user' || data.role === 'system'
         messages.set(data.messageId, {
           id: data.messageId,
           role: data.role,
           content: data.content ?? '',
           timestamp: new Date(event.timestamp).toISOString(),
           tokenCount: 0,
-          isStreaming: true,
+          isStreaming: !isUserOrSystem,
           ...(data.contextWindowId ? { contextWindowId: data.contextWindowId } : {}),
           ...(data.subAgentId ? { subAgentId: data.subAgentId } : {}),
           ...(data.subAgentType ? { subAgentType: data.subAgentType } : {}),
@@ -171,6 +172,83 @@ function buildMessagesFromEvents(events: StoredEvent[]): Message[] {
   }
 
   return Array.from(messages.values())
+}
+
+/**
+ * Build context messages for LLM from EventStore events.
+ * Simpler format than full Message - just what the LLM needs.
+ */
+function buildContextMessagesFromEvents(events: StoredEvent[]): Array<{
+  role: 'user' | 'assistant' | 'tool'
+  content: string
+  toolCalls?: Array<{ id: string; name: string; arguments: Record<string, unknown> }>
+  toolCallId?: string
+}> {
+  const messages: Array<{
+    id: string
+    role: 'user' | 'assistant' | 'tool'
+    content: string
+    toolCalls?: Array<{ id: string; name: string; arguments: Record<string, unknown> }>
+    toolCallId?: string
+  }> = []
+  
+  const messageMap = new Map<string, typeof messages[0]>()
+  
+  for (const event of events) {
+    switch (event.type) {
+      case 'message.start': {
+        const data = event.data as Extract<TurnEvent, { type: 'message.start' }>['data']
+        if (data.role !== 'system') {
+          const msg = {
+            id: data.messageId,
+            role: data.role as 'user' | 'assistant',
+            content: data.content ?? '',
+          }
+          messageMap.set(data.messageId, msg)
+          messages.push(msg)
+        }
+        break
+      }
+      
+      case 'message.delta': {
+        const data = event.data as Extract<TurnEvent, { type: 'message.delta' }>['data']
+        const msg = messageMap.get(data.messageId)
+        if (msg) {
+          msg.content += data.content
+        }
+        break
+      }
+      
+      case 'tool.call': {
+        const data = event.data as Extract<TurnEvent, { type: 'tool.call' }>['data']
+        const msg = messageMap.get(data.messageId)
+        if (msg) {
+          if (!msg.toolCalls) msg.toolCalls = []
+          msg.toolCalls.push(data.toolCall)
+        }
+        break
+      }
+      
+      case 'tool.result': {
+        const data = event.data as Extract<TurnEvent, { type: 'tool.result' }>['data']
+        const toolMsg = {
+          id: `tool-${data.toolCallId}`,
+          role: 'tool' as const,
+          content: data.result.success ? (data.result.output ?? 'Success') : `Error: ${data.result.error}`,
+          toolCallId: data.toolCallId,
+        }
+        messages.push(toolMsg)
+        break
+      }
+    }
+  }
+  
+  return messages.map(m => ({
+    role: m.role,
+    content: m.content,
+    ...(m.toolCalls && { toolCalls: m.toolCalls }),
+    ...(m.toolCallId && { toolCallId: m.toolCallId }),
+  }))
 }
 
 interface ClientConnection {
@@ -426,18 +504,7 @@ async function handleClientMessage(
       // Tab model: set active session and subscribe if not already subscribed
       client.activeSessionId = session.id
       
-      // Subscribe to this session's events if not already subscribed (additive)
-      // OLD event system (sessionEvents queue)
-      if (!client.subscribedSessions.has(session.id)) {
-        const sid = session.id  // Capture for closure
-        const unsubscribe = sessionEvents.subscribe(sid, (event, seq) => {
-          send({ ...event, seq, sessionId: sid })
-        })
-        client.subscribedSessions.set(session.id, unsubscribe)
-        logger.debug('Subscribed to session events (old system)', { sessionId: session.id })
-      }
-      
-      // NEW event system (EventStore) - subscribe for live streaming
+      // Subscribe to EventStore for live streaming
       if (!client.eventStoreSubscriptions.has(session.id)) {
         const sid = session.id
         const eventStore = getEventStore()
@@ -534,22 +601,27 @@ async function handleClientMessage(
         send(createPhaseChangedMessage('build'))
       }
       
+      const sessionId = client.activeSessionId
+      const eventStore = getEventStore()
+      
       // Add user message to BOTH old system (for backward compat) AND EventStore (new system)
-      const userMessage = sessionManager.addMessage(client.activeSessionId, {
+      const userMessage = sessionManager.addMessage(sessionId, {
         role: 'user',
         content: message.payload.content,
         tokenCount: Math.ceil(message.payload.content.length / 4),
       })
       
-      const sessionId = client.activeSessionId
-      const eventStore = getEventStore()
-      
-      // Also write to EventStore
+      // Write to EventStore for persistence (used for context building)
       eventStore.append(sessionId, createMessageStartEvent(userMessage.id, 'user', message.payload.content))
+      eventStore.append(sessionId, { type: 'message.done', data: { messageId: userMessage.id } })
       
       // Mark session as running
-      sessionManager.setRunning(client.activeSessionId, true)
+      sessionManager.setRunning(sessionId, true)
       eventStore.append(sessionId, { type: 'running.changed', data: { isRunning: true } })
+      
+      // Send user message directly to client (don't rely on EventStore subscription for this)
+      send(createChatMessageMessage(userMessage))
+      send(createSessionRunningMessage(true))
       
       // Create AbortController for this chat (abort existing if any - defense in depth)
       const controller = new AbortController()
@@ -563,17 +635,7 @@ async function handleClientMessage(
       // Acknowledge immediately
       send({ type: 'ack', payload: {}, id: message.id })
       
-      // Ensure client is subscribed to BOTH event systems (tab model - additive)
-      // Old system
-      if (!client.subscribedSessions.has(sessionId)) {
-        const sid = sessionId
-        const unsubscribe = sessionEvents.subscribe(sid, (event, seq) => {
-          send({ ...event, seq, sessionId: sid })
-        })
-        client.subscribedSessions.set(sessionId, unsubscribe)
-      }
-      
-      // New system (EventStore) - already subscribed in session.load, but ensure it here too
+      // Ensure client is subscribed to EventStore
       if (!client.eventStoreSubscriptions.has(sessionId)) {
         const sid = sessionId
         const { iterator, unsubscribe } = eventStore.subscribe(sid)
@@ -603,117 +665,12 @@ async function handleClientMessage(
         if (error instanceof Error && error.message === 'Aborted') {
           return
         }
-        logger.error('Chat error', { error })
+        logger.error('Continue error', { error })
         // Errors are handled inside runChatTurn and appended to EventStore
       }).finally(() => {
         activeAgents.delete(sessionId)
         sessionManager.setRunning(sessionId, false)
         eventStore.append(sessionId, { type: 'running.changed', data: { isRunning: false } })
-      })
-      
-      break
-    }
-    
-    case 'chat.stop': {
-      if (!client.activeSessionId) {
-        send(createErrorMessage('NO_SESSION', 'No active session', message.id))
-        return
-      }
-      
-      const sessionId = client.activeSessionId
-      
-      // Abort any running agent
-      const controller = activeAgents.get(sessionId)
-      if (controller) {
-        controller.abort()
-        activeAgents.delete(sessionId)
-      }
-      
-      sessionManager.setRunning(sessionId, false)
-      
-      // Don't create a separate "stopped" message - the tool results will include
-      // [interrupted by user] marker which is sufficient for AI context.
-      // Just emit done event with empty messageId (client handles this)
-      sessionEvents.push(sessionId, createChatDoneMessage('', 'stopped'))
-      
-      // Schedule cleanup after brief delay
-      sessionEvents.scheduleCleanup(sessionId)
-      
-      send({ type: 'ack', payload: {}, id: message.id })
-      break
-    }
-    
-    case 'chat.continue': {
-      if (!client.activeSessionId) {
-        send(createErrorMessage('NO_SESSION', 'No active session', message.id))
-        return
-      }
-      
-      const session = sessionManager.requireSession(client.activeSessionId)
-      
-      // Don't continue if already running
-      if (session.isRunning) {
-        send(createErrorMessage('ALREADY_RUNNING', 'Chat is already running', message.id))
-        return
-      }
-      
-      // Don't continue in planner mode (planner only responds to user messages)
-      if (session.mode === 'planner') {
-        send(createErrorMessage('INVALID_MODE', 'Cannot continue in planner mode', message.id))
-        return
-      }
-      
-      const sessionId = client.activeSessionId
-      
-      // Acknowledge immediately
-      send({ type: 'ack', payload: {}, id: message.id })
-      
-      // Mark session as running
-      sessionManager.setRunning(sessionId, true)
-      
-      // Create AbortController
-      const controller = new AbortController()
-      activeAgents.set(sessionId, controller)
-      
-      // Ensure client is subscribed to this session's events (tab model - additive)
-      if (!client.subscribedSessions.has(sessionId)) {
-        const sid = sessionId  // Capture for closure
-        const unsubscribe = sessionEvents.subscribe(sid, (event, seq) => {
-          send({ ...event, seq, sessionId: sid })
-        })
-        client.subscribedSessions.set(sessionId, unsubscribe)
-      }
-      
-      // Continue chat with events going through queue
-      handleChat({
-        sessionId,
-        llmClient,
-        signal: controller.signal,
-        onMessage: (event) => sessionEvents.push(sessionId, event),
-      }).catch((error) => {
-        // Don't create error message for controlled abort - tool results already have the marker
-        if (error instanceof Error && error.message === 'Aborted') {
-          return
-        }
-        logger.error('Continue error', { error })
-        // Create error message so we have a messageId for the done event
-        const errorMsg = sessionManager.addMessage(sessionId, {
-          role: 'user',
-          content: `Error: ${error instanceof Error ? error.message : 'Unknown error'}`,
-          tokenCount: 10,
-          isSystemGenerated: true,
-          messageKind: 'correction',
-        })
-        sessionEvents.push(sessionId, createChatMessageMessage(errorMsg))
-        sessionEvents.push(sessionId, createChatErrorMessage(
-          error instanceof Error ? error.message : 'Unknown error',
-          false
-        ))
-        sessionEvents.push(sessionId, createChatDoneMessage(errorMsg.id, 'error'))
-      }).finally(() => {
-        activeAgents.delete(sessionId)
-        sessionManager.setRunning(sessionId, false)
-        sessionEvents.scheduleCleanup(sessionId)
       })
       
       break
@@ -761,68 +718,91 @@ async function handleClientMessage(
       }
       
       const sessionId = client.activeSessionId
+      const eventStore = getEventStore()
       
       // Acknowledge immediately
       send({ type: 'ack', payload: {}, id: message.id })
       
-      // Ensure client is subscribed to this session's events (tab model - additive)
-      if (!client.subscribedSessions.has(sessionId)) {
-        const sid = sessionId  // Capture for closure
-        const unsubscribe = sessionEvents.subscribe(sid, (event, seq) => {
-          send({ ...event, seq, sessionId: sid })
-        })
-        client.subscribedSessions.set(sessionId, unsubscribe)
+      // Ensure client is subscribed to EventStore (tab model - additive)
+      if (!client.eventStoreSubscriptions.has(sessionId)) {
+        const sid = sessionId
+        const { iterator, unsubscribe } = eventStore.subscribe(sid)
+        client.eventStoreSubscriptions.set(sessionId, unsubscribe)
+        
+        ;(async () => {
+          try {
+            for await (const storedEvent of iterator) {
+              const serverMsg = storedEventToServerMessage(storedEvent)
+              if (serverMsg && ws.readyState === WebSocket.OPEN) {
+                ws.send(serializeServerMessage({ ...serverMsg, seq: storedEvent.seq, sessionId: sid }))
+              }
+            }
+          } catch (error) {
+            logger.debug('EventStore subscription ended', { sessionId: sid, error })
+          }
+        })()
       }
       
-      // Helper to push events through queue
-      const pushEvent = (event: ServerMessage) => sessionEvents.push(sessionId, event)
+      // Mark session as running
+      sessionManager.setRunning(sessionId, true)
+      eventStore.append(sessionId, { type: 'running.changed', data: { isRunning: true } })
+      send(createSessionRunningMessage(true))
       
       // Generate summary and start builder asynchronously
       ;(async () => {
         try {
-          // Add summary request prompt as visible user message (auto-prompt style)
-          const summaryRequestMsg = sessionManager.addMessage(sessionId, {
-            role: 'user',
-            content: SUMMARY_REQUEST_PROMPT,
-            tokenCount: estimateTokens(SUMMARY_REQUEST_PROMPT),
+          // Add summary request prompt as user message
+          const summaryMsgId = crypto.randomUUID()
+          eventStore.append(sessionId, createMessageStartEvent(summaryMsgId, 'user', SUMMARY_REQUEST_PROMPT, {
             isSystemGenerated: true,
             messageKind: 'auto-prompt',
-          })
-          pushEvent(createChatMessageMessage(summaryRequestMsg))
+          }))
+          eventStore.append(sessionId, { type: 'message.done', data: { messageId: summaryMsgId } })
           
-          // Stream summary response using core function (no tools, no thinking)
-          const session = sessionManager.requireSession(sessionId)
-          const { content: instructions } = await getAllInstructions(session.workdir, session.projectId)
+          // Build context for summary generation
+          const currentSession = sessionManager.requireSession(sessionId)
+          const { content: instructions } = await getAllInstructions(currentSession.workdir, currentSession.projectId)
           const toolRegistry = getToolRegistryForMode('planner')
-          const systemPrompt = buildPlannerPrompt(session.workdir, toolRegistry.definitions, instructions || undefined)
-          const result = await streamLLMResponse({
-            sessionId,
+          const systemPrompt = buildPlannerPrompt(currentSession.workdir, toolRegistry.definitions, instructions || undefined)
+          
+          // Build context messages from EventStore
+          const events = eventStore.getEvents(sessionId)
+          const contextMessages = buildContextMessagesFromEvents(events)
+          
+          // Stream summary response (no tools, no thinking)
+          const assistantMsgId = crypto.randomUUID()
+          eventStore.append(sessionId, createMessageStartEvent(assistantMsgId, 'assistant'))
+          
+          const turnMetrics = new TurnMetrics()
+          const streamGen = streamLLMPure({
+            messageId: assistantMsgId,
             systemPrompt,
             llmClient,
-            onEvent: pushEvent,
+            messages: contextMessages,
+            tools: [], // No tools for summary
+            toolChoice: 'none',
             enableThinking: false,
           })
           
-          // Emit stats for summary generation (PROMPT -> WORK -> stats+sound pattern)
-          const summaryStats = computeMessageStats({
-            model: llmClient.getModel(),
-            mode: 'planner',
-            timing: result.timing,
-            usage: result.usage,
+          const result = await consumeStreamGenerator(streamGen, event => {
+            eventStore.append(sessionId, event)
           })
-          sessionManager.updateMessageStats(sessionId, result.messageId, summaryStats)
-          pushEvent(createChatDoneMessage(result.messageId, 'complete', summaryStats))
           
+          turnMetrics.addLLMCall(result.timing, result.usage.promptTokens, result.usage.completionTokens)
+          
+          // Emit message.done with stats
+          const stats = turnMetrics.buildStats(llmClient.getModel(), 'planner')
+          eventStore.append(sessionId, createMessageDoneEvent(assistantMsgId, { segments: result.segments, stats }))
+          eventStore.append(sessionId, createChatDoneEvent(assistantMsgId, 'complete', stats))
+          
+          // Save summary
           sessionManager.setSummary(sessionId, result.content)
           
           // Switch to builder mode and phase
           sessionManager.setMode(sessionId, 'builder')
           sessionManager.setPhase(sessionId, 'build')
-          pushEvent(createModeChangedMessage('builder', false, 'Criteria accepted'))
-          pushEvent(createPhaseChangedMessage('build'))
-          
-          // Mark session as running
-          sessionManager.setRunning(sessionId, true)
+          eventStore.append(sessionId, { type: 'mode.changed', data: { mode: 'builder', auto: false, reason: 'Criteria accepted' } })
+          eventStore.append(sessionId, { type: 'phase.changed', data: { phase: 'build' } })
           
           // Create AbortController for builder (abort existing if any - defense in depth)
           const controller = new AbortController()
@@ -838,28 +818,31 @@ async function handleClientMessage(
             sessionId,
             llmClient,
             signal: controller.signal,
-            onMessage: pushEvent,
           })
         } catch (error) {
+          if (error instanceof Error && error.message === 'Aborted') {
+            return
+          }
           logger.error('mode.accept error', { error })
-          // Create error message as visible user message (auto-prompt style)
-          const errorMsg = sessionManager.addMessage(sessionId, {
-            role: 'user',
-            content: `Error: ${error instanceof Error ? error.message : 'Unknown error'}`,
-            tokenCount: 10,
-            isSystemGenerated: true,
-            messageKind: 'auto-prompt',
+          // Emit error event
+          eventStore.append(sessionId, {
+            type: 'chat.error',
+            data: {
+              error: error instanceof Error ? error.message : 'Unknown error',
+              recoverable: false,
+            },
           })
-          pushEvent(createChatMessageMessage(errorMsg))
-          pushEvent(createChatErrorMessage(
-            error instanceof Error ? error.message : 'Unknown error',
-            false
-          ))
-          pushEvent(createChatDoneMessage(errorMsg.id, 'error'))
+          const errorMsgId = crypto.randomUUID()
+          eventStore.append(sessionId, createMessageStartEvent(errorMsgId, 'user', `Error: ${error instanceof Error ? error.message : 'Unknown error'}`, {
+            isSystemGenerated: true,
+            messageKind: 'correction',
+          }))
+          eventStore.append(sessionId, { type: 'message.done', data: { messageId: errorMsgId } })
+          eventStore.append(sessionId, createChatDoneEvent(errorMsgId, 'error'))
         } finally {
           activeAgents.delete(sessionId)
           sessionManager.setRunning(sessionId, false)
-          sessionEvents.scheduleCleanup(sessionId)
+          eventStore.append(sessionId, { type: 'running.changed', data: { isRunning: false } })
         }
       })()
       
@@ -1012,18 +995,21 @@ async function handleClientMessage(
         return
       }
       
+      const sessionId = client.activeSessionId
+      const eventStore = getEventStore()
+      
       // Check if session is blocked - user intervention resets it
       if (session.phase === 'blocked') {
-        logger.info('User launched runner - resetting blocked state', { sessionId: client.activeSessionId })
-        sessionManager.setPhase(client.activeSessionId, 'build')
-        sessionManager.resetAllCriteriaAttempts(client.activeSessionId)
-        send(createPhaseChangedMessage('build'))
+        logger.info('User launched runner - resetting blocked state', { sessionId })
+        sessionManager.setPhase(sessionId, 'build')
+        sessionManager.resetAllCriteriaAttempts(sessionId)
+        eventStore.append(sessionId, { type: 'phase.changed', data: { phase: 'build' } })
       }
-      
-      const sessionId = client.activeSessionId
       
       // Mark session as running
       sessionManager.setRunning(sessionId, true)
+      eventStore.append(sessionId, { type: 'running.changed', data: { isRunning: true } })
+      send(createSessionRunningMessage(true))
       
       // Create AbortController for this run (abort existing if any - defense in depth)
       const controller = new AbortController()
@@ -1037,13 +1023,24 @@ async function handleClientMessage(
       // Acknowledge immediately
       send({ type: 'ack', payload: {}, id: message.id })
       
-      // Ensure client is subscribed to this session's events (tab model - additive)
-      if (!client.subscribedSessions.has(sessionId)) {
-        const sid = sessionId  // Capture for closure
-        const unsubscribe = sessionEvents.subscribe(sid, (event, seq) => {
-          send({ ...event, seq, sessionId: sid })
-        })
-        client.subscribedSessions.set(sessionId, unsubscribe)
+      // Ensure client is subscribed to EventStore (tab model - additive)
+      if (!client.eventStoreSubscriptions.has(sessionId)) {
+        const sid = sessionId
+        const { iterator, unsubscribe } = eventStore.subscribe(sid)
+        client.eventStoreSubscriptions.set(sessionId, unsubscribe)
+        
+        ;(async () => {
+          try {
+            for await (const storedEvent of iterator) {
+              const serverMsg = storedEventToServerMessage(storedEvent)
+              if (serverMsg && ws.readyState === WebSocket.OPEN) {
+                ws.send(serializeServerMessage({ ...serverMsg, seq: storedEvent.seq, sessionId: sid }))
+              }
+            }
+          } catch (error) {
+            logger.debug('EventStore subscription ended', { sessionId: sid, error })
+          }
+        })()
       }
       
       // Run orchestrator asynchronously
@@ -1053,30 +1050,17 @@ async function handleClientMessage(
         sessionId,
         llmClient,
         signal: controller.signal,
-        onMessage: (event) => sessionEvents.push(sessionId, event),
       }).catch((error) => {
-        // Don't create error message for controlled abort - tool results already have the marker
+        // Don't create error message for controlled abort
         if (error instanceof Error && error.message === 'Aborted') {
           return
         }
         logger.error('Runner error', { error, sessionId })
-        const errorMsg = sessionManager.addMessage(sessionId, {
-          role: 'user',
-          content: `Runner error: ${error instanceof Error ? error.message : 'Unknown error'}`,
-          tokenCount: 20,
-          isSystemGenerated: true,
-          messageKind: 'correction',
-        })
-        sessionEvents.push(sessionId, createChatMessageMessage(errorMsg))
-        sessionEvents.push(sessionId, createChatErrorMessage(
-          error instanceof Error ? error.message : 'Unknown error',
-          false
-        ))
-        sessionEvents.push(sessionId, createChatDoneMessage(errorMsg.id, 'error'))
+        // Error events are handled inside runOrchestrator and appended to EventStore
       }).finally(() => {
         activeAgents.delete(sessionId)
         sessionManager.setRunning(sessionId, false)
-        sessionEvents.scheduleCleanup(sessionId)
+        eventStore.append(sessionId, { type: 'running.changed', data: { isRunning: false } })
       })
       
       break

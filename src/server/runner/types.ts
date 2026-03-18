@@ -28,7 +28,8 @@ export interface OrchestratorOptions {
   sessionId: string
   llmClient: LLMClientWithModel
   signal?: AbortSignal
-  onMessage: (msg: ServerMessage) => void
+  /** @deprecated No longer used - events go through EventStore */
+  onMessage?: (msg: ServerMessage) => void
 }
 
 export interface OrchestratorResult {
