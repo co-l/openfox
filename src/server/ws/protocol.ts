@@ -291,3 +291,149 @@ export function isSettingsSetPayload(payload: unknown): payload is SettingsSetPa
 export function createSettingsValueMessage(key: string, value: string | null, correlationId?: string): ServerMessage {
   return createServerMessage<SettingsValuePayload>('settings.value', { key, value }, correlationId)
 }
+
+// ============================================================================
+// Event Store → Server Message Conversion
+// ============================================================================
+
+import type { StoredEvent, TurnEvent } from '../events/types.js'
+
+/**
+ * Convert a StoredEvent from EventStore to a ServerMessage for WebSocket.
+ * This bridges the new event sourcing layer with the existing frontend protocol.
+ * 
+ * Returns null for events that don't have a direct WebSocket equivalent
+ * (e.g., turn.snapshot events are used for efficient loading, not streaming).
+ */
+export function storedEventToServerMessage(event: StoredEvent): ServerMessage | null {
+  switch (event.type) {
+    case 'message.start': {
+      const data = event.data as Extract<TurnEvent, { type: 'message.start' }>['data']
+      // Create a minimal Message object for chat.message
+      const message: Message = {
+        id: data.messageId,
+        role: data.role,
+        content: data.content ?? '',
+        timestamp: new Date(event.timestamp).toISOString(),
+        tokenCount: 0,
+        isStreaming: true,
+        ...(data.contextWindowId ? { contextWindowId: data.contextWindowId } : {}),
+        ...(data.subAgentId ? { subAgentId: data.subAgentId } : {}),
+        ...(data.subAgentType ? { subAgentType: data.subAgentType } : {}),
+        ...(data.isSystemGenerated ? { isSystemGenerated: data.isSystemGenerated } : {}),
+        ...(data.messageKind ? { messageKind: data.messageKind } : {}),
+      }
+      return createChatMessageMessage(message)
+    }
+
+    case 'message.delta': {
+      const data = event.data as Extract<TurnEvent, { type: 'message.delta' }>['data']
+      return createChatDeltaMessage(data.messageId, data.content)
+    }
+
+    case 'message.thinking': {
+      const data = event.data as Extract<TurnEvent, { type: 'message.thinking' }>['data']
+      return createChatThinkingMessage(data.messageId, data.content)
+    }
+
+    case 'message.done': {
+      const data = event.data as Extract<TurnEvent, { type: 'message.done' }>['data']
+      // This maps to chat.message_updated with isStreaming: false
+      return createChatMessageUpdatedMessage(data.messageId, {
+        isStreaming: false,
+        ...(data.stats ? { stats: data.stats } : {}),
+      })
+    }
+
+    case 'tool.preparing': {
+      const data = event.data as Extract<TurnEvent, { type: 'tool.preparing' }>['data']
+      return createChatToolPreparingMessage(data.messageId, data.index, data.name)
+    }
+
+    case 'tool.call': {
+      const data = event.data as Extract<TurnEvent, { type: 'tool.call' }>['data']
+      return createChatToolCallMessage(
+        data.messageId,
+        data.toolCall.id,
+        data.toolCall.name,
+        data.toolCall.arguments
+      )
+    }
+
+    case 'tool.output': {
+      const data = event.data as Extract<TurnEvent, { type: 'tool.output' }>['data']
+      return createChatToolOutputMessage('', data.toolCallId, data.content, data.stream)
+    }
+
+    case 'tool.result': {
+      const data = event.data as Extract<TurnEvent, { type: 'tool.result' }>['data']
+      // Need messageId for the result - we include it in the event
+      return createChatToolResultMessage(
+        data.messageId,
+        data.toolCallId,
+        '', // Tool name not available in event, but not used by frontend for matching
+        data.result
+      )
+    }
+
+    case 'phase.changed': {
+      const data = event.data as Extract<TurnEvent, { type: 'phase.changed' }>['data']
+      return createPhaseChangedMessage(data.phase)
+    }
+
+    case 'mode.changed': {
+      const data = event.data as Extract<TurnEvent, { type: 'mode.changed' }>['data']
+      return createModeChangedMessage(data.mode, data.auto, data.reason)
+    }
+
+    case 'running.changed': {
+      const data = event.data as Extract<TurnEvent, { type: 'running.changed' }>['data']
+      return createSessionRunningMessage(data.isRunning)
+    }
+
+    case 'criteria.set': {
+      const data = event.data as Extract<TurnEvent, { type: 'criteria.set' }>['data']
+      return createCriteriaUpdatedMessage(data.criteria)
+    }
+
+    case 'criterion.updated': {
+      // No direct equivalent - would need to fetch full criteria list
+      // For now, skip this event in streaming (frontend gets full state on load)
+      return null
+    }
+
+    case 'context.state': {
+      const data = event.data as ContextState
+      return createContextStateMessage(data)
+    }
+
+    case 'todo.updated': {
+      const data = event.data as Extract<TurnEvent, { type: 'todo.updated' }>['data']
+      return createChatTodoMessage(data.todos)
+    }
+
+    case 'chat.done': {
+      const data = event.data as Extract<TurnEvent, { type: 'chat.done' }>['data']
+      return createChatDoneMessage(data.messageId, data.reason, data.stats)
+    }
+
+    case 'chat.error': {
+      const data = event.data as Extract<TurnEvent, { type: 'chat.error' }>['data']
+      return createChatErrorMessage(data.error, data.recoverable)
+    }
+
+    case 'format.retry': {
+      const data = event.data as Extract<TurnEvent, { type: 'format.retry' }>['data']
+      return createChatFormatRetryMessage(data.attempt, data.maxAttempts)
+    }
+
+    case 'turn.snapshot':
+    case 'context.compacted':
+      // These are internal events, not sent to frontend in real-time
+      return null
+
+    default:
+      // Unknown event type - log and skip
+      return null
+  }
+}

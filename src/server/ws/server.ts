@@ -6,7 +6,11 @@ import type { LLMClientWithModel } from '../llm/client.js'
 import type { ToolRegistry } from '../tools/index.js'
 import { sessionManager } from '../session/index.js'
 import { sessionEvents } from '../session/events.js'
+import { getEventStore, type StoredEvent, type TurnEvent, type SnapshotMessage, type SessionSnapshot } from '../events/index.js'
+import type { Message } from '../../shared/types.js'
 import { handleChat } from '../chat/index.js'
+import { runChatTurn } from '../chat/orchestrator.js'
+import { createMessageStartEvent } from '../chat/stream-pure.js'
 import { runOrchestrator } from '../runner/index.js'
 import { streamLLMResponse } from '../chat/stream.js'
 import { computeMessageStats } from '../chat/stats.js'
@@ -58,15 +62,122 @@ import {
   isSettingsGetPayload,
   isSettingsSetPayload,
   createSettingsValueMessage,
+  storedEventToServerMessage,
 } from './protocol.js'
 
 // Track active agent AbortControllers by sessionId
 const activeAgents = new Map<string, AbortController>()
 
+// ============================================================================
+// Event Store → Messages Conversion
+// ============================================================================
+
+/**
+ * Build Message array from EventStore events.
+ * Used when loading a session that has events in EventStore.
+ */
+function buildMessagesFromEvents(events: StoredEvent[]): Message[] {
+  const messages: Map<string, Message> = new Map()
+  
+  for (const event of events) {
+    switch (event.type) {
+      case 'message.start': {
+        const data = event.data as Extract<TurnEvent, { type: 'message.start' }>['data']
+        messages.set(data.messageId, {
+          id: data.messageId,
+          role: data.role,
+          content: data.content ?? '',
+          timestamp: new Date(event.timestamp).toISOString(),
+          tokenCount: 0,
+          isStreaming: true,
+          ...(data.contextWindowId ? { contextWindowId: data.contextWindowId } : {}),
+          ...(data.subAgentId ? { subAgentId: data.subAgentId } : {}),
+          ...(data.subAgentType ? { subAgentType: data.subAgentType } : {}),
+          ...(data.isSystemGenerated ? { isSystemGenerated: data.isSystemGenerated } : {}),
+          ...(data.messageKind ? { messageKind: data.messageKind } : {}),
+        })
+        break
+      }
+
+      case 'message.delta': {
+        const data = event.data as Extract<TurnEvent, { type: 'message.delta' }>['data']
+        const msg = messages.get(data.messageId)
+        if (msg) {
+          msg.content += data.content
+        }
+        break
+      }
+
+      case 'message.thinking': {
+        const data = event.data as Extract<TurnEvent, { type: 'message.thinking' }>['data']
+        const msg = messages.get(data.messageId)
+        if (msg) {
+          msg.thinkingContent = (msg.thinkingContent ?? '') + data.content
+        }
+        break
+      }
+
+      case 'message.done': {
+        const data = event.data as Extract<TurnEvent, { type: 'message.done' }>['data']
+        const msg = messages.get(data.messageId)
+        if (msg) {
+          msg.isStreaming = false
+          if (data.stats) msg.stats = data.stats
+          if (data.segments) msg.segments = data.segments
+          if (data.partial) msg.partial = data.partial
+        }
+        break
+      }
+
+      case 'tool.call': {
+        const data = event.data as Extract<TurnEvent, { type: 'tool.call' }>['data']
+        const msg = messages.get(data.messageId)
+        if (msg) {
+          if (!msg.toolCalls) msg.toolCalls = []
+          msg.toolCalls.push(data.toolCall)
+        }
+        break
+      }
+
+      case 'tool.result': {
+        const data = event.data as Extract<TurnEvent, { type: 'tool.result' }>['data']
+        const msg = messages.get(data.messageId)
+        if (msg?.toolCalls) {
+          const tc = msg.toolCalls.find(t => t.id === data.toolCallId)
+          if (tc) {
+            tc.result = data.result
+          }
+        }
+        break
+      }
+
+      // Skip events that don't affect message state
+      case 'turn.snapshot':
+      case 'phase.changed':
+      case 'mode.changed':
+      case 'running.changed':
+      case 'criteria.set':
+      case 'criterion.updated':
+      case 'context.state':
+      case 'context.compacted':
+      case 'todo.updated':
+      case 'chat.done':
+      case 'chat.error':
+      case 'format.retry':
+      case 'tool.preparing':
+      case 'tool.output':
+        break
+    }
+  }
+
+  return Array.from(messages.values())
+}
+
 interface ClientConnection {
   ws: WebSocket
   activeSessionId: string | null                    // Currently viewing session
-  subscribedSessions: Map<string, () => void>       // sessionId -> unsubscribe fn
+  subscribedSessions: Map<string, () => void>       // sessionId -> unsubscribe fn (old event system)
+  eventStoreSubscriptions: Map<string, () => void>  // sessionId -> unsubscribe fn (new EventStore)
 }
 
 export function createWebSocketServer(
@@ -118,7 +229,7 @@ export function createWebSocketServer(
   
   wss.on('connection', (ws) => {
     logger.debug('WebSocket client connected')
-    clients.set(ws, { ws, activeSessionId: null, subscribedSessions: new Map() })
+    clients.set(ws, { ws, activeSessionId: null, subscribedSessions: new Map(), eventStoreSubscriptions: new Map() })
     
     ws.on('message', async (data) => {
       const message = parseClientMessage(data.toString())
@@ -147,9 +258,12 @@ export function createWebSocketServer(
     ws.on('close', () => {
       logger.debug('WebSocket client disconnected')
       const client = clients.get(ws)
-      // Unsubscribe from all session events
+      // Unsubscribe from all session events (both old and new systems)
       if (client) {
         for (const unsubscribe of client.subscribedSessions.values()) {
+          unsubscribe()
+        }
+        for (const unsubscribe of client.eventStoreSubscriptions.values()) {
           unsubscribe()
         }
       }
@@ -313,17 +427,56 @@ async function handleClientMessage(
       client.activeSessionId = session.id
       
       // Subscribe to this session's events if not already subscribed (additive)
+      // OLD event system (sessionEvents queue)
       if (!client.subscribedSessions.has(session.id)) {
         const sid = session.id  // Capture for closure
         const unsubscribe = sessionEvents.subscribe(sid, (event, seq) => {
           send({ ...event, seq, sessionId: sid })
         })
         client.subscribedSessions.set(session.id, unsubscribe)
-        logger.debug('Subscribed to session events', { sessionId: session.id })
+        logger.debug('Subscribed to session events (old system)', { sessionId: session.id })
       }
       
-      // Fetch all messages for this session (server-authoritative)
-      const messages = getMessages(session.id)
+      // NEW event system (EventStore) - subscribe for live streaming
+      if (!client.eventStoreSubscriptions.has(session.id)) {
+        const sid = session.id
+        const eventStore = getEventStore()
+        const { iterator, unsubscribe } = eventStore.subscribe(sid)
+        client.eventStoreSubscriptions.set(session.id, unsubscribe)
+        
+        // Forward events asynchronously
+        ;(async () => {
+          try {
+            for await (const storedEvent of iterator) {
+              const serverMsg = storedEventToServerMessage(storedEvent)
+              if (serverMsg && ws.readyState === WebSocket.OPEN) {
+                ws.send(serializeServerMessage({ ...serverMsg, seq: storedEvent.seq, sessionId: sid }))
+              }
+            }
+          } catch (error) {
+            // Iterator closed or connection dropped - this is expected
+            logger.debug('EventStore subscription ended', { sessionId: sid, error })
+          }
+        })()
+        
+        logger.debug('Subscribed to EventStore', { sessionId: session.id })
+      }
+      
+      // Fetch messages - prefer EventStore if it has events, otherwise fall back to messages table
+      const eventStore = getEventStore()
+      const events = eventStore.getEvents(session.id)
+      
+      let messages: Message[]
+      if (events.length > 0) {
+        // New system: build messages from events
+        messages = buildMessagesFromEvents(events)
+        logger.debug('Loaded messages from EventStore', { sessionId: session.id, eventCount: events.length, messageCount: messages.length })
+      } else {
+        // Old system: fetch from messages table
+        messages = getMessages(session.id)
+        logger.debug('Loaded messages from DB', { sessionId: session.id, messageCount: messages.length })
+      }
+      
       send(createSessionStateMessage(session, messages, message.id))
       
       // Send context state
@@ -381,19 +534,25 @@ async function handleClientMessage(
         send(createPhaseChangedMessage('build'))
       }
       
-      // Add user message and notify client (server-authoritative)
+      // Add user message to BOTH old system (for backward compat) AND EventStore (new system)
       const userMessage = sessionManager.addMessage(client.activeSessionId, {
         role: 'user',
         content: message.payload.content,
         tokenCount: Math.ceil(message.payload.content.length / 4),
       })
       
+      const sessionId = client.activeSessionId
+      const eventStore = getEventStore()
+      
+      // Also write to EventStore
+      eventStore.append(sessionId, createMessageStartEvent(userMessage.id, 'user', message.payload.content))
+      
       // Mark session as running
       sessionManager.setRunning(client.activeSessionId, true)
+      eventStore.append(sessionId, { type: 'running.changed', data: { isRunning: true } })
       
       // Create AbortController for this chat (abort existing if any - defense in depth)
       const controller = new AbortController()
-      const sessionId = client.activeSessionId
       const existingController = activeAgents.get(sessionId)
       if (existingController) {
         logger.warn('Aborting existing agent before starting new one', { sessionId })
@@ -404,48 +563,52 @@ async function handleClientMessage(
       // Acknowledge immediately
       send({ type: 'ack', payload: {}, id: message.id })
       
-      // Ensure client is subscribed to this session's events (tab model - additive)
+      // Ensure client is subscribed to BOTH event systems (tab model - additive)
+      // Old system
       if (!client.subscribedSessions.has(sessionId)) {
-        const sid = sessionId  // Capture for closure
+        const sid = sessionId
         const unsubscribe = sessionEvents.subscribe(sid, (event, seq) => {
           send({ ...event, seq, sessionId: sid })
         })
         client.subscribedSessions.set(sessionId, unsubscribe)
       }
       
-      // Send the user message immediately so client has it in its messages array
-      sessionEvents.push(sessionId, createChatMessageMessage(userMessage))
+      // New system (EventStore) - already subscribed in session.load, but ensure it here too
+      if (!client.eventStoreSubscriptions.has(sessionId)) {
+        const sid = sessionId
+        const { iterator, unsubscribe } = eventStore.subscribe(sid)
+        client.eventStoreSubscriptions.set(sessionId, unsubscribe)
+        
+        ;(async () => {
+          try {
+            for await (const storedEvent of iterator) {
+              const serverMsg = storedEventToServerMessage(storedEvent)
+              if (serverMsg && ws.readyState === WebSocket.OPEN) {
+                ws.send(serializeServerMessage({ ...serverMsg, seq: storedEvent.seq, sessionId: sid }))
+              }
+            }
+          } catch (error) {
+            logger.debug('EventStore subscription ended', { sessionId: sid, error })
+          }
+        })()
+      }
       
-      // Run chat asynchronously with events going through queue
-      handleChat({
+      // Use NEW orchestrator (events go through EventStore → WS subscription)
+      runChatTurn({
         sessionId,
         llmClient,
         signal: controller.signal,
-        onMessage: (event) => sessionEvents.push(sessionId, event),
       }).catch((error) => {
-        // Don't create error message for controlled abort - tool results already have the marker
+        // Don't create error message for controlled abort
         if (error instanceof Error && error.message === 'Aborted') {
           return
         }
         logger.error('Chat error', { error })
-        // Create an error message so we have a messageId for the done event
-        const errorMsg = sessionManager.addMessage(sessionId, {
-          role: 'user',
-          content: `Error: ${error instanceof Error ? error.message : 'Unknown error'}`,
-          tokenCount: 10,
-          isSystemGenerated: true,
-          messageKind: 'correction',
-        })
-        sessionEvents.push(sessionId, createChatMessageMessage(errorMsg))
-        sessionEvents.push(sessionId, createChatErrorMessage(
-          error instanceof Error ? error.message : 'Unknown error',
-          false
-        ))
-        sessionEvents.push(sessionId, createChatDoneMessage(errorMsg.id, 'error'))
+        // Errors are handled inside runChatTurn and appended to EventStore
       }).finally(() => {
         activeAgents.delete(sessionId)
         sessionManager.setRunning(sessionId, false)
-        sessionEvents.scheduleCleanup(sessionId)
+        eventStore.append(sessionId, { type: 'running.changed', data: { isRunning: false } })
       })
       
       break

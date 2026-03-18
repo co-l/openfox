@@ -7,7 +7,8 @@ import { readFile, access } from 'node:fs/promises'
 import { createServer as createViteServer, type ViteDevServer } from 'vite'
 
 import type { Config } from '../shared/types.js'
-import { initDatabase, closeDatabase } from './db/index.js'
+import { initDatabase, closeDatabase, getDatabase } from './db/index.js'
+import { initEventStore } from './events/index.js'
 import { createLLMClient, detectModel, getLlmStatus, detectBackend, getBackendDisplayName, type Backend } from './llm/index.js'
 import { createToolRegistry } from './tools/index.js'
 import { createWebSocketServer } from './ws/index.js'
@@ -21,7 +22,10 @@ export async function createServer(config: Config): Promise<void> {
   setLogLevel(config.logging?.level ?? undefined, config.mode)
 
   // Initialize database
-  initDatabase(config)
+  const db = initDatabase(config)
+
+  // Initialize event store
+  initEventStore(db)
 
   // Create LLM client
   const llmClient = createLLMClient(config)
