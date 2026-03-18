@@ -15,6 +15,7 @@ import { config } from 'dotenv'
 config({ path: new URL('../.env', import.meta.url).pathname })
 
 const VLLM_URL = process.env['OPENFOX_VLLM_URL'] ?? 'http://localhost:8000/v1'
+const BACKEND = process.env['OPENFOX_BACKEND'] ?? 'auto'
 const TEST_PORT = process.env['OPENFOX_TEST_PORT'] ?? '3999'
 
 let serverProcess: ChildProcess | null = null
@@ -63,7 +64,7 @@ export async function setup(): Promise<void> {
   if (!vllmHealthy) {
     throw new Error(`vLLM server not reachable at ${VLLM_URL}. Please start vLLM before running E2E tests.`)
   }
-  console.log(`✅ vLLM server healthy at ${VLLM_URL}`)
+  console.log(`✅ vLLM server healthy at ${VLLM_URL} (backend: ${BACKEND})`)
   
   console.log('\n🚀 Starting OpenFox server...')
   
@@ -77,6 +78,7 @@ export async function setup(): Promise<void> {
       OPENFOX_PORT: TEST_PORT,
       OPENFOX_DB_PATH: ':memory:',
       OPENFOX_VLLM_URL: VLLM_URL,
+      OPENFOX_BACKEND: BACKEND,
       OPENFOX_LOG_LEVEL: 'warn',
       OPENFOX_DISABLE_THINKING: 'true',
       OPENFOX_HOST: '127.0.0.1',
@@ -106,8 +108,14 @@ export async function setup(): Promise<void> {
   
   // Ensure model is auto-detected (server's initModel runs async)
   const refreshRes = await fetch(`${serverUrl}/api/model/refresh`, { method: 'POST' })
-  const modelInfo = await refreshRes.json() as { model: string; source: string }
-  console.log(`✅ OpenFox server running at ${serverUrl} (model: ${modelInfo.model})`)
+  const modelInfo = await refreshRes.json() as { model: string; source: string; backend: string; llmStatus: string }
+  
+  // Validate backend matches expected
+  if (BACKEND !== 'auto' && modelInfo.backend !== BACKEND) {
+    throw new Error(`Backend mismatch! Expected '${BACKEND}' but server detected '${modelInfo.backend}'. Check OPENFOX_BACKEND env var.`)
+  }
+  
+  console.log(`✅ OpenFox server running at ${serverUrl} (model: ${modelInfo.model}, backend: ${modelInfo.backend}, llm: ${VLLM_URL})`)
   
   // Store URL for tests to use
   process.env['OPENFOX_TEST_URL'] = serverUrl

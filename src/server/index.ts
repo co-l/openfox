@@ -289,8 +289,7 @@ export async function createServer(config: Config): Promise<void> {
   httpServer.listen(config.server.port, config.server.host, () => {
     logger.info(`OpenFox server running at http://${config.server.host}:${config.server.port}`)
     logger.info(`WebSocket available at ws://${config.server.host}:${config.server.port}/ws`)
-    logger.info(`LLM server at ${config.llm.baseUrl}`)
-    logger.info(`Model: ${config.llm.model}`)
+    logger.info(`LLM backend: ${llmClient.getBackend()}, model: ${llmClient.getModel()}, url: ${config.llm.baseUrl}`)
   })
 
   // Graceful shutdown

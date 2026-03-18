@@ -21,13 +21,24 @@ export async function runServe(options: ServeOptions): Promise<void> {
   const global = await import('./config.js').then(m => m.loadGlobalConfig(mode))
   const env = loadConfig()
   
+  // Environment variables take precedence over global config file
+  // This allows CLI overrides and e2e test configuration to work properly
+  const envBackend = env.llm.backend
+  const envModel = env.llm.model
+  const envUrl = env.llm.baseUrl
+  
+  // Only use env values if they're not the defaults (meaning they were explicitly set)
+  const isEnvBackendExplicit = envBackend !== 'auto'
+  const isEnvModelExplicit = envModel !== 'qwen3.5-122b-int4-autoround' // default in config.ts
+  const isEnvUrlExplicit = envUrl !== 'http://localhost:8000/v1' // default in config.ts
+  
   const merged = {
     ...env,
     llm: { 
       ...env.llm, 
-      baseUrl: global.llm.url ?? env.llm.baseUrl,
-      model: global.llm.model ?? env.llm.model,
-      backend: (global.llm.backend as any) ?? env.llm.backend,
+      baseUrl: isEnvUrlExplicit ? envUrl : (global.llm.url ?? envUrl),
+      model: isEnvModelExplicit ? envModel : (global.llm.model ?? envModel),
+      backend: isEnvBackendExplicit ? envBackend : ((global.llm.backend as any) ?? envBackend),
     },
     server: { 
       ...env.server, 
