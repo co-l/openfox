@@ -215,8 +215,9 @@ async function runPlannerTurn(
     throw new Error('Aborted')
   }
 
-  // Track metrics
+  // Track metrics and update context size for frontend display
   turnMetrics.addLLMCall(result.timing, result.usage.promptTokens, result.usage.completionTokens)
+  sessionManager.setCurrentContextSize(sessionId, result.usage.promptTokens)
 
   // Execute tool calls (if any)
   if (result.toolCalls.length > 0) {
@@ -356,8 +357,9 @@ export async function runBuilderTurn(
     throw new Error('Aborted')
   }
 
-  // Track metrics
+  // Track metrics and update context size for frontend display
   turnMetrics.addLLMCall(result.timing, result.usage.promptTokens, result.usage.completionTokens)
+  sessionManager.setCurrentContextSize(sessionId, result.usage.promptTokens)
 
   // Execute tool calls (if any)
   if (result.toolCalls.length > 0) {
@@ -541,6 +543,7 @@ ${modifiedFiles.length > 0 ? modifiedFiles.map(f => `- ${f}`).join('\n') : '(non
       throw new Error('Aborted')
     }
 
+    // Track metrics (verifier uses fresh context, so don't update main context size)
     turnMetrics.addLLMCall(result.timing, result.usage.promptTokens, result.usage.completionTokens)
 
     // Add assistant response to custom context

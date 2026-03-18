@@ -671,6 +671,9 @@ async function handleClientMessage(
         activeAgents.delete(sessionId)
         sessionManager.setRunning(sessionId, false)
         eventStore.append(sessionId, { type: 'running.changed', data: { isRunning: false } })
+        // Send updated context state to frontend
+        const contextState = sessionManager.getContextState(sessionId)
+        send(createContextStateMessage(contextState))
       })
       
       break
@@ -843,6 +846,9 @@ async function handleClientMessage(
           activeAgents.delete(sessionId)
           sessionManager.setRunning(sessionId, false)
           eventStore.append(sessionId, { type: 'running.changed', data: { isRunning: false } })
+          // Send updated context state to frontend
+          const contextState = sessionManager.getContextState(sessionId)
+          send(createContextStateMessage(contextState))
         }
       })()
       
