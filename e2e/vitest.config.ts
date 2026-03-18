@@ -2,17 +2,12 @@ import { defineConfig } from 'vitest/config'
 
 export default defineConfig({
   test: {
-    // Long timeouts for real LLM calls
-    testTimeout: 120_000,      // 2 minutes per test
-    hookTimeout: 60_000,       // 1 minute for setup/teardown
+    // Short timeouts for local LLM (fast)
+    testTimeout: 30_000,       // 30 seconds per test
+    hookTimeout: 15_000,       // 15 seconds for setup/teardown
     
     // Run tests sequentially to avoid port conflicts
     pool: 'forks',
-    poolOptions: {
-      forks: {
-        singleFork: true,
-      },
-    },
     
     // Global setup to verify vLLM is reachable
     globalSetup: './setup.ts',

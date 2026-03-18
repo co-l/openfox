@@ -68,9 +68,9 @@ export async function setup(): Promise<void> {
   console.log('\n🚀 Starting OpenFox server...')
   
   // Start the server with test configuration
-  // Use tsx directly to avoid auto-restarts on file changes
+  // Use built production CLI
   // Use detached: true to create a process group for clean shutdown
-  serverProcess = spawn('tsx', ['src/server/index.ts'], {
+  serverProcess = spawn('node', ['dist/cli/index.js', '--no-browser'], {
     cwd: new URL('..', import.meta.url).pathname,
     env: {
       ...process.env,
@@ -79,6 +79,7 @@ export async function setup(): Promise<void> {
       OPENFOX_VLLM_URL: VLLM_URL,
       OPENFOX_LOG_LEVEL: 'warn',
       OPENFOX_DISABLE_THINKING: 'true',
+      OPENFOX_HOST: '127.0.0.1',
     },
     stdio: ['ignore', 'pipe', 'pipe'],
     detached: true,
