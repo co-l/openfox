@@ -4,7 +4,7 @@ import { resolve, isAbsolute } from 'node:path'
 import type { ToolResult } from '../../shared/types.js'
 import type { Tool, ToolContext } from './types.js'
 import { OUTPUT_LIMITS } from './types.js'
-import { requestPathAccess } from './path-security.js'
+import { requestPathAccess, PathAccessDeniedError } from './path-security.js'
 
 export const grepTool: Tool = {
   name: 'grep',
@@ -149,6 +149,10 @@ export const grepTool: Tool = {
         truncated,
       }
     } catch (error) {
+      // Re-throw path access errors for orchestrator to handle with helpful message
+      if (error instanceof PathAccessDeniedError) {
+        throw error
+      }
       return {
         success: false,
         error: error instanceof Error ? error.message : 'Unknown error during grep',

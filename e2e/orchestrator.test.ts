@@ -50,22 +50,25 @@ describe('Runner/Orchestrator', () => {
     })
 
     it('starts runner with pending criteria', async () => {
-      // Add criteria
+      // Add a specific criterion that the LLM will accept without asking for clarification
       await client.send('chat.send', { 
-        content: 'Add criterion: "A function exists". Use add_criterion.' 
+        content: 'Add criterion ID "function-exists": "Function add(a: number, b: number) exists in src/math.ts". Use add_criterion tool.' 
       })
       await client.waitForChatDone()
+      
+      // Verify criterion was added
+      const session = client.getSession()!
+      expect(session.criteria.length).toBeGreaterThan(0)
       
       // Switch to builder
       await client.send('mode.switch', { mode: 'builder' })
       
-      // Launch runner
+      // Launch runner - should acknowledge since we have pending criteria
       const response = await client.send('runner.launch', {})
       expect(response.type).toBe('ack')
       
-      // Should start running
-      const session = client.getSession()!
-      expect(session.isRunning).toBe(true)
+      // Wait for runner to start (isRunning becomes true)
+      await client.waitFor('session.running', (payload: { isRunning: boolean }) => payload.isRunning === true, 5_000)
       
       // Wait for completion
       await collectUntilPhase(client, 'done', 180_000)

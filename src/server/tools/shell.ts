@@ -7,6 +7,7 @@ import {
   extractAbsolutePathsFromCommand,
   extractSensitivePathsFromCommand,
   requestPathAccess,
+  PathAccessDeniedError,
 } from './path-security.js'
 
 const DANGEROUS_PATTERNS = [
@@ -151,6 +152,10 @@ export const runCommandTool: Tool = {
         truncated,
       }
     } catch (error) {
+      // Re-throw path access errors for orchestrator to handle with helpful message
+      if (error instanceof PathAccessDeniedError) {
+        throw error
+      }
       return {
         success: false,
         error: error instanceof Error ? error.message : 'Unknown error executing command',

@@ -4,7 +4,7 @@ import type { ToolResult } from '../../shared/types.js'
 import type { Tool, ToolContext } from './types.js'
 import { OUTPUT_LIMITS } from './types.js'
 import { ToolExecutionError } from '../utils/errors.js'
-import { requestPathAccess } from './path-security.js'
+import { requestPathAccess, PathAccessDeniedError } from './path-security.js'
 import { computeFileHash } from './file-tracker.js'
 import { sessionManager } from '../session/index.js'
 
@@ -124,6 +124,10 @@ export const readFileTool: Tool = {
         truncated,
       }
     } catch (error) {
+      // Re-throw path access errors for orchestrator to handle with helpful message
+      if (error instanceof PathAccessDeniedError) {
+        throw error
+      }
       return {
         success: false,
         error: error instanceof Error ? error.message : 'Unknown error reading file',

@@ -3,7 +3,7 @@ import { resolve, isAbsolute } from 'node:path'
 import type { ToolResult, Diagnostic, EditContextRegion } from '../../shared/types.js'
 import type { Tool, ToolContext } from './types.js'
 import { formatDiagnosticsForLLM } from './diagnostics.js'
-import { requestPathAccess } from './path-security.js'
+import { requestPathAccess, PathAccessDeniedError } from './path-security.js'
 import { validateFileForWrite, computeFileHash } from './file-tracker.js'
 import { sessionManager } from '../session/index.js'
 import { extractEditContext } from './edit-context.js'
@@ -172,6 +172,10 @@ export const editFileTool: Tool = {
         ...(editContextRegions.length > 0 && { editContext: { regions: editContextRegions } }),
       }
     } catch (error) {
+      // Re-throw path access errors for orchestrator to handle with helpful message
+      if (error instanceof PathAccessDeniedError) {
+        throw error
+      }
       return {
         success: false,
         error: error instanceof Error ? error.message : 'Unknown error editing file',
