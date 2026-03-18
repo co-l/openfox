@@ -202,7 +202,7 @@ export class LspServer {
       
       this.state = 'running'
       
-      logger.info('LSP server started', {
+      logger.debug('LSP server started', {
         language: this.config.id,
         pid: this.process.pid,
       })
@@ -251,7 +251,7 @@ export class LspServer {
     this.openDocuments.clear()
     this.diagnostics.clear()
     
-    logger.info('LSP server stopped', { language: this.config.id })
+    logger.debug('LSP server stopped', { language: this.config.id })
   }
   
   private handleProcessExit(): void {

@@ -53,7 +53,7 @@ const configSchema = z.object({
     disableThinking: z.boolean().default(false),
   }).default({}),
   server: z.object({
-    port: z.number().default(3000),
+    port: z.number().default(10369),
     host: z.string().default('127.0.0.1'),
     openBrowser: z.boolean().default(true),
   }).default({}),
@@ -97,7 +97,7 @@ export function mergeConfigs(...configs: Array<Partial<z.infer<typeof configSche
     return acc
   }, {
     llm: { url: 'http://localhost:8000/v1', model: 'auto', backend: 'auto' as const, maxContext: 200000, disableThinking: false },
-    server: { port: 3000, host: '127.0.0.1', openBrowser: true },
+    server: { port: 10369, host: '127.0.0.1', openBrowser: true },
     logging: { level: 'info' as const },
   })
   return configSchema.parse(result)

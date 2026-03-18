@@ -15,7 +15,7 @@ Commands:
   config    Show current configuration
 
 Options:
-  -p, --port <number>     Specify port (default: 3000 for prod, 3100 for dev)
+  -p, --port <number>     Specify port (default: 10369 for prod, 10469 for dev)
   --no-browser            Don't open browser on start
   -h, --help              Show this help message
   -v, --version           Show version number
@@ -93,7 +93,7 @@ export async function runCli(options: { mode: Mode }): Promise<void> {
           const { saveGlobalConfig } = await import('./config.js')
           await saveGlobalConfig(mode, {
             llm: { url: detected.url, backend: detected.backend as 'auto' | 'vllm' | 'sglang' | 'ollama' | 'llamacpp', model: detected.model, maxContext: 200000, disableThinking: false },
-            server: { port: 3000, host: '127.0.0.1', openBrowser: true },
+            server: { port: 10369, host: '127.0.0.1', openBrowser: true },
             logging: { level: 'info' as const },
             database: { path: '' },
           })

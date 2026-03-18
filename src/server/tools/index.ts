@@ -87,12 +87,12 @@ function createRegistryFromTools(tools: Tool[]): ToolRegistry {
         }
       }
       
-      logger.info('Executing tool', { tool: name, args })
+      logger.debug('Executing tool', { tool: name, args })
       
       try {
         const result = await tool.execute(args, context)
         
-        logger.info('Tool completed', {
+        logger.debug('Tool completed', {
           tool: name,
           success: result.success,
           durationMs: result.durationMs,

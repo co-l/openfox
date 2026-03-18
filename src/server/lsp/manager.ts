@@ -67,7 +67,7 @@ export class LspManager implements LspManagerInterface {
     // Check if command exists (checks bundled, project-local, then system PATH)
     const commandPath = await which(config.serverCommand, this.workdir)
     if (!commandPath) {
-      logger.info('LSP server not installed, skipping', {
+      logger.warn('LSP server not installed, skipping', {
         language: langId,
         command: config.serverCommand,
         sessionId: this.sessionId,
@@ -83,7 +83,7 @@ export class LspManager implements LspManagerInterface {
       await server.start()
       this.servers.set(langId, server)
       
-      logger.info('LSP server started for session', {
+      logger.debug('LSP server started for session', {
         language: langId,
         sessionId: this.sessionId,
       })
@@ -193,7 +193,7 @@ export class LspManager implements LspManagerInterface {
     this.unavailableServers.clear()
     this.serverPromises.clear()
     
-    logger.info('LSP manager shutdown complete', { sessionId: this.sessionId })
+    logger.debug('LSP manager shutdown complete', { sessionId: this.sessionId })
   }
   
   /**

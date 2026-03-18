@@ -52,7 +52,7 @@ export async function runVerifierStep(options: VerifierStepOptions): Promise<Ste
   // Check if there's anything to verify
   const toVerify = session.criteria.filter(c => c.status.type === 'completed')
   if (toVerify.length === 0) {
-    logger.info('Nothing to verify', { sessionId })
+    logger.debug('Nothing to verify', { sessionId })
     return {
       messageId: '',
       hasToolCalls: false,
@@ -87,9 +87,9 @@ ${summary}
 ${criteriaList}
 
 ## Modified Files
-${modifiedFiles.length > 0 ? modifiedFiles.map(f => `- ${f}`).join('\n') : '(none)'}`
+ ${modifiedFiles.length > 0 ? modifiedFiles.map(f => `- ${f}`).join('\n') : '(none)'}`
   
-  logger.info('Verifier starting', { 
+  logger.debug('Verifier starting', { 
     sessionId, 
     subAgentId,
     criteriaCount: session.criteria.length,
@@ -270,9 +270,9 @@ ${modifiedFiles.length > 0 ? modifiedFiles.map(f => `- ${f}`).join('\n') : '(non
   }
   
   if (failed.length > 0) {
-    logger.info('Verification failed', { sessionId, failed: failed.length })
+    logger.warn('Verification failed', { sessionId, failed: failed.length })
   } else {
-    logger.info('All criteria verified', { sessionId })
+    logger.debug('All criteria verified', { sessionId })
   }
   
   return {

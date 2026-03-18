@@ -65,8 +65,8 @@ const activeAgents = new Map<string, AbortController>()
 
 interface ClientConnection {
   ws: WebSocket
-  sessionId: string | null
-  eventUnsubscribe: (() => void) | null  // Unsubscribe from session events
+  activeSessionId: string | null                    // Currently viewing session
+  subscribedSessions: Map<string, () => void>       // sessionId -> unsubscribe fn
 }
 
 export function createWebSocketServer(
@@ -86,7 +86,8 @@ export function createWebSocketServer(
     if (!sessionId) return
     
     for (const [ws, client] of clients) {
-      if (client.sessionId === sessionId && ws.readyState === WebSocket.OPEN) {
+      // Send events to all clients subscribed to this session (tab model)
+      if (client.subscribedSessions.has(sessionId) && ws.readyState === WebSocket.OPEN) {
         // Only broadcast session.state for session_updated (not mode_changed)
         // mode_changed is handled via the event queue to maintain ordering during streaming
         if (event.type === 'session_updated') {
@@ -116,8 +117,8 @@ export function createWebSocketServer(
   })
   
   wss.on('connection', (ws) => {
-    logger.info('WebSocket client connected')
-    clients.set(ws, { ws, sessionId: null, eventUnsubscribe: null })
+    logger.debug('WebSocket client connected')
+    clients.set(ws, { ws, activeSessionId: null, subscribedSessions: new Map() })
     
     ws.on('message', async (data) => {
       const message = parseClientMessage(data.toString())
@@ -144,9 +145,14 @@ export function createWebSocketServer(
     })
     
     ws.on('close', () => {
-      logger.info('WebSocket client disconnected')
+      logger.debug('WebSocket client disconnected')
       const client = clients.get(ws)
-      client?.eventUnsubscribe?.()  // Unsubscribe from session events
+      // Unsubscribe from all session events
+      if (client) {
+        for (const unsubscribe of client.subscribedSessions.values()) {
+          unsubscribe()
+        }
+      }
       clients.delete(ws)
     })
     
@@ -285,7 +291,7 @@ async function handleClientMessage(
         message.payload.projectId,
         message.payload.title
       )
-      client.sessionId = session.id
+      client.activeSessionId = session.id
       // New session has no events yet
       send(createSessionStateMessage(session, [], message.id))
       break
@@ -303,11 +309,19 @@ async function handleClientMessage(
         return
       }
       
-      // Unsubscribe from previous session events if any
-      client.eventUnsubscribe?.()
-      client.eventUnsubscribe = null
+      // Tab model: set active session and subscribe if not already subscribed
+      client.activeSessionId = session.id
       
-      client.sessionId = session.id
+      // Subscribe to this session's events if not already subscribed (additive)
+      if (!client.subscribedSessions.has(session.id)) {
+        const sid = session.id  // Capture for closure
+        const unsubscribe = sessionEvents.subscribe(sid, (event, seq) => {
+          send({ ...event, seq, sessionId: sid })
+        })
+        client.subscribedSessions.set(session.id, unsubscribe)
+        logger.debug('Subscribed to session events', { sessionId: session.id })
+      }
+      
       // Fetch all messages for this session (server-authoritative)
       const messages = getMessages(session.id)
       send(createSessionStateMessage(session, messages, message.id))
@@ -316,28 +330,7 @@ async function handleClientMessage(
       const contextState = sessionManager.getContextState(session.id)
       send(createContextStateMessage(contextState))
       
-      // If session is running, replay missed events and subscribe to future events
-      if (session.isRunning) {
-        const fromSeq = message.payload.lastEventSeq ?? 0
-        
-        // Replay missed events
-        const missedEvents = sessionEvents.getEvents(session.id, fromSeq)
-        for (const { event, seq } of missedEvents) {
-          // Add seq to event for frontend tracking
-          send({ ...event, seq })
-        }
-        
-        logger.info('Replayed missed events', { 
-          sessionId: session.id, 
-          fromSeq, 
-          replayedCount: missedEvents.length 
-        })
-        
-        // Subscribe to future events
-        client.eventUnsubscribe = sessionEvents.subscribe(session.id, (event, seq) => {
-          send({ ...event, seq })
-        })
-      }
+      // No event replay needed - client stays subscribed to all sessions (tab model)
       break
     }
     
@@ -363,7 +356,7 @@ async function handleClientMessage(
     // =========================================================================
     
     case 'chat.send': {
-      if (!client.sessionId) {
+      if (!client.activeSessionId) {
         send(createErrorMessage('NO_SESSION', 'No active session', message.id))
         return
       }
@@ -373,38 +366,52 @@ async function handleClientMessage(
         return
       }
       
+      // Check if session is already running - reject concurrent execution
+      const currentSession = sessionManager.requireSession(client.activeSessionId)
+      if (currentSession.isRunning) {
+        send(createErrorMessage('ALREADY_RUNNING', 'Session is already running', message.id))
+        return
+      }
+      
       // Check if session is blocked - user intervention resets it
-      const currentSession = sessionManager.requireSession(client.sessionId)
       if (currentSession.phase === 'blocked') {
-        logger.info('User intervention - resetting blocked state', { sessionId: client.sessionId })
-        sessionManager.setPhase(client.sessionId, 'build')
-        sessionManager.resetAllCriteriaAttempts(client.sessionId)
+        logger.info('User intervention - resetting blocked state', { sessionId: client.activeSessionId })
+        sessionManager.setPhase(client.activeSessionId, 'build')
+        sessionManager.resetAllCriteriaAttempts(client.activeSessionId)
         send(createPhaseChangedMessage('build'))
       }
       
       // Add user message and notify client (server-authoritative)
-      const userMessage = sessionManager.addMessage(client.sessionId, {
+      const userMessage = sessionManager.addMessage(client.activeSessionId, {
         role: 'user',
         content: message.payload.content,
         tokenCount: Math.ceil(message.payload.content.length / 4),
       })
       
       // Mark session as running
-      sessionManager.setRunning(client.sessionId, true)
+      sessionManager.setRunning(client.activeSessionId, true)
       
-      // Create AbortController for this chat
+      // Create AbortController for this chat (abort existing if any - defense in depth)
       const controller = new AbortController()
-      const sessionId = client.sessionId
+      const sessionId = client.activeSessionId
+      const existingController = activeAgents.get(sessionId)
+      if (existingController) {
+        logger.warn('Aborting existing agent before starting new one', { sessionId })
+        existingController.abort()
+      }
       activeAgents.set(sessionId, controller)
       
       // Acknowledge immediately
       send({ type: 'ack', payload: {}, id: message.id })
       
-      // Subscribe this client to session events (unsubscribe from previous if any)
-      client.eventUnsubscribe?.()
-      client.eventUnsubscribe = sessionEvents.subscribe(sessionId, (event, seq) => {
-        send({ ...event, seq })
-      })
+      // Ensure client is subscribed to this session's events (tab model - additive)
+      if (!client.subscribedSessions.has(sessionId)) {
+        const sid = sessionId  // Capture for closure
+        const unsubscribe = sessionEvents.subscribe(sid, (event, seq) => {
+          send({ ...event, seq, sessionId: sid })
+        })
+        client.subscribedSessions.set(sessionId, unsubscribe)
+      }
       
       // Send the user message immediately so client has it in its messages array
       sessionEvents.push(sessionId, createChatMessageMessage(userMessage))
@@ -445,12 +452,12 @@ async function handleClientMessage(
     }
     
     case 'chat.stop': {
-      if (!client.sessionId) {
+      if (!client.activeSessionId) {
         send(createErrorMessage('NO_SESSION', 'No active session', message.id))
         return
       }
       
-      const sessionId = client.sessionId
+      const sessionId = client.activeSessionId
       
       // Abort any running agent
       const controller = activeAgents.get(sessionId)
@@ -474,12 +481,12 @@ async function handleClientMessage(
     }
     
     case 'chat.continue': {
-      if (!client.sessionId) {
+      if (!client.activeSessionId) {
         send(createErrorMessage('NO_SESSION', 'No active session', message.id))
         return
       }
       
-      const session = sessionManager.requireSession(client.sessionId)
+      const session = sessionManager.requireSession(client.activeSessionId)
       
       // Don't continue if already running
       if (session.isRunning) {
@@ -493,7 +500,7 @@ async function handleClientMessage(
         return
       }
       
-      const sessionId = client.sessionId
+      const sessionId = client.activeSessionId
       
       // Acknowledge immediately
       send({ type: 'ack', payload: {}, id: message.id })
@@ -505,11 +512,14 @@ async function handleClientMessage(
       const controller = new AbortController()
       activeAgents.set(sessionId, controller)
       
-      // Subscribe this client to session events (unsubscribe from previous if any)
-      client.eventUnsubscribe?.()
-      client.eventUnsubscribe = sessionEvents.subscribe(sessionId, (event, seq) => {
-        send({ ...event, seq })
-      })
+      // Ensure client is subscribed to this session's events (tab model - additive)
+      if (!client.subscribedSessions.has(sessionId)) {
+        const sid = sessionId  // Capture for closure
+        const unsubscribe = sessionEvents.subscribe(sid, (event, seq) => {
+          send({ ...event, seq, sessionId: sid })
+        })
+        client.subscribedSessions.set(sessionId, unsubscribe)
+      }
       
       // Continue chat with events going through queue
       handleChat({
@@ -551,7 +561,7 @@ async function handleClientMessage(
     // =========================================================================
     
     case 'mode.switch': {
-      if (!client.sessionId) {
+      if (!client.activeSessionId) {
         send(createErrorMessage('NO_SESSION', 'No active session', message.id))
         return
       }
@@ -561,7 +571,7 @@ async function handleClientMessage(
         return
       }
       
-      const session = sessionManager.setMode(client.sessionId, message.payload.mode)
+      const session = sessionManager.setMode(client.activeSessionId, message.payload.mode)
       send(createModeChangedMessage(message.payload.mode, false))
       const messages = getMessages(session.id)
       send(createSessionStateMessage(session, messages, message.id))
@@ -569,28 +579,37 @@ async function handleClientMessage(
     }
     
     case 'mode.accept': {
-      if (!client.sessionId) {
+      if (!client.activeSessionId) {
         send(createErrorMessage('NO_SESSION', 'No active session', message.id))
         return
       }
       
-      const session = sessionManager.requireSession(client.sessionId)
+      const session = sessionManager.requireSession(client.activeSessionId)
+      
+      // Check if session is already running - reject concurrent execution
+      if (session.isRunning) {
+        send(createErrorMessage('ALREADY_RUNNING', 'Session is already running', message.id))
+        return
+      }
       
       if (session.criteria.length === 0) {
         send(createErrorMessage('NO_CRITERIA', 'Cannot accept: no criteria defined', message.id))
         return
       }
       
-      const sessionId = client.sessionId
+      const sessionId = client.activeSessionId
       
       // Acknowledge immediately
       send({ type: 'ack', payload: {}, id: message.id })
       
-      // Subscribe this client to session events (unsubscribe from previous if any)
-      client.eventUnsubscribe?.()
-      client.eventUnsubscribe = sessionEvents.subscribe(sessionId, (event, seq) => {
-        send({ ...event, seq })
-      })
+      // Ensure client is subscribed to this session's events (tab model - additive)
+      if (!client.subscribedSessions.has(sessionId)) {
+        const sid = sessionId  // Capture for closure
+        const unsubscribe = sessionEvents.subscribe(sid, (event, seq) => {
+          send({ ...event, seq, sessionId: sid })
+        })
+        client.subscribedSessions.set(sessionId, unsubscribe)
+      }
       
       // Helper to push events through queue
       const pushEvent = (event: ServerMessage) => sessionEvents.push(sessionId, event)
@@ -642,8 +661,13 @@ async function handleClientMessage(
           // Mark session as running
           sessionManager.setRunning(sessionId, true)
           
-          // Create AbortController for builder
+          // Create AbortController for builder (abort existing if any - defense in depth)
           const controller = new AbortController()
+          const existingController = activeAgents.get(sessionId)
+          if (existingController) {
+            logger.warn('Aborting existing agent before starting new one', { sessionId })
+            existingController.abort()
+          }
           activeAgents.set(sessionId, controller)
           
           // Auto-start orchestrator (full state machine with verification)
@@ -684,7 +708,7 @@ async function handleClientMessage(
     // =========================================================================
     
     case 'criteria.edit': {
-      if (!client.sessionId) {
+      if (!client.activeSessionId) {
         send(createErrorMessage('NO_SESSION', 'No active session', message.id))
         return
       }
@@ -694,7 +718,7 @@ async function handleClientMessage(
         return
       }
       
-      sessionManager.setCriteria(client.sessionId, message.payload.criteria)
+      sessionManager.setCriteria(client.activeSessionId, message.payload.criteria)
       send(createCriteriaUpdatedMessage(message.payload.criteria))
       send({ type: 'ack', payload: {}, id: message.id })
       break
@@ -705,13 +729,13 @@ async function handleClientMessage(
     // =========================================================================
     
     case 'context.compact': {
-      if (!client.sessionId) {
+      if (!client.activeSessionId) {
         send(createErrorMessage('NO_SESSION', 'No active session', message.id))
         return
       }
       
-      const session = sessionManager.requireSession(client.sessionId)
-      const sessionId = client.sessionId
+      const session = sessionManager.requireSession(client.activeSessionId)
+      const sessionId = client.activeSessionId
       
       // Check if session is running
       if (session.isRunning) {
@@ -799,12 +823,18 @@ async function handleClientMessage(
     // =========================================================================
     
     case 'runner.launch': {
-      if (!client.sessionId) {
+      if (!client.activeSessionId) {
         send(createErrorMessage('NO_SESSION', 'No active session', message.id))
         return
       }
       
-      const session = sessionManager.requireSession(client.sessionId)
+      const session = sessionManager.requireSession(client.activeSessionId)
+      
+      // Check if session is already running - reject concurrent execution
+      if (session.isRunning) {
+        send(createErrorMessage('ALREADY_RUNNING', 'Session is already running', message.id))
+        return
+      }
       
       // Only allow launching from builder mode
       if (session.mode !== 'builder') {
@@ -821,29 +851,37 @@ async function handleClientMessage(
       
       // Check if session is blocked - user intervention resets it
       if (session.phase === 'blocked') {
-        logger.info('User launched runner - resetting blocked state', { sessionId: client.sessionId })
-        sessionManager.setPhase(client.sessionId, 'build')
-        sessionManager.resetAllCriteriaAttempts(client.sessionId)
+        logger.info('User launched runner - resetting blocked state', { sessionId: client.activeSessionId })
+        sessionManager.setPhase(client.activeSessionId, 'build')
+        sessionManager.resetAllCriteriaAttempts(client.activeSessionId)
         send(createPhaseChangedMessage('build'))
       }
       
-      const sessionId = client.sessionId
+      const sessionId = client.activeSessionId
       
       // Mark session as running
       sessionManager.setRunning(sessionId, true)
       
-      // Create AbortController for this run
+      // Create AbortController for this run (abort existing if any - defense in depth)
       const controller = new AbortController()
+      const existingController = activeAgents.get(sessionId)
+      if (existingController) {
+        logger.warn('Aborting existing agent before starting new one', { sessionId })
+        existingController.abort()
+      }
       activeAgents.set(sessionId, controller)
       
       // Acknowledge immediately
       send({ type: 'ack', payload: {}, id: message.id })
       
-      // Subscribe this client to session events
-      client.eventUnsubscribe?.()
-      client.eventUnsubscribe = sessionEvents.subscribe(sessionId, (event, seq) => {
-        send({ ...event, seq })
-      })
+      // Ensure client is subscribed to this session's events (tab model - additive)
+      if (!client.subscribedSessions.has(sessionId)) {
+        const sid = sessionId  // Capture for closure
+        const unsubscribe = sessionEvents.subscribe(sid, (event, seq) => {
+          send({ ...event, seq, sessionId: sid })
+        })
+        client.subscribedSessions.set(sessionId, unsubscribe)
+      }
       
       // Run orchestrator asynchronously
       logger.info('Runner launching', { sessionId, pendingCriteria: pendingCriteria.length })
@@ -886,7 +924,7 @@ async function handleClientMessage(
     // =========================================================================
     
     case 'path.confirm': {
-      if (!client.sessionId) {
+      if (!client.activeSessionId) {
         send(createErrorMessage('NO_SESSION', 'No active session', message.id))
         return
       }
@@ -904,8 +942,8 @@ async function handleClientMessage(
         return
       }
       
-      logger.info('Path confirmation response', { 
-        sessionId: client.sessionId, 
+      logger.debug('Path confirmation response', { 
+        sessionId: client.activeSessionId, 
         callId, 
         approved 
       })

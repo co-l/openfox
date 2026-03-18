@@ -91,7 +91,7 @@ class SessionManagerImpl {
       sessionTitle = `Session ${existingSessions.length + 1}`
     }
     
-    logger.info('Creating session', { projectId, workdir: project.workdir, title: sessionTitle })
+    logger.debug('Creating session', { projectId, workdir: project.workdir, title: sessionTitle })
     const session = dbCreateSession(projectId, project.workdir, sessionTitle)
     
     this.emit({ type: 'session_created', session })
@@ -124,7 +124,7 @@ class SessionManagerImpl {
   }
   
   deleteSession(id: string): void {
-    logger.info('Deleting session', { id })
+    logger.debug('Deleting session', { id })
     
     // Shutdown LSP manager for this session (async, but we don't wait)
     shutdownLspManager(id).catch(err => {
@@ -159,7 +159,7 @@ class SessionManagerImpl {
       return session
     }
     
-    logger.info('Changing session mode', { sessionId, from: fromMode, to: toMode })
+    logger.debug('Changing session mode', { sessionId, from: fromMode, to: toMode })
     
     updateSessionMode(sessionId, toMode)
     
@@ -195,7 +195,7 @@ class SessionManagerImpl {
       return session
     }
     
-    logger.info('Changing session phase', { sessionId, from: session.phase, to: phase })
+    logger.debug('Changing session phase', { sessionId, from: session.phase, to: phase })
     
     updateSessionPhase(sessionId, phase)
     
@@ -216,7 +216,7 @@ class SessionManagerImpl {
       return session
     }
     
-    logger.info('Setting session running state', { sessionId, isRunning })
+    logger.debug('Setting session running state', { sessionId, isRunning })
     
     updateSessionRunning(sessionId, isRunning)
     
@@ -228,7 +228,7 @@ class SessionManagerImpl {
   }
   
   setSummary(sessionId: string, summary: string): Session {
-    logger.info('Setting session summary', { sessionId, summaryLength: summary.length })
+    logger.debug('Setting session summary', { sessionId, summaryLength: summary.length })
     
     updateSessionSummary(sessionId, summary)
     

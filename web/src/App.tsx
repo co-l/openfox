@@ -6,7 +6,7 @@ import { useProjectStore } from './stores/project'
 import { useConfigStore } from './stores/config'
 import { Header } from './components/layout/Header'
 import { Sidebar } from './components/layout/Sidebar'
-import { ProjectSelector } from './components/ProjectSelector'
+import { HomePage } from './components/HomePage'
 import { EmptyProjectView } from './components/EmptyProjectView'
 import { PlanPanel } from './components/plan/PlanPanel'
 import { Spinner, SpinnerWithText } from './components/shared/Spinner'
@@ -151,7 +151,7 @@ function App() {
             <ProjectView />
           </Route>
           <Route path="/">
-            <ProjectSelector />
+            <HomePage />
           </Route>
         </Switch>
       </div>

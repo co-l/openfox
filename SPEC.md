@@ -1785,7 +1785,7 @@ OPENFOX_VLLM_URL=http://localhost:8000/v1
 OPENFOX_WORKDIR=/path/to/default/workspace
 
 # Optional
-OPENFOX_PORT=3000
+OPENFOX_PORT=10369
 OPENFOX_HOST=0.0.0.0
 OPENFOX_DB_PATH=./openfox.db
 OPENFOX_LOG_LEVEL=info

@@ -169,6 +169,7 @@ export interface ServerMessage<T = unknown> {
   type: ServerMessageType
   payload: T
   seq?: number // Sequence number for event replay/subscription
+  sessionId?: string // Session this event belongs to (for multi-session support)
 }
 
 // Payload types for server messages

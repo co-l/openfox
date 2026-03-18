@@ -55,14 +55,14 @@ export function createLLMClient(config: Config, initialBackend: Backend = 'unkno
     },
     
     setBackend(newBackend: Backend) {
-      logger.info('Setting LLM backend', { from: backend, to: newBackend })
+      logger.debug('Setting LLM backend', { from: backend, to: newBackend })
       backend = newBackend
       capabilities = getBackendCapabilities(newBackend)
     },
     
     setModel(newModel: string) {
       const newProfile = getModelProfile(newModel)
-      logger.info('Switching model', { 
+      logger.debug('Switching model', { 
         from: model, 
         to: newModel,
         profile: newProfile.name,
@@ -353,7 +353,17 @@ export function createLLMClient(config: Config, initialBackend: Backend = 'unkno
 // ============================================================================
 
 function convertMessages(messages: LLMMessage[]): ChatCompletionMessageParam[] {
-  return messages.map((msg): ChatCompletionMessageParam => {
+  // Filter out empty assistant messages (no content and no tool calls)
+  // These can occur from aborted streams and cause errors with Mistral tokenizer
+  const filtered = messages.filter(msg => {
+    if (msg.role === 'assistant' && !msg.content?.trim() && !msg.toolCalls?.length) {
+      logger.warn('Filtering empty assistant message from LLM context')
+      return false
+    }
+    return true
+  })
+  
+  return filtered.map((msg): ChatCompletionMessageParam => {
     if (msg.role === 'tool') {
       return {
         role: 'tool',

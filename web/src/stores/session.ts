@@ -266,11 +266,27 @@ export const useSessionStore = create<SessionState>((set, get) => ({
       
       case 'session.running': {
         const payload = message.payload as SessionRunningPayload
+        const eventSessionId = message.sessionId
+        const activeSessionId = get().currentSession?.id
+        const isBackgroundSession = eventSessionId && eventSessionId !== activeSessionId
+        
+        // Always update sidebar running status
         set(state => ({
-          currentSession: state.currentSession
-            ? { ...state.currentSession, isRunning: payload.isRunning }
-            : null,
+          sessions: state.sessions.map(s => 
+            s.id === eventSessionId 
+              ? { ...s, isRunning: payload.isRunning }
+              : s
+          ),
         }))
+        
+        // Only update currentSession if this is the active session
+        if (!isBackgroundSession) {
+          set(state => ({
+            currentSession: state.currentSession
+              ? { ...state.currentSession, isRunning: payload.isRunning }
+              : null,
+          }))
+        }
         break
       }
       
@@ -519,29 +535,45 @@ export const useSessionStore = create<SessionState>((set, get) => ({
       
       case 'phase.changed': {
         const payload = message.payload as PhaseChangedPayload
-        const currentPhase = get().currentSession?.phase
-        // Only play sounds if phase actually changed (not if already in that phase)
-        const shouldPlayAchievement = payload.phase === 'done' && currentPhase !== 'done'
-        const shouldPlayIntervention = payload.phase === 'blocked' && currentPhase !== 'blocked'
+        const eventSessionId = message.sessionId
+        const activeSessionId = get().currentSession?.id
+        const isBackgroundSession = eventSessionId && eventSessionId !== activeSessionId
         
+        // Always update sidebar status for the session
         set(state => ({
-          currentSession: state.currentSession
-            ? { ...state.currentSession, phase: payload.phase }
-            : null,
-          // Also update the sessions list for the sidebar
           sessions: state.sessions.map(s => 
-            s.id === state.currentSession?.id 
+            s.id === eventSessionId 
               ? { ...s, phase: payload.phase }
               : s
           ),
         }))
-        // Play achievement sound when phase becomes 'done' (only once)
-        if (shouldPlayAchievement) {
-          playAchievement()
-        }
-        // Play intervention sound when phase becomes 'blocked' (only once)
-        if (shouldPlayIntervention) {
-          playIntervention()
+        
+        if (isBackgroundSession) {
+          // Background session: only play sounds, don't update currentSession
+          if (payload.phase === 'done') {
+            playAchievement()
+          }
+          if (payload.phase === 'blocked') {
+            playIntervention()
+          }
+        } else {
+          // Active session: full state update and sounds
+          const currentPhase = get().currentSession?.phase
+          const shouldPlayAchievement = payload.phase === 'done' && currentPhase !== 'done'
+          const shouldPlayIntervention = payload.phase === 'blocked' && currentPhase !== 'blocked'
+          
+          set(state => ({
+            currentSession: state.currentSession
+              ? { ...state.currentSession, phase: payload.phase }
+              : null,
+          }))
+          
+          if (shouldPlayAchievement) {
+            playAchievement()
+          }
+          if (shouldPlayIntervention) {
+            playIntervention()
+          }
         }
         break
       }

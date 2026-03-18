@@ -384,4 +384,6 @@ export interface Config {
   logging?: {
     level: 'debug' | 'info' | 'warn' | 'error'
   }
+  mode?: 'development' | 'production'
+  dev?: boolean  // true when running in dev mode (OPENFOX_DEV=true or mode='development')
 }

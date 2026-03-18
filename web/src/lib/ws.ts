@@ -117,5 +117,5 @@ class WebSocketClient {
 }
 
 // Singleton instance
-const wsUrl = `ws://${window.location.hostname}:3000/ws`
+const wsUrl = `ws://${window.location.hostname}:${window.location.port || '10369'}/ws`
 export const wsClient = new WebSocketClient(wsUrl)

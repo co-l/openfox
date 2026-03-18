@@ -161,7 +161,7 @@ Copy `.env.example` to `.env`. Key variables:
 OPENFOX_VLLM_URL=http://localhost:8000/v1
 OPENFOX_MODEL_NAME=qwen3.5-122b-int4-autoround
 OPENFOX_MAX_CONTEXT=200000
-OPENFOX_PORT=3000
+OPENFOX_PORT=10369
 OPENFOX_HOST=0.0.0.0
 OPENFOX_WORKDIR=/home/conrad/dev
 OPENFOX_DB_PATH=./openfox.db

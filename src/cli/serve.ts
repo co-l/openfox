@@ -31,7 +31,7 @@ export async function runServe(options: ServeOptions): Promise<void> {
     },
     server: { 
       ...env.server, 
-      port: port ?? (mode === 'development' ? 3100 : env.server.port),
+      port: port ?? (mode === 'development' ? 10469 : env.server.port),
       host: '127.0.0.1',
       openBrowser: openBrowser ?? global.server.openBrowser,
     },
@@ -41,6 +41,7 @@ export async function runServe(options: ServeOptions): Promise<void> {
     logging: {
       level: global.logging?.level ?? 'info' as const,
     },
+    mode,
   }
   
   await createServer(merged)

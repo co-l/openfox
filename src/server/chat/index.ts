@@ -86,7 +86,7 @@ export async function handleChat(options: ChatOptions): Promise<void> {
   let session = sessionManager.requireSession(sessionId)
   const mode = session.mode
   
-  logger.info('Starting chat', { sessionId, mode })
+  logger.debug('Starting chat', { sessionId, mode })
   
   // Set up todo callback
   setTodoUpdateCallback((sid, todos) => {

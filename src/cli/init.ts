@@ -37,7 +37,7 @@ export async function runInitWithSelect(mode: Mode): Promise<void> {
     s.stop(`✓ Found ${found.backend} (${found.model})`)
     const config = {
       llm: { url: found.url, backend: found.backend as 'auto' | 'vllm' | 'sglang' | 'ollama' | 'llamacpp', model: found.model, maxContext: 200000, disableThinking: false },
-      server: { port: 3000, host: '127.0.0.1', openBrowser: true },
+      server: { port: 10369, host: '127.0.0.1', openBrowser: true },
       logging: { level: 'info' as const },
       database: { path: '' },
     }
@@ -81,7 +81,7 @@ export async function runInitWithSelect(mode: Mode): Promise<void> {
     
     const config = {
       llm: { url, backend: backend as 'auto' | 'vllm' | 'sglang' | 'ollama' | 'llamacpp', model: model ?? 'auto', maxContext: 200000, disableThinking: false },
-      server: { port: 3000, host: '127.0.0.1', openBrowser: true },
+      server: { port: 10369, host: '127.0.0.1', openBrowser: true },
       logging: { level: 'info' as const },
       database: { path: '' },
     }
@@ -108,7 +108,7 @@ export async function runInitWithSelect(mode: Mode): Promise<void> {
     // choice === 'continue' - save anyway with auto backend
     const config = {
       llm: { url, backend: 'auto' as const, model: 'auto', maxContext: 200000, disableThinking: false },
-      server: { port: 3000, host: '127.0.0.1', openBrowser: true },
+      server: { port: 10369, host: '127.0.0.1', openBrowser: true },
       logging: { level: 'info' as const },
       database: { path: '' },
     }

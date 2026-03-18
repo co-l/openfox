@@ -36,12 +36,12 @@ export async function runOrchestrator(options: OrchestratorOptions): Promise<Orc
   const startTime = performance.now()
   let iterations = 0
   
-  logger.info('Orchestrator starting', { sessionId })
+  logger.debug('Orchestrator starting', { sessionId })
   
   while (iterations < RUNNER_CONFIG.maxIterations) {
     // Check abort signal
     if (signal?.aborted) {
-      logger.info('Orchestrator aborted', { sessionId, iterations })
+      logger.debug('Orchestrator aborted', { sessionId, iterations })
       return {
         finalAction: { type: 'RUN_BUILDER', reason: 'Aborted' },
         iterations,
@@ -61,7 +61,7 @@ export async function runOrchestrator(options: OrchestratorOptions): Promise<Orc
       case 'DONE': {
         sessionManager.setPhase(sessionId, 'done')
         onMessage(createPhaseChangedMessage('done'))
-        logger.info('Orchestrator complete', { sessionId, iterations })
+        logger.debug('Orchestrator complete', { sessionId, iterations })
         return {
           finalAction: action,
           iterations,
@@ -83,7 +83,7 @@ export async function runOrchestrator(options: OrchestratorOptions): Promise<Orc
         })
         onMessage(createChatMessageMessage(blockedMsg))
         
-        logger.info('Orchestrator blocked', { sessionId, iterations, reason: action.reason })
+        logger.warn('Orchestrator blocked', { sessionId, iterations, reason: action.reason })
         return {
           finalAction: action,
           iterations,

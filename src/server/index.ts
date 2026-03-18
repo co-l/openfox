@@ -17,7 +17,7 @@ const __dirname = dirname(fileURLToPath(import.meta.url))
 
 export async function createServer(config: Config): Promise<void> {
   // Set log level (mode-based default: debug for dev, warn for production)
-  setLogLevel(config.logging?.level, config.mode)
+  setLogLevel(config.logging?.level ?? undefined, config.mode)
 
   // Initialize database
   initDatabase(config)
@@ -168,66 +168,124 @@ export async function createServer(config: Config): Promise<void> {
     return types[ext || ''] || 'application/octet-stream'
   }
   
-  // Serve all static files from web directory
-  app.get('/assets/*', async (c) => {
-    const path = c.req.path
-    const filename = path.substring(path.lastIndexOf('/') + 1)
-    const filePath = join(webDir, 'assets', filename)
-    try {
-      await access(filePath)
-      const content = await readFile(filePath)
-      return c.body(content, 200, { 'Content-Type': getContentType(filePath) })
-    } catch {
-      return c.text('Not found: ' + filename, 404)
-    }
-  })
+  // Dev mode: proxy frontend requests to Vite dev server
+  const isDev = config.mode === 'development'
   
-  app.get('/fox.svg', async (c) => {
-    try {
-      const content = await readFile(join(webDir, 'fox.svg'))
+  if (isDev) {
+    logger.info('Dev mode: proxying frontend requests to Vite', { target: 'http://localhost:5173' })
+    
+    // Proxy root path to Vite
+    app.get('/', async (c) => {
+      const response = await fetch('http://localhost:5173/')
+      const content = await response.text()
+      return c.html(content)
+    })
+    
+    // Proxy assets
+    app.get('/assets/*', async (c) => {
+      const path = c.req.path
+      const response = await fetch(`http://localhost:5173${path}`)
+      const content = await response.arrayBuffer()
+      return c.body(content, 200, { 'Content-Type': getContentType(path) })
+    })
+    
+    // Proxy fox.svg
+    app.get('/fox.svg', async (c) => {
+      const response = await fetch('http://localhost:5173/fox.svg')
+      const content = await response.arrayBuffer()
       return c.body(content, 200, { 'Content-Type': 'image/svg+xml' })
-    } catch {
-      return c.text('Not found', 404)
-    }
-  })
-  
-  app.get('/sounds/*', async (c) => {
-    const path = c.req.path
-    const filename = path.substring(path.lastIndexOf('/') + 1)
-    const filePath = join(webDir, 'sounds', filename)
-    try {
-      await access(filePath)
-      const content = await readFile(filePath)
+    })
+    
+    // Proxy sounds
+    app.get('/sounds/*', async (c) => {
+      const path = c.req.path
+      const response = await fetch(`http://localhost:5173${path}`)
+      const content = await response.arrayBuffer()
       return c.body(content, 200, { 'Content-Type': 'audio/mpeg' })
-    } catch {
-      return c.text('Not found: ' + filename, 404)
-    }
-  })
-  
-  app.get('/', async (c) => {
-    try {
-      const content = await readFile(join(webDir, 'index.html'))
-      return c.html(content.toString())
-    } catch {
-      return c.text('Web UI not built. Run `npm run build:web`', 404)
-    }
-  })
-  
-  // Catch-all route for SPA - serve index.html for any unmatched path
-  // Must be after all specific routes (/api/*, /assets/*, /sounds/*, /fox.svg)
-  app.get('*', async (c) => {
-    const path = c.req.path
-    // Skip catch-all for API and static assets
-    if (path.startsWith('/api/') || path.startsWith('/assets/') || path.startsWith('/sounds/') || path === '/fox.svg') {
-      return c.next()
-    }
-    try {
-      const content = await readFile(join(webDir, 'index.html'))
-      return c.html(content.toString())
-    } catch {
-      return c.text('Web UI not built. Run `npm run build:web`', 404)
-    }
-  })
+    })
+    
+    // Catch-all for SPA routing - proxy to Vite
+    app.get('*', async (c) => {
+      const path = c.req.path
+      // Skip catch-all for API
+      if (path.startsWith('/api/')) {
+        // API routes are handled above, this won't be reached
+        return
+      }
+      const response = await fetch(`http://localhost:5173${path}`)
+      if (response.status === 404) {
+        // Vite returns 404, try index.html for SPA
+        const indexResponse = await fetch('http://localhost:5173/')
+        const content = await indexResponse.text()
+        return c.html(content)
+      }
+      const content = await response.text()
+      return c.body(content, 200, { 'Content-Type': getContentType(path) })
+    })
+  } else {
+    // Production mode: serve static files from dist/web
+    
+    // Serve all static files from web directory
+    app.get('/assets/*', async (c) => {
+      const path = c.req.path
+      const filename = path.substring(path.lastIndexOf('/') + 1)
+      const filePath = join(webDir, 'assets', filename)
+      try {
+        await access(filePath)
+        const content = await readFile(filePath)
+        return c.body(content, 200, { 'Content-Type': getContentType(filePath) })
+      } catch {
+        return c.text('Not found: ' + filename, 404)
+      }
+    })
+    
+    app.get('/fox.svg', async (c) => {
+      try {
+        const content = await readFile(join(webDir, 'fox.svg'))
+        return c.body(content, 200, { 'Content-Type': 'image/svg+xml' })
+      } catch {
+        return c.text('Not found', 404)
+      }
+    })
+    
+    app.get('/sounds/*', async (c) => {
+      const path = c.req.path
+      const filename = path.substring(path.lastIndexOf('/') + 1)
+      const filePath = join(webDir, 'sounds', filename)
+      try {
+        await access(filePath)
+        const content = await readFile(filePath)
+        return c.body(content, 200, { 'Content-Type': 'audio/mpeg' })
+      } catch {
+        return c.text('Not found: ' + filename, 404)
+      }
+    })
+    
+    app.get('/', async (c) => {
+      try {
+        const content = await readFile(join(webDir, 'index.html'))
+        return c.html(content.toString())
+      } catch {
+        return c.text('Web UI not built. Run `npm run build:web`', 404)
+      }
+    })
+    
+    // Catch-all route for SPA - serve index.html for any unmatched path
+    // Must be after all specific routes (/api/*, /assets/*, /sounds/*, /fox.svg)
+    app.get('*', async (c) => {
+      const path = c.req.path
+      // Skip catch-all for API and static assets
+      if (path.startsWith('/api/') || path.startsWith('/assets/') || path.startsWith('/sounds/') || path === '/fox.svg') {
+        return c.body(null)
+      }
+      try {
+        const content = await readFile(join(webDir, 'index.html'))
+        return c.html(content.toString())
+      } catch {
+        return c.text('Web UI not built. Run `npm run build:web`', 404)
+      }
+    })
+  }
 
   // Convert headers to Headers object
   function toHeaders(incomingHeaders: IncomingMessage['headers']): Headers {

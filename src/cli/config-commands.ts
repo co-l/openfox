@@ -14,7 +14,7 @@ Commands:
   config    Show current configuration
 
 Options:
-  -p, --port <number>     Specify port (default: 3000 for prod, 3100 for dev)
+  -p, --port <number>     Specify port (default: 10369 for prod, 10469 for dev)
   --no-browser            Don't open browser on start
   -h, --help              Show this help message
   -v, --version           Show version number
