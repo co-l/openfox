@@ -20,8 +20,10 @@ type DisplayItem =
   | { type: 'context-divider'; windowSequence: number }
 
 // Check if a message contains only criterion tool calls (no text content)
+// Subagent messages are never criteria-only - they stay grouped in their pane
 function isCriteriaOnlyMessage(msg: Message): boolean {
   if (msg.role !== 'assistant') return false
+  if (msg.subAgentId) return false  // Keep subagent messages together
   if (msg.content?.trim()) return false  // Has text content
   if (msg.thinkingContent?.trim()) return false  // Has thinking content
   if (!msg.toolCalls || msg.toolCalls.length === 0) return false  // No tool calls
