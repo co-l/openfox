@@ -12,12 +12,17 @@ import type { OrchestratorOptions, OrchestratorResult } from './types.js'
 import { RUNNER_CONFIG } from './types.js'
 import { decideNextAction } from './decision.js'
 import type { SessionManager } from '../session/index.js'
-import { getEventStore } from '../events/index.js'
+import { getEventStore, getCurrentContextWindowId } from '../events/index.js'
 import { logger } from '../utils/logger.js'
 
 // Import from chat orchestrator (EventStore-based)
 import { runBuilderTurn, runVerifierTurn, TurnMetrics, createMessageStartEvent } from '../chat/orchestrator.js'
 import type { LLMClientWithModel } from '../llm/client.js'
+
+function getCurrentWindowMessageOptions(sessionId: string): { contextWindowId: string } | undefined {
+  const contextWindowId = getCurrentContextWindowId(sessionId)
+  return contextWindowId ? { contextWindowId } : undefined
+}
 
 /**
  * Run the orchestrator loop until done, blocked, or aborted.
@@ -48,6 +53,7 @@ export async function runOrchestrator(options: OrchestratorOptions): Promise<Orc
     
     // Get current session state and decide next action
     const session = sessionManager.requireSession(sessionId)
+    const currentWindowMessageOptions = getCurrentWindowMessageOptions(sessionId)
     const action = decideNextAction(session.criteria)
     
     logger.debug('Orchestrator decision', { sessionId, iteration: iterations, action: action.type })
@@ -71,6 +77,7 @@ export async function runOrchestrator(options: OrchestratorOptions): Promise<Orc
         // Inject message explaining why blocked
         const blockedMsgId = crypto.randomUUID()
         eventStore.append(sessionId, createMessageStartEvent(blockedMsgId, 'user', `Runner blocked: ${action.reason}`, {
+          ...(currentWindowMessageOptions ?? {}),
           isSystemGenerated: true,
           messageKind: 'correction',
         }))
@@ -104,6 +111,7 @@ export async function runOrchestrator(options: OrchestratorOptions): Promise<Orc
         if (iterations > 1) {
           const nudgeMsgId = crypto.randomUUID()
           eventStore.append(sessionId, createMessageStartEvent(nudgeMsgId, 'user', `Continue working on the acceptance criteria. ${action.reason}.`, {
+            ...(currentWindowMessageOptions ?? {}),
             isSystemGenerated: true,
             messageKind: 'correction',
           }))
@@ -129,6 +137,7 @@ export async function runOrchestrator(options: OrchestratorOptions): Promise<Orc
   
   const maxIterMsgId = crypto.randomUUID()
   eventStore.append(sessionId, createMessageStartEvent(maxIterMsgId, 'user', `Runner stopped: Maximum iterations (${RUNNER_CONFIG.maxIterations}) reached`, {
+    ...(getCurrentWindowMessageOptions(sessionId) ?? {}),
     isSystemGenerated: true,
     messageKind: 'correction',
   }))

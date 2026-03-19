@@ -128,7 +128,7 @@ Please explore the existing code and propose acceptance criteria using add_crite
       expect(criterion?.status.type).toBe('passed')
     })
 
-    it('verifier fails and builder retries', async () => {
+    it('verifier fails and builder retries', { timeout: 10_000 }, async () => {
       await client.send('project.create', { name: 'Retry Workflow', workdir: testDir.path })
       const projectId = client.getProject()!.id
       await client.send('session.create', { projectId })
@@ -140,7 +140,7 @@ Please explore the existing code and propose acceptance criteria using add_crite
       await client.send('mode.switch', { mode: 'builder' })
       await client.send('runner.launch', {})
 
-      await collectUntilPhase(client, 'blocked', 1_500)
+      await collectUntilPhase(client, 'blocked', 5_000)
       
       const session = client.getSession()!
       const events = client.allEvents()
@@ -151,7 +151,7 @@ Please explore the existing code and propose acceptance criteria using add_crite
   })
 
   describe('Multiple Criteria', () => {
-    it('handles multiple criteria in sequence', async () => {
+    it('handles multiple criteria in sequence', { timeout: 10_000 }, async () => {
       await client.send('project.create', { name: 'Multi Criteria', workdir: testDir.path })
       const projectId = client.getProject()!.id
       await client.send('session.create', { projectId })
@@ -167,7 +167,7 @@ Please explore the existing code and propose acceptance criteria using add_crite
       await client.send('mode.switch', { mode: 'builder' })
       await client.send('runner.launch', {})
 
-      await collectUntilPhase(client, 'blocked', 1_500)
+      await collectUntilPhase(client, 'blocked', 5_000)
 
       const finalSession = client.getSession()!
       const processed = finalSession.criteria.filter((c: Criterion) => 

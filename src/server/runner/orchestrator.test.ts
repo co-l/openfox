@@ -3,11 +3,13 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 const {
   decideNextActionMock,
   getEventStoreMock,
+  getCurrentContextWindowIdMock,
   runBuilderTurnMock,
   runVerifierTurnMock,
 } = vi.hoisted(() => ({
   decideNextActionMock: vi.fn(),
   getEventStoreMock: vi.fn(),
+  getCurrentContextWindowIdMock: vi.fn(),
   runBuilderTurnMock: vi.fn(),
   runVerifierTurnMock: vi.fn(),
 }))
@@ -18,6 +20,7 @@ vi.mock('./decision.js', () => ({
 
 vi.mock('../events/index.js', () => ({
   getEventStore: getEventStoreMock,
+  getCurrentContextWindowId: getCurrentContextWindowIdMock,
 }))
 
 vi.mock('../chat/orchestrator.js', async (importOriginal) => {
@@ -48,6 +51,8 @@ describe('runner orchestrator', () => {
   beforeEach(() => {
     decideNextActionMock.mockReset()
     getEventStoreMock.mockReset()
+    getCurrentContextWindowIdMock.mockReset()
+    getCurrentContextWindowIdMock.mockReturnValue(undefined)
     runBuilderTurnMock.mockReset()
     runVerifierTurnMock.mockReset()
   })

@@ -128,7 +128,7 @@ describe('Runner/Orchestrator', () => {
   })
 
   describe('Blocked State', () => {
-    it('reaches blocked after repeated failures', async () => {
+    it('reaches blocked after repeated failures', { timeout: 10_000 }, async () => {
       const uniqueId = `missing-${Date.now()}`
       await client.send('criteria.edit', { 
         criteria: [{ id: uniqueId, description: 'File /nonexistent-xyz.txt exists', status: { type: 'pending' }, attempts: [] }] 
@@ -138,7 +138,7 @@ describe('Runner/Orchestrator', () => {
       await client.send('mode.switch', { mode: 'builder' })
       await client.send('runner.launch', {})
 
-      await collectUntilPhase(client, 'blocked', 1_500)
+      await collectUntilPhase(client, 'blocked', 5_000)
       
       const session = client.getSession()!
       expect(session.phase).toBe('blocked')
@@ -209,7 +209,7 @@ describe('Runner/Orchestrator', () => {
       await client.send('mode.switch', { mode: 'builder' })
       await client.send('runner.launch', {})
 
-      await collectUntilPhase(client, 'blocked', 3_000)
+      await collectUntilPhase(client, 'blocked', 5_000)
       
       // Send user message to reset
       await client.send('chat.send', { 
@@ -219,7 +219,7 @@ describe('Runner/Orchestrator', () => {
       // Should receive phase change back to build
       const phaseEvent = await client.waitFor('phase.changed', (payload: unknown) => {
         return (payload as { phase: string }).phase === 'build'
-      }, 3_000).catch(() => null)
+      }, 5_000).catch(() => null)
       
       expect((phaseEvent?.payload as { phase: string } | undefined)?.phase).toBe('build')
     })

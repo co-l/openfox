@@ -2,6 +2,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const {
   getEventStoreMock,
+  getContextMessagesMock,
+  getCurrentContextWindowIdMock,
   getAllInstructionsMock,
   getToolRegistryForModeMock,
   createToolProgressHandlerMock,
@@ -9,6 +11,8 @@ const {
   consumeStreamGeneratorMock,
 } = vi.hoisted(() => ({
   getEventStoreMock: vi.fn(),
+  getContextMessagesMock: vi.fn(),
+  getCurrentContextWindowIdMock: vi.fn(),
   getAllInstructionsMock: vi.fn(),
   getToolRegistryForModeMock: vi.fn(),
   createToolProgressHandlerMock: vi.fn(() => undefined),
@@ -18,6 +22,8 @@ const {
 
 vi.mock('../events/index.js', () => ({
   getEventStore: getEventStoreMock,
+  getContextMessages: getContextMessagesMock,
+  getCurrentContextWindowId: getCurrentContextWindowIdMock,
 }))
 
 vi.mock('../context/instructions.js', () => ({
@@ -79,6 +85,18 @@ function createSessionManager(state: Record<string, any>) {
     getCurrentWindowMessages: vi.fn(() => state['current'].messages ?? []),
     setCurrentContextSize: vi.fn(),
     getLspManager: vi.fn(() => ({ name: 'lsp' })),
+    updateCriterionStatus: vi.fn((_: string, criterionId: string, status: Record<string, unknown>) => {
+      state['current'].criteria = state['current'].criteria.map((criterion: any) =>
+        criterion.id === criterionId ? { ...criterion, status } : criterion,
+      )
+    }),
+    addCriterionAttempt: vi.fn((_: string, criterionId: string, attempt: Record<string, unknown>) => {
+      state['current'].criteria = state['current'].criteria.map((criterion: any) =>
+        criterion.id === criterionId
+          ? { ...criterion, attempts: [...criterion.attempts, attempt] }
+          : criterion,
+      )
+    }),
     addModifiedFile: vi.fn((_: string, path: string) => {
       state['current'].executionState = { ...(state['current'].executionState ?? {}), modifiedFiles: [path] }
     }),
@@ -88,6 +106,10 @@ function createSessionManager(state: Record<string, any>) {
 describe('chat orchestrator', () => {
   beforeEach(() => {
     getEventStoreMock.mockReset()
+    getContextMessagesMock.mockReset()
+    getCurrentContextWindowIdMock.mockReset()
+    getContextMessagesMock.mockReturnValue([])
+    getCurrentContextWindowIdMock.mockReturnValue(undefined)
     getAllInstructionsMock.mockReset()
     getToolRegistryForModeMock.mockReset()
     createToolProgressHandlerMock.mockClear()
@@ -524,7 +546,237 @@ describe('chat orchestrator', () => {
     expect(types).toContain('chat.done')
   })
 
-  it('handles verifier path denial and returns success when nothing failed', async () => {
+  it('nudges verifier in the same context when it stops before terminalizing criteria', async () => {
+    const eventStore = createEventStore()
+    getEventStoreMock.mockReturnValue(eventStore)
+    getAllInstructionsMock.mockResolvedValue({ content: 'Verify carefully', files: [] })
+
+    const state: any = {
+      current: {
+        id: 'session-1',
+        projectId: 'project-1',
+        workdir: '/tmp/project',
+        mode: 'builder',
+        phase: 'verification',
+        isRunning: true,
+        criteria: [{ id: 'tests-pass', description: 'Tests pass', status: { type: 'completed', completedAt: '2024-01-01T00:00:00.000Z' }, attempts: [] }],
+        executionState: { modifiedFiles: ['src/index.ts'] },
+        summary: 'Task summary',
+        messages: [],
+      },
+    }
+    const sessionManager = createSessionManager(state)
+    const execute = vi.fn(async () => {
+      state.current.criteria = [{ id: 'tests-pass', description: 'Tests pass', status: { type: 'failed', failedAt: '2024-01-01T00:00:00.000Z', reason: 'still broken' }, attempts: [] }]
+      return { success: true, output: 'verification failed', durationMs: 15, truncated: false }
+    })
+
+    getToolRegistryForModeMock.mockReturnValue({
+      definitions: [{ type: 'function', function: { name: 'fail_criterion', description: 'Fail', parameters: {} } }],
+      execute,
+    })
+    streamLLMPureMock.mockReturnValue({ kind: 'stream' })
+    consumeStreamGeneratorMock
+      .mockResolvedValueOnce({
+        content: 'I need to keep verifying.',
+        toolCalls: [],
+        segments: [{ type: 'text', content: 'I need to keep verifying.' }],
+        usage: { promptTokens: 8, completionTokens: 3 },
+        timing: { ttft: 1, completionTime: 1, tps: 3, prefillTps: 8 },
+        aborted: false,
+        xmlFormatError: false,
+      })
+      .mockResolvedValueOnce({
+        content: 'marking failed',
+        toolCalls: [{ id: 'call-1', name: 'fail_criterion', arguments: { id: 'tests-pass', reason: 'still broken' } }],
+        segments: [],
+        usage: { promptTokens: 6, completionTokens: 2 },
+        timing: { ttft: 1, completionTime: 1, tps: 2, prefillTps: 6 },
+        aborted: false,
+        xmlFormatError: false,
+      })
+      .mockResolvedValueOnce({
+        content: 'done',
+        toolCalls: [],
+        segments: [{ type: 'text', content: 'done' }],
+        usage: { promptTokens: 5, completionTokens: 1 },
+        timing: { ttft: 1, completionTime: 1, tps: 1, prefillTps: 5 },
+        aborted: false,
+        xmlFormatError: false,
+      })
+
+    const result = await runVerifierTurn({
+      sessionManager: sessionManager as never,
+      sessionId: 'session-1',
+      llmClient: { getModel: () => 'qwen3-32b' } as never,
+      onMessage: vi.fn(),
+    }, new TurnMetrics())
+
+    expect(result).toEqual({ allPassed: false, failed: [{ id: 'tests-pass', reason: 'still broken' }] })
+    expect(execute).toHaveBeenCalledTimes(1)
+
+    expect(streamLLMPureMock.mock.calls).toHaveLength(3)
+    expect(streamLLMPureMock.mock.calls[1]?.[0]).toMatchObject({
+      messages: expect.arrayContaining([
+        expect.objectContaining({ role: 'assistant', content: 'I need to keep verifying.' }),
+        expect.objectContaining({
+          role: 'user',
+          content: expect.stringContaining('Use pass_criterion or fail_criterion'),
+        }),
+      ]),
+    })
+
+    expect(eventStore.append.mock.calls.find(([, event]) => {
+      if (event.type !== 'message.start') return false
+      const data = event.data as { content?: string; subAgentType?: string; messageKind?: string }
+      return data.subAgentType === 'verifier'
+        && data.messageKind === 'correction'
+        && data.content?.includes('tests-pass') === true
+    })).toBeDefined()
+  })
+
+  it('nudges verifier after non-terminal tool work with no verification progress', async () => {
+    const eventStore = createEventStore()
+    getEventStoreMock.mockReturnValue(eventStore)
+    getAllInstructionsMock.mockResolvedValue({ content: 'Verify carefully', files: [] })
+
+    const state: any = {
+      current: {
+        id: 'session-1',
+        projectId: 'project-1',
+        workdir: '/tmp/project',
+        mode: 'builder',
+        phase: 'verification',
+        isRunning: true,
+        criteria: [{ id: 'tests-pass', description: 'Tests pass', status: { type: 'completed', completedAt: '2024-01-01T00:00:00.000Z' }, attempts: [] }],
+        executionState: { modifiedFiles: ['src/index.ts'] },
+        summary: 'Task summary',
+        messages: [],
+      },
+    }
+    const sessionManager = createSessionManager(state)
+    const execute = vi.fn(async (name: string) => {
+      if (name === 'read_file') {
+        return { success: true, output: 'file contents', durationMs: 5, truncated: false }
+      }
+
+      state.current.criteria = [{ id: 'tests-pass', description: 'Tests pass', status: { type: 'failed', failedAt: '2024-01-01T00:00:00.000Z', reason: 'still broken' }, attempts: [] }]
+      return { success: true, output: 'verification failed', durationMs: 15, truncated: false }
+    })
+
+    getToolRegistryForModeMock.mockReturnValue({
+      definitions: [
+        { type: 'function', function: { name: 'read_file', description: 'Read', parameters: {} } },
+        { type: 'function', function: { name: 'fail_criterion', description: 'Fail', parameters: {} } },
+      ],
+      execute,
+    })
+    streamLLMPureMock.mockReturnValue({ kind: 'stream' })
+    consumeStreamGeneratorMock
+      .mockResolvedValueOnce({
+        content: 'checking files',
+        toolCalls: [{ id: 'call-1', name: 'read_file', arguments: { path: 'src/index.ts' } }],
+        segments: [],
+        usage: { promptTokens: 8, completionTokens: 3 },
+        timing: { ttft: 1, completionTime: 1, tps: 3, prefillTps: 8 },
+        aborted: false,
+        xmlFormatError: false,
+      })
+      .mockResolvedValueOnce({
+        content: 'marking failed',
+        toolCalls: [{ id: 'call-2', name: 'fail_criterion', arguments: { id: 'tests-pass', reason: 'still broken' } }],
+        segments: [],
+        usage: { promptTokens: 6, completionTokens: 2 },
+        timing: { ttft: 1, completionTime: 1, tps: 2, prefillTps: 6 },
+        aborted: false,
+        xmlFormatError: false,
+      })
+      .mockResolvedValueOnce({
+        content: 'done',
+        toolCalls: [],
+        segments: [{ type: 'text', content: 'done' }],
+        usage: { promptTokens: 5, completionTokens: 1 },
+        timing: { ttft: 1, completionTime: 1, tps: 1, prefillTps: 5 },
+        aborted: false,
+        xmlFormatError: false,
+      })
+
+    const result = await runVerifierTurn({
+      sessionManager: sessionManager as never,
+      sessionId: 'session-1',
+      llmClient: { getModel: () => 'qwen3-32b' } as never,
+      onMessage: vi.fn(),
+    }, new TurnMetrics())
+
+    expect(result).toEqual({ allPassed: false, failed: [{ id: 'tests-pass', reason: 'still broken' }] })
+    expect(streamLLMPureMock.mock.calls[1]?.[0]).toMatchObject({
+      messages: expect.arrayContaining([
+        expect.objectContaining({
+          role: 'user',
+          content: expect.stringContaining('Use pass_criterion or fail_criterion'),
+        }),
+      ]),
+    })
+  })
+
+  it('fails remaining completed criteria after repeated verifier nudges without progress', async () => {
+    const eventStore = createEventStore()
+    getEventStoreMock.mockReturnValue(eventStore)
+    getAllInstructionsMock.mockResolvedValue({ content: 'Verify carefully', files: [] })
+
+    const state: any = {
+      current: {
+        id: 'session-1',
+        projectId: 'project-1',
+        workdir: '/tmp/project',
+        mode: 'builder',
+        phase: 'verification',
+        isRunning: true,
+        criteria: [{ id: 'tests-pass', description: 'Tests pass', status: { type: 'completed', completedAt: '2024-01-01T00:00:00.000Z' }, attempts: [] }],
+        executionState: { modifiedFiles: ['src/index.ts'] },
+        summary: 'Task summary',
+        messages: [],
+      },
+    }
+    const sessionManager = createSessionManager(state)
+
+    getToolRegistryForModeMock.mockReturnValue({
+      definitions: [{ type: 'function', function: { name: 'fail_criterion', description: 'Fail', parameters: {} } }],
+      execute: vi.fn(),
+    })
+    streamLLMPureMock.mockReturnValue({ kind: 'stream' })
+    for (let index = 0; index < 6; index++) {
+      consumeStreamGeneratorMock.mockResolvedValueOnce({
+        content: `stopped-${index}`,
+        toolCalls: [],
+        segments: [{ type: 'text', content: `stopped-${index}` }],
+        usage: { promptTokens: 8, completionTokens: 1 },
+        timing: { ttft: 1, completionTime: 1, tps: 1, prefillTps: 8 },
+        aborted: false,
+        xmlFormatError: false,
+      })
+    }
+
+    const result = await runVerifierTurn({
+      sessionManager: sessionManager as never,
+      sessionId: 'session-1',
+      llmClient: { getModel: () => 'qwen3-32b' } as never,
+      onMessage: vi.fn(),
+    }, new TurnMetrics())
+
+    expect(result.allPassed).toBe(false)
+    expect(result.failed).toEqual([
+      {
+        id: 'tests-pass',
+        reason: 'Verifier stopped repeatedly without using verification tools after repeated nudges.',
+      },
+    ])
+    expect(sessionManager.updateCriterionStatus).toHaveBeenCalledTimes(1)
+    expect(sessionManager.addCriterionAttempt).toHaveBeenCalledTimes(1)
+    expect(streamLLMPureMock.mock.calls).toHaveLength(6)
+  })
+
+  it('handles verifier path denial and nudges until verification reaches a terminal state', async () => {
     const eventStore = createEventStore()
     getEventStoreMock.mockReturnValue(eventStore)
     getAllInstructionsMock.mockResolvedValue({ content: 'Verify carefully', files: [] })
@@ -543,10 +795,21 @@ describe('chat orchestrator', () => {
       },
     }
     const sessionManager = createSessionManager(state)
-    const execute = vi.fn(async () => {
-      throw new PathAccessDeniedError(['/etc/passwd'], 'read_file')
+    const execute = vi.fn(async (name: string) => {
+      if (name === 'read_file') {
+        throw new PathAccessDeniedError(['/etc/passwd'], 'read_file')
+      }
+
+      state.current.criteria = [{ id: 'tests-pass', description: 'Tests pass', status: { type: 'passed', verifiedAt: '2024-01-01T00:00:00.000Z' }, attempts: [] }]
+      return { success: true, output: 'verification passed', durationMs: 10, truncated: false }
     })
-    getToolRegistryForModeMock.mockReturnValue({ definitions: [{ type: 'function', function: { name: 'read_file', description: 'Read', parameters: {} } }], execute })
+    getToolRegistryForModeMock.mockReturnValue({
+      definitions: [
+        { type: 'function', function: { name: 'read_file', description: 'Read', parameters: {} } },
+        { type: 'function', function: { name: 'pass_criterion', description: 'Pass', parameters: {} } },
+      ],
+      execute,
+    })
     streamLLMPureMock.mockReturnValue({ kind: 'stream' })
     consumeStreamGeneratorMock
       .mockResolvedValueOnce({
@@ -562,6 +825,24 @@ describe('chat orchestrator', () => {
         content: 'done',
         toolCalls: [],
         segments: [{ type: 'text', content: 'done' }],
+        usage: { promptTokens: 5, completionTokens: 1 },
+        timing: { ttft: 1, completionTime: 1, tps: 1, prefillTps: 5 },
+        aborted: false,
+        xmlFormatError: false,
+      })
+      .mockResolvedValueOnce({
+        content: 'passing criterion',
+        toolCalls: [{ id: 'call-2', name: 'pass_criterion', arguments: { id: 'tests-pass', reason: 'verified from available signals' } }],
+        segments: [],
+        usage: { promptTokens: 6, completionTokens: 2 },
+        timing: { ttft: 1, completionTime: 1, tps: 2, prefillTps: 6 },
+        aborted: false,
+        xmlFormatError: false,
+      })
+      .mockResolvedValueOnce({
+        content: 'verified',
+        toolCalls: [],
+        segments: [{ type: 'text', content: 'verified' }],
         usage: { promptTokens: 5, completionTokens: 1 },
         timing: { ttft: 1, completionTime: 1, tps: 1, prefillTps: 5 },
         aborted: false,
@@ -665,5 +946,162 @@ describe('chat orchestrator', () => {
       llmClient: { getModel: () => 'qwen3-32b' } as never,
       onMessage: vi.fn(),
     }, new TurnMetrics())).rejects.toThrow('unexpected verifier failure')
+  })
+
+  describe('context window filtering', () => {
+    it('planner turn uses getContextMessages to filter by current window', async () => {
+      const eventStore = createEventStore()
+      getEventStoreMock.mockReturnValue(eventStore)
+      
+      // Mock getContextMessages to return only current-window messages
+      const currentWindowMessages = [
+        { role: 'user' as const, content: 'Current window message' },
+      ]
+      getContextMessagesMock.mockReturnValue(currentWindowMessages)
+      getCurrentContextWindowIdMock.mockReturnValue('window-2')
+      
+      getAllInstructionsMock.mockResolvedValue({ content: '', files: [] })
+      getToolRegistryForModeMock.mockReturnValue({ definitions: [], execute: vi.fn() })
+      streamLLMPureMock.mockReturnValue({ kind: 'stream' })
+      consumeStreamGeneratorMock.mockResolvedValue({
+        content: 'Response',
+        toolCalls: [],
+        segments: [{ type: 'text', content: 'Response' }],
+        usage: { promptTokens: 10, completionTokens: 5 },
+        timing: { ttft: 1, completionTime: 1, tps: 5, prefillTps: 10 },
+        aborted: false,
+        xmlFormatError: false,
+      })
+
+      const sessionManager = createSessionManager({
+        current: {
+          id: 'session-1',
+          projectId: 'project-1',
+          workdir: '/tmp/project',
+          mode: 'planner',
+          phase: 'plan',
+          isRunning: true,
+          criteria: [],
+          executionState: {},
+          messages: [],
+        },
+      })
+
+      await runChatTurn({
+        sessionManager: sessionManager as never,
+        sessionId: 'session-1',
+        llmClient: { getModel: () => 'qwen3-32b' } as never,
+      })
+
+      // Verify getContextMessages was called with session ID
+      expect(getContextMessagesMock).toHaveBeenCalledWith('session-1')
+      
+      // Verify streamLLMPure received only current-window messages
+      expect(streamLLMPureMock).toHaveBeenCalledWith(
+        expect.objectContaining({
+          messages: currentWindowMessages,
+        })
+      )
+    })
+
+    it('builder turn uses getContextMessages to filter by current window', async () => {
+      const eventStore = createEventStore()
+      getEventStoreMock.mockReturnValue(eventStore)
+      
+      const currentWindowMessages = [
+        { role: 'user' as const, content: 'Build this' },
+      ]
+      getContextMessagesMock.mockReturnValue(currentWindowMessages)
+      getCurrentContextWindowIdMock.mockReturnValue('window-2')
+      
+      getAllInstructionsMock.mockResolvedValue({ content: '', files: [] })
+      getToolRegistryForModeMock.mockReturnValue({ definitions: [], execute: vi.fn() })
+      streamLLMPureMock.mockReturnValue({ kind: 'stream' })
+      consumeStreamGeneratorMock.mockResolvedValue({
+        content: 'Built',
+        toolCalls: [],
+        segments: [{ type: 'text', content: 'Built' }],
+        usage: { promptTokens: 10, completionTokens: 5 },
+        timing: { ttft: 1, completionTime: 1, tps: 5, prefillTps: 10 },
+        aborted: false,
+        xmlFormatError: false,
+      })
+
+      const sessionManager = createSessionManager({
+        current: {
+          id: 'session-1',
+          projectId: 'project-1',
+          workdir: '/tmp/project',
+          mode: 'builder',
+          phase: 'build',
+          isRunning: true,
+          criteria: [{ id: 'c1', description: 'Test', status: { type: 'pending' }, attempts: [] }],
+          executionState: { modifiedFiles: [] },
+          messages: [],
+        },
+      })
+
+      await runBuilderTurn({
+        sessionManager: sessionManager as never,
+        sessionId: 'session-1',
+        llmClient: { getModel: () => 'qwen3-32b' } as never,
+      }, new TurnMetrics())
+
+      expect(getContextMessagesMock).toHaveBeenCalledWith('session-1')
+      expect(streamLLMPureMock).toHaveBeenCalledWith(
+        expect.objectContaining({
+          messages: currentWindowMessages,
+        })
+      )
+    })
+
+    it('assistant messages include contextWindowId', async () => {
+      const eventStore = createEventStore()
+      getEventStoreMock.mockReturnValue(eventStore)
+      
+      getContextMessagesMock.mockReturnValue([{ role: 'user' as const, content: 'Hello' }])
+      getCurrentContextWindowIdMock.mockReturnValue('window-123')
+      
+      getAllInstructionsMock.mockResolvedValue({ content: '', files: [] })
+      getToolRegistryForModeMock.mockReturnValue({ definitions: [], execute: vi.fn() })
+      streamLLMPureMock.mockReturnValue({ kind: 'stream' })
+      consumeStreamGeneratorMock.mockResolvedValue({
+        content: 'Hi',
+        toolCalls: [],
+        segments: [{ type: 'text', content: 'Hi' }],
+        usage: { promptTokens: 5, completionTokens: 2 },
+        timing: { ttft: 1, completionTime: 1, tps: 2, prefillTps: 5 },
+        aborted: false,
+        xmlFormatError: false,
+      })
+
+      const sessionManager = createSessionManager({
+        current: {
+          id: 'session-1',
+          projectId: 'project-1',
+          workdir: '/tmp/project',
+          mode: 'planner',
+          phase: 'plan',
+          isRunning: true,
+          criteria: [],
+          executionState: {},
+          messages: [],
+        },
+      })
+
+      await runChatTurn({
+        sessionManager: sessionManager as never,
+        sessionId: 'session-1',
+        llmClient: { getModel: () => 'qwen3-32b' } as never,
+      })
+
+      // Find the message.start event for the assistant
+      const assistantStart = eventStore.append.mock.calls.find(
+        ([, event]) => event.type === 'message.start' && (event.data as any).role === 'assistant'
+      )
+      
+      expect(assistantStart).toBeDefined()
+      expect((assistantStart![1].data as any).contextWindowId).toBe('window-123')
+    })
   })
 })

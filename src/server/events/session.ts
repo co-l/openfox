@@ -40,7 +40,7 @@ import {
   foldPhase,
   foldIsRunning,
   foldContextState,
-  buildContextMessagesFromMessages,
+  buildContextMessagesFromStoredEvents,
   type ContextMessage,
   type FoldedSessionState,
 } from './folding.js'
@@ -92,10 +92,14 @@ export function getCurrentWindowMessages(sessionId: string): SnapshotMessage[] {
  * Get context messages for LLM from current window
  */
 export function getContextMessages(sessionId: string): ContextMessage[] {
-  const state = getSessionState(sessionId)
-  if (!state) return []
+  const eventStore = getEventStore()
+  const events = eventStore.getEvents(sessionId)
+  if (events.length === 0) return []
 
-  return buildContextMessagesFromMessages(state.messages, state.currentContextWindowId)
+  const currentContextWindowId = getCurrentContextWindowId(sessionId)
+  if (!currentContextWindowId) return []
+
+  return buildContextMessagesFromStoredEvents(events, currentContextWindowId)
 }
 
 /**

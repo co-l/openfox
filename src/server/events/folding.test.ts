@@ -75,6 +75,40 @@ describe('event folding', () => {
     ])
   })
 
+  it('filters llm context messages by context window when requested', () => {
+    const events: StoredEvent[] = [
+      { ...baseEvent, type: 'message.start', data: { messageId: 'old-user', role: 'user', content: 'old', contextWindowId: 'window-1' } },
+      { ...baseEvent, type: 'message.done', data: { messageId: 'old-user' } },
+      { ...baseEvent, type: 'message.start', data: { messageId: 'old-assistant', role: 'assistant', contextWindowId: 'window-1' } },
+      { ...baseEvent, type: 'message.delta', data: { messageId: 'old-assistant', content: 'previous answer' } },
+      { ...baseEvent, type: 'tool.call', data: { messageId: 'old-assistant', toolCall: { id: 'old-call', name: 'glob', arguments: { pattern: '*.ts' } } } },
+      { ...baseEvent, type: 'tool.result', data: { messageId: 'old-assistant', toolCallId: 'old-call', result: { success: true, output: 'old result', durationMs: 1, truncated: false } } },
+      { ...baseEvent, type: 'message.start', data: { messageId: 'new-user', role: 'user', content: 'new', contextWindowId: 'window-2' } },
+      { ...baseEvent, type: 'message.done', data: { messageId: 'new-user' } },
+      { ...baseEvent, type: 'message.start', data: { messageId: 'new-assistant', role: 'assistant', contextWindowId: 'window-2' } },
+      { ...baseEvent, type: 'message.delta', data: { messageId: 'new-assistant', content: 'current answer' } },
+      { ...baseEvent, type: 'tool.call', data: { messageId: 'new-assistant', toolCall: { id: 'new-call', name: 'read_file', arguments: { path: 'src/app.ts' } } } },
+      { ...baseEvent, type: 'tool.result', data: { messageId: 'new-assistant', toolCallId: 'new-call', result: { success: true, output: 'new result', durationMs: 1, truncated: false } } },
+    ]
+
+    expect(buildContextMessagesFromStoredEvents(events, 'window-2')).toEqual([
+      {
+        role: 'user',
+        content: 'new',
+      },
+      {
+        role: 'assistant',
+        content: 'current answer',
+        toolCalls: [{ id: 'new-call', name: 'read_file', arguments: { path: 'src/app.ts' } }],
+      },
+      {
+        role: 'tool',
+        content: 'new result',
+        toolCallId: 'new-call',
+      },
+    ])
+  })
+
   it('folds turn events into snapshot messages and builds a snapshot', () => {
     const events: Array<{ type: any; timestamp: number; data: any }> = [
       { type: 'message.start', timestamp: 123, data: { messageId: 'm1', role: 'assistant' as const, contextWindowId: 'window-1' } },

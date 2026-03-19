@@ -20,6 +20,7 @@ const {
   consumeStreamGeneratorMock,
   streamLLMResponseMock,
   getEventStoreMock,
+  getCurrentContextWindowIdMock,
 } = vi.hoisted(() => ({
   createProjectMock: vi.fn(),
   getProjectMock: vi.fn(),
@@ -37,6 +38,7 @@ const {
   consumeStreamGeneratorMock: vi.fn(),
   streamLLMResponseMock: vi.fn(),
   getEventStoreMock: vi.fn(),
+  getCurrentContextWindowIdMock: vi.fn(),
 }))
 
 vi.mock('../db/projects.js', () => ({
@@ -94,6 +96,7 @@ vi.mock('../events/index.js', async (importOriginal) => {
   return {
     ...actual,
     getEventStore: getEventStoreMock,
+    getCurrentContextWindowId: getCurrentContextWindowIdMock,
   }
 })
 
@@ -270,6 +273,8 @@ describe('createWebSocketServer', () => {
     consumeStreamGeneratorMock.mockReset()
     streamLLMResponseMock.mockReset()
     getEventStoreMock.mockReset()
+    getCurrentContextWindowIdMock.mockReset()
+    getCurrentContextWindowIdMock.mockReturnValue(undefined)
   })
 
   afterEach(async () => {

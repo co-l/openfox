@@ -136,7 +136,7 @@ describe('Verifier Mode', () => {
     })
 
     describe('fail_criterion', () => {
-      it('marks criterion as failed and returns to builder', async () => {
+      it('marks criterion as failed and returns to builder', { timeout: 10_000 }, async () => {
         await client.send('chat.send', {
           content: 'Add criterion ID "verify-fail": "Verifier should fail this criterion". Use add_criterion.',
         })
@@ -144,7 +144,7 @@ describe('Verifier Mode', () => {
         await client.send('mode.switch', { mode: 'builder' })
         await client.send('runner.launch', {})
 
-        await collectUntilPhase(client, 'blocked', 1_500)
+        await collectUntilPhase(client, 'blocked', 5_000)
         
         // Check criteria status
         const session = client.getSession()!

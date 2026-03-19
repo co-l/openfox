@@ -14,26 +14,32 @@ import type { ToolCall, ToolResult, Criterion, ContextState, Todo, MessageStats,
 import type { ServerMessage } from '../../shared/protocol.js'
 import type { LLMClientWithModel } from '../llm/client.js'
 import type { SessionSnapshot } from '../events/types.js'
-import { getEventStore } from '../events/index.js'
-import { buildContextMessagesFromStoredEvents, buildSnapshotFromSessionState } from '../events/folding.js'
+import { getEventStore, getContextMessages, getCurrentContextWindowId } from '../events/index.js'
+import { buildSnapshotFromSessionState } from '../events/folding.js'
 import type { SessionManager } from '../session/index.js'
 import { getToolRegistryForMode, AskUserInterrupt, PathAccessDeniedError } from '../tools/index.js'
 import { buildPlannerPrompt, buildBuilderPrompt, buildVerifierPrompt, BUILDER_KICKOFF_PROMPT, VERIFIER_KICKOFF_PROMPT } from './prompts.js'
 import { streamLLMPure, consumeStreamGenerator, TurnMetrics, createMessageStartEvent, createMessageDoneEvent, createToolCallEvent, createToolResultEvent, createChatDoneEvent, createFormatRetryEvent } from './stream-pure.js'
 import { createToolProgressHandler } from './tool-streaming.js'
-import { estimateTokens } from '../context/tokenizer.js'
 import { getAllInstructions } from '../context/instructions.js'
 import { logger } from '../utils/logger.js'
 
 // Re-export for runner orchestrator
 export { TurnMetrics, createMessageStartEvent, createMessageDoneEvent, createToolCallEvent, createToolResultEvent, createChatDoneEvent }
 
+function getCurrentWindowMessageOptions(sessionId: string): { contextWindowId: string } | undefined {
+  const contextWindowId = getCurrentContextWindowId(sessionId)
+  return contextWindowId ? { contextWindowId } : undefined
+}
+
 // ============================================================================
 // Constants
 // ============================================================================
 
 const MAX_FORMAT_RETRIES = 10
+const MAX_CONSECUTIVE_VERIFIER_NUDGES = 5
 const FORMAT_CORRECTION_PROMPT = `IMPORTANT: You MUST use the JSON function calling API. Do NOT output XML tags like <tool_call>, <function=>, or <parameter=>. Your previous attempt was stopped because you used the wrong format. Use the proper tool_calls format.`
+const VERIFIER_STALL_REASON = 'Verifier stopped repeatedly without using verification tools after repeated nudges.'
 
 // ============================================================================
 // Types
@@ -88,6 +94,7 @@ export async function runChatTurn(options: OrchestratorOptions): Promise<void> {
       // Emit waiting for user event
       const waitMsgId = crypto.randomUUID()
       eventStore.append(sessionId, createMessageStartEvent(waitMsgId, 'user', 'Waiting for user input...', {
+        ...(getCurrentWindowMessageOptions(sessionId) ?? {}),
         isSystemGenerated: true,
         messageKind: 'auto-prompt',
       }))
@@ -110,6 +117,7 @@ export async function runChatTurn(options: OrchestratorOptions): Promise<void> {
         },
       })
       eventStore.append(sessionId, createMessageStartEvent(errorMsgId, 'user', `Access denied: ${error.paths.join(', ')}. If you need this file, explain why and ask the user for permission.`, {
+        ...(getCurrentWindowMessageOptions(sessionId) ?? {}),
         isSystemGenerated: true,
         messageKind: 'correction',
       }))
@@ -133,6 +141,7 @@ export async function runChatTurn(options: OrchestratorOptions): Promise<void> {
       },
     })
     eventStore.append(sessionId, createMessageStartEvent(errorMsgId, 'user', `Error: ${error instanceof Error ? error.message : 'Unknown error'}`, {
+      ...(getCurrentWindowMessageOptions(sessionId) ?? {}),
       isSystemGenerated: true,
       messageKind: 'correction',
     }))
@@ -166,14 +175,16 @@ async function runPlannerTurn(
 
   const toolRegistry = getToolRegistryForMode('planner')
   const systemPrompt = buildPlannerPrompt(session.workdir, toolRegistry.definitions, instructionContent || undefined)
+  const currentWindowMessageOptions = getCurrentWindowMessageOptions(sessionId)
 
-  // Build messages from current context
-  const contextMessages = buildContextMessages(sessionManager, sessionId)
+  // Build messages from current context window only
+  const contextMessages = getContextMessages(sessionId)
 
   // Handle format retry
   if (formatRetryCount > 0) {
     const correctionMsgId = crypto.randomUUID()
     eventStore.append(sessionId, createMessageStartEvent(correctionMsgId, 'user', FORMAT_CORRECTION_PROMPT, {
+      ...(currentWindowMessageOptions ?? {}),
       isSystemGenerated: true,
       messageKind: 'correction',
     }))
@@ -181,9 +192,9 @@ async function runPlannerTurn(
     contextMessages.push({ role: 'user' as const, content: FORMAT_CORRECTION_PROMPT })
   }
 
-  // Create assistant message
+  // Create assistant message with current context window ID
   const assistantMsgId = crypto.randomUUID()
-  eventStore.append(sessionId, createMessageStartEvent(assistantMsgId, 'assistant'))
+  eventStore.append(sessionId, createMessageStartEvent(assistantMsgId, 'assistant', undefined, currentWindowMessageOptions))
 
   // Stream LLM response using pure generator
   const streamGen = streamLLMPure({
@@ -311,6 +322,7 @@ export async function runBuilderTurn(
       const kickoffMsgId = crypto.randomUUID()
       const kickoffContent = BUILDER_KICKOFF_PROMPT(session.criteria.length)
       eventStore.append(sessionId, createMessageStartEvent(kickoffMsgId, 'user', kickoffContent, {
+        ...(getCurrentWindowMessageOptions(sessionId) ?? {}),
         isSystemGenerated: true,
         messageKind: 'auto-prompt',
       }))
@@ -329,14 +341,16 @@ export async function runBuilderTurn(
     session.executionState?.modifiedFiles ?? [],
     instructionContent || undefined
   )
+  const currentWindowMessageOptions = getCurrentWindowMessageOptions(sessionId)
 
-  // Build messages from current context
-  const contextMessages = buildContextMessages(sessionManager, sessionId)
+  // Build messages from current context window only
+  const contextMessages = getContextMessages(sessionId)
 
   // Handle format retry
   if (formatRetryCount > 0) {
     const correctionMsgId = crypto.randomUUID()
     eventStore.append(sessionId, createMessageStartEvent(correctionMsgId, 'user', FORMAT_CORRECTION_PROMPT, {
+      ...(currentWindowMessageOptions ?? {}),
       isSystemGenerated: true,
       messageKind: 'correction',
     }))
@@ -344,9 +358,9 @@ export async function runBuilderTurn(
     contextMessages.push({ role: 'user' as const, content: FORMAT_CORRECTION_PROMPT })
   }
 
-  // Create assistant message
+  // Create assistant message with current context window ID
   const assistantMsgId = crypto.randomUUID()
-  eventStore.append(sessionId, createMessageStartEvent(assistantMsgId, 'assistant'))
+  eventStore.append(sessionId, createMessageStartEvent(assistantMsgId, 'assistant', undefined, currentWindowMessageOptions))
 
   // Stream LLM response using pure generator
   const streamGen = streamLLMPure({
@@ -506,10 +520,12 @@ ${criteriaList}
 ${modifiedFiles.length > 0 ? modifiedFiles.map(f => `- ${f}`).join('\n') : '(none)'}`
 
   logger.debug('Verifier starting', { sessionId, subAgentId, criteriaCount: session.criteria.length })
+  const currentWindowMessageOptions = getCurrentWindowMessageOptions(sessionId)
 
   // Emit context reset marker (visible in UI)
   const resetMsgId = crypto.randomUUID()
   eventStore.append(sessionId, createMessageStartEvent(resetMsgId, 'user', 'Fresh Context', {
+    ...(currentWindowMessageOptions ?? {}),
     isSystemGenerated: true,
     messageKind: 'context-reset',
     subAgentId,
@@ -520,6 +536,7 @@ ${modifiedFiles.length > 0 ? modifiedFiles.map(f => `- ${f}`).join('\n') : '(non
   // Emit context content
   const contextMsgId = crypto.randomUUID()
   eventStore.append(sessionId, createMessageStartEvent(contextMsgId, 'user', contextContent, {
+    ...(currentWindowMessageOptions ?? {}),
     isSystemGenerated: true,
     messageKind: 'auto-prompt',
     subAgentId,
@@ -530,6 +547,7 @@ ${modifiedFiles.length > 0 ? modifiedFiles.map(f => `- ${f}`).join('\n') : '(non
   // Emit verifier kickoff prompt
   const kickoffMsgId = crypto.randomUUID()
   eventStore.append(sessionId, createMessageStartEvent(kickoffMsgId, 'user', VERIFIER_KICKOFF_PROMPT, {
+    ...(currentWindowMessageOptions ?? {}),
     isSystemGenerated: true,
     messageKind: 'auto-prompt',
     subAgentId,
@@ -556,16 +574,19 @@ ${modifiedFiles.length > 0 ? modifiedFiles.map(f => `- ${f}`).join('\n') : '(non
 
   const maxIterations = 20
   let lastAssistantMsgId = ''
+  let nudgesSinceLastProgress = 0
+  let emittedTerminalDone = false
 
   for (let iteration = 0; iteration < maxIterations; iteration++) {
     if (signal?.aborted) {
       throw new Error('Aborted')
     }
 
-    // Create assistant message
+    // Create assistant message with current context window ID
     const assistantMsgId = crypto.randomUUID()
     lastAssistantMsgId = assistantMsgId
     eventStore.append(sessionId, createMessageStartEvent(assistantMsgId, 'assistant', undefined, {
+      ...(currentWindowMessageOptions ?? {}),
       subAgentId,
       subAgentType: 'verifier',
     }))
@@ -603,11 +624,48 @@ ${modifiedFiles.length > 0 ? modifiedFiles.map(f => `- ${f}`).join('\n') : '(non
       ...(result.toolCalls.length > 0 && { toolCalls: result.toolCalls }),
     })
 
-    // If no tool calls, verifier is done
+    session = sessionManager.requireSession(sessionId)
+    const criteriaAwaitingVerification = getCriteriaAwaitingVerification(session.criteria)
+
+    // If no tool calls, verifier is done or needs a nudge
     if (result.toolCalls.length === 0) {
+      if (criteriaAwaitingVerification.length > 0) {
+        if (nudgesSinceLastProgress < MAX_CONSECUTIVE_VERIFIER_NUDGES) {
+          nudgesSinceLastProgress += 1
+          const nudgeContent = buildVerifierNudgeContent(criteriaAwaitingVerification)
+          const nudgeMsgId = crypto.randomUUID()
+
+          eventStore.append(sessionId, createMessageDoneEvent(assistantMsgId, { segments: result.segments }))
+          eventStore.append(sessionId, createMessageStartEvent(nudgeMsgId, 'user', nudgeContent, {
+            ...(currentWindowMessageOptions ?? {}),
+            isSystemGenerated: true,
+            messageKind: 'correction',
+            subAgentId,
+            subAgentType: 'verifier',
+          }))
+          eventStore.append(sessionId, { type: 'message.done', data: { messageId: nudgeMsgId } })
+          customMessages = [...customMessages, { role: 'user', content: nudgeContent }]
+          continue
+        }
+
+        markCriteriaFailedAfterVerifierStall(sessionManager, sessionId, criteriaAwaitingVerification)
+        session = sessionManager.requireSession(sessionId)
+
+        const stalledMsgId = crypto.randomUUID()
+        eventStore.append(sessionId, createMessageStartEvent(stalledMsgId, 'user', `${VERIFIER_STALL_REASON} Marking remaining criteria as failed: ${criteriaAwaitingVerification.map(c => c.id).join(', ')}.`, {
+          ...(currentWindowMessageOptions ?? {}),
+          isSystemGenerated: true,
+          messageKind: 'correction',
+          subAgentId,
+          subAgentType: 'verifier',
+        }))
+        eventStore.append(sessionId, { type: 'message.done', data: { messageId: stalledMsgId } })
+      }
+
       const stats = turnMetrics.buildStats(llmClient.getModel(), 'verifier')
       eventStore.append(sessionId, createMessageDoneEvent(assistantMsgId, { segments: result.segments, stats }))
       eventStore.append(sessionId, createChatDoneEvent(assistantMsgId, 'complete', stats))
+      emittedTerminalDone = true
       break
     }
 
@@ -663,6 +721,59 @@ ${modifiedFiles.length > 0 ? modifiedFiles.map(f => `- ${f}`).join('\n') : '(non
         session = updatedSession
       }
     }
+
+    session = sessionManager.requireSession(sessionId)
+    const remainingCriteriaAfterTools = getCriteriaAwaitingVerification(session.criteria)
+
+    if (remainingCriteriaAfterTools.length < criteriaAwaitingVerification.length) {
+      nudgesSinceLastProgress = 0
+      continue
+    }
+
+    if (remainingCriteriaAfterTools.length === 0) {
+      nudgesSinceLastProgress = 0
+      continue
+    }
+
+    if (nudgesSinceLastProgress < MAX_CONSECUTIVE_VERIFIER_NUDGES) {
+      nudgesSinceLastProgress += 1
+      const nudgeContent = buildVerifierNudgeContent(remainingCriteriaAfterTools)
+      const nudgeMsgId = crypto.randomUUID()
+
+      eventStore.append(sessionId, createMessageStartEvent(nudgeMsgId, 'user', nudgeContent, {
+        ...(currentWindowMessageOptions ?? {}),
+        isSystemGenerated: true,
+        messageKind: 'correction',
+        subAgentId,
+        subAgentType: 'verifier',
+      }))
+      eventStore.append(sessionId, { type: 'message.done', data: { messageId: nudgeMsgId } })
+      customMessages = [...customMessages, { role: 'user', content: nudgeContent }]
+    }
+  }
+
+  session = sessionManager.requireSession(sessionId)
+  const remainingCriteriaAfterLoop = getCriteriaAwaitingVerification(session.criteria)
+
+  if (remainingCriteriaAfterLoop.length > 0) {
+    markCriteriaFailedAfterVerifierStall(sessionManager, sessionId, remainingCriteriaAfterLoop)
+    session = sessionManager.requireSession(sessionId)
+
+    const stalledMsgId = crypto.randomUUID()
+    eventStore.append(sessionId, createMessageStartEvent(stalledMsgId, 'user', `${VERIFIER_STALL_REASON} Marking remaining criteria as failed: ${remainingCriteriaAfterLoop.map((criterion) => criterion.id).join(', ')}.`, {
+      ...(currentWindowMessageOptions ?? {}),
+      isSystemGenerated: true,
+      messageKind: 'correction',
+      subAgentId,
+      subAgentType: 'verifier',
+    }))
+    eventStore.append(sessionId, { type: 'message.done', data: { messageId: stalledMsgId } })
+
+    if (!emittedTerminalDone && lastAssistantMsgId) {
+      const stats = turnMetrics.buildStats(llmClient.getModel(), 'verifier')
+      eventStore.append(sessionId, createChatDoneEvent(lastAssistantMsgId, 'complete', stats))
+      emittedTerminalDone = true
+    }
   }
 
   // Check results
@@ -687,31 +798,36 @@ ${modifiedFiles.length > 0 ? modifiedFiles.map(f => `- ${f}`).join('\n') : '(non
 // Helpers
 // ============================================================================
 
-/**
- * Build context messages for LLM from EventStore.
- * Folds events into messages suitable for LLM context.
- */
-function buildContextMessages(sessionManager: SessionManager, sessionId: string): Array<{
-  role: 'user' | 'assistant' | 'tool'
-  content: string
-  toolCalls?: ToolCall[]
-  toolCallId?: string
-}> {
-  const eventStore = getEventStore()
-  const events = eventStore.getEvents(sessionId)
-  
-  // If no events in EventStore, fall back to old system
-  if (events.length === 0) {
-    const messages = sessionManager.getCurrentWindowMessages(sessionId)
-    return messages.map(m => ({
-      role: m.role as 'user' | 'assistant' | 'tool',
-      content: m.content,
-      ...(m.toolCalls && { toolCalls: m.toolCalls }),
-      ...(m.toolCallId && { toolCallId: m.toolCallId }),
-    }))
-  }
+function getCriteriaAwaitingVerification(criteria: Criterion[]): Criterion[] {
+  return criteria.filter((criterion) => criterion.status.type === 'completed')
+}
 
-  return buildContextMessagesFromStoredEvents(events)
+function buildVerifierNudgeContent(criteria: Criterion[]): string {
+  const ids = criteria.map((criterion) => criterion.id).join(', ')
+  return `You stopped before finalizing verification. ${criteria.length} criteria still need a terminal verification result. Use pass_criterion or fail_criterion for each remaining criterion: ${ids}.`
+}
+
+function markCriteriaFailedAfterVerifierStall(
+  sessionManager: SessionManager,
+  sessionId: string,
+  criteria: Criterion[],
+): void {
+  const timestamp = new Date().toISOString()
+
+  for (const criterion of criteria) {
+    sessionManager.updateCriterionStatus(sessionId, criterion.id, {
+      type: 'failed',
+      failedAt: timestamp,
+      reason: VERIFIER_STALL_REASON,
+    })
+
+    sessionManager.addCriterionAttempt(sessionId, criterion.id, {
+      attemptNumber: criterion.attempts.length + 1,
+      status: 'failed',
+      timestamp,
+      details: VERIFIER_STALL_REASON,
+    })
+  }
 }
 
 /**

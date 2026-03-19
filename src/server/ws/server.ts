@@ -5,7 +5,7 @@ import type { Config } from '../config.js'
 import type { LLMClientWithModel } from '../llm/client.js'
 import type { ToolRegistry } from '../tools/index.js'
 import type { SessionManager } from '../session/index.js'
-import { getEventStore } from '../events/index.js'
+import { getEventStore, getCurrentContextWindowId } from '../events/index.js'
 import { buildContextMessagesFromStoredEvents, buildMessagesFromStoredEvents } from '../events/folding.js'
 import type { Message } from '../../shared/types.js'
 import { runChatTurn, TurnMetrics, createMessageStartEvent, createMessageDoneEvent, createChatDoneEvent } from '../chat/orchestrator.js'
@@ -15,7 +15,6 @@ import { streamLLMResponse } from '../chat/stream.js'
 import { computeMessageStats } from '../chat/stats.js'
 import { buildPlannerPrompt, SUMMARY_REQUEST_PROMPT, COMPACTION_PROMPT } from '../chat/prompts.js'
 import { getToolRegistryForMode, providePathConfirmation, addAllowedPaths } from '../tools/index.js'
-import { estimateTokens } from '../context/tokenizer.js'
 import { getAllInstructions } from '../context/instructions.js'
 import { logger } from '../utils/logger.js'
 import {
@@ -63,6 +62,11 @@ import {
   createSettingsValueMessage,
   storedEventToServerMessage,
 } from './protocol.js'
+
+function getCurrentWindowMessageOptions(sessionId: string): { contextWindowId: string } | undefined {
+  const contextWindowId = getCurrentContextWindowId(sessionId)
+  return contextWindowId ? { contextWindowId } : undefined
+}
 
 // Track active agent AbortControllers by sessionId
 const activeAgents = new Map<string, AbortController>()
@@ -415,11 +419,11 @@ async function handleClientMessage(
       const sessionId = client.activeSessionId
       const eventStore = getEventStore()
       
-      // Add user message (emits events to EventStore)
+      // Add user message with attachments (emits events to EventStore)
       const userMessage = sessionManager.addMessage(sessionId, {
         role: 'user',
         content: message.payload.content,
-        tokenCount: Math.ceil(message.payload.content.length / 4),
+        ...(message.payload.attachments && { attachments: message.payload.attachments }),
       })
       
       // Mark session as running (emits running.changed event)
@@ -605,6 +609,7 @@ async function handleClientMessage(
           // Add summary request prompt as user message
           const summaryMsgId = crypto.randomUUID()
           eventStore.append(sessionId, createMessageStartEvent(summaryMsgId, 'user', SUMMARY_REQUEST_PROMPT, {
+            ...(getCurrentWindowMessageOptions(sessionId) ?? {}),
             isSystemGenerated: true,
             messageKind: 'auto-prompt',
           }))
@@ -616,13 +621,13 @@ async function handleClientMessage(
           const toolRegistry = getToolRegistryForMode('planner')
           const systemPrompt = buildPlannerPrompt(currentSession.workdir, toolRegistry.definitions, instructions || undefined)
           
-          // Build context messages from EventStore
+          // Build context messages from EventStore (intentionally ALL messages, not filtered)
           const events = eventStore.getEvents(sessionId)
           const contextMessages = buildContextMessagesFromStoredEvents(events)
           
           // Stream summary response (no tools, no thinking)
           const assistantMsgId = crypto.randomUUID()
-          eventStore.append(sessionId, createMessageStartEvent(assistantMsgId, 'assistant'))
+          eventStore.append(sessionId, createMessageStartEvent(assistantMsgId, 'assistant', undefined, getCurrentWindowMessageOptions(sessionId)))
           
           const turnMetrics = new TurnMetrics()
           const streamGen = streamLLMPure({
@@ -687,6 +692,7 @@ async function handleClientMessage(
           })
           const errorMsgId = crypto.randomUUID()
           eventStore.append(sessionId, createMessageStartEvent(errorMsgId, 'user', `Error: ${error instanceof Error ? error.message : 'Unknown error'}`, {
+            ...(getCurrentWindowMessageOptions(sessionId) ?? {}),
             isSystemGenerated: true,
             messageKind: 'correction',
           }))
@@ -758,7 +764,6 @@ async function handleClientMessage(
           const compactPromptMsg = sessionManager.addMessage(sessionId, {
             role: 'user',
             content: COMPACTION_PROMPT,
-            tokenCount: estimateTokens(COMPACTION_PROMPT),
             isSystemGenerated: true,
             messageKind: 'auto-prompt',
           })

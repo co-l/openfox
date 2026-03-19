@@ -157,9 +157,13 @@ export function buildMessagesFromStoredEvents(events: StoredEvent[]): Message[] 
 }
 
 /**
- * Build context messages for LLM from stored events
+ * Build context messages for LLM from stored events.
+ * When windowId is provided, only messages in that context window are included.
  */
-export function buildContextMessagesFromStoredEvents(events: StoredEvent[]): ContextMessage[] {
+export function buildContextMessagesFromStoredEvents(
+  events: StoredEvent[],
+  windowId?: string
+): ContextMessage[] {
   const messages: Array<ContextMessage & { id: string }> = []
   const messageMap = new Map<string, ContextMessage & { id: string }>()
 
@@ -167,7 +171,7 @@ export function buildContextMessagesFromStoredEvents(events: StoredEvent[]): Con
     switch (event.type) {
       case 'message.start': {
         const data = event.data as Extract<TurnEvent, { type: 'message.start' }>['data']
-        if (data.role !== 'system') {
+        if (data.role !== 'system' && (windowId === undefined || data.contextWindowId === windowId)) {
           const message = {
             id: data.messageId,
             role: data.role as 'user' | 'assistant',
@@ -197,12 +201,14 @@ export function buildContextMessagesFromStoredEvents(events: StoredEvent[]): Con
       }
       case 'tool.result': {
         const data = event.data as Extract<TurnEvent, { type: 'tool.result' }>['data']
-        messages.push({
-          id: `tool-${data.toolCallId}`,
-          role: 'tool',
-          content: data.result.success ? (data.result.output ?? 'Success') : `Error: ${data.result.error}`,
-          toolCallId: data.toolCallId,
-        })
+        if (messageMap.has(data.messageId)) {
+          messages.push({
+            id: `tool-${data.toolCallId}`,
+            role: 'tool',
+            content: data.result.success ? (data.result.output ?? 'Success') : `Error: ${data.result.error}`,
+            toolCallId: data.toolCallId,
+          })
+        }
         break
       }
     }
@@ -351,6 +357,8 @@ interface ContextFoldResult {
   currentContextWindowId: string
   compactionCount: number
   readFiles: ReadFileEntry[]
+  // Latest context.state from LLM (real promptTokens)
+  latestContextState: ContextState | null
 }
 
 /**
@@ -359,6 +367,7 @@ interface ContextFoldResult {
 export function foldContextState(events: EventLike[], initialWindowId: string): ContextFoldResult {
   let currentContextWindowId = initialWindowId
   let compactionCount = 0
+  let latestContextState: ContextState | null = null
   const readFilesMap = new Map<string, ReadFileEntry>()
 
   for (const event of events) {
@@ -368,12 +377,20 @@ export function foldContextState(events: EventLike[], initialWindowId: string): 
         currentContextWindowId = data.contextWindowId
         break
       }
+      case 'context.state': {
+        // Use the real promptTokens from LLM
+        const data = event.data as ContextState
+        latestContextState = data
+        break
+      }
       case 'context.compacted': {
         const data = event.data as Extract<TurnEvent, { type: 'context.compacted' }>['data']
         currentContextWindowId = data.newWindowId
         compactionCount++
         // Clear read files cache on compaction (new window)
         readFilesMap.clear()
+        // Reset context state after compaction (will be updated by next LLM call)
+        latestContextState = null
         break
       }
       case 'file.read': {
@@ -394,6 +411,7 @@ export function foldContextState(events: EventLike[], initialWindowId: string): 
     currentContextWindowId,
     compactionCount,
     readFiles: Array.from(readFilesMap.values()),
+    latestContextState,
   }
 }
 
@@ -450,15 +468,6 @@ export function foldIsRunning(events: EventLike[]): boolean {
 }
 
 /**
- * Calculate current token count from messages in current window
- */
-export function calculateTokenCount(messages: SnapshotMessage[], currentWindowId: string): number {
-  return messages
-    .filter((m) => m.contextWindowId === currentWindowId)
-    .reduce((sum, m) => sum + (m.tokenCount ?? 0), 0)
-}
-
-/**
  * Fold full session state from events
  */
 export function foldSessionState(events: EventLike[], initialWindowId: string): FoldedSessionState {
@@ -470,8 +479,20 @@ export function foldSessionState(events: EventLike[], initialWindowId: string): 
   const todos = foldTodos(events)
   const contextResult = foldContextState(events, initialWindowId)
 
-  const currentTokens = calculateTokenCount(messages, contextResult.currentContextWindowId)
-  const maxTokens = 200000 // TODO: Get from config
+  // Use real promptTokens from latest context.state event if available
+  // This is the accurate value from the LLM, not an estimate
+  const baseContextState = contextResult.latestContextState ?? {
+    currentTokens: 0,
+    maxTokens: 200000, // TODO: Get from config
+    compactionCount: contextResult.compactionCount,
+    dangerZone: false,
+    canCompact: false,
+  }
+
+  // Ensure compactionCount is up-to-date from events (in case compaction happened after last context.state)
+  const contextState: ContextState = baseContextState.compactionCount !== contextResult.compactionCount
+    ? { ...baseContextState, compactionCount: contextResult.compactionCount }
+    : baseContextState
 
   return {
     mode,
@@ -480,13 +501,7 @@ export function foldSessionState(events: EventLike[], initialWindowId: string): 
     messages,
     criteria,
     todos,
-    contextState: {
-      currentTokens,
-      maxTokens,
-      compactionCount: contextResult.compactionCount,
-      dangerZone: currentTokens > maxTokens * 0.8,
-      canCompact: currentTokens > maxTokens * 0.5,
-    },
+    contextState,
     currentContextWindowId: contextResult.currentContextWindowId,
     readFiles: contextResult.readFiles,
   }
