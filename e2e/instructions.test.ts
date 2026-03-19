@@ -4,23 +4,34 @@
  * Tests AGENTS.md discovery, global instructions, and project custom instructions.
  */
 
-import { describe, it, expect, beforeEach, afterEach } from 'vitest'
+import { describe, it, expect, beforeAll, afterAll, beforeEach, afterEach } from 'vitest'
 import { writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { 
   createTestClient, 
   createTestProject,
+  createTestServer,
   type TestClient, 
-  type TestProject 
+  type TestProject,
+  type TestServerHandle 
 } from './utils/index.js'
 import type { Message, PromptContext } from '@openfox/shared'
 
 describe('Instructions System', () => {
+  let server: TestServerHandle
   let client: TestClient
   let testDir: TestProject
 
+  beforeAll(async () => {
+    server = await createTestServer()
+  })
+
+  afterAll(async () => {
+    await server.close()
+  })
+
   beforeEach(async () => {
-    client = await createTestClient()
+    client = await createTestClient({ url: server.wsUrl })
   })
 
   afterEach(async () => {

@@ -4,7 +4,7 @@ import type { ServerMessage } from '../../shared/protocol.js'
 import type { Config } from '../config.js'
 import type { LLMClientWithModel } from '../llm/client.js'
 import type { ToolRegistry } from '../tools/index.js'
-import { sessionManager } from '../session/index.js'
+import type { SessionManager } from '../session/index.js'
 import { getEventStore, type StoredEvent, type TurnEvent, type SnapshotMessage, type SessionSnapshot } from '../events/index.js'
 import type { Message } from '../../shared/types.js'
 import { handleChat } from '../chat/index.js'
@@ -262,7 +262,8 @@ export function createWebSocketServer(
   httpServer: Server,
   config: Config,
   llmClient: LLMClientWithModel,
-  toolRegistry: ToolRegistry
+  toolRegistry: ToolRegistry,
+  sessionManager: SessionManager
 ): WebSocketServer {
   const wss = new WebSocketServer({ server: httpServer, path: '/ws' })
   const clients = new Map<WebSocket, ClientConnection>()
@@ -320,7 +321,7 @@ export function createWebSocketServer(
       const client = clients.get(ws)!
       
       try {
-        await handleClientMessage(ws, client, message, config, llmClient, toolRegistry)
+        await handleClientMessage(ws, client, message, config, llmClient, toolRegistry, sessionManager)
       } catch (error) {
         logger.error('Error handling client message', { error, type: message.type })
         ws.send(serializeServerMessage(
@@ -362,7 +363,8 @@ async function handleClientMessage(
   message: { id: string; type: string; payload: unknown },
   config: Config,
   llmClient: LLMClientWithModel,
-  toolRegistry: ToolRegistry
+  toolRegistry: ToolRegistry,
+  sessionManager: SessionManager
 ): Promise<void> {
   const send = (msg: ServerMessage) => {
     if (ws.readyState === WebSocket.OPEN) {
@@ -657,6 +659,7 @@ async function handleClientMessage(
       
       // Use NEW orchestrator (events go through EventStore → WS subscription)
       runChatTurn({
+        sessionManager,
         sessionId,
         llmClient,
         signal: controller.signal,
@@ -855,6 +858,7 @@ async function handleClientMessage(
           
           // Auto-start orchestrator (full state machine with verification)
           await runOrchestrator({
+            sessionManager,
             sessionId,
             llmClient,
             signal: controller.signal,
@@ -958,6 +962,7 @@ async function handleClientMessage(
           const toolRegistry = getToolRegistryForMode('planner')
           const systemPrompt = buildPlannerPrompt(session.workdir, toolRegistry.definitions, instructions || undefined)
           const result = await streamLLMResponse({
+            sessionManager,
             sessionId,
             systemPrompt,
             llmClient,
@@ -1091,6 +1096,7 @@ async function handleClientMessage(
       logger.info('Runner launching', { sessionId, pendingCriteria: pendingCriteria.length })
       
       runOrchestrator({
+        sessionManager,
         sessionId,
         llmClient,
         signal: controller.signal,

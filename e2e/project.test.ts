@@ -4,16 +4,25 @@
  * Tests project CRUD operations and custom instructions.
  */
 
-import { describe, it, expect, beforeEach, afterEach } from 'vitest'
-import { createTestClient, createTestProject, type TestClient, type TestProject } from './utils/index.js'
+import { describe, it, expect, beforeAll, afterAll, beforeEach, afterEach } from 'vitest'
+import { createTestClient, createTestProject, createTestServer, type TestClient, type TestProject, type TestServerHandle } from './utils/index.js'
 import type { Project } from '@openfox/shared'
 
 describe('Project Management', () => {
+  let server: TestServerHandle
   let client: TestClient
   let testDir: TestProject
 
+  beforeAll(async () => {
+    server = await createTestServer()
+  })
+
+  afterAll(async () => {
+    await server.close()
+  })
+
   beforeEach(async () => {
-    client = await createTestClient()
+    client = await createTestClient({ url: server.wsUrl })
     testDir = await createTestProject({ template: 'empty' })
   })
 
@@ -82,7 +91,7 @@ describe('Project Management', () => {
       const created = client.getProject()!
 
       // Create new client to test load
-      const client2 = await createTestClient()
+      const client2 = await createTestClient({ url: server.wsUrl })
       try {
         const response = await client2.send('project.load', { projectId: created.id })
 

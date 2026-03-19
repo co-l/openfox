@@ -5,23 +5,34 @@
  * providing early feedback to users about what tool is being invoked.
  */
 
-import { describe, it, expect, beforeEach, afterEach } from 'vitest'
+import { describe, it, expect, beforeAll, afterAll, beforeEach, afterEach } from 'vitest'
 import { 
   createTestClient, 
   createTestProject,
+  createTestServer,
   collectChatEvents,
   assertNoErrors,
   type TestClient, 
-  type TestProject 
+  type TestProject,
+  type TestServerHandle 
 } from './utils/index.js'
 import type { ChatToolPreparingPayload, ChatToolCallPayload } from '@openfox/shared/protocol'
 
 describe('Tool Preparing Events', () => {
+  let server: TestServerHandle
   let client: TestClient
   let testDir: TestProject
 
+  beforeAll(async () => {
+    server = await createTestServer()
+  })
+
+  afterAll(async () => {
+    await server.close()
+  })
+
   beforeEach(async () => {
-    client = await createTestClient()
+    client = await createTestClient({ url: server.wsUrl })
     testDir = await createTestProject({ template: 'typescript' })
     
     // Create project and session in builder mode (has all tools)

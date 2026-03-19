@@ -2,10 +2,12 @@ import type { ToolResult } from '../../shared/types.js'
 import type { ServerMessage } from '../../shared/protocol.js'
 import type { LLMToolDefinition } from '../llm/types.js'
 import type { LspManagerInterface } from '../lsp/types.js'
+import type { SessionManager } from '../session/manager.js'
 
 export interface ToolContext {
   workdir: string
   sessionId: string
+  sessionManager: SessionManager  // Injected dependency (replaces singleton import)
   signal?: AbortSignal | undefined  // For cancelling long-running operations (e.g., shell commands)
   onProgress?: ((message: string) => void) | undefined
   onEvent?: ((event: ServerMessage) => void) | undefined  // For sending events to client (e.g., path confirmation)

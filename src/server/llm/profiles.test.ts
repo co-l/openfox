@@ -50,7 +50,7 @@ describe('profiles', () => {
       const profile = getModelProfile('some-unknown-model')
       
       expect(profile.name).toBe('default')
-      expect(profile.supportsReasoning).toBe(true) // default assumes reasoning support
+      expect(profile.supportsReasoning).toBe(false) // default is conservative - no reasoning
     })
   })
 

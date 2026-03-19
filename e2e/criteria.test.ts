@@ -4,23 +4,34 @@
  * Tests criterion CRUD operations and status transitions.
  */
 
-import { describe, it, expect, beforeEach, afterEach } from 'vitest'
+import { describe, it, expect, beforeAll, afterAll, beforeEach, afterEach } from 'vitest'
 import { 
   createTestClient, 
   createTestProject,
+  createTestServer,
   collectChatEvents,
   assertNoErrors,
   type TestClient, 
-  type TestProject 
+  type TestProject,
+  type TestServerHandle 
 } from './utils/index.js'
 import type { Criterion } from '@openfox/shared'
 
 describe('Criteria System', () => {
+  let server: TestServerHandle
   let client: TestClient
   let testDir: TestProject
 
+  beforeAll(async () => {
+    server = await createTestServer()
+  })
+
+  afterAll(async () => {
+    await server.close()
+  })
+
   beforeEach(async () => {
-    client = await createTestClient()
+    client = await createTestClient({ url: server.wsUrl })
     testDir = await createTestProject({ template: 'typescript' })
     
     await client.send('project.create', { name: 'Criteria Test', workdir: testDir.path })
@@ -288,7 +299,7 @@ describe('Criteria System', () => {
       const sessionId = client.getSession()!.id
       
       // Load in new client
-      const client2 = await createTestClient()
+      const client2 = await createTestClient({ url: server.wsUrl })
       try {
         await client2.send('session.load', { sessionId })
         

@@ -73,7 +73,7 @@ type SessionEvents = {
 // Session Manager
 // ============================================================================
 
-class SessionManagerImpl {
+export class SessionManager {
   private events = new EventEmitter<SessionEvents>()
   private activeSessionId: string | null = null
   
@@ -707,5 +707,6 @@ class SessionManagerImpl {
   }
 }
 
-// Singleton instance
-export const sessionManager = new SessionManagerImpl()
+// Legacy singleton for gradual migration
+// TODO: Remove once all consumers use context-based injection
+export const sessionManager = new SessionManager()

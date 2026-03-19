@@ -5,26 +5,37 @@
  * These are the most important tests - they validate the full system integration.
  */
 
-import { describe, it, expect, beforeEach, afterEach } from 'vitest'
+import { describe, it, expect, beforeAll, afterAll, beforeEach, afterEach } from 'vitest'
 import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { 
   createTestClient, 
   createTestProject,
+  createTestServer,
   collectUntilPhase,
   collectChatEvents,
   assertNoErrors,
   type TestClient, 
-  type TestProject 
+  type TestProject,
+  type TestServerHandle 
 } from './utils/index.js'
 import type { Criterion } from '@openfox/shared'
 
 describe('Full Workflows', () => {
+  let server: TestServerHandle
   let client: TestClient
   let testDir: TestProject
 
+  beforeAll(async () => {
+    server = await createTestServer()
+  })
+
+  afterAll(async () => {
+    await server.close()
+  })
+
   beforeEach(async () => {
-    client = await createTestClient()
+    client = await createTestClient({ url: server.wsUrl })
     testDir = await createTestProject({ template: 'typescript' })
   })
 
@@ -184,7 +195,7 @@ Please explore the existing code and propose acceptance criteria using add_crite
       const criteriaCount = session.criteria.length
       
       // Create new client and load session
-      const client2 = await createTestClient()
+      const client2 = await createTestClient({ url: server.wsUrl })
       try {
         await client2.send('session.load', { sessionId })
         

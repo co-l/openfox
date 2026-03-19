@@ -5,25 +5,36 @@
  * The git tool is read-only and blocks destructive commands.
  */
 
-import { describe, it, expect, beforeEach, afterEach } from 'vitest'
+import { describe, it, expect, beforeAll, afterAll, beforeEach, afterEach } from 'vitest'
 import { execSync } from 'node:child_process'
 import { writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { 
   createTestClient, 
   createTestProject,
+  createTestServer,
   collectChatEvents,
   assertNoErrors,
   type TestClient, 
-  type TestProject 
+  type TestProject,
+  type TestServerHandle 
 } from './utils/index.js'
 
 describe('Git Tool', () => {
+  let server: TestServerHandle
   let client: TestClient
   let testDir: TestProject
 
+  beforeAll(async () => {
+    server = await createTestServer()
+  })
+
+  afterAll(async () => {
+    await server.close()
+  })
+
   beforeEach(async () => {
-    client = await createTestClient()
+    client = await createTestClient({ url: server.wsUrl })
     // Create a project with git initialized
     testDir = await createTestProject({ template: 'git-repo' })
     
@@ -166,7 +177,7 @@ describe('Git Tool', () => {
       const nonGitDir = await createTestProject({ template: 'typescript' })
       
       try {
-        const client2 = await createTestClient()
+        const client2 = await createTestClient({ url: server.wsUrl })
         try {
           await client2.send('project.create', { name: 'Non-Git Test', workdir: nonGitDir.path })
           const projectId = client2.getProject()!.id

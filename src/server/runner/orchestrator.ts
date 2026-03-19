@@ -11,7 +11,7 @@
 import type { OrchestratorOptions, OrchestratorResult } from './types.js'
 import { RUNNER_CONFIG } from './types.js'
 import { decideNextAction } from './decision.js'
-import { sessionManager } from '../session/index.js'
+import type { SessionManager } from '../session/index.js'
 import { getEventStore } from '../events/index.js'
 import { logger } from '../utils/logger.js'
 
@@ -26,7 +26,7 @@ import type { LLMClientWithModel } from '../llm/client.js'
  * It keeps calling builder/verifier until all criteria pass.
  */
 export async function runOrchestrator(options: OrchestratorOptions): Promise<OrchestratorResult> {
-  const { sessionId, llmClient, signal, onMessage } = options
+  const { sessionManager, sessionId, llmClient, signal, onMessage } = options
   const eventStore = getEventStore()
   const startTime = performance.now()
   let iterations = 0
@@ -90,7 +90,7 @@ export async function runOrchestrator(options: OrchestratorOptions): Promise<Orc
         
         // Run verification step
         const turnMetrics = new TurnMetrics()
-        await runVerifierTurn({ sessionId, llmClient, ...(signal ? { signal } : {}), ...(onMessage ? { onMessage } : {}) }, turnMetrics)
+        await runVerifierTurn({ sessionManager, sessionId, llmClient, ...(signal ? { signal } : {}), ...(onMessage ? { onMessage } : {}) }, turnMetrics)
         
         // Loop continues to check result
         break
@@ -112,7 +112,7 @@ export async function runOrchestrator(options: OrchestratorOptions): Promise<Orc
         
         // Run builder step
         const turnMetrics = new TurnMetrics()
-        await runBuilderTurn({ sessionId, llmClient, ...(signal ? { signal } : {}), ...(onMessage ? { onMessage } : {}) }, turnMetrics)
+        await runBuilderTurn({ sessionManager, sessionId, llmClient, ...(signal ? { signal } : {}), ...(onMessage ? { onMessage } : {}) }, turnMetrics)
         
         // Loop continues to check if more work needed
         break

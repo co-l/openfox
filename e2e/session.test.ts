@@ -4,17 +4,26 @@
  * Tests session CRUD operations, state management, and reconnection.
  */
 
-import { describe, it, expect, beforeEach, afterEach } from 'vitest'
-import { createTestClient, createTestProject, type TestClient, type TestProject } from './utils/index.js'
+import { describe, it, expect, beforeAll, afterAll, beforeEach, afterEach } from 'vitest'
+import { createTestClient, createTestProject, createTestServer, type TestClient, type TestProject, type TestServerHandle } from './utils/index.js'
 import type { Session, SessionSummary, Message } from '@openfox/shared'
 
 describe('Session Management', () => {
+  let server: TestServerHandle
   let client: TestClient
   let testDir: TestProject
   let projectId: string
 
+  beforeAll(async () => {
+    server = await createTestServer()
+  })
+
+  afterAll(async () => {
+    await server.close()
+  })
+
   beforeEach(async () => {
-    client = await createTestClient()
+    client = await createTestClient({ url: server.wsUrl })
     testDir = await createTestProject({ template: 'typescript' })
     
     // Create a project for sessions
@@ -73,7 +82,7 @@ describe('Session Management', () => {
       const created = client.getSession()!
 
       // Create new client and load the session
-      const client2 = await createTestClient()
+      const client2 = await createTestClient({ url: server.wsUrl })
       try {
         const response = await client2.send('session.load', { sessionId: created.id })
 
@@ -91,7 +100,7 @@ describe('Session Management', () => {
       await client.send('session.create', { projectId })
       const created = client.getSession()!
 
-      const client2 = await createTestClient()
+      const client2 = await createTestClient({ url: server.wsUrl })
       try {
         await client2.send('session.load', { sessionId: created.id })
         

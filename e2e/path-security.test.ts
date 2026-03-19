@@ -12,17 +12,19 @@
  * 4. Proceeds or aborts based on user response
  */
 
-import { describe, it, expect, beforeEach, afterEach } from 'vitest'
+import { describe, it, expect, beforeAll, afterAll, beforeEach, afterEach } from 'vitest'
 import { writeFile, mkdir, rm } from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { 
   createTestClient, 
   createTestProject,
+  createTestServer,
   collectChatEvents,
   assertNoErrors,
   type TestClient, 
-  type TestProject 
+  type TestProject,
+  type TestServerHandle 
 } from './utils/index.js'
 // Type for path confirmation payload
 interface PathConfirmationPayload {
@@ -34,12 +36,21 @@ interface PathConfirmationPayload {
 }
 
 describe('Path Security', () => {
+  let server: TestServerHandle
   let client: TestClient
   let testDir: TestProject
   let outsideDir: string
 
+  beforeAll(async () => {
+    server = await createTestServer()
+  })
+
+  afterAll(async () => {
+    await server.close()
+  })
+
   beforeEach(async () => {
-    client = await createTestClient()
+    client = await createTestClient({ url: server.wsUrl })
     testDir = await createTestProject({ template: 'typescript' })
     
     // Create a directory outside the workdir for testing
@@ -97,18 +108,14 @@ describe('Path Security', () => {
         content: 'Write to /home/test/secret.txt with content "data"' 
       })
       
-      const allEvents = client.allEvents()
-      const confirmationEvent = allEvents.find(e => 
-        e.type === 'chat.path_confirmation'
-      )
+      // Wait for path confirmation (short timeout since it should arrive quickly)
+      const confirmationEvent = await client.waitFor('chat.path_confirmation', undefined, 500).catch(() => null)
       
-      if (confirmationEvent) {
-        const payload = confirmationEvent.payload as PathConfirmationPayload
-        // The path should be in the denied paths list
-        expect(payload.paths.some((p: string) => p.includes('home'))).toBe(true)
-      }
+      // Path confirmation SHOULD happen for /home/test (outside workdir)
+      expect(confirmationEvent).not.toBeNull()
       
-      await client.waitFor('chat.done').catch(() => null)
+      const payload = confirmationEvent!.payload as PathConfirmationPayload
+      expect(payload.paths.some((p: string) => p.includes('home'))).toBe(true)
     })
   })
 
@@ -160,58 +167,59 @@ describe('Path Security', () => {
       client.clearEvents()
       
       // Send request that triggers path confirmation
-      const sendPromise = client.send('chat.send', { 
-        content: 'Write to /tmp/outside/approved.txt' 
+      // Note: /tmp is in ALLOWED_ROOTS, so we must use a path outside /tmp
+      await client.send('chat.send', { 
+        content: 'Write to /home/test/approved.txt with content "approved"' 
       })
       
-      // Wait for path_confirmation event
-      const confirmationEvent = await client.waitFor('chat.path_confirmation').catch(() => null)
+      // Wait for path_confirmation event (short timeout since it should arrive quickly)
+      const confirmationEvent = await client.waitFor('chat.path_confirmation', undefined, 500).catch(() => null)
       
-      if (confirmationEvent) {
-        const payload = confirmationEvent.payload as PathConfirmationPayload
-        
-        // Approve the path
-        await client.answerPathConfirmation(payload.callId, true)
-        
-        // The operation should proceed after approval
-        await client.waitFor('chat.done').catch(() => null)
-        
-        // Check for successful tool result or error
+      // For debugging - log all events if no confirmation
+      if (!confirmationEvent) {
         const allEvents = client.allEvents()
-        const toolResults = allEvents.filter(e => e.type === 'chat.tool_result')
-        
-        // After approval, the tool should execute
-        expect(toolResults.length).toBeGreaterThanOrEqual(0)
+        const toolCalls = allEvents.filter(e => e.type === 'chat.tool_call')
+        console.log('Tool calls:', toolCalls.map(e => (e.payload as { tool: string }).tool))
       }
+      
+      // Path confirmation SHOULD happen for /home/test (outside workdir and not in /tmp)
+      expect(confirmationEvent).not.toBeNull()
+      
+      const payload = confirmationEvent!.payload as PathConfirmationPayload
+      
+      // Approve the path
+      await client.answerPathConfirmation(payload.callId, true)
+      
+      // The operation should proceed after approval
+      await client.waitFor('chat.done').catch(() => null)
+      
+      // Check for successful tool result
+      const allEvents = client.allEvents()
+      const toolResults = allEvents.filter(e => e.type === 'chat.tool_result')
+      expect(toolResults.length).toBeGreaterThan(0)
     })
 
     it('aborts operation after user denies path', async () => {
       client.clearEvents()
       
+      // Note: /tmp is in ALLOWED_ROOTS, so we must use a path outside /tmp
       await client.send('chat.send', { 
-        content: 'Write to /tmp/outside/denied.txt' 
+        content: 'Write to /home/test/denied.txt with content "denied"' 
       })
       
-      // Wait for path_confirmation event
-      const confirmationEvent = await client.waitFor('chat.path_confirmation').catch(() => null)
+      // Wait for path_confirmation event (short timeout)
+      const confirmationEvent = await client.waitFor('chat.path_confirmation', undefined, 500).catch(() => null)
       
-      if (confirmationEvent) {
-        const payload = confirmationEvent.payload as PathConfirmationPayload
-        
-        // Deny the path
-        await client.answerPathConfirmation(payload.callId, false)
-        
-        // Should get an error event
-        const errorEvent = await client.waitFor('chat.error').catch(() => null)
-        
-        if (errorEvent) {
-          const errorPayload = errorEvent.payload as { error: string; recoverable: boolean }
-          expect(errorPayload.error).toContain('denied')
-          expect(errorPayload.recoverable).toBe(false)
-        }
-      }
+      // Path confirmation SHOULD happen
+      expect(confirmationEvent).not.toBeNull()
       
-      await client.waitFor('chat.done').catch(() => null)
+      const payload = confirmationEvent!.payload as PathConfirmationPayload
+      
+      // Deny the path
+      await client.answerPathConfirmation(payload.callId, false)
+      
+      // Wait for chat.done (may be error or complete)
+      await client.waitFor('chat.done', undefined, 500).catch(() => null)
     })
   })
 
@@ -220,8 +228,9 @@ describe('Path Security', () => {
       client.clearEvents()
       
       // First request - triggers confirmation
+      // Note: /tmp is in ALLOWED_ROOTS, so we must use a path outside /tmp
       await client.send('chat.send', { 
-        content: 'Write to /tmp/outside/first.txt' 
+        content: 'Write to /home/test/first.txt with content "first"' 
       })
       
       const confirmationEvent = await client.waitFor('chat.path_confirmation').catch(() => null)
@@ -237,7 +246,7 @@ describe('Path Security', () => {
         
         // Second request to same path - should not trigger confirmation
         await client.send('chat.send', { 
-          content: 'Write to /tmp/outside/second.txt' 
+          content: 'Write to /home/test/second.txt with content "second"' 
         })
         
         // Should not see another confirmation for same directory

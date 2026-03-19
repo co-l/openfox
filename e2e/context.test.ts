@@ -4,23 +4,34 @@
  * Tests context window tracking, compaction, and token counting.
  */
 
-import { describe, it, expect, beforeEach, afterEach } from 'vitest'
+import { describe, it, expect, beforeAll, afterAll, beforeEach, afterEach } from 'vitest'
 import { 
   createTestClient, 
   createTestProject,
+  createTestServer,
   collectChatEvents,
   assertNoErrors,
   type TestClient, 
-  type TestProject 
+  type TestProject,
+  type TestServerHandle 
 } from './utils/index.js'
 import type { ContextState } from '@openfox/shared'
 
 describe('Context Management', () => {
+  let server: TestServerHandle
   let client: TestClient
   let testDir: TestProject
 
+  beforeAll(async () => {
+    server = await createTestServer()
+  })
+
+  afterAll(async () => {
+    await server.close()
+  })
+
   beforeEach(async () => {
-    client = await createTestClient()
+    client = await createTestClient({ url: server.wsUrl })
     testDir = await createTestProject({ template: 'typescript' })
     
     await client.send('project.create', { name: 'Context Test', workdir: testDir.path })
@@ -38,7 +49,7 @@ describe('Context Management', () => {
       const session = client.getSession()!
       
       // Load session in new client to trigger context.state
-      const client2 = await createTestClient()
+      const client2 = await createTestClient({ url: server.wsUrl })
       try {
         await client2.send('session.load', { sessionId: session.id })
         
@@ -71,7 +82,7 @@ describe('Context Management', () => {
     it('reports maxTokens from config', async () => {
       const sessionId = client.getSession()!.id
       
-      const client2 = await createTestClient()
+      const client2 = await createTestClient({ url: server.wsUrl })
       try {
         await client2.send('session.load', { sessionId })
         
@@ -183,7 +194,7 @@ describe('Context Management', () => {
     it('includes dangerZone field in context state', async () => {
       const sessionId = client.getSession()!.id
       
-      const client2 = await createTestClient()
+      const client2 = await createTestClient({ url: server.wsUrl })
       try {
         await client2.send('session.load', { sessionId })
         
@@ -203,7 +214,7 @@ describe('Context Management', () => {
       // Fresh session should not have enough to compact
       const sessionId = client.getSession()!.id
       
-      const client2 = await createTestClient()
+      const client2 = await createTestClient({ url: server.wsUrl })
       try {
         await client2.send('session.load', { sessionId })
         

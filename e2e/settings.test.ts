@@ -4,14 +4,23 @@
  * Tests settings get/set operations.
  */
 
-import { describe, it, expect, beforeEach, afterEach } from 'vitest'
-import { createTestClient, type TestClient } from './utils/index.js'
+import { describe, it, expect, beforeAll, afterAll, beforeEach, afterEach } from 'vitest'
+import { createTestClient, createTestServer, type TestClient, type TestServerHandle } from './utils/index.js'
 
 describe('Settings', () => {
+  let server: TestServerHandle
   let client: TestClient
 
+  beforeAll(async () => {
+    server = await createTestServer()
+  })
+
+  afterAll(async () => {
+    await server.close()
+  })
+
   beforeEach(async () => {
-    client = await createTestClient()
+    client = await createTestClient({ url: server.wsUrl })
   })
 
   afterEach(async () => {
@@ -92,7 +101,7 @@ describe('Settings', () => {
       await client.send('settings.set', { key: 'persist-test', value: 'persisted-value' })
       
       // Create new client and verify
-      const client2 = await createTestClient()
+      const client2 = await createTestClient({ url: server.wsUrl })
       try {
         const response = await client2.send('settings.get', { key: 'persist-test' })
         const payload = response.payload as { value: string | null }

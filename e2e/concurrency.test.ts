@@ -5,17 +5,26 @@
  * on the same session (prevents multiple orchestrators/chat handlers).
  */
 
-import { describe, it, expect, beforeEach, afterEach } from 'vitest'
-import { createTestClient, createTestProject, type TestClient, type TestProject } from './utils/index.js'
+import { describe, it, expect, beforeAll, afterAll, beforeEach, afterEach } from 'vitest'
+import { createTestClient, createTestProject, createTestServer, type TestClient, type TestProject, type TestServerHandle } from './utils/index.js'
 
 describe('Concurrency Guards', () => {
+  let server: TestServerHandle
   let client: TestClient
   let testDir: TestProject
   let projectId: string
   let sessionId: string
 
+  beforeAll(async () => {
+    server = await createTestServer()
+  })
+
+  afterAll(async () => {
+    await server.close()
+  })
+
   beforeEach(async () => {
-    client = await createTestClient()
+    client = await createTestClient({ url: server.wsUrl })
     testDir = await createTestProject({ template: 'typescript' })
     
     // Create project and session

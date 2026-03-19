@@ -12,14 +12,16 @@
  * - Mobile app backgrounding
  */
 
-import { describe, it, expect, beforeEach, afterEach } from 'vitest'
+import { describe, it, expect, beforeAll, afterAll, beforeEach, afterEach } from 'vitest'
 import { 
   createTestClient, 
   createTestProject,
+  createTestServer,
   collectChatEvents,
   assertNoErrors,
   type TestClient, 
-  type TestProject 
+  type TestProject,
+  type TestServerHandle 
 } from './utils/index.js'
 // Type definitions for session and message (avoid module resolution issues)
 interface SessionType {
@@ -39,13 +41,22 @@ interface MessageType {
 }
 
 describe('Session Reconnection', () => {
+  let server: TestServerHandle
   let client: TestClient
   let testDir: TestProject
   let projectId: string
   let sessionId: string
 
+  beforeAll(async () => {
+    server = await createTestServer()
+  })
+
+  afterAll(async () => {
+    await server.close()
+  })
+
   beforeEach(async () => {
-    client = await createTestClient()
+    client = await createTestClient({ url: server.wsUrl })
     testDir = await createTestProject({ template: 'typescript' })
     
     await client.send('project.create', { name: 'Reconnection Test', workdir: testDir.path })
@@ -67,7 +78,7 @@ describe('Session Reconnection', () => {
       await client.waitForChatDone()
       
       // Create a new client (simulating reconnection)
-      const client2 = await createTestClient()
+      const client2 = await createTestClient({ url: server.wsUrl })
       
       try {
         // Load the session
@@ -101,7 +112,7 @@ describe('Session Reconnection', () => {
       await client.waitForChatDone()
       
       // Reconnect with new client
-      const client2 = await createTestClient()
+      const client2 = await createTestClient({ url: server.wsUrl })
       
       try {
         await client2.send('session.load', { sessionId })
@@ -119,7 +130,7 @@ describe('Session Reconnection', () => {
       await client.send('mode.switch', { mode: 'builder' })
       
       // Reconnect
-      const client2 = await createTestClient()
+      const client2 = await createTestClient({ url: server.wsUrl })
       
       try {
         await client2.send('session.load', { sessionId })
@@ -142,7 +153,7 @@ describe('Session Reconnection', () => {
       await client.waitForChatDone()
       
       // Reconnect
-      const client2 = await createTestClient()
+      const client2 = await createTestClient({ url: server.wsUrl })
       
       try {
         await client2.send('session.load', { sessionId })
@@ -167,7 +178,7 @@ describe('Session Reconnection', () => {
       await client.waitForChatDone()
       
       // Connect second client
-      const client2 = await createTestClient()
+      const client2 = await createTestClient({ url: server.wsUrl })
       
       try {
         await client2.send('session.load', { sessionId })
@@ -179,7 +190,7 @@ describe('Session Reconnection', () => {
       }
       
       // Connect third client
-      const client3 = await createTestClient()
+      const client3 = await createTestClient({ url: server.wsUrl })
       
       try {
         await client3.send('session.load', { sessionId })
@@ -194,7 +205,7 @@ describe('Session Reconnection', () => {
 
   describe('Session Load Errors', () => {
     it('returns NOT_FOUND for invalid session ID', async () => {
-      const client2 = await createTestClient()
+      const client2 = await createTestClient({ url: server.wsUrl })
       
       try {
         const response = await client2.send('session.load', { 
@@ -220,7 +231,7 @@ describe('Session Reconnection', () => {
       await client.waitForChatDone()
       
       // Reconnect
-      const client2 = await createTestClient()
+      const client2 = await createTestClient({ url: server.wsUrl })
       
       try {
         const response = await client2.send('session.load', { sessionId })
@@ -261,7 +272,7 @@ describe('Session Reconnection', () => {
       await client.send('mode.switch', { mode: 'builder' })
       
       // Reconnect
-      const client2 = await createTestClient()
+      const client2 = await createTestClient({ url: server.wsUrl })
       
       try {
         await client2.send('session.load', { sessionId })
@@ -285,7 +296,7 @@ describe('Session Reconnection', () => {
       await client.waitForChatDone()
       
       // Reconnect
-      const client2 = await createTestClient()
+      const client2 = await createTestClient({ url: server.wsUrl })
       
       try {
         await client2.send('session.load', { sessionId })

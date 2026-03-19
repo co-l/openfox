@@ -5,7 +5,15 @@ import type { ToolResult } from '../../shared/types.js'
 import { PathAccessDeniedError } from './path-security.js'
 
 describe('createTool', () => {
+  // Mock sessionManager for test context
+  const mockSessionManager = {
+    recordFileRead: vi.fn(),
+    getReadFiles: vi.fn().mockReturnValue({}),
+    updateFileHash: vi.fn(),
+  } as any
+  
   const mockContext: ToolContext = {
+    sessionManager: mockSessionManager,
     workdir: '/test/workdir',
     sessionId: 'test-session',
   }

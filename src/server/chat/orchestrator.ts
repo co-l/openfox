@@ -15,7 +15,7 @@ import type { ServerMessage } from '../../shared/protocol.js'
 import type { LLMClientWithModel } from '../llm/client.js'
 import type { TurnEvent, SessionSnapshot, SnapshotMessage, ToolCallWithResult } from '../events/types.js'
 import { getEventStore } from '../events/index.js'
-import { sessionManager } from '../session/index.js'
+import type { SessionManager } from '../session/index.js'
 import { getToolRegistryForMode, AskUserInterrupt, PathAccessDeniedError } from '../tools/index.js'
 import { buildPlannerPrompt, buildBuilderPrompt, buildVerifierPrompt, BUILDER_KICKOFF_PROMPT, VERIFIER_KICKOFF_PROMPT } from './prompts.js'
 import { streamLLMPure, consumeStreamGenerator, TurnMetrics, createMessageStartEvent, createMessageDoneEvent, createToolCallEvent, createToolResultEvent, createChatDoneEvent, createFormatRetryEvent } from './stream-pure.js'
@@ -39,6 +39,7 @@ const FORMAT_CORRECTION_PROMPT = `IMPORTANT: You MUST use the JSON function call
 // ============================================================================
 
 export interface OrchestratorOptions {
+  sessionManager: SessionManager
   sessionId: string
   llmClient: LLMClientWithModel
   signal?: AbortSignal
@@ -55,7 +56,7 @@ export interface OrchestratorOptions {
  * Appends all events to EventStore and creates a snapshot at end of turn.
  */
 export async function runChatTurn(options: OrchestratorOptions): Promise<void> {
-  const { sessionId, llmClient, signal, onMessage } = options
+  const { sessionManager, sessionId, llmClient, signal, onMessage } = options
   const eventStore = getEventStore()
 
   const session = sessionManager.requireSession(sessionId)
@@ -78,7 +79,7 @@ export async function runChatTurn(options: OrchestratorOptions): Promise<void> {
     }
 
     // Create end-of-turn snapshot
-    const snapshot = buildSnapshot(sessionId, turnMetrics.buildStats(llmClient.getModel(), mode))
+    const snapshot = buildSnapshot(sessionManager, sessionId, turnMetrics.buildStats(llmClient.getModel(), mode))
     eventStore.append(sessionId, { type: 'turn.snapshot', data: snapshot })
 
   } catch (error) {
@@ -149,7 +150,7 @@ async function runPlannerTurn(
   turnMetrics: TurnMetrics,
   formatRetryCount = 0
 ): Promise<void> {
-  const { sessionId, llmClient, signal, onMessage } = options
+  const { sessionManager, sessionId, llmClient, signal, onMessage } = options
   const eventStore = getEventStore()
 
   const session = sessionManager.requireSession(sessionId)
@@ -166,7 +167,7 @@ async function runPlannerTurn(
   const systemPrompt = buildPlannerPrompt(session.workdir, toolRegistry.definitions, instructionContent || undefined)
 
   // Build messages from current context
-  const contextMessages = buildContextMessages(sessionId)
+  const contextMessages = buildContextMessages(sessionManager, sessionId)
 
   // Handle format retry
   if (formatRetryCount > 0) {
@@ -239,6 +240,7 @@ async function runPlannerTurn(
       let toolResult: ToolResult
       try {
         toolResult = await toolRegistry.execute(toolCall.name, toolCall.arguments, {
+          sessionManager,
           workdir: session.workdir,
           sessionId,
           signal,
@@ -289,7 +291,7 @@ export async function runBuilderTurn(
   turnMetrics: TurnMetrics,
   formatRetryCount = 0
 ): Promise<void> {
-  const { sessionId, llmClient, signal, onMessage } = options
+  const { sessionManager, sessionId, llmClient, signal, onMessage } = options
   const eventStore = getEventStore()
 
   const session = sessionManager.requireSession(sessionId)
@@ -328,7 +330,7 @@ export async function runBuilderTurn(
   )
 
   // Build messages from current context
-  const contextMessages = buildContextMessages(sessionId)
+  const contextMessages = buildContextMessages(sessionManager, sessionId)
 
   // Handle format retry
   if (formatRetryCount > 0) {
@@ -401,6 +403,7 @@ export async function runBuilderTurn(
       let toolResult: ToolResult
       try {
         toolResult = await toolRegistry.execute(toolCall.name, toolCall.arguments, {
+          sessionManager,
           workdir: session.workdir,
           sessionId,
           signal,
@@ -465,7 +468,7 @@ export async function runVerifierTurn(
   options: OrchestratorOptions,
   turnMetrics: TurnMetrics
 ): Promise<VerifierResult> {
-  const { sessionId, llmClient, signal, onMessage } = options
+  const { sessionManager, sessionId, llmClient, signal, onMessage } = options
   const eventStore = getEventStore()
   const subAgentId = crypto.randomUUID()
 
@@ -620,6 +623,7 @@ ${modifiedFiles.length > 0 ? modifiedFiles.map(f => `- ${f}`).join('\n') : '(non
       let toolResult: ToolResult
       try {
         toolResult = await toolRegistry.execute(toolCall.name, toolCall.arguments, {
+          sessionManager,
           workdir: session.workdir,
           sessionId,
           signal,
@@ -686,7 +690,7 @@ ${modifiedFiles.length > 0 ? modifiedFiles.map(f => `- ${f}`).join('\n') : '(non
  * Build context messages for LLM from EventStore.
  * Folds events into messages suitable for LLM context.
  */
-function buildContextMessages(sessionId: string): Array<{
+function buildContextMessages(sessionManager: SessionManager, sessionId: string): Array<{
   role: 'user' | 'assistant' | 'tool'
   content: string
   toolCalls?: ToolCall[]
@@ -778,7 +782,7 @@ function buildContextMessages(sessionId: string): Array<{
 /**
  * Build a snapshot of current session state.
  */
-function buildSnapshot(sessionId: string, lastStats?: MessageStats): SessionSnapshot {
+function buildSnapshot(sessionManager: SessionManager, sessionId: string, lastStats?: MessageStats): SessionSnapshot {
   const eventStore = getEventStore()
   const session = sessionManager.requireSession(sessionId)
 

@@ -34,8 +34,16 @@ import { runCommandTool } from './shell.js'
 describe('PathAccessDeniedError propagation', () => {
   const mockOnEvent = vi.fn()
   
+  // Mock sessionManager for test context
+  const mockSessionManager = {
+    recordFileRead: vi.fn(),
+    getReadFiles: vi.fn().mockReturnValue({}),
+    updateFileHash: vi.fn(),
+  } as any
+  
   // Context with onEvent to trigger path security checks
   const context = {
+    sessionManager: mockSessionManager,
     sessionId: 'test-session',
     workdir: '/test',
     onEvent: mockOnEvent,

@@ -4,38 +4,39 @@
  * Tests planner chat, tool usage, and criteria creation with real LLM.
  */
 
-import { describe, it, expect, beforeEach, afterEach } from 'vitest'
+import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest'
 import { 
-  createTestClient, 
-  createTestProject, 
+  createSessionPool,
+  createTestServer,
   collectChatEvents,
   assertNoErrors,
-  type TestClient, 
-  type TestProject 
+  type TestServerHandle,
+  type SessionPool,
 } from './utils/index.js'
-import type { Criterion, Message } from '@openfox/shared'
+import type { Message } from '@openfox/shared'
+
+// Server and pool are created in beforeAll
+let server: TestServerHandle
+let pool: SessionPool
 
 describe('Planner Mode', () => {
-  let client: TestClient
-  let testDir: TestProject
-
-  beforeEach(async () => {
-    client = await createTestClient()
-    testDir = await createTestProject({ template: 'typescript' })
-    
-    // Create project and session
-    await client.send('project.create', { name: 'Planner Test', workdir: testDir.path })
-    const projectId = client.getProject()!.id
-    await client.send('session.create', { projectId })
+  beforeAll(async () => {
+    server = await createTestServer()
+    pool = createSessionPool({ template: 'typescript', mode: 'planner', wsUrl: server.wsUrl })
+    await pool.setup()
   })
-
-  afterEach(async () => {
-    await client.close()
-    await testDir.cleanup()
+  afterAll(async () => {
+    await pool.cleanup()
+    await server.close()
+  })
+  beforeEach(async () => {
+    await pool.reset()
   })
 
   describe('Basic Chat', () => {
     it('sends message and receives streaming response', async () => {
+      const { client } = pool.get()
+      
       // Send a simple message
       await client.send('chat.send', { content: 'What files are in this project?' })
       
@@ -56,6 +57,8 @@ describe('Planner Mode', () => {
     })
 
     it('includes stats in chat.done', async () => {
+      const { client } = pool.get()
+      
       await client.send('chat.send', { content: 'Hello, briefly introduce yourself.' })
       
       const response = await client.waitForChatDone()
@@ -68,6 +71,8 @@ describe('Planner Mode', () => {
     })
 
     it('accumulates content from deltas', async () => {
+      const { client } = pool.get()
+      
       await client.send('chat.send', { content: 'Say exactly: "Hello World"' })
       
       const response = await client.waitForChatDone()
@@ -80,6 +85,8 @@ describe('Planner Mode', () => {
 
   describe('Tool Usage', () => {
     it('uses read_file tool when asked about file contents', async () => {
+      const { client } = pool.get()
+      
       await client.send('chat.send', { 
         content: 'Read the package.json file and tell me the project name.' 
       })
@@ -104,6 +111,8 @@ describe('Planner Mode', () => {
     })
 
     it('uses glob tool to find files', async () => {
+      const { client } = pool.get()
+      
       await client.send('chat.send', { 
         content: 'Find all TypeScript files in this project using glob.' 
       })
@@ -120,6 +129,8 @@ describe('Planner Mode', () => {
     })
 
     it('uses grep tool to search file contents', async () => {
+      const { client } = pool.get()
+      
       await client.send('chat.send', { 
         content: 'Search for the word "export" in the TypeScript files using grep.' 
       })
@@ -138,6 +149,8 @@ describe('Planner Mode', () => {
 
   describe('Criteria Management', () => {
     it('creates criteria when asked to propose them', async () => {
+      const { client } = pool.get()
+      
       await client.send('chat.send', { 
         content: 'I want to add a multiply function to math.ts. Propose acceptance criteria for this task. Use the add_criterion tool.' 
       })
@@ -155,6 +168,8 @@ describe('Planner Mode', () => {
     })
 
     it('can add multiple criteria', async () => {
+      const { client } = pool.get()
+      
       await client.send('chat.send', { 
         content: `Add these two acceptance criteria:
 1. A multiply function exists in math.ts that takes two numbers
@@ -170,6 +185,8 @@ Use add_criterion for each one.`
     })
 
     it('criteria have pending status initially', async () => {
+      const { client } = pool.get()
+      
       await client.send('chat.send', { 
         content: 'Add a criterion: Tests pass with npm test. Use add_criterion.' 
       })
@@ -184,6 +201,8 @@ Use add_criterion for each one.`
 
   describe('Multi-turn Conversation', () => {
     it('maintains context across turns', async () => {
+      const { client } = pool.get()
+      
       // First turn: establish context
       await client.send('chat.send', { content: 'The project name is "test-project".' })
       await client.waitForChatDone()
@@ -196,6 +215,8 @@ Use add_criterion for each one.`
     })
 
     it('accumulates criteria across turns', async () => {
+      const { client } = pool.get()
+      
       // Add first criterion
       await client.send('chat.send', { 
         content: 'Add criterion: Function is exported. Use add_criterion.' 
@@ -215,6 +236,8 @@ Use add_criterion for each one.`
 
   describe('Stop Generation', () => {
     it('stops generation when requested', async () => {
+      const { client } = pool.get()
+      
       // Send a message that would generate a long response
       await client.send('chat.send', { 
         content: 'Write a very long and detailed explanation of TypeScript.' 
@@ -235,6 +258,8 @@ Use add_criterion for each one.`
 
   describe('Thinking Content', () => {
     it('streams thinking content when model supports it', async () => {
+      const { client } = pool.get()
+      
       await client.send('chat.send', { 
         content: 'Think step by step about how to add a new function to a TypeScript file.' 
       })
@@ -250,6 +275,8 @@ Use add_criterion for each one.`
 
   describe('Stats Bar', () => {
     it('attaches stats to only ONE message after chat with tool calls', async () => {
+      const { client } = pool.get()
+      
       // This chat will require at least one tool call (read_file)
       // then a follow-up response, creating multiple assistant messages
       await client.send('chat.send', { 
@@ -274,6 +301,8 @@ Use add_criterion for each one.`
     })
 
     it('emits exactly one chat.done with complete reason per conversation turn', async () => {
+      const { client } = pool.get()
+      
       await client.send('chat.send', { 
         content: 'Read package.json and summarize it.' 
       })

@@ -240,6 +240,32 @@ const RULES: MockRule[] = [
   // -------------------------------------------------------------------------
   // Write Tool
   // -------------------------------------------------------------------------
+  // Path security test rules - writing outside /tmp (requires confirmation)
+  {
+    match: /write.*\/home\/test\/approved/i,
+    tools: [{ name: 'write_file', arguments: { path: '/home/test/approved.txt', content: 'approved' } }],
+    response: 'Wrote to the approved path.',
+  },
+  {
+    match: /write.*\/home\/test\/denied/i,
+    tools: [{ name: 'write_file', arguments: { path: '/home/test/denied.txt', content: 'denied' } }],
+    response: 'Wrote to the denied path.',
+  },
+  {
+    match: /write.*\/home\/test\/first/i,
+    tools: [{ name: 'write_file', arguments: { path: '/home/test/first.txt', content: 'first' } }],
+    response: 'Wrote the first file.',
+  },
+  {
+    match: /write.*\/home\/test\/second/i,
+    tools: [{ name: 'write_file', arguments: { path: '/home/test/second.txt', content: 'second' } }],
+    response: 'Wrote the second file.',
+  },
+  {
+    match: /write.*\/home\/test\/secret/i,
+    tools: [{ name: 'write_file', arguments: { path: '/home/test/secret.txt', content: 'secret' } }],
+    response: 'Wrote to home.',
+  },
   {
     match: /without reading.*write|write.*without reading/i,
     tools: [{ name: 'write_file', arguments: { path: 'src/index.ts', content: 'new content' } }],

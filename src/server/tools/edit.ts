@@ -3,7 +3,6 @@ import type { Diagnostic, EditContextRegion } from '../../shared/types.js'
 import { createTool } from './tool-helpers.js'
 import { formatDiagnosticsForLLM } from './diagnostics.js'
 import { validateFileForWrite, computeFileHash } from './file-tracker.js'
-import { sessionManager } from '../session/index.js'
 import { extractEditContext } from './edit-context.js'
 
 interface EditFileArgs {
@@ -51,7 +50,7 @@ export const editFileTool = createTool<EditFileArgs>(
     await helpers.checkPathAccess([fullPath])
     
     // Validate file was read before editing
-    const readFiles = sessionManager.getReadFiles(context.sessionId)
+    const readFiles = context.sessionManager.getReadFiles(context.sessionId)
     const validation = await validateFileForWrite(fullPath, readFiles)
     if (!validation.valid) {
       return helpers.error(validation.error?.message ?? 'File validation failed')
@@ -129,7 +128,7 @@ export const editFileTool = createTool<EditFileArgs>(
     // Update file hash after edit so subsequent edits don't require re-reading
     const newHash = await computeFileHash(fullPath)
     if (newHash) {
-      sessionManager.updateFileHash(context.sessionId, fullPath, newHash)
+      context.sessionManager.updateFileHash(context.sessionId, fullPath, newHash)
     }
     
     return helpers.success(output, false, {

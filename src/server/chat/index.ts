@@ -2,7 +2,8 @@ import type { Session, SessionMode, ToolMode, ToolCall, Todo, MessageStats, Mess
 import type { ServerMessage } from '../../shared/protocol.js'
 import type { LLMClientWithModel } from '../llm/client.js'
 import type { StreamTiming } from '../llm/streaming.js'
-import { sessionManager } from '../session/index.js'
+import type { SessionManager } from '../session/index.js'
+import type { ToolContext } from '../tools/types.js'
 import {
   getToolRegistryForMode,
   setTodoUpdateCallback,
@@ -27,6 +28,7 @@ import {
 import { createToolProgressHandler } from './tool-streaming.js'
 
 export interface ChatOptions {
+  sessionManager: SessionManager
   sessionId: string
   llmClient: LLMClientWithModel
   signal?: AbortSignal
@@ -81,7 +83,7 @@ class TurnMetrics {
  * This is single-turn chat - used by the "Send" button.
  */
 export async function handleChat(options: ChatOptions): Promise<void> {
-  const { sessionId, llmClient, signal, onMessage } = options
+  const { sessionManager, sessionId, llmClient, signal, onMessage } = options
   
   let session = sessionManager.requireSession(sessionId)
   const mode = session.mode
@@ -184,7 +186,7 @@ async function runPlannerChat(
   metrics?: TurnMetrics,
   cachedInstructionData?: { content: string; files: InjectedFile[] }
 ): Promise<void> {
-  const { sessionId, llmClient, signal, onMessage } = options
+  const { sessionManager, sessionId, llmClient, signal, onMessage } = options
   const turnMetrics = metrics ?? new TurnMetrics()
   
   let session = sessionManager.requireSession(sessionId)
@@ -219,6 +221,7 @@ async function runPlannerChat(
   let result
   try {
     result = await streamLLMResponse({
+      sessionManager,
       sessionId,
       systemPrompt,
       llmClient,
@@ -257,7 +260,7 @@ async function runPlannerChat(
       const toolResult = await toolRegistry.execute(
         toolCall.name,
         toolCall.arguments,
-        { workdir: session.workdir, sessionId, signal, lspManager: sessionManager.getLspManager(sessionId), onEvent: onMessage, onProgress }
+        { sessionManager, workdir: session.workdir, sessionId, signal, lspManager: sessionManager.getLspManager(sessionId), onEvent: onMessage, onProgress }
       )
       
       // Track tool execution time
@@ -308,7 +311,7 @@ async function runBuilderTurn(
   metrics?: TurnMetrics,
   cachedInstructionData?: { content: string; files: InjectedFile[] }
 ): Promise<void> {
-  const { sessionId, llmClient, signal, onMessage } = options
+  const { sessionManager, sessionId, llmClient, signal, onMessage } = options
   const turnMetrics = metrics ?? new TurnMetrics()
   
   let session = sessionManager.requireSession(sessionId)
@@ -349,6 +352,7 @@ async function runBuilderTurn(
   let result
   try {
     result = await streamLLMResponse({
+      sessionManager,
       sessionId,
       systemPrompt,
       llmClient,
@@ -387,7 +391,7 @@ async function runBuilderTurn(
       const toolResult = await toolRegistry.execute(
         toolCall.name,
         toolCall.arguments,
-        { workdir: session.workdir, sessionId, signal, lspManager: sessionManager.getLspManager(sessionId), onEvent: onMessage, onProgress }
+        { sessionManager, workdir: session.workdir, sessionId, signal, lspManager: sessionManager.getLspManager(sessionId), onEvent: onMessage, onProgress }
       )
       
       // Track tool execution time

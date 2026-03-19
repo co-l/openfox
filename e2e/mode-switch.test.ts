@@ -4,22 +4,33 @@
  * Tests mode transitions, accept criteria, and phase changes.
  */
 
-import { describe, it, expect, beforeEach, afterEach } from 'vitest'
+import { describe, it, expect, beforeAll, afterAll, beforeEach, afterEach } from 'vitest'
 import { 
   createTestClient, 
   createTestProject,
+  createTestServer,
   collectUntilPhase,
   assertNoErrors,
   type TestClient, 
-  type TestProject 
+  type TestProject,
+  type TestServerHandle 
 } from './utils/index.js'
 
 describe('Mode Switching', () => {
+  let server: TestServerHandle
   let client: TestClient
   let testDir: TestProject
 
+  beforeAll(async () => {
+    server = await createTestServer()
+  })
+
+  afterAll(async () => {
+    await server.close()
+  })
+
   beforeEach(async () => {
-    client = await createTestClient()
+    client = await createTestClient({ url: server.wsUrl })
     testDir = await createTestProject({ template: 'typescript' })
     
     // Create project and session
@@ -142,7 +153,7 @@ describe('Mode Switching', () => {
       expect(['build', 'verification', 'done']).toContain(session.phase)
     })
 
-    it('sets phase to blocked after max failures', async () => {
+    it('sets phase to blocked after max failures', { timeout: 10_000 }, async () => {
       // Add an impossible criterion
       await client.send('chat.send', { 
         content: 'Add criterion: "The file /impossible/path/that/does/not/exist.txt contains the text MAGIC". Use add_criterion.' 

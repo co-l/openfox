@@ -13,6 +13,7 @@ import type { Config } from '../../shared/types.js'
 // Create a minimal test context
 function createTestContext(sessionId: string, workdir: string): ToolContext {
   return {
+    sessionManager,
     sessionId,
     workdir,
   }

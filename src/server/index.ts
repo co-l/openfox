@@ -3,22 +3,31 @@ import cors from 'cors'
 import { createServer as createHttpServer } from 'node:http'
 import { fileURLToPath } from 'node:url'
 import { dirname, resolve, join } from 'node:path'
-import { readFile, access } from 'node:fs/promises'
+import { readFile } from 'node:fs/promises'
 import { createServer as createViteServer, type ViteDevServer } from 'vite'
 
 import type { Config } from '../shared/types.js'
+import type { ServerHandle } from './context.js'
 import { initDatabase, closeDatabase, getDatabase } from './db/index.js'
 import { initEventStore } from './events/index.js'
 import { createLLMClient, detectModel, getLlmStatus, detectBackend, getBackendDisplayName, type Backend } from './llm/index.js'
 import { createMockLLMClient } from './llm/mock.js'
 import { createToolRegistry } from './tools/index.js'
 import { createWebSocketServer } from './ws/index.js'
-import { sessionManager } from './session/index.js'
+import { SessionManager } from './session/manager.js'
 import { logger, setLogLevel } from './utils/logger.js'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 
-export async function createServer(config: Config): Promise<void> {
+/**
+ * Create a server handle that can be started on any port.
+ * Returns a ServerHandle with start() and close() methods.
+ * 
+ * Use this for:
+ * - In-process testing with isolated instances
+ * - Programmatic server control
+ */
+export async function createServerHandle(config: Config): Promise<ServerHandle> {
   // Set log level
   setLogLevel(config.logging?.level ?? undefined, config.mode)
 
@@ -27,6 +36,9 @@ export async function createServer(config: Config): Promise<void> {
 
   // Initialize event store
   initEventStore(db)
+
+  // Create SessionManager instance (not singleton!)
+  const sessionManager = new SessionManager()
 
   // Create LLM client - use mock if OPENFOX_MOCK_LLM is set
   const useMock = process.env['OPENFOX_MOCK_LLM'] === 'true'
@@ -145,7 +157,7 @@ export async function createServer(config: Config): Promise<void> {
         directories,
         basename: basename(resolvedPath),
       })
-    } catch (error) {
+    } catch {
       res.status(400).json({ 
         error: 'Cannot read directory',
         current: DEFAULT_BASE_PATH,
@@ -289,28 +301,54 @@ export async function createServer(config: Config): Promise<void> {
   const httpServer = createHttpServer(app)
 
   // Create WebSocket server attached to HTTP server
-  createWebSocketServer(httpServer, config, llmClient, toolRegistry)
+  createWebSocketServer(httpServer, config, llmClient, toolRegistry, sessionManager)
 
-  // Start server
-  httpServer.listen(config.server.port, config.server.host, () => {
-    logger.info(`OpenFox server running at http://${config.server.host}:${config.server.port}`)
-    logger.info(`WebSocket available at ws://${config.server.host}:${config.server.port}/ws`)
-    logger.info(`LLM backend: ${llmClient.getBackend()}, model: ${llmClient.getModel()}, url: ${config.llm.baseUrl}`)
-  })
+  // Return the handle with start/close methods
+  return {
+    httpServer,
+    ctx: { config, sessionManager, llmClient, toolRegistry },
+    
+    start: (port?: number) => new Promise((resolve, reject) => {
+      const listenPort = port ?? config.server.port
+      const host = config.server.host
+      
+      httpServer.listen(listenPort, host, () => {
+        const addr = httpServer.address()
+        const actualPort = typeof addr === 'object' && addr ? addr.port : listenPort
+        logger.info(`OpenFox server running at http://${host}:${actualPort}`)
+        logger.info(`WebSocket available at ws://${host}:${actualPort}/ws`)
+        logger.info(`LLM backend: ${llmClient.getBackend()}, model: ${llmClient.getModel()}, url: ${config.llm.baseUrl}`)
+        resolve({ port: actualPort })
+      })
+      
+      httpServer.on('error', reject)
+    }),
+    
+    close: () => new Promise<void>((resolve) => {
+      logger.info('Shutting down...')
+      viteServer?.close()
+      closeDatabase()
+      httpServer.close(() => resolve())
+    }),
+  }
+}
 
+/**
+ * Create and start a server (convenience function for CLI).
+ * Starts listening immediately on the configured port.
+ * Sets up SIGINT/SIGTERM handlers.
+ */
+export async function createServer(config: Config): Promise<void> {
+  const handle = await createServerHandle(config)
+  await handle.start()
+  
   // Graceful shutdown
   process.on('SIGINT', () => {
-    logger.info('Shutting down...')
-    closeDatabase()
-    httpServer.close()
-    process.exit(0)
+    handle.close().then(() => process.exit(0))
   })
 
   process.on('SIGTERM', () => {
-    logger.info('Shutting down...')
-    closeDatabase()
-    httpServer.close()
-    process.exit(0)
+    handle.close().then(() => process.exit(0))
   })
 }
 

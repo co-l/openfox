@@ -28,7 +28,9 @@
     "build:web": "cd web && FORCE_COLOR=1 vite build --outDir ../dist/web",
     "start": "node dist/cli/index.js",
     "start:dev": "node dist/cli/dev.js",
-    "test": "vitest",
+    "test": "vitest run && vitest run --config e2e/vitest.config.ts",
+    "test:unit": "vitest run",
+    "test:e2e": "vitest run --config e2e/vitest.config.ts",
     "typecheck": "tsc --noEmit",
     "clean": "rm -rf dist",
     "prepublishOnly": "npm run build"

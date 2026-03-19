@@ -1,6 +1,5 @@
 import type { ToolResult, CriterionStatus } from '../../shared/types.js'
 import type { Tool, ToolContext } from './types.js'
-import { sessionManager } from '../session/index.js'
 
 /**
  * complete_criterion - Builder marks a criterion as completed (awaiting verification)
@@ -36,7 +35,7 @@ export const completeCriterionTool: Tool = {
       const id = args['id'] as string
       const reason = args['reason'] as string | undefined
       
-      const session = sessionManager.requireSession(context.sessionId)
+      const session = context.sessionManager.requireSession(context.sessionId)
       const criterion = session.criteria.find(c => c.id === id)
       
       if (!criterion) {
@@ -55,7 +54,7 @@ export const completeCriterionTool: Tool = {
         ...(reason ? { reason } : {}),
       }
       
-      sessionManager.updateCriterionStatus(context.sessionId, id, status)
+      context.sessionManager.updateCriterionStatus(context.sessionId, id, status)
       
       return {
         success: true,
@@ -108,7 +107,7 @@ export const passCriterionTool: Tool = {
       const id = args['id'] as string
       const reason = args['reason'] as string | undefined
       
-      const session = sessionManager.requireSession(context.sessionId)
+      const session = context.sessionManager.requireSession(context.sessionId)
       const criterion = session.criteria.find(c => c.id === id)
       
       if (!criterion) {
@@ -126,10 +125,10 @@ export const passCriterionTool: Tool = {
         ...(reason ? { reason } : {}),
       }
       
-      sessionManager.updateCriterionStatus(context.sessionId, id, status)
+      context.sessionManager.updateCriterionStatus(context.sessionId, id, status)
       
       // Record the verification attempt
-      sessionManager.addCriterionAttempt(context.sessionId, id, {
+      context.sessionManager.addCriterionAttempt(context.sessionId, id, {
         attemptNumber: criterion.attempts.length + 1,
         status: 'passed',
         timestamp: new Date().toISOString(),
@@ -187,7 +186,7 @@ export const failCriterionTool: Tool = {
       const id = args['id'] as string
       const reason = args['reason'] as string
       
-      const session = sessionManager.requireSession(context.sessionId)
+      const session = context.sessionManager.requireSession(context.sessionId)
       const criterion = session.criteria.find(c => c.id === id)
       
       if (!criterion) {
@@ -205,10 +204,10 @@ export const failCriterionTool: Tool = {
         reason,
       }
       
-      sessionManager.updateCriterionStatus(context.sessionId, id, status)
+      context.sessionManager.updateCriterionStatus(context.sessionId, id, status)
       
       // Record the verification attempt
-      sessionManager.addCriterionAttempt(context.sessionId, id, {
+      context.sessionManager.addCriterionAttempt(context.sessionId, id, {
         attemptNumber: criterion.attempts.length + 1,
         status: 'failed',
         timestamp: new Date().toISOString(),

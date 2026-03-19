@@ -4,15 +4,24 @@
  * Tests basic WebSocket communication, message format, and error handling.
  */
 
-import { describe, it, expect, beforeEach, afterEach } from 'vitest'
-import { createTestClient, createTestProject, type TestClient, type TestProject } from './utils/index.js'
+import { describe, it, expect, beforeAll, afterAll, beforeEach, afterEach } from 'vitest'
+import { createTestClient, createTestProject, createTestServer, type TestClient, type TestProject, type TestServerHandle } from './utils/index.js'
 
 describe('WebSocket Protocol', () => {
+  let server: TestServerHandle
   let client: TestClient
   let project: TestProject
 
+  beforeAll(async () => {
+    server = await createTestServer()
+  })
+
+  afterAll(async () => {
+    await server.close()
+  })
+
   beforeEach(async () => {
-    client = await createTestClient()
+    client = await createTestClient({ url: server.wsUrl })
     project = await createTestProject({ template: 'typescript' })
   })
 

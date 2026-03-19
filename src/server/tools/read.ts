@@ -2,7 +2,6 @@ import { readFile, stat } from 'node:fs/promises'
 import { OUTPUT_LIMITS } from './types.js'
 import { createTool } from './tool-helpers.js'
 import { computeFileHash } from './file-tracker.js'
-import { sessionManager } from '../session/index.js'
 
 interface ReadFileArgs {
   path: string
@@ -89,7 +88,7 @@ export const readFileTool = createTool<ReadFileArgs>(
     // Record file read with content hash for write validation
     const contentHash = await computeFileHash(fullPath)
     if (contentHash) {
-      sessionManager.recordFileRead(context.sessionId, fullPath, contentHash)
+      context.sessionManager.recordFileRead(context.sessionId, fullPath, contentHash)
     }
     
     return helpers.success(output, truncated)

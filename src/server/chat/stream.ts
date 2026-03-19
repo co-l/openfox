@@ -13,7 +13,7 @@ import type { ServerMessage } from '../../shared/protocol.js'
 import type { LLMClientWithModel } from '../llm/client.js'
 import type { LLMToolDefinition } from '../llm/types.js'
 import type { StreamTiming } from '../llm/streaming.js'
-import { sessionManager } from '../session/index.js'
+import type { SessionManager } from '../session/index.js'
 import { streamWithSegments } from '../llm/streaming.js'
 import { estimateTokens } from '../context/tokenizer.js'
 import { logger } from '../utils/logger.js'
@@ -32,6 +32,7 @@ const MAX_FORMAT_RETRIES = 10
 const FORMAT_CORRECTION_PROMPT = `IMPORTANT: You MUST use the JSON function calling API. Do NOT output XML tags like <tool_call>, <function=>, or <parameter=>. Your previous attempt was stopped because you used the wrong format. Use the proper tool_calls format.`
 
 export interface StreamOptions {
+  sessionManager: SessionManager
   sessionId: string
   systemPrompt: string
   llmClient: LLMClientWithModel
@@ -74,7 +75,7 @@ async function streamLLMResponseInternal(
   formatRetryCount: number,
   existingMessageId?: string
 ): Promise<StreamResult> {
-  const { sessionId, systemPrompt, llmClient, tools, toolChoice, signal, onEvent, customMessages, subAgentId, subAgentType, enableThinking } = options
+  const { sessionManager, sessionId, systemPrompt, llmClient, tools, toolChoice, signal, onEvent, customMessages, subAgentId, subAgentType, enableThinking } = options
 
   // If retrying due to XML format error, inject correction prompt
   if (formatRetryCount > 0) {

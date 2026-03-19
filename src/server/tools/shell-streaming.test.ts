@@ -8,10 +8,18 @@ import { join } from 'node:path'
 describe('shell tool streaming', () => {
   let tempDir: string
   let context: ToolContext
+  
+  // Mock sessionManager for test context
+  const mockSessionManager = {
+    recordFileRead: vi.fn(),
+    getReadFiles: vi.fn().mockReturnValue({}),
+    updateFileHash: vi.fn(),
+  } as any
 
   beforeEach(async () => {
     tempDir = await mkdtemp(join(tmpdir(), 'shell-test-'))
     context = {
+      sessionManager: mockSessionManager,
       workdir: tempDir,
       sessionId: 'test-session',
     }
@@ -147,6 +155,7 @@ echo "line 3"
   it('does not call onProgress when not provided', async () => {
     // Context without onProgress
     const plainContext: ToolContext = {
+      sessionManager: mockSessionManager,
       workdir: tempDir,
       sessionId: 'test-session',
     }
@@ -164,6 +173,7 @@ echo "line 3"
   it('returns partial output with interrupted marker when aborted', async () => {
     const controller = new AbortController()
     const contextWithSignal: ToolContext = {
+      sessionManager: mockSessionManager,
       workdir: tempDir,
       sessionId: 'test-session',
       signal: controller.signal,

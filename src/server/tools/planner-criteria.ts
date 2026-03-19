@@ -1,6 +1,5 @@
 import type { Criterion } from '../../shared/types.js'
 import type { Tool } from './types.js'
-import { sessionManager } from '../session/index.js'
 
 function formatCriteriaList(criteria: Criterion[]): string {
   if (criteria.length === 0) return 'No criteria defined.'
@@ -21,7 +20,7 @@ export const getCriteriaTool: Tool = {
     },
   },
   execute: async (_args, context) => {
-    const session = sessionManager.requireSession(context.sessionId)
+    const session = context.sessionManager.requireSession(context.sessionId)
     const criteria = session.criteria
     
     return {
@@ -71,7 +70,7 @@ export const addCriterionTool: Tool = {
       return { success: false, error: 'description is required', durationMs: 0, truncated: false }
     }
     
-    sessionManager.requireSession(context.sessionId)
+    context.sessionManager.requireSession(context.sessionId)
     
     const criterion: Criterion = {
       id,
@@ -80,7 +79,7 @@ export const addCriterionTool: Tool = {
       attempts: [],
     }
     
-    const result = sessionManager.addCriterion(context.sessionId, criterion)
+    const result = context.sessionManager.addCriterion(context.sessionId, criterion)
     
     if ('error' in result) {
       return { success: false, error: result.error, durationMs: 0, truncated: false }
@@ -129,7 +128,7 @@ export const updateCriterionTool: Tool = {
       return { success: false, error: 'id is required', durationMs: 0, truncated: false }
     }
     
-    const session = sessionManager.requireSession(context.sessionId)
+    const session = context.sessionManager.requireSession(context.sessionId)
     
     if (!session.criteria.find(c => c.id === id)) {
       return { success: false, error: `criterion "${id}" not found`, durationMs: 0, truncated: false }
@@ -139,7 +138,7 @@ export const updateCriterionTool: Tool = {
       return { success: false, error: 'description is required for update', durationMs: 0, truncated: false }
     }
     
-    const criteria = sessionManager.updateCriterionFull(context.sessionId, id, { description })
+    const criteria = context.sessionManager.updateCriterionFull(context.sessionId, id, { description })
     return {
       success: true,
       output: `Updated criterion "${id}". Current criteria:\n${formatCriteriaList(criteria)}`,
@@ -175,13 +174,13 @@ export const removeCriterionTool: Tool = {
       return { success: false, error: 'id is required', durationMs: 0, truncated: false }
     }
     
-    const session = sessionManager.requireSession(context.sessionId)
+    const session = context.sessionManager.requireSession(context.sessionId)
     
     if (!session.criteria.find(c => c.id === id)) {
       return { success: false, error: `criterion "${id}" not found`, durationMs: 0, truncated: false }
     }
     
-    const criteria = sessionManager.removeCriterion(context.sessionId, id)
+    const criteria = context.sessionManager.removeCriterion(context.sessionId, id)
     return {
       success: true,
       output: criteria.length === 0

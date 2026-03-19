@@ -32,6 +32,8 @@ export interface MockLLMConfig {
   thinkingContent?: string
   /** Default response content when no tool calls match */
   defaultResponse?: string
+  /** Delay between streaming chunks in ms (default: 0 for fast tests) */
+  streamDelayMs?: number
 }
 
 export interface MockLLMClient extends LLMClientWithModel {
@@ -68,6 +70,7 @@ export function createMockLLMClient(config: MockLLMConfig = {}): MockLLMClient {
   const profile = getModelProfile(model)
   const defaultResponse = config.defaultResponse ?? 'I completed the task.'
   const defaultThinking = config.thinkingContent ?? ''
+  const streamDelayMs = config.streamDelayMs ?? 0 // Default to 0 for fast tests
   
   // Default rules - can be extended by tests
   const defaultRules: MockToolCallRule[] = [
@@ -162,6 +165,27 @@ export function createMockLLMClient(config: MockLLMConfig = {}): MockLLMClient {
       promptMatch: /write.*home.*secret/i,
       toolCalls: [{ name: 'write_file', arguments: { path: '/home/test/secret.txt', content: 'secret' } }],
       response: 'I wrote to home.',
+    },
+    // Generic /home/test writes for path security approval flow tests
+    {
+      promptMatch: /write.*\/home\/test\/approved/i,
+      toolCalls: [{ name: 'write_file', arguments: { path: '/home/test/approved.txt', content: 'approved' } }],
+      response: 'I wrote to the approved path.',
+    },
+    {
+      promptMatch: /write.*\/home\/test\/denied/i,
+      toolCalls: [{ name: 'write_file', arguments: { path: '/home/test/denied.txt', content: 'denied' } }],
+      response: 'I wrote to the denied path.',
+    },
+    {
+      promptMatch: /write.*\/home\/test\/first/i,
+      toolCalls: [{ name: 'write_file', arguments: { path: '/home/test/first.txt', content: 'first' } }],
+      response: 'I wrote the first file.',
+    },
+    {
+      promptMatch: /write.*\/home\/test\/second/i,
+      toolCalls: [{ name: 'write_file', arguments: { path: '/home/test/second.txt', content: 'second' } }],
+      response: 'I wrote the second file.',
     },
     // Sensitive file detection rules
     {
@@ -322,7 +346,9 @@ export function createMockLLMClient(config: MockLLMConfig = {}): MockLLMClient {
         const chunks = thinking.split(' ')
         for (const chunk of chunks) {
           yield { type: 'thinking_delta', content: chunk + ' ' }
-          await new Promise(resolve => setTimeout(resolve, 10))
+          if (streamDelayMs > 0) {
+            await new Promise(resolve => setTimeout(resolve, streamDelayMs))
+          }
         }
       }
       
@@ -343,7 +369,9 @@ export function createMockLLMClient(config: MockLLMConfig = {}): MockLLMClient {
         const chunks = responseContent.split(' ')
         for (const chunk of chunks) {
           yield { type: 'text_delta', content: chunk + ' ' }
-          await new Promise(resolve => setTimeout(resolve, 10))
+          if (streamDelayMs > 0) {
+            await new Promise(resolve => setTimeout(resolve, streamDelayMs))
+          }
         }
       }
       

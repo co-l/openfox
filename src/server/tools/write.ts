@@ -4,7 +4,6 @@ import type { Diagnostic } from '../../shared/types.js'
 import { createTool } from './tool-helpers.js'
 import { formatDiagnosticsForLLM } from './diagnostics.js'
 import { validateFileForWrite, computeFileHash } from './file-tracker.js'
-import { sessionManager } from '../session/index.js'
 
 interface WriteFileArgs {
   path: string
@@ -39,7 +38,7 @@ export const writeFileTool = createTool<WriteFileArgs>(
     await helpers.checkPathAccess([fullPath])
     
     // Validate file was read before writing (only for existing files)
-    const readFiles = sessionManager.getReadFiles(context.sessionId)
+    const readFiles = context.sessionManager.getReadFiles(context.sessionId)
     const validation = await validateFileForWrite(fullPath, readFiles)
     if (!validation.valid) {
       return helpers.error(validation.error?.message ?? 'File validation failed')
@@ -67,7 +66,7 @@ export const writeFileTool = createTool<WriteFileArgs>(
     // Update file hash after write so subsequent writes don't require re-reading
     const newHash = await computeFileHash(fullPath)
     if (newHash) {
-      sessionManager.updateFileHash(context.sessionId, fullPath, newHash)
+      context.sessionManager.updateFileHash(context.sessionId, fullPath, newHash)
     }
     
     return helpers.success(

@@ -9,6 +9,7 @@ import type { Criterion, MessageStats } from '../../shared/types.js'
 import type { ServerMessage } from '../../shared/protocol.js'
 import type { LLMClientWithModel } from '../llm/client.js'
 import type { StreamTiming } from '../llm/streaming.js'
+import type { SessionManager } from '../session/index.js'
 
 // ============================================================================
 // Decision Types - What the state machine decides to do next
@@ -25,6 +26,7 @@ export type NextAction =
 // ============================================================================
 
 export interface OrchestratorOptions {
+  sessionManager: SessionManager
   sessionId: string
   llmClient: LLMClientWithModel
   signal?: AbortSignal

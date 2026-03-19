@@ -11,14 +11,16 @@
  * - Summary generation during compaction
  */
 
-import { describe, it, expect, beforeEach, afterEach } from 'vitest'
+import { describe, it, expect, beforeAll, afterAll, beforeEach, afterEach } from 'vitest'
 import { 
   createTestClient, 
   createTestProject,
+  createTestServer,
   collectChatEvents,
   assertNoErrors,
   type TestClient, 
-  type TestProject 
+  type TestProject,
+  type TestServerHandle 
 } from './utils/index.js'
 
 // Type for context state
@@ -31,11 +33,20 @@ interface ContextState {
 }
 
 describe('Auto-Compaction', () => {
+  let server: TestServerHandle
   let client: TestClient
   let testDir: TestProject
 
+  beforeAll(async () => {
+    server = await createTestServer()
+  })
+
+  afterAll(async () => {
+    await server.close()
+  })
+
   beforeEach(async () => {
-    client = await createTestClient()
+    client = await createTestClient({ url: server.wsUrl })
     testDir = await createTestProject({ template: 'typescript' })
     
     await client.send('project.create', { name: 'Auto-Compaction Test', workdir: testDir.path })
@@ -71,7 +82,7 @@ describe('Auto-Compaction', () => {
       // Fresh session should not be able to compact
       const sessionId = client.getSession()!.id
       
-      const client2 = await createTestClient()
+      const client2 = await createTestClient({ url: server.wsUrl })
       try {
         await client2.send('session.load', { sessionId })
         
@@ -109,7 +120,7 @@ describe('Auto-Compaction', () => {
     it('reports dangerZone in context state', async () => {
       const sessionId = client.getSession()!.id
       
-      const client2 = await createTestClient()
+      const client2 = await createTestClient({ url: server.wsUrl })
       try {
         await client2.send('session.load', { sessionId })
         
@@ -131,7 +142,7 @@ describe('Auto-Compaction', () => {
     it('tracks compaction count in context state', async () => {
       const sessionId = client.getSession()!.id
       
-      const client2 = await createTestClient()
+      const client2 = await createTestClient({ url: server.wsUrl })
       try {
         await client2.send('session.load', { sessionId })
         
@@ -294,7 +305,7 @@ describe('Auto-Compaction', () => {
     it('emits context.state on session load', async () => {
       const sessionId = client.getSession()!.id
       
-      const client2 = await createTestClient()
+      const client2 = await createTestClient({ url: server.wsUrl })
       try {
         await client2.send('session.load', { sessionId })
         

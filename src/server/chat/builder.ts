@@ -9,7 +9,7 @@ import type { ToolCall, PromptContext, InjectedFile } from '../../shared/types.j
 import type { ServerMessage } from '../../shared/protocol.js'
 import type { LLMClientWithModel } from '../llm/client.js'
 import type { StepResult } from '../runner/types.js'
-import { sessionManager } from '../session/index.js'
+import type { SessionManager } from '../session/index.js'
 import { getToolRegistryForMode } from '../tools/index.js'
 import { buildBuilderPrompt, BUILDER_KICKOFF_PROMPT } from './prompts.js'
 import { streamLLMResponse } from './stream.js'
@@ -26,6 +26,7 @@ import {
 import { createToolProgressHandler } from './tool-streaming.js'
 
 export interface BuilderStepOptions {
+  sessionManager: SessionManager
   sessionId: string
   llmClient: LLMClientWithModel
   signal?: AbortSignal
@@ -40,7 +41,7 @@ export interface BuilderStepOptions {
  * between tool executions.
  */
 export async function runBuilderStep(options: BuilderStepOptions): Promise<StepResult> {
-  const { sessionId, llmClient, signal, onMessage } = options
+  const { sessionManager, sessionId, llmClient, signal, onMessage } = options
   const startTime = performance.now()
   
   let session = sessionManager.requireSession(sessionId)
@@ -129,6 +130,7 @@ export async function runBuilderStep(options: BuilderStepOptions): Promise<StepR
     let result
     try {
       result = await streamLLMResponse({
+        sessionManager,
         sessionId,
         systemPrompt,
         llmClient,
@@ -199,7 +201,7 @@ export async function runBuilderStep(options: BuilderStepOptions): Promise<StepR
       const toolResult = await toolRegistry.execute(
         toolCall.name,
         toolCall.arguments,
-        { workdir: session.workdir, sessionId, signal, lspManager: sessionManager.getLspManager(sessionId), onEvent: onMessage, onProgress }
+        { sessionManager, workdir: session.workdir, sessionId, signal, lspManager: sessionManager.getLspManager(sessionId), onEvent: onMessage, onProgress }
       )
       
       iterationToolTime += toolResult.durationMs
