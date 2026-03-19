@@ -289,6 +289,79 @@ describe('chat orchestrator', () => {
     })
   })
 
+  it('aborts tool execution loop when signal is aborted between tool calls', async () => {
+    const eventStore = createEventStore()
+    getEventStoreMock.mockReturnValue(eventStore)
+    getAllInstructionsMock.mockResolvedValue({ content: '', files: [] })
+
+    const controller = new AbortController()
+    const executedTools: string[] = []
+
+    // Track which tools were executed and abort after first one
+    const execute = vi.fn(async (name: string) => {
+      executedTools.push(name)
+      if (executedTools.length === 1) {
+        // Abort after first tool executes
+        controller.abort()
+      }
+      return { success: true, output: 'ok', durationMs: 10, truncated: false }
+    })
+
+    getToolRegistryForModeMock.mockReturnValue({
+      definitions: [
+        { type: 'function', function: { name: 'glob', description: 'Search', parameters: {} } },
+        { type: 'function', function: { name: 'read_file', description: 'Read', parameters: {} } },
+        { type: 'function', function: { name: 'grep', description: 'Grep', parameters: {} } },
+      ],
+      execute,
+    })
+
+    streamLLMPureMock.mockReturnValue({ kind: 'stream' })
+    consumeStreamGeneratorMock.mockResolvedValueOnce({
+      content: '',
+      toolCalls: [
+        { id: 'call-1', name: 'glob', arguments: { pattern: '*.ts' } },
+        { id: 'call-2', name: 'read_file', arguments: { path: 'src/index.ts' } },
+        { id: 'call-3', name: 'grep', arguments: { pattern: 'foo' } },
+      ],
+      segments: [],
+      usage: { promptTokens: 10, completionTokens: 5 },
+      timing: { ttft: 1, completionTime: 1, tps: 5, prefillTps: 10 },
+      aborted: false,
+      xmlFormatError: false,
+    })
+
+    const sessionManager = createSessionManager({
+      current: {
+        id: 'session-1',
+        projectId: 'project-1',
+        workdir: '/tmp/project',
+        mode: 'planner',
+        phase: 'plan',
+        isRunning: true,
+        criteria: [],
+        executionState: { currentTokenCount: 0, compactionCount: 0 },
+        messages: [{ id: 'user-1', role: 'user', content: 'Search for files' }],
+      },
+    })
+
+    await runChatTurn({
+      sessionManager: sessionManager as never,
+      sessionId: 'session-1',
+      llmClient: { getModel: () => 'qwen3-32b' } as never,
+      signal: controller.signal,
+    })
+
+    // Only 1 tool should have been executed before abort stopped the loop
+    expect(executedTools).toEqual(['glob'])
+    expect(execute).toHaveBeenCalledTimes(1)
+
+    // Should have emitted stopped done event
+    expect(eventStore.append.mock.calls.find(([, event]) => event.type === 'chat.done')?.[1]).toMatchObject({
+      data: { reason: 'stopped' },
+    })
+  })
+
   it('retries builder turns after xml format errors and completes after tool execution', async () => {
     const eventStore = createEventStore()
     getEventStoreMock.mockReturnValue(eventStore)

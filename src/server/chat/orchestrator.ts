@@ -277,6 +277,18 @@ async function runPlannerTurn(
     }))
     
     for (const toolCall of result.toolCalls) {
+      // Check abort before each tool execution
+      if (signal?.aborted) {
+        const stats = turnMetrics.buildStats(llmClient.getModel(), 'planner')
+        eventStore.append(sessionId, createMessageDoneEvent(assistantMsgId, {
+          stats,
+          partial: true,
+          promptContext: assembledRequest.promptContext,
+        }))
+        eventStore.append(sessionId, createChatDoneEvent(assistantMsgId, 'stopped', stats))
+        throw new Error('Aborted')
+      }
+
       eventStore.append(sessionId, createToolCallEvent(assistantMsgId, toolCall))
 
       // Create progress handler for streaming output (run_command only)
@@ -315,6 +327,18 @@ async function runPlannerTurn(
       if (JSON.stringify(updatedSession.criteria) !== JSON.stringify(session.criteria)) {
         eventStore.append(sessionId, { type: 'criteria.set', data: { criteria: updatedSession.criteria } })
       }
+    }
+
+    // Check abort before continuing with another LLM call
+    if (signal?.aborted) {
+      const stats = turnMetrics.buildStats(llmClient.getModel(), 'planner')
+      eventStore.append(sessionId, createMessageDoneEvent(assistantMsgId, {
+        stats,
+        partial: true,
+        promptContext: assembledRequest.promptContext,
+      }))
+      eventStore.append(sessionId, createChatDoneEvent(assistantMsgId, 'stopped', stats))
+      throw new Error('Aborted')
     }
 
     // Continue with another response
@@ -463,6 +487,18 @@ export async function runBuilderTurn(
     }))
     
     for (const toolCall of result.toolCalls) {
+      // Check abort before each tool execution
+      if (signal?.aborted) {
+        const stats = turnMetrics.buildStats(llmClient.getModel(), 'builder')
+        eventStore.append(sessionId, createMessageDoneEvent(assistantMsgId, {
+          stats,
+          partial: true,
+          promptContext: assembledRequest.promptContext,
+        }))
+        eventStore.append(sessionId, createChatDoneEvent(assistantMsgId, 'stopped', stats))
+        throw new Error('Aborted')
+      }
+
       eventStore.append(sessionId, createToolCallEvent(assistantMsgId, toolCall))
 
       // Create progress handler for streaming output (run_command only)
@@ -507,6 +543,18 @@ export async function runBuilderTurn(
       if (JSON.stringify(updatedSession.criteria) !== JSON.stringify(session.criteria)) {
         eventStore.append(sessionId, { type: 'criteria.set', data: { criteria: updatedSession.criteria } })
       }
+    }
+
+    // Check abort before continuing with another LLM call
+    if (signal?.aborted) {
+      const stats = turnMetrics.buildStats(llmClient.getModel(), 'builder')
+      eventStore.append(sessionId, createMessageDoneEvent(assistantMsgId, {
+        stats,
+        partial: true,
+        promptContext: assembledRequest.promptContext,
+      }))
+      eventStore.append(sessionId, createChatDoneEvent(assistantMsgId, 'stopped', stats))
+      throw new Error('Aborted')
     }
 
     // Continue with another response
@@ -755,6 +803,18 @@ ${modifiedFiles.length > 0 ? modifiedFiles.map(f => `- ${f}`).join('\n') : '(non
 
     // Execute tool calls
     for (const toolCall of result.toolCalls) {
+      // Check abort before each tool execution
+      if (signal?.aborted) {
+        const stats = turnMetrics.buildStats(llmClient.getModel(), 'verifier')
+        eventStore.append(sessionId, createMessageDoneEvent(assistantMsgId, {
+          stats,
+          partial: true,
+          promptContext: assembledRequest.promptContext,
+        }))
+        eventStore.append(sessionId, createChatDoneEvent(assistantMsgId, 'stopped', stats))
+        throw new Error('Aborted')
+      }
+
       eventStore.append(sessionId, createToolCallEvent(assistantMsgId, toolCall))
 
       // Create progress handler for streaming output (run_command only)
