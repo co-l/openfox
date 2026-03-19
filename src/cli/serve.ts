@@ -1,10 +1,11 @@
 import { createServer } from '../server/index.js'
 import { loadConfig } from '../server/config.js'
 import { logger } from '../server/utils/logger.js'
-import { mergeConfigs } from './config.js'
+import { loadGlobalConfig, getActiveProvider } from './config.js'
 import { getDatabasePath, ensureDataDirExists } from './paths.js'
 import open from 'open'
 import type { Mode } from './main.js'
+import type { LlmBackend } from '../shared/types.js'
 
 export interface ServeOptions {
   mode: Mode
@@ -18,7 +19,8 @@ export async function runServe(options: ServeOptions): Promise<void> {
   // Ensure data directory exists before starting server
   await ensureDataDirExists(mode)
   
-  const global = await import('./config.js').then(m => m.loadGlobalConfig(mode))
+  const globalConfig = await loadGlobalConfig(mode)
+  const activeProvider = getActiveProvider(globalConfig)
   const env = loadConfig()
   
   // Environment variables take precedence over global config file
@@ -32,28 +34,36 @@ export async function runServe(options: ServeOptions): Promise<void> {
   const isEnvModelExplicit = envModel !== 'qwen3.5-122b-int4-autoround' // default in config.ts
   const isEnvUrlExplicit = envUrl !== 'http://localhost:8000/v1' // default in config.ts
   
+  // Get provider values with fallbacks
+  const providerUrl = activeProvider?.url ?? envUrl
+  const providerModel = activeProvider?.model ?? envModel
+  const providerBackend = (activeProvider?.backend ?? envBackend) as LlmBackend | 'auto'
+  
   const merged = {
     ...env,
     llm: { 
       ...env.llm, 
-      baseUrl: isEnvUrlExplicit ? envUrl : (global.llm.url ?? envUrl),
-      model: isEnvModelExplicit ? envModel : (global.llm.model ?? envModel),
-      backend: isEnvBackendExplicit ? envBackend : ((global.llm.backend as any) ?? envBackend),
+      baseUrl: isEnvUrlExplicit ? envUrl : providerUrl,
+      model: isEnvModelExplicit ? envModel : providerModel,
+      backend: isEnvBackendExplicit ? envBackend : providerBackend,
     },
     server: { 
       ...env.server, 
       port: port ?? (mode === 'development' ? 10469 : env.server.port),
       host: '127.0.0.1',
-      openBrowser: openBrowser ?? global.server.openBrowser,
+      openBrowser: openBrowser ?? globalConfig.server.openBrowser,
     },
     database: {
       // Use env OPENFOX_DB_PATH if explicitly set (e.g., ":memory:" for tests), otherwise use standard path
       path: env.database.path !== './openfox.db' ? env.database.path : getDatabasePath(mode),
     },
     logging: {
-      level: global.logging?.level ?? 'info' as const,
+      level: globalConfig.logging?.level ?? 'info' as const,
     },
     mode,
+    // Pass providers for the server to use
+    providers: globalConfig.providers,
+    activeProviderId: globalConfig.activeProviderId,
   }
   
   await createServer(merged)

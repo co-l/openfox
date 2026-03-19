@@ -77,7 +77,7 @@ interface ClientConnection {
 export function createWebSocketServer(
   httpServer: Server,
   config: Config,
-  llmClient: LLMClientWithModel,
+  getLLMClient: () => LLMClientWithModel,
   toolRegistry: ToolRegistry,
   sessionManager: SessionManager
 ): WebSocketServer {
@@ -132,7 +132,7 @@ export function createWebSocketServer(
       const client = clients.get(ws)!
       
       try {
-        await handleClientMessage(ws, client, message, config, llmClient, toolRegistry, sessionManager)
+        await handleClientMessage(ws, client, message, config, getLLMClient, toolRegistry, sessionManager)
       } catch (error) {
         logger.error('Error handling client message', { error, type: message.type })
         ws.send(serializeServerMessage(
@@ -173,7 +173,7 @@ async function handleClientMessage(
   client: ClientConnection,
   message: { id: string; type: string; payload: unknown },
   config: Config,
-  llmClient: LLMClientWithModel,
+  getLLMClient: () => LLMClientWithModel,
   toolRegistry: ToolRegistry,
   sessionManager: SessionManager
 ): Promise<void> {
@@ -465,7 +465,7 @@ async function handleClientMessage(
       runChatTurn({
         sessionManager,
         sessionId,
-        llmClient,
+        llmClient: getLLMClient(),
         signal: controller.signal,
         onMessage: send,  // For path confirmation dialogs
       }).catch((error) => {
@@ -628,7 +628,7 @@ async function handleClientMessage(
           const streamGen = streamLLMPure({
             messageId: assistantMsgId,
             systemPrompt,
-            llmClient,
+            llmClient: getLLMClient(),
             messages: contextMessages,
             tools: [], // No tools for summary
             toolChoice: 'none',
@@ -642,7 +642,7 @@ async function handleClientMessage(
           turnMetrics.addLLMCall(result.timing, result.usage.promptTokens, result.usage.completionTokens)
           
           // Emit message.done with stats
-          const stats = turnMetrics.buildStats(llmClient.getModel(), 'planner')
+          const stats = turnMetrics.buildStats(getLLMClient().getModel(), 'planner')
           eventStore.append(sessionId, createMessageDoneEvent(assistantMsgId, { segments: result.segments, stats }))
           eventStore.append(sessionId, createChatDoneEvent(assistantMsgId, 'complete', stats))
           
@@ -668,7 +668,7 @@ async function handleClientMessage(
           await runOrchestrator({
             sessionManager,
             sessionId,
-            llmClient,
+            llmClient: getLLMClient(),
             signal: controller.signal,
             onMessage: send,  // For path confirmation dialogs
           })
@@ -773,13 +773,13 @@ async function handleClientMessage(
             sessionManager,
             sessionId,
             systemPrompt,
-            llmClient,
+            llmClient: getLLMClient(),
             onEvent: send,
           })
           
           // Emit stats for compaction (PROMPT -> WORK -> stats+sound pattern)
           const compactionStats = computeMessageStats({
-            model: llmClient.getModel(),
+            model: getLLMClient().getModel(),
             mode: 'planner',
             timing: result.timing,
             usage: result.usage,
@@ -907,7 +907,7 @@ async function handleClientMessage(
       runOrchestrator({
         sessionManager,
         sessionId,
-        llmClient,
+        llmClient: getLLMClient(),
         signal: controller.signal,
         onMessage: send,  // For path confirmation dialogs
       }).catch((error) => {

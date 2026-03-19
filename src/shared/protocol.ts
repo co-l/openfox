@@ -50,6 +50,8 @@ export type ClientMessageType =
   // Settings management
   | 'settings.get'        // Get a setting value
   | 'settings.set'        // Set a setting value
+  // Provider management
+  | 'provider.activate'   // Switch to a different provider
 
 export interface ClientMessage<T = unknown> {
   id: string
@@ -104,7 +106,7 @@ export interface CriteriaEditPayload {
   criteria: Criterion[]
 }
 
-// Settings payloads
+  // Settings payloads
 export interface SettingsGetPayload {
   key: string
 }
@@ -117,6 +119,11 @@ export interface SettingsSetPayload {
 export interface SettingsValuePayload {
   key: string
   value: string | null
+}
+
+// Provider payloads
+export interface ProviderActivatePayload {
+  providerId: string
 }
 
 // ============================================================================
@@ -159,6 +166,8 @@ export type ServerMessageType =
   | 'context.state'       // Context window state update
   // Settings events
   | 'settings.value'      // Setting value response
+  // Provider events
+  | 'provider.changed'    // Active provider was switched
   // Other
   | 'lsp.diagnostics'
   | 'error'
@@ -325,6 +334,14 @@ export interface CriteriaUpdatedPayload {
 // Context payloads
 export interface ContextStatePayload {
   context: ContextState
+}
+
+// Provider payloads (server → client)
+export interface ProviderChangedPayload {
+  providerId: string
+  providerName: string
+  model: string
+  backend: string
 }
 
 // Other payloads

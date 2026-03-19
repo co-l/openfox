@@ -10,9 +10,13 @@ Usage:
   openfox [command] [options]
 
 Commands:
-  (none)    Start server for current project
-  init      Interactive configuration setup
-  config    Show current configuration
+  (none)           Start server for current project
+  init             Interactive configuration setup
+  config           Show current configuration
+  provider add     Add a new LLM provider
+  provider list    List configured providers
+  provider use     Switch active provider
+  provider remove  Remove a provider
 
 Options:
   -p, --port <number>     Specify port (default: 10369 for prod, 10469 for dev)
@@ -23,17 +27,24 @@ Options:
 }
 
 export async function runConfig(mode: Mode): Promise<void> {
-  const { loadGlobalConfig } = await import('./config.js')
+  const { loadGlobalConfig, getActiveProvider } = await import('./config.js')
   const { getGlobalConfigPath } = await import('./paths.js')
   
   const config = await loadGlobalConfig(mode)
   const configPath = getGlobalConfigPath(mode)
+  const activeProvider = getActiveProvider(config)
   
   console.log(`Configuration (${mode}):`)
   console.log(`  Location: ${configPath}`)
-  console.log(`  LLM URL: ${config.llm.url}`)
-  console.log(`  Model: ${config.llm.model}`)
-  console.log(`  Backend: ${config.llm.backend}`)
+  console.log(`  Providers: ${config.providers.length}`)
+  if (activeProvider) {
+    console.log(`  Active: ${activeProvider.name}`)
+    console.log(`    URL: ${activeProvider.url}`)
+    console.log(`    Model: ${activeProvider.model}`)
+    console.log(`    Backend: ${activeProvider.backend}`)
+  } else {
+    console.log(`  Active: (none configured)`)
+  }
   console.log(`  Port: ${config.server.port}`)
 }
 
@@ -66,13 +77,23 @@ export async function runCli(options: { mode: Mode }): Promise<void> {
   switch (command) {
     case 'init': {
       const { runInitWithSelect } = await import('./init.js')
-      const config = await import('./config.js').then(m => m.loadGlobalConfig(mode))
-      console.log(`Current LLM: ${config.llm.url}\n`)
+      const { loadGlobalConfig, getActiveProvider } = await import('./config.js')
+      const config = await loadGlobalConfig(mode)
+      const activeProvider = getActiveProvider(config)
+      if (activeProvider) {
+        console.log(`Current provider: ${activeProvider.name} (${activeProvider.url})\n`)
+      }
       await runInitWithSelect(mode)
       break
     }
     case 'config': {
       await runConfig(mode)
+      break
+    }
+    case 'provider': {
+      const { runProviderCommand } = await import('./provider.js')
+      const [, subcommand] = positionals
+      await runProviderCommand(mode, subcommand)
       break
     }
     default: {
@@ -85,18 +106,27 @@ export async function runCli(options: { mode: Mode }): Promise<void> {
         console.log('Welcome to OpenFox!\n')
         
         // Try smart defaults in parallel (silent - no logs)
-        const { trySmartDefaults } = await import('./config.js')
+        const { trySmartDefaults, saveGlobalConfig, addProvider } = await import('./config.js')
         const detected = await trySmartDefaults(mode)
         
         if (detected) {
           console.log(`✓ Found ${detected.backend} (${detected.model}) at ${detected.url}`)
-          const { saveGlobalConfig } = await import('./config.js')
-          await saveGlobalConfig(mode, {
-            llm: { url: detected.url, backend: detected.backend as 'auto' | 'vllm' | 'sglang' | 'ollama' | 'llamacpp', model: detected.model, maxContext: 200000, disableThinking: false },
+          const baseConfig = {
+            providers: [],
+            activeProviderId: undefined as string | undefined,
             server: { port: 10369, host: '127.0.0.1', openBrowser: true },
             logging: { level: 'info' as const },
             database: { path: '' },
+          }
+          const configWithProvider = addProvider(baseConfig, {
+            name: 'Default',
+            url: detected.url,
+            model: detected.model,
+            backend: detected.backend as 'auto' | 'vllm' | 'sglang' | 'ollama' | 'llamacpp',
+            maxContext: 200000,
+            isActive: true,
           })
+          await saveGlobalConfig(mode, configWithProvider)
           console.log('Configuration saved!\n')
         } else {
           console.log('✗ No LLM server detected\n')

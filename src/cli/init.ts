@@ -1,7 +1,8 @@
-import { select, text, spinner, log, outro } from '@clack/prompts'
+import { select, text, spinner, outro } from '@clack/prompts'
 import { detectBackend, detectModel } from '../server/llm/index.js'
-import { saveGlobalConfig } from './config.js'
+import { saveGlobalConfig, addProvider, type GlobalConfig } from './config.js'
 import type { Mode } from './main.js'
+import type { ProviderBackend } from '../shared/types.js'
 
 const LLM_OPTIONS = [
   { value: 'http://localhost:8000', label: 'http://localhost:8000' },
@@ -9,6 +10,16 @@ const LLM_OPTIONS = [
   { value: 'http://localhost:8080', label: 'http://localhost:8080' },
   { value: 'other', label: 'Other...' },
 ]
+
+function createBaseConfig(): GlobalConfig {
+  return {
+    providers: [],
+    activeProviderId: undefined,
+    server: { port: 10369, host: '127.0.0.1', openBrowser: true },
+    logging: { level: 'info' as const },
+    database: { path: '' },
+  }
+}
 
 export async function runInitWithSelect(mode: Mode): Promise<void> {
   const s = spinner()
@@ -35,12 +46,14 @@ export async function runInitWithSelect(mode: Mode): Promise<void> {
   const found = detected.find(r => r !== null)
   if (found) {
     s.stop(`✓ Found ${found.backend} (${found.model})`)
-    const config = {
-      llm: { url: found.url, backend: found.backend as 'auto' | 'vllm' | 'sglang' | 'ollama' | 'llamacpp', model: found.model, maxContext: 200000, disableThinking: false },
-      server: { port: 10369, host: '127.0.0.1', openBrowser: true },
-      logging: { level: 'info' as const },
-      database: { path: '' },
-    }
+    const config = addProvider(createBaseConfig(), {
+      name: 'Default',
+      url: found.url,
+      model: found.model,
+      backend: found.backend as ProviderBackend,
+      maxContext: 200000,
+      isActive: true,
+    })
     await saveGlobalConfig(mode, config)
     outro('Configuration saved!')
     return
@@ -56,9 +69,9 @@ export async function runInitWithSelect(mode: Mode): Promise<void> {
   let url: string
   if (String(selection) === 'other') {
     const textValue = await text({
-      message: 'LLM Server URL',
-      placeholder: 'http://localhost:8000/v1',
-      initialValue: 'http://localhost:8000/v1',
+      message: 'LLM Server URL (don\'t include /v1)',
+      placeholder: 'http://localhost:8000',
+      initialValue: 'http://localhost:8000',
       validate: (value) => {
         if (!value || value.length === 0) return 'URL is required'
         if (!value.startsWith('http')) return 'Must start with http://'
@@ -79,16 +92,18 @@ export async function runInitWithSelect(mode: Mode): Promise<void> {
     
     s2.stop(`Connected to ${backend}${model ? ' (' + model + ')' : ''}`)
     
-    const config = {
-      llm: { url, backend: backend as 'auto' | 'vllm' | 'sglang' | 'ollama' | 'llamacpp', model: model ?? 'auto', maxContext: 200000, disableThinking: false },
-      server: { port: 10369, host: '127.0.0.1', openBrowser: true },
-      logging: { level: 'info' as const },
-      database: { path: '' },
-    }
+    const config = addProvider(createBaseConfig(), {
+      name: 'Default',
+      url,
+      model: model ?? 'auto',
+      backend: backend as ProviderBackend,
+      maxContext: 200000,
+      isActive: true,
+    })
     await saveGlobalConfig(mode, config)
     
     outro('Configuration saved!')
-  } catch (err) {
+  } catch {
     s2.stop('Server isn\'t available')
     
     const choice = await select({
@@ -106,12 +121,14 @@ export async function runInitWithSelect(mode: Mode): Promise<void> {
       return runInitWithSelect(mode)  // Recurse to change selection
     }
     // choice === 'continue' - save anyway with auto backend
-    const config = {
-      llm: { url, backend: 'auto' as const, model: 'auto', maxContext: 200000, disableThinking: false },
-      server: { port: 10369, host: '127.0.0.1', openBrowser: true },
-      logging: { level: 'info' as const },
-      database: { path: '' },
-    }
+    const config = addProvider(createBaseConfig(), {
+      name: 'Default',
+      url,
+      model: 'auto',
+      backend: 'auto',
+      maxContext: 200000,
+      isActive: true,
+    })
     await saveGlobalConfig(mode, config)
     outro('Configuration saved!')
   }

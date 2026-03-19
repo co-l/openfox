@@ -353,6 +353,22 @@ export interface Diagnostic {
 /** Supported LLM inference backends */
 export type LlmBackend = 'vllm' | 'sglang' | 'ollama' | 'llamacpp' | 'unknown'
 
+/** Extended backend type including cloud providers */
+export type ProviderBackend = LlmBackend | 'openai' | 'anthropic' | 'auto'
+
+/** LLM provider configuration */
+export interface Provider {
+  id: string              // UUID
+  name: string            // User-defined display name (e.g., "Local vLLM", "Anthropic Claude")
+  url: string             // API endpoint (e.g., "http://localhost:8000/v1")
+  model: string           // Default model (can be "auto" for auto-detect)
+  backend: ProviderBackend
+  apiKey?: string | undefined   // Optional, for cloud providers
+  maxContext?: number | undefined  // Max context window (optional, defaults to 200000)
+  isActive: boolean       // Currently selected provider
+  createdAt: string       // ISO timestamp
+}
+
 export interface Config {
   llm: {
     baseUrl: string
@@ -386,4 +402,8 @@ export interface Config {
   }
   mode?: 'development' | 'production'
   dev?: boolean  // true when running in dev mode (OPENFOX_DEV=true or mode='development')
+  /** Configured providers (loaded from global config) */
+  providers?: Provider[] | undefined
+  /** ID of the active provider */
+  activeProviderId?: string | undefined
 }

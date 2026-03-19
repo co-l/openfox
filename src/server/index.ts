@@ -6,12 +6,13 @@ import { dirname, resolve, join } from 'node:path'
 import { readFile } from 'node:fs/promises'
 import { createServer as createViteServer, type ViteDevServer } from 'vite'
 
-import type { Config } from '../shared/types.js'
+import type { Config, Provider } from '../shared/types.js'
 import type { ServerHandle } from './context.js'
 import { initDatabase, closeDatabase, getDatabase } from './db/index.js'
 import { initEventStore } from './events/index.js'
 import { createLLMClient, detectModel, getLlmStatus, detectBackend, getBackendDisplayName, type Backend } from './llm/index.js'
 import { createMockLLMClient } from './llm/mock.js'
+import { createProviderManager } from './provider-manager.js'
 import { createToolRegistry } from './tools/index.js'
 import { createWebSocketServer } from './ws/index.js'
 import { SessionManager } from './session/manager.js'
@@ -40,9 +41,14 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
   // Create SessionManager instance (not singleton!)
   const sessionManager = new SessionManager()
 
+  // Create Provider Manager (handles LLM client lifecycle)
+  const providerManager = createProviderManager(config)
+  
   // Create LLM client - use mock if OPENFOX_MOCK_LLM is set
   const useMock = process.env['OPENFOX_MOCK_LLM'] === 'true'
-  const llmClient = useMock ? createMockLLMClient() : createLLMClient(config)
+  // For mock mode, we bypass the provider manager
+  const getMockClient = useMock ? createMockLLMClient : null
+  const getLLMClient = () => getMockClient ? getMockClient() : providerManager.getLLMClient()
   
   if (useMock) {
     logger.info('Using MOCK LLM client - deterministic responses for testing')
@@ -50,6 +56,7 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
 
   // Auto-detect backend and model from LLM server
   async function initLLM(): Promise<void> {
+    const llmClient = getLLMClient()
     let backend: Backend = 'unknown'
     if (config.llm.backend === 'auto') {
       backend = await detectBackend(config.llm.baseUrl)
@@ -111,23 +118,58 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
 
   // Config endpoint
   app.get('/api/config', (_req, res) => {
+    const llmClient = getLLMClient()
+    const activeProvider = providerManager.getActiveProvider()
     res.json({
       model: llmClient.getModel(),
       maxContext: config.context.maxTokens,
-      llmUrl: config.llm.baseUrl,
+      llmUrl: activeProvider?.url ?? config.llm.baseUrl,
       llmStatus: getLlmStatus(),
       backend: llmClient.getBackend(),
+      // Include provider info
+      providers: providerManager.getProviders(),
+      activeProviderId: providerManager.getActiveProviderId(),
     })
   })
 
   // Model refresh endpoint
   app.post('/api/model/refresh', async (_req, res) => {
-    const detected = await detectModel(config.llm.baseUrl)
+    const llmClient = getLLMClient()
+    const activeProvider = providerManager.getActiveProvider()
+    const baseUrl = activeProvider?.url ?? config.llm.baseUrl
+    const detected = await detectModel(baseUrl)
     if (detected) {
       llmClient.setModel(detected)
       return res.json({ model: detected, source: 'detected', llmStatus: getLlmStatus(), backend: llmClient.getBackend() })
     }
     res.json({ model: llmClient.getModel(), source: 'cached', llmStatus: getLlmStatus(), backend: llmClient.getBackend() })
+  })
+
+  // Provider endpoints
+  app.get('/api/providers', (_req, res) => {
+    const providers = providerManager.getProviders().map(p => ({
+      ...p,
+      status: providerManager.getProviderStatus(p.id),
+    }))
+    res.json({
+      providers,
+      activeProviderId: providerManager.getActiveProviderId(),
+    })
+  })
+
+  app.post('/api/providers/:id/activate', async (req, res) => {
+    const { id } = req.params
+    const result = await providerManager.activateProvider(id as string)
+    if (!result.success) {
+      return res.status(400).json({ error: result.error })
+    }
+    const llmClient = getLLMClient()
+    res.json({
+      success: true,
+      activeProviderId: id,
+      model: llmClient.getModel(),
+      backend: llmClient.getBackend(),
+    })
   })
 
   // Directory browser endpoint
@@ -301,12 +343,12 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
   const httpServer = createHttpServer(app)
 
   // Create WebSocket server attached to HTTP server
-  createWebSocketServer(httpServer, config, llmClient, toolRegistry, sessionManager)
+  createWebSocketServer(httpServer, config, getLLMClient, toolRegistry, sessionManager)
 
   // Return the handle with start/close methods
   return {
     httpServer,
-    ctx: { config, sessionManager, llmClient, toolRegistry },
+    ctx: { config, sessionManager, llmClient: getLLMClient(), toolRegistry, providerManager },
     
     start: (port?: number) => new Promise((resolve, reject) => {
       const listenPort = port ?? config.server.port
@@ -315,9 +357,10 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
       httpServer.listen(listenPort, host, () => {
         const addr = httpServer.address()
         const actualPort = typeof addr === 'object' && addr ? addr.port : listenPort
+        const client = getLLMClient()
         logger.info(`OpenFox server running at http://${host}:${actualPort}`)
         logger.info(`WebSocket available at ws://${host}:${actualPort}/ws`)
-        logger.info(`LLM backend: ${llmClient.getBackend()}, model: ${llmClient.getModel()}, url: ${config.llm.baseUrl}`)
+        logger.info(`LLM backend: ${client.getBackend()}, model: ${client.getModel()}, url: ${config.llm.baseUrl}`)
         resolve({ port: actualPort })
       })
       

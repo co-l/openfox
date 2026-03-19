@@ -22,16 +22,23 @@ Options:
 }
 
 export async function runConfig(mode: Mode): Promise<void> {
-  const { loadGlobalConfig } = await import('./config.js')
+  const { loadGlobalConfig, getActiveProvider } = await import('./config.js')
   const { getGlobalConfigPath } = await import('./paths.js')
   
   const config = await loadGlobalConfig(mode)
   const configPath = getGlobalConfigPath(mode)
+  const activeProvider = getActiveProvider(config)
   
   console.log(`Configuration (${mode}):`)
   console.log(`  Location: ${configPath}`)
-  console.log(`  LLM URL: ${config.llm.url}`)
-  console.log(`  Model: ${config.llm.model}`)
-  console.log(`  Backend: ${config.llm.backend}`)
+  console.log(`  Providers: ${config.providers.length}`)
+  if (activeProvider) {
+    console.log(`  Active: ${activeProvider.name}`)
+    console.log(`    URL: ${activeProvider.url}`)
+    console.log(`    Model: ${activeProvider.model}`)
+    console.log(`    Backend: ${activeProvider.backend}`)
+  } else {
+    console.log(`  Active: (none configured)`)
+  }
   console.log(`  Port: ${config.server.port}`)
 }
