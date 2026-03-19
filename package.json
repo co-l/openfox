@@ -31,6 +31,9 @@
     "test": "vitest run && vitest run --config e2e/vitest.config.ts",
     "test:unit": "vitest run",
     "test:e2e": "vitest run --config e2e/vitest.config.ts",
+    "test:cov": "vitest run --coverage && vitest run --config e2e/vitest.config.ts --coverage",
+    "test:cov:unit": "vitest run --coverage",
+    "test:cov:e2e": "vitest run --config e2e/vitest.config.ts --coverage",
     "typecheck": "tsc --noEmit",
     "clean": "rm -rf dist",
     "prepublishOnly": "npm run build"
@@ -70,6 +73,7 @@
     "@types/react-dom": "^19.0.3",
     "@types/ws": "^8.5.14",
     "@vitejs/plugin-react": "^4.3.4",
+    "@vitest/coverage-v8": "^4.1.0",
     "autoprefixer": "^10.4.20",
     "concurrently": "^8.2.0",
     "dotenv": "^17.3.1",

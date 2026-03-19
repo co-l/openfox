@@ -13,8 +13,9 @@
 import type { ToolCall, ToolResult, Criterion, ContextState, Todo, MessageStats, ToolMode, InjectedFile, PromptContext } from '../../shared/types.js'
 import type { ServerMessage } from '../../shared/protocol.js'
 import type { LLMClientWithModel } from '../llm/client.js'
-import type { TurnEvent, SessionSnapshot, SnapshotMessage, ToolCallWithResult } from '../events/types.js'
+import type { SessionSnapshot } from '../events/types.js'
 import { getEventStore } from '../events/index.js'
+import { buildContextMessagesFromStoredEvents, buildSnapshotFromSessionState } from '../events/folding.js'
 import type { SessionManager } from '../session/index.js'
 import { getToolRegistryForMode, AskUserInterrupt, PathAccessDeniedError } from '../tools/index.js'
 import { buildPlannerPrompt, buildBuilderPrompt, buildVerifierPrompt, BUILDER_KICKOFF_PROMPT, VERIFIER_KICKOFF_PROMPT } from './prompts.js'
@@ -709,74 +710,8 @@ function buildContextMessages(sessionManager: SessionManager, sessionId: string)
       ...(m.toolCallId && { toolCallId: m.toolCallId }),
     }))
   }
-  
-  // Build messages from events
-  const messages: Array<{
-    id: string
-    role: 'user' | 'assistant' | 'tool'
-    content: string
-    toolCalls?: ToolCall[]
-    toolCallId?: string
-  }> = []
-  
-  const messageMap = new Map<string, typeof messages[0]>()
-  
-  for (const event of events) {
-    switch (event.type) {
-      case 'message.start': {
-        const data = event.data as { messageId: string; role: 'user' | 'assistant' | 'system'; content?: string }
-        if (data.role !== 'system') { // Skip system messages for LLM context
-          const msg = {
-            id: data.messageId,
-            role: data.role as 'user' | 'assistant',
-            content: data.content ?? '',
-          }
-          messageMap.set(data.messageId, msg)
-          messages.push(msg)
-        }
-        break
-      }
-      
-      case 'message.delta': {
-        const data = event.data as { messageId: string; content: string }
-        const msg = messageMap.get(data.messageId)
-        if (msg) {
-          msg.content += data.content
-        }
-        break
-      }
-      
-      case 'tool.call': {
-        const data = event.data as { messageId: string; toolCall: ToolCall }
-        const msg = messageMap.get(data.messageId)
-        if (msg) {
-          if (!msg.toolCalls) msg.toolCalls = []
-          msg.toolCalls.push(data.toolCall)
-        }
-        break
-      }
-      
-      case 'tool.result': {
-        const data = event.data as { messageId: string; toolCallId: string; result: ToolResult }
-        // Create a tool result message
-        const toolMsg = {
-          id: `tool-${data.toolCallId}`,
-          role: 'tool' as const,
-          content: data.result.success ? (data.result.output ?? 'Success') : `Error: ${data.result.error}`,
-          toolCallId: data.toolCallId,
-        }
-        messages.push(toolMsg)
-        break
-      }
-    }
-  }
-  
-  return messages.map(m => ({
-    role: m.role,
-    content: m.content,
-    ...(m.toolCalls && { toolCalls: m.toolCalls }),
-    ...(m.toolCallId && { toolCallId: m.toolCallId }),
-  }))
+
+  return buildContextMessagesFromStoredEvents(events)
 }
 
 /**
@@ -785,120 +720,12 @@ function buildContextMessages(sessionManager: SessionManager, sessionId: string)
 function buildSnapshot(sessionManager: SessionManager, sessionId: string, lastStats?: MessageStats): SessionSnapshot {
   const eventStore = getEventStore()
   const session = sessionManager.requireSession(sessionId)
-
-  // Get all events and fold them into messages
   const events = eventStore.getEvents(sessionId)
-  const messages = foldEventsToMessages(events)
-
-  // Get latest seq
   const latestSeq = eventStore.getLatestSeq(sessionId) ?? 0
 
-  return {
-    mode: session.mode,
-    phase: session.phase,
-    isRunning: session.isRunning,
-    messages,
-    criteria: session.criteria,
-    contextState: {
-      currentTokens: session.executionState?.currentTokenCount ?? 0,
-      maxTokens: 200000, // TODO: Get from config
-      compactionCount: session.executionState?.compactionCount ?? 0,
-      dangerZone: false,
-      canCompact: false,
-    },
-    todos: [], // TODO: Get from session state
-    snapshotSeq: latestSeq,
-    snapshotAt: Date.now(),
-  }
-}
-
-// Type helpers for event data extraction
-type MessageStartData = Extract<TurnEvent, { type: 'message.start' }>['data']
-type MessageDeltaData = Extract<TurnEvent, { type: 'message.delta' }>['data']
-type MessageThinkingData = Extract<TurnEvent, { type: 'message.thinking' }>['data']
-type MessageDoneData = Extract<TurnEvent, { type: 'message.done' }>['data']
-type ToolCallData = Extract<TurnEvent, { type: 'tool.call' }>['data']
-type ToolResultData = Extract<TurnEvent, { type: 'tool.result' }>['data']
-
-/**
- * Fold events into messages.
- * This reconstructs the message list from events.
- */
-function foldEventsToMessages(events: Array<{ type: string; data: unknown }>): SnapshotMessage[] {
-  const messages: Map<string, SnapshotMessage> = new Map()
-
-  for (const event of events) {
-    switch (event.type) {
-      case 'message.start': {
-        const data = event.data as MessageStartData
-        messages.set(data.messageId, {
-          id: data.messageId,
-          role: data.role,
-          content: data.content ?? '',
-          timestamp: Date.now(),
-          isStreaming: true,
-          ...(data.contextWindowId ? { contextWindowId: data.contextWindowId } : {}),
-          ...(data.subAgentId ? { subAgentId: data.subAgentId } : {}),
-          ...(data.subAgentType ? { subAgentType: data.subAgentType } : {}),
-          ...(data.isSystemGenerated ? { isSystemGenerated: data.isSystemGenerated } : {}),
-          ...(data.messageKind ? { messageKind: data.messageKind } : {}),
-        })
-        break
-      }
-
-      case 'message.delta': {
-        const data = event.data as MessageDeltaData
-        const msg = messages.get(data.messageId)
-        if (msg) {
-          msg.content += data.content
-        }
-        break
-      }
-
-      case 'message.thinking': {
-        const data = event.data as MessageThinkingData
-        const msg = messages.get(data.messageId)
-        if (msg) {
-          msg.thinkingContent = (msg.thinkingContent ?? '') + data.content
-        }
-        break
-      }
-
-      case 'message.done': {
-        const data = event.data as MessageDoneData
-        const msg = messages.get(data.messageId)
-        if (msg) {
-          msg.isStreaming = false
-          if (data.stats) msg.stats = data.stats
-          if (data.partial) msg.partial = data.partial
-        }
-        break
-      }
-
-      case 'tool.call': {
-        const data = event.data as ToolCallData
-        const msg = messages.get(data.messageId)
-        if (msg) {
-          if (!msg.toolCalls) msg.toolCalls = []
-          msg.toolCalls.push(data.toolCall as ToolCallWithResult)
-        }
-        break
-      }
-
-      case 'tool.result': {
-        const data = event.data as ToolResultData
-        // Attach result to tool call
-        const msg = messages.get(data.messageId)
-        if (msg?.toolCalls) {
-          const tc = msg.toolCalls.find(t => t.id === data.toolCallId)
-          if (tc) {
-            tc.result = data.result
-          }
-        }
-        break
-      }
-    }
-  }
-
-  return Array.from(messages.values())
+  return buildSnapshotFromSessionState({
+    session,
+    events,
+    latestSeq,
+  })
 }

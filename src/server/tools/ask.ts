@@ -37,6 +37,7 @@ export const askUserTool: Tool = {
     
     // Create a deferred promise for the answer
     const deferred = createDeferred<string>()
+    void deferred.promise.catch(() => {})
     
     pendingQuestions.set(callId, {
       resolve: deferred.resolve,

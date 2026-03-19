@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { detectBackend, getBackendCapabilities, type Backend } from './backend.js'
+import { detectBackend, getBackendCapabilities, getBackendDisplayName, type Backend } from './backend.js'
 
 describe('backend', () => {
   beforeEach(() => {
@@ -91,6 +91,29 @@ describe('backend', () => {
       const backend = await detectBackend('http://localhost:8000', 'sglang')
       expect(backend).toBe('sglang')
     })
+
+    it('continues probing when explicit backend is unknown and normalizes base urls without /v1', async () => {
+      const fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation(async (url) => {
+        if (String(url).endsWith('/api/tags')) {
+          return { ok: false } as Response
+        }
+        if (String(url).endsWith('/health')) {
+          return { ok: false, json: async () => ({}) } as Response
+        }
+        if (String(url).endsWith('/get_model_info')) {
+          return { ok: false } as Response
+        }
+        if (String(url).endsWith('/v1/models')) {
+          return { ok: true, json: async () => ({ data: [{ id: 'model' }] }) } as Response
+        }
+        return { ok: false } as Response
+      })
+
+      const backend = await detectBackend('http://localhost:8000', 'unknown', true)
+      expect(backend).toBe('vllm')
+      expect(fetchSpy).toHaveBeenCalledWith('http://localhost:8000/api/tags', expect.any(Object))
+      expect(fetchSpy).toHaveBeenCalledWith('http://localhost:8000/v1/models', expect.any(Object))
+    })
   })
 
   describe('getBackendCapabilities', () => {
@@ -127,6 +150,22 @@ describe('backend', () => {
       expect(caps.supportsReasoningField).toBe(true)
       expect(caps.supportsChatTemplateKwargs).toBe(true)
       expect(caps.supportsTopK).toBe(true)
+    })
+  })
+
+  describe('getBackendDisplayName', () => {
+    it('returns friendly names for all backends', () => {
+      const cases: Record<Backend, string> = {
+        vllm: 'vLLM',
+        sglang: 'SGLang',
+        ollama: 'Ollama',
+        llamacpp: 'llama.cpp',
+        unknown: 'Unknown',
+      }
+
+      for (const [backend, name] of Object.entries(cases) as Array<[Backend, string]>) {
+        expect(getBackendDisplayName(backend)).toBe(name)
+      }
     })
   })
 })

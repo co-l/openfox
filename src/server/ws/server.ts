@@ -5,9 +5,9 @@ import type { Config } from '../config.js'
 import type { LLMClientWithModel } from '../llm/client.js'
 import type { ToolRegistry } from '../tools/index.js'
 import type { SessionManager } from '../session/index.js'
-import { getEventStore, type StoredEvent, type TurnEvent, type SnapshotMessage, type SessionSnapshot } from '../events/index.js'
+import { getEventStore } from '../events/index.js'
+import { buildContextMessagesFromStoredEvents, buildMessagesFromStoredEvents } from '../events/folding.js'
 import type { Message } from '../../shared/types.js'
-import { handleChat } from '../chat/index.js'
 import { runChatTurn, TurnMetrics, createMessageStartEvent, createMessageDoneEvent, createChatDoneEvent } from '../chat/orchestrator.js'
 import { streamLLMPure, consumeStreamGenerator } from '../chat/stream-pure.js'
 import { runOrchestrator } from '../runner/index.js'
@@ -66,190 +66,6 @@ import {
 
 // Track active agent AbortControllers by sessionId
 const activeAgents = new Map<string, AbortController>()
-
-// ============================================================================
-// Event Store → Messages Conversion
-// ============================================================================
-
-/**
- * Build Message array from EventStore events.
- * Used when loading a session that has events in EventStore.
- */
-function buildMessagesFromEvents(events: StoredEvent[]): Message[] {
-  const messages: Map<string, Message> = new Map()
-  
-  for (const event of events) {
-    switch (event.type) {
-      case 'message.start': {
-        const data = event.data as Extract<TurnEvent, { type: 'message.start' }>['data']
-        // User/system messages have content upfront and are not streaming
-        const isUserOrSystem = data.role === 'user' || data.role === 'system'
-        messages.set(data.messageId, {
-          id: data.messageId,
-          role: data.role,
-          content: data.content ?? '',
-          timestamp: new Date(event.timestamp).toISOString(),
-          tokenCount: 0,
-          isStreaming: !isUserOrSystem,
-          ...(data.contextWindowId ? { contextWindowId: data.contextWindowId } : {}),
-          ...(data.subAgentId ? { subAgentId: data.subAgentId } : {}),
-          ...(data.subAgentType ? { subAgentType: data.subAgentType } : {}),
-          ...(data.isSystemGenerated ? { isSystemGenerated: data.isSystemGenerated } : {}),
-          ...(data.messageKind ? { messageKind: data.messageKind } : {}),
-        })
-        break
-      }
-
-      case 'message.delta': {
-        const data = event.data as Extract<TurnEvent, { type: 'message.delta' }>['data']
-        const msg = messages.get(data.messageId)
-        if (msg) {
-          msg.content += data.content
-        }
-        break
-      }
-
-      case 'message.thinking': {
-        const data = event.data as Extract<TurnEvent, { type: 'message.thinking' }>['data']
-        const msg = messages.get(data.messageId)
-        if (msg) {
-          msg.thinkingContent = (msg.thinkingContent ?? '') + data.content
-        }
-        break
-      }
-
-      case 'message.done': {
-        const data = event.data as Extract<TurnEvent, { type: 'message.done' }>['data']
-        const msg = messages.get(data.messageId)
-        if (msg) {
-          msg.isStreaming = false
-          if (data.stats) msg.stats = data.stats
-          if (data.segments) msg.segments = data.segments
-          if (data.partial) msg.partial = data.partial
-        }
-        break
-      }
-
-      case 'tool.call': {
-        const data = event.data as Extract<TurnEvent, { type: 'tool.call' }>['data']
-        const msg = messages.get(data.messageId)
-        if (msg) {
-          if (!msg.toolCalls) msg.toolCalls = []
-          msg.toolCalls.push(data.toolCall)
-        }
-        break
-      }
-
-      case 'tool.result': {
-        const data = event.data as Extract<TurnEvent, { type: 'tool.result' }>['data']
-        const msg = messages.get(data.messageId)
-        if (msg?.toolCalls) {
-          const tc = msg.toolCalls.find(t => t.id === data.toolCallId)
-          if (tc) {
-            tc.result = data.result
-          }
-        }
-        break
-      }
-
-      // Skip events that don't affect message state
-      case 'turn.snapshot':
-      case 'phase.changed':
-      case 'mode.changed':
-      case 'running.changed':
-      case 'criteria.set':
-      case 'criterion.updated':
-      case 'context.state':
-      case 'context.compacted':
-      case 'todo.updated':
-      case 'chat.done':
-      case 'chat.error':
-      case 'format.retry':
-      case 'tool.preparing':
-      case 'tool.output':
-        break
-    }
-  }
-
-  return Array.from(messages.values())
-}
-
-/**
- * Build context messages for LLM from EventStore events.
- * Simpler format than full Message - just what the LLM needs.
- */
-function buildContextMessagesFromEvents(events: StoredEvent[]): Array<{
-  role: 'user' | 'assistant' | 'tool'
-  content: string
-  toolCalls?: Array<{ id: string; name: string; arguments: Record<string, unknown> }>
-  toolCallId?: string
-}> {
-  const messages: Array<{
-    id: string
-    role: 'user' | 'assistant' | 'tool'
-    content: string
-    toolCalls?: Array<{ id: string; name: string; arguments: Record<string, unknown> }>
-    toolCallId?: string
-  }> = []
-  
-  const messageMap = new Map<string, typeof messages[0]>()
-  
-  for (const event of events) {
-    switch (event.type) {
-      case 'message.start': {
-        const data = event.data as Extract<TurnEvent, { type: 'message.start' }>['data']
-        if (data.role !== 'system') {
-          const msg = {
-            id: data.messageId,
-            role: data.role as 'user' | 'assistant',
-            content: data.content ?? '',
-          }
-          messageMap.set(data.messageId, msg)
-          messages.push(msg)
-        }
-        break
-      }
-      
-      case 'message.delta': {
-        const data = event.data as Extract<TurnEvent, { type: 'message.delta' }>['data']
-        const msg = messageMap.get(data.messageId)
-        if (msg) {
-          msg.content += data.content
-        }
-        break
-      }
-      
-      case 'tool.call': {
-        const data = event.data as Extract<TurnEvent, { type: 'tool.call' }>['data']
-        const msg = messageMap.get(data.messageId)
-        if (msg) {
-          if (!msg.toolCalls) msg.toolCalls = []
-          msg.toolCalls.push(data.toolCall)
-        }
-        break
-      }
-      
-      case 'tool.result': {
-        const data = event.data as Extract<TurnEvent, { type: 'tool.result' }>['data']
-        const toolMsg = {
-          id: `tool-${data.toolCallId}`,
-          role: 'tool' as const,
-          content: data.result.success ? (data.result.output ?? 'Success') : `Error: ${data.result.error}`,
-          toolCallId: data.toolCallId,
-        }
-        messages.push(toolMsg)
-        break
-      }
-    }
-  }
-  
-  return messages.map(m => ({
-    role: m.role,
-    content: m.content,
-    ...(m.toolCalls && { toolCalls: m.toolCalls }),
-    ...(m.toolCallId && { toolCallId: m.toolCallId }),
-  }))
-}
 
 interface ClientConnection {
   ws: WebSocket
@@ -538,7 +354,7 @@ async function handleClientMessage(
       let messages: Message[]
       if (events.length > 0) {
         // New system: build messages from events
-        messages = buildMessagesFromEvents(events)
+        messages = buildMessagesFromStoredEvents(events)
         logger.debug('Loaded messages from EventStore', { sessionId: session.id, eventCount: events.length, messageCount: messages.length })
       } else {
         // Old system: fetch from messages table
@@ -810,7 +626,7 @@ async function handleClientMessage(
           
           // Build context messages from EventStore
           const events = eventStore.getEvents(sessionId)
-          const contextMessages = buildContextMessagesFromEvents(events)
+          const contextMessages = buildContextMessagesFromStoredEvents(events)
           
           // Stream summary response (no tools, no thinking)
           const assistantMsgId = crypto.randomUUID()

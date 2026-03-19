@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { streamWithSegments, type StreamEvent } from './streaming.js'
+import { SegmentBuilder, streamWithSegments, type StreamEvent } from './streaming.js'
 import type { LLMClient, LLMStreamEvent, LLMCompletionResponse } from './types.js'
 
 // Helper to create a mock LLM client
@@ -172,5 +172,103 @@ describe('streamWithSegments', () => {
     if (textSegment.type === 'text') {
       expect(textSegment.content).toBe('Hello')
     }
+  })
+
+  it('aborts immediately on xml tool syntax and returns null', async () => {
+    const client = createMockClient([
+      { type: 'text_delta', content: '<tool_call>' },
+    ])
+
+    const events: StreamEvent[] = []
+    const gen = streamWithSegments(client, { messages: [] })
+    let returnValue: unknown = undefined
+    while (true) {
+      const { value, done } = await gen.next()
+      if (done) {
+        returnValue = value
+        break
+      }
+      events.push(value)
+    }
+
+    expect(events).toEqual([{ type: 'xml_tool_abort' }])
+    expect(returnValue).toBeNull()
+  })
+
+  it('returns null on explicit error events and abort errors', async () => {
+    const errorClient = createMockClient([
+      { type: 'error', error: 'backend failed' },
+    ])
+    const errorEvents: StreamEvent[] = []
+    const errorGen = streamWithSegments(errorClient, { messages: [] })
+    let errorResult: unknown = undefined
+    while (true) {
+      const { value, done } = await errorGen.next()
+      if (done) {
+        errorResult = value
+        break
+      }
+      errorEvents.push(value)
+    }
+    expect(errorEvents).toEqual([{ type: 'error', error: 'backend failed' }])
+    expect(errorResult).toBeNull()
+
+    const abortClient: LLMClient = {
+      complete: async () => {
+        throw new Error('Not implemented')
+      },
+      stream: async function* () {
+        const error = new Error('aborted')
+        error.name = 'AbortError'
+        throw error
+      },
+    }
+    const abortGen = streamWithSegments(abortClient, { messages: [] })
+    const abortDone = await abortGen.next()
+    expect(abortDone.done).toBe(true)
+    expect(abortDone.value).toBeNull()
+  })
+
+  it('returns null if the stream ends without a done response', async () => {
+    const client = createMockClient([
+      { type: 'text_delta', content: 'partial' },
+    ])
+
+    const gen = streamWithSegments(client, { messages: [] })
+    let result: unknown = undefined
+    while (true) {
+      const { value, done } = await gen.next()
+      if (done) {
+        result = value
+        break
+      }
+    }
+
+    expect(result).toBeNull()
+  })
+
+  it('accumulates and clears segments with SegmentBuilder', () => {
+    const builder = new SegmentBuilder()
+    builder.addFromResult({
+      content: 'Hello',
+      thinkingContent: 'Think',
+      toolCalls: [{ id: 'call-1', name: 'glob', arguments: { pattern: '*.ts' } }],
+      response: mockResponse,
+      segments: [
+        { type: 'thinking', content: 'Think' },
+        { type: 'text', content: 'Hello' },
+      ],
+      timing: { ttft: 1, completionTime: 1, tps: 1, prefillTps: 1 },
+    })
+    builder.addToolCall('call-2')
+
+    expect(builder.build()).toEqual([
+      { type: 'thinking', content: 'Think' },
+      { type: 'text', content: 'Hello' },
+      { type: 'tool_call', toolCallId: 'call-2' },
+    ])
+
+    builder.clear()
+    expect(builder.build()).toEqual([])
   })
 })

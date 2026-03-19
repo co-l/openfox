@@ -14,6 +14,12 @@ import { logger } from '../utils/logger.js'
 import { LLMError } from '../utils/errors.js'
 import { getModelProfile, type ModelProfile } from './profiles.js'
 import { type Backend, type BackendCapabilities, getBackendCapabilities } from './backend.js'
+import {
+  buildNonStreamingCreateParams,
+  buildStreamingCreateParams,
+  extractThinking,
+  mapFinishReason,
+} from './client-pure.js'
 
 export interface LLMClientWithModel extends LLMClient {
   getModel(): string
@@ -81,21 +87,7 @@ export function createLLMClient(config: Config, initialBackend: Backend = 'unkno
       
       try {
         // Build request with profile defaults
-        const createParams: OpenAI.ChatCompletionCreateParamsNonStreaming = {
-          model,
-          messages: convertMessages(request.messages),
-          ...(request.tools ? { tools: convertTools(request.tools) } : {}),
-          ...(request.toolChoice ? { tool_choice: request.toolChoice as ChatCompletionToolChoiceOption } : {}),
-          temperature: request.temperature ?? profile.temperature,
-          max_tokens: request.maxTokens ?? profile.defaultMaxTokens,
-          top_p: profile.topP,
-          stream: false,
-        }
-        
-        // Add top_k if backend supports it and profile specifies it
-        if (capabilities.supportsTopK && profile.topK !== undefined) {
-          (createParams as unknown as Record<string, unknown>)['top_k'] = profile.topK
-        }
+        const createParams = buildNonStreamingCreateParams({ model, request, profile, capabilities })
         
         const response = await openai.chat.completions.create(createParams, {
           signal: request.signal,
@@ -178,28 +170,7 @@ export function createLLMClient(config: Config, initialBackend: Backend = 'unkno
       
       try {
         // Build request with profile defaults
-        const createParams: OpenAI.ChatCompletionCreateParamsStreaming = {
-          model,
-          messages: convertMessages(request.messages),
-          ...(request.tools ? { tools: convertTools(request.tools) } : {}),
-          ...(request.toolChoice ? { tool_choice: request.toolChoice as ChatCompletionToolChoiceOption } : {}),
-          temperature: request.temperature ?? profile.temperature,
-          max_tokens: request.maxTokens ?? profile.defaultMaxTokens,
-          top_p: profile.topP,
-          stream: true,
-          stream_options: { include_usage: true },
-        }
-        
-        // Add top_k if backend supports it and profile specifies it
-        if (capabilities.supportsTopK && profile.topK !== undefined) {
-          (createParams as unknown as Record<string, unknown>)['top_k'] = profile.topK
-        }
-        
-        // Disable thinking if requested or globally disabled - only for backends and models that support it
-        // Models without reasoning capability (e.g., Mistral) don't understand enable_thinking kwarg
-        if (capabilities.supportsChatTemplateKwargs && profile.supportsReasoning && (request.enableThinking === false || disableThinking)) {
-          (createParams as unknown as Record<string, unknown>)['chat_template_kwargs'] = { enable_thinking: false }
-        }
+        const createParams = buildStreamingCreateParams({ model, request, profile, capabilities, disableThinking })
         
         const stream = await openai.chat.completions.create(createParams, {
           signal: request.signal,
@@ -346,94 +317,5 @@ export function createLLMClient(config: Config, initialBackend: Backend = 'unkno
         }
       }
     },
-  }
-}
-
-// ============================================================================
-// Helpers
-// ============================================================================
-
-function convertMessages(messages: LLMMessage[]): ChatCompletionMessageParam[] {
-  // Filter out empty assistant messages (no content and no tool calls)
-  // These can occur from aborted streams and cause errors with Mistral tokenizer
-  const filtered = messages.filter(msg => {
-    if (msg.role === 'assistant' && !msg.content?.trim() && !msg.toolCalls?.length) {
-      logger.warn('Filtering empty assistant message from LLM context')
-      return false
-    }
-    return true
-  })
-  
-  return filtered.map((msg): ChatCompletionMessageParam => {
-    if (msg.role === 'tool') {
-      return {
-        role: 'tool',
-        content: msg.content,
-        tool_call_id: msg.toolCallId!,
-      }
-    }
-    
-    if (msg.role === 'assistant' && msg.toolCalls?.length) {
-      return {
-        role: 'assistant',
-        content: msg.content || null,
-        tool_calls: msg.toolCalls.map(tc => ({
-          id: tc.id,
-          type: 'function' as const,
-          function: {
-            name: tc.name,
-            arguments: JSON.stringify(tc.arguments),
-          },
-        })),
-      }
-    }
-    
-    return {
-      role: msg.role as 'system' | 'user' | 'assistant',
-      content: msg.content,
-    }
-  })
-}
-
-function convertTools(tools: LLMToolDefinition[]): ChatCompletionTool[] {
-  return tools.map(tool => ({
-    type: 'function' as const,
-    function: {
-      name: tool.function.name,
-      description: tool.function.description,
-      parameters: tool.function.parameters,
-    },
-  }))
-}
-
-function mapFinishReason(reason: string | null): LLMCompletionResponse['finishReason'] {
-  switch (reason) {
-    case 'stop':
-      return 'stop'
-    case 'tool_calls':
-      return 'tool_calls'
-    case 'length':
-      return 'length'
-    case 'content_filter':
-      return 'content_filter'
-    default:
-      return 'stop'
-  }
-}
-
-function extractThinking(content: string): { content: string; thinkingContent: string | null } {
-  const thinkRegex = /<think>([\s\S]*?)<\/think>/g
-  let thinkingContent = ''
-  let cleanContent = content
-  
-  let match
-  while ((match = thinkRegex.exec(content)) !== null) {
-    thinkingContent += match[1]
-    cleanContent = cleanContent.replace(match[0], '')
-  }
-  
-  return {
-    content: cleanContent.trim(),
-    thinkingContent: thinkingContent.trim() || null,
   }
 }

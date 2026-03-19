@@ -26,7 +26,7 @@ interface SessionEventQueue {
 const DEFAULT_MAX_EVENTS = 10000
 const DEFAULT_CLEANUP_DELAY_MS = 30000
 
-class SessionEvents {
+export class SessionEvents {
   private queues = new Map<string, SessionEventQueue>()
   private maxEvents: number
   private cleanupDelayMs: number

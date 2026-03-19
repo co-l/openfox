@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest'
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { mkdir, symlink, rm, writeFile } from 'node:fs/promises'
 import { join, normalize, resolve } from 'node:path'
 import { tmpdir, homedir } from 'node:os'
@@ -6,13 +6,19 @@ import {
   isPathWithinSandbox,
   extractAbsolutePathsFromCommand,
   extractSensitivePathsFromCommand,
+  addAllowedPath,
+  addAllowedPaths,
   checkPathsAccess,
   PathConfirmationInterrupt,
   PathAccessDeniedError,
+  clearAllowedPaths,
+  isPathAllowed,
   providePathConfirmation,
   cancelPathConfirmation,
   hasPendingPathConfirmation,
   isSensitivePath,
+  registerPathConfirmation,
+  requestPathAccess,
 } from './path-security.js'
 
 // Test fixtures directory - use a unique subdir that's NOT in /tmp's allowed root
@@ -109,6 +115,14 @@ describe('path-security', () => {
       it('denies path to file in directory outside /tmp', async () => {
         const result = await isPathWithinSandbox(join(TRULY_OUTSIDE, 'some-file'), WORKDIR)
         expect(result.allowed).toBe(false)
+      })
+
+      it('allows previously approved path outside workdir for the same session', async () => {
+        const sessionId = 'approved-outside'
+        addAllowedPath(sessionId, '/etc/passwd')
+        const result = await isPathWithinSandbox('/etc/passwd', WORKDIR, sessionId)
+        expect(result.allowed).toBe(true)
+        expect(result.resolvedPath).toBe('/etc/passwd')
       })
     })
 
@@ -672,6 +686,97 @@ describe('path-security', () => {
       expect(cancelPathConfirmation('unknown-id', 'reason')).toBe(false)
     })
 
+    it('manages session allowlists with normalization', () => {
+      const sessionId = 'allowlist-session'
+      addAllowedPath(sessionId, '/tmp/foo/../bar')
+      addAllowedPaths(sessionId, ['/etc/hosts', '/var/log/../tmp/test.log'])
+
+      expect(isPathAllowed(sessionId, '/tmp/bar')).toBe(true)
+      expect(isPathAllowed(sessionId, '/etc/hosts')).toBe(true)
+      expect(isPathAllowed(sessionId, '/var/tmp/test.log')).toBe(true)
+
+      clearAllowedPaths(sessionId)
+      expect(isPathAllowed(sessionId, '/tmp/bar')).toBe(false)
+    })
+
+    it('registers, approves, and cancels pending confirmations', async () => {
+      const approvedPromise = registerPathConfirmation('call-approve', ['/tmp/secret'], 'session-1')
+      expect(hasPendingPathConfirmation('call-approve')).toBe(true)
+      expect(providePathConfirmation('call-approve', true)).toEqual({
+        found: true,
+        sessionId: 'session-1',
+        approved: true,
+      })
+      await expect(approvedPromise).resolves.toBe(true)
+      expect(hasPendingPathConfirmation('call-approve')).toBe(false)
+      expect(isPathAllowed('session-1', '/tmp/secret')).toBe(true)
+
+      const deniedPromise = registerPathConfirmation('call-cancel', ['/tmp/other'], 'session-2')
+      const deniedAssertion = expect(deniedPromise).rejects.toThrow('user cancelled')
+      expect(cancelPathConfirmation('call-cancel', 'user cancelled')).toBe(true)
+      await deniedAssertion
+      expect(hasPendingPathConfirmation('call-cancel')).toBe(false)
+    })
+
+    it('requests path access, emits confirmation events, and resolves approval/denial', async () => {
+      const onEvent = vi.fn()
+      const sensitivePath = join(WORKDIR, '.env')
+      const waitForPending = async (callId: string) => {
+        for (let attempt = 0; attempt < 20; attempt++) {
+          if (hasPendingPathConfirmation(callId)) {
+            return
+          }
+          await new Promise<void>((resolve) => setTimeout(resolve, 5))
+        }
+      }
+
+      const approvedPromise = requestPathAccess(
+        [sensitivePath],
+        WORKDIR,
+        'session-sensitive',
+        'call-sensitive',
+        'read_file',
+        onEvent,
+      )
+
+      await waitForPending('call-sensitive')
+      expect(hasPendingPathConfirmation('call-sensitive')).toBe(true)
+      expect(onEvent).toHaveBeenCalledWith(expect.objectContaining({
+        type: 'chat.path_confirmation',
+        payload: expect.objectContaining({
+          callId: 'call-sensitive',
+          tool: 'read_file',
+          paths: [sensitivePath],
+          reason: 'sensitive_file',
+        }),
+      }))
+      providePathConfirmation('call-sensitive', true)
+      await expect(approvedPromise).resolves.toBeUndefined()
+      expect(isPathAllowed('session-sensitive', sensitivePath)).toBe(true)
+
+      const deniedPromise = requestPathAccess(
+        ['/etc/.env'],
+        WORKDIR,
+        'session-both',
+        'call-both',
+        'run_command',
+        onEvent,
+      )
+      await waitForPending('call-both')
+      const deniedAssertion = expect(deniedPromise).rejects.toMatchObject({
+        name: 'PathAccessDeniedError',
+        reason: 'both',
+        tool: 'run_command',
+        paths: ['/etc/.env'],
+      })
+      expect(onEvent).toHaveBeenLastCalledWith(expect.objectContaining({
+        type: 'chat.path_confirmation',
+        payload: expect.objectContaining({ reason: 'both', paths: ['/etc/.env'] }),
+      }))
+      providePathConfirmation('call-both', false)
+      await deniedAssertion
+    })
+
     // Note: Full flow testing requires the interrupt to be thrown and caught,
     // which is integration-level testing. Unit tests verify the API exists.
   })
@@ -787,6 +892,18 @@ describe('path-security', () => {
         expect(isSensitivePath('.eslintrc.js')).toBe(false)
         expect(isSensitivePath('vite.config.ts')).toBe(false)
       })
+    })
+  })
+
+  describe('extractAbsolutePathsFromCommand edge cases', () => {
+    it('skips url markers and regex-like slash patterns', () => {
+      const command = "curl https://example.com && rg '/foo/' /tmp/project && open file:///etc/passwd"
+      const result = extractAbsolutePathsFromCommand(command)
+
+      expect(result).toContain('/etc/passwd')
+      expect(result).toContain('/tmp/project')
+      expect(result).not.toContain('/foo/')
+      expect(result.filter((path) => path.includes('__URL__') || path.includes('__FILEURL__'))).toEqual([])
     })
   })
 

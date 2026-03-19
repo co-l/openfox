@@ -2,18 +2,27 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import { mkdir, writeFile, rm } from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
-import { findInstructionFiles, loadInstructions, type InstructionFile } from './instructions.js'
+import { loadConfig } from '../config.js'
+import { closeDatabase, initDatabase } from '../db/index.js'
+import { createProject, updateProject } from '../db/projects.js'
+import { setSetting, SETTINGS_KEYS } from '../db/settings.js'
+import { findInstructionFiles, getAllInstructions, getInstructionsForWorkdir, loadInstructions, type InstructionFile } from './instructions.js'
 
 describe('instructions', () => {
   let testDir: string
 
   beforeEach(async () => {
+    closeDatabase()
+    const config = loadConfig()
+    config.database.path = ':memory:'
+    initDatabase(config)
     // Create a unique temp directory for each test
     testDir = join(tmpdir(), `openfox-test-${Date.now()}-${Math.random().toString(36).slice(2)}`)
     await mkdir(testDir, { recursive: true })
   })
 
   afterEach(async () => {
+    closeDatabase()
     // Clean up temp directory
     await rm(testDir, { recursive: true, force: true })
   })
@@ -139,6 +148,47 @@ describe('instructions', () => {
 
       const result = await loadInstructions(files)
       expect(result).toBe('')
+    })
+  })
+
+  describe('higher level helpers', () => {
+    it('returns workdir instructions with discovered files', async () => {
+      await writeFile(join(testDir, 'AGENTS.md'), '# Agent instructions')
+
+      const result = await getInstructionsForWorkdir(testDir)
+
+      expect(result.files).toHaveLength(1)
+      expect(result.content).toContain('# Agent instructions')
+    })
+
+    it('combines global, project, and file instructions in order', async () => {
+      const project = createProject('OpenFox', testDir)
+      setSetting(SETTINGS_KEYS.GLOBAL_INSTRUCTIONS, 'Global rule')
+      updateProject(project.id, { customInstructions: 'Project rule' })
+      await writeFile(join(testDir, 'AGENTS.md'), '# Local instructions\nUse tests')
+
+      const result = await getAllInstructions(testDir, project.id)
+
+      expect(result.content).toContain('## GLOBAL INSTRUCTIONS\n\nGlobal rule')
+      expect(result.content).toContain('## PROJECT INSTRUCTIONS\n\nProject rule')
+      expect(result.content).toContain('## FILE INSTRUCTIONS')
+      expect(result.files).toEqual([
+        { path: 'Global Instructions', source: 'global', content: 'Global rule' },
+        { path: 'Project: OpenFox', source: 'project', content: 'Project rule' },
+        { path: join(testDir, 'AGENTS.md'), source: 'agents-md', content: '# Local instructions\nUse tests' },
+      ])
+    })
+
+    it('keeps file entries even when a discovered instruction file becomes unreadable', async () => {
+      const project = createProject('OpenFox', testDir)
+      const path = join(testDir, 'AGENTS.md')
+      await writeFile(path, '# Local instructions')
+      await rm(path)
+
+      const result = await getAllInstructions(testDir, project.id)
+
+      expect(result.content).toBe('')
+      expect(result.files).toEqual([])
     })
   })
 })
