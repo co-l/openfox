@@ -1,5 +1,5 @@
 import type { Provider, Config, LlmBackend } from '../shared/types.js'
-import { createLLMClient, detectBackend, detectModel, type LLMClientWithModel } from './llm/index.js'
+import { createLLMClient, detectBackend, detectModel, clearModelCache, type LLMClientWithModel } from './llm/index.js'
 import { logger } from './utils/logger.js'
 
 export interface ProviderManager {
@@ -102,6 +102,9 @@ export function createProviderManager(config: Config): ProviderManager {
       // Try to detect backend and model
       try {
         const url = provider.url.includes('/v1') ? provider.url.replace('/v1', '') : provider.url
+        
+        // Clear cache for this URL to force fresh detection
+        clearModelCache(url)
         
         if (provider.backend === 'auto') {
           const detected = await detectBackend(url)
