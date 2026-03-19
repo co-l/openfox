@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { useLocation } from 'wouter'
 import { useProjectStore } from '../stores/project'
 import { Button } from './shared/Button'
@@ -33,6 +33,8 @@ export function OpenProjectModal({ isOpen, onClose }: OpenProjectModalProps) {
   const createProject = useProjectStore(state => state.createProject)
   const listProjects = useProjectStore(state => state.listProjects)
   const [creatingPath, setCreatingPath] = useState<string | null>(null)
+  const [focusedIndex, setFocusedIndex] = useState(-1)
+  const itemsRef = useRef<HTMLButtonElement[]>([])
   
   // Fetch directory listing
   const fetchDirectory = useCallback(async (path?: string) => {
@@ -64,6 +66,12 @@ export function OpenProjectModal({ isOpen, onClose }: OpenProjectModalProps) {
     searchQuery === '' || dir.name.toLowerCase().includes(searchQuery.toLowerCase())
   ) ?? []
   
+  // Build unified list of visible items (parent + filtered directories)
+  const visibleItems = [
+    ...(listing?.parent && !searchQuery ? [{ type: 'parent' as const, path: listing.parent, name: '..' }] : []),
+    ...filteredDirectories.map(dir => ({ type: 'directory' as const, path: dir.path, name: dir.name }))
+  ]
+  
   // Handle clicking a project from recent list - navigate directly
   const handleProjectClick = (projectId: string) => {
     navigate(`/p/${projectId}`)
@@ -90,11 +98,65 @@ export function OpenProjectModal({ isOpen, onClose }: OpenProjectModalProps) {
     }
   }, [projects, creatingPath, navigate, onClose])
   
+  // Reset focus when filter changes
+  useEffect(() => {
+    setFocusedIndex(visibleItems.length > 0 ? 0 : -1)
+  }, [searchQuery, visibleItems.length])
+  
   // Handle navigating into a directory (browse only)
   const handleNavigate = (path: string) => {
     setSearchQuery('')
     fetchDirectory(path)
   }
+  
+  // Keyboard navigation handler
+  const handleKeyDown = useCallback((e: KeyboardEvent) => {
+    if (!['ArrowDown', 'ArrowUp', 'Enter'].includes(e.key)) return
+    if (!isOpen) return
+    
+    // Only handle if search input is focused
+    const activeElement = document.activeElement
+    if (!activeElement || activeElement.tagName !== 'INPUT') return
+    
+    e.preventDefault()
+    
+    if (e.key === 'ArrowDown') {
+      setFocusedIndex(prev => {
+        const next = prev + 1
+        return next >= visibleItems.length ? 0 : next
+      })
+    } else if (e.key === 'ArrowUp') {
+      setFocusedIndex(prev => {
+        const next = prev - 1
+        return next < 0 ? visibleItems.length - 1 : next
+      })
+    } else if (e.key === 'Enter' && focusedIndex >= 0 && focusedIndex < visibleItems.length) {
+      const item = visibleItems[focusedIndex]
+      if (item?.type === 'parent') {
+        handleNavigate(item.path)
+      } else if (item) {
+        handleDirectoryClick(item.path)
+      }
+    }
+  }, [isOpen, visibleItems.length, focusedIndex, handleNavigate, handleDirectoryClick])
+  
+  // Attach keyboard listener
+  useEffect(() => {
+    if (!isOpen) return
+    
+    document.addEventListener('keydown', handleKeyDown)
+    return () => document.removeEventListener('keydown', handleKeyDown)
+  }, [isOpen, handleKeyDown])
+  
+  // Auto-scroll focused item into view
+  useEffect(() => {
+    if (focusedIndex >= 0 && itemsRef.current[focusedIndex]) {
+      itemsRef.current[focusedIndex].scrollIntoView({
+        behavior: 'smooth',
+        block: 'nearest'
+      })
+    }
+  }, [focusedIndex])
   
   // Build breadcrumbs from current path
   const getBreadcrumbs = () => {
@@ -219,50 +281,30 @@ export function OpenProjectModal({ isOpen, onClose }: OpenProjectModalProps) {
                 <div className="p-8 text-center text-text-muted">
                   <div className="animate-spin w-5 h-5 border-2 border-accent-primary border-t-transparent rounded-full mx-auto" />
                 </div>
-              ) : filteredDirectories.length === 0 ? (
+              ) : visibleItems.length === 0 ? (
                 <div className="p-8 text-center text-text-muted text-sm">
                   {searchQuery ? 'No matching directories' : 'No subdirectories'}
                 </div>
               ) : (
                 <div className="divide-y divide-border">
-                  {/* Parent directory - only show when not filtering */}
-                  {!searchQuery && listing?.parent && (
+                  {visibleItems.map((item, index) => (
                     <button
-                      onClick={() => handleNavigate(listing.parent!)}
-                      className="w-full p-3 flex items-center gap-3 hover:bg-bg-tertiary/50 text-left text-text-muted"
+                      ref={el => {
+                        itemsRef.current[index] = el!
+                      }}
+                      key={item.path}
+                      onClick={() => item.type === 'parent' ? handleNavigate(item.path) : handleDirectoryClick(item.path)}
+                      className={`w-full p-3 flex items-center gap-3 text-left transition-colors ${
+                        index === focusedIndex 
+                          ? 'bg-accent-primary/20 text-accent-primary' 
+                          : 'hover:bg-bg-tertiary/50'
+                      }`}
                     >
-                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 17l-5-5m0 0l5-5m-5 5h12" />
+                      <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
+                        <path d="M10 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z" />
                       </svg>
-                      <span>..</span>
+                      <span className="flex-1">{item.name}</span>
                     </button>
-                  )}
-                  
-                  {/* Directories */}
-                  {filteredDirectories.map(dir => (
-                    <div
-                      key={dir.path}
-                      className="flex items-center group"
-                    >
-                      <button
-                        onClick={() => handleDirectoryClick(dir.path)}
-                        className="flex-1 p-3 flex items-center gap-3 text-left hover:bg-bg-tertiary/50 transition-colors"
-                      >
-                        <svg className="w-5 h-5 text-accent-primary" fill="currentColor" viewBox="0 0 24 24">
-                          <path d="M10 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z" />
-                        </svg>
-                        <span className="flex-1">{dir.name}</span>
-                      </button>
-                      <button
-                        onClick={() => handleNavigate(dir.path)}
-                        className="p-3 text-text-muted hover:text-accent-primary opacity-0 group-hover:opacity-100 transition-opacity"
-                        title="Browse folder"
-                      >
-                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                        </svg>
-                      </button>
-                    </div>
                   ))}
                 </div>
               )}
