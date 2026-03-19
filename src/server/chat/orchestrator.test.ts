@@ -776,6 +776,60 @@ describe('chat orchestrator', () => {
     expect(streamLLMPureMock.mock.calls).toHaveLength(6)
   })
 
+  it('fails repeated non-terminal verifier tool loops at the nudge cap', async () => {
+    const eventStore = createEventStore()
+    getEventStoreMock.mockReturnValue(eventStore)
+    getAllInstructionsMock.mockResolvedValue({ content: 'Verify carefully', files: [] })
+
+    const state: any = {
+      current: {
+        id: 'session-1',
+        projectId: 'project-1',
+        workdir: '/tmp/project',
+        mode: 'builder',
+        phase: 'verification',
+        isRunning: true,
+        criteria: [{ id: 'tests-pass', description: 'Tests pass', status: { type: 'completed', completedAt: '2024-01-01T00:00:00.000Z' }, attempts: [] }],
+        executionState: { modifiedFiles: ['src/index.ts'] },
+        summary: 'Task summary',
+        messages: [],
+      },
+    }
+    const sessionManager = createSessionManager(state)
+    const execute = vi.fn(async () => ({ success: true, output: 'file contents', durationMs: 5, truncated: false }))
+
+    getToolRegistryForModeMock.mockReturnValue({
+      definitions: [{ type: 'function', function: { name: 'read_file', description: 'Read', parameters: {} } }],
+      execute,
+    })
+    streamLLMPureMock.mockReturnValue({ kind: 'stream' })
+    for (let index = 0; index < 6; index++) {
+      consumeStreamGeneratorMock.mockResolvedValueOnce({
+        content: `checking-${index}`,
+        toolCalls: [{ id: `call-${index}`, name: 'read_file', arguments: { path: 'src/index.ts' } }],
+        segments: [],
+        usage: { promptTokens: 8, completionTokens: 1 },
+        timing: { ttft: 1, completionTime: 1, tps: 1, prefillTps: 8 },
+        aborted: false,
+        xmlFormatError: false,
+      })
+    }
+
+    const result = await runVerifierTurn({
+      sessionManager: sessionManager as never,
+      sessionId: 'session-1',
+      llmClient: { getModel: () => 'qwen3-32b' } as never,
+      onMessage: vi.fn(),
+    }, new TurnMetrics())
+
+    expect(result).toEqual({
+      allPassed: false,
+      failed: [{ id: 'tests-pass', reason: 'Verifier stopped repeatedly without using verification tools after repeated nudges.' }],
+    })
+    expect(execute).toHaveBeenCalledTimes(6)
+    expect(streamLLMPureMock.mock.calls).toHaveLength(6)
+  })
+
   it('handles verifier path denial and nudges until verification reaches a terminal state', async () => {
     const eventStore = createEventStore()
     getEventStoreMock.mockReturnValue(eventStore)

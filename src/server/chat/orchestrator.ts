@@ -749,7 +749,27 @@ ${modifiedFiles.length > 0 ? modifiedFiles.map(f => `- ${f}`).join('\n') : '(non
       }))
       eventStore.append(sessionId, { type: 'message.done', data: { messageId: nudgeMsgId } })
       customMessages = [...customMessages, { role: 'user', content: nudgeContent }]
+      continue
     }
+
+    markCriteriaFailedAfterVerifierStall(sessionManager, sessionId, remainingCriteriaAfterTools)
+    session = sessionManager.requireSession(sessionId)
+
+    const stalledMsgId = crypto.randomUUID()
+    eventStore.append(sessionId, createMessageStartEvent(stalledMsgId, 'user', `${VERIFIER_STALL_REASON} Marking remaining criteria as failed: ${remainingCriteriaAfterTools.map((criterion) => criterion.id).join(', ')}.`, {
+      ...(currentWindowMessageOptions ?? {}),
+      isSystemGenerated: true,
+      messageKind: 'correction',
+      subAgentId,
+      subAgentType: 'verifier',
+    }))
+    eventStore.append(sessionId, { type: 'message.done', data: { messageId: stalledMsgId } })
+
+    const stats = turnMetrics.buildStats(llmClient.getModel(), 'verifier')
+    eventStore.append(sessionId, createMessageDoneEvent(assistantMsgId, { segments: result.segments, stats }))
+    eventStore.append(sessionId, createChatDoneEvent(assistantMsgId, 'complete', stats))
+    emittedTerminalDone = true
+    break
   }
 
   session = sessionManager.requireSession(sessionId)
@@ -771,9 +791,16 @@ ${modifiedFiles.length > 0 ? modifiedFiles.map(f => `- ${f}`).join('\n') : '(non
 
     if (!emittedTerminalDone && lastAssistantMsgId) {
       const stats = turnMetrics.buildStats(llmClient.getModel(), 'verifier')
+      eventStore.append(sessionId, createMessageDoneEvent(lastAssistantMsgId, { stats }))
       eventStore.append(sessionId, createChatDoneEvent(lastAssistantMsgId, 'complete', stats))
       emittedTerminalDone = true
     }
+  }
+
+  if (!emittedTerminalDone && lastAssistantMsgId) {
+    const stats = turnMetrics.buildStats(llmClient.getModel(), 'verifier')
+    eventStore.append(sessionId, createMessageDoneEvent(lastAssistantMsgId, { stats }))
+    eventStore.append(sessionId, createChatDoneEvent(lastAssistantMsgId, 'complete', stats))
   }
 
   // Check results
