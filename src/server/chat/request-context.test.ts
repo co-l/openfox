@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import type { Criterion, InjectedFile } from '../../shared/types.js'
+import type { InjectedFile } from '../../shared/types.js'
 import type { LLMToolDefinition } from '../llm/types.js'
 import { assembleBuilderRequest, assemblePlannerRequest, type RequestContextMessage } from './request-context.js'
 
@@ -31,10 +31,8 @@ const injectedFiles: InjectedFile[] = [
 ]
 
 describe('request context assembly', () => {
-  it('keeps the builder system prompt stable while moving runtime state to trailing messages', () => {
+  it('keeps the builder system prompt stable and passes messages through unchanged', () => {
     const history: RequestContextMessage[] = [{ role: 'user', content: 'Implement the feature', source: 'history' }]
-    const criteriaA: Criterion[] = [{ id: 'tests-pass', description: 'Tests pass', status: { type: 'pending' }, attempts: [] }]
-    const criteriaB: Criterion[] = [{ id: 'tests-pass', description: 'Tests pass', status: { type: 'completed', completedAt: '2024-01-01T00:00:00.000Z' }, attempts: [] }]
 
     const first = assembleBuilderRequest({
       workdir: '/tmp/project',
@@ -42,8 +40,6 @@ describe('request context assembly', () => {
       promptTools: tools,
       injectedFiles,
       customInstructions: 'Follow project conventions',
-      criteria: criteriaA,
-      modifiedFiles: [],
     })
     const second = assembleBuilderRequest({
       workdir: '/tmp/project',
@@ -51,17 +47,12 @@ describe('request context assembly', () => {
       promptTools: tools,
       injectedFiles,
       customInstructions: 'Follow project conventions',
-      criteria: criteriaB,
-      modifiedFiles: ['src/index.ts'],
     })
 
     expect(first.systemPrompt).toBe(second.systemPrompt)
-    expect(second.promptContext.userMessage).toBe('Implement the feature')
-    expect(first.promptContext.messages.at(-1)).toMatchObject({ role: 'user', source: 'runtime' })
-    expect(second.promptContext.messages.at(-1)).toMatchObject({ role: 'user', source: 'runtime' })
-    expect(first.promptContext.messages.at(-1)?.content).toContain('[PENDING]')
-    expect(second.promptContext.messages.at(-1)?.content).toContain('[COMPLETED - awaiting verification]')
-    expect(second.promptContext.messages.at(-1)?.content).toContain('src/index.ts')
+    expect(first.promptContext.userMessage).toBe('Implement the feature')
+    expect(first.promptContext.messages).toEqual([{ role: 'user', content: 'Implement the feature', source: 'history' }])
+    expect(second.promptContext.messages).toEqual([{ role: 'user', content: 'Implement the feature', source: 'history' }])
   })
 
   it('captures the exact assembled request in promptContext', () => {

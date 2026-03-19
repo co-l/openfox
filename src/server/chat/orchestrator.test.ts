@@ -1225,15 +1225,10 @@ describe('chat orchestrator', () => {
       }, new TurnMetrics())
 
       expect(getContextMessagesMock).toHaveBeenCalledWith('session-1')
+      // Builder passes messages through without injecting runtime state
       expect(streamLLMPureMock).toHaveBeenCalledWith(
         expect.objectContaining({
-          messages: [
-            ...currentWindowMessages,
-            expect.objectContaining({
-              role: 'user',
-              content: expect.stringContaining('## ACCEPTANCE CRITERIA (RUNTIME STATE)'),
-            }),
-          ],
+          messages: currentWindowMessages,
         })
       )
     })

@@ -1,4 +1,3 @@
-import type { Criterion, SessionMode } from '../../shared/types.js'
 import type { LLMToolDefinition } from '../llm/types.js'
 
 // ============================================================================
@@ -83,7 +82,7 @@ export function buildBuilderPrompt(
     ? `\n\n## CUSTOM INSTRUCTIONS\n\n${customInstructions}`
     : ''
 
-  return `You are an expert software engineer. Your task is to satisfy the acceptance criteria below.
+  return `You are an expert software engineer. Your task is to satisfy the acceptance criteria.
 
 ## ENVIRONMENT
 Working directory: ${workdir}
@@ -106,29 +105,6 @@ ${toolList}
 - Always test your changes when possible
 - Call \`complete_criterion\` for each criterion as you finish it
 - If stuck on a criterion after 3 attempts, ask the user for help${instructionsSection}`
-}
-
-export function buildBuilderRuntimeStateMessage(criteria: Criterion[], modifiedFiles: string[]): string {
-  const criteriaList = criteria
-    .map((criterion, index) => {
-      const status = criterion.status.type === 'passed' ? '[VERIFIED]'
-        : criterion.status.type === 'completed' ? '[COMPLETED - awaiting verification]'
-        : criterion.status.type === 'in_progress' ? '[IN PROGRESS]'
-        : criterion.status.type === 'failed' ? '[FAILED]'
-        : '[PENDING]'
-      return `${index + 1}. ${status} ${criterion.description}`
-    })
-    .join('\n')
-
-  const filesModified = modifiedFiles.length > 0
-    ? modifiedFiles.join(', ')
-    : 'none yet'
-
-  return `## ACCEPTANCE CRITERIA (RUNTIME STATE)
-${criteriaList}
-
-## CURRENT STATE
-Files modified this session: ${filesModified}`
 }
 
 // ============================================================================

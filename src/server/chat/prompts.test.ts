@@ -1,6 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { buildPlannerPrompt, buildBuilderPrompt, buildBuilderRuntimeStateMessage, buildVerifierPrompt } from './prompts.js'
-import type { Criterion } from '../../shared/types.js'
+import { buildPlannerPrompt, buildBuilderPrompt, buildVerifierPrompt } from './prompts.js'
 
 describe('buildPlannerPrompt', () => {
   it('includes workdir in prompt', () => {
@@ -33,11 +32,6 @@ describe('buildPlannerPrompt', () => {
 })
 
 describe('buildBuilderPrompt', () => {
-  const mockCriteria: Criterion[] = [
-    { id: 'test-pass', description: 'Tests pass', status: { type: 'pending' }, attempts: [] },
-    { id: 'lint-pass', description: 'Lint passes', status: { type: 'completed', completedAt: '2024-01-01T00:00:00Z' }, attempts: [] },
-  ]
-
   it('includes workdir in prompt', () => {
     const prompt = buildBuilderPrompt('/home/user/myapp', [], undefined)
     expect(prompt).toContain('/home/user/myapp')
@@ -50,20 +44,12 @@ describe('buildBuilderPrompt', () => {
     expect(prompt).toContain(process.arch)
   })
 
-  it('keeps runtime state out of the stable system prompt', () => {
+  it('keeps the system prompt stable without runtime state', () => {
     const prompt = buildBuilderPrompt('/tmp', [], undefined)
-    expect(prompt).not.toContain('Tests pass')
+    // System prompt should not contain criteria-specific content
     expect(prompt).not.toContain('[PENDING]')
     expect(prompt).not.toContain('[COMPLETED')
-  })
-
-  it('renders runtime state as a trailing context message', () => {
-    const message = buildBuilderRuntimeStateMessage(mockCriteria, ['src/index.ts', 'package.json'])
-    expect(message).toContain('Tests pass')
-    expect(message).toContain('[PENDING]')
-    expect(message).toContain('[COMPLETED')
-    expect(message).toContain('src/index.ts')
-    expect(message).toContain('package.json')
+    expect(prompt).not.toContain('Files modified')
   })
 })
 

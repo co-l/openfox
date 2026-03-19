@@ -11,7 +11,7 @@ import type { LLMClientWithModel } from '../llm/client.js'
 import type { StepResult } from '../runner/types.js'
 import type { SessionManager } from '../session/index.js'
 import { getToolRegistryForMode } from '../tools/index.js'
-import { buildBuilderPrompt, buildBuilderRuntimeStateMessage, BUILDER_KICKOFF_PROMPT } from './prompts.js'
+import { buildBuilderPrompt, BUILDER_KICKOFF_PROMPT } from './prompts.js'
 import { streamLLMResponse } from './stream.js'
 import { computeAggregatedStats } from './stats.js'
 import { getAllInstructions } from '../context/instructions.js'
@@ -120,7 +120,6 @@ export async function runBuilderStep(options: BuilderStepOptions): Promise<StepR
         userMessage: lastUserMessage.content,
         messages: [
           { role: 'user', content: lastUserMessage.content, source: 'history' },
-          { role: 'user', content: buildBuilderRuntimeStateMessage(session.criteria, session.executionState?.modifiedFiles ?? []), source: 'runtime' },
         ],
         tools: toolRegistry.definitions.map(tool => ({ name: tool.function.name, description: tool.function.description, parameters: tool.function.parameters })),
         requestOptions: { toolChoice: 'auto', enableThinking: true },

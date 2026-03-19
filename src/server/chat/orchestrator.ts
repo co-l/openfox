@@ -422,8 +422,6 @@ export async function runBuilderTurn(
     messages: requestMessages,
     injectedFiles,
     promptTools: toolRegistry.definitions,
-    criteria: session.criteria,
-    modifiedFiles: session.executionState?.modifiedFiles ?? [],
     toolChoice: 'auto',
     ...(instructionContent ? { customInstructions: instructionContent } : {}),
   })

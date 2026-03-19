@@ -1,6 +1,5 @@
 import type {
   Attachment,
-  Criterion,
   InjectedFile,
   PromptContext,
   PromptContextMessage,
@@ -8,7 +7,7 @@ import type {
   PromptRequestOptions,
 } from '../../shared/types.js'
 import type { LLMToolDefinition } from '../llm/types.js'
-import { buildBuilderPrompt, buildBuilderRuntimeStateMessage, buildPlannerPrompt, buildVerifierPrompt } from './prompts.js'
+import { buildBuilderPrompt, buildPlannerPrompt, buildVerifierPrompt } from './prompts.js'
 
 export type RequestContextMessage = PromptContextMessage
 
@@ -47,21 +46,11 @@ export function assemblePlannerRequest(input: BaseAssemblyInput): AssemblyResult
   })
 }
 
-export function assembleBuilderRequest(input: BaseAssemblyInput & {
-  criteria: Criterion[]
-  modifiedFiles: string[]
-}): AssemblyResult {
+export function assembleBuilderRequest(input: BaseAssemblyInput): AssemblyResult {
   const systemPrompt = buildBuilderPrompt(input.workdir, input.promptTools, input.customInstructions)
   return createAssemblyResult({
     systemPrompt,
-    messages: [
-      ...input.messages,
-      {
-        role: 'user',
-        content: buildBuilderRuntimeStateMessage(input.criteria, input.modifiedFiles),
-        source: 'runtime',
-      },
-    ],
+    messages: input.messages,
     injectedFiles: input.injectedFiles,
     requestTools: input.requestTools ?? input.promptTools,
     toolChoice: input.toolChoice ?? 'auto',
