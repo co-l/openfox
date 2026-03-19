@@ -3,17 +3,14 @@ import { useLocation } from 'wouter'
 import { useSessionStore } from '../stores/session'
 import { useProjectStore } from '../stores/project'
 import { Button } from './shared/Button'
-import { CreateSessionModal } from './CreateSessionModal'
+import { OpenProjectModal } from './CreateSessionModal'
 
 export function HomePage() {
   const [, navigate] = useLocation()
-  const [showCreateModal, setShowCreateModal] = useState(false)
-  const [pendingProjectId, setPendingProjectId] = useState<string | null>(null)
+  const [showOpenModal, setShowOpenModal] = useState(false)
   
   const sessions = useSessionStore(state => state.sessions)
   const projects = useProjectStore(state => state.projects)
-  const currentSession = useSessionStore(state => state.currentSession)
-  const createSession = useSessionStore(state => state.createSession)
   const listProjects = useProjectStore(state => state.listProjects)
   const listSessions = useSessionStore(state => state.listSessions)
   
@@ -30,11 +27,8 @@ export function HomePage() {
   const recentProjects = projects.slice(0, 5)
   
   const handleSessionClick = (sessionId: string) => {
-    // Navigate to the session
-    // Need to find the project for this session
     const session = sessions.find(s => s.id === sessionId)
     if (session) {
-      // Find project by matching workdir
       const project = projects.find(p => session.workdir.startsWith(p.workdir))
       if (project) {
         navigate(`/p/${project.id}/s/${sessionId}`)
@@ -46,25 +40,9 @@ export function HomePage() {
     navigate(`/p/${projectId}`)
   }
   
-  const handleNewSession = () => {
-    setShowCreateModal(true)
-    setPendingProjectId(null)
+  const handleOpenProject = () => {
+    setShowOpenModal(true)
   }
-  
-  const handleCreateSession = (projectId: string) => {
-    createSession(projectId)
-    setPendingProjectId(projectId)
-    setShowCreateModal(false)
-    // Navigation will happen in useEffect when currentSession is set
-  }
-  
-  // Navigate to new session when it's created
-  useEffect(() => {
-    if (currentSession && !showCreateModal && pendingProjectId) {
-      navigate(`/p/${pendingProjectId}/s/${currentSession.id}`)
-      setPendingProjectId(null)
-    }
-  }, [currentSession, navigate, showCreateModal, pendingProjectId])
   
   const getPhaseBadgeClasses = (phase: string) => {
     switch (phase) {
@@ -98,9 +76,9 @@ export function HomePage() {
           <Button
             variant="primary"
             className="w-full py-4 text-lg font-semibold"
-            onClick={handleNewSession}
+            onClick={handleOpenProject}
           >
-            + New Session
+            Open Project
           </Button>
         </div>
         
@@ -192,12 +170,11 @@ export function HomePage() {
         )}
       </div>
       
-      {/* Create Session Modal */}
-      {showCreateModal && (
-        <CreateSessionModal
-          isOpen={showCreateModal}
-          onClose={() => setShowCreateModal(false)}
-          onCreate={handleCreateSession}
+      {/* Open Project Modal */}
+      {showOpenModal && (
+        <OpenProjectModal
+          isOpen={showOpenModal}
+          onClose={() => setShowOpenModal(false)}
         />
       )}
     </div>

@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
+import { useLocation } from 'wouter'
 import { useProjectStore } from '../stores/project'
 import { Button } from './shared/Button'
 import { Input } from './shared/Input'
@@ -17,23 +18,21 @@ interface DirectoryListing {
 
 const DEFAULT_BASE_PATH = '/home/conrad/dev'
 
-interface CreateSessionModalProps {
+interface OpenProjectModalProps {
   isOpen: boolean
   onClose: () => void
-  onCreate: (projectId: string) => void
-  onProjectCreate?: (projectId: string) => void
 }
 
-export function CreateSessionModal({ isOpen, onClose, onCreate }: CreateSessionModalProps) {
+export function OpenProjectModal({ isOpen, onClose }: OpenProjectModalProps) {
+  const [, navigate] = useLocation()
   const [searchQuery, setSearchQuery] = useState('')
   const [listing, setListing] = useState<DirectoryListing | null>(null)
   const [loading, setLoading] = useState(false)
-  const [selectedPath, setSelectedPath] = useState<string | null>(null)
-  const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null)
   
   const projects = useProjectStore(state => state.projects)
   const createProject = useProjectStore(state => state.createProject)
   const listProjects = useProjectStore(state => state.listProjects)
+  const [creatingPath, setCreatingPath] = useState<string | null>(null)
   
   // Fetch directory listing
   const fetchDirectory = useCallback(async (path?: string) => {
@@ -65,21 +64,34 @@ export function CreateSessionModal({ isOpen, onClose, onCreate }: CreateSessionM
     searchQuery === '' || dir.name.toLowerCase().includes(searchQuery.toLowerCase())
   ) ?? []
   
-  // Handle selecting a project from recent list
-  const handleSelectProject = (projectId: string) => {
-    setSelectedProjectId(projectId)
-    setSelectedPath(null) // Clear browse selection
+  // Handle clicking a project from recent list - navigate directly
+  const handleProjectClick = (projectId: string) => {
+    navigate(`/p/${projectId}`)
+    onClose()
   }
   
-  // Handle selecting a directory from browse
-  const handleSelectDirectory = (path: string) => {
-    setSelectedPath(path)
-    setSelectedProjectId(null) // Clear project selection
+  // Handle clicking a directory from browse - create project
+  const handleDirectoryClick = (path: string) => {
+    const basename = path.split('/').filter(Boolean).pop() ?? ''
+    createProject(basename, path)
+    listProjects()
+    setCreatingPath(path)
   }
   
-  // Handle navigating into a directory
+  // Navigate to newly created project when it appears in the list
+  useEffect(() => {
+    if (creatingPath) {
+      const newProject = projects.find(p => p.workdir === creatingPath)
+      if (newProject) {
+        navigate(`/p/${newProject.id}`)
+        onClose()
+        setCreatingPath(null)
+      }
+    }
+  }, [projects, creatingPath, navigate, onClose])
+  
+  // Handle navigating into a directory (browse only)
   const handleNavigate = (path: string) => {
-    setSelectedPath(null)
     setSearchQuery('')
     fetchDirectory(path)
   }
@@ -99,39 +111,6 @@ export function CreateSessionModal({ isOpen, onClose, onCreate }: CreateSessionM
   
   const breadcrumbs = getBreadcrumbs()
   
-  // Check if create button should be enabled
-  const canCreateSession = selectedProjectId !== null || selectedPath !== null
-  
-  // Handle create session action
-  const handleCreate = () => {
-    if (selectedProjectId) {
-      onCreate(selectedProjectId)
-    } else if (selectedPath) {
-      // Create a new project from the selected path first
-      const basename = selectedPath.split('/').filter(Boolean).pop() ?? ''
-      createProject(basename, selectedPath)
-      onClose()
-    }
-  }
-  
-  // Keyboard shortcuts
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (!isOpen) return
-      
-      if (e.key === 'Escape') {
-        e.preventDefault()
-        onClose()
-      } else if (e.key === 'Enter' && canCreateSession) {
-        e.preventDefault()
-        handleCreate()
-      }
-    }
-    
-    window.addEventListener('keydown', handleKeyDown)
-    return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [isOpen, canCreateSession, onClose])
-  
   if (!isOpen) return null
   
   return (
@@ -139,7 +118,7 @@ export function CreateSessionModal({ isOpen, onClose, onCreate }: CreateSessionM
       <div className="bg-bg-secondary border border-border rounded-lg w-full max-w-4xl max-h-[90vh] flex flex-col">
         {/* Header */}
         <div className="p-4 border-b border-border flex items-center justify-between">
-          <h2 className="text-lg font-semibold text-text-primary">Create New Session</h2>
+          <h2 className="text-lg font-semibold text-text-primary">Open Project</h2>
           <button
             onClick={onClose}
             className="p-1 rounded hover:bg-bg-tertiary text-text-muted hover:text-text-primary transition-colors"
@@ -165,35 +144,21 @@ export function CreateSessionModal({ isOpen, onClose, onCreate }: CreateSessionM
                 </div>
               ) : (
                 <div className="divide-y divide-border">
-                  {projects.map(project => {
-                    const isSelected = selectedProjectId === project.id
-                    return (
-                      <div
-                        key={project.id}
-                        className={`flex items-center group ${isSelected ? 'bg-accent-primary/10' : ''}`}
-                      >
-                        <button
-                          onClick={() => handleSelectProject(project.id)}
-                          className={`flex-1 p-3 flex items-center gap-3 text-left hover:bg-bg-tertiary/50 ${
-                            isSelected ? 'text-accent-primary' : ''
-                          }`}
-                        >
-                          <svg className={`w-5 h-5 ${isSelected ? 'text-accent-primary' : 'text-accent-primary/70'}`} fill="currentColor" viewBox="0 0 24 24">
-                            <path d="M10 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z" />
-                          </svg>
-                          <div className="flex-1 min-w-0">
-                            <div className="font-medium truncate">{project.name}</div>
-                            <div className="text-xs text-text-muted truncate">{project.workdir}</div>
-                          </div>
-                          {isSelected && (
-                            <svg className="w-5 h-5 text-accent-primary" fill="currentColor" viewBox="0 0 24 24">
-                              <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z" />
-                            </svg>
-                          )}
-                        </button>
+                  {projects.map(project => (
+                    <button
+                      key={project.id}
+                      onClick={() => handleProjectClick(project.id)}
+                      className="w-full p-3 flex items-center gap-3 text-left hover:bg-bg-tertiary/50 transition-colors"
+                    >
+                      <svg className="w-5 h-5 text-accent-primary" fill="currentColor" viewBox="0 0 24 24">
+                        <path d="M10 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z" />
+                      </svg>
+                      <div className="flex-1 min-w-0">
+                        <div className="font-medium truncate">{project.name}</div>
+                        <div className="text-xs text-text-muted truncate">{project.workdir}</div>
                       </div>
-                    )
-                  })}
+                    </button>
+                  ))}
                 </div>
               )}
             </div>
@@ -274,54 +239,35 @@ export function CreateSessionModal({ isOpen, onClose, onCreate }: CreateSessionM
                   )}
                   
                   {/* Directories */}
-                  {filteredDirectories.map(dir => {
-                    const isSelected = selectedPath === dir.path
-                    return (
-                      <div
-                        key={dir.path}
-                        className={`flex items-center group ${isSelected ? 'bg-accent-primary/10' : ''}`}
+                  {filteredDirectories.map(dir => (
+                    <div
+                      key={dir.path}
+                      className="flex items-center group"
+                    >
+                      <button
+                        onClick={() => handleDirectoryClick(dir.path)}
+                        className="flex-1 p-3 flex items-center gap-3 text-left hover:bg-bg-tertiary/50 transition-colors"
                       >
-                        <button
-                          onClick={() => handleSelectDirectory(dir.path)}
-                          className={`flex-1 p-3 flex items-center gap-3 text-left hover:bg-bg-tertiary/50 ${
-                            isSelected ? 'text-accent-primary' : ''
-                          }`}
-                        >
-                          <svg className={`w-5 h-5 ${isSelected ? 'text-accent-primary' : 'text-accent-primary/70'}`} fill="currentColor" viewBox="0 0 24 24">
-                            <path d="M10 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z" />
-                          </svg>
-                          <span className="flex-1">{dir.name}</span>
-                          {isSelected && (
-                            <svg className="w-5 h-5 text-accent-primary" fill="currentColor" viewBox="0 0 24 24">
-                              <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z" />
-                            </svg>
-                          )}
-                        </button>
-                        <button
-                          onClick={() => handleNavigate(dir.path)}
-                          className="p-3 text-text-muted hover:text-accent-primary opacity-0 group-hover:opacity-100 transition-opacity"
-                          title="Open folder"
-                        >
-                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                          </svg>
-                        </button>
-                      </div>
-                    )
-                  })}
+                        <svg className="w-5 h-5 text-accent-primary" fill="currentColor" viewBox="0 0 24 24">
+                          <path d="M10 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z" />
+                        </svg>
+                        <span className="flex-1">{dir.name}</span>
+                      </button>
+                      <button
+                        onClick={() => handleNavigate(dir.path)}
+                        className="p-3 text-text-muted hover:text-accent-primary opacity-0 group-hover:opacity-100 transition-opacity"
+                        title="Browse folder"
+                      >
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                        </svg>
+                      </button>
+                    </div>
+                  ))}
                 </div>
               )}
             </div>
             
-            {/* Selected path info */}
-            {selectedPath && (
-              <div className="p-3 border-t border-border bg-bg-tertiary/30">
-                <div className="text-xs">
-                  <span className="text-text-muted">Selected: </span>
-                  <span className="text-accent-primary font-mono">{selectedPath}</span>
-                </div>
-              </div>
-            )}
           </div>
         </div>
         
@@ -329,13 +275,6 @@ export function CreateSessionModal({ isOpen, onClose, onCreate }: CreateSessionM
         <div className="p-4 border-t border-border flex justify-end gap-2">
           <Button variant="secondary" onClick={onClose}>
             Cancel
-          </Button>
-          <Button 
-            variant="primary" 
-            onClick={handleCreate}
-            disabled={!canCreateSession}
-          >
-            Create Session
           </Button>
         </div>
       </div>
