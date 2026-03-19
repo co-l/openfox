@@ -58,22 +58,32 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
   async function initLLM(): Promise<void> {
     const llmClient = getLLMClient()
     let backend: Backend = 'unknown'
+    const useMock = process.env['OPENFOX_MOCK_LLM'] === 'true'
+    
     if (config.llm.backend === 'auto') {
-      backend = await detectBackend(config.llm.baseUrl)
+      backend = await detectBackend(config.llm.baseUrl, undefined, useMock)
       llmClient.setBackend(backend)
-      logger.info('Auto-detected LLM backend', { backend: getBackendDisplayName(backend) })
+      if (!useMock) {
+        logger.info('Auto-detected LLM backend', { backend: getBackendDisplayName(backend) })
+      }
     } else {
       backend = config.llm.backend
       llmClient.setBackend(backend)
-      logger.info('Using configured LLM backend', { backend: getBackendDisplayName(backend) })
+      if (!useMock) {
+        logger.info('Using configured LLM backend', { backend: getBackendDisplayName(backend) })
+      }
     }
     
     const detected = await detectModel(config.llm.baseUrl)
     if (detected) {
       llmClient.setModel(detected)
-      logger.info('Auto-detected LLM model', { model: detected, backend: getBackendDisplayName(backend) })
+      if (!useMock) {
+        logger.info('Auto-detected LLM model', { model: detected, backend: getBackendDisplayName(backend) })
+      }
     } else {
-      logger.warn('Could not auto-detect model, using config', { model: config.llm.model })
+      if (!useMock) {
+        logger.warn('Could not auto-detect model, using config', { model: config.llm.model })
+      }
     }
   }
 

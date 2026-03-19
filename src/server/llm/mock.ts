@@ -934,7 +934,9 @@ export function createMockLLMClient(): LLMClientWithModel {
       if (request.signal?.aborted) throw new Error('Aborted')
       const response = buildMockResponse(request)
 
-      console.error(`[MockLLM] "${prompt.slice(0, 50)}..." → ${response.toolCalls.length > 0 ? response.toolCalls.map(toolCall => toolCall.name).join(', ') : 'text'}`)
+      if (process.env['OPENFOX_TEST_VERBOSE'] === 'true') {
+        console.error(`[MockLLM] "${prompt.slice(0, 50)}..." → ${response.toolCalls.length > 0 ? response.toolCalls.map(toolCall => toolCall.name).join(', ') : 'text'}`)
+      }
 
       return {
         id: `mock-${Date.now()}`,
@@ -952,7 +954,9 @@ export function createMockLLMClient(): LLMClientWithModel {
       if (request.signal?.aborted) throw new Error('Aborted')
       const response = buildMockResponse(request)
 
-      console.error(`[MockLLM] "${prompt.slice(0, 50)}..." → ${response.toolCalls.length > 0 ? response.toolCalls.map(toolCall => toolCall.name).join(', ') : 'text'}`)
+      if (process.env['OPENFOX_TEST_VERBOSE'] === 'true') {
+        console.error(`[MockLLM] "${prompt.slice(0, 50)}..." → ${response.toolCalls.length > 0 ? response.toolCalls.map(toolCall => toolCall.name).join(', ') : 'text'}`)
+      }
 
       // Stream tool calls
       for (let i = 0; i < response.toolCalls.length; i++) {

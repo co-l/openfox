@@ -38,7 +38,10 @@ export async function setup(): Promise<void> {
   killProcessOnPort(TEST_PORT)
   await sleep(300)
 
-  console.log('\n🚀 Starting OpenFox with Mock LLM...')
+  const verbose = process.env['OPENFOX_TEST_VERBOSE'] === 'true'
+  if (verbose) {
+    console.log('\n🚀 Starting OpenFox with Mock LLM...')
+  }
 
   // Spawn with completely isolated stdio to avoid vitest conflicts
   serverProcess = spawn('node', ['dist/cli/index.js', '--no-browser'], {
@@ -61,7 +64,9 @@ export async function setup(): Promise<void> {
   const serverUrl = `http://localhost:${TEST_PORT}`
   await waitForServer(serverUrl)
 
-  console.log(`✅ Mock server ready at ${serverUrl}`)
+  if (verbose) {
+    console.log(`✅ Mock server ready at ${serverUrl}`)
+  }
 
   process.env['OPENFOX_TEST_URL'] = serverUrl
   process.env['OPENFOX_TEST_WS_URL'] = `ws://localhost:${TEST_PORT}/ws`
@@ -78,11 +83,16 @@ export async function setup(): Promise<void> {
 
 export async function teardown(): Promise<void> {
   if (serverProcess?.pid) {
-    console.log('\n🛑 Stopping server...')
+    const verbose = process.env['OPENFOX_TEST_VERBOSE'] === 'true'
+    if (verbose) {
+      console.log('\n🛑 Stopping server...')
+    }
     try { process.kill(-serverProcess.pid, 'SIGTERM') } catch { serverProcess?.kill('SIGTERM') }
     await sleep(500)
     try { process.kill(-serverProcess.pid, 'SIGKILL') } catch { /* already dead */ }
     serverProcess = null
-    console.log('✅ Stopped')
+    if (verbose) {
+      console.log('✅ Stopped')
+    }
   }
 }

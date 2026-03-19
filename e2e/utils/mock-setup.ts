@@ -53,10 +53,13 @@ export async function setupMockLLMServer(): Promise<void> {
   killProcessOnPort(TEST_PORT)
   await sleep(500)
   
-  console.log('\n🚀 Starting OpenFox server with MOCK LLM...')
-  console.log(`   Model: ${MOCK_MODEL}`)
-  console.log(`   Backend: ${MOCK_BACKEND}`)
-  console.log(`   Port: ${TEST_PORT}`)
+  const verbose = process.env['OPENFOX_TEST_VERBOSE'] === 'true'
+  if (verbose) {
+    console.log('\n🚀 Starting OpenFox server with MOCK LLM...')
+    console.log(`   Model: ${MOCK_MODEL}`)
+    console.log(`   Backend: ${MOCK_BACKEND}`)
+    console.log(`   Port: ${TEST_PORT}`)
+  }
   
   // Start the server with mock LLM configuration
   // The server will use the mock LLM client when OPENFOX_MOCK_LLM is set
@@ -78,26 +81,30 @@ export async function setupMockLLMServer(): Promise<void> {
     detached: true,
   })
   
-  // Log server output
-  serverProcess.stdout?.on('data', (data: Buffer) => {
-    const msg = data.toString().trim()
-    if (msg) console.log(`[server] ${msg}`)
-  })
-  
-  serverProcess.stderr?.on('data', (data: Buffer) => {
-    const msg = data.toString().trim()
-    if (msg) console.error(`[server:err] ${msg}`)
-  })
-  
-  serverProcess.on('error', (err) => {
-    console.error('Server process error:', err)
-  })
+  // Log server output (only in verbose mode)
+  if (verbose) {
+    serverProcess.stdout?.on('data', (data: Buffer) => {
+      const msg = data.toString().trim()
+      if (msg) console.log(`[server] ${msg}`)
+    })
+    
+    serverProcess.stderr?.on('data', (data: Buffer) => {
+      const msg = data.toString().trim()
+      if (msg) console.error(`[server:err] ${msg}`)
+    })
+    
+    serverProcess.on('error', (err) => {
+      console.error('Server process error:', err)
+    })
+  }
   
   // Wait for server to be healthy
   const serverUrl = `http://localhost:${TEST_PORT}`
   await waitForServer(serverUrl)
   
-  console.log(`✅ Mock LLM server running at ${serverUrl}`)
+  if (verbose) {
+    console.log(`✅ Mock LLM server running at ${serverUrl}`)
+  }
   
   // Store URL for tests to use
   process.env['OPENFOX_TEST_URL'] = serverUrl
@@ -121,7 +128,10 @@ export async function setupMockLLMServer(): Promise<void> {
 
 export async function teardownMockLLMServer(): Promise<void> {
   if (serverProcess && serverProcess.pid) {
-    console.log('\n🛑 Stopping mock LLM server...')
+    const verbose = process.env['OPENFOX_TEST_VERBOSE'] === 'true'
+    if (verbose) {
+      console.log('\n🛑 Stopping mock LLM server...')
+    }
     
     try {
       process.kill(-serverProcess.pid, 'SIGTERM')
@@ -148,6 +158,8 @@ export async function teardownMockLLMServer(): Promise<void> {
     })
     
     serverProcess = null
-    console.log('✅ Mock server stopped')
+    if (verbose) {
+      console.log('✅ Mock server stopped')
+    }
   }
 }
