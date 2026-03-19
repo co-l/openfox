@@ -5,6 +5,7 @@
  */
 
 import { mkdir, writeFile, rm } from 'node:fs/promises'
+import { execSync } from 'node:child_process'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 
@@ -14,11 +15,13 @@ import { tmpdir } from 'node:os'
 
 export interface TestProjectOptions {
   /** Project template to use */
-  template?: 'empty' | 'typescript' | 'simple-js' | 'with-agents-md'
+  template?: 'empty' | 'typescript' | 'simple-js' | 'with-agents-md' | 'git-repo'
   /** Custom files to add (path → content) */
   files?: Record<string, string>
   /** Custom AGENTS.md content */
   agentsMd?: string
+  /** Initialize as git repository */
+  initGit?: boolean
 }
 
 export interface TestProject {
@@ -107,6 +110,23 @@ export function greet(name) {
 }
 `,
   },
+  
+  'git-repo': {
+    'package.json': JSON.stringify({
+      name: 'git-test-project',
+      version: '1.0.0',
+      type: 'module',
+    }, null, 2),
+    'README.md': `# Git Test Project
+
+This project is used for testing git tool functionality.
+`,
+    'src/index.ts': `// Main entry point
+export function main(): void {
+  console.log('Hello from git repo!')
+}
+`,
+  },
 }
 
 // ============================================================================
@@ -125,7 +145,7 @@ export function greet(name) {
  * }
  */
 export async function createTestProject(options: TestProjectOptions = {}): Promise<TestProject> {
-  const { template = 'empty', files = {}, agentsMd } = options
+  const { template = 'empty', files = {}, agentsMd, initGit } = options
   
   // Create unique temp directory
   const projectPath = join(tmpdir(), `openfox-e2e-${Date.now()}-${Math.random().toString(36).slice(2)}`)
@@ -148,6 +168,15 @@ export async function createTestProject(options: TestProjectOptions = {}): Promi
     const dir = join(fullPath, '..')
     await mkdir(dir, { recursive: true })
     await writeFile(fullPath, content)
+  }
+  
+  // Initialize git repository if requested or using git-repo template
+  if (initGit || template === 'git-repo') {
+    execSync('git init', { cwd: projectPath, stdio: 'ignore' })
+    execSync('git config user.email "test@example.com"', { cwd: projectPath, stdio: 'ignore' })
+    execSync('git config user.name "Test User"', { cwd: projectPath, stdio: 'ignore' })
+    execSync('git add -A', { cwd: projectPath, stdio: 'ignore' })
+    execSync('git commit -m "Initial commit"', { cwd: projectPath, stdio: 'ignore' })
   }
   
   return {
