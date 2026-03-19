@@ -6,24 +6,24 @@
  *
  * Usage:
  * ```typescript
- * import { initEventStore, getEventStore, createEvent } from './events/index.js'
+ * import { getEventStore, getSessionState, emitUserMessage } from './events/index.js'
  * import type { TurnEvent, StoredEvent, SessionSnapshot } from './events/index.js'
  *
  * // Initialize (once, at app startup)
  * initEventStore(db)
  *
- * // Append events
- * const store = getEventStore()
- * store.append(sessionId, createEvent('message.start', { messageId, role: 'user', content }))
+ * // Emit events (preferred API)
+ * const messageId = emitUserMessage(sessionId, 'Hello')
+ * emitModeChanged(sessionId, 'builder', false)
+ *
+ * // Get current session state
+ * const state = getSessionState(sessionId)
  *
  * // Subscribe to live events
- * const { iterator, unsubscribe } = store.subscribe(sessionId)
+ * const { iterator, unsubscribe } = getEventStore().subscribe(sessionId)
  * for await (const event of iterator) {
  *   // Handle event
  * }
- *
- * // Load session (snapshot + events since)
- * const { snapshot, events } = store.getEventsSinceSnapshot(sessionId)
  * ```
  */
 
@@ -37,9 +37,63 @@ export type {
   SessionSnapshot,
   SnapshotMessage,
   ToolCallWithResult,
+  ReadFileEntry,
   EventType,
   EventData,
 } from './types.js'
 
-// Helpers
+// Type helpers
 export { createEvent, isTurnEvent, isStoredEvent } from './types.js'
+
+// Folding
+export type { FoldedSessionState, ContextMessage } from './folding.js'
+export {
+  buildMessagesFromStoredEvents,
+  buildContextMessagesFromStoredEvents,
+  foldTurnEventsToSnapshotMessages,
+  foldSessionState,
+  foldCriteria,
+  foldTodos,
+  foldMode,
+  foldPhase,
+  foldIsRunning,
+  foldContextState,
+  buildSnapshot,
+  buildSnapshotFromSessionState,
+  getMessagesForWindow,
+  buildContextMessagesFromMessages,
+} from './folding.js'
+
+// Session State API
+export {
+  getSessionState,
+  getCurrentWindowMessages,
+  getContextMessages,
+  getCurrentContextWindowId,
+  getReadFilesCache,
+  isFileInCache,
+  emitSessionInitialized,
+  emitUserMessage,
+  emitAssistantMessageStart,
+  emitMessageDelta,
+  emitMessageThinking,
+  emitMessageDone,
+  emitToolPreparing,
+  emitToolCall,
+  emitToolOutput,
+  emitToolResult,
+  emitModeChanged,
+  emitPhaseChanged,
+  emitRunningChanged,
+  emitCriteriaSet,
+  emitCriterionUpdated,
+  emitTodosUpdated,
+  emitFileRead,
+  emitContextCompacted,
+  emitContextState,
+  emitChatDone,
+  emitChatError,
+  emitFormatRetry,
+  emitTurnSnapshot,
+  compactContext,
+} from './session.js'

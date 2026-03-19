@@ -192,8 +192,8 @@ describe('Auto-Compaction', () => {
       await client.send('chat.send', { content: 'First message.' })
       await client.waitForChatDone()
       
-      let session = client.getSession()!
-      const initialWindowCount = session.contextWindows.length
+      const initialContextState = client.getContextState()!
+      const initialCompactionCount = initialContextState.compactionCount
       
       // Compact
       const response = await client.send('context.compact', {})
@@ -201,9 +201,12 @@ describe('Auto-Compaction', () => {
       if (response.type === 'ack') {
         await client.waitForChatDone()
         
-        // Check for new window
-        session = client.getSession()!
-        expect(session.contextWindows.length).toBeGreaterThan(initialWindowCount)
+        // Wait for context.state to arrive after compaction
+        await client.waitFor('context.state')
+        
+        // Check for new window via compaction count
+        const contextState = client.getContextState()!
+        expect(contextState.compactionCount).toBeGreaterThan(initialCompactionCount)
       }
     })
   })

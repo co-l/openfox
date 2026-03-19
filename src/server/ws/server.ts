@@ -26,7 +26,7 @@ import {
   deleteProject,
 } from '../db/projects.js'
 import { getSetting, setSetting } from '../db/settings.js'
-import { getMessages } from '../db/sessions.js'
+// Messages are now retrieved from EventStore, not DB
 import {
   parseClientMessage,
   serializeServerMessage,
@@ -99,19 +99,14 @@ export function createWebSocketServer(
         if (event.type === 'session_updated') {
           const session = sessionManager.getSession(sessionId)
           if (session) {
-            const messages = getMessages(sessionId)
+            // Get messages from EventStore
+            const eventStore = getEventStore()
+            const events = eventStore.getEvents(sessionId)
+            const messages = events.length > 0 
+              ? buildMessagesFromStoredEvents(events) 
+              : []
             ws.send(serializeServerMessage(createSessionStateMessage(session, messages)))
           }
-        }
-        // Forward message updates to clients (e.g., isStreaming changes)
-        if (event.type === 'message_updated') {
-          ws.send(serializeServerMessage(createChatMessageUpdatedMessage(event.messageId, event.updates)))
-        }
-        
-        // Send context state updates when execution state changes
-        if (event.type === 'execution_state_changed') {
-          const contextState = sessionManager.getContextState(sessionId)
-          ws.send(serializeServerMessage(createContextStateMessage(contextState)))
         }
         
         // Broadcast running state changes in real-time
@@ -304,6 +299,10 @@ async function handleClientMessage(
       client.activeSessionId = session.id
       // New session has no events yet
       send(createSessionStateMessage(session, [], message.id))
+      
+      // Send initial context state
+      const contextState = sessionManager.getContextState(session.id)
+      send(createContextStateMessage(contextState))
       break
     }
     
@@ -352,15 +351,9 @@ async function handleClientMessage(
       const events = eventStore.getEvents(session.id)
       
       let messages: Message[]
-      if (events.length > 0) {
-        // New system: build messages from events
-        messages = buildMessagesFromStoredEvents(events)
-        logger.debug('Loaded messages from EventStore', { sessionId: session.id, eventCount: events.length, messageCount: messages.length })
-      } else {
-        // Old system: fetch from messages table
-        messages = getMessages(session.id)
-        logger.debug('Loaded messages from DB', { sessionId: session.id, messageCount: messages.length })
-      }
+      // Build messages from EventStore
+      messages = buildMessagesFromStoredEvents(events)
+      logger.debug('Loaded messages from EventStore', { sessionId: session.id, eventCount: events.length, messageCount: messages.length })
       
       send(createSessionStateMessage(session, messages, message.id))
       
@@ -422,20 +415,15 @@ async function handleClientMessage(
       const sessionId = client.activeSessionId
       const eventStore = getEventStore()
       
-      // Add user message to BOTH old system (for backward compat) AND EventStore (new system)
+      // Add user message (emits events to EventStore)
       const userMessage = sessionManager.addMessage(sessionId, {
         role: 'user',
         content: message.payload.content,
         tokenCount: Math.ceil(message.payload.content.length / 4),
       })
       
-      // Write to EventStore for persistence (used for context building)
-      eventStore.append(sessionId, createMessageStartEvent(userMessage.id, 'user', message.payload.content))
-      eventStore.append(sessionId, { type: 'message.done', data: { messageId: userMessage.id } })
-      
-      // Mark session as running
+      // Mark session as running (emits running.changed event)
       sessionManager.setRunning(sessionId, true)
-      eventStore.append(sessionId, { type: 'running.changed', data: { isRunning: true } })
       
       // Send user message directly to client (don't rely on EventStore subscription for this)
       send(createChatMessageMessage(userMessage))
@@ -489,8 +477,8 @@ async function handleClientMessage(
         // Errors are handled inside runChatTurn and appended to EventStore
       }).finally(() => {
         activeAgents.delete(sessionId)
+        // setRunning emits running.changed event
         sessionManager.setRunning(sessionId, false)
-        eventStore.append(sessionId, { type: 'running.changed', data: { isRunning: false } })
         // Send updated context state to frontend
         const contextState = sessionManager.getContextState(sessionId)
         send(createContextStateMessage(contextState))
@@ -526,7 +514,9 @@ async function handleClientMessage(
         return
       }
 
-      const messages = getMessages(session.id)
+      const continueEventStore = getEventStore()
+      const events = continueEventStore.getEvents(session.id)
+      const messages = buildMessagesFromStoredEvents(events)
       const lastAssistantMessage = [...messages].reverse().find(msg => msg.role === 'assistant')
       const fallbackMessageId = lastAssistantMessage?.id ?? [...messages].reverse().find(msg => msg.role === 'user')?.id ?? crypto.randomUUID()
 
@@ -552,8 +542,10 @@ async function handleClientMessage(
       
       const session = sessionManager.setMode(client.activeSessionId, message.payload.mode)
       send(createModeChangedMessage(message.payload.mode, false))
-      const messages = getMessages(session.id)
-      send(createSessionStateMessage(session, messages, message.id))
+      const modeEventStore = getEventStore()
+      const modeEvents = modeEventStore.getEvents(session.id)
+      const modeMessages = buildMessagesFromStoredEvents(modeEvents)
+      send(createSessionStateMessage(session, modeMessages, message.id))
       break
     }
     
@@ -815,8 +807,10 @@ async function handleClientMessage(
           
           // Send updated session state so client sees all messages
           const updatedSession = sessionManager.requireSession(sessionId)
-          const messages = getMessages(sessionId)
-          send(createSessionStateMessage(updatedSession, messages))
+          const compactEventStore = getEventStore()
+          const compactEvents = compactEventStore.getEvents(sessionId)
+          const compactMessages = buildMessagesFromStoredEvents(compactEvents)
+          send(createSessionStateMessage(updatedSession, compactMessages))
         } catch (error) {
           logger.error('Compaction failed', { error, sessionId })
           send(createChatErrorMessage(
@@ -866,14 +860,13 @@ async function handleClientMessage(
       // Check if session is blocked - user intervention resets it
       if (session.phase === 'blocked') {
         logger.info('User launched runner - resetting blocked state', { sessionId })
+        // setPhase emits phase.changed event
         sessionManager.setPhase(sessionId, 'build')
         sessionManager.resetAllCriteriaAttempts(sessionId)
-        eventStore.append(sessionId, { type: 'phase.changed', data: { phase: 'build' } })
       }
       
-      // Mark session as running
+      // Mark session as running (emits running.changed event)
       sessionManager.setRunning(sessionId, true)
-      eventStore.append(sessionId, { type: 'running.changed', data: { isRunning: true } })
       send(createSessionRunningMessage(true))
       
       // Create AbortController for this run (abort existing if any - defense in depth)
@@ -926,8 +919,8 @@ async function handleClientMessage(
         // Error events are handled inside runOrchestrator and appended to EventStore
       }).finally(() => {
         activeAgents.delete(sessionId)
+        // setRunning emits running.changed event
         sessionManager.setRunning(sessionId, false)
-        eventStore.append(sessionId, { type: 'running.changed', data: { isRunning: false } })
       })
       
       break

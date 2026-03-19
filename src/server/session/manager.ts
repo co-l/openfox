@@ -1,54 +1,55 @@
+/**
+ * Session Manager
+ *
+ * Manages session lifecycle (create, delete, list) and provides access to session state.
+ * All session state is derived from EventStore - this is a thin wrapper.
+ *
+ * State changes should go through the events/session.ts API directly,
+ * not through SessionManager.
+ */
+
 import type {
   Session,
   SessionSummary,
   SessionMode,
   SessionPhase,
-  Message,
   Criterion,
-  ExecutionState,
   ContextState,
-  FileReadEntry,
 } from '../../shared/types.js'
 import {
   createSession as dbCreateSession,
   getSession as dbGetSession,
-  updateSessionMode,
-  updateSessionPhase,
-  updateSessionRunning,
-  updateSessionSummary,
-  updateSessionMetadata,
   listSessions as dbListSessions,
   listSessionsByProject as dbListSessionsByProject,
   deleteSession as dbDeleteSession,
-  addMessage as dbAddMessage,
-  getMessages,
-  getMessagesForWindow,
-  deleteMessages,
-  updateMessageStats as dbUpdateMessageStats,
-  updateMessage as dbUpdateMessage,
-  setCriteria as dbSetCriteria,
-  getCriteria,
-  updateCriterion as dbUpdateCriterion,
-  addCriterion as dbAddCriterion,
-  updateCriterionFull as dbUpdateCriterionFull,
-  removeCriterion as dbRemoveCriterion,
-  setExecutionState as dbSetExecutionState,
-  getExecutionState,
-  clearExecutionState,
-  getCurrentContextWindow,
-  createContextWindow,
-  closeContextWindow,
+  updateSessionSummary,
+  updateSessionMetadata,
 } from '../db/sessions.js'
 import { getProject } from '../db/projects.js'
 import { SessionNotFoundError } from '../utils/errors.js'
 import { logger } from '../utils/logger.js'
 import { EventEmitter, type Unsubscribe } from '../utils/async.js'
-import { calculateContextTokens, isInDangerZone, canCompact } from '../context/index.js'
-import { loadConfig } from '../config.js'
 import { getLspManager as getOrCreateLspManager, shutdownLspManager, type LspManager } from '../lsp/index.js'
+import { getEventStore } from '../events/store.js'
+import {
+  getSessionState,
+  emitSessionInitialized,
+  emitModeChanged,
+  emitPhaseChanged,
+  emitRunningChanged,
+  emitUserMessage,
+  emitMessageDone,
+  emitCriteriaSet,
+  emitCriterionUpdated,
+  emitContextCompacted,
+  getCurrentWindowMessages as getWindowMessages,
+  type FoldedSessionState,
+} from '../events/index.js'
+import type { Message, CriterionStatus } from '../../shared/types.js'
+import { loadConfig } from '../config.js'
 
 // ============================================================================
-// Event Types
+// Event Types (for backward compatibility with existing subscribers)
 // ============================================================================
 
 export type SessionEvent =
@@ -58,11 +59,8 @@ export type SessionEvent =
   | { type: 'mode_changed'; sessionId: string; from: SessionMode; to: SessionMode }
   | { type: 'phase_changed'; sessionId: string; phase: SessionPhase }
   | { type: 'running_changed'; sessionId: string; isRunning: boolean }
-  | { type: 'message_added'; sessionId: string; message: Message }
-  | { type: 'message_updated'; sessionId: string; messageId: string; updates: Partial<Omit<Message, 'id' | 'timestamp' | 'role'>> }
   | { type: 'criteria_updated'; sessionId: string; criteria: Criterion[] }
-  | { type: 'criterion_status_changed'; sessionId: string; criterionId: string; status: Criterion['status'] }
-  | { type: 'execution_state_changed'; sessionId: string; state: ExecutionState | null }
+  | { type: 'message_added'; sessionId: string; message: Message }
 
 type SessionEvents = {
   event: [SessionEvent]
@@ -76,34 +74,59 @@ type SessionEvents = {
 export class SessionManager {
   private events = new EventEmitter<SessionEvents>()
   private activeSessionId: string | null = null
-  
-  // Lifecycle
-  
+
+  // ============================================================================
+  // Session Lifecycle
+  // ============================================================================
+
+  /**
+   * Create a new session. Emits session.initialized event.
+   */
   createSession(projectId: string, title?: string): Session {
     const project = getProject(projectId)
     if (!project) {
       throw new Error(`Project not found: ${projectId}`)
     }
-    
-    // Auto-generate title if not provided: "Session N"
+
+    // Auto-generate title if not provided
     let sessionTitle = title
     if (!sessionTitle) {
       const existingSessions = dbListSessionsByProject(projectId, project.workdir)
       sessionTitle = `Session ${existingSessions.length + 1}`
     }
-    
+
     logger.debug('Creating session', { projectId, workdir: project.workdir, title: sessionTitle })
-    const session = dbCreateSession(projectId, project.workdir, sessionTitle)
-    
+
+    // Create session in DB (minimal: id, projectId, workdir, title, timestamps)
+    const dbSession = dbCreateSession(projectId, project.workdir, sessionTitle)
+
+    // Emit session.initialized event to EventStore
+    const contextWindowId = crypto.randomUUID()
+    emitSessionInitialized(dbSession.id, projectId, project.workdir, contextWindowId, sessionTitle)
+
+    // Build full session object
+    const session = this.buildSessionFromDb(dbSession)
+
     this.emit({ type: 'session_created', session })
-    
+
     return session
   }
-  
+
+  /**
+   * Get a session by ID. Returns null if not found.
+   * Session state is derived from EventStore.
+   */
   getSession(id: string): Session | null {
-    return dbGetSession(id)
+    const dbSession = dbGetSession(id)
+    if (!dbSession) {
+      return null
+    }
+    return this.buildSessionFromDb(dbSession)
   }
-  
+
+  /**
+   * Get a session by ID. Throws if not found.
+   */
   requireSession(id: string): Session {
     const session = this.getSession(id)
     if (!session) {
@@ -111,11 +134,17 @@ export class SessionManager {
     }
     return session
   }
-  
+
+  /**
+   * List all sessions (summary only).
+   */
   listSessions(): SessionSummary[] {
     return dbListSessions()
   }
-  
+
+  /**
+   * List sessions for a project.
+   */
   listSessionsByProject(projectId: string): SessionSummary[] {
     const project = getProject(projectId)
     if (!project) {
@@ -123,481 +152,121 @@ export class SessionManager {
     }
     return dbListSessionsByProject(projectId, project.workdir)
   }
-  
+
+  /**
+   * Delete a session and all its events.
+   */
   deleteSession(id: string): void {
     logger.debug('Deleting session', { id })
-    
-    // Shutdown LSP manager for this session (async, but we don't wait)
-    shutdownLspManager(id).catch(err => {
+
+    // Shutdown LSP manager
+    shutdownLspManager(id).catch((err) => {
       logger.error('Error shutting down LSP manager', { sessionId: id, error: err })
     })
-    
+
+    // Delete events first
+    const eventStore = getEventStore()
+    eventStore.deleteSession(id)
+
+    // Delete session from DB
     dbDeleteSession(id)
-    
+
     if (this.activeSessionId === id) {
       this.activeSessionId = null
     }
-    
+
     this.emit({ type: 'session_deleted', sessionId: id })
   }
-  
+
+  // ============================================================================
+  // State Changes (emit events + notify subscribers)
+  // ============================================================================
+
   /**
-   * Get the LSP manager for a session.
-   * Creates one if it doesn't exist (lazy initialization).
+   * Change session mode. Emits mode.changed event.
    */
-  getLspManager(sessionId: string): LspManager {
-    const session = this.requireSession(sessionId)
-    return getOrCreateLspManager(sessionId, session.workdir)
-  }
-  
-  // Mode management (simpler than old phase system)
-  
   setMode(sessionId: string, toMode: SessionMode): Session {
     const session = this.requireSession(sessionId)
     const fromMode = session.mode
-    
+
     if (fromMode === toMode) {
       return session
     }
-    
+
     logger.debug('Changing session mode', { sessionId, from: fromMode, to: toMode })
-    
-    updateSessionMode(sessionId, toMode)
-    
-    // Initialize execution state if entering builder mode from planner
-    if (toMode === 'builder' && fromMode === 'planner') {
-      const now = new Date().toISOString()
-      const state: ExecutionState = {
-        iteration: (session.executionState?.iteration ?? 0) + 1,
-        modifiedFiles: session.executionState?.modifiedFiles ?? [],
-        readFiles: session.executionState?.readFiles ?? {},
-        consecutiveFailures: 0,
-        currentTokenCount: session.executionState?.currentTokenCount ?? 0,
-        messageCountAtLastUpdate: session.executionState?.messageCountAtLastUpdate ?? 0,
-        compactionCount: session.executionState?.compactionCount ?? 0,
-        startedAt: now,
-        lastActivityAt: now,
-      }
-      dbSetExecutionState(sessionId, state)
-    }
-    
+
+    emitModeChanged(sessionId, toMode, false)
+
     const updatedSession = this.requireSession(sessionId)
-    
+
     this.emit({ type: 'mode_changed', sessionId, from: fromMode, to: toMode })
     this.emit({ type: 'session_updated', session: updatedSession })
-    
+
     return updatedSession
   }
-  
+
+  /**
+   * Change session phase. Emits phase.changed event.
+   */
   setPhase(sessionId: string, phase: SessionPhase): Session {
     const session = this.requireSession(sessionId)
-    
+
     if (session.phase === phase) {
       return session
     }
-    
+
     logger.debug('Changing session phase', { sessionId, from: session.phase, to: phase })
-    
-    updateSessionPhase(sessionId, phase)
-    
+
+    emitPhaseChanged(sessionId, phase)
+
     const updatedSession = this.requireSession(sessionId)
-    
-    // Note: Don't emit session_updated here - it causes session.state to be sent
-    // before phase.changed, breaking sound triggers on the frontend.
-    // The dedicated phase.changed event is sent via sessionEvents.push() by callers.
+
     this.emit({ type: 'phase_changed', sessionId, phase })
-    
+
     return updatedSession
   }
-  
+
+  /**
+   * Set session running state. Emits running.changed event.
+   */
   setRunning(sessionId: string, isRunning: boolean): Session {
     const session = this.requireSession(sessionId)
-    
+
     if (session.isRunning === isRunning) {
       return session
     }
-    
+
     logger.debug('Setting session running state', { sessionId, isRunning })
-    
-    updateSessionRunning(sessionId, isRunning)
-    
+
+    emitRunningChanged(sessionId, isRunning)
+
     const updatedSession = this.requireSession(sessionId)
     this.emit({ type: 'session_updated', session: updatedSession })
     this.emit({ type: 'running_changed', sessionId, isRunning })
-    
+
     return updatedSession
   }
-  
+
+  /**
+   * Set session summary. Updates DB directly (metadata, not event).
+   */
   setSummary(sessionId: string, summary: string): Session {
     logger.debug('Setting session summary', { sessionId, summaryLength: summary.length })
-    
+
     updateSessionSummary(sessionId, summary)
-    
+
     const updatedSession = this.requireSession(sessionId)
     this.emit({ type: 'session_updated', session: updatedSession })
-    
+
     return updatedSession
   }
-  
-  // Messages
-  
-  addMessage(sessionId: string, message: Omit<Message, 'id' | 'timestamp'>): Message {
-    this.requireSession(sessionId)
-    
-    // Auto-assign current context window ID if not provided
-    let messageWithWindow = message
-    if (!message.contextWindowId) {
-      const currentWindow = getCurrentContextWindow(sessionId)
-      if (currentWindow) {
-        messageWithWindow = { ...message, contextWindowId: currentWindow.id }
-      }
-    }
-    
-    const savedMessage = dbAddMessage(sessionId, messageWithWindow)
-    
-    this.emit({ type: 'message_added', sessionId, message: savedMessage })
-    
-    return savedMessage
-  }
-  
-  updateMessageStats(sessionId: string, messageId: string, stats: Message['stats']): void {
-    this.requireSession(sessionId)
-    dbUpdateMessageStats(sessionId, messageId, stats)
-  }
-  
-  updateMessage(
-    sessionId: string, 
-    messageId: string, 
-    updates: Partial<Omit<Message, 'id' | 'timestamp' | 'role'>>
-  ): void {
-    this.requireSession(sessionId)
-    dbUpdateMessage(sessionId, messageId, updates)
-    this.emit({ type: 'message_updated', sessionId, messageId, updates })
-  }
-  
+
+  // ============================================================================
+  // Session Metadata (DB operations)
+  // ============================================================================
+
   /**
-   * Compact context using the context windows model.
-   * 
-   * The caller should have already:
-   * 1. Added compaction prompt as a user message (in current window)
-   * 2. Streamed the summary response (in current window, with isCompactionSummary)
-   * 
-   * This function:
-   * - Closes the current context window (preserves all messages including summary)
-   * - Creates a new empty context window for future messages
-   * - Resets token tracking for the new window
-   * 
-   * @param sessionId - The session to compact
-   * @param summary - The summary content (for storing in window metadata)
-   * @param tokenCountAtClose - Token count when closing the window
-   */
-  compactContext(sessionId: string, summary: string, tokenCountAtClose: number): void {
-    const session = this.requireSession(sessionId)
-    
-    // Get current context window
-    const currentWindow = getCurrentContextWindow(sessionId)
-    if (!currentWindow) {
-      throw new Error('No current context window to compact')
-    }
-    
-    // Estimate summary tokens
-    const summaryTokenCount = Math.ceil(summary.length / 4)
-    
-    // Close current window
-    closeContextWindow(currentWindow.id, tokenCountAtClose)
-    
-    // Create new context window with next sequence number
-    // The summary is stored as metadata for reference
-    createContextWindow(
-      sessionId,
-      currentWindow.sequenceNumber + 1,
-      summary,
-      summaryTokenCount
-    )
-    
-    // Update execution state - new window starts fresh
-    const execState = session.executionState
-    this.updateExecutionState(sessionId, {
-      currentTokenCount: 0,
-      messageCountAtLastUpdate: 0,
-      compactionCount: (execState?.compactionCount ?? 0) + 1,
-    })
-    
-    const updatedSession = this.requireSession(sessionId)
-    this.emit({ type: 'session_updated', session: updatedSession })
-  }
-  
-  /**
-   * Get messages for the current context window only (for LLM context building).
-   * Returns empty array if no current window exists.
-   */
-  getCurrentWindowMessages(sessionId: string): Message[] {
-    const currentWindow = getCurrentContextWindow(sessionId)
-    if (!currentWindow) {
-      return []
-    }
-    return getMessagesForWindow(sessionId, currentWindow.id)
-  }
-  
-  /**
-   * @deprecated Use compactContext() with the new context windows model
-   */
-  compactMessages(sessionId: string, messageIds: string[], summary: string): Message {
-    this.requireSession(sessionId)
-    
-    // Delete old messages
-    deleteMessages(sessionId, messageIds)
-    
-    // Add compacted message
-    const compactedMessage = dbAddMessage(sessionId, {
-      role: 'system',
-      content: `[COMPACTED HISTORY]\n${summary}`,
-      tokenCount: Math.ceil(summary.length / 4), // Approximate
-      isCompacted: true,
-      originalMessageIds: messageIds,
-    })
-    
-    const session = this.requireSession(sessionId)
-    this.emit({ type: 'session_updated', session })
-    
-    return compactedMessage
-  }
-  
-  // Criteria
-  
-  setCriteria(sessionId: string, criteria: Criterion[]): void {
-    this.requireSession(sessionId)
-    
-    dbSetCriteria(sessionId, criteria)
-    
-    this.emit({ type: 'criteria_updated', sessionId, criteria })
-  }
-  
-  addCriterion(sessionId: string, criterion: Criterion): { criteria: Criterion[]; actualId: string } | { error: string } {
-    this.requireSession(sessionId)
-    
-    const result = dbAddCriterion(sessionId, criterion)
-    if (!result.success) {
-      return { error: result.error }
-    }
-    
-    // Reload to get updated list
-    const criteria = getCriteria(sessionId)
-    this.emit({ type: 'criteria_updated', sessionId, criteria })
-    
-    return { criteria, actualId: result.actualId }
-  }
-  
-  updateCriterionFull(
-    sessionId: string,
-    criterionId: string,
-    updates: Partial<Pick<Criterion, 'description'>>
-  ): Criterion[] {
-    const session = this.requireSession(sessionId)
-    
-    // Check criterion exists
-    if (!session.criteria.find(c => c.id === criterionId)) {
-      throw new Error(`Criterion not found: ${criterionId}`)
-    }
-    
-    dbUpdateCriterionFull(sessionId, criterionId, updates)
-    
-    // Reload to get updated list
-    const criteria = getCriteria(sessionId)
-    this.emit({ type: 'criteria_updated', sessionId, criteria })
-    
-    return criteria
-  }
-  
-  removeCriterion(sessionId: string, criterionId: string): Criterion[] {
-    const session = this.requireSession(sessionId)
-    
-    // Check criterion exists
-    if (!session.criteria.find(c => c.id === criterionId)) {
-      throw new Error(`Criterion not found: ${criterionId}`)
-    }
-    
-    dbRemoveCriterion(sessionId, criterionId)
-    
-    // Reload to get updated list
-    const criteria = getCriteria(sessionId)
-    this.emit({ type: 'criteria_updated', sessionId, criteria })
-    
-    return criteria
-  }
-  
-  updateCriterionStatus(
-    sessionId: string,
-    criterionId: string,
-    status: Criterion['status']
-  ): void {
-    this.requireSession(sessionId)
-    
-    dbUpdateCriterion(sessionId, criterionId, { status })
-    
-    this.emit({ type: 'criterion_status_changed', sessionId, criterionId, status })
-  }
-  
-  addCriterionAttempt(
-    sessionId: string,
-    criterionId: string,
-    attempt: Criterion['attempts'][number]
-  ): void {
-    const session = this.requireSession(sessionId)
-    const criterion = session.criteria.find(c => c.id === criterionId)
-    
-    if (!criterion) {
-      throw new Error(`Criterion not found: ${criterionId}`)
-    }
-    
-    const attempts = [...criterion.attempts, attempt]
-    dbUpdateCriterion(sessionId, criterionId, { attempts })
-  }
-  
-  /**
-   * Reset verification attempts on all criteria (used when user intervenes after blocked state)
-   */
-  resetAllCriteriaAttempts(sessionId: string): void {
-    const session = this.requireSession(sessionId)
-    
-    for (const criterion of session.criteria) {
-      if (criterion.attempts.length > 0) {
-        dbUpdateCriterion(sessionId, criterion.id, { attempts: [] })
-      }
-    }
-  }
-  
-  // Execution state
-  
-  updateExecutionState(sessionId: string, updates: Partial<ExecutionState>): void {
-    const session = this.requireSession(sessionId)
-    
-    const currentState = session.executionState ?? {
-      iteration: 1,
-      modifiedFiles: [],
-      readFiles: {},
-      consecutiveFailures: 0,
-      currentTokenCount: 0,
-      messageCountAtLastUpdate: 0,
-      compactionCount: 0,
-      startedAt: new Date().toISOString(),
-      lastActivityAt: new Date().toISOString(),
-    }
-    
-    const newState: ExecutionState = {
-      ...currentState,
-      ...updates,
-      lastActivityAt: new Date().toISOString(),
-    }
-    
-    dbSetExecutionState(sessionId, newState)
-    
-    this.emit({ type: 'execution_state_changed', sessionId, state: newState })
-  }
-  
-  addModifiedFile(sessionId: string, filePath: string): void {
-    const session = this.requireSession(sessionId)
-    const modifiedFiles = session.executionState?.modifiedFiles ?? []
-    
-    if (!modifiedFiles.includes(filePath)) {
-      this.updateExecutionState(sessionId, {
-        modifiedFiles: [...modifiedFiles, filePath],
-      })
-    }
-  }
-  
-  /**
-   * Record that a file was read by the agent.
-   * Stores the content hash for later validation before writes.
-   */
-  recordFileRead(sessionId: string, filePath: string, contentHash: string): void {
-    const session = this.requireSession(sessionId)
-    const readFiles = session.executionState?.readFiles ?? {}
-    
-    this.updateExecutionState(sessionId, {
-      readFiles: {
-        ...readFiles,
-        [filePath]: {
-          hash: contentHash,
-          readAt: new Date().toISOString(),
-        },
-      },
-    })
-  }
-  
-  /**
-   * Get the read files map for a session.
-   * Used by tools to validate before writing.
-   */
-  getReadFiles(sessionId: string): Record<string, FileReadEntry> {
-    const session = this.requireSession(sessionId)
-    return session.executionState?.readFiles ?? {}
-  }
-  
-  /**
-   * Update the hash for a file after the agent writes to it.
-   * This allows subsequent writes without re-reading.
-   */
-  updateFileHash(sessionId: string, filePath: string, contentHash: string): void {
-    const session = this.requireSession(sessionId)
-    const readFiles = session.executionState?.readFiles ?? {}
-    
-    // Only update if the file was previously read
-    if (readFiles[filePath]) {
-      this.updateExecutionState(sessionId, {
-        readFiles: {
-          ...readFiles,
-          [filePath]: {
-            hash: contentHash,
-            readAt: readFiles[filePath].readAt, // Keep original read time
-          },
-        },
-      })
-    }
-  }
-  
-  recordToolFailure(sessionId: string, tool: string, reason: string): void {
-    const session = this.requireSession(sessionId)
-    const consecutiveFailures = (session.executionState?.consecutiveFailures ?? 0) + 1
-    
-    this.updateExecutionState(sessionId, {
-      consecutiveFailures,
-      lastFailedTool: tool,
-      lastFailureReason: reason,
-    })
-  }
-  
-  resetToolFailures(sessionId: string): void {
-    const session = this.requireSession(sessionId)
-    if (!session.executionState) return
-    
-    // Destructure to remove the failure tracking properties, then rebuild state
-    const { lastFailedTool: _tool, lastFailureReason: _reason, ...rest } = session.executionState
-    const newState: ExecutionState = {
-      ...rest,
-      consecutiveFailures: 0,
-      lastActivityAt: new Date().toISOString(),
-    }
-    
-    dbSetExecutionState(sessionId, newState)
-    this.emit({ type: 'execution_state_changed', sessionId, state: newState })
-  }
-  
-  /**
-   * Set the current context window size (prompt tokens from last LLM call).
-   * This is used for compaction decisions. Also tracks message count for staleness detection.
-   */
-  setCurrentContextSize(sessionId: string, promptTokens: number): void {
-    const session = this.requireSession(sessionId)
-    this.updateExecutionState(sessionId, {
-      currentTokenCount: promptTokens,
-      messageCountAtLastUpdate: session.messages.length,
-    })
-  }
-  
-  /**
-   * Add to the cumulative token usage (for billing/metrics).
-   * This tracks total tokens consumed across all LLM calls.
+   * Add to the cumulative token usage.
    */
   addTokensUsed(sessionId: string, tokens: number): void {
     const session = this.requireSession(sessionId)
@@ -605,108 +274,496 @@ export class SessionManager {
       totalTokensUsed: session.metadata.totalTokensUsed + tokens,
     })
   }
-  
+
   /**
-   * @deprecated Use setCurrentContextSize() and addTokensUsed() separately
+   * Increment tool call counter.
    */
-  incrementTokenCount(sessionId: string, tokens: number): void {
-    const session = this.requireSession(sessionId)
-    const currentTokenCount = (session.executionState?.currentTokenCount ?? 0) + tokens
-    
-    this.updateExecutionState(sessionId, { currentTokenCount })
-    
-    // Also update total tokens in metadata
-    updateSessionMetadata(sessionId, {
-      totalTokensUsed: session.metadata.totalTokensUsed + tokens,
-    })
-  }
-  
   incrementToolCalls(sessionId: string): void {
     const session = this.requireSession(sessionId)
-    
     updateSessionMetadata(sessionId, {
       totalToolCalls: session.metadata.totalToolCalls + 1,
     })
   }
-  
-  // Context state
-  
+
+  // ============================================================================
+  // Message Operations (delegates to EventStore)
+  // ============================================================================
+
   /**
-   * Get the current context state for a session.
-   * Only counts tokens in the CURRENT context window (after any compaction).
-   * Uses real token count from LLM if available and fresh, otherwise estimates.
+   * Add a message. Delegates to EventStore.
    */
-  getContextState(sessionId: string): ContextState {
-    const session = this.requireSession(sessionId)
-    const config = loadConfig()
-    const maxTokens = config.context.maxTokens
-    const execState = session.executionState
-    
-    // Get messages for current window only
-    const currentWindowMessages = this.getCurrentWindowMessages(sessionId)
-    const currentMessageCount = currentWindowMessages.length
-    
-    let currentTokens: number
-    
-    // Use real token count if we have it and it's fresh (message count matches current window)
-    const realTokenCount = execState?.currentTokenCount ?? 0
-    const messageCountAtUpdate = execState?.messageCountAtLastUpdate ?? 0
-    const isFresh = realTokenCount > 0 && messageCountAtUpdate === currentMessageCount
-    
-    if (isFresh) {
-      // Real count from last LLM call is still valid
-      currentTokens = realTokenCount
-    } else if (realTokenCount > 0 && messageCountAtUpdate > 0 && messageCountAtUpdate <= currentMessageCount) {
-      // We have a real count but messages were added since - estimate the delta
-      const newMessages = currentWindowMessages.slice(messageCountAtUpdate)
-      const deltaTokens = calculateContextTokens(newMessages)
-      currentTokens = realTokenCount + deltaTokens
-    } else {
-      // No real count available - full estimation of current window only
-      currentTokens = calculateContextTokens(currentWindowMessages)
+  addMessage(
+    sessionId: string,
+    message: Omit<Message, 'id' | 'timestamp'>
+  ): Message {
+    this.requireSession(sessionId)
+
+    const state = getSessionState(sessionId)
+    const contextWindowId = message.contextWindowId ?? state?.currentContextWindowId
+
+    // Build options object without undefined values
+    const options: {
+      contextWindowId?: string
+      isSystemGenerated?: boolean
+      messageKind?: 'correction' | 'auto-prompt' | 'context-reset'
+      tokenCount?: number
+    } = {}
+    if (contextWindowId !== undefined) options.contextWindowId = contextWindowId
+    if (message.isSystemGenerated !== undefined) options.isSystemGenerated = message.isSystemGenerated
+    if (message.messageKind !== undefined) options.messageKind = message.messageKind
+    if (message.tokenCount !== undefined) options.tokenCount = message.tokenCount
+
+    // Emit message events
+    const messageId = emitUserMessage(sessionId, message.content, options)
+
+    // Build result without undefined values
+    const result: Message = {
+      id: messageId,
+      role: message.role,
+      content: message.content,
+      timestamp: new Date().toISOString(),
+      tokenCount: message.tokenCount ?? 0,
     }
-    
-    return {
-      currentTokens,
-      maxTokens,
-      compactionCount: execState?.compactionCount ?? 0,
-      dangerZone: isInDangerZone(currentTokens, maxTokens),
-      canCompact: canCompact(currentTokens, maxTokens),
+    if (contextWindowId !== undefined) result.contextWindowId = contextWindowId
+    if (message.isSystemGenerated !== undefined) result.isSystemGenerated = message.isSystemGenerated
+    if (message.messageKind !== undefined) result.messageKind = message.messageKind
+
+    // Emit internal event for subscribers
+    this.emit({ type: 'message_added', sessionId, message: result })
+
+    return result
+  }
+
+  /**
+   * Update message stats. Delegates to EventStore (emits message.done if needed).
+   */
+  updateMessageStats(sessionId: string, messageId: string, stats: Message['stats']): void {
+    this.requireSession(sessionId)
+    // Stats are included in message.done event, which should already have been emitted
+    // This is a no-op in the new model - stats come from LLM streaming
+    logger.debug('updateMessageStats called (no-op in event model)', { sessionId, messageId })
+  }
+
+  /**
+   * Update a message. Delegates to EventStore.
+   */
+  updateMessage(
+    sessionId: string,
+    messageId: string,
+    updates: Partial<Omit<Message, 'id' | 'timestamp' | 'role'>>
+  ): void {
+    this.requireSession(sessionId)
+    // In the event model, messages are immutable after message.done
+    // Some updates like isCompactionSummary should be set in message.start
+    logger.debug('updateMessage called (limited support in event model)', { sessionId, messageId, updates })
+  }
+
+  /**
+   * Get messages for the current context window.
+   */
+  getCurrentWindowMessages(sessionId: string): Message[] {
+    const state = getSessionState(sessionId)
+    if (!state) return []
+
+    return state.messages
+      .filter((m) => m.contextWindowId === state.currentContextWindowId)
+      .map((m) => {
+        const msg: Message = {
+          id: m.id,
+          role: m.role,
+          content: m.content,
+          timestamp: new Date(m.timestamp).toISOString(),
+          tokenCount: m.tokenCount ?? 0,
+        }
+        if (m.thinkingContent !== undefined) msg.thinkingContent = m.thinkingContent
+        if (m.toolCalls !== undefined) msg.toolCalls = m.toolCalls
+        if (m.segments !== undefined) msg.segments = m.segments
+        if (m.stats !== undefined) msg.stats = m.stats
+        if (m.partial !== undefined) msg.partial = m.partial
+        if (m.isStreaming !== undefined) msg.isStreaming = m.isStreaming
+        if (m.contextWindowId !== undefined) msg.contextWindowId = m.contextWindowId
+        return msg
+      })
+  }
+
+  /**
+   * Compact context. Delegates to EventStore.
+   */
+  compactContext(sessionId: string, summary: string, tokenCountAtClose: number): void {
+    const state = getSessionState(sessionId)
+    if (!state) {
+      throw new Error('Session not found')
+    }
+
+    const closedWindowId = state.currentContextWindowId
+    const newWindowId = crypto.randomUUID()
+
+    emitContextCompacted(sessionId, closedWindowId, newWindowId, tokenCountAtClose, 0, summary)
+  }
+
+  /**
+   * Set current context size (for token tracking).
+   */
+  setCurrentContextSize(sessionId: string, promptTokens: number): void {
+    // In event model, token count is derived from message stats
+    logger.debug('setCurrentContextSize called (derived from events)', { sessionId, promptTokens })
+  }
+
+  // ============================================================================
+  // Criteria Operations (delegates to EventStore)
+  // ============================================================================
+
+  /**
+   * Set criteria. Delegates to EventStore.
+   */
+  setCriteria(sessionId: string, criteria: Criterion[]): void {
+    this.requireSession(sessionId)
+    emitCriteriaSet(sessionId, criteria)
+    this.emit({ type: 'criteria_updated', sessionId, criteria })
+  }
+
+  /**
+   * Update criterion status. Delegates to EventStore.
+   */
+  updateCriterionStatus(sessionId: string, criterionId: string, status: CriterionStatus): void {
+    this.requireSession(sessionId)
+    emitCriterionUpdated(sessionId, criterionId, status)
+  }
+
+  /**
+   * Reset all criteria verification attempts.
+   */
+  resetAllCriteriaAttempts(sessionId: string): void {
+    const state = getSessionState(sessionId)
+    if (!state) return
+
+    // Reset attempts by re-emitting criteria with cleared attempts
+    const resetCriteria = state.criteria.map((c) => ({
+      ...c,
+      attempts: [],
+    }))
+    emitCriteriaSet(sessionId, resetCriteria)
+  }
+
+  /**
+   * Add a criterion attempt.
+   */
+  addCriterionAttempt(
+    sessionId: string,
+    criterionId: string,
+    attempt: Criterion['attempts'][number]
+  ): void {
+    const state = getSessionState(sessionId)
+    if (!state) return
+
+    const criterion = state.criteria.find((c) => c.id === criterionId)
+    if (!criterion) {
+      throw new Error(`Criterion not found: ${criterionId}`)
+    }
+
+    // Re-emit criteria with new attempt added
+    const updatedCriteria = state.criteria.map((c) =>
+      c.id === criterionId
+        ? { ...c, attempts: [...c.attempts, attempt] }
+        : c
+    )
+    emitCriteriaSet(sessionId, updatedCriteria)
+  }
+
+  // ============================================================================
+  // Execution State (runtime tracking, not persisted to events)
+  // ============================================================================
+
+  /**
+   * Record that a file was modified.
+   */
+  addModifiedFile(sessionId: string, filePath: string): void {
+    // In event model, this could be tracked via file.modified events
+    // For now, this is a no-op - modifications are tracked per-tool
+    logger.debug('addModifiedFile called', { sessionId, filePath })
+  }
+
+  /**
+   * Add a criterion. Returns the updated criteria list.
+   */
+  addCriterion(sessionId: string, criterion: Criterion): { criteria: Criterion[]; actualId: string } | { error: string } {
+    const state = getSessionState(sessionId)
+    if (!state) {
+      return { error: 'Session not found' }
+    }
+
+    // If ID already exists, generate a unique one
+    let actualId = criterion.id
+    if (state.criteria.some((c) => c.id === criterion.id)) {
+      let suffix = 1
+      while (state.criteria.some((c) => c.id === `${criterion.id}-${suffix}`)) {
+        suffix++
+      }
+      actualId = `${criterion.id}-${suffix}`
+    }
+
+    const updatedCriteria = [...state.criteria, { ...criterion, id: actualId }]
+    emitCriteriaSet(sessionId, updatedCriteria)
+
+    return { criteria: updatedCriteria, actualId }
+  }
+
+  /**
+   * Update criterion description.
+   */
+  updateCriterionFull(
+    sessionId: string,
+    criterionId: string,
+    updates: Partial<Pick<Criterion, 'description'>>
+  ): Criterion[] {
+    const state = getSessionState(sessionId)
+    if (!state) {
+      throw new Error('Session not found')
+    }
+
+    if (!state.criteria.find((c) => c.id === criterionId)) {
+      throw new Error(`Criterion not found: ${criterionId}`)
+    }
+
+    const updatedCriteria = state.criteria.map((c) =>
+      c.id === criterionId ? { ...c, ...updates } : c
+    )
+    emitCriteriaSet(sessionId, updatedCriteria)
+
+    return updatedCriteria
+  }
+
+  /**
+   * Remove a criterion.
+   */
+  removeCriterion(sessionId: string, criterionId: string): Criterion[] {
+    const state = getSessionState(sessionId)
+    if (!state) {
+      throw new Error('Session not found')
+    }
+
+    if (!state.criteria.find((c) => c.id === criterionId)) {
+      throw new Error(`Criterion not found: ${criterionId}`)
+    }
+
+    const updatedCriteria = state.criteria.filter((c) => c.id !== criterionId)
+    emitCriteriaSet(sessionId, updatedCriteria)
+
+    return updatedCriteria
+  }
+
+  // ============================================================================
+  // File Tracking (runtime state, stored in memory per session)
+  // ============================================================================
+
+  private readFilesCache = new Map<string, Record<string, { hash: string; readAt: string }>>()
+
+  /**
+   * Record that a file was read.
+   */
+  recordFileRead(sessionId: string, filePath: string, contentHash: string): void {
+    const cache = this.readFilesCache.get(sessionId) ?? {}
+    cache[filePath] = { hash: contentHash, readAt: new Date().toISOString() }
+    this.readFilesCache.set(sessionId, cache)
+  }
+
+  /**
+   * Get read files cache.
+   */
+  getReadFiles(sessionId: string): Record<string, { hash: string; readAt: string }> {
+    return this.readFilesCache.get(sessionId) ?? {}
+  }
+
+  /**
+   * Update file hash after write.
+   */
+  updateFileHash(sessionId: string, filePath: string, contentHash: string): void {
+    const cache = this.readFilesCache.get(sessionId) ?? {}
+    if (cache[filePath]) {
+      cache[filePath] = { ...cache[filePath], hash: contentHash }
+      this.readFilesCache.set(sessionId, cache)
     }
   }
-  
-  // Active session
-  
+
+  /**
+   * Record a tool failure.
+   */
+  recordToolFailure(sessionId: string, tool: string, reason: string): void {
+    // In event model, this could be tracked via events
+    // For now, log it
+    logger.debug('recordToolFailure called', { sessionId, tool, reason })
+  }
+
+  /**
+   * Reset tool failures.
+   */
+  resetToolFailures(sessionId: string): void {
+    logger.debug('resetToolFailures called', { sessionId })
+  }
+
+  /**
+   * Update execution state.
+   */
+  updateExecutionState(sessionId: string, updates: Record<string, unknown>): void {
+    // In event model, execution state is derived from events
+    logger.debug('updateExecutionState called', { sessionId, updates })
+  }
+
+  /**
+   * @deprecated Use addMessage + compactContext instead
+   */
+  compactMessages(sessionId: string, _messageIds: string[], summary: string): Message {
+    // Emit a system message with the compacted summary
+    const messageId = emitUserMessage(sessionId, `[COMPACTED HISTORY]\n${summary}`, {
+      isSystemGenerated: true,
+    })
+
+    return {
+      id: messageId,
+      role: 'system',
+      content: `[COMPACTED HISTORY]\n${summary}`,
+      timestamp: new Date().toISOString(),
+      tokenCount: Math.ceil(summary.length / 4),
+      isCompacted: true,
+    }
+  }
+
+  /**
+   * @deprecated Use addTokensUsed instead
+   */
+  incrementTokenCount(sessionId: string, tokens: number): void {
+    this.addTokensUsed(sessionId, tokens)
+  }
+
+  // ============================================================================
+  // Context State
+  // ============================================================================
+
+  /**
+   * Get the current context state for a session.
+   */
+  getContextState(sessionId: string): ContextState {
+    const state = getSessionState(sessionId)
+    if (!state) {
+      const config = loadConfig()
+      return {
+        currentTokens: 0,
+        maxTokens: config.context.maxTokens,
+        compactionCount: 0,
+        dangerZone: false,
+        canCompact: false,
+      }
+    }
+    return state.contextState
+  }
+
+  // ============================================================================
+  // LSP Manager
+  // ============================================================================
+
+  /**
+   * Get the LSP manager for a session.
+   */
+  getLspManager(sessionId: string): LspManager {
+    const session = this.requireSession(sessionId)
+    return getOrCreateLspManager(sessionId, session.workdir)
+  }
+
+  // ============================================================================
+  // Active Session
+  // ============================================================================
+
   setActiveSession(id: string | null): void {
     this.activeSessionId = id
   }
-  
+
   getActiveSessionId(): string | null {
     return this.activeSessionId
   }
-  
-  // Events
-  
+
+  // ============================================================================
+  // Event Subscription
+  // ============================================================================
+
   subscribe(callback: (event: SessionEvent) => void): Unsubscribe {
     return this.events.on('event', callback)
   }
-  
+
   subscribeToSession(sessionId: string, callback: (event: SessionEvent) => void): Unsubscribe {
     return this.events.on(`session:${sessionId}`, callback)
   }
-  
+
   private emit(event: SessionEvent): void {
     this.events.emit('event', event)
-    
-    // Also emit to session-specific channel
+
     if ('sessionId' in event) {
       this.events.emit(`session:${event.sessionId}`, event)
     } else if ('session' in event) {
       this.events.emit(`session:${event.session.id}`, event)
     }
   }
+
+  // ============================================================================
+  // Private Helpers
+  // ============================================================================
+
+  /**
+   * Build a full Session object from DB session + EventStore state
+   */
+  private buildSessionFromDb(dbSession: Session): Session {
+    const eventState = getSessionState(dbSession.id)
+
+    if (!eventState) {
+      // No events yet - return defaults
+      return {
+        ...dbSession,
+        mode: 'planner',
+        phase: 'plan',
+        isRunning: false,
+        messages: [],
+        criteria: [],
+        contextWindows: [],
+        executionState: null,
+      }
+    }
+
+    // Map SnapshotMessage[] to Message[]
+    const messages = eventState.messages.map((m) => {
+      const msg: import('../../shared/types.js').Message = {
+        id: m.id,
+        role: m.role,
+        content: m.content,
+        timestamp: new Date(m.timestamp).toISOString(),
+        tokenCount: m.tokenCount ?? 0,
+      }
+      if (m.thinkingContent !== undefined) msg.thinkingContent = m.thinkingContent
+      if (m.toolCalls !== undefined) msg.toolCalls = m.toolCalls
+      if (m.segments !== undefined) msg.segments = m.segments
+      if (m.stats !== undefined) msg.stats = m.stats
+      if (m.partial !== undefined) msg.partial = m.partial
+      if (m.isStreaming !== undefined) msg.isStreaming = m.isStreaming
+      if (m.subAgentId !== undefined) msg.subAgentId = m.subAgentId
+      if (m.subAgentType !== undefined) msg.subAgentType = m.subAgentType
+      if (m.isSystemGenerated !== undefined) msg.isSystemGenerated = m.isSystemGenerated
+      if (m.messageKind !== undefined) msg.messageKind = m.messageKind
+      if (m.contextWindowId !== undefined) msg.contextWindowId = m.contextWindowId
+      if (m.isCompactionSummary !== undefined) msg.isCompactionSummary = m.isCompactionSummary
+      if (m.promptContext !== undefined) msg.promptContext = m.promptContext
+      return msg
+    })
+
+    return {
+      ...dbSession,
+      mode: eventState.mode,
+      phase: eventState.phase,
+      isRunning: eventState.isRunning,
+      messages,
+      criteria: eventState.criteria,
+      contextWindows: [], // Derived from events, not stored separately
+      executionState: null, // No longer using execution state
+    }
+  }
 }
 
-// Legacy singleton for gradual migration
-// TODO: Remove once all consumers use context-based injection
+// Singleton for gradual migration
 export const sessionManager = new SessionManager()

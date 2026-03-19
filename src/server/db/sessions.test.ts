@@ -1,3 +1,10 @@
+/**
+ * Session Database Tests
+ *
+ * Tests session metadata CRUD operations. Message, criteria, and context
+ * data is now stored in the events table (tested in events/store.test.ts).
+ */
+
 import { mkdtemp, rm, mkdir } from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
@@ -6,30 +13,11 @@ import { loadConfig } from '../config.js'
 import { closeDatabase, initDatabase } from './index.js'
 import { createProject } from './projects.js'
 import {
-  addCriterion,
-  addMessage,
-  clearExecutionState,
-  closeContextWindow,
-  createContextWindow,
   createSession,
-  deleteMessages,
   deleteSession,
-  getContextWindows,
-  getCriteria,
-  getCurrentContextWindow,
-  getExecutionState,
-  getMessages,
-  getMessagesForWindow,
   getSession,
   listSessions,
   listSessionsByProject,
-  removeCriterion,
-  setCriteria,
-  setExecutionState,
-  updateCriterion,
-  updateCriterionFull,
-  updateMessage,
-  updateMessageStats,
   updateSessionMetadata,
   updateSessionMode,
   updateSessionPhase,
@@ -63,262 +51,147 @@ describe('db sessions', () => {
     await rm(rootB, { recursive: true, force: true })
   })
 
-  it('creates, updates, lists, filters, and deletes sessions', () => {
-    const sessionA = createSession(projectAId, rootA, 'Session A')
-    const sessionB = createSession(projectBId, join(rootA, 'nested'))
+  it('creates sessions with default values', () => {
+    const session = createSession(projectAId, rootA, 'Test Session')
 
-    expect(sessionA.metadata.title).toBe('Session A')
-    expect(sessionA.contextWindows).toHaveLength(1)
-    expect(sessionA.phase).toBe('plan')
-    expect(getSession(sessionA.id)).toMatchObject({
-      id: sessionA.id,
+    expect(session).toMatchObject({
+      projectId: projectAId,
+      workdir: rootA,
+      mode: 'planner',
+      phase: 'plan',
+      isRunning: false,
+      summary: null,
+      messages: [],
+      criteria: [],
+      contextWindows: [],
+      executionState: null,
+      metadata: {
+        title: 'Test Session',
+        totalTokensUsed: 0,
+        totalToolCalls: 0,
+        iterationCount: 0,
+      },
+    })
+    expect(session.id).toBeDefined()
+    expect(session.createdAt).toBeDefined()
+    expect(session.updatedAt).toBeDefined()
+  })
+
+  it('gets session by id', () => {
+    const session = createSession(projectAId, rootA, 'Session A')
+
+    const retrieved = getSession(session.id)
+    expect(retrieved).toMatchObject({
+      id: session.id,
       projectId: projectAId,
       workdir: rootA,
       phase: 'plan',
       mode: 'planner',
       isRunning: false,
-      metadata: { title: 'Session A', totalTokensUsed: 0, totalToolCalls: 0, iterationCount: 0 },
-    })
-
-    updateSessionMode(sessionA.id, 'builder')
-    updateSessionPhase(sessionA.id, 'verification')
-    updateSessionRunning(sessionA.id, true)
-    updateSessionSummary(sessionA.id, 'Summary text')
-    updateSessionMetadata(sessionA.id, {
-      title: 'Session A Updated',
-      totalTokensUsed: 42,
-      totalToolCalls: 3,
-      iterationCount: 2,
-    })
-
-    expect(getSession(sessionA.id)).toMatchObject({
-      mode: 'builder',
-      phase: 'verification',
-      isRunning: true,
-      summary: 'Summary text',
       metadata: {
-        title: 'Session A Updated',
-        totalTokensUsed: 42,
-        totalToolCalls: 3,
-        iterationCount: 2,
+        title: 'Session A',
+        totalTokensUsed: 0,
+        totalToolCalls: 0,
+        iterationCount: 0,
       },
     })
 
-    const listed = listSessions()
-    expect(listed).toHaveLength(2)
-    expect(listed.find((session) => session.id === sessionA.id)).toMatchObject({
-      title: 'Session A Updated',
-      mode: 'builder',
-      phase: 'verification',
-      isRunning: true,
-      criteriaCount: 0,
-      criteriaCompleted: 0,
-    })
-
-    const filtered = listSessionsByProject(projectAId, rootA)
-    expect(filtered.map((session) => session.id)).toContain(sessionA.id)
-    expect(filtered.map((session) => session.id)).toContain(sessionB.id)
-
-    deleteSession(sessionA.id)
-    expect(getSession(sessionA.id)).toBeNull()
+    expect(getSession('non-existent')).toBeNull()
   })
 
-  it('stores, updates, filters, and deletes messages across context windows', () => {
-    const session = createSession(projectAId, rootA, 'Messages')
-    const firstWindow = getCurrentContextWindow(session.id)
-    expect(firstWindow).not.toBeNull()
-
-    const message = addMessage(session.id, {
-      role: 'assistant',
-      content: 'Initial content',
-      contextWindowId: firstWindow!.id,
-      toolCalls: [{ id: 'call-1', name: 'read_file', arguments: { path: 'src/index.ts' } }],
-      thinkingContent: 'Need to inspect',
-      toolCallId: 'call-1',
-      toolName: 'read_file',
-      toolResult: { success: true, output: 'File text', durationMs: 12, truncated: false },
-      tokenCount: 9,
-      isCompacted: true,
-      originalMessageIds: ['m-old-1', 'm-old-2'],
-      segments: [{ type: 'text', content: 'Initial content' }],
-      partial: true,
-      isSystemGenerated: true,
-      isStreaming: true,
-      messageKind: 'correction',
-      subAgentId: 'sub-1',
-      subAgentType: 'verifier',
-      isCompactionSummary: true,
-      promptContext: {
-        systemPrompt: 'System prompt',
-        userMessage: 'User prompt',
-        injectedFiles: [{ path: 'AGENTS.md', content: 'Do tests', source: 'agents-md' }],
-      },
-    })
-
-    updateMessageStats(session.id, message.id, {
-      model: 'qwen3-32b',
-      mode: 'builder',
-      totalTime: 1,
-      toolTime: 0.2,
-      prefillTokens: 10,
-      prefillSpeed: 20,
-      generationTokens: 5,
-      generationSpeed: 10,
-    })
-    updateMessage(session.id, message.id, {
-      content: 'Updated content',
-      thinkingContent: 'Updated thinking',
-      toolCalls: [{ id: 'call-2', name: 'glob', arguments: { pattern: '*.ts' } }],
-      tokenCount: 10,
-      segments: [{ type: 'text', content: 'Updated content' }],
-      stats: {
-        model: 'qwen3-32b',
-        mode: 'builder',
-        totalTime: 2,
-        toolTime: 0.2,
-        prefillTokens: 20,
-        prefillSpeed: 30,
-        generationTokens: 6,
-        generationSpeed: 12,
-      },
-      isStreaming: false,
-      partial: false,
-      promptContext: {
-        systemPrompt: 'Updated system',
-        userMessage: 'Updated user',
-        injectedFiles: [],
-      },
-    })
-    updateMessage(session.id, message.id, {})
-
-    const secondWindow = createContextWindow(session.id, 2, 'Summary of previous', 15)
-    const secondMessage = addMessage(session.id, {
-      role: 'user',
-      content: 'Second window message',
-      contextWindowId: secondWindow.id,
-      tokenCount: 4,
-    })
-
-    const messages = getMessages(session.id)
-    expect(messages).toHaveLength(2)
-    expect(messages[0]).toMatchObject({
-      id: message.id,
-      content: 'Updated content',
-      thinkingContent: 'Updated thinking',
-      toolCalls: [{ id: 'call-2', name: 'glob', arguments: { pattern: '*.ts' } }],
-      partial: false,
-      isSystemGenerated: true,
-      isCompactionSummary: true,
-      subAgentId: 'sub-1',
-      subAgentType: 'verifier',
-    })
-    expect(messages[1]).toMatchObject({ id: secondMessage.id, content: 'Second window message' })
-
-    expect(getMessagesForWindow(session.id, firstWindow!.id)).toHaveLength(1)
-    expect(getMessagesForWindow(session.id, secondWindow.id)).toHaveLength(1)
-
-    closeContextWindow(firstWindow!.id, 99)
-    expect(getContextWindows(session.id)).toEqual([
-      expect.objectContaining({ id: firstWindow!.id, closedAt: expect.any(String), tokenCountAtClose: 99 }),
-      expect.objectContaining({ id: secondWindow.id, summaryOfPrevious: 'Summary of previous', summaryTokenCount: 15 }),
-    ])
-    expect(getCurrentContextWindow(session.id)).toMatchObject({ id: secondWindow.id })
-
-    deleteMessages(session.id, [secondMessage.id])
-    expect(getMessages(session.id).map((entry) => entry.id)).toEqual([message.id])
-  })
-
-  it('stores criteria, handles duplicate ids, and manages execution state', () => {
+  it('updates session mode', () => {
     const session = createSession(projectAId, rootA)
 
-    setCriteria(session.id, [
-      {
-        id: 'tests-pass',
-        description: 'Tests pass',
-        status: { type: 'pending' },
-        attempts: [],
-      },
-      {
-        id: 'docs-updated',
-        description: 'Docs updated',
-        status: { type: 'passed', verifiedAt: '2024-01-01T00:00:00.000Z' },
-        attempts: [{ attemptNumber: 1, status: 'passed', timestamp: '2024-01-01T00:00:00.000Z' }],
-      },
-    ])
-    expect(getCriteria(session.id)).toEqual([
-      expect.objectContaining({ id: 'tests-pass', description: 'Tests pass' }),
-      expect.objectContaining({ id: 'docs-updated', status: { type: 'passed', verifiedAt: '2024-01-01T00:00:00.000Z' } }),
-    ])
+    updateSessionMode(session.id, 'builder')
+    expect(getSession(session.id)?.mode).toBe('builder')
 
-    updateCriterion(session.id, 'tests-pass', {
-      status: { type: 'failed', failedAt: '2024-01-01T00:00:00.000Z', reason: 'Still broken' },
-      attempts: [{ attemptNumber: 1, status: 'failed', timestamp: '2024-01-01T00:00:00.000Z', details: 'Still broken' }],
-    })
-    updateCriterion(session.id, 'tests-pass', {})
-    updateCriterionFull(session.id, 'tests-pass', { description: 'Tests pass on CI' })
-    updateCriterionFull(session.id, 'tests-pass', {})
+    updateSessionMode(session.id, 'planner')
+    expect(getSession(session.id)?.mode).toBe('planner')
+  })
 
-    const firstDuplicate = addCriterion(session.id, {
-      id: 'tests-pass',
-      description: 'Duplicate criterion',
-      status: { type: 'pending' },
-      attempts: [],
-    })
-    const secondDuplicate = addCriterion(session.id, {
-      id: 'tests-pass',
-      description: 'Another duplicate criterion',
-      status: { type: 'pending' },
-      attempts: [],
-    })
+  it('updates session phase', () => {
+    const session = createSession(projectAId, rootA)
 
-    expect(firstDuplicate).toEqual({ success: true, actualId: 'tests-pass-1' })
-    expect(secondDuplicate).toEqual({ success: true, actualId: 'tests-pass-2' })
-    expect(getCriteria(session.id).map((criterion) => criterion.id)).toEqual([
-      'tests-pass',
-      'docs-updated',
-      'tests-pass-1',
-      'tests-pass-2',
-    ])
+    updateSessionPhase(session.id, 'build')
+    expect(getSession(session.id)?.phase).toBe('build')
 
-    removeCriterion(session.id, 'tests-pass-1')
-    expect(getCriteria(session.id).map((criterion) => criterion.id)).toEqual([
-      'tests-pass',
-      'docs-updated',
-      'tests-pass-2',
-    ])
+    updateSessionPhase(session.id, 'verification')
+    expect(getSession(session.id)?.phase).toBe('verification')
+  })
 
-    setExecutionState(session.id, {
-      iteration: 2,
-      modifiedFiles: ['src/index.ts'],
-      readFiles: {
-        'src/index.ts': { hash: 'hash-1', readAt: '2024-01-01T00:00:00.000Z' },
-      },
-      consecutiveFailures: 1,
-      lastFailedTool: 'edit_file',
-      lastFailureReason: 'Patch failed',
-      currentTokenCount: 123,
-      messageCountAtLastUpdate: 4,
-      compactionCount: 1,
-      startedAt: '2024-01-01T00:00:00.000Z',
-      lastActivityAt: '2024-01-01T00:00:01.000Z',
-    })
-    expect(getExecutionState(session.id)).toEqual({
-      iteration: 2,
-      modifiedFiles: ['src/index.ts'],
-      readFiles: {
-        'src/index.ts': { hash: 'hash-1', readAt: '2024-01-01T00:00:00.000Z' },
-      },
-      consecutiveFailures: 1,
-      lastFailedTool: 'edit_file',
-      lastFailureReason: 'Patch failed',
-      currentTokenCount: 123,
-      messageCountAtLastUpdate: 4,
-      compactionCount: 1,
-      startedAt: '2024-01-01T00:00:00.000Z',
-      lastActivityAt: '2024-01-01T00:00:01.000Z',
+  it('updates session running state', () => {
+    const session = createSession(projectAId, rootA)
+
+    updateSessionRunning(session.id, true)
+    expect(getSession(session.id)?.isRunning).toBe(true)
+
+    updateSessionRunning(session.id, false)
+    expect(getSession(session.id)?.isRunning).toBe(false)
+  })
+
+  it('updates session summary', () => {
+    const session = createSession(projectAId, rootA)
+
+    updateSessionSummary(session.id, 'This is a summary')
+    expect(getSession(session.id)?.summary).toBe('This is a summary')
+  })
+
+  it('updates session metadata', () => {
+    const session = createSession(projectAId, rootA)
+
+    updateSessionMetadata(session.id, {
+      title: 'Updated Title',
+      totalTokensUsed: 1000,
+      totalToolCalls: 50,
+      iterationCount: 5,
     })
 
-    clearExecutionState(session.id)
-    expect(getExecutionState(session.id)).toBeNull()
+    const retrieved = getSession(session.id)
+    expect(retrieved?.metadata).toMatchObject({
+      title: 'Updated Title',
+      totalTokensUsed: 1000,
+      totalToolCalls: 50,
+      iterationCount: 5,
+    })
+  })
+
+  it('lists all sessions', () => {
+    createSession(projectAId, rootA, 'Session A')
+    createSession(projectBId, rootB, 'Session B')
+
+    const sessions = listSessions()
+    expect(sessions).toHaveLength(2)
+    expect(sessions.map(s => s.title)).toContain('Session A')
+    expect(sessions.map(s => s.title)).toContain('Session B')
+  })
+
+  it('lists sessions by project including nested workdirs', () => {
+    const sessionA = createSession(projectAId, rootA, 'Session A')
+    const sessionNested = createSession(projectBId, join(rootA, 'nested'), 'Nested Session')
+    createSession(projectBId, rootB, 'Session B')
+
+    const filtered = listSessionsByProject(projectAId, rootA)
+    expect(filtered.map(s => s.id)).toContain(sessionA.id)
+    expect(filtered.map(s => s.id)).toContain(sessionNested.id)
+    expect(filtered).toHaveLength(2)
+  })
+
+  it('deletes sessions', () => {
+    const session = createSession(projectAId, rootA)
+
+    expect(getSession(session.id)).not.toBeNull()
+
+    deleteSession(session.id)
+
+    expect(getSession(session.id)).toBeNull()
+  })
+
+  it('handles sessions without title', () => {
+    const session = createSession(projectAId, rootA)
+
+    expect(session.metadata.title).toBeUndefined()
+
+    const retrieved = getSession(session.id)
+    expect(retrieved?.metadata.title).toBeUndefined()
   })
 })

@@ -7,7 +7,8 @@ import { promisify } from 'node:util'
 import { gitTool } from './git.js'
 import { sessionManager } from '../session/index.js'
 import { createProject } from '../db/projects.js'
-import { initDatabase } from '../db/index.js'
+import { getDatabase, initDatabase } from '../db/index.js'
+import { initEventStore } from '../events/index.js'
 import { loadConfig } from '../config.js'
 
 const execAsync = promisify(exec)
@@ -22,6 +23,8 @@ describe('git tool', () => {
     const config = loadConfig()
     config.database.path = ':memory:'
     initDatabase(config)
+    // Initialize EventStore
+    initEventStore(getDatabase())
 
     // Create test directory
     testDir = await mkdtemp(join(tmpdir(), 'openfox-git-test-'))

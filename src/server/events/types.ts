@@ -22,6 +22,7 @@ import type {
   Todo,
   MessageSegment,
   ContextState,
+  PromptContext,
 } from '../../shared/types.js'
 
 // ============================================================================
@@ -42,6 +43,19 @@ export interface StoredEvent<T extends TurnEvent = TurnEvent> {
 
 export type TurnEvent =
   // ----------------------------------------------------------------------------
+  // Session lifecycle
+  // ----------------------------------------------------------------------------
+  | {
+      type: 'session.initialized'
+      data: {
+        projectId: string
+        workdir: string
+        title?: string
+        contextWindowId: string // First window created with session
+      }
+    }
+
+  // ----------------------------------------------------------------------------
   // Message lifecycle
   // ----------------------------------------------------------------------------
   | {
@@ -55,6 +69,8 @@ export type TurnEvent =
         subAgentType?: 'verifier'
         isSystemGenerated?: boolean
         messageKind?: 'correction' | 'auto-prompt' | 'context-reset'
+        isCompactionSummary?: boolean // True if this is the summary message after compaction
+        tokenCount?: number // Known upfront for user messages
       }
     }
   | {
@@ -78,6 +94,8 @@ export type TurnEvent =
         stats?: MessageStats
         segments?: MessageSegment[]
         partial?: boolean // True if interrupted
+        promptContext?: PromptContext // What was sent to LLM (assistant messages only)
+        tokenCount?: number // Final token count for assistant messages
       }
     }
 
@@ -167,10 +185,19 @@ export type TurnEvent =
   | {
       type: 'context.compacted'
       data: {
+        closedWindowId: string // Window being closed
+        newWindowId: string // New window being created
         beforeTokens: number
-        afterTokens: number
-        newWindowId: string
+        afterTokens: number // Should be ~0 for new window
         summary: string
+      }
+    }
+  | {
+      type: 'file.read'
+      data: {
+        path: string
+        tokenCount: number
+        contextWindowId: string // Scoped to window for cache invalidation
       }
     }
 
@@ -236,13 +263,25 @@ export interface SessionSnapshot {
 
   // Context state
   contextState: ContextState
+  currentContextWindowId: string
 
   // Builder todos
   todos: Todo[]
 
+  // File read cache (for current window)
+  readFiles: ReadFileEntry[]
+
   // Metadata
   snapshotSeq: number // The event seq this snapshot was taken at
   snapshotAt: number // Unix timestamp
+}
+
+/**
+ * Entry in the file read cache
+ */
+export interface ReadFileEntry {
+  path: string
+  tokenCount: number
 }
 
 /**
@@ -258,6 +297,7 @@ export interface SnapshotMessage {
   segments?: MessageSegment[]
   stats?: MessageStats
   timestamp: number
+  tokenCount?: number
   isStreaming?: boolean
   partial?: boolean
   subAgentId?: string
@@ -265,6 +305,8 @@ export interface SnapshotMessage {
   isSystemGenerated?: boolean
   messageKind?: 'correction' | 'auto-prompt' | 'context-reset'
   contextWindowId?: string
+  isCompactionSummary?: boolean
+  promptContext?: PromptContext
 }
 
 export interface ToolCallWithResult extends ToolCall {

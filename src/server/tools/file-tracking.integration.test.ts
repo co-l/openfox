@@ -7,7 +7,8 @@ import { writeFileTool } from './write.js'
 import { editFileTool } from './edit.js'
 import type { ToolContext } from './types.js'
 import { sessionManager } from '../session/index.js'
-import { initDatabase, closeDatabase } from '../db/index.js'
+import { initDatabase, closeDatabase, getDatabase } from '../db/index.js'
+import { initEventStore } from '../events/index.js'
 import type { Config } from '../../shared/types.js'
 
 // Create a minimal test context
@@ -38,6 +39,8 @@ describe('file tracking integration', () => {
   beforeEach(async () => {
     // Initialize database for session manager
     initDatabase(createTestConfig())
+    // Initialize EventStore
+    initEventStore(getDatabase())
     
     // Create test directory
     testDir = join(tmpdir(), `openfox-file-tracking-test-${Date.now()}`)

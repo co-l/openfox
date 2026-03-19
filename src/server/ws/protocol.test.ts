@@ -350,8 +350,8 @@ describe('ws/protocol', () => {
         { ...baseEvent, type: 'chat.done', data: { messageId: 'm1', reason: 'complete' } },
         { ...baseEvent, type: 'chat.error', data: { error: 'boom', recoverable: false } },
         { ...baseEvent, type: 'format.retry', data: { attempt: 2, maxAttempts: 10 } },
-        { ...baseEvent, type: 'turn.snapshot', data: { mode: 'planner', phase: 'plan', isRunning: false, messages: [], criteria: [], contextState: { currentTokens: 0, maxTokens: 1, dangerZone: false, canCompact: false, compactionCount: 0 }, todos: [], snapshotSeq: 1, snapshotAt: 1 } },
-        { ...baseEvent, type: 'context.compacted', data: { beforeTokens: 10, afterTokens: 5, newWindowId: 'window-2', summary: 'compact' } },
+        { ...baseEvent, type: 'turn.snapshot', data: { mode: 'planner', phase: 'plan', isRunning: false, messages: [], criteria: [], contextState: { currentTokens: 0, maxTokens: 1, dangerZone: false, canCompact: false, compactionCount: 0 }, currentContextWindowId: 'window-1', todos: [], readFiles: [], snapshotSeq: 1, snapshotAt: 1 } },
+        { ...baseEvent, type: 'context.compacted', data: { closedWindowId: 'window-1', beforeTokens: 10, afterTokens: 5, newWindowId: 'window-2', summary: 'compact' } },
         { ...baseEvent, type: 'unknown-event' as never, data: {} as never },
       ]
 

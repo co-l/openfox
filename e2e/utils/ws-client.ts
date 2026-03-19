@@ -14,7 +14,7 @@ import type {
   SessionStatePayload,
   ProjectStatePayload,
 } from '@openfox/shared/protocol'
-import type { Session, Project, Message, ToolCall, ToolResult, MessageStats } from '@openfox/shared'
+import type { Session, Project, Message, ToolCall, ToolResult, MessageStats, ContextState } from '@openfox/shared'
 
 // ============================================================================
 // Types
@@ -69,6 +69,9 @@ export interface TestClient {
   
   /** Get the current session (after session.load/create) */
   getSession(): Session | null
+  
+  /** Get the current context state */
+  getContextState(): ContextState | null
   
   /** Get the current project (after project.load/create) */
   getProject(): Project | null
@@ -244,6 +247,7 @@ export async function createTestClient(options: TestClientOptions = {}): Promise
   
   let currentSession: Session | null = null
   let currentProject: Project | null = null
+  let currentContextState: ContextState | null = null
   let connected = false
   let chatCursor = 0
   let collectionCursor = 0
@@ -300,6 +304,11 @@ export async function createTestClient(options: TestClientOptions = {}): Promise
       if (msg.type === 'phase.changed' && currentSession) {
         const payload = msg.payload as { phase: Session['phase'] }
         currentSession = { ...currentSession, phase: payload.phase }
+      }
+      // Update context state from context.state events
+      if (msg.type === 'context.state') {
+        const payload = msg.payload as { context: ContextState }
+        currentContextState = payload.context
       }
       
       // Resolve pending requests by correlation ID
@@ -573,6 +582,10 @@ export async function createTestClient(options: TestClientOptions = {}): Promise
     
     getSession(): Session | null {
       return currentSession
+    },
+    
+    getContextState(): ContextState | null {
+      return currentContextState
     },
     
     getProject(): Project | null {

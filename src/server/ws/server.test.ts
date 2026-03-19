@@ -11,7 +11,6 @@ const {
   deleteProjectMock,
   getSettingMock,
   setSettingMock,
-  getMessagesMock,
   getAllInstructionsMock,
   getToolRegistryForModeMock,
   providePathConfirmationMock,
@@ -29,7 +28,6 @@ const {
   deleteProjectMock: vi.fn(),
   getSettingMock: vi.fn(),
   setSettingMock: vi.fn(),
-  getMessagesMock: vi.fn(),
   getAllInstructionsMock: vi.fn(),
   getToolRegistryForModeMock: vi.fn(),
   providePathConfirmationMock: vi.fn(),
@@ -54,9 +52,7 @@ vi.mock('../db/settings.js', () => ({
   setSetting: setSettingMock,
 }))
 
-vi.mock('../db/sessions.js', () => ({
-  getMessages: getMessagesMock,
-}))
+// db/sessions.js mock removed - messages are now stored in EventStore only
 
 vi.mock('../context/instructions.js', () => ({
   getAllInstructions: getAllInstructionsMock,
@@ -263,7 +259,7 @@ describe('createWebSocketServer', () => {
     deleteProjectMock.mockReset()
     getSettingMock.mockReset()
     setSettingMock.mockReset()
-    getMessagesMock.mockReset()
+
     getAllInstructionsMock.mockReset()
     getToolRegistryForModeMock.mockReset()
     providePathConfirmationMock.mockReset()
@@ -362,7 +358,6 @@ describe('createWebSocketServer', () => {
       getSession: vi.fn((id: string) => id === 'session-1' ? session : null),
       requireSession: vi.fn(() => session),
     })
-    getMessagesMock.mockReturnValue([{ id: 'db-1', role: 'user', content: 'from-db', timestamp: 'a', tokenCount: 0 }])
 
     const harness = await createHarness({ sessionManager, eventStore })
 
@@ -379,11 +374,12 @@ describe('createWebSocketServer', () => {
     })
     expect(await harness.nextMessage((message) => message.type === 'context.state')).toMatchObject({ type: 'context.state' })
 
+    // With pure event-sourcing, empty events = empty messages (no DB fallback)
     eventStore.getEvents.mockReturnValueOnce([])
     harness.send({ id: 'sl-db', type: 'session.load', payload: { sessionId: 'session-1' } })
     expect(await harness.nextMessage((message) => message.id === 'sl-db')).toMatchObject({
       type: 'session.state',
-      payload: { messages: [{ id: 'db-1', content: 'from-db' }] },
+      payload: { messages: [] },
     })
     await harness.nextMessage((message) => message.type === 'context.state')
 
@@ -419,10 +415,6 @@ describe('createWebSocketServer', () => {
       resolveRun = resolve
       signal?.addEventListener('abort', () => resolve())
     }))
-    getMessagesMock.mockReturnValue([
-      { id: 'user-1', role: 'user', content: 'Hi', timestamp: 'a', tokenCount: 0 },
-      { id: 'assistant-1', role: 'assistant', content: 'Done', timestamp: 'b', tokenCount: 0, stats: { model: 'qwen', mode: 'planner', totalTime: 1, toolTime: 0, prefillTokens: 1, prefillSpeed: 1, generationTokens: 1, generationSpeed: 1 } },
-    ])
 
     const harness = await createHarness({ sessionManager })
 
@@ -448,6 +440,15 @@ describe('createWebSocketServer', () => {
     if (releaseRun) {
       releaseRun()
     }
+
+    // Simulate events that would have been stored during the chat run
+    // (runChatTurn is mocked so no real events are appended)
+    const mockEventStore = getEventStoreMock()
+    mockEventStore.getEvents.mockReturnValueOnce([
+      { seq: 1, sessionId: 'session-1', timestamp: 123, type: 'message.start', data: { messageId: 'assistant-1', role: 'assistant', contextWindowId: 'w1' } },
+      { seq: 2, sessionId: 'session-1', timestamp: 124, type: 'message.delta', data: { messageId: 'assistant-1', content: 'Done' } },
+      { seq: 3, sessionId: 'session-1', timestamp: 125, type: 'message.done', data: { messageId: 'assistant-1', stats: { model: 'qwen', mode: 'planner', totalTime: 1, toolTime: 0, prefillTokens: 1, prefillSpeed: 1, generationTokens: 1, generationSpeed: 1 } } },
+    ])
 
     harness.send({ id: 'chat-continue', type: 'chat.continue', payload: {} })
     expect(await harness.nextMessage((message) => message.id === 'chat-continue')).toMatchObject({ type: 'ack' })
@@ -496,7 +497,6 @@ describe('createWebSocketServer', () => {
       xmlFormatError: false,
     })
     runOrchestratorMock.mockResolvedValue({ success: true })
-    getMessagesMock.mockReturnValue([])
     streamLLMResponseMock.mockResolvedValue({
       messageId: 'compact-1',
       content: 'Compacted summary',

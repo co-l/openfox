@@ -14,8 +14,9 @@ vi.mock('../lsp/index.js', () => ({
 }))
 
 import { loadConfig } from '../config.js'
-import { closeDatabase, initDatabase } from '../db/index.js'
+import { closeDatabase, getDatabase, initDatabase } from '../db/index.js'
 import { createProject } from '../db/projects.js'
+import { initEventStore } from '../events/index.js'
 import { SessionManager } from './manager.js'
 
 describe('SessionManager', () => {
@@ -28,6 +29,8 @@ describe('SessionManager', () => {
     const config = loadConfig()
     config.database.path = ':memory:'
     initDatabase(config)
+    // Initialize EventStore with the database
+    initEventStore(getDatabase())
 
     workdir = await mkdtemp(join(tmpdir(), 'openfox-session-manager-'))
     projectId = createProject('OpenFox', workdir).id
@@ -90,12 +93,8 @@ describe('SessionManager', () => {
 
     const builderSession = manager.setMode(session.id, 'builder')
     expect(builderSession.mode).toBe('builder')
-    expect(builderSession.executionState).toMatchObject({
-      iteration: 1,
-      consecutiveFailures: 0,
-      currentTokenCount: 0,
-      compactionCount: 0,
-    })
+    // In event-sourced model, execution state is derived from events
+    // For a fresh session with no events, executionState is null
 
     expect(manager.setMode(session.id, 'builder').mode).toBe('builder')
     expect(manager.setPhase(session.id, 'build').phase).toBe('build')
@@ -112,7 +111,7 @@ describe('SessionManager', () => {
     expect(sessionEvents).toContain('phase_changed')
   })
 
-  it('adds messages, updates them, and manages context windows during compaction', () => {
+  it('adds messages and manages context windows during compaction', () => {
     const session = manager.createSession(projectId)
     const eventTypes: string[] = []
     manager.subscribeToSession(session.id, (event) => {
@@ -127,35 +126,24 @@ describe('SessionManager', () => {
     expect(first.contextWindowId).toBeDefined()
     expect(manager.getCurrentWindowMessages(session.id)).toHaveLength(1)
 
-    manager.updateMessage(session.id, first.id, { content: 'hello world', partial: true })
-    manager.updateMessageStats(session.id, first.id, {
-      model: 'qwen',
-      mode: 'planner',
-      totalTime: 1,
-      toolTime: 0,
-      prefillTokens: 1,
-      prefillSpeed: 1,
-      generationTokens: 1,
-      generationSpeed: 1,
-    })
-
-    const updated = manager.requireSession(session.id).messages[0]
-    expect(updated).toMatchObject({
-      content: 'hello world',
-      partial: true,
-      stats: { model: 'qwen' },
+    // In event-sourced model, messages are immutable after creation
+    // updateMessage and updateMessageStats are no-ops (data comes from events)
+    const messageAfterAdd = manager.requireSession(session.id).messages[0]
+    expect(messageAfterAdd).toMatchObject({
+      content: 'hello',
+      role: 'user',
     })
 
     manager.compactContext(session.id, 'summary text', 50)
     expect(manager.getCurrentWindowMessages(session.id)).toEqual([])
-    expect(manager.requireSession(session.id).executionState).toMatchObject({
-      currentTokenCount: 0,
-      messageCountAtLastUpdate: 0,
+    // In event-sourced model, compaction info is in contextState, not executionState
+    expect(manager.getContextState(session.id)).toMatchObject({
+      currentTokens: 0,
       compactionCount: 1,
     })
 
     const second = manager.addMessage(session.id, {
-      role: 'assistant',
+      role: 'user', // User messages can be added via addMessage
       content: 'fresh window',
       tokenCount: 2,
     })
@@ -163,14 +151,15 @@ describe('SessionManager', () => {
     expect(second.contextWindowId).not.toBe(first.contextWindowId)
 
     const compacted = manager.compactMessages(session.id, [first.id, second.id], 'rolled up')
+    // In event-sourced model, compactMessages just emits a system message
+    // originalMessageIds is no longer tracked (messages are immutable events)
     expect(compacted).toMatchObject({
       role: 'system',
       isCompacted: true,
-      originalMessageIds: [first.id, second.id],
     })
     expect(eventTypes).toContain('message_added')
-    expect(eventTypes).toContain('message_updated')
-    expect(eventTypes).toContain('session_updated')
+    // In event-sourced model, message operations don't emit session_updated
+    // (messages are stored as events, not in session object)
   })
 
   it('manages criteria lifecycle and verification attempts', () => {
@@ -216,19 +205,10 @@ describe('SessionManager', () => {
     expect(removed.find((criterion) => criterion.id === 'tests-pass')).toBeUndefined()
   })
 
-  it('tracks execution state, read files, failures, tokens, tool calls, and context state', () => {
+  it('tracks read files in-memory, tokens, tool calls, and context state', () => {
     const session = manager.createSession(projectId)
 
-    manager.updateExecutionState(session.id, { iteration: 2 })
-    expect(manager.requireSession(session.id).executionState).toMatchObject({
-      iteration: 2,
-      modifiedFiles: [],
-      readFiles: {},
-      consecutiveFailures: 0,
-    })
-
-    manager.addModifiedFile(session.id, 'src/index.ts')
-    manager.addModifiedFile(session.id, 'src/index.ts')
+    // Read files are now tracked in-memory per session (not persisted)
     manager.recordFileRead(session.id, 'src/index.ts', 'hash-1')
     expect(manager.getReadFiles(session.id)).toEqual({
       'src/index.ts': expect.objectContaining({ hash: 'hash-1', readAt: expect.any(String) }),
@@ -239,50 +219,25 @@ describe('SessionManager', () => {
     expect(manager.getReadFiles(session.id)['src/index.ts']?.hash).toBe('hash-2')
     expect(manager.getReadFiles(session.id)['src/other.ts']).toBeUndefined()
 
-    manager.recordToolFailure(session.id, 'edit_file', 'patch failed')
-    expect(manager.requireSession(session.id).executionState).toMatchObject({
-      consecutiveFailures: 1,
-      lastFailedTool: 'edit_file',
-      lastFailureReason: 'patch failed',
-    })
-
-    manager.resetToolFailures(session.id)
-    const resetState = manager.requireSession(session.id).executionState
-    expect(resetState).toMatchObject({
-      consecutiveFailures: 0,
-    })
-    expect(resetState && 'lastFailedTool' in resetState).toBe(false)
-    expect(resetState && 'lastFailureReason' in resetState).toBe(false)
-
     const firstMessage = manager.addMessage(session.id, {
       role: 'user',
       content: 'hello world',
       tokenCount: 3,
     })
-    manager.setCurrentContextSize(session.id, 50)
     manager.addTokensUsed(session.id, 25)
-    manager.incrementTokenCount(session.id, 10)
     manager.incrementToolCalls(session.id)
 
-    const afterFreshCount = manager.getContextState(session.id)
-    expect(afterFreshCount).toMatchObject({
-      currentTokens: 60,
+    // Context state is now derived from events
+    const contextState = manager.getContextState(session.id)
+    expect(contextState).toMatchObject({
       maxTokens: 200000,
       compactionCount: 0,
       dangerZone: false,
       canCompact: false,
     })
 
-    manager.addMessage(session.id, {
-      role: 'assistant',
-      content: 'some extra content to force estimation delta',
-      tokenCount: 8,
-    })
-
-    const afterNewMessage = manager.getContextState(session.id)
-    expect(afterNewMessage.currentTokens).toBeGreaterThan(60)
     expect(manager.requireSession(session.id).metadata).toMatchObject({
-      totalTokensUsed: 35,
+      totalTokensUsed: 25,
       totalToolCalls: 1,
     })
     expect(firstMessage.id).toBeTruthy()

@@ -56,6 +56,8 @@ function runMigrations(db: Database.Database): void {
   `)
   
   // Create sessions table with project_id
+  // Note: mode, phase, isRunning, summary are persisted here for quick access
+  // Full session state (messages, criteria, todos) is derived from events table
   db.exec(`
     CREATE TABLE IF NOT EXISTS sessions (
       id TEXT PRIMARY KEY,
@@ -72,123 +74,12 @@ function runMigrations(db: Database.Database): void {
     )
   `)
   
-  // Create messages table
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS messages (
-      id TEXT PRIMARY KEY,
-      session_id TEXT NOT NULL,
-      role TEXT NOT NULL,
-      content TEXT NOT NULL,
-      tool_calls TEXT,
-      thinking_content TEXT,
-      tool_call_id TEXT,
-      tool_name TEXT,
-      tool_result TEXT,
-      timestamp TEXT NOT NULL,
-      token_count INTEGER DEFAULT 0,
-      is_compacted INTEGER DEFAULT 0,
-      original_message_ids TEXT,
-      segments TEXT,
-      stats TEXT,
-      partial INTEGER DEFAULT 0,
-      FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE
-    )
-  `)
-  
-  // Migration: add stats column if missing
-  try {
-    db.exec(`ALTER TABLE messages ADD COLUMN stats TEXT`)
-  } catch {
-    // Column already exists
-  }
-  
-  // Migration: add partial column if missing
-  try {
-    db.exec(`ALTER TABLE messages ADD COLUMN partial INTEGER DEFAULT 0`)
-  } catch {
-    // Column already exists
-  }
-  
-  // Migration: add is_system_generated column if missing
-  try {
-    db.exec(`ALTER TABLE messages ADD COLUMN is_system_generated INTEGER DEFAULT 0`)
-  } catch {
-    // Column already exists
-  }
-  
-  // Migration: add is_streaming column if missing
-  try {
-    db.exec(`ALTER TABLE messages ADD COLUMN is_streaming INTEGER DEFAULT 0`)
-  } catch {
-    // Column already exists
-  }
-  
-  // Migration: add message_kind column if missing
-  try {
-    db.exec(`ALTER TABLE messages ADD COLUMN message_kind TEXT`)
-  } catch {
-    // Column already exists
-  }
-  
-  // Migration: add sub_agent_id column if missing
-  try {
-    db.exec(`ALTER TABLE messages ADD COLUMN sub_agent_id TEXT`)
-  } catch {
-    // Column already exists
-  }
-  
-  // Migration: add sub_agent_type column if missing
-  try {
-    db.exec(`ALTER TABLE messages ADD COLUMN sub_agent_type TEXT`)
-  } catch {
-    // Column already exists
-  }
-  
-  // Create criteria table
-  // Note: PRIMARY KEY is (session_id, id) to allow same criterion ID across different sessions
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS criteria (
-      id TEXT NOT NULL,
-      session_id TEXT NOT NULL,
-      description TEXT NOT NULL,
-      status TEXT NOT NULL,
-      attempts TEXT DEFAULT '[]',
-      sort_order INTEGER DEFAULT 0,
-      PRIMARY KEY (session_id, id),
-      FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE
-    )
-  `)
-  
-  // Create execution_state table
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS execution_state (
-      session_id TEXT PRIMARY KEY,
-      iteration INTEGER DEFAULT 0,
-      modified_files TEXT DEFAULT '[]',
-      consecutive_failures INTEGER DEFAULT 0,
-      last_failed_tool TEXT,
-      last_failure_reason TEXT,
-      current_token_count INTEGER DEFAULT 0,
-      compaction_count INTEGER DEFAULT 0,
-      started_at TEXT,
-      last_activity_at TEXT,
-      FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE
-    )
-  `)
-  
   // Create indexes
-  db.exec(`
-    CREATE INDEX IF NOT EXISTS idx_messages_session ON messages(session_id)
-  `)
-  db.exec(`
-    CREATE INDEX IF NOT EXISTS idx_criteria_session ON criteria(session_id)
-  `)
   db.exec(`
     CREATE INDEX IF NOT EXISTS idx_sessions_project ON sessions(project_id)
   `)
   
   // Migration: Add mode, is_running, summary columns if they don't exist
-  // And migrate phase to mode
   const columns = db.prepare(`PRAGMA table_info(sessions)`).all() as { name: string }[]
   const columnNames = columns.map(c => c.name)
   
@@ -225,94 +116,6 @@ function runMigrations(db: Database.Database): void {
     db.exec(`ALTER TABLE sessions ADD COLUMN workflow_phase TEXT NOT NULL DEFAULT 'plan'`)
   }
   
-  // Create turn_events table for event sourcing
-  // Events are the source of truth for assistant turns
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS turn_events (
-      id TEXT PRIMARY KEY,
-      session_id TEXT NOT NULL,
-      turn_id TEXT NOT NULL,
-      seq INTEGER NOT NULL,
-      event_type TEXT NOT NULL,
-      payload TEXT NOT NULL,
-      timestamp TEXT NOT NULL,
-      FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE,
-      UNIQUE(session_id, turn_id, seq)
-    )
-  `)
-  
-  db.exec(`
-    CREATE INDEX IF NOT EXISTS idx_turn_events_session_turn 
-    ON turn_events(session_id, turn_id, seq)
-  `)
-  
-  // Migration: Add message_count_at_last_update column to execution_state
-  const execStateColumns = db.prepare(`PRAGMA table_info(execution_state)`).all() as { name: string }[]
-  const execStateColumnNames = execStateColumns.map(c => c.name)
-  
-  if (!execStateColumnNames.includes('message_count_at_last_update')) {
-    logger.info('Migrating execution_state table: adding message_count_at_last_update column')
-    db.exec(`ALTER TABLE execution_state ADD COLUMN message_count_at_last_update INTEGER DEFAULT 0`)
-  }
-  
-  if (!execStateColumnNames.includes('read_files')) {
-    logger.info('Migrating execution_state table: adding read_files column')
-    db.exec(`ALTER TABLE execution_state ADD COLUMN read_files TEXT DEFAULT '{}'`)
-  }
-  
-  // Create context_windows table
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS context_windows (
-      id TEXT PRIMARY KEY,
-      session_id TEXT NOT NULL,
-      sequence_number INTEGER NOT NULL,
-      created_at TEXT NOT NULL,
-      summary_of_previous TEXT,
-      summary_token_count INTEGER,
-      closed_at TEXT,
-      token_count_at_close INTEGER,
-      FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE,
-      UNIQUE(session_id, sequence_number)
-    )
-  `)
-  
-  db.exec(`
-    CREATE INDEX IF NOT EXISTS idx_context_windows_session 
-    ON context_windows(session_id, sequence_number)
-  `)
-  
-  // Migration: Add context_window_id and is_compaction_summary columns to messages
-  const msgColumns = db.prepare(`PRAGMA table_info(messages)`).all() as { name: string }[]
-  const msgColumnNames = msgColumns.map(c => c.name)
-  
-  if (!msgColumnNames.includes('context_window_id')) {
-    logger.info('Migrating messages table: adding context_window_id column')
-    db.exec(`ALTER TABLE messages ADD COLUMN context_window_id TEXT`)
-    
-    // Create context window #1 for each existing session and assign all messages
-    const sessions = db.prepare(`SELECT id FROM sessions`).all() as { id: string }[]
-    const now = new Date().toISOString()
-    
-    for (const session of sessions) {
-      const windowId = crypto.randomUUID()
-      db.prepare(`
-        INSERT INTO context_windows (id, session_id, sequence_number, created_at)
-        VALUES (?, ?, 1, ?)
-      `).run(windowId, session.id, now)
-      
-      db.prepare(`
-        UPDATE messages SET context_window_id = ? WHERE session_id = ?
-      `).run(windowId, session.id)
-    }
-    
-    logger.info('Migrated existing sessions to context windows model', { sessionCount: sessions.length })
-  }
-  
-  if (!msgColumnNames.includes('is_compaction_summary')) {
-    logger.info('Migrating messages table: adding is_compaction_summary column')
-    db.exec(`ALTER TABLE messages ADD COLUMN is_compaction_summary INTEGER DEFAULT 0`)
-  }
-  
   // Create settings table for global configuration (e.g., global instructions)
   db.exec(`
     CREATE TABLE IF NOT EXISTS settings (
@@ -331,11 +134,29 @@ function runMigrations(db: Database.Database): void {
     db.exec(`ALTER TABLE projects ADD COLUMN custom_instructions TEXT`)
   }
   
-  // Migration: Add prompt_context column to messages table for storing what was sent to LLM
-  if (!msgColumnNames.includes('prompt_context')) {
-    logger.info('Migrating messages table: adding prompt_context column')
-    db.exec(`ALTER TABLE messages ADD COLUMN prompt_context TEXT`)
-  }
+  // Create events table for EventStore (single source of truth)
+  // Note: EventStore creates this table with its own schema in initSchema()
+  // We just ensure the index exists for the event_type column
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS events (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      session_id TEXT NOT NULL,
+      seq INTEGER NOT NULL,
+      timestamp INTEGER NOT NULL,
+      event_type TEXT NOT NULL,
+      payload TEXT NOT NULL,
+      UNIQUE(session_id, seq),
+      FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE
+    )
+  `)
+  
+  db.exec(`
+    CREATE INDEX IF NOT EXISTS idx_events_session_seq ON events(session_id, seq)
+  `)
+  
+  db.exec(`
+    CREATE INDEX IF NOT EXISTS idx_events_session_type ON events(session_id, event_type)
+  `)
   
   logger.info('Database migrations completed')
 }
