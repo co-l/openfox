@@ -4,15 +4,18 @@ import { useSessionStore } from '../stores/session'
 import { useProjectStore } from '../stores/project'
 import { Button } from './shared/Button'
 import { OpenProjectModal } from './CreateSessionModal'
+import { DeleteProjectConfirmationModal } from './DeleteProjectConfirmationModal.js'
 
 export function HomePage() {
   const [, navigate] = useLocation()
   const [showOpenModal, setShowOpenModal] = useState(false)
+  const [projectToDelete, setProjectToDelete] = useState<{ id: string; name: string } | null>(null)
   
   const sessions = useSessionStore(state => state.sessions)
   const projects = useProjectStore(state => state.projects)
   const listProjects = useProjectStore(state => state.listProjects)
   const listSessions = useSessionStore(state => state.listSessions)
+  const deleteProject = useProjectStore(state => state.deleteProject)
   
   // Load projects and sessions on mount
   useEffect(() => {
@@ -42,6 +45,18 @@ export function HomePage() {
   
   const handleOpenProject = () => {
     setShowOpenModal(true)
+  }
+  
+  const handleDeleteClick = (project: { id: string; name: string }, e: React.MouseEvent) => {
+    e.stopPropagation()
+    setProjectToDelete(project)
+  }
+  
+  const handleConfirmDelete = () => {
+    if (projectToDelete) {
+      deleteProject(projectToDelete.id)
+      setProjectToDelete(null)
+    }
   }
   
   const getPhaseBadgeClasses = (phase: string) => {
@@ -154,16 +169,29 @@ export function HomePage() {
             
             <div className="flex flex-wrap gap-2 mb-3">
               {recentProjects.map(project => (
-                <button
+                <div
                   key={project.id}
-                  onClick={() => handleProjectClick(project.id)}
-                  className="px-4 py-2 bg-bg-secondary border border-border rounded-full hover:bg-bg-tertiary hover:border-accent-primary transition-colors flex items-center gap-2"
+                  className="px-4 py-2 bg-bg-secondary border border-border rounded-full hover:bg-bg-tertiary hover:border-accent-primary transition-colors flex items-center gap-2 group relative"
                 >
-                  <svg className="w-4 h-4 text-accent-primary" fill="currentColor" viewBox="0 0 24 24">
-                    <path d="M10 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z" />
-                  </svg>
-                  <span className="text-text-primary">{project.name}</span>
-                </button>
+                  <button
+                    onClick={() => handleProjectClick(project.id)}
+                    className="flex items-center gap-2"
+                  >
+                    <svg className="w-4 h-4 text-accent-primary" fill="currentColor" viewBox="0 0 24 24">
+                      <path d="M10 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z" />
+                    </svg>
+                    <span className="text-text-primary">{project.name}</span>
+                  </button>
+                  <button
+                    onClick={(e) => handleDeleteClick(project, e)}
+                    className="opacity-0 group-hover:opacity-100 text-accent-error/70 hover:text-accent-error p-1 transition-opacity ml-1"
+                    title="Delete project"
+                  >
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                  </button>
+                </div>
               ))}
             </div>
           </div>
@@ -175,6 +203,16 @@ export function HomePage() {
         <OpenProjectModal
           isOpen={showOpenModal}
           onClose={() => setShowOpenModal(false)}
+        />
+      )}
+      
+      {/* Delete Confirmation Modal */}
+      {projectToDelete && (
+        <DeleteProjectConfirmationModal
+          isOpen={true}
+          onClose={() => setProjectToDelete(null)}
+          projectName={projectToDelete.name}
+          onConfirm={handleConfirmDelete}
         />
       )}
     </div>

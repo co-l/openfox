@@ -3,6 +3,7 @@ import { useLocation } from 'wouter'
 import { useProjectStore } from '../stores/project'
 import { Button } from './shared/Button'
 import { Input } from './shared/Input'
+import { DeleteProjectConfirmationModal } from './DeleteProjectConfirmationModal.js'
 
 interface DirectoryEntry {
   name: string
@@ -32,8 +33,10 @@ export function OpenProjectModal({ isOpen, onClose }: OpenProjectModalProps) {
   const projects = useProjectStore(state => state.projects)
   const createProject = useProjectStore(state => state.createProject)
   const listProjects = useProjectStore(state => state.listProjects)
+  const deleteProject = useProjectStore(state => state.deleteProject)
   const [creatingPath, setCreatingPath] = useState<string | null>(null)
   const [focusedIndex, setFocusedIndex] = useState(-1)
+  const [projectToDelete, setProjectToDelete] = useState<{ id: string; name: string } | null>(null)
   const itemsRef = useRef<HTMLButtonElement[]>([])
   
   // Fetch directory listing
@@ -76,6 +79,18 @@ export function OpenProjectModal({ isOpen, onClose }: OpenProjectModalProps) {
   const handleProjectClick = (projectId: string) => {
     navigate(`/p/${projectId}`)
     onClose()
+  }
+  
+  const handleDeleteClick = (project: { id: string; name: string }, e: React.MouseEvent) => {
+    e.stopPropagation()
+    setProjectToDelete(project)
+  }
+  
+  const handleConfirmDelete = () => {
+    if (projectToDelete) {
+      deleteProject(projectToDelete.id)
+      setProjectToDelete(null)
+    }
   }
   
   // Handle clicking a directory from browse - create project
@@ -207,19 +222,32 @@ export function OpenProjectModal({ isOpen, onClose }: OpenProjectModalProps) {
               ) : (
                 <div className="divide-y divide-border">
                   {projects.map(project => (
-                    <button
+                    <div
                       key={project.id}
-                      onClick={() => handleProjectClick(project.id)}
-                      className="w-full p-3 flex items-center gap-3 text-left hover:bg-bg-tertiary/50 transition-colors"
+                      className="group flex items-center gap-3 p-3 hover:bg-bg-tertiary/50 transition-colors"
                     >
-                      <svg className="w-5 h-5 text-accent-primary" fill="currentColor" viewBox="0 0 24 24">
-                        <path d="M10 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z" />
-                      </svg>
-                      <div className="flex-1 min-w-0">
-                        <div className="font-medium truncate">{project.name}</div>
-                        <div className="text-xs text-text-muted truncate">{project.workdir}</div>
-                      </div>
-                    </button>
+                      <button
+                        onClick={() => handleProjectClick(project.id)}
+                        className="flex-1 flex items-center gap-3 text-left"
+                      >
+                        <svg className="w-5 h-5 text-accent-primary" fill="currentColor" viewBox="0 0 24 24">
+                          <path d="M10 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z" />
+                        </svg>
+                        <div className="flex-1 min-w-0">
+                          <div className="font-medium truncate">{project.name}</div>
+                          <div className="text-xs text-text-muted truncate">{project.workdir}</div>
+                        </div>
+                      </button>
+                      <button
+                        onClick={(e) => handleDeleteClick(project, e)}
+                        className="opacity-0 group-hover:opacity-100 text-accent-error/70 hover:text-accent-error p-1 transition-opacity"
+                        title="Delete project"
+                      >
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                        </svg>
+                      </button>
+                    </div>
                   ))}
                 </div>
               )}
@@ -320,6 +348,16 @@ export function OpenProjectModal({ isOpen, onClose }: OpenProjectModalProps) {
           </Button>
         </div>
       </div>
+      
+      {/* Delete Confirmation Modal */}
+      {projectToDelete && (
+        <DeleteProjectConfirmationModal
+          isOpen={true}
+          onClose={() => setProjectToDelete(null)}
+          projectName={projectToDelete.name}
+          onConfirm={handleConfirmDelete}
+        />
+      )}
     </div>
   )
 }
