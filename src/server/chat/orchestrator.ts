@@ -817,41 +817,10 @@ ${modifiedFiles.length > 0 ? modifiedFiles.map(f => `- ${f}`).join('\n') : '(non
       continue
     }
 
-    if (nudgesSinceLastProgress < MAX_CONSECUTIVE_VERIFIER_NUDGES) {
-      nudgesSinceLastProgress += 1
-      const nudgeContent = buildVerifierNudgeContent(remainingCriteriaAfterTools)
-      const nudgeMsgId = crypto.randomUUID()
-
-      eventStore.append(sessionId, createMessageStartEvent(nudgeMsgId, 'user', nudgeContent, {
-        ...(currentWindowMessageOptions ?? {}),
-        isSystemGenerated: true,
-        messageKind: 'correction',
-        subAgentId,
-        subAgentType: 'verifier',
-      }))
-      eventStore.append(sessionId, { type: 'message.done', data: { messageId: nudgeMsgId } })
-      customMessages = [...customMessages, { role: 'user', content: nudgeContent, source: 'runtime' }]
-      continue
-    }
-
-    markCriteriaFailedAfterVerifierStall(sessionManager, sessionId, remainingCriteriaAfterTools)
-    session = sessionManager.requireSession(sessionId)
-
-    const stalledMsgId = crypto.randomUUID()
-    eventStore.append(sessionId, createMessageStartEvent(stalledMsgId, 'user', `${VERIFIER_STALL_REASON} Marking remaining criteria as failed: ${remainingCriteriaAfterTools.map((criterion) => criterion.id).join(', ')}.`, {
-      ...(currentWindowMessageOptions ?? {}),
-      isSystemGenerated: true,
-      messageKind: 'correction',
-      subAgentId,
-      subAgentType: 'verifier',
-    }))
-    eventStore.append(sessionId, { type: 'message.done', data: { messageId: stalledMsgId } })
-
-    const stats = turnMetrics.buildStats(llmClient.getModel(), 'verifier')
-    eventStore.append(sessionId, createMessageDoneEvent(assistantMsgId, { segments: result.segments, stats }))
-    eventStore.append(sessionId, createChatDoneEvent(assistantMsgId, 'complete', stats))
-    emittedTerminalDone = true
-    break
+    // Tool calls were made - this IS progress, even if criteria didn't change.
+    // The model needs to see tool results before calling pass_criterion/fail_criterion.
+    // Reset the nudge counter since the model is actively working.
+    nudgesSinceLastProgress = 0
   }
 
   session = sessionManager.requireSession(sessionId)

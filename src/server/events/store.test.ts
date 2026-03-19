@@ -7,7 +7,7 @@
 
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import Database from 'better-sqlite3'
-import { EventStore } from './store.js'
+import { EventStore, initEventStore } from './store.js'
 import type { TurnEvent, StoredEvent } from './types.js'
 
 describe('EventStore', () => {
@@ -553,5 +553,126 @@ describe('EventStore', () => {
       const events = store.getEvents('session-1')
       expect(events[0]!.data).toEqual(complexData)
     })
+  })
+})
+
+describe('initEventStore', () => {
+  it('should reset stale running sessions on startup', () => {
+    // This simulates a server crash/restart scenario:
+    // 1. Server was running, session was in running state
+    // 2. Server crashed (no clean shutdown)
+    // 3. Server restarts and loads the session - it should reset to not running
+
+    const db = new Database(':memory:')
+
+    // Create sessions table (normally done by db migrations)
+    db.exec(`
+      CREATE TABLE sessions (
+        id TEXT PRIMARY KEY,
+        project_id TEXT NOT NULL,
+        workdir TEXT NOT NULL
+      )
+    `)
+
+    // Create a session
+    db.prepare(`INSERT INTO sessions (id, project_id, workdir) VALUES (?, ?, ?)`).run(
+      'session-1',
+      'project-1',
+      '/tmp/test'
+    )
+
+    // Manually create the EventStore first (simulates first server run)
+    const firstStore = new EventStore(db)
+
+    // Simulate: session was running when server crashed
+    firstStore.append('session-1', { type: 'running.changed', data: { isRunning: true } })
+
+    // Verify the session shows as running
+    const eventsBeforeRestart = firstStore.getEvents('session-1')
+    const lastRunningBefore = eventsBeforeRestart.filter(e => e.type === 'running.changed').pop()
+    expect((lastRunningBefore?.data as { isRunning: boolean }).isRunning).toBe(true)
+
+    // Now simulate server restart by calling initEventStore
+    // This should detect the stale running state and emit a false event
+    const restartedStore = initEventStore(db)
+
+    // Check that a running.changed: false event was emitted
+    const eventsAfterRestart = restartedStore.getEvents('session-1')
+    const lastRunningAfter = eventsAfterRestart.filter(e => e.type === 'running.changed').pop()
+    expect((lastRunningAfter?.data as { isRunning: boolean }).isRunning).toBe(false)
+
+    // Should have one more event than before
+    expect(eventsAfterRestart.length).toBe(eventsBeforeRestart.length + 1)
+
+    db.close()
+  })
+
+  it('should not emit reset event for sessions already not running', () => {
+    const db = new Database(':memory:')
+
+    db.exec(`
+      CREATE TABLE sessions (
+        id TEXT PRIMARY KEY,
+        project_id TEXT NOT NULL,
+        workdir TEXT NOT NULL
+      )
+    `)
+
+    db.prepare(`INSERT INTO sessions (id, project_id, workdir) VALUES (?, ?, ?)`).run(
+      'session-1',
+      'project-1',
+      '/tmp/test'
+    )
+
+    const firstStore = new EventStore(db)
+
+    // Session was properly stopped (running.changed: false)
+    firstStore.append('session-1', { type: 'running.changed', data: { isRunning: true } })
+    firstStore.append('session-1', { type: 'running.changed', data: { isRunning: false } })
+
+    const eventsBeforeRestart = firstStore.getEvents('session-1')
+
+    // Restart
+    const restartedStore = initEventStore(db)
+
+    // Should NOT have added any new events
+    const eventsAfterRestart = restartedStore.getEvents('session-1')
+    expect(eventsAfterRestart.length).toBe(eventsBeforeRestart.length)
+
+    db.close()
+  })
+
+  it('should handle sessions with no running.changed events', () => {
+    const db = new Database(':memory:')
+
+    db.exec(`
+      CREATE TABLE sessions (
+        id TEXT PRIMARY KEY,
+        project_id TEXT NOT NULL,
+        workdir TEXT NOT NULL
+      )
+    `)
+
+    db.prepare(`INSERT INTO sessions (id, project_id, workdir) VALUES (?, ?, ?)`).run(
+      'session-1',
+      'project-1',
+      '/tmp/test'
+    )
+
+    const firstStore = new EventStore(db)
+
+    // Session has some events but no running.changed
+    firstStore.append('session-1', { type: 'message.start', data: { messageId: 'msg-1', role: 'user', content: 'hi' } })
+
+    const eventsBeforeRestart = firstStore.getEvents('session-1')
+
+    // Restart
+    const restartedStore = initEventStore(db)
+
+    // Should NOT have added any new events
+    const eventsAfterRestart = restartedStore.getEvents('session-1')
+    expect(eventsAfterRestart.length).toBe(eventsBeforeRestart.length)
+
+    db.close()
   })
 })

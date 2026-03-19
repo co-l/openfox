@@ -375,7 +375,49 @@ let eventStoreInstance: EventStore | null = null
 
 export function initEventStore(db: Database.Database): EventStore {
   eventStoreInstance = new EventStore(db)
+
+  // Reset stale running states from previous server runs.
+  // Sessions cannot actually be running when server starts - any session
+  // that shows as running was interrupted (crash, restart, etc.).
+  resetStaleRunningSessions(eventStoreInstance, db)
+
   return eventStoreInstance
+}
+
+/**
+ * Find sessions that would fold to isRunning=true and emit running.changed=false
+ * to clean up stale running states from server crashes/restarts.
+ */
+function resetStaleRunningSessions(eventStore: EventStore, db: Database.Database): void {
+  // Get all session IDs
+  const sessions = db.prepare(`SELECT id FROM sessions`).all() as { id: string }[]
+
+  let resetCount = 0
+  for (const { id: sessionId } of sessions) {
+    // Get the last running.changed event for this session
+    const lastRunningEvent = db.prepare(`
+      SELECT payload FROM events 
+      WHERE session_id = ? AND event_type = 'running.changed'
+      ORDER BY seq DESC LIMIT 1
+    `).get(sessionId) as { payload: string } | undefined
+
+    if (lastRunningEvent) {
+      const data = JSON.parse(lastRunningEvent.payload) as { isRunning: boolean }
+      if (data.isRunning === true) {
+        // This session was left in running state - emit false to reset
+        eventStore.append(sessionId, {
+          type: 'running.changed',
+          data: { isRunning: false },
+        })
+        resetCount++
+      }
+    }
+  }
+
+  if (resetCount > 0) {
+    // Log using console.log since logger may not be initialized yet
+    console.log(`[EventStore] Reset ${resetCount} stale running session(s)`)
+  }
 }
 
 export function getEventStore(): EventStore {

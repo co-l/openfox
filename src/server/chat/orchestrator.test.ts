@@ -635,7 +635,9 @@ describe('chat orchestrator', () => {
     })).toBeDefined()
   })
 
-  it('nudges verifier after non-terminal tool work with no verification progress', async () => {
+  it('verifier continues without nudge after tool calls (tool calls are progress)', async () => {
+    // After the fix: tool calls should NOT trigger nudges. The model gets to see
+    // the tool results and respond naturally without being nagged.
     const eventStore = createEventStore()
     getEventStoreMock.mockReturnValue(eventStore)
     getAllInstructionsMock.mockResolvedValue({ content: 'Verify carefully', files: [] })
@@ -709,10 +711,19 @@ describe('chat orchestrator', () => {
     }, new TurnMetrics())
 
     expect(result).toEqual({ allPassed: false, failed: [{ id: 'tests-pass', reason: 'still broken' }] })
+
+    // Verify NO nudge messages were sent after tool calls
+    const nudgeMessages = eventStore.append.mock.calls.filter(
+      ([, event]) => event.type === 'message.start' &&
+        (event.data as any).messageKind === 'correction' &&
+        (event.data as any).content?.includes('stopped before finalizing')
+    )
+    expect(nudgeMessages).toHaveLength(0)
+
+    // The second call should NOT contain a nudge - just the tool result from the first call
     expect(streamLLMPureMock.mock.calls[1]?.[0]).toMatchObject({
-      messages: expect.arrayContaining([
+      messages: expect.not.arrayContaining([
         expect.objectContaining({
-          role: 'user',
           content: expect.stringContaining('Use pass_criterion or fail_criterion'),
         }),
       ]),
@@ -776,7 +787,10 @@ describe('chat orchestrator', () => {
     expect(streamLLMPureMock.mock.calls).toHaveLength(6)
   })
 
-  it('fails repeated non-terminal verifier tool loops at the nudge cap', async () => {
+  it('does not nudge verifier when tool calls are being made (tool calls are progress)', async () => {
+    // This test verifies that the verifier does NOT get nudged when it's actively
+    // making tool calls (read_file, run_command, etc). Nudging should only happen
+    // when the model responds WITHOUT any tool calls.
     const eventStore = createEventStore()
     getEventStoreMock.mockReturnValue(eventStore)
     getAllInstructionsMock.mockResolvedValue({ content: 'Verify carefully', files: [] })
@@ -796,14 +810,25 @@ describe('chat orchestrator', () => {
       },
     }
     const sessionManager = createSessionManager(state)
-    const execute = vi.fn(async () => ({ success: true, output: 'file contents', durationMs: 5, truncated: false }))
+    const execute = vi.fn(async (name: string) => {
+      if (name === 'pass_criterion') {
+        state.current.criteria = [{ id: 'tests-pass', description: 'Tests pass', status: { type: 'passed', verifiedAt: '2024-01-01T00:00:00.000Z' }, attempts: [] }]
+        return { success: true, output: 'Criterion passed', durationMs: 5, truncated: false }
+      }
+      return { success: true, output: 'file contents', durationMs: 5, truncated: false }
+    })
 
     getToolRegistryForModeMock.mockReturnValue({
-      definitions: [{ type: 'function', function: { name: 'read_file', description: 'Read', parameters: {} } }],
+      definitions: [
+        { type: 'function', function: { name: 'read_file', description: 'Read', parameters: {} } },
+        { type: 'function', function: { name: 'pass_criterion', description: 'Pass', parameters: {} } },
+      ],
       execute,
     })
     streamLLMPureMock.mockReturnValue({ kind: 'stream' })
-    for (let index = 0; index < 6; index++) {
+
+    // Model makes 5 information-gathering tool calls, then passes the criterion
+    for (let index = 0; index < 5; index++) {
       consumeStreamGeneratorMock.mockResolvedValueOnce({
         content: `checking-${index}`,
         toolCalls: [{ id: `call-${index}`, name: 'read_file', arguments: { path: 'src/index.ts' } }],
@@ -814,6 +839,26 @@ describe('chat orchestrator', () => {
         xmlFormatError: false,
       })
     }
+    // Finally passes the criterion
+    consumeStreamGeneratorMock.mockResolvedValueOnce({
+      content: 'verified',
+      toolCalls: [{ id: 'call-pass', name: 'pass_criterion', arguments: { id: 'tests-pass', reason: 'All checks pass' } }],
+      segments: [],
+      usage: { promptTokens: 8, completionTokens: 1 },
+      timing: { ttft: 1, completionTime: 1, tps: 1, prefillTps: 8 },
+      aborted: false,
+      xmlFormatError: false,
+    })
+    // Final response
+    consumeStreamGeneratorMock.mockResolvedValueOnce({
+      content: 'All criteria verified',
+      toolCalls: [],
+      segments: [{ type: 'text', content: 'All criteria verified' }],
+      usage: { promptTokens: 8, completionTokens: 1 },
+      timing: { ttft: 1, completionTime: 1, tps: 1, prefillTps: 8 },
+      aborted: false,
+      xmlFormatError: false,
+    })
 
     const result = await runVerifierTurn({
       sessionManager: sessionManager as never,
@@ -822,12 +867,17 @@ describe('chat orchestrator', () => {
       onMessage: vi.fn(),
     }, new TurnMetrics())
 
-    expect(result).toEqual({
-      allPassed: false,
-      failed: [{ id: 'tests-pass', reason: 'Verifier stopped repeatedly without using verification tools after repeated nudges.' }],
-    })
-    expect(execute).toHaveBeenCalledTimes(6)
-    expect(streamLLMPureMock.mock.calls).toHaveLength(6)
+    // Should pass - no nudging occurred because model was making tool calls
+    expect(result).toEqual({ allPassed: true, failed: [] })
+    expect(execute).toHaveBeenCalledTimes(6) // 5 read_file + 1 pass_criterion
+
+    // Verify NO nudge messages were emitted
+    const nudgeMessages = eventStore.append.mock.calls.filter(
+      ([, event]) => event.type === 'message.start' &&
+        (event.data as any).messageKind === 'correction' &&
+        (event.data as any).content?.includes('stopped before finalizing')
+    )
+    expect(nudgeMessages).toHaveLength(0)
   })
 
   it('handles verifier path denial and nudges until verification reaches a terminal state', async () => {
