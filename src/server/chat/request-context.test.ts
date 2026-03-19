@@ -56,6 +56,7 @@ describe('request context assembly', () => {
     })
 
     expect(first.systemPrompt).toBe(second.systemPrompt)
+    expect(second.promptContext.userMessage).toBe('Implement the feature')
     expect(first.promptContext.messages.at(-1)).toMatchObject({ role: 'user', source: 'runtime' })
     expect(second.promptContext.messages.at(-1)).toMatchObject({ role: 'user', source: 'runtime' })
     expect(first.promptContext.messages.at(-1)?.content).toContain('[PENDING]')
@@ -84,6 +85,34 @@ describe('request context assembly', () => {
     expect(assembled.promptContext.requestOptions).toEqual({
       toolChoice: 'auto',
       enableThinking: true,
+    })
+  })
+
+  it('preserves attachments in the exact request context', () => {
+    const assembled = assemblePlannerRequest({
+      workdir: '/tmp/project',
+      messages: [{
+        role: 'user',
+        content: 'Describe the image',
+        source: 'history',
+        attachments: [{
+          id: 'att-1',
+          filename: 'screenshot.png',
+          mimeType: 'image/png',
+          size: 12,
+          data: 'ZmFrZQ==',
+        }],
+      }],
+      promptTools: tools,
+      injectedFiles,
+      toolChoice: 'auto',
+    })
+
+    expect(assembled.promptContext.messages[0]).toMatchObject({
+      attachments: [expect.objectContaining({ filename: 'screenshot.png' })],
+    })
+    expect(assembled.messages[0]).toMatchObject({
+      attachments: [expect.objectContaining({ filename: 'screenshot.png' })],
     })
   })
 })

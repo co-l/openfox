@@ -206,7 +206,7 @@ async function runPlannerTurn(
       messageKind: 'correction',
     }))
     eventStore.append(sessionId, createFormatRetryEvent(formatRetryCount, MAX_FORMAT_RETRIES))
-    requestMessages.push({ role: 'user', content: FORMAT_CORRECTION_PROMPT, source: 'history' })
+    requestMessages.push({ role: 'user', content: FORMAT_CORRECTION_PROMPT, source: 'runtime' })
   }
 
   const assembledRequest = assemblePlannerRequest({
@@ -390,7 +390,7 @@ export async function runBuilderTurn(
       messageKind: 'correction',
     }))
     eventStore.append(sessionId, createFormatRetryEvent(formatRetryCount, MAX_FORMAT_RETRIES))
-    requestMessages.push({ role: 'user', content: FORMAT_CORRECTION_PROMPT, source: 'history' })
+    requestMessages.push({ role: 'user', content: FORMAT_CORRECTION_PROMPT, source: 'runtime' })
   }
 
   const assembledRequest = assembleBuilderRequest({

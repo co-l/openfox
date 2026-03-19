@@ -122,6 +122,9 @@ describe('runBuilderStep', () => {
         systemPrompt: expect.any(String),
         injectedFiles: [{ path: 'AGENTS.md', content: 'Always add tests', source: 'global' }],
         userMessage: expect.stringContaining('fulfil the 1 criteria'),
+        messages: expect.any(Array),
+        tools: expect.any(Array),
+        requestOptions: { toolChoice: 'auto', enableThinking: true },
       },
     })
     expect(toolRegistry.execute).toHaveBeenCalledWith('write_file', { path: 'src/index.ts' }, expect.objectContaining({

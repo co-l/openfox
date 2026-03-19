@@ -7,13 +7,13 @@ import type { ToolRegistry } from '../tools/index.js'
 import type { SessionManager } from '../session/index.js'
 import { getEventStore, getCurrentContextWindowId } from '../events/index.js'
 import { buildContextMessagesFromStoredEvents, buildMessagesFromStoredEvents } from '../events/folding.js'
-import type { InjectedFile, Message } from '../../shared/types.js'
+import type { Attachment, InjectedFile, Message } from '../../shared/types.js'
 import { runChatTurn, TurnMetrics, createMessageStartEvent, createMessageDoneEvent, createChatDoneEvent } from '../chat/orchestrator.js'
 import { streamLLMPure, consumeStreamGenerator } from '../chat/stream-pure.js'
 import { runOrchestrator } from '../runner/index.js'
 import { SUMMARY_REQUEST_PROMPT, COMPACTION_PROMPT } from '../chat/prompts.js'
 import { assemblePlannerRequest, type RequestContextMessage } from '../chat/request-context.js'
-import { getToolRegistryForMode, providePathConfirmation, addAllowedPaths } from '../tools/index.js'
+import { providePathConfirmation, addAllowedPaths } from '../tools/index.js'
 import { getAllInstructions } from '../context/instructions.js'
 import { logger } from '../utils/logger.js'
 import {
@@ -72,6 +72,7 @@ function toRequestContextMessages(messages: Array<{
   content: string
   toolCalls?: Array<{ id: string; name: string; arguments: Record<string, unknown> }>
   toolCallId?: string
+  attachments?: Attachment[]
 }>): RequestContextMessage[] {
   return messages.map((message) => ({
     role: message.role,
@@ -79,6 +80,7 @@ function toRequestContextMessages(messages: Array<{
     source: 'history',
     ...(message.toolCalls ? { toolCalls: message.toolCalls } : {}),
     ...(message.toolCallId ? { toolCallId: message.toolCallId } : {}),
+    ...(message.attachments ? { attachments: message.attachments } : {}),
   }))
 }
 
@@ -637,7 +639,6 @@ async function handleClientMessage(
             content: file.content ?? '',
             source: file.source,
           }))
-          const toolRegistry = getToolRegistryForMode('planner')
 
           // Build context messages from EventStore (intentionally ALL messages, not filtered)
           const events = eventStore.getEvents(sessionId)
@@ -646,7 +647,7 @@ async function handleClientMessage(
             workdir: currentSession.workdir,
             messages: requestMessages,
             injectedFiles,
-            promptTools: toolRegistry.definitions,
+            promptTools: [],
             requestTools: [],
             toolChoice: 'none',
             enableThinking: false,
@@ -810,7 +811,6 @@ async function handleClientMessage(
             content: file.content ?? '',
             source: file.source,
           }))
-          const toolRegistry = getToolRegistryForMode('planner')
           const currentWindowId = getCurrentContextWindowId(sessionId)
           const currentWindowEvents = eventStore.getEvents(sessionId)
           const requestMessages = toRequestContextMessages(buildContextMessagesFromStoredEvents(
@@ -822,7 +822,7 @@ async function handleClientMessage(
             workdir: session.workdir,
             messages: requestMessages,
             injectedFiles,
-            promptTools: toolRegistry.definitions,
+            promptTools: [],
             requestTools: [],
             toolChoice: 'none',
             enableThinking: false,

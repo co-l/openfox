@@ -11,10 +11,9 @@ import type { LLMClientWithModel } from '../llm/client.js'
 import type { StepResult } from '../runner/types.js'
 import type { SessionManager } from '../session/index.js'
 import { getToolRegistryForMode } from '../tools/index.js'
-import { buildBuilderPrompt, BUILDER_KICKOFF_PROMPT } from './prompts.js'
+import { buildBuilderPrompt, buildBuilderRuntimeStateMessage, BUILDER_KICKOFF_PROMPT } from './prompts.js'
 import { streamLLMResponse } from './stream.js'
 import { computeAggregatedStats } from './stats.js'
-import { estimateTokens } from '../context/tokenizer.js'
 import { getAllInstructions } from '../context/instructions.js'
 import {
   createChatToolCallMessage,
@@ -57,7 +56,6 @@ export async function runBuilderStep(options: BuilderStepOptions): Promise<StepR
     const kickoffMsg = sessionManager.addMessage(sessionId, {
       role: 'user',
       content: kickoffContent,
-      tokenCount: estimateTokens(kickoffContent),
       isSystemGenerated: true,
       messageKind: 'auto-prompt',
     })
@@ -106,9 +104,7 @@ export async function runBuilderStep(options: BuilderStepOptions): Promise<StepR
     
     const systemPrompt = buildBuilderPrompt(
       session.workdir,
-      session.criteria,
       toolRegistry.definitions,
-      session.executionState?.modifiedFiles ?? [],
       instructions || undefined
     )
     
@@ -122,6 +118,12 @@ export async function runBuilderStep(options: BuilderStepOptions): Promise<StepR
         systemPrompt,
         injectedFiles: instructionFiles.map(f => ({ path: f.path, content: f.content ?? '', source: f.source })) as InjectedFile[],
         userMessage: lastUserMessage.content,
+        messages: [
+          { role: 'user', content: lastUserMessage.content, source: 'history' },
+          { role: 'user', content: buildBuilderRuntimeStateMessage(session.criteria, session.executionState?.modifiedFiles ?? []), source: 'runtime' },
+        ],
+        tools: toolRegistry.definitions.map(tool => ({ name: tool.function.name, description: tool.function.description, parameters: tool.function.parameters })),
+        requestOptions: { toolChoice: 'auto', enableThinking: true },
       }
       sessionManager.updateMessage(sessionId, lastUserMessage.id, { promptContext })
     }
@@ -216,7 +218,6 @@ export async function runBuilderStep(options: BuilderStepOptions): Promise<StepR
         toolCallId: toolCall.id,
         toolName: toolCall.name,
         toolResult,
-        tokenCount: estimateTokens(toolResult.output ?? toolResult.error ?? ''),
       })
       onMessage(createChatMessageMessage(toolMsg))
       

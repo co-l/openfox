@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { buildPlannerPrompt, buildBuilderPrompt, buildVerifierPrompt } from './prompts.js'
+import { buildPlannerPrompt, buildBuilderPrompt, buildBuilderRuntimeStateMessage, buildVerifierPrompt } from './prompts.js'
 import type { Criterion } from '../../shared/types.js'
 
 describe('buildPlannerPrompt', () => {
@@ -39,28 +39,31 @@ describe('buildBuilderPrompt', () => {
   ]
 
   it('includes workdir in prompt', () => {
-    const prompt = buildBuilderPrompt('/home/user/myapp', mockCriteria, [], [], undefined)
+    const prompt = buildBuilderPrompt('/home/user/myapp', [], undefined)
     expect(prompt).toContain('/home/user/myapp')
     expect(prompt).toMatch(/working directory/i)
   })
 
   it('includes platform info in prompt', () => {
-    const prompt = buildBuilderPrompt('/tmp', mockCriteria, [], [], undefined)
+    const prompt = buildBuilderPrompt('/tmp', [], undefined)
     expect(prompt).toContain(process.platform)
     expect(prompt).toContain(process.arch)
   })
 
-  it('includes criteria list with status', () => {
-    const prompt = buildBuilderPrompt('/tmp', mockCriteria, [], [], undefined)
-    expect(prompt).toContain('Tests pass')
-    expect(prompt).toContain('[PENDING]')
-    expect(prompt).toContain('[COMPLETED')
+  it('keeps runtime state out of the stable system prompt', () => {
+    const prompt = buildBuilderPrompt('/tmp', [], undefined)
+    expect(prompt).not.toContain('Tests pass')
+    expect(prompt).not.toContain('[PENDING]')
+    expect(prompt).not.toContain('[COMPLETED')
   })
 
-  it('includes modified files', () => {
-    const prompt = buildBuilderPrompt('/tmp', mockCriteria, [], ['src/index.ts', 'package.json'], undefined)
-    expect(prompt).toContain('src/index.ts')
-    expect(prompt).toContain('package.json')
+  it('renders runtime state as a trailing context message', () => {
+    const message = buildBuilderRuntimeStateMessage(mockCriteria, ['src/index.ts', 'package.json'])
+    expect(message).toContain('Tests pass')
+    expect(message).toContain('[PENDING]')
+    expect(message).toContain('[COMPLETED')
+    expect(message).toContain('src/index.ts')
+    expect(message).toContain('package.json')
   })
 })
 

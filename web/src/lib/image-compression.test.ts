@@ -2,8 +2,8 @@
  * Unit tests for image compression utility
  */
 
-import { describe, it, expect, vi } from 'vitest'
-import { compressImage, isValidImageType, validateImageSize } from '../../lib/image-compression.js'
+import { afterEach, beforeAll, describe, it, expect } from 'vitest'
+import { compressImage, isValidImageType, validateImageSize } from './image-compression.js'
 
 // Mock Image class for testing
 class MockImage {
@@ -11,7 +11,7 @@ class MockImage {
   height: number
   onload: (() => void) | null = null
   
-  constructor(width: number, height: number) {
+  constructor(width = 1200, height = 800) {
     this.width = width
     this.height = height
   }
@@ -45,7 +45,7 @@ class MockCanvasContext {
   imageSmoothingQuality = 'high'
   
   drawImage(_img: HTMLImageElement, _sx: number, _sy: number, _sw: number, _sh: number, _dx: number, _dy: number, _dw: number, _dh: number): void
-  drawImage(_img: any, ...args: any[]) {
+  drawImage(_img: any, ..._args: any[]) {
     // Mock implementation
   }
 }
@@ -68,6 +68,18 @@ describe('Image Compression', () => {
     ;(global as any).Image = MockImage
     ;(global as any).HTMLImageElement = MockImage
     ;(global as any).FileReader = MockFileReader
+    ;(global as any).document = {
+      createElement: () => new MockCanvas(),
+    }
+  })
+
+  afterEach(() => {
+    ;(global as any).Image = MockImage
+    ;(global as any).HTMLImageElement = MockImage
+    ;(global as any).FileReader = MockFileReader
+    ;(global as any).document = {
+      createElement: () => new MockCanvas(),
+    }
   })
 
   describe('compressImage', () => {
@@ -119,15 +131,22 @@ describe('Image Compression', () => {
     it('should handle GIF files by converting to PNG', async () => {
       const gifFile = new File(['gif data'], 'test.gif', { type: 'image/gif' })
       
-      // @ts-ignore
       const result = await compressImage(gifFile, {
         maxWidth: 1920,
         maxHeight: 1920,
         quality: 0.85,
-        maxSizeBytes: 1048576,
+        maxSizeBytes: 1,
       })
       
       expect(result.mimeType).toBe('image/png') // GIFs are converted to PNG
+    })
+
+    it('fails clearly when browser image APIs are unavailable', async () => {
+      ;(global as any).FileReader = undefined
+
+      const pngFile = new File(['png data'], 'test.png', { type: 'image/png' })
+
+      await expect(compressImage(pngFile, { maxSizeBytes: 1 })).rejects.toThrow('Image compression requires browser file APIs')
     })
   })
 

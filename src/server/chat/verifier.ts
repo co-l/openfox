@@ -14,7 +14,6 @@ import { getToolRegistryForMode } from '../tools/index.js'
 import { buildVerifierPrompt, VERIFIER_KICKOFF_PROMPT } from './prompts.js'
 import { streamLLMResponse } from './stream.js'
 import { computeAggregatedStats } from './stats.js'
-import { estimateTokens } from '../context/tokenizer.js'
 import { getAllInstructions } from '../context/instructions.js'
 import { logger } from '../utils/logger.js'
 import {
@@ -100,7 +99,6 @@ ${criteriaList}
   const resetMsg = sessionManager.addMessage(sessionId, {
     role: 'user',
     content: 'Fresh Context',
-    tokenCount: 2,
     isSystemGenerated: true,
     messageKind: 'context-reset',
     subAgentId,
@@ -112,7 +110,6 @@ ${criteriaList}
   const contextMsg = sessionManager.addMessage(sessionId, {
     role: 'user',
     content: contextContent,
-    tokenCount: estimateTokens(contextContent),
     isSystemGenerated: true,
     messageKind: 'auto-prompt',
     subAgentId,
@@ -124,7 +121,6 @@ ${criteriaList}
   const kickoffMsg = sessionManager.addMessage(sessionId, {
     role: 'user',
     content: VERIFIER_KICKOFF_PROMPT,
-    tokenCount: estimateTokens(VERIFIER_KICKOFF_PROMPT),
     isSystemGenerated: true,
     messageKind: 'auto-prompt',
     subAgentId,
@@ -143,6 +139,12 @@ ${criteriaList}
     systemPrompt,
     injectedFiles: instructionFiles.map(f => ({ path: f.path, content: f.content ?? '', source: f.source })) as InjectedFile[],
     userMessage: VERIFIER_KICKOFF_PROMPT,
+    messages: [
+      { role: 'user', content: contextContent, source: 'runtime' },
+      { role: 'user', content: VERIFIER_KICKOFF_PROMPT, source: 'runtime' },
+    ],
+    tools: toolRegistry.definitions.map(tool => ({ name: tool.function.name, description: tool.function.description, parameters: tool.function.parameters })),
+    requestOptions: { toolChoice: 'auto', enableThinking: false },
   }
   sessionManager.updateMessage(sessionId, kickoffMsg.id, { promptContext })
   

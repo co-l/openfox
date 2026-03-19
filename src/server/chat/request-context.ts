@@ -92,7 +92,7 @@ export function createPromptContext(input: {
   return {
     systemPrompt: input.systemPrompt,
     injectedFiles: input.injectedFiles,
-    userMessage: getLastUserMessage(input.messages),
+    userMessage: getTriggerUserMessage(input.messages),
     messages: input.messages.map((message) => ({
       role: message.role,
       content: message.content,
@@ -134,7 +134,14 @@ function createAssemblyResult(input: {
   }
 }
 
-function getLastUserMessage(messages: RequestContextMessage[]): string {
+function getTriggerUserMessage(messages: RequestContextMessage[]): string {
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const message = messages[index]
+    if (message?.role === 'user' && message.source === 'history') {
+      return message.content
+    }
+  }
+
   for (let index = messages.length - 1; index >= 0; index -= 1) {
     const message = messages[index]
     if (message?.role === 'user') {

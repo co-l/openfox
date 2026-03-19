@@ -25,6 +25,45 @@ const DEFAULT_OPTIONS: Required<CompressionOptions> = {
   maxSizeBytes: 1048576, // 1MB
 }
 
+interface ImageLike {
+  width: number
+  height: number
+}
+
+interface CanvasContextLike {
+  imageSmoothingEnabled: boolean
+  imageSmoothingQuality: 'low' | 'medium' | 'high'
+  drawImage: (image: ImageLike, dx: number, dy: number, dw: number, dh: number) => void
+}
+
+interface CanvasLike {
+  width: number
+  height: number
+  getContext: (contextType: string) => CanvasContextLike | null
+  toDataURL: (type?: string, quality?: number) => string
+}
+
+interface BrowserImage extends ImageLike {
+  onload: null | (() => void)
+  onerror: null | (() => void)
+  src: string
+}
+
+interface BrowserFileReader {
+  result: string | ArrayBuffer | null
+  onload: null | (() => void)
+  onerror: null | (() => void)
+  readAsDataURL: (file: File) => void
+}
+
+interface BrowserGlobals {
+  document?: {
+    createElement: (tagName: string) => unknown
+  }
+  Image?: new () => BrowserImage
+  FileReader?: new () => BrowserFileReader
+}
+
 /**
  * Compress an image file to meet size and dimension constraints.
  */
@@ -81,7 +120,7 @@ async function compressToTarget(
   const { width, height } = calculateScaledDimensions(img.width, img.height, opts.maxWidth, opts.maxHeight)
   
   // Create canvas and draw resized image
-  const canvas = document.createElement('canvas')
+  const canvas = createCanvas()
   canvas.width = width
   canvas.height = height
   
@@ -156,7 +195,8 @@ function calculateScaledDimensions(
  */
 function fileToDataUrl(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
-    const reader = new FileReader()
+    const FileReaderConstructor = getFileReaderConstructor()
+    const reader = new FileReaderConstructor()
     reader.onload = () => resolve(reader.result as string)
     reader.onerror = () => reject(new Error('Failed to read file'))
     reader.readAsDataURL(file)
@@ -166,13 +206,45 @@ function fileToDataUrl(file: File): Promise<string> {
 /**
  * Load image from Data URL.
  */
-function loadImage(dataUrl: string): Promise<HTMLImageElement> {
+function loadImage(dataUrl: string): Promise<ImageLike> {
   return new Promise((resolve, reject) => {
-    const img = new Image()
+    const ImageConstructor = getImageConstructor()
+    const img = new ImageConstructor()
     img.onload = () => resolve(img)
     img.onerror = () => reject(new Error('Failed to load image'))
     img.src = dataUrl
   })
+}
+
+function createCanvas(): CanvasLike {
+  const browserGlobals = getBrowserGlobals()
+  if (!browserGlobals.document?.createElement) {
+    throw new Error('Image compression requires browser canvas APIs')
+  }
+
+  return browserGlobals.document.createElement('canvas') as CanvasLike
+}
+
+function getImageConstructor(): new () => BrowserImage {
+  const browserGlobals = getBrowserGlobals()
+  if (!browserGlobals.Image) {
+    throw new Error('Image compression requires browser image APIs')
+  }
+
+  return browserGlobals.Image
+}
+
+function getFileReaderConstructor(): new () => BrowserFileReader {
+  const browserGlobals = getBrowserGlobals()
+  if (!browserGlobals.FileReader) {
+    throw new Error('Image compression requires browser file APIs')
+  }
+
+  return browserGlobals.FileReader
+}
+
+function getBrowserGlobals(): BrowserGlobals {
+  return globalThis as BrowserGlobals
 }
 
 /**

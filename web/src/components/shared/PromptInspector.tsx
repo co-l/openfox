@@ -49,7 +49,17 @@ export function PromptInspector({ isOpen, onClose, promptContext }: PromptInspec
                     <span className="font-mono text-text-primary">{message.role}</span>
                     <span className="rounded bg-bg-tertiary px-1.5 py-0.5">{message.source}</span>
                     {message.toolCallId && <span className="font-mono">{message.toolCallId}</span>}
+                    {message.attachments && message.attachments.length > 0 && (
+                      <span className="rounded bg-bg-tertiary px-1.5 py-0.5">
+                        {message.attachments.length} attachment{message.attachments.length === 1 ? '' : 's'}
+                      </span>
+                    )}
                   </div>
+                  {message.attachments && message.attachments.length > 0 && (
+                    <div className="border-b border-border px-3 py-2 text-xs text-text-muted">
+                      {message.attachments.map((attachment: { filename: string }) => attachment.filename).join(', ')}
+                    </div>
+                  )}
                   <pre className="text-xs text-text-secondary whitespace-pre-wrap bg-bg-tertiary rounded-b p-3 max-h-64 overflow-auto font-mono">
                     {message.content || '(empty)'}
                   </pre>

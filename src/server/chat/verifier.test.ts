@@ -140,6 +140,9 @@ describe('runVerifierStep', () => {
         systemPrompt: expect.any(String),
         injectedFiles: [{ path: 'AGENTS.md', content: 'Verify carefully', source: 'global' }],
         userMessage: expect.any(String),
+        messages: expect.any(Array),
+        tools: expect.any(Array),
+        requestOptions: { toolChoice: 'auto', enableThinking: false },
       },
     })
     expect(toolRegistry.execute).toHaveBeenCalledWith('fail_criterion', { id: 'tests-pass', reason: 'still broken' }, expect.objectContaining({

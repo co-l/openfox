@@ -1104,7 +1104,13 @@ describe('chat orchestrator', () => {
       expect(getContextMessagesMock).toHaveBeenCalledWith('session-1')
       expect(streamLLMPureMock).toHaveBeenCalledWith(
         expect.objectContaining({
-          messages: currentWindowMessages,
+          messages: [
+            ...currentWindowMessages,
+            expect.objectContaining({
+              role: 'user',
+              content: expect.stringContaining('## ACCEPTANCE CRITERIA (RUNTIME STATE)'),
+            }),
+          ],
         })
       )
     })

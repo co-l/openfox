@@ -58,22 +58,21 @@ Never use any type.`,
       await client.send('chat.send', { content: 'Hello' })
       await client.waitForChatDone()
       
-      // Get messages and find the one with promptContext
+      // Get message updates and find the assistant turn with promptContext
       const events = client.allEvents()
-      const messageEvents = events.filter(e => e.type === 'chat.message')
+      const messageEvents = events.filter(e => e.type === 'chat.message_updated')
       
-      // Find a message with promptContext (should be on user message)
-      const userMessage = messageEvents.find(e => {
-        const payload = e.payload as { message: Message }
-        return payload.message.promptContext !== undefined
+      const assistantMessage = messageEvents.find(e => {
+        const payload = e.payload as { updates: Message }
+        return payload.updates.promptContext !== undefined
       })
       
-      if (userMessage) {
-        const payload = userMessage.payload as { message: Message }
-        const promptContext = payload.message.promptContext!
+      if (assistantMessage) {
+        const payload = assistantMessage.payload as { updates: Message }
+        const promptContext = payload.updates.promptContext!
         expect(promptContext.injectedFiles.length).toBeGreaterThan(0)
         
-        const agentsMd = promptContext.injectedFiles.find(f => 
+        const agentsMd = promptContext.injectedFiles.find((f: { path: string }) => 
           f.path.includes('AGENTS.md')
         )
         expect(agentsMd).toBeDefined()
@@ -184,14 +183,14 @@ Never use any type.`,
       // Find message with promptContext
       const events = client.allEvents()
       const messageWithContext = events.find(e => {
-        if (e.type !== 'chat.message') return false
-        const payload = e.payload as { message: Message }
-        return payload.message.promptContext !== undefined
+        if (e.type !== 'chat.message_updated') return false
+        const payload = e.payload as { updates: Message }
+        return payload.updates.promptContext !== undefined
       })
       
       if (messageWithContext) {
-        const payload = messageWithContext.payload as { message: Message }
-        const promptContext = payload.message.promptContext!
+        const payload = messageWithContext.payload as { updates: Message }
+        const promptContext = payload.updates.promptContext!
         
         expect(promptContext.systemPrompt).toBeDefined()
         expect(promptContext.systemPrompt.length).toBeGreaterThan(100)

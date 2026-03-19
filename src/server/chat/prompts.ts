@@ -72,29 +72,12 @@ Bad: "Login should work"
 
 export function buildBuilderPrompt(
   workdir: string,
-  criteria: Criterion[],
   tools: LLMToolDefinition[],
-  modifiedFiles: string[],
   customInstructions?: string
 ): string {
-  const criteriaList = criteria
-    .map((c, i) => {
-      const status = c.status.type === 'passed' ? '[VERIFIED]' 
-        : c.status.type === 'completed' ? '[COMPLETED - awaiting verification]'
-        : c.status.type === 'in_progress' ? '[IN PROGRESS]'
-        : c.status.type === 'failed' ? '[FAILED]'
-        : '[PENDING]'
-      return `${i + 1}. ${status} ${c.description}`
-    })
-    .join('\n')
-  
   const toolList = tools
     .map(t => `- ${t.function.name}: ${t.function.description}`)
     .join('\n')
-  
-  const filesModified = modifiedFiles.length > 0
-    ? modifiedFiles.join(', ')
-    : 'none yet'
   
   const instructionsSection = customInstructions 
     ? `\n\n## CUSTOM INSTRUCTIONS\n\n${customInstructions}`
@@ -105,9 +88,6 @@ export function buildBuilderPrompt(
 ## ENVIRONMENT
 Working directory: ${workdir}
 Platform: ${process.platform} (${process.arch})
-
-## ACCEPTANCE CRITERIA (CONTRACT)
-${criteriaList}
 
 ## RULES
 1. Work through criteria systematically, one at a time
@@ -120,15 +100,35 @@ ${criteriaList}
 ## AVAILABLE TOOLS
 ${toolList}
 
-## CURRENT STATE
-Files modified this session: ${filesModified}
-
 ## IMPORTANT
 - Focus on one criterion at a time
 - Make minimal, focused changes
 - Always test your changes when possible
 - Call \`complete_criterion\` for each criterion as you finish it
 - If stuck on a criterion after 3 attempts, ask the user for help${instructionsSection}`
+}
+
+export function buildBuilderRuntimeStateMessage(criteria: Criterion[], modifiedFiles: string[]): string {
+  const criteriaList = criteria
+    .map((criterion, index) => {
+      const status = criterion.status.type === 'passed' ? '[VERIFIED]'
+        : criterion.status.type === 'completed' ? '[COMPLETED - awaiting verification]'
+        : criterion.status.type === 'in_progress' ? '[IN PROGRESS]'
+        : criterion.status.type === 'failed' ? '[FAILED]'
+        : '[PENDING]'
+      return `${index + 1}. ${status} ${criterion.description}`
+    })
+    .join('\n')
+
+  const filesModified = modifiedFiles.length > 0
+    ? modifiedFiles.join(', ')
+    : 'none yet'
+
+  return `## ACCEPTANCE CRITERIA (RUNTIME STATE)
+${criteriaList}
+
+## CURRENT STATE
+Files modified this session: ${filesModified}`
 }
 
 // ============================================================================

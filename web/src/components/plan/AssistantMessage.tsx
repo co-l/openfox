@@ -1,4 +1,4 @@
-import { memo, useState } from 'react'
+import { memo } from 'react'
 import type { Message, MessageSegment, ToolCall, Todo, PreparingToolCall } from '../../../src/shared/types.js'
 import { Markdown } from '../shared/Markdown'
 import { ThinkingBlock } from '../shared/ThinkingBlock'
@@ -6,7 +6,7 @@ import { ToolCallDisplay } from '../shared/ToolCallDisplay'
 import { ToolCallPreparing } from '../shared/ToolCallPreparing'
 import { TodoListDisplay } from '../shared/TodoListDisplay'
 import { CriteriaGroupDisplay, isCriterionTool } from '../shared/CriteriaGroupDisplay'
-import { PromptInspector } from '../shared/PromptInspector'
+import { MessageOptionsMenu } from './MessageOptionsMenu'
 import { useSessionStore } from '../../stores/session'
 
 interface AssistantMessageProps {
@@ -130,7 +130,6 @@ function segmentsToElements(
 }
 
 export const AssistantMessage = memo(function AssistantMessage({ message, showStats = true }: AssistantMessageProps) {
-  const [showInspector, setShowInspector] = useState(false)
   const criteria = useSessionStore(state => state.currentSession?.criteria)
   const rawElements = messageToElements(message, showStats)
   const elements = groupConsecutiveCriteria(rawElements)
@@ -138,25 +137,10 @@ export const AssistantMessage = memo(function AssistantMessage({ message, showSt
   if (elements.length === 0) return null
   
   return (
-    <div className="feed-item">
-      {message.promptContext && (
-        <>
-          <div className="mb-2 flex justify-end">
-            <button
-              onClick={() => setShowInspector(true)}
-              className="rounded border border-border px-2 py-1 text-xs text-text-muted transition-colors hover:bg-bg-tertiary hover:text-text-primary"
-            >
-              Inspect Prompt
-            </button>
-          </div>
-          <PromptInspector
-            isOpen={showInspector}
-            onClose={() => setShowInspector(false)}
-            promptContext={message.promptContext}
-          />
-        </>
-      )}
-      {elements.map((element, i) => {
+    <div className="feed-item flex items-start gap-1.5">
+      <MessageOptionsMenu content={message.content} promptContext={message.promptContext} align="left" />
+      <div className="min-w-0 flex-1">
+        {elements.map((element, i) => {
         switch (element.type) {
           case 'thinking':
             return <ThinkingBlock key={i} content={element.content} />
@@ -241,7 +225,7 @@ export const AssistantMessage = memo(function AssistantMessage({ message, showSt
             )
           }
         }
-      })}
+        })}
         
         {message.partial && (
           <div className="flex items-center gap-1.5 text-[10px] text-accent-warning mt-1">
@@ -251,6 +235,7 @@ export const AssistantMessage = memo(function AssistantMessage({ message, showSt
             <span>Interrupted</span>
           </div>
         )}
+      </div>
     </div>
   )
 })
