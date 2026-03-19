@@ -1,5 +1,5 @@
 import { memo } from 'react'
-import type { Message } from '../../../src/shared/types.js'
+import type { Message, PromptContext } from '../../../src/shared/types.js'
 import { Markdown } from '../shared/Markdown'
 import { AssistantMessage } from './AssistantMessage'
 import { MessageAttachments } from '../shared/MessageAttachments.js'
@@ -8,20 +8,22 @@ import { MessageOptionsMenu } from './MessageOptionsMenu'
 interface ChatMessageProps {
   message: Message
   isLastAssistantMessage?: boolean
+  promptContext?: PromptContext
 }
 
 interface UserMessageProps {
   message: Message
+  promptContext?: PromptContext
 }
 
-function UserMessage({ message }: UserMessageProps) {
+function UserMessage({ message, promptContext }: UserMessageProps) {
   const isAutoPrompt = message.messageKind === 'auto-prompt'
   const isSystemGenerated = message.isSystemGenerated
   
   return (
     <div className="flex justify-end items-start gap-1.5 feed-item">
       {!isSystemGenerated && (
-        <MessageOptionsMenu content={message.content} promptContext={message.promptContext} align="right" />
+        <MessageOptionsMenu content={message.content} promptContext={promptContext} align="right" />
       )}
 
       <div className={`max-w-[75%] rounded p-2 ${
@@ -53,7 +55,7 @@ function UserMessage({ message }: UserMessageProps) {
   )
 }
 
-export const ChatMessage = memo(function ChatMessage({ message, isLastAssistantMessage = false }: ChatMessageProps) {
+export const ChatMessage = memo(function ChatMessage({ message, isLastAssistantMessage = false, promptContext }: ChatMessageProps) {
   const isUser = message.role === 'user'
   const isAssistant = message.role === 'assistant'
   const isSystem = message.role === 'system'
@@ -116,7 +118,7 @@ export const ChatMessage = memo(function ChatMessage({ message, isLastAssistantM
   
   // User message
   if (isUser) {
-    return <UserMessage message={message} />
+    return <UserMessage message={message} promptContext={promptContext} />
   }
   
   return (

@@ -6,7 +6,6 @@ import { ToolCallDisplay } from '../shared/ToolCallDisplay'
 import { ToolCallPreparing } from '../shared/ToolCallPreparing'
 import { TodoListDisplay } from '../shared/TodoListDisplay'
 import { CriteriaGroupDisplay, isCriterionTool } from '../shared/CriteriaGroupDisplay'
-import { MessageOptionsMenu } from './MessageOptionsMenu'
 import { useSessionStore } from '../../stores/session'
 
 interface AssistantMessageProps {
@@ -137,9 +136,8 @@ export const AssistantMessage = memo(function AssistantMessage({ message, showSt
   if (elements.length === 0) return null
   
   return (
-    <div className="feed-item flex items-start gap-1.5">
-      <MessageOptionsMenu content={message.content} promptContext={message.promptContext} align="left" />
-      <div className="min-w-0 flex-1">
+    <div className="feed-item">
+      <div className="min-w-0">
         {elements.map((element, i) => {
         switch (element.type) {
           case 'thinking':

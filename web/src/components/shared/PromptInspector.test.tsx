@@ -1,6 +1,13 @@
+import type { ReactNode } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { PromptInspector } from './PromptInspector'
+
+vi.mock('./Modal', () => ({
+  Modal: ({ isOpen, title, children }: { isOpen: boolean; title: string; children: ReactNode }) => (
+    isOpen ? <div data-title={title}>{children}</div> : null
+  ),
+}))
 
 describe('PromptInspector', () => {
   it('renders exact request messages and tools when present', () => {

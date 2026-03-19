@@ -13,6 +13,7 @@ import { RunningIndicator } from '../shared/RunningIndicator'
 import { CriteriaGroupDisplay, isCriterionTool } from '../shared/CriteriaGroupDisplay'
 import { AttachmentPreview } from '../shared/AttachmentPreview.js'
 import { compressImage, isValidImageType, validateImageSize } from '../../lib/image-compression.js'
+import { buildPromptContextByUserMessageId } from './prompt-context-linking.js'
 
 // Display item: either a single message, a grouped sub-agent run, criteria batch, or a context window divider
 type DisplayItem = 
@@ -136,6 +137,8 @@ export function PlanPanel() {
   const displayItems = useMemo((): DisplayItem[] => {
     return groupMessages(messages)
   }, [messages])
+
+  const promptContextByUserMessageId = useMemo(() => buildPromptContextByUserMessageId(messages), [messages])
   
   const scrollToBottom = useCallback(() => {
     const container = scrollContainerRef.current
@@ -572,6 +575,7 @@ export function PlanPanel() {
               key={message.id} 
               message={message} 
               isLastAssistantMessage={false}
+              promptContext={message.role === 'user' ? promptContextByUserMessageId[message.id] : undefined}
             />
           )
         })}
