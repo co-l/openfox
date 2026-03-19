@@ -10,7 +10,7 @@
  * This is the ONE place where events get appended to the store.
  */
 
-import type { ToolCall, ToolResult, Criterion, ContextState, Todo, MessageStats, ToolMode, InjectedFile, PromptContext } from '../../shared/types.js'
+import type { ToolCall, ToolResult, Criterion, ContextState, Todo, MessageStats, ToolMode, InjectedFile, PromptContext, Attachment } from '../../shared/types.js'
 import type { ServerMessage } from '../../shared/protocol.js'
 import type { LLMClientWithModel } from '../llm/client.js'
 import type { SessionSnapshot } from '../events/types.js'
@@ -18,11 +18,12 @@ import { getEventStore, getContextMessages, getCurrentContextWindowId } from '..
 import { buildSnapshotFromSessionState } from '../events/folding.js'
 import type { SessionManager } from '../session/index.js'
 import { getToolRegistryForMode, AskUserInterrupt, PathAccessDeniedError } from '../tools/index.js'
-import { buildPlannerPrompt, buildBuilderPrompt, buildVerifierPrompt, BUILDER_KICKOFF_PROMPT, VERIFIER_KICKOFF_PROMPT } from './prompts.js'
+import { BUILDER_KICKOFF_PROMPT, VERIFIER_KICKOFF_PROMPT } from './prompts.js'
 import { streamLLMPure, consumeStreamGenerator, TurnMetrics, createMessageStartEvent, createMessageDoneEvent, createToolCallEvent, createToolResultEvent, createChatDoneEvent, createFormatRetryEvent } from './stream-pure.js'
 import { createToolProgressHandler } from './tool-streaming.js'
 import { getAllInstructions } from '../context/instructions.js'
 import { logger } from '../utils/logger.js'
+import { assembleBuilderRequest, assemblePlannerRequest, assembleVerifierRequest, type RequestContextMessage } from './request-context.js'
 
 // Re-export for runner orchestrator
 export { TurnMetrics, createMessageStartEvent, createMessageDoneEvent, createToolCallEvent, createToolResultEvent, createChatDoneEvent }
@@ -30,6 +31,23 @@ export { TurnMetrics, createMessageStartEvent, createMessageDoneEvent, createToo
 function getCurrentWindowMessageOptions(sessionId: string): { contextWindowId: string } | undefined {
   const contextWindowId = getCurrentContextWindowId(sessionId)
   return contextWindowId ? { contextWindowId } : undefined
+}
+
+function toRequestContextMessages(messages: Array<{
+  role: 'user' | 'assistant' | 'tool'
+  content: string
+  toolCalls?: ToolCall[]
+  toolCallId?: string
+  attachments?: Attachment[]
+}>): RequestContextMessage[] {
+  return messages.map((message) => ({
+    role: message.role,
+    content: message.content,
+    source: 'history',
+    ...(message.toolCalls ? { toolCalls: message.toolCalls.map((toolCall) => ({ id: toolCall.id, name: toolCall.name, arguments: toolCall.arguments })) } : {}),
+    ...(message.toolCallId ? { toolCallId: message.toolCallId } : {}),
+    ...(message.attachments ? { attachments: message.attachments } : {}),
+  }))
 }
 
 // ============================================================================
@@ -174,11 +192,10 @@ async function runPlannerTurn(
   }))
 
   const toolRegistry = getToolRegistryForMode('planner')
-  const systemPrompt = buildPlannerPrompt(session.workdir, toolRegistry.definitions, instructionContent || undefined)
   const currentWindowMessageOptions = getCurrentWindowMessageOptions(sessionId)
 
   // Build messages from current context window only
-  const contextMessages = getContextMessages(sessionId)
+  const requestMessages = toRequestContextMessages(getContextMessages(sessionId))
 
   // Handle format retry
   if (formatRetryCount > 0) {
@@ -189,8 +206,17 @@ async function runPlannerTurn(
       messageKind: 'correction',
     }))
     eventStore.append(sessionId, createFormatRetryEvent(formatRetryCount, MAX_FORMAT_RETRIES))
-    contextMessages.push({ role: 'user' as const, content: FORMAT_CORRECTION_PROMPT })
+    requestMessages.push({ role: 'user', content: FORMAT_CORRECTION_PROMPT, source: 'history' })
   }
+
+  const assembledRequest = assemblePlannerRequest({
+    workdir: session.workdir,
+    messages: requestMessages,
+    injectedFiles,
+    promptTools: toolRegistry.definitions,
+    toolChoice: 'auto',
+    ...(instructionContent ? { customInstructions: instructionContent } : {}),
+  })
 
   // Create assistant message with current context window ID
   const assistantMsgId = crypto.randomUUID()
@@ -199,9 +225,9 @@ async function runPlannerTurn(
   // Stream LLM response using pure generator
   const streamGen = streamLLMPure({
     messageId: assistantMsgId,
-    systemPrompt,
+    systemPrompt: assembledRequest.systemPrompt,
     llmClient,
-    messages: contextMessages,
+    messages: assembledRequest.messages,
     tools: toolRegistry.definitions,
     toolChoice: 'auto',
     signal,
@@ -229,7 +255,11 @@ async function runPlannerTurn(
   // Handle abort
   if (result.aborted) {
     const stats = turnMetrics.buildStats(llmClient.getModel(), 'planner')
-    eventStore.append(sessionId, createMessageDoneEvent(assistantMsgId, { stats, partial: true }))
+    eventStore.append(sessionId, createMessageDoneEvent(assistantMsgId, {
+      stats,
+      partial: true,
+      promptContext: assembledRequest.promptContext,
+    }))
     eventStore.append(sessionId, createChatDoneEvent(assistantMsgId, 'stopped', stats))
     throw new Error('Aborted')
   }
@@ -241,7 +271,10 @@ async function runPlannerTurn(
   // Execute tool calls (if any)
   if (result.toolCalls.length > 0) {
     // Emit message done WITHOUT stats (intermediate message)
-    eventStore.append(sessionId, createMessageDoneEvent(assistantMsgId, { segments: result.segments }))
+    eventStore.append(sessionId, createMessageDoneEvent(assistantMsgId, {
+      segments: result.segments,
+      promptContext: assembledRequest.promptContext,
+    }))
     
     for (const toolCall of result.toolCalls) {
       eventStore.append(sessionId, createToolCallEvent(assistantMsgId, toolCall))
@@ -290,7 +323,11 @@ async function runPlannerTurn(
 
   // Final response - emit message.done WITH stats and chat.done
   const stats = turnMetrics.buildStats(llmClient.getModel(), 'planner')
-  eventStore.append(sessionId, createMessageDoneEvent(assistantMsgId, { segments: result.segments, stats }))
+  eventStore.append(sessionId, createMessageDoneEvent(assistantMsgId, {
+    segments: result.segments,
+    stats,
+    promptContext: assembledRequest.promptContext,
+  }))
   eventStore.append(sessionId, createChatDoneEvent(assistantMsgId, 'complete', stats))
 }
 
@@ -332,19 +369,17 @@ export async function runBuilderTurn(
 
   // Load instructions
   const { content: instructionContent, files } = await getAllInstructions(session.workdir, session.projectId)
+  const injectedFiles: InjectedFile[] = files.map(file => ({
+    path: file.path,
+    content: file.content ?? '',
+    source: file.source,
+  }))
 
   const toolRegistry = getToolRegistryForMode('builder')
-  const systemPrompt = buildBuilderPrompt(
-    session.workdir,
-    session.criteria,
-    toolRegistry.definitions,
-    session.executionState?.modifiedFiles ?? [],
-    instructionContent || undefined
-  )
   const currentWindowMessageOptions = getCurrentWindowMessageOptions(sessionId)
 
   // Build messages from current context window only
-  const contextMessages = getContextMessages(sessionId)
+  const requestMessages = toRequestContextMessages(getContextMessages(sessionId))
 
   // Handle format retry
   if (formatRetryCount > 0) {
@@ -355,8 +390,19 @@ export async function runBuilderTurn(
       messageKind: 'correction',
     }))
     eventStore.append(sessionId, createFormatRetryEvent(formatRetryCount, MAX_FORMAT_RETRIES))
-    contextMessages.push({ role: 'user' as const, content: FORMAT_CORRECTION_PROMPT })
+    requestMessages.push({ role: 'user', content: FORMAT_CORRECTION_PROMPT, source: 'history' })
   }
+
+  const assembledRequest = assembleBuilderRequest({
+    workdir: session.workdir,
+    messages: requestMessages,
+    injectedFiles,
+    promptTools: toolRegistry.definitions,
+    criteria: session.criteria,
+    modifiedFiles: session.executionState?.modifiedFiles ?? [],
+    toolChoice: 'auto',
+    ...(instructionContent ? { customInstructions: instructionContent } : {}),
+  })
 
   // Create assistant message with current context window ID
   const assistantMsgId = crypto.randomUUID()
@@ -365,9 +411,9 @@ export async function runBuilderTurn(
   // Stream LLM response using pure generator
   const streamGen = streamLLMPure({
     messageId: assistantMsgId,
-    systemPrompt,
+    systemPrompt: assembledRequest.systemPrompt,
     llmClient,
-    messages: contextMessages,
+    messages: assembledRequest.messages,
     tools: toolRegistry.definitions,
     toolChoice: 'auto',
     signal,
@@ -395,7 +441,11 @@ export async function runBuilderTurn(
   // Handle abort
   if (result.aborted) {
     const stats = turnMetrics.buildStats(llmClient.getModel(), 'builder')
-    eventStore.append(sessionId, createMessageDoneEvent(assistantMsgId, { stats, partial: true }))
+    eventStore.append(sessionId, createMessageDoneEvent(assistantMsgId, {
+      stats,
+      partial: true,
+      promptContext: assembledRequest.promptContext,
+    }))
     eventStore.append(sessionId, createChatDoneEvent(assistantMsgId, 'stopped', stats))
     throw new Error('Aborted')
   }
@@ -407,7 +457,10 @@ export async function runBuilderTurn(
   // Execute tool calls (if any)
   if (result.toolCalls.length > 0) {
     // Emit message done WITHOUT stats (intermediate message)
-    eventStore.append(sessionId, createMessageDoneEvent(assistantMsgId, { segments: result.segments }))
+    eventStore.append(sessionId, createMessageDoneEvent(assistantMsgId, {
+      segments: result.segments,
+      promptContext: assembledRequest.promptContext,
+    }))
     
     for (const toolCall of result.toolCalls) {
       eventStore.append(sessionId, createToolCallEvent(assistantMsgId, toolCall))
@@ -462,7 +515,11 @@ export async function runBuilderTurn(
 
   // Final response - emit message.done WITH stats and chat.done
   const stats = turnMetrics.buildStats(llmClient.getModel(), 'builder')
-  eventStore.append(sessionId, createMessageDoneEvent(assistantMsgId, { segments: result.segments, stats }))
+  eventStore.append(sessionId, createMessageDoneEvent(assistantMsgId, {
+    segments: result.segments,
+    stats,
+    promptContext: assembledRequest.promptContext,
+  }))
   eventStore.append(sessionId, createChatDoneEvent(assistantMsgId, 'complete', stats))
 }
 
@@ -556,20 +613,19 @@ ${modifiedFiles.length > 0 ? modifiedFiles.map(f => `- ${f}`).join('\n') : '(non
   eventStore.append(sessionId, { type: 'message.done', data: { messageId: kickoffMsgId } })
 
   // Load instructions
-  const { content: instructionContent } = await getAllInstructions(session.workdir, session.projectId)
+  const { content: instructionContent, files } = await getAllInstructions(session.workdir, session.projectId)
+  const injectedFiles: InjectedFile[] = files.map(file => ({
+    path: file.path,
+    content: file.content ?? '',
+    source: file.source,
+  }))
 
   const toolRegistry = getToolRegistryForMode('verifier')
-  const systemPrompt = buildVerifierPrompt(session.workdir, toolRegistry.definitions, instructionContent || undefined)
 
   // Build fresh context messages (not from EventStore - verifier has isolated context)
-  let customMessages: Array<{
-    role: 'user' | 'assistant' | 'tool'
-    content: string
-    toolCalls?: ToolCall[]
-    toolCallId?: string
-  }> = [
-    { role: 'user', content: contextContent },
-    { role: 'user', content: VERIFIER_KICKOFF_PROMPT },
+  let customMessages: RequestContextMessage[] = [
+    { role: 'user', content: contextContent, source: 'runtime' },
+    { role: 'user', content: VERIFIER_KICKOFF_PROMPT, source: 'runtime' },
   ]
 
   const maxIterations = 20
@@ -591,12 +647,22 @@ ${modifiedFiles.length > 0 ? modifiedFiles.map(f => `- ${f}`).join('\n') : '(non
       subAgentType: 'verifier',
     }))
 
+    const assembledRequest = assembleVerifierRequest({
+      workdir: session.workdir,
+      messages: customMessages,
+      injectedFiles,
+      promptTools: toolRegistry.definitions,
+      toolChoice: 'auto',
+      enableThinking: false,
+      ...(instructionContent ? { customInstructions: instructionContent } : {}),
+    })
+
     // Stream LLM response (no thinking for verifier)
     const streamGen = streamLLMPure({
       messageId: assistantMsgId,
-      systemPrompt,
+      systemPrompt: assembledRequest.systemPrompt,
       llmClient,
-      messages: customMessages,
+      messages: assembledRequest.messages,
       tools: toolRegistry.definitions,
       toolChoice: 'auto',
       signal,
@@ -609,7 +675,11 @@ ${modifiedFiles.length > 0 ? modifiedFiles.map(f => `- ${f}`).join('\n') : '(non
 
     if (result.aborted) {
       const stats = turnMetrics.buildStats(llmClient.getModel(), 'verifier')
-      eventStore.append(sessionId, createMessageDoneEvent(assistantMsgId, { stats, partial: true }))
+      eventStore.append(sessionId, createMessageDoneEvent(assistantMsgId, {
+        stats,
+        partial: true,
+        promptContext: assembledRequest.promptContext,
+      }))
       eventStore.append(sessionId, createChatDoneEvent(assistantMsgId, 'stopped', stats))
       throw new Error('Aborted')
     }
@@ -621,6 +691,7 @@ ${modifiedFiles.length > 0 ? modifiedFiles.map(f => `- ${f}`).join('\n') : '(non
     customMessages.push({
       role: 'assistant',
       content: result.content,
+      source: 'history',
       ...(result.toolCalls.length > 0 && { toolCalls: result.toolCalls }),
     })
 
@@ -635,7 +706,10 @@ ${modifiedFiles.length > 0 ? modifiedFiles.map(f => `- ${f}`).join('\n') : '(non
           const nudgeContent = buildVerifierNudgeContent(criteriaAwaitingVerification)
           const nudgeMsgId = crypto.randomUUID()
 
-          eventStore.append(sessionId, createMessageDoneEvent(assistantMsgId, { segments: result.segments }))
+          eventStore.append(sessionId, createMessageDoneEvent(assistantMsgId, {
+            segments: result.segments,
+            promptContext: assembledRequest.promptContext,
+          }))
           eventStore.append(sessionId, createMessageStartEvent(nudgeMsgId, 'user', nudgeContent, {
             ...(currentWindowMessageOptions ?? {}),
             isSystemGenerated: true,
@@ -644,7 +718,7 @@ ${modifiedFiles.length > 0 ? modifiedFiles.map(f => `- ${f}`).join('\n') : '(non
             subAgentType: 'verifier',
           }))
           eventStore.append(sessionId, { type: 'message.done', data: { messageId: nudgeMsgId } })
-          customMessages = [...customMessages, { role: 'user', content: nudgeContent }]
+          customMessages = [...customMessages, { role: 'user', content: nudgeContent, source: 'runtime' }]
           continue
         }
 
@@ -663,14 +737,21 @@ ${modifiedFiles.length > 0 ? modifiedFiles.map(f => `- ${f}`).join('\n') : '(non
       }
 
       const stats = turnMetrics.buildStats(llmClient.getModel(), 'verifier')
-      eventStore.append(sessionId, createMessageDoneEvent(assistantMsgId, { segments: result.segments, stats }))
+      eventStore.append(sessionId, createMessageDoneEvent(assistantMsgId, {
+        segments: result.segments,
+        stats,
+        promptContext: assembledRequest.promptContext,
+      }))
       eventStore.append(sessionId, createChatDoneEvent(assistantMsgId, 'complete', stats))
       emittedTerminalDone = true
       break
     }
 
     // Emit message done (intermediate, no stats)
-    eventStore.append(sessionId, createMessageDoneEvent(assistantMsgId, { segments: result.segments }))
+    eventStore.append(sessionId, createMessageDoneEvent(assistantMsgId, {
+      segments: result.segments,
+      promptContext: assembledRequest.promptContext,
+    }))
 
     // Execute tool calls
     for (const toolCall of result.toolCalls) {
@@ -711,6 +792,7 @@ ${modifiedFiles.length > 0 ? modifiedFiles.map(f => `- ${f}`).join('\n') : '(non
       customMessages.push({
         role: 'tool',
         content: toolResult.success ? (toolResult.output ?? 'Success') : `Error: ${toolResult.error}`,
+        source: 'history',
         toolCallId: toolCall.id,
       })
 
@@ -748,7 +830,7 @@ ${modifiedFiles.length > 0 ? modifiedFiles.map(f => `- ${f}`).join('\n') : '(non
         subAgentType: 'verifier',
       }))
       eventStore.append(sessionId, { type: 'message.done', data: { messageId: nudgeMsgId } })
-      customMessages = [...customMessages, { role: 'user', content: nudgeContent }]
+      customMessages = [...customMessages, { role: 'user', content: nudgeContent, source: 'runtime' }]
       continue
     }
 

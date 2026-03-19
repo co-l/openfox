@@ -14,6 +14,7 @@ import type {
   ToolResult,
   CriterionStatus,
   ContextState,
+  Attachment,
 } from './types.js'
 
 // ============================================================================
@@ -95,6 +96,7 @@ export interface SessionLoadPayload {
 // Chat payloads (unified)
 export interface ChatSendPayload {
   content: string
+  attachments?: Attachment[]
 }
 
 export interface ModeSwitchPayload {
@@ -259,7 +261,7 @@ export interface ChatSummaryPayload {
 
 export interface ChatProgressPayload {
   message: string
-  phase?: 'summary' | 'mode_switch' | 'starting'
+  phase?: 'summary' | 'mode_switch' | 'starting' | 'context_warning' | 'context_error'
 }
 
 export interface ChatFormatRetryPayload {

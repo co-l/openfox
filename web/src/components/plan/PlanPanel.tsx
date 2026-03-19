@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useCallback, useMemo } from 'react'
 import { useSessionStore, useIsRunning } from '../../stores/session'
-import type { Message, ToolCall } from '../../../src/shared/types.js'
+import type { Message, ToolCall, Attachment } from '../../../src/shared/types.js'
 import { SessionLayout } from '../layout/SessionLayout'
 import { SessionHeader } from './SessionHeader'
 import { ChatMessage } from './ChatMessage'
@@ -11,6 +11,8 @@ import { Button } from '../shared/Button'
 import { PathConfirmationDialog } from '../shared/PathConfirmationDialog'
 import { RunningIndicator } from '../shared/RunningIndicator'
 import { CriteriaGroupDisplay, isCriterionTool } from '../shared/CriteriaGroupDisplay'
+import { AttachmentPreview } from '../shared/AttachmentPreview.js'
+import { compressImage, isValidImageType, validateImageSize } from '../../lib/image-compression.js'
 
 // Display item: either a single message, a grouped sub-agent run, criteria batch, or a context window divider
 type DisplayItem = 
@@ -109,9 +111,13 @@ function groupMessages(messages: Message[]): DisplayItem[] {
 export function PlanPanel() {
   const [input, setInput] = useState('')
   const [userScrolledUp, setUserScrolledUp] = useState(false)
+  const [attachments, setAttachments] = useState<Attachment[]>([])
+  const [dragOver, setDragOver] = useState(false)
+  const [errorMessage, setErrorMessage] = useState<string | null>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const scrollContainerRef = useRef<HTMLDivElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
+  const fileInputRef = useRef<HTMLInputElement>(null)
   
   const session = useSessionStore(state => state.currentSession)
   const messages = useSessionStore(state => state.messages)
@@ -223,14 +229,76 @@ export function PlanPanel() {
     return () => window.removeEventListener('keydown', handleEscape)
   }, [isRunning, stopGeneration])
   
+  // Paste event listener for textarea
+  useEffect(() => {
+    const textarea = textareaRef.current
+    if (!textarea) return
+    
+    const handlePaste = (e: ClipboardEvent) => {
+      // Only handle if the textarea is focused
+      if (document.activeElement !== textarea) return
+      
+      const items = e.clipboardData?.items
+      if (!items) return
+      
+      for (const item of Array.from(items)) {
+        if (item.type.startsWith('image/')) {
+          e.preventDefault()
+          const file = item.getAsFile()
+          if (!file) continue
+          
+          // Process the pasted image (inline function to access state)
+          ;(async () => {
+            try {
+              if (!isValidImageType(file)) {
+                setErrorMessage('Only PNG, JPG, and GIF images are supported.')
+                return
+              }
+              
+              const sizeValidation = validateImageSize(file, 50 * 1024 * 1024)
+              if (!sizeValidation.valid) {
+                setErrorMessage(sizeValidation.error ?? 'Image file is too large')
+                return
+              }
+              
+              const compressed = await compressImage(file, {
+                maxWidth: 1920,
+                maxHeight: 1920,
+                quality: 0.85,
+                maxSizeBytes: 1048576,
+              })
+              
+              const attachment: Attachment = {
+                id: crypto.randomUUID(),
+                filename: 'pasted-image',
+                mimeType: compressed.mimeType as 'image/png' | 'image/jpeg' | 'image/gif',
+                size: compressed.size,
+                data: compressed.dataUrl,
+              }
+              
+              setAttachments(prev => [...prev, attachment])
+            } catch (err) {
+              const errorMsg = err instanceof Error ? (err.message ?? 'Failed to process image') : 'Failed to process image'
+              setErrorMessage(errorMsg)
+            }
+          })()
+        }
+      }
+    }
+    
+    textarea.addEventListener('paste', handlePaste)
+    return () => textarea.removeEventListener('paste', handlePaste)
+  }, [])
+  
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
-    if (!input.trim() || isRunning) return
+    if ((!input.trim() && attachments.length === 0) || isRunning) return
 
     setUserScrolledUp(false)
     
-    sendMessage(input)
+    sendMessage(input, attachments)
     setInput('')
+    setAttachments([])
     
     // Clear draft from localStorage after sending
     if (session?.id) {
@@ -244,6 +312,180 @@ export function PlanPanel() {
       handleSubmit(e)
     }
   }
+  
+  // Handle file selection from file picker
+  const handleFileSelect = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files
+    if (!files || files.length === 0) return
+    
+    setErrorMessage(null)
+    
+    for (const file of Array.from(files)) {
+      try {
+        // Validate file type
+        if (!isValidImageType(file)) {
+          setErrorMessage(`Unsupported file type: ${file.type}. Only PNG, JPG, and GIF are supported.`)
+          continue
+        }
+        
+        // Validate file size (before compression)
+        const sizeValidation = validateImageSize(file, 50 * 1024 * 1024) // 50MB max
+        if (!sizeValidation.valid) {
+          setErrorMessage(sizeValidation.error ?? 'Image file is too large')
+          continue
+        }
+        
+        // Compress the image
+        const compressed = await compressImage(file, {
+          maxWidth: 1920,
+          maxHeight: 1920,
+          quality: 0.85,
+          maxSizeBytes: 1048576, // 1MB target
+        })
+        
+        // Create attachment
+        const attachment: Attachment = {
+          id: crypto.randomUUID(),
+          filename: file.name,
+          mimeType: compressed.mimeType as 'image/png' | 'image/jpeg' | 'image/gif',
+          size: compressed.size,
+          data: compressed.dataUrl,
+        }
+        
+        setAttachments(prev => [...prev, attachment])
+      } catch (err) {
+        const errorMsg = err instanceof Error ? (err.message ?? 'Failed to process image') : 'Failed to process image'
+        setErrorMessage(errorMsg)
+      }
+    }
+    
+    // Reset file input
+    if (fileInputRef.current) {
+      fileInputRef.current.value = ''
+    }
+  }, [])
+  
+  // Handle paste event
+  const handlePaste = useCallback(async (e: ClipboardEvent) => {
+    const items = e.clipboardData?.items
+    if (!items) return
+    
+    setErrorMessage(null)
+    
+    for (const item of Array.from(items)) {
+      if (item.type.startsWith('image/')) {
+        const file = item.getAsFile()
+        if (!file) continue
+        
+        try {
+          // Validate file type
+          if (!isValidImageType(file)) {
+            setErrorMessage('Only PNG, JPG, and GIF images are supported for pasted content.')
+            continue
+          }
+          
+          // Validate file size
+          const sizeValidation = validateImageSize(file, 50 * 1024 * 1024)
+          if (!sizeValidation.valid) {
+            setErrorMessage(sizeValidation.error ?? 'Image file is too large')
+            continue
+          }
+          
+          // Compress the image
+          const compressed = await compressImage(file, {
+            maxWidth: 1920,
+            maxHeight: 1920,
+            quality: 0.85,
+            maxSizeBytes: 1048576,
+          })
+          
+          const attachment: Attachment = {
+            id: crypto.randomUUID(),
+            filename: 'pasted-image',
+            mimeType: compressed.mimeType as 'image/png' | 'image/jpeg' | 'image/gif',
+            size: compressed.size,
+            data: compressed.dataUrl,
+          }
+          
+          setAttachments(prev => [...prev, attachment])
+        } catch (err) {
+          const errorMsg = err instanceof Error ? (err.message ?? 'Failed to process pasted image') : 'Failed to process pasted image'
+          setErrorMessage(errorMsg)
+        }
+      }
+    }
+  }, [])
+  
+  // Handle drag and drop
+  const handleDragOver = useCallback((e: React.DragEvent) => {
+    e.preventDefault()
+    e.stopPropagation()
+    setDragOver(true)
+  }, [])
+  
+  const handleDragLeave = useCallback((e: React.DragEvent) => {
+    e.preventDefault()
+    e.stopPropagation()
+    setDragOver(false)
+  }, [])
+  
+  const handleDrop = useCallback(async (e: React.DragEvent) => {
+    e.preventDefault()
+    e.stopPropagation()
+    setDragOver(false)
+    setErrorMessage(null)
+    
+    const files = e.dataTransfer.files
+    if (!files || files.length === 0) return
+    
+    for (const file of Array.from(files)) {
+      try {
+        // Validate file type
+        if (!isValidImageType(file)) {
+          setErrorMessage(`Unsupported file type: ${file.type}. Only PNG, JPG, and GIF are supported.`)
+          continue
+        }
+        
+        // Validate file size
+        const sizeValidation = validateImageSize(file, 50 * 1024 * 1024)
+        if (!sizeValidation.valid) {
+          setErrorMessage(sizeValidation.error ?? 'Image file is too large')
+          continue
+        }
+        
+        // Compress the image
+        const compressed = await compressImage(file, {
+          maxWidth: 1920,
+          maxHeight: 1920,
+          quality: 0.85,
+          maxSizeBytes: 1048576,
+        })
+        
+        const attachment: Attachment = {
+          id: crypto.randomUUID(),
+          filename: file.name,
+          mimeType: compressed.mimeType as 'image/png' | 'image/jpeg' | 'image/gif',
+          size: compressed.size,
+          data: compressed.dataUrl,
+        }
+        
+        setAttachments(prev => [...prev, attachment])
+      } catch (err) {
+        const errorMsg = err instanceof Error ? (err.message ?? 'Failed to process image') : 'Failed to process image'
+        setErrorMessage(errorMsg)
+      }
+    }
+  }, [])
+  
+  // Handle remove attachment
+  const handleRemoveAttachment = useCallback((id: string) => {
+    setAttachments(prev => prev.filter(att => att.id !== id))
+  }, [])
+  
+  // Handle attach button click
+  const handleAttachClick = useCallback(() => {
+    fileInputRef.current?.click()
+  }, [])
   
   const isPlanning = session?.mode === 'planner'
   const isBuilding = session?.mode === 'builder'
@@ -372,7 +614,61 @@ export function PlanPanel() {
       </div>
       
       <form onSubmit={handleSubmit} className="p-4 border-t border-border bg-gradient-to-t from-bg-secondary/50 to-transparent">
-        <div className={`flex items-end gap-3 p-3 rounded border ${isRunning ? 'border-accent-warning/30 bg-accent-warning/5' : 'border-border bg-bg-tertiary/50'} transition-colors`}>
+        {/* Hidden file input */}
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept=".png,.jpg,.jpeg,.gif"
+          onChange={handleFileSelect}
+          className="hidden"
+          multiple
+        />
+        
+        {/* Error message */}
+        {errorMessage && (
+          <div className="mb-2 p-2 bg-red-500/10 border border-red-500/50 rounded text-red-300 text-sm">
+            {errorMessage}
+          </div>
+        )}
+        
+        {/* Attachments preview area */}
+        {attachments.length > 0 && (
+          <div className="mb-3 flex flex-wrap gap-2">
+            {attachments.map((attachment) => (
+              <AttachmentPreview
+                key={attachment.id}
+                attachment={attachment}
+                onRemove={handleRemoveAttachment}
+              />
+            ))}
+          </div>
+        )}
+        
+        <div 
+          className={`flex items-end gap-3 p-3 rounded border transition-colors ${
+            dragOver 
+              ? 'border-accent-primary/50 bg-accent-primary/10' 
+              : isRunning 
+                ? 'border-accent-warning/30 bg-accent-warning/5' 
+                : 'border-border bg-bg-tertiary/50'
+          }`}
+          onDragOver={handleDragOver}
+          onDragLeave={handleDragLeave}
+          onDrop={handleDrop}
+        >
+          {/* Attach file button */}
+          <button
+            type="button"
+            onClick={handleAttachClick}
+            disabled={isRunning}
+            className="p-2 rounded hover:bg-bg-tertiary text-text-muted hover:text-text-primary disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+            title="Attach image file"
+          >
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" />
+            </svg>
+          </button>
+          
           <textarea
             ref={textareaRef}
             value={input}
@@ -399,7 +695,7 @@ export function PlanPanel() {
               )}
               <button
                 type="submit"
-                disabled={!input.trim()}
+                disabled={(!input.trim() && attachments.length === 0)}
                 className="px-4 py-1.5 rounded bg-accent-primary/20 text-sm text-accent-primary font-medium hover:bg-accent-primary/30 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
               >
                 Send
@@ -417,7 +713,7 @@ export function PlanPanel() {
         </div>
         <div className="mt-3 flex items-center justify-between">
           <ModeSwitch />
-          <span className="text-sm text-text-muted">Enter to send</span>
+          <span className="text-sm text-text-muted">Enter to send, paste or drag & drop images</span>
         </div>
       </form>
     </SessionLayout>

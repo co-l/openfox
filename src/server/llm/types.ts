@@ -1,4 +1,4 @@
-import type { ToolCall } from '../../shared/types.js'
+import type { ToolCall, Attachment } from '../../shared/types.js'
 
 export interface LLMMessage {
   role: 'system' | 'user' | 'assistant' | 'tool'
@@ -6,6 +6,7 @@ export interface LLMMessage {
   toolCalls?: ToolCall[]
   toolCallId?: string
   name?: string
+  attachments?: Attachment[]
 }
 
 export interface LLMToolDefinition {

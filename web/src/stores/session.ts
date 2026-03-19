@@ -7,6 +7,7 @@ import type {
   Todo,
   Message,
   ContextState,
+  Attachment,
 } from '../../../src/shared/types.js'
 import type {
   ServerMessage,
@@ -87,7 +88,7 @@ interface SessionState {
   clearSession: () => void
   
   // Unified chat (works in any mode)
-  sendMessage: (content: string) => void
+  sendMessage: (content: string, attachments?: Attachment[]) => void
   stopGeneration: () => void
   continueGeneration: () => void
   
@@ -192,10 +193,10 @@ export const useSessionStore = create<SessionState>((set, get) => ({
     })
   },
   
-  sendMessage: (content) => {
+  sendMessage: (content, attachments) => {
     // No optimistic update needed - server will send chat.message with user message
     set({ streamingMessageId: null })
-    wsClient.send('chat.send', { content })
+    wsClient.send('chat.send', { content, attachments })
   },
   
   stopGeneration: () => {
@@ -503,9 +504,10 @@ export const useSessionStore = create<SessionState>((set, get) => ({
       case 'chat.error': {
         const payload = message.payload as ChatErrorPayload
         console.error('Chat error:', payload.error, 'recoverable:', payload.recoverable)
-        if (!payload.recoverable) {
-          set({ streamingMessageId: null })
-        }
+        set({ 
+          error: { code: 'CHAT_ERROR', message: payload.error },
+          streamingMessageId: payload.recoverable ? get().streamingMessageId : null,
+        })
         break
       }
       

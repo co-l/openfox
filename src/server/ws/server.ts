@@ -7,13 +7,12 @@ import type { ToolRegistry } from '../tools/index.js'
 import type { SessionManager } from '../session/index.js'
 import { getEventStore, getCurrentContextWindowId } from '../events/index.js'
 import { buildContextMessagesFromStoredEvents, buildMessagesFromStoredEvents } from '../events/folding.js'
-import type { Message } from '../../shared/types.js'
+import type { InjectedFile, Message } from '../../shared/types.js'
 import { runChatTurn, TurnMetrics, createMessageStartEvent, createMessageDoneEvent, createChatDoneEvent } from '../chat/orchestrator.js'
 import { streamLLMPure, consumeStreamGenerator } from '../chat/stream-pure.js'
 import { runOrchestrator } from '../runner/index.js'
-import { streamLLMResponse } from '../chat/stream.js'
-import { computeMessageStats } from '../chat/stats.js'
-import { buildPlannerPrompt, SUMMARY_REQUEST_PROMPT, COMPACTION_PROMPT } from '../chat/prompts.js'
+import { SUMMARY_REQUEST_PROMPT, COMPACTION_PROMPT } from '../chat/prompts.js'
+import { assemblePlannerRequest, type RequestContextMessage } from '../chat/request-context.js'
 import { getToolRegistryForMode, providePathConfirmation, addAllowedPaths } from '../tools/index.js'
 import { getAllInstructions } from '../context/instructions.js'
 import { logger } from '../utils/logger.js'
@@ -66,6 +65,21 @@ import {
 function getCurrentWindowMessageOptions(sessionId: string): { contextWindowId: string } | undefined {
   const contextWindowId = getCurrentContextWindowId(sessionId)
   return contextWindowId ? { contextWindowId } : undefined
+}
+
+function toRequestContextMessages(messages: Array<{
+  role: 'user' | 'assistant' | 'tool'
+  content: string
+  toolCalls?: Array<{ id: string; name: string; arguments: Record<string, unknown> }>
+  toolCallId?: string
+}>): RequestContextMessage[] {
+  return messages.map((message) => ({
+    role: message.role,
+    content: message.content,
+    source: 'history',
+    ...(message.toolCalls ? { toolCalls: message.toolCalls } : {}),
+    ...(message.toolCallId ? { toolCallId: message.toolCallId } : {}),
+  }))
 }
 
 // Track active agent AbortControllers by sessionId
@@ -617,14 +631,28 @@ async function handleClientMessage(
           
           // Build context for summary generation
           const currentSession = sessionManager.requireSession(sessionId)
-          const { content: instructions } = await getAllInstructions(currentSession.workdir, currentSession.projectId)
+          const { content: instructions, files } = await getAllInstructions(currentSession.workdir, currentSession.projectId)
+          const injectedFiles: InjectedFile[] = files.map((file) => ({
+            path: file.path,
+            content: file.content ?? '',
+            source: file.source,
+          }))
           const toolRegistry = getToolRegistryForMode('planner')
-          const systemPrompt = buildPlannerPrompt(currentSession.workdir, toolRegistry.definitions, instructions || undefined)
-          
+
           // Build context messages from EventStore (intentionally ALL messages, not filtered)
           const events = eventStore.getEvents(sessionId)
-          const contextMessages = buildContextMessagesFromStoredEvents(events)
-          
+          const requestMessages = toRequestContextMessages(buildContextMessagesFromStoredEvents(events))
+          const assembledRequest = assemblePlannerRequest({
+            workdir: currentSession.workdir,
+            messages: requestMessages,
+            injectedFiles,
+            promptTools: toolRegistry.definitions,
+            requestTools: [],
+            toolChoice: 'none',
+            enableThinking: false,
+            ...(instructions ? { customInstructions: instructions } : {}),
+          })
+
           // Stream summary response (no tools, no thinking)
           const assistantMsgId = crypto.randomUUID()
           eventStore.append(sessionId, createMessageStartEvent(assistantMsgId, 'assistant', undefined, getCurrentWindowMessageOptions(sessionId)))
@@ -632,9 +660,9 @@ async function handleClientMessage(
           const turnMetrics = new TurnMetrics()
           const streamGen = streamLLMPure({
             messageId: assistantMsgId,
-            systemPrompt,
+            systemPrompt: assembledRequest.systemPrompt,
             llmClient: getLLMClient(),
-            messages: contextMessages,
+            messages: assembledRequest.messages,
             tools: [], // No tools for summary
             toolChoice: 'none',
             enableThinking: false,
@@ -648,7 +676,11 @@ async function handleClientMessage(
           
           // Emit message.done with stats
           const stats = turnMetrics.buildStats(getLLMClient().getModel(), 'planner')
-          eventStore.append(sessionId, createMessageDoneEvent(assistantMsgId, { segments: result.segments, stats }))
+          eventStore.append(sessionId, createMessageDoneEvent(assistantMsgId, {
+            segments: result.segments,
+            stats,
+            promptContext: assembledRequest.promptContext,
+          }))
           eventStore.append(sessionId, createChatDoneEvent(assistantMsgId, 'complete', stats))
           
           // Save summary
@@ -753,6 +785,7 @@ async function handleClientMessage(
       
       const contextState = sessionManager.getContextState(sessionId)
       const tokensBefore = contextState.currentTokens
+      const eventStore = getEventStore()
       
       // Acknowledge immediately
       send({ type: 'ack', payload: {}, id: message.id })
@@ -761,41 +794,67 @@ async function handleClientMessage(
       ;(async () => {
         try {
           // 1. Add compaction prompt as visible user message (auto-prompt style)
-          const compactPromptMsg = sessionManager.addMessage(sessionId, {
-            role: 'user',
-            content: COMPACTION_PROMPT,
+          const compactPromptMsgId = crypto.randomUUID()
+          eventStore.append(sessionId, createMessageStartEvent(compactPromptMsgId, 'user', COMPACTION_PROMPT, {
+            ...(getCurrentWindowMessageOptions(sessionId) ?? {}),
             isSystemGenerated: true,
             messageKind: 'auto-prompt',
-          })
-          send(createChatMessageMessage(compactPromptMsg))
-          
-          // 2. Stream compaction response using core function (no tools)
+          }))
+          eventStore.append(sessionId, { type: 'message.done', data: { messageId: compactPromptMsgId } })
+
+          // 2. Stream compaction response using the event-sourced path (no tools)
           const session = sessionManager.requireSession(sessionId)
-          const { content: instructions } = await getAllInstructions(session.workdir, session.projectId)
+          const { content: instructions, files } = await getAllInstructions(session.workdir, session.projectId)
+          const injectedFiles: InjectedFile[] = files.map((file) => ({
+            path: file.path,
+            content: file.content ?? '',
+            source: file.source,
+          }))
           const toolRegistry = getToolRegistryForMode('planner')
-          const systemPrompt = buildPlannerPrompt(session.workdir, toolRegistry.definitions, instructions || undefined)
-          const result = await streamLLMResponse({
-            sessionManager,
-            sessionId,
-            systemPrompt,
-            llmClient: getLLMClient(),
-            onEvent: send,
+          const currentWindowId = getCurrentContextWindowId(sessionId)
+          const currentWindowEvents = eventStore.getEvents(sessionId)
+          const requestMessages = toRequestContextMessages(buildContextMessagesFromStoredEvents(
+            currentWindowEvents,
+            currentWindowId,
+            { includeVerifier: false },
+          ))
+          const assembledRequest = assemblePlannerRequest({
+            workdir: session.workdir,
+            messages: requestMessages,
+            injectedFiles,
+            promptTools: toolRegistry.definitions,
+            requestTools: [],
+            toolChoice: 'none',
+            enableThinking: false,
+            ...(instructions ? { customInstructions: instructions } : {}),
           })
+
+          const assistantMsgId = crypto.randomUUID()
+          eventStore.append(sessionId, createMessageStartEvent(assistantMsgId, 'assistant', undefined, getCurrentWindowMessageOptions(sessionId)))
+
+          const turnMetrics = new TurnMetrics()
+          const streamGen = streamLLMPure({
+            messageId: assistantMsgId,
+            systemPrompt: assembledRequest.systemPrompt,
+            llmClient: getLLMClient(),
+            messages: assembledRequest.messages,
+            tools: [],
+            toolChoice: 'none',
+            enableThinking: false,
+          })
+          const result = await consumeStreamGenerator(streamGen, event => {
+            eventStore.append(sessionId, event)
+          })
+          turnMetrics.addLLMCall(result.timing, result.usage.promptTokens, result.usage.completionTokens)
           
           // Emit stats for compaction (PROMPT -> WORK -> stats+sound pattern)
-          const compactionStats = computeMessageStats({
-            model: getLLMClient().getModel(),
-            mode: 'planner',
-            timing: result.timing,
-            usage: result.usage,
-          })
-          sessionManager.updateMessageStats(sessionId, result.messageId, compactionStats)
-          send(createChatDoneMessage(result.messageId, 'complete', compactionStats))
-          
-          // 3. Mark response as compaction summary
-          sessionManager.updateMessage(sessionId, result.messageId, {
-            isCompactionSummary: true,
-          })
+          const compactionStats = turnMetrics.buildStats(getLLMClient().getModel(), 'planner')
+          eventStore.append(sessionId, createMessageDoneEvent(assistantMsgId, {
+            segments: result.segments,
+            stats: compactionStats,
+            promptContext: assembledRequest.promptContext,
+          }))
+          eventStore.append(sessionId, createChatDoneEvent(assistantMsgId, 'complete', compactionStats))
           
           // 4. Close current window and create new one
           sessionManager.compactContext(sessionId, result.content, tokensBefore)

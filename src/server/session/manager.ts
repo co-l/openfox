@@ -15,6 +15,7 @@ import type {
   SessionPhase,
   Criterion,
   ContextState,
+  Attachment,
 } from '../../shared/types.js'
 import {
   createSession as dbCreateSession,
@@ -42,11 +43,13 @@ import {
   emitCriteriaSet,
   emitCriterionUpdated,
   emitContextCompacted,
+  emitContextState,
   getCurrentWindowMessages as getWindowMessages,
   type FoldedSessionState,
 } from '../events/index.js'
 import type { Message, CriterionStatus } from '../../shared/types.js'
 import { loadConfig } from '../config.js'
+import { isInDangerZone, canCompact } from '../context/tokenizer.js'
 
 // ============================================================================
 // Event Types (for backward compatibility with existing subscribers)
@@ -307,11 +310,13 @@ export class SessionManager {
       isSystemGenerated?: boolean
       messageKind?: 'correction' | 'auto-prompt' | 'context-reset'
       tokenCount?: number
+      attachments?: Attachment[] // Optional image attachments
     } = {}
     if (contextWindowId !== undefined) options.contextWindowId = contextWindowId
     if (message.isSystemGenerated !== undefined) options.isSystemGenerated = message.isSystemGenerated
     if (message.messageKind !== undefined) options.messageKind = message.messageKind
     if (message.tokenCount !== undefined) options.tokenCount = message.tokenCount
+    if (message.attachments !== undefined) options.attachments = message.attachments
 
     // Emit message events
     const messageId = emitUserMessage(sessionId, message.content, options)
@@ -322,11 +327,11 @@ export class SessionManager {
       role: message.role,
       content: message.content,
       timestamp: new Date().toISOString(),
-      tokenCount: message.tokenCount ?? 0,
     }
     if (contextWindowId !== undefined) result.contextWindowId = contextWindowId
     if (message.isSystemGenerated !== undefined) result.isSystemGenerated = message.isSystemGenerated
     if (message.messageKind !== undefined) result.messageKind = message.messageKind
+    if (message.attachments !== undefined) result.attachments = message.attachments
 
     // Emit internal event for subscribers
     this.emit({ type: 'message_added', sessionId, message: result })
@@ -373,7 +378,6 @@ export class SessionManager {
           role: m.role,
           content: m.content,
           timestamp: new Date(m.timestamp).toISOString(),
-          tokenCount: m.tokenCount ?? 0,
         }
         if (m.thinkingContent !== undefined) msg.thinkingContent = m.thinkingContent
         if (m.toolCalls !== undefined) msg.toolCalls = m.toolCalls
@@ -382,6 +386,10 @@ export class SessionManager {
         if (m.partial !== undefined) msg.partial = m.partial
         if (m.isStreaming !== undefined) msg.isStreaming = m.isStreaming
         if (m.contextWindowId !== undefined) msg.contextWindowId = m.contextWindowId
+        if (m.isSystemGenerated !== undefined) msg.isSystemGenerated = m.isSystemGenerated
+        if (m.messageKind !== undefined) msg.messageKind = m.messageKind
+        if (m.isCompactionSummary !== undefined) msg.isCompactionSummary = m.isCompactionSummary
+        if (m.promptContext !== undefined) msg.promptContext = m.promptContext
         return msg
       })
   }
@@ -399,14 +407,34 @@ export class SessionManager {
     const newWindowId = crypto.randomUUID()
 
     emitContextCompacted(sessionId, closedWindowId, newWindowId, tokenCountAtClose, 0, summary)
+    emitUserMessage(sessionId, `Previous context summary:\n${summary}`, {
+      contextWindowId: newWindowId,
+      isSystemGenerated: true,
+      messageKind: 'auto-prompt',
+      isCompactionSummary: true,
+    })
   }
 
   /**
    * Set current context size (for token tracking).
+   * Emits a context.state event with the real promptTokens from the LLM.
    */
   setCurrentContextSize(sessionId: string, promptTokens: number): void {
-    // In event model, token count is derived from message stats
-    logger.debug('setCurrentContextSize called (derived from events)', { sessionId, promptTokens })
+    const config = loadConfig()
+    const maxTokens = config.context.maxTokens
+    const state = getSessionState(sessionId)
+    const compactionCount = state?.contextState.compactionCount ?? 0
+
+    emitContextState(
+      sessionId,
+      promptTokens,
+      maxTokens,
+      compactionCount,
+      isInDangerZone(promptTokens, maxTokens),
+      canCompact(promptTokens, maxTokens)
+    )
+
+    logger.debug('Context state updated', { sessionId, promptTokens, maxTokens })
   }
 
   // ============================================================================
@@ -623,7 +651,6 @@ export class SessionManager {
       role: 'system',
       content: `[COMPACTED HISTORY]\n${summary}`,
       timestamp: new Date().toISOString(),
-      tokenCount: Math.ceil(summary.length / 4),
       isCompacted: true,
     }
   }
@@ -734,7 +761,6 @@ export class SessionManager {
         role: m.role,
         content: m.content,
         timestamp: new Date(m.timestamp).toISOString(),
-        tokenCount: m.tokenCount ?? 0,
       }
       if (m.thinkingContent !== undefined) msg.thinkingContent = m.thinkingContent
       if (m.toolCalls !== undefined) msg.toolCalls = m.toolCalls

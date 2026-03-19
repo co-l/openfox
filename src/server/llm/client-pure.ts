@@ -41,6 +41,31 @@ export function convertMessages(messages: LLMMessage[]): ChatCompletionMessagePa
       }
     }
 
+    // Handle user messages with attachments
+    if (msg.role === 'user' && msg.attachments && msg.attachments.length > 0) {
+      const content: Array<{ type: 'text'; text: string } | { type: 'image_url'; image_url: { url: string } }> = []
+      
+      // Add text content if present
+      if (msg.content?.trim()) {
+        content.push({ type: 'text', text: msg.content })
+      }
+      
+      // Add attachments as image URLs
+      for (const attachment of msg.attachments) {
+        content.push({
+          type: 'image_url',
+          image_url: {
+            url: attachment.data, // base64 data URL
+          },
+        })
+      }
+      
+      return {
+        role: 'user',
+        content,
+      }
+    }
+
     return {
       role: msg.role as 'system' | 'user' | 'assistant',
       content: msg.content,

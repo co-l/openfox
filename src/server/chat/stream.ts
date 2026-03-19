@@ -8,14 +8,15 @@
  * - Handles XML tool format retry universally
  */
 
-import type { ToolCall, MessageSegment } from '../../shared/types.js'
+import type { ToolCall, MessageSegment, Attachment } from '../../shared/types.js'
 import type { ServerMessage } from '../../shared/protocol.js'
 import type { LLMClientWithModel } from '../llm/client.js'
 import type { LLMToolDefinition } from '../llm/types.js'
 import type { StreamTiming } from '../llm/streaming.js'
 import type { SessionManager } from '../session/index.js'
 import { streamWithSegments } from '../llm/streaming.js'
-import { estimateTokens } from '../context/tokenizer.js'
+import { estimateContextSize } from '../context/tokenizer.js'
+import { loadConfig } from '../config.js'
 import { logger } from '../utils/logger.js'
 import {
   createChatDeltaMessage,
@@ -25,6 +26,7 @@ import {
   createChatErrorMessage,
   createChatFormatRetryMessage,
   createChatMessageMessage,
+  createChatProgressMessage,
 } from '../ws/protocol.js'
 
 // Constants for XML tool format retry
@@ -82,7 +84,6 @@ async function streamLLMResponseInternal(
     const correctionMsg = sessionManager.addMessage(sessionId, {
       role: 'user',
       content: FORMAT_CORRECTION_PROMPT,
-      tokenCount: estimateTokens(FORMAT_CORRECTION_PROMPT),
       isSystemGenerated: true,
       messageKind: 'correction',
       ...(subAgentId && { subAgentId }),
@@ -93,7 +94,7 @@ async function streamLLMResponseInternal(
   }
 
   // Build messages - use custom messages if provided, otherwise session's current window
-  let llmMessages: Array<{ role: 'system' | 'user' | 'assistant' | 'tool'; content: string; toolCalls?: ToolCall[]; toolCallId?: string }>
+  let llmMessages: Array<{ role: 'system' | 'user' | 'assistant' | 'tool'; content: string; toolCalls?: ToolCall[]; toolCallId?: string; attachments?: Attachment[] }>
   
   if (customMessages) {
     llmMessages = [
@@ -109,8 +110,43 @@ async function streamLLMResponseInternal(
         content: m.content,
         ...(m.toolCalls && { toolCalls: m.toolCalls }),
         ...(m.toolCallId && { toolCallId: m.toolCallId }),
+        ...(m.attachments && { attachments: m.attachments }),
       })),
     ]
+  }
+
+  // Pre-flight estimation: warn user if context is approaching limit
+  const config = loadConfig()
+  const estimate = estimateContextSize(
+    systemPrompt,
+    llmMessages.map(m => ({ role: m.role, content: m.content })),
+    config.context.maxTokens
+  )
+  
+  if (estimate.isOverLimit) {
+    logger.warn('Context exceeds limit', { 
+      sessionId, 
+      estimated: estimate.estimatedTokens, 
+      max: estimate.maxTokens,
+      percent: estimate.percentUsed 
+    })
+    onEvent(createChatProgressMessage(
+      `Context is full (~${estimate.percentUsed}%). Please compact before continuing.`,
+      'context_error'
+    ))
+    // Don't throw - let the LLM truncate or error naturally
+    // The real promptTokens will be reported after the call
+  } else if (estimate.isNearLimit) {
+    logger.info('Context nearing limit', { 
+      sessionId, 
+      estimated: estimate.estimatedTokens, 
+      max: estimate.maxTokens,
+      percent: estimate.percentUsed 
+    })
+    onEvent(createChatProgressMessage(
+      `Context at ~${estimate.percentUsed}%. Consider compacting soon.`,
+      'context_warning'
+    ))
   }
 
   // Create or reuse assistant message
@@ -119,7 +155,6 @@ async function streamLLMResponseInternal(
     const assistantMsg = sessionManager.addMessage(sessionId, {
       role: 'assistant',
       content: '',
-      tokenCount: 0,
       isStreaming: true,
       ...(subAgentId && { subAgentId }),
       ...(subAgentType && { subAgentType }),
@@ -219,7 +254,6 @@ async function streamLLMResponseInternal(
     content,
     ...(thinkingContent && { thinkingContent }),
     ...(toolCalls.length > 0 && { toolCalls }),
-    tokenCount: response.usage.completionTokens,
     segments,
     isStreaming: false,
   })

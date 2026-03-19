@@ -10,7 +10,7 @@
  * - Managing session state
  */
 
-import type { ToolCall, MessageSegment, MessageStats, ToolResult } from '../../shared/types.js'
+import type { PromptContext, ToolCall, MessageSegment, MessageStats, ToolResult, Attachment } from '../../shared/types.js'
 import type { LLMClientWithModel } from '../llm/client.js'
 import type { LLMToolDefinition } from '../llm/types.js'
 import type { StreamTiming } from '../llm/streaming.js'
@@ -31,6 +31,7 @@ export interface PureStreamOptions {
     content: string
     toolCalls?: ToolCall[]
     toolCallId?: string
+    attachments?: Attachment[]
   }>
   tools?: LLMToolDefinition[]
   toolChoice?: 'auto' | 'none' | 'required'
@@ -297,6 +298,7 @@ export function createMessageDoneEvent(
     stats?: MessageStats
     segments?: MessageSegment[]
     partial?: boolean
+    promptContext?: PromptContext
   }
 ): TurnEvent {
   return {
@@ -306,6 +308,7 @@ export function createMessageDoneEvent(
       ...(options?.stats && { stats: options.stats }),
       ...(options?.segments && { segments: options.segments }),
       ...(options?.partial && { partial: options.partial }),
+      ...(options?.promptContext && { promptContext: options.promptContext }),
     },
   }
 }

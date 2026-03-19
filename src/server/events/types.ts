@@ -23,6 +23,7 @@ import type {
   MessageSegment,
   ContextState,
   PromptContext,
+  Attachment,
 } from '../../shared/types.js'
 
 // ============================================================================
@@ -71,6 +72,7 @@ export type TurnEvent =
         messageKind?: 'correction' | 'auto-prompt' | 'context-reset'
         isCompactionSummary?: boolean // True if this is the summary message after compaction
         tokenCount?: number // Known upfront for user messages
+        attachments?: Attachment[] // Optional image attachments
       }
     }
   | {
@@ -307,6 +309,7 @@ export interface SnapshotMessage {
   contextWindowId?: string
   isCompactionSummary?: boolean
   promptContext?: PromptContext
+  attachments?: Attachment[] // Optional image attachments
 }
 
 export interface ToolCallWithResult extends ToolCall {

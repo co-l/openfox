@@ -109,6 +109,24 @@ describe('event folding', () => {
     ])
   })
 
+  it('excludes verifier sub-agent messages from main-context reconstruction when requested', () => {
+    const events: StoredEvent[] = [
+      { ...baseEvent, type: 'message.start', data: { messageId: 'user-1', role: 'user', content: 'build it', contextWindowId: 'window-1' } },
+      { ...baseEvent, type: 'message.done', data: { messageId: 'user-1' } },
+      { ...baseEvent, type: 'message.start', data: { messageId: 'reset', role: 'user', content: 'Fresh Context', contextWindowId: 'window-1', subAgentType: 'verifier', messageKind: 'context-reset' } },
+      { ...baseEvent, type: 'message.done', data: { messageId: 'reset' } },
+      { ...baseEvent, type: 'message.start', data: { messageId: 'verifier-1', role: 'assistant', contextWindowId: 'window-1', subAgentType: 'verifier' } },
+      { ...baseEvent, type: 'message.delta', data: { messageId: 'verifier-1', content: 'verification thoughts' } },
+    ]
+
+    expect(buildContextMessagesFromStoredEvents(events, 'window-1', { includeVerifier: false })).toEqual([
+      {
+        role: 'user',
+        content: 'build it',
+      },
+    ])
+  })
+
   it('folds turn events into snapshot messages and builds a snapshot', () => {
     const events: Array<{ type: any; timestamp: number; data: any }> = [
       { type: 'message.start', timestamp: 123, data: { messageId: 'm1', role: 'assistant' as const, contextWindowId: 'window-1' } },

@@ -89,7 +89,6 @@ describe('streamLLMResponse', () => {
       content: 'answer',
       thinkingContent: 'thinking',
       toolCalls: [{ id: 'call-1', name: 'read_file', arguments: { path: 'src/index.ts' } }],
-      tokenCount: 4,
       segments: [{ type: 'text', content: 'answer' }],
       isStreaming: false,
     })

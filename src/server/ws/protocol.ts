@@ -167,7 +167,7 @@ export function createChatSummaryMessage(summary: string): ServerMessage<ChatSum
 
 export function createChatProgressMessage(
   message: string,
-  phase?: 'summary' | 'mode_switch' | 'starting'
+  phase?: 'summary' | 'mode_switch' | 'starting' | 'context_warning' | 'context_error'
 ): ServerMessage<ChatProgressPayload> {
   return createServerMessage('chat.progress', { message, ...(phase ? { phase } : {}) })
 }
@@ -325,6 +325,7 @@ export function storedEventToServerMessage(event: StoredEvent): ServerMessage | 
         ...(data.subAgentType ? { subAgentType: data.subAgentType } : {}),
         ...(data.isSystemGenerated ? { isSystemGenerated: data.isSystemGenerated } : {}),
         ...(data.messageKind ? { messageKind: data.messageKind } : {}),
+        ...(data.isCompactionSummary ? { isCompactionSummary: data.isCompactionSummary } : {}),
       }
       return createChatMessageMessage(message)
     }
@@ -342,9 +343,12 @@ export function storedEventToServerMessage(event: StoredEvent): ServerMessage | 
     case 'message.done': {
       const data = event.data as Extract<TurnEvent, { type: 'message.done' }>['data']
       // This maps to chat.message_updated with isStreaming: false and optionally stats
-      const updates: { isStreaming: false; stats?: typeof data.stats } = { isStreaming: false }
+      const updates: { isStreaming: false; stats?: typeof data.stats; promptContext?: typeof data.promptContext } = { isStreaming: false }
       if (data.stats) {
         updates.stats = data.stats
+      }
+      if (data.promptContext) {
+        updates.promptContext = data.promptContext
       }
       return createChatMessageUpdatedMessage(data.messageId, updates)
     }

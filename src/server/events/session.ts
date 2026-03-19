@@ -28,6 +28,7 @@ import type {
   Todo,
   MessageSegment,
   PromptContext,
+  Attachment,
 } from '../../shared/types.js'
 import type { SessionSnapshot, SnapshotMessage, ReadFileEntry } from './types.js'
 import { getEventStore } from './store.js'
@@ -99,7 +100,7 @@ export function getContextMessages(sessionId: string): ContextMessage[] {
   const currentContextWindowId = getCurrentContextWindowId(sessionId)
   if (!currentContextWindowId) return []
 
-  return buildContextMessagesFromStoredEvents(events, currentContextWindowId)
+  return buildContextMessagesFromStoredEvents(events, currentContextWindowId, { includeVerifier: false })
 }
 
 /**
@@ -165,7 +166,9 @@ export function emitUserMessage(
     contextWindowId?: string
     isSystemGenerated?: boolean
     messageKind?: 'correction' | 'auto-prompt' | 'context-reset'
+    isCompactionSummary?: boolean
     tokenCount?: number
+    attachments?: Attachment[] // Optional image attachments
   }
 ): string {
   const eventStore = getEventStore()
@@ -180,7 +183,9 @@ export function emitUserMessage(
       ...(options?.contextWindowId !== undefined && { contextWindowId: options.contextWindowId }),
       ...(options?.isSystemGenerated !== undefined && { isSystemGenerated: options.isSystemGenerated }),
       ...(options?.messageKind !== undefined && { messageKind: options.messageKind }),
+      ...(options?.isCompactionSummary !== undefined && { isCompactionSummary: options.isCompactionSummary }),
       ...(options?.tokenCount !== undefined && { tokenCount: options.tokenCount }),
+      ...(options?.attachments !== undefined && { attachments: options.attachments }),
     },
   })
 

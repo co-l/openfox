@@ -131,6 +131,29 @@ export interface PromptContext {
   systemPrompt: string           // Full system prompt sent to LLM
   injectedFiles: InjectedFile[]  // AGENTS.md, global/project instructions, etc.
   userMessage: string            // The user message that triggered this response
+  messages: PromptContextMessage[]
+  tools: PromptContextTool[]
+  requestOptions: PromptRequestOptions
+}
+
+export interface PromptContextMessage {
+  role: 'user' | 'assistant' | 'tool'
+  content: string
+  source: 'history' | 'runtime'
+  toolCalls?: Array<{ id: string; name: string; arguments: Record<string, unknown> }>
+  toolCallId?: string
+  attachments?: Attachment[]
+}
+
+export interface PromptContextTool {
+  name: string
+  description: string
+  parameters: Record<string, unknown>
+}
+
+export interface PromptRequestOptions {
+  toolChoice: 'auto' | 'none' | 'required' | { type: 'function'; function: { name: string } }
+  enableThinking: boolean
 }
 
 export interface InjectedFile {
@@ -145,6 +168,14 @@ export interface PreparingToolCall {
   name: string    // Tool name (available early in stream)
 }
 
+export interface Attachment {
+  id: string
+  filename: string
+  mimeType: 'image/png' | 'image/jpeg' | 'image/gif'
+  size: number
+  data: string  // base64-encoded image data
+}
+
 export interface Message {
   id: string
   role: MessageRole
@@ -157,7 +188,7 @@ export interface Message {
   toolName?: string
   toolResult?: ToolResult
   timestamp: string
-  tokenCount: number
+  tokenCount?: number  // Deprecated: no longer used for context tracking
   isCompacted?: boolean
   originalMessageIds?: string[]
   segments?: MessageSegment[]  // Preserves streaming order: text/thinking chunks + tool call refs
@@ -170,6 +201,7 @@ export interface Message {
   subAgentId?: string          // If set, this message belongs to a sub-agent process
   subAgentType?: 'verifier'    // Type of sub-agent (extensible for future)
   promptContext?: PromptContext  // What was sent to LLM for this response (assistant messages only)
+  attachments?: Attachment[]     // Optional image attachments
 }
 
 // ============================================================================

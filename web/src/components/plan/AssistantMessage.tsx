@@ -1,4 +1,4 @@
-import { memo } from 'react'
+import { memo, useState } from 'react'
 import type { Message, MessageSegment, ToolCall, Todo, PreparingToolCall } from '../../../src/shared/types.js'
 import { Markdown } from '../shared/Markdown'
 import { ThinkingBlock } from '../shared/ThinkingBlock'
@@ -6,6 +6,7 @@ import { ToolCallDisplay } from '../shared/ToolCallDisplay'
 import { ToolCallPreparing } from '../shared/ToolCallPreparing'
 import { TodoListDisplay } from '../shared/TodoListDisplay'
 import { CriteriaGroupDisplay, isCriterionTool } from '../shared/CriteriaGroupDisplay'
+import { PromptInspector } from '../shared/PromptInspector'
 import { useSessionStore } from '../../stores/session'
 
 interface AssistantMessageProps {
@@ -129,6 +130,7 @@ function segmentsToElements(
 }
 
 export const AssistantMessage = memo(function AssistantMessage({ message, showStats = true }: AssistantMessageProps) {
+  const [showInspector, setShowInspector] = useState(false)
   const criteria = useSessionStore(state => state.currentSession?.criteria)
   const rawElements = messageToElements(message, showStats)
   const elements = groupConsecutiveCriteria(rawElements)
@@ -137,6 +139,23 @@ export const AssistantMessage = memo(function AssistantMessage({ message, showSt
   
   return (
     <div className="feed-item">
+      {message.promptContext && (
+        <>
+          <div className="mb-2 flex justify-end">
+            <button
+              onClick={() => setShowInspector(true)}
+              className="rounded border border-border px-2 py-1 text-xs text-text-muted transition-colors hover:bg-bg-tertiary hover:text-text-primary"
+            >
+              Inspect Prompt
+            </button>
+          </div>
+          <PromptInspector
+            isOpen={showInspector}
+            onClose={() => setShowInspector(false)}
+            promptContext={message.promptContext}
+          />
+        </>
+      )}
       {elements.map((element, i) => {
         switch (element.type) {
           case 'thinking':

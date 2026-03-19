@@ -14,6 +14,7 @@ import type {
   ContextState,
   Todo,
   ToolCall,
+  Attachment,
 } from '../../shared/types.js'
 import type {
   StoredEvent,
@@ -33,6 +34,11 @@ export interface ContextMessage {
   content: string
   toolCalls?: Array<{ id: string; name: string; arguments: Record<string, unknown> }>
   toolCallId?: string
+  attachments?: Attachment[]
+}
+
+export interface ContextMessageBuildOptions {
+  includeVerifier?: boolean
 }
 
 type EventLike = Pick<StoredEvent, 'type' | 'data'> & Partial<Pick<StoredEvent, 'timestamp'>>
@@ -80,6 +86,7 @@ export function buildMessagesFromStoredEvents(events: StoredEvent[]): Message[] 
           ...(data.isSystemGenerated !== undefined && { isSystemGenerated: data.isSystemGenerated }),
           ...(data.messageKind !== undefined && { messageKind: data.messageKind }),
           ...(data.isCompactionSummary !== undefined && { isCompactionSummary: data.isCompactionSummary }),
+          ...(data.attachments !== undefined && { attachments: data.attachments }),
         })
         break
       }
@@ -162,8 +169,10 @@ export function buildMessagesFromStoredEvents(events: StoredEvent[]): Message[] 
  */
 export function buildContextMessagesFromStoredEvents(
   events: StoredEvent[],
-  windowId?: string
+  windowId?: string,
+  options?: ContextMessageBuildOptions,
 ): ContextMessage[] {
+  const includeVerifier = options?.includeVerifier ?? true
   const messages: Array<ContextMessage & { id: string }> = []
   const messageMap = new Map<string, ContextMessage & { id: string }>()
 
@@ -171,11 +180,16 @@ export function buildContextMessagesFromStoredEvents(
     switch (event.type) {
       case 'message.start': {
         const data = event.data as Extract<TurnEvent, { type: 'message.start' }>['data']
-        if (data.role !== 'system' && (windowId === undefined || data.contextWindowId === windowId)) {
-          const message = {
+        if (
+          data.role !== 'system'
+          && (windowId === undefined || data.contextWindowId === windowId)
+          && (includeVerifier || data.subAgentType !== 'verifier')
+        ) {
+          const message: ContextMessage & { id: string } = {
             id: data.messageId,
             role: data.role as 'user' | 'assistant',
             content: data.content ?? '',
+            ...(data.attachments !== undefined && { attachments: data.attachments }),
           }
           messageMap.set(data.messageId, message)
           messages.push(message)
@@ -241,6 +255,7 @@ export function foldTurnEventsToSnapshotMessages(events: EventLike[]): SnapshotM
         if (data.isSystemGenerated !== undefined) msg.isSystemGenerated = data.isSystemGenerated
         if (data.messageKind !== undefined) msg.messageKind = data.messageKind
         if (data.isCompactionSummary !== undefined) msg.isCompactionSummary = data.isCompactionSummary
+        if (data.attachments !== undefined) msg.attachments = data.attachments
         messages.set(data.messageId, msg)
         break
       }

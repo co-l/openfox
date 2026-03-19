@@ -1,0 +1,31 @@
+import { renderToStaticMarkup } from 'react-dom/server'
+import { describe, expect, it } from 'vitest'
+import { PromptInspector } from './PromptInspector'
+
+describe('PromptInspector', () => {
+  it('renders exact request messages and tools when present', () => {
+    const html = renderToStaticMarkup(
+      <PromptInspector
+        isOpen
+        onClose={() => undefined}
+        promptContext={{
+          systemPrompt: 'system prompt',
+          userMessage: 'Do the thing',
+          injectedFiles: [{ path: 'AGENTS.md', content: 'rules', source: 'agents-md' }],
+          messages: [
+            { role: 'user', content: 'Do the thing', source: 'history' },
+            { role: 'user', content: 'Runtime state', source: 'runtime' },
+          ],
+          tools: [{ name: 'read_file', description: 'Read a file', parameters: { path: { type: 'string' } } }],
+          requestOptions: { toolChoice: 'auto', enableThinking: true },
+        }}
+      />,
+    )
+
+    expect(html).toContain('Prompt Messages (2)')
+    expect(html).toContain('Tools (1)')
+    expect(html).toContain('Request Options')
+    expect(html).toContain('runtime')
+    expect(html).toContain('read_file')
+  })
+})

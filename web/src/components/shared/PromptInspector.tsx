@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import type { PromptContext } from '../../../src/shared/types.js'
+import type { InjectedFile, PromptContext, PromptContextMessage, PromptContextTool } from '../../../src/shared/types.js'
 import { Modal } from './Modal'
 
 interface PromptInspectorProps {
@@ -11,6 +11,9 @@ interface PromptInspectorProps {
 export function PromptInspector({ isOpen, onClose, promptContext }: PromptInspectorProps) {
   const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>({
     systemPrompt: false,
+    messages: true,
+    tools: true,
+    requestOptions: true,
     injectedFiles: true,
     userMessage: true,
   })
@@ -33,6 +36,63 @@ export function PromptInspector({ isOpen, onClose, promptContext }: PromptInspec
           </pre>
         </Section>
 
+        {promptContext.messages.length > 0 && (
+          <Section
+            title={`Prompt Messages (${promptContext.messages.length})`}
+            expanded={expandedSections['messages'] ?? true}
+            onToggle={() => toggleSection('messages')}
+          >
+            <div className="space-y-2">
+              {promptContext.messages.map((message: PromptContextMessage, index: number) => (
+                <div key={`${message.role}-${index}`} className="border border-border rounded overflow-hidden">
+                  <div className="flex items-center gap-2 px-3 py-2 bg-bg-tertiary/50 text-xs text-text-muted">
+                    <span className="font-mono text-text-primary">{message.role}</span>
+                    <span className="rounded bg-bg-tertiary px-1.5 py-0.5">{message.source}</span>
+                    {message.toolCallId && <span className="font-mono">{message.toolCallId}</span>}
+                  </div>
+                  <pre className="text-xs text-text-secondary whitespace-pre-wrap bg-bg-tertiary rounded-b p-3 max-h-64 overflow-auto font-mono">
+                    {message.content || '(empty)'}
+                  </pre>
+                </div>
+              ))}
+            </div>
+          </Section>
+        )}
+
+        <Section
+          title={`Tools (${promptContext.tools.length})`}
+          expanded={expandedSections['tools'] ?? true}
+          onToggle={() => toggleSection('tools')}
+        >
+          <div className="space-y-2">
+            {promptContext.tools.length === 0 && (
+              <div className="text-sm text-text-muted">No tools sent with this request.</div>
+            )}
+            {promptContext.tools.map((tool: PromptContextTool, index: number) => (
+              <div key={`${tool.name}-${index}`} className="bg-bg-tertiary rounded p-3 space-y-2">
+                <div className="flex items-center justify-between gap-3">
+                  <span className="font-mono text-sm text-text-primary">{tool.name}</span>
+                  <span className="text-xs text-text-muted">parameters</span>
+                </div>
+                <div className="text-sm text-text-secondary">{tool.description}</div>
+                <pre className="text-xs text-text-secondary whitespace-pre-wrap max-h-48 overflow-auto font-mono">
+                  {JSON.stringify(tool.parameters, null, 2)}
+                </pre>
+              </div>
+            ))}
+          </div>
+        </Section>
+
+        <Section
+          title="Request Options"
+          expanded={expandedSections['requestOptions'] ?? true}
+          onToggle={() => toggleSection('requestOptions')}
+        >
+          <pre className="text-xs text-text-secondary whitespace-pre-wrap bg-bg-tertiary rounded p-3 max-h-48 overflow-auto font-mono lowercase">
+            {JSON.stringify(promptContext.requestOptions, null, 2)}
+          </pre>
+        </Section>
+
         {/* Injected Files Section */}
         {promptContext.injectedFiles.length > 0 && (
           <Section
@@ -41,7 +101,7 @@ export function PromptInspector({ isOpen, onClose, promptContext }: PromptInspec
             onToggle={() => toggleSection('injectedFiles')}
           >
             <div className="space-y-2">
-              {promptContext.injectedFiles.map((file, index) => (
+              {promptContext.injectedFiles.map((file: InjectedFile, index: number) => (
                 <FileItem 
                   key={index} 
                   file={file} 

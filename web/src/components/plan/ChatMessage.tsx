@@ -3,6 +3,7 @@ import type { Message } from '../../../src/shared/types.js'
 import { Markdown } from '../shared/Markdown'
 import { AssistantMessage } from './AssistantMessage'
 import { PromptInspector } from '../shared/PromptInspector'
+import { MessageAttachments } from '../shared/MessageAttachments.js'
 
 interface ChatMessageProps {
   message: Message
@@ -129,6 +130,9 @@ function UserMessage({ message }: UserMessageProps) {
         }`}>
           {message.content}
         </div>
+        {message.attachments && message.attachments.length > 0 && (
+          <MessageAttachments attachments={message.attachments} />
+        )}
       </div>
     </div>
   )

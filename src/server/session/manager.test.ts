@@ -135,7 +135,14 @@ describe('SessionManager', () => {
     })
 
     manager.compactContext(session.id, 'summary text', 50)
-    expect(manager.getCurrentWindowMessages(session.id)).toEqual([])
+    expect(manager.getCurrentWindowMessages(session.id)).toEqual([
+      expect.objectContaining({
+        role: 'user',
+        content: expect.stringContaining('summary text'),
+        isCompactionSummary: true,
+        isSystemGenerated: true,
+      }),
+    ])
     // In event-sourced model, compaction info is in contextState, not executionState
     expect(manager.getContextState(session.id)).toMatchObject({
       currentTokens: 0,
@@ -241,5 +248,46 @@ describe('SessionManager', () => {
       totalToolCalls: 1,
     })
     expect(firstMessage.id).toBeTruthy()
+  })
+
+  it('setCurrentContextSize emits context.state event with real promptTokens', () => {
+    const session = manager.createSession(projectId)
+
+    // Add a message first (tokenCount will be removed in Phase 2)
+    manager.addMessage(session.id, {
+      role: 'user',
+      content: 'hello',
+      tokenCount: 0,
+    })
+
+    // Simulate LLM response with real promptTokens
+    manager.setCurrentContextSize(session.id, 78300)
+
+    // Context state should reflect the real promptTokens, not calculated from messages
+    const contextState = manager.getContextState(session.id)
+    expect(contextState.currentTokens).toBe(78300)
+    expect(contextState.dangerZone).toBe(false) // 78300 < 180000 (200000 - 20000)
+    expect(contextState.canCompact).toBe(true) // 78300 > 40000 (200000 * 0.2)
+  })
+
+  it('getContextState uses latest context.state event value', () => {
+    const session = manager.createSession(projectId)
+
+    // Initial state should be 0
+    expect(manager.getContextState(session.id).currentTokens).toBe(0)
+
+    // First LLM call reports 50k tokens
+    manager.setCurrentContextSize(session.id, 50000)
+    expect(manager.getContextState(session.id).currentTokens).toBe(50000)
+
+    // Second LLM call reports 85k tokens (context grew)
+    manager.setCurrentContextSize(session.id, 85000)
+    expect(manager.getContextState(session.id).currentTokens).toBe(85000)
+
+    // After compaction, context resets
+    manager.compactContext(session.id, 'summary', 85000)
+    // New LLM call after compaction reports smaller context
+    manager.setCurrentContextSize(session.id, 5000)
+    expect(manager.getContextState(session.id).currentTokens).toBe(5000)
   })
 })
