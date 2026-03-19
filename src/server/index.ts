@@ -343,7 +343,7 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
   const httpServer = createHttpServer(app)
 
   // Create WebSocket server attached to HTTP server
-  createWebSocketServer(httpServer, config, getLLMClient, toolRegistry, sessionManager)
+  const wss = createWebSocketServer(httpServer, config, getLLMClient, toolRegistry, sessionManager)
 
   // Return the handle with start/close methods
   return {
@@ -371,6 +371,11 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
       logger.info('Shutting down...')
       viteServer?.close()
       closeDatabase()
+      // Terminate all WebSocket connections to allow clean shutdown
+      for (const client of wss.clients) {
+        client.terminate()
+      }
+      wss.close()
       httpServer.close(() => resolve())
     }),
   }
@@ -385,14 +390,20 @@ export async function createServer(config: Config): Promise<void> {
   const handle = await createServerHandle(config)
   await handle.start()
   
-  // Graceful shutdown
-  process.on('SIGINT', () => {
+  // Graceful shutdown with force exit timeout
+  const shutdown = () => {
+    // Force exit after 3 seconds if graceful shutdown hangs
+    const forceExitTimer = setTimeout(() => {
+      logger.warn('Forcing exit after timeout')
+      process.exit(1)
+    }, 3000)
+    forceExitTimer.unref() // Don't keep process alive just for this timer
+    
     handle.close().then(() => process.exit(0))
-  })
-
-  process.on('SIGTERM', () => {
-    handle.close().then(() => process.exit(0))
-  })
+  }
+  
+  process.on('SIGINT', shutdown)
+  process.on('SIGTERM', shutdown)
 }
 
 function basename(path: string): string {
