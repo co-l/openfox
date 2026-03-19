@@ -1,6 +1,4 @@
-import type { Message } from '../../shared/types.js'
-
-// Approximate token counting (tiktoken would be more accurate but adds complexity)
+// Approximate token counting for pre-flight estimation
 // For English text, approximately 4 characters = 1 token
 const CHARS_PER_TOKEN = 4
 
@@ -13,56 +11,12 @@ export const MIN_COMPACT_THRESHOLD_RATIO = 0.20
 // Target context after manual compaction (20K tokens)
 export const MANUAL_COMPACT_TARGET = 20000
 
+/**
+ * Estimate tokens for a string (used for pre-flight checks only).
+ * For accurate context tracking, use real promptTokens from the LLM.
+ */
 export function estimateTokens(text: string): number {
   return Math.ceil(text.length / CHARS_PER_TOKEN)
-}
-
-export function estimateMessagesTokens(messages: { content: string }[]): number {
-  let total = 0
-  
-  for (const msg of messages) {
-    // Add message overhead (~4 tokens per message)
-    total += 4
-    total += estimateTokens(msg.content)
-  }
-  
-  return total
-}
-
-/**
- * Estimate context tokens from messages (fallback when real count unavailable).
- * Includes: message content, thinking, tool calls/results.
- */
-export function calculateContextTokens(messages: Message[]): number {
-  let total = 0
-  
-  for (const msg of messages) {
-    // Message overhead
-    total += 4
-    
-    // Main content
-    total += estimateTokens(msg.content)
-    
-    // Thinking content
-    if (msg.thinkingContent) {
-      total += estimateTokens(msg.thinkingContent)
-    }
-    
-    // Tool calls (function name + arguments)
-    if (msg.toolCalls) {
-      for (const tc of msg.toolCalls) {
-        total += 10 // Function name + structure overhead
-        total += estimateTokens(JSON.stringify(tc.arguments))
-      }
-    }
-    
-    // Tool result
-    if (msg.toolResult?.output) {
-      total += estimateTokens(msg.toolResult.output)
-    }
-  }
-  
-  return total
 }
 
 /**
@@ -77,4 +31,41 @@ export function isInDangerZone(currentTokens: number, maxTokens: number): boolea
  */
 export function canCompact(currentTokens: number, maxTokens: number): boolean {
   return currentTokens > (maxTokens * MIN_COMPACT_THRESHOLD_RATIO)
+}
+
+/**
+ * Pre-flight estimation: estimate the context size before sending to LLM.
+ * Used to warn user or trigger compaction before context overflows.
+ */
+export interface ContextEstimate {
+  estimatedTokens: number
+  maxTokens: number
+  percentUsed: number
+  isNearLimit: boolean   // > 80%
+  isOverLimit: boolean   // > 100%
+}
+
+export function estimateContextSize(
+  systemPrompt: string,
+  messages: Array<{ role: string; content: string }>,
+  maxTokens: number
+): ContextEstimate {
+  // Estimate system prompt
+  let total = estimateTokens(systemPrompt)
+  
+  // Estimate each message with overhead
+  for (const msg of messages) {
+    total += 4 // Message structure overhead
+    total += estimateTokens(msg.content)
+  }
+  
+  const percentUsed = Math.round((total / maxTokens) * 100)
+  
+  return {
+    estimatedTokens: total,
+    maxTokens,
+    percentUsed,
+    isNearLimit: percentUsed > 80,
+    isOverLimit: percentUsed > 100,
+  }
 }
