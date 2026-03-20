@@ -180,7 +180,7 @@ export function ProviderSelector() {
       
       {/* Unified Provider + Model Dropdown */}
       {isOpen && (
-        <div className="absolute top-full right-0 mt-1 w-72 bg-bg-secondary border border-border rounded-lg shadow-lg z-50 overflow-hidden">
+        <div className="absolute bottom-full right-0 mb-1 w-72 bg-bg-secondary border border-border rounded-lg shadow-lg z-50 overflow-hidden">
           <div className="py-1">
             {providers.map(provider => (
               <div key={provider.id}>

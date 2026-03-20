@@ -4,7 +4,6 @@ import { useSessionStore } from '../../stores/session'
 import { useProjectStore } from '../../stores/project'
 import { useConfigStore } from '../../stores/config'
 import { GlobalSettingsModal } from '../settings/GlobalSettingsModal'
-import { ProviderSelector } from '../settings/ProviderSelector'
 
 export function Header() {
   const [showSettings, setShowSettings] = useState(false)
@@ -48,8 +47,6 @@ export function Header() {
       </div>
       
       <div className="flex items-center gap-3">
-        <ProviderSelector />
-        
         {/* Global Settings Button */}
         <button
           onClick={() => setShowSettings(true)}

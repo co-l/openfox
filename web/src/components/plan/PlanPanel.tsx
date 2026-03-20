@@ -14,6 +14,7 @@ import { CriteriaGroupDisplay, isCriterionTool } from '../shared/CriteriaGroupDi
 import { AttachmentPreview } from '../shared/AttachmentPreview.js'
 import { compressImage, isValidImageType, validateImageSize } from '../../lib/image-compression.js'
 import { buildPromptContextByUserMessageId } from './prompt-context-linking.js'
+import { ProviderSelector } from '../settings/ProviderSelector'
 
 // Display item: either a single message, a grouped sub-agent run, criteria batch, or a context window divider
 type DisplayItem = 
@@ -717,7 +718,7 @@ export function PlanPanel() {
         </div>
         <div className="mt-3 flex items-center justify-between">
           <ModeSwitch />
-          <span className="text-sm text-text-muted">Enter to send, paste or drag & drop images</span>
+          <ProviderSelector />
         </div>
       </form>
     </SessionLayout>
