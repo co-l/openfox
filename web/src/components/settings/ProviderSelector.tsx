@@ -117,6 +117,7 @@ export function ProviderSelector() {
   if (providers.length === 0) {
     return (
       <button
+        type="button"
         onClick={() => refreshModel()}
         className="flex items-center gap-1 px-1.5 py-0.5 rounded hover:bg-bg-tertiary transition-colors group"
         title={isLlmOffline ? 'LLM server is offline. Click to retry.' : (model ?? 'Click to refresh model')}
@@ -144,6 +145,7 @@ export function ProviderSelector() {
   return (
     <div className="relative" ref={dropdownRef}>
       <button
+        type="button"
         onClick={() => setIsOpen(!isOpen)}
         className="flex items-center gap-1 px-1.5 py-0.5 rounded hover:bg-bg-tertiary transition-colors group"
         title="Click to switch provider or model"
@@ -212,6 +214,7 @@ export function ProviderSelector() {
                       <span className="w-4" />
                     )}
                     <button
+                      type="button"
                       onClick={(e) => {
                         e.stopPropagation()
                         handleChevronClick(provider)
@@ -244,6 +247,7 @@ export function ProviderSelector() {
                       providerModels[provider.id]!.map(modelName => (
                         <button
                           key={modelName}
+                          type="button"
                           onClick={() => handleModelClick(provider.id, modelName)}
                           disabled={loadingModels === 'activating'}
                           className={`w-full px-4 py-1.5 text-left hover:bg-bg-tertiary transition-colors text-sm flex items-center justify-between ${
