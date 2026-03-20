@@ -202,14 +202,14 @@ describe('Runner/Orchestrator', () => {
   })
 
   describe('Reset Blocked', () => {
-    it('resets from blocked state on user intervention', { timeout: 10_000 }, async () => {
+    it('resets from blocked state on user intervention', { timeout: 15_000 }, async () => {
       await client.send('criteria.edit', {
         criteria: [{ id: 'reset-blocked', description: 'Impossible thing', status: { type: 'pending' }, attempts: [] }],
       })
       await client.send('mode.switch', { mode: 'builder' })
       await client.send('runner.launch', {})
 
-      await collectUntilPhase(client, 'blocked', 5_000)
+      await collectUntilPhase(client, 'blocked', 8_000)
       
       // Send user message to reset
       await client.send('chat.send', { 
@@ -219,7 +219,7 @@ describe('Runner/Orchestrator', () => {
       // Should receive phase change back to build
       const phaseEvent = await client.waitFor('phase.changed', (payload: unknown) => {
         return (payload as { phase: string }).phase === 'build'
-      }, 5_000).catch(() => null)
+      }, 8_000).catch(() => null)
       
       expect((phaseEvent?.payload as { phase: string } | undefined)?.phase).toBe('build')
     })

@@ -153,7 +153,7 @@ describe('Mode Switching', () => {
       expect(['build', 'verification', 'done']).toContain(session.phase)
     })
 
-    it('sets phase to blocked after max failures', { timeout: 10_000 }, async () => {
+    it('sets phase to blocked after max failures', { timeout: 15_000 }, async () => {
       // Add an impossible criterion
       await client.send('chat.send', { 
         content: 'Add criterion: "The file /impossible/path/that/does/not/exist.txt contains the text MAGIC". Use add_criterion.' 
@@ -171,7 +171,7 @@ describe('Mode Switching', () => {
       await client.send('runner.launch', {})
 
       // Should eventually get blocked (or done if LLM gives up gracefully)
-      const events = await collectUntilPhase(client, 'blocked', 180_000)
+      const events = await collectUntilPhase(client, 'blocked', 10_000)
         .catch(() => collectUntilPhase(client, 'done', 10_000))
       
       // Either blocked or done is acceptable

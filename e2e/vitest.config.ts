@@ -13,7 +13,7 @@ export default defineConfig({
     // Run tests in parallel with thread pool
     // Each test file gets its own in-process server on a dynamic port
     pool: 'threads',
-    maxWorkers: 7,
+    maxWorkers: 5,
     
     // No global setup - each test file manages its own server
     // globalSetup: './setup.ts',  // REMOVED - using in-process servers
