@@ -7,28 +7,30 @@ import { ProjectSettingsModal } from '../settings/ProjectSettingsModal'
 
 interface SidebarProps {
   projectId: string
+  isOpen?: boolean
+  onClose?: () => void
 }
 
-export function Sidebar({ projectId }: SidebarProps) {
+export function Sidebar({ projectId, isOpen = true, onClose }: SidebarProps) {
   const [, navigate] = useLocation()
   const pendingNewSession = useRef(false)
   const [showSettings, setShowSettings] = useState(false)
-  
+
   const sessions = useSessionStore(state => state.sessions)
   const currentSession = useSessionStore(state => state.currentSession)
   const unreadSessionIds = useSessionStore(state => state.unreadSessionIds)
   const createSession = useSessionStore(state => state.createSession)
   const deleteSession = useSessionStore(state => state.deleteSession)
   const listSessions = useSessionStore(state => state.listSessions)
-  
+
   const currentProject = useProjectStore(state => state.currentProject)
-  
+
   // Filter sessions to those under project workdir
   const projectSessions = sessions.filter(session => {
     if (!currentProject) return false
     return session.workdir.startsWith(currentProject.workdir)
   })
-  
+
   // Navigate to new session when created
   useEffect(() => {
     if (pendingNewSession.current && currentSession) {
@@ -37,16 +39,18 @@ export function Sidebar({ projectId }: SidebarProps) {
       navigate(`/p/${projectId}/s/${currentSession.id}`)
     }
   }, [currentSession, projectId, navigate, listSessions])
-  
+
   const handleNewSession = () => {
     pendingNewSession.current = true
     createSession(projectId)
   }
-  
+
   const handleSelectSession = (sessionId: string) => {
     navigate(`/p/${projectId}/s/${sessionId}`)
+    // Close sidebar on mobile after selection
+    if (onClose) onClose()
   }
-  
+
   const handleDeleteSession = (sessionId: string, e: React.MouseEvent) => {
     e.stopPropagation()
     if (confirm('Delete this session?')) {
@@ -57,134 +61,164 @@ export function Sidebar({ projectId }: SidebarProps) {
       }
     }
   }
-  
+
   return (
-    <aside className="w-[200px] bg-bg-secondary border-r border-border flex flex-col">
-      <div className="p-4 border-b border-border flex gap-2">
-        <Button
-          variant="primary"
-          className="flex-1 text-sm"
-          onClick={handleNewSession}
-        >
-          + New Session
-        </Button>
-        <button
-          onClick={() => setShowSettings(true)}
-          className="flex-shrink-0 p-1 rounded hover:bg-bg-tertiary text-text-muted hover:text-text-primary transition-colors"
-          title="Project Settings"
-        >
-          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-          </svg>
-        </button>
-      </div>
-      
-      {/* Project Settings Modal */}
-      {currentProject && (
-        <ProjectSettingsModal
-          isOpen={showSettings}
-          onClose={() => setShowSettings(false)}
-          project={currentProject}
+    <>
+      {/* Mobile/tablet backdrop */}
+      {isOpen && onClose && (
+        <div
+          className="fixed inset-0 bg-black/50 z-40"
+          onClick={onClose}
         />
       )}
-      
-      <div className="flex-1 overflow-y-auto">
-        {projectSessions.length === 0 ? (
-          <div className="p-4 text-center text-text-muted text-xs">
-            No sessions
-          </div>
-        ) : (
-          <div className="divide-y divide-border">
-            {projectSessions.map(session => {
-              const isActive = currentSession?.id === session.id
-              const hasUnread = unreadSessionIds.includes(session.id)
-              const isRunning = session.isRunning && session.phase !== 'done' && session.phase !== 'blocked'
-              return (
-                <div
-                  key={session.id}
-                  onClick={() => handleSelectSession(session.id)}
-                  className={`w-full px-4 py-3 text-left hover:bg-bg-tertiary/50 transition-colors group cursor-pointer ${
-                    isActive ? 'bg-bg-tertiary' : ''
-                  }`}
-                >
-                  <div className="flex items-center gap-1.5">
-                    {isActive && (
-                      <span className="w-1 h-1 rounded-full bg-accent-primary flex-shrink-0" />
-                    )}
-                    <span className={`font-medium truncate text-sm ${isActive ? 'text-accent-primary' : 'text-text-primary'}`}>
-                      {session.title ?? session.id.slice(0, 6)}
-                    </span>
-                    {isRunning && (
-                      <svg
-                        aria-label="Session running"
-                        className="w-3 h-3 text-blue-400 animate-spin flex-shrink-0"
-                        viewBox="0 0 24 24"
-                        fill="none"
-                      >
-                        <title>Running</title>
-                        <circle className="opacity-30" cx="12" cy="12" r="9" stroke="currentColor" strokeWidth="3" />
-                        <path d="M21 12a9 9 0 00-9-9" stroke="currentColor" strokeWidth="3" strokeLinecap="round" />
-                      </svg>
-                    )}
-                    {hasUnread && !isActive && !isRunning && (
-                      <span
-                        aria-label="Unread activity"
-                        title="Unread activity"
-                        className="w-2 h-2 rounded-full bg-amber-400 flex-shrink-0"
-                      />
-                    )}
-                  </div>
-                  
-                  <div className="flex items-center justify-between mt-0.5">
-                    <span className={`text-[10px] px-1 py-0.5 rounded flex items-center gap-0.5 ${
-                      session.phase === 'done'
-                        ? 'bg-green-500/20 text-green-400'
-                        : session.phase === 'blocked'
-                        ? 'bg-red-500/20 text-red-400'
-                        : session.phase === 'verification'
-                        ? 'bg-yellow-500/20 text-yellow-400'
-                        : session.phase === 'build'
-                        ? 'bg-blue-500/20 text-blue-400'
-                        : 'bg-purple-500/20 text-purple-400'
-                    }`}>
-                      {session.phase === 'done' ? (
-                        <>
-                          <svg className="w-2.5 h-2.5" fill="currentColor" viewBox="0 0 20 20">
-                            <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
-                          </svg>
-                          done
-                        </>
-                      ) : session.phase === 'blocked' ? (
-                        <>
-                          <svg className="w-2.5 h-2.5" fill="currentColor" viewBox="0 0 20 20">
-                            <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
-                          </svg>
-                          blocked
-                        </>
-                      ) : session.phase === 'verification' ? (
-                        'verify'
-                      ) : (
-                        session.phase
-                      )}
-                    </span>
-                    
-                    <button
-                      onClick={(e) => handleDeleteSession(session.id, e)}
-                      className="opacity-0 group-hover:opacity-100 p-1 rounded hover:bg-accent-error/20 text-text-muted hover:text-accent-error transition-all"
-                      title="Delete"
-                    >
-                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                      </svg>
-                    </button>
-                  </div>
-                </div>
-              )
-            })}
-          </div>
+
+      <aside
+        className={`
+          fixed md:relative z-50 md:z-auto
+          w-[200px] bg-bg-secondary border-r border-border flex flex-col
+          transition-transform duration-300 ease-in-out
+          ${isOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'}
+          h-[calc(100vh-32px)] md:h-auto
+        `}
+      >
+        <div className="p-4 border-b border-border flex gap-2">
+          <Button
+            variant="primary"
+            className="flex-1 text-sm"
+            onClick={handleNewSession}
+          >
+            + New Session
+          </Button>
+          <button
+            onClick={() => setShowSettings(true)}
+            className="flex-shrink-0 p-2.5 rounded hover:bg-bg-tertiary text-text-muted hover:text-text-primary transition-colors"
+            title="Project Settings"
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+            </svg>
+          </button>
+          {/* Mobile close button */}
+          {onClose && (
+            <button
+              onClick={onClose}
+              className="md:hidden flex-shrink-0 p-2.5 rounded hover:bg-bg-tertiary text-text-muted hover:text-text-primary transition-colors"
+              title="Close sidebar"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          )}
+        </div>
+
+        {/* Project Settings Modal */}
+        {currentProject && (
+          <ProjectSettingsModal
+            isOpen={showSettings}
+            onClose={() => setShowSettings(false)}
+            project={currentProject}
+          />
         )}
-      </div>
-    </aside>
+
+        <div className="flex-1 overflow-y-auto">
+          {projectSessions.length === 0 ? (
+            <div className="p-4 text-center text-text-muted text-xs">
+              No sessions
+            </div>
+          ) : (
+            <div className="divide-y divide-border">
+              {projectSessions.map(session => {
+                const isActive = currentSession?.id === session.id
+                const hasUnread = unreadSessionIds.includes(session.id)
+                const isRunning = session.isRunning && session.phase !== 'done' && session.phase !== 'blocked'
+                return (
+                  <div
+                    key={session.id}
+                    onClick={() => handleSelectSession(session.id)}
+                    className={`w-full px-4 py-3 text-left hover:bg-bg-tertiary/50 transition-colors group cursor-pointer ${
+                      isActive ? 'bg-bg-tertiary' : ''
+                    }`}
+                  >
+                    <div className="flex items-center gap-1.5">
+                      {isActive && (
+                        <span className="w-1 h-1 rounded-full bg-accent-primary flex-shrink-0" />
+                      )}
+                      <span className={`font-medium truncate text-sm ${isActive ? 'text-accent-primary' : 'text-text-primary'}`}>
+                        {session.title ?? session.id.slice(0, 6)}
+                      </span>
+                      {isRunning && (
+                        <svg
+                          aria-label="Session running"
+                          className="w-3 h-3 text-blue-400 animate-spin flex-shrink-0"
+                          viewBox="0 0 24 24"
+                          fill="none"
+                        >
+                          <title>Running</title>
+                          <circle className="opacity-30" cx="12" cy="12" r="9" stroke="currentColor" strokeWidth="3" />
+                          <path d="M21 12a9 9 0 00-9-9" stroke="currentColor" strokeWidth="3" strokeLinecap="round" />
+                        </svg>
+                      )}
+                      {hasUnread && !isActive && !isRunning && (
+                        <span
+                          aria-label="Unread activity"
+                          title="Unread activity"
+                          className="w-2 h-2 rounded-full bg-amber-400 flex-shrink-0"
+                        />
+                      )}
+                    </div>
+
+                    <div className="flex items-center justify-between mt-0.5">
+                      <span className={`text-[10px] px-1 py-0.5 rounded flex items-center gap-0.5 ${
+                        session.phase === 'done'
+                          ? 'bg-green-500/20 text-green-400'
+                          : session.phase === 'blocked'
+                          ? 'bg-red-500/20 text-red-400'
+                          : session.phase === 'verification'
+                          ? 'bg-yellow-500/20 text-yellow-400'
+                          : session.phase === 'build'
+                          ? 'bg-blue-500/20 text-blue-400'
+                          : 'bg-purple-500/20 text-purple-400'
+                      }`}>
+                        {session.phase === 'done' ? (
+                          <>
+                            <svg className="w-2.5 h-2.5" fill="currentColor" viewBox="0 0 20 20">
+                              <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                            </svg>
+                            done
+                          </>
+                        ) : session.phase === 'blocked' ? (
+                          <>
+                            <svg className="w-2.5 h-2.5" fill="currentColor" viewBox="0 0 20 20">
+                              <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+                            </svg>
+                            blocked
+                          </>
+                        ) : session.phase === 'verification' ? (
+                          'verify'
+                        ) : (
+                          session.phase
+                        )}
+                      </span>
+
+                      <button
+                        onClick={(e) => handleDeleteSession(session.id, e)}
+                        className="opacity-0 group-hover:opacity-100 p-2.5 rounded hover:bg-accent-error/20 text-text-muted hover:text-accent-error transition-all"
+                        title="Delete"
+                      >
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                        </svg>
+                      </button>
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          )}
+        </div>
+      </aside>
+    </>
   )
 }

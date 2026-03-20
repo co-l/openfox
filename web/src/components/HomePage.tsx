@@ -10,25 +10,25 @@ export function HomePage() {
   const [, navigate] = useLocation()
   const [showOpenModal, setShowOpenModal] = useState(false)
   const [projectToDelete, setProjectToDelete] = useState<{ id: string; name: string } | null>(null)
-  
+
   const sessions = useSessionStore(state => state.sessions)
   const projects = useProjectStore(state => state.projects)
   const listProjects = useProjectStore(state => state.listProjects)
   const listSessions = useSessionStore(state => state.listSessions)
   const deleteProject = useProjectStore(state => state.deleteProject)
-  
+
   // Load projects and sessions on mount
   useEffect(() => {
     listProjects()
     listSessions()
   }, [listProjects, listSessions])
-  
+
   // Get recent sessions (last 5)
   const recentSessions = sessions.slice(0, 5)
-  
+
   // Get recent projects (last 3-5)
   const recentProjects = projects.slice(0, 5)
-  
+
   const handleSessionClick = (sessionId: string) => {
     const session = sessions.find(s => s.id === sessionId)
     if (session) {
@@ -38,27 +38,27 @@ export function HomePage() {
       }
     }
   }
-  
+
   const handleProjectClick = (projectId: string) => {
     navigate(`/p/${projectId}`)
   }
-  
+
   const handleOpenProject = () => {
     setShowOpenModal(true)
   }
-  
+
   const handleDeleteClick = (project: { id: string; name: string }, e: React.MouseEvent) => {
     e.stopPropagation()
     setProjectToDelete(project)
   }
-  
+
   const handleConfirmDelete = () => {
     if (projectToDelete) {
       deleteProject(projectToDelete.id)
       setProjectToDelete(null)
     }
   }
-  
+
   const getPhaseBadgeClasses = (phase: string) => {
     switch (phase) {
       case 'done':
@@ -74,20 +74,20 @@ export function HomePage() {
         return 'bg-purple-500/20 text-purple-400'
     }
   }
-  
+
   return (
     <div className="flex-1 flex flex-col overflow-y-auto">
-      <div className="max-w-5xl mx-auto w-full p-8">
+      <div className="max-w-5xl mx-auto w-full p-4 md:p-8">
         {/* Hero Section */}
-        <div className="mb-8">
+        <div className="mb-6 md:mb-8">
           <h1 className="text-3xl font-bold text-accent-primary mb-2">OpenFox</h1>
           <p className="text-text-secondary">
             Local LLM-powered coding assistant with contract-driven execution
           </p>
         </div>
-        
+
         {/* Primary CTA */}
-        <div className="mb-8">
+        <div className="mb-6 md:mb-8">
           <Button
             variant="primary"
             className="w-full py-4 text-lg font-semibold"
@@ -96,16 +96,16 @@ export function HomePage() {
             Open Project
           </Button>
         </div>
-        
+
         {/* Recent Sessions */}
         {recentSessions.length > 0 && (
-          <div className="mb-8">
+          <div className="mb-6 md:mb-8">
             <div className="flex items-center justify-between mb-3">
               <h2 className="text-lg font-semibold text-text-primary">
                 Recent Sessions
               </h2>
             </div>
-            
+
             <div className="bg-bg-secondary border border-border rounded overflow-hidden">
               <div className="divide-y divide-border">
                 {recentSessions.map(session => {
@@ -114,7 +114,7 @@ export function HomePage() {
                     <div
                       key={session.id}
                       onClick={() => handleSessionClick(session.id)}
-                      className="p-4 hover:bg-bg-tertiary/50 cursor-pointer transition-colors"
+                      className="p-3 md:p-4 hover:bg-bg-tertiary/50 cursor-pointer transition-colors"
                     >
                       <div className="flex items-center justify-between">
                         <div className="flex items-center gap-3 flex-1 min-w-0">
@@ -130,8 +130,8 @@ export function HomePage() {
                             </div>
                           </div>
                         </div>
-                        
-                        <span className={`text-xs px-2 py-1 rounded flex items-center gap-1 ${getPhaseBadgeClasses(session.phase)}`}>
+
+                        <span className={`text-xs px-2 py-1 rounded flex items-center gap-1 flex-shrink-0 ${getPhaseBadgeClasses(session.phase)}`}>
                           {session.phase === 'done' ? (
                             <>
                               <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
@@ -159,14 +159,14 @@ export function HomePage() {
             </div>
           </div>
         )}
-        
+
         {/* Quick Projects */}
         {recentProjects.length > 0 && (
           <div>
             <h2 className="text-lg font-semibold text-text-primary mb-3">
               Quick Projects
             </h2>
-            
+
             <div className="flex flex-wrap gap-2 mb-3">
               {recentProjects.map(project => (
                 <div
@@ -197,7 +197,7 @@ export function HomePage() {
           </div>
         )}
       </div>
-      
+
       {/* Open Project Modal */}
       {showOpenModal && (
         <OpenProjectModal
@@ -205,7 +205,7 @@ export function HomePage() {
           onClose={() => setShowOpenModal(false)}
         />
       )}
-      
+
       {/* Delete Confirmation Modal */}
       {projectToDelete && (
         <DeleteProjectConfirmationModal

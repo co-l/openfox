@@ -1,4 +1,4 @@
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { Route, Switch, useRoute, useLocation } from 'wouter'
 import { useWebSocket } from './hooks/useWebSocket'
 import { useSessionStore } from './stores/session'
@@ -21,17 +21,17 @@ function LoadingSpinner() {
 }
 
 // Project view with sidebar (no session selected)
-function ProjectView() {
+function ProjectView({ sidebarOpen, onSidebarToggle }: { sidebarOpen: boolean, onSidebarToggle: () => void }) {
   const [, params] = useRoute('/p/:projectId')
   const projectId = params?.projectId
-  
+
   const connectionStatus = useSessionStore(state => state.connectionStatus)
   const listSessions = useSessionStore(state => state.listSessions)
   const clearSession = useSessionStore(state => state.clearSession)
-  
+
   const currentProject = useProjectStore(state => state.currentProject)
   const loadProject = useProjectStore(state => state.loadProject)
-  
+
   // Load project and sessions when entering project view
   useEffect(() => {
     if (connectionStatus === 'connected' && projectId) {
@@ -42,15 +42,15 @@ function ProjectView() {
       clearSession()
     }
   }, [connectionStatus, projectId, currentProject?.id, loadProject, listSessions, clearSession])
-  
+
   if (!currentProject || currentProject.id !== projectId) {
     return <LoadingSpinner />
   }
-  
+
   return (
     <>
-      <Sidebar projectId={projectId!} />
-      <div className="flex-1 bg-bg-primary">
+      <Sidebar projectId={projectId!} isOpen={sidebarOpen} onClose={onSidebarToggle} />
+      <div className="flex-1 min-w-0 bg-bg-primary">
         <EmptyProjectView />
       </div>
     </>
@@ -58,29 +58,39 @@ function ProjectView() {
 }
 
 // Project + Session view with sidebar
-function ProjectSessionView() {
+function ProjectSessionView({ 
+  sidebarOpen, 
+  onSidebarToggle,
+  criteriaSidebarOpen,
+  onCriteriaSidebarToggle
+}: { 
+  sidebarOpen: boolean, 
+  onSidebarToggle: () => void,
+  criteriaSidebarOpen: boolean,
+  onCriteriaSidebarToggle: () => void
+}) {
   const [, params] = useRoute('/p/:projectId/s/:sessionId')
   const projectId = params?.projectId
   const sessionId = params?.sessionId
   const [, navigate] = useLocation()
-  
+
   const connectionStatus = useSessionStore(state => state.connectionStatus)
   const session = useSessionStore(state => state.currentSession)
   const loadSession = useSessionStore(state => state.loadSession)
   const listSessions = useSessionStore(state => state.listSessions)
   const error = useSessionStore(state => state.error)
   const clearError = useSessionStore(state => state.clearError)
-  
+
   const currentProject = useProjectStore(state => state.currentProject)
   const loadProject = useProjectStore(state => state.loadProject)
-  
+
   // Load project if needed
   useEffect(() => {
     if (connectionStatus === 'connected' && projectId && currentProject?.id !== projectId) {
       loadProject(projectId)
     }
   }, [connectionStatus, projectId, currentProject?.id, loadProject])
-  
+
   // Load session and session list
   useEffect(() => {
     if (connectionStatus === 'connected' && sessionId && session?.id !== sessionId) {
@@ -90,7 +100,7 @@ function ProjectSessionView() {
       listSessions()
     }
   }, [connectionStatus, sessionId, session?.id, loadSession, listSessions])
-  
+
   // Redirect to project view if session not found
   useEffect(() => {
     if (error?.code === 'NOT_FOUND' && projectId) {
@@ -98,27 +108,27 @@ function ProjectSessionView() {
       navigate(`/p/${projectId}`)
     }
   }, [error, projectId, clearError, navigate])
-  
+
   if (!currentProject || currentProject.id !== projectId) {
     return <LoadingSpinner />
   }
-  
+
   if (!session || session.id !== sessionId) {
     return (
       <>
-        <Sidebar projectId={projectId!} />
+        <Sidebar projectId={projectId!} isOpen={sidebarOpen} onClose={onSidebarToggle} />
         <LoadingSpinner />
       </>
     )
   }
-  
+
   return (
     <>
-      <Sidebar projectId={projectId!} />
-      
+      <Sidebar projectId={projectId!} isOpen={sidebarOpen} onClose={onSidebarToggle} />
+
       {/* Main content area - single unified chat panel */}
       <div className="flex-1 min-w-0 bg-bg-primary">
-        <PlanPanel />
+        <PlanPanel criteriaSidebarOpen={criteriaSidebarOpen} onCriteriaSidebarToggle={onCriteriaSidebarToggle} />
       </div>
     </>
   )
@@ -128,18 +138,22 @@ function App() {
   const { connectionStatus } = useWebSocket()
   const fetchConfig = useConfigStore(state => state.fetchConfig)
   const handleProjectMessage = useProjectStore(state => state.handleServerMessage)
+  const [sidebarOpen, setSidebarOpen] = useState(false)
+  const [criteriaSidebarOpen, setCriteriaSidebarOpen] = useState(true)
   
+  const hasCriteria = useSessionStore(state => (state.currentSession?.criteria?.length ?? 0) > 0)
+
   // Fetch config on mount
   useEffect(() => {
     fetchConfig()
   }, [fetchConfig])
-  
+
   // Subscribe to project messages
   useEffect(() => {
     // The project store needs to handle server messages
     // This is done via the session store's subscription, but we need to add project handling
   }, [handleProjectMessage])
-  
+
   // Block UI until connected
   if (connectionStatus !== 'connected') {
     return (
@@ -148,18 +162,27 @@ function App() {
       </div>
     )
   }
-  
+
   return (
     <div className="h-screen flex flex-col">
-      <Header />
-      
+      <Header 
+        onMenuClick={() => setSidebarOpen(!sidebarOpen)} 
+        onCriteriaToggle={() => setCriteriaSidebarOpen(!criteriaSidebarOpen)}
+        hasCriteria={hasCriteria}
+      />
+
       <div className="flex-1 flex overflow-hidden">
         <Switch>
           <Route path="/p/:projectId/s/:sessionId">
-            <ProjectSessionView />
+            <ProjectSessionView 
+              sidebarOpen={sidebarOpen} 
+              onSidebarToggle={() => setSidebarOpen(false)}
+              criteriaSidebarOpen={criteriaSidebarOpen}
+              onCriteriaSidebarToggle={() => setCriteriaSidebarOpen(!criteriaSidebarOpen)}
+            />
           </Route>
           <Route path="/p/:projectId">
-            <ProjectView />
+            <ProjectView sidebarOpen={sidebarOpen} onSidebarToggle={() => setSidebarOpen(false)} />
           </Route>
           <Route path="/">
             <HomePage />

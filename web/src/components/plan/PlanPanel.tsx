@@ -110,7 +110,12 @@ function groupMessages(messages: Message[]): DisplayItem[] {
   return items
 }
 
-export function PlanPanel() {
+interface PlanPanelProps {
+  criteriaSidebarOpen: boolean
+  onCriteriaSidebarToggle: () => void
+}
+
+export function PlanPanel({ criteriaSidebarOpen, onCriteriaSidebarToggle }: PlanPanelProps) {
   const [input, setInput] = useState('')
   const [userScrolledUp, setUserScrolledUp] = useState(false)
   const [attachments, setAttachments] = useState<Attachment[]>([])
@@ -511,16 +516,16 @@ export function PlanPanel() {
   const showLaunchButton = isBuilding && hasPendingCriteria && !isRunning && !isDone
   
   return (
-    <SessionLayout>
+    <SessionLayout criteriaSidebarOpen={criteriaSidebarOpen}>
       {pendingPathConfirmation && (
         <PathConfirmationDialog confirmation={pendingPathConfirmation} />
       )}
       <SessionHeader />
       
-      <div 
+      <div
         ref={scrollContainerRef}
         onWheel={handleWheel}
-        className="flex-1 min-w-0 overflow-y-auto overflow-x-hidden px-4 pt-4"
+        className="flex-1 min-w-0 overflow-y-auto overflow-x-hidden px-2 md:px-4 pt-4"
       >
         {displayItems.map((item) => {
           if (item.type === 'context-divider') {
@@ -618,7 +623,7 @@ export function PlanPanel() {
         <div ref={messagesEndRef} />
       </div>
       
-      <form onSubmit={handleSubmit} className="p-4 border-t border-border bg-gradient-to-t from-bg-secondary/50 to-transparent">
+      <form onSubmit={handleSubmit} className="p-2 md:p-4 border-t border-border bg-gradient-to-t from-bg-secondary/50 to-transparent">
         {/* Hidden file input */}
         <input
           ref={fileInputRef}
@@ -666,7 +671,7 @@ export function PlanPanel() {
             type="button"
             onClick={handleAttachClick}
             disabled={isRunning}
-            className="p-2 rounded hover:bg-bg-tertiary text-text-muted hover:text-text-primary disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+            className="p-3 rounded hover:bg-bg-tertiary text-text-muted hover:text-text-primary disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
             title="Attach image file"
           >
             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">

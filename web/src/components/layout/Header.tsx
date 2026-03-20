@@ -5,32 +5,51 @@ import { useProjectStore } from '../../stores/project'
 import { useConfigStore } from '../../stores/config'
 import { GlobalSettingsModal } from '../settings/GlobalSettingsModal'
 
-export function Header() {
+interface HeaderProps {
+  onMenuClick?: () => void
+  onCriteriaToggle?: () => void
+  hasCriteria?: boolean
+}
+
+export function Header({ onMenuClick, onCriteriaToggle, hasCriteria }: HeaderProps) {
   const [showSettings, setShowSettings] = useState(false)
   const connectionStatus = useSessionStore(state => state.connectionStatus)
   const session = useSessionStore(state => state.currentSession)
   const project = useProjectStore(state => state.currentProject)
   const startAutoRefresh = useConfigStore(state => state.startAutoRefresh)
   const stopAutoRefresh = useConfigStore(state => state.stopAutoRefresh)
-  
+
   // Start auto-refresh on mount
   useEffect(() => {
     startAutoRefresh()
     return () => stopAutoRefresh()
   }, [startAutoRefresh, stopAutoRefresh])
-  
+
   return (
     <header className="h-8 bg-bg-secondary border-b border-border flex items-center justify-between px-2">
-      <div className="flex items-center gap-2">
-        <Link href="/" className="text-accent-primary font-semibold text-base hover:underline">
+      <div className="flex items-center gap-2 flex-1 min-w-0">
+        {/* Hamburger menu button - visible on mobile and tablet */}
+        {onMenuClick && (
+          <button
+            onClick={onMenuClick}
+            className="lg:hidden flex-shrink-0 p-2.5 rounded hover:bg-bg-tertiary text-text-muted hover:text-text-primary transition-colors"
+            title="Toggle sidebar"
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
+            </svg>
+          </button>
+        )}
+
+        <Link href="/" className="text-accent-primary font-semibold text-base hover:underline flex-shrink-0">
           OpenFox
         </Link>
         {project && (
           <>
-            <span className="text-text-muted">/</span>
-            <Link 
+            <span className="text-text-muted flex-shrink-0">/</span>
+            <Link
               href={`/p/${project.id}`}
-              className="text-text-secondary hover:text-text-primary hover:underline text-sm"
+              className="text-text-secondary hover:text-text-primary hover:underline text-sm truncate"
             >
               {project.name}
             </Link>
@@ -38,19 +57,32 @@ export function Header() {
         )}
         {session && (
           <>
-            <span className="text-text-muted">/</span>
-            <span className="text-text-secondary text-sm">
+            <span className="text-text-muted flex-shrink-0">/</span>
+            <span className="text-text-secondary text-sm truncate">
               {session.metadata.title ?? session.id.slice(0, 8)}
             </span>
           </>
         )}
       </div>
-      
-      <div className="flex items-center gap-3">
+
+      <div className="flex items-center gap-2 flex-shrink-0">
+        {/* Criteria toggle button - only visible when there are criteria */}
+        {onCriteriaToggle && hasCriteria && (
+          <button
+            onClick={onCriteriaToggle}
+            className="p-2.5 rounded hover:bg-bg-tertiary text-text-muted hover:text-text-primary transition-colors"
+            title="Toggle criteria sidebar"
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
+            </svg>
+          </button>
+        )}
+
         {/* Global Settings Button */}
         <button
           onClick={() => setShowSettings(true)}
-          className="p-1 rounded hover:bg-bg-tertiary text-text-muted hover:text-text-primary transition-colors"
+          className="p-2.5 rounded hover:bg-bg-tertiary text-text-muted hover:text-text-primary transition-colors"
           title="Global Settings"
         >
           <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -58,21 +90,22 @@ export function Header() {
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
           </svg>
         </button>
-        
+
+        {/* Connection status - icon-only on mobile, full on desktop */}
         <div className="flex items-center gap-1.5">
-          <div className={`w-1.5 h-1.5 rounded-full ${
+          <div className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${
             connectionStatus === 'connected' ? 'bg-accent-success' :
             connectionStatus === 'reconnecting' ? 'bg-accent-warning animate-pulse' :
             'bg-accent-error'
           }`} />
-          <span className="text-sm text-text-secondary">
+          <span className="text-sm text-text-secondary hidden sm:inline">
             {connectionStatus === 'connected' ? 'Connected' :
              connectionStatus === 'reconnecting' ? 'Reconnecting...' :
              'Disconnected'}
           </span>
         </div>
       </div>
-      
+
       {/* Global Settings Modal */}
       <GlobalSettingsModal
         isOpen={showSettings}

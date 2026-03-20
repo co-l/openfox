@@ -192,7 +192,7 @@ export function OpenProjectModal({ isOpen, onClose }: OpenProjectModalProps) {
   
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50">
-      <div className="bg-bg-secondary border border-border rounded-lg w-full max-w-4xl max-h-[90vh] flex flex-col">
+      <div className="bg-bg-secondary border border-border rounded-lg w-full max-w-[90vw] md:max-w-4xl max-h-[90vh] flex flex-col">
         {/* Header */}
         <div className="p-4 border-b border-border flex items-center justify-between">
           <h2 className="text-lg font-semibold text-text-primary">Open Project</h2>
