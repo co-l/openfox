@@ -730,12 +730,22 @@ describe('chat orchestrator', () => {
       },
     }
     const sessionManager = createSessionManager(state)
-    const execute = vi.fn(async (name: string) => {
+    const execute = vi.fn(async (name: string, args: Record<string, unknown>) => {
       if (name === 'read_file') {
         return { success: true, output: 'file contents', durationMs: 5, truncated: false }
       }
 
-      state.current.criteria = [{ id: 'tests-pass', description: 'Tests pass', status: { type: 'failed', failedAt: '2024-01-01T00:00:00.000Z', reason: 'still broken' }, attempts: [] }]
+      if (name === 'fail_criterion') {
+        const id = args['id'] as string
+        // Trigger the session manager mock to update the criterion
+        sessionManager.updateCriterionStatus('session-1', id, { 
+          type: 'failed', 
+          failedAt: '2024-01-01T00:00:00.000Z', 
+          reason: 'still broken' 
+        })
+        return { success: true, output: 'verification failed', durationMs: 15, truncated: false }
+      }
+
       return { success: true, output: 'verification failed', durationMs: 15, truncated: false }
     })
 
@@ -860,10 +870,10 @@ describe('chat orchestrator', () => {
     expect(streamLLMPureMock.mock.calls).toHaveLength(6)
   })
 
-  it('does not nudge verifier when tool calls are being made (tool calls are progress)', async () => {
-    // This test verifies that the verifier does NOT get nudged when it's actively
-    // making tool calls (read_file, run_command, etc). Nudging should only happen
-    // when the model responds WITHOUT any tool calls.
+  it('does not nudge verifier when tool calls terminalize criteria', async () => {
+    // This test verifies that the verifier does NOT get nudged when tool calls
+    // actually terminalize criteria (pass_criterion/fail_criterion). Nudging should
+    // only happen when tool calls don't make progress toward terminalizing criteria.
     const eventStore = createEventStore()
     getEventStoreMock.mockReturnValue(eventStore)
     getAllInstructionsMock.mockResolvedValue({ content: 'Verify carefully', files: [] })
@@ -883,9 +893,15 @@ describe('chat orchestrator', () => {
       },
     }
     const sessionManager = createSessionManager(state)
-    const execute = vi.fn(async (name: string) => {
+    const execute = vi.fn(async (name: string, args: Record<string, unknown>) => {
       if (name === 'pass_criterion') {
-        state.current.criteria = [{ id: 'tests-pass', description: 'Tests pass', status: { type: 'passed', verifiedAt: '2024-01-01T00:00:00.000Z' }, attempts: [] }]
+        // Update criterion status to 'passed' (terminalized)
+        const id = args['id'] as string
+        state.current.criteria = state.current.criteria.map((c: any) => 
+          c.id === id 
+            ? { ...c, status: { type: 'passed', verifiedAt: '2024-01-01T00:00:00.000Z' } }
+            : c
+        )
         return { success: true, output: 'Criterion passed', durationMs: 5, truncated: false }
       }
       return { success: true, output: 'file contents', durationMs: 5, truncated: false }
@@ -900,19 +916,17 @@ describe('chat orchestrator', () => {
     })
     streamLLMPureMock.mockReturnValue({ kind: 'stream' })
 
-    // Model makes 5 information-gathering tool calls, then passes the criterion
-    for (let index = 0; index < 5; index++) {
-      consumeStreamGeneratorMock.mockResolvedValueOnce({
-        content: `checking-${index}`,
-        toolCalls: [{ id: `call-${index}`, name: 'read_file', arguments: { path: 'src/index.ts' } }],
-        segments: [],
-        usage: { promptTokens: 8, completionTokens: 1 },
-        timing: { ttft: 1, completionTime: 1, tps: 1, prefillTps: 8 },
-        aborted: false,
-        xmlFormatError: false,
-      })
-    }
-    // Finally passes the criterion
+    // Model makes 1 information-gathering tool call, then passes the criterion
+    consumeStreamGeneratorMock.mockResolvedValueOnce({
+      content: 'checking',
+      toolCalls: [{ id: 'call-1', name: 'read_file', arguments: { path: 'src/index.ts' } }],
+      segments: [],
+      usage: { promptTokens: 8, completionTokens: 1 },
+      timing: { ttft: 1, completionTime: 1, tps: 1, prefillTps: 8 },
+      aborted: false,
+      xmlFormatError: false,
+    })
+    // Passes the criterion
     consumeStreamGeneratorMock.mockResolvedValueOnce({
       content: 'verified',
       toolCalls: [{ id: 'call-pass', name: 'pass_criterion', arguments: { id: 'tests-pass', reason: 'All checks pass' } }],
@@ -922,7 +936,7 @@ describe('chat orchestrator', () => {
       aborted: false,
       xmlFormatError: false,
     })
-    // Final response
+    // Final response - no tool calls, all criteria terminalized
     consumeStreamGeneratorMock.mockResolvedValueOnce({
       content: 'All criteria verified',
       toolCalls: [],
@@ -940,17 +954,115 @@ describe('chat orchestrator', () => {
       onMessage: vi.fn(),
     }, new TurnMetrics())
 
-    // Should pass - no nudging occurred because model was making tool calls
+    // Should pass - criterion was terminalized
     expect(result).toEqual({ allPassed: true, failed: [] })
-    expect(execute).toHaveBeenCalledTimes(6) // 5 read_file + 1 pass_criterion
+    expect(execute).toHaveBeenCalledTimes(2) // 1 read_file + 1 pass_criterion
 
-    // Verify NO nudge messages were emitted
+    // Verify NO nudge messages were emitted (criteria were terminalized)
+    // Filter for stall messages specifically
+    const stallMessages = eventStore.append.mock.calls.filter(
+      ([, event]) => event.type === 'message.start' &&
+        (event.data as any).messageKind === 'correction' &&
+        (event.data as any).subAgentType === 'verifier' &&
+        (event.data as any).content?.includes('Verifier stopped repeatedly')
+    )
+    expect(stallMessages).toHaveLength(0)
+  })
+
+  it('nudges verifier that makes non-terminalizing tool calls repeatedly', async () => {
+    // Verifier keeps making read_file/run_command calls but never calls pass_criterion/fail_criterion
+    // This should trigger nudges, not infinite tool calls
+    const eventStore = createEventStore()
+    getEventStoreMock.mockReturnValue(eventStore)
+    getAllInstructionsMock.mockResolvedValue({ content: 'Verify carefully', files: [] })
+
+    const state: any = {
+      current: {
+        id: 'session-1',
+        projectId: 'project-1',
+        workdir: '/tmp/project',
+        mode: 'builder',
+        phase: 'verification',
+        isRunning: true,
+        criteria: [{ id: 'tests-pass', description: 'Tests pass', status: { type: 'completed', completedAt: '2024-01-01T00:00:00.000Z' }, attempts: [] }],
+        executionState: { modifiedFiles: ['src/index.ts'] },
+        summary: 'Task summary',
+        messages: [],
+      },
+    }
+    const sessionManager = createSessionManager(state)
+    const execute = vi.fn(async () => {
+      return { success: true, output: 'file contents', durationMs: 5, truncated: false }
+    })
+
+    getToolRegistryForModeMock.mockReturnValue({
+      definitions: [
+        { type: 'function', function: { name: 'read_file', description: 'Read', parameters: {} } },
+        { type: 'function', function: { name: 'run_command', description: 'Run', parameters: {} } },
+        { type: 'function', function: { name: 'pass_criterion', description: 'Pass', parameters: {} } },
+      ],
+      execute,
+    })
+    streamLLMPureMock.mockReturnValue({ kind: 'stream' })
+
+    // Verifier keeps making non-terminalizing tool calls without progress
+    // After 4 nudges, the 5th response (no tool calls) should trigger stall
+    let toolCallCount = 0
+    consumeStreamGeneratorMock.mockImplementation(async () => {
+      toolCallCount += 1
+      if (toolCallCount <= 4) {
+        // First 4 iterations: tool calls without progress (increments nudge counter)
+        return {
+          content: `checking-${toolCallCount}`,
+          toolCalls: [{ id: `call-${toolCallCount}`, name: 'read_file', arguments: { path: 'src/index.ts' } }],
+          segments: [],
+          usage: { promptTokens: 8, completionTokens: 1 },
+          timing: { ttft: 1, completionTime: 1, tps: 1, prefillTps: 8 },
+          aborted: false,
+          xmlFormatError: false,
+        }
+      }
+      // 5th iteration: no tool calls - existing nudge logic sends nudge (counter becomes 5)
+      // 6th iteration: no tool calls - existing nudge logic stalls (counter becomes 6)
+      return {
+        content: 'still checking',
+        toolCalls: [],
+        segments: [{ type: 'text', content: 'still checking' }],
+        usage: { promptTokens: 8, completionTokens: 1 },
+        timing: { ttft: 1, completionTime: 1, tps: 1, prefillTps: 8 },
+        aborted: false,
+        xmlFormatError: false,
+      }
+    })
+
+    const result = await runVerifierTurn({
+      sessionManager: sessionManager as never,
+      sessionId: 'session-1',
+      llmClient: { getModel: () => 'qwen3-32b' } as never,
+      onMessage: vi.fn(),
+    }, new TurnMetrics())
+
+    // Should fail - verifier never terminalized
+    expect(result.allPassed).toBe(false)
+    expect(result.failed).toEqual([
+      {
+        id: 'tests-pass',
+        reason: 'Verifier stopped repeatedly without using verification tools after repeated nudges.',
+      },
+    ])
+    expect(sessionManager.updateCriterionStatus).toHaveBeenCalledTimes(1)
+
+    // Verify nudge messages were sent:
+    // - Iterations 1-4: tool calls increment nudge counter (no messages sent)
+    // - Iteration 5: no tool calls, counter=4, sends nudge (counter becomes 5)
+    // - Iteration 6: no tool calls, counter=5, stalls (sends stall message)
+    // Total: 2 correction messages (1 nudge + 1 stall)
     const nudgeMessages = eventStore.append.mock.calls.filter(
       ([, event]) => event.type === 'message.start' &&
         (event.data as any).messageKind === 'correction' &&
-        (event.data as any).content?.includes('stopped before finalizing')
+        (event.data as any).subAgentType === 'verifier'
     )
-    expect(nudgeMessages).toHaveLength(0)
+    expect(nudgeMessages).toHaveLength(2)
   })
 
   it('handles verifier path denial and nudges until verification reaches a terminal state', async () => {

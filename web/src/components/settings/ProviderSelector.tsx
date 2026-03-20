@@ -3,6 +3,9 @@ import { useConfigStore, getBackendDisplayName, type Provider } from '../../stor
 
 export function ProviderSelector() {
   const [isOpen, setIsOpen] = useState(false)
+  const [showModelMenu, setShowModelMenu] = useState(false)
+  const [providerModels, setProviderModels] = useState<Record<string, string[]>>({})
+  const [loadingModels, setLoadingModels] = useState(false)
   const dropdownRef = useRef<HTMLDivElement>(null)
   
   const providers = useConfigStore(state => state.providers)
@@ -19,6 +22,7 @@ export function ProviderSelector() {
     function handleClickOutside(event: MouseEvent) {
       if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
         setIsOpen(false)
+        setShowModelMenu(false)
       }
     }
     document.addEventListener('mousedown', handleClickOutside)
@@ -38,13 +42,54 @@ export function ProviderSelector() {
   
   const handleProviderClick = async (provider: Provider) => {
     if (provider.id === activeProviderId) {
+      // Close provider dropdown and show model selection menu
       setIsOpen(false)
+      if (providerModels[provider.id]) {
+        setShowModelMenu(true)
+      } else {
+        setLoadingModels(true)
+        try {
+          const response = await fetch(`/api/providers/${provider.id}/models`)
+          if (response.ok) {
+            const data = await response.json() as { models: string[] }
+            setProviderModels(prev => ({ ...prev, [provider.id]: data.models }))
+            setShowModelMenu(true)
+          }
+        } catch {
+          // Silently fail
+        } finally {
+          setLoadingModels(false)
+        }
+      }
       return
     }
     
     const success = await activateProvider(provider.id)
     if (success) {
       setIsOpen(false)
+      setShowModelMenu(false)
+    }
+  }
+
+  const handleModelClick = async (providerId: string, newModel: string) => {
+    setLoadingModels(true)
+    try {
+      const response = await fetch(`/api/providers/${providerId}/activate`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ model: newModel }),
+      })
+      if (response.ok) {
+        // Refresh the config to sync state from server
+        const store = useConfigStore.getState()
+        await store.fetchConfig()
+        setShowModelMenu(false)
+        setIsOpen(false)
+      }
+    } catch {
+      // Silently fail
+    } finally {
+      setLoadingModels(false)
     }
   }
   
@@ -121,7 +166,7 @@ export function ProviderSelector() {
         )}
       </button>
       
-      {/* Dropdown */}
+      {/* Provider Dropdown */}
       {isOpen && hasMultipleProviders && (
         <div className="absolute top-full right-0 mt-1 w-64 bg-bg-secondary border border-border rounded-lg shadow-lg z-50 overflow-hidden">
           <div className="py-1">
@@ -159,6 +204,37 @@ export function ProviderSelector() {
             <p className="text-xs text-text-muted">
               Use <code className="bg-bg-tertiary px-1 rounded">openfox provider add</code> to add more providers
             </p>
+          </div>
+        </div>
+      )}
+
+      {/* Model Selection Dropdown */}
+      {showModelMenu && activeProviderId && (
+        <div className="absolute top-full right-0 mt-1 w-56 bg-bg-secondary border border-border rounded-lg shadow-lg z-50 overflow-hidden">
+          <div className="px-3 py-2 border-b border-border">
+            <p className="text-xs text-text-muted font-medium">Select model for {activeProvider?.name}</p>
+          </div>
+          <div className="py-1 max-h-64 overflow-y-auto">
+            {loadingModels ? (
+              <div className="px-3 py-2 text-xs text-text-muted">Loading models...</div>
+            ) : providerModels[activeProviderId]?.length && providerModels[activeProviderId].length > 0 ? (
+              providerModels[activeProviderId]!.map(modelName => (
+                <button
+                  key={modelName}
+                  onClick={() => handleModelClick(activeProviderId, modelName)}
+                  className={`w-full px-3 py-2 text-left hover:bg-bg-tertiary transition-colors text-sm ${
+                    model === modelName ? 'text-accent-primary font-medium' : 'text-text-primary'
+                  }`}
+                >
+                  {modelName.split('/').pop()?.replace(/-/g, ' ') ?? modelName}
+                  {model === modelName && (
+                    <span className="ml-2 text-accent-success">✓</span>
+                  )}
+                </button>
+              ))
+            ) : (
+              <div className="px-3 py-2 text-xs text-text-muted">No models available</div>
+            )}
           </div>
         </div>
       )}

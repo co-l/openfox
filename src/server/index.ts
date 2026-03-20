@@ -167,9 +167,16 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
     })
   })
 
+  app.get('/api/providers/:id/models', async (req, res) => {
+    const { id } = req.params
+    const models = await providerManager.getProviderModels(id as string)
+    res.json({ models })
+  })
+
   app.post('/api/providers/:id/activate', async (req, res) => {
     const { id } = req.params
-    const result = await providerManager.activateProvider(id as string)
+    const body = req.body as { model?: string }
+    const result = await providerManager.activateProvider(id as string, body.model ? { model: body.model } : undefined)
     if (!result.success) {
       return res.status(400).json({ error: result.error })
     }

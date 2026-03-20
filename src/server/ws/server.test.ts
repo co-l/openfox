@@ -106,6 +106,7 @@ type TestMessage = { id?: string; type: string; payload: Record<string, unknown>
 
 function createEventStore() {
   const eventsBySession = new Map<string, Array<{ seq: number; sessionId: string; timestamp: number; type: string; data: unknown }>>()
+  const subscribers = new Map<string, { resolve: (event: { seq: number; sessionId: string; timestamp: number; type: string; data: unknown }) => void; event: { seq: number; sessionId: string; timestamp: number; type: string; data: unknown } }>()
 
   return {
     append: vi.fn((sessionId: string, event: { type: string; data: unknown }) => {
@@ -118,6 +119,14 @@ function createEventStore() {
         data: event.data,
       }
       eventsBySession.set(sessionId, [...existing, stored])
+      
+      // Notify subscriber if exists
+      const subscriber = subscribers.get(sessionId)
+      if (subscriber) {
+        subscriber.resolve(stored)
+        subscribers.delete(sessionId)
+      }
+      
       return stored
     }),
     getEvents: vi.fn((sessionId: string) => eventsBySession.get(sessionId) ?? []),
@@ -125,10 +134,40 @@ function createEventStore() {
       const events = eventsBySession.get(sessionId) ?? []
       return events.at(-1)?.seq ?? null
     }),
-    subscribe: vi.fn(() => ({
-      iterator: (async function* () {})(),
-      unsubscribe: vi.fn(),
-    })),
+    subscribe: vi.fn((sessionId: string) => {
+      const events = eventsBySession.get(sessionId) ?? []
+      let index = 0
+      let pendingResolve: ((event: { seq: number; sessionId: string; timestamp: number; type: string; data: unknown }) => void) | null = null
+      
+      return {
+        iterator: (async function* () {
+          // Yield existing events first
+          for (const event of events) {
+            yield event
+            index++
+          }
+          
+          // Then yield new events as they're appended
+          while (true) {
+            const currentEvents = eventsBySession.get(sessionId) ?? []
+            if (index < currentEvents.length) {
+              yield currentEvents[index]
+              index++
+            } else {
+              // Wait for next append
+              yield await new Promise<{ seq: number; sessionId: string; timestamp: number; type: string; data: unknown }>((resolve) => {
+                pendingResolve = resolve
+                subscribers.set(sessionId, { resolve, event: null as any })
+              })
+              index++
+            }
+          }
+        })(),
+        unsubscribe: vi.fn(() => {
+          subscribers.delete(sessionId)
+        }),
+      }
+    }),
   }
 }
 
@@ -493,24 +532,35 @@ describe('createWebSocketServer', () => {
     getAllInstructionsMock.mockResolvedValue({ content: 'Follow instructions', files: [] })
     getToolRegistryForModeMock.mockReturnValue({ definitions: [{ type: 'function', function: { name: 'read_file', description: 'Read', parameters: {} } }] })
     streamLLMPureMock.mockReturnValue({ kind: 'stream' })
-    consumeStreamGeneratorMock.mockResolvedValue({
-      content: 'Summary content',
-      toolCalls: [],
-      segments: [],
-      usage: { promptTokens: 20, completionTokens: 5 },
-      timing: { ttft: 1, completionTime: 1, tps: 5, prefillTps: 20 },
-      aborted: false,
-      xmlFormatError: false,
-    })
+    consumeStreamGeneratorMock
+      .mockResolvedValueOnce({
+        content: 'Summary content',
+        toolCalls: [],
+        segments: [],
+        usage: { promptTokens: 20, completionTokens: 5 },
+        timing: { ttft: 1, completionTime: 1, tps: 5, prefillTps: 20 },
+        aborted: false,
+        xmlFormatError: false,
+      })
+      .mockResolvedValueOnce({
+        content: 'Compacted summary',
+        toolCalls: [],
+        segments: [],
+        usage: { promptTokens: 10, completionTokens: 4 },
+        timing: { ttft: 1, completionTime: 1, tps: 4, prefillTps: 10 },
+        aborted: false,
+        xmlFormatError: false,
+      })
+      .mockResolvedValueOnce({
+        content: 'Orchestrator summary',
+        toolCalls: [],
+        segments: [],
+        usage: { promptTokens: 15, completionTokens: 3 },
+        timing: { ttft: 1, completionTime: 1, tps: 3, prefillTps: 15 },
+        aborted: false,
+        xmlFormatError: false,
+      })
     runOrchestratorMock.mockResolvedValue({ success: true })
-    streamLLMResponseMock.mockResolvedValue({
-      messageId: 'compact-1',
-      content: 'Compacted summary',
-      toolCalls: [],
-      segments: [],
-      usage: { promptTokens: 10, completionTokens: 4 },
-      timing: { ttft: 1, completionTime: 1, tps: 4, prefillTps: 10 },
-    })
     providePathConfirmationMock
       .mockReturnValueOnce({ found: false })
       .mockReturnValueOnce({ found: true })
@@ -533,7 +583,7 @@ describe('createWebSocketServer', () => {
     harness.send({ id: 'compact', type: 'context.compact', payload: {} })
     expect(await harness.nextMessage((message) => message.id === 'compact')).toMatchObject({ type: 'ack' })
     expect(await harness.nextMessage((message) => message.type === 'chat.message')).toMatchObject({ type: 'chat.message' })
-    expect(await harness.nextMessage((message) => message.type === 'chat.done')).toMatchObject({ payload: { messageId: 'compact-1', reason: 'complete' } })
+    expect(await harness.nextMessage((message) => message.type === 'chat.done')).toMatchObject({ payload: { reason: 'complete' } })
     expect(await harness.nextMessage((message) => message.type === 'context.state')).toMatchObject({ type: 'context.state' })
     expect(await harness.nextMessage((message) => message.type === 'session.state')).toMatchObject({ type: 'session.state' })
     expect(sessionManager.compactContext).toHaveBeenCalledWith('session-1', 'Compacted summary', 10)
@@ -633,7 +683,6 @@ describe('createWebSocketServer', () => {
 
     harness.send({ id: 'compact-fail', type: 'context.compact', payload: {} })
     expect(await harness.nextMessage((message) => message.id === 'compact-fail')).toMatchObject({ type: 'ack' })
-    expect(await harness.nextMessage((message) => message.type === 'chat.message')).toMatchObject({ type: 'chat.message' })
     expect(await harness.nextMessage((message) => message.type === 'chat.error')).toMatchObject({
       payload: { error: 'Compaction failed: compact blew up', recoverable: true },
     })

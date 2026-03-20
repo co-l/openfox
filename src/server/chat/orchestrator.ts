@@ -866,19 +866,22 @@ ${modifiedFiles.length > 0 ? modifiedFiles.map(f => `- ${f}`).join('\n') : '(non
     const remainingCriteriaAfterTools = getCriteriaAwaitingVerification(session.criteria)
 
     if (remainingCriteriaAfterTools.length < criteriaAwaitingVerification.length) {
+      // Criteria were terminalized - this is progress
       nudgesSinceLastProgress = 0
       continue
     }
 
     if (remainingCriteriaAfterTools.length === 0) {
+      // All criteria terminalized - done
       nudgesSinceLastProgress = 0
       continue
     }
 
-    // Tool calls were made - this IS progress, even if criteria didn't change.
-    // The model needs to see tool results before calling pass_criterion/fail_criterion.
-    // Reset the nudge counter since the model is actively working.
-    nudgesSinceLastProgress = 0
+    // Tool calls were made but no criteria were terminalized.
+    // The model may be gathering information or stuck in a loop.
+    // Increment the nudge counter to track potential stalling.
+    nudgesSinceLastProgress += 1
+    continue
   }
 
   session = sessionManager.requireSession(sessionId)

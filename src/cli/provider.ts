@@ -1,5 +1,6 @@
 import { select, text, password, spinner, log, outro, isCancel, cancel } from '@clack/prompts'
 import { detectBackend, detectModel } from '../server/llm/index.js'
+import { fetchAvailableModelsFromBackend } from '../server/provider-manager.js'
 import {
   loadGlobalConfig,
   saveGlobalConfig,
@@ -83,15 +84,72 @@ export async function runProviderAdd(mode: Mode): Promise<void> {
     return
   }
 
-  // Model
-  const model = await text({
-    message: 'Model name (or "auto" to detect):',
-    placeholder: 'auto',
-    initialValue: 'auto',
-  })
-  if (isCancel(model)) {
-    cancel('Cancelled')
-    return
+  // Model selection - fetch available models from backend
+  let selectedModel: string
+  const s = spinner()
+  s.start(`Fetching available models from ${url}...`)
+
+  let availableModels: string[] = []
+  let detectedModel: string | null = null
+
+  try {
+    // Detect backend first if needed
+    let detectedBackend = backend as string
+    if (backend === 'auto') {
+      detectedBackend = await detectBackend(url as string)
+    }
+
+    // Fetch available models
+    availableModels = await fetchAvailableModelsFromBackend(url as string)
+    s.stop(`Found ${availableModels.length} model(s)`)
+  } catch {
+    s.stop('⚠ Could not fetch models, will use auto-detect')
+  }
+
+  if (availableModels.length > 0) {
+    // Show dropdown of available models
+    const modelChoice = await select({
+      message: 'Select model:',
+      options: availableModels.map(m => ({
+        value: m,
+        label: m.split('/').pop() ?? m,
+        hint: m,
+      })),
+    })
+    if (isCancel(modelChoice)) {
+      cancel('Cancelled')
+      return
+    }
+    selectedModel = modelChoice as string
+  } else {
+    // Fall back to text input
+    const model = await text({
+      message: 'Model name (or "auto" to detect):',
+      placeholder: 'auto',
+      initialValue: 'auto',
+    })
+    if (isCancel(model)) {
+      cancel('Cancelled')
+      return
+    }
+    selectedModel = model as string
+
+    // Try to detect model if auto
+    if (selectedModel === 'auto') {
+      const detectSpinner = spinner()
+      detectSpinner.start('Detecting model...')
+      try {
+        detectedModel = await detectModel(url as string)
+        if (detectedModel) {
+          selectedModel = detectedModel
+          detectSpinner.stop(`Detected: ${detectedModel}`)
+        } else {
+          detectSpinner.stop('Could not detect model, will use auto')
+        }
+      } catch {
+        detectSpinner.stop('Detection failed, will use auto')
+      }
+    }
   }
 
   // API Key (optional)
@@ -130,22 +188,22 @@ export async function runProviderAdd(mode: Mode): Promise<void> {
   }
 
   // Test connection
-  const s = spinner()
-  s.start(`Testing connection to ${url}...`)
+  const testSpinner = spinner()
+  testSpinner.start(`Testing connection to ${url}...`)
 
-  let detectedBackend = backend as string
-  let detectedModel = model
+  let finalBackend = backend as string
+  let finalDetectedModel: string | null = null
 
   try {
     if (backend === 'auto') {
-      detectedBackend = await detectBackend(url as string)
+      finalBackend = await detectBackend(url as string)
     }
-    if (model === 'auto') {
-      detectedModel = await detectModel(url as string) ?? 'auto'
+    if (selectedModel === 'auto') {
+      finalDetectedModel = await detectModel(url as string) ?? 'auto'
     }
-    s.stop(`✓ Connected to ${detectedBackend}${detectedModel !== 'auto' ? ` (${detectedModel})` : ''}`)
+    testSpinner.stop(`✓ Connected to ${finalBackend}${finalDetectedModel !== 'auto' ? ` (${finalDetectedModel})` : ''}`)
   } catch {
-    s.stop('⚠ Could not connect to provider')
+    testSpinner.stop('⚠ Could not connect to provider')
     const continueAnyway = await select({
       message: 'Provider is not reachable. Save anyway?',
       options: [
@@ -175,8 +233,8 @@ export async function runProviderAdd(mode: Mode): Promise<void> {
   const newConfig = addProvider(config, {
     name: name as string,
     url: url as string,
-    model: detectedModel as string,
-    backend: detectedBackend as ProviderBackend,
+    model: selectedModel,
+    backend: finalBackend as ProviderBackend,
     apiKey,
     maxContext: 200000,
     isActive: makeActive as boolean,
