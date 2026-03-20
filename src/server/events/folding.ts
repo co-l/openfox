@@ -64,8 +64,42 @@ export interface FoldedSessionState {
 
 /**
  * Build Message[] from stored events (for backward compatibility with shared types)
+ * 
+ * If a snapshot exists, messages are extracted from it since individual message events
+ * may have been deleted to save space.
  */
 export function buildMessagesFromStoredEvents(events: StoredEvent[]): Message[] {
+  // Check if there's a snapshot - if so, extract messages from it
+  const snapshotEvent = events.find(e => e.type === 'turn.snapshot')
+  if (snapshotEvent) {
+    const snapshot = snapshotEvent.data as import('./types.js').SessionSnapshot
+    return snapshot.messages.map(msg => {
+      const message: Message = {
+        id: msg.id,
+        role: msg.role,
+        content: msg.content,
+        timestamp: new Date(msg.timestamp).toISOString(),
+        ...(msg.tokenCount !== undefined && { tokenCount: msg.tokenCount }),
+        ...(msg.isStreaming !== undefined && { isStreaming: msg.isStreaming }),
+        ...(msg.contextWindowId !== undefined && { contextWindowId: msg.contextWindowId }),
+        ...(msg.subAgentId !== undefined && { subAgentId: msg.subAgentId }),
+        ...(msg.subAgentType !== undefined && { subAgentType: msg.subAgentType }),
+        ...(msg.isSystemGenerated !== undefined && { isSystemGenerated: msg.isSystemGenerated }),
+        ...(msg.messageKind !== undefined && { messageKind: msg.messageKind }),
+        ...(msg.isCompactionSummary !== undefined && { isCompactionSummary: msg.isCompactionSummary }),
+        ...(msg.attachments !== undefined && { attachments: msg.attachments }),
+        ...(msg.thinkingContent !== undefined && { thinkingContent: msg.thinkingContent }),
+        ...(msg.toolCalls !== undefined && { toolCalls: msg.toolCalls }),
+        ...(msg.segments !== undefined && { segments: msg.segments }),
+        ...(msg.stats !== undefined && { stats: msg.stats }),
+        ...(msg.partial !== undefined && { partial: msg.partial }),
+        ...(msg.promptContext !== undefined && { promptContext: msg.promptContext }),
+      }
+      return message
+    })
+  }
+
+  // Fallback: build from individual message events (for sessions without snapshots)
   const messages = new Map<string, Message>()
 
   for (const event of events) {
@@ -166,6 +200,9 @@ export function buildMessagesFromStoredEvents(events: StoredEvent[]): Message[] 
 /**
  * Build context messages for LLM from stored events.
  * When windowId is provided, only messages in that context window are included.
+ * 
+ * If events are missing (deleted after snapshot), this function will not find them.
+ * Callers should ensure they have access to the latest snapshot for complete message history.
  */
 export function buildContextMessagesFromStoredEvents(
   events: StoredEvent[],

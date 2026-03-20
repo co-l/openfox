@@ -676,3 +676,272 @@ describe('initEventStore', () => {
     db.close()
   })
 })
+
+// ============================================================================
+// Event cleanup tests
+// ============================================================================
+
+describe('EventStore - Event Cleanup', () => {
+  let db: Database.Database
+  let store: EventStore
+
+  beforeEach(() => {
+    db = new Database(':memory:')
+    store = new EventStore(db)
+  })
+
+  afterEach(() => {
+    db.close()
+  })
+
+  describe('deleteEventsUpToSeq', () => {
+    it('should delete events up to and including the given seq', () => {
+      // Append several events
+      store.append('session-1', {
+        type: 'message.start',
+        data: { messageId: 'msg-1', role: 'user', content: 'Hello' },
+      })
+      store.append('session-1', {
+        type: 'message.delta',
+        data: { messageId: 'msg-1', content: ' world' },
+      })
+      store.append('session-1', {
+        type: 'message.done',
+        data: { messageId: 'msg-1' },
+      })
+      store.append('session-1', {
+        type: 'message.start',
+        data: { messageId: 'msg-2', role: 'assistant', content: 'Hi' },
+      })
+
+      // Delete up to seq 2
+      const deletedCount = store.deleteEventsUpToSeq('session-1', 2)
+      expect(deletedCount).toBe(2)
+
+      // Remaining events should be seq 3 and 4
+      const remaining = store.getEvents('session-1')
+      expect(remaining).toHaveLength(2)
+      expect(remaining[0]!.seq).toBe(3)
+      expect(remaining[1]!.seq).toBe(4)
+    })
+
+    it('should delete all events when upToSeq is the latest seq', () => {
+      store.append('session-1', {
+        type: 'message.start',
+        data: { messageId: 'msg-1', role: 'user', content: 'Hello' },
+      })
+      store.append('session-1', {
+        type: 'message.done',
+        data: { messageId: 'msg-1' },
+      })
+
+      const deletedCount = store.deleteEventsUpToSeq('session-1', 2)
+      expect(deletedCount).toBe(2)
+
+      const remaining = store.getEvents('session-1')
+      expect(remaining).toHaveLength(0)
+    })
+
+    it('should return 0 when deleting up to seq 0', () => {
+      store.append('session-1', {
+        type: 'message.start',
+        data: { messageId: 'msg-1', role: 'user', content: 'Hello' },
+      })
+
+      const deletedCount = store.deleteEventsUpToSeq('session-1', 0)
+      expect(deletedCount).toBe(0)
+
+      const remaining = store.getEvents('session-1')
+      expect(remaining).toHaveLength(1)
+    })
+
+    it('should not affect events from other sessions', () => {
+      store.append('session-1', {
+        type: 'message.start',
+        data: { messageId: 'msg-1', role: 'user', content: 'Hello' },
+      })
+      store.append('session-2', {
+        type: 'message.start',
+        data: { messageId: 'msg-2', role: 'user', content: 'Hi' },
+      })
+
+      store.deleteEventsUpToSeq('session-1', 1)
+
+      const session1Events = store.getEvents('session-1')
+      const session2Events = store.getEvents('session-2')
+
+      expect(session1Events).toHaveLength(0)
+      expect(session2Events).toHaveLength(1)
+    })
+  })
+
+  describe('getLatestSnapshotSeq', () => {
+    it('should return the seq of the latest snapshot', () => {
+      store.append('session-1', {
+        type: 'message.start',
+        data: { messageId: 'msg-1', role: 'user', content: 'Hello' },
+      })
+      store.append('session-1', {
+        type: 'turn.snapshot',
+        data: {
+          mode: 'planner',
+          phase: 'plan',
+          isRunning: false,
+          messages: [],
+          criteria: [],
+          contextState: { currentTokens: 100, maxTokens: 200000, compactionCount: 0, dangerZone: false, canCompact: false },
+          currentContextWindowId: 'window-1',
+          todos: [],
+          readFiles: [],
+          snapshotSeq: 2,
+          snapshotAt: Date.now(),
+        },
+      })
+      store.append('session-1', {
+        type: 'message.start',
+        data: { messageId: 'msg-2', role: 'assistant', content: 'Hi' },
+      })
+
+      const latestSnapshotSeq = store.getLatestSnapshotSeq('session-1')
+      expect(latestSnapshotSeq).toBe(2)
+    })
+
+    it('should return 0 when no snapshot exists', () => {
+      store.append('session-1', {
+        type: 'message.start',
+        data: { messageId: 'msg-1', role: 'user', content: 'Hello' },
+      })
+
+      const latestSnapshotSeq = store.getLatestSnapshotSeq('session-1')
+      expect(latestSnapshotSeq).toBe(0)
+    })
+
+    it('should return the latest snapshot seq when multiple snapshots exist', () => {
+      store.append('session-1', {
+        type: 'turn.snapshot',
+        data: {
+          mode: 'planner',
+          phase: 'plan',
+          isRunning: false,
+          messages: [],
+          criteria: [],
+          contextState: { currentTokens: 100, maxTokens: 200000, compactionCount: 0, dangerZone: false, canCompact: false },
+          currentContextWindowId: 'window-1',
+          todos: [],
+          readFiles: [],
+          snapshotSeq: 1,
+          snapshotAt: Date.now(),
+        },
+      })
+      store.append('session-1', {
+        type: 'message.start',
+        data: { messageId: 'msg-1', role: 'user', content: 'Hello' },
+      })
+      store.append('session-1', {
+        type: 'turn.snapshot',
+        data: {
+          mode: 'builder',
+          phase: 'build',
+          isRunning: false,
+          messages: [],
+          criteria: [],
+          contextState: { currentTokens: 200, maxTokens: 200000, compactionCount: 1, dangerZone: false, canCompact: false },
+          currentContextWindowId: 'window-2',
+          todos: [],
+          readFiles: [],
+          snapshotSeq: 3,
+          snapshotAt: Date.now(),
+        },
+      })
+
+      const latestSnapshotSeq = store.getLatestSnapshotSeq('session-1')
+      expect(latestSnapshotSeq).toBe(3)
+    })
+  })
+
+  describe('cleanup after snapshot', () => {
+    it('should keep only snapshot and current window events after cleanup', () => {
+      // Simulate a conversation with multiple turns
+      store.append('session-1', {
+        type: 'session.initialized',
+        data: { projectId: 'proj-1', workdir: '/tmp', contextWindowId: 'window-1' },
+      })
+      store.append('session-1', {
+        type: 'message.start',
+        data: { messageId: 'msg-1', role: 'user', content: 'Hello' },
+      })
+      store.append('session-1', {
+        type: 'message.delta',
+        data: { messageId: 'msg-1', content: ' world' },
+      })
+      store.append('session-1', {
+        type: 'message.done',
+        data: { messageId: 'msg-1' },
+      })
+      store.append('session-1', {
+        type: 'turn.snapshot',
+        data: {
+          mode: 'planner',
+          phase: 'plan',
+          isRunning: false,
+          messages: [{ id: 'msg-1', role: 'user', content: 'Hello world', timestamp: Date.now() }],
+          criteria: [],
+          contextState: { currentTokens: 100, maxTokens: 200000, compactionCount: 0, dangerZone: false, canCompact: false },
+          currentContextWindowId: 'window-1',
+          todos: [],
+          readFiles: [],
+          snapshotSeq: 5,
+          snapshotAt: Date.now(),
+        },
+      })
+      store.append('session-1', {
+        type: 'message.start',
+        data: { messageId: 'msg-2', role: 'assistant', content: 'Hi' },
+      })
+      store.append('session-1', {
+        type: 'message.done',
+        data: { messageId: 'msg-2' },
+      })
+
+      // Simulate cleanup: delete events before the snapshot (seq 1-4)
+      store.deleteEventsUpToSeq('session-1', 4)
+
+      // Should have snapshot (seq 5) and current window events (seq 6, 7)
+      const remaining = store.getEvents('session-1')
+      expect(remaining).toHaveLength(3)
+      expect(remaining[0]!.type).toBe('turn.snapshot')
+      expect(remaining[0]!.seq).toBe(5)
+      expect(remaining[1]!.type).toBe('message.start')
+      expect(remaining[2]!.type).toBe('message.done')
+    })
+
+    it('should not delete when snapshot is the first event', () => {
+      store.append('session-1', {
+        type: 'turn.snapshot',
+        data: {
+          mode: 'planner',
+          phase: 'plan',
+          isRunning: false,
+          messages: [],
+          criteria: [],
+          contextState: { currentTokens: 100, maxTokens: 200000, compactionCount: 0, dangerZone: false, canCompact: false },
+          currentContextWindowId: 'window-1',
+          todos: [],
+          readFiles: [],
+          snapshotSeq: 1,
+          snapshotAt: Date.now(),
+        },
+      })
+      store.append('session-1', {
+        type: 'message.start',
+        data: { messageId: 'msg-1', role: 'user', content: 'Hello' },
+      })
+
+      // Try to delete events before seq 1 (should delete nothing)
+      store.deleteEventsUpToSeq('session-1', 0)
+
+      const remaining = store.getEvents('session-1')
+      expect(remaining).toHaveLength(2)
+    })
+  })
+})

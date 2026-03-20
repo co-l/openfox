@@ -53,9 +53,17 @@ import {
 /**
  * Get full session state by folding all events.
  * Returns undefined if no session.initialized event exists.
+ * 
+ * If a snapshot exists, messages are loaded from the snapshot instead of
+ * reconstructing from individual events (which may have been deleted).
  */
 export function getSessionState(sessionId: string): FoldedSessionState | undefined {
   const eventStore = getEventStore()
+  
+  // Check for the latest snapshot first
+  const latestSnapshotEvent = eventStore.getLatestSnapshot(sessionId)
+  
+  // Get all events (snapshots + current window events)
   const events = eventStore.getEvents(sessionId)
 
   if (events.length === 0) {
@@ -76,31 +84,120 @@ export function getSessionState(sessionId: string): FoldedSessionState | undefin
     return undefined
   }
 
+  // If we have a snapshot, use it as the base for messages
+  if (latestSnapshotEvent) {
+    const snapshot = latestSnapshotEvent.data
+    const state = foldSessionState(events, initialWindowId)
+    
+    // Override messages with snapshot messages (they're already fully reconstructed)
+    return {
+      ...state,
+      messages: snapshot.messages,
+    }
+  }
+
   return foldSessionState(events, initialWindowId)
 }
 
 /**
  * Get messages for the current context window (for LLM context building)
+ * 
+ * If a snapshot exists, messages are loaded from the snapshot.
+ * Otherwise, they're built from events.
  */
 export function getCurrentWindowMessages(sessionId: string): SnapshotMessage[] {
+  const eventStore = getEventStore()
+  const latestSnapshotEvent = eventStore.getLatestSnapshot(sessionId)
+  
+  // Get current context window ID from events (not from snapshot, as snapshot may be stale)
+  const currentWindowId = getCurrentContextWindowId(sessionId)
+  if (!currentWindowId) return []
+  
+  // If we have a snapshot, use its messages filtered by current window
+  if (latestSnapshotEvent) {
+    const snapshot = latestSnapshotEvent.data
+    return snapshot.messages.filter(m => m.contextWindowId === currentWindowId)
+  }
+  
+  // Fallback to building from events (for sessions without snapshots yet)
   const state = getSessionState(sessionId)
   if (!state) return []
-
-  return state.messages.filter((m) => m.contextWindowId === state.currentContextWindowId)
+  
+  return state.messages.filter((m) => m.contextWindowId === currentWindowId)
 }
 
 /**
  * Get context messages for LLM from current window
+ * 
+ * If a snapshot exists, messages are loaded from the snapshot.
+ * Otherwise, they're built from events.
  */
 export function getContextMessages(sessionId: string): ContextMessage[] {
   const eventStore = getEventStore()
+  const latestSnapshotEvent = eventStore.getLatestSnapshot(sessionId)
+  
+  // Get current context window ID from events (not from snapshot, as snapshot may be stale)
+  const currentWindowId = getCurrentContextWindowId(sessionId)
+  if (!currentWindowId) return []
+  
+  // If we have a snapshot, extract context messages from it
+  if (latestSnapshotEvent) {
+    const snapshot = latestSnapshotEvent.data
+    
+    // Filter messages for current window and convert to context messages
+    const windowMessages = snapshot.messages.filter(m => m.contextWindowId === currentWindowId)
+    
+    const result: ContextMessage[] = []
+    for (const msg of windowMessages) {
+      if (msg.role === 'system') continue
+      
+      const contextMsg: ContextMessage = {
+        role: msg.role as 'user' | 'assistant',
+        content: msg.content,
+      }
+      
+      if (msg.toolCalls && msg.toolCalls.length > 0) {
+        contextMsg.toolCalls = msg.toolCalls.map(tc => ({
+          id: tc.id,
+          name: tc.name,
+          arguments: tc.arguments,
+        }))
+      }
+      
+      result.push(contextMsg)
+      
+      // Add tool results as separate tool messages
+      if (msg.toolCalls) {
+        for (const tc of msg.toolCalls) {
+          if (tc.result) {
+            result.push({
+              role: 'tool',
+              content: tc.result.success
+                ? (tc.result.output ?? 'Success')
+                : `Error: ${tc.result.error}`,
+              toolCallId: tc.id,
+            })
+          }
+        }
+      }
+    }
+    
+    // Also include messages from events after the snapshot (current turn's messages)
+    // These are not in the snapshot yet
+    const events = eventStore.getEvents(sessionId, latestSnapshotEvent.seq + 1)
+    if (events.length > 0) {
+      const additionalMessages = buildContextMessagesFromStoredEvents(events, currentWindowId, { includeVerifier: false })
+      result.push(...additionalMessages)
+    }
+    
+    return result
+  }
+  
+  // Fallback to building from events (for sessions without snapshots yet)
   const events = eventStore.getEvents(sessionId)
   if (events.length === 0) return []
-
-  const currentContextWindowId = getCurrentContextWindowId(sessionId)
-  if (!currentContextWindowId) return []
-
-  return buildContextMessagesFromStoredEvents(events, currentContextWindowId, { includeVerifier: false })
+  
+  return buildContextMessagesFromStoredEvents(events, currentWindowId, { includeVerifier: false })
 }
 
 /**

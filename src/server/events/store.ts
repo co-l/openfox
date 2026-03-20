@@ -365,6 +365,82 @@ export class EventStore {
       this.subscribers.delete(sessionId)
     }
   }
+
+  /**
+   * Delete all events up to (and including) a given sequence number.
+   * This is used to clean up events that are now contained in a snapshot.
+   * 
+   * @param sessionId - The session ID
+   * @param upToSeq - The sequence number to delete up to (inclusive)
+   * @returns The number of events deleted
+   */
+  deleteEventsUpToSeq(sessionId: string, upToSeq: number): number {
+    const result = this.db
+      .prepare(`DELETE FROM events WHERE session_id = ? AND seq <= ?`)
+      .run(sessionId, upToSeq)
+
+    return result.changes as number
+  }
+
+  /**
+   * Clean up old events, keeping only:
+   * - session.initialized event (seq 1)
+   * - All snapshot events
+   * - State-changing events (criteria.set, criterion.updated, mode.changed, phase.changed, context.state, etc.)
+   * - Events after the latest snapshot (current window)
+   * 
+   * This is the recommended cleanup method that preserves all snapshots and state.
+   * 
+   * @param sessionId - The session ID
+   * @returns The number of events deleted
+   */
+  cleanupOldEvents(sessionId: string): number {
+    // Get the latest snapshot sequence
+    const latestSnapshotSeq = this.getLatestSnapshotSeq(sessionId)
+    
+    if (latestSnapshotSeq === 0) {
+      // No snapshots yet, nothing to clean up
+      return 0
+    }
+
+    // Delete all events before the latest snapshot, except:
+    // - seq 1 (session.initialized)
+    // - All snapshot events (turn.snapshot)
+    // - State-changing events that define session state
+    const result = this.db
+      .prepare(`
+        DELETE FROM events 
+        WHERE session_id = ? AND seq > 1 AND seq < ? 
+        AND event_type NOT IN (
+          'turn.snapshot',
+          'criteria.set',
+          'criterion.updated',
+          'mode.changed',
+          'phase.changed',
+          'todo.updated',
+          'context.state'
+        )
+      `)
+      .run(sessionId, latestSnapshotSeq)
+
+    return result.changes as number
+  }
+
+  /**
+   * Get the latest snapshot sequence number for a session
+   * @returns The sequence number of the latest snapshot, or 0 if none
+   */
+  getLatestSnapshotSeq(sessionId: string): number {
+    const row = this.db
+      .prepare(`
+        SELECT seq FROM events 
+        WHERE session_id = ? AND event_type = 'turn.snapshot' 
+        ORDER BY seq DESC LIMIT 1
+      `)
+      .get(sessionId) as { seq: number } | undefined
+
+    return row?.seq ?? 0
+  }
 }
 
 // ============================================================================

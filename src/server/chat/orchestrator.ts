@@ -105,7 +105,14 @@ export async function runChatTurn(options: OrchestratorOptions): Promise<void> {
 
     // Create end-of-turn snapshot
     const snapshot = buildSnapshot(sessionManager, sessionId, turnMetrics.buildStats(llmClient.getModel(), mode))
-    eventStore.append(sessionId, { type: 'turn.snapshot', data: snapshot })
+    const snapshotEvent = eventStore.append(sessionId, { type: 'turn.snapshot', data: snapshot })
+
+    // Clean up old events that are now contained in snapshots
+    // This keeps the EventStore bounded while preserving full history in snapshots
+    const deletedCount = eventStore.cleanupOldEvents(sessionId)
+    if (deletedCount > 0) {
+      logger.debug('Cleaned up old events after snapshot', { sessionId, deletedCount, snapshotSeq: snapshotEvent.seq })
+    }
 
   } catch (error) {
     if (error instanceof AskUserInterrupt) {

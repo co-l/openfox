@@ -127,6 +127,93 @@ describe('event folding', () => {
     ])
   })
 
+  it('extracts messages from snapshot when individual events are deleted', () => {
+    const events: StoredEvent[] = [
+      {
+        seq: 1,
+        timestamp: Date.now(),
+        sessionId: 'session-1',
+        type: 'session.initialized',
+        data: { projectId: 'proj-1', workdir: '/tmp', contextWindowId: 'window-1' },
+      },
+      {
+        seq: 2,
+        timestamp: Date.now(),
+        sessionId: 'session-1',
+        type: 'turn.snapshot',
+        data: {
+          mode: 'planner',
+          phase: 'plan',
+          isRunning: false,
+          messages: [
+            { id: 'msg-1', role: 'user', content: 'Hello', timestamp: Date.now() },
+            { id: 'msg-2', role: 'assistant', content: 'Hi there!', timestamp: Date.now() },
+          ],
+          criteria: [],
+          contextState: { currentTokens: 50, maxTokens: 200000, compactionCount: 0, dangerZone: false, canCompact: false },
+          currentContextWindowId: 'window-1',
+          todos: [],
+          readFiles: [],
+          snapshotSeq: 2,
+          snapshotAt: Date.now(),
+        },
+      },
+    ]
+
+    const messages = buildMessagesFromStoredEvents(events)
+    expect(messages).toHaveLength(2)
+    expect(messages[0]!.id).toBe('msg-1')
+    expect(messages[0]!.content).toBe('Hello')
+    expect(messages[1]!.id).toBe('msg-2')
+    expect(messages[1]!.content).toBe('Hi there!')
+  })
+
+  it('extracts messages with tool calls from snapshot', () => {
+    const events: StoredEvent[] = [
+      {
+        seq: 1,
+        timestamp: Date.now(),
+        sessionId: 'session-1',
+        type: 'turn.snapshot',
+        data: {
+          mode: 'builder',
+          phase: 'build',
+          isRunning: false,
+          messages: [
+            {
+              id: 'msg-1',
+              role: 'assistant',
+              content: '',
+              toolCalls: [
+                {
+                  id: 'call-1',
+                  name: 'read_file',
+                  arguments: { path: 'test.txt' },
+                  result: { success: true, output: 'File content', durationMs: 100, truncated: false },
+                },
+              ],
+              timestamp: Date.now(),
+            },
+          ],
+          criteria: [],
+          contextState: { currentTokens: 100, maxTokens: 200000, compactionCount: 0, dangerZone: false, canCompact: false },
+          currentContextWindowId: 'window-1',
+          todos: [],
+          readFiles: [],
+          snapshotSeq: 1,
+          snapshotAt: Date.now(),
+        },
+      },
+    ]
+
+    const messages = buildMessagesFromStoredEvents(events)
+    expect(messages).toHaveLength(1)
+    expect(messages[0]!.toolCalls).toBeDefined()
+    expect(messages[0]!.toolCalls![0]!.name).toBe('read_file')
+    expect(messages[0]!.toolCalls![0]!.result).toBeDefined()
+    expect(messages[0]!.toolCalls![0]!.result!.success).toBe(true)
+  })
+
   it('folds turn events into snapshot messages and builds a snapshot', () => {
     const events: Array<{ type: any; timestamp: number; data: any }> = [
       { type: 'message.start', timestamp: 123, data: { messageId: 'm1', role: 'assistant' as const, contextWindowId: 'window-1' } },

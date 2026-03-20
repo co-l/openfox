@@ -387,7 +387,8 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
     close: () => new Promise<void>((resolve) => {
       logger.info('Shutting down...')
       viteServer?.close()
-      closeDatabase()
+      // Note: Not closing database here - it's a singleton shared across servers.
+      // Database should only be closed when the application exits.
       // Terminate all WebSocket connections to allow clean shutdown
       for (const client of wss.clients) {
         client.terminate()
