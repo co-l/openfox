@@ -378,7 +378,6 @@ export const useSessionStore = create<SessionState>((set, get) => ({
       case 'session.state': {
         const payload = message.payload as SessionStatePayload
         if (!isSessionStateForCurrentView(message, activeSessionId)) {
-          markBackgroundSessionUnread()
           break
         }
         // Server sends complete state: session + messages

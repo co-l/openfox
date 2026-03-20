@@ -66,11 +66,11 @@ vi.mock('../settings/ProjectSettingsModal', () => ({
 }))
 
 describe('Sidebar', () => {
-  it('shows running and unread indicators for sessions with background activity', () => {
+  it('shows the running indicator and hides unread for running sessions', () => {
     const html = renderToStaticMarkup(<Sidebar projectId="project-1" />)
 
     expect(html).toContain('Session running')
-    expect(html).toContain('Unread activity')
+    expect(html).not.toContain('Unread activity')
     expect(html).toContain('animate-spin')
   })
 })

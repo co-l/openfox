@@ -519,4 +519,42 @@ describe('useSessionStore session isolation', () => {
     expect(playWaitingForUserMock).toHaveBeenCalledTimes(1)
     expect(playNotificationMock).not.toHaveBeenCalled()
   })
+
+  it('does not mark a background session unread when it only receives session state', async () => {
+    const useSessionStore = await loadSessionStore()
+
+    useSessionStore.setState((state) => ({
+      ...state,
+      currentSession: {
+        id: 'session-2',
+        projectId: 'project-1',
+        workdir: '/tmp/project-2',
+        mode: 'builder',
+        phase: 'build',
+        isRunning: false,
+        criteria: [],
+        summary: null,
+      } as any,
+    }))
+
+    useSessionStore.getState().handleServerMessage({
+      type: 'session.state',
+      sessionId: 'session-1',
+      payload: {
+        session: {
+          id: 'session-1',
+          projectId: 'project-1',
+          workdir: '/tmp/project-1',
+          mode: 'planner',
+          phase: 'plan',
+          isRunning: false,
+          criteria: [],
+          summary: null,
+        },
+        messages: [],
+      },
+    })
+
+    expect(useSessionStore.getState().unreadSessionIds).toEqual([])
+  })
 })

@@ -127,7 +127,7 @@ export function Sidebar({ projectId }: SidebarProps) {
                         <path d="M21 12a9 9 0 00-9-9" stroke="currentColor" strokeWidth="3" strokeLinecap="round" />
                       </svg>
                     )}
-                    {hasUnread && !isActive && (
+                    {hasUnread && !isActive && !isRunning && (
                       <span
                         aria-label="Unread activity"
                         title="Unread activity"
