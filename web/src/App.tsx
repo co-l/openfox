@@ -1,5 +1,5 @@
 import { useEffect } from 'react'
-import { Route, Switch, useRoute } from 'wouter'
+import { Route, Switch, useRoute, useLocation } from 'wouter'
 import { useWebSocket } from './hooks/useWebSocket'
 import { useSessionStore } from './stores/session'
 import { useProjectStore } from './stores/project'
@@ -62,11 +62,14 @@ function ProjectSessionView() {
   const [, params] = useRoute('/p/:projectId/s/:sessionId')
   const projectId = params?.projectId
   const sessionId = params?.sessionId
+  const [, navigate] = useLocation()
   
   const connectionStatus = useSessionStore(state => state.connectionStatus)
   const session = useSessionStore(state => state.currentSession)
   const loadSession = useSessionStore(state => state.loadSession)
   const listSessions = useSessionStore(state => state.listSessions)
+  const error = useSessionStore(state => state.error)
+  const clearError = useSessionStore(state => state.clearError)
   
   const currentProject = useProjectStore(state => state.currentProject)
   const loadProject = useProjectStore(state => state.loadProject)
@@ -87,6 +90,14 @@ function ProjectSessionView() {
       listSessions()
     }
   }, [connectionStatus, sessionId, session?.id, loadSession, listSessions])
+  
+  // Redirect to project view if session not found
+  useEffect(() => {
+    if (error?.code === 'NOT_FOUND' && projectId) {
+      clearError()
+      navigate(`/p/${projectId}`)
+    }
+  }, [error, projectId, clearError, navigate])
   
   if (!currentProject || currentProject.id !== projectId) {
     return <LoadingSpinner />
