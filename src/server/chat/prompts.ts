@@ -5,10 +5,6 @@ import type { LLMToolDefinition } from '../llm/types.js'
 // ============================================================================
 
 export function buildPlannerPrompt(workdir: string, tools: LLMToolDefinition[], customInstructions?: string): string {
-  const toolList = tools
-    .map(t => `- **${t.function.name}**: ${t.function.description}`)
-    .join('\n')
-
   const instructionsSection = customInstructions 
     ? `\n\n## CUSTOM INSTRUCTIONS\n\n${customInstructions}`
     : ''
@@ -34,10 +30,6 @@ A separate builder will handle implementation AFTER planning is complete.
 2. **Explore** - Use read-only tools to understand the codebase context
 3. **Propose** - Present acceptance criteria to the user for approval
 4. **Refine** - Iterate based on user feedback
-
-## AVAILABLE TOOLS
-
-${toolList}
 
 ## HOW TO PROPOSE CRITERIA
 
@@ -74,10 +66,6 @@ export function buildBuilderPrompt(
   tools: LLMToolDefinition[],
   customInstructions?: string
 ): string {
-  const toolList = tools
-    .map(t => `- ${t.function.name}: ${t.function.description}`)
-    .join('\n')
-  
   const instructionsSection = customInstructions 
     ? `\n\n## CUSTOM INSTRUCTIONS\n\n${customInstructions}`
     : ''
@@ -96,9 +84,6 @@ Platform: ${process.platform} (${process.arch})
 5. When you complete a criterion, call \`complete_criterion\` to mark it done
 6. Use \`todo_write\` to track your tasks and show progress
 
-## AVAILABLE TOOLS
-${toolList}
-
 ## IMPORTANT
 - Focus on one criterion at a time
 - Make minimal, focused changes
@@ -112,10 +97,6 @@ ${toolList}
 // ============================================================================
 
 export function buildVerifierPrompt(workdir: string, tools: LLMToolDefinition[], customInstructions?: string): string {
-  const toolList = tools
-    .map(t => `- ${t.function.name}: ${t.function.description}`)
-    .join('\n')
-  
   const instructionsSection = customInstructions 
     ? `\n\n## CUSTOM INSTRUCTIONS\n\n${customInstructions}`
     : ''
@@ -142,9 +123,6 @@ For each criterion marked [NEEDS VERIFICATION]:
 Then call:
 - \`pass_criterion\` if the criterion is satisfied
 - \`fail_criterion\` if it is NOT satisfied (explain why clearly)
-
-## AVAILABLE TOOLS
-${toolList}
 
 ## IMPORTANT
 - Start by analyzing what each criterion actually requires

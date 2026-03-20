@@ -20,14 +20,15 @@ describe('buildPlannerPrompt', () => {
     expect(prompt).toContain('CUSTOM INSTRUCTIONS')
   })
 
-  it('includes tool list', () => {
+  it('does not include tool list (tools are passed via structured API)', () => {
     const tools = [
       { type: 'function' as const, function: { name: 'read_file', description: 'Read a file', parameters: {} } },
       { type: 'function' as const, function: { name: 'glob', description: 'Find files', parameters: {} } },
     ]
     const prompt = buildPlannerPrompt('/tmp', tools, undefined)
-    expect(prompt).toContain('read_file')
-    expect(prompt).toContain('glob')
+    expect(prompt).not.toContain('## AVAILABLE TOOLS')
+    expect(prompt).not.toContain('read_file')
+    expect(prompt).not.toContain('glob')
   })
 })
 
