@@ -130,6 +130,10 @@ function createEventStore() {
       return stored
     }),
     getEvents: vi.fn((sessionId: string) => eventsBySession.get(sessionId) ?? []),
+    getLatestSnapshot: vi.fn((sessionId: string) => {
+      const events = eventsBySession.get(sessionId) ?? []
+      return [...events].reverse().find((event) => event.type === 'turn.snapshot')
+    }),
     getLatestSeq: vi.fn((sessionId: string) => {
       const events = eventsBySession.get(sessionId) ?? []
       return events.at(-1)?.seq ?? null
@@ -727,6 +731,86 @@ describe('createWebSocketServer', () => {
     expect(harness.eventStore.append.mock.calls.find(([, event]) => event.type === 'chat.error')?.[1]).toMatchObject({
       data: { error: 'summary failed', recoverable: false },
     })
+
+    await harness.close()
+  })
+
+  it('uses snapshot-backed planner context when generating the mode.accept summary', async () => {
+    const sessionState: any = {
+      id: 'session-1',
+      projectId: 'project-1',
+      workdir: '/tmp/project',
+      mode: 'planner',
+      phase: 'plan',
+      isRunning: false,
+      criteria: [{ id: 'deleted-session-fix', description: 'Fix deleted session navigation', status: { type: 'pending' }, attempts: [] }],
+      summary: null,
+    }
+    const sessionManager = createSessionManager({
+      createSession: vi.fn(() => sessionState),
+      getSession: vi.fn(() => sessionState),
+      requireSession: vi.fn(() => structuredClone(sessionState)),
+    })
+
+    getAllInstructionsMock.mockResolvedValue({ content: '', files: [] })
+    streamLLMPureMock.mockReturnValue({ kind: 'stream' })
+    consumeStreamGeneratorMock.mockResolvedValue({
+      content: 'Summary content',
+      toolCalls: [],
+      segments: [],
+      usage: { promptTokens: 20, completionTokens: 5 },
+      timing: { ttft: 1, completionTime: 1, tps: 5, prefillTps: 20 },
+      aborted: false,
+      xmlFormatError: false,
+    })
+    runOrchestratorMock.mockResolvedValue({ success: true })
+
+    const harness = await createHarness({ sessionManager })
+
+    harness.send({ id: 'sc-ok', type: 'session.create', payload: { projectId: 'project-1' } })
+    await harness.nextMessage((message) => message.id === 'sc-ok')
+
+    harness.eventStore.append('session-1', {
+      type: 'turn.snapshot',
+      data: {
+        mode: 'planner',
+        phase: 'plan',
+        isRunning: false,
+        messages: [
+          {
+            id: 'msg-1',
+            role: 'user',
+            content: 'Fix the bug where deleted session URLs hang forever.',
+            timestamp: Date.now(),
+            contextWindowId: 'window-1',
+          },
+          {
+            id: 'msg-2',
+            role: 'assistant',
+            content: 'I found the issue and can propose criteria.',
+            timestamp: Date.now(),
+            contextWindowId: 'window-1',
+          },
+        ],
+        criteria: [],
+        contextState: { currentTokens: 50, maxTokens: 200000, compactionCount: 0, dangerZone: false, canCompact: false },
+        currentContextWindowId: 'window-1',
+        todos: [],
+        readFiles: [],
+        snapshotSeq: 1,
+        snapshotAt: Date.now(),
+      },
+    })
+
+    harness.send({ id: 'mode-accept-snapshot', type: 'mode.accept', payload: {} })
+    expect(await harness.nextMessage((message) => message.id === 'mode-accept-snapshot')).toMatchObject({ type: 'ack' })
+    await new Promise<void>((resolve) => setTimeout(resolve, 0))
+
+    expect(streamLLMPureMock).toHaveBeenCalled()
+    const summaryCall = streamLLMPureMock.mock.calls.at(-1)?.[0]
+    expect(summaryCall.messages).toEqual(expect.arrayContaining([
+      expect.objectContaining({ role: 'user', content: 'Fix the bug where deleted session URLs hang forever.' }),
+    ]))
 
     await harness.close()
   })

@@ -50,6 +50,7 @@ export type { FoldedSessionState, ContextMessage } from './folding.js'
 export {
   buildMessagesFromStoredEvents,
   buildContextMessagesFromStoredEvents,
+  buildContextMessagesFromEventHistory,
   foldTurnEventsToSnapshotMessages,
   foldSessionState,
   foldCriteria,

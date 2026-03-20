@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { StoredEvent } from './types.js'
 import {
+  buildContextMessagesFromEventHistory,
   buildContextMessagesFromStoredEvents,
   buildMessagesFromStoredEvents,
   buildSnapshotFromSessionState,
@@ -105,6 +106,132 @@ describe('event folding', () => {
         role: 'tool',
         content: 'new result',
         toolCallId: 'new-call',
+      },
+    ])
+  })
+
+  it('reconstructs llm context from the latest snapshot plus newer events', () => {
+    const events: StoredEvent[] = [
+      {
+        ...baseEvent,
+        seq: 1,
+        type: 'turn.snapshot',
+        data: {
+          mode: 'planner',
+          phase: 'plan',
+          isRunning: false,
+          messages: [
+            {
+              id: 'msg-1',
+              role: 'user',
+              content: 'Fix loading deleted sessions gracefully',
+              timestamp: baseEvent.timestamp,
+              contextWindowId: 'window-1',
+            },
+            {
+              id: 'msg-2',
+              role: 'assistant',
+              content: 'I can help propose acceptance criteria.',
+              timestamp: baseEvent.timestamp,
+              contextWindowId: 'window-1',
+            },
+          ],
+          criteria: [],
+          contextState: { currentTokens: 50, maxTokens: 200000, compactionCount: 0, dangerZone: false, canCompact: false },
+          currentContextWindowId: 'window-1',
+          todos: [],
+          readFiles: [],
+          snapshotSeq: 1,
+          snapshotAt: baseEvent.timestamp,
+        },
+      },
+      {
+        ...baseEvent,
+        seq: 2,
+        type: 'message.start',
+        data: { messageId: 'msg-3', role: 'user', content: 'Redirect to the project view instead of hanging', contextWindowId: 'window-1' },
+      },
+      {
+        ...baseEvent,
+        seq: 3,
+        type: 'message.done',
+        data: { messageId: 'msg-3' },
+      },
+    ]
+
+    expect(buildContextMessagesFromEventHistory(events)).toEqual([
+      {
+        role: 'user',
+        content: 'Fix loading deleted sessions gracefully',
+      },
+      {
+        role: 'assistant',
+        content: 'I can help propose acceptance criteria.',
+      },
+      {
+        role: 'user',
+        content: 'Redirect to the project view instead of hanging',
+      },
+    ])
+  })
+
+  it('reconstructs current-window llm context from snapshot history', () => {
+    const events: StoredEvent[] = [
+      {
+        ...baseEvent,
+        seq: 1,
+        type: 'turn.snapshot',
+        data: {
+          mode: 'builder',
+          phase: 'build',
+          isRunning: false,
+          messages: [
+            {
+              id: 'msg-1',
+              role: 'user',
+              content: 'Old window message',
+              timestamp: baseEvent.timestamp,
+              contextWindowId: 'window-1',
+            },
+            {
+              id: 'msg-2',
+              role: 'user',
+              content: 'Current window message',
+              timestamp: baseEvent.timestamp,
+              contextWindowId: 'window-2',
+            },
+          ],
+          criteria: [],
+          contextState: { currentTokens: 50, maxTokens: 200000, compactionCount: 1, dangerZone: false, canCompact: false },
+          currentContextWindowId: 'window-2',
+          todos: [],
+          readFiles: [],
+          snapshotSeq: 1,
+          snapshotAt: baseEvent.timestamp,
+        },
+      },
+      {
+        ...baseEvent,
+        seq: 2,
+        type: 'message.start',
+        data: { messageId: 'msg-3', role: 'assistant', contextWindowId: 'window-2' },
+      },
+      {
+        ...baseEvent,
+        seq: 3,
+        type: 'message.delta',
+        data: { messageId: 'msg-3', content: 'New current-window reply' },
+      },
+    ]
+
+    expect(buildContextMessagesFromEventHistory(events, 'window-2')).toEqual([
+      {
+        role: 'user',
+        content: 'Current window message',
+      },
+      {
+        role: 'assistant',
+        content: 'New current-window reply',
       },
     ])
   })

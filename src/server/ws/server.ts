@@ -6,7 +6,7 @@ import type { LLMClientWithModel } from '../llm/client.js'
 import type { ToolRegistry } from '../tools/index.js'
 import type { SessionManager } from '../session/index.js'
 import { getEventStore, getCurrentContextWindowId } from '../events/index.js'
-import { buildContextMessagesFromStoredEvents, buildMessagesFromStoredEvents } from '../events/folding.js'
+import { buildContextMessagesFromEventHistory, buildMessagesFromStoredEvents } from '../events/folding.js'
 import type { Attachment, InjectedFile, Message, Provider, StatsIdentity } from '../../shared/types.js'
 import { runChatTurn, TurnMetrics, createMessageStartEvent, createMessageDoneEvent, createChatDoneEvent } from '../chat/orchestrator.js'
 import { streamLLMPure, consumeStreamGenerator } from '../chat/stream-pure.js'
@@ -665,7 +665,7 @@ async function handleClientMessage(
 
           // Build context messages from EventStore (intentionally ALL messages, not filtered)
           const events = eventStore.getEvents(sessionId)
-          const requestMessages = toRequestContextMessages(buildContextMessagesFromStoredEvents(events))
+          const requestMessages = toRequestContextMessages(buildContextMessagesFromEventHistory(events))
           const assembledRequest = assemblePlannerRequest({
             workdir: currentSession.workdir,
             messages: requestMessages,
@@ -838,7 +838,7 @@ async function handleClientMessage(
           }))
           const currentWindowId = getCurrentContextWindowId(sessionId)
           const currentWindowEvents = eventStore.getEvents(sessionId)
-          const requestMessages = toRequestContextMessages(buildContextMessagesFromStoredEvents(
+          const requestMessages = toRequestContextMessages(buildContextMessagesFromEventHistory(
             currentWindowEvents,
             currentWindowId,
             { includeVerifier: false },

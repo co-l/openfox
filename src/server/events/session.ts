@@ -41,6 +41,7 @@ import {
   foldPhase,
   foldIsRunning,
   foldContextState,
+  buildContextMessagesFromEventHistory,
   buildContextMessagesFromStoredEvents,
   buildMessagesFromStoredEvents,
   type ContextMessage,
@@ -148,70 +149,14 @@ export function getCurrentWindowMessages(sessionId: string): SnapshotMessage[] {
  */
 export function getContextMessages(sessionId: string): ContextMessage[] {
   const eventStore = getEventStore()
-  const latestSnapshotEvent = eventStore.getLatestSnapshot(sessionId)
-  
   // Get current context window ID from events (not from snapshot, as snapshot may be stale)
   const currentWindowId = getCurrentContextWindowId(sessionId)
   if (!currentWindowId) return []
-  
-  // If we have a snapshot, extract context messages from it
-  if (latestSnapshotEvent) {
-    const snapshot = latestSnapshotEvent.data
-    
-    // Filter messages for current window and convert to context messages
-    const windowMessages = snapshot.messages.filter(m => m.contextWindowId === currentWindowId)
-    
-    const result: ContextMessage[] = []
-    for (const msg of windowMessages) {
-      if (msg.role === 'system') continue
-      
-      const contextMsg: ContextMessage = {
-        role: msg.role as 'user' | 'assistant',
-        content: msg.content,
-      }
-      
-      if (msg.toolCalls && msg.toolCalls.length > 0) {
-        contextMsg.toolCalls = msg.toolCalls.map(tc => ({
-          id: tc.id,
-          name: tc.name,
-          arguments: tc.arguments,
-        }))
-      }
-      
-      result.push(contextMsg)
-      
-      // Add tool results as separate tool messages
-      if (msg.toolCalls) {
-        for (const tc of msg.toolCalls) {
-          if (tc.result) {
-            result.push({
-              role: 'tool',
-              content: tc.result.success
-                ? (tc.result.output ?? 'Success')
-                : `Error: ${tc.result.error}`,
-              toolCallId: tc.id,
-            })
-          }
-        }
-      }
-    }
-    
-    // Also include messages from events after the snapshot (current turn's messages)
-    // These are not in the snapshot yet
-    const events = eventStore.getEvents(sessionId, latestSnapshotEvent.seq + 1)
-    if (events.length > 0) {
-      const additionalMessages = buildContextMessagesFromStoredEvents(events, currentWindowId, { includeVerifier: false })
-      result.push(...additionalMessages)
-    }
-    
-    return result
-  }
-  
-  // Fallback to building from events (for sessions without snapshots yet)
+
   const events = eventStore.getEvents(sessionId)
   if (events.length === 0) return []
-  
-  return buildContextMessagesFromStoredEvents(events, currentWindowId, { includeVerifier: false })
+
+  return buildContextMessagesFromEventHistory(events, currentWindowId, { includeVerifier: false })
 }
 
 /**

@@ -65,6 +65,60 @@ function snapshotMessageToMessage(message: SnapshotMessage): Message {
   })
 }
 
+function shouldIncludeContextMessage(
+  message: Pick<SnapshotMessage, 'role' | 'contextWindowId' | 'subAgentType'>,
+  windowId?: string,
+  options?: ContextMessageBuildOptions,
+): boolean {
+  const includeVerifier = options?.includeVerifier ?? true
+
+  return message.role !== 'system'
+    && (windowId === undefined || message.contextWindowId === windowId)
+    && (includeVerifier || message.subAgentType !== 'verifier')
+}
+
+function appendSnapshotMessageContext(
+  result: ContextMessage[],
+  message: SnapshotMessage,
+): void {
+  const contextMsg: ContextMessage = {
+    role: message.role as 'user' | 'assistant',
+    content: message.content,
+  }
+
+  if (message.toolCalls && message.toolCalls.length > 0) {
+    contextMsg.toolCalls = message.toolCalls.map((toolCall) => ({
+      id: toolCall.id,
+      name: toolCall.name,
+      arguments: toolCall.arguments,
+    }))
+  }
+
+  if (message.attachments !== undefined) {
+    contextMsg.attachments = message.attachments
+  }
+
+  result.push(contextMsg)
+
+  if (!message.toolCalls) {
+    return
+  }
+
+  for (const toolCall of message.toolCalls) {
+    if (!toolCall.result) {
+      continue
+    }
+
+    result.push({
+      role: 'tool',
+      content: toolCall.result.success
+        ? (toolCall.result.output ?? 'Success')
+        : `Error: ${toolCall.result.error}`,
+      toolCallId: toolCall.id,
+    })
+  }
+}
+
 function applyStoredMessageEvents(initialMessages: Message[], events: StoredEvent[]): Message[] {
   const messages = new Map(initialMessages.map((message) => [message.id, cloneMessage(message)]))
 
@@ -386,6 +440,33 @@ export function buildContextMessagesFromStoredEvents(
   }
 
   return messages.map(({ id: _id, ...message }) => message)
+}
+
+export function buildContextMessagesFromEventHistory(
+  events: StoredEvent[],
+  windowId?: string,
+  options?: ContextMessageBuildOptions,
+): ContextMessage[] {
+  const snapshotEvent = [...events].reverse().find((event) => event.type === 'turn.snapshot')
+  if (!snapshotEvent) {
+    return buildContextMessagesFromStoredEvents(events, windowId, options)
+  }
+
+  const snapshot = snapshotEvent.data as SessionSnapshot
+  const snapshotMessages = snapshot.messages.reduce<ContextMessage[]>((result, message) => {
+    if (!shouldIncludeContextMessage(message, windowId, options)) {
+      return result
+    }
+
+    appendSnapshotMessageContext(result, message)
+    return result
+  }, [])
+  const laterEvents = events.filter((event) => event.seq > snapshotEvent.seq)
+
+  return [
+    ...snapshotMessages,
+    ...buildContextMessagesFromStoredEvents(laterEvents, windowId, options),
+  ]
 }
 
 /**
@@ -712,42 +793,12 @@ export function buildContextMessagesFromMessages(
   messages: SnapshotMessage[],
   windowId: string
 ): ContextMessage[] {
-  const windowMessages = getMessagesForWindow(messages, windowId)
-  const result: ContextMessage[] = []
-
-  for (const msg of windowMessages) {
-    if (msg.role === 'system') continue
-
-    const contextMsg: ContextMessage = {
-      role: msg.role as 'user' | 'assistant',
-      content: msg.content,
+  return getMessagesForWindow(messages, windowId).reduce<ContextMessage[]>((result, message) => {
+    if (!shouldIncludeContextMessage(message, windowId)) {
+      return result
     }
 
-    if (msg.toolCalls && msg.toolCalls.length > 0) {
-      contextMsg.toolCalls = msg.toolCalls.map((tc) => ({
-        id: tc.id,
-        name: tc.name,
-        arguments: tc.arguments,
-      }))
-    }
-
-    result.push(contextMsg)
-
-    // Add tool results as separate tool messages
-    if (msg.toolCalls) {
-      for (const tc of msg.toolCalls) {
-        if (tc.result) {
-          result.push({
-            role: 'tool',
-            content: tc.result.success
-              ? (tc.result.output ?? 'Success')
-              : `Error: ${tc.result.error}`,
-            toolCallId: tc.id,
-          })
-        }
-      }
-    }
-  }
-
-  return result
+    appendSnapshotMessageContext(result, message)
+    return result
+  }, [])
 }
