@@ -71,6 +71,28 @@ export function ProviderSelector() {
     }
   }
 
+  const handleModelMenuToggle = async () => {
+    if (!activeProviderId) return
+    
+    if (providerModels[activeProviderId]) {
+      setShowModelMenu(!showModelMenu)
+    } else {
+      setLoadingModels(true)
+      try {
+        const response = await fetch(`/api/providers/${activeProviderId}/models`)
+        if (response.ok) {
+          const data = await response.json() as { models: string[] }
+          setProviderModels(prev => ({ ...prev, [activeProviderId]: data.models }))
+          setShowModelMenu(true)
+        }
+      } catch {
+        // Silently fail
+      } finally {
+        setLoadingModels(false)
+      }
+    }
+  }
+
   const handleModelClick = async (providerId: string, newModel: string) => {
     setLoadingModels(true)
     try {
@@ -124,11 +146,11 @@ export function ProviderSelector() {
   return (
     <div className="relative" ref={dropdownRef}>
       <button
-        onClick={() => hasMultipleProviders ? setIsOpen(!isOpen) : refreshModel()}
+        onClick={() => hasMultipleProviders ? setIsOpen(!isOpen) : handleModelMenuToggle()}
         className="flex items-center gap-1 px-1.5 py-0.5 rounded hover:bg-bg-tertiary transition-colors group"
         title={hasMultipleProviders 
           ? `${activeProvider?.name ?? 'Provider'} - Click to switch providers` 
-          : (isLlmOffline ? 'LLM server is offline. Click to retry.' : (model ?? 'Click to refresh model'))}
+          : (isLlmOffline ? 'LLM server is offline. Click to retry.' : (model ?? 'Click to select model'))}
       >
         {isLlmOffline ? (
           <>
@@ -160,9 +182,14 @@ export function ProviderSelector() {
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
           </svg>
         ) : (
-          <span className="text-text-muted opacity-0 group-hover:opacity-100 transition-opacity">
-            ↻
-          </span>
+          <svg 
+            className={`w-3 h-3 text-text-muted transition-transform ${showModelMenu ? 'rotate-180' : ''}`} 
+            fill="none" 
+            stroke="currentColor" 
+            viewBox="0 0 24 24"
+          >
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+          </svg>
         )}
       </button>
       
