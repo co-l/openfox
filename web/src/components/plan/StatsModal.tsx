@@ -66,17 +66,6 @@ function formatTimestamp(ts: string): string {
   }
 }
 
-/**
- * Get mode badge color
- */
-function getModeColor(mode: string): string {
-  switch (mode) {
-    case 'planner': return 'bg-accent-primary/20 text-accent-primary'
-    case 'builder': return 'bg-accent-success/20 text-accent-success'
-    case 'verifier': return 'bg-accent-warning/20 text-accent-warning'
-    default: return 'bg-bg-tertiary text-text-muted'
-  }
-}
 
 /**
  * Create JSON export data
@@ -295,24 +284,22 @@ export function StatsModal({ isOpen, onClose, stats }: StatsModalProps) {
               <colgroup>
                 <col className="w-[7%]" />
                 <col className="w-[14%]" />
-                <col className="w-[15%]" />
-                <col className="w-[11%]" />
-                <col className="w-[14%]" />
                 <col className="w-[10%]" />
                 <col className="w-[14%]" />
-                <col className="w-[13%]" />
+                <col className="w-[14%]" />
+                <col className="w-[14%]" />
+                <col className="w-[11%]" />
                 <col className="w-[2%]" />
               </colgroup>
               <thead>
                 <tr className="text-[10px] uppercase tracking-wide text-text-muted/80">
                   <th className="px-3 py-2 text-center font-medium">#</th>
                   <th className="px-2 py-2 text-center font-medium">At</th>
-                  <th className="px-2 py-2 text-center font-medium">Agent</th>
-                  <th className="px-2 py-2 text-center font-medium">Calls</th>
-                  <th className="px-2 py-2 text-center font-medium">Context</th>
                   <th className="px-2 py-2 text-center font-medium">Time</th>
+                  <th className="px-2 py-2 text-center font-medium">Context</th>
                   <th className="px-2 py-2 text-center font-medium">PP t/s</th>
                   <th className="px-2 py-2 text-center font-medium">TG t/s</th>
+                  <th className="px-2 py-2 text-center font-medium">Calls</th>
                   <th className="px-2 py-2" />
                 </tr>
               </thead>
@@ -390,16 +377,11 @@ function ResponseRow({
     >
       <td className="px-3 py-2 text-center text-text-muted align-middle">{row.responseIndex}</td>
       <td className="px-2 py-2 text-center text-text-muted font-mono align-middle whitespace-nowrap">{formatTimestamp(row.timestamp)}</td>
-      <td className="px-2 py-2 text-center align-middle">
-        <span className={`inline-flex items-center justify-center px-1.5 py-0.5 rounded text-[11px] font-medium whitespace-nowrap ${getModeColor(row.mode)}`}>
-          {row.mode}
-        </span>
-      </td>
+      <td className="px-2 py-2 text-center text-text-muted align-middle whitespace-nowrap">{row.totalTime.toFixed(1)}s</td>
+      <td className="px-2 py-2 text-center text-text-primary font-mono align-middle whitespace-nowrap">{contextSummary.replace(/ ctx$/, '')}</td>
+      <td className="px-2 py-2 text-center text-text-primary font-mono align-middle whitespace-nowrap">{formatRate(row.prefillSpeed)}</td>
+      <td className="px-2 py-2 text-center text-text-primary font-mono align-middle whitespace-nowrap">{formatRate(row.generationSpeed)}</td>
       <td className="px-2 py-2 text-center text-text-muted font-mono align-middle whitespace-nowrap">{row.callCount}</td>
-      <td className="px-2 py-2 text-center text-text-secondary font-mono align-middle whitespace-nowrap">{contextSummary.replace(/ ctx$/, '')}</td>
-      <td className="px-2 py-2 text-center text-text-secondary align-middle whitespace-nowrap">{row.totalTime.toFixed(1)}s</td>
-      <td className="px-2 py-2 text-center text-text-muted font-mono align-middle whitespace-nowrap">{formatRate(row.prefillSpeed)}</td>
-      <td className="px-2 py-2 text-center text-text-muted font-mono align-middle whitespace-nowrap">{formatRate(row.generationSpeed)}</td>
       <td className="px-2 py-2 text-center text-text-muted align-middle whitespace-nowrap">{row.isExpandable ? (isExpanded ? 'v' : '>') : ''}</td>
     </tr>
   )
@@ -416,16 +398,11 @@ function CallDataPointRow({
     <tr className={`${index % 2 === 0 ? 'bg-bg-tertiary/10' : 'bg-bg-tertiary/5'}`}>
       <td className="px-3 py-2 pl-6 text-center text-text-muted align-middle border-l border-border/60">c{dataPoint.callIndex}</td>
       <td className="px-2 py-2 text-center text-text-muted font-mono align-middle whitespace-nowrap">{formatTimestamp(dataPoint.timestamp)}</td>
-      <td className="px-2 py-2 text-center align-middle">
-        <span className={`inline-flex items-center justify-center px-1.5 py-0.5 rounded text-[11px] font-medium whitespace-nowrap ${getModeColor(dataPoint.mode)}`}>
-          {dataPoint.mode}
-        </span>
-      </td>
+      <td className="px-2 py-2 text-center text-text-muted align-middle whitespace-nowrap">{dataPoint.totalTime.toFixed(1)}s</td>
+      <td className="px-2 py-2 text-center text-text-primary font-mono align-middle whitespace-nowrap">{formatTokens(dataPoint.promptTokens)}</td>
+      <td className="px-2 py-2 text-center text-text-primary font-mono align-middle whitespace-nowrap">{formatRate(dataPoint.prefillSpeed)}</td>
+      <td className="px-2 py-2 text-center text-text-primary font-mono align-middle whitespace-nowrap">{formatRate(dataPoint.generationSpeed)}</td>
       <td className="px-2 py-2 text-center text-text-muted font-mono align-middle whitespace-nowrap">{dataPoint.callIndex}</td>
-      <td className="px-2 py-2 text-center text-text-secondary font-mono align-middle whitespace-nowrap">{formatTokens(dataPoint.promptTokens)}</td>
-      <td className="px-2 py-2 text-center text-text-secondary align-middle whitespace-nowrap">{dataPoint.totalTime.toFixed(1)}s</td>
-      <td className="px-2 py-2 text-center text-text-muted font-mono align-middle whitespace-nowrap">{formatRate(dataPoint.prefillSpeed)}</td>
-      <td className="px-2 py-2 text-center text-text-muted font-mono align-middle whitespace-nowrap">{formatRate(dataPoint.generationSpeed)}</td>
       <td className="px-2 py-2" />
     </tr>
   )
