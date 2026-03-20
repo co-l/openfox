@@ -13,6 +13,15 @@ const statusConfig: Record<Todo['status'], { icon: string; color: string; animat
 
 
 export const TodoListDisplay = memo(function TodoListDisplay({ todos }: TodoListDisplayProps) {
+  // Defensive: handle case where todos is not an array (corrupted session state)
+  if (!Array.isArray(todos)) {
+    return (
+      <div className="text-xs text-accent-warning italic my-1">
+        ⚠️ Invalid todos data
+      </div>
+    )
+  }
+  
   if (todos.length === 0) {
     return (
       <div className="text-xs text-text-muted italic my-1">
@@ -40,8 +49,8 @@ export const TodoListDisplay = memo(function TodoListDisplay({ todos }: TodoList
                 index > 0 ? 'border-t border-border' : ''
               }`}
             >
-              <span className={`${config.color} ${config.animate ? 'animate-pulse' : ''} text-sm leading-tight`}>
-                {config.icon}
+              <span className={`${config?.color ?? 'text-text-muted'} ${config?.animate ? 'animate-pulse' : ''} text-sm leading-tight`}>
+                {config?.icon ?? '○'}
               </span>
               <span className={`text-sm leading-tight ${
                 todo.status === 'completed' ? 'text-text-muted' : 'text-text-primary'

@@ -159,7 +159,9 @@ export const AssistantMessage = memo(function AssistantMessage({ message, showSt
             
             // Special: todo_write → inline todo list
             if (tc.name === 'todo_write') {
-              const todos = (tc.arguments['todos'] ?? []) as Todo[]
+              const todosArg = tc.arguments['todos']
+              // Defensive: ensure todos is an array (handle malformed LLM output)
+              const todos = Array.isArray(todosArg) ? todosArg : []
               return <TodoListDisplay key={i} todos={todos} />
             }
             
