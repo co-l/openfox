@@ -97,6 +97,19 @@ export interface MessageStats {
   prefillSpeed: number      // aggregate tokens/second
   generationTokens: number  // total completion tokens
   generationSpeed: number   // aggregate tokens/second
+  llmCalls?: LLMCallStats[] // optional per-call breakdown for this response
+}
+
+export interface LLMCallStats {
+  callIndex: number         // 1-based call order within the response
+  promptTokens: number      // prompt tokens for this specific LLM call
+  completionTokens: number  // completion tokens for this specific LLM call
+  ttft: number              // seconds to first token
+  completionTime: number    // seconds spent generating tokens after TTFT
+  prefillSpeed: number      // tok/s for prompt processing
+  generationSpeed: number   // tok/s for token generation
+  totalTime: number         // ttft + completionTime
+  timestamp?: string        // optional completion timestamp for ordering/display
 }
 
 // Single data point for session stats progression charts
@@ -104,11 +117,30 @@ export interface StatsDataPoint {
   messageId: string
   timestamp: string
   mode: ToolMode
-  contextTokens: number      // prefillTokens (≈ context size at this point)
+  responseIndex: number      // 1-based assistant response order within the session
+  prefillTokens: number      // Total prompt tokens spent producing this response
+  generationTokens: number   // Total completion tokens for this response
   prefillSpeed: number       // tok/s
   generationSpeed: number    // tok/s
   totalTime: number          // seconds
   aiTime: number             // totalTime - toolTime (LLM inference only)
+  toolTime: number           // seconds spent in tools during this response
+}
+
+export interface CallStatsDataPoint {
+  messageId: string
+  timestamp: string
+  mode: ToolMode
+  responseIndex: number      // 1-based assistant response order within the session
+  sessionCallIndex: number   // 1-based LLM call order across the whole session
+  callIndex: number          // 1-based LLM call order within the response
+  promptTokens: number
+  completionTokens: number
+  ttft: number
+  completionTime: number
+  prefillSpeed: number
+  generationSpeed: number
+  totalTime: number
 }
 
 // Aggregated session-level stats for benchmarking
@@ -121,9 +153,11 @@ export interface SessionStats {
   generationTokens: number   // Total completion tokens
   avgPrefillSpeed: number    // Weighted average tok/s
   avgGenerationSpeed: number // Weighted average tok/s
-  messageCount: number       // Number of assistant messages with stats
+  responseCount: number      // Number of assistant responses with stats
+  llmCallCount: number       // Number of persisted internal LLM calls across responses
   // Progression data for charts
   dataPoints: StatsDataPoint[]
+  callDataPoints: CallStatsDataPoint[]
 }
 
 // Metadata about what was sent to the LLM for this response

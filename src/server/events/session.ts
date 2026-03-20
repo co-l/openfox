@@ -42,9 +42,34 @@ import {
   foldIsRunning,
   foldContextState,
   buildContextMessagesFromStoredEvents,
+  buildMessagesFromStoredEvents,
   type ContextMessage,
   type FoldedSessionState,
 } from './folding.js'
+
+function toSnapshotMessage(message: import('../../shared/types.js').Message): SnapshotMessage {
+  return {
+    id: message.id,
+    role: message.role,
+    content: message.content,
+    timestamp: new Date(message.timestamp).getTime(),
+    ...(message.thinkingContent !== undefined && { thinkingContent: message.thinkingContent }),
+    ...(message.toolCalls !== undefined && { toolCalls: message.toolCalls }),
+    ...(message.segments !== undefined && { segments: message.segments }),
+    ...(message.stats !== undefined && { stats: message.stats }),
+    ...(message.tokenCount !== undefined && { tokenCount: message.tokenCount }),
+    ...(message.isStreaming !== undefined && { isStreaming: message.isStreaming }),
+    ...(message.partial !== undefined && { partial: message.partial }),
+    ...(message.subAgentId !== undefined && { subAgentId: message.subAgentId }),
+    ...(message.subAgentType !== undefined && { subAgentType: message.subAgentType }),
+    ...(message.isSystemGenerated !== undefined && { isSystemGenerated: message.isSystemGenerated }),
+    ...(message.messageKind !== undefined && { messageKind: message.messageKind }),
+    ...(message.contextWindowId !== undefined && { contextWindowId: message.contextWindowId }),
+    ...(message.isCompactionSummary !== undefined && { isCompactionSummary: message.isCompactionSummary }),
+    ...(message.promptContext !== undefined && { promptContext: message.promptContext }),
+    ...(message.attachments !== undefined && { attachments: message.attachments }),
+  }
+}
 
 // ============================================================================
 // Session State Retrieval
@@ -84,15 +109,14 @@ export function getSessionState(sessionId: string): FoldedSessionState | undefin
     return undefined
   }
 
-  // If we have a snapshot, use it as the base for messages
+  // If we have a snapshot, use it as the base for messages and replay newer events
   if (latestSnapshotEvent) {
-    const snapshot = latestSnapshotEvent.data
     const state = foldSessionState(events, initialWindowId)
     
-    // Override messages with snapshot messages (they're already fully reconstructed)
+    // Override folded messages with the latest snapshot plus replayed events.
     return {
       ...state,
-      messages: snapshot.messages,
+      messages: buildMessagesFromStoredEvents(events).map(toSnapshotMessage),
     }
   }
 
@@ -106,20 +130,10 @@ export function getSessionState(sessionId: string): FoldedSessionState | undefin
  * Otherwise, they're built from events.
  */
 export function getCurrentWindowMessages(sessionId: string): SnapshotMessage[] {
-  const eventStore = getEventStore()
-  const latestSnapshotEvent = eventStore.getLatestSnapshot(sessionId)
-  
   // Get current context window ID from events (not from snapshot, as snapshot may be stale)
   const currentWindowId = getCurrentContextWindowId(sessionId)
   if (!currentWindowId) return []
-  
-  // If we have a snapshot, use its messages filtered by current window
-  if (latestSnapshotEvent) {
-    const snapshot = latestSnapshotEvent.data
-    return snapshot.messages.filter(m => m.contextWindowId === currentWindowId)
-  }
-  
-  // Fallback to building from events (for sessions without snapshots yet)
+
   const state = getSessionState(sessionId)
   if (!state) return []
   

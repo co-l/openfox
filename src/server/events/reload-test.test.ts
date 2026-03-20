@@ -279,4 +279,51 @@ describe('Session Reload After Cleanup', () => {
     expect(state!.messages[0]!.content).toBe('Hello')
     expect(state!.messages[1]!.content).toBe('Hi there!')
   })
+
+  it('should include messages created after the latest snapshot on reload', () => {
+    const sessionId = 'session-1'
+    const eventStore = getEventStore()
+
+    eventStore.append(sessionId, {
+      type: 'session.initialized',
+      data: { projectId: 'proj-1', workdir: '/tmp', contextWindowId: 'window-1' },
+    })
+
+    eventStore.append(sessionId, {
+      type: 'turn.snapshot',
+      data: {
+        mode: 'planner',
+        phase: 'plan',
+        isRunning: false,
+        messages: [{ id: 'msg-1', role: 'user', content: 'Hello', timestamp: Date.now() }],
+        criteria: [],
+        contextState: { currentTokens: 20, maxTokens: 200000, compactionCount: 0, dangerZone: false, canCompact: false },
+        currentContextWindowId: 'window-1',
+        todos: [],
+        readFiles: [],
+        snapshotSeq: 2,
+        snapshotAt: Date.now(),
+      },
+    })
+
+    eventStore.append(sessionId, {
+      type: 'message.start',
+      data: { messageId: 'msg-2', role: 'assistant', content: '' },
+    })
+    eventStore.append(sessionId, {
+      type: 'message.delta',
+      data: { messageId: 'msg-2', content: 'New response after snapshot' },
+    })
+    eventStore.append(sessionId, {
+      type: 'message.done',
+      data: { messageId: 'msg-2' },
+    })
+
+    const state = getSessionState(sessionId)
+
+    expect(state).toBeDefined()
+    expect(state!.messages).toHaveLength(2)
+    expect(state!.messages[0]!.content).toBe('Hello')
+    expect(state!.messages[1]!.content).toBe('New response after snapshot')
+  })
 })

@@ -153,7 +153,7 @@ describe('stream-pure', () => {
     metrics.addLLMCall({ ttft: 1, completionTime: 3, tps: 7, prefillTps: 20 }, 25, 18)
     metrics.addToolTime(500)
 
-    expect(metrics.buildStats('test-model', 'builder')).toEqual({
+    expect(metrics.buildStats('test-model', 'builder')).toMatchObject({
       model: 'test-model',
       mode: 'builder',
       totalTime: 6,
@@ -162,6 +162,30 @@ describe('stream-pure', () => {
       prefillSpeed: 25,
       generationTokens: 50,
       generationSpeed: 7.1,
+      llmCalls: [
+        {
+          callIndex: 1,
+          promptTokens: 50,
+          completionTokens: 32,
+          ttft: 2,
+          completionTime: 4,
+          prefillSpeed: 25,
+          generationSpeed: 8,
+          totalTime: 6,
+          timestamp: expect.any(String),
+        },
+        {
+          callIndex: 2,
+          promptTokens: 25,
+          completionTokens: 18,
+          ttft: 1,
+          completionTime: 3,
+          prefillSpeed: 25,
+          generationSpeed: 6,
+          totalTime: 4,
+          timestamp: expect.any(String),
+        },
+      ],
     })
   })
 

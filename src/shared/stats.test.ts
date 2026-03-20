@@ -8,6 +8,17 @@ function createMessageWithStats(
   stats: Partial<MessageStats> & { mode: MessageStats['mode'] },
   timestamp = '2024-01-01T10:00:00Z'
 ): Message {
+  const {
+    mode,
+    totalTime = 10,
+    toolTime = 2,
+    prefillTokens = 50000,
+    prefillSpeed = 10000,
+    generationTokens = 500,
+    generationSpeed = 150,
+    ...restStats
+  } = stats
+
   return {
     id,
     role: 'assistant',
@@ -16,13 +27,14 @@ function createMessageWithStats(
     tokenCount: 100,
     stats: {
       model: 'test-model',
-      mode: stats.mode,
-      totalTime: stats.totalTime ?? 10,
-      toolTime: stats.toolTime ?? 2,
-      prefillTokens: stats.prefillTokens ?? 50000,
-      prefillSpeed: stats.prefillSpeed ?? 10000,
-      generationTokens: stats.generationTokens ?? 500,
-      generationSpeed: stats.generationSpeed ?? 150,
+      mode,
+      totalTime,
+      toolTime,
+      prefillTokens,
+      prefillSpeed,
+      generationTokens,
+      generationSpeed,
+      ...restStats,
     },
   }
 }
@@ -58,7 +70,7 @@ describe('computeSessionStats', () => {
     const result = computeSessionStats(messages)
 
     expect(result).not.toBeNull()
-    expect(result!.messageCount).toBe(1)
+    expect(result!.responseCount).toBe(1)
     expect(result!.totalTime).toBe(10)
     expect(result!.toolTime).toBe(2)
     expect(result!.aiTime).toBe(8) // 10 - 2
@@ -67,6 +79,12 @@ describe('computeSessionStats', () => {
     expect(result!.avgPrefillSpeed).toBe(10000)
     expect(result!.avgGenerationSpeed).toBe(150)
     expect(result!.dataPoints).toHaveLength(1)
+    expect(result!.dataPoints[0]).toMatchObject({
+      responseIndex: 1,
+      prefillTokens: 50000,
+      generationTokens: 500,
+      toolTime: 2,
+    })
   })
 
   it('aggregates multiple messages correctly', () => {
@@ -94,7 +112,7 @@ describe('computeSessionStats', () => {
     const result = computeSessionStats(messages)
 
     expect(result).not.toBeNull()
-    expect(result!.messageCount).toBe(2)
+    expect(result!.responseCount).toBe(2)
     expect(result!.totalTime).toBe(30) // 10 + 20
     expect(result!.toolTime).toBe(7) // 2 + 5
     expect(result!.aiTime).toBe(23) // 30 - 7
@@ -156,7 +174,7 @@ describe('computeSessionStats', () => {
 
     const result = computeSessionStats(messages)
 
-    expect(result!.messageCount).toBe(2)
+    expect(result!.responseCount).toBe(2)
     expect(result!.dataPoints.some(dp => dp.mode === 'verifier')).toBe(true)
   })
 
@@ -169,7 +187,7 @@ describe('computeSessionStats', () => {
 
     const result = computeSessionStats(messages)
 
-    expect(result!.messageCount).toBe(2)
+    expect(result!.responseCount).toBe(2)
     expect(result!.dataPoints).toHaveLength(2)
   })
 
@@ -185,6 +203,9 @@ describe('computeSessionStats', () => {
     expect(result!.dataPoints[0]!.messageId).toBe('1')
     expect(result!.dataPoints[1]!.messageId).toBe('2')
     expect(result!.dataPoints[2]!.messageId).toBe('3')
+    expect(result!.dataPoints[0]!.responseIndex).toBe(1)
+    expect(result!.dataPoints[1]!.responseIndex).toBe(2)
+    expect(result!.dataPoints[2]!.responseIndex).toBe(3)
     expect(result!.dataPoints[0]!.mode).toBe('planner')
     expect(result!.dataPoints[1]!.mode).toBe('builder')
     expect(result!.dataPoints[2]!.mode).toBe('verifier')
@@ -203,6 +224,7 @@ describe('computeSessionStats', () => {
 
     expect(result!.dataPoints[0]!.aiTime).toBe(7) // 10 - 3
     expect(result!.dataPoints[0]!.totalTime).toBe(10)
+    expect(result!.dataPoints[0]!.toolTime).toBe(3)
   })
 
   it('handles zero tool time', () => {
@@ -237,5 +259,105 @@ describe('computeSessionStats', () => {
 
     expect(result!.generationTokens).toBe(0)
     expect(result!.avgGenerationSpeed).toBe(0)
+  })
+
+  it('tracks prompt work per response instead of pretending it is context size', () => {
+    const messages = [
+      createMessageWithStats('1', {
+        mode: 'builder',
+        prefillTokens: 12000000,
+        prefillSpeed: 19500,
+      }, '2024-01-01T10:00:00Z'),
+      createMessageWithStats('2', {
+        mode: 'builder',
+        prefillTokens: 17500,
+        prefillSpeed: 2200,
+      }, '2024-01-01T10:10:00Z'),
+    ]
+
+    const result = computeSessionStats(messages)
+
+    expect(result!.dataPoints[0]).toMatchObject({
+      responseIndex: 1,
+      prefillTokens: 12000000,
+    })
+    expect(result!.dataPoints[1]).toMatchObject({
+      responseIndex: 2,
+      prefillTokens: 17500,
+    })
+    expect(result!.dataPoints[0]).not.toHaveProperty('contextTokens')
+    expect(result!.dataPoints[1]).not.toHaveProperty('contextTokens')
+  })
+
+  it('flattens persisted llm call details into session-level call progression', () => {
+    const messages: Message[] = [
+      {
+        ...createMessageWithStats('1', {
+          mode: 'planner',
+          totalTime: 8,
+          toolTime: 1,
+          prefillTokens: 120,
+          generationTokens: 24,
+          prefillSpeed: 20,
+          generationSpeed: 6,
+          llmCalls: [
+            {
+              callIndex: 1,
+              promptTokens: 40,
+              completionTokens: 8,
+              ttft: 2,
+              completionTime: 1,
+              prefillSpeed: 20,
+              generationSpeed: 8,
+              totalTime: 3,
+            },
+            {
+              callIndex: 2,
+              promptTokens: 80,
+              completionTokens: 16,
+              ttft: 4,
+              completionTime: 4,
+              prefillSpeed: 20,
+              generationSpeed: 4,
+              totalTime: 8,
+            },
+          ],
+        }),
+        timestamp: '2024-01-01T10:00:00Z',
+      },
+      {
+        ...createMessageWithStats('2', {
+          mode: 'builder',
+          totalTime: 4,
+          toolTime: 0,
+          prefillTokens: 60,
+          generationTokens: 12,
+          prefillSpeed: 30,
+          generationSpeed: 6,
+          llmCalls: [
+            {
+              callIndex: 1,
+              promptTokens: 60,
+              completionTokens: 12,
+              ttft: 2,
+              completionTime: 2,
+              prefillSpeed: 30,
+              generationSpeed: 6,
+              totalTime: 4,
+            },
+          ],
+        }),
+        timestamp: '2024-01-01T10:05:00Z',
+      },
+    ]
+
+    const result = computeSessionStats(messages)
+
+    expect(result!.llmCallCount).toBe(3)
+    expect(result!.callDataPoints).toEqual([
+      expect.objectContaining({ sessionCallIndex: 1, responseIndex: 1, callIndex: 1, promptTokens: 40, completionTokens: 8 }),
+      expect.objectContaining({ sessionCallIndex: 2, responseIndex: 1, callIndex: 2, promptTokens: 80, completionTokens: 16 }),
+      expect.objectContaining({ sessionCallIndex: 3, responseIndex: 2, callIndex: 1, promptTokens: 60, completionTokens: 12 }),
+    ])
   })
 })

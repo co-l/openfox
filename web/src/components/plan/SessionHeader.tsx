@@ -120,7 +120,7 @@ export function SessionHeader() {
             <button
               onClick={() => setShowStatsModal(true)}
               className="flex items-center gap-3 px-2 py-0.5 rounded hover:bg-bg-tertiary/50 transition-colors group"
-              title="View detailed stats"
+              title="View detailed response and call-level stats"
             >
               <div className="flex items-center gap-2 text-xs text-text-muted">
                 <span className="text-text-secondary">{formatTime(stats.aiTime)}</span>

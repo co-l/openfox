@@ -222,6 +222,7 @@ export class TurnMetrics {
   private totalGenTokens = 0
   private totalGenTime = 0 // seconds
   private totalToolTime = 0 // seconds
+  private llmCalls: NonNullable<MessageStats['llmCalls']> = []
 
   constructor() {
     this.startTime = performance.now()
@@ -229,10 +230,25 @@ export class TurnMetrics {
 
   /** Add metrics from an LLM call */
   addLLMCall(timing: StreamTiming, promptTokens: number, completionTokens: number): void {
+    const callIndex = this.llmCalls.length + 1
     this.totalPrefillTokens += promptTokens
     this.totalPrefillTime += timing.ttft
     this.totalGenTokens += completionTokens
     this.totalGenTime += timing.completionTime
+    this.llmCalls = [
+      ...this.llmCalls,
+      {
+        callIndex,
+        promptTokens,
+        completionTokens,
+        ttft: timing.ttft,
+        completionTime: timing.completionTime,
+        prefillSpeed: timing.ttft > 0 ? Math.round((promptTokens / timing.ttft) * 10) / 10 : 0,
+        generationSpeed: timing.completionTime > 0 ? Math.round((completionTokens / timing.completionTime) * 10) / 10 : 0,
+        totalTime: Math.round((timing.ttft + timing.completionTime) * 10) / 10,
+        timestamp: new Date().toISOString(),
+      },
+    ]
   }
 
   /** Add tool execution time (in milliseconds) */
@@ -251,6 +267,7 @@ export class TurnMetrics {
       totalGenTime: this.totalGenTime,
       totalToolTime: this.totalToolTime,
       totalTime: (performance.now() - this.startTime) / 1000,
+      llmCalls: this.llmCalls,
     })
   }
 }

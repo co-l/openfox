@@ -1,7 +1,8 @@
-import { useRef, useCallback } from 'react'
+import { useRef, useCallback, useMemo, useState } from 'react'
 import { Modal } from '../shared/Modal'
 import { DualSparkline } from '../shared/Sparkline'
-import type { SessionStats, StatsDataPoint } from '../../../src/shared/types.js'
+import { buildPerformanceChartData, buildResponseLogRows, type ResponseLogRow } from '../../../../src/shared/stats-view.js'
+import type { CallStatsDataPoint, SessionStats } from '../../../../src/shared/types.js'
 
 interface StatsModalProps {
   isOpen: boolean
@@ -35,6 +36,23 @@ function formatTokens(n: number): string {
 function formatSpeed(n: number): string {
   if (n >= 1_000) return `${(n / 1_000).toFixed(1)}k`
   return n.toFixed(1)
+}
+
+function formatContextRange(tokens: number[]): string {
+  if (tokens.length === 0) return '0 ctx'
+
+  const minTokens = Math.min(...tokens)
+  const maxTokens = Math.max(...tokens)
+
+  if (minTokens === maxTokens) {
+    return `${formatTokens(minTokens)} ctx`
+  }
+
+  return `${formatTokens(minTokens)}-${formatTokens(maxTokens)} ctx`
+}
+
+function formatRate(value: number, label: 'pp' | 'tg'): string {
+  return `${formatSpeed(value)} ${label} t/s`
 }
 
 /**
@@ -76,29 +94,50 @@ function createExportData(stats: SessionStats, model?: string) {
       generationTokens: stats.generationTokens,
       avgPrefillSpeed: stats.avgPrefillSpeed,
       avgGenerationSpeed: stats.avgGenerationSpeed,
-      messageCount: stats.messageCount,
+      responseCount: stats.responseCount,
+      llmCallCount: stats.llmCallCount,
     },
-    dataPoints: stats.dataPoints.map(dp => ({
+    responses: stats.dataPoints.map(dp => ({
+      responseIndex: dp.responseIndex,
       timestamp: dp.timestamp,
       mode: dp.mode,
-      contextTokens: dp.contextTokens,
+      prefillTokens: dp.prefillTokens,
+      generationTokens: dp.generationTokens,
       prefillSpeed: dp.prefillSpeed,
       generationSpeed: dp.generationSpeed,
       totalTime: dp.totalTime,
       aiTime: dp.aiTime,
+      toolTime: dp.toolTime,
+    })),
+    llmCalls: stats.callDataPoints.map(dp => ({
+      sessionCallIndex: dp.sessionCallIndex,
+      responseIndex: dp.responseIndex,
+      callIndex: dp.callIndex,
+      timestamp: dp.timestamp,
+      mode: dp.mode,
+      promptTokens: dp.promptTokens,
+      completionTokens: dp.completionTokens,
+      ttft: dp.ttft,
+      completionTime: dp.completionTime,
+      prefillSpeed: dp.prefillSpeed,
+      generationSpeed: dp.generationSpeed,
+      totalTime: dp.totalTime,
     })),
   }
 }
 
 export function StatsModal({ isOpen, onClose, stats, model }: StatsModalProps) {
   const contentRef = useRef<HTMLDivElement>(null)
+  const [expandedResponses, setExpandedResponses] = useState<Record<string, boolean>>({})
+  const responseRows = useMemo(() => buildResponseLogRows(stats), [stats])
+  const chartData = useMemo(() => buildPerformanceChartData(stats), [stats])
 
-  // Prepare chart data
-  const chartData = stats.dataPoints.map(dp => ({
-    context: dp.contextTokens,
-    ppSpeed: dp.prefillSpeed,
-    tgSpeed: dp.generationSpeed,
-  }))
+  const toggleResponse = useCallback((messageId: string) => {
+    setExpandedResponses((current) => ({
+      ...current,
+      [messageId]: !current[messageId],
+    }))
+  }, [])
 
   // Copy JSON to clipboard
   const handleCopyJson = useCallback(() => {
@@ -139,11 +178,12 @@ export function StatsModal({ isOpen, onClose, stats, model }: StatsModalProps) {
           <h3 className="text-sm font-semibold text-text-secondary mb-3 uppercase tracking-wide">
             Summary
           </h3>
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+          <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
             <StatCard label="AI Time" value={formatTime(stats.aiTime)} />
             <StatCard label="Total Time" value={formatTime(stats.totalTime)} />
             <StatCard label="Tool Time" value={formatTime(stats.toolTime)} />
-            <StatCard label="LLM Calls" value={stats.messageCount.toString()} />
+            <StatCard label="Responses" value={stats.responseCount.toString()} />
+            <StatCard label="LLM Calls" value={stats.llmCallCount.toString()} />
           </div>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mt-3">
             <StatCard 
@@ -170,13 +210,13 @@ export function StatsModal({ isOpen, onClose, stats, model }: StatsModalProps) {
         </section>
 
         {/* Progression Charts */}
-        {stats.dataPoints.length > 1 && (
+        {chartData.points.length > 1 && (
           <section>
             <div className="flex items-center justify-between mb-3">
               <h3 className="text-sm font-semibold text-text-secondary uppercase tracking-wide">
                 Performance Progression
               </h3>
-              <div className="flex gap-2">
+              <div className="flex items-center gap-2">
                 <button
                   onClick={handleCopyJson}
                   className="px-2 py-1 text-xs text-text-muted hover:text-text-primary hover:bg-bg-tertiary rounded transition-colors"
@@ -192,19 +232,39 @@ export function StatsModal({ isOpen, onClose, stats, model }: StatsModalProps) {
               </div>
             </div>
             <div className="bg-bg-tertiary/50 rounded p-4">
-              <DualSparkline data={chartData} width={50} />
+              <DualSparkline
+                data={chartData.points}
+                width={50}
+                prefillLabel={chartData.prefillLabel}
+                generationLabel={chartData.generationLabel}
+                xLabel={chartData.xLabel}
+              />
             </div>
           </section>
         )}
 
-        {/* Call Log */}
+        {/* Response Log */}
         <section>
           <h3 className="text-sm font-semibold text-text-secondary mb-3 uppercase tracking-wide">
-            Call Log ({stats.dataPoints.length} calls)
+            Response Log ({stats.dataPoints.length} responses)
           </h3>
           <div className="max-h-60 overflow-y-auto bg-bg-tertiary/30 rounded">
-            {stats.dataPoints.map((dp, i) => (
-              <DataPointRow key={dp.messageId} dataPoint={dp} index={i} />
+            {responseRows.map((row, i) => (
+              <div key={row.messageId}>
+                <ResponseRow
+                  row={row}
+                  index={i}
+                  isExpanded={expandedResponses[row.messageId] ?? false}
+                  onToggle={row.isExpandable ? () => toggleResponse(row.messageId) : undefined}
+                />
+                {(expandedResponses[row.messageId] ?? false) && row.calls.map((call, callIndex) => (
+                  <CallDataPointRow
+                    key={`${call.messageId}-${call.callIndex}`}
+                    dataPoint={call}
+                    index={callIndex}
+                  />
+                ))}
+              </div>
             ))}
           </div>
         </section>
@@ -235,46 +295,110 @@ function StatCard({
 }
 
 /**
- * Single row in the call log
+ * Single row in the response log
  */
-function DataPointRow({ 
-  dataPoint, 
-  index 
-}: { 
-  dataPoint: StatsDataPoint
-  index: number 
+function ResponseRow({
+  row,
+  index,
+  isExpanded,
+  onToggle,
+}: {
+  row: ResponseLogRow
+  index: number
+  isExpanded: boolean
+  onToggle?: () => void
 }) {
+  const contextSummary = row.calls.length > 0
+    ? formatContextRange(row.calls.map((call) => call.promptTokens))
+    : `${formatTokens(row.prefillTokens)} ctx`
+
+  const content = (
+    <div className="grid grid-cols-[2.75rem_5.75rem_5.5rem_4.75rem_8rem_4.5rem_7.5rem_7.5rem_1.5rem] items-center gap-3 w-full">
+      <span className="text-text-muted w-6 text-right">#{row.responseIndex}</span>
+      <span className="text-text-muted w-20 font-mono">
+        {formatTimestamp(row.timestamp)}
+      </span>
+      <span className={`px-1.5 py-0.5 rounded text-[10px] font-medium ${getModeColor(row.mode)}`}>
+        {row.mode}
+      </span>
+      <span className="text-text-muted font-mono text-right">
+        {row.callCount} {row.callCount === 1 ? 'call' : 'calls'}
+      </span>
+      <span className="text-text-secondary w-16 text-right font-mono">
+        {contextSummary}
+      </span>
+      <span className="text-text-secondary w-12 text-right">
+        {row.totalTime.toFixed(1)}s
+      </span>
+      <span className="text-text-muted text-right font-mono">
+        {formatRate(row.prefillSpeed, 'pp')}
+      </span>
+      <span className="text-text-muted text-right font-mono">
+        {formatRate(row.generationSpeed, 'tg')}
+      </span>
+      <span className="text-text-muted w-4 text-center">
+        {row.isExpandable ? (isExpanded ? 'v' : '>') : ''}
+      </span>
+    </div>
+  )
+
   return (
     <div className={`flex items-center gap-3 px-3 py-2 text-xs ${
       index % 2 === 0 ? 'bg-bg-tertiary/20' : ''
     }`}>
-      {/* Index */}
-      <span className="text-text-muted w-6 text-right">#{index + 1}</span>
-      
-      {/* Timestamp */}
-      <span className="text-text-muted w-20 font-mono">
-        {formatTimestamp(dataPoint.timestamp)}
-      </span>
-      
-      {/* Mode badge */}
-      <span className={`px-1.5 py-0.5 rounded text-[10px] font-medium ${getModeColor(dataPoint.mode)}`}>
-        {dataPoint.mode}
-      </span>
-      
-      {/* Context size */}
-      <span className="text-text-secondary w-16 text-right font-mono">
-        {formatTokens(dataPoint.contextTokens)} ctx
-      </span>
-      
-      {/* AI Time */}
-      <span className="text-text-secondary w-12 text-right">
-        {dataPoint.aiTime.toFixed(1)}s
-      </span>
-      
-      {/* Speeds */}
-      <span className="text-text-muted flex-1 text-right font-mono">
-        {formatSpeed(dataPoint.prefillSpeed)} pp · {formatSpeed(dataPoint.generationSpeed)} tg
-      </span>
+      {onToggle ? (
+        <button
+          onClick={onToggle}
+          className="flex items-center gap-3 w-full text-left hover:text-text-primary transition-colors"
+        >
+          {content}
+        </button>
+      ) : (
+        <div className="flex items-center gap-3 w-full">
+          {content}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function CallDataPointRow({
+  dataPoint,
+  index,
+}: {
+  dataPoint: CallStatsDataPoint
+  index: number
+}) {
+  return (
+    <div className={`relative px-3 py-2 text-xs ${
+      index % 2 === 0 ? 'bg-bg-tertiary/10' : 'bg-bg-tertiary/5'
+    }`}>
+      <div className="absolute left-6 top-0 bottom-0 w-px bg-border/60" />
+      <div className="grid grid-cols-[2.75rem_5.75rem_5.5rem_4.75rem_8rem_4.5rem_7.5rem_7.5rem_1.5rem] items-center gap-3 w-full relative">
+        <span className="text-text-muted w-6 text-right">c{dataPoint.callIndex}</span>
+        <span className="text-text-muted w-20 font-mono">
+          {formatTimestamp(dataPoint.timestamp)}
+        </span>
+        <span className={`px-1.5 py-0.5 rounded text-[10px] font-medium ${getModeColor(dataPoint.mode)}`}>
+          {dataPoint.mode}
+        </span>
+        <span className="text-text-muted font-mono text-right">
+          r{dataPoint.responseIndex}.c{dataPoint.callIndex}
+        </span>
+        <span className="text-text-secondary font-mono text-right">
+          {formatTokens(dataPoint.promptTokens)} ctx
+        </span>
+        <span className="text-text-secondary text-right">
+          {dataPoint.totalTime.toFixed(1)}s
+        </span>
+        <span className="text-text-muted text-right font-mono">
+          {formatRate(dataPoint.prefillSpeed, 'pp')}
+        </span>
+        <span className="text-text-muted text-right font-mono">
+          {formatRate(dataPoint.generationSpeed, 'tg')}
+        </span>
+        <span />
+      </div>
     </div>
   )
 }

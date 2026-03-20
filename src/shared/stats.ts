@@ -1,9 +1,9 @@
 /**
- * Session stats computation - aggregates MessageStats from multiple messages
- * into SessionStats for benchmarking and progression charts.
+ * Session stats computation - aggregates response-level MessageStats from
+ * multiple assistant messages into SessionStats for benchmarking and trends.
  */
 
-import type { Message, SessionStats, StatsDataPoint } from './types.js'
+import type { CallStatsDataPoint, Message, SessionStats, StatsDataPoint } from './types.js'
 
 const roundTo1 = (n: number): number => Math.round(n * 10) / 10
 
@@ -20,7 +20,7 @@ export function computeSessionStats(messages: Message[]): SessionStats | null {
   const messagesWithStats = messages.filter(
     (msg): msg is Message & { stats: NonNullable<Message['stats']> } => 
       msg.stats !== undefined && msg.stats !== null
-  )
+  ).sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime())
 
   if (messagesWithStats.length === 0) {
     return null
@@ -35,10 +35,12 @@ export function computeSessionStats(messages: Message[]): SessionStats | null {
   let totalGenTime = 0      // For weighted average
 
   const dataPoints: StatsDataPoint[] = []
-
-  for (const msg of messagesWithStats) {
+  const callDataPoints: CallStatsDataPoint[] = []
+  let sessionCallIndex = 0
+  
+  for (const [index, msg] of messagesWithStats.entries()) {
     const stats = msg.stats
-
+    
     totalTime += stats.totalTime
     toolTime += stats.toolTime
     prefillTokens += stats.prefillTokens
@@ -57,16 +59,40 @@ export function computeSessionStats(messages: Message[]): SessionStats | null {
     totalGenTime += genTime
 
     // Create data point for progression charts
+    // Use the actual context size (prefill tokens for this message) not cumulative
     dataPoints.push({
       messageId: msg.id,
       timestamp: msg.timestamp,
       mode: stats.mode,
-      contextTokens: stats.prefillTokens,
+      responseIndex: index + 1,
+      prefillTokens: stats.prefillTokens,
+      generationTokens: stats.generationTokens,
       prefillSpeed: stats.prefillSpeed,
       generationSpeed: stats.generationSpeed,
       totalTime: stats.totalTime,
       aiTime: stats.totalTime - stats.toolTime,
+      toolTime: stats.toolTime,
     })
+
+    const llmCalls = stats.llmCalls ?? []
+    for (const call of llmCalls) {
+      sessionCallIndex += 1
+      callDataPoints.push({
+        messageId: msg.id,
+        timestamp: call.timestamp ?? msg.timestamp,
+        mode: stats.mode,
+        responseIndex: index + 1,
+        sessionCallIndex,
+        callIndex: call.callIndex,
+        promptTokens: call.promptTokens,
+        completionTokens: call.completionTokens,
+        ttft: call.ttft,
+        completionTime: call.completionTime,
+        prefillSpeed: call.prefillSpeed,
+        generationSpeed: call.generationSpeed,
+        totalTime: call.totalTime,
+      })
+    }
   }
 
   // Compute weighted average speeds
@@ -85,7 +111,9 @@ export function computeSessionStats(messages: Message[]): SessionStats | null {
     generationTokens,
     avgPrefillSpeed,
     avgGenerationSpeed,
-    messageCount: messagesWithStats.length,
+    responseCount: messagesWithStats.length,
+    llmCallCount: callDataPoints.length,
     dataPoints,
+    callDataPoints,
   }
 }

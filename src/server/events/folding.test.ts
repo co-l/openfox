@@ -214,6 +214,157 @@ describe('event folding', () => {
     expect(messages[0]!.toolCalls![0]!.result!.success).toBe(true)
   })
 
+  it('uses the latest snapshot rather than the oldest retained snapshot', () => {
+    const firstTimestamp = Date.parse('2024-01-01T00:00:00.000Z')
+    const secondTimestamp = Date.parse('2024-01-01T00:10:00.000Z')
+
+    const events: StoredEvent[] = [
+      {
+        seq: 1,
+        timestamp: firstTimestamp,
+        sessionId: 'session-1',
+        type: 'session.initialized',
+        data: { projectId: 'proj-1', workdir: '/tmp', contextWindowId: 'window-1' },
+      },
+      {
+        seq: 2,
+        timestamp: firstTimestamp,
+        sessionId: 'session-1',
+        type: 'turn.snapshot',
+        data: {
+          mode: 'builder',
+          phase: 'plan',
+          isRunning: false,
+          messages: [
+            { id: 'msg-1', role: 'assistant', content: 'old answer', timestamp: firstTimestamp },
+          ],
+          criteria: [],
+          contextState: { currentTokens: 100, maxTokens: 200000, compactionCount: 0, dangerZone: false, canCompact: false },
+          currentContextWindowId: 'window-1',
+          todos: [],
+          readFiles: [],
+          snapshotSeq: 2,
+          snapshotAt: firstTimestamp,
+        },
+      },
+      {
+        seq: 3,
+        timestamp: secondTimestamp,
+        sessionId: 'session-1',
+        type: 'turn.snapshot',
+        data: {
+          mode: 'builder',
+          phase: 'plan',
+          isRunning: false,
+          messages: [
+            { id: 'msg-1', role: 'assistant', content: 'new answer', timestamp: secondTimestamp },
+            { id: 'msg-2', role: 'assistant', content: 'latest answer', timestamp: secondTimestamp },
+          ],
+          criteria: [],
+          contextState: { currentTokens: 200, maxTokens: 200000, compactionCount: 1, dangerZone: false, canCompact: false },
+          currentContextWindowId: 'window-1',
+          todos: [],
+          readFiles: [],
+          snapshotSeq: 3,
+          snapshotAt: secondTimestamp,
+        },
+      },
+    ]
+
+    expect(buildMessagesFromStoredEvents(events)).toEqual([
+      {
+        id: 'msg-1',
+        role: 'assistant',
+        content: 'new answer',
+        timestamp: '2024-01-01T00:10:00.000Z',
+      },
+      {
+        id: 'msg-2',
+        role: 'assistant',
+        content: 'latest answer',
+        timestamp: '2024-01-01T00:10:00.000Z',
+      },
+    ])
+  })
+
+  it('replays events that happened after the latest snapshot', () => {
+    const snapshotTimestamp = Date.parse('2024-01-01T00:00:00.000Z')
+    const afterSnapshotTimestamp = Date.parse('2024-01-01T00:05:00.000Z')
+
+    const events: StoredEvent[] = [
+      {
+        seq: 1,
+        timestamp: snapshotTimestamp,
+        sessionId: 'session-1',
+        type: 'session.initialized',
+        data: { projectId: 'proj-1', workdir: '/tmp', contextWindowId: 'window-1' },
+      },
+      {
+        seq: 2,
+        timestamp: snapshotTimestamp,
+        sessionId: 'session-1',
+        type: 'turn.snapshot',
+        data: {
+          mode: 'planner',
+          phase: 'plan',
+          isRunning: false,
+          messages: [
+            { id: 'msg-1', role: 'user', content: 'hello', timestamp: snapshotTimestamp },
+          ],
+          criteria: [],
+          contextState: { currentTokens: 10, maxTokens: 200000, compactionCount: 0, dangerZone: false, canCompact: false },
+          currentContextWindowId: 'window-1',
+          todos: [],
+          readFiles: [],
+          snapshotSeq: 2,
+          snapshotAt: snapshotTimestamp,
+        },
+      },
+      {
+        seq: 3,
+        timestamp: afterSnapshotTimestamp,
+        sessionId: 'session-1',
+        type: 'message.start',
+        data: { messageId: 'msg-2', role: 'assistant' },
+      },
+      {
+        seq: 4,
+        timestamp: afterSnapshotTimestamp,
+        sessionId: 'session-1',
+        type: 'message.delta',
+        data: { messageId: 'msg-2', content: 'fresh response' },
+      },
+      {
+        seq: 5,
+        timestamp: afterSnapshotTimestamp,
+        sessionId: 'session-1',
+        type: 'message.done',
+        data: {
+          messageId: 'msg-2',
+          stats: { model: 'qwen', mode: 'planner', totalTime: 2, toolTime: 0, prefillTokens: 100, prefillSpeed: 50, generationTokens: 20, generationSpeed: 10 },
+        },
+      },
+    ]
+
+    expect(buildMessagesFromStoredEvents(events)).toEqual([
+      {
+        id: 'msg-1',
+        role: 'user',
+        content: 'hello',
+        timestamp: '2024-01-01T00:00:00.000Z',
+      },
+      {
+        id: 'msg-2',
+        role: 'assistant',
+        content: 'fresh response',
+        timestamp: '2024-01-01T00:05:00.000Z',
+        tokenCount: 0,
+        isStreaming: false,
+        stats: { model: 'qwen', mode: 'planner', totalTime: 2, toolTime: 0, prefillTokens: 100, prefillSpeed: 50, generationTokens: 20, generationSpeed: 10 },
+      },
+    ])
+  })
+
   it('folds turn events into snapshot messages and builds a snapshot', () => {
     const events: Array<{ type: any; timestamp: number; data: any }> = [
       { type: 'message.start', timestamp: 123, data: { messageId: 'm1', role: 'assistant' as const, contextWindowId: 'window-1' } },
@@ -267,5 +418,81 @@ describe('event folding', () => {
       snapshotSeq: 42,
       snapshotAt: 999,
     })
+  })
+
+  it('builds snapshots from the latest retained snapshot plus newer turn events', () => {
+    const initialTimestamp = Date.parse('2024-01-01T00:00:00.000Z')
+    const newTurnTimestamp = Date.parse('2024-01-01T00:05:00.000Z')
+
+    const snapshot = buildSnapshotFromSessionState({
+      session: {
+        mode: 'builder',
+        phase: 'build',
+        isRunning: false,
+        criteria: [],
+        executionState: { currentTokenCount: 120, compactionCount: 1 },
+      },
+      events: [
+        {
+          timestamp: initialTimestamp,
+          type: 'session.initialized',
+          data: { projectId: 'proj-1', workdir: '/tmp', contextWindowId: 'window-1' },
+        },
+        {
+          timestamp: initialTimestamp,
+          type: 'turn.snapshot',
+          data: {
+            mode: 'planner',
+            phase: 'plan',
+            isRunning: false,
+            messages: [
+              { id: 'msg-1', role: 'user', content: 'First turn', timestamp: initialTimestamp, contextWindowId: 'window-1' },
+              { id: 'msg-2', role: 'assistant', content: 'First reply', timestamp: initialTimestamp, contextWindowId: 'window-1' },
+            ],
+            criteria: [],
+            contextState: { currentTokens: 40, maxTokens: 200000, compactionCount: 0, dangerZone: false, canCompact: false },
+            currentContextWindowId: 'window-1',
+            todos: [],
+            readFiles: [],
+            snapshotSeq: 2,
+            snapshotAt: initialTimestamp,
+          },
+        },
+        {
+          timestamp: newTurnTimestamp,
+          type: 'message.start',
+          data: { messageId: 'msg-3', role: 'user', content: 'Second turn', contextWindowId: 'window-1' },
+        },
+        {
+          timestamp: newTurnTimestamp,
+          type: 'message.done',
+          data: { messageId: 'msg-3' },
+        },
+        {
+          timestamp: newTurnTimestamp,
+          type: 'message.start',
+          data: { messageId: 'msg-4', role: 'assistant', contextWindowId: 'window-1' },
+        },
+        {
+          timestamp: newTurnTimestamp,
+          type: 'message.delta',
+          data: { messageId: 'msg-4', content: 'Second reply' },
+        },
+        {
+          timestamp: newTurnTimestamp,
+          type: 'message.done',
+          data: { messageId: 'msg-4' },
+        },
+      ],
+      latestSeq: 7,
+      snapshotAt: newTurnTimestamp,
+    })
+
+    expect(snapshot.messages.map((message) => message.content)).toEqual([
+      'First turn',
+      'First reply',
+      'Second turn',
+      'Second reply',
+    ])
   })
 })

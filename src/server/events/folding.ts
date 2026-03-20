@@ -25,82 +25,48 @@ import type {
   ReadFileEntry,
 } from './types.js'
 
-// ============================================================================
-// Types
-// ============================================================================
-
-export interface ContextMessage {
-  role: 'user' | 'assistant' | 'tool'
-  content: string
-  toolCalls?: Array<{ id: string; name: string; arguments: Record<string, unknown> }>
-  toolCallId?: string
-  attachments?: Attachment[]
-}
-
-export interface ContextMessageBuildOptions {
-  includeVerifier?: boolean
-}
-
-type EventLike = Pick<StoredEvent, 'type' | 'data'> & Partial<Pick<StoredEvent, 'timestamp'>>
-
-/**
- * Full session state derived entirely from events
- */
-export interface FoldedSessionState {
-  mode: SessionMode
-  phase: SessionPhase
-  isRunning: boolean
-  messages: SnapshotMessage[]
-  criteria: Criterion[]
-  todos: Todo[]
-  contextState: ContextState
-  currentContextWindowId: string
-  readFiles: ReadFileEntry[]
-}
-
-// ============================================================================
-// Message Folding
-// ============================================================================
-
-/**
- * Build Message[] from stored events (for backward compatibility with shared types)
- * 
- * If a snapshot exists, messages are extracted from it since individual message events
- * may have been deleted to save space.
- */
-export function buildMessagesFromStoredEvents(events: StoredEvent[]): Message[] {
-  // Check if there's a snapshot - if so, extract messages from it
-  const snapshotEvent = events.find(e => e.type === 'turn.snapshot')
-  if (snapshotEvent) {
-    const snapshot = snapshotEvent.data as import('./types.js').SessionSnapshot
-    return snapshot.messages.map(msg => {
-      const message: Message = {
-        id: msg.id,
-        role: msg.role,
-        content: msg.content,
-        timestamp: new Date(msg.timestamp).toISOString(),
-        ...(msg.tokenCount !== undefined && { tokenCount: msg.tokenCount }),
-        ...(msg.isStreaming !== undefined && { isStreaming: msg.isStreaming }),
-        ...(msg.contextWindowId !== undefined && { contextWindowId: msg.contextWindowId }),
-        ...(msg.subAgentId !== undefined && { subAgentId: msg.subAgentId }),
-        ...(msg.subAgentType !== undefined && { subAgentType: msg.subAgentType }),
-        ...(msg.isSystemGenerated !== undefined && { isSystemGenerated: msg.isSystemGenerated }),
-        ...(msg.messageKind !== undefined && { messageKind: msg.messageKind }),
-        ...(msg.isCompactionSummary !== undefined && { isCompactionSummary: msg.isCompactionSummary }),
-        ...(msg.attachments !== undefined && { attachments: msg.attachments }),
-        ...(msg.thinkingContent !== undefined && { thinkingContent: msg.thinkingContent }),
-        ...(msg.toolCalls !== undefined && { toolCalls: msg.toolCalls }),
-        ...(msg.segments !== undefined && { segments: msg.segments }),
-        ...(msg.stats !== undefined && { stats: msg.stats }),
-        ...(msg.partial !== undefined && { partial: msg.partial }),
-        ...(msg.promptContext !== undefined && { promptContext: msg.promptContext }),
-      }
-      return message
-    })
+function cloneMessage(message: Message): Message {
+  return {
+    ...message,
+    ...(message.attachments ? { attachments: [...message.attachments] } : {}),
+    ...(message.toolCalls ? {
+      toolCalls: message.toolCalls.map((toolCall) => ({
+        ...toolCall,
+        ...(toolCall.streamingOutput ? { streamingOutput: [...toolCall.streamingOutput] } : {}),
+        ...(toolCall.result ? { result: { ...toolCall.result } } : {}),
+      })),
+    } : {}),
+    ...(message.segments ? { segments: [...message.segments] } : {}),
+    ...(message.preparingToolCalls ? { preparingToolCalls: [...message.preparingToolCalls] } : {}),
   }
+}
 
-  // Fallback: build from individual message events (for sessions without snapshots)
-  const messages = new Map<string, Message>()
+function snapshotMessageToMessage(message: SnapshotMessage): Message {
+  return cloneMessage({
+    id: message.id,
+    role: message.role,
+    content: message.content,
+    timestamp: new Date(message.timestamp).toISOString(),
+    ...(message.tokenCount !== undefined && { tokenCount: message.tokenCount }),
+    ...(message.isStreaming !== undefined && { isStreaming: message.isStreaming }),
+    ...(message.contextWindowId !== undefined && { contextWindowId: message.contextWindowId }),
+    ...(message.subAgentId !== undefined && { subAgentId: message.subAgentId }),
+    ...(message.subAgentType !== undefined && { subAgentType: message.subAgentType }),
+    ...(message.isSystemGenerated !== undefined && { isSystemGenerated: message.isSystemGenerated }),
+    ...(message.messageKind !== undefined && { messageKind: message.messageKind }),
+    ...(message.isCompactionSummary !== undefined && { isCompactionSummary: message.isCompactionSummary }),
+    ...(message.attachments !== undefined && { attachments: message.attachments }),
+    ...(message.thinkingContent !== undefined && { thinkingContent: message.thinkingContent }),
+    ...(message.toolCalls !== undefined && { toolCalls: message.toolCalls }),
+    ...(message.segments !== undefined && { segments: message.segments }),
+    ...(message.stats !== undefined && { stats: message.stats }),
+    ...(message.partial !== undefined && { partial: message.partial }),
+    ...(message.promptContext !== undefined && { promptContext: message.promptContext }),
+  })
+}
+
+function applyStoredMessageEvents(initialMessages: Message[], events: StoredEvent[]): Message[] {
+  const messages = new Map(initialMessages.map((message) => [message.id, cloneMessage(message)]))
 
   for (const event of events) {
     switch (event.type) {
@@ -157,8 +123,8 @@ export function buildMessagesFromStoredEvents(events: StoredEvent[]): Message[] 
         const data = event.data as Extract<TurnEvent, { type: 'tool.call' }>['data']
         const msg = messages.get(data.messageId)
         if (msg) {
-          if (!msg.toolCalls) msg.toolCalls = []
-          msg.toolCalls.push(data.toolCall)
+          const existingToolCalls = msg.toolCalls ?? []
+          msg.toolCalls = [...existingToolCalls, data.toolCall]
         }
         break
       }
@@ -173,7 +139,6 @@ export function buildMessagesFromStoredEvents(events: StoredEvent[]): Message[] 
         }
         break
       }
-      // Ignore non-message events
       case 'session.initialized':
       case 'turn.snapshot':
       case 'phase.changed':
@@ -195,6 +160,161 @@ export function buildMessagesFromStoredEvents(events: StoredEvent[]): Message[] 
   }
 
   return Array.from(messages.values())
+}
+
+// ============================================================================
+// Types
+// ============================================================================
+
+export interface ContextMessage {
+  role: 'user' | 'assistant' | 'tool'
+  content: string
+  toolCalls?: Array<{ id: string; name: string; arguments: Record<string, unknown> }>
+  toolCallId?: string
+  attachments?: Attachment[]
+}
+
+export interface ContextMessageBuildOptions {
+  includeVerifier?: boolean
+}
+
+type EventLike = Pick<StoredEvent, 'type' | 'data'> & Partial<Pick<StoredEvent, 'timestamp'>>
+
+function cloneSnapshotMessage(message: SnapshotMessage): SnapshotMessage {
+  return {
+    ...message,
+    ...(message.attachments ? { attachments: [...message.attachments] } : {}),
+    ...(message.toolCalls ? {
+      toolCalls: message.toolCalls.map((toolCall) => ({
+        ...toolCall,
+        ...(toolCall.streamingOutput ? { streamingOutput: [...toolCall.streamingOutput] } : {}),
+        ...(toolCall.result ? { result: { ...toolCall.result } } : {}),
+      })),
+    } : {}),
+    ...(message.segments ? { segments: [...message.segments] } : {}),
+  }
+}
+
+function applyTurnEventsToSnapshotMessages(
+  initialMessages: SnapshotMessage[],
+  events: EventLike[]
+): SnapshotMessage[] {
+  const messages = new Map(initialMessages.map((message) => [message.id, cloneSnapshotMessage(message)]))
+
+  for (const event of events) {
+    switch (event.type) {
+      case 'message.start': {
+        const data = event.data as Extract<TurnEvent, { type: 'message.start' }>['data']
+        const msg: SnapshotMessage = {
+          id: data.messageId,
+          role: data.role,
+          content: data.content ?? '',
+          timestamp: typeof event.timestamp === 'number' ? event.timestamp : Date.now(),
+          isStreaming: true,
+        }
+        if (data.tokenCount !== undefined) msg.tokenCount = data.tokenCount
+        if (data.contextWindowId !== undefined) msg.contextWindowId = data.contextWindowId
+        if (data.subAgentId !== undefined) msg.subAgentId = data.subAgentId
+        if (data.subAgentType !== undefined) msg.subAgentType = data.subAgentType
+        if (data.isSystemGenerated !== undefined) msg.isSystemGenerated = data.isSystemGenerated
+        if (data.messageKind !== undefined) msg.messageKind = data.messageKind
+        if (data.isCompactionSummary !== undefined) msg.isCompactionSummary = data.isCompactionSummary
+        if (data.attachments !== undefined) msg.attachments = data.attachments
+        messages.set(data.messageId, msg)
+        break
+      }
+      case 'message.delta': {
+        const data = event.data as Extract<TurnEvent, { type: 'message.delta' }>['data']
+        const msg = messages.get(data.messageId)
+        if (msg) {
+          msg.content += data.content
+        }
+        break
+      }
+      case 'message.thinking': {
+        const data = event.data as Extract<TurnEvent, { type: 'message.thinking' }>['data']
+        const msg = messages.get(data.messageId)
+        if (msg) {
+          msg.thinkingContent = (msg.thinkingContent ?? '') + data.content
+        }
+        break
+      }
+      case 'message.done': {
+        const data = event.data as Extract<TurnEvent, { type: 'message.done' }>['data']
+        const msg = messages.get(data.messageId)
+        if (msg) {
+          msg.isStreaming = false
+          if (data.stats) msg.stats = data.stats
+          if (data.segments) msg.segments = data.segments
+          if (data.partial) msg.partial = data.partial
+          if (data.promptContext) msg.promptContext = data.promptContext
+          if (data.tokenCount !== undefined) msg.tokenCount = data.tokenCount
+        }
+        break
+      }
+      case 'tool.call': {
+        const data = event.data as Extract<TurnEvent, { type: 'tool.call' }>['data']
+        const msg = messages.get(data.messageId)
+        if (msg) {
+          const toolCalls = msg.toolCalls ?? []
+          msg.toolCalls = [...toolCalls, data.toolCall as ToolCallWithResult]
+        }
+        break
+      }
+      case 'tool.result': {
+        const data = event.data as Extract<TurnEvent, { type: 'tool.result' }>['data']
+        const msg = messages.get(data.messageId)
+        if (msg?.toolCalls) {
+          const toolCall = msg.toolCalls.find((tc) => tc.id === data.toolCallId)
+          if (toolCall) {
+            toolCall.result = data.result
+          }
+        }
+        break
+      }
+    }
+  }
+
+  return Array.from(messages.values())
+}
+
+/**
+ * Full session state derived entirely from events
+ */
+export interface FoldedSessionState {
+  mode: SessionMode
+  phase: SessionPhase
+  isRunning: boolean
+  messages: SnapshotMessage[]
+  criteria: Criterion[]
+  todos: Todo[]
+  contextState: ContextState
+  currentContextWindowId: string
+  readFiles: ReadFileEntry[]
+}
+
+// ============================================================================
+// Message Folding
+// ============================================================================
+
+/**
+ * Build Message[] from stored events (for backward compatibility with shared types)
+ * 
+ * If a snapshot exists, messages are extracted from it since individual message events
+ * may have been deleted to save space.
+ */
+export function buildMessagesFromStoredEvents(events: StoredEvent[]): Message[] {
+  // Check if there's a snapshot - if so, use the latest one and replay newer events
+  const snapshotEvent = [...events].reverse().find((event) => event.type === 'turn.snapshot')
+  if (snapshotEvent) {
+    const snapshot = snapshotEvent.data as import('./types.js').SessionSnapshot
+    const snapshotMessages = snapshot.messages.map(snapshotMessageToMessage)
+    const laterEvents = events.filter((event) => event.seq > snapshotEvent.seq)
+    return applyStoredMessageEvents(snapshotMessages, laterEvents)
+  }
+
+  // Fallback: build from individual message events (for sessions without snapshots)
+  return applyStoredMessageEvents([], events)
 }
 
 /**
@@ -272,83 +392,7 @@ export function buildContextMessagesFromStoredEvents(
  * Fold events into SnapshotMessage[] for snapshots
  */
 export function foldTurnEventsToSnapshotMessages(events: EventLike[]): SnapshotMessage[] {
-  const messages = new Map<string, SnapshotMessage>()
-
-  for (const event of events) {
-    switch (event.type) {
-      case 'message.start': {
-        const data = event.data as Extract<TurnEvent, { type: 'message.start' }>['data']
-        const msg: SnapshotMessage = {
-          id: data.messageId,
-          role: data.role,
-          content: data.content ?? '',
-          timestamp: typeof event.timestamp === 'number' ? event.timestamp : Date.now(),
-          isStreaming: true,
-        }
-        if (data.tokenCount !== undefined) msg.tokenCount = data.tokenCount
-        if (data.contextWindowId !== undefined) msg.contextWindowId = data.contextWindowId
-        if (data.subAgentId !== undefined) msg.subAgentId = data.subAgentId
-        if (data.subAgentType !== undefined) msg.subAgentType = data.subAgentType
-        if (data.isSystemGenerated !== undefined) msg.isSystemGenerated = data.isSystemGenerated
-        if (data.messageKind !== undefined) msg.messageKind = data.messageKind
-        if (data.isCompactionSummary !== undefined) msg.isCompactionSummary = data.isCompactionSummary
-        if (data.attachments !== undefined) msg.attachments = data.attachments
-        messages.set(data.messageId, msg)
-        break
-      }
-      case 'message.delta': {
-        const data = event.data as Extract<TurnEvent, { type: 'message.delta' }>['data']
-        const msg = messages.get(data.messageId)
-        if (msg) {
-          msg.content += data.content
-        }
-        break
-      }
-      case 'message.thinking': {
-        const data = event.data as Extract<TurnEvent, { type: 'message.thinking' }>['data']
-        const msg = messages.get(data.messageId)
-        if (msg) {
-          msg.thinkingContent = (msg.thinkingContent ?? '') + data.content
-        }
-        break
-      }
-      case 'message.done': {
-        const data = event.data as Extract<TurnEvent, { type: 'message.done' }>['data']
-        const msg = messages.get(data.messageId)
-        if (msg) {
-          msg.isStreaming = false
-          if (data.stats) msg.stats = data.stats
-          if (data.segments) msg.segments = data.segments
-          if (data.partial) msg.partial = data.partial
-          if (data.promptContext) msg.promptContext = data.promptContext
-          if (data.tokenCount !== undefined) msg.tokenCount = data.tokenCount
-        }
-        break
-      }
-      case 'tool.call': {
-        const data = event.data as Extract<TurnEvent, { type: 'tool.call' }>['data']
-        const msg = messages.get(data.messageId)
-        if (msg) {
-          if (!msg.toolCalls) msg.toolCalls = []
-          msg.toolCalls.push(data.toolCall as ToolCallWithResult)
-        }
-        break
-      }
-      case 'tool.result': {
-        const data = event.data as Extract<TurnEvent, { type: 'tool.result' }>['data']
-        const msg = messages.get(data.messageId)
-        if (msg?.toolCalls) {
-          const toolCall = msg.toolCalls.find((tc) => tc.id === data.toolCallId)
-          if (toolCall) {
-            toolCall.result = data.result
-          }
-        }
-        break
-      }
-    }
-  }
-
-  return Array.from(messages.values())
+  return applyTurnEventsToSnapshotMessages([], events)
 }
 
 // ============================================================================
@@ -620,13 +664,21 @@ export function buildSnapshotFromSessionState(input: {
   }
 
   const foldedState = foldSessionState(events, initialWindowId)
+  const latestSnapshotIndex = events.map((event) => event.type).lastIndexOf('turn.snapshot')
+  const latestSnapshotEvent = latestSnapshotIndex >= 0 ? events[latestSnapshotIndex] : undefined
+  const messages = latestSnapshotEvent
+    ? applyTurnEventsToSnapshotMessages(
+        (latestSnapshotEvent.data as SessionSnapshot).messages,
+        events.slice(latestSnapshotIndex + 1),
+      )
+    : foldedState.messages
 
   // Override with legacy session values where provided
   return {
     mode: session.mode,
     phase: session.phase,
     isRunning: session.isRunning,
-    messages: foldedState.messages,
+    messages,
     criteria: session.criteria,
     contextState: {
       currentTokens: session.executionState?.currentTokenCount ?? foldedState.contextState.currentTokens,
