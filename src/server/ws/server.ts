@@ -727,6 +727,7 @@ async function handleClientMessage(
             sessionId,
             llmClient: getLLMClient(),
             statsIdentity: resolveStatsIdentity(getLLMClient(), getActiveProvider),
+            injectBuilderKickoff: true,
             signal: controller.signal,
             onMessage: send,  // For path confirmation dialogs
           })
@@ -993,6 +994,7 @@ async function handleClientMessage(
         sessionId,
         llmClient: getLLMClient(),
         statsIdentity: resolveStatsIdentity(getLLMClient(), getActiveProvider),
+        injectBuilderKickoff: true,
         signal: controller.signal,
         onMessage: send,  // For path confirmation dialogs
       }).catch((error) => {

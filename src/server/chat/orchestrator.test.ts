@@ -591,6 +591,105 @@ describe('chat orchestrator', () => {
     }, new TurnMetrics())).rejects.toThrow('unexpected builder failure')
   })
 
+  it('does not inject a builder kickoff prompt for manual builder turns', async () => {
+    const eventStore = createEventStore()
+    getEventStoreMock.mockReturnValue(eventStore)
+    getCurrentContextWindowIdMock.mockReturnValue('window-1')
+    getAllInstructionsMock.mockResolvedValue({ content: 'Build carefully', files: [] })
+    getContextMessagesMock.mockReturnValue([
+      { role: 'user' as const, content: 'Rename the helper function' },
+    ])
+    getToolRegistryForModeMock.mockReturnValue({ definitions: [], execute: vi.fn() })
+    streamLLMPureMock.mockReturnValue({ kind: 'stream' })
+    consumeStreamGeneratorMock.mockResolvedValueOnce({
+      content: 'Done',
+      toolCalls: [],
+      segments: [{ type: 'text', content: 'Done' }],
+      usage: { promptTokens: 10, completionTokens: 3 },
+      timing: { ttft: 1, completionTime: 1, tps: 3, prefillTps: 10 },
+      aborted: false,
+      xmlFormatError: false,
+    })
+
+    const sessionManager = createSessionManager({
+      current: {
+        id: 'session-1',
+        projectId: 'project-1',
+        workdir: '/tmp/project',
+        mode: 'builder',
+        phase: 'build',
+        isRunning: true,
+        criteria: [{ id: 'c1', description: 'Test', status: { type: 'pending' }, attempts: [] }],
+        executionState: { modifiedFiles: [] },
+        messages: [{ id: 'user-1', role: 'user', content: 'Rename the helper function' }],
+      },
+    })
+
+    await runBuilderTurn({
+      sessionManager: sessionManager as never,
+      sessionId: 'session-1',
+      llmClient: { getModel: () => 'qwen3-32b' } as never,
+    }, new TurnMetrics())
+
+    const kickoffEvent = eventStore.append.mock.calls.find(([, event]) => {
+      if (event.type !== 'message.start') return false
+      const data = event.data as { content?: string; messageKind?: string }
+      return data.messageKind === 'auto-prompt' && data.content?.includes('Implement the task and make sure you fulfil')
+    })
+
+    expect(kickoffEvent).toBeUndefined()
+  })
+
+  it('injects a builder kickoff prompt for orchestrated builder turns', async () => {
+    const eventStore = createEventStore()
+    getEventStoreMock.mockReturnValue(eventStore)
+    getCurrentContextWindowIdMock.mockReturnValue('window-1')
+    getAllInstructionsMock.mockResolvedValue({ content: 'Build carefully', files: [] })
+    getContextMessagesMock.mockReturnValue([
+      { role: 'user' as const, content: 'Rename the helper function' },
+    ])
+    getToolRegistryForModeMock.mockReturnValue({ definitions: [], execute: vi.fn() })
+    streamLLMPureMock.mockReturnValue({ kind: 'stream' })
+    consumeStreamGeneratorMock.mockResolvedValueOnce({
+      content: 'Done',
+      toolCalls: [],
+      segments: [{ type: 'text', content: 'Done' }],
+      usage: { promptTokens: 10, completionTokens: 3 },
+      timing: { ttft: 1, completionTime: 1, tps: 3, prefillTps: 10 },
+      aborted: false,
+      xmlFormatError: false,
+    })
+
+    const sessionManager = createSessionManager({
+      current: {
+        id: 'session-1',
+        projectId: 'project-1',
+        workdir: '/tmp/project',
+        mode: 'builder',
+        phase: 'build',
+        isRunning: true,
+        criteria: [{ id: 'c1', description: 'Test', status: { type: 'pending' }, attempts: [] }],
+        executionState: { modifiedFiles: [] },
+        messages: [{ id: 'user-1', role: 'user', content: 'Rename the helper function' }],
+      },
+    })
+
+    await runBuilderTurn({
+      sessionManager: sessionManager as never,
+      sessionId: 'session-1',
+      llmClient: { getModel: () => 'qwen3-32b' } as never,
+      injectBuilderKickoff: true,
+    }, new TurnMetrics())
+
+    const kickoffEvent = eventStore.append.mock.calls.find(([, event]) => {
+      if (event.type !== 'message.start') return false
+      const data = event.data as { content?: string; messageKind?: string }
+      return data.messageKind === 'auto-prompt' && data.content?.includes('Implement the task and make sure you fulfil')
+    })
+
+    expect(kickoffEvent).toBeDefined()
+  })
+
   it('returns early for verifier when nothing is completed and handles full verifier loop', async () => {
     const emptyStore = createEventStore()
     getEventStoreMock.mockReturnValue(emptyStore)

@@ -69,6 +69,7 @@ export interface OrchestratorOptions {
   llmClient: LLMClientWithModel
   statsIdentity?: StatsIdentity
   signal?: AbortSignal
+  injectBuilderKickoff?: boolean
   /** Optional callback for WebSocket forwarding (temporary, until WS layer is refactored) */
   onMessage?: (msg: ServerMessage) => void
 }
@@ -400,7 +401,7 @@ export async function runBuilderTurn(
 
   // Add builder kickoff prompt on first entry (if not already present)
   // This tells the LLM to start implementing the criteria
-  if (formatRetryCount === 0) {
+  if (options.injectBuilderKickoff === true && formatRetryCount === 0) {
     const events = eventStore.getEvents(sessionId)
     const hasBuilderKickoff = events.some(e => {
       if (e.type !== 'message.start') return false

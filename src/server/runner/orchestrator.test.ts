@@ -116,6 +116,27 @@ describe('runner orchestrator', () => {
     expect(result.finalAction.type).toBe('DONE')
   })
 
+  it('passes builder kickoff injection through to the builder turn', async () => {
+    const eventStore = createEventStore()
+    getEventStoreMock.mockReturnValue(eventStore)
+    decideNextActionMock
+      .mockReturnValueOnce({ type: 'RUN_BUILDER', reason: 'Start implementing' })
+      .mockReturnValueOnce({ type: 'DONE', reason: 'All criteria passed' })
+    const sessionManager = createSessionManager([{ id: 'tests-pass' }])
+
+    await runOrchestrator({
+      sessionManager: sessionManager as never,
+      sessionId: 'session-1',
+      llmClient: {} as never,
+      injectBuilderKickoff: true,
+    })
+
+    expect(runBuilderTurnMock).toHaveBeenCalledWith(
+      expect.objectContaining({ injectBuilderKickoff: true }),
+      expect.any(Object),
+    )
+  })
+
   it('returns early on abort and blocks after max iterations', async () => {
     const abortStore = createEventStore()
     getEventStoreMock.mockReturnValue(abortStore)

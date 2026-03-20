@@ -66,6 +66,25 @@ describe('Mode Switching', () => {
       const session = client.getSession()!
       expect(session.mode).toBe('planner')
     })
+
+    it('does not inject the builder kickoff prompt into manual builder chats', async () => {
+      await client.send('mode.switch', { mode: 'builder' })
+      client.clearEvents()
+
+      await client.send('chat.send', {
+        content: 'List the files in src and tell me what you find.',
+      })
+      await client.waitForChatDone()
+
+      const injectedKickoff = client.allEvents().some((event) => {
+        if (event.type !== 'chat.message') return false
+        const payload = event.payload as { message: { content: string; isSystemGenerated?: boolean } }
+        return payload.message.isSystemGenerated === true
+          && payload.message.content.includes('Implement the task and make sure you fulfil')
+      })
+
+      expect(injectedKickoff).toBe(false)
+    })
   })
 
   describe('Accept Criteria (mode.accept)', () => {
@@ -122,6 +141,29 @@ describe('Mode Switching', () => {
                p.message.content.includes('summary')
       })
       expect(summaryPrompt).toBeDefined()
+    })
+
+    it('injects the builder kickoff exactly once after accepting criteria', { timeout: 15_000 }, async () => {
+      await client.send('chat.send', {
+        content: 'Add criterion with ID "inspect-src": "Inspect the src directory and report what exists". Use add_criterion.',
+      })
+      await client.waitForChatDone()
+
+      client.clearEvents()
+
+      await client.send('mode.accept', {})
+      await client.waitFor('session.running', (payload: unknown) => {
+        return (payload as { isRunning: boolean }).isRunning === false
+      }, 10_000)
+
+      const kickoffMessages = client.allEvents().filter((event) => {
+        if (event.type !== 'chat.message') return false
+        const payload = event.payload as { message: { content: string; isSystemGenerated?: boolean } }
+        return payload.message.isSystemGenerated === true
+          && payload.message.content.includes('Implement the task and make sure you fulfil')
+      })
+
+      expect(kickoffMessages).toHaveLength(1)
     })
   })
 

@@ -31,6 +31,7 @@ export interface OrchestratorOptions {
   llmClient: LLMClientWithModel
   statsIdentity?: StatsIdentity
   signal?: AbortSignal
+  injectBuilderKickoff?: boolean
   /** For path confirmation dialogs (sent directly, not through EventStore) */
   onMessage?: (msg: ServerMessage) => void
 }

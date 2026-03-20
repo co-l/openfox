@@ -120,7 +120,15 @@ export async function runOrchestrator(options: OrchestratorOptions): Promise<Orc
         
         // Run builder step
         const turnMetrics = new TurnMetrics()
-        await runBuilderTurn({ sessionManager, sessionId, llmClient, ...(options.statsIdentity ? { statsIdentity: options.statsIdentity } : {}), ...(signal ? { signal } : {}), ...(onMessage ? { onMessage } : {}) }, turnMetrics)
+        await runBuilderTurn({
+          sessionManager,
+          sessionId,
+          llmClient,
+          ...(options.statsIdentity ? { statsIdentity: options.statsIdentity } : {}),
+          ...(options.injectBuilderKickoff === true ? { injectBuilderKickoff: true } : {}),
+          ...(signal ? { signal } : {}),
+          ...(onMessage ? { onMessage } : {}),
+        }, turnMetrics)
         
         // Loop continues to check if more work needed
         break
