@@ -35,10 +35,81 @@ import type {
   ContextStatePayload,
 } from '../../../src/shared/protocol.js'
 import { wsClient, type ConnectionStatus } from '../lib/ws'
-import { playNotification, playAchievement, playIntervention } from '../lib/sound'
+import { playNotification, playAchievement, playIntervention, playWaitingForUser } from '../lib/sound'
 
 // Track subscription to prevent duplicates
 let isSubscribed = false
+
+function isMessageForCurrentSession(message: ServerMessage, currentSessionId: string | null): boolean {
+  return currentSessionId !== null && message.sessionId === currentSessionId
+}
+
+function isSessionStateForCurrentView(message: ServerMessage, currentSessionId: string | null): boolean {
+  return message.id !== undefined || isMessageForCurrentSession(message, currentSessionId)
+}
+
+function addUnreadSessionId(unreadSessionIds: string[], sessionId: string): string[] {
+  return unreadSessionIds.includes(sessionId)
+    ? unreadSessionIds
+    : [...unreadSessionIds, sessionId]
+}
+
+function removeUnreadSessionId(unreadSessionIds: string[], sessionId: string): string[] {
+  return unreadSessionIds.filter(id => id !== sessionId)
+}
+
+function mergeSessionIntoSummary(
+  sessions: SessionSummary[],
+  session: Session,
+): SessionSummary[] {
+  const existingSession = sessions.find(candidate => candidate.id === session.id)
+  const nextSummary: SessionSummary = existingSession
+    ? {
+        ...existingSession,
+        projectId: session.projectId,
+        workdir: session.workdir,
+        mode: session.mode,
+        phase: session.phase,
+        isRunning: session.isRunning,
+      }
+    : {
+        id: session.id,
+        projectId: session.projectId,
+        workdir: session.workdir,
+        mode: session.mode,
+        phase: session.phase,
+        isRunning: session.isRunning,
+        createdAt: '',
+        updatedAt: '',
+        criteriaCount: session.criteria.length,
+        criteriaCompleted: session.criteria.filter(criterion => criterion.status.type === 'passed').length,
+      }
+
+  return existingSession
+    ? sessions.map(candidate => candidate.id === session.id ? nextSummary : candidate)
+    : [nextSummary, ...sessions]
+}
+
+function mergeSessionList(
+  incomingSessions: SessionSummary[],
+  existingSessions: SessionSummary[],
+  currentSession: Session | null,
+): SessionSummary[] {
+  return incomingSessions.map(incomingSession => {
+    const currentSessionOverride = currentSession?.id === incomingSession.id
+      ? currentSession
+      : null
+    const existingSession = existingSessions.find(candidate => candidate.id === incomingSession.id)
+
+    return {
+      ...incomingSession,
+      title: incomingSession.title ?? existingSession?.title,
+      mode: currentSessionOverride?.mode ?? existingSession?.mode ?? incomingSession.mode,
+      phase: currentSessionOverride?.phase ?? existingSession?.phase ?? incomingSession.phase,
+      isRunning: currentSessionOverride?.isRunning ?? existingSession?.isRunning ?? incomingSession.isRunning,
+    }
+  })
+}
 
 // Pending path confirmation request from server
 export interface PendingPathConfirmation {
@@ -56,6 +127,7 @@ interface SessionState {
   // Sessions
   sessions: SessionSummary[]
   currentSession: Session | null
+  unreadSessionIds: string[]
   
   // Messages: server-authoritative, includes streaming state
   // Each message has isStreaming flag to indicate if it's being streamed
@@ -114,10 +186,51 @@ interface SessionState {
   handleServerMessage: (message: ServerMessage) => void
 }
 
+function getKnownPhase(state: SessionState, sessionId: string): SessionSummary['phase'] | Session['phase'] | null {
+  if (state.currentSession?.id === sessionId) {
+    return state.currentSession.phase
+  }
+
+  return state.sessions.find(session => session.id === sessionId)?.phase ?? null
+}
+
+function handleGlobalSoundEffects(message: ServerMessage, state: SessionState): void {
+  if (message.type === 'chat.done') {
+    const payload = message.payload as ChatDonePayload
+    if (payload.reason === 'complete') {
+      playNotification()
+    }
+    if (payload.reason === 'waiting_for_user') {
+      playWaitingForUser()
+    }
+    return
+  }
+
+  if (message.type === 'phase.changed' && message.sessionId) {
+    const payload = message.payload as PhaseChangedPayload
+    const previousPhase = getKnownPhase(state, message.sessionId)
+    if (previousPhase === payload.phase) {
+      return
+    }
+
+    if (payload.phase === 'done') {
+      playAchievement()
+    }
+    if (payload.phase === 'blocked') {
+      playIntervention()
+    }
+  }
+}
+
+export const soundTestExports = {
+  handleGlobalSoundEffects,
+}
+
 export const useSessionStore = create<SessionState>((set, get) => ({
   connectionStatus: 'disconnected',
   sessions: [],
   currentSession: null,
+  unreadSessionIds: [],
   messages: [],
   streamingMessageId: null,
   currentTodos: [],
@@ -166,11 +279,17 @@ export const useSessionStore = create<SessionState>((set, get) => ({
     // Clear state when loading a different session
     if (!currentSession || currentSession.id !== sessionId) {
       set({ 
+        currentSession: null,
+        unreadSessionIds: removeUnreadSessionId(get().unreadSessionIds, sessionId),
         messages: [],
         streamingMessageId: null,
         currentTodos: [],
         contextState: null,
+        pendingPathConfirmation: null,
+        error: null,
       })
+    } else {
+      set({ unreadSessionIds: removeUnreadSessionId(get().unreadSessionIds, sessionId) })
     }
     wsClient.send('session.load', { sessionId })
   },
@@ -184,13 +303,16 @@ export const useSessionStore = create<SessionState>((set, get) => ({
   },
   
   clearSession: () => {
-    set({ 
+    set(state => ({ 
       currentSession: null, 
       messages: [],
       streamingMessageId: null,
       currentTodos: [],
       contextState: null,
-    })
+      unreadSessionIds: state.currentSession
+        ? removeUnreadSessionId(state.unreadSessionIds, state.currentSession.id)
+        : state.unreadSessionIds,
+    }))
   },
   
   sendMessage: (content, attachments) => {
@@ -240,27 +362,52 @@ export const useSessionStore = create<SessionState>((set, get) => ({
   },
   
   handleServerMessage: (message) => {
+    const stateSnapshot = get()
+    handleGlobalSoundEffects(message, stateSnapshot)
+
+    const activeSessionId = stateSnapshot.currentSession?.id ?? null
+    const markBackgroundSessionUnread = () => {
+      const eventSessionId = message.sessionId
+      if (!eventSessionId || eventSessionId === activeSessionId) {
+        return
+      }
+      set(state => ({ unreadSessionIds: addUnreadSessionId(state.unreadSessionIds, eventSessionId) }))
+    }
+
     switch (message.type) {
       case 'session.state': {
         const payload = message.payload as SessionStatePayload
+        if (!isSessionStateForCurrentView(message, activeSessionId)) {
+          markBackgroundSessionUnread()
+          break
+        }
         // Server sends complete state: session + messages
         // This is the source of truth on load/reconnect
         set({ 
           currentSession: payload.session,
+          sessions: mergeSessionIntoSummary(get().sessions, payload.session),
+          unreadSessionIds: removeUnreadSessionId(get().unreadSessionIds, payload.session.id),
           messages: payload.messages,
           // If any message is streaming, track it
           streamingMessageId: payload.messages.find(m => m.isStreaming)?.id ?? null,
+          currentTodos: [],
+          pendingPathConfirmation: null,
+          error: null,
         })
         break
       }
       
       case 'session.list': {
         const payload = message.payload as SessionListPayload
-        set({ sessions: payload.sessions })
+        set(state => ({
+          sessions: mergeSessionList(payload.sessions, state.sessions, state.currentSession),
+        }))
         break
       }
       
       case 'session.deleted': {
+        const payload = message.payload as { sessionId: string }
+        set(state => ({ unreadSessionIds: removeUnreadSessionId(state.unreadSessionIds, payload.sessionId) }))
         get().listSessions()
         break
       }
@@ -293,6 +440,10 @@ export const useSessionStore = create<SessionState>((set, get) => ({
       
       case 'chat.message': {
         // Server created a new message (user message or assistant message before streaming)
+        if (!isMessageForCurrentSession(message, get().currentSession?.id ?? null)) {
+          markBackgroundSessionUnread()
+          break
+        }
         const payload = message.payload as ChatMessagePayload
         set(state => {
           // Don't add duplicates
@@ -312,6 +463,10 @@ export const useSessionStore = create<SessionState>((set, get) => ({
       
       case 'chat.message_updated': {
         // Server updated a message (e.g., isStreaming changed after tool loop iteration)
+        if (!isMessageForCurrentSession(message, get().currentSession?.id ?? null)) {
+          markBackgroundSessionUnread()
+          break
+        }
         const payload = message.payload as ChatMessageUpdatedPayload
         set(state => ({
           messages: state.messages.map(m => 
@@ -330,6 +485,10 @@ export const useSessionStore = create<SessionState>((set, get) => ({
       
       case 'chat.delta': {
         // Append text content to the message with this messageId
+        if (!isMessageForCurrentSession(message, get().currentSession?.id ?? null)) {
+          markBackgroundSessionUnread()
+          break
+        }
         const payload = message.payload as ChatDeltaPayload
         set(state => ({
           messages: state.messages.map(m => 
@@ -344,6 +503,10 @@ export const useSessionStore = create<SessionState>((set, get) => ({
       
       case 'chat.thinking': {
         // Append thinking content to the message with this messageId
+        if (!isMessageForCurrentSession(message, get().currentSession?.id ?? null)) {
+          markBackgroundSessionUnread()
+          break
+        }
         const payload = message.payload as ChatThinkingPayload
         set(state => ({
           messages: state.messages.map(m => 
@@ -358,6 +521,10 @@ export const useSessionStore = create<SessionState>((set, get) => ({
       
       case 'chat.tool_preparing': {
         // Add preparing tool call indicator (temporary, replaced when full tool call arrives)
+        if (!isMessageForCurrentSession(message, get().currentSession?.id ?? null)) {
+          markBackgroundSessionUnread()
+          break
+        }
         const payload = message.payload as ChatToolPreparingPayload
         set(state => ({
           messages: state.messages.map(m => 
@@ -378,6 +545,10 @@ export const useSessionStore = create<SessionState>((set, get) => ({
       case 'chat.tool_call': {
         // Add tool call to the message with this messageId
         // Also remove any matching preparing tool call (by name match, since we don't have index in tool_call)
+        if (!isMessageForCurrentSession(message, get().currentSession?.id ?? null)) {
+          markBackgroundSessionUnread()
+          break
+        }
         const payload = message.payload as ChatToolCallPayload
         set(state => ({
           messages: state.messages.map(m => {
@@ -411,6 +582,10 @@ export const useSessionStore = create<SessionState>((set, get) => ({
       
       case 'chat.tool_output': {
         // Append streaming output to the tool call (run_command only)
+        if (!isMessageForCurrentSession(message, get().currentSession?.id ?? null)) {
+          markBackgroundSessionUnread()
+          break
+        }
         const payload = message.payload as ChatToolOutputPayload
         set(state => ({
           messages: state.messages.map(m => {
@@ -434,6 +609,10 @@ export const useSessionStore = create<SessionState>((set, get) => ({
       case 'chat.tool_result': {
         // Tool results come as separate chat.message events (tool role messages)
         // This event is just for real-time display - can track in message's toolCalls
+        if (!isMessageForCurrentSession(message, get().currentSession?.id ?? null)) {
+          markBackgroundSessionUnread()
+          break
+        }
         const payload = message.payload as ChatToolResultPayload
         set(state => ({
           messages: state.messages.map(m => {
@@ -451,12 +630,20 @@ export const useSessionStore = create<SessionState>((set, get) => ({
       }
       
       case 'chat.todo': {
+        if (!isMessageForCurrentSession(message, get().currentSession?.id ?? null)) {
+          markBackgroundSessionUnread()
+          break
+        }
         const payload = message.payload as ChatTodoPayload
         set({ currentTodos: payload.todos })
         break
       }
       
       case 'chat.summary': {
+        if (!isMessageForCurrentSession(message, get().currentSession?.id ?? null)) {
+          markBackgroundSessionUnread()
+          break
+        }
         const payload = message.payload as ChatSummaryPayload
         set(state => ({
           currentSession: state.currentSession
@@ -467,6 +654,10 @@ export const useSessionStore = create<SessionState>((set, get) => ({
       }
       
       case 'chat.progress': {
+        if (!isMessageForCurrentSession(message, get().currentSession?.id ?? null)) {
+          markBackgroundSessionUnread()
+          break
+        }
         // Progress messages are transient - could add to a separate state if needed
         // For now, just log
         const payload = message.payload as ChatProgressPayload
@@ -475,6 +666,10 @@ export const useSessionStore = create<SessionState>((set, get) => ({
       }
       
       case 'chat.format_retry': {
+        if (!isMessageForCurrentSession(message, get().currentSession?.id ?? null)) {
+          markBackgroundSessionUnread()
+          break
+        }
         // Format retry - could show in UI
         const payload = message.payload as ChatFormatRetryPayload
         console.log('Format retry:', payload.attempt, '/', payload.maxAttempts)
@@ -482,26 +677,31 @@ export const useSessionStore = create<SessionState>((set, get) => ({
       }
       
       case 'chat.done': {
+        if (!isMessageForCurrentSession(message, get().currentSession?.id ?? null)) {
+          markBackgroundSessionUnread()
+          break
+        }
         const payload = message.payload as ChatDonePayload
+        const messageStats = payload.stats as Message['stats']
         
         // Mark the message as no longer streaming and add stats if present
         // Note: isRunning is now updated via session.running event, not here
         set(state => ({
           messages: state.messages.map(m => 
             m.id === payload.messageId
-              ? { ...m, isStreaming: false, stats: payload.stats ?? m.stats }
+              ? { ...m, isStreaming: false, stats: messageStats ?? m.stats }
               : m
           ),
           streamingMessageId: null,
         }))
-        
-        if (payload.reason === 'complete') {
-          playNotification()
-        }
         break
       }
       
       case 'chat.error': {
+        if (!isMessageForCurrentSession(message, get().currentSession?.id ?? null)) {
+          markBackgroundSessionUnread()
+          break
+        }
         const payload = message.payload as ChatErrorPayload
         console.error('Chat error:', payload.error, 'recoverable:', payload.recoverable)
         set({ 
@@ -512,6 +712,10 @@ export const useSessionStore = create<SessionState>((set, get) => ({
       }
       
       case 'chat.path_confirmation': {
+        if (!isMessageForCurrentSession(message, get().currentSession?.id ?? null)) {
+          markBackgroundSessionUnread()
+          break
+        }
         const payload = message.payload as ChatPathConfirmationPayload
         set({
           pendingPathConfirmation: {
@@ -526,6 +730,10 @@ export const useSessionStore = create<SessionState>((set, get) => ({
       }
       
       case 'mode.changed': {
+        if (!isMessageForCurrentSession(message, get().currentSession?.id ?? null)) {
+          markBackgroundSessionUnread()
+          break
+        }
         const payload = message.payload as ModeChangedPayload
         set(state => ({
           currentSession: state.currentSession
@@ -549,38 +757,22 @@ export const useSessionStore = create<SessionState>((set, get) => ({
               : s
           ),
         }))
-        
-        if (isBackgroundSession) {
-          // Background session: only play sounds, don't update currentSession
-          if (payload.phase === 'done') {
-            playAchievement()
-          }
-          if (payload.phase === 'blocked') {
-            playIntervention()
-          }
-        } else {
-          // Active session: full state update and sounds
-          const currentPhase = get().currentSession?.phase
-          const shouldPlayAchievement = payload.phase === 'done' && currentPhase !== 'done'
-          const shouldPlayIntervention = payload.phase === 'blocked' && currentPhase !== 'blocked'
-          
+
+        if (!isBackgroundSession) {
           set(state => ({
             currentSession: state.currentSession
               ? { ...state.currentSession, phase: payload.phase }
               : null,
           }))
-          
-          if (shouldPlayAchievement) {
-            playAchievement()
-          }
-          if (shouldPlayIntervention) {
-            playIntervention()
-          }
         }
         break
       }
       
       case 'criteria.updated': {
+        if (!isMessageForCurrentSession(message, get().currentSession?.id ?? null)) {
+          markBackgroundSessionUnread()
+          break
+        }
         const payload = message.payload as CriteriaUpdatedPayload
         set(state => ({
           currentSession: state.currentSession
@@ -591,6 +783,10 @@ export const useSessionStore = create<SessionState>((set, get) => ({
       }
       
       case 'context.state': {
+        if (!isMessageForCurrentSession(message, get().currentSession?.id ?? null)) {
+          markBackgroundSessionUnread()
+          break
+        }
         const payload = message.payload as ContextStatePayload
         set({ contextState: payload.context })
         break

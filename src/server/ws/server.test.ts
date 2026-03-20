@@ -836,4 +836,103 @@ describe('createWebSocketServer', () => {
 
     await harness.close()
   })
+
+  it('tags direct session-scoped messages with their originating session after switching sessions', async () => {
+    const sessionOne: any = {
+      id: 'session-1',
+      projectId: 'project-1',
+      workdir: '/tmp/project-1',
+      mode: 'planner',
+      phase: 'plan',
+      isRunning: false,
+      criteria: [],
+      summary: null,
+    }
+    const sessionTwo: any = {
+      id: 'session-2',
+      projectId: 'project-1',
+      workdir: '/tmp/project-2',
+      mode: 'planner',
+      phase: 'plan',
+      isRunning: false,
+      criteria: [],
+      summary: null,
+    }
+    const sessions = new Map<string, any>([
+      ['session-1', sessionOne],
+      ['session-2', sessionTwo],
+    ])
+
+    let releaseRun: (() => void) | null = null
+    let emitFromRun: ((message: TestMessage) => void) | null = null
+
+    runChatTurnMock.mockImplementation(({ onMessage }) => new Promise<void>((resolve) => {
+      emitFromRun = onMessage as (message: TestMessage) => void
+      releaseRun = resolve
+    }))
+
+    const sessionManager = createSessionManager({
+      createSession: vi.fn(() => sessionOne),
+      getSession: vi.fn((sessionId: string) => sessions.get(sessionId) ?? null),
+      requireSession: vi.fn((sessionId: string) => sessions.get(sessionId)),
+      getContextState: vi.fn((sessionId: string) => ({
+        currentTokens: sessionId === 'session-1' ? 11 : 22,
+        maxTokens: 200000,
+        compactionCount: 0,
+        dangerZone: false,
+        canCompact: false,
+      })),
+    })
+
+    const harness = await createHarness({ sessionManager })
+
+    harness.send({ id: 'create-session-1', type: 'session.create', payload: { projectId: 'project-1' } })
+    await harness.nextMessage((message) => message.id === 'create-session-1')
+    await harness.nextMessage((message) => message.type === 'context.state' && message.sessionId === 'session-1')
+
+    harness.send({ id: 'chat-session-1', type: 'chat.send', payload: { content: 'Keep working' } })
+    await harness.nextMessage((message) => message.type === 'chat.message')
+    await harness.nextMessage((message) => message.type === 'session.running')
+    await harness.nextMessage((message) => message.id === 'chat-session-1')
+
+    harness.send({ id: 'load-session-2', type: 'session.load', payload: { sessionId: 'session-2' } })
+    expect(await harness.nextMessage((message) => message.id === 'load-session-2')).toMatchObject({
+      type: 'session.state',
+      sessionId: 'session-2',
+      payload: { session: { id: 'session-2' } },
+    })
+    expect(await harness.nextMessage((message) => message.type === 'context.state' && message.sessionId === 'session-2')).toMatchObject({
+      type: 'context.state',
+      sessionId: 'session-2',
+      payload: { context: { currentTokens: 22 } },
+    })
+
+    expect(emitFromRun).not.toBeNull()
+    emitFromRun!({
+      type: 'chat.path_confirmation',
+      payload: {
+        callId: 'path-1',
+        tool: 'read_file',
+        paths: ['/tmp/project-1/secrets.txt'],
+        workdir: '/tmp/project-1',
+        reason: 'outside_workdir',
+      },
+    })
+
+    expect(await harness.nextMessage((message) => message.type === 'chat.path_confirmation')).toMatchObject({
+      type: 'chat.path_confirmation',
+      sessionId: 'session-1',
+      payload: { callId: 'path-1' },
+    })
+
+    expect(releaseRun).not.toBeNull()
+    releaseRun!()
+    expect(await harness.nextMessage((message) => message.type === 'context.state' && message.sessionId === 'session-1')).toMatchObject({
+      type: 'context.state',
+      sessionId: 'session-1',
+      payload: { context: { currentTokens: 11 } },
+    })
+
+    await harness.close()
+  })
 })

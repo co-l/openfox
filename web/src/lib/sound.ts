@@ -7,6 +7,9 @@ achievementSound.volume = 0.6
 const interventionSound = new Audio('/sounds/intervention.mp3')
 interventionSound.volume = 0.6
 
+const waitingForUserSound = new Audio('/sounds/waiting-for-user.mp3')
+waitingForUserSound.volume = 0.6
+
 export const playNotification = () => {
   notificationSound.currentTime = 0
   notificationSound.play().catch(() => {}) // Ignore autoplay errors
@@ -20,4 +23,9 @@ export const playAchievement = () => {
 export const playIntervention = () => {
   interventionSound.currentTime = 0
   interventionSound.play().catch(() => {}) // Ignore autoplay errors
+}
+
+export const playWaitingForUser = () => {
+  waitingForUserSound.currentTime = 0
+  waitingForUserSound.play().catch(() => {}) // Ignore autoplay errors
 }

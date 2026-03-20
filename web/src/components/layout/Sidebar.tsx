@@ -16,6 +16,7 @@ export function Sidebar({ projectId }: SidebarProps) {
   
   const sessions = useSessionStore(state => state.sessions)
   const currentSession = useSessionStore(state => state.currentSession)
+  const unreadSessionIds = useSessionStore(state => state.unreadSessionIds)
   const createSession = useSessionStore(state => state.createSession)
   const deleteSession = useSessionStore(state => state.deleteSession)
   const listSessions = useSessionStore(state => state.listSessions)
@@ -97,6 +98,8 @@ export function Sidebar({ projectId }: SidebarProps) {
           <div className="divide-y divide-border">
             {projectSessions.map(session => {
               const isActive = currentSession?.id === session.id
+              const hasUnread = unreadSessionIds.includes(session.id)
+              const isRunning = session.isRunning && session.phase !== 'done' && session.phase !== 'blocked'
               return (
                 <div
                   key={session.id}
@@ -112,6 +115,25 @@ export function Sidebar({ projectId }: SidebarProps) {
                     <span className={`font-medium truncate text-sm ${isActive ? 'text-accent-primary' : 'text-text-primary'}`}>
                       {session.title ?? session.id.slice(0, 6)}
                     </span>
+                    {isRunning && (
+                      <svg
+                        aria-label="Session running"
+                        className="w-3 h-3 text-blue-400 animate-spin flex-shrink-0"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                      >
+                        <title>Running</title>
+                        <circle className="opacity-30" cx="12" cy="12" r="9" stroke="currentColor" strokeWidth="3" />
+                        <path d="M21 12a9 9 0 00-9-9" stroke="currentColor" strokeWidth="3" strokeLinecap="round" />
+                      </svg>
+                    )}
+                    {hasUnread && !isActive && (
+                      <span
+                        aria-label="Unread activity"
+                        title="Unread activity"
+                        className="w-2 h-2 rounded-full bg-amber-400 flex-shrink-0"
+                      />
+                    )}
                   </div>
                   
                   <div className="flex items-center justify-between mt-0.5">
@@ -145,7 +167,6 @@ export function Sidebar({ projectId }: SidebarProps) {
                       ) : (
                         session.phase
                       )}
-                      {session.isRunning && session.phase !== 'done' && session.phase !== 'blocked' && ' •'}
                     </span>
                     
                     <button

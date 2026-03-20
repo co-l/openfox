@@ -142,13 +142,13 @@ export function createWebSocketServer(
             const messages = events.length > 0 
               ? buildMessagesFromStoredEvents(events) 
               : []
-            ws.send(serializeServerMessage(createSessionStateMessage(session, messages)))
+            ws.send(serializeServerMessage({ ...createSessionStateMessage(session, messages), sessionId }))
           }
         }
         
         // Broadcast running state changes in real-time
         if (event.type === 'running_changed') {
-          ws.send(serializeServerMessage(createSessionRunningMessage(event.isRunning)))
+          ws.send(serializeServerMessage({ ...createSessionRunningMessage(event.isRunning), sessionId }))
         }
       }
     }
@@ -219,6 +219,10 @@ async function handleClientMessage(
     if (ws.readyState === WebSocket.OPEN) {
       ws.send(serializeServerMessage(msg))
     }
+  }
+
+  const sendForSession = (sessionId: string, msg: ServerMessage) => {
+    send({ ...msg, sessionId })
   }
   
   switch (message.type) {
@@ -336,11 +340,11 @@ async function handleClientMessage(
       )
       client.activeSessionId = session.id
       // New session has no events yet
-      send(createSessionStateMessage(session, [], message.id))
+      sendForSession(session.id, createSessionStateMessage(session, [], message.id))
       
       // Send initial context state
       const contextState = sessionManager.getContextState(session.id)
-      send(createContextStateMessage(contextState))
+      sendForSession(session.id, createContextStateMessage(contextState))
       break
     }
     
@@ -393,11 +397,11 @@ async function handleClientMessage(
       messages = buildMessagesFromStoredEvents(events)
       logger.debug('Loaded messages from EventStore', { sessionId: session.id, eventCount: events.length, messageCount: messages.length })
       
-      send(createSessionStateMessage(session, messages, message.id))
+      sendForSession(session.id, createSessionStateMessage(session, messages, message.id))
       
       // Send context state
       const contextState = sessionManager.getContextState(session.id)
-      send(createContextStateMessage(contextState))
+      sendForSession(session.id, createContextStateMessage(contextState))
       
       // No event replay needed - client stays subscribed to all sessions (tab model)
       break
@@ -447,7 +451,7 @@ async function handleClientMessage(
         logger.info('User intervention - resetting blocked state', { sessionId: client.activeSessionId })
         sessionManager.setPhase(client.activeSessionId, 'build')
         sessionManager.resetAllCriteriaAttempts(client.activeSessionId)
-        send(createPhaseChangedMessage('build'))
+        sendForSession(client.activeSessionId, createPhaseChangedMessage('build'))
       }
       
       const sessionId = client.activeSessionId
@@ -464,8 +468,8 @@ async function handleClientMessage(
       sessionManager.setRunning(sessionId, true)
       
       // Send user message directly to client (don't rely on EventStore subscription for this)
-      send(createChatMessageMessage(userMessage))
-      send(createSessionRunningMessage(true))
+      sendForSession(sessionId, createChatMessageMessage(userMessage))
+      sendForSession(sessionId, createSessionRunningMessage(true))
       
       // Create AbortController for this chat (abort existing if any - defense in depth)
       const controller = new AbortController()
@@ -506,7 +510,7 @@ async function handleClientMessage(
         llmClient: getLLMClient(),
         statsIdentity: resolveStatsIdentity(getLLMClient(), getActiveProvider),
         signal: controller.signal,
-        onMessage: send,  // For path confirmation dialogs
+         onMessage: (msg) => sendForSession(sessionId, msg),  // For path confirmation dialogs
       }).catch((error) => {
         // Don't create error message for controlled abort
         if (error instanceof Error && error.message === 'Aborted') {
@@ -520,7 +524,7 @@ async function handleClientMessage(
         sessionManager.setRunning(sessionId, false)
         // Send updated context state to frontend
         const contextState = sessionManager.getContextState(sessionId)
-        send(createContextStateMessage(contextState))
+        sendForSession(sessionId, createContextStateMessage(contextState))
       })
       
       break
@@ -560,7 +564,7 @@ async function handleClientMessage(
       const fallbackMessageId = lastAssistantMessage?.id ?? [...messages].reverse().find(msg => msg.role === 'user')?.id ?? crypto.randomUUID()
 
       send({ type: 'ack', payload: {}, id: message.id })
-      send(createChatDoneMessage(fallbackMessageId, 'complete', lastAssistantMessage?.stats))
+      sendForSession(session.id, createChatDoneMessage(fallbackMessageId, 'complete', lastAssistantMessage?.stats))
       break
     }
     
@@ -580,11 +584,11 @@ async function handleClientMessage(
       }
       
       const session = sessionManager.setMode(client.activeSessionId, message.payload.mode)
-      send(createModeChangedMessage(message.payload.mode, false))
+      sendForSession(client.activeSessionId, createModeChangedMessage(message.payload.mode, false))
       const modeEventStore = getEventStore()
       const modeEvents = modeEventStore.getEvents(session.id)
       const modeMessages = buildMessagesFromStoredEvents(modeEvents)
-      send(createSessionStateMessage(session, modeMessages, message.id))
+      sendForSession(client.activeSessionId, createSessionStateMessage(session, modeMessages, message.id))
       break
     }
     
@@ -636,7 +640,7 @@ async function handleClientMessage(
       // Mark session as running
       sessionManager.setRunning(sessionId, true)
       eventStore.append(sessionId, { type: 'running.changed', data: { isRunning: true } })
-      send(createSessionRunningMessage(true))
+      sendForSession(sessionId, createSessionRunningMessage(true))
       
       // Generate summary and start builder asynchronously
       ;(async () => {
@@ -729,8 +733,8 @@ async function handleClientMessage(
             statsIdentity: resolveStatsIdentity(getLLMClient(), getActiveProvider),
             injectBuilderKickoff: true,
             signal: controller.signal,
-            onMessage: send,  // For path confirmation dialogs
-          })
+           onMessage: (msg) => sendForSession(sessionId, msg),  // For path confirmation dialogs
+         })
         } catch (error) {
           if (error instanceof Error && error.message === 'Aborted') {
             return
@@ -758,7 +762,7 @@ async function handleClientMessage(
           eventStore.append(sessionId, { type: 'running.changed', data: { isRunning: false } })
           // Send updated context state to frontend
           const contextState = sessionManager.getContextState(sessionId)
-          send(createContextStateMessage(contextState))
+          sendForSession(sessionId, createContextStateMessage(contextState))
         }
       })()
       
@@ -781,7 +785,7 @@ async function handleClientMessage(
       }
       
       sessionManager.setCriteria(client.activeSessionId, message.payload.criteria)
-      send(createCriteriaUpdatedMessage(message.payload.criteria))
+      sendForSession(client.activeSessionId, createCriteriaUpdatedMessage(message.payload.criteria))
       send({ type: 'ack', payload: {}, id: message.id })
       break
     }
@@ -888,17 +892,17 @@ async function handleClientMessage(
           
           // Send updated context state
           const newContextState = sessionManager.getContextState(sessionId)
-          send(createContextStateMessage(newContextState))
+          sendForSession(sessionId, createContextStateMessage(newContextState))
           
           // Send updated session state so client sees all messages
           const updatedSession = sessionManager.requireSession(sessionId)
           const compactEventStore = getEventStore()
           const compactEvents = compactEventStore.getEvents(sessionId)
           const compactMessages = buildMessagesFromStoredEvents(compactEvents)
-          send(createSessionStateMessage(updatedSession, compactMessages))
+          sendForSession(sessionId, createSessionStateMessage(updatedSession, compactMessages))
         } catch (error) {
           logger.error('Compaction failed', { error, sessionId })
-          send(createChatErrorMessage(
+          sendForSession(sessionId, createChatErrorMessage(
             `Compaction failed: ${error instanceof Error ? error.message : 'Unknown error'}`,
             true
           ))
@@ -952,7 +956,7 @@ async function handleClientMessage(
       
       // Mark session as running (emits running.changed event)
       sessionManager.setRunning(sessionId, true)
-      send(createSessionRunningMessage(true))
+      sendForSession(sessionId, createSessionRunningMessage(true))
       
       // Create AbortController for this run (abort existing if any - defense in depth)
       const controller = new AbortController()
@@ -996,8 +1000,8 @@ async function handleClientMessage(
         statsIdentity: resolveStatsIdentity(getLLMClient(), getActiveProvider),
         injectBuilderKickoff: true,
         signal: controller.signal,
-        onMessage: send,  // For path confirmation dialogs
-      }).catch((error) => {
+         onMessage: (msg) => sendForSession(sessionId, msg),  // For path confirmation dialogs
+       }).catch((error) => {
         // Don't create error message for controlled abort
         if (error instanceof Error && error.message === 'Aborted') {
           return
