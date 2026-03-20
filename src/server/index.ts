@@ -146,12 +146,19 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
   app.post('/api/model/refresh', async (_req, res) => {
     const llmClient = getLLMClient()
     const activeProvider = providerManager.getActiveProvider()
-    const baseUrl = activeProvider?.url ?? config.llm.baseUrl
-    const detected = await detectModel(baseUrl)
-    if (detected) {
-      llmClient.setModel(detected)
-      return res.json({ model: detected, source: 'detected', llmStatus: getLlmStatus(), backend: llmClient.getBackend() })
+    
+    // Only auto-detect if the provider has model: 'auto'
+    // Otherwise, preserve the explicitly selected model
+    if (activeProvider?.model === 'auto') {
+      const baseUrl = activeProvider.url ?? config.llm.baseUrl
+      const detected = await detectModel(baseUrl)
+      if (detected) {
+        llmClient.setModel(detected)
+        return res.json({ model: detected, source: 'detected', llmStatus: getLlmStatus(), backend: llmClient.getBackend() })
+      }
     }
+    
+    // Return current model without overwriting
     res.json({ model: llmClient.getModel(), source: 'cached', llmStatus: getLlmStatus(), backend: llmClient.getBackend() })
   })
 
