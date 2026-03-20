@@ -9,6 +9,13 @@ import type { ToolCall, PromptContext, InjectedFile } from '../../shared/types.j
 import type { ServerMessage } from '../../shared/protocol.js'
 import type { LLMClientWithModel } from '../llm/client.js'
 import type { StepResult } from '../runner/types.js'
+
+const getStatsIdentity = (model: string) => ({
+  providerId: `provider:${model}`,
+  providerName: 'Unknown Provider',
+  backend: 'unknown' as const,
+  model,
+})
 import type { SessionManager } from '../session/index.js'
 import { getToolRegistryForMode } from '../tools/index.js'
 import { buildBuilderPrompt, BUILDER_KICKOFF_PROMPT } from './prompts.js'
@@ -81,7 +88,7 @@ export async function runBuilderStep(options: BuilderStepOptions): Promise<StepR
     if (signal?.aborted) {
       // Emit partial stats before aborting
       const stats = computeAggregatedStats({
-        model: llmClient.getModel(),
+        identity: getStatsIdentity(llmClient.getModel()),
         mode: 'builder',
         totalPrefillTokens: totalPromptTokens,
         totalGenTokens: totalCompletionTokens,
@@ -158,7 +165,7 @@ export async function runBuilderStep(options: BuilderStepOptions): Promise<StepR
     // Emit stats for this builder step (PROMPT -> WORK -> stats+sound pattern)
     if (result.toolCalls.length === 0) {
       const stats = computeAggregatedStats({
-        model: llmClient.getModel(),
+        identity: getStatsIdentity(llmClient.getModel()),
         mode: 'builder',
         totalPrefillTokens: totalPromptTokens,
         totalGenTokens: totalCompletionTokens,
@@ -180,7 +187,7 @@ export async function runBuilderStep(options: BuilderStepOptions): Promise<StepR
       if (signal?.aborted) {
         // Emit partial stats before aborting
         const stats = computeAggregatedStats({
-          model: llmClient.getModel(),
+          identity: getStatsIdentity(llmClient.getModel()),
           mode: 'builder',
           totalPrefillTokens: totalPromptTokens,
           totalGenTokens: totalCompletionTokens,

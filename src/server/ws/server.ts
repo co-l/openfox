@@ -7,7 +7,7 @@ import type { ToolRegistry } from '../tools/index.js'
 import type { SessionManager } from '../session/index.js'
 import { getEventStore, getCurrentContextWindowId } from '../events/index.js'
 import { buildContextMessagesFromStoredEvents, buildMessagesFromStoredEvents } from '../events/folding.js'
-import type { Attachment, InjectedFile, Message } from '../../shared/types.js'
+import type { Attachment, InjectedFile, Message, Provider, StatsIdentity } from '../../shared/types.js'
 import { runChatTurn, TurnMetrics, createMessageStartEvent, createMessageDoneEvent, createChatDoneEvent } from '../chat/orchestrator.js'
 import { streamLLMPure, consumeStreamGenerator } from '../chat/stream-pure.js'
 import { runOrchestrator } from '../runner/index.js'
@@ -84,6 +84,22 @@ function toRequestContextMessages(messages: Array<{
   }))
 }
 
+function resolveStatsIdentity(
+  llmClient: LLMClientWithModel,
+  getActiveProvider?: () => Provider | undefined,
+): StatsIdentity {
+  const provider = getActiveProvider?.()
+  const model = llmClient.getModel()
+  const backend = provider?.backend ?? (llmClient.getBackend() === 'unknown' ? 'unknown' : llmClient.getBackend())
+
+  return {
+    providerId: provider?.id ?? `provider:${model}`,
+    providerName: provider?.name ?? 'Unknown Provider',
+    backend,
+    model,
+  }
+}
+
 // Track active agent AbortControllers by sessionId
 const activeAgents = new Map<string, AbortController>()
 
@@ -98,6 +114,7 @@ export function createWebSocketServer(
   httpServer: Server,
   config: Config,
   getLLMClient: () => LLMClientWithModel,
+  getActiveProvider: (() => Provider | undefined) | undefined,
   toolRegistry: ToolRegistry,
   sessionManager: SessionManager
 ): WebSocketServer {
@@ -152,7 +169,7 @@ export function createWebSocketServer(
       const client = clients.get(ws)!
       
       try {
-        await handleClientMessage(ws, client, message, config, getLLMClient, toolRegistry, sessionManager)
+          await handleClientMessage(ws, client, message, config, getLLMClient, getActiveProvider, toolRegistry, sessionManager)
       } catch (error) {
         logger.error('Error handling client message', { error, type: message.type })
         ws.send(serializeServerMessage(
@@ -194,6 +211,7 @@ async function handleClientMessage(
   message: { id: string; type: string; payload: unknown },
   config: Config,
   getLLMClient: () => LLMClientWithModel,
+  getActiveProvider: (() => Provider | undefined) | undefined,
   toolRegistry: ToolRegistry,
   sessionManager: SessionManager
 ): Promise<void> {
@@ -486,6 +504,7 @@ async function handleClientMessage(
         sessionManager,
         sessionId,
         llmClient: getLLMClient(),
+        statsIdentity: resolveStatsIdentity(getLLMClient(), getActiveProvider),
         signal: controller.signal,
         onMessage: send,  // For path confirmation dialogs
       }).catch((error) => {
@@ -676,7 +695,7 @@ async function handleClientMessage(
           turnMetrics.addLLMCall(result.timing, result.usage.promptTokens, result.usage.completionTokens)
           
           // Emit message.done with stats
-          const stats = turnMetrics.buildStats(getLLMClient().getModel(), 'planner')
+          const stats = turnMetrics.buildStats(resolveStatsIdentity(getLLMClient(), getActiveProvider), 'planner')
           eventStore.append(sessionId, createMessageDoneEvent(assistantMsgId, {
             segments: result.segments,
             stats,
@@ -707,6 +726,7 @@ async function handleClientMessage(
             sessionManager,
             sessionId,
             llmClient: getLLMClient(),
+            statsIdentity: resolveStatsIdentity(getLLMClient(), getActiveProvider),
             signal: controller.signal,
             onMessage: send,  // For path confirmation dialogs
           })
@@ -848,7 +868,7 @@ async function handleClientMessage(
           turnMetrics.addLLMCall(result.timing, result.usage.promptTokens, result.usage.completionTokens)
           
           // Emit stats for compaction (PROMPT -> WORK -> stats+sound pattern)
-          const compactionStats = turnMetrics.buildStats(getLLMClient().getModel(), 'planner')
+          const compactionStats = turnMetrics.buildStats(resolveStatsIdentity(getLLMClient(), getActiveProvider), 'planner')
           eventStore.append(sessionId, createMessageDoneEvent(assistantMsgId, {
             segments: result.segments,
             stats: compactionStats,
@@ -972,6 +992,7 @@ async function handleClientMessage(
         sessionManager,
         sessionId,
         llmClient: getLLMClient(),
+        statsIdentity: resolveStatsIdentity(getLLMClient(), getActiveProvider),
         signal: controller.signal,
         onMessage: send,  // For path confirmation dialogs
       }).catch((error) => {

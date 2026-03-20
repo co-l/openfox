@@ -218,11 +218,12 @@ async function createHarness(options: {
   const eventStore = options.eventStore ?? createEventStore()
   getEventStoreMock.mockReturnValue(eventStore)
 
-  const mockLLMClient = { getModel: () => 'qwen3-32b' } as never
+  const mockLLMClient = { getModel: () => 'qwen3-32b', getBackend: () => 'vllm' } as never
   const wss = createWebSocketServer(
     httpServer,
     { } as never,
     () => mockLLMClient,
+    undefined,
     { tools: [], definitions: [], execute: vi.fn() } as never,
     sessionManager as never,
   )

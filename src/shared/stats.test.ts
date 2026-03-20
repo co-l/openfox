@@ -26,6 +26,9 @@ function createMessageWithStats(
     timestamp,
     tokenCount: 100,
     stats: {
+      providerId: 'provider-1',
+      providerName: 'Local vLLM',
+      backend: 'vllm',
       model: 'test-model',
       mode,
       totalTime,
@@ -302,6 +305,10 @@ describe('computeSessionStats', () => {
           generationSpeed: 6,
           llmCalls: [
             {
+              providerId: 'provider-1',
+              providerName: 'Local vLLM',
+              backend: 'vllm',
+              model: 'test-model',
               callIndex: 1,
               promptTokens: 40,
               completionTokens: 8,
@@ -312,6 +319,10 @@ describe('computeSessionStats', () => {
               totalTime: 3,
             },
             {
+              providerId: 'provider-1',
+              providerName: 'Local vLLM',
+              backend: 'vllm',
+              model: 'test-model',
               callIndex: 2,
               promptTokens: 80,
               completionTokens: 16,
@@ -336,6 +347,10 @@ describe('computeSessionStats', () => {
           generationSpeed: 6,
           llmCalls: [
             {
+              providerId: 'provider-1',
+              providerName: 'Local vLLM',
+              backend: 'vllm',
+              model: 'test-model',
               callIndex: 1,
               promptTokens: 60,
               completionTokens: 12,
@@ -359,5 +374,50 @@ describe('computeSessionStats', () => {
       expect.objectContaining({ sessionCallIndex: 2, responseIndex: 1, callIndex: 2, promptTokens: 80, completionTokens: 16 }),
       expect.objectContaining({ sessionCallIndex: 3, responseIndex: 2, callIndex: 1, promptTokens: 60, completionTokens: 12 }),
     ])
+  })
+
+  it('groups session stats by provider and model', () => {
+    const messages = [
+      createMessageWithStats('1', {
+        providerId: 'provider-1',
+        providerName: 'Local vLLM',
+        backend: 'vllm',
+        model: 'qwen-1',
+        mode: 'planner',
+        totalTime: 8,
+        prefillTokens: 800,
+        generationTokens: 80,
+      }),
+      createMessageWithStats('2', {
+        providerId: 'provider-2',
+        providerName: 'Anthropic',
+        backend: 'anthropic',
+        model: 'claude-1',
+        mode: 'builder',
+        totalTime: 12,
+        prefillTokens: 1200,
+        generationTokens: 120,
+      }),
+    ]
+
+    const result = computeSessionStats(messages)
+
+    expect(result!.modelGroups).toHaveLength(2)
+    expect(result!.modelGroups[0]).toMatchObject({
+      key: 'provider-1::qwen-1',
+      label: 'Local vLLM > qwen-1',
+      providerId: 'provider-1',
+      providerName: 'Local vLLM',
+      model: 'qwen-1',
+      responseCount: 1,
+    })
+    expect(result!.modelGroups[1]).toMatchObject({
+      key: 'provider-2::claude-1',
+      label: 'Anthropic > claude-1',
+      providerId: 'provider-2',
+      providerName: 'Anthropic',
+      model: 'claude-1',
+      responseCount: 1,
+    })
   })
 })

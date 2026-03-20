@@ -97,7 +97,7 @@ export async function runOrchestrator(options: OrchestratorOptions): Promise<Orc
         
         // Run verification step
         const turnMetrics = new TurnMetrics()
-        await runVerifierTurn({ sessionManager, sessionId, llmClient, ...(signal ? { signal } : {}), ...(onMessage ? { onMessage } : {}) }, turnMetrics)
+        await runVerifierTurn({ sessionManager, sessionId, llmClient, ...(options.statsIdentity ? { statsIdentity: options.statsIdentity } : {}), ...(signal ? { signal } : {}), ...(onMessage ? { onMessage } : {}) }, turnMetrics)
         
         // Loop continues to check result
         break
@@ -120,7 +120,7 @@ export async function runOrchestrator(options: OrchestratorOptions): Promise<Orc
         
         // Run builder step
         const turnMetrics = new TurnMetrics()
-        await runBuilderTurn({ sessionManager, sessionId, llmClient, ...(signal ? { signal } : {}), ...(onMessage ? { onMessage } : {}) }, turnMetrics)
+        await runBuilderTurn({ sessionManager, sessionId, llmClient, ...(options.statsIdentity ? { statsIdentity: options.statsIdentity } : {}), ...(signal ? { signal } : {}), ...(onMessage ? { onMessage } : {}) }, turnMetrics)
         
         // Loop continues to check if more work needed
         break

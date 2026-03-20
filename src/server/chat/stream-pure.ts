@@ -10,7 +10,7 @@
  * - Managing session state
  */
 
-import type { PromptContext, ToolCall, MessageSegment, MessageStats, ToolResult, Attachment } from '../../shared/types.js'
+import type { PromptContext, ToolCall, MessageSegment, MessageStats, StatsIdentity, ToolResult, Attachment } from '../../shared/types.js'
 import type { LLMClientWithModel } from '../llm/client.js'
 import type { LLMToolDefinition } from '../llm/types.js'
 import type { StreamTiming } from '../llm/streaming.js'
@@ -222,7 +222,7 @@ export class TurnMetrics {
   private totalGenTokens = 0
   private totalGenTime = 0 // seconds
   private totalToolTime = 0 // seconds
-  private llmCalls: NonNullable<MessageStats['llmCalls']> = []
+  private llmCalls: Array<Omit<NonNullable<MessageStats['llmCalls']>[number], 'providerId' | 'providerName' | 'backend' | 'model'>> = []
 
   constructor() {
     this.startTime = performance.now()
@@ -257,9 +257,9 @@ export class TurnMetrics {
   }
 
   /** Build final stats object */
-  buildStats(model: string, mode: 'planner' | 'builder' | 'verifier'): MessageStats {
+  buildStats(identity: StatsIdentity, mode: 'planner' | 'builder' | 'verifier'): MessageStats {
     return computeAggregatedStats({
-      model,
+      identity,
       mode,
       totalPrefillTokens: this.totalPrefillTokens,
       totalGenTokens: this.totalGenTokens,
@@ -267,7 +267,10 @@ export class TurnMetrics {
       totalGenTime: this.totalGenTime,
       totalToolTime: this.totalToolTime,
       totalTime: (performance.now() - this.startTime) / 1000,
-      llmCalls: this.llmCalls,
+      llmCalls: this.llmCalls.map((call) => ({
+        ...identity,
+        ...call,
+      })),
     })
   }
 }

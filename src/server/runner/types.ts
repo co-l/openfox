@@ -5,7 +5,7 @@
  * State is derived from session criteria, not persisted separately.
  */
 
-import type { Criterion, MessageStats } from '../../shared/types.js'
+import type { Criterion, MessageStats, StatsIdentity } from '../../shared/types.js'
 import type { ServerMessage } from '../../shared/protocol.js'
 import type { LLMClientWithModel } from '../llm/client.js'
 import type { StreamTiming } from '../llm/streaming.js'
@@ -29,6 +29,7 @@ export interface OrchestratorOptions {
   sessionManager: SessionManager
   sessionId: string
   llmClient: LLMClientWithModel
+  statsIdentity?: StatsIdentity
   signal?: AbortSignal
   /** For path confirmation dialogs (sent directly, not through EventStore) */
   onMessage?: (msg: ServerMessage) => void

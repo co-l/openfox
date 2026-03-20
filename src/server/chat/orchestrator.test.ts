@@ -167,6 +167,61 @@ describe('chat orchestrator', () => {
     })
   })
 
+  it('persists provider and model identity in emitted stats', async () => {
+    const eventStore = createEventStore()
+    getEventStoreMock.mockReturnValue(eventStore)
+    getAllInstructionsMock.mockResolvedValue({ content: 'Plan carefully', files: [] })
+    getToolRegistryForModeMock.mockReturnValue({ definitions: [], execute: vi.fn() })
+    streamLLMPureMock.mockReturnValue({ kind: 'stream' })
+    consumeStreamGeneratorMock.mockResolvedValue({
+      content: 'Planned response',
+      toolCalls: [],
+      segments: [{ type: 'text', content: 'Planned response' }],
+      usage: { promptTokens: 30, completionTokens: 10 },
+      timing: { ttft: 1, completionTime: 2, tps: 5, prefillTps: 30 },
+      aborted: false,
+      xmlFormatError: false,
+    })
+
+    const state: any = {
+      current: {
+        id: 'session-1',
+        projectId: 'project-1',
+        workdir: '/tmp/project',
+        mode: 'planner',
+        phase: 'plan',
+        isRunning: true,
+        criteria: [],
+        executionState: { currentTokenCount: 0, compactionCount: 0 },
+        messages: [{ id: 'user-1', role: 'user', content: 'Do the plan' }],
+      },
+    }
+    const sessionManager = createSessionManager(state)
+
+    await runChatTurn({
+      sessionManager: sessionManager as never,
+      sessionId: 'session-1',
+      llmClient: { getModel: () => 'qwen3-32b' } as never,
+      statsIdentity: {
+        providerId: 'provider-1',
+        providerName: 'Local vLLM',
+        backend: 'vllm',
+        model: 'qwen3-32b',
+      },
+    })
+
+    expect(eventStore.append.mock.calls.find(([, event]) => event.type === 'message.done')?.[1]).toMatchObject({
+      data: {
+        stats: expect.objectContaining({
+          providerId: 'provider-1',
+          providerName: 'Local vLLM',
+          backend: 'vllm',
+          model: 'qwen3-32b',
+        }),
+      },
+    })
+  })
+
   it('handles ask-user interrupts during planner execution', async () => {
     const eventStore = createEventStore()
     getEventStoreMock.mockReturnValue(eventStore)

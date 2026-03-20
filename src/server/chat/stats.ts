@@ -2,20 +2,22 @@
  * Message stats computation - single source of truth for the formula.
  */
 
-import type { LLMCallStats, MessageStats, ToolMode } from '../../shared/types.js'
+import type { LLMCallStats, MessageStats, StatsIdentity, ToolMode } from '../../shared/types.js'
 import type { StreamTiming } from '../llm/streaming.js'
 
 const roundTo1 = (n: number): number => Math.round(n * 10) / 10
 
 function buildCallStats(input: {
+  identity: StatsIdentity
   callIndex: number
   timing: StreamTiming
   promptTokens: number
   completionTokens: number
   timestamp?: string
 }): LLMCallStats {
-  const { callIndex, timing, promptTokens, completionTokens, timestamp } = input
+  const { identity, callIndex, timing, promptTokens, completionTokens, timestamp } = input
   return {
+    ...identity,
     callIndex,
     promptTokens,
     completionTokens,
@@ -29,7 +31,7 @@ function buildCallStats(input: {
 }
 
 export interface StatsInput {
-  model: string
+  identity: StatsIdentity
   mode: ToolMode
   timing: StreamTiming
   usage: { promptTokens: number; completionTokens: number }
@@ -47,12 +49,12 @@ export interface StatsInput {
  * For multi-call flows: pass totalTimeOverride with wall clock time
  */
 export function computeMessageStats(input: StatsInput): MessageStats {
-  const { model, mode, timing, usage, toolTime = 0, totalTimeOverride, timestamp } = input
+  const { identity, mode, timing, usage, toolTime = 0, totalTimeOverride, timestamp } = input
   
   const totalTime = totalTimeOverride ?? (timing.ttft + timing.completionTime + toolTime)
   
   return {
-    model,
+    ...identity,
     mode,
     totalTime,
     toolTime,
@@ -61,6 +63,7 @@ export function computeMessageStats(input: StatsInput): MessageStats {
     generationTokens: usage.completionTokens,
     generationSpeed: timing.completionTime > 0 ? roundTo1(usage.completionTokens / timing.completionTime) : 0,
     llmCalls: [buildCallStats({
+      identity,
       callIndex: 1,
       timing,
       promptTokens: usage.promptTokens,
@@ -75,7 +78,7 @@ export function computeMessageStats(input: StatsInput): MessageStats {
  * Speeds are computed as averages across all calls.
  */
 export function computeAggregatedStats(input: {
-  model: string
+  identity: StatsIdentity
   mode: ToolMode
   totalPrefillTokens: number
   totalGenTokens: number
@@ -85,10 +88,10 @@ export function computeAggregatedStats(input: {
   totalTime: number         // wall clock seconds
   llmCalls?: LLMCallStats[]
 }): MessageStats {
-  const { model, mode, totalPrefillTokens, totalGenTokens, totalPrefillTime, totalGenTime, totalToolTime, totalTime, llmCalls } = input
+  const { identity, mode, totalPrefillTokens, totalGenTokens, totalPrefillTime, totalGenTime, totalToolTime, totalTime, llmCalls } = input
   
   return {
-    model,
+    ...identity,
     mode,
     totalTime,
     toolTime: totalToolTime,

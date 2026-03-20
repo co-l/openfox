@@ -1,14 +1,13 @@
-import { useRef, useCallback, useMemo, useState } from 'react'
+import { Fragment, useRef, useCallback, useEffect, useMemo, useState } from 'react'
 import { Modal } from '../shared/Modal'
 import { DualSparkline } from '../shared/Sparkline'
 import { buildPerformanceChartData, buildResponseLogRows, type ResponseLogRow } from '../../../../src/shared/stats-view.js'
-import type { CallStatsDataPoint, SessionStats } from '../../../../src/shared/types.js'
+import type { CallStatsDataPoint, ModelSessionStats, SessionStats } from '../../../../src/shared/types.js'
 
 interface StatsModalProps {
   isOpen: boolean
   onClose: () => void
   stats: SessionStats
-  model?: string
 }
 
 /**
@@ -51,8 +50,8 @@ function formatContextRange(tokens: number[]): string {
   return `${formatTokens(minTokens)}-${formatTokens(maxTokens)} ctx`
 }
 
-function formatRate(value: number, label: 'pp' | 'tg'): string {
-  return `${formatSpeed(value)} ${label} t/s`
+function formatRate(value: number): string {
+  return `${formatSpeed(value)} t/s`
 }
 
 /**
@@ -82,10 +81,14 @@ function getModeColor(mode: string): string {
 /**
  * Create JSON export data
  */
-function createExportData(stats: SessionStats, model?: string) {
+function createExportData(stats: ModelSessionStats) {
   return {
     exportedAt: new Date().toISOString(),
-    model: model ?? 'unknown',
+    providerId: stats.providerId,
+    providerName: stats.providerName,
+    backend: stats.backend,
+    model: stats.model,
+    label: stats.label,
     summary: {
       totalTime: stats.totalTime,
       aiTime: stats.aiTime,
@@ -126,11 +129,26 @@ function createExportData(stats: SessionStats, model?: string) {
   }
 }
 
-export function StatsModal({ isOpen, onClose, stats, model }: StatsModalProps) {
+export function StatsModal({ isOpen, onClose, stats }: StatsModalProps) {
   const contentRef = useRef<HTMLDivElement>(null)
   const [expandedResponses, setExpandedResponses] = useState<Record<string, boolean>>({})
-  const responseRows = useMemo(() => buildResponseLogRows(stats), [stats])
-  const chartData = useMemo(() => buildPerformanceChartData(stats), [stats])
+  const [selectedModelKey, setSelectedModelKey] = useState(() => stats.modelGroups[0]?.key ?? '')
+
+  useEffect(() => {
+    if (!stats.modelGroups.some((group) => group.key === selectedModelKey)) {
+      setSelectedModelKey(stats.modelGroups[0]?.key ?? '')
+    }
+  }, [selectedModelKey, stats.modelGroups])
+
+  const currentStats = useMemo(() => (
+    stats.modelGroups.find((group) => group.key === selectedModelKey) ?? stats.modelGroups[0]
+  ), [selectedModelKey, stats.modelGroups])
+
+  const responseRows = useMemo(() => currentStats ? buildResponseLogRows(currentStats) : [], [currentStats])
+  const chartData = useMemo(() => currentStats ? buildPerformanceChartData(currentStats) : { mode: 'responses', xLabel: 'response', prefillLabel: '', generationLabel: '', points: [] }, [currentStats])
+  const visibleResponseRowCount = useMemo(() => (
+    responseRows.reduce((count, row) => count + 1 + ((expandedResponses[row.messageId] ?? false) ? row.calls.length : 0), 0)
+  ), [expandedResponses, responseRows])
 
   const toggleResponse = useCallback((messageId: string) => {
     setExpandedResponses((current) => ({
@@ -141,10 +159,12 @@ export function StatsModal({ isOpen, onClose, stats, model }: StatsModalProps) {
 
   // Copy JSON to clipboard
   const handleCopyJson = useCallback(() => {
-    const data = createExportData(stats, model)
+    if (!currentStats) return
+
+    const data = createExportData(currentStats)
     navigator.clipboard.writeText(JSON.stringify(data, null, 2))
       .catch(err => console.error('Failed to copy:', err))
-  }, [stats, model])
+  }, [currentStats])
 
   // Export PNG (requires html2canvas)
   const handleExportPng = useCallback(async () => {
@@ -173,44 +193,65 @@ export function StatsModal({ isOpen, onClose, stats, model }: StatsModalProps) {
   return (
     <Modal isOpen={isOpen} onClose={onClose} title="Session Stats" size="lg">
       <div ref={contentRef} className="space-y-6">
+        <section>
+          <div className="flex flex-wrap gap-2">
+            {stats.modelGroups.map((group) => (
+              <button
+                key={group.key}
+                onClick={() => setSelectedModelKey(group.key)}
+                className={`px-3 py-1.5 rounded border text-xs transition-colors ${
+                  group.key === currentStats?.key
+                    ? 'border-accent-primary bg-accent-primary/10 text-accent-primary'
+                    : 'border-border text-text-muted hover:text-text-primary hover:bg-bg-tertiary/40'
+                }`}
+                title={group.label}
+              >
+                {group.label}
+              </button>
+            ))}
+          </div>
+        </section>
+
         {/* Summary Section */}
+        {currentStats && (
         <section>
           <h3 className="text-sm font-semibold text-text-secondary mb-3 uppercase tracking-wide">
             Summary
           </h3>
           <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
-            <StatCard label="AI Time" value={formatTime(stats.aiTime)} />
-            <StatCard label="Total Time" value={formatTime(stats.totalTime)} />
-            <StatCard label="Tool Time" value={formatTime(stats.toolTime)} />
-            <StatCard label="Responses" value={stats.responseCount.toString()} />
-            <StatCard label="LLM Calls" value={stats.llmCallCount.toString()} />
+            <StatCard label="AI Time" value={formatTime(currentStats.aiTime)} />
+            <StatCard label="Total Time" value={formatTime(currentStats.totalTime)} />
+            <StatCard label="Tool Time" value={formatTime(currentStats.toolTime)} />
+            <StatCard label="Responses" value={currentStats.responseCount.toString()} />
+            <StatCard label="LLM Calls" value={currentStats.llmCallCount.toString()} />
           </div>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mt-3">
             <StatCard 
               label="Prefill Tokens" 
-              value={formatTokens(stats.prefillTokens)} 
-              subValue={`@ ${formatSpeed(stats.avgPrefillSpeed)} tok/s`}
+              value={formatTokens(currentStats.prefillTokens)} 
+              subValue={`@ ${formatSpeed(currentStats.avgPrefillSpeed)} tok/s`}
             />
             <StatCard 
               label="Gen Tokens" 
-              value={formatTokens(stats.generationTokens)}
-              subValue={`@ ${formatSpeed(stats.avgGenerationSpeed)} tok/s`}
+              value={formatTokens(currentStats.generationTokens)}
+              subValue={`@ ${formatSpeed(currentStats.avgGenerationSpeed)} tok/s`}
             />
             <StatCard 
               label="Avg PP Speed" 
-              value={`${formatSpeed(stats.avgPrefillSpeed)}`}
+              value={`${formatSpeed(currentStats.avgPrefillSpeed)}`}
               subValue="tok/s"
             />
             <StatCard 
               label="Avg TG Speed" 
-              value={`${formatSpeed(stats.avgGenerationSpeed)}`}
+              value={`${formatSpeed(currentStats.avgGenerationSpeed)}`}
               subValue="tok/s"
             />
           </div>
         </section>
+        )}
 
         {/* Progression Charts */}
-        {chartData.points.length > 1 && (
+        {currentStats && chartData.points.length > 1 && (
           <section>
             <div className="flex items-center justify-between mb-3">
               <h3 className="text-sm font-semibold text-text-secondary uppercase tracking-wide">
@@ -244,30 +285,60 @@ export function StatsModal({ isOpen, onClose, stats, model }: StatsModalProps) {
         )}
 
         {/* Response Log */}
+        {currentStats && (
         <section>
           <h3 className="text-sm font-semibold text-text-secondary mb-3 uppercase tracking-wide">
-            Response Log ({stats.dataPoints.length} responses)
+            Response Log ({currentStats.responseCount} responses)
           </h3>
-          <div className="max-h-60 overflow-y-auto bg-bg-tertiary/30 rounded">
-            {responseRows.map((row, i) => (
-              <div key={row.messageId}>
-                <ResponseRow
-                  row={row}
-                  index={i}
-                  isExpanded={expandedResponses[row.messageId] ?? false}
-                  onToggle={row.isExpandable ? () => toggleResponse(row.messageId) : undefined}
-                />
-                {(expandedResponses[row.messageId] ?? false) && row.calls.map((call, callIndex) => (
-                  <CallDataPointRow
-                    key={`${call.messageId}-${call.callIndex}`}
-                    dataPoint={call}
-                    index={callIndex}
-                  />
+          <div className={`${visibleResponseRowCount > 6 ? 'max-h-72 overflow-y-auto' : 'overflow-hidden'} bg-bg-tertiary/30 rounded`}>
+            <table className="w-full table-fixed border-separate border-spacing-0 text-xs">
+              <colgroup>
+                <col className="w-[7%]" />
+                <col className="w-[14%]" />
+                <col className="w-[15%]" />
+                <col className="w-[11%]" />
+                <col className="w-[14%]" />
+                <col className="w-[10%]" />
+                <col className="w-[14%]" />
+                <col className="w-[13%]" />
+                <col className="w-[2%]" />
+              </colgroup>
+              <thead>
+                <tr className="text-[10px] uppercase tracking-wide text-text-muted/80">
+                  <th className="px-3 py-2 text-center font-medium">#</th>
+                  <th className="px-2 py-2 text-center font-medium">At</th>
+                  <th className="px-2 py-2 text-center font-medium">Agent</th>
+                  <th className="px-2 py-2 text-center font-medium">Calls</th>
+                  <th className="px-2 py-2 text-center font-medium">Context</th>
+                  <th className="px-2 py-2 text-center font-medium">Time</th>
+                  <th className="px-2 py-2 text-center font-medium">PP t/s</th>
+                  <th className="px-2 py-2 text-center font-medium">TG t/s</th>
+                  <th className="px-2 py-2" />
+                </tr>
+              </thead>
+              <tbody>
+                {responseRows.map((row, i) => (
+                  <Fragment key={row.messageId}>
+                    <ResponseRow
+                      row={row}
+                      index={i}
+                      isExpanded={expandedResponses[row.messageId] ?? false}
+                      onToggle={row.isExpandable ? () => toggleResponse(row.messageId) : undefined}
+                    />
+                    {(expandedResponses[row.messageId] ?? false) && row.calls.map((call, callIndex) => (
+                      <CallDataPointRow
+                        key={`${call.messageId}-${call.callIndex}`}
+                        dataPoint={call}
+                        index={callIndex}
+                      />
+                    ))}
+                  </Fragment>
                 ))}
-              </div>
-            ))}
+              </tbody>
+            </table>
           </div>
         </section>
+        )}
       </div>
     </Modal>
   )
@@ -312,53 +383,25 @@ function ResponseRow({
     ? formatContextRange(row.calls.map((call) => call.promptTokens))
     : `${formatTokens(row.prefillTokens)} ctx`
 
-  const content = (
-    <div className="grid grid-cols-[2.75rem_5.75rem_5.5rem_4.75rem_8rem_4.5rem_7.5rem_7.5rem_1.5rem] items-center gap-3 w-full">
-      <span className="text-text-muted w-6 text-right">#{row.responseIndex}</span>
-      <span className="text-text-muted w-20 font-mono">
-        {formatTimestamp(row.timestamp)}
-      </span>
-      <span className={`px-1.5 py-0.5 rounded text-[10px] font-medium ${getModeColor(row.mode)}`}>
-        {row.mode}
-      </span>
-      <span className="text-text-muted font-mono text-right">
-        {row.callCount} {row.callCount === 1 ? 'call' : 'calls'}
-      </span>
-      <span className="text-text-secondary w-16 text-right font-mono">
-        {contextSummary}
-      </span>
-      <span className="text-text-secondary w-12 text-right">
-        {row.totalTime.toFixed(1)}s
-      </span>
-      <span className="text-text-muted text-right font-mono">
-        {formatRate(row.prefillSpeed, 'pp')}
-      </span>
-      <span className="text-text-muted text-right font-mono">
-        {formatRate(row.generationSpeed, 'tg')}
-      </span>
-      <span className="text-text-muted w-4 text-center">
-        {row.isExpandable ? (isExpanded ? 'v' : '>') : ''}
-      </span>
-    </div>
-  )
-
   return (
-    <div className={`flex items-center gap-3 px-3 py-2 text-xs ${
-      index % 2 === 0 ? 'bg-bg-tertiary/20' : ''
-    }`}>
-      {onToggle ? (
-        <button
-          onClick={onToggle}
-          className="flex items-center gap-3 w-full text-left hover:text-text-primary transition-colors"
-        >
-          {content}
-        </button>
-      ) : (
-        <div className="flex items-center gap-3 w-full">
-          {content}
-        </div>
-      )}
-    </div>
+    <tr
+      onClick={onToggle}
+      className={`${index % 2 === 0 ? 'bg-bg-tertiary/20' : ''} ${onToggle ? 'cursor-pointer hover:bg-bg-tertiary/35 transition-colors' : ''}`}
+    >
+      <td className="px-3 py-2 text-center text-text-muted align-middle">{row.responseIndex}</td>
+      <td className="px-2 py-2 text-center text-text-muted font-mono align-middle whitespace-nowrap">{formatTimestamp(row.timestamp)}</td>
+      <td className="px-2 py-2 text-center align-middle">
+        <span className={`inline-flex items-center justify-center px-1.5 py-0.5 rounded text-[11px] font-medium whitespace-nowrap ${getModeColor(row.mode)}`}>
+          {row.mode}
+        </span>
+      </td>
+      <td className="px-2 py-2 text-center text-text-muted font-mono align-middle whitespace-nowrap">{row.callCount}</td>
+      <td className="px-2 py-2 text-center text-text-secondary font-mono align-middle whitespace-nowrap">{contextSummary.replace(/ ctx$/, '')}</td>
+      <td className="px-2 py-2 text-center text-text-secondary align-middle whitespace-nowrap">{row.totalTime.toFixed(1)}s</td>
+      <td className="px-2 py-2 text-center text-text-muted font-mono align-middle whitespace-nowrap">{formatRate(row.prefillSpeed)}</td>
+      <td className="px-2 py-2 text-center text-text-muted font-mono align-middle whitespace-nowrap">{formatRate(row.generationSpeed)}</td>
+      <td className="px-2 py-2 text-center text-text-muted align-middle whitespace-nowrap">{row.isExpandable ? (isExpanded ? 'v' : '>') : ''}</td>
+    </tr>
   )
 }
 
@@ -370,35 +413,20 @@ function CallDataPointRow({
   index: number
 }) {
   return (
-    <div className={`relative px-3 py-2 text-xs ${
-      index % 2 === 0 ? 'bg-bg-tertiary/10' : 'bg-bg-tertiary/5'
-    }`}>
-      <div className="absolute left-6 top-0 bottom-0 w-px bg-border/60" />
-      <div className="grid grid-cols-[2.75rem_5.75rem_5.5rem_4.75rem_8rem_4.5rem_7.5rem_7.5rem_1.5rem] items-center gap-3 w-full relative">
-        <span className="text-text-muted w-6 text-right">c{dataPoint.callIndex}</span>
-        <span className="text-text-muted w-20 font-mono">
-          {formatTimestamp(dataPoint.timestamp)}
-        </span>
-        <span className={`px-1.5 py-0.5 rounded text-[10px] font-medium ${getModeColor(dataPoint.mode)}`}>
+    <tr className={`${index % 2 === 0 ? 'bg-bg-tertiary/10' : 'bg-bg-tertiary/5'}`}>
+      <td className="px-3 py-2 pl-6 text-center text-text-muted align-middle border-l border-border/60">c{dataPoint.callIndex}</td>
+      <td className="px-2 py-2 text-center text-text-muted font-mono align-middle whitespace-nowrap">{formatTimestamp(dataPoint.timestamp)}</td>
+      <td className="px-2 py-2 text-center align-middle">
+        <span className={`inline-flex items-center justify-center px-1.5 py-0.5 rounded text-[11px] font-medium whitespace-nowrap ${getModeColor(dataPoint.mode)}`}>
           {dataPoint.mode}
         </span>
-        <span className="text-text-muted font-mono text-right">
-          r{dataPoint.responseIndex}.c{dataPoint.callIndex}
-        </span>
-        <span className="text-text-secondary font-mono text-right">
-          {formatTokens(dataPoint.promptTokens)} ctx
-        </span>
-        <span className="text-text-secondary text-right">
-          {dataPoint.totalTime.toFixed(1)}s
-        </span>
-        <span className="text-text-muted text-right font-mono">
-          {formatRate(dataPoint.prefillSpeed, 'pp')}
-        </span>
-        <span className="text-text-muted text-right font-mono">
-          {formatRate(dataPoint.generationSpeed, 'tg')}
-        </span>
-        <span />
-      </div>
-    </div>
+      </td>
+      <td className="px-2 py-2 text-center text-text-muted font-mono align-middle whitespace-nowrap">{dataPoint.callIndex}</td>
+      <td className="px-2 py-2 text-center text-text-secondary font-mono align-middle whitespace-nowrap">{formatTokens(dataPoint.promptTokens)}</td>
+      <td className="px-2 py-2 text-center text-text-secondary align-middle whitespace-nowrap">{dataPoint.totalTime.toFixed(1)}s</td>
+      <td className="px-2 py-2 text-center text-text-muted font-mono align-middle whitespace-nowrap">{formatRate(dataPoint.prefillSpeed)}</td>
+      <td className="px-2 py-2 text-center text-text-muted font-mono align-middle whitespace-nowrap">{formatRate(dataPoint.generationSpeed)}</td>
+      <td className="px-2 py-2" />
+    </tr>
   )
 }

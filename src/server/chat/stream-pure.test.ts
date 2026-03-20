@@ -153,7 +153,15 @@ describe('stream-pure', () => {
     metrics.addLLMCall({ ttft: 1, completionTime: 3, tps: 7, prefillTps: 20 }, 25, 18)
     metrics.addToolTime(500)
 
-    expect(metrics.buildStats('test-model', 'builder')).toMatchObject({
+    expect(metrics.buildStats({
+      providerId: 'provider-1',
+      providerName: 'Local vLLM',
+      backend: 'vllm',
+      model: 'test-model',
+    }, 'builder')).toMatchObject({
+      providerId: 'provider-1',
+      providerName: 'Local vLLM',
+      backend: 'vllm',
       model: 'test-model',
       mode: 'builder',
       totalTime: 6,
@@ -164,6 +172,10 @@ describe('stream-pure', () => {
       generationSpeed: 7.1,
       llmCalls: [
         {
+          providerId: 'provider-1',
+          providerName: 'Local vLLM',
+          backend: 'vllm',
+          model: 'test-model',
           callIndex: 1,
           promptTokens: 50,
           completionTokens: 32,
@@ -175,6 +187,10 @@ describe('stream-pure', () => {
           timestamp: expect.any(String),
         },
         {
+          providerId: 'provider-1',
+          providerName: 'Local vLLM',
+          backend: 'vllm',
+          model: 'test-model',
           callIndex: 2,
           promptTokens: 25,
           completionTokens: 18,

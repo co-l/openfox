@@ -1,4 +1,4 @@
-import type { CallStatsDataPoint, SessionStats, StatsDataPoint } from './types.js'
+import type { CallStatsDataPoint, ModelSessionStats, SessionStats, StatsDataPoint } from './types.js'
 
 export type StatsChartMode = 'responses' | 'calls'
 
@@ -16,7 +16,9 @@ export interface PerformanceChartData {
   points: Array<{ x: number; ppSpeed: number; tgSpeed: number }>
 }
 
-export function buildResponseLogRows(stats: SessionStats): ResponseLogRow[] {
+type StatsViewData = Pick<SessionStats, 'dataPoints' | 'callDataPoints'> | Pick<ModelSessionStats, 'dataPoints' | 'callDataPoints'>
+
+export function buildResponseLogRows(stats: StatsViewData): ResponseLogRow[] {
   const callsByMessageId = new Map<string, CallStatsDataPoint[]>()
 
   for (const call of stats.callDataPoints) {
@@ -37,7 +39,7 @@ export function buildResponseLogRows(stats: SessionStats): ResponseLogRow[] {
   })
 }
 
-function buildResponseChartData(stats: SessionStats): PerformanceChartData {
+function buildResponseChartData(stats: StatsViewData): PerformanceChartData {
   return {
     mode: 'responses',
     xLabel: 'response',
@@ -51,7 +53,7 @@ function buildResponseChartData(stats: SessionStats): PerformanceChartData {
   }
 }
 
-function buildCallChartData(stats: SessionStats): PerformanceChartData {
+function buildCallChartData(stats: StatsViewData): PerformanceChartData {
   return {
     mode: 'calls',
     xLabel: 'context',
@@ -66,7 +68,7 @@ function buildCallChartData(stats: SessionStats): PerformanceChartData {
 }
 
 export function buildPerformanceChartData(
-  stats: SessionStats
+  stats: StatsViewData
 ): PerformanceChartData {
   if (stats.callDataPoints.length > 0) {
     return buildCallChartData(stats)

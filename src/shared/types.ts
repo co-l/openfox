@@ -89,6 +89,9 @@ export type MessageSegment =
   | { type: 'tool_call'; toolCallId: string }
 
 export interface MessageStats {
+  providerId: string
+  providerName: string
+  backend: ProviderBackend
   model: string
   mode: ToolMode  // Which system prompt was used (planner, builder, verifier)
   totalTime: number         // wall clock time (seconds)
@@ -101,6 +104,10 @@ export interface MessageStats {
 }
 
 export interface LLMCallStats {
+  providerId: string
+  providerName: string
+  backend: ProviderBackend
+  model: string
   callIndex: number         // 1-based call order within the response
   promptTokens: number      // prompt tokens for this specific LLM call
   completionTokens: number  // completion tokens for this specific LLM call
@@ -116,6 +123,10 @@ export interface LLMCallStats {
 export interface StatsDataPoint {
   messageId: string
   timestamp: string
+  providerId: string
+  providerName: string
+  backend: ProviderBackend
+  model: string
   mode: ToolMode
   responseIndex: number      // 1-based assistant response order within the session
   prefillTokens: number      // Total prompt tokens spent producing this response
@@ -130,6 +141,10 @@ export interface StatsDataPoint {
 export interface CallStatsDataPoint {
   messageId: string
   timestamp: string
+  providerId: string
+  providerName: string
+  backend: ProviderBackend
+  model: string
   mode: ToolMode
   responseIndex: number      // 1-based assistant response order within the session
   sessionCallIndex: number   // 1-based LLM call order across the whole session
@@ -156,6 +171,30 @@ export interface SessionStats {
   responseCount: number      // Number of assistant responses with stats
   llmCallCount: number       // Number of persisted internal LLM calls across responses
   // Progression data for charts
+  dataPoints: StatsDataPoint[]
+  callDataPoints: CallStatsDataPoint[]
+  modelGroups: ModelSessionStats[]
+}
+
+export interface StatsIdentity {
+  providerId: string
+  providerName: string
+  backend: ProviderBackend
+  model: string
+}
+
+export interface ModelSessionStats extends StatsIdentity {
+  key: string
+  label: string
+  totalTime: number
+  aiTime: number
+  toolTime: number
+  prefillTokens: number
+  generationTokens: number
+  avgPrefillSpeed: number
+  avgGenerationSpeed: number
+  responseCount: number
+  llmCallCount: number
   dataPoints: StatsDataPoint[]
   callDataPoints: CallStatsDataPoint[]
 }

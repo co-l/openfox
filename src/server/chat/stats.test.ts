@@ -2,10 +2,17 @@ import { describe, it, expect } from 'vitest'
 import { computeMessageStats, computeAggregatedStats } from './stats.js'
 
 describe('stats computation', () => {
+  const identity = {
+    providerId: 'provider-1',
+    providerName: 'Local vLLM',
+    backend: 'vllm' as const,
+    model: 'test-model',
+  }
+
   describe('computeMessageStats', () => {
     it('calculates speeds correctly for single LLM call', () => {
       const stats = computeMessageStats({
-        model: 'test-model',
+        identity,
         mode: 'builder',
         timing: { ttft: 5, completionTime: 10, tps: 0, prefillTps: 0 },
         usage: { promptTokens: 50000, completionTokens: 500 },
@@ -26,7 +33,7 @@ describe('stats computation', () => {
     it('calculates speeds correctly for multiple LLM calls', () => {
       // Simulate 5 LLM calls, each with ~70k prompt tokens and ~500 gen tokens
       const stats = computeAggregatedStats({
-        model: 'test-model',
+        identity,
         mode: 'builder',
         totalPrefillTokens: 350000,  // 5 × 70k
         totalGenTokens: 2500,        // 5 × 500
@@ -51,7 +58,7 @@ describe('stats computation', () => {
       // This is the BUG: using computeMessageStats with cumulative tokens
       // but only the LAST call's timing
       const buggyStats = computeMessageStats({
-        model: 'test-model',
+        identity,
         mode: 'builder',
         // Cumulative tokens from 5 LLM calls
         usage: { promptTokens: 350000, completionTokens: 2500 },
@@ -71,7 +78,7 @@ describe('stats computation', () => {
     it('shows correct speeds when using computeAggregatedStats with cumulative timing', () => {
       // This is the FIX: use computeAggregatedStats with cumulative timing
       const correctStats = computeAggregatedStats({
-        model: 'test-model',
+        identity,
         mode: 'builder',
         totalPrefillTokens: 350000,
         totalGenTokens: 2500,

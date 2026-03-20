@@ -10,7 +10,7 @@
  * This is the ONE place where events get appended to the store.
  */
 
-import type { ToolCall, ToolResult, Criterion, ContextState, Todo, MessageStats, ToolMode, InjectedFile, PromptContext, Attachment } from '../../shared/types.js'
+import type { Attachment, ContextState, Criterion, InjectedFile, MessageStats, PromptContext, StatsIdentity, Todo, ToolCall, ToolMode, ToolResult } from '../../shared/types.js'
 import type { ServerMessage } from '../../shared/protocol.js'
 import type { LLMClientWithModel } from '../llm/client.js'
 import type { SessionSnapshot } from '../events/types.js'
@@ -67,9 +67,28 @@ export interface OrchestratorOptions {
   sessionManager: SessionManager
   sessionId: string
   llmClient: LLMClientWithModel
+  statsIdentity?: StatsIdentity
   signal?: AbortSignal
   /** Optional callback for WebSocket forwarding (temporary, until WS layer is refactored) */
   onMessage?: (msg: ServerMessage) => void
+}
+
+function resolveStatsIdentity(options: OrchestratorOptions): StatsIdentity {
+  const model = options.llmClient.getModel()
+
+  if (options.statsIdentity) {
+    return {
+      ...options.statsIdentity,
+      model,
+    }
+  }
+
+  return {
+    providerId: `provider:${model}`,
+    providerName: 'Unknown Provider',
+    backend: 'unknown',
+    model,
+  }
 }
 
 // ============================================================================
@@ -83,6 +102,7 @@ export interface OrchestratorOptions {
 export async function runChatTurn(options: OrchestratorOptions): Promise<void> {
   const { sessionManager, sessionId, llmClient, signal, onMessage } = options
   const eventStore = getEventStore()
+  const statsIdentity = resolveStatsIdentity(options)
 
   const session = sessionManager.requireSession(sessionId)
   const mode = session.mode
@@ -104,7 +124,7 @@ export async function runChatTurn(options: OrchestratorOptions): Promise<void> {
     }
 
     // Create end-of-turn snapshot
-    const snapshot = buildSnapshot(sessionManager, sessionId, turnMetrics.buildStats(llmClient.getModel(), mode))
+    const snapshot = buildSnapshot(sessionManager, sessionId, turnMetrics.buildStats(statsIdentity, mode))
     const snapshotEvent = eventStore.append(sessionId, { type: 'turn.snapshot', data: snapshot })
 
     // Clean up old events that are now contained in snapshots
@@ -187,6 +207,7 @@ async function runPlannerTurn(
 ): Promise<void> {
   const { sessionManager, sessionId, llmClient, signal, onMessage } = options
   const eventStore = getEventStore()
+  const statsIdentity = resolveStatsIdentity(options)
 
   const session = sessionManager.requireSession(sessionId)
 
@@ -261,7 +282,7 @@ async function runPlannerTurn(
 
   // Handle abort
   if (result.aborted) {
-    const stats = turnMetrics.buildStats(llmClient.getModel(), 'planner')
+    const stats = turnMetrics.buildStats(statsIdentity, 'planner')
     eventStore.append(sessionId, createMessageDoneEvent(assistantMsgId, {
       stats,
       partial: true,
@@ -286,7 +307,7 @@ async function runPlannerTurn(
     for (const toolCall of result.toolCalls) {
       // Check abort before each tool execution
       if (signal?.aborted) {
-        const stats = turnMetrics.buildStats(llmClient.getModel(), 'planner')
+        const stats = turnMetrics.buildStats(statsIdentity, 'planner')
         eventStore.append(sessionId, createMessageDoneEvent(assistantMsgId, {
           stats,
           partial: true,
@@ -338,7 +359,7 @@ async function runPlannerTurn(
 
     // Check abort before continuing with another LLM call
     if (signal?.aborted) {
-      const stats = turnMetrics.buildStats(llmClient.getModel(), 'planner')
+      const stats = turnMetrics.buildStats(statsIdentity, 'planner')
       eventStore.append(sessionId, createMessageDoneEvent(assistantMsgId, {
         stats,
         partial: true,
@@ -353,7 +374,7 @@ async function runPlannerTurn(
   }
 
   // Final response - emit message.done WITH stats and chat.done
-  const stats = turnMetrics.buildStats(llmClient.getModel(), 'planner')
+  const stats = turnMetrics.buildStats(statsIdentity, 'planner')
   eventStore.append(sessionId, createMessageDoneEvent(assistantMsgId, {
     segments: result.segments,
     stats,
@@ -373,6 +394,7 @@ export async function runBuilderTurn(
 ): Promise<void> {
   const { sessionManager, sessionId, llmClient, signal, onMessage } = options
   const eventStore = getEventStore()
+  const statsIdentity = resolveStatsIdentity(options)
 
   const session = sessionManager.requireSession(sessionId)
 
@@ -469,7 +491,7 @@ export async function runBuilderTurn(
 
   // Handle abort
   if (result.aborted) {
-    const stats = turnMetrics.buildStats(llmClient.getModel(), 'builder')
+    const stats = turnMetrics.buildStats(statsIdentity, 'builder')
     eventStore.append(sessionId, createMessageDoneEvent(assistantMsgId, {
       stats,
       partial: true,
@@ -494,7 +516,7 @@ export async function runBuilderTurn(
     for (const toolCall of result.toolCalls) {
       // Check abort before each tool execution
       if (signal?.aborted) {
-        const stats = turnMetrics.buildStats(llmClient.getModel(), 'builder')
+        const stats = turnMetrics.buildStats(statsIdentity, 'builder')
         eventStore.append(sessionId, createMessageDoneEvent(assistantMsgId, {
           stats,
           partial: true,
@@ -552,7 +574,7 @@ export async function runBuilderTurn(
 
     // Check abort before continuing with another LLM call
     if (signal?.aborted) {
-      const stats = turnMetrics.buildStats(llmClient.getModel(), 'builder')
+      const stats = turnMetrics.buildStats(statsIdentity, 'builder')
       eventStore.append(sessionId, createMessageDoneEvent(assistantMsgId, {
         stats,
         partial: true,
@@ -567,7 +589,7 @@ export async function runBuilderTurn(
   }
 
   // Final response - emit message.done WITH stats and chat.done
-  const stats = turnMetrics.buildStats(llmClient.getModel(), 'builder')
+  const stats = turnMetrics.buildStats(statsIdentity, 'builder')
   eventStore.append(sessionId, createMessageDoneEvent(assistantMsgId, {
     segments: result.segments,
     stats,
@@ -595,6 +617,7 @@ export async function runVerifierTurn(
 ): Promise<VerifierResult> {
   const { sessionManager, sessionId, llmClient, signal, onMessage } = options
   const eventStore = getEventStore()
+  const statsIdentity = resolveStatsIdentity(options)
   const subAgentId = crypto.randomUUID()
 
   let session = sessionManager.requireSession(sessionId)
@@ -727,7 +750,7 @@ ${modifiedFiles.length > 0 ? modifiedFiles.map(f => `- ${f}`).join('\n') : '(non
     })
 
     if (result.aborted) {
-      const stats = turnMetrics.buildStats(llmClient.getModel(), 'verifier')
+      const stats = turnMetrics.buildStats(statsIdentity, 'verifier')
       eventStore.append(sessionId, createMessageDoneEvent(assistantMsgId, {
         stats,
         partial: true,
@@ -789,7 +812,7 @@ ${modifiedFiles.length > 0 ? modifiedFiles.map(f => `- ${f}`).join('\n') : '(non
         eventStore.append(sessionId, { type: 'message.done', data: { messageId: stalledMsgId } })
       }
 
-      const stats = turnMetrics.buildStats(llmClient.getModel(), 'verifier')
+      const stats = turnMetrics.buildStats(statsIdentity, 'verifier')
       eventStore.append(sessionId, createMessageDoneEvent(assistantMsgId, {
         segments: result.segments,
         stats,
@@ -810,7 +833,7 @@ ${modifiedFiles.length > 0 ? modifiedFiles.map(f => `- ${f}`).join('\n') : '(non
     for (const toolCall of result.toolCalls) {
       // Check abort before each tool execution
       if (signal?.aborted) {
-        const stats = turnMetrics.buildStats(llmClient.getModel(), 'verifier')
+        const stats = turnMetrics.buildStats(statsIdentity, 'verifier')
         eventStore.append(sessionId, createMessageDoneEvent(assistantMsgId, {
           stats,
           partial: true,
@@ -909,7 +932,7 @@ ${modifiedFiles.length > 0 ? modifiedFiles.map(f => `- ${f}`).join('\n') : '(non
     eventStore.append(sessionId, { type: 'message.done', data: { messageId: stalledMsgId } })
 
     if (!emittedTerminalDone && lastAssistantMsgId) {
-      const stats = turnMetrics.buildStats(llmClient.getModel(), 'verifier')
+      const stats = turnMetrics.buildStats(statsIdentity, 'verifier')
       eventStore.append(sessionId, createMessageDoneEvent(lastAssistantMsgId, { stats }))
       eventStore.append(sessionId, createChatDoneEvent(lastAssistantMsgId, 'complete', stats))
       emittedTerminalDone = true
@@ -917,7 +940,7 @@ ${modifiedFiles.length > 0 ? modifiedFiles.map(f => `- ${f}`).join('\n') : '(non
   }
 
   if (!emittedTerminalDone && lastAssistantMsgId) {
-    const stats = turnMetrics.buildStats(llmClient.getModel(), 'verifier')
+    const stats = turnMetrics.buildStats(statsIdentity, 'verifier')
     eventStore.append(sessionId, createMessageDoneEvent(lastAssistantMsgId, { stats }))
     eventStore.append(sessionId, createChatDoneEvent(lastAssistantMsgId, 'complete', stats))
   }

@@ -21,7 +21,7 @@ describe('event folding', () => {
       { ...baseEvent, type: 'message.thinking', data: { messageId: 'm1', content: 'Thinking...' } },
       { ...baseEvent, type: 'tool.call', data: { messageId: 'm1', toolCall: { id: 'call-1', name: 'read_file', arguments: { path: 'src/index.ts' } } } },
       { ...baseEvent, type: 'tool.result', data: { messageId: 'm1', toolCallId: 'call-1', result: { success: true, output: 'ok', durationMs: 1, truncated: false } } },
-      { ...baseEvent, type: 'message.done', data: { messageId: 'm1', partial: true, stats: { model: 'qwen', mode: 'builder', totalTime: 1, toolTime: 0, prefillTokens: 1, prefillSpeed: 1, generationTokens: 1, generationSpeed: 1 }, segments: [{ type: 'text', content: 'Hello' }] } },
+      { ...baseEvent, type: 'message.done', data: { messageId: 'm1', partial: true, stats: { providerId: 'provider-1', providerName: 'Local vLLM', backend: 'vllm', model: 'qwen', mode: 'builder', totalTime: 1, toolTime: 0, prefillTokens: 1, prefillSpeed: 1, generationTokens: 1, generationSpeed: 1 }, segments: [{ type: 'text', content: 'Hello' }] } },
       { ...baseEvent, type: 'message.start', data: { messageId: 'm2', role: 'user', content: 'Question', isSystemGenerated: true, messageKind: 'auto-prompt' } },
     ]
 
@@ -35,7 +35,7 @@ describe('event folding', () => {
         tokenCount: 0,
         isStreaming: false,
         partial: true,
-        stats: { model: 'qwen', mode: 'builder', totalTime: 1, toolTime: 0, prefillTokens: 1, prefillSpeed: 1, generationTokens: 1, generationSpeed: 1 },
+        stats: { providerId: 'provider-1', providerName: 'Local vLLM', backend: 'vllm', model: 'qwen', mode: 'builder', totalTime: 1, toolTime: 0, prefillTokens: 1, prefillSpeed: 1, generationTokens: 1, generationSpeed: 1 },
         segments: [{ type: 'text', content: 'Hello' }],
         toolCalls: [{ id: 'call-1', name: 'read_file', arguments: { path: 'src/index.ts' }, result: { success: true, output: 'ok', durationMs: 1, truncated: false } }],
       },
@@ -341,7 +341,7 @@ describe('event folding', () => {
         type: 'message.done',
         data: {
           messageId: 'msg-2',
-          stats: { model: 'qwen', mode: 'planner', totalTime: 2, toolTime: 0, prefillTokens: 100, prefillSpeed: 50, generationTokens: 20, generationSpeed: 10 },
+          stats: { providerId: 'provider-1', providerName: 'Local vLLM', backend: 'vllm', model: 'qwen', mode: 'planner', totalTime: 2, toolTime: 0, prefillTokens: 100, prefillSpeed: 50, generationTokens: 20, generationSpeed: 10 },
         },
       },
     ]
@@ -360,7 +360,7 @@ describe('event folding', () => {
         timestamp: '2024-01-01T00:05:00.000Z',
         tokenCount: 0,
         isStreaming: false,
-        stats: { model: 'qwen', mode: 'planner', totalTime: 2, toolTime: 0, prefillTokens: 100, prefillSpeed: 50, generationTokens: 20, generationSpeed: 10 },
+        stats: { providerId: 'provider-1', providerName: 'Local vLLM', backend: 'vllm', model: 'qwen', mode: 'planner', totalTime: 2, toolTime: 0, prefillTokens: 100, prefillSpeed: 50, generationTokens: 20, generationSpeed: 10 },
       },
     ])
   })

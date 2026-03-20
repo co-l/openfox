@@ -1,6 +1,5 @@
 import { useState } from 'react'
 import { useSessionStore } from '../../stores/session'
-import { useConfigStore } from '../../stores/config'
 import { useSessionStats } from '../../hooks/useSessionStats'
 import { Button } from '../shared/Button'
 import { StatsModal } from './StatsModal'
@@ -57,7 +56,6 @@ export function SessionHeader() {
   const currentSession = useSessionStore(state => state.currentSession)
   const messages = useSessionStore(state => state.messages)
   const compactContext = useSessionStore(state => state.compactContext)
-  const model = useConfigStore(state => state.model)
   
   const stats = useSessionStats(messages)
   
@@ -150,7 +148,6 @@ export function SessionHeader() {
           isOpen={showStatsModal}
           onClose={() => setShowStatsModal(false)}
           stats={stats}
-          model={model ?? undefined}
         />
       )}
     </>

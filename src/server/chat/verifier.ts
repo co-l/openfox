@@ -16,6 +16,13 @@ import { streamLLMResponse } from './stream.js'
 import { computeAggregatedStats } from './stats.js'
 import { getAllInstructions } from '../context/instructions.js'
 import { logger } from '../utils/logger.js'
+
+const getStatsIdentity = (model: string) => ({
+  providerId: `provider:${model}`,
+  providerName: 'Unknown Provider',
+  backend: 'unknown' as const,
+  model,
+})
 import {
   createChatToolCallMessage,
   createChatToolResultMessage,
@@ -260,7 +267,7 @@ ${criteriaList}
   // Emit stats for this verifier step (PROMPT -> WORK -> stats+sound pattern)
   if (currentMessageId) {
     const stats = computeAggregatedStats({
-      model: llmClient.getModel(),
+      identity: getStatsIdentity(llmClient.getModel()),
       mode: 'verifier',
       totalPrefillTokens,
       totalGenTokens,

@@ -16,6 +16,10 @@ const baseStats: SessionStats = {
     {
       messageId: 'r1',
       timestamp: '2024-01-01T16:37:48Z',
+      providerId: 'provider-1',
+      providerName: 'Local vLLM',
+      backend: 'vllm',
+      model: 'qwen-1',
       mode: 'planner',
       responseIndex: 1,
       prefillTokens: 1400,
@@ -29,6 +33,10 @@ const baseStats: SessionStats = {
     {
       messageId: 'r2',
       timestamp: '2024-01-01T16:37:54Z',
+      providerId: 'provider-1',
+      providerName: 'Local vLLM',
+      backend: 'vllm',
+      model: 'qwen-1',
       mode: 'planner',
       responseIndex: 2,
       prefillTokens: 1500,
@@ -42,6 +50,10 @@ const baseStats: SessionStats = {
     {
       messageId: 'r3',
       timestamp: '2024-01-01T16:38:02Z',
+      providerId: 'provider-1',
+      providerName: 'Local vLLM',
+      backend: 'vllm',
+      model: 'qwen-1',
       mode: 'planner',
       responseIndex: 3,
       prefillTokens: 1600,
@@ -55,6 +67,10 @@ const baseStats: SessionStats = {
     {
       messageId: 'r4',
       timestamp: '2024-01-01T16:41:01Z',
+      providerId: 'provider-1',
+      providerName: 'Local vLLM',
+      backend: 'vllm',
+      model: 'qwen-1',
       mode: 'planner',
       responseIndex: 4,
       prefillTokens: 3800,
@@ -70,6 +86,10 @@ const baseStats: SessionStats = {
     {
       messageId: 'r1',
       timestamp: '2024-01-01T16:37:53Z',
+      providerId: 'provider-1',
+      providerName: 'Local vLLM',
+      backend: 'vllm',
+      model: 'qwen-1',
       mode: 'planner',
       responseIndex: 1,
       sessionCallIndex: 1,
@@ -85,6 +105,10 @@ const baseStats: SessionStats = {
     {
       messageId: 'r2',
       timestamp: '2024-01-01T16:37:59Z',
+      providerId: 'provider-1',
+      providerName: 'Local vLLM',
+      backend: 'vllm',
+      model: 'qwen-1',
       mode: 'planner',
       responseIndex: 2,
       sessionCallIndex: 2,
@@ -100,6 +124,10 @@ const baseStats: SessionStats = {
     {
       messageId: 'r3',
       timestamp: '2024-01-01T16:38:08Z',
+      providerId: 'provider-1',
+      providerName: 'Local vLLM',
+      backend: 'vllm',
+      model: 'qwen-1',
       mode: 'planner',
       responseIndex: 3,
       sessionCallIndex: 3,
@@ -115,6 +143,10 @@ const baseStats: SessionStats = {
     {
       messageId: 'r4',
       timestamp: '2024-01-01T16:41:01Z',
+      providerId: 'provider-1',
+      providerName: 'Local vLLM',
+      backend: 'vllm',
+      model: 'qwen-1',
       mode: 'planner',
       responseIndex: 4,
       sessionCallIndex: 4,
@@ -130,6 +162,10 @@ const baseStats: SessionStats = {
     {
       messageId: 'r4',
       timestamp: '2024-01-01T16:41:14Z',
+      providerId: 'provider-1',
+      providerName: 'Local vLLM',
+      backend: 'vllm',
+      model: 'qwen-1',
       mode: 'planner',
       responseIndex: 4,
       sessionCallIndex: 5,
@@ -143,6 +179,27 @@ const baseStats: SessionStats = {
       totalTime: 13.1,
     },
   ],
+  modelGroups: [
+    {
+      key: 'provider-1::qwen-1',
+      label: 'Local vLLM > qwen-1',
+      providerId: 'provider-1',
+      providerName: 'Local vLLM',
+      backend: 'vllm',
+      model: 'qwen-1',
+      totalTime: 34.6,
+      aiTime: 34.6,
+      toolTime: 0,
+      prefillTokens: 8300,
+      generationTokens: 931,
+      avgPrefillSpeed: 1900,
+      avgGenerationSpeed: 30.8,
+      responseCount: 4,
+      llmCallCount: 5,
+      dataPoints: [],
+      callDataPoints: [],
+    },
+  ],
 }
 
 describe('stats view helpers', () => {
@@ -152,7 +209,7 @@ describe('stats view helpers', () => {
     expect(rows).toHaveLength(4)
     expect(rows[0]).toMatchObject({ responseIndex: 1, callCount: 1, isExpandable: false })
     expect(rows[3]).toMatchObject({ responseIndex: 4, callCount: 2, isExpandable: true })
-    expect(rows[3]!.calls.map((call) => call.callIndex)).toEqual([1, 2])
+    expect(rows[3]!.calls.map((call: { callIndex: number }) => call.callIndex)).toEqual([1, 2])
   })
 
   it('uses call-level chart data by default when call data exists', () => {
