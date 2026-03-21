@@ -32,7 +32,7 @@ export function Header({ onMenuClick, onCriteriaToggle, hasCriteria }: HeaderPro
         {onMenuClick && (
           <button
             onClick={onMenuClick}
-            className="lg:hidden flex-shrink-0 p-2.5 rounded hover:bg-bg-tertiary text-text-muted hover:text-text-primary transition-colors"
+            className="xl:hidden flex-shrink-0 p-2.5 rounded hover:bg-bg-tertiary text-text-muted hover:text-text-primary transition-colors"
             title="Toggle sidebar"
           >
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">

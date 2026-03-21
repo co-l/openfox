@@ -149,7 +149,7 @@ function App() {
 
   return (
     <div className="h-screen flex flex-col">
-      <Header />
+      <Header onMenuClick={() => setSidebarOpen(!sidebarOpen)} />
 
       <div className="flex-1 flex overflow-hidden">
         <Switch>
