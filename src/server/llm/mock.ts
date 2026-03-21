@@ -539,57 +539,86 @@ function applyCaptures(args: Record<string, unknown>, captures: string[]): Recor
 }
 
 function getLastUserPrompt(request: LLMCompletionRequest): string {
+  const stripRuntimeReminders = (content: string): string => {
+    return content.replace(/\n*<system-reminder>[\s\S]*<\/system-reminder>\s*/gi, '').trim()
+  }
+
   const userMessages = request.messages.filter(message => message.role === 'user')
   const latestUserMessage = userMessages.at(-1)
   if (!latestUserMessage) {
     return ''
   }
 
+  const isRuntimeReminder = (content: string): boolean => {
+    return /<system-reminder>[\s\S]*<\/system-reminder>/i.test(content)
+  }
+
+  const isBuilderKickoff = (content: string): boolean => {
+    return /Implement the task and make sure you fulfil the \d+ criteria\./i.test(content)
+  }
+
+  const isSummaryPrompt = (content: string): boolean => {
+    return /Write a 2-3 sentence summary of what the user wants to accomplish\./i.test(content)
+  }
+
+  const isCompactionPrompt = (content: string): boolean => {
+    return /Summarize the conversation history concisely/i.test(content)
+  }
+
+  const isWaitingPrompt = (content: string): boolean => {
+    return /Waiting for user input/i.test(content)
+  }
+
+  const isXmlCorrectionPrompt = (content: string): boolean => {
+    return /IMPORTANT: You used XML tags/i.test(content)
+  }
+
+  const isVerifierKickoff = (content: string): boolean => {
+    return /Verify each criterion marked \[NEEDS VERIFICATION\]\./i.test(content)
+  }
+
   const isAutoPrompt = (content: string): boolean => {
+    const strippedContent = stripRuntimeReminders(content)
+
     return (
-      /Implement the task and make sure you fulfil the \d+ criteria\./i.test(content) ||
-      /Write a 2-3 sentence summary of what the user wants to accomplish\./i.test(content) ||
-      /Summarize the conversation history concisely/i.test(content) ||
-      /Waiting for user input/i.test(content) ||
-      /IMPORTANT: You used XML tags/i.test(content) ||
-      /Verify each criterion marked \[NEEDS VERIFICATION\]\./i.test(content)
+      (isRuntimeReminder(content) && strippedContent.length === 0) ||
+      isBuilderKickoff(strippedContent) ||
+      isSummaryPrompt(strippedContent) ||
+      isCompactionPrompt(strippedContent) ||
+      isWaitingPrompt(strippedContent) ||
+      isXmlCorrectionPrompt(strippedContent) ||
+      isVerifierKickoff(strippedContent)
     )
   }
 
-  const isBuilderKickoff = /Implement the task and make sure you fulfil the \d+ criteria\./i.test(latestUserMessage.content)
-  const isVerifierKickoff = /Verify each criterion marked \[NEEDS VERIFICATION\]\./i.test(latestUserMessage.content)
+  const latestPrompt = stripRuntimeReminders(latestUserMessage.content)
 
-  if (isVerifierKickoff) {
-    return latestUserMessage.content
+  if (isVerifierKickoff(latestPrompt)) {
+    return latestPrompt
   }
 
-  if (isBuilderKickoff) {
-    const latestUserIndex = request.messages.lastIndexOf(latestUserMessage)
-    const previousMessage = request.messages[latestUserIndex - 1]
-
-    if (previousMessage?.role === 'user' && !isAutoPrompt(previousMessage.content)) {
-      return previousMessage.content
-    }
-
-    return latestUserMessage.content
+  if (
+    isBuilderKickoff(latestPrompt)
+    || isSummaryPrompt(latestPrompt)
+    || isCompactionPrompt(latestPrompt)
+    || isWaitingPrompt(latestPrompt)
+    || isXmlCorrectionPrompt(latestPrompt)
+  ) {
+    return latestPrompt
   }
 
   if (!isAutoPrompt(latestUserMessage.content)) {
-    return latestUserMessage.content
+    return latestPrompt
   }
 
-  const latestUserIndex = request.messages.lastIndexOf(latestUserMessage)
-  for (let i = latestUserIndex - 1; i >= 0; i--) {
-    const message = request.messages[i]!
-    if (message.role === 'assistant' || message.role === 'tool') {
-      return latestUserMessage.content
-    }
-    if (message.role === 'user' && !isAutoPrompt(message.content)) {
-      return message.content
+  for (let i = userMessages.length - 2; i >= 0; i--) {
+    const message = userMessages[i]!
+    if (!isAutoPrompt(message.content)) {
+      return stripRuntimeReminders(message.content)
     }
   }
 
-  return latestUserMessage.content
+  return latestPrompt
 }
 
 function getConversationText(request: LLMCompletionRequest): string {
@@ -608,6 +637,33 @@ function getInstructionAwareResponse(request: LLMCompletionRequest): string | nu
     .reverse()
     .map(content => content.match(/project name is ["']([^"']+)["']/i)?.[1])
     .find((value): value is string => Boolean(value))
+
+  if (/Generate a concise, descriptive session name/i.test(prompt)) {
+    const userMessage = prompt.match(/User message:\s*([\s\S]+)$/i)?.[1]?.trim()
+    if (!userMessage) {
+      return 'New session'
+    }
+
+    if (/react/i.test(userMessage) && /typescript/i.test(userMessage)) {
+      return 'React TypeScript setup'
+    }
+    if (/authentication bug/i.test(userMessage)) {
+      return 'Fix authentication bug'
+    }
+    if (/unit tests/i.test(userMessage) && /api/i.test(userMessage)) {
+      return 'Add API unit tests'
+    }
+    if (/oauth2/i.test(userMessage) && /jwt/i.test(userMessage)) {
+      return 'OAuth2 JWT auth'
+    }
+
+    const words = userMessage
+      .replace(/[^a-z0-9\s]/gi, ' ')
+      .trim()
+      .split(/\s+/)
+      .slice(0, 6)
+    return words.length > 0 ? words.join(' ') : 'New session'
+  }
 
   if (/what did i say the project name was\??/i.test(prompt) && projectName) {
     return `You said the project name was ${projectName}.`
@@ -760,6 +816,16 @@ function getConversationAwareToolResponse(request: LLMCompletionRequest): MockMa
   const conversationText = getConversationText(request)
 
   if (/Implement the task and make sure you fulfil the \d+ criteria\./i.test(prompt)) {
+    if (conversationText.includes('inspect-src')) {
+      return {
+        tools: [
+          { name: 'read_file', arguments: { path: 'src' } },
+          { name: 'complete_criterion', arguments: { id: 'inspect-src', reason: 'Inspected the src directory and reported what exists' } },
+        ],
+        response: 'Inspected the src directory and completed the criterion.',
+      }
+    }
+
     if (conversationText.includes('trivial-pass')) {
       return {
         tools: [{ name: 'complete_criterion', arguments: { id: 'trivial-pass', reason: 'Trivial criterion passes immediately' } }],

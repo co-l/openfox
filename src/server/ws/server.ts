@@ -143,6 +143,17 @@ export function createWebSocketServer(
 ): WebSocketServer {
   const wss = new WebSocketServer({ server: httpServer, path: '/ws' })
   const clients = new Map<WebSocket, ClientConnection>()
+  const isSubscribedToSession = (client: ClientConnection, sessionId: string) => {
+    return client.activeSessionId === sessionId || client.eventStoreSubscriptions.has(sessionId)
+  }
+  
+  const broadcastForSession = (sessionId: string, msg: ServerMessage) => {
+    for (const [clientWs, client] of clients) {
+      if (isSubscribedToSession(client, sessionId) && clientWs.readyState === WebSocket.OPEN) {
+        clientWs.send(serializeServerMessage({ ...msg, sessionId }))
+      }
+    }
+  }
   
   // Subscribe to session events and broadcast to relevant clients
   sessionManager.subscribe((event) => {
@@ -153,7 +164,7 @@ export function createWebSocketServer(
     
     for (const [ws, client] of clients) {
       // Send events to all clients subscribed to this session (tab model)
-      if (client.subscribedSessions.has(sessionId) && ws.readyState === WebSocket.OPEN) {
+      if (isSubscribedToSession(client, sessionId) && ws.readyState === WebSocket.OPEN) {
         // Only broadcast session.state for session_updated (not mode_changed)
         // mode_changed is handled via the event queue to maintain ordering during streaming
         if (event.type === 'session_updated') {
@@ -192,7 +203,7 @@ export function createWebSocketServer(
       const client = clients.get(ws)!
       
       try {
-          await handleClientMessage(ws, client, message, config, getLLMClient, getActiveProvider, toolRegistry, sessionManager)
+          await handleClientMessage(ws, client, message, config, getLLMClient, getActiveProvider, toolRegistry, sessionManager, broadcastForSession)
       } catch (error) {
         logger.error('Error handling client message', { error, type: message.type })
         ws.send(serializeServerMessage(
@@ -236,7 +247,8 @@ async function handleClientMessage(
   getLLMClient: () => LLMClientWithModel,
   getActiveProvider: (() => Provider | undefined) | undefined,
   toolRegistry: ToolRegistry,
-  sessionManager: SessionManager
+  sessionManager: SessionManager,
+  broadcastForSession: (sessionId: string, msg: ServerMessage) => void,
 ): Promise<void> {
   const send = (msg: ServerMessage) => {
     if (ws.readyState === WebSocket.OPEN) {
@@ -512,7 +524,7 @@ async function handleClientMessage(
               if (updatedSession) {
                 const events = eventStore.getEvents(sessionId)
                 const messages = buildMessagesFromStoredEvents(events)
-                sendForSession(sessionId, createSessionStateMessage(updatedSession, messages))
+                broadcastForSession(sessionId, createSessionStateMessage(updatedSession, messages))
               }
               
               logger.info('Session name generated', { sessionId, name: result.name })
@@ -729,6 +741,7 @@ async function handleClientMessage(
           const assembledRequest = assemblePlannerRequest({
             workdir: currentSession.workdir,
             messages: requestMessages,
+            includeRuntimeReminder: false,
             injectedFiles,
             promptTools: [],
             requestTools: [],
@@ -906,6 +919,7 @@ async function handleClientMessage(
           const assembledRequest = assemblePlannerRequest({
             workdir: session.workdir,
             messages: requestMessages,
+            includeRuntimeReminder: false,
             injectedFiles,
             promptTools: [],
             requestTools: [],

@@ -305,6 +305,11 @@ export async function createTestClient(options: TestClientOptions = {}): Promise
         const payload = msg.payload as { phase: Session['phase'] }
         currentSession = { ...currentSession, phase: payload.phase }
       }
+      // Update running state from session.running events
+      if (msg.type === 'session.running' && currentSession) {
+        const payload = msg.payload as { isRunning: boolean }
+        currentSession = { ...currentSession, isRunning: payload.isRunning }
+      }
       // Update context state from context.state events
       if (msg.type === 'context.state') {
         const payload = msg.payload as { context: ContextState }

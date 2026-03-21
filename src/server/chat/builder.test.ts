@@ -122,11 +122,16 @@ describe('runBuilderStep', () => {
         systemPrompt: expect.any(String),
         injectedFiles: [{ path: 'AGENTS.md', content: 'Always add tests', source: 'global' }],
         userMessage: expect.stringContaining('fulfil the 1 criteria'),
-        messages: expect.any(Array),
+        messages: [
+          { role: 'user', content: 'Build it', source: 'history' },
+          { role: 'user', content: expect.stringContaining('fulfil the 1 criteria'), source: 'history' },
+        ],
         tools: expect.any(Array),
         requestOptions: { toolChoice: 'auto', disableThinking: false },
       },
     })
+    const promptContext = sessionManager.updateMessage.mock.calls[0]?.[2]?.promptContext
+    expect(promptContext.messages[1].content).toContain('Build mode ACTIVE')
     expect(toolRegistry.execute).toHaveBeenCalledWith('write_file', { path: 'src/index.ts' }, expect.objectContaining({
       workdir: '/tmp/project',
       sessionId: 'session-1',

@@ -37,7 +37,7 @@ describe('Auto Session Name', () => {
   })
 
   describe('session.name_generated event', () => {
-    it('should emit session.name_generated event after first message', async () => {
+    it('should emit session.name_generated event after first message', { timeout: 8_000 }, async () => {
       // Create session with default title
       await client.send('session.create', { projectId })
       const session = client.getSession()!
@@ -48,8 +48,9 @@ describe('Auto Session Name', () => {
         content: 'How do I set up a React project with TypeScript?'
       })
 
-      // Wait for name generation (async, non-blocking)
-      await new Promise(resolve => setTimeout(resolve, 3000))
+      await client.waitForChatDone(3_000)
+
+      await client.waitFor('session.name_generated', undefined, 3_000)
 
       // Check all received events for session.name_generated
       const allEvents = client.allEvents()
@@ -64,7 +65,7 @@ describe('Auto Session Name', () => {
       expect(nameEvent.payload.name.length).toBeLessThanOrEqual(50)
     })
 
-    it('should update session title in database', async () => {
+    it('should update session title in database', { timeout: 8_000 }, async () => {
       // Create session with default title
       await client.send('session.create', { projectId })
       const session = client.getSession()!
@@ -75,8 +76,9 @@ describe('Auto Session Name', () => {
         content: 'Fix the authentication bug in the login component'
       })
 
-      // Wait for name generation
-      await new Promise(resolve => setTimeout(resolve, 3000))
+      await client.waitForChatDone(3_000)
+
+      await client.waitFor('session.name_generated', undefined, 3_000)
 
       // Reload session to verify DB update
       const reloaded = await client.send('session.load', { sessionId: session.id })
@@ -87,7 +89,7 @@ describe('Auto Session Name', () => {
       expect(updatedSession.metadata.title).toBeDefined()
     })
 
-    it('should broadcast updated session state to WebSocket clients', async () => {
+    it('should broadcast updated session state to WebSocket clients', { timeout: 8_000 }, async () => {
       // Create session
       await client.send('session.create', { projectId })
       const session = client.getSession()!
@@ -102,8 +104,12 @@ describe('Auto Session Name', () => {
         content: 'Add unit tests for the API endpoints'
       })
 
-      // Wait for name generation and broadcast
-      await new Promise(resolve => setTimeout(resolve, 3000))
+      await client.waitForChatDone(3_000)
+
+      await client2.waitFor('session.state', (payload: unknown) => {
+        const sessionPayload = payload as { session: { metadata: { title?: string | null } } }
+        return Boolean(sessionPayload.session.metadata.title && sessionPayload.session.metadata.title !== initialTitle)
+      }, 3_000)
 
       // Verify session.state was broadcast with updated title
       const allEvents = client2.allEvents()
@@ -115,7 +121,7 @@ describe('Auto Session Name', () => {
       await client2.close()
     })
 
-    it('should not generate name for subsequent messages', async () => {
+    it('should not generate name for subsequent messages', { timeout: 8_000 }, async () => {
       // Create session
       await client.send('session.create', { projectId })
       const session = client.getSession()!
@@ -125,8 +131,9 @@ describe('Auto Session Name', () => {
         content: 'Initial question about the project'
       })
 
-      // Wait for potential name generation
-      await new Promise(resolve => setTimeout(resolve, 2000))
+      await client.waitForChatDone(3_000)
+
+      await client.waitFor('session.name_generated', undefined, 3_000)
 
       const allEvents1 = client.allEvents()
       const nameEvents1 = allEvents1.filter(msg => msg.type === 'session.name_generated')
@@ -137,8 +144,9 @@ describe('Auto Session Name', () => {
         content: 'Follow-up question'
       })
 
-      // Wait a bit
-      await new Promise(resolve => setTimeout(resolve, 1000))
+      await client.waitForChatDone(3_000)
+
+      await new Promise(resolve => setTimeout(resolve, 200))
 
       // Check for additional name generation events
       const allEvents2 = client.allEvents()
@@ -152,7 +160,7 @@ describe('Auto Session Name', () => {
       expect(finalSession.metadata.title).toBe(titleAfterFirst)
     })
 
-    it('should handle name generation failure gracefully', async () => {
+    it('should handle name generation failure gracefully', { timeout: 8_000 }, async () => {
       // Create session
       await client.send('session.create', { projectId })
       const session = client.getSession()!
@@ -162,6 +170,8 @@ describe('Auto Session Name', () => {
         content: 'Test message that might cause name generation to fail'
       })
 
+      await client.waitForChatDone(3_000)
+
       // Session should still be functional
       const response = await client.send('chat.send', {
         content: 'Another message'
@@ -170,7 +180,7 @@ describe('Auto Session Name', () => {
       expect(response.type).toBe('ack')
     })
 
-    it('should generate descriptive name from message content', async () => {
+    it('should generate descriptive name from message content', { timeout: 8_000 }, async () => {
       // Create session
       await client.send('session.create', { projectId })
       const session = client.getSession()!
@@ -180,8 +190,9 @@ describe('Auto Session Name', () => {
         content: 'How do I implement OAuth2 authentication with JWT tokens?'
       })
 
-      // Wait for name generation
-      await new Promise(resolve => setTimeout(resolve, 3000))
+      await client.waitForChatDone(3_000)
+
+      await client.waitFor('session.name_generated', undefined, 3_000)
 
       // Check for name generation event
       const allEvents = client.allEvents()

@@ -1,5 +1,11 @@
 import { describe, it, expect } from 'vitest'
-import { buildPlannerPrompt, buildBuilderPrompt, buildVerifierPrompt } from './prompts.js'
+import {
+  buildBuilderPrompt,
+  buildBuilderReminder,
+  buildPlannerPrompt,
+  buildPlannerReminder,
+  buildVerifierPrompt,
+} from './prompts.js'
 
 describe('buildPlannerPrompt', () => {
   it('includes workdir in prompt', () => {
@@ -51,6 +57,33 @@ describe('buildBuilderPrompt', () => {
     expect(prompt).not.toContain('[PENDING]')
     expect(prompt).not.toContain('[COMPLETED')
     expect(prompt).not.toContain('Files modified')
+  })
+
+  it('matches the planner system prompt to preserve cache reuse', () => {
+    expect(buildBuilderPrompt('/tmp', [], 'Follow project rules')).toBe(
+      buildPlannerPrompt('/tmp', [], 'Follow project rules'),
+    )
+  })
+
+  it('treats runtime reminders as OpenFox-authored control messages', () => {
+    const prompt = buildBuilderPrompt('/tmp', [], undefined)
+    expect(prompt).toContain('OpenFox may append system-generated runtime control messages as USER-role messages')
+    expect(prompt).toContain('Do not describe them as "the user reminded me"')
+  })
+})
+
+describe('mode reminders', () => {
+  it('builds a planner reminder that keeps execution disabled', () => {
+    const reminder = buildPlannerReminder()
+    expect(reminder).toContain('Plan mode ACTIVE')
+    expect(reminder).toContain('MUST NOT make any edits')
+  })
+
+  it('builds a builder reminder that enables execution', () => {
+    const reminder = buildBuilderReminder()
+    expect(reminder).toContain('Build mode ACTIVE')
+    expect(reminder).toContain('implementation is now allowed')
+    expect(reminder).toContain('write or update the failing test first')
   })
 })
 

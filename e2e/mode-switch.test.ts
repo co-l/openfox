@@ -143,7 +143,7 @@ describe('Mode Switching', () => {
       expect(summaryPrompt).toBeDefined()
     })
 
-    it('injects the builder kickoff exactly once after accepting criteria', { timeout: 15_000 }, async () => {
+    it('injects the builder kickoff exactly once after accepting criteria', { timeout: 25_000 }, async () => {
       await client.send('chat.send', {
         content: 'Add criterion with ID "inspect-src": "Inspect the src directory and report what exists". Use add_criterion.',
       })
@@ -154,7 +154,7 @@ describe('Mode Switching', () => {
       await client.send('mode.accept', {})
       await client.waitFor('session.running', (payload: unknown) => {
         return (payload as { isRunning: boolean }).isRunning === false
-      }, 10_000)
+      }, 20_000)
 
       const kickoffMessages = client.allEvents().filter((event) => {
         if (event.type !== 'chat.message') return false

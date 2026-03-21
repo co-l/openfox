@@ -1,7 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { createServer, type Server as HttpServer } from 'node:http'
+import { createServer } from 'node:http'
 import { once } from 'node:events'
 import WebSocket from 'ws'
+import type { StoredEvent, TurnEvent } from '../events/types.js'
 
 const {
   createProjectMock,
@@ -185,6 +186,7 @@ function createSessionManager(overrides: Record<string, unknown> = {}) {
     isRunning: false,
     criteria: [] as Array<Record<string, unknown>>,
     summary: null,
+    metadata: { totalTokensUsed: 0, totalToolCalls: 0, iterationCount: 0 },
   }
 
   const manager = {
@@ -220,6 +222,7 @@ async function createHarness(options: {
   const httpServer = createServer()
   const sessionManager = options.sessionManager ?? createSessionManager()
   const eventStore = options.eventStore ?? createEventStore()
+  
   getEventStoreMock.mockReturnValue(eventStore)
 
   const mockLLMClient = { 
@@ -456,6 +459,7 @@ describe('createWebSocketServer', () => {
       isRunning: false,
       criteria: [{ id: 'tests-pass', description: 'Tests pass', status: { type: 'pending' }, attempts: [] }],
       summary: null,
+      metadata: { title: null },
     }
     const sessionManager = createSessionManager({
       createSession: vi.fn(() => sessionState),
@@ -463,7 +467,7 @@ describe('createWebSocketServer', () => {
       requireSession: vi.fn(() => structuredClone(sessionState)),
       setMode: vi.fn((_id, mode) => ({ ...sessionState, mode })),
     })
-
+    
     let resolveRun: (() => void) | null = null
     runChatTurnMock.mockImplementation(({ sessionManager, sessionId, signal }) => {
       // The event store is already set up in the harness - we just need to wait
@@ -472,27 +476,46 @@ describe('createWebSocketServer', () => {
         signal?.addEventListener('abort', () => resolve())
       })
     })
-    
-    // Manually append events synchronously to ensure they're delivered via the subscription
-    const eventStore = getEventStoreMock()
-    if (eventStore && typeof eventStore.append === 'function') {
-      eventStore.append('session-1', { type: 'phase.changed', data: { phase: 'build' } })
-      const msgId = 'assistant-1'
-      eventStore.append('session-1', { type: 'message.start', data: { messageId: msgId, role: 'assistant', content: 'Working...' } })
-      eventStore.append('session-1', { type: 'message.delta', data: { messageId: msgId, content: 'Done' } })
-      eventStore.append('session-1', { type: 'message.done', data: { messageId: msgId, stats: { model: 'qwen', mode: 'planner', totalTime: 1, toolTime: 0, prefillTokens: 1, prefillSpeed: 1, generationTokens: 1, generationSpeed: 1 } } })
-      eventStore.append('session-1', { type: 'running.changed', data: { isRunning: true } })
-    }
 
     const harness = await createHarness({ sessionManager })
+    
+    // Override addMessage and setRunning to emit events after harness is created
+    const eventStore = getEventStoreMock()
+    sessionManager.addMessage = vi.fn((sessionId: string, message: any) => {
+      if (eventStore && typeof eventStore.append === 'function') {
+        eventStore.append(sessionId, {
+          type: 'message.start',
+          data: { messageId: `msg-${Date.now()}`, role: message.role, content: message.content }
+        })
+      }
+      return { id: `msg-${Date.now()}`, timestamp: new Date().toISOString(), ...message }
+    })
+    
+    sessionManager.setRunning = vi.fn((sessionId: string, isRunning: boolean) => {
+      if (eventStore && typeof eventStore.append === 'function') {
+        eventStore.append(sessionId, {
+          type: 'running.changed',
+          data: { isRunning }
+        })
+      }
+      return { ...sessionState, isRunning }
+    })
 
     harness.send({ id: 'sc-ok', type: 'session.create', payload: { projectId: 'project-1' } })
     await harness.nextMessage((message) => message.id === 'sc-ok')
+    await harness.nextMessage((message) => message.type === 'context.state')
+    
+    // Load the session to set up the event store subscription
+    harness.send({ id: 'sl-ok', type: 'session.load', payload: { sessionId: 'session-1' } })
+    await harness.nextMessage((message) => message.id === 'sl-ok')
+    await harness.nextMessage((message) => message.type === 'context.state')
 
     harness.send({ id: 'chat-bad', type: 'chat.send', payload: {} })
     expect(await harness.nextMessage((message) => message.id === 'chat-bad')).toMatchObject({ payload: { code: 'INVALID_PAYLOAD' } })
 
     harness.send({ id: 'chat-ok', type: 'chat.send', payload: { content: 'Please continue' } })
+    
+    // Messages arrive in order: phase.changed, chat.message, session.running, ack
     expect(await harness.nextMessage((message) => message.type === 'phase.changed')).toMatchObject({ payload: { phase: 'build' } })
     expect(await harness.nextMessage((message) => message.type === 'chat.message')).toMatchObject({ type: 'chat.message' })
     expect(await harness.nextMessage((message) => message.type === 'session.running')).toMatchObject({ payload: { isRunning: true } })
@@ -599,6 +622,10 @@ describe('createWebSocketServer', () => {
     await new Promise<void>((resolve) => setTimeout(resolve, 0))
     expect(sessionManager.setSummary).toHaveBeenCalledWith('session-1', 'Summary content')
     expect(runOrchestratorMock).toHaveBeenCalled()
+    expect(streamLLMPureMock.mock.calls[0]?.[0]?.messages).toEqual(expect.not.arrayContaining([
+      expect.objectContaining({ content: expect.stringContaining('Plan mode ACTIVE') }),
+      expect.objectContaining({ content: expect.stringContaining('Build mode ACTIVE') }),
+    ]))
 
     harness.send({ id: 'runner-launch', type: 'runner.launch', payload: {} })
     expect(await harness.nextMessage((message) => message.id === 'runner-launch')).toMatchObject({ type: 'ack' })
@@ -610,6 +637,10 @@ describe('createWebSocketServer', () => {
     expect(await harness.nextMessage((message) => message.type === 'context.state')).toMatchObject({ type: 'context.state' })
     expect(await harness.nextMessage((message) => message.type === 'session.state')).toMatchObject({ type: 'session.state' })
     expect(sessionManager.compactContext).toHaveBeenCalledWith('session-1', 'Compacted summary', 10)
+    expect(streamLLMPureMock.mock.calls[1]?.[0]?.messages).toEqual(expect.not.arrayContaining([
+      expect.objectContaining({ content: expect.stringContaining('Plan mode ACTIVE') }),
+      expect.objectContaining({ content: expect.stringContaining('Build mode ACTIVE') }),
+    ]))
 
     harness.send({ id: 'path-missing', type: 'path.confirm', payload: { callId: 'call-1', approved: true } })
     expect(await harness.nextMessage((message) => message.id === 'path-missing')).toMatchObject({ payload: { code: 'NOT_FOUND' } })
@@ -829,6 +860,9 @@ describe('createWebSocketServer', () => {
     expect(summaryCall.messages).toEqual(expect.arrayContaining([
       expect.objectContaining({ role: 'user', content: 'Fix the bug where deleted session URLs hang forever.' }),
     ]))
+    expect(summaryCall.messages).toEqual(expect.not.arrayContaining([
+      expect.objectContaining({ content: expect.stringContaining('Plan mode ACTIVE') }),
+    ]))
 
     await harness.close()
   })
@@ -949,6 +983,7 @@ describe('createWebSocketServer', () => {
       isRunning: false,
       criteria: [],
       summary: null,
+      metadata: { totalTokensUsed: 0, totalToolCalls: 0, iterationCount: 0 },
     }
     const sessionTwo: any = {
       id: 'session-2',
@@ -959,6 +994,7 @@ describe('createWebSocketServer', () => {
       isRunning: false,
       criteria: [],
       summary: null,
+      metadata: { totalTokensUsed: 0, totalToolCalls: 0, iterationCount: 0 },
     }
     const sessions = new Map<string, any>([
       ['session-1', sessionOne],

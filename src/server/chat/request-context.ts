@@ -7,7 +7,13 @@ import type {
   PromptRequestOptions,
 } from '../../shared/types.js'
 import type { LLMToolDefinition } from '../llm/types.js'
-import { buildBuilderPrompt, buildPlannerPrompt, buildVerifierPrompt } from './prompts.js'
+import {
+  buildBuilderPrompt,
+  buildBuilderReminder,
+  buildPlannerPrompt,
+  buildPlannerReminder,
+  buildVerifierPrompt,
+} from './prompts.js'
 
 export type RequestContextMessage = PromptContextMessage
 
@@ -16,6 +22,7 @@ interface BaseAssemblyInput {
   messages: RequestContextMessage[]
   injectedFiles: InjectedFile[]
   customInstructions?: string
+  includeRuntimeReminder?: boolean
   promptTools: LLMToolDefinition[]
   requestTools?: LLMToolDefinition[]
   toolChoice?: PromptRequestOptions['toolChoice']
@@ -39,6 +46,7 @@ export function assemblePlannerRequest(input: BaseAssemblyInput): AssemblyResult
   return createAssemblyResult({
     systemPrompt,
     messages: input.messages,
+    ...(input.includeRuntimeReminder === false ? {} : { runtimeReminder: buildPlannerReminder() }),
     injectedFiles: input.injectedFiles,
     requestTools: input.requestTools ?? input.promptTools,
     toolChoice: input.toolChoice ?? 'auto',
@@ -51,6 +59,7 @@ export function assembleBuilderRequest(input: BaseAssemblyInput): AssemblyResult
   return createAssemblyResult({
     systemPrompt,
     messages: input.messages,
+    ...(input.includeRuntimeReminder === false ? {} : { runtimeReminder: buildBuilderReminder() }),
     injectedFiles: input.injectedFiles,
     requestTools: input.requestTools ?? input.promptTools,
     toolChoice: input.toolChoice ?? 'auto',
@@ -77,11 +86,12 @@ export function createPromptContext(input: {
   requestTools: LLMToolDefinition[]
   toolChoice: PromptRequestOptions['toolChoice']
   disableThinking: boolean
+  userMessage?: string
 }): PromptContext {
   return {
     systemPrompt: input.systemPrompt,
     injectedFiles: input.injectedFiles,
-    userMessage: getTriggerUserMessage(input.messages),
+    userMessage: input.userMessage ?? getTriggerUserMessage(input.messages),
     messages: input.messages.map((message) => ({
       role: message.role,
       content: message.content,
@@ -105,22 +115,54 @@ export function createPromptContext(input: {
 function createAssemblyResult(input: {
   systemPrompt: string
   messages: RequestContextMessage[]
+  runtimeReminder?: string
   injectedFiles: InjectedFile[]
   requestTools: LLMToolDefinition[]
   toolChoice: PromptRequestOptions['toolChoice']
   disableThinking: boolean
 }): AssemblyResult {
+  const triggerUserMessage = getTriggerUserMessage(input.messages)
+  const messages = input.runtimeReminder
+    ? injectRuntimeReminder(input.messages, input.runtimeReminder)
+    : input.messages
+
   return {
     systemPrompt: input.systemPrompt,
-    messages: input.messages.map((message) => ({
+    messages: messages.map((message) => ({
       role: message.role,
       content: message.content,
       ...(message.toolCalls ? { toolCalls: message.toolCalls } : {}),
       ...(message.toolCallId ? { toolCallId: message.toolCallId } : {}),
       ...(message.attachments ? { attachments: message.attachments } : {}),
     })),
-    promptContext: createPromptContext(input),
+    promptContext: createPromptContext({
+      ...input,
+      messages,
+      userMessage: triggerUserMessage,
+    }),
   }
+}
+
+function injectRuntimeReminder(messages: RequestContextMessage[], runtimeReminder: string): RequestContextMessage[] {
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const message = messages[index]
+    if (message?.role !== 'user' || message.source !== 'history') {
+      continue
+    }
+
+    return messages.map((entry, entryIndex) => {
+      if (entryIndex !== index) {
+        return entry
+      }
+
+      return {
+        ...entry,
+        content: `${entry.content}\n\n${runtimeReminder}`,
+      }
+    })
+  }
+
+  return [...messages, { role: 'user', content: runtimeReminder, source: 'runtime' }]
 }
 
 function getTriggerUserMessage(messages: RequestContextMessage[]): string {

@@ -88,12 +88,13 @@ export function createLLMClient(config: Config, initialBackend: Backend = 'unkno
       })
       
       try {
+        const shouldDisableThinking = disableThinking || request.disableThinking === true
         const createParams = buildNonStreamingCreateParams({
           model, 
           request, 
           profile, 
           capabilities, 
-          disableThinking: disableThinking || request.disableThinking
+          disableThinking: shouldDisableThinking,
         })
         const response = await openai.chat.completions.create(createParams, {
           signal: request.signal,
@@ -178,7 +179,7 @@ export function createLLMClient(config: Config, initialBackend: Backend = 'unkno
       
       try {
         // Disable thinking if configured globally or requested per-call
-        const shouldDisableThinking = disableThinking || request.disableThinking
+        const shouldDisableThinking = disableThinking || request.disableThinking === true
         
         const createParams = buildStreamingCreateParams({ model, request, profile, capabilities, disableThinking: shouldDisableThinking })
         

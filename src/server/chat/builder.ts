@@ -5,7 +5,7 @@
  * naturally stops (returns no tool calls). This is the standard agent loop.
  */
 
-import type { ToolCall, PromptContext, InjectedFile } from '../../shared/types.js'
+import type { ToolCall } from '../../shared/types.js'
 import type { ServerMessage } from '../../shared/protocol.js'
 import type { LLMClientWithModel } from '../llm/client.js'
 import type { StepResult } from '../runner/types.js'
@@ -18,10 +18,11 @@ const getStatsIdentity = (model: string) => ({
 })
 import type { SessionManager } from '../session/index.js'
 import { getToolRegistryForMode } from '../tools/index.js'
-import { buildBuilderPrompt, BUILDER_KICKOFF_PROMPT } from './prompts.js'
+import { BUILDER_KICKOFF_PROMPT } from './prompts.js'
 import { streamLLMResponse } from './stream.js'
 import { computeAggregatedStats } from './stats.js'
 import { getAllInstructions } from '../context/instructions.js'
+import { assembleBuilderRequest, type RequestContextMessage } from './request-context.js'
 import {
   createChatToolCallMessage,
   createChatToolResultMessage,
@@ -109,29 +110,30 @@ export async function runBuilderStep(options: BuilderStepOptions): Promise<StepR
     session = sessionManager.requireSession(sessionId)
     const { content: instructions, files: instructionFiles } = await getAllInstructions(session.workdir, session.projectId)
     
-    const systemPrompt = buildBuilderPrompt(
-      session.workdir,
-      toolRegistry.definitions,
-      instructions || undefined
-    )
-    
-    // Attach prompt context to the last user message (for debugging/inspection)
     const currentWindowMessages = sessionManager.getCurrentWindowMessages(sessionId)
+    const requestMessages: RequestContextMessage[] = currentWindowMessages.map(message => ({
+      role: message.role as 'user' | 'assistant' | 'tool',
+      content: message.content,
+      source: 'history',
+      ...(message.toolCalls ? { toolCalls: message.toolCalls } : {}),
+      ...(message.toolCallId ? { toolCallId: message.toolCallId } : {}),
+      ...(message.attachments ? { attachments: message.attachments } : {}),
+    }))
+    const assembledRequest = assembleBuilderRequest({
+      workdir: session.workdir,
+      messages: requestMessages,
+      injectedFiles: instructionFiles.map(file => ({ path: file.path, content: file.content ?? '', source: file.source })),
+      promptTools: toolRegistry.definitions,
+      toolChoice: 'auto',
+      ...(instructions ? { customInstructions: instructions } : {}),
+    })
+    const systemPrompt = assembledRequest.systemPrompt
+
+    // Attach prompt context to the last user message (for debugging/inspection)
     const lastUserMessage = [...currentWindowMessages].reverse().find(m => m.role === 'user')
     
     if (lastUserMessage && !madeAnyToolCalls) {
-      // Only attach on first iteration, not after tool results
-      const promptContext: PromptContext = {
-        systemPrompt,
-        injectedFiles: instructionFiles.map(f => ({ path: f.path, content: f.content ?? '', source: f.source })) as InjectedFile[],
-        userMessage: lastUserMessage.content,
-        messages: [
-          { role: 'user', content: lastUserMessage.content, source: 'history' },
-        ],
-        tools: toolRegistry.definitions.map(tool => ({ name: tool.function.name, description: tool.function.description, parameters: tool.function.parameters })),
-        requestOptions: { toolChoice: 'auto', disableThinking: false },
-      }
-      sessionManager.updateMessage(sessionId, lastUserMessage.id, { promptContext })
+      sessionManager.updateMessage(sessionId, lastUserMessage.id, { promptContext: assembledRequest.promptContext })
     }
     
     // Stream LLM response
@@ -146,6 +148,7 @@ export async function runBuilderStep(options: BuilderStepOptions): Promise<StepR
         toolChoice: 'auto',
         signal,
         onEvent: onMessage,
+        customMessages: assembledRequest.messages,
       })
     } catch (error) {
       // Aborted or error - rethrow for orchestrator to handle

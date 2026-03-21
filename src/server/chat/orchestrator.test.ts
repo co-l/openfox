@@ -1439,12 +1439,15 @@ describe('chat orchestrator', () => {
       // Verify getContextMessages was called with session ID
       expect(getContextMessagesMock).toHaveBeenCalledWith('session-1')
       
-      // Verify streamLLMPure received only current-window messages
+      // Verify streamLLMPure merged the planner runtime reminder into the user message
       expect(streamLLMPureMock).toHaveBeenCalledWith(
         expect.objectContaining({
-          messages: currentWindowMessages,
+          messages: [
+            expect.objectContaining({ role: 'user', content: expect.stringContaining('Current window message') }),
+          ],
         })
       )
+      expect(streamLLMPureMock.mock.calls[0]?.[0]?.messages[0]?.content).toContain('Plan mode ACTIVE')
     })
 
     it('builder turn uses getContextMessages to filter by current window', async () => {
@@ -1491,12 +1494,15 @@ describe('chat orchestrator', () => {
       }, new TurnMetrics())
 
       expect(getContextMessagesMock).toHaveBeenCalledWith('session-1')
-      // Builder passes messages through without injecting runtime state
+      // Builder merges the runtime reminder into the triggering user turn
       expect(streamLLMPureMock).toHaveBeenCalledWith(
         expect.objectContaining({
-          messages: currentWindowMessages,
+          messages: [
+            expect.objectContaining({ role: 'user', content: expect.stringContaining('Build this') }),
+          ],
         })
       )
+      expect(streamLLMPureMock.mock.calls[0]?.[0]?.messages[0]?.content).toContain('Build mode ACTIVE')
     })
 
     it('assistant messages include contextWindowId', async () => {
