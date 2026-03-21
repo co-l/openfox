@@ -116,20 +116,20 @@ export function SessionHeader({ criteriaSidebarOpen = true, onCriteriaSidebarTog
             >
               Compact
             </Button>
-            
-            {/* Criteria sidebar toggle button - shows when sidebar is closed */}
-            {onCriteriaSidebarToggle && (
-              <button
-                onClick={onCriteriaSidebarToggle}
-                className={`flex items-center justify-center p-1.5 rounded hover:bg-bg-tertiary text-text-muted hover:text-text-primary transition-colors ${criteriaSidebarOpen ? 'md:hidden' : 'md:flex'}`}
-                title={criteriaSidebarOpen ? 'Hide criteria sidebar' : 'Show criteria sidebar'}
-              >
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
-                </svg>
-              </button>
-            )}
           </div>
+          
+          {/* Criteria sidebar toggle button - shows when sidebar is closed, positioned on far right */}
+          {onCriteriaSidebarToggle && (
+            <button
+              onClick={onCriteriaSidebarToggle}
+              className={`flex items-center justify-center p-1.5 rounded hover:bg-bg-tertiary text-text-muted hover:text-text-primary transition-colors ${criteriaSidebarOpen ? 'md:hidden' : 'md:flex'}`}
+              title={criteriaSidebarOpen ? 'Hide criteria sidebar' : 'Show criteria sidebar'}
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
+              </svg>
+            </button>
+          )}
           
           {/* Right side: Stats summary */}
           {stats && (
