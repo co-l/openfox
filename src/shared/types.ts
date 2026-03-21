@@ -226,7 +226,7 @@ export interface PromptContextTool {
 
 export interface PromptRequestOptions {
   toolChoice: 'auto' | 'none' | 'required' | { type: 'function'; function: { name: string } }
-  enableThinking: boolean
+  disableThinking: boolean
 }
 
 export interface InjectedFile {

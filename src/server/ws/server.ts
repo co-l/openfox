@@ -733,7 +733,7 @@ async function handleClientMessage(
             promptTools: [],
             requestTools: [],
             toolChoice: 'none',
-            enableThinking: false,
+            disableThinking: true,
             ...(instructions ? { customInstructions: instructions } : {}),
           })
 
@@ -749,7 +749,7 @@ async function handleClientMessage(
             messages: assembledRequest.messages,
             tools: [], // No tools for summary
             toolChoice: 'none',
-            enableThinking: false,
+            disableThinking: true,
           })
           
           const result = await consumeStreamGenerator(streamGen, event => {
@@ -910,7 +910,7 @@ async function handleClientMessage(
             promptTools: [],
             requestTools: [],
             toolChoice: 'none',
-            enableThinking: false,
+            disableThinking: true,
             ...(instructions ? { customInstructions: instructions } : {}),
           })
 
@@ -925,7 +925,7 @@ async function handleClientMessage(
             messages: assembledRequest.messages,
             tools: [],
             toolChoice: 'none',
-            enableThinking: false,
+            disableThinking: true,
           })
           const result = await consumeStreamGenerator(streamGen, event => {
             eventStore.append(sessionId, event)

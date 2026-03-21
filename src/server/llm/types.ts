@@ -26,7 +26,7 @@ export interface LLMCompletionRequest {
   maxTokens?: number
   stream?: boolean
   signal?: AbortSignal
-  disableThinking: boolean
+  disableThinking?: boolean
 }
 
 export interface LLMCompletionResponse {

@@ -178,7 +178,7 @@ export function createLLMClient(config: Config, initialBackend: Backend = 'unkno
       
       try {
         // Disable thinking if configured globally or requested per-call
-        const shouldDisableThinking = disableThinking || request.enableThinking === false
+        const shouldDisableThinking = disableThinking || request.disableThinking
         
         const createParams = buildStreamingCreateParams({ model, request, profile, capabilities, disableThinking: shouldDisableThinking })
         

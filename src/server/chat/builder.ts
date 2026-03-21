@@ -129,7 +129,7 @@ export async function runBuilderStep(options: BuilderStepOptions): Promise<StepR
           { role: 'user', content: lastUserMessage.content, source: 'history' },
         ],
         tools: toolRegistry.definitions.map(tool => ({ name: tool.function.name, description: tool.function.description, parameters: tool.function.parameters })),
-        requestOptions: { toolChoice: 'auto', enableThinking: true },
+        requestOptions: { toolChoice: 'auto', disableThinking: false },
       }
       sessionManager.updateMessage(sessionId, lastUserMessage.id, { promptContext })
     }

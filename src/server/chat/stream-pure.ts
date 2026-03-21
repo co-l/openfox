@@ -36,7 +36,7 @@ export interface PureStreamOptions {
   tools?: LLMToolDefinition[]
   toolChoice?: 'auto' | 'none' | 'required'
   signal?: AbortSignal | undefined
-  enableThinking?: boolean
+  disableThinking?: boolean
 }
 
 export interface PureStreamResult {
@@ -78,7 +78,7 @@ export interface PureStreamResult {
 export async function* streamLLMPure(
   options: PureStreamOptions
 ): AsyncGenerator<TurnEvent, PureStreamResult> {
-  const { messageId, systemPrompt, llmClient, messages, tools, toolChoice, signal, enableThinking } = options
+  const { messageId, systemPrompt, llmClient, messages, tools, toolChoice, signal, disableThinking } = options
 
   // Build LLM messages
   const llmMessages = [{ role: 'system' as const, content: systemPrompt }, ...messages]
@@ -88,7 +88,7 @@ export async function* streamLLMPure(
     messages: llmMessages,
     ...(tools && { tools }),
     ...(tools && { toolChoice: toolChoice ?? 'auto' }),
-    ...(enableThinking === false && { enableThinking: false }),
+    disableThinking: disableThinking ?? false,
   })
 
   // Track tool call indices we've emitted preparing events for

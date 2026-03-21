@@ -1,5 +1,9 @@
 import type OpenAI from 'openai'
-import type { ChatCompletionMessageParam, ChatCompletionTool, ChatCompletionToolChoiceOption } from 'openai/resources/chat/completions'
+import type {
+  ChatCompletionMessageParam,
+  ChatCompletionTool,
+  ChatCompletionToolChoiceOption,
+} from 'openai/resources/chat/completions'
 import type { LLMCompletionRequest, LLMCompletionResponse, LLMMessage, LLMToolDefinition } from './types.js'
 import type { ModelProfile } from './profiles.js'
 import type { BackendCapabilities } from './backend.js'
@@ -10,11 +14,7 @@ type MinimalProfile = Pick<ModelProfile, 'temperature' | 'defaultMaxTokens' | 't
 
 export function convertMessages(messages: LLMMessage[]): ChatCompletionMessageParam[] {
   const filtered = messages.filter((msg) => {
-    if (msg.role === 'assistant' && !msg.content?.trim() && !msg.toolCalls?.length) {
-      logger.warn('Filtering empty assistant message from LLM context')
-      return false
-    }
-    return true
+    return !(msg.role === 'assistant' && !msg.content?.trim() && !msg.toolCalls?.length)
   })
 
   return filtered.map((msg): ChatCompletionMessageParam => {
@@ -44,12 +44,12 @@ export function convertMessages(messages: LLMMessage[]): ChatCompletionMessagePa
     // Handle user messages with attachments
     if (msg.role === 'user' && msg.attachments && msg.attachments.length > 0) {
       const content: Array<{ type: 'text'; text: string } | { type: 'image_url'; image_url: { url: string } }> = []
-      
+
       // Add text content if present
       if (msg.content?.trim()) {
         content.push({ type: 'text', text: msg.content })
       }
-      
+
       // Add attachments as image URLs
       for (const attachment of msg.attachments) {
         content.push({
@@ -59,7 +59,7 @@ export function convertMessages(messages: LLMMessage[]): ChatCompletionMessagePa
           },
         })
       }
-      
+
       return {
         role: 'user',
         content,
@@ -107,8 +107,6 @@ export function buildNonStreamingCreateParams(input: {
     ;(params as unknown as Record<string, unknown>)['top_k'] = profile.topK
   }
 
-  // Disable thinking for models that support it
-  console.log("Disabled thinking?", capabilities.supportsChatTemplateKwargs, profile.supportsReasoning, disableThinking)
   if (capabilities.supportsChatTemplateKwargs && profile.supportsReasoning && disableThinking) {
     ;(params as unknown as Record<string, unknown>)['chat_template_kwargs'] = { enable_thinking: false }
   }
@@ -140,7 +138,7 @@ export function buildStreamingCreateParams(input: {
     ;(params as unknown as Record<string, unknown>)['top_k'] = profile.topK
   }
 
-  if (capabilities.supportsChatTemplateKwargs && profile.supportsReasoning && (request.enableThinking === false || disableThinking)) {
+  if (capabilities.supportsChatTemplateKwargs && profile.supportsReasoning && (disableThinking || request.disableThinking)) {
     ;(params as unknown as Record<string, unknown>)['chat_template_kwargs'] = { enable_thinking: false }
   }
 

@@ -142,7 +142,7 @@ describe('runVerifierStep', () => {
         userMessage: expect.any(String),
         messages: expect.any(Array),
         tools: expect.any(Array),
-        requestOptions: { toolChoice: 'auto', enableThinking: false },
+        requestOptions: { toolChoice: 'auto', disableThinking: true },
       },
     })
     expect(toolRegistry.execute).toHaveBeenCalledWith('fail_criterion', { id: 'tests-pass', reason: 'still broken' }, expect.objectContaining({

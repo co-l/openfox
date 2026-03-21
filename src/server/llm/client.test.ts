@@ -219,7 +219,7 @@ describe('llm client', () => {
     for await (const event of client.stream({
       messages: [{ role: 'user', content: 'hello' }],
       tools: [{ type: 'function', function: { name: 'glob', description: 'Search', parameters: { type: 'object' } } }],
-      enableThinking: false,
+      disableThinking: true,
     })) {
       events.push(event as Record<string, unknown>)
     }

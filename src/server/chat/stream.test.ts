@@ -78,6 +78,7 @@ describe('streamLLMResponse', () => {
       ],
       tools: [{ type: 'function', function: { name: 'read_file', description: 'Read', parameters: { type: 'object' } } }],
       toolChoice: 'auto',
+      disableThinking: false,
     })
     expect(emitted.map((event) => event.type)).toEqual([
       'chat.message',

@@ -730,7 +730,7 @@ ${modifiedFiles.length > 0 ? modifiedFiles.map(f => `- ${f}`).join('\n') : '(non
       injectedFiles,
       promptTools: toolRegistry.definitions,
       toolChoice: 'auto',
-      enableThinking: false,
+      disableThinking: true,
       ...(instructionContent ? { customInstructions: instructionContent } : {}),
     })
 
@@ -743,7 +743,7 @@ ${modifiedFiles.length > 0 ? modifiedFiles.map(f => `- ${f}`).join('\n') : '(non
       tools: toolRegistry.definitions,
       toolChoice: 'auto',
       signal,
-      enableThinking: false,
+      disableThinking: true,
     })
 
     const result = await consumeStreamGenerator(streamGen, event => {

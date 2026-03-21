@@ -124,7 +124,7 @@ describe('runBuilderStep', () => {
         userMessage: expect.stringContaining('fulfil the 1 criteria'),
         messages: expect.any(Array),
         tools: expect.any(Array),
-        requestOptions: { toolChoice: 'auto', enableThinking: true },
+        requestOptions: { toolChoice: 'auto', disableThinking: false },
       },
     })
     expect(toolRegistry.execute).toHaveBeenCalledWith('write_file', { path: 'src/index.ts' }, expect.objectContaining({

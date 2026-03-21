@@ -56,7 +56,7 @@ describe('llm client pure helpers', () => {
       messages: [{ role: 'user' as const, content: 'hello' }],
       tools: [{ type: 'function' as const, function: { name: 'glob', description: 'Search', parameters: { type: 'object' } } }],
       toolChoice: 'auto' as const,
-      enableThinking: false,
+      disableThinking: false,
     }
     const profile = {
       temperature: 0.2,
@@ -88,7 +88,7 @@ describe('llm client pure helpers', () => {
       request: baseRequest,
       profile,
       capabilities: { supportsTopK: true, supportsChatTemplateKwargs: true },
-      disableThinking: false,
+      disableThinking: true,
     })).toEqual({
       model: 'test-model',
       messages: [{ role: 'user', content: 'hello' }],

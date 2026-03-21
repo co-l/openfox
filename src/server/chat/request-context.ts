@@ -19,7 +19,7 @@ interface BaseAssemblyInput {
   promptTools: LLMToolDefinition[]
   requestTools?: LLMToolDefinition[]
   toolChoice?: PromptRequestOptions['toolChoice']
-  enableThinking?: boolean
+  disableThinking?: boolean
 }
 
 interface AssemblyResult {
@@ -42,7 +42,7 @@ export function assemblePlannerRequest(input: BaseAssemblyInput): AssemblyResult
     injectedFiles: input.injectedFiles,
     requestTools: input.requestTools ?? input.promptTools,
     toolChoice: input.toolChoice ?? 'auto',
-    enableThinking: input.enableThinking ?? true,
+    disableThinking: input.disableThinking ?? false,
   })
 }
 
@@ -54,7 +54,7 @@ export function assembleBuilderRequest(input: BaseAssemblyInput): AssemblyResult
     injectedFiles: input.injectedFiles,
     requestTools: input.requestTools ?? input.promptTools,
     toolChoice: input.toolChoice ?? 'auto',
-    enableThinking: input.enableThinking ?? true,
+    disableThinking: input.disableThinking ?? false,
   })
 }
 
@@ -66,7 +66,7 @@ export function assembleVerifierRequest(input: BaseAssemblyInput): AssemblyResul
     injectedFiles: input.injectedFiles,
     requestTools: input.requestTools ?? input.promptTools,
     toolChoice: input.toolChoice ?? 'auto',
-    enableThinking: input.enableThinking ?? true,
+    disableThinking: input.disableThinking ?? false,
   })
 }
 
@@ -76,7 +76,7 @@ export function createPromptContext(input: {
   injectedFiles: InjectedFile[]
   requestTools: LLMToolDefinition[]
   toolChoice: PromptRequestOptions['toolChoice']
-  enableThinking: boolean
+  disableThinking: boolean
 }): PromptContext {
   return {
     systemPrompt: input.systemPrompt,
@@ -97,7 +97,7 @@ export function createPromptContext(input: {
     })),
     requestOptions: {
       toolChoice: input.toolChoice,
-      enableThinking: input.enableThinking,
+      disableThinking: input.disableThinking,
     },
   }
 }
@@ -108,7 +108,7 @@ function createAssemblyResult(input: {
   injectedFiles: InjectedFile[]
   requestTools: LLMToolDefinition[]
   toolChoice: PromptRequestOptions['toolChoice']
-  enableThinking: boolean
+  disableThinking: boolean
 }): AssemblyResult {
   return {
     systemPrompt: input.systemPrompt,

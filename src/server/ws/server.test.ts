@@ -222,7 +222,11 @@ async function createHarness(options: {
   const eventStore = options.eventStore ?? createEventStore()
   getEventStoreMock.mockReturnValue(eventStore)
 
-  const mockLLMClient = { getModel: () => 'qwen3-32b', getBackend: () => 'vllm' } as never
+  const mockLLMClient = { 
+    getModel: () => 'qwen3-32b', 
+    getBackend: () => 'vllm',
+    complete: vi.fn().mockResolvedValue({ content: 'Test Session', toolCalls: [] }),
+  } as never
   const wss = createWebSocketServer(
     httpServer,
     { } as never,
@@ -461,10 +465,24 @@ describe('createWebSocketServer', () => {
     })
 
     let resolveRun: (() => void) | null = null
-    runChatTurnMock.mockImplementation(({ signal }) => new Promise<void>((resolve) => {
-      resolveRun = resolve
-      signal?.addEventListener('abort', () => resolve())
-    }))
+    runChatTurnMock.mockImplementation(({ sessionManager, sessionId, signal }) => {
+      // The event store is already set up in the harness - we just need to wait
+      return new Promise<void>((resolve) => {
+        resolveRun = resolve
+        signal?.addEventListener('abort', () => resolve())
+      })
+    })
+    
+    // Manually append events synchronously to ensure they're delivered via the subscription
+    const eventStore = getEventStoreMock()
+    if (eventStore && typeof eventStore.append === 'function') {
+      eventStore.append('session-1', { type: 'phase.changed', data: { phase: 'build' } })
+      const msgId = 'assistant-1'
+      eventStore.append('session-1', { type: 'message.start', data: { messageId: msgId, role: 'assistant', content: 'Working...' } })
+      eventStore.append('session-1', { type: 'message.delta', data: { messageId: msgId, content: 'Done' } })
+      eventStore.append('session-1', { type: 'message.done', data: { messageId: msgId, stats: { model: 'qwen', mode: 'planner', totalTime: 1, toolTime: 0, prefillTokens: 1, prefillSpeed: 1, generationTokens: 1, generationSpeed: 1 } } })
+      eventStore.append('session-1', { type: 'running.changed', data: { isRunning: true } })
+    }
 
     const harness = await createHarness({ sessionManager })
 

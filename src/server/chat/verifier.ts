@@ -151,7 +151,7 @@ ${criteriaList}
       { role: 'user', content: VERIFIER_KICKOFF_PROMPT, source: 'runtime' },
     ],
     tools: toolRegistry.definitions.map(tool => ({ name: tool.function.name, description: tool.function.description, parameters: tool.function.parameters })),
-    requestOptions: { toolChoice: 'auto', enableThinking: false },
+    requestOptions: { toolChoice: 'auto', disableThinking: true },
   }
   sessionManager.updateMessage(sessionId, kickoffMsg.id, { promptContext })
   
@@ -195,7 +195,7 @@ ${criteriaList}
         customMessages,
         subAgentId,
         subAgentType: 'verifier',
-        enableThinking: false,
+        disableThinking: true,
       })
     } catch (error) {
       throw error

@@ -75,7 +75,7 @@ describe('request context assembly', () => {
     ])
     expect(assembled.promptContext.requestOptions).toEqual({
       toolChoice: 'auto',
-      enableThinking: true,
+      disableThinking: false,
     })
   })
 
