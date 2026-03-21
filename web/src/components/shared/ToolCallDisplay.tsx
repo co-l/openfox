@@ -4,7 +4,7 @@ import { ToolIcon } from './ToolIcon'
 import { DiffView, FilePreview, EditContextView } from './DiffView'
 import { DiagnosticsView } from './DiagnosticsView'
 import { RunCommandView } from './RunCommandView'
-import { formatToolArgs, formatToolArgsFull } from '../../lib/formatToolArgs'
+import { formatToolArgsFull, formatToolArgsWithMetadata } from '../../lib/formatToolArgs'
 
 type ToolStatus = 'pending' | 'success' | 'error' | 'interrupted'
 
@@ -27,6 +27,8 @@ interface ToolCallDisplayProps {
   // For run_command streaming
   startedAt?: number  // Timestamp when tool started
   streamingOutput?: StreamingChunk[]  // Real-time output chunks
+  // For enhanced display with metadata
+  metadata?: Record<string, unknown>  // Tool-specific metadata
 }
 
 const statusConfig = {
@@ -64,6 +66,7 @@ export const ToolCallDisplay = memo(function ToolCallDisplay({
   editContext,
   startedAt,
   streamingOutput,
+  metadata,
 }: ToolCallDisplayProps) {
   // Auto-expand file operations and running commands so content is immediately visible
   const isFileOperation = tool === 'edit_file' || tool === 'write_file'
@@ -78,7 +81,7 @@ export const ToolCallDisplay = memo(function ToolCallDisplay({
         <ToolIcon tool={tool} />
         <span className="text-accent-primary font-medium">{tool}</span>
         <span className="text-text-muted truncate flex-1">
-          {formatToolArgs(tool, args)}
+          {formatToolArgsWithMetadata(tool, args, metadata)}
         </span>
         <span className={`${config.color} ${config.animate ? 'animate-pulse' : ''}`}>
           {status === 'pending' ? '...' : 'done'}
@@ -98,7 +101,7 @@ export const ToolCallDisplay = memo(function ToolCallDisplay({
         </span>
         <span className="font-mono text-accent-primary text-sm">{tool}</span>
         <span className="text-text-muted text-xs flex-1 truncate">
-          {formatToolArgs(tool, args)}
+          {formatToolArgsWithMetadata(tool, args, metadata)}
         </span>
         <span className="text-text-muted text-xs">{expanded ? '▼' : '▶'}</span>
       </button>

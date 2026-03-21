@@ -1,5 +1,6 @@
 import { memo } from 'react'
-import type { Message, MessageSegment, ToolCall, Todo, PreparingToolCall } from '../../../src/shared/types.js'
+// @ts-ignore
+import type { Message, MessageSegment, ToolCall, PreparingToolCall } from '../../../src/shared/types.js'
 import { Markdown } from '../shared/Markdown'
 import { ThinkingBlock } from '../shared/ThinkingBlock'
 import { ToolCallDisplay } from '../shared/ToolCallDisplay'
@@ -103,7 +104,9 @@ function segmentsToElements(
         break
         
       case 'thinking':
-        elements.push({ type: 'thinking', content: segment.content })
+        if (segment.content && segment.content.trim().length > 0) {
+          elements.push({ type: 'thinking', content: segment.content })
+        }
         break
         
       case 'tool_call': {
@@ -186,6 +189,7 @@ export const AssistantMessage = memo(function AssistantMessage({ message, showSt
                 editContext={result?.editContext}
                 startedAt={tc.startedAt}
                 streamingOutput={tc.streamingOutput}
+                metadata={result?.metadata}
               />
             )
           }

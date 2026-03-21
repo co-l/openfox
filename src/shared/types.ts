@@ -328,6 +328,7 @@ export interface ToolResult {
   editContext?: {
     regions: EditContextRegion[]
   }
+  metadata?: Record<string, unknown>  // Tool-specific metadata for frontend display
 }
 
 export type ToolName = 

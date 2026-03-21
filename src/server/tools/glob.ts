@@ -70,6 +70,14 @@ export const globTool = createTool<GlobArgs>(
       output += `\n\n[${files.length} file(s) found]`
     }
     
-    return helpers.success(output, truncated)
+    return helpers.success(output, truncated, {
+      metadata: {
+        pattern: args.pattern,
+        cwd: args.cwd,
+        totalFound: files.length,
+        shownCount: limitedFiles.length,
+        truncated,
+      },
+    })
   }
 )

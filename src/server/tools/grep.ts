@@ -123,6 +123,15 @@ export const grepTool = createTool<GrepArgs>(
       output = 'No matches found.'
     }
     
-    return helpers.success(output, truncated)
+    return helpers.success(output, truncated, {
+      metadata: {
+        pattern: args.pattern,
+        include: args.include,
+        cwd: args.cwd,
+        totalMatches: matches.length,
+        shownCount: matches.length,
+        truncated,
+      },
+    })
   }
 )
