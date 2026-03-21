@@ -565,7 +565,7 @@ describe('createWebSocketServer', () => {
       phase: 'blocked',
       isRunning: false,
       criteria: [{ id: 'tests-pass', description: 'Tests pass', status: { type: 'pending' }, attempts: [] }],
-      summary: null,
+      summary: 'Pre-generated summary', // Summary already exists from mode.switch
     }
     const sessionManager = createSessionManager({
       createSession: vi.fn(() => sessionState),
@@ -579,15 +579,6 @@ describe('createWebSocketServer', () => {
     getToolRegistryForModeMock.mockReturnValue({ definitions: [{ type: 'function', function: { name: 'read_file', description: 'Read', parameters: {} } }] })
     streamLLMPureMock.mockReturnValue({ kind: 'stream' })
     consumeStreamGeneratorMock
-      .mockResolvedValueOnce({
-        content: 'Summary content',
-        toolCalls: [],
-        segments: [],
-        usage: { promptTokens: 20, completionTokens: 5 },
-        timing: { ttft: 1, completionTime: 1, tps: 5, prefillTps: 20 },
-        aborted: false,
-        xmlFormatError: false,
-      })
       .mockResolvedValueOnce({
         content: 'Compacted summary',
         toolCalls: [],
@@ -620,12 +611,7 @@ describe('createWebSocketServer', () => {
     expect(await harness.nextMessage((message) => message.id === 'mode-accept')).toMatchObject({ type: 'ack' })
     expect(await harness.nextMessage((message) => message.type === 'session.running')).toMatchObject({ payload: { isRunning: true } })
     await new Promise<void>((resolve) => setTimeout(resolve, 0))
-    expect(sessionManager.setSummary).toHaveBeenCalledWith('session-1', 'Summary content')
     expect(runOrchestratorMock).toHaveBeenCalled()
-    expect(streamLLMPureMock.mock.calls[0]?.[0]?.messages).toEqual(expect.not.arrayContaining([
-      expect.objectContaining({ content: expect.stringContaining('Plan mode ACTIVE') }),
-      expect.objectContaining({ content: expect.stringContaining('Build mode ACTIVE') }),
-    ]))
 
     harness.send({ id: 'runner-launch', type: 'runner.launch', payload: {} })
     expect(await harness.nextMessage((message) => message.id === 'runner-launch')).toMatchObject({ type: 'ack' })
@@ -744,7 +730,7 @@ describe('createWebSocketServer', () => {
     await harness.close()
   })
 
-  it('emits error events when mode.accept summary generation fails', async () => {
+  it('emits error events when mode.accept fails during orchestrator', async () => {
     const sessionState: any = {
       id: 'session-1',
       projectId: 'project-1',
@@ -753,14 +739,14 @@ describe('createWebSocketServer', () => {
       phase: 'plan',
       isRunning: false,
       criteria: [{ id: 'tests-pass', description: 'Tests pass', status: { type: 'pending' }, attempts: [] }],
-      summary: null,
+      summary: 'Pre-generated summary', // Summary already exists from mode.switch
     }
     const sessionManager = createSessionManager({
       createSession: vi.fn(() => sessionState),
       getSession: vi.fn(() => sessionState),
       requireSession: vi.fn(() => structuredClone(sessionState)),
     })
-    getAllInstructionsMock.mockRejectedValueOnce(new Error('summary failed'))
+    runOrchestratorMock.mockRejectedValueOnce(new Error('orchestrator failed'))
 
     const harness = await createHarness({ sessionManager })
     harness.send({ id: 'sc-ok', type: 'session.create', payload: { projectId: 'project-1' } })
@@ -778,13 +764,13 @@ describe('createWebSocketServer', () => {
     expect(appendedTypes).toContain('chat.done')
     expect(appendedTypes).toContain('running.changed')
     expect(harness.eventStore.append.mock.calls.find(([, event]) => event.type === 'chat.error')?.[1]).toMatchObject({
-      data: { error: 'summary failed', recoverable: false },
+      data: { error: 'orchestrator failed', recoverable: false },
     })
 
     await harness.close()
   })
 
-  it('uses snapshot-backed planner context when generating the mode.accept summary', async () => {
+  it('generates summary when switching to builder mode for first time', async () => {
     const sessionState: any = {
       id: 'session-1',
       projectId: 'project-1',
@@ -799,72 +785,22 @@ describe('createWebSocketServer', () => {
       createSession: vi.fn(() => sessionState),
       getSession: vi.fn(() => sessionState),
       requireSession: vi.fn(() => structuredClone(sessionState)),
+      setSummary: vi.fn(),
     })
-
-    getAllInstructionsMock.mockResolvedValue({ content: '', files: [] })
-    streamLLMPureMock.mockReturnValue({ kind: 'stream' })
-    consumeStreamGeneratorMock.mockResolvedValue({
-      content: 'Summary content',
-      toolCalls: [],
-      segments: [],
-      usage: { promptTokens: 20, completionTokens: 5 },
-      timing: { ttft: 1, completionTime: 1, tps: 5, prefillTps: 20 },
-      aborted: false,
-      xmlFormatError: false,
-    })
-    runOrchestratorMock.mockResolvedValue({ success: true })
 
     const harness = await createHarness({ sessionManager })
 
     harness.send({ id: 'sc-ok', type: 'session.create', payload: { projectId: 'project-1' } })
     await harness.nextMessage((message) => message.id === 'sc-ok')
 
-    harness.eventStore.append('session-1', {
-      type: 'turn.snapshot',
-      data: {
-        mode: 'planner',
-        phase: 'plan',
-        isRunning: false,
-        messages: [
-          {
-            id: 'msg-1',
-            role: 'user',
-            content: 'Fix the bug where deleted session URLs hang forever.',
-            timestamp: Date.now(),
-            contextWindowId: 'window-1',
-          },
-          {
-            id: 'msg-2',
-            role: 'assistant',
-            content: 'I found the issue and can propose criteria.',
-            timestamp: Date.now(),
-            contextWindowId: 'window-1',
-          },
-        ],
-        criteria: [],
-        contextState: { currentTokens: 50, maxTokens: 200000, compactionCount: 0, dangerZone: false, canCompact: false },
-        currentContextWindowId: 'window-1',
-        todos: [],
-        readFiles: [],
-        snapshotSeq: 1,
-        snapshotAt: Date.now(),
-      },
-    })
-
-    harness.send({ id: 'mode-accept-snapshot', type: 'mode.accept', payload: {} })
-    expect(await harness.nextMessage((message) => message.id === 'mode-accept-snapshot')).toMatchObject({ type: 'ack' })
-    await new Promise<void>((resolve) => setTimeout(resolve, 0))
-
-    expect(streamLLMPureMock).toHaveBeenCalled()
-    const summaryCall = streamLLMPureMock.mock.calls.at(-1)?.[0]
-    expect(summaryCall.messages).toEqual(expect.arrayContaining([
-      expect.objectContaining({ role: 'user', content: 'Fix the bug where deleted session URLs hang forever.' }),
-    ]))
-    expect(summaryCall.messages).toEqual(expect.not.arrayContaining([
-      expect.objectContaining({ content: expect.stringContaining('Plan mode ACTIVE') }),
-    ]))
-
-    await harness.close()
+    harness.send({ id: 'mode-switch-builder', type: 'mode.switch', payload: { mode: 'builder' } })
+    expect(await harness.nextMessage((message) => message.type === 'mode.changed')).toMatchObject({ payload: { mode: 'builder', auto: false } })
+    await harness.nextMessage((message) => message.type === 'session.state')
+    
+    // Wait for async summary generation
+    await new Promise<void>((resolve) => setTimeout(resolve, 10))
+    
+    expect(sessionManager.setSummary).toHaveBeenCalled()
   })
 
   it('handles runner relaunch, subscription failures, and orchestrator errors', async () => {

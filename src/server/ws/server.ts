@@ -11,7 +11,7 @@ import type { Attachment, InjectedFile, Message, Provider, StatsIdentity } from 
 import { runChatTurn, TurnMetrics, createMessageStartEvent, createMessageDoneEvent, createChatDoneEvent } from '../chat/orchestrator.js'
 import { streamLLMPure, consumeStreamGenerator } from '../chat/stream-pure.js'
 import { runOrchestrator } from '../runner/index.js'
-import { SUMMARY_REQUEST_PROMPT, COMPACTION_PROMPT } from '../chat/prompts.js'
+import { COMPACTION_PROMPT } from '../chat/prompts.js'
 import { assemblePlannerRequest, type RequestContextMessage } from '../chat/request-context.js'
 import { providePathConfirmation, addAllowedPaths } from '../tools/index.js'
 import { getAllInstructions } from '../context/instructions.js'
@@ -26,6 +26,7 @@ import {
 import { getSetting, setSetting } from '../db/settings.js'
 import { updateSessionMetadata } from '../db/sessions.js'
 import { generateSessionName, needsNameGeneration } from '../session/name-generator.js'
+import { generateSessionSummary, needsSummaryGeneration } from '../session/summary-generator.js'
 // Messages are now retrieved from EventStore, not DB
 import {
   parseClientMessage,
@@ -655,12 +656,49 @@ async function handleClientMessage(
         return
       }
       
-      const session = sessionManager.setMode(client.activeSessionId, message.payload.mode)
-      sendForSession(client.activeSessionId, createModeChangedMessage(message.payload.mode, false))
-      const modeEventStore = getEventStore()
-      const modeEvents = modeEventStore.getEvents(session.id)
+      const sessionId = client.activeSessionId
+      const session = sessionManager.requireSession(sessionId)
+      const eventStore = getEventStore()
+      
+      // Trigger summary generation when switching to builder mode for the first time
+      if (message.payload.mode === 'builder' && needsSummaryGeneration(session.summary)) {
+        // Generate summary in parallel - don't block the mode switch
+        const events = eventStore.getEvents(sessionId)
+        const contextMessages = buildContextMessagesFromEventHistory(events)
+        const summaryMessages = contextMessages.filter(m => m.role === 'user' || m.role === 'assistant')
+          .map(m => ({ role: m.role as 'user' | 'assistant', content: m.content }))
+        
+        generateSessionSummary({
+          messages: summaryMessages,
+          llmClient: getLLMClient(),
+        })
+          .then(async (result) => {
+            if (result.success && result.summary) {
+              // Update DB with the generated summary
+              sessionManager.setSummary(sessionId, result.summary)
+              
+              // Broadcast updated session state to all WebSocket clients
+              const updatedSession = sessionManager.getSession(sessionId)
+              if (updatedSession) {
+                const events = eventStore.getEvents(sessionId)
+                const messages = buildMessagesFromStoredEvents(events)
+                broadcastForSession(sessionId, createSessionStateMessage(updatedSession, messages))
+              }
+              
+              logger.info('Session summary generated', { sessionId, summaryLength: result.summary.length })
+            }
+          })
+          .catch((error) => {
+            logger.warn('Session summary generation failed', { sessionId, error: error instanceof Error ? error.message : error })
+            // Don't propagate error - summary generation is optional
+          })
+      }
+      
+      sessionManager.setMode(sessionId, message.payload.mode)
+      sendForSession(sessionId, createModeChangedMessage(message.payload.mode, false))
+      const modeEvents = eventStore.getEvents(sessionId)
       const modeMessages = buildMessagesFromStoredEvents(modeEvents)
-      sendForSession(client.activeSessionId, createSessionStateMessage(session, modeMessages, message.id))
+      sendForSession(sessionId, createSessionStateMessage(sessionManager.getSession(sessionId)!, modeMessages, message.id))
       break
     }
     
@@ -714,75 +752,33 @@ async function handleClientMessage(
       eventStore.append(sessionId, { type: 'running.changed', data: { isRunning: true } })
       sendForSession(sessionId, createSessionRunningMessage(true))
       
-      // Generate summary and start builder asynchronously
+      // Generate summary if needed (summary generation on first entry to builder mode)
+      const currentSession = sessionManager.requireSession(sessionId)
+      if (needsSummaryGeneration(currentSession.summary)) {
+        // Generate summary in parallel - don't block the mode switch
+        const events = eventStore.getEvents(sessionId)
+        const contextMessages = buildContextMessagesFromEventHistory(events)
+        const summaryMessages = contextMessages.filter(m => m.role === 'user' || m.role === 'assistant')
+          .map(m => ({ role: m.role as 'user' | 'assistant', content: m.content }))
+        
+        generateSessionSummary({
+          messages: summaryMessages,
+          llmClient: getLLMClient(),
+        })
+          .then(async (result) => {
+            if (result.success && result.summary) {
+              // Update DB with the generated summary
+              sessionManager.setSummary(sessionId, result.summary)
+            }
+          })
+          .catch((error) => {
+            logger.warn('Session summary generation failed', { sessionId, error: error instanceof Error ? error.message : error })
+          })
+      }
+      
+      // Start builder asynchronously (summary already generated on mode.switch if needed)
       ;(async () => {
         try {
-          // Add summary request prompt as user message
-          const summaryMsgId = crypto.randomUUID()
-          eventStore.append(sessionId, createMessageStartEvent(summaryMsgId, 'user', SUMMARY_REQUEST_PROMPT, {
-            ...(getCurrentWindowMessageOptions(sessionId) ?? {}),
-            isSystemGenerated: true,
-            messageKind: 'auto-prompt',
-          }))
-          eventStore.append(sessionId, { type: 'message.done', data: { messageId: summaryMsgId } })
-          
-          // Build context for summary generation
-          const currentSession = sessionManager.requireSession(sessionId)
-          const { content: instructions, files } = await getAllInstructions(currentSession.workdir, currentSession.projectId)
-          const injectedFiles: InjectedFile[] = files.map((file) => ({
-            path: file.path,
-            content: file.content ?? '',
-            source: file.source,
-          }))
-
-          // Build context messages from EventStore (intentionally ALL messages, not filtered)
-          const events = eventStore.getEvents(sessionId)
-          const requestMessages = toRequestContextMessages(buildContextMessagesFromEventHistory(events))
-          const assembledRequest = assemblePlannerRequest({
-            workdir: currentSession.workdir,
-            messages: requestMessages,
-            includeRuntimeReminder: false,
-            injectedFiles,
-            promptTools: [],
-            requestTools: [],
-            toolChoice: 'none',
-            disableThinking: true,
-            ...(instructions ? { customInstructions: instructions } : {}),
-          })
-
-          // Stream summary response (no tools, no thinking)
-          const assistantMsgId = crypto.randomUUID()
-          eventStore.append(sessionId, createMessageStartEvent(assistantMsgId, 'assistant', undefined, getCurrentWindowMessageOptions(sessionId)))
-          
-          const turnMetrics = new TurnMetrics()
-          const streamGen = streamLLMPure({
-            messageId: assistantMsgId,
-            systemPrompt: assembledRequest.systemPrompt,
-            llmClient: getLLMClient(),
-            messages: assembledRequest.messages,
-            tools: [], // No tools for summary
-            toolChoice: 'none',
-            disableThinking: true,
-          })
-          
-          const result = await consumeStreamGenerator(streamGen, event => {
-            eventStore.append(sessionId, event)
-          })
-          
-          turnMetrics.addLLMCall(result.timing, result.usage.promptTokens, result.usage.completionTokens)
-          
-          // Emit message.done with stats
-          const stats = turnMetrics.buildStats(resolveStatsIdentity(getLLMClient(), getActiveProvider), 'planner')
-          eventStore.append(sessionId, createMessageDoneEvent(assistantMsgId, {
-            segments: result.segments,
-            stats,
-            promptContext: assembledRequest.promptContext,
-          }))
-          eventStore.append(sessionId, createChatDoneEvent(assistantMsgId, 'complete', stats))
-          
-          // Save summary
-          sessionManager.setSummary(sessionId, result.content)
-          
           // Switch to builder mode and phase
           sessionManager.setMode(sessionId, 'builder')
           sessionManager.setPhase(sessionId, 'build')
@@ -806,8 +802,8 @@ async function handleClientMessage(
             statsIdentity: resolveStatsIdentity(getLLMClient(), getActiveProvider),
             injectBuilderKickoff: true,
             signal: controller.signal,
-           onMessage: (msg) => sendForSession(sessionId, msg),  // For path confirmation dialogs
-         })
+            onMessage: (msg) => sendForSession(sessionId, msg),  // For path confirmation dialogs
+          })
         } catch (error) {
           if (error instanceof Error && error.message === 'Aborted') {
             return

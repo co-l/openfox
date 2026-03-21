@@ -122,25 +122,48 @@ describe('Mode Switching', () => {
       expect(phasePayload.phase).toBe('build')
     })
 
-    it('generates summary message before switching', async () => {
+    it('generates summary when switching to builder mode', async () => {
       // Add criterion
       await client.send('chat.send', { 
         content: 'Add criterion: File exists. Use add_criterion.' 
       })
       await client.waitForChatDone()
       
-      client.clearEvents()
+      // Switch to builder mode (this triggers summary generation)
+      await client.send('mode.switch', { mode: 'builder' })
       
-      // Accept
+      // Wait for session state update (summary should be populated)
+      await client.waitFor('session.state')
+      
+      // Give async summary generation time to complete
+      await new Promise(resolve => setTimeout(resolve, 100))
+      
+      const session = client.getSession()!
+      expect(session.summary).toBeDefined()
+      expect(session.summary?.length).toBeGreaterThan(0)
+    })
+
+    it('generates summary when using mode.accept (Start Building button)', async () => {
+      // Add criterion
+      await client.send('chat.send', { 
+        content: 'Add criterion: File exists. Use add_criterion.' 
+      })
+      await client.waitForChatDone()
+      
+      // Use mode.accept (Start Building button flow)
       await client.send('mode.accept', {})
       
-      // Wait for summary request message (auto-prompt)
-      const summaryPrompt = await client.waitFor('chat.message', (payload: unknown) => {
-        const p = payload as { message: { content: string; isSystemGenerated?: boolean } }
-        return p.message.isSystemGenerated === true && 
-               p.message.content.includes('summary')
-      })
-      expect(summaryPrompt).toBeDefined()
+      // Wait for runner to complete
+      await client.waitFor('session.running', (payload: unknown) => {
+        return (payload as { isRunning: boolean }).isRunning === false
+      }, 10000)
+      
+      // Give async summary generation time to complete
+      await new Promise(resolve => setTimeout(resolve, 100))
+      
+      const session = client.getSession()!
+      expect(session.summary).toBeDefined()
+      expect(session.summary?.length).toBeGreaterThan(0)
     })
 
     it('injects the builder kickoff exactly once after accepting criteria', { timeout: 25_000 }, async () => {

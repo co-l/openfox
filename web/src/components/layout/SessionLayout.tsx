@@ -1,13 +1,13 @@
 import type { ReactNode } from 'react'
 import { useSessionStore } from '../../stores/session'
-import { CriteriaEditor } from '../plan/CriteriaEditor'
+import { SummaryDisplay } from '../plan/SummaryDisplay'
 
 interface SessionLayoutProps {
   children: ReactNode
   criteriaSidebarOpen: boolean
 }
 
-const CRITERIA_SIDEBAR_CLASSES = 'w-[320px] min-w-[320px] shrink-0 border-l border-border p-4 overflow-y-auto'
+const SUMMARY_SIDEBAR_CLASSES = 'w-[320px] min-w-[320px] shrink-0 border-l border-border p-4 overflow-y-auto'
 
 export function SessionLayout({ children, criteriaSidebarOpen }: SessionLayoutProps) {
   const session = useSessionStore(state => state.currentSession)
@@ -19,14 +19,14 @@ export function SessionLayout({ children, criteriaSidebarOpen }: SessionLayoutPr
         {children}
       </div>
       
-      {/* Criteria Sidebar - auto-collapses on mobile/tablet, visible on desktop */}
+      {/* Summary Sidebar - auto-collapses on mobile/tablet, visible on desktop */}
       <aside
         className={`
-          ${CRITERIA_SIDEBAR_CLASSES}
+          ${SUMMARY_SIDEBAR_CLASSES}
           hidden md:block
         `}
       >
-        <CriteriaEditor criteria={session?.criteria ?? []} />
+        <SummaryDisplay summary={session?.summary ?? null} />
       </aside>
     </div>
   )
