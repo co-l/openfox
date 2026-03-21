@@ -123,7 +123,7 @@ export function SessionHeader({ criteriaSidebarOpen = true, onCriteriaSidebarTog
           {onCriteriaSidebarToggle && (
             <button
               onClick={onCriteriaSidebarToggle}
-              className="hidden md:flex items-center justify-center p-1.5 rounded hover:bg-bg-tertiary text-text-muted hover:text-text-primary transition-colors"
+              className="flex md:hidden items-center justify-center p-1.5 rounded hover:bg-bg-tertiary text-text-muted hover:text-text-primary transition-colors"
               title={criteriaSidebarOpen ? 'Hide criteria sidebar' : 'Show criteria sidebar'}
             >
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
