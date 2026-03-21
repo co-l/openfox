@@ -591,6 +591,81 @@ describe('chat orchestrator', () => {
     }, new TurnMetrics())).rejects.toThrow('unexpected builder failure')
   })
 
+  it('returns error tool result when tool call has parseError', async () => {
+    const eventStore = createEventStore()
+    getEventStoreMock.mockReturnValue(eventStore)
+    getCurrentContextWindowIdMock.mockReturnValue('window-1')
+    getAllInstructionsMock.mockResolvedValue({ content: '', files: [] })
+    getContextMessagesMock.mockReturnValue([
+      { role: 'user' as const, content: 'Do something' },
+    ])
+    const execute = vi.fn()
+    getToolRegistryForModeMock.mockReturnValue({
+      definitions: [{ type: 'function', function: { name: 'glob', description: 'Tool', parameters: {} } }],
+      execute,
+    })
+    streamLLMPureMock.mockReturnValue({ kind: 'stream' })
+    consumeStreamGeneratorMock
+      .mockResolvedValueOnce({
+        content: '',
+        toolCalls: [{
+          id: 'call-1',
+          name: 'glob',
+          arguments: {},
+          parseError: 'Unexpected token in JSON at position 1',
+          rawArguments: '{bad-json',
+        }],
+        segments: [],
+        usage: { promptTokens: 10, completionTokens: 3 },
+        timing: { ttft: 1, completionTime: 1, tps: 3, prefillTps: 10 },
+        aborted: false,
+        xmlFormatError: false,
+      })
+      .mockResolvedValueOnce({
+        content: 'Done',
+        toolCalls: [],
+        segments: [{ type: 'text', content: 'Done' }],
+        usage: { promptTokens: 5, completionTokens: 2 },
+        timing: { ttft: 1, completionTime: 1, tps: 2, prefillTps: 5 },
+        aborted: false,
+        xmlFormatError: false,
+      })
+
+    const sessionManager = createSessionManager({
+      current: {
+        id: 'session-1',
+        projectId: 'project-1',
+        workdir: '/tmp/project',
+        mode: 'builder',
+        phase: 'build',
+        isRunning: true,
+        criteria: [{ id: 'tests-pass', description: 'Tests pass', status: { type: 'pending' }, attempts: [] }],
+        executionState: { modifiedFiles: [] },
+        messages: [{ id: 'user-1', role: 'user', content: 'Do something' }],
+      },
+    })
+
+    await runBuilderTurn({
+      sessionManager: sessionManager as never,
+      sessionId: 'session-1',
+      llmClient: { getModel: () => 'qwen3-32b' } as never,
+      onMessage: vi.fn(),
+    }, new TurnMetrics())
+
+    // Verify tool execution was NOT called
+    expect(execute).not.toHaveBeenCalled()
+
+    // Verify tool.result event was emitted with error
+    const toolResultEvent = eventStore.append.mock.calls.find(([, event]) => event.type === 'tool.result')
+    expect(toolResultEvent).toBeDefined()
+    const toolResultData = toolResultEvent![1].data as { toolCallId: string; result: { success: boolean; error: string } }
+    expect(toolResultData.toolCallId).toBe('call-1')
+    expect(toolResultData.result.success).toBe(false)
+    expect(toolResultData.result.error).toContain('Failed to parse tool call arguments')
+    expect(toolResultData.result.error).toContain('Unexpected token in JSON at position 1')
+    expect(toolResultData.result.error).toContain('Please ensure your JSON function call arguments are valid')
+  })
+
   it('does not inject a builder kickoff prompt for manual builder turns', async () => {
     const eventStore = createEventStore()
     getEventStoreMock.mockReturnValue(eventStore)

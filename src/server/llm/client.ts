@@ -304,8 +304,16 @@ export function createLLMClient(config: Config, initialBackend: Backend = 'unkno
               name: tc.name,
               arguments: JSON.parse(tc.arguments) as Record<string, unknown>,
             })
-          } catch {
+          } catch (error) {
             logger.warn('Failed to parse tool call arguments', { name: tc.name, arguments: tc.arguments })
+            // Include the failed tool call with error metadata so the LLM can retry
+            parsedToolCalls.push({
+              id: tc.id,
+              name: tc.name,
+              arguments: {},
+              parseError: error instanceof Error ? error.message : 'Unknown JSON parse error',
+              rawArguments: tc.arguments,
+            })
           }
         }
         

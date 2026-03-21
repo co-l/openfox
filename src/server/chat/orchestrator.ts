@@ -320,6 +320,19 @@ async function runPlannerTurn(
 
       eventStore.append(sessionId, createToolCallEvent(assistantMsgId, toolCall))
 
+      // Check for parse error - return error result without executing
+      if (toolCall.parseError) {
+        const toolResult: ToolResult = {
+          success: false,
+          error: `Failed to parse tool call arguments: ${toolCall.parseError}. Please ensure your JSON function call arguments are valid.`,
+          durationMs: 0,
+          truncated: false,
+        }
+        turnMetrics.addToolTime(toolResult.durationMs)
+        eventStore.append(sessionId, createToolResultEvent(assistantMsgId, toolCall.id, toolResult))
+        continue
+      }
+
       // Create progress handler for streaming output (run_command only)
       const onProgress = onMessage ? createToolProgressHandler(assistantMsgId, toolCall.id, onMessage) : undefined
 
@@ -528,6 +541,19 @@ export async function runBuilderTurn(
       }
 
       eventStore.append(sessionId, createToolCallEvent(assistantMsgId, toolCall))
+
+      // Check for parse error - return error result without executing
+      if (toolCall.parseError) {
+        const toolResult: ToolResult = {
+          success: false,
+          error: `Failed to parse tool call arguments: ${toolCall.parseError}. Please ensure your JSON function call arguments are valid.`,
+          durationMs: 0,
+          truncated: false,
+        }
+        turnMetrics.addToolTime(toolResult.durationMs)
+        eventStore.append(sessionId, createToolResultEvent(assistantMsgId, toolCall.id, toolResult))
+        continue
+      }
 
       // Create progress handler for streaming output (run_command only)
       const onProgress = onMessage ? createToolProgressHandler(assistantMsgId, toolCall.id, onMessage) : undefined
@@ -845,6 +871,27 @@ ${modifiedFiles.length > 0 ? modifiedFiles.map(f => `- ${f}`).join('\n') : '(non
       }
 
       eventStore.append(sessionId, createToolCallEvent(assistantMsgId, toolCall))
+
+      // Check for parse error - return error result without executing
+      if (toolCall.parseError) {
+        const toolResult: ToolResult = {
+          success: false,
+          error: `Failed to parse tool call arguments: ${toolCall.parseError}. Please ensure your JSON function call arguments are valid.`,
+          durationMs: 0,
+          truncated: false,
+        }
+        turnMetrics.addToolTime(toolResult.durationMs)
+        eventStore.append(sessionId, createToolResultEvent(assistantMsgId, toolCall.id, toolResult))
+        
+        // Add tool result to custom context
+        customMessages.push({
+          role: 'tool',
+          content: `Error: ${toolResult.error}`,
+          source: 'history',
+          toolCallId: toolCall.id,
+        })
+        continue
+      }
 
       // Create progress handler for streaming output (run_command only)
       const onProgress = onMessage ? createToolProgressHandler(assistantMsgId, toolCall.id, onMessage) : undefined

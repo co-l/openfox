@@ -280,7 +280,7 @@ describe('llm client', () => {
     })
   })
 
-  it('treats reasoning field as text for non-reasoning models and skips invalid tool args', async () => {
+  it('treats reasoning field as text for non-reasoning models and includes tool calls with parseError for invalid tool args', async () => {
     openAiCreateMock.mockResolvedValueOnce((async function* () {
       yield createChunk({
         choices: [{
@@ -318,6 +318,13 @@ describe('llm client', () => {
           content: 'reasoning as text',
           finishReason: 'tool_calls',
           usage: { promptTokens: 9, completionTokens: 3, totalTokens: 12 },
+          toolCalls: [{
+            id: 'call-1',
+            name: 'glob',
+            arguments: {},
+            parseError: expect.stringContaining('JSON'),
+            rawArguments: '{bad-json',
+          }],
         },
       },
     ])
@@ -334,5 +341,50 @@ describe('llm client', () => {
     }
 
     expect(events).toEqual([{ type: 'error', error: 'stream failed' }])
+  })
+
+  it('includes tool calls with parseError when JSON arguments are malformed', async () => {
+    openAiCreateMock.mockResolvedValueOnce((async function* () {
+      yield createChunk({
+        choices: [{
+          delta: { content: 'Let me search for files' },
+          finish_reason: null,
+        }],
+      })
+      yield createChunk({
+        choices: [{
+          delta: { tool_calls: [{ index: 0, id: 'call-1', function: { name: 'glob', arguments: '{bad-json' } }] },
+          finish_reason: 'tool_calls',
+        }],
+        usage: {
+          prompt_tokens: 9,
+          completion_tokens: 3,
+          total_tokens: 12,
+        },
+      })
+    })())
+
+    const client = createLLMClient(createConfig(), 'vllm')
+    const events = [] as Array<Record<string, unknown>>
+
+    for await (const event of client.stream({
+      messages: [{ role: 'user', content: 'hello' }],
+      tools: [{ type: 'function', function: { name: 'glob', description: 'Search', parameters: { type: 'object' } } }],
+    })) {
+      events.push(event as Record<string, unknown>)
+    }
+
+    const doneEvent = events.find(e => e.type === 'done')
+    expect(doneEvent).toBeDefined()
+    const response = (doneEvent as { response: Record<string, unknown> }).response
+    expect(response.toolCalls).toHaveLength(1)
+    const toolCall = (response.toolCalls as Array<Record<string, unknown>>)[0]
+    expect(toolCall).toEqual({
+      id: 'call-1',
+      name: 'glob',
+      arguments: {},
+      parseError: expect.stringContaining('JSON'),
+      rawArguments: '{bad-json',
+    })
   })
 })
