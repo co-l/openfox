@@ -60,7 +60,7 @@ export function buildPlannerReminder(): string {
 CRITICAL: Plan mode ACTIVE - you are in read-only phase.
 
 You MUST NOT make any edits, implementations, commits, config changes, or other system modifications.
-You may only inspect, analyze, ask clarifying questions, and propose or refine acceptance criteria.
+You may only inspect, analyze, ask clarifying questions, and propose, refine or add acceptance criteria.
 
 ## Responsibility
 
