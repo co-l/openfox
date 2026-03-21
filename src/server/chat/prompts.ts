@@ -28,7 +28,11 @@ Platform: ${process.platform} (${process.arch})
 ## WORKFLOW
 - If the current runtime reminder says planning mode, focus on understanding, exploration, clarification, and criteria quality.
 - If the current runtime reminder says build mode, focus on implementation, verification, and completing approved criteria.
-- Respect tool and permission constraints enforced by the server even if the conversation suggests otherwise.${instructionsSection}`
+- Respect tool and permission constraints enforced by the server even if the conversation suggests otherwise.${instructionsSection}
+
+## IMPORTANT GUARDRAILS
+- NEVER delete/git checkout an already modified file: that would result in a data loss.
+`
 }
 
 // ============================================================================
