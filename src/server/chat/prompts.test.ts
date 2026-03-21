@@ -89,20 +89,19 @@ describe('mode reminders', () => {
 
 describe('buildVerifierPrompt', () => {
   it('includes workdir in prompt', () => {
-    const prompt = buildVerifierPrompt('/var/project', [], undefined)
+    const prompt = buildVerifierPrompt('/var/project')
     expect(prompt).toContain('/var/project')
     expect(prompt).toMatch(/working directory/i)
   })
 
   it('includes platform info in prompt', () => {
-    const prompt = buildVerifierPrompt('/tmp', [], undefined)
+    const prompt = buildVerifierPrompt('/tmp')
     expect(prompt).toContain(process.platform)
     expect(prompt).toContain(process.arch)
   })
 
-  it('includes custom instructions when provided', () => {
-    const prompt = buildVerifierPrompt('/tmp', [], 'Be extra strict')
-    expect(prompt).toContain('Be extra strict')
-    expect(prompt).toContain('CUSTOM INSTRUCTIONS')
+  it('does not include custom instructions section', () => {
+    const prompt = buildVerifierPrompt('/tmp')
+    expect(prompt).not.toContain('CUSTOM INSTRUCTIONS')
   })
 })

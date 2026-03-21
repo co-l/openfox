@@ -135,11 +135,11 @@ ${criteriaList}
   })
   onMessage(createChatMessageMessage(kickoffMsg))
   
-  // Load all instructions (re-read each step so user can edit mid-session)
-  const { content: instructions, files: instructionFiles } = await getAllInstructions(session.workdir, session.projectId)
+  // Load instruction files
+  const { files: instructionFiles } = await getAllInstructions(session.workdir, session.projectId)
   
   const toolRegistry = getToolRegistryForMode('verifier')
-  const systemPrompt = buildVerifierPrompt(session.workdir, toolRegistry.definitions, instructions || undefined)
+  const systemPrompt = buildVerifierPrompt(session.workdir)
   
   // Attach prompt context to the kickoff message for inspection
   const promptContext: PromptContext = {

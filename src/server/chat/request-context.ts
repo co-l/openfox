@@ -68,7 +68,7 @@ export function assembleBuilderRequest(input: BaseAssemblyInput): AssemblyResult
 }
 
 export function assembleVerifierRequest(input: BaseAssemblyInput): AssemblyResult {
-  const systemPrompt = buildVerifierPrompt(input.workdir, input.promptTools, input.customInstructions)
+  const systemPrompt = buildVerifierPrompt(input.workdir)
   return createAssemblyResult({
     systemPrompt,
     messages: input.messages,

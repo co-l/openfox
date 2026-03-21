@@ -93,11 +93,7 @@ You may read files, edit files, run commands, and use tools as needed to satisfy
 // Verifier Mode Prompt
 // ============================================================================
 
-export function buildVerifierPrompt(workdir: string, tools: LLMToolDefinition[], customInstructions?: string): string {
-  const instructionsSection = customInstructions 
-    ? `\n\n## CUSTOM INSTRUCTIONS\n\n${customInstructions}`
-    : ''
-
+export function buildVerifierPrompt(workdir: string): string {
   return `You are a code reviewer performing independent verification.
 
 ## ENVIRONMENT
@@ -128,7 +124,7 @@ Then call:
 - Be thorough but efficient - don't explore unnecessarily
 - Only fail criteria that genuinely don't meet the requirement
 - Provide clear, actionable feedback when failing
-- Don't re-verify criteria already marked [PASSED]${instructionsSection}`
+- Don't re-verify criteria already marked [PASSED]`
 }
 
 // ============================================================================
