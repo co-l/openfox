@@ -52,6 +52,7 @@ function getTextColor(percent: number, dangerZone: boolean): string {
 interface SessionHeaderProps {
   criteriaSidebarOpen?: boolean
   onCriteriaSidebarToggle?: () => void
+  alwaysShowToggle?: boolean
 }
 
 export function SessionHeader({ criteriaSidebarOpen = true, onCriteriaSidebarToggle }: SessionHeaderProps) {
@@ -118,11 +119,11 @@ export function SessionHeader({ criteriaSidebarOpen = true, onCriteriaSidebarTog
             </Button>
           </div>
           
-          {/* Criteria sidebar toggle button - shows when sidebar is closed, positioned on far right */}
+          {/* Criteria sidebar toggle button - always visible on desktop, toggles sidebar */}
           {onCriteriaSidebarToggle && (
             <button
               onClick={onCriteriaSidebarToggle}
-              className={`flex items-center justify-center p-1.5 rounded hover:bg-bg-tertiary text-text-muted hover:text-text-primary transition-colors ${criteriaSidebarOpen ? 'md:hidden' : 'md:flex'}`}
+              className="hidden md:flex items-center justify-center p-1.5 rounded hover:bg-bg-tertiary text-text-muted hover:text-text-primary transition-colors"
               title={criteriaSidebarOpen ? 'Hide criteria sidebar' : 'Show criteria sidebar'}
             >
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">

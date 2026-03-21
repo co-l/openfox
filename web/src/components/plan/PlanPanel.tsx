@@ -234,7 +234,58 @@ export function PlanPanel() {
     window.addEventListener('keydown', handleEscape)
     return () => window.removeEventListener('keydown', handleEscape)
   }, [isRunning, stopGeneration])
-  
+
+  // Handle paste event
+  const handlePaste = useCallback(async (e: ClipboardEvent) => {
+    const items = e.clipboardData?.items
+    if (!items) return
+
+    setErrorMessage(null)
+
+    for (const item of Array.from(items)) {
+      if (item.type.startsWith('image/')) {
+        const file = item.getAsFile()
+        if (!file) continue
+
+        try {
+          // Validate file type
+          if (!isValidImageType(file)) {
+            setErrorMessage('Only PNG, JPG, and GIF images are supported for pasted content.')
+            continue
+          }
+
+          // Validate file size
+          const sizeValidation = validateImageSize(file, 50 * 1024 * 1024)
+          if (!sizeValidation.valid) {
+            setErrorMessage(sizeValidation.error ?? 'Image file is too large')
+            continue
+          }
+
+          // Compress the image
+          const compressed = await compressImage(file, {
+            maxWidth: 1920,
+            maxHeight: 1920,
+            quality: 0.85,
+            maxSizeBytes: 1048576,
+          })
+
+          const attachment: Attachment = {
+            id: crypto.randomUUID(),
+            filename: 'pasted-image',
+            mimeType: compressed.mimeType as 'image/png' | 'image/jpeg' | 'image/gif',
+            size: compressed.size,
+            data: compressed.dataUrl,
+          }
+
+          setAttachments(prev => [...prev, attachment])
+        } catch (err) {
+          const errorMsg = err instanceof Error ? (err.message ?? 'Failed to process pasted image') : 'Failed to process pasted image'
+          setErrorMessage(errorMsg)
+        }
+      }
+    }
+  }, [])
+
   // Paste event listener for textarea
   useEffect(() => {
     const textarea = textareaRef.current
