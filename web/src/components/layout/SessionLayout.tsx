@@ -4,12 +4,12 @@ import { SummaryDisplay } from '../plan/SummaryDisplay'
 
 interface SessionLayoutProps {
   children: ReactNode
-  criteriaSidebarOpen: boolean
+  criteriaSidebarOpen?: boolean
 }
 
 const SUMMARY_SIDEBAR_CLASSES = 'w-[320px] min-w-[320px] shrink-0 border-l border-border p-4 overflow-y-auto'
 
-export function SessionLayout({ children, criteriaSidebarOpen }: SessionLayoutProps) {
+export function SessionLayout({ children, criteriaSidebarOpen = true }: SessionLayoutProps) {
   const session = useSessionStore(state => state.currentSession)
   
   return (
@@ -19,11 +19,12 @@ export function SessionLayout({ children, criteriaSidebarOpen }: SessionLayoutPr
         {children}
       </div>
       
-      {/* Summary Sidebar - auto-collapses on mobile/tablet, visible on desktop */}
+      {/* Summary Sidebar - auto-collapses on mobile/tablet, visible on desktop when criteriaSidebarOpen is true */}
       <aside
         className={`
           ${SUMMARY_SIDEBAR_CLASSES}
           hidden md:block
+          ${criteriaSidebarOpen ? 'md:block' : 'md:hidden'}
         `}
       >
         <SummaryDisplay summary={session?.summary ?? null} />

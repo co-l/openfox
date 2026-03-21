@@ -83,11 +83,14 @@ export function Sidebar({ projectId, isOpen = true, onClose }: SidebarProps) {
 
       <aside
         className={`
-          fixed md:relative z-50 md:z-auto
-          w-[200px] bg-bg-secondary border-r border-border flex flex-col
+
+          xl:relative xl:z-auto xl:translate-x-0 xl:h-auto
+
+          fixed z-50 -translate-x-full h-[calc(100vh-32px)]
+
+          w-[300px] bg-bg-secondary border-r border-border flex flex-col
           transition-transform duration-300 ease-in-out
-          ${isOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'}
-          h-[calc(100vh-32px)] md:h-auto
+          ${isOpen ? 'translate-x-0' : ''}
         `}
       >
         <div className="p-4 border-b border-border flex gap-2">

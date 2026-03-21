@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect, useCallback, useMemo } from 'react'
 import { useSessionStore, useIsRunning } from '../../stores/session'
+// @ts-ignore
 import type { Message, ToolCall, Attachment } from '../../../src/shared/types.js'
 import { SessionLayout } from '../layout/SessionLayout'
 import { SessionHeader } from './SessionHeader'
@@ -31,7 +32,7 @@ function isCriteriaOnlyMessage(msg: Message): boolean {
   if (msg.content?.trim()) return false  // Has text content
   if (msg.thinkingContent?.trim()) return false  // Has thinking content
   if (!msg.toolCalls || msg.toolCalls.length === 0) return false  // No tool calls
-  return msg.toolCalls.every(tc => isCriterionTool(tc.name))
+  return msg.toolCalls.every((tc: { name: string }) => isCriterionTool(tc.name))
 }
 
 // Group messages into display items, collapsing consecutive sub-agent messages,
@@ -110,12 +111,8 @@ function groupMessages(messages: Message[]): DisplayItem[] {
   return items
 }
 
-interface PlanPanelProps {
-  criteriaSidebarOpen: boolean
-  onCriteriaSidebarToggle: () => void
-}
-
-export function PlanPanel({ criteriaSidebarOpen, onCriteriaSidebarToggle }: PlanPanelProps) {
+export function PlanPanel() {
+  const [criteriaSidebarOpen, setCriteriaSidebarOpen] = useState(true)
   const [input, setInput] = useState('')
   const [userScrolledUp, setUserScrolledUp] = useState(false)
   const [attachments, setAttachments] = useState<Attachment[]>([])
@@ -373,58 +370,7 @@ export function PlanPanel({ criteriaSidebarOpen, onCriteriaSidebarToggle }: Plan
       fileInputRef.current.value = ''
     }
   }, [])
-  
-  // Handle paste event
-  const handlePaste = useCallback(async (e: ClipboardEvent) => {
-    const items = e.clipboardData?.items
-    if (!items) return
-    
-    setErrorMessage(null)
-    
-    for (const item of Array.from(items)) {
-      if (item.type.startsWith('image/')) {
-        const file = item.getAsFile()
-        if (!file) continue
-        
-        try {
-          // Validate file type
-          if (!isValidImageType(file)) {
-            setErrorMessage('Only PNG, JPG, and GIF images are supported for pasted content.')
-            continue
-          }
-          
-          // Validate file size
-          const sizeValidation = validateImageSize(file, 50 * 1024 * 1024)
-          if (!sizeValidation.valid) {
-            setErrorMessage(sizeValidation.error ?? 'Image file is too large')
-            continue
-          }
-          
-          // Compress the image
-          const compressed = await compressImage(file, {
-            maxWidth: 1920,
-            maxHeight: 1920,
-            quality: 0.85,
-            maxSizeBytes: 1048576,
-          })
-          
-          const attachment: Attachment = {
-            id: crypto.randomUUID(),
-            filename: 'pasted-image',
-            mimeType: compressed.mimeType as 'image/png' | 'image/jpeg' | 'image/gif',
-            size: compressed.size,
-            data: compressed.dataUrl,
-          }
-          
-          setAttachments(prev => [...prev, attachment])
-        } catch (err) {
-          const errorMsg = err instanceof Error ? (err.message ?? 'Failed to process pasted image') : 'Failed to process pasted image'
-          setErrorMessage(errorMsg)
-        }
-      }
-    }
-  }, [])
-  
+
   // Handle drag and drop
   const handleDragOver = useCallback((e: React.DragEvent) => {
     e.preventDefault()
@@ -520,7 +466,10 @@ export function PlanPanel({ criteriaSidebarOpen, onCriteriaSidebarToggle }: Plan
       {pendingPathConfirmation && (
         <PathConfirmationDialog confirmation={pendingPathConfirmation} />
       )}
-      <SessionHeader />
+      <SessionHeader 
+        criteriaSidebarOpen={criteriaSidebarOpen}
+        onCriteriaSidebarToggle={() => setCriteriaSidebarOpen(!criteriaSidebarOpen)}
+      />
       
       <div
         ref={scrollContainerRef}

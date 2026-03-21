@@ -61,13 +61,9 @@ function ProjectView({ sidebarOpen, onSidebarToggle }: { sidebarOpen: boolean, o
 function ProjectSessionView({ 
   sidebarOpen, 
   onSidebarToggle,
-  criteriaSidebarOpen,
-  onCriteriaSidebarToggle
-}: { 
+}: {
   sidebarOpen: boolean, 
   onSidebarToggle: () => void,
-  criteriaSidebarOpen: boolean,
-  onCriteriaSidebarToggle: () => void
 }) {
   const [, params] = useRoute('/p/:projectId/s/:sessionId')
   const projectId = params?.projectId
@@ -113,22 +109,13 @@ function ProjectSessionView({
     return <LoadingSpinner />
   }
 
-  if (!session || session.id !== sessionId) {
-    return (
-      <>
-        <Sidebar projectId={projectId!} isOpen={sidebarOpen} onClose={onSidebarToggle} />
-        <LoadingSpinner />
-      </>
-    )
-  }
-
   return (
     <>
       <Sidebar projectId={projectId!} isOpen={sidebarOpen} onClose={onSidebarToggle} />
 
       {/* Main content area - single unified chat panel */}
       <div className="flex-1 min-w-0 bg-bg-primary">
-        <PlanPanel criteriaSidebarOpen={criteriaSidebarOpen} onCriteriaSidebarToggle={onCriteriaSidebarToggle} />
+        <PlanPanel />
       </div>
     </>
   )
@@ -139,9 +126,6 @@ function App() {
   const fetchConfig = useConfigStore(state => state.fetchConfig)
   const handleProjectMessage = useProjectStore(state => state.handleServerMessage)
   const [sidebarOpen, setSidebarOpen] = useState(false)
-  const [criteriaSidebarOpen, setCriteriaSidebarOpen] = useState(true)
-  
-  const hasCriteria = useSessionStore(state => (state.currentSession?.criteria?.length ?? 0) > 0)
 
   // Fetch config on mount
   useEffect(() => {
@@ -165,11 +149,7 @@ function App() {
 
   return (
     <div className="h-screen flex flex-col">
-      <Header 
-        onMenuClick={() => setSidebarOpen(!sidebarOpen)} 
-        onCriteriaToggle={() => setCriteriaSidebarOpen(!criteriaSidebarOpen)}
-        hasCriteria={hasCriteria}
-      />
+      <Header />
 
       <div className="flex-1 flex overflow-hidden">
         <Switch>
@@ -177,12 +157,13 @@ function App() {
             <ProjectSessionView 
               sidebarOpen={sidebarOpen} 
               onSidebarToggle={() => setSidebarOpen(false)}
-              criteriaSidebarOpen={criteriaSidebarOpen}
-              onCriteriaSidebarToggle={() => setCriteriaSidebarOpen(!criteriaSidebarOpen)}
             />
           </Route>
           <Route path="/p/:projectId">
-            <ProjectView sidebarOpen={sidebarOpen} onSidebarToggle={() => setSidebarOpen(false)} />
+            <ProjectView 
+              sidebarOpen={sidebarOpen} 
+              onSidebarToggle={() => setSidebarOpen(false)}
+            />
           </Route>
           <Route path="/">
             <HomePage />
