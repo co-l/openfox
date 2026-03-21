@@ -32,6 +32,7 @@ const readOnlyTools: Tool[] = [
 // Planner mode: read-only exploration + criteria management + git inspection
 const plannerTools: Tool[] = [
   ...readOnlyTools,
+  runCommandTool,
   gitTool,
   getCriteriaTool,
   addCriterionTool,
