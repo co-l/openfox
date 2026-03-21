@@ -126,10 +126,17 @@ export function OpenProjectModal({ isOpen, onClose }: OpenProjectModalProps) {
   
   // Keyboard navigation handler
   const handleKeyDown = useCallback((e: KeyboardEvent) => {
-    if (!['ArrowDown', 'ArrowUp', 'Enter'].includes(e.key)) return
     if (!isOpen) return
     
-    // Only handle if search input is focused
+    // Handle Escape key to close modal
+    if (e.key === 'Escape') {
+      onClose()
+      return
+    }
+    
+    // Only handle navigation keys if search input is focused
+    if (!['ArrowDown', 'ArrowUp', 'Enter'].includes(e.key)) return
+    
     const activeElement = document.activeElement
     if (!activeElement || activeElement.tagName !== 'INPUT') return
     
@@ -153,7 +160,7 @@ export function OpenProjectModal({ isOpen, onClose }: OpenProjectModalProps) {
         handleDirectoryClick(item.path)
       }
     }
-  }, [isOpen, visibleItems.length, focusedIndex, handleNavigate, handleDirectoryClick])
+  }, [isOpen, visibleItems.length, focusedIndex, handleNavigate, handleDirectoryClick, onClose])
   
   // Attach keyboard listener
   useEffect(() => {
