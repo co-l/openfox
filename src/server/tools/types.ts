@@ -31,6 +31,7 @@ export const OUTPUT_LIMITS = {
   read_file: {
     maxLines: 2000,
     maxBytes: 100_000,
+    maxImageBytes: 2_097_152, // 2MB for images
   },
   run_command: {
     maxLines: 2000,
