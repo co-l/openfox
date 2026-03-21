@@ -70,7 +70,7 @@ describe('llm client pure helpers', () => {
       model: 'test-model',
       request: baseRequest,
       profile,
-      capabilities: { supportsTopK: true },
+      capabilities: { supportsTopK: true, supportsChatTemplateKwargs: true },
     })).toEqual({
       model: 'test-model',
       messages: [{ role: 'user', content: 'hello' }],

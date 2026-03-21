@@ -78,17 +78,23 @@ export function createLLMClient(config: Config, initialBackend: Backend = 'unkno
       model = newModel
       profile = newProfile
     },
+
     async complete(request: LLMCompletionRequest): Promise<LLMCompletionResponse> {
       logger.debug('LLM complete request', { 
         messageCount: request.messages.length,
         hasTools: !!request.tools?.length,
         profile: profile.name,
+        disableThinking,
       })
       
       try {
-        // Build request with profile defaults
-        const createParams = buildNonStreamingCreateParams({ model, request, profile, capabilities })
-        
+        const createParams = buildNonStreamingCreateParams({
+          model, 
+          request, 
+          profile, 
+          capabilities, 
+          disableThinking: disableThinking || request.disableThinking
+        })
         const response = await openai.chat.completions.create(createParams, {
           signal: request.signal,
         })
@@ -153,6 +159,7 @@ export function createLLMClient(config: Config, initialBackend: Backend = 'unkno
           },
         }
       } catch (error) {
+        console.log("LLM complete error", error)
         logger.error('LLM complete error', { error })
         throw new LLMError(
           error instanceof Error ? error.message : 'Unknown LLM error',
@@ -166,11 +173,14 @@ export function createLLMClient(config: Config, initialBackend: Backend = 'unkno
         messageCount: request.messages.length,
         hasTools: !!request.tools?.length,
         profile: profile.name,
+        disableThinking,
       })
       
       try {
-        // Build request with profile defaults
-        const createParams = buildStreamingCreateParams({ model, request, profile, capabilities, disableThinking })
+        // Disable thinking if configured globally or requested per-call
+        const shouldDisableThinking = disableThinking || request.enableThinking === false
+        
+        const createParams = buildStreamingCreateParams({ model, request, profile, capabilities, disableThinking: shouldDisableThinking })
         
         const stream = await openai.chat.completions.create(createParams, {
           signal: request.signal,

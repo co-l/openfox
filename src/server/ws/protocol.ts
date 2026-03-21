@@ -15,6 +15,7 @@ import type {
   SessionStatePayload,
   SessionListPayload,
   SessionRunningPayload,
+  SessionNameGeneratedPayload,
   ChatDeltaPayload,
   ChatThinkingPayload,
   ChatToolPreparingPayload,
@@ -233,6 +234,18 @@ export function createContextStateMessage(context: ContextState): ServerMessage<
   return createServerMessage('context.state', { context })
 }
 
+// Session name messages
+export function createSessionNameGeneratedMessage(name: string, sessionId?: string): ServerMessage<SessionNameGeneratedPayload> {
+  const msg: ServerMessage<SessionNameGeneratedPayload> = {
+    type: 'session.name_generated',
+    payload: { name },
+  }
+  if (sessionId) {
+    msg.sessionId = sessionId
+  }
+  return msg
+}
+
 // Type guards for payloads
 
 // Project payloads
@@ -413,6 +426,15 @@ export function storedEventToServerMessage(event: StoredEvent): ServerMessage | 
     case 'context.state': {
       const data = event.data as ContextState
       return createContextStateMessage(data)
+    }
+
+    case 'session.name_generated': {
+      const data = event.data as { name: string }
+      return {
+        type: 'session.name_generated',
+        payload: { name: data.name },
+        sessionId: event.sessionId,
+      }
     }
 
     case 'todo.updated': {

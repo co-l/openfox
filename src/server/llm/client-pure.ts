@@ -88,9 +88,10 @@ export function buildNonStreamingCreateParams(input: {
   model: string
   request: LLMCompletionRequest
   profile: MinimalProfile
-  capabilities: Pick<BackendCapabilities, 'supportsTopK'>
+  capabilities: MinimalCapabilities
+  disableThinking?: boolean
 }): OpenAI.ChatCompletionCreateParamsNonStreaming {
-  const { model, request, profile, capabilities } = input
+  const { model, request, profile, capabilities, disableThinking } = input
   const params: OpenAI.ChatCompletionCreateParamsNonStreaming = {
     model,
     messages: convertMessages(request.messages),
@@ -104,6 +105,12 @@ export function buildNonStreamingCreateParams(input: {
 
   if (capabilities.supportsTopK && profile.topK !== undefined) {
     ;(params as unknown as Record<string, unknown>)['top_k'] = profile.topK
+  }
+
+  // Disable thinking for models that support it
+  console.log("Disabled thinking?", capabilities.supportsChatTemplateKwargs, profile.supportsReasoning, disableThinking)
+  if (capabilities.supportsChatTemplateKwargs && profile.supportsReasoning && disableThinking) {
+    ;(params as unknown as Record<string, unknown>)['chat_template_kwargs'] = { enable_thinking: false }
   }
 
   return params

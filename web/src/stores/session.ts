@@ -791,6 +791,33 @@ export const useSessionStore = create<SessionState>((set, get) => ({
         break
       }
       
+      case 'session.name_generated': {
+        // Session name was generated - update both currentSession and sessions list
+        const payload = message.payload as { name: string }
+        const eventSessionId = message.sessionId
+        const activeSessionId = get().currentSession?.id
+        
+        set(state => {
+          const updatedSessions = state.sessions.map(s =>
+            s.id === eventSessionId
+              ? { ...s, title: payload.name, updatedAt: new Date().toISOString() }
+              : s
+          )
+          
+          const updatedCurrentSession = activeSessionId === eventSessionId
+            ? state.currentSession
+              ? { ...state.currentSession, title: payload.name, updatedAt: new Date().toISOString() }
+              : null
+            : state.currentSession
+          
+          return {
+            sessions: updatedSessions,
+            currentSession: updatedCurrentSession,
+          }
+        })
+        break
+      }
+      
       case 'error': {
         const payload = message.payload as { code: string; message: string }
         console.error('Server error:', payload)

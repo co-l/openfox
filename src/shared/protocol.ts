@@ -142,6 +142,7 @@ export type ServerMessageType =
   | 'session.list'
   | 'session.deleted'
   | 'session.running'    // Real-time running state change
+  | 'session.name_generated' // Session name was auto-generated
   // Unified chat events (replaces plan.delta, agent.event, etc.)
   | 'chat.delta'          // Text streaming
   | 'chat.thinking'       // Thinking block content
@@ -210,6 +211,10 @@ export interface SessionListPayload {
 
 export interface SessionRunningPayload {
   isRunning: boolean
+}
+
+export interface SessionNameGeneratedPayload {
+  name: string
 }
 
 // Chat payloads (unified streaming)

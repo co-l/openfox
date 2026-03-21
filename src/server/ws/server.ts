@@ -24,6 +24,8 @@ import {
   deleteProject,
 } from '../db/projects.js'
 import { getSetting, setSetting } from '../db/settings.js'
+import { updateSessionMetadata } from '../db/sessions.js'
+import { generateSessionName, needsNameGeneration } from '../session/name-generator.js'
 // Messages are now retrieved from EventStore, not DB
 import {
   parseClientMessage,
@@ -65,6 +67,27 @@ import {
 function getCurrentWindowMessageOptions(sessionId: string): { contextWindowId: string } | undefined {
   const contextWindowId = getCurrentContextWindowId(sessionId)
   return contextWindowId ? { contextWindowId } : undefined
+}
+
+/**
+ * Get the count of user messages in a session.
+ * Used to determine if this is the first user message.
+ */
+function getSessionMessageCount(sessionId: string): number {
+  const eventStore = getEventStore()
+  const events = eventStore.getEvents(sessionId)
+  
+  let count = 0
+  for (const event of events) {
+    if (event.type === 'message.start') {
+      const data = event.data as { role: string }
+      if (data.role === 'user') {
+        count++
+      }
+    }
+  }
+  
+  return count
 }
 
 function toRequestContextMessages(messages: Array<{
@@ -463,6 +486,43 @@ async function handleClientMessage(
         content: message.payload.content,
         ...(message.payload.attachments && { attachments: message.payload.attachments }),
       })
+      
+      // Check if we need to generate a session name (first message with default/empty title)
+      const messageCount = getSessionMessageCount(sessionId)
+      if (needsNameGeneration(currentSession.metadata.title, messageCount)) {
+        // Generate name in parallel - don't block the chat turn
+        // Use the active LLM client (respects user's selected model)
+        generateSessionName({
+          userMessage: message.payload.content,
+          llmClient: getLLMClient(),
+        })
+          .then(async (result) => {
+            if (result.success && result.name) {
+              // Update DB with the generated name
+              updateSessionMetadata(sessionId, { title: result.name })
+              
+              // Emit session.name_generated event to EventStore
+              eventStore.append(sessionId, {
+                type: 'session.name_generated',
+                data: { name: result.name },
+              })
+              
+              // Broadcast updated session state to all WebSocket clients
+              const updatedSession = sessionManager.getSession(sessionId)
+              if (updatedSession) {
+                const events = eventStore.getEvents(sessionId)
+                const messages = buildMessagesFromStoredEvents(events)
+                sendForSession(sessionId, createSessionStateMessage(updatedSession, messages))
+              }
+              
+              logger.info('Session name generated', { sessionId, name: result.name })
+            }
+          })
+          .catch((error) => {
+            logger.warn('Session name generation failed', { sessionId, error: error instanceof Error ? error.message : error })
+            // Don't propagate error - name generation is optional
+          })
+      }
       
       // Mark session as running (emits running.changed event)
       sessionManager.setRunning(sessionId, true)

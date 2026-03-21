@@ -26,8 +26,7 @@ export interface LLMCompletionRequest {
   maxTokens?: number
   stream?: boolean
   signal?: AbortSignal
-  /** Set to false to disable thinking/reasoning (vLLM chat_template_kwargs) */
-  enableThinking?: boolean
+  disableThinking: boolean
 }
 
 export interface LLMCompletionResponse {

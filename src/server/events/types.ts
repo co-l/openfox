@@ -159,6 +159,12 @@ export type TurnEvent =
         isRunning: boolean
       }
     }
+  | {
+      type: 'session.name_generated'
+      data: {
+        name: string
+      }
+    }
 
   // ----------------------------------------------------------------------------
   // Criteria
