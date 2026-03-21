@@ -513,7 +513,7 @@ export function PlanPanel() {
   const showLaunchButton = isBuilding && hasPendingCriteria && !isRunning && !isDone
   
   return (
-    <SessionLayout criteriaSidebarOpen={criteriaSidebarOpen}>
+    <SessionLayout criteriaSidebarOpen={criteriaSidebarOpen} messages={messages}>
       {pendingPathConfirmation && (
         <PathConfirmationDialog confirmation={pendingPathConfirmation} />
       )}

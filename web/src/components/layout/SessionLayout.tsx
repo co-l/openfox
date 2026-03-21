@@ -1,15 +1,17 @@
 import type { ReactNode } from 'react'
 import { useSessionStore } from '../../stores/session'
 import { SummaryDisplay } from '../plan/SummaryDisplay'
+import type { Message } from '../../../src/shared/types.js'
 
 interface SessionLayoutProps {
   children: ReactNode
   criteriaSidebarOpen?: boolean
+  messages: Message[]
 }
 
 const SUMMARY_SIDEBAR_CLASSES = 'w-[320px] min-w-[320px] shrink-0 border-l border-border p-4 overflow-y-auto'
 
-export function SessionLayout({ children, criteriaSidebarOpen = true }: SessionLayoutProps) {
+export function SessionLayout({ children, criteriaSidebarOpen = true, messages }: SessionLayoutProps) {
   const session = useSessionStore(state => state.currentSession)
   
   return (
@@ -27,7 +29,7 @@ export function SessionLayout({ children, criteriaSidebarOpen = true }: SessionL
           ${criteriaSidebarOpen ? 'md:block' : 'md:hidden'}
         `}
       >
-        <SummaryDisplay summary={session?.summary ?? null} />
+        <SummaryDisplay summary={session?.summary ?? null} messages={messages} />
       </aside>
     </div>
   )
