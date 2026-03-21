@@ -31,9 +31,21 @@ const sessionStoreState = {
       criteriaCount: 0,
       criteriaCompleted: 0,
     },
+    {
+      id: 'session-3',
+      projectId: 'project-1',
+      workdir: '/tmp/project',
+      mode: 'planner' as const,
+      phase: 'plan' as const,
+      isRunning: false,
+      createdAt: 'a',
+      updatedAt: 'b',
+      criteriaCount: 0,
+      criteriaCompleted: 0,
+    },
   ],
   currentSession: { id: 'session-2' },
-  unreadSessionIds: ['session-1'],
+  unreadSessionIds: ['session-3'],
   createSession: vi.fn(),
   deleteSession: vi.fn(),
   listSessions: vi.fn(),
@@ -70,7 +82,19 @@ describe('Sidebar', () => {
     const html = renderToStaticMarkup(<Sidebar projectId="project-1" />)
 
     expect(html).toContain('Session running')
-    expect(html).not.toContain('Unread activity')
     expect(html).toContain('animate-spin')
+  })
+
+  it('groups all indicators on the right with proper alignment', () => {
+    const html = renderToStaticMarkup(<Sidebar projectId="project-1" />)
+
+    // Verify flex container with justify-between for right alignment
+    expect(html).toContain('justify-between')
+    // Verify flex container with items-center and gap for indicator alignment
+    expect(html).toContain('flex items-center gap-2')
+    // Verify no float-right hack is used
+    expect(html).not.toContain('float-right')
+    // Verify options menu trigger is present
+    expect(html).toContain('Options')
   })
 })

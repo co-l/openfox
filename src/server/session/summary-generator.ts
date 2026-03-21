@@ -65,9 +65,6 @@ export async function generateSessionSummary(
       },
     ]
 
-
-    console.log("COUCOU", prompt)
-
     const response = await llmClient.complete({
       messages: llmMessages,
       tools: [],
