@@ -181,6 +181,26 @@ export class SessionManager {
     this.emit({ type: 'session_deleted', sessionId: id })
   }
 
+  /**
+   * Get a project by ID.
+   */
+  getProject(projectId: string) {
+    return getProject(projectId)
+  }
+
+  /**
+   * Delete all sessions for a project.
+   */
+  deleteAllSessions(projectId: string, workdir: string): void {
+    logger.debug('Deleting all sessions for project', { projectId, workdir })
+
+    const sessions = dbListSessionsByProject(projectId, workdir)
+
+    sessions.forEach((session) => {
+      this.deleteSession(session.id)
+    })
+  }
+
   // ============================================================================
   // State Changes (emit events + notify subscribers)
   // ============================================================================

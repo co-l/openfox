@@ -126,6 +126,16 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
     res.json({ success: true })
   })
 
+  app.delete('/api/projects/:projectId/sessions', (req, res) => {
+    const projectId = req.params['projectId'] as string
+    const project = sessionManager.getProject(projectId)
+    if (!project) {
+      return res.status(404).json({ error: 'Project not found' })
+    }
+    sessionManager.deleteAllSessions(projectId, project.workdir)
+    res.json({ success: true })
+  })
+
   // Config endpoint
   app.get('/api/config', (_req, res) => {
     const llmClient = getLLMClient()

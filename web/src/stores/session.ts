@@ -157,6 +157,7 @@ interface SessionState {
   loadSession: (sessionId: string) => void
   listSessions: () => void
   deleteSession: (sessionId: string) => void
+  deleteAllSessions: (projectId: string) => void
   clearSession: () => void
   
   // Unified chat (works in any mode)
@@ -302,6 +303,10 @@ export const useSessionStore = create<SessionState>((set, get) => ({
     wsClient.send('session.delete', { sessionId })
   },
   
+  deleteAllSessions: (projectId) => {
+    wsClient.send('session.deleteAll', { projectId })
+  },
+  
   clearSession: () => {
     set(state => ({ 
       currentSession: null, 
@@ -407,6 +412,11 @@ export const useSessionStore = create<SessionState>((set, get) => ({
       case 'session.deleted': {
         const payload = message.payload as { sessionId: string }
         set(state => ({ unreadSessionIds: removeUnreadSessionId(state.unreadSessionIds, payload.sessionId) }))
+        get().listSessions()
+        break
+      }
+      
+      case 'session.deletedAll': {
         get().listSessions()
         break
       }

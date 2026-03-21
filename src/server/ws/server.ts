@@ -460,6 +460,22 @@ async function handleClientMessage(
       break
     }
     
+    case 'session.deleteAll': {
+      if (!message.payload || typeof message.payload !== 'object' || !('projectId' in message.payload)) {
+        send(createErrorMessage('INVALID_PAYLOAD', 'Invalid session.deleteAll payload', message.id))
+        return
+      }
+      const payload = message.payload as { projectId: string }
+      const project = sessionManager.getProject(payload.projectId)
+      if (!project) {
+        send(createErrorMessage('PROJECT_NOT_FOUND', 'Project not found', message.id))
+        return
+      }
+      sessionManager.deleteAllSessions(payload.projectId, project.workdir)
+      send({ type: 'session.deletedAll', payload: { projectId: payload.projectId }, id: message.id })
+      break
+    }
+    
     // =========================================================================
     // Unified Chat (replaces plan.message, agent.start, etc.)
     // =========================================================================

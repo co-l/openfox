@@ -33,6 +33,7 @@ export type ClientMessageType =
   | 'session.load'
   | 'session.list'
   | 'session.delete'
+  | 'session.deleteAll'
   // Unified chat (replaces plan.message, agent.start, etc.)
   | 'chat.send'           // Send a message (works in any mode)
   | 'chat.stop'           // Stop current generation
@@ -93,6 +94,10 @@ export interface SessionLoadPayload {
   lastEventSeq?: number  // Resume from this sequence number (for reconnection)
 }
 
+export interface SessionDeleteAllPayload {
+  projectId: string
+}
+
 // Chat payloads (unified)
 export interface ChatSendPayload {
   content: string
@@ -141,6 +146,7 @@ export type ServerMessageType =
   | 'session.state'
   | 'session.list'
   | 'session.deleted'
+  | 'session.deletedAll'
   | 'session.running'    // Real-time running state change
   | 'session.name_generated' // Session name was auto-generated
   // Unified chat events (replaces plan.delta, agent.event, etc.)
