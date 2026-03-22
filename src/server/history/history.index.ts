@@ -1,10 +1,46 @@
-import { readFile, writeFile, existsSync, readdirSync } from 'node:fs'
+import { readFile, writeFile, existsSync, readdirSync, rename } from 'node:fs'
 import { join } from 'node:path'
 import { promisify } from 'node:util'
 import type { SnapshotData } from './history.snapshot.js'
 
 const readFileAsync = promisify(readFile)
 const writeFileAsync = promisify(writeFile)
+const renameAsync = promisify(rename)
+
+// ============================================================================
+// File Lock for Index Operations
+// ============================================================================
+
+const indexLocks = new Map<string, Promise<any>>()
+
+/**
+ * Execute a function with a lock on the index file to prevent concurrent writes
+ */
+async function withIndexLock<T>(
+  snapshotDir: string,
+  fn: () => Promise<T>
+): Promise<T> {
+  const lockKey = snapshotDir
+  
+  // Wait for any existing operation on this index
+  while (indexLocks.has(lockKey)) {
+    await indexLocks.get(lockKey)
+  }
+  
+  // Create new promise for this operation
+  let resolveLock: () => void
+  const lockPromise = new Promise<void>((resolve) => {
+    resolveLock = resolve
+  })
+  indexLocks.set(lockKey, lockPromise)
+  
+  try {
+    return await fn()
+  } finally {
+    resolveLock!()
+    indexLocks.delete(lockKey)
+  }
+}
 
 // ============================================================================
 // Types
@@ -56,7 +92,7 @@ export async function loadIndex(snapshotDir: string): Promise<IndexEntry[]> {
 }
 
 /**
- * Save index file
+ * Save index file with atomic write and locking
  */
 export async function saveIndex(snapshotDir: string, entries: IndexEntry[]): Promise<void> {
   const indexPath = getIndexPath(snapshotDir)
@@ -65,13 +101,15 @@ export async function saveIndex(snapshotDir: string, entries: IndexEntry[]): Pro
   const { ensureDirectory } = await import('./history.snapshot.js')
   await ensureDirectory(snapshotDir)
   
-  // Write to temp file first, then rename for atomic operation
-  const tmpPath = indexPath + '.tmp'
-  await writeFileAsync(tmpPath, JSON.stringify(entries, null, 2))
-  
-  // Atomic rename
-  const { rename } = await import('node:fs/promises')
-  await rename(tmpPath, indexPath)
+  // Use lock to prevent concurrent writes
+  return withIndexLock(snapshotDir, async () => {
+    // Write to temp file first, then rename for atomic operation
+    const tmpPath = indexPath + '.tmp'
+    await writeFileAsync(tmpPath, JSON.stringify(entries, null, 2))
+    
+    // Atomic rename
+    await renameAsync(tmpPath, indexPath)
+  })
 }
 
 /**
