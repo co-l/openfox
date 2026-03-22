@@ -45,6 +45,12 @@ export async function runConfig(mode: Mode): Promise<void> {
   } else {
     console.log(`  Active: (none configured)`)
   }
+  
+  // Display server host with human-readable description
+  const hostDisplay = config.server.host === '0.0.0.0' 
+    ? `${config.server.host} (accessible from local network)`
+    : `${config.server.host} (localhost only)`
+  console.log(`  Server: ${hostDisplay}`)
   console.log(`  Port: ${config.server.port}`)
 }
 
@@ -83,7 +89,8 @@ export async function runCli(options: { mode: Mode }): Promise<void> {
       if (activeProvider) {
         console.log(`Current provider: ${activeProvider.name} (${activeProvider.url})\n`)
       }
-      await runInitWithSelect(mode)
+      // Pass existing config to init for potential preservation
+      await runInitWithSelect(mode, config)
       break
     }
     case 'config': {

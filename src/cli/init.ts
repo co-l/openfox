@@ -1,4 +1,4 @@
-import { select, text, spinner, outro } from '@clack/prompts'
+import { select, text, spinner, outro, confirm } from '@clack/prompts'
 import { detectBackend, detectModel } from '../server/llm/index.js'
 import { saveGlobalConfig, addProvider, type GlobalConfig } from './config.js'
 import type { Mode } from './main.js'
@@ -21,115 +21,176 @@ function createBaseConfig(): GlobalConfig {
   }
 }
 
-export async function runInitWithSelect(mode: Mode): Promise<void> {
-  const s = spinner()
-  s.start('Searching for local LLM...')
-  
-  // Try smart defaults in parallel while showing spinner
-  const detected = await Promise.all(
-    LLM_OPTIONS.filter(o => o.value !== 'other').map(async ({ value: url }) => {
-      try {
-        const [backend, model] = await Promise.all([
-          detectBackend(url, undefined, true),
-          detectModel(url, 1, true),
-        ])
-        if (backend !== 'unknown' && model) {
-          return { url, backend, model }
-        }
-      } catch {
-        // Silent fail
-      }
-      return null
-    })
-  )
-  
-  const found = detected.find(r => r !== null)
-  if (found) {
-    s.stop(`✓ Found ${found.backend} (${found.model})`)
-    const config = addProvider(createBaseConfig(), {
-      name: 'Default',
-      url: found.url,
-      model: found.model,
-      backend: found.backend as ProviderBackend,
-      maxContext: 200000,
-      isActive: true,
-    })
-    await saveGlobalConfig(mode, config)
-    outro('Configuration saved!')
-    return
-  }
-  
-  s.stop('✗ No LLM server detected')
-  
-  const selection = await select({
-    message: 'Select your LLM server:',
-    options: LLM_OPTIONS,
+/**
+ * Prompt user for network accessibility preference
+ * Returns '127.0.0.1' for localhost only, '0.0.0.0' for network access
+ */
+async function promptNetworkAccessibility(): Promise<string> {
+  const networkChoice = await select({
+    message: 'How should OpenFox be accessible?',
+    options: [
+      { value: 'localhost', label: 'Secure (localhost only)' },
+      { value: 'network', label: 'Accessible from local network (phone, tablet, etc.)' },
+    ],
   })
   
-  let url: string
-  if (String(selection) === 'other') {
-    const textValue = await text({
-      message: 'LLM Server URL (don\'t include /v1)',
-      placeholder: 'http://localhost:8000',
-      initialValue: 'http://localhost:8000',
-      validate: (value) => {
-        if (!value || value.length === 0) return 'URL is required'
-        if (!value.startsWith('http')) return 'Must start with http://'
-      },
-    })
-    url = String(textValue)
-  } else {
-    url = String(selection)
+  // Default to secure if user skips
+  if (networkChoice === Symbol.for('clack:cancel')) {
+    return '127.0.0.1'
   }
   
-  // Test connection
-  const s2 = spinner()
-  s2.start(`Testing connection to ${url}...`)
+  return networkChoice === 'network' ? '0.0.0.0' : '127.0.0.1'
+}
+
+/**
+ * Run the init wizard with optional existing config
+ * If existingConfig is provided, offer to preserve providers
+ */
+export async function runInitWithSelect(mode: Mode, existingConfig?: GlobalConfig): Promise<void> {
+  // If existing config, ask about preserving providers
+  let preserveProviders = false
+  let config: GlobalConfig
   
-  try {
-    const backend = await detectBackend(url)
-    const model = await detectModel(url)
-    
-    s2.stop(`Connected to ${backend}${model ? ' (' + model + ')' : ''}`)
-    
-    const config = addProvider(createBaseConfig(), {
-      name: 'Default',
-      url,
-      model: model ?? 'auto',
-      backend: backend as ProviderBackend,
-      maxContext: 200000,
-      isActive: true,
+  if (existingConfig && existingConfig.providers.length > 0) {
+    console.log('\nCurrent configuration detected:')
+    console.log(`  Providers: ${existingConfig.providers.length}`)
+    existingConfig.providers.forEach((p, i) => {
+      console.log(`    ${i + 1}. ${p.name} (${p.url}) - ${p.model}`)
     })
-    await saveGlobalConfig(mode, config)
+    console.log(`  Server: ${existingConfig.server.host}`)
     
-    outro('Configuration saved!')
-  } catch {
-    s2.stop('Server isn\'t available')
-    
-    const choice = await select({
-      message: 'Continue with this URL or retry?',
-      options: [
-        { value: 'continue', label: 'Continue' },
-        { value: 'retry', label: 'Retry' },
-        { value: 'change', label: 'Select different server' },
-      ],
+    const keepChoice = await confirm({
+      message: 'Keep existing providers?',
+      initialValue: true,
     })
     
-    if (choice === 'retry') {
-      return runInitWithSelect(mode)  // Recurse to retry
-    } else if (choice === 'change') {
-      return runInitWithSelect(mode)  // Recurse to change selection
+    if (keepChoice === true) {
+      preserveProviders = true
+      config = {
+        ...existingConfig,
+        server: { ...existingConfig.server }, // Copy server settings
+      }
+      console.log('\nPreserving existing providers...\n')
+    } else {
+      console.log('\nStarting fresh configuration...\n')
+      config = createBaseConfig()
     }
-    // choice === 'continue' - save anyway with auto backend
-    const config = addProvider(createBaseConfig(), {
-      name: 'Default',
-      url,
-      model: 'auto',
-      backend: 'auto',
-      maxContext: 200000,
-      isActive: true,
-    })
-    await saveGlobalConfig(mode, config)
-    outro('Configuration saved!')
+  } else {
+    config = createBaseConfig()
   }
+  
+  // Only run LLM setup if not preserving providers
+  if (!preserveProviders) {
+    const s = spinner()
+    s.start('Searching for local LLM...')
+    
+    // Try smart defaults in parallel while showing spinner
+    const detected = await Promise.all(
+      LLM_OPTIONS.filter(o => o.value !== 'other').map(async ({ value: url }) => {
+        try {
+          const [backend, model] = await Promise.all([
+            detectBackend(url, undefined, true),
+            detectModel(url, 1, true),
+          ])
+          if (backend !== 'unknown' && model) {
+            return { url, backend, model }
+          }
+        } catch {
+          // Silent fail
+        }
+        return null
+      })
+    )
+    
+    const found = detected.find(r => r !== null)
+    if (found) {
+      s.stop(`✓ Found ${found.backend} (${found.model})`)
+      config = addProvider(config, {
+        name: 'Default',
+        url: found.url,
+        model: found.model,
+        backend: found.backend as ProviderBackend,
+        maxContext: 200000,
+        isActive: true,
+      })
+    } else {
+      s.stop('✗ No LLM server detected')
+      
+      const selection = await select({
+        message: 'Select your LLM server:',
+        options: LLM_OPTIONS,
+      })
+      
+      let url: string
+      if (String(selection) === 'other') {
+        const textValue = await text({
+          message: 'LLM Server URL (don\'t include /v1)',
+          placeholder: 'http://localhost:8000',
+          initialValue: 'http://localhost:8000',
+          validate: (value) => {
+            if (!value || value.length === 0) return 'URL is required'
+            if (!value.startsWith('http')) return 'Must start with http://'
+          },
+        })
+        url = String(textValue)
+      } else {
+        url = String(selection)
+      }
+      
+      // Test connection
+      const s2 = spinner()
+      s2.start(`Testing connection to ${url}...`)
+      
+      try {
+        const backend = await detectBackend(url)
+        const model = await detectModel(url)
+        
+        s2.stop(`Connected to ${backend}${model ? ' (' + model + ')' : ''}`)
+        
+        config = addProvider(config, {
+          name: 'Default',
+          url,
+          model: model ?? 'auto',
+          backend: backend as ProviderBackend,
+          maxContext: 200000,
+          isActive: true,
+        })
+      } catch {
+        s2.stop('Server isn\'t available')
+        
+        const choice = await select({
+          message: 'Continue with this URL or retry?',
+          options: [
+            { value: 'continue', label: 'Continue' },
+            { value: 'retry', label: 'Retry' },
+            { value: 'change', label: 'Select different server' },
+          ],
+        })
+        
+        if (choice === 'retry') {
+          return runInitWithSelect(mode, existingConfig)  // Recurse to retry
+        } else if (choice === 'change') {
+          return runInitWithSelect(mode, existingConfig)  // Recurse to change selection
+        }
+        // choice === 'continue' - save anyway with auto backend
+        config = addProvider(config, {
+          name: 'Default',
+          url,
+          model: 'auto',
+          backend: 'auto',
+          maxContext: 200000,
+          isActive: true,
+        })
+      }
+    }
+  }
+  
+  // Ask about network accessibility
+  const host = await promptNetworkAccessibility()
+  config.server.host = host
+  
+  // Save the configuration
+  await saveGlobalConfig(mode, config)
+  
+  outro('Configuration saved!')
 }

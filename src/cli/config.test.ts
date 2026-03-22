@@ -180,4 +180,70 @@ describe('config', () => {
       expect(loaded.activeProviderId).toBe('test-123')
     })
   })
+
+  describe('server host configuration', () => {
+    it('saves and loads server.host = 0.0.0.0 for network access', async () => {
+      const config = {
+        providers: [],
+        activeProviderId: undefined,
+        server: { port: 10369, host: '0.0.0.0', openBrowser: true },
+        logging: { level: 'info' as const },
+        database: { path: '' },
+      }
+
+      await saveGlobalConfig('production', config)
+      const loaded = await loadGlobalConfig('production')
+
+      expect(loaded.server.host).toBe('0.0.0.0')
+    })
+
+    it('saves and loads server.host = 127.0.0.1 for localhost only', async () => {
+      const config = {
+        providers: [],
+        activeProviderId: undefined,
+        server: { port: 10369, host: '127.0.0.1', openBrowser: true },
+        logging: { level: 'info' as const },
+        database: { path: '' },
+      }
+
+      await saveGlobalConfig('production', config)
+      const loaded = await loadGlobalConfig('production')
+
+      expect(loaded.server.host).toBe('127.0.0.1')
+    })
+
+    it('preserves server.host when updating other settings', async () => {
+      const originalConfig = {
+        providers: [
+          {
+            id: 'test-123',
+            name: 'Test Provider',
+            url: 'http://localhost:8000/v1',
+            model: 'test-model',
+            backend: 'vllm' as const,
+            isActive: true,
+            createdAt: new Date().toISOString(),
+          },
+        ],
+        activeProviderId: 'test-123',
+        server: { port: 10369, host: '0.0.0.0', openBrowser: true },
+        logging: { level: 'warn' as const },
+        database: { path: '' },
+      }
+
+      await saveGlobalConfig('production', originalConfig)
+      
+      // Simulate updating only logging level
+      const updatedConfig = await loadGlobalConfig('production')
+      updatedConfig.logging.level = 'error' as const
+      
+      await saveGlobalConfig('production', updatedConfig)
+      const reloaded = await loadGlobalConfig('production')
+
+      expect(reloaded.server.host).toBe('0.0.0.0')
+      expect(reloaded.server.port).toBe(10369)
+      expect(reloaded.logging.level).toBe('error')
+      expect(reloaded.providers).toHaveLength(1)
+    })
+  })
 })
