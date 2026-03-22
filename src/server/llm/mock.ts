@@ -715,6 +715,17 @@ function getPromptAwareToolResponse(prompt: string): MockMatchResult | null {
     }
   }
 
+  if (/First call get_criteria to see what needs to be done, then create src\/test\.ts and call complete_criterion for ["']test-file["']\./i.test(prompt)) {
+    return {
+      tools: [
+        { name: 'get_criteria', arguments: {} },
+        { name: 'write_file', arguments: { path: 'src/test.ts', content: 'export const created = true' } },
+        { name: 'complete_criterion', arguments: { id: 'test-file', reason: 'Created the requested file' } },
+      ],
+      response: 'Reviewed the criteria, created the file, and completed the criterion.',
+    }
+  }
+
   if (/Create the file src\/utils\.ts with any content, then call complete_criterion/i.test(prompt)) {
     return {
       tools: [

@@ -554,6 +554,17 @@ export function foldContextState(events: EventLike[], initialWindowId: string): 
         currentContextWindowId = data.contextWindowId
         break
       }
+      case 'turn.snapshot': {
+        const data = event.data as SessionSnapshot
+        currentContextWindowId = data.currentContextWindowId
+        compactionCount = data.contextState.compactionCount
+        latestContextState = data.contextState
+        readFilesMap.clear()
+        for (const entry of data.readFiles) {
+          readFilesMap.set(entry.path, { ...entry })
+        }
+        break
+      }
       case 'context.state': {
         // Use the real promptTokens from LLM
         const data = event.data as ContextState

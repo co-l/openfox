@@ -12,7 +12,7 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import Database from 'better-sqlite3'
 import { EventStore } from './store.js'
-import { getSessionState } from './session.js'
+import { getContextMessages, getCurrentContextWindowId, getSessionState } from './session.js'
 import { initEventStore, getEventStore } from './index.js'
 
 describe('Session Reload After Cleanup', () => {
@@ -325,5 +325,84 @@ describe('Session Reload After Cleanup', () => {
     expect(state!.messages).toHaveLength(2)
     expect(state!.messages[0]!.content).toBe('Hello')
     expect(state!.messages[1]!.content).toBe('New response after snapshot')
+  })
+
+  it('should preserve the compacted context window after cleanup and reload', () => {
+    const sessionId = 'session-1'
+    const eventStore = getEventStore()
+
+    eventStore.append(sessionId, {
+      type: 'session.initialized',
+      data: { projectId: 'proj-1', workdir: '/tmp', contextWindowId: 'window-1' },
+    })
+
+    eventStore.append(sessionId, {
+      type: 'message.start',
+      data: { messageId: 'old-user', role: 'user', content: 'Old window request', contextWindowId: 'window-1' },
+    })
+    eventStore.append(sessionId, {
+      type: 'message.done',
+      data: { messageId: 'old-user' },
+    })
+    eventStore.append(sessionId, {
+      type: 'message.start',
+      data: { messageId: 'old-assistant', role: 'assistant', content: 'Old window response', contextWindowId: 'window-1' },
+    })
+    eventStore.append(sessionId, {
+      type: 'message.done',
+      data: { messageId: 'old-assistant' },
+    })
+
+    eventStore.append(sessionId, {
+      type: 'context.compacted',
+      data: {
+        closedWindowId: 'window-1',
+        beforeTokens: 120,
+        afterTokens: 12,
+        newWindowId: 'window-2',
+        summary: 'Compacted summary',
+      },
+    })
+
+    eventStore.append(sessionId, {
+      type: 'message.start',
+      data: { messageId: 'new-user', role: 'user', content: 'Fresh context request', contextWindowId: 'window-2' },
+    })
+    eventStore.append(sessionId, {
+      type: 'message.done',
+      data: { messageId: 'new-user' },
+    })
+
+    const eventsBeforeCleanup = eventStore.getEvents(sessionId)
+    eventStore.append(sessionId, {
+      type: 'turn.snapshot',
+      data: {
+        mode: 'planner',
+        phase: 'plan',
+        isRunning: false,
+        messages: [
+          { id: 'old-user', role: 'user', content: 'Old window request', timestamp: Date.now(), contextWindowId: 'window-1' },
+          { id: 'old-assistant', role: 'assistant', content: 'Old window response', timestamp: Date.now(), contextWindowId: 'window-1' },
+          { id: 'new-user', role: 'user', content: 'Fresh context request', timestamp: Date.now(), contextWindowId: 'window-2' },
+        ],
+        criteria: [],
+        contextState: { currentTokens: 12, maxTokens: 200000, compactionCount: 1, dangerZone: false, canCompact: false },
+        currentContextWindowId: 'window-2',
+        todos: [],
+        readFiles: [],
+        snapshotSeq: eventsBeforeCleanup.length + 1,
+        snapshotAt: Date.now(),
+      },
+    })
+
+    eventStore.cleanupOldEvents(sessionId)
+
+    expect(getCurrentContextWindowId(sessionId)).toBe('window-2')
+    expect(getContextMessages(sessionId)).toEqual([
+      {
+        role: 'user',
+        content: 'Fresh context request',
+      },
+    ])
   })
 })

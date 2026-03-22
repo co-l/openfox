@@ -165,6 +165,25 @@ describe('mock llm runtime reminders', () => {
     ])
   })
 
+  it('returns get_criteria before completing a criterion when the prompt asks for both', async () => {
+    const client = createMockLLMClient()
+
+    const response = await client.complete({
+      messages: [
+        {
+          role: 'user',
+          content: 'First call get_criteria to see what needs to be done, then create src/test.ts and call complete_criterion for "test-file".',
+        },
+      ],
+    })
+
+    expect(response.toolCalls).toEqual([
+      expect.objectContaining({ name: 'get_criteria', arguments: {} }),
+      expect.objectContaining({ name: 'write_file', arguments: { path: 'src/test.ts', content: 'export const created = true' } }),
+      expect.objectContaining({ name: 'complete_criterion', arguments: { id: 'test-file', reason: 'Created the requested file' } }),
+    ])
+  })
+
   it('returns a plain text session name for session name generation prompts', async () => {
     const client = createMockLLMClient()
 
