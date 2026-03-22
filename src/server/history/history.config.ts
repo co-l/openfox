@@ -19,7 +19,7 @@ export interface HistoryConfig {
 const DEFAULT_CONFIG: HistoryConfig = {
   retentionDays: 30,
   maxSizeMB: 100,
-  excludePatterns: [],
+  excludePatterns: ['.openfox/**'],
 }
 
 // ============================================================================

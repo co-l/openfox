@@ -51,7 +51,8 @@ describe('history integration', () => {
     // Assert
     expect(config.retentionDays).toBe(30)
     expect(config.maxSizeMB).toBe(100)
-    expect(config.excludePatterns).toEqual([])
+    // Default exclude pattern for .openfox is included
+    expect(config.excludePatterns).toEqual(['.openfox/**'])
     
     // Verify config file was created
     const { existsSync } = await import('node:fs')

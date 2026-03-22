@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
-import { X, Calendar, FileText, Plus, Trash2, Edit2 } from 'lucide-react'
+import { X, FileText, Plus, Trash2, Edit2 } from 'lucide-react'
+import { Markdown } from '../shared/Markdown'
 
 // ============================================================================
 // Types
@@ -36,48 +37,29 @@ interface HistoryModalProps {
 export function HistoryModal({ isOpen, onClose, workdir }: HistoryModalProps) {
   const [entries, setEntries] = useState<HistoryEntry[]>([])
   const [loading, setLoading] = useState(false)
-  const [page, setPage] = useState(1)
-  const [hasMore, setHasMore] = useState(false)
-  const [selectedEntry, setSelectedEntry] = useState<HistoryEntry | null>(null)
-  
-  // Filters
-  const [fromDate, setFromDate] = useState('')
-  const [toDate, setToDate] = useState('')
   const [pathFilter, setPathFilter] = useState('')
-  const [changeTypeFilter, setChangeTypeFilter] = useState<string[]>([])
+  const [selectedEntry, setSelectedEntry] = useState<HistoryEntry & { content?: string } | null>(null)
 
   useEffect(() => {
     if (isOpen) {
       loadHistory()
     }
-  }, [isOpen, page])
+  }, [isOpen])
 
   const loadHistory = async () => {
     setLoading(true)
     try {
       const params = new URLSearchParams({
         workdir,
-        page: page.toString(),
-        pageSize: '50',
+        page: '1',
+        pageSize: '100',
       })
       
-      if (fromDate) params.append('from', fromDate)
-      if (toDate) params.append('to', toDate)
       if (pathFilter) params.append('path', pathFilter)
-      if (changeTypeFilter.length > 0) {
-        changeTypeFilter.forEach(type => params.append('changeType', type))
-      }
       
       const response = await fetch(`/api/history?${params}`)
       const data: HistoryResponse = await response.json()
-      
-      if (page === 1) {
-        setEntries(data.entries)
-      } else {
-        setEntries(prev => [...prev, ...data.entries])
-      }
-      
-      setHasMore(data.pagination.hasMore)
+      setEntries(data.entries)
     } catch (error) {
       console.error('Error loading history:', error)
     } finally {
@@ -85,12 +67,17 @@ export function HistoryModal({ isOpen, onClose, workdir }: HistoryModalProps) {
     }
   }
 
-  const handleToggleChangeType = (type: string) => {
-    setChangeTypeFilter(prev => 
-      prev.includes(type)
-        ? prev.filter(t => t !== type)
-        : [...prev, type]
-    )
+  const handleEntryClick = async (entry: HistoryEntry) => {
+    try {
+      const response = await fetch(`/api/history/${entry.timestamp}?workdir=${encodeURIComponent(workdir)}`)
+      const data = await response.json()
+      
+      if (data.entry) {
+        setSelectedEntry(data.entry)
+      }
+    } catch (error) {
+      console.error('Error loading snapshot:', error)
+    }
   }
 
   const getChangeTypeIcon = (type: string) => {
@@ -111,11 +98,15 @@ export function HistoryModal({ isOpen, onClose, workdir }: HistoryModalProps) {
     return date.toLocaleString()
   }
 
+  const filteredEntries = entries.filter(entry => 
+    entry.path.toLowerCase().includes(pathFilter.toLowerCase())
+  )
+
   if (!isOpen) return null
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-      <div className="bg-gray-900 rounded-lg w-3/4 h-3/4 flex flex-col">
+      <div className="bg-gray-900 rounded-lg w-5/6 h-5/6 flex flex-col">
         {/* Header */}
         <div className="flex items-center justify-between p-4 border-b border-gray-700">
           <h2 className="text-xl font-semibold text-white">File History</h2>
@@ -127,147 +118,94 @@ export function HistoryModal({ isOpen, onClose, workdir }: HistoryModalProps) {
           </button>
         </div>
 
-        {/* Filters */}
-        <div className="p-4 border-b border-gray-700 space-y-4">
-          <div className="flex gap-4">
-            <div className="flex-1">
-              <label className="block text-sm text-gray-400 mb-1">From</label>
-              <input
-                type="datetime-local"
-                value={fromDate}
-                onChange={(e) => setFromDate(e.target.value)}
-                className="w-full bg-gray-800 text-white rounded px-3 py-2"
-              />
-            </div>
-            <div className="flex-1">
-              <label className="block text-sm text-gray-400 mb-1">To</label>
-              <input
-                type="datetime-local"
-                value={toDate}
-                onChange={(e) => setToDate(e.target.value)}
-                className="w-full bg-gray-800 text-white rounded px-3 py-2"
-              />
-            </div>
+        {/* Path Filter */}
+        <div className="p-4 border-b border-gray-700">
+          <div className="flex-1">
+            <label className="block text-sm text-gray-400 mb-1">Filter by path</label>
+            <input
+              type="text"
+              value={pathFilter}
+              onChange={(e) => setPathFilter(e.target.value)}
+              placeholder="Enter file name..."
+              className="w-full bg-gray-800 text-white rounded px-3 py-2"
+            />
           </div>
-          
-          <div className="flex gap-4">
-            <div className="flex-1">
-              <label className="block text-sm text-gray-400 mb-1">Path</label>
-              <input
-                type="text"
-                value={pathFilter}
-                onChange={(e) => setPathFilter(e.target.value)}
-                placeholder="Filter by path..."
-                className="w-full bg-gray-800 text-white rounded px-3 py-2"
-              />
-            </div>
-          </div>
-          
-          <div>
-            <label className="block text-sm text-gray-400 mb-1">Change Type</label>
-            <div className="flex gap-4">
-              {['create', 'modify', 'delete'].map(type => (
-                <label key={type} className="flex items-center gap-2">
-                  <input
-                    type="checkbox"
-                    checked={changeTypeFilter.includes(type)}
-                    onChange={() => handleToggleChangeType(type)}
-                    className="rounded bg-gray-800"
-                  />
-                  <span className="text-gray-300 capitalize">{type}</span>
-                </label>
-              ))}
-            </div>
-          </div>
-          
-          <button
-            onClick={() => {
-              setFromDate('')
-              setToDate('')
-              setPathFilter('')
-              setChangeTypeFilter([])
-              setPage(1)
-              loadHistory()
-            }}
-            className="text-sm text-blue-400 hover:text-blue-300"
-          >
-            Clear filters
-          </button>
         </div>
 
-        {/* Content */}
-        <div className="flex-1 overflow-auto p-4">
-          {loading && entries.length === 0 ? (
-            <div className="text-center text-gray-400">Loading...</div>
-          ) : entries.length === 0 ? (
-            <div className="text-center text-gray-400">
-              <FileText className="w-12 h-12 mx-auto mb-2" />
-              <p>No history found</p>
-              <p className="text-sm">File changes will be tracked automatically</p>
-            </div>
-          ) : (
-            <div className="space-y-2">
-              {entries.map((entry, index) => (
-                <div
-                  key={index}
-                  onClick={() => setSelectedEntry(entry)}
-                  className="flex items-center gap-3 p-3 bg-gray-800 rounded hover:bg-gray-750 cursor-pointer"
-                >
-                  {getChangeTypeIcon(entry.changeType)}
-                  <div className="flex-1">
-                    <div className="text-white font-mono">{entry.path}</div>
-                    <div className="text-sm text-gray-400 flex items-center gap-2">
-                      <Calendar className="w-3 h-3" />
-                      {formatDate(entry.timestamp)}
+        {/* Split View */}
+        <div className="flex-1 flex overflow-hidden">
+          {/* Left Panel - Entry List */}
+          <div className="w-1/2 overflow-auto p-4 border-r border-gray-700">
+            {loading ? (
+              <div className="text-center text-gray-400">Loading...</div>
+            ) : filteredEntries.length === 0 ? (
+              <div className="text-center text-gray-400">
+                <FileText className="w-12 h-12 mx-auto mb-2" />
+                <p>No history found</p>
+                <p className="text-sm">File changes will be tracked automatically</p>
+              </div>
+            ) : (
+              <div className="space-y-2">
+                {filteredEntries.map((entry, index) => (
+                  <div
+                    key={index}
+                    onClick={() => handleEntryClick(entry)}
+                    className={`flex items-center gap-3 p-3 rounded cursor-pointer ${
+                      selectedEntry?.timestamp === entry.timestamp 
+                        ? 'bg-blue-900' 
+                        : 'bg-gray-800 hover:bg-gray-750'
+                    }`}
+                  >
+                    {getChangeTypeIcon(entry.changeType)}
+                    <div className="flex-1">
+                      <div className="text-white font-mono text-sm">{entry.path}</div>
+                      <div className="text-xs text-gray-400">{formatDate(entry.timestamp)}</div>
+                    </div>
+                    <span className="text-xs text-gray-400 capitalize">{entry.changeType}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Right Panel - File Content */}
+          <div className="w-1/2 overflow-auto p-4 bg-gray-950">
+            {selectedEntry ? (
+              <div>
+                <h3 className="text-lg font-semibold text-white mb-2 font-mono">
+                  {selectedEntry.path}
+                </h3>
+                <div className="text-sm text-gray-400 mb-4">
+                  {formatDate(selectedEntry.timestamp)} • {selectedEntry.changeType}
+                </div>
+                
+                {selectedEntry.content !== undefined ? (
+                  <div className="border border-gray-700 rounded-lg overflow-hidden">
+                    <div className="bg-gray-800 px-4 py-2 text-sm text-gray-400 border-b border-gray-700">
+                      File Content
+                    </div>
+                    <div className="p-4">
+                      <Markdown 
+                        content={`\`\`\`\n${selectedEntry.content}\n\`\`\``} 
+                        className="text-sm"
+                      />
                     </div>
                   </div>
-                  <span className="text-sm text-gray-400 capitalize">{entry.changeType}</span>
-                </div>
-              ))}
-              
-              {hasMore && (
-                <button
-                  onClick={() => setPage(p => p + 1)}
-                  className="w-full py-2 text-blue-400 hover:text-blue-300"
-                  disabled={loading}
-                >
-                  {loading ? 'Loading...' : 'Load more'}
-                </button>
-              )}
-            </div>
-          )}
-        </div>
-
-        {/* Detail View */}
-        {selectedEntry && (
-          <div className="border-t border-gray-700 p-4 bg-gray-800">
-            <h3 className="text-lg font-semibold text-white mb-2">
-              {selectedEntry.path}
-            </h3>
-            <div className="grid grid-cols-2 gap-4 text-sm">
-              <div>
-                <span className="text-gray-400">Timestamp:</span>
-                <span className="text-white ml-2">{formatDate(selectedEntry.timestamp)}</span>
+                ) : (
+                  <div className="text-gray-500 italic">
+                    No content (file was deleted)
+                  </div>
+                )}
               </div>
-              <div>
-                <span className="text-gray-400">Change Type:</span>
-                <span className="text-white ml-2 capitalize">{selectedEntry.changeType}</span>
+            ) : (
+              <div className="text-center text-gray-500 mt-20">
+                <FileText className="w-16 h-16 mx-auto mb-4" />
+                <p className="text-lg">Select a file to view its content</p>
+                <p className="text-sm mt-2">Click on any entry from the left panel</p>
               </div>
-              <div>
-                <span className="text-gray-400">Hash Before:</span>
-                <span className="text-white ml-2 font-mono text-xs">
-                  {selectedEntry.hashBefore?.substring(0, 16)}...
-                </span>
-              </div>
-              <div>
-                <span className="text-gray-400">Hash After:</span>
-                <span className="text-white ml-2 font-mono text-xs">
-                  {selectedEntry.hashAfter?.substring(0, 16)}...
-                </span>
-              </div>
-            </div>
+            )}
           </div>
-        )}
+        </div>
       </div>
     </div>
   )

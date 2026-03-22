@@ -10,6 +10,7 @@ import type { Config, Provider } from '../shared/types.js'
 import type { ServerHandle } from './context.js'
 import { initDatabase, closeDatabase, getDatabase } from './db/index.js'
 import { initEventStore } from './events/index.js'
+import { listSessions } from './db/sessions.js'
 import { createLLMClient, detectModel, getLlmStatus, detectBackend, getBackendDisplayName, type Backend } from './llm/index.js'
 import { createMockLLMClient } from './llm/mock.js'
 import { createProviderManager } from './provider-manager.js'
@@ -121,9 +122,27 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
     logger.info('History watcher started', { workdir })
   }
 
-  // Initialize history for default workdir
-  const defaultWorkdir = config.llm.baseUrl ? process.cwd() : process.cwd()
-  await initHistoryForWorkdir(defaultWorkdir)
+  // Initialize history watchers for all existing sessions' workdirs
+  const allSessions = listSessions()
+  const uniqueWorkdirs = new Set<string>()
+  
+  // Add default workdir (for sessions without explicit workdir or for backward compatibility)
+  const defaultWorkdir = process.cwd()
+  uniqueWorkdirs.add(defaultWorkdir)
+  
+  // Extract unique workdirs from all sessions
+  for (const session of allSessions) {
+    if (session.workdir) {
+      uniqueWorkdirs.add(session.workdir)
+    }
+  }
+  
+  // Initialize history watcher for each unique workdir
+  for (const workdir of uniqueWorkdirs) {
+    if (!historyWatchers.has(workdir)) {
+      await initHistoryForWorkdir(workdir)
+    }
+  }
 
   const toolRegistry = createToolRegistry()
   

@@ -1,6 +1,6 @@
 import type { Request, Response } from 'express'
 import { join } from 'node:path'
-import { loadIndex, type IndexEntry } from './history.index.js'
+import { loadIndex, loadSnapshot, type IndexEntry } from './history.index.js'
 import { loadConfig } from './history.config.js'
 
 // ============================================================================
@@ -86,7 +86,7 @@ export async function getHistory(req: Request, res: Response): Promise<void> {
 
 /**
  * GET /api/history/:snapshotId
- * Get specific snapshot details
+ * Get specific snapshot details with full content
  */
 export async function getHistorySnapshot(req: Request, res: Response): Promise<void> {
   try {
@@ -103,26 +103,73 @@ export async function getHistorySnapshot(req: Request, res: Response): Promise<v
       return
     }
     
-    // For now, just return the entry from index
-    // In the future, we could load the full snapshot from disk
     const snapshotDir = join(workdir, '.openfox', 'history')
     const entries = await loadIndex(snapshotDir)
     
-    const entry = entries.find(e => {
-      // Match by timestamp or path
-      return e.timestamp === snapshotId || (e.path && e.path.includes(snapshotId))
-    })
+    // Find the entry by timestamp (snapshotId is the timestamp)
+    const entry = entries.find(e => e.timestamp === snapshotId)
     
     if (!entry) {
       res.status(404).json({ error: 'Snapshot not found' })
       return
     }
     
-    res.json({ entry })
+    // Load the full snapshot from disk using the helper function
+    const snapshotPath = await findSnapshotFile(snapshotDir, entry)
+    
+    let content: string | null = null
+    
+    if (snapshotPath) {
+      const snapshotData = await loadSnapshot(snapshotPath)
+      if (snapshotData && snapshotData.content) {
+        content = Buffer.from(snapshotData.content, 'base64').toString('utf-8')
+      }
+    }
+    
+    res.json({
+      entry: {
+        ...entry,
+        content,
+      },
+    })
   } catch (error) {
     console.error('Error getting snapshot:', error)
     res.status(500).json({ error: 'Internal server error' })
   }
+}
+
+/**
+ * Find the snapshot file for a given entry
+ */
+async function findSnapshotFile(snapshotDir: string, entry: IndexEntry): Promise<string | null> {
+  const { existsSync, readdirSync } = await import('node:fs')
+  
+  const date = new Date(entry.timestamp)
+  const year = date.getFullYear().toString()
+  const month = (date.getMonth() + 1).toString().padStart(2, '0') // getMonth() is 0-indexed!
+  const day = date.getDate().toString().padStart(2, '0')
+  
+  const dateDir = join(snapshotDir, year, month, day)
+  
+  if (!existsSync(dateDir)) {
+    return null
+  }
+  
+  // Search for the snapshot file
+  const searchPattern = `${entry.path.replace(/[\\/]/g, '_')}_ts-`
+  
+  try {
+    const files = readdirSync(dateDir)
+    const matchingFile = files.find((f: string) => f.startsWith(searchPattern))
+    
+    if (matchingFile) {
+      return join(dateDir, matchingFile)
+    }
+  } catch {
+    // Directory might not be readable
+  }
+  
+  return null
 }
 
 // ============================================================================

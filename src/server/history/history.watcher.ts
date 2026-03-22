@@ -23,6 +23,18 @@ export interface SnapshotEvent {
 }
 
 // ============================================================================
+// Default Exclusions
+// ============================================================================
+
+/**
+ * Built-in patterns that are always excluded from history watching.
+ * These are hardcoded to prevent watching OpenFox's own internal directories.
+ */
+const BUILTIN_EXCLUDE_PATTERNS = [
+  '.openfox/**',
+]
+
+// ============================================================================
 // File Watcher
 // ============================================================================
 
@@ -44,9 +56,12 @@ export class FileWatcher {
     private additionalExcludePatterns: string[] = [],
     private debounceMs: number = 500
   ) {
+    // Combine builtin exclusions with additional patterns
+    const allExcludePatterns = [...BUILTIN_EXCLUDE_PATTERNS, ...additionalExcludePatterns]
+    
     this.config = {
       debounceMs,
-      excludePatterns: additionalExcludePatterns,
+      excludePatterns: allExcludePatterns,
     }
   }
 
@@ -65,12 +80,18 @@ export class FileWatcher {
     this.watcher = watch(this.workdir, { recursive: true }, async (eventType, filename) => {
       if (!filename) return
       
-      // Normalize path
-      const filePath = join(this.workdir, filename)
-      const relativePath = relative(this.workdir, filename)
+      // Normalize path - filename from fs.watch is already relative to workdir
+      const relativePath = filename.startsWith('/') || filename.startsWith('\\') 
+        ? relative(this.workdir, filename)
+        : filename
+      
+      // Normalize path separators to forward slashes
+      const normalizedPath = relativePath.replace(/\\/g, '/')
+      
+      const filePath = join(this.workdir, normalizedPath)
       
       // Check if path should be excluded
-      if (this.shouldExclude(relativePath)) {
+      if (this.shouldExclude(normalizedPath)) {
         return
       }
       
