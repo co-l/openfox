@@ -1,8 +1,9 @@
 import { createServer } from '../server/index.js'
 import { loadConfig } from '../server/config.js'
 import { logger } from '../server/utils/logger.js'
+import { displayStartupBanner } from '../server/utils/network.js'
 import { loadGlobalConfig, getActiveProvider } from './config.js'
-import { getDatabasePath, ensureDataDirExists } from './paths.js'
+import { getDatabasePath, getGlobalConfigPath, ensureDataDirExists } from './paths.js'
 import open from 'open'
 import type { Mode } from './main.js'
 import type { LlmBackend } from '../shared/types.js'
@@ -68,17 +69,16 @@ export async function runServe(options: ServeOptions): Promise<void> {
   
   await createServer(merged)
   
-  const displayHost = merged.server.host === '127.0.0.1' ? 'localhost' : merged.server.host
-  const url = `http://${displayHost}:${merged.server.port}`
-  
-  logger.info(`OpenFox ${mode === 'development' ? '[DEV]' : 'v0.1.0'}`, {
-    url,
-    mode,
-    database: merged.database.path,
+  // Display startup banner
+  displayStartupBanner({
+    host: merged.server.host,
+    port: merged.server.port,
+    databasePath: merged.database.path,
+    configPath: getGlobalConfigPath(mode),
   })
   
   if (merged.server.openBrowser) {
-    open(url).catch(() => {
+    open(`http://${merged.server.host === '127.0.0.1' ? 'localhost' : merged.server.host}:${merged.server.port}`).catch(() => {
       logger.warn('Could not open browser automatically')
     })
   }

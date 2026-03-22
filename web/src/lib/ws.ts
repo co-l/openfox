@@ -1,5 +1,6 @@
 import type { ClientMessage, ServerMessage, ClientMessageType } from '../../../src/shared/protocol.js'
 import { isServerMessage } from '../../../src/shared/protocol.js'
+import { generateUUID } from './uuid.js'
 
 export type ConnectionStatus = 'connected' | 'disconnected' | 'reconnecting'
 type MessageHandler = (message: ServerMessage) => void
@@ -100,7 +101,7 @@ class WebSocketClient {
       throw new Error('WebSocket not connected')
     }
     
-    const id = crypto.randomUUID()
+    const id = generateUUID()
     const message: ClientMessage<T> = { id, type, payload }
     this.ws.send(JSON.stringify(message))
     return id

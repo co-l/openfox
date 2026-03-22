@@ -16,6 +16,7 @@ import { AttachmentPreview } from '../shared/AttachmentPreview.js'
 import { compressImage, isValidImageType, validateImageSize } from '../../lib/image-compression.js'
 import { buildPromptContextByUserMessageId } from './prompt-context-linking.js'
 import { ProviderSelector } from '../settings/ProviderSelector'
+import { generateUUID } from '../../lib/uuid.js'
 
 // Display item: either a single message, a grouped sub-agent run, criteria batch, or a context window divider
 type DisplayItem = 
@@ -270,7 +271,7 @@ export function PlanPanel() {
           })
 
           const attachment: Attachment = {
-            id: crypto.randomUUID(),
+            id: generateUUID(),
             filename: 'pasted-image',
             mimeType: compressed.mimeType as 'image/png' | 'image/jpeg' | 'image/gif',
             size: compressed.size,
@@ -326,7 +327,7 @@ export function PlanPanel() {
               })
               
               const attachment: Attachment = {
-                id: crypto.randomUUID(),
+                id: generateUUID(),
                 filename: 'pasted-image',
                 mimeType: compressed.mimeType as 'image/png' | 'image/jpeg' | 'image/gif',
                 size: compressed.size,
@@ -402,7 +403,7 @@ export function PlanPanel() {
         
         // Create attachment
         const attachment: Attachment = {
-          id: crypto.randomUUID(),
+          id: generateUUID(),
           filename: file.name,
           mimeType: compressed.mimeType as 'image/png' | 'image/jpeg' | 'image/gif',
           size: compressed.size,
@@ -468,7 +469,7 @@ export function PlanPanel() {
         })
         
         const attachment: Attachment = {
-          id: crypto.randomUUID(),
+          id: generateUUID(),
           filename: file.name,
           mimeType: compressed.mimeType as 'image/png' | 'image/jpeg' | 'image/gif',
           size: compressed.size,
