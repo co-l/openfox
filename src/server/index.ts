@@ -89,7 +89,38 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
 
   initLLM().catch(err => logger.error('LLM initialization failed', { error: err instanceof Error ? err.message : String(err) }))
 
+  // Initialize history for default workdir (config.workdir or process.cwd)
+  const defaultWorkdir = config.llm.baseUrl ? process.cwd() : process.cwd()
+  await initHistoryForWorkdir(defaultWorkdir)
+
   const toolRegistry = createToolRegistry()
+  
+  // Initialize history service for each workdir
+  // We'll track watchers by workdir
+  const historyWatchers = new Map<string, InstanceType<typeof import('./history/history.watcher.js').FileWatcher>>()
+  
+  // Helper to start/stop history watcher for a workdir
+  async function initHistoryForWorkdir(workdir: string): Promise<void> {
+    const { FileWatcher } = await import('./history/history.watcher.js')
+    const { loadConfig } = await import('./history/history.config.js')
+    const { startCleanupScheduler } = await import('./history/history.retention.js')
+    
+    const snapshotDir = workdir ? `${workdir}/.openfox/history` : ''
+    
+    // Load config
+    const config = await loadConfig(workdir)
+    
+    // Start cleanup scheduler
+    startCleanupScheduler(snapshotDir, config)
+    
+    // Create and start watcher
+    const watcher = new FileWatcher(workdir, snapshotDir, config.excludePatterns)
+    watcher.start()
+    historyWatchers.set(workdir, watcher)
+    
+    logger.info('History watcher started', { workdir })
+  }
+  
   const app = express()
 
   // Middleware
@@ -109,6 +140,12 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
 
   app.post('/api/sessions', async (req, res) => {
     const { workdir, title } = req.body
+    
+    // Initialize history watcher for this workdir if not already running
+    if (!historyWatchers.has(workdir)) {
+      await initHistoryForWorkdir(workdir)
+    }
+    
     const session = sessionManager.createSession(workdir, title)
     res.status(201).json({ session })
   })
@@ -204,6 +241,17 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
       model: llmClient.getModel(),
       backend: llmClient.getBackend(),
     })
+  })
+
+  // History API endpoints
+  const { getHistory, getHistorySnapshot } = await import('./history/history.api.js')
+  
+  app.get('/api/history', async (req, res) => {
+    await getHistory(req, res)
+  })
+  
+  app.get('/api/history/:snapshotId', async (req, res) => {
+    await getHistorySnapshot(req, res)
   })
 
   // Directory browser endpoint
@@ -404,6 +452,14 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
     close: () => new Promise<void>((resolve) => {
       logger.info('Shutting down...')
       viteServer?.close()
+      
+      // Stop all history watchers
+      for (const [workdir, watcher] of historyWatchers) {
+        watcher.stop()
+        logger.info('History watcher stopped', { workdir })
+      }
+      historyWatchers.clear()
+      
       // Note: Not closing database here - it's a singleton shared across servers.
       // Database should only be closed when the application exits.
       // Terminate all WebSocket connections to allow clean shutdown

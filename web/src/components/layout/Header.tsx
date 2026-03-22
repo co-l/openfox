@@ -4,6 +4,7 @@ import { useSessionStore } from '../../stores/session'
 import { useProjectStore } from '../../stores/project'
 import { useConfigStore } from '../../stores/config'
 import { GlobalSettingsModal } from '../settings/GlobalSettingsModal'
+import { HistoryModal } from '../history/HistoryModal'
 
 interface HeaderProps {
   onMenuClick?: () => void
@@ -13,6 +14,7 @@ interface HeaderProps {
 
 export function Header({ onMenuClick, onCriteriaToggle, hasCriteria }: HeaderProps) {
   const [showSettings, setShowSettings] = useState(false)
+  const [showHistory, setShowHistory] = useState(false)
   const connectionStatus = useSessionStore(state => state.connectionStatus)
   const session = useSessionStore(state => state.currentSession)
   const project = useProjectStore(state => state.currentProject)
@@ -24,6 +26,9 @@ export function Header({ onMenuClick, onCriteriaToggle, hasCriteria }: HeaderPro
     startAutoRefresh()
     return () => stopAutoRefresh()
   }, [startAutoRefresh, stopAutoRefresh])
+
+  // Get workdir for history
+  const workdir = project?.workdir || session?.workdir || ''
 
   return (
     <header className="h-8 bg-bg-secondary border-b border-border flex items-center justify-between px-2">
@@ -91,6 +96,19 @@ export function Header({ onMenuClick, onCriteriaToggle, hasCriteria }: HeaderPro
           </svg>
         </button>
 
+        {/* History Button */}
+        {workdir && (
+          <button
+            onClick={() => setShowHistory(true)}
+            className="p-2.5 rounded hover:bg-bg-tertiary text-text-muted hover:text-text-primary transition-colors"
+            title="View File History"
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+          </button>
+        )}
+
         {/* Connection status - icon-only on mobile, full on desktop */}
         <div className="flex items-center gap-1.5">
           <div className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${
@@ -110,6 +128,13 @@ export function Header({ onMenuClick, onCriteriaToggle, hasCriteria }: HeaderPro
       <GlobalSettingsModal
         isOpen={showSettings}
         onClose={() => setShowSettings(false)}
+      />
+
+      {/* History Modal */}
+      <HistoryModal
+        isOpen={showHistory}
+        onClose={() => setShowHistory(false)}
+        workdir={workdir}
       />
     </header>
   )
