@@ -41,9 +41,16 @@ export async function loadIndex(snapshotDir: string): Promise<IndexEntry[]> {
   
   try {
     const content = await readFileAsync(indexPath, 'utf-8')
-    return JSON.parse(content) as IndexEntry[]
+    const parsed = JSON.parse(content) as IndexEntry[]
+    // Validate that it's an array
+    if (!Array.isArray(parsed)) {
+      console.error('Index file is not an array, resetting to empty')
+      return []
+    }
+    return parsed
   } catch (error) {
     console.error('Error loading index:', error)
+    // If JSON is corrupted, return empty array to allow recovery
     return []
   }
 }
@@ -55,7 +62,16 @@ export async function saveIndex(snapshotDir: string, entries: IndexEntry[]): Pro
   const indexPath = getIndexPath(snapshotDir)
   
   // Create directory if it doesn't exist
-  await writeFileAsync(indexPath, JSON.stringify(entries, null, 2))
+  const { ensureDirectory } = await import('./history.snapshot.js')
+  await ensureDirectory(snapshotDir)
+  
+  // Write to temp file first, then rename for atomic operation
+  const tmpPath = indexPath + '.tmp'
+  await writeFileAsync(tmpPath, JSON.stringify(entries, null, 2))
+  
+  // Atomic rename
+  const { rename } = await import('node:fs/promises')
+  await rename(tmpPath, indexPath)
 }
 
 /**
@@ -109,6 +125,12 @@ export async function cleanupOldIndexEntries(
  */
 export async function getAllSnapshotFiles(snapshotDir: string): Promise<string[]> {
   const files: string[] = []
+  
+  // Check if directory exists first
+  const { existsSync } = await import('node:fs')
+  if (!existsSync(snapshotDir)) {
+    return []
+  }
   
   function scanDirectory(dir: string): void {
     try {

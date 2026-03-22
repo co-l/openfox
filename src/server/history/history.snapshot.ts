@@ -4,6 +4,24 @@ import { createHash } from 'node:crypto'
 import { addToIndex } from './history.index.js'
 
 // ============================================================================
+// Utility Functions
+// ============================================================================
+
+/**
+ * Ensure a directory exists, creating it if necessary
+ */
+export async function ensureDirectory(dirPath: string): Promise<void> {
+  try {
+    await mkdir(dirPath, { recursive: true })
+  } catch (error) {
+    // Directory might already exist, that's fine
+    if ((error as NodeJS.ErrnoException).code !== 'EEXIST') {
+      throw error
+    }
+  }
+}
+
+// ============================================================================
 // Types
 // ============================================================================
 

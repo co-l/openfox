@@ -89,12 +89,6 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
 
   initLLM().catch(err => logger.error('LLM initialization failed', { error: err instanceof Error ? err.message : String(err) }))
 
-  // Initialize history for default workdir (config.workdir or process.cwd)
-  const defaultWorkdir = config.llm.baseUrl ? process.cwd() : process.cwd()
-  await initHistoryForWorkdir(defaultWorkdir)
-
-  const toolRegistry = createToolRegistry()
-  
   // Initialize history service for each workdir
   // We'll track watchers by workdir
   const historyWatchers = new Map<string, InstanceType<typeof import('./history/history.watcher.js').FileWatcher>>()
@@ -104,8 +98,14 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
     const { FileWatcher } = await import('./history/history.watcher.js')
     const { loadConfig } = await import('./history/history.config.js')
     const { startCleanupScheduler } = await import('./history/history.retention.js')
+    const { ensureDirectory } = await import('./history/history.snapshot.js')
     
     const snapshotDir = workdir ? `${workdir}/.openfox/history` : ''
+    
+    // Ensure snapshot directory exists before any operations
+    if (snapshotDir) {
+      await ensureDirectory(snapshotDir)
+    }
     
     // Load config
     const config = await loadConfig(workdir)
@@ -120,6 +120,12 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
     
     logger.info('History watcher started', { workdir })
   }
+
+  // Initialize history for default workdir
+  const defaultWorkdir = config.llm.baseUrl ? process.cwd() : process.cwd()
+  await initHistoryForWorkdir(defaultWorkdir)
+
+  const toolRegistry = createToolRegistry()
   
   const app = express()
 
