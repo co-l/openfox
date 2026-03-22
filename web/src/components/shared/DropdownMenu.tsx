@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 
 export interface DropdownMenuItem {
   label: string
-  onClick: () => void
+  onClick: (event?: React.MouseEvent) => void
   danger?: boolean
 }
 
@@ -43,8 +43,8 @@ export function DropdownMenu({ items, trigger }: DropdownMenuProps) {
           {items.map((item, index) => (
             <button
               key={index}
-              onClick={() => {
-                item.onClick()
+              onClick={(e) => {
+                item.onClick(e)
                 setIsOpen(false)
               }}
               className={`w-full px-3 py-2 text-left text-sm hover:bg-bg-tertiary transition-colors ${

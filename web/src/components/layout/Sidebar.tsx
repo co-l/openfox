@@ -55,8 +55,8 @@ export function Sidebar({ projectId, isOpen = true, onClose }: SidebarProps) {
     if (onClose) onClose()
   }
 
-  const handleDeleteSession = (sessionId: string, e: React.MouseEvent) => {
-    e.stopPropagation()
+  const handleDeleteSession = (sessionId: string, e?: React.MouseEvent) => {
+    e?.stopPropagation()
     if (confirm('Delete this session?')) {
       deleteSession(sessionId)
       // If deleting current session, navigate to project root
@@ -172,7 +172,7 @@ function renderSessionGroups(
   currentSession: { id: string | null } | null,
   unreadSessionIds: string[],
   handleSelectSession: (sessionId: string) => void,
-  handleDeleteSession: (sessionId: string, e: React.MouseEvent<HTMLButtonElement>) => void,
+  handleDeleteSession: (sessionId: string, e?: React.MouseEvent) => void,
 ) {
   const groups = groupSessionsByDate(projectSessions)
   
