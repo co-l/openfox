@@ -2,16 +2,23 @@ import { memo, useMemo } from 'react'
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter'
 import { oneDark } from 'react-syntax-highlighter/dist/esm/styles/prism'
 
-// Custom oneDark theme with transparent backgrounds (no ugly grey line backgrounds)
-const oneDarkTransparent = {
+// Custom oneDark theme with transparent backgrounds and word wrapping
+const oneDarkTransparent: Record<string, any> = {
   ...oneDark,
   'pre[class*="language-"]': {
     ...(oneDark['pre[class*="language-"]'] as Record<string, unknown>),
     background: 'transparent',
+    whiteSpace: 'pre-wrap !important' as any,
+    wordBreak: 'break-all !important' as any,
+    overflowWrap: 'break-word !important' as any,
+    overflowX: 'hidden !important' as any,
   },
   'code[class*="language-"]': {
     ...(oneDark['code[class*="language-"]'] as Record<string, unknown>),
     background: 'transparent',
+    whiteSpace: 'pre-wrap !important' as any,
+    wordBreak: 'break-all !important' as any,
+    overflowWrap: 'break-word !important' as any,
   },
 }
 import type { EditContextRegion } from '../../../src/shared/types.js'
@@ -183,43 +190,44 @@ export const DiffView = memo(function DiffView({ oldString, newString, filePath 
 interface FilePreviewProps {
   content: string
   filePath?: string
-  maxLines?: number
 }
 
-export const FilePreview = memo(function FilePreview({ content, filePath, maxLines = 20 }: FilePreviewProps) {
+// Custom styles for FilePreview with word wrapping
+export const wrappedCodeStyle: React.CSSProperties = {
+  margin: 0,
+  padding: 0,
+  borderRadius: 0,
+  fontSize: '0.875rem',
+  lineHeight: '1.5rem',
+  background: 'transparent',
+  whiteSpace: 'pre-wrap',
+  wordBreak: 'break-all',
+  overflowWrap: 'break-word',
+}
+
+export const FilePreview = memo(function FilePreview({ content, filePath }: FilePreviewProps) {
   const language = useMemo(() => getLanguageFromPath(filePath), [filePath])
   
-  const lines = content.split('\n')
-  const isTruncated = lines.length > maxLines
-  const displayContent = isTruncated 
-    ? lines.slice(0, maxLines).join('\n') + '\n...'
-    : content
-  
   return (
-    <div className="rounded overflow-hidden border border-border">
+    <div className="rounded overflow-hidden border border-border max-h-[45vh] overflow-y-auto">
       <div className="grid grid-cols-[3px_1.5rem_1fr]">
         <div className="bg-green-400/60" />
         <div className="bg-green-950/30 text-green-400/70 text-sm font-mono text-center">
-          {displayContent.split('\n').map((_, i) => (
+          {content.split('\n').map((_, i) => (
             <div key={i} className="leading-[1.5rem]">+</div>
           ))}
         </div>
-        <div className="bg-green-950/30 pr-2 overflow-x-auto min-w-0">
+        <div className="bg-green-950/30 pr-2 min-w-0 overflow-x-hidden">
           <SyntaxHighlighter
             style={oneDarkTransparent}
             language={language}
-            PreTag="div"
-            customStyle={codeStyle}
+            PreTag="pre"
+            customStyle={wrappedCodeStyle as React.CSSProperties}
           >
-            {displayContent}
+            {content}
           </SyntaxHighlighter>
         </div>
       </div>
-      {isTruncated && (
-        <div className="text-xs text-text-muted px-2 py-1 bg-bg-tertiary border-t border-border">
-          ... {lines.length - maxLines} more lines
-        </div>
-      )}
     </div>
   )
 })
