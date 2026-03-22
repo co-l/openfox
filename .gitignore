@@ -28,6 +28,9 @@ Thumbs.db
 # Turbo
 .turbo/
 
+# OpenFox internal files
+.openfox/
+
 # Logs
 *.log
 logs/
