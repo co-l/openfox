@@ -47,9 +47,11 @@ describe('file watcher', () => {
     // Assert
     expect(snapshotCallback).toHaveBeenCalled()
     const callArgs = snapshotCallback.mock.calls[0]
-    expect(callArgs[0].path).toBe('test-file.txt')
+    expect(callArgs).toBeDefined()
+    const [event] = callArgs ?? []
+    expect(event?.path).toBe('test-file.txt')
     // Change type could be 'create' or 'modify' depending on timing, both are acceptable
-    expect(['create', 'modify']).toContain(callArgs[0].changeType)
+    expect(['create', 'modify']).toContain(event?.changeType)
   })
 
   it('debounces rapid file changes', async () => {
@@ -91,7 +93,9 @@ describe('file watcher', () => {
     // Assert
     expect(snapshotCallback).toHaveBeenCalled()
     const callArgs = snapshotCallback.mock.calls[0]
-    expect(callArgs[0].changeType).toBe('create')
+    expect(callArgs).toBeDefined()
+    const [event] = callArgs ?? []
+    expect(event?.changeType).toBe('create')
   })
 
   it('detects file deletion', async () => {

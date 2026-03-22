@@ -40,10 +40,12 @@ describe('snapshot creation', () => {
     // Assert
     expect(result.success).toBe(true)
     expect(result.snapshotPath).toBeDefined()
-    expect(result.snapshotData.path).toBe(filePath)
-    expect(result.snapshotData.changeType).toBe('modify')
-    expect(result.snapshotData.hashBefore).toBeDefined()
-    expect(result.snapshotData.content).toBeDefined()
+    expect(result.snapshotData).toBeDefined()
+    const snapshot = result.snapshotData
+    expect(snapshot?.path).toBe(filePath)
+    expect(snapshot?.changeType).toBe('modify')
+    expect(snapshot?.hashBefore).toBeDefined()
+    expect(snapshot?.content).toBeDefined()
   })
 
   it('records correct metadata in snapshot', async () => {

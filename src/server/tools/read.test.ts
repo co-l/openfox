@@ -108,7 +108,7 @@ describe('readFileTool - Image Support', () => {
       )
 
       expect(result.success).toBe(true)
-      expect(result.metadata?.mimeType).toBe('image/gif')
+      expect(result.metadata?.['mimeType']).toBe('image/gif')
     })
 
     it('should detect and read a WebP image file', async () => {
@@ -130,7 +130,7 @@ describe('readFileTool - Image Support', () => {
       )
 
       expect(result.success).toBe(true)
-      expect(result.metadata?.mimeType).toBe('image/webp')
+      expect(result.metadata?.['mimeType']).toBe('image/webp')
     })
 
     it('should detect and read a BMP image file', async () => {
@@ -151,7 +151,7 @@ describe('readFileTool - Image Support', () => {
       )
 
       expect(result.success).toBe(true)
-      expect(result.metadata?.mimeType).toBe('image/bmp')
+      expect(result.metadata?.['mimeType']).toBe('image/bmp')
     })
 
     it('should detect and read an SVG image file', async () => {
@@ -170,7 +170,7 @@ describe('readFileTool - Image Support', () => {
       )
 
       expect(result.success).toBe(true)
-      expect(result.metadata?.mimeType).toBe('image/svg+xml')
+      expect(result.metadata?.['mimeType']).toBe('image/svg+xml')
     })
   })
 
@@ -304,7 +304,7 @@ describe('readFileTool - Image Support', () => {
         mockContext
       )
 
-      const base64Data = result.metadata?.base64Data as string
+      const base64Data = result.metadata?.['base64Data'] as string
       expect(base64Data).toBeDefined()
       
       // Verify it's valid base64 by decoding

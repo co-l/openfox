@@ -374,11 +374,15 @@ describe('llm client', () => {
       events.push(event as Record<string, unknown>)
     }
 
-    const doneEvent = events.find(e => e.type === 'done')
+    const doneEvent = events.find((event): event is Record<string, unknown> & { response: Record<string, unknown> } => event['type'] === 'done' && 'response' in event)
     expect(doneEvent).toBeDefined()
-    const response = (doneEvent as { response: Record<string, unknown> }).response
-    expect(response.toolCalls).toHaveLength(1)
-    const toolCall = (response.toolCalls as Array<Record<string, unknown>>)[0]
+    if (!doneEvent) {
+      throw new Error('Expected done event')
+    }
+    const response = doneEvent.response
+    const toolCalls = response['toolCalls'] as Array<Record<string, unknown>> | undefined
+    expect(toolCalls).toHaveLength(1)
+    const toolCall = toolCalls?.[0]
     expect(toolCall).toEqual({
       id: 'call-1',
       name: 'glob',
