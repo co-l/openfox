@@ -16,7 +16,7 @@ import type { StreamTiming } from '../llm/streaming.js'
 import type { SessionManager } from '../session/index.js'
 import { streamWithSegments } from '../llm/streaming.js'
 import { estimateContextSize } from '../context/tokenizer.js'
-import { loadConfig } from '../config.js'
+import { getRuntimeConfig } from '../runtime-config.js'
 import { logger } from '../utils/logger.js'
 import {
   createChatDeltaMessage,
@@ -116,7 +116,7 @@ async function streamLLMResponseInternal(
   }
 
   // Pre-flight estimation: warn user if context is approaching limit
-  const config = loadConfig()
+  const config = getRuntimeConfig()
   const estimate = estimateContextSize(
     systemPrompt,
     llmMessages.map(m => ({ role: m.role, content: m.content })),

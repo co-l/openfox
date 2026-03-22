@@ -21,6 +21,7 @@ const {
   consumeStreamGeneratorMock,
   streamLLMResponseMock,
   getEventStoreMock,
+  getContextMessagesMock,
   getCurrentContextWindowIdMock,
 } = vi.hoisted(() => ({
   createProjectMock: vi.fn(),
@@ -39,6 +40,7 @@ const {
   consumeStreamGeneratorMock: vi.fn(),
   streamLLMResponseMock: vi.fn(),
   getEventStoreMock: vi.fn(),
+  getContextMessagesMock: vi.fn(),
   getCurrentContextWindowIdMock: vi.fn(),
 }))
 
@@ -97,6 +99,7 @@ vi.mock('../events/index.js', async (importOriginal) => {
   return {
     ...actual,
     getEventStore: getEventStoreMock,
+    getContextMessages: getContextMessagesMock,
     getCurrentContextWindowId: getCurrentContextWindowIdMock,
   }
 })
@@ -324,6 +327,8 @@ describe('createWebSocketServer', () => {
     consumeStreamGeneratorMock.mockReset()
     streamLLMResponseMock.mockReset()
     getEventStoreMock.mockReset()
+    getContextMessagesMock.mockReset()
+    getContextMessagesMock.mockReturnValue([])
     getCurrentContextWindowIdMock.mockReset()
     getCurrentContextWindowIdMock.mockReturnValue(undefined)
   })
@@ -552,6 +557,71 @@ describe('createWebSocketServer', () => {
     harness.send({ id: 'criteria-ok', type: 'criteria.edit', payload: { criteria: [{ id: 'c1', description: 'd', status: { type: 'pending' }, attempts: [] }] } })
     expect(await harness.nextMessage((message) => message.type === 'criteria.updated')).toMatchObject({ type: 'criteria.updated' })
     expect(await harness.nextMessage((message) => message.id === 'criteria-ok')).toMatchObject({ type: 'ack' })
+
+    await harness.close()
+  })
+
+  it('auto-compacts before accepting a new chat message when context is over threshold', async () => {
+    const sessionState: any = {
+      id: 'session-1',
+      projectId: 'project-1',
+      workdir: '/tmp/project',
+      mode: 'planner',
+      phase: 'plan',
+      isRunning: false,
+      criteria: [],
+      summary: null,
+      metadata: { title: null },
+    }
+    const sessionManager = createSessionManager({
+      createSession: vi.fn(() => sessionState),
+      getSession: vi.fn(() => sessionState),
+      requireSession: vi.fn(() => structuredClone(sessionState)),
+      getContextState: vi.fn(() => ({
+        currentTokens: 190000,
+        maxTokens: 200000,
+        compactionCount: 0,
+        dangerZone: true,
+        canCompact: true,
+      })),
+    })
+
+    getAllInstructionsMock.mockResolvedValue({ content: '', files: [] })
+    streamLLMPureMock.mockReturnValue({ kind: 'stream' })
+    consumeStreamGeneratorMock.mockResolvedValue({
+      content: 'Compacted summary',
+      toolCalls: [],
+      segments: [{ type: 'text', content: 'Compacted summary' }],
+      usage: { promptTokens: 190000, completionTokens: 100 },
+      timing: { ttft: 1, completionTime: 1, tps: 100, prefillTps: 190000 },
+      aborted: false,
+      xmlFormatError: false,
+    })
+    runChatTurnMock.mockResolvedValue(undefined)
+
+    const harness = await createHarness({ sessionManager })
+
+    harness.send({ id: 'sc-ok', type: 'session.create', payload: { projectId: 'project-1' } })
+    await harness.nextMessage((message) => message.id === 'sc-ok')
+    await harness.nextMessage((message) => message.type === 'context.state')
+
+    harness.send({ id: 'sl-ok', type: 'session.load', payload: { sessionId: 'session-1' } })
+    await harness.nextMessage((message) => message.id === 'sl-ok')
+    await harness.nextMessage((message) => message.type === 'context.state')
+
+    harness.send({ id: 'chat-ok', type: 'chat.send', payload: { content: 'Please continue' } })
+
+    expect(await harness.nextMessage((message) => message.type === 'chat.message')).toMatchObject({ type: 'chat.message' })
+    expect(await harness.nextMessage((message) => message.type === 'session.running')).toMatchObject({ payload: { isRunning: true } })
+    expect(await harness.nextMessage((message) => message.id === 'chat-ok')).toMatchObject({ type: 'ack' })
+
+    expect(consumeStreamGeneratorMock).toHaveBeenCalledTimes(1)
+    expect(sessionManager.compactContext).toHaveBeenCalledWith('session-1', 'Compacted summary', 190000)
+    const compactOrder = sessionManager.compactContext.mock.invocationCallOrder[0]
+    const addMessageOrder = sessionManager.addMessage.mock.invocationCallOrder[0]
+    expect(compactOrder).toBeDefined()
+    expect(addMessageOrder).toBeDefined()
+    expect(compactOrder ?? 0).toBeLessThan(addMessageOrder ?? 0)
 
     await harness.close()
   })

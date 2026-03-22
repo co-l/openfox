@@ -10,14 +10,21 @@ import type { Config } from '../../src/shared/types.js'
 import { loadConfig } from '../../src/server/config.js'
 
 // Create test config by modifying env vars before calling loadConfig
-function createTestConfig(): Config {
+function createTestConfig(options: { maxContext?: number } = {}): Config {
   // Set test-specific env vars (loadConfig reads from process.env)
   process.env['OPENFOX_DB_PATH'] = ':memory:'
   process.env['OPENFOX_LOG_LEVEL'] = 'error'
   process.env['OPENFOX_HOST'] = '127.0.0.1'
   process.env['OPENFOX_PORT'] = '0' // Will be overridden by start(0) anyway
+  if (options.maxContext !== undefined) {
+    process.env['OPENFOX_MAX_CONTEXT'] = String(options.maxContext)
+  }
   
   const config = loadConfig()
+
+  if (options.maxContext !== undefined) {
+    config.context.maxTokens = options.maxContext
+  }
   
   // Force production mode to skip Vite middleware (faster startup)
   config.mode = 'production'
@@ -50,14 +57,14 @@ export interface TestServerHandle extends ServerHandle {
  * })
  * ```
  */
-export async function createTestServer(): Promise<TestServerHandle> {
+export async function createTestServer(options: { maxContext?: number } = {}): Promise<TestServerHandle> {
   // Set mock LLM env before importing server (it reads env at module load time)
   process.env['OPENFOX_MOCK_LLM'] = 'true'
   
   // Dynamic import to ensure fresh module state and env vars are applied
   const { createServerHandle } = await import('../../src/server/index.js')
   
-  const config = createTestConfig()
+  const config = createTestConfig(options)
   const handle = await createServerHandle(config)
   const { port } = await handle.start(0) // Dynamic port
   

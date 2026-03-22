@@ -21,6 +21,7 @@ import { getToolRegistryForMode, AskUserInterrupt, PathAccessDeniedError } from 
 import { BUILDER_KICKOFF_PROMPT, VERIFIER_KICKOFF_PROMPT } from './prompts.js'
 import { streamLLMPure, consumeStreamGenerator, TurnMetrics, createMessageStartEvent, createMessageDoneEvent, createToolCallEvent, createToolResultEvent, createChatDoneEvent, createFormatRetryEvent } from './stream-pure.js'
 import { createToolProgressHandler } from './tool-streaming.js'
+import { maybeAutoCompactContext } from '../context/auto-compaction.js'
 import { getAllInstructions } from '../context/instructions.js'
 import { logger } from '../utils/logger.js'
 import { assembleBuilderRequest, assemblePlannerRequest, assembleVerifierRequest, type RequestContextMessage } from './request-context.js'
@@ -209,6 +210,14 @@ async function runPlannerTurn(
   const { sessionManager, sessionId, llmClient, signal, onMessage } = options
   const eventStore = getEventStore()
   const statsIdentity = resolveStatsIdentity(options)
+
+  await maybeAutoCompactContext({
+    sessionManager,
+    sessionId,
+    llmClient,
+    statsIdentity,
+    ...(signal ? { signal } : {}),
+  })
 
   const session = sessionManager.requireSession(sessionId)
 
@@ -409,6 +418,14 @@ export async function runBuilderTurn(
   const { sessionManager, sessionId, llmClient, signal, onMessage } = options
   const eventStore = getEventStore()
   const statsIdentity = resolveStatsIdentity(options)
+
+  await maybeAutoCompactContext({
+    sessionManager,
+    sessionId,
+    llmClient,
+    statsIdentity,
+    ...(signal ? { signal } : {}),
+  })
 
   const session = sessionManager.requireSession(sessionId)
 

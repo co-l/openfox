@@ -83,7 +83,15 @@ function createSessionManager(state: Record<string, any>) {
   return {
     requireSession: vi.fn(() => structuredClone(state['current'])),
     getCurrentWindowMessages: vi.fn(() => state['current'].messages ?? []),
+    getContextState: vi.fn(() => ({
+      currentTokens: 0,
+      maxTokens: 200000,
+      compactionCount: 0,
+      dangerZone: false,
+      canCompact: false,
+    })),
     setCurrentContextSize: vi.fn(),
+    compactContext: vi.fn(),
     getLspManager: vi.fn(() => ({ name: 'lsp' })),
     updateCriterionStatus: vi.fn((_: string, criterionId: string, status: Record<string, unknown>) => {
       state['current'].criteria = state['current'].criteria.map((criterion: any) =>
@@ -165,6 +173,65 @@ describe('chat orchestrator', () => {
       type: 'turn.snapshot',
       data: expect.objectContaining({ mode: 'planner', phase: 'plan', snapshotSeq: expect.any(Number) }),
     })
+  })
+
+  it('auto-compacts planner context before the next LLM call when over threshold', async () => {
+    const eventStore = createEventStore()
+    getEventStoreMock.mockReturnValue(eventStore)
+    getAllInstructionsMock.mockResolvedValue({ content: 'Plan carefully', files: [] })
+    getToolRegistryForModeMock.mockReturnValue({ definitions: [], execute: vi.fn() })
+    streamLLMPureMock.mockReturnValue({ kind: 'stream' })
+    consumeStreamGeneratorMock
+      .mockResolvedValueOnce({
+        content: 'Compacted summary',
+        toolCalls: [],
+        segments: [{ type: 'text', content: 'Compacted summary' }],
+        usage: { promptTokens: 190000, completionTokens: 100 },
+        timing: { ttft: 1, completionTime: 1, tps: 100, prefillTps: 190000 },
+        aborted: false,
+        xmlFormatError: false,
+      })
+      .mockResolvedValueOnce({
+        content: 'Planned response',
+        toolCalls: [],
+        segments: [{ type: 'text', content: 'Planned response' }],
+        usage: { promptTokens: 20000, completionTokens: 10 },
+        timing: { ttft: 1, completionTime: 1, tps: 10, prefillTps: 20000 },
+        aborted: false,
+        xmlFormatError: false,
+      })
+
+    const sessionManager = createSessionManager({
+      current: {
+        id: 'session-1',
+        projectId: 'project-1',
+        workdir: '/tmp/project',
+        mode: 'planner',
+        phase: 'plan',
+        isRunning: true,
+        criteria: [],
+        executionState: { currentTokenCount: 0, compactionCount: 0 },
+        messages: [{ id: 'user-1', role: 'user', content: 'Do the plan' }],
+      },
+    })
+    sessionManager.getContextState = vi.fn(() => ({
+      currentTokens: 190000,
+      maxTokens: 200000,
+      compactionCount: 0,
+      dangerZone: true,
+      canCompact: true,
+    }))
+
+    await runChatTurn({
+      sessionManager: sessionManager as never,
+      sessionId: 'session-1',
+      llmClient: { getModel: () => 'qwen3-32b' } as never,
+    })
+
+    expect(consumeStreamGeneratorMock).toHaveBeenCalledTimes(2)
+    expect(streamLLMPureMock.mock.calls[0]?.[0]).toMatchObject({ toolChoice: 'none', disableThinking: true, tools: [] })
+    expect(streamLLMPureMock.mock.calls[1]?.[0]).toMatchObject({ toolChoice: 'auto' })
+    expect(sessionManager.compactContext).toHaveBeenCalledWith('session-1', 'Compacted summary', 190000)
   })
 
   it('persists provider and model identity in emitted stats', async () => {
@@ -1675,6 +1742,67 @@ describe('chat orchestrator', () => {
         })
       )
       expect(streamLLMPureMock.mock.calls[0]?.[0]?.messages[0]?.content).toContain('Build mode ACTIVE')
+    })
+
+    it('auto-compacts builder context before the next LLM call when over threshold', async () => {
+      const eventStore = createEventStore()
+      getEventStoreMock.mockReturnValue(eventStore)
+
+      getContextMessagesMock.mockReturnValue([{ role: 'user' as const, content: 'Build this' }])
+      getAllInstructionsMock.mockResolvedValue({ content: '', files: [] })
+      getToolRegistryForModeMock.mockReturnValue({ definitions: [], execute: vi.fn() })
+      streamLLMPureMock.mockReturnValue({ kind: 'stream' })
+      consumeStreamGeneratorMock
+        .mockResolvedValueOnce({
+          content: 'Compacted summary',
+          toolCalls: [],
+          segments: [{ type: 'text', content: 'Compacted summary' }],
+          usage: { promptTokens: 190000, completionTokens: 100 },
+          timing: { ttft: 1, completionTime: 1, tps: 100, prefillTps: 190000 },
+          aborted: false,
+          xmlFormatError: false,
+        })
+        .mockResolvedValueOnce({
+          content: 'Built',
+          toolCalls: [],
+          segments: [{ type: 'text', content: 'Built' }],
+          usage: { promptTokens: 20000, completionTokens: 5 },
+          timing: { ttft: 1, completionTime: 1, tps: 5, prefillTps: 20000 },
+          aborted: false,
+          xmlFormatError: false,
+        })
+
+      const sessionManager = createSessionManager({
+        current: {
+          id: 'session-1',
+          projectId: 'project-1',
+          workdir: '/tmp/project',
+          mode: 'builder',
+          phase: 'build',
+          isRunning: true,
+          criteria: [{ id: 'c1', description: 'Test', status: { type: 'pending' }, attempts: [] }],
+          executionState: { modifiedFiles: [] },
+          messages: [],
+        },
+      })
+      sessionManager.getContextState = vi.fn(() => ({
+        currentTokens: 190000,
+        maxTokens: 200000,
+        compactionCount: 0,
+        dangerZone: true,
+        canCompact: true,
+      }))
+
+      await runBuilderTurn({
+        sessionManager: sessionManager as never,
+        sessionId: 'session-1',
+        llmClient: { getModel: () => 'qwen3-32b' } as never,
+      }, new TurnMetrics())
+
+      expect(consumeStreamGeneratorMock).toHaveBeenCalledTimes(2)
+      expect(streamLLMPureMock.mock.calls[0]?.[0]).toMatchObject({ toolChoice: 'none', disableThinking: true, tools: [] })
+      expect(streamLLMPureMock.mock.calls[1]?.[0]).toMatchObject({ toolChoice: 'auto' })
+      expect(sessionManager.compactContext).toHaveBeenCalledWith('session-1', 'Compacted summary', 190000)
     })
 
     it('assistant messages include contextWindowId', async () => {

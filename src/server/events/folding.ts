@@ -24,6 +24,7 @@ import type {
   ToolCallWithResult,
   ReadFileEntry,
 } from './types.js'
+import { getRuntimeConfig } from '../runtime-config.js'
 
 function cloneMessage(message: Message): Message {
   return {
@@ -659,6 +660,7 @@ export function foldIsRunning(events: EventLike[]): boolean {
  * Fold full session state from events
  */
 export function foldSessionState(events: EventLike[], initialWindowId: string): FoldedSessionState {
+  const maxTokens = getRuntimeConfig().context.maxTokens
   const mode = foldMode(events)
   const phase = foldPhase(events)
   const isRunning = foldIsRunning(events)
@@ -671,7 +673,7 @@ export function foldSessionState(events: EventLike[], initialWindowId: string): 
   // This is the accurate value from the LLM, not an estimate
   const baseContextState = contextResult.latestContextState ?? {
     currentTokens: 0,
-    maxTokens: 200000, // TODO: Get from config
+    maxTokens,
     compactionCount: contextResult.compactionCount,
     dangerZone: false,
     canCompact: false,
@@ -774,7 +776,7 @@ export function buildSnapshotFromSessionState(input: {
     criteria: session.criteria,
     contextState: {
       currentTokens: session.executionState?.currentTokenCount ?? foldedState.contextState.currentTokens,
-      maxTokens: 200000,
+      maxTokens: foldedState.contextState.maxTokens,
       compactionCount: session.executionState?.compactionCount ?? foldedState.contextState.compactionCount,
       dangerZone: foldedState.contextState.dangerZone,
       canCompact: foldedState.contextState.canCompact,

@@ -17,6 +17,7 @@ import { createProviderManager } from './provider-manager.js'
 import { createToolRegistry } from './tools/index.js'
 import { createWebSocketServer } from './ws/index.js'
 import { SessionManager } from './session/manager.js'
+import { setRuntimeConfig } from './runtime-config.js'
 import { logger, setLogLevel } from './utils/logger.js'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
@@ -30,6 +31,8 @@ const __dirname = dirname(fileURLToPath(import.meta.url))
  * - Programmatic server control
  */
 export async function createServerHandle(config: Config): Promise<ServerHandle> {
+  setRuntimeConfig(config)
+
   // Set log level
   setLogLevel(config.logging?.level ?? undefined, config.mode)
 

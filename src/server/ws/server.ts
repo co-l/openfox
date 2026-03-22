@@ -7,14 +7,11 @@ import type { ToolRegistry } from '../tools/index.js'
 import type { SessionManager } from '../session/index.js'
 import { getEventStore, getCurrentContextWindowId } from '../events/index.js'
 import { buildContextMessagesFromEventHistory, buildMessagesFromStoredEvents } from '../events/folding.js'
-import type { Attachment, InjectedFile, Message, Provider, StatsIdentity } from '../../shared/types.js'
-import { runChatTurn, TurnMetrics, createMessageStartEvent, createMessageDoneEvent, createChatDoneEvent } from '../chat/orchestrator.js'
-import { streamLLMPure, consumeStreamGenerator } from '../chat/stream-pure.js'
+import type { Message, Provider, StatsIdentity } from '../../shared/types.js'
+import { runChatTurn, createMessageStartEvent, createChatDoneEvent } from '../chat/orchestrator.js'
 import { runOrchestrator } from '../runner/index.js'
-import { COMPACTION_PROMPT } from '../chat/prompts.js'
-import { assemblePlannerRequest, type RequestContextMessage } from '../chat/request-context.js'
+import { maybeAutoCompactContext, performManualContextCompaction } from '../context/auto-compaction.js'
 import { providePathConfirmation, addAllowedPaths } from '../tools/index.js'
-import { getAllInstructions } from '../context/instructions.js'
 import { logger } from '../utils/logger.js'
 import {
   createProject,
@@ -89,23 +86,6 @@ function getSessionMessageCount(sessionId: string): number {
   }
   
   return count
-}
-
-function toRequestContextMessages(messages: Array<{
-  role: 'user' | 'assistant' | 'tool'
-  content: string
-  toolCalls?: Array<{ id: string; name: string; arguments: Record<string, unknown> }>
-  toolCallId?: string
-  attachments?: Attachment[]
-}>): RequestContextMessage[] {
-  return messages.map((message) => ({
-    role: message.role,
-    content: message.content,
-    source: 'history',
-    ...(message.toolCalls ? { toolCalls: message.toolCalls } : {}),
-    ...(message.toolCallId ? { toolCallId: message.toolCallId } : {}),
-    ...(message.attachments ? { attachments: message.attachments } : {}),
-  }))
 }
 
 function resolveStatsIdentity(
@@ -260,6 +240,32 @@ async function handleClientMessage(
   const sendForSession = (sessionId: string, msg: ServerMessage) => {
     send({ ...msg, sessionId })
   }
+
+  const ensureEventStoreSubscription = (sessionId: string) => {
+    if (client.eventStoreSubscriptions.has(sessionId)) {
+      return
+    }
+
+    const sid = sessionId
+    const eventStore = getEventStore()
+    const { iterator, unsubscribe } = eventStore.subscribe(sid)
+    client.eventStoreSubscriptions.set(sessionId, unsubscribe)
+
+    ;(async () => {
+      try {
+        for await (const storedEvent of iterator) {
+          const serverMsg = storedEventToServerMessage(storedEvent)
+          if (serverMsg && ws.readyState === WebSocket.OPEN) {
+            ws.send(serializeServerMessage({ ...serverMsg, seq: storedEvent.seq, sessionId: sid }))
+          }
+        }
+      } catch (error) {
+        logger.debug('EventStore subscription ended', { sessionId: sid, error })
+      }
+    })()
+
+    logger.debug('Subscribed to EventStore', { sessionId })
+  }
   
   switch (message.type) {
     // =========================================================================
@@ -398,31 +404,7 @@ async function handleClientMessage(
       
       // Tab model: set active session and subscribe if not already subscribed
       client.activeSessionId = session.id
-      
-      // Subscribe to EventStore for live streaming
-      if (!client.eventStoreSubscriptions.has(session.id)) {
-        const sid = session.id
-        const eventStore = getEventStore()
-        const { iterator, unsubscribe } = eventStore.subscribe(sid)
-        client.eventStoreSubscriptions.set(session.id, unsubscribe)
-        
-        // Forward events asynchronously
-        ;(async () => {
-          try {
-            for await (const storedEvent of iterator) {
-              const serverMsg = storedEventToServerMessage(storedEvent)
-              if (serverMsg && ws.readyState === WebSocket.OPEN) {
-                ws.send(serializeServerMessage({ ...serverMsg, seq: storedEvent.seq, sessionId: sid }))
-              }
-            }
-          } catch (error) {
-            // Iterator closed or connection dropped - this is expected
-            logger.debug('EventStore subscription ended', { sessionId: sid, error })
-          }
-        })()
-        
-        logger.debug('Subscribed to EventStore', { sessionId: session.id })
-      }
+      ensureEventStoreSubscription(session.id)
       
       // Fetch messages - prefer EventStore if it has events, otherwise fall back to messages table
       const eventStore = getEventStore()
@@ -508,6 +490,15 @@ async function handleClientMessage(
       
       const sessionId = client.activeSessionId
       const eventStore = getEventStore()
+
+      ensureEventStoreSubscription(sessionId)
+
+      await maybeAutoCompactContext({
+        sessionManager,
+        sessionId,
+        llmClient: getLLMClient(),
+        statsIdentity: resolveStatsIdentity(getLLMClient(), getActiveProvider),
+      })
       
       // Add user message with attachments (emits events to EventStore)
       const userMessage = sessionManager.addMessage(sessionId, {
@@ -571,26 +562,6 @@ async function handleClientMessage(
       
       // Acknowledge immediately
       send({ type: 'ack', payload: {}, id: message.id })
-      
-      // Ensure client is subscribed to EventStore
-      if (!client.eventStoreSubscriptions.has(sessionId)) {
-        const sid = sessionId
-        const { iterator, unsubscribe } = eventStore.subscribe(sid)
-        client.eventStoreSubscriptions.set(sessionId, unsubscribe)
-        
-        ;(async () => {
-          try {
-            for await (const storedEvent of iterator) {
-              const serverMsg = storedEventToServerMessage(storedEvent)
-              if (serverMsg && ws.readyState === WebSocket.OPEN) {
-                ws.send(serializeServerMessage({ ...serverMsg, seq: storedEvent.seq, sessionId: sid }))
-              }
-            }
-          } catch (error) {
-            logger.debug('EventStore subscription ended', { sessionId: sid, error })
-          }
-        })()
-      }
       
       // Use NEW orchestrator (events go through EventStore → WS subscription)
       runChatTurn({
@@ -904,76 +875,12 @@ async function handleClientMessage(
       // Perform compaction asynchronously
       ;(async () => {
         try {
-          // 1. Add compaction prompt as visible user message (auto-prompt style)
-          const compactPromptMsgId = crypto.randomUUID()
-          eventStore.append(sessionId, createMessageStartEvent(compactPromptMsgId, 'user', COMPACTION_PROMPT, {
-            ...(getCurrentWindowMessageOptions(sessionId) ?? {}),
-            isSystemGenerated: true,
-            messageKind: 'auto-prompt',
-          }))
-          eventStore.append(sessionId, { type: 'message.done', data: { messageId: compactPromptMsgId } })
-
-          // 2. Stream compaction response using the event-sourced path (no tools)
-          const session = sessionManager.requireSession(sessionId)
-          const { content: instructions, files } = await getAllInstructions(session.workdir, session.projectId)
-          const injectedFiles: InjectedFile[] = files.map((file) => ({
-            path: file.path,
-            content: file.content ?? '',
-            source: file.source,
-          }))
-          const currentWindowId = getCurrentContextWindowId(sessionId)
-          const currentWindowEvents = eventStore.getEvents(sessionId)
-          const requestMessages = toRequestContextMessages(buildContextMessagesFromEventHistory(
-            currentWindowEvents,
-            currentWindowId,
-            { includeVerifier: false },
-          ))
-          const assembledRequest = assemblePlannerRequest({
-            workdir: session.workdir,
-            messages: requestMessages,
-            includeRuntimeReminder: false,
-            injectedFiles,
-            promptTools: [],
-            requestTools: [],
-            toolChoice: 'none',
-            disableThinking: true,
-            ...(instructions ? { customInstructions: instructions } : {}),
-          })
-
-          const assistantMsgId = crypto.randomUUID()
-          eventStore.append(sessionId, createMessageStartEvent(assistantMsgId, 'assistant', undefined, getCurrentWindowMessageOptions(sessionId)))
-
-          const turnMetrics = new TurnMetrics()
-          const streamGen = streamLLMPure({
-            messageId: assistantMsgId,
-            systemPrompt: assembledRequest.systemPrompt,
-            llmClient: getLLMClient(),
-            messages: assembledRequest.messages,
-            tools: [],
-            toolChoice: 'none',
-            disableThinking: true,
-          })
-          const result = await consumeStreamGenerator(streamGen, event => {
-            eventStore.append(sessionId, event)
-          })
-          turnMetrics.addLLMCall(result.timing, result.usage.promptTokens, result.usage.completionTokens)
-          
-          // Emit stats for compaction (PROMPT -> WORK -> stats+sound pattern)
-          const compactionStats = turnMetrics.buildStats(resolveStatsIdentity(getLLMClient(), getActiveProvider), 'planner')
-          eventStore.append(sessionId, createMessageDoneEvent(assistantMsgId, {
-            segments: result.segments,
-            stats: compactionStats,
-            promptContext: assembledRequest.promptContext,
-          }))
-          eventStore.append(sessionId, createChatDoneEvent(assistantMsgId, 'complete', compactionStats))
-          
-          // 4. Close current window and create new one
-          sessionManager.compactContext(sessionId, result.content, tokensBefore)
-          
-          logger.info('Manual compaction complete', {
+          await performManualContextCompaction({
+            sessionManager,
             sessionId,
-            tokensBefore,
-            summaryTokens: result.usage.completionTokens,
+            llmClient: getLLMClient(),
+            statsIdentity: resolveStatsIdentity(getLLMClient(), getActiveProvider),
+            tokenCountAtClose: tokensBefore,
           })
           
           // Send updated context state
@@ -1057,24 +964,7 @@ async function handleClientMessage(
       send({ type: 'ack', payload: {}, id: message.id })
       
       // Ensure client is subscribed to EventStore (tab model - additive)
-      if (!client.eventStoreSubscriptions.has(sessionId)) {
-        const sid = sessionId
-        const { iterator, unsubscribe } = eventStore.subscribe(sid)
-        client.eventStoreSubscriptions.set(sessionId, unsubscribe)
-        
-        ;(async () => {
-          try {
-            for await (const storedEvent of iterator) {
-              const serverMsg = storedEventToServerMessage(storedEvent)
-              if (serverMsg && ws.readyState === WebSocket.OPEN) {
-                ws.send(serializeServerMessage({ ...serverMsg, seq: storedEvent.seq, sessionId: sid }))
-              }
-            }
-          } catch (error) {
-            logger.debug('EventStore subscription ended', { sessionId: sid, error })
-          }
-        })()
-      }
+      ensureEventStoreSubscription(sessionId)
       
       // Run orchestrator asynchronously
       logger.info('Runner launching', { sessionId, pendingCriteria: pendingCriteria.length })

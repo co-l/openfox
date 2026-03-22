@@ -48,8 +48,8 @@ import {
   type FoldedSessionState,
 } from '../events/index.js'
 import type { Message, CriterionStatus } from '../../shared/types.js'
-import { loadConfig } from '../config.js'
 import { isInDangerZone, canCompact } from '../context/tokenizer.js'
+import { getRuntimeConfig } from '../runtime-config.js'
 
 // ============================================================================
 // Event Types (for backward compatibility with existing subscribers)
@@ -440,7 +440,7 @@ export class SessionManager {
    * Emits a context.state event with the real promptTokens from the LLM.
    */
   setCurrentContextSize(sessionId: string, promptTokens: number): void {
-    const config = loadConfig()
+    const config = getRuntimeConfig()
     const maxTokens = config.context.maxTokens
     const state = getSessionState(sessionId)
     const compactionCount = state?.contextState.compactionCount ?? 0
@@ -692,7 +692,7 @@ export class SessionManager {
   getContextState(sessionId: string): ContextState {
     const state = getSessionState(sessionId)
     if (!state) {
-      const config = loadConfig()
+      const config = getRuntimeConfig()
       return {
         currentTokens: 0,
         maxTokens: config.context.maxTokens,
