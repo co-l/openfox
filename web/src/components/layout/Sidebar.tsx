@@ -2,9 +2,11 @@ import { useEffect, useRef, useState } from 'react'
 import { useLocation } from 'wouter'
 import { useSessionStore } from '../../stores/session'
 import { useProjectStore } from '../../stores/project'
+import type { SessionSummary } from '../../../src/shared/types.js'
 import { Button } from '../shared/Button'
 import { ProjectSettingsModal } from '../settings/ProjectSettingsModal'
 import { DropdownMenu } from '../shared/DropdownMenu'
+import { groupSessionsByDate, formatDateHeader, formatTime } from '../../lib/format-date.js'
 
 interface SidebarProps {
   projectId: string
@@ -156,71 +158,103 @@ export function Sidebar({ projectId, isOpen = true, onClose }: SidebarProps) {
             </div>
           ) : (
             <div className="divide-y divide-border">
-              {projectSessions.map(session => {
-                const isActive = currentSession?.id === session.id
-                const hasUnread = unreadSessionIds.includes(session.id)
-                const isRunning = session.isRunning
-                return (
-                  <div
-                    key={session.id}
-                    onClick={() => handleSelectSession(session.id)}
-                    className={`w-full px-4 py-3 text-left hover:bg-bg-tertiary/50 transition-colors group cursor-pointer ${
-                      isActive ? 'bg-bg-tertiary' : ''
-                    }`}
-                  >
-                    <div className="flex justify-between items-center mb-1">
-                      <span className={`font-medium truncate text-sm ${isActive ? 'text-accent-primary' : 'text-text-primary'}`}>
-                        {session.title ?? session.id.slice(0, 6)}
-                      </span>
-                      <DropdownMenu
-                        items={[
-                          {
-                            label: 'Delete session',
-                            onClick: () => handleDeleteSession(session.id, new MouseEvent('click') as unknown as React.MouseEvent),
-                            danger: true,
-                          },
-                        ]}
-                        trigger={
-                          <button
-                            className="p-1.5 rounded hover:bg-bg-tertiary text-text-muted hover:text-text-primary transition-all"
-                            title="Options"
-                          >
-                            <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
-                              <circle cx="12" cy="5" r="2" />
-                              <circle cx="12" cy="12" r="2" />
-                              <circle cx="12" cy="19" r="2" />
-                            </svg>
-                          </button>
-                        }
-                      />
-                    </div>
-                    <div className="flex items-center gap-2">
-                      {isRunning ? (
-                        <svg
-                          aria-label="Session running"
-                          className="w-3 h-3 text-blue-400 animate-spin flex-shrink-0"
-                          viewBox="0 0 24 24"
-                          fill="none"
-                        >
-                          <title>Running</title>
-                          <circle className="opacity-30" cx="12" cy="12" r="9" stroke="currentColor" strokeWidth="3" />
-                          <path d="M21 12a9 9 0 00-9-9" stroke="currentColor" strokeWidth="3" strokeLinecap="round" />
-                        </svg>
-                      ) : hasUnread && !isActive ? (
-                        <span
-                          aria-label="Unread activity"
-                          title="Unread activity"
-                          className="w-2 h-2 rounded-full bg-amber-400 flex-shrink-0"
-                        />
-                      ) : null}
-                    </div>
-                  </div>
-                )
-              })}
+              {renderSessionGroups(projectSessions, currentSession, unreadSessionIds, handleSelectSession, handleDeleteSession)}
             </div>
           )}
         </div>
       </aside>
     </>
   )
+}
+
+function renderSessionGroups(
+  projectSessions: SessionSummary[],
+  currentSession: { id: string | null } | null,
+  unreadSessionIds: string[],
+  handleSelectSession: (sessionId: string) => void,
+  handleDeleteSession: (sessionId: string, e: React.MouseEvent<HTMLButtonElement>) => void,
+) {
+  const groups = groupSessionsByDate(projectSessions)
+  
+  return Array.from(groups).map(([dateKey, daySessions]) => {
+    const firstSession = daySessions[0]
+    if (!firstSession) return null
+    
+    return (
+      <div key={dateKey}>
+        {/* Date header */}
+        <div className="px-4 py-2 bg-bg-tertiary/30 text-text-muted text-xs font-medium">
+          {formatDateHeader(firstSession.updatedAt)}
+        </div>
+        
+        {/* Sessions for this day */}
+        {daySessions.map(session => {
+          const isActive = currentSession?.id === session.id
+          const hasUnread = unreadSessionIds.includes(session.id)
+          const isRunning = session.isRunning
+          return (
+            <div
+              key={session.id}
+              onClick={() => handleSelectSession(session.id)}
+              className={`w-full px-4 py-3 text-left hover:bg-bg-tertiary/50 transition-colors group cursor-pointer ${
+                isActive ? 'bg-bg-tertiary' : ''
+              }`}
+            >
+              <div className="flex justify-between items-center mb-1">
+                <span className={`font-medium truncate text-sm ${isActive ? 'text-accent-primary' : 'text-text-primary'}`}>
+                  {session.title ?? session.id.slice(0, 6)}
+                </span>
+                <DropdownMenu
+                  items={[
+                    {
+                      label: 'Delete session',
+                      onClick: (e: React.MouseEvent) => handleDeleteSession(session.id, e),
+                      danger: true,
+                    },
+                  ]}
+                  trigger={
+                    <button
+                      className="p-1.5 rounded hover:bg-bg-tertiary text-text-muted hover:text-text-primary transition-all"
+                      title="Options"
+                    >
+                      <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
+                        <circle cx="12" cy="5" r="2" />
+                        <circle cx="12" cy="12" r="2" />
+                        <circle cx="12" cy="19" r="2" />
+                      </svg>
+                    </button>
+                  }
+                />
+              </div>
+              {/* Time displayed below the title as muted secondary text */}
+              <div className="flex items-center gap-2 mt-1">
+                {isRunning ? (
+                  <svg
+                    aria-label="Session running"
+                    className="w-3 h-3 text-blue-400 animate-spin flex-shrink-0"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                  >
+                    <title>Running</title>
+                    <circle className="opacity-30" cx="12" cy="12" r="9" stroke="currentColor" strokeWidth="3" />
+                    <path d="M21 12a9 9 0 00-9-9" stroke="currentColor" strokeWidth="3" strokeLinecap="round" />
+                  </svg>
+                ) : hasUnread && !isActive ? (
+                  <span
+                    aria-label="Unread activity"
+                    title="Unread activity"
+                    className="w-2 h-2 rounded-full bg-amber-400 flex-shrink-0"
+                  />
+                ) : null}
+                {/* Time in muted style */}
+                <span className="text-text-muted text-xs flex-shrink-0">
+                  {formatTime(session.updatedAt)}
+                </span>
+              </div>
+            </div>
+          )
+        })}
+      </div>
+    )
+  })
 }
