@@ -57,7 +57,7 @@ function toRequestContextMessages(messages: Array<{
 const MAX_FORMAT_RETRIES = 10
 const MAX_CONSECUTIVE_VERIFIER_NUDGES = 5
 const FORMAT_CORRECTION_PROMPT = `IMPORTANT: You MUST use the JSON function calling API. Do NOT output XML tags like <tool_call>, <function=>, or <parameter=>. Your previous attempt was stopped because you used the wrong format. Use the proper tool_calls format.`
-const VERIFIER_STALL_REASON = 'Verifier stopped repeatedly without using verification tools after repeated nudges.'
+const VERIFIER_STALL_REASON = 'Verifier stopped repeatedly before terminalizing verification after repeated nudges.'
 
 // ============================================================================
 // Types
@@ -733,7 +733,7 @@ ${modifiedFiles.length > 0 ? modifiedFiles.map(f => `- ${f}`).join('\n') : '(non
 
   const maxIterations = 20
   let lastAssistantMsgId = ''
-  let nudgesSinceLastProgress = 0
+  let consecutiveEmptyVerifierStops = 0
   let emittedTerminalDone = false
 
   for (let iteration = 0; iteration < maxIterations; iteration++) {
@@ -804,8 +804,8 @@ ${modifiedFiles.length > 0 ? modifiedFiles.map(f => `- ${f}`).join('\n') : '(non
     // If no tool calls, verifier is done or needs a nudge
     if (result.toolCalls.length === 0) {
       if (criteriaAwaitingVerification.length > 0) {
-        if (nudgesSinceLastProgress < MAX_CONSECUTIVE_VERIFIER_NUDGES) {
-          nudgesSinceLastProgress += 1
+        if (consecutiveEmptyVerifierStops < MAX_CONSECUTIVE_VERIFIER_NUDGES) {
+          consecutiveEmptyVerifierStops += 1
           const nudgeContent = buildVerifierNudgeContent(criteriaAwaitingVerification)
           const nudgeMsgId = crypto.randomUUID()
 
@@ -945,20 +945,20 @@ ${modifiedFiles.length > 0 ? modifiedFiles.map(f => `- ${f}`).join('\n') : '(non
 
     if (remainingCriteriaAfterTools.length < criteriaAwaitingVerification.length) {
       // Criteria were terminalized - this is progress
-      nudgesSinceLastProgress = 0
+      consecutiveEmptyVerifierStops = 0
       continue
     }
 
     if (remainingCriteriaAfterTools.length === 0) {
       // All criteria terminalized - done
-      nudgesSinceLastProgress = 0
+      consecutiveEmptyVerifierStops = 0
       continue
     }
 
-    // Tool calls were made but no criteria were terminalized.
-    // The model may be gathering information or stuck in a loop.
-    // Increment the nudge counter to track potential stalling.
-    nudgesSinceLastProgress += 1
+    // Tool calls were made, so this was not an empty verifier stop.
+    // Let exploratory verification continue until the verifier actually stops
+    // without terminalizing criteria or until maxIterations is reached.
+    consecutiveEmptyVerifierStops = 0
     continue
   }
 
