@@ -3,15 +3,15 @@ import type { SessionSummary } from '../../../src/shared/types.js'
 /**
  * Format a date string to "Dayname YYYY/MM/DD" format
  * Example: "Monday 2024/01/15"
- * Uses UTC to ensure consistent formatting regardless of local timezone
+ * Uses local time to match user's timezone
  */
 export function formatDateHeader(isoString: string): string {
   const date = new Date(isoString)
   const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
-  const dayName = days[date.getUTCDay()]
-  const year = date.getUTCFullYear()
-  const month = String(date.getUTCMonth() + 1).padStart(2, '0')
-  const day = String(date.getUTCDate()).padStart(2, '0')
+  const dayName = days[date.getDay()]
+  const year = date.getFullYear()
+  const month = String(date.getMonth() + 1).padStart(2, '0')
+  const day = String(date.getDate()).padStart(2, '0')
   
   return `${dayName} ${year}/${month}/${day}`
 }
@@ -19,25 +19,25 @@ export function formatDateHeader(isoString: string): string {
 /**
  * Format a date string to "HH:MM" 24-hour format
  * Example: "14:30"
- * Uses UTC to ensure consistent formatting regardless of local timezone
+ * Uses local time to match user's timezone
  */
 export function formatTime(isoString: string): string {
   const date = new Date(isoString)
-  const hours = String(date.getUTCHours()).padStart(2, '0')
-  const minutes = String(date.getUTCMinutes()).padStart(2, '0')
+  const hours = String(date.getHours()).padStart(2, '0')
+  const minutes = String(date.getMinutes()).padStart(2, '0')
   return `${hours}:${minutes}`
 }
 
 /**
  * Extract the date part (YYYY-MM-DD) from an ISO timestamp
  * Used for grouping sessions by day
- * Uses UTC to ensure consistent grouping regardless of local timezone
+ * Uses local time to match user's timezone
  */
 export function extractDateKey(isoString: string): string {
   const date = new Date(isoString)
-  const year = date.getUTCFullYear()
-  const month = String(date.getUTCMonth() + 1).padStart(2, '0')
-  const day = String(date.getUTCDate()).padStart(2, '0')
+  const year = date.getFullYear()
+  const month = String(date.getMonth() + 1).padStart(2, '0')
+  const day = String(date.getDate()).padStart(2, '0')
   return `${year}-${month}-${day}`
 }
 

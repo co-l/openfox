@@ -26,28 +26,29 @@ describe('formatDateHeader', () => {
 
 describe('formatTime', () => {
   it('formats time to "HH:MM" 24-hour format', () => {
-    expect(formatTime('2024-01-15T14:30:00Z')).toBe('14:30')
-    expect(formatTime('2024-01-15T09:15:00Z')).toBe('09:15')
-    expect(formatTime('2024-01-15T00:05:00Z')).toBe('00:05')
-    expect(formatTime('2024-01-15T23:59:00Z')).toBe('23:59')
+    // Use local time timestamps (without Z suffix)
+    expect(formatTime('2024-01-15T14:30:00')).toBe('14:30')
+    expect(formatTime('2024-01-15T09:15:00')).toBe('09:15')
+    expect(formatTime('2024-01-15T00:05:00')).toBe('00:05')
+    expect(formatTime('2024-01-15T23:59:00')).toBe('23:59')
   })
 
   it('pads hours and minutes with leading zeros', () => {
-    expect(formatTime('2024-01-15T01:02:00Z')).toBe('01:02')
-    expect(formatTime('2024-01-15T00:00:00Z')).toBe('00:00')
+    expect(formatTime('2024-01-15T01:02:00')).toBe('01:02')
+    expect(formatTime('2024-01-15T00:00:00')).toBe('00:00')
   })
 })
 
 describe('extractDateKey', () => {
   it('extracts YYYY-MM-DD from ISO timestamp', () => {
-    expect(extractDateKey('2024-01-15T14:30:00Z')).toBe('2024-01-15')
-    expect(extractDateKey('2024-01-15T00:00:00Z')).toBe('2024-01-15')
-    expect(extractDateKey('2024-12-31T23:59:59Z')).toBe('2024-12-31')
+    expect(extractDateKey('2024-01-15T14:30:00')).toBe('2024-01-15')
+    expect(extractDateKey('2024-01-15T00:00:00')).toBe('2024-01-15')
+    expect(extractDateKey('2024-12-31T23:59:59')).toBe('2024-12-31')
   })
 
   it('pads month and day with leading zeros', () => {
-    expect(extractDateKey('2024-01-05T00:00:00Z')).toBe('2024-01-05')
-    expect(extractDateKey('2024-05-01T00:00:00Z')).toBe('2024-05-01')
+    expect(extractDateKey('2024-01-05T00:00:00')).toBe('2024-01-05')
+    expect(extractDateKey('2024-05-01T00:00:00')).toBe('2024-05-01')
   })
 })
 
