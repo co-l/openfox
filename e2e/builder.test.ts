@@ -182,6 +182,43 @@ describe('Builder Mode', () => {
         expect(completed).toBeDefined()
       }
     })
+
+    it('can read criteria with get_criteria before completing them', async () => {
+      // First add a criterion in planner mode
+      await client.send('mode.switch', { mode: 'planner' })
+      await client.send('chat.send', { 
+        content: 'Add criterion ID "test-file": "A test file exists". Use add_criterion.' 
+      })
+      await client.waitForChatDone()
+      
+      // Switch to builder
+      await client.send('mode.switch', { mode: 'builder' })
+      
+      // Ask builder to read criteria first, then implement
+      await client.send('chat.send', { 
+        content: 'First call get_criteria to see what needs to be done, then create src/test.ts and call complete_criterion for "test-file".' 
+      })
+      
+      const events = await collectChatEvents(client)
+      assertNoErrors(events)
+      
+      // Should have get_criteria call before complete_criterion
+      const toolCalls = events.get('chat.tool_call')
+      const getCall = toolCalls.find(e => {
+        const payload = e.payload as { tool: string }
+        return payload.tool === 'get_criteria'
+      })
+      const completeCall = toolCalls.find(e => {
+        const payload = e.payload as { tool: string }
+        return payload.tool === 'complete_criterion'
+      })
+      
+      expect(getCall).toBeDefined()
+      expect(completeCall).toBeDefined()
+      
+      // Verify get_criteria was called before complete_criterion
+      expect(toolCalls.indexOf(getCall)).toBeLessThan(toolCalls.indexOf(completeCall))
+    })
   })
 
   describe('Todo Tracking', () => {

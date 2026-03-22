@@ -40,7 +40,7 @@ const plannerTools: Tool[] = [
   removeCriterionTool,
 ]
 
-// Builder mode: full write access + criterion completion + task tracking
+// Builder mode: full write access + criterion completion + task tracking + criteria reading
 const builderTools: Tool[] = [
   ...readOnlyTools,
   writeFileTool,
@@ -48,6 +48,7 @@ const builderTools: Tool[] = [
   runCommandTool,
   askUserTool,
   completeCriterionTool,
+  getCriteriaTool,
   todoWriteTool,
 ]
 

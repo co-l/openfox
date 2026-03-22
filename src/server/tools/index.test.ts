@@ -78,7 +78,7 @@ describe('tool registries', () => {
       'read_file', 'glob', 'grep', 'run_command', 'git', 'get_criteria', 'add_criterion', 'update_criterion', 'remove_criterion',
     ])
     expect(getToolRegistryForMode('builder').tools.map((tool) => tool.name)).toEqual([
-      'read_file', 'glob', 'grep', 'write_file', 'edit_file', 'run_command', 'ask_user', 'complete_criterion', 'todo_write',
+      'read_file', 'glob', 'grep', 'write_file', 'edit_file', 'run_command', 'ask_user', 'complete_criterion', 'get_criteria', 'todo_write',
     ])
     expect(getToolRegistryForMode('verifier').tools.map((tool) => tool.name)).toEqual([
       'read_file', 'glob', 'grep', 'run_command', 'pass_criterion', 'fail_criterion',
