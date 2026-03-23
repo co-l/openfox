@@ -3,6 +3,7 @@ import { resolve, isAbsolute } from 'node:path'
 import type { ToolResult } from '../../shared/types.js'
 import type { Tool, ToolContext } from './types.js'
 import { OUTPUT_LIMITS } from './types.js'
+import { terminateProcessTree } from '../utils/process-tree.js'
 
 export const gitTool: Tool = {
   name: 'git',
@@ -157,15 +158,12 @@ function executeGitCommand(
     let stdout = ''
     let stderr = ''
     let aborted = false
-    
+    let exited = false
+
     const onAbort = () => {
       if (!aborted) {
         aborted = true
-        try {
-          process.kill(-proc.pid!, 'SIGINT')
-        } catch {
-          proc.kill('SIGINT')
-        }
+        void terminateProcessTree(proc, { exited: () => exited })
       }
     }
     signal?.addEventListener('abort', onAbort)
@@ -179,6 +177,7 @@ function executeGitCommand(
     })
     
     proc.on('close', (code) => {
+      exited = true
       signal?.removeEventListener('abort', onAbort)
       
       if (aborted) {

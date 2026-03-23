@@ -594,6 +594,22 @@ export function cancelPathConfirmation(callId: string, reason: string): boolean 
   return true
 }
 
+export function cancelPathConfirmationsForSession(sessionId: string, reason: string): number {
+  let cancelledCount = 0
+
+  for (const [callId, pending] of pendingConfirmations.entries()) {
+    if (pending.sessionId !== sessionId) {
+      continue
+    }
+
+    pending.reject(new Error(reason))
+    pendingConfirmations.delete(callId)
+    cancelledCount += 1
+  }
+
+  return cancelledCount
+}
+
 /**
  * Check if there's a pending path confirmation.
  * 

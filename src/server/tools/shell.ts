@@ -6,6 +6,7 @@ import {
   extractAbsolutePathsFromCommand,
   extractSensitivePathsFromCommand,
 } from './path-security.js'
+import { terminateProcessTree } from '../utils/process-tree.js'
 
 const DANGEROUS_PATTERNS = [
   /rm\s+(-rf?|--recursive)\s+[\/~]/,
@@ -163,15 +164,11 @@ function executeCommand(
     let stderr = ''
     let killed = false
     let aborted = false
+    let exited = false
     
     const timer = setTimeout(() => {
       killed = true
-      // Kill the process group to terminate all children
-      try {
-        process.kill(-proc.pid!, 'SIGKILL')
-      } catch {
-        proc.kill('SIGKILL')
-      }
+      void terminateProcessTree(proc, { exited: () => exited })
       reject(new Error(`Command timed out after ${timeout}ms`))
     }, timeout)
     
@@ -179,13 +176,7 @@ function executeCommand(
     const onAbort = () => {
       if (!killed && !aborted) {
         aborted = true
-        // Kill the process group (negative PID) to terminate all children
-        try {
-          process.kill(-proc.pid!, 'SIGINT')
-        } catch {
-          // Process may have already exited
-          proc.kill('SIGINT')
-        }
+        void terminateProcessTree(proc, { exited: () => exited })
       }
     }
     signal?.addEventListener('abort', onAbort)
@@ -203,6 +194,7 @@ function executeCommand(
     })
     
     proc.on('close', (code) => {
+      exited = true
       clearTimeout(timer)
       signal?.removeEventListener('abort', onAbort)
       

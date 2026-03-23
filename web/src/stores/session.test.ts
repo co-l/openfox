@@ -348,6 +348,90 @@ describe('useSessionStore session isolation', () => {
     expect(useSessionStore.getState().unreadSessionIds).toEqual([])
   })
 
+  it('clears pending path confirmation when the active session stops running', async () => {
+    const useSessionStore = await loadSessionStore()
+
+    useSessionStore.setState((state) => ({
+      ...state,
+      currentSession: {
+        id: 'session-1',
+        projectId: 'project-1',
+        workdir: '/tmp/project-1',
+        mode: 'builder',
+        phase: 'build',
+        isRunning: true,
+        criteria: [],
+        summary: null,
+      } as any,
+      pendingPathConfirmation: {
+        callId: 'path-1',
+        tool: 'read_file',
+        paths: ['/tmp/project-1/secrets.txt'],
+        workdir: '/tmp/project-1',
+        reason: 'outside_workdir',
+      },
+    }))
+
+    useSessionStore.getState().handleServerMessage({
+      type: 'session.running',
+      sessionId: 'session-1',
+      payload: { isRunning: false },
+    })
+
+    expect(useSessionStore.getState().currentSession?.isRunning).toBe(false)
+    expect(useSessionStore.getState().pendingPathConfirmation).toBeNull()
+  })
+
+  it('applies partial updates from chat.message_updated immediately', async () => {
+    const useSessionStore = await loadSessionStore()
+
+    useSessionStore.setState((state) => ({
+      ...state,
+      currentSession: {
+        id: 'session-1',
+        projectId: 'project-1',
+        workdir: '/tmp/project-1',
+        mode: 'planner',
+        phase: 'plan',
+        isRunning: true,
+        criteria: [],
+        summary: null,
+      } as any,
+      messages: [
+        {
+          id: 'assistant-1',
+          role: 'assistant',
+          content: 'partial answer',
+          timestamp: '2024-01-01T00:00:00.000Z',
+          tokenCount: 0,
+          isStreaming: true,
+        } as any,
+      ],
+      streamingMessageId: 'assistant-1',
+    }))
+
+    useSessionStore.getState().handleServerMessage({
+      type: 'chat.message_updated',
+      sessionId: 'session-1',
+      payload: {
+        messageId: 'assistant-1',
+        updates: {
+          isStreaming: false,
+          partial: true,
+        },
+      },
+    })
+
+    expect(useSessionStore.getState().messages).toEqual([
+      expect.objectContaining({
+        id: 'assistant-1',
+        isStreaming: false,
+        partial: true,
+      }),
+    ])
+    expect(useSessionStore.getState().streamingMessageId).toBeNull()
+  })
+
   it('merges session.state into sidebar summaries so running status appears immediately after load', async () => {
     const useSessionStore = await loadSessionStore()
 

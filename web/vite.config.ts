@@ -1,6 +1,7 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import path from 'path'
+import { createViteWatchOptions } from './vite-watch.js'
 
 export default defineConfig({
   plugins: [react()],
@@ -16,6 +17,7 @@ export default defineConfig({
   server: {
     port: 5173,
     strictPort: true,
+    watch: createViteWatchOptions(),
     // In dev mode, users access Vite directly (for HMR to work)
     // Vite proxies API/WS to the backend server
     proxy: {

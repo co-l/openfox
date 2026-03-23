@@ -67,6 +67,8 @@ vi.mock('../tools/index.js', () => ({
   getToolRegistryForMode: getToolRegistryForModeMock,
   providePathConfirmation: providePathConfirmationMock,
   addAllowedPaths: vi.fn(),
+  cancelQuestionsForSession: vi.fn(),
+  cancelPathConfirmationsForSession: vi.fn(),
 }))
 
 vi.mock('../runner/index.js', () => ({
@@ -529,7 +531,10 @@ describe('createWebSocketServer', () => {
 
     harness.send({ id: 'chat-stop', type: 'chat.stop', payload: {} })
     expect(await harness.nextMessage((message) => message.id === 'chat-stop')).toMatchObject({ type: 'ack' })
-    await new Promise<void>((resolve) => setTimeout(resolve, 0))
+    expect(await harness.nextMessage((message) => message.type === 'session.running' && message.payload['isRunning'] === false)).toMatchObject({
+      type: 'session.running',
+      payload: { isRunning: false },
+    })
     expect(sessionManager.setRunning).toHaveBeenLastCalledWith('session-1', false)
 
     const releaseRun = resolveRun as (() => void) | null

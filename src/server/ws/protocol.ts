@@ -356,7 +356,15 @@ export function storedEventToServerMessage(event: StoredEvent): ServerMessage | 
     case 'message.done': {
       const data = event.data as Extract<TurnEvent, { type: 'message.done' }>['data']
       // This maps to chat.message_updated with isStreaming: false and optionally stats
-      const updates: { isStreaming: false; stats?: typeof data.stats; promptContext?: typeof data.promptContext } = { isStreaming: false }
+      const updates: {
+        isStreaming: false
+        partial?: true
+        stats?: typeof data.stats
+        promptContext?: typeof data.promptContext
+      } = { isStreaming: false }
+      if (data.partial) {
+        updates.partial = true
+      }
       if (data.stats) {
         updates.stats = data.stats
       }

@@ -442,6 +442,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
             currentSession: state.currentSession
               ? { ...state.currentSession, isRunning: payload.isRunning }
               : null,
+            pendingPathConfirmation: payload.isRunning ? state.pendingPathConfirmation : null,
           }))
         }
         break

@@ -154,12 +154,13 @@ export function createToolRegistry(): ToolRegistry {
 
 // Re-export types and utilities
 export type { Tool, ToolRegistry, ToolContext } from './types.js'
-export { AskUserInterrupt, provideAnswer, cancelQuestion } from './ask.js'
+export { AskUserInterrupt, provideAnswer, cancelQuestion, cancelQuestionsForSession } from './ask.js'
 export { setTodoUpdateCallback, getTodos, clearTodos } from './todo.js'
 export {
   PathAccessDeniedError,
   providePathConfirmation,
   cancelPathConfirmation,
+  cancelPathConfirmationsForSession,
   addAllowedPaths,
   clearAllowedPaths,
   requestPathAccess,

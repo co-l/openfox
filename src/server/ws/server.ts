@@ -11,7 +11,12 @@ import type { Message, Provider, StatsIdentity } from '../../shared/types.js'
 import { runChatTurn, createMessageStartEvent, createChatDoneEvent } from '../chat/orchestrator.js'
 import { runOrchestrator } from '../runner/index.js'
 import { maybeAutoCompactContext, performManualContextCompaction } from '../context/auto-compaction.js'
-import { providePathConfirmation, addAllowedPaths } from '../tools/index.js'
+import {
+  providePathConfirmation,
+  addAllowedPaths,
+  cancelQuestionsForSession,
+  cancelPathConfirmationsForSession,
+} from '../tools/index.js'
 import { logger } from '../utils/logger.js'
 import {
   createProject,
@@ -239,6 +244,23 @@ async function handleClientMessage(
 
   const sendForSession = (sessionId: string, msg: ServerMessage) => {
     send({ ...msg, sessionId })
+  }
+
+  const abortSessionExecution = (sessionId: string, reason: string) => {
+    const controller = activeAgents.get(sessionId)
+    if (!controller) {
+      return false
+    }
+
+    activeAgents.delete(sessionId)
+    controller.abort()
+    cancelQuestionsForSession(sessionId, reason)
+    cancelPathConfirmationsForSession(sessionId, reason)
+    sessionManager.setRunning(sessionId, false)
+    sendForSession(sessionId, createSessionRunningMessage(false))
+    const contextState = sessionManager.getContextState(sessionId)
+    sendForSession(sessionId, createContextStateMessage(contextState))
+    return true
   }
 
   const ensureEventStoreSubscription = (sessionId: string) => {
@@ -579,6 +601,9 @@ async function handleClientMessage(
         logger.error('Continue error', { error })
         // Errors are handled inside runChatTurn and appended to EventStore
       }).finally(() => {
+        if (activeAgents.get(sessionId) !== controller) {
+          return
+        }
         activeAgents.delete(sessionId)
         // setRunning emits running.changed event
         sessionManager.setRunning(sessionId, false)
@@ -596,10 +621,7 @@ async function handleClientMessage(
         return
       }
 
-      const controller = activeAgents.get(client.activeSessionId)
-      if (controller) {
-        controller.abort()
-      }
+      abortSessionExecution(client.activeSessionId, 'Session aborted by user')
 
       send({ type: 'ack', payload: {}, id: message.id })
       break
@@ -765,6 +787,7 @@ async function handleClientMessage(
       
       // Start builder asynchronously (summary already generated on mode.switch if needed)
       ;(async () => {
+        let controller: AbortController | null = null
         try {
           // Switch to builder mode and phase
           sessionManager.setMode(sessionId, 'builder')
@@ -773,7 +796,7 @@ async function handleClientMessage(
           eventStore.append(sessionId, { type: 'phase.changed', data: { phase: 'build' } })
           
           // Create AbortController for builder (abort existing if any - defense in depth)
-          const controller = new AbortController()
+          controller = new AbortController()
           const existingController = activeAgents.get(sessionId)
           if (existingController) {
             logger.warn('Aborting existing agent before starting new one', { sessionId })
@@ -813,6 +836,9 @@ async function handleClientMessage(
           eventStore.append(sessionId, { type: 'message.done', data: { messageId: errorMsgId } })
           eventStore.append(sessionId, createChatDoneEvent(errorMsgId, 'error'))
         } finally {
+          if (!controller || activeAgents.get(sessionId) !== controller) {
+            return
+          }
           activeAgents.delete(sessionId)
           sessionManager.setRunning(sessionId, false)
           eventStore.append(sessionId, { type: 'running.changed', data: { isRunning: false } })
@@ -977,7 +1003,7 @@ async function handleClientMessage(
         injectBuilderKickoff: true,
         signal: controller.signal,
          onMessage: (msg) => sendForSession(sessionId, msg),  // For path confirmation dialogs
-       }).catch((error) => {
+      }).catch((error) => {
         // Don't create error message for controlled abort
         if (error instanceof Error && error.message === 'Aborted') {
           return
@@ -985,6 +1011,9 @@ async function handleClientMessage(
         logger.error('Runner error', { error, sessionId })
         // Error events are handled inside runOrchestrator and appended to EventStore
       }).finally(() => {
+        if (activeAgents.get(sessionId) !== controller) {
+          return
+        }
         activeAgents.delete(sessionId)
         // setRunning emits running.changed event
         sessionManager.setRunning(sessionId, false)

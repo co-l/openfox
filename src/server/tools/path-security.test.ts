@@ -14,6 +14,7 @@ import {
   clearAllowedPaths,
   isPathAllowed,
   providePathConfirmation,
+  cancelPathConfirmationsForSession,
   cancelPathConfirmation,
   hasPendingPathConfirmation,
   isSensitivePath,
@@ -716,6 +717,25 @@ describe('path-security', () => {
       expect(cancelPathConfirmation('call-cancel', 'user cancelled')).toBe(true)
       await deniedAssertion
       expect(hasPendingPathConfirmation('call-cancel')).toBe(false)
+    })
+
+    it('cancels all pending confirmations for a session', async () => {
+      const pendingA = registerPathConfirmation('call-a', ['/tmp/a'], 'session-1')
+      const pendingB = registerPathConfirmation('call-b', ['/tmp/b'], 'session-1')
+      const pendingC = registerPathConfirmation('call-c', ['/tmp/c'], 'session-2')
+
+      const rejectedA = expect(pendingA).rejects.toThrow('session aborted')
+      const rejectedB = expect(pendingB).rejects.toThrow('session aborted')
+
+      expect(cancelPathConfirmationsForSession('session-1', 'session aborted')).toBe(2)
+      expect(hasPendingPathConfirmation('call-a')).toBe(false)
+      expect(hasPendingPathConfirmation('call-b')).toBe(false)
+      expect(hasPendingPathConfirmation('call-c')).toBe(true)
+      expect(cancelPathConfirmationsForSession('missing', 'noop')).toBe(0)
+
+      await Promise.all([rejectedA, rejectedB])
+      expect(cancelPathConfirmation('call-c', 'cleanup')).toBe(true)
+      await expect(pendingC).rejects.toThrow('cleanup')
     })
 
     it('requests path access, emits confirmation events, and resolves approval/denial', async () => {

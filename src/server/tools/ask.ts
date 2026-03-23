@@ -6,6 +6,7 @@ import { createDeferred } from '../utils/async.js'
 const pendingQuestions = new Map<string, {
   resolve: (answer: string) => void
   reject: (error: Error) => void
+  sessionId: string
 }>()
 
 export const askUserTool: Tool = {
@@ -42,6 +43,7 @@ export const askUserTool: Tool = {
     pendingQuestions.set(callId, {
       resolve: deferred.resolve,
       reject: deferred.reject,
+      sessionId: context.sessionId,
     })
     
     // The agent runner will see this and pause execution,
@@ -85,6 +87,22 @@ export function cancelQuestion(callId: string, reason: string): boolean {
   pending.reject(new Error(reason))
   pendingQuestions.delete(callId)
   return true
+}
+
+export function cancelQuestionsForSession(sessionId: string, reason: string): number {
+  let cancelledCount = 0
+
+  for (const [callId, pending] of pendingQuestions.entries()) {
+    if (pending.sessionId !== sessionId) {
+      continue
+    }
+
+    pending.reject(new Error(reason))
+    pendingQuestions.delete(callId)
+    cancelledCount += 1
+  }
+
+  return cancelledCount
 }
 
 // Check if there's a pending question
