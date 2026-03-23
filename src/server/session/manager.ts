@@ -627,10 +627,12 @@ export class SessionManager {
    */
   updateFileHash(sessionId: string, filePath: string, contentHash: string): void {
     const cache = this.readFilesCache.get(sessionId) ?? {}
-    if (cache[filePath]) {
-      cache[filePath] = { ...cache[filePath], hash: contentHash }
-      this.readFilesCache.set(sessionId, cache)
+    const existingEntry = cache[filePath]
+    cache[filePath] = {
+      hash: contentHash,
+      readAt: existingEntry?.readAt ?? new Date().toISOString(),
     }
+    this.readFilesCache.set(sessionId, cache)
   }
 
   /**

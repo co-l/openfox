@@ -224,7 +224,10 @@ describe('SessionManager', () => {
     manager.updateFileHash(session.id, 'src/index.ts', 'hash-2')
     manager.updateFileHash(session.id, 'src/other.ts', 'hash-3')
     expect(manager.getReadFiles(session.id)['src/index.ts']?.hash).toBe('hash-2')
-    expect(manager.getReadFiles(session.id)['src/other.ts']).toBeUndefined()
+    expect(manager.getReadFiles(session.id)['src/other.ts']).toEqual({
+      hash: 'hash-3',
+      readAt: expect.any(String),
+    })
 
     const firstMessage = manager.addMessage(session.id, {
       role: 'user',

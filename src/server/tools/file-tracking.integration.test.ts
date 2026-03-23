@@ -125,6 +125,22 @@ describe('file tracking integration', () => {
       )
       expect(write2.success).toBe(true)
     })
+
+    it('allows repeated writes after creating a new file', async () => {
+      const write1 = await writeFileTool.execute(
+        { path: 'created-then-written.txt', content: 'first version' },
+        context
+      )
+      expect(write1.success).toBe(true)
+
+      const write2 = await writeFileTool.execute(
+        { path: 'created-then-written.txt', content: 'second version' },
+        context
+      )
+
+      expect(write2.success).toBe(true)
+      expect(write2.output).toContain('Successfully wrote')
+    })
   })
 
   describe('edit_file requires read first', () => {
@@ -175,6 +191,22 @@ describe('file tracking integration', () => {
         context
       )
       expect(edit2.success).toBe(true)
+    })
+
+    it('allows editing a file that was just created with write_file', async () => {
+      const writeResult = await writeFileTool.execute(
+        { path: 'created-then-edited.txt', content: 'hello world' },
+        context
+      )
+      expect(writeResult.success).toBe(true)
+
+      const editResult = await editFileTool.execute(
+        { path: 'created-then-edited.txt', old_string: 'hello', new_string: 'hi' },
+        context
+      )
+
+      expect(editResult.success).toBe(true)
+      expect(editResult.output).toContain('Successfully replaced')
     })
   })
 
