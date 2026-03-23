@@ -28,10 +28,7 @@ import {
   createChatMessageMessage,
   createChatProgressMessage,
 } from '../ws/protocol.js'
-
-// Constants for XML tool format retry
-const MAX_FORMAT_RETRIES = 10
-const FORMAT_CORRECTION_PROMPT = `IMPORTANT: You MUST use the JSON function calling API. Do NOT output XML tags like <tool_call>, <function=>, or <parameter=>. Your previous attempt was stopped because you used the wrong format. Use the proper tool_calls format.`
+import { FORMAT_CORRECTION_PROMPT, MAX_FORMAT_RETRIES } from './prompts.js'
 
 export interface StreamOptions {
   sessionManager: SessionManager

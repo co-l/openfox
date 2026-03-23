@@ -4,7 +4,7 @@ import type { SessionManager } from '../session/index.js'
 import { getEventStore, getContextMessages, getCurrentContextWindowId } from '../events/index.js'
 import { getAllInstructions } from './instructions.js'
 import { shouldCompact } from './compactor.js'
-import { COMPACTION_PROMPT } from '../chat/prompts.js'
+import { COMPACTION_PROMPT, FORMAT_CORRECTION_PROMPT, MAX_FORMAT_RETRIES } from '../chat/prompts.js'
 import { assemblePlannerRequest, type RequestContextMessage } from '../chat/request-context.js'
 import {
   TurnMetrics,
@@ -108,25 +108,42 @@ async function performContextCompaction(options: ContextCompactionOptions & {
   eventStore.append(sessionId, createMessageStartEvent(assistantMsgId, 'assistant', undefined, getCurrentWindowMessageOptions(sessionId)))
 
   const turnMetrics = new TurnMetrics()
-  const streamGen = streamLLMPure({
-    messageId: assistantMsgId,
-    systemPrompt: assembledRequest.systemPrompt,
-    llmClient,
-    messages: assembledRequest.messages,
-    tools: [],
-    toolChoice: 'none',
-    disableThinking: true,
-    ...(signal ? { signal } : {}),
-  })
-  const result = await consumeStreamGenerator(streamGen, event => {
-    eventStore.append(sessionId, event)
-  })
+  const correctionMessages: Array<{ role: 'user'; content: string }> = []
+  let result: Awaited<ReturnType<typeof consumeStreamGenerator>> | null = null
 
-  if (result.aborted) {
-    throw new Error('Aborted')
+  for (let attempt = 0; attempt < MAX_FORMAT_RETRIES; attempt++) {
+    const streamGen = streamLLMPure({
+      messageId: assistantMsgId,
+      systemPrompt: assembledRequest.systemPrompt,
+      llmClient,
+      messages: [...assembledRequest.messages, ...correctionMessages],
+      tools: [],
+      toolChoice: 'none',
+      disableThinking: true,
+      ...(signal ? { signal } : {}),
+    })
+    result = await consumeStreamGenerator(streamGen, event => {
+      eventStore.append(sessionId, event)
+    })
+
+    if (result.aborted) {
+      throw new Error('Aborted')
+    }
+
+    if (!result.xmlFormatError) {
+      break
+    }
+
+    logger.warn('Compaction XML tool format error, retrying', {
+      sessionId,
+      attempt: attempt + 1,
+      maxAttempts: MAX_FORMAT_RETRIES,
+    })
+
+    correctionMessages.push({ role: 'user', content: FORMAT_CORRECTION_PROMPT })
   }
 
-  if (result.xmlFormatError) {
+  if (!result || result.xmlFormatError) {
     throw new Error('Compaction summary generation failed due to XML tool format output')
   }
 
