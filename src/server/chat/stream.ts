@@ -47,9 +47,11 @@ export interface StreamOptions {
   /** Optional: sub-agent ID to tag the created assistant message */
   subAgentId?: string
   /** Optional: sub-agent type to tag the created assistant message */
-  subAgentType?: 'verifier'
+  subAgentType?: 'verifier' | 'code_reviewer' | 'test_generator' | 'debugger'
   /** Optional: disable thinking/reasoning for this call (default: false) */
   disableThinking?: boolean
+  /** Optional: reuse an existing message ID instead of creating a new one */
+  existingMessageId?: string
 }
 
 export interface StreamResult {
@@ -152,8 +154,7 @@ async function streamLLMResponseInternal(
   // Create or reuse assistant message
   let messageId = existingMessageId
   if (!messageId) {
-    const assistantMsg = sessionManager.addMessage(sessionId, {
-      role: 'assistant',
+    const assistantMsg = sessionManager.addAssistantMessage(sessionId, {
       content: '',
       isStreaming: true,
       ...(subAgentId && { subAgentId }),

@@ -225,6 +225,8 @@ export function emitUserMessage(
     isCompactionSummary?: boolean
     tokenCount?: number
     attachments?: Attachment[] // Optional image attachments
+    subAgentId?: string
+    subAgentType?: 'verifier' | 'code_reviewer' | 'test_generator' | 'debugger'
   }
 ): string {
   const eventStore = getEventStore()
@@ -242,6 +244,8 @@ export function emitUserMessage(
       ...(options?.isCompactionSummary !== undefined && { isCompactionSummary: options.isCompactionSummary }),
       ...(options?.tokenCount !== undefined && { tokenCount: options.tokenCount }),
       ...(options?.attachments !== undefined && { attachments: options.attachments }),
+      ...(options?.subAgentId !== undefined && { subAgentId: options.subAgentId }),
+      ...(options?.subAgentType !== undefined && { subAgentType: options.subAgentType }),
     },
   })
 

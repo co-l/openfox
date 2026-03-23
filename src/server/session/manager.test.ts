@@ -293,4 +293,70 @@ describe('SessionManager', () => {
     manager.setCurrentContextSize(session.id, 5000)
     expect(manager.getContextState(session.id).currentTokens).toBe(5000)
   })
+
+  it('preserves subAgentId and subAgentType when adding messages', () => {
+    const session = manager.createSession(projectId)
+    const subAgentId = 'verifier-test-123'
+    const subAgentType = 'verifier' as const
+
+    const message = manager.addMessage(session.id, {
+      role: 'user',
+      content: 'Fresh Context',
+      isSystemGenerated: true,
+      messageKind: 'context-reset',
+      subAgentId,
+      subAgentType,
+    })
+
+    // The message should preserve subAgentId and subAgentType
+    expect(message.subAgentId).toBe(subAgentId)
+    expect(message.subAgentType).toBe(subAgentType)
+
+    // Verify it's also in the stored session
+    const storedSession = manager.requireSession(session.id)
+    const storedMessage = storedSession.messages.find(m => m.id === message.id)
+    expect(storedMessage).toBeDefined()
+    expect(storedMessage?.subAgentId).toBe(subAgentId)
+    expect(storedMessage?.subAgentType).toBe(subAgentType)
+  })
+
+  it('groups verifier messages correctly for SubAgentContainer display', () => {
+    const session = manager.createSession(projectId)
+    const verifierId = 'verifier-run-001'
+
+    // Add a sequence of verifier messages
+    manager.addMessage(session.id, {
+      role: 'user',
+      content: 'Fresh Context',
+      isSystemGenerated: true,
+      messageKind: 'context-reset',
+      subAgentId: verifierId,
+      subAgentType: 'verifier',
+    })
+
+    manager.addMessage(session.id, {
+      role: 'user',
+      content: 'Verification context data',
+      isSystemGenerated: true,
+      messageKind: 'auto-prompt',
+      subAgentId: verifierId,
+      subAgentType: 'verifier',
+    })
+
+    manager.addMessage(session.id, {
+      role: 'assistant',
+      content: 'Verifying criteria...',
+      subAgentId: verifierId,
+      subAgentType: 'verifier',
+    })
+
+    // Get all messages for this session
+    const allMessages = manager.requireSession(session.id).messages
+
+    // All messages should have the verifier sub-agent metadata
+    const verifierMessages = allMessages.filter(m => m.subAgentId === verifierId && m.subAgentType === 'verifier')
+    expect(verifierMessages).toHaveLength(3)
+    expect(verifierMessages.every(m => m.subAgentId === verifierId)).toBe(true)
+    expect(verifierMessages.every(m => m.subAgentType === 'verifier')).toBe(true)
+  })
 })

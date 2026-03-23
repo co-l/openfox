@@ -39,6 +39,7 @@ import {
   emitPhaseChanged,
   emitRunningChanged,
   emitUserMessage,
+  emitAssistantMessageStart,
   emitMessageDone,
   emitCriteriaSet,
   emitCriterionUpdated,
@@ -331,12 +332,16 @@ export class SessionManager {
       messageKind?: 'correction' | 'auto-prompt' | 'context-reset'
       tokenCount?: number
       attachments?: Attachment[] // Optional image attachments
+      subAgentId?: string
+      subAgentType?: 'verifier' | 'code_reviewer' | 'test_generator' | 'debugger'
     } = {}
     if (contextWindowId !== undefined) options.contextWindowId = contextWindowId
     if (message.isSystemGenerated !== undefined) options.isSystemGenerated = message.isSystemGenerated
     if (message.messageKind !== undefined) options.messageKind = message.messageKind
     if (message.tokenCount !== undefined) options.tokenCount = message.tokenCount
     if (message.attachments !== undefined) options.attachments = message.attachments
+    if (message.subAgentId !== undefined) options.subAgentId = message.subAgentId
+    if (message.subAgentType !== undefined) options.subAgentType = message.subAgentType
 
     // Emit message events
     const messageId = emitUserMessage(sessionId, message.content, options)
@@ -352,6 +357,52 @@ export class SessionManager {
     if (message.isSystemGenerated !== undefined) result.isSystemGenerated = message.isSystemGenerated
     if (message.messageKind !== undefined) result.messageKind = message.messageKind
     if (message.attachments !== undefined) result.attachments = message.attachments
+    if (message.subAgentId !== undefined) result.subAgentId = message.subAgentId
+    if (message.subAgentType !== undefined) result.subAgentType = message.subAgentType
+
+    // Emit internal event for subscribers
+    this.emit({ type: 'message_added', sessionId, message: result })
+
+    return result
+  }
+
+  /**
+   * Add an assistant message. Delegates to EventStore.
+   */
+  addAssistantMessage(
+    sessionId: string,
+    message: Omit<Message, 'id' | 'timestamp' | 'role'>
+  ): Message {
+    this.requireSession(sessionId)
+
+    const state = getSessionState(sessionId)
+    const contextWindowId = message.contextWindowId ?? state?.currentContextWindowId
+
+    // Build options object without undefined values
+    const options: {
+      contextWindowId?: string
+      subAgentId?: string
+      subAgentType?: 'verifier' | 'code_reviewer' | 'test_generator' | 'debugger'
+    } = {}
+    if (contextWindowId !== undefined) options.contextWindowId = contextWindowId
+    if (message.subAgentId !== undefined) options.subAgentId = message.subAgentId
+    if (message.subAgentType !== undefined) options.subAgentType = message.subAgentType
+
+    // Emit message start event
+    const messageId = emitAssistantMessageStart(sessionId, options)
+
+    // Build result without undefined values
+    const result: Message = {
+      id: messageId,
+      role: 'assistant',
+      content: message.content ?? '',
+      timestamp: new Date().toISOString(),
+    }
+    if (contextWindowId !== undefined) result.contextWindowId = contextWindowId
+    if (message.subAgentId !== undefined) result.subAgentId = message.subAgentId
+    if (message.subAgentType !== undefined) result.subAgentType = message.subAgentType
+    if (message.isStreaming !== undefined) result.isStreaming = message.isStreaming
+    if (message.thinkingContent !== undefined) result.thinkingContent = message.thinkingContent
 
     // Emit internal event for subscribers
     this.emit({ type: 'message_added', sessionId, message: result })

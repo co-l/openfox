@@ -684,7 +684,8 @@ export async function runVerifierTurn(
       sessionManager,
       sessionId,
       llmClient,
-      toolRegistry
+      toolRegistry,
+      onMessage  // Pass the onMessage callback to stream verifier events to UI
     )
 
     // Track metrics (sub-agent execution)
