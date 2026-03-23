@@ -1539,6 +1539,76 @@ describe('chat orchestrator', () => {
     expect(correctionMessages).toHaveLength(6)
   })
 
+  it('does not consume the empty-stop budget for malformed verifier tool calls', async () => {
+    const eventStore = createEventStore()
+    getEventStoreMock.mockReturnValue(eventStore)
+    getAllInstructionsMock.mockResolvedValue({ content: 'Verify carefully', files: [] })
+
+    const state: any = {
+      current: {
+        id: 'session-1',
+        projectId: 'project-1',
+        workdir: '/tmp/project',
+        mode: 'builder',
+        phase: 'verification',
+        isRunning: true,
+        criteria: [{ id: 'tests-pass', description: 'Tests pass', status: { type: 'completed', completedAt: '2024-01-01T00:00:00.000Z' }, attempts: [] }],
+        executionState: { modifiedFiles: ['src/index.ts'] },
+        summary: 'Task summary',
+        messages: [],
+      },
+    }
+    const sessionManager = createSessionManager(state)
+    const execute = vi.fn()
+
+    getToolRegistryForModeMock.mockReturnValue({
+      definitions: [{ type: 'function', function: { name: 'read_file', description: 'Read', parameters: {} } }],
+      execute,
+    })
+    streamLLMPureMock.mockReturnValue({ kind: 'stream' })
+    consumeStreamGeneratorMock.mockResolvedValueOnce({
+      content: 'checking',
+      toolCalls: [{
+        id: 'call-1',
+        name: 'read_file',
+        arguments: {},
+        parseError: 'Unexpected token in JSON at position 1',
+        rawArguments: '{bad-json',
+      }],
+      segments: [],
+      usage: { promptTokens: 8, completionTokens: 1 },
+      timing: { ttft: 1, completionTime: 1, tps: 1, prefillTps: 8 },
+      aborted: false,
+      xmlFormatError: false,
+    })
+
+    for (let index = 0; index < 6; index++) {
+      consumeStreamGeneratorMock.mockResolvedValueOnce({
+        content: `stopped-${index}`,
+        toolCalls: [],
+        segments: [{ type: 'text', content: `stopped-${index}` }],
+        usage: { promptTokens: 8, completionTokens: 1 },
+        timing: { ttft: 1, completionTime: 1, tps: 1, prefillTps: 8 },
+        aborted: false,
+        xmlFormatError: false,
+      })
+    }
+
+    const result = await runVerifierTurn({
+      sessionManager: sessionManager as never,
+      sessionId: 'session-1',
+      llmClient: { getModel: () => 'qwen3-32b' } as never,
+      onMessage: vi.fn(),
+    }, new TurnMetrics())
+
+    expect(result.allPassed).toBe(false)
+    expect(execute).not.toHaveBeenCalled()
+    // Malformed tool calls don't count as empty stops, so the budget is consumed by the 6 empty stops
+    expect(sessionManager.updateCriterionStatus).toHaveBeenCalledTimes(1)
+    expect(sessionManager.addCriterionAttempt).toHaveBeenCalledTimes(1)
+    expect(streamLLMPureMock.mock.calls).toHaveLength(7)
+  })
+
   it('handles verifier path denial and nudges until verification reaches a terminal state', async () => {
     const eventStore = createEventStore()
     getEventStoreMock.mockReturnValue(eventStore)

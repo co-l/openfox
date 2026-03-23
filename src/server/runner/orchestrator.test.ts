@@ -137,7 +137,7 @@ describe('runner orchestrator', () => {
     )
   })
 
-  it('returns early on abort and blocks after max iterations', async () => {
+  it('returns early on abort', async () => {
     const abortStore = createEventStore()
     getEventStoreMock.mockReturnValue(abortStore)
     const controller = new AbortController()
@@ -152,20 +152,30 @@ describe('runner orchestrator', () => {
     })
 
     expect(aborted.finalAction).toEqual({ type: 'RUN_BUILDER', reason: 'Aborted' })
+  })
 
-    const maxStore = createEventStore()
-    getEventStoreMock.mockReturnValue(maxStore)
+  it('does not enforce a runner max-iteration limit', async () => {
+    const eventStore = createEventStore()
+    getEventStoreMock.mockReturnValue(eventStore)
+    const controller = new AbortController()
     decideNextActionMock.mockReturnValue({ type: 'RUN_BUILDER', reason: 'Still working' })
     const loopingManager = createSessionManager([{ id: 'tests-pass' }])
+    runBuilderTurnMock.mockImplementation(async () => {
+      if (runBuilderTurnMock.mock.calls.length >= 101) {
+        controller.abort()
+      }
+    })
 
-    const blocked = await runOrchestrator({
+    const result = await runOrchestrator({
       sessionManager: loopingManager as never,
       sessionId: 'session-1',
       llmClient: {} as never,
+      signal: controller.signal,
     })
 
-    expect(loopingManager.setPhase).toHaveBeenLastCalledWith('session-1', 'blocked')
-    expect(maxStore.append.mock.calls.some(([_, event]) => event.type === 'message.start' && String((event.data as any).content).includes('Maximum iterations'))).toBe(true)
-    expect(blocked.finalAction).toEqual({ type: 'BLOCKED', reason: 'Max iterations reached', blockedCriteria: [] })
+    expect(runBuilderTurnMock).toHaveBeenCalledTimes(101)
+    expect(result.finalAction).toEqual({ type: 'RUN_BUILDER', reason: 'Aborted' })
+    expect(loopingManager.setPhase).not.toHaveBeenCalledWith('session-1', 'blocked')
+    expect(eventStore.append.mock.calls.some(([_, event]) => event.type === 'message.start' && String((event.data as any).content).includes('Maximum iterations'))).toBe(false)
   })
 })

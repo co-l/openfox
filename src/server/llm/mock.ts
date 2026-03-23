@@ -826,68 +826,80 @@ function getConversationAwareToolResponse(request: LLMCompletionRequest): MockMa
   const prompt = getLastUserPrompt(request)
   const conversationText = getConversationText(request)
 
-  if (/Implement the task and make sure you fulfil the \d+ criteria\./i.test(prompt)) {
+  if (
+    /Implement the task and make sure you fulfil the \d+ criteria\./i.test(prompt)
+    || /Continue working on the acceptance criteria\./i.test(prompt)
+  ) {
+    const tools: Array<{ name: string; arguments: Record<string, unknown> }> = []
+    const completedCriteria: string[] = []
+
     if (conversationText.includes('inspect-src')) {
-      return {
-        tools: [
-          { name: 'read_file', arguments: { path: 'src' } },
-          { name: 'complete_criterion', arguments: { id: 'inspect-src', reason: 'Inspected the src directory and reported what exists' } },
-        ],
-        response: 'Inspected the src directory and completed the criterion.',
-      }
+      tools.push(
+        { name: 'read_file', arguments: { path: 'src' } },
+        { name: 'complete_criterion', arguments: { id: 'inspect-src', reason: 'Inspected the src directory and reported what exists' } },
+      )
+      completedCriteria.push('inspect-src')
     }
 
     if (conversationText.includes('trivial-pass')) {
-      return {
-        tools: [{ name: 'complete_criterion', arguments: { id: 'trivial-pass', reason: 'Trivial criterion passes immediately' } }],
-        response: 'Completed the trivial criterion.',
-      }
+      tools.push({ name: 'complete_criterion', arguments: { id: 'trivial-pass', reason: 'Trivial criterion passes immediately' } })
+      completedCriteria.push('trivial-pass')
     }
 
     if (conversationText.includes('verify-fail')) {
-      return {
-        tools: [{ name: 'complete_criterion', arguments: { id: 'verify-fail', reason: 'Prepared criterion for verification' } }],
-        response: 'Completed the criterion for verification.',
-      }
+      tools.push({ name: 'complete_criterion', arguments: { id: 'verify-fail', reason: 'Prepared criterion for verification' } })
+      completedCriteria.push('verify-fail')
     }
 
     if (conversationText.includes('file-created')) {
+      tools.push(
+        { name: 'write_file', arguments: { path: 'src/utils.ts', content: 'export const created = true' } },
+        { name: 'complete_criterion', arguments: { id: 'file-created', reason: 'Created the requested file' } },
+      )
+      completedCriteria.push('file-created')
+    }
+
+    if (tools.length > 0) {
       return {
-        tools: [
-          { name: 'write_file', arguments: { path: 'src/utils.ts', content: 'export const created = true' } },
-          { name: 'complete_criterion', arguments: { id: 'file-created', reason: 'Created the requested file' } },
-        ],
-        response: 'Created the file and completed the criterion.',
+        tools,
+        response: `Completed builder work for: ${completedCriteria.join(', ')}.`,
       }
     }
   }
 
   if (/Verify each criterion marked \[NEEDS VERIFICATION\]\./i.test(prompt)) {
+    const tools: Array<{ name: string; arguments: Record<string, unknown> }> = []
+    const terminalizedCriteria: string[] = []
+
     if (conversationText.includes('trivial-pass')) {
-      return {
-        tools: [{ name: 'pass_criterion', arguments: { id: 'trivial-pass', reason: 'Verified successfully' } }],
-        response: 'Verified the trivial criterion.',
-      }
+      tools.push({ name: 'pass_criterion', arguments: { id: 'trivial-pass', reason: 'Verified successfully' } })
+      terminalizedCriteria.push('trivial-pass')
+    }
+
+    if (conversationText.includes('inspect-src')) {
+      tools.push({ name: 'pass_criterion', arguments: { id: 'inspect-src', reason: 'Verified the src directory was inspected successfully' } })
+      terminalizedCriteria.push('inspect-src')
     }
 
     if (conversationText.includes('verify-fail')) {
-      return {
-        tools: [{ name: 'fail_criterion', arguments: { id: 'verify-fail', reason: 'Verification fails intentionally for this criterion' } }],
-        response: 'Failed the verification criterion.',
-      }
+      tools.push({ name: 'fail_criterion', arguments: { id: 'verify-fail', reason: 'Verification fails intentionally for this criterion' } })
+      terminalizedCriteria.push('verify-fail')
     }
 
     if (conversationText.includes('file-created')) {
-      return {
-        tools: [{ name: 'pass_criterion', arguments: { id: 'file-created', reason: 'Verified the file was created successfully' } }],
-        response: 'Verified the created file criterion.',
-      }
+      tools.push({ name: 'pass_criterion', arguments: { id: 'file-created', reason: 'Verified the file was created successfully' } })
+      terminalizedCriteria.push('file-created')
     }
 
     if (conversationText.includes('impossible/path')) {
+      tools.push({ name: 'fail_criterion', arguments: { id: 'auto-impossible', reason: 'Impossible path does not exist' } })
+      terminalizedCriteria.push('auto-impossible')
+    }
+
+    if (tools.length > 0) {
       return {
-        tools: [{ name: 'fail_criterion', arguments: { id: 'auto-impossible', reason: 'Impossible path does not exist' } }],
-        response: 'Failed the impossible criterion.',
+        tools,
+        response: `Terminalized verifier work for: ${terminalizedCriteria.join(', ')}.`,
       }
     }
   }

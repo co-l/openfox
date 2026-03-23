@@ -186,4 +186,10 @@ export const COMPACTION_PROMPT = `Summarize the conversation history concisely, 
 3. Current progress on each task
 4. Any important decisions or learnings
 
-Be thorough but concise. Output as a structured summary.`
+Be thorough but concise. Output as a structured summary.
+
+IMPORTANT: Do NOT use any tools. Do NOT output XML tags like <tool_call>, <function=>. Only respond with plain text summary.`
+
+export const FORMAT_CORRECTION_PROMPT = `IMPORTANT: You MUST use the JSON function calling API. Do NOT output XML tags like <tool_call>, <function=>, or <parameter=>. Your previous attempt was stopped because you used the wrong format. Use the proper tool_calls format.`
+
+export const MAX_FORMAT_RETRIES = 10

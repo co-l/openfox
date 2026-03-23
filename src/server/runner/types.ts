@@ -61,5 +61,4 @@ export interface StepResult {
 
 export const RUNNER_CONFIG = {
   maxVerifyRetries: 4,      // Max times to retry a failing criterion
-  maxIterations: 100,       // Safety limit for the orchestrator loop
 } as const
