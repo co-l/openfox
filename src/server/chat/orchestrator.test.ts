@@ -1109,7 +1109,7 @@ describe('chat orchestrator', () => {
     })
   })
 
-  it('fails remaining completed criteria after repeated verifier nudges without progress', async () => {
+  it('nudges verifier 10 times, then exits without failing criteria', async () => {
     const eventStore = createEventStore()
     getEventStoreMock.mockReturnValue(eventStore)
     getAllInstructionsMock.mockResolvedValue({ content: 'Verify carefully', files: [] })
@@ -1135,7 +1135,7 @@ describe('chat orchestrator', () => {
       execute: vi.fn(),
     })
     streamLLMPureMock.mockReturnValue({ kind: 'stream' })
-    for (let index = 0; index < 6; index++) {
+    for (let index = 0; index < 11; index++) {
       consumeStreamGeneratorMock.mockResolvedValueOnce({
         content: `stopped-${index}`,
         toolCalls: [],
@@ -1154,16 +1154,18 @@ describe('chat orchestrator', () => {
       onMessage: vi.fn(),
     }, new TurnMetrics())
 
-    expect(result.allPassed).toBe(false)
-    expect(result.failed).toEqual([
-      {
-        id: 'tests-pass',
-        reason: 'Verifier stopped repeatedly before terminalizing verification after repeated nudges.',
-      },
-    ])
-    expect(sessionManager.updateCriterionStatus).toHaveBeenCalledTimes(1)
-    expect(sessionManager.addCriterionAttempt).toHaveBeenCalledTimes(1)
-    expect(streamLLMPureMock.mock.calls).toHaveLength(6)
+    expect(result).toEqual({ allPassed: false, failed: [] })
+    expect(sessionManager.updateCriterionStatus).not.toHaveBeenCalled()
+    expect(sessionManager.addCriterionAttempt).not.toHaveBeenCalled()
+    expect(streamLLMPureMock.mock.calls).toHaveLength(11)
+
+    const nudgeMessages = eventStore.append.mock.calls.filter(
+      ([, event]) => event.type === 'message.start'
+        && (event.data as any).messageKind === 'correction'
+        && (event.data as any).subAgentType === 'verifier'
+        && (event.data as any).content?.includes('You stopped before finalizing verification.')
+    )
+    expect(nudgeMessages).toHaveLength(10)
   })
 
   it('does not nudge verifier when tool calls terminalize criteria', async () => {
@@ -1338,10 +1340,22 @@ describe('chat orchestrator', () => {
         }
       }
 
+      if (toolCallCount === 6) {
+        return {
+          content: 'passing criterion',
+          toolCalls: [{ id: 'call-pass', name: 'pass_criterion', arguments: { id: 'tests-pass', reason: 'verified after continued checking' } }],
+          segments: [],
+          usage: { promptTokens: 8, completionTokens: 1 },
+          timing: { ttft: 1, completionTime: 1, tps: 1, prefillTps: 8 },
+          aborted: false,
+          xmlFormatError: false,
+        }
+      }
+
       return {
-        content: 'passing criterion',
-        toolCalls: [{ id: 'call-pass', name: 'pass_criterion', arguments: { id: 'tests-pass', reason: 'verified after continued checking' } }],
-        segments: [],
+        content: 'verified',
+        toolCalls: [],
+        segments: [{ type: 'text', content: 'verified' }],
         usage: { promptTokens: 8, completionTokens: 1 },
         timing: { ttft: 1, completionTime: 1, tps: 1, prefillTps: 8 },
         aborted: false,
@@ -1372,7 +1386,7 @@ describe('chat orchestrator', () => {
     expect((nudgeMessages[0]?.[1].data as any).content).toContain('Use pass_criterion or fail_criterion')
   })
 
-  it('fails verifier only after repeated empty stops even after exploratory tool calls', async () => {
+  it('exits verifier after 10 empty stops even after exploratory tool calls, without failing criteria', async () => {
     const eventStore = createEventStore()
     getEventStoreMock.mockReturnValue(eventStore)
     getAllInstructionsMock.mockResolvedValue({ content: 'Verify carefully', files: [] })
@@ -1440,22 +1454,95 @@ describe('chat orchestrator', () => {
       onMessage: vi.fn(),
     }, new TurnMetrics())
 
-    expect(result.allPassed).toBe(false)
-    expect(result.failed).toEqual([
-      {
-        id: 'tests-pass',
-        reason: 'Verifier stopped repeatedly before terminalizing verification after repeated nudges.',
-      },
-    ])
-    expect(sessionManager.updateCriterionStatus).toHaveBeenCalledTimes(1)
-    expect(streamLLMPureMock.mock.calls).toHaveLength(10)
+    expect(result).toEqual({ allPassed: false, failed: [] })
+    expect(sessionManager.updateCriterionStatus).not.toHaveBeenCalled()
+    expect(sessionManager.addCriterionAttempt).not.toHaveBeenCalled()
+    expect(streamLLMPureMock.mock.calls).toHaveLength(15)
 
-    const correctionMessages = eventStore.append.mock.calls.filter(
+    const nudgeMessages = eventStore.append.mock.calls.filter(
       ([, event]) => event.type === 'message.start' &&
         (event.data as any).messageKind === 'correction' &&
-        (event.data as any).subAgentType === 'verifier'
+        (event.data as any).subAgentType === 'verifier' &&
+        (event.data as any).content?.includes('You stopped before finalizing verification.')
     )
-    expect(correctionMessages).toHaveLength(6)
+    expect(nudgeMessages).toHaveLength(10)
+  })
+
+  it('does not consume the empty-stop budget for malformed verifier tool calls', async () => {
+    const eventStore = createEventStore()
+    getEventStoreMock.mockReturnValue(eventStore)
+    getAllInstructionsMock.mockResolvedValue({ content: 'Verify carefully', files: [] })
+
+    const state: any = {
+      current: {
+        id: 'session-1',
+        projectId: 'project-1',
+        workdir: '/tmp/project',
+        mode: 'builder',
+        phase: 'verification',
+        isRunning: true,
+        criteria: [{ id: 'tests-pass', description: 'Tests pass', status: { type: 'completed', completedAt: '2024-01-01T00:00:00.000Z' }, attempts: [] }],
+        executionState: { modifiedFiles: ['src/index.ts'] },
+        summary: 'Task summary',
+        messages: [],
+      },
+    }
+    const sessionManager = createSessionManager(state)
+    const execute = vi.fn()
+
+    getToolRegistryForModeMock.mockReturnValue({
+      definitions: [{ type: 'function', function: { name: 'read_file', description: 'Read', parameters: {} } }],
+      execute,
+    })
+    streamLLMPureMock.mockReturnValue({ kind: 'stream' })
+    consumeStreamGeneratorMock.mockResolvedValueOnce({
+      content: 'checking',
+      toolCalls: [{
+        id: 'call-1',
+        name: 'read_file',
+        arguments: {},
+        parseError: 'Unexpected token in JSON at position 1',
+        rawArguments: '{bad-json',
+      }],
+      segments: [],
+      usage: { promptTokens: 8, completionTokens: 1 },
+      timing: { ttft: 1, completionTime: 1, tps: 1, prefillTps: 8 },
+      aborted: false,
+      xmlFormatError: false,
+    })
+
+    for (let index = 0; index < 11; index++) {
+      consumeStreamGeneratorMock.mockResolvedValueOnce({
+        content: `stopped-${index}`,
+        toolCalls: [],
+        segments: [{ type: 'text', content: `stopped-${index}` }],
+        usage: { promptTokens: 8, completionTokens: 1 },
+        timing: { ttft: 1, completionTime: 1, tps: 1, prefillTps: 8 },
+        aborted: false,
+        xmlFormatError: false,
+      })
+    }
+
+    const result = await runVerifierTurn({
+      sessionManager: sessionManager as never,
+      sessionId: 'session-1',
+      llmClient: { getModel: () => 'qwen3-32b' } as never,
+      onMessage: vi.fn(),
+    }, new TurnMetrics())
+
+    expect(result).toEqual({ allPassed: false, failed: [] })
+    expect(execute).not.toHaveBeenCalled()
+    expect(sessionManager.updateCriterionStatus).not.toHaveBeenCalled()
+    expect(sessionManager.addCriterionAttempt).not.toHaveBeenCalled()
+    expect(streamLLMPureMock.mock.calls).toHaveLength(12)
+
+    const nudgeMessages = eventStore.append.mock.calls.filter(
+      ([, event]) => event.type === 'message.start'
+        && (event.data as any).messageKind === 'correction'
+        && (event.data as any).subAgentType === 'verifier'
+        && (event.data as any).content?.includes('You stopped before finalizing verification.')
+    )
+    expect(nudgeMessages).toHaveLength(10)
   })
 
   it('handles verifier path denial and nudges until verification reaches a terminal state', async () => {

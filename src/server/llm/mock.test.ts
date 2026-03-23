@@ -165,6 +165,115 @@ describe('mock llm runtime reminders', () => {
     ])
   })
 
+  it('passes inspect-src during verifier follow-up', async () => {
+    const client = createMockLLMClient()
+
+    const response = await client.complete({
+      messages: [
+        {
+          role: 'user',
+          content: 'Add criterion with ID "inspect-src": "Inspect the src directory and report what exists". Use add_criterion.',
+        },
+        {
+          role: 'assistant',
+          content: 'Added the criterion.',
+          toolCalls: [{ id: 'call-1', name: 'add_criterion', arguments: { id: 'inspect-src', description: 'Inspect the src directory and report what exists' } }],
+        },
+        {
+          role: 'tool',
+          content: 'Added criterion "inspect-src".',
+          toolCallId: 'call-1',
+        },
+        {
+          role: 'user',
+          content: 'Verify each criterion marked [NEEDS VERIFICATION].',
+        },
+      ],
+    })
+
+    expect(response.toolCalls).toEqual([
+      expect.objectContaining({ name: 'pass_criterion', arguments: { id: 'inspect-src', reason: 'Verified the src directory was inspected successfully' } }),
+    ])
+  })
+
+  it('continues builder retries with criterion-aware tool calls', async () => {
+    const client = createMockLLMClient()
+
+    const response = await client.complete({
+      messages: [
+        {
+          role: 'user',
+          content: 'Add criterion ID "file-created": "A new file utils.ts exists". Use add_criterion.',
+        },
+        {
+          role: 'assistant',
+          content: 'Added the criterion.',
+          toolCalls: [{ id: 'call-1', name: 'add_criterion', arguments: { id: 'file-created', description: 'A new file utils.ts exists' } }],
+        },
+        {
+          role: 'tool',
+          content: 'Added criterion "file-created".',
+          toolCallId: 'call-1',
+        },
+        {
+          role: 'user',
+          content: 'Continue working on the acceptance criteria. 1 criteria remaining.',
+        },
+      ],
+    })
+
+    expect(response.toolCalls).toEqual([
+      expect.objectContaining({ name: 'write_file', arguments: { path: 'src/utils.ts', content: 'export const created = true' } }),
+      expect.objectContaining({ name: 'complete_criterion', arguments: { id: 'file-created', reason: 'Created the requested file' } }),
+    ])
+  })
+
+  it('handles multiple criteria in a single verifier pass', async () => {
+    const client = createMockLLMClient()
+
+    const response = await client.complete({
+      messages: [
+        {
+          role: 'user',
+          content: 'Add criterion ID "file-created": "A new file utils.ts exists". Use add_criterion.',
+        },
+        {
+          role: 'assistant',
+          content: 'Added the criterion.',
+          toolCalls: [{ id: 'call-1', name: 'add_criterion', arguments: { id: 'file-created', description: 'A new file utils.ts exists' } }],
+        },
+        {
+          role: 'tool',
+          content: 'Added criterion "file-created".',
+          toolCallId: 'call-1',
+        },
+        {
+          role: 'user',
+          content: 'Add criterion ID "trivial-pass": "Trivial pass criterion". Use add_criterion.',
+        },
+        {
+          role: 'assistant',
+          content: 'Added the criterion.',
+          toolCalls: [{ id: 'call-2', name: 'add_criterion', arguments: { id: 'trivial-pass', description: 'Trivial pass criterion' } }],
+        },
+        {
+          role: 'tool',
+          content: 'Added criterion "trivial-pass".',
+          toolCallId: 'call-2',
+        },
+        {
+          role: 'user',
+          content: 'Verify each criterion marked [NEEDS VERIFICATION].',
+        },
+      ],
+    })
+
+    expect(response.toolCalls).toEqual([
+      expect.objectContaining({ name: 'pass_criterion', arguments: { id: 'trivial-pass', reason: 'Verified successfully' } }),
+      expect.objectContaining({ name: 'pass_criterion', arguments: { id: 'file-created', reason: 'Verified the file was created successfully' } }),
+    ])
+  })
+
   it('returns get_criteria before completing a criterion when the prompt asks for both', async () => {
     const client = createMockLLMClient()
 

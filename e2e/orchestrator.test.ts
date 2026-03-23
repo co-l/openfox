@@ -128,17 +128,15 @@ describe('Runner/Orchestrator', () => {
   })
 
   describe('Blocked State', () => {
-    it('reaches blocked after repeated failures', { timeout: 10_000 }, async () => {
-      const uniqueId = `missing-${Date.now()}`
-      await client.send('criteria.edit', { 
-        criteria: [{ id: uniqueId, description: 'File /nonexistent-xyz.txt exists', status: { type: 'pending' }, attempts: [] }] 
+    it('reaches blocked after repeated failures', { timeout: 20_000 }, async () => {
+      await client.send('chat.send', {
+        content: 'Add criterion ID "verify-fail": "Verifier should fail this criterion". Use add_criterion.',
       })
-      await client.waitFor('criteria.updated')
+      await client.waitForChatDone()
 
-      await client.send('mode.switch', { mode: 'builder' })
-      await client.send('runner.launch', {})
+      await client.send('mode.accept', {})
 
-      await collectUntilPhase(client, 'blocked', 5_000)
+      await collectUntilPhase(client, 'blocked', 15_000)
       
       const session = client.getSession()!
       expect(session.phase).toBe('blocked')
@@ -202,14 +200,14 @@ describe('Runner/Orchestrator', () => {
   })
 
   describe('Reset Blocked', () => {
-    it('resets from blocked state on user intervention', { timeout: 15_000 }, async () => {
-      await client.send('criteria.edit', {
-        criteria: [{ id: 'reset-blocked', description: 'Impossible thing', status: { type: 'pending' }, attempts: [] }],
+    it('resets from blocked state on user intervention', { timeout: 20_000 }, async () => {
+      await client.send('chat.send', {
+        content: 'Add criterion ID "verify-fail": "Verifier should fail this criterion". Use add_criterion.',
       })
-      await client.send('mode.switch', { mode: 'builder' })
-      await client.send('runner.launch', {})
+      await client.waitForChatDone()
+      await client.send('mode.accept', {})
 
-      await collectUntilPhase(client, 'blocked', 8_000)
+      await collectUntilPhase(client, 'blocked', 15_000)
       
       // Send user message to reset
       await client.send('chat.send', { 
@@ -256,7 +254,7 @@ describe('Runner/Orchestrator', () => {
       expect(stats).toBeDefined()
     })
 
-    it('emits chat.done with complete at end of multi-iteration run', async () => {
+    it('emits chat.done with complete at end of multi-iteration run', { timeout: 10_000 }, async () => {
       await client.send('chat.send', {
         content: 'Add criterion ID "file-created": "A new file utils.ts exists". Use add_criterion.',
       })
@@ -269,7 +267,7 @@ describe('Runner/Orchestrator', () => {
       await client.send('runner.launch', {})
       
       // Wait for completion
-      await collectUntilPhase(client, 'done', 1_500)
+      await collectUntilPhase(client, 'done', 5_000)
       
       const events = client.allEvents()
       

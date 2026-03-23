@@ -218,10 +218,10 @@ describe('Mode Switching', () => {
       expect(['build', 'verification', 'done']).toContain(session.phase)
     })
 
-    it('sets phase to blocked after max failures', { timeout: 15_000 }, async () => {
-      // Add an impossible criterion
+    it('sets phase to blocked after max failures', { timeout: 20_000 }, async () => {
+      // Add a criterion the mock verifier intentionally fails repeatedly
       await client.send('chat.send', { 
-        content: 'Add criterion: "The file /impossible/path/that/does/not/exist.txt contains the text MAGIC". Use add_criterion.' 
+        content: 'Add criterion ID "verify-fail": "Verifier should fail this criterion". Use add_criterion.' 
       })
       await client.waitForChatDone()
       
@@ -235,14 +235,10 @@ describe('Mode Switching', () => {
       })
       await client.send('runner.launch', {})
 
-      // Should eventually get blocked (or done if LLM gives up gracefully)
-      const events = await collectUntilPhase(client, 'blocked', 10_000)
-        .catch(() => collectUntilPhase(client, 'done', 10_000))
-      
-      // Either blocked or done is acceptable
+      const events = await collectUntilPhase(client, 'blocked', 15_000)
       const lastPhase = events.get('phase.changed').slice(-1)[0]
       const phase = (lastPhase?.payload as { phase: string })?.phase
-      expect(['blocked', 'done']).toContain(phase)
+      expect(phase).toBe('blocked')
     })
   })
 

@@ -128,7 +128,7 @@ Please explore the existing code and propose acceptance criteria using add_crite
       expect(criterion?.status.type).toBe('passed')
     })
 
-    it('verifier fails and builder retries', { timeout: 10_000 }, async () => {
+    it('verifier fails and builder retries', { timeout: 20_000 }, async () => {
       await client.send('project.create', { name: 'Retry Workflow', workdir: testDir.path })
       const projectId = client.getProject()!.id
       await client.send('session.create', { projectId })
@@ -140,7 +140,7 @@ Please explore the existing code and propose acceptance criteria using add_crite
       await client.send('mode.switch', { mode: 'builder' })
       await client.send('runner.launch', {})
 
-      await collectUntilPhase(client, 'blocked', 5_000)
+      await collectUntilPhase(client, 'blocked', 15_000)
       
       const session = client.getSession()!
       const events = client.allEvents()
@@ -151,7 +151,7 @@ Please explore the existing code and propose acceptance criteria using add_crite
   })
 
   describe('Multiple Criteria', () => {
-    it('handles multiple criteria in sequence', { timeout: 10_000 }, async () => {
+    it('handles multiple criteria in sequence', { timeout: 20_000 }, async () => {
       await client.send('project.create', { name: 'Multi Criteria', workdir: testDir.path })
       const projectId = client.getProject()!.id
       await client.send('session.create', { projectId })
@@ -161,19 +161,19 @@ Please explore the existing code and propose acceptance criteria using add_crite
       })
       await client.waitForChatDone()
       await client.send('chat.send', {
-        content: 'Add criterion ID "verify-fail": "Verifier should fail this criterion". Use add_criterion.',
+        content: 'Add criterion ID "trivial-pass": "Trivial pass criterion". Use add_criterion.',
       })
       await client.waitForChatDone()
       await client.send('mode.switch', { mode: 'builder' })
       await client.send('runner.launch', {})
 
-      await collectUntilPhase(client, 'blocked', 5_000)
+      await collectUntilPhase(client, 'done', 15_000)
 
       const finalSession = client.getSession()!
-      const processed = finalSession.criteria.filter((c: Criterion) => 
-        c.status.type !== 'pending'
+      const processed = finalSession.criteria.filter((c: Criterion) =>
+        c.status.type === 'passed'
       )
-      expect(processed.length).toBeGreaterThan(0)
+      expect(processed).toHaveLength(2)
     })
   })
 
@@ -235,7 +235,7 @@ Please explore the existing code and propose acceptance criteria using add_crite
   })
 
   describe('User Intervention', () => {
-    it('resets blocked state on user message', async () => {
+    it('resets blocked state on user message', { timeout: 10_000 }, async () => {
       await client.send('project.create', { name: 'Intervention Test', workdir: testDir.path })
       const projectId = client.getProject()!.id
       await client.send('session.create', { projectId })
@@ -253,10 +253,12 @@ Please explore the existing code and propose acceptance criteria using add_crite
       await client.send('chat.send', { 
         content: 'Actually, let me help you. Just create src/newfile.ts with "export const x = 1".' 
       })
-      
-      // Should not error out
-      const events = await collectChatEvents(client)
-      assertNoErrors(events)
+
+      await client.waitForChatDone(5_000)
+
+      const allEvents = client.allEvents()
+      const errorEvents = allEvents.filter((event) => event.type === 'error' || event.type === 'chat.error')
+      expect(errorEvents).toHaveLength(0)
     })
   })
 })

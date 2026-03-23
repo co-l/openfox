@@ -9,7 +9,6 @@
  */
 
 import type { OrchestratorOptions, OrchestratorResult } from './types.js'
-import { RUNNER_CONFIG } from './types.js'
 import { decideNextAction } from './decision.js'
 import type { SessionManager } from '../session/index.js'
 import { getEventStore, getCurrentContextWindowId } from '../events/index.js'
@@ -38,7 +37,7 @@ export async function runOrchestrator(options: OrchestratorOptions): Promise<Orc
   
   logger.debug('Orchestrator starting', { sessionId })
   
-  while (iterations < RUNNER_CONFIG.maxIterations) {
+  while (true) {
     // Check abort signal
     if (signal?.aborted) {
       logger.debug('Orchestrator aborted', { sessionId, iterations })
@@ -134,26 +133,5 @@ export async function runOrchestrator(options: OrchestratorOptions): Promise<Orc
         break
       }
     }
-  }
-  
-  // Max iterations reached
-  logger.warn('Orchestrator max iterations reached', { sessionId, iterations })
-  const maxIterAction = { type: 'BLOCKED' as const, reason: 'Max iterations reached', blockedCriteria: [] }
-  
-  sessionManager.setPhase(sessionId, 'blocked')
-  eventStore.append(sessionId, { type: 'phase.changed', data: { phase: 'blocked' } })
-  
-  const maxIterMsgId = crypto.randomUUID()
-  eventStore.append(sessionId, createMessageStartEvent(maxIterMsgId, 'user', `Runner stopped: Maximum iterations (${RUNNER_CONFIG.maxIterations}) reached`, {
-    ...(getCurrentWindowMessageOptions(sessionId) ?? {}),
-    isSystemGenerated: true,
-    messageKind: 'correction',
-  }))
-  eventStore.append(sessionId, { type: 'message.done', data: { messageId: maxIterMsgId } })
-  
-  return {
-    finalAction: maxIterAction,
-    iterations,
-    totalTime: (performance.now() - startTime) / 1000,
   }
 }

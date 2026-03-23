@@ -56,7 +56,7 @@ function toRequestContextMessages(messages: Array<{
 // ============================================================================
 
 const MAX_FORMAT_RETRIES = 10
-const MAX_CONSECUTIVE_VERIFIER_NUDGES = 5
+const MAX_CONSECUTIVE_VERIFIER_NUDGES = 10
 const FORMAT_CORRECTION_PROMPT = `IMPORTANT: You MUST use the JSON function calling API. Do NOT output XML tags like <tool_call>, <function=>, or <parameter=>. Your previous attempt was stopped because you used the wrong format. Use the proper tool_calls format.`
 const VERIFIER_STALL_REASON = 'Verifier stopped repeatedly before terminalizing verification after repeated nudges.'
 
@@ -748,19 +748,15 @@ ${modifiedFiles.length > 0 ? modifiedFiles.map(f => `- ${f}`).join('\n') : '(non
     { role: 'user', content: VERIFIER_KICKOFF_PROMPT, source: 'runtime' },
   ]
 
-  const maxIterations = 20
-  let lastAssistantMsgId = ''
   let consecutiveEmptyVerifierStops = 0
-  let emittedTerminalDone = false
 
-  for (let iteration = 0; iteration < maxIterations; iteration++) {
+  for (;;) {
     if (signal?.aborted) {
       throw new Error('Aborted')
     }
 
     // Create assistant message with current context window ID
     const assistantMsgId = crypto.randomUUID()
-    lastAssistantMsgId = assistantMsgId
     eventStore.append(sessionId, createMessageStartEvent(assistantMsgId, 'assistant', undefined, {
       ...(currentWindowMessageOptions ?? {}),
       subAgentId,
@@ -842,11 +838,8 @@ ${modifiedFiles.length > 0 ? modifiedFiles.map(f => `- ${f}`).join('\n') : '(non
           continue
         }
 
-        markCriteriaFailedAfterVerifierStall(sessionManager, sessionId, criteriaAwaitingVerification)
-        session = sessionManager.requireSession(sessionId)
-
         const stalledMsgId = crypto.randomUUID()
-        eventStore.append(sessionId, createMessageStartEvent(stalledMsgId, 'user', `${VERIFIER_STALL_REASON} Marking remaining criteria as failed: ${criteriaAwaitingVerification.map(c => c.id).join(', ')}.`, {
+        eventStore.append(sessionId, createMessageStartEvent(stalledMsgId, 'user', buildVerifierRestartContent(criteriaAwaitingVerification), {
           ...(currentWindowMessageOptions ?? {}),
           isSystemGenerated: true,
           messageKind: 'correction',
@@ -863,7 +856,6 @@ ${modifiedFiles.length > 0 ? modifiedFiles.map(f => `- ${f}`).join('\n') : '(non
         promptContext: assembledRequest.promptContext,
       }))
       eventStore.append(sessionId, createChatDoneEvent(assistantMsgId, 'complete', stats))
-      emittedTerminalDone = true
       break
     }
 
@@ -974,44 +966,14 @@ ${modifiedFiles.length > 0 ? modifiedFiles.map(f => `- ${f}`).join('\n') : '(non
 
     // Tool calls were made, so this was not an empty verifier stop.
     // Let exploratory verification continue until the verifier actually stops
-    // without terminalizing criteria or until maxIterations is reached.
+    // without terminalizing criteria.
     consecutiveEmptyVerifierStops = 0
     continue
   }
 
-  session = sessionManager.requireSession(sessionId)
-  const remainingCriteriaAfterLoop = getCriteriaAwaitingVerification(session.criteria)
-
-  if (remainingCriteriaAfterLoop.length > 0) {
-    markCriteriaFailedAfterVerifierStall(sessionManager, sessionId, remainingCriteriaAfterLoop)
-    session = sessionManager.requireSession(sessionId)
-
-    const stalledMsgId = crypto.randomUUID()
-    eventStore.append(sessionId, createMessageStartEvent(stalledMsgId, 'user', `${VERIFIER_STALL_REASON} Marking remaining criteria as failed: ${remainingCriteriaAfterLoop.map((criterion) => criterion.id).join(', ')}.`, {
-      ...(currentWindowMessageOptions ?? {}),
-      isSystemGenerated: true,
-      messageKind: 'correction',
-      subAgentId,
-      subAgentType: 'verifier',
-    }))
-    eventStore.append(sessionId, { type: 'message.done', data: { messageId: stalledMsgId } })
-
-    if (!emittedTerminalDone && lastAssistantMsgId) {
-      const stats = turnMetrics.buildStats(statsIdentity, 'verifier')
-      eventStore.append(sessionId, createMessageDoneEvent(lastAssistantMsgId, { stats }))
-      eventStore.append(sessionId, createChatDoneEvent(lastAssistantMsgId, 'complete', stats))
-      emittedTerminalDone = true
-    }
-  }
-
-  if (!emittedTerminalDone && lastAssistantMsgId) {
-    const stats = turnMetrics.buildStats(statsIdentity, 'verifier')
-    eventStore.append(sessionId, createMessageDoneEvent(lastAssistantMsgId, { stats }))
-    eventStore.append(sessionId, createChatDoneEvent(lastAssistantMsgId, 'complete', stats))
-  }
-
   // Check results
   session = sessionManager.requireSession(sessionId)
+  const remainingCriteriaAwaitingVerification = getCriteriaAwaitingVerification(session.criteria)
   const failed = session.criteria
     .filter(c => c.status.type === 'failed')
     .map(c => ({
@@ -1021,11 +983,19 @@ ${modifiedFiles.length > 0 ? modifiedFiles.map(f => `- ${f}`).join('\n') : '(non
 
   if (failed.length > 0) {
     logger.warn('Verification failed', { sessionId, failed: failed.length })
+  } else if (remainingCriteriaAwaitingVerification.length > 0) {
+    logger.debug('Verification paused with criteria still awaiting terminalization', {
+      sessionId,
+      remaining: remainingCriteriaAwaitingVerification.length,
+    })
   } else {
     logger.debug('All criteria verified', { sessionId })
   }
 
-  return { allPassed: failed.length === 0, failed }
+  return {
+    allPassed: failed.length === 0 && remainingCriteriaAwaitingVerification.length === 0,
+    failed,
+  }
 }
 
 // ============================================================================
@@ -1041,27 +1011,9 @@ function buildVerifierNudgeContent(criteria: Criterion[]): string {
   return `You stopped before finalizing verification. ${criteria.length} criteria still need a terminal verification result. Use pass_criterion or fail_criterion for each remaining criterion: ${ids}.`
 }
 
-function markCriteriaFailedAfterVerifierStall(
-  sessionManager: SessionManager,
-  sessionId: string,
-  criteria: Criterion[],
-): void {
-  const timestamp = new Date().toISOString()
-
-  for (const criterion of criteria) {
-    sessionManager.updateCriterionStatus(sessionId, criterion.id, {
-      type: 'failed',
-      failedAt: timestamp,
-      reason: VERIFIER_STALL_REASON,
-    })
-
-    sessionManager.addCriterionAttempt(sessionId, criterion.id, {
-      attemptNumber: criterion.attempts.length + 1,
-      status: 'failed',
-      timestamp,
-      details: VERIFIER_STALL_REASON,
-    })
-  }
+function buildVerifierRestartContent(criteria: Criterion[]): string {
+  const ids = criteria.map((criterion) => criterion.id).join(', ')
+  return `${VERIFIER_STALL_REASON} Leaving remaining criteria unchanged so verification can restart in a fresh window: ${ids}.`
 }
 
 /**
