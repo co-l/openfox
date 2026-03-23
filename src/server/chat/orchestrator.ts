@@ -25,8 +25,7 @@ import { maybeAutoCompactContext } from '../context/auto-compaction.js'
 import { getAllInstructions } from '../context/instructions.js'
 import { logger } from '../utils/logger.js'
 import { assembleBuilderRequest, assemblePlannerRequest, assembleVerifierRequest, type RequestContextMessage } from './request-context.js'
-import { createSubAgentManager } from '../sub-agents/manager.js'
-import type { SubAgentType } from '../sub-agents/types.js'
+import { createSubAgentRegistry } from '../sub-agents/registry.js'
 
 // Re-export for runner orchestrator
 export { TurnMetrics, createMessageStartEvent, createMessageDoneEvent, createToolCallEvent, createToolResultEvent, createChatDoneEvent }
@@ -654,15 +653,18 @@ export interface VerifierResult {
 }
 
 /**
- * Run a verifier turn with fresh context using Sub-Agent framework.
- * Unlike builder/planner, verifier uses only summary + criteria, not full conversation.
+ * Run a verifier turn with fresh context.
+ * Uses the sub-agent registry for context building but keeps EventStore-based
+ * event emission and nudge/stall logic that the verifier requires.
  */
 export async function runVerifierTurn(
   options: OrchestratorOptions,
   turnMetrics: TurnMetrics
 ): Promise<VerifierResult> {
   const { sessionManager, sessionId, llmClient, signal, onMessage } = options
+  const eventStore = getEventStore()
   const statsIdentity = resolveStatsIdentity(options)
+  const subAgentId = crypto.randomUUID()
 
   let session = sessionManager.requireSession(sessionId)
 
@@ -673,45 +675,310 @@ export async function runVerifierTurn(
     return { allPassed: true, failed: [] }
   }
 
-  // Use SubAgentManager to execute verifier
-  const subAgentManager = createSubAgentManager()
+  // Use sub-agent registry for context building
+  const registry = createSubAgentRegistry()
+  const definition = registry.getSubAgent('verifier')!
+  const initialContext = definition.createContext(session, { prompt: VERIFIER_KICKOFF_PROMPT })
+
+  logger.debug('Verifier starting', { sessionId, subAgentId, criteriaCount: session.criteria.length })
+  const currentWindowMessageOptions = getCurrentWindowMessageOptions(sessionId)
+
+  // Emit context reset marker (visible in UI)
+  const resetMsgId = crypto.randomUUID()
+  eventStore.append(sessionId, createMessageStartEvent(resetMsgId, 'user', 'Fresh Context', {
+    ...(currentWindowMessageOptions ?? {}),
+    isSystemGenerated: true,
+    messageKind: 'context-reset',
+    subAgentId,
+    subAgentType: 'verifier',
+  }))
+  eventStore.append(sessionId, { type: 'message.done', data: { messageId: resetMsgId } })
+
+  // Emit context content
+  const contextMsgId = crypto.randomUUID()
+  eventStore.append(sessionId, createMessageStartEvent(contextMsgId, 'user', initialContext.messages[0].content, {
+    ...(currentWindowMessageOptions ?? {}),
+    isSystemGenerated: true,
+    messageKind: 'auto-prompt',
+    subAgentId,
+    subAgentType: 'verifier',
+  }))
+  eventStore.append(sessionId, { type: 'message.done', data: { messageId: contextMsgId } })
+
+  // Emit verifier kickoff prompt
+  const kickoffMsgId = crypto.randomUUID()
+  eventStore.append(sessionId, createMessageStartEvent(kickoffMsgId, 'user', VERIFIER_KICKOFF_PROMPT, {
+    ...(currentWindowMessageOptions ?? {}),
+    isSystemGenerated: true,
+    messageKind: 'auto-prompt',
+    subAgentId,
+    subAgentType: 'verifier',
+  }))
+  eventStore.append(sessionId, { type: 'message.done', data: { messageId: kickoffMsgId } })
+
+  // Load instructions
+  const { content: instructionContent, files } = await getAllInstructions(session.workdir, session.projectId)
+  const injectedFiles: InjectedFile[] = files.map(file => ({
+    path: file.path,
+    content: file.content ?? '',
+    source: file.source,
+  }))
+
   const toolRegistry = getToolRegistryForMode('verifier')
 
-  try {
-    const result = await subAgentManager.executeSubAgent(
-      'verifier' as SubAgentType,
-      VERIFIER_KICKOFF_PROMPT,
-      sessionManager,
-      sessionId,
-      llmClient,
-      toolRegistry,
-      onMessage  // Pass the onMessage callback to stream verifier events to UI
-    )
+  // Build fresh context messages (not from EventStore - verifier has isolated context)
+  let customMessages: RequestContextMessage[] = initialContext.messages.map(m => ({
+    role: m.role as 'user' | 'assistant' | 'tool',
+    content: m.content,
+    source: m.source as 'runtime' | 'history',
+  }))
 
-    // Track metrics (sub-agent execution)
-    turnMetrics.addLLMCall({ ttft: 0, completionTime: 0, tps: 0, prefillTps: 0 }, 0, 0)
+  let consecutiveEmptyVerifierStops = 0
 
-    logger.debug('Verifier sub-agent completed', { sessionId, resultLength: result.length })
-
-    // Check results from session state
-    session = sessionManager.requireSession(sessionId)
-    const failed = session.criteria
-      .filter(c => c.status.type === 'failed')
-      .map(c => ({
-        id: c.id,
-        reason: c.status.type === 'failed' ? c.status.reason : 'unknown',
-      }))
-
-    if (failed.length > 0) {
-      logger.warn('Verification failed', { sessionId, failed: failed.length })
-    } else {
-      logger.debug('All criteria verified', { sessionId })
+  for (;;) {
+    if (signal?.aborted) {
+      throw new Error('Aborted')
     }
 
-    return { allPassed: failed.length === 0, failed }
-  } catch (error) {
-    logger.error('Verifier sub-agent error', { sessionId, error })
-    throw error
+    // Create assistant message with current context window ID
+    const assistantMsgId = crypto.randomUUID()
+    eventStore.append(sessionId, createMessageStartEvent(assistantMsgId, 'assistant', undefined, {
+      ...(currentWindowMessageOptions ?? {}),
+      subAgentId,
+      subAgentType: 'verifier',
+    }))
+
+    const assembledRequest = assembleVerifierRequest({
+      workdir: session.workdir,
+      messages: customMessages,
+      injectedFiles,
+      promptTools: toolRegistry.definitions,
+      toolChoice: 'auto',
+      disableThinking: true,
+      ...(instructionContent ? { customInstructions: instructionContent } : {}),
+    })
+
+    // Stream LLM response (no thinking for verifier)
+    const streamGen = streamLLMPure({
+      messageId: assistantMsgId,
+      systemPrompt: assembledRequest.systemPrompt,
+      llmClient,
+      messages: assembledRequest.messages,
+      tools: toolRegistry.definitions,
+      toolChoice: 'auto',
+      signal,
+      disableThinking: true,
+    })
+
+    const result = await consumeStreamGenerator(streamGen, event => {
+      eventStore.append(sessionId, event)
+    })
+
+    if (result.aborted) {
+      const stats = turnMetrics.buildStats(statsIdentity, 'verifier')
+      eventStore.append(sessionId, createMessageDoneEvent(assistantMsgId, {
+        stats,
+        partial: true,
+        promptContext: assembledRequest.promptContext,
+      }))
+      eventStore.append(sessionId, createChatDoneEvent(assistantMsgId, 'stopped', stats))
+      throw new Error('Aborted')
+    }
+
+    // Track metrics (verifier uses fresh context, so don't update main context size)
+    turnMetrics.addLLMCall(result.timing, result.usage.promptTokens, result.usage.completionTokens)
+
+    // Add assistant response to custom context
+    customMessages.push({
+      role: 'assistant',
+      content: result.content,
+      source: 'history',
+      ...(result.toolCalls.length > 0 && { toolCalls: result.toolCalls }),
+    })
+
+    session = sessionManager.requireSession(sessionId)
+    const criteriaAwaitingVerification = getCriteriaAwaitingVerification(session.criteria)
+
+    // If no tool calls, verifier is done or needs a nudge
+    if (result.toolCalls.length === 0) {
+      if (criteriaAwaitingVerification.length > 0) {
+        if (consecutiveEmptyVerifierStops < MAX_CONSECUTIVE_VERIFIER_NUDGES) {
+          consecutiveEmptyVerifierStops += 1
+          const nudgeContent = buildVerifierNudgeContent(criteriaAwaitingVerification)
+          const nudgeMsgId = crypto.randomUUID()
+
+          eventStore.append(sessionId, createMessageDoneEvent(assistantMsgId, {
+            segments: result.segments,
+            promptContext: assembledRequest.promptContext,
+          }))
+          eventStore.append(sessionId, createMessageStartEvent(nudgeMsgId, 'user', nudgeContent, {
+            ...(currentWindowMessageOptions ?? {}),
+            isSystemGenerated: true,
+            messageKind: 'correction',
+            subAgentId,
+            subAgentType: 'verifier',
+          }))
+          eventStore.append(sessionId, { type: 'message.done', data: { messageId: nudgeMsgId } })
+          customMessages = [...customMessages, { role: 'user', content: nudgeContent, source: 'runtime' }]
+          continue
+        }
+
+        // Stalled - auto-fail remaining criteria
+        markCriteriaFailedAfterVerifierStall(sessionManager, sessionId, criteriaAwaitingVerification)
+
+        const stalledMsgId = crypto.randomUUID()
+        eventStore.append(sessionId, createMessageStartEvent(stalledMsgId, 'user', `${VERIFIER_STALL_REASON} Auto-failing remaining criteria.`, {
+          ...(currentWindowMessageOptions ?? {}),
+          isSystemGenerated: true,
+          messageKind: 'correction',
+          subAgentId,
+          subAgentType: 'verifier',
+        }))
+        eventStore.append(sessionId, { type: 'message.done', data: { messageId: stalledMsgId } })
+      }
+
+      const stats = turnMetrics.buildStats(statsIdentity, 'verifier')
+      eventStore.append(sessionId, createMessageDoneEvent(assistantMsgId, {
+        segments: result.segments,
+        stats,
+        promptContext: assembledRequest.promptContext,
+      }))
+      eventStore.append(sessionId, createChatDoneEvent(assistantMsgId, 'complete', stats))
+      break
+    }
+
+    // Emit message done (intermediate, no stats)
+    eventStore.append(sessionId, createMessageDoneEvent(assistantMsgId, {
+      segments: result.segments,
+      promptContext: assembledRequest.promptContext,
+    }))
+
+    // Execute tool calls
+    for (const toolCall of result.toolCalls) {
+      // Check abort before each tool execution
+      if (signal?.aborted) {
+        const stats = turnMetrics.buildStats(statsIdentity, 'verifier')
+        eventStore.append(sessionId, createMessageDoneEvent(assistantMsgId, {
+          stats,
+          partial: true,
+          promptContext: assembledRequest.promptContext,
+        }))
+        eventStore.append(sessionId, createChatDoneEvent(assistantMsgId, 'stopped', stats))
+        throw new Error('Aborted')
+      }
+
+      eventStore.append(sessionId, createToolCallEvent(assistantMsgId, toolCall))
+
+      // Check for parse error - return error result without executing
+      if (toolCall.parseError) {
+        const toolResult: ToolResult = {
+          success: false,
+          error: `Failed to parse tool call arguments: ${toolCall.parseError}. Please ensure your JSON function call arguments are valid.`,
+          durationMs: 0,
+          truncated: false,
+        }
+        turnMetrics.addToolTime(toolResult.durationMs)
+        eventStore.append(sessionId, createToolResultEvent(assistantMsgId, toolCall.id, toolResult))
+
+        // Add tool result to custom context
+        customMessages.push({
+          role: 'tool',
+          content: `Error: ${toolResult.error}`,
+          source: 'history',
+          toolCallId: toolCall.id,
+        })
+        continue
+      }
+
+      // Create progress handler for streaming output (run_command only)
+      const onProgress = onMessage ? createToolProgressHandler(assistantMsgId, toolCall.id, onMessage) : undefined
+
+      let toolResult: ToolResult
+      try {
+        toolResult = await toolRegistry.execute(toolCall.name, toolCall.arguments, {
+          sessionManager,
+          workdir: session.workdir,
+          sessionId,
+          signal,
+          lspManager: sessionManager.getLspManager(sessionId),
+          onEvent: onMessage,
+          onProgress,
+        })
+      } catch (error) {
+        if (error instanceof PathAccessDeniedError) {
+          // User denied access - return as tool error with helpful message
+          toolResult = {
+            success: false,
+            error: `User denied access to ${error.paths.join(', ')}. If you need this file, explain why and ask for permission.`,
+            durationMs: 0,
+            truncated: false,
+          }
+        } else {
+          throw error  // Re-throw other errors
+        }
+      }
+
+      turnMetrics.addToolTime(toolResult.durationMs)
+      eventStore.append(sessionId, createToolResultEvent(assistantMsgId, toolCall.id, toolResult))
+
+      // Add tool result to custom context
+      customMessages.push({
+        role: 'tool',
+        content: toolResult.success ? (toolResult.output ?? 'Success') : `Error: ${toolResult.error}`,
+        source: 'history',
+        toolCallId: toolCall.id,
+      })
+
+      // Check criteria changes
+      const updatedSession = sessionManager.requireSession(sessionId)
+      if (JSON.stringify(updatedSession.criteria) !== JSON.stringify(session.criteria)) {
+        eventStore.append(sessionId, { type: 'criteria.set', data: { criteria: updatedSession.criteria } })
+        session = updatedSession
+      }
+    }
+
+    session = sessionManager.requireSession(sessionId)
+    const remainingCriteriaAfterTools = getCriteriaAwaitingVerification(session.criteria)
+
+    if (remainingCriteriaAfterTools.length < criteriaAwaitingVerification.length) {
+      consecutiveEmptyVerifierStops = 0
+      continue
+    }
+
+    if (remainingCriteriaAfterTools.length === 0) {
+      consecutiveEmptyVerifierStops = 0
+      continue
+    }
+
+    // Tool calls were made but no criteria terminalized - still not an empty stop
+    consecutiveEmptyVerifierStops = 0
+    continue
+  }
+
+  // Check results
+  session = sessionManager.requireSession(sessionId)
+  const remainingCriteriaAwaitingVerification = getCriteriaAwaitingVerification(session.criteria)
+  const failed = session.criteria
+    .filter(c => c.status.type === 'failed')
+    .map(c => ({
+      id: c.id,
+      reason: c.status.type === 'failed' ? c.status.reason : 'unknown',
+    }))
+
+  if (failed.length > 0) {
+    logger.warn('Verification failed', { sessionId, failed: failed.length })
+  } else if (remainingCriteriaAwaitingVerification.length > 0) {
+    logger.debug('Verification paused with criteria still awaiting terminalization', {
+      sessionId,
+      remaining: remainingCriteriaAwaitingVerification.length,
+    })
+  } else {
+    logger.debug('All criteria verified', { sessionId })
+  }
+
+  return {
+    allPassed: failed.length === 0 && remainingCriteriaAwaitingVerification.length === 0,
+    failed,
   }
 }
 

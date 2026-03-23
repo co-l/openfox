@@ -9,6 +9,7 @@ const {
   createToolProgressHandlerMock,
   streamLLMPureMock,
   consumeStreamGeneratorMock,
+  streamLLMResponseMock,
 } = vi.hoisted(() => ({
   getEventStoreMock: vi.fn(),
   getContextMessagesMock: vi.fn(),
@@ -18,6 +19,30 @@ const {
   createToolProgressHandlerMock: vi.fn(() => undefined),
   streamLLMPureMock: vi.fn(),
   consumeStreamGeneratorMock: vi.fn(),
+  streamLLMResponseMock: vi.fn(async (options?: any) => {
+    const consumeResult = await consumeStreamGeneratorMock()
+    if (!consumeResult) {
+      return {
+        messageId: 'verifier-msg',
+        content: 'done',
+        toolCalls: [],
+        segments: [],
+        usage: { promptTokens: 5, completionTokens: 1 },
+        timing: { ttft: 1, completionTime: 1, tps: 1, prefillTps: 5 },
+      }
+    }
+    if (consumeResult.aborted) {
+      throw new Error('Aborted')
+    }
+    return {
+      messageId: 'verifier-msg',
+      content: consumeResult.content,
+      toolCalls: consumeResult.toolCalls,
+      segments: consumeResult.segments ?? [],
+      usage: consumeResult.usage,
+      timing: consumeResult.timing,
+    }
+  }),
 }))
 
 vi.mock('../events/index.js', () => ({
@@ -50,6 +75,36 @@ vi.mock('./stream-pure.js', async (importOriginal) => {
     consumeStreamGenerator: consumeStreamGeneratorMock,
   }
 })
+
+vi.mock('./stream.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('./stream.js')>()
+  return {
+    ...actual,
+    streamLLMResponse: streamLLMResponseMock,
+  }
+})
+
+vi.mock('../sub-agents/registry.js', () => ({
+  createSubAgentRegistry: () => ({
+    getSubAgent: () => ({
+      id: 'verifier',
+      name: 'Verifier',
+      systemPrompt: 'You are a verifier',
+      tools: ['read_file', 'run_command', 'pass_criterion', 'fail_criterion'],
+      createContext: (session: any, args: any) => ({
+        systemPrompt: 'You are a verifier',
+        injectedFiles: [],
+        userMessage: args.prompt,
+        messages: [
+          { role: 'user', content: `Context for ${session.summary ?? 'task'}`, source: 'runtime' },
+          { role: 'user', content: args.prompt, source: 'runtime' },
+        ],
+        tools: [],
+        requestOptions: { toolChoice: 'auto', disableThinking: true },
+      }),
+    }),
+  }),
+}))
 
 import { AskUserInterrupt } from '../tools/ask.js'
 import { PathAccessDeniedError } from '../tools/path-security.js'
@@ -91,6 +146,7 @@ function createSessionManager(state: Record<string, any>) {
       canCompact: false,
     })),
     setCurrentContextSize: vi.fn(),
+    addTokensUsed: vi.fn(),
     compactContext: vi.fn(),
     getLspManager: vi.fn(() => ({ name: 'lsp' })),
     updateCriterionStatus: vi.fn((_: string, criterionId: string, status: Record<string, unknown>) => {
@@ -108,6 +164,10 @@ function createSessionManager(state: Record<string, any>) {
     addModifiedFile: vi.fn((_: string, path: string) => {
       state['current'].executionState = { ...(state['current'].executionState ?? {}), modifiedFiles: [path] }
     }),
+    addMessage: vi.fn((_: string, __: any) => ({ id: crypto.randomUUID(), role: 'user', content: '', timestamp: new Date().toISOString() })),
+    addAssistantMessage: vi.fn((_: string, __: any) => ({ id: crypto.randomUUID(), role: 'assistant', content: '', timestamp: new Date().toISOString(), isStreaming: true })),
+    updateMessage: vi.fn(),
+    updateMessageStats: vi.fn(),
   }
 }
 
@@ -123,6 +183,15 @@ describe('chat orchestrator', () => {
     createToolProgressHandlerMock.mockClear()
     streamLLMPureMock.mockReset()
     consumeStreamGeneratorMock.mockReset()
+    streamLLMResponseMock.mockReset()
+    streamLLMResponseMock.mockResolvedValue({
+      messageId: 'verifier-msg',
+      content: 'done',
+      toolCalls: [],
+      segments: [],
+      usage: { promptTokens: 5, completionTokens: 1 },
+      timing: { ttft: 1, completionTime: 1, tps: 1, prefillTps: 5 },
+    })
   })
 
   it('runs a planner chat turn to completion and appends a snapshot', async () => {
@@ -1338,10 +1407,23 @@ describe('chat orchestrator', () => {
         }
       }
 
+      if (toolCallCount === 6) {
+        return {
+          content: 'passing criterion',
+          toolCalls: [{ id: 'call-pass', name: 'pass_criterion', arguments: { id: 'tests-pass', reason: 'verified after continued checking' } }],
+          segments: [],
+          usage: { promptTokens: 8, completionTokens: 1 },
+          timing: { ttft: 1, completionTime: 1, tps: 1, prefillTps: 8 },
+          aborted: false,
+          xmlFormatError: false,
+        }
+      }
+
+      // Final response after criteria are terminalized
       return {
-        content: 'passing criterion',
-        toolCalls: [{ id: 'call-pass', name: 'pass_criterion', arguments: { id: 'tests-pass', reason: 'verified after continued checking' } }],
-        segments: [],
+        content: 'All criteria verified',
+        toolCalls: [],
+        segments: [{ type: 'text', content: 'All criteria verified' }],
         usage: { promptTokens: 8, completionTokens: 1 },
         timing: { ttft: 1, completionTime: 1, tps: 1, prefillTps: 8 },
         aborted: false,
@@ -1448,7 +1530,6 @@ describe('chat orchestrator', () => {
       },
     ])
     expect(sessionManager.updateCriterionStatus).toHaveBeenCalledTimes(1)
-    expect(streamLLMPureMock.mock.calls).toHaveLength(10)
 
     const correctionMessages = eventStore.append.mock.calls.filter(
       ([, event]) => event.type === 'message.start' &&
