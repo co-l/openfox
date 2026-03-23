@@ -68,48 +68,51 @@ export class FileWatcher {
   /**
    * Start watching the workdir for changes
    */
-  start(): void {
-    // Load .gitignore patterns
-    loadGitignore(this.workdir).then((patterns: string[]) => {
-      this.gitignorePatterns = patterns
-    }).catch((err: Error) => {
+  async start(): Promise<void> {
+    if (this.watcher) {
+      return
+    }
+
+    try {
+      this.gitignorePatterns = await loadGitignore(this.workdir)
+    } catch (err) {
       console.error('Error loading .gitignore:', err)
       this.gitignorePatterns = []
-    })
-    
+    }
+
     this.watcher = watch(this.workdir, { recursive: true }, async (eventType, filename) => {
       if (!filename) return
-      
+
       // Normalize path - filename from fs.watch is already relative to workdir
-      const relativePath = filename.startsWith('/') || filename.startsWith('\\') 
+      const relativePath = filename.startsWith('/') || filename.startsWith('\\')
         ? relative(this.workdir, filename)
         : filename
-      
+
       // Normalize path separators to forward slashes
       const normalizedPath = relativePath.replace(/\\/g, '/')
-      
+
       const filePath = join(this.workdir, normalizedPath)
-      
+
       // Check if path should be excluded
       if (this.shouldExclude(normalizedPath)) {
         return
       }
-      
+
       // Skip binary files
       if (this.isBinaryFile(filename)) {
         return
       }
-      
+
       // Determine change type by checking file existence
       let changeType: ChangeType = 'modify'
-      
+
       try {
         const stats = await stat(filePath)
         if (stats.isFile()) {
           // File exists - check if it's a new file (created in this debounce window)
           const mtime = stats.mtimeMs
           const now = Date.now()
-          
+
           // If file was created very recently (within debounce window), treat as create
           if (now - mtime < this.config.debounceMs + 100) {
             changeType = 'create'
@@ -121,19 +124,19 @@ export class FileWatcher {
         // File doesn't exist - it was deleted
         changeType = 'delete'
       }
-      
+
       // Debounce: clear existing timer for this file
       const existingTimer = this.debounceTimers.get(filePath)
       if (existingTimer) {
         clearTimeout(existingTimer)
       }
-      
+
       // Create new timer
       const timer = setTimeout(async () => {
         this.debounceTimers.delete(filePath)
-        await this.createSnapshot(filePath, relativePath, changeType)
+        await this.createSnapshot(filePath, normalizedPath, changeType)
       }, this.config.debounceMs)
-      
+
       this.debounceTimers.set(filePath, timer)
     })
   }

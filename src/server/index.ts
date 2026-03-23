@@ -119,7 +119,7 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
     
     // Create and start watcher
     const watcher = new FileWatcher(workdir, snapshotDir, config.excludePatterns)
-    watcher.start()
+    await watcher.start()
     historyWatchers.set(workdir, watcher)
     
     logger.info('History watcher started', { workdir })

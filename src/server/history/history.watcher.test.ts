@@ -112,13 +112,12 @@ describe('file watcher', () => {
     // Arrange
     const excludedPath = join(testDir, 'node_modules', 'test.txt')
     await mkdir(join(testDir, 'node_modules'), { recursive: true })
+    await writeFile(join(testDir, '.gitignore'), 'node_modules/\n')
     await writeFile(excludedPath, 'should not be tracked')
     
     const snapshotCallback = vi.fn()
+    watcher = new FileWatcher(testDir, snapshotDir, [])
     watcher.onSnapshot = snapshotCallback
-    
-    // Use gitignore patterns
-    watcher = new FileWatcher(testDir, snapshotDir, ['node_modules/**'])
     watcher.start()
     await new Promise(resolve => setTimeout(resolve, 100))
     

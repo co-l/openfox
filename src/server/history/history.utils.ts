@@ -1,6 +1,7 @@
 import { readFile, existsSync } from 'node:fs'
 import { join } from 'node:path'
 import { promisify } from 'node:util'
+import ignore from 'ignore'
 
 const readFileAsync = promisify(readFile)
 
@@ -34,40 +35,22 @@ export async function loadGitignore(workdir: string): Promise<string[]> {
  * Supports: *, **, ?, and basic patterns
  */
 export function isPathExcluded(relativePath: string, patterns: string[]): boolean {
-  if (patterns.length === 0) {
+  const normalizedPath = normalizeHistoryPath(relativePath)
+
+  if (!normalizedPath || patterns.length === 0) {
     return false
   }
-  
-  // Simple glob matching
-  for (const pattern of patterns) {
-    if (matchPattern(relativePath, pattern)) {
-      return true
-    }
+
+  try {
+    return ignore().add(patterns).ignores(normalizedPath)
+  } catch (error) {
+    console.error('Error matching ignore patterns:', error)
+    return false
   }
-  
-  return false
 }
 
-/**
- * Match a path against a gitignore-style pattern
- */
-function matchPattern(path: string, pattern: string): boolean {
-  // Convert gitignore pattern to regex
-  let regexPattern = pattern
-    .replace(/\./g, '\\.')
-    .replace(/\*\*/g, '.__HIDDEN__')
-    .replace(/\*/g, '[^/]*')
-    .replace(/.__HIDDEN__/g, '.*')
-    .replace(/\?/g, '.')
-  
-  regexPattern = `^${regexPattern}$`
-  
-  try {
-    const regex = new RegExp(regexPattern)
-    return regex.test(path)
-  } catch {
-    return false
-  }
+function normalizeHistoryPath(relativePath: string): string {
+  return relativePath.replace(/\\/g, '/').replace(/^\.\//, '').replace(/^\/+/, '')
 }
 
 // ============================================================================

@@ -1,7 +1,8 @@
 import type { Request, Response } from 'express'
 import { join } from 'node:path'
-import { loadIndex, loadSnapshot, type IndexEntry } from './history.index.js'
+import { loadIndex, loadSnapshot, saveIndex, type IndexEntry } from './history.index.js'
 import { loadConfig } from './history.config.js'
+import { isPathExcluded, loadGitignore } from './history.utils.js'
 
 // ============================================================================
 // Types
@@ -49,11 +50,8 @@ export async function getHistory(req: Request, res: Response): Promise<void> {
     
     const snapshotDir = join(workdir, '.openfox', 'history')
     
-    // Load config for max entries
     const config = await loadConfig(workdir)
-    
-    // Load index
-    let entries = await loadIndex(snapshotDir)
+    let entries = await loadVisibleEntries(workdir, snapshotDir, config.excludePatterns)
     
     // Apply filters
     const filters = getFiltersFromQuery(req.query)
@@ -104,7 +102,8 @@ export async function getHistorySnapshot(req: Request, res: Response): Promise<v
     }
     
     const snapshotDir = join(workdir, '.openfox', 'history')
-    const entries = await loadIndex(snapshotDir)
+    const config = await loadConfig(workdir)
+    const entries = await loadVisibleEntries(workdir, snapshotDir, config.excludePatterns)
     
     // Find the entry by timestamp (snapshotId is the timestamp)
     const entry = entries.find(e => e.timestamp === snapshotId)
@@ -170,6 +169,26 @@ async function findSnapshotFile(snapshotDir: string, entry: IndexEntry): Promise
   }
   
   return null
+}
+
+async function loadVisibleEntries(
+  workdir: string,
+  snapshotDir: string,
+  excludePatterns: string[]
+): Promise<IndexEntry[]> {
+  const [entries, gitignorePatterns] = await Promise.all([
+    loadIndex(snapshotDir),
+    loadGitignore(workdir),
+  ])
+
+  const allPatterns = [...gitignorePatterns, ...excludePatterns]
+  const visibleEntries = entries.filter(entry => !isPathExcluded(entry.path, allPatterns))
+
+  if (visibleEntries.length !== entries.length) {
+    await saveIndex(snapshotDir, visibleEntries)
+  }
+
+  return visibleEntries
 }
 
 // ============================================================================

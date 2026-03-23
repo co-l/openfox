@@ -3,7 +3,7 @@ import { writeFile, rm, mkdir } from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { createSnapshot } from './history.snapshot.js'
-import { getHistorySnapshot } from './history.api.js'
+import { getHistory, getHistorySnapshot } from './history.api.js'
 import type { Request, Response } from 'express'
 
 describe('history API snapshot content', () => {
@@ -92,5 +92,42 @@ describe('history API snapshot content', () => {
     
     // Assert - deleted files should have content (what was deleted)
     expect(jsonResponse.entry.content).toBe(originalContent)
+  })
+
+  it('filters stale ignored entries from history listings', async () => {
+    await writeFile(join(testDir, '.gitignore'), 'node_modules/\n')
+
+    const ignoredDir = join(testDir, 'node_modules')
+    await mkdir(ignoredDir, { recursive: true })
+
+    const ignoredFile = join(ignoredDir, 'tracked-by-bug.js')
+    const trackedFile = join(testDir, 'src.ts')
+
+    await writeFile(ignoredFile, 'ignored')
+    await writeFile(trackedFile, 'tracked')
+
+    const ignoredSnapshot = await createSnapshot(ignoredFile, testDir, 'create', snapshotDir)
+    const trackedSnapshot = await createSnapshot(trackedFile, testDir, 'create', snapshotDir)
+
+    expect(ignoredSnapshot.success).toBe(true)
+    expect(trackedSnapshot.success).toBe(true)
+
+    const mockReq = {
+      query: { workdir: testDir, page: '1', pageSize: '50' },
+      params: {},
+    } as unknown as Request
+
+    let jsonResponse: any
+    const mockRes = {
+      status: (_code: number) => mockRes,
+      json: (data: any) => {
+        jsonResponse = data
+      },
+    } as unknown as Response
+
+    await getHistory(mockReq, mockRes)
+
+    expect(jsonResponse.entries).toHaveLength(1)
+    expect(jsonResponse.entries[0]?.path).toBe('src.ts')
   })
 })
