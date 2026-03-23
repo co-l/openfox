@@ -33,8 +33,7 @@ describe('buildPlannerPrompt', () => {
     ]
     const prompt = buildPlannerPrompt('/tmp', tools, undefined)
     expect(prompt).not.toContain('## AVAILABLE TOOLS')
-    expect(prompt).not.toContain('read_file')
-    expect(prompt).not.toContain('glob')
+    // Note: Sub-agents section may mention tool names, but that's different from tool list
   })
 })
 

@@ -13,7 +13,7 @@ import { logger } from '../utils/logger.js'
 import type { ToolRegistry } from '../tools/types.js'
 import type { ServerMessage } from '../../shared/protocol.js'
 import { createToolProgressHandler } from '../chat/tool-streaming.js'
-import { createChatToolCallMessage, createChatToolResultMessage, createChatMessageMessage } from '../ws/protocol.js'
+import { createChatToolCallMessage, createChatToolResultMessage } from '../ws/protocol.js'
 import { PathAccessDeniedError } from '../tools/path-security.js'
 
 export interface SubAgentManager {
@@ -87,14 +87,9 @@ export function createSubAgentManager(): SubAgentManager {
         content: '',
         isStreaming: true,
         subAgentId,
-        subAgentType: subAgentType as 'verifier' | 'code_reviewer' | 'test_generator' | 'debugger',
+        subAgentType,
       })
       const assistantMsgId = assistantMsg.id
-      
-      // Emit the message start event so the UI knows about it
-      if (onMessage) {
-        onMessage(createChatMessageMessage(assistantMsg))
-      }
 
       // 7. Run LLM turn with isolated context, executing tool calls
       const maxIterations = 20
@@ -123,10 +118,10 @@ export function createSubAgentManager(): SubAgentManager {
           toolChoice: 'auto',
           customMessages: contextContent.messages,
           subAgentId,
-          subAgentType: subAgentType as 'verifier' | 'code_reviewer' | 'test_generator' | 'debugger',
-          disableThinking: subAgentType === 'verifier',
+          subAgentType,
+          disableThinking: contextContent.requestOptions.disableThinking,
           onEvent: onMessage ?? (() => {}),
-          existingMessageId: assistantMsgId, // Reuse the SAME message for all iterations
+          existingMessageId: assistantMsgId,
         })
 
         finalContent = result.content

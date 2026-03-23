@@ -28,6 +28,14 @@ function createSessionManager() {
       timestamp: '2024-01-01T00:00:00.000Z',
       ...message,
     })),
+    addAssistantMessage: vi.fn((_sessionId, message) => ({
+      id: `msg-${nextId++}`,
+      role: 'assistant',
+      timestamp: '2024-01-01T00:00:00.000Z',
+      content: message.content ?? '',
+      isStreaming: true,
+      ...message,
+    })),
     getCurrentWindowMessages: vi.fn(() => [{ role: 'user', content: 'hello' }]),
     updateMessage: vi.fn(),
     setCurrentContextSize: vi.fn(),
@@ -132,7 +140,9 @@ describe('streamLLMResponse', () => {
       },
     })
 
-    expect(sessionManager.addMessage).toHaveBeenNthCalledWith(2, 'session-1', expect.objectContaining({
+    expect(sessionManager.addAssistantMessage).toHaveBeenCalledTimes(1)
+    expect(sessionManager.addMessage).toHaveBeenCalledTimes(1)
+    expect(sessionManager.addMessage).toHaveBeenCalledWith('session-1', expect.objectContaining({
       role: 'user',
       isSystemGenerated: true,
       messageKind: 'correction',
