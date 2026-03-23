@@ -183,7 +183,7 @@ npx vitest run src/tools/myfeature.test.ts
 
 ## E2E Tests
 
-E2E tests require a running vLLM server. The test setup auto-loads configuration from the root `.env` file (including `OPENFOX_VLLM_URL`).
+E2E tests run against a local OpenFox server instance. The test setup auto-loads configuration from the root `.env` file.
 
 ```bash
 cd e2e
@@ -212,5 +212,5 @@ The verbose mode shows:
 The setup automatically:
 - Loads `.env` from repository root
 - Kills any leftover process on the test port (3999)
-- Auto-detects the model from vLLM
+- Starts the OpenFox server for testing
 - Cleans up on ctrl+c or test completion
