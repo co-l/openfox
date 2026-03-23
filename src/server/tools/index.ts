@@ -16,6 +16,7 @@ import {
 import { completeCriterionTool, passCriterionTool, failCriterionTool } from './criterion.js'
 import { getCriteriaTool, addCriterionTool, updateCriterionTool, removeCriterionTool } from './planner-criteria.js'
 import { todoWriteTool, setTodoUpdateCallback, getTodos, clearTodos } from './todo.js'
+import { callSubAgentTool } from './sub-agent.js'
 import { logger } from '../utils/logger.js'
 
 // ============================================================================
@@ -29,7 +30,7 @@ const readOnlyTools: Tool[] = [
   grepTool,
 ]
 
-// Planner mode: read-only exploration + criteria management + git inspection
+// Planner mode: read-only exploration + criteria management + git inspection + sub-agents
 const plannerTools: Tool[] = [
   ...readOnlyTools,
   runCommandTool,
@@ -38,9 +39,10 @@ const plannerTools: Tool[] = [
   addCriterionTool,
   updateCriterionTool,
   removeCriterionTool,
+  callSubAgentTool,
 ]
 
-// Builder mode: full write access + criterion completion + task tracking + criteria reading
+// Builder mode: full write access + criterion completion + task tracking + criteria reading + sub-agents
 const builderTools: Tool[] = [
   ...readOnlyTools,
   writeFileTool,
@@ -50,6 +52,7 @@ const builderTools: Tool[] = [
   completeCriterionTool,
   getCriteriaTool,
   todoWriteTool,
+  callSubAgentTool,
 ]
 
 // Verifier mode: read + run commands (for testing) + criterion pass/fail

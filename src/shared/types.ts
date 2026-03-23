@@ -272,7 +272,7 @@ export interface Message {
   messageKind?: 'correction' | 'auto-prompt' | 'context-reset'  // Visual styling hint for system-generated messages
   isCompactionSummary?: boolean  // true if this is the summary message after compaction
   subAgentId?: string          // If set, this message belongs to a sub-agent process
-  subAgentType?: 'verifier'    // Type of sub-agent (extensible for future)
+  subAgentType?: 'verifier' | 'code_reviewer' | 'test_generator' | 'debugger'  // Type of sub-agent
   promptContext?: PromptContext  // What was sent to LLM for this response (assistant messages only)
   attachments?: Attachment[]     // Optional image attachments
 }

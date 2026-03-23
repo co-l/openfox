@@ -5,6 +5,36 @@ function buildPrimaryPrompt(workdir: string, customInstructions?: string): strin
     ? `\n\n## CUSTOM INSTRUCTIONS\n\n${customInstructions}`
     : ''
 
+  const subAgentsSection = `
+## AVAILABLE SUB-AGENTS
+
+You can call specialized sub-agents for specific tasks using the call_sub_agent tool:
+
+1. **verifier** - Verify completed criteria against implementation
+   - Use when: You've completed criteria and need independent verification
+   - Has access to: read_file, run_command, pass_criterion, fail_criterion
+   - Returns: Verification results for each criterion
+
+2. **code_reviewer** - Review code changes for quality and bugs
+   - Use when: You've made code changes and want feedback
+   - Has access to: read_file, grep
+   - Returns: Review findings and suggestions
+
+3. **test_generator** - Generate tests for implemented features
+   - Use when: You've implemented features and need tests
+   - Has access to: read_file, write_file, run_command
+   - Returns: Test code and execution results
+
+4. **debugger** - Analyze errors and suggest fixes
+   - Use when: You encounter errors or bugs
+   - Has access to: read_file, run_command, grep
+   - Returns: Root cause analysis and fix suggestions
+
+To call a sub-agent, use the call_sub_agent tool with:
+- subAgentType: The ID of the sub-agent (verifier, code_reviewer, test_generator, or debugger)
+- prompt: Clear description of what you need
+`
+
   return `You are OpenFox, a local-LLM-first agentic coding assistant.
 
 ## ENVIRONMENT
@@ -28,7 +58,7 @@ Platform: ${process.platform} (${process.arch})
 ## WORKFLOW
 - If the current runtime reminder says planning mode, focus on understanding, exploration, clarification, and criteria quality.
 - If the current runtime reminder says build mode, focus on implementation, verification, and completing approved criteria.
-- Respect tool and permission constraints enforced by the server even if the conversation suggests otherwise.${instructionsSection}
+- Respect tool and permission constraints enforced by the server even if the conversation suggests otherwise.${instructionsSection}${subAgentsSection}
 
 ## IMPORTANT GUARDRAILS
 - NEVER delete/git checkout an already modified file: that would result in a data loss.

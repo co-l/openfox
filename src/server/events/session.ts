@@ -261,7 +261,7 @@ export function emitAssistantMessageStart(
   options?: {
     contextWindowId?: string
     subAgentId?: string
-    subAgentType?: 'verifier'
+    subAgentType?: 'verifier' | 'code_reviewer' | 'test_generator' | 'debugger'
   }
 ): string {
   const eventStore = getEventStore()

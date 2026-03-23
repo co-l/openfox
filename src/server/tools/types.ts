@@ -1,4 +1,5 @@
 import type { ToolResult } from '../../shared/types.js'
+export type { ToolResult } from '../../shared/types.js'
 import type { ServerMessage } from '../../shared/protocol.js'
 import type { LLMToolDefinition } from '../llm/types.js'
 import type { LspManagerInterface } from '../lsp/types.js'
