@@ -57,7 +57,7 @@ function toRequestContextMessages(messages: Array<{
 // ============================================================================
 
 const MAX_FORMAT_RETRIES = 10
-const MAX_CONSECUTIVE_VERIFIER_NUDGES = 5
+const MAX_CONSECUTIVE_VERIFIER_NUDGES = 10
 const FORMAT_CORRECTION_PROMPT = `IMPORTANT: You MUST use the JSON function calling API. Do NOT output XML tags like <tool_call>, <function=>, or <parameter=>. Your previous attempt was stopped because you used the wrong format. Use the proper tool_calls format.`
 const VERIFIER_STALL_REASON = 'Verifier stopped repeatedly before terminalizing verification after repeated nudges.'
 
@@ -823,11 +823,8 @@ export async function runVerifierTurn(
           continue
         }
 
-        // Stalled - auto-fail remaining criteria
-        markCriteriaFailedAfterVerifierStall(sessionManager, sessionId, criteriaAwaitingVerification)
-
         const stalledMsgId = crypto.randomUUID()
-        eventStore.append(sessionId, createMessageStartEvent(stalledMsgId, 'user', `${VERIFIER_STALL_REASON} Auto-failing remaining criteria.`, {
+        eventStore.append(sessionId, createMessageStartEvent(stalledMsgId, 'user', buildVerifierRestartContent(criteriaAwaitingVerification), {
           ...(currentWindowMessageOptions ?? {}),
           isSystemGenerated: true,
           messageKind: 'correction',
@@ -995,27 +992,9 @@ function buildVerifierNudgeContent(criteria: Criterion[]): string {
   return `You stopped before finalizing verification. ${criteria.length} criteria still need a terminal verification result. Use pass_criterion or fail_criterion for each remaining criterion: ${ids}.`
 }
 
-function markCriteriaFailedAfterVerifierStall(
-  sessionManager: SessionManager,
-  sessionId: string,
-  criteria: Criterion[],
-): void {
-  const timestamp = new Date().toISOString()
-
-  for (const criterion of criteria) {
-    sessionManager.updateCriterionStatus(sessionId, criterion.id, {
-      type: 'failed',
-      failedAt: timestamp,
-      reason: VERIFIER_STALL_REASON,
-    })
-
-    sessionManager.addCriterionAttempt(sessionId, criterion.id, {
-      attemptNumber: criterion.attempts.length + 1,
-      status: 'failed',
-      timestamp,
-      details: VERIFIER_STALL_REASON,
-    })
-  }
+function buildVerifierRestartContent(criteria: Criterion[]): string {
+  const ids = criteria.map((criterion) => criterion.id).join(', ')
+  return `${VERIFIER_STALL_REASON} Leaving remaining criteria unchanged so verification can restart in a fresh window: ${ids}.`
 }
 
 /**

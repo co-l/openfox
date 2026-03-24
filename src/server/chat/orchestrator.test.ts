@@ -1178,7 +1178,7 @@ describe('chat orchestrator', () => {
     })
   })
 
-  it('fails remaining completed criteria after repeated verifier nudges without progress', async () => {
+  it('nudges verifier 10 times, then exits without failing criteria', async () => {
     const eventStore = createEventStore()
     getEventStoreMock.mockReturnValue(eventStore)
     getAllInstructionsMock.mockResolvedValue({ content: 'Verify carefully', files: [] })
@@ -1204,7 +1204,7 @@ describe('chat orchestrator', () => {
       execute: vi.fn(),
     })
     streamLLMPureMock.mockReturnValue({ kind: 'stream' })
-    for (let index = 0; index < 6; index++) {
+    for (let index = 0; index < 11; index++) {
       consumeStreamGeneratorMock.mockResolvedValueOnce({
         content: `stopped-${index}`,
         toolCalls: [],
@@ -1223,16 +1223,18 @@ describe('chat orchestrator', () => {
       onMessage: vi.fn(),
     }, new TurnMetrics())
 
-    expect(result.allPassed).toBe(false)
-    expect(result.failed).toEqual([
-      {
-        id: 'tests-pass',
-        reason: 'Verifier stopped repeatedly before terminalizing verification after repeated nudges.',
-      },
-    ])
-    expect(sessionManager.updateCriterionStatus).toHaveBeenCalledTimes(1)
-    expect(sessionManager.addCriterionAttempt).toHaveBeenCalledTimes(1)
-    expect(streamLLMPureMock.mock.calls).toHaveLength(6)
+    expect(result).toEqual({ allPassed: false, failed: [] })
+    expect(sessionManager.updateCriterionStatus).not.toHaveBeenCalled()
+    expect(sessionManager.addCriterionAttempt).not.toHaveBeenCalled()
+    expect(streamLLMPureMock.mock.calls).toHaveLength(11)
+
+    const nudgeMessages = eventStore.append.mock.calls.filter(
+      ([, event]) => event.type === 'message.start'
+        && (event.data as any).messageKind === 'correction'
+        && (event.data as any).subAgentType === 'verifier'
+        && (event.data as any).content?.includes('You stopped before finalizing verification.')
+    )
+    expect(nudgeMessages).toHaveLength(10)
   })
 
   it('does not nudge verifier when tool calls terminalize criteria', async () => {
@@ -1522,21 +1524,17 @@ describe('chat orchestrator', () => {
       onMessage: vi.fn(),
     }, new TurnMetrics())
 
-    expect(result.allPassed).toBe(false)
-    expect(result.failed).toEqual([
-      {
-        id: 'tests-pass',
-        reason: 'Verifier stopped repeatedly before terminalizing verification after repeated nudges.',
-      },
-    ])
-    expect(sessionManager.updateCriterionStatus).toHaveBeenCalledTimes(1)
+    expect(result).toEqual({ allPassed: false, failed: [] })
+    expect(sessionManager.updateCriterionStatus).not.toHaveBeenCalled()
+    expect(sessionManager.addCriterionAttempt).not.toHaveBeenCalled()
 
     const correctionMessages = eventStore.append.mock.calls.filter(
       ([, event]) => event.type === 'message.start' &&
         (event.data as any).messageKind === 'correction' &&
         (event.data as any).subAgentType === 'verifier'
     )
-    expect(correctionMessages).toHaveLength(6)
+    // 10 nudges + 1 stall restart message = 11
+    expect(correctionMessages).toHaveLength(11)
   })
 
   it('does not consume the empty-stop budget for malformed verifier tool calls', async () => {
@@ -1582,7 +1580,7 @@ describe('chat orchestrator', () => {
       xmlFormatError: false,
     })
 
-    for (let index = 0; index < 6; index++) {
+    for (let index = 0; index < 11; index++) {
       consumeStreamGeneratorMock.mockResolvedValueOnce({
         content: `stopped-${index}`,
         toolCalls: [],
@@ -1601,12 +1599,11 @@ describe('chat orchestrator', () => {
       onMessage: vi.fn(),
     }, new TurnMetrics())
 
-    expect(result.allPassed).toBe(false)
+    expect(result).toEqual({ allPassed: false, failed: [] })
     expect(execute).not.toHaveBeenCalled()
-    // Malformed tool calls don't count as empty stops, so the budget is consumed by the 6 empty stops
-    expect(sessionManager.updateCriterionStatus).toHaveBeenCalledTimes(1)
-    expect(sessionManager.addCriterionAttempt).toHaveBeenCalledTimes(1)
-    expect(streamLLMPureMock.mock.calls).toHaveLength(7)
+    expect(sessionManager.updateCriterionStatus).not.toHaveBeenCalled()
+    expect(sessionManager.addCriterionAttempt).not.toHaveBeenCalled()
+    expect(streamLLMPureMock.mock.calls).toHaveLength(12)
   })
 
   it('handles verifier path denial and nudges until verification reaches a terminal state', async () => {

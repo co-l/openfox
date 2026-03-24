@@ -121,8 +121,8 @@ describe('runVerifierTurn - Sub-Agent Registry Integration', () => {
     })
 
     // LLM returns no tool calls - verifier is done (criteria will be nudged then stalled)
-    // Need enough responses for nudges (MAX_CONSECUTIVE_VERIFIER_NUDGES = 5) + final stall
-    for (let i = 0; i < 6; i++) {
+    // Need enough responses for nudges (MAX_CONSECUTIVE_VERIFIER_NUDGES = 10) + final stall = 11
+    for (let i = 0; i < 11; i++) {
       consumeStreamGeneratorMock.mockResolvedValueOnce({
         content: 'All verified',
         toolCalls: [],
@@ -133,16 +133,6 @@ describe('runVerifierTurn - Sub-Agent Registry Integration', () => {
         xmlFormatError: false,
       })
     }
-    // Also add one more in case it's needed
-    consumeStreamGeneratorMock.mockResolvedValueOnce({
-      content: 'All verified',
-      toolCalls: [],
-      segments: [{ type: 'text', content: 'All verified' }],
-      usage: { promptTokens: 10, completionTokens: 5 },
-      timing: { ttft: 1, completionTime: 1, tps: 5, prefillTps: 10 },
-      aborted: false,
-      xmlFormatError: false,
-    })
 
     const state = {
       current: {
