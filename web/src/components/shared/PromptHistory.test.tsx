@@ -11,6 +11,7 @@ describe('PromptHistoryList', () => {
       timestamp: '2026-03-24T16:30:00Z',
       formattedTimestamp: '2026/03/24 16:30',
       trimmedContent: 'This is a very long prompt that should be trimmed to 150 characters maximum and show an ellipsis at the end...',
+      sessionName: 'This session',
     },
     {
       id: 'msg2',
@@ -18,6 +19,7 @@ describe('PromptHistoryList', () => {
       timestamp: '2026-03-24T14:15:00Z',
       formattedTimestamp: '2026/03/24 14:15',
       trimmedContent: 'Short prompt',
+      sessionName: 'Project Planning Session',
     },
     {
       id: 'msg3',
@@ -25,6 +27,7 @@ describe('PromptHistoryList', () => {
       timestamp: '2026-03-24T10:00:00Z',
       formattedTimestamp: '2026/03/24 10:00',
       trimmedContent: 'Another prompt for testing purposes',
+      sessionName: 'Debugging Session',
     },
   ]
 
@@ -45,12 +48,20 @@ describe('PromptHistoryList', () => {
     expect(html).toContain('2026/03/24 10:00')
   })
 
-  it('shows separator lines between entries', () => {
+  it('displays session names with separator after timestamp', () => {
     const html = renderToStaticMarkup(<PromptHistoryList {...defaultProps} />)
     
-    // Count occurrences of separator
-    const separatorCount = (html.match(/-------/g) || []).length
-    expect(separatorCount).toBe(2) // 2 separators for 3 items
+    // Check for the format: "date | <span>session name</span>"
+    expect(html).toMatch(/2026\/03\/24 16:30 \| <span[^>]*>This session<\/span>/)
+    expect(html).toMatch(/2026\/03\/24 14:15 \| <span[^>]*>Project Planning Session<\/span>/)
+    expect(html).toMatch(/2026\/03\/24 10:00 \| <span[^>]*>Debugging Session<\/span>/)
+  })
+
+  it('does not show separator lines between entries', () => {
+    const html = renderToStaticMarkup(<PromptHistoryList {...defaultProps} />)
+    
+    // No separator lines should be present
+    expect(html).not.toContain('-------')
   })
 
   it('displays trimmed content for long prompts', () => {
@@ -82,6 +93,7 @@ describe('PromptHistoryList', () => {
       timestamp: `2026-03-24T${String(10 + i).padStart(2, '0')}:00:00Z`,
       formattedTimestamp: `2026/03/24 ${String(10 + i).padStart(2, '0')}:00`,
       trimmedContent: `Prompt ${i}`,
+      sessionName: i % 2 === 0 ? 'Session A' : 'Session B',
     }))
     
     const html = renderToStaticMarkup(<PromptHistoryList 

@@ -1,3 +1,4 @@
+import { useEffect, useRef } from 'react'
 import type { PromptHistoryItem } from '../hooks/usePromptHistory'
 
 interface PromptHistoryListProps {
@@ -15,6 +16,19 @@ export function PromptHistoryList({
   onEscape,
   onNavigate,
 }: PromptHistoryListProps) {
+  const containerRef = useRef<HTMLDivElement>(null)
+  const selectedItemRef = useRef<HTMLDivElement>(null)
+
+  // Auto-scroll to keep selected item in view
+  useEffect(() => {
+    if (selectedItemRef.current && containerRef.current) {
+      selectedItemRef.current.scrollIntoView({
+        block: 'nearest',
+        behavior: 'smooth',
+      })
+    }
+  }, [selectedIndex])
+
   const handleKeyDown = (e: React.KeyboardEvent) => {
     switch (e.key) {
       case 'Enter':
@@ -38,16 +52,23 @@ export function PromptHistoryList({
     }
   }
 
+  const handleSelect = (content: string) => {
+    onSelect(content)
+  }
+
   return (
     <div
+      ref={containerRef}
       role="list"
       className="mb-2 p-2 bg-bg-secondary border border-border rounded-lg overflow-y-auto max-h-64"
       onKeyDown={handleKeyDown}
     >
       {history.map((item, index) => (
         <div
+          ref={index === selectedIndex ? selectedItemRef : null}
           key={item.id}
           role="listitem"
+          onClick={() => handleSelect(item.content)}
           className={`
             p-2 rounded cursor-pointer transition-colors
             ${index === selectedIndex 
@@ -57,13 +78,18 @@ export function PromptHistoryList({
         >
           <div className="text-xs text-text-muted font-mono">
             {item.formattedTimestamp}
+            {item.sessionName && (
+              <>
+                {' | '}
+                <span className="text-accent-primary font-medium">
+                  {item.sessionName}
+                </span>
+              </>
+            )}
           </div>
           <div className="text-sm text-text-primary mt-1">
             {item.trimmedContent}
           </div>
-          {index < history.length - 1 && (
-            <div className="mt-2 text-text-muted text-xs">-------</div>
-          )}
         </div>
       ))}
     </div>
