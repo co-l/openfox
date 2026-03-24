@@ -26,10 +26,8 @@ describe('FilePreview component', () => {
     expect(props).toHaveProperty('filePath')
   })
 
-  it('should have word-break: break-all in wrappedCodeStyle for long word wrapping', () => {
-    // This test will FAIL because the current wrappedCodeStyle doesn't include
-    // word-break styles - they're only in the theme, which may not apply correctly
-    expect(wrappedCodeStyle.wordBreak).toBe('break-all')
+  it('should not have word-break: break-all in wrappedCodeStyle (uses overflow-wrap instead)', () => {
+    expect(wrappedCodeStyle.wordBreak).toBeUndefined()
   })
 
   it('should have white-space: pre-wrap in wrappedCodeStyle to preserve whitespace while allowing wrap', () => {

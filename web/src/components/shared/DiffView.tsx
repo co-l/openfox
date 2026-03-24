@@ -1,26 +1,6 @@
 import { memo, useMemo } from 'react'
-import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter'
-import { oneDark } from 'react-syntax-highlighter/dist/esm/styles/prism'
-
-// Custom oneDark theme with transparent backgrounds and word wrapping
-export const oneDarkTransparent: Record<string, any> = {
-  ...oneDark,
-  'pre[class*="language-"]': {
-    ...(oneDark['pre[class*="language-"]'] as Record<string, unknown>),
-    background: 'transparent',
-    whiteSpace: 'pre-wrap !important' as any,
-    wordBreak: 'break-all !important' as any,
-    overflowWrap: 'break-word !important' as any,
-    overflowX: 'hidden !important' as any,
-  },
-  'code[class*="language-"]': {
-    ...(oneDark['code[class*="language-"]'] as Record<string, unknown>),
-    background: 'transparent',
-    whiteSpace: 'pre-wrap !important' as any,
-    wordBreak: 'break-all !important' as any,
-    overflowWrap: 'break-word !important' as any,
-  },
-}
+import { CodeHighlight, getLanguageFromPath } from './CodeHighlight'
+export { getLanguageFromPath, wrappedCodeStyle, oneDarkTransparent } from './CodeHighlight'
 import type { EditContextRegion } from '../../../src/shared/types.js'
 
 interface DiffViewProps {
@@ -35,89 +15,6 @@ interface EditContextViewProps {
   filePath?: string
 }
 
-// Map file extensions to Prism language names
-const extensionToLanguage: Record<string, string> = {
-  ts: 'typescript',
-  tsx: 'tsx',
-  js: 'javascript',
-  jsx: 'jsx',
-  py: 'python',
-  rb: 'ruby',
-  rs: 'rust',
-  go: 'go',
-  java: 'java',
-  c: 'c',
-  cpp: 'cpp',
-  h: 'c',
-  hpp: 'cpp',
-  cs: 'csharp',
-  php: 'php',
-  swift: 'swift',
-  kt: 'kotlin',
-  scala: 'scala',
-  sh: 'bash',
-  bash: 'bash',
-  zsh: 'bash',
-  fish: 'bash',
-  ps1: 'powershell',
-  sql: 'sql',
-  html: 'html',
-  htm: 'html',
-  css: 'css',
-  scss: 'scss',
-  sass: 'sass',
-  less: 'less',
-  json: 'json',
-  yaml: 'yaml',
-  yml: 'yaml',
-  xml: 'xml',
-  md: 'markdown',
-  markdown: 'markdown',
-  toml: 'toml',
-  ini: 'ini',
-  conf: 'ini',
-  dockerfile: 'docker',
-  makefile: 'makefile',
-  cmake: 'cmake',
-  graphql: 'graphql',
-  gql: 'graphql',
-  vue: 'vue',
-  svelte: 'svelte',
-}
-
-export function getLanguageFromPath(filePath?: string): string {
-  if (!filePath) return 'text'
-  
-  const fileName = filePath.split('/').pop() ?? ''
-  
-  // Handle special filenames
-  const lowerName = fileName.toLowerCase()
-  if (lowerName === 'dockerfile') return 'docker'
-  if (lowerName === 'makefile') return 'makefile'
-  if (lowerName === 'cmakelists.txt') return 'cmake'
-  
-  // Get extension
-  const ext = fileName.split('.').pop()?.toLowerCase()
-  if (!ext) return 'text'
-  
-  return extensionToLanguage[ext] ?? 'text'
-}
-
-// Custom style overrides for diff highlighting (minimal - use Tailwind for layout)
-const codeStyle: React.CSSProperties = {
-  margin: 0,
-  padding: 0,
-  borderRadius: 0,
-  fontSize: '0.875rem',    // 14px to match text-sm
-  lineHeight: '1.5rem',    // 24px for consistent line alignment
-  background: 'transparent',
-}
-
-// Static inline variant to avoid creating new objects on every render
-const inlineCodeStyle: React.CSSProperties = {
-  ...codeStyle,
-  display: 'inline',
-}
 
 export const DiffView = memo(function DiffView({ oldString, newString, filePath }: DiffViewProps) {
   const language = useMemo(() => getLanguageFromPath(filePath), [filePath])
@@ -149,14 +46,7 @@ export const DiffView = memo(function DiffView({ oldString, newString, filePath 
             ))}
           </div>
           <div className="bg-red-950/30 pr-2 line-through decoration-red-400/30 overflow-x-auto min-w-0">
-            <SyntaxHighlighter
-              style={oneDarkTransparent}
-              language={language}
-              PreTag="div"
-              customStyle={codeStyle}
-            >
-              {oldString}
-            </SyntaxHighlighter>
+            <CodeHighlight code={oldString} language={language} variant="block-nowrap" />
           </div>
         </>
       )}
@@ -171,14 +61,7 @@ export const DiffView = memo(function DiffView({ oldString, newString, filePath 
             ))}
           </div>
           <div className="bg-green-950/30 pr-2 overflow-x-auto min-w-0">
-            <SyntaxHighlighter
-              style={oneDarkTransparent}
-              language={language}
-              PreTag="div"
-              customStyle={codeStyle}
-            >
-              {newString}
-            </SyntaxHighlighter>
+            <CodeHighlight code={newString} language={language} variant="block-nowrap" />
           </div>
         </>
       )}
@@ -192,22 +75,9 @@ interface FilePreviewProps {
   filePath?: string
 }
 
-// Custom styles for FilePreview with word wrapping
-export const wrappedCodeStyle: React.CSSProperties = {
-  margin: 0,
-  padding: 0,
-  borderRadius: 0,
-  fontSize: '0.875rem',
-  lineHeight: '1.5rem',
-  background: 'transparent',
-  whiteSpace: 'pre-wrap',
-  wordBreak: 'break-all',
-  overflowWrap: 'break-word',
-}
-
 export const FilePreview = memo(function FilePreview({ content, filePath }: FilePreviewProps) {
   const language = useMemo(() => getLanguageFromPath(filePath), [filePath])
-  
+
   return (
     <div className="rounded overflow-hidden border border-border max-h-[45vh] overflow-y-auto">
       <div className="grid grid-cols-[3px_1.5rem_1fr]">
@@ -218,14 +88,7 @@ export const FilePreview = memo(function FilePreview({ content, filePath }: File
           ))}
         </div>
         <div className="bg-green-950/30 pr-2 min-w-0 overflow-x-hidden">
-          <SyntaxHighlighter
-            style={oneDarkTransparent}
-            language={language}
-            PreTag="pre"
-            customStyle={wrappedCodeStyle as React.CSSProperties}
-          >
-            {content}
-          </SyntaxHighlighter>
+          <CodeHighlight code={content} language={language} variant="block" />
         </div>
       </div>
     </div>
@@ -393,14 +256,7 @@ const DisplayItemRow = memo(function DisplayItemRow({ item, language, lineNumWid
       
       {/* Code content */}
       <div className={`pr-2 overflow-x-auto min-w-0 ${lineClass}`}>
-        <SyntaxHighlighter
-          style={oneDarkTransparent}
-          language={language}
-          PreTag="span"
-          customStyle={inlineCodeStyle}
-        >
-          {item.content || ' '}
-        </SyntaxHighlighter>
+        <CodeHighlight code={item.content || ' '} language={language} variant="inline" />
       </div>
     </div>
   )
@@ -464,14 +320,7 @@ export const ReadFileView = memo(function ReadFileView({ result, metadata, fileP
             })}
         </div>
         <div className="min-w-0 overflow-x-hidden py-0.5">
-          <SyntaxHighlighter
-            style={oneDarkTransparent}
-            language={language}
-            PreTag="pre"
-            customStyle={wrappedCodeStyle as React.CSSProperties}
-          >
-            {strippedContent}
-          </SyntaxHighlighter>
+          <CodeHighlight code={strippedContent} language={language} variant="block" />
         </div>
       </div>
     </div>
