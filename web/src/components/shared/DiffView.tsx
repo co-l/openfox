@@ -1,7 +1,8 @@
-import { memo, useMemo } from 'react'
+import { memo, useMemo, useState } from 'react'
 import { CodeHighlight, getLanguageFromPath } from './CodeHighlight'
 export { getLanguageFromPath, wrappedCodeStyle, oneDarkTransparent } from './CodeHighlight'
 import type { EditContextRegion } from '../../../src/shared/types.js'
+import { ImageModal } from './ImageModal'
 
 interface DiffViewProps {
   oldString: string
@@ -271,20 +272,33 @@ interface ReadFileViewProps {
 }
 
 export const ReadFileView = memo(function ReadFileView({ result, metadata, filePath, heightExpanded = false }: ReadFileViewProps) {
+  const [modalOpen, setModalOpen] = useState(false)
   const language = useMemo(() => getLanguageFromPath(filePath), [filePath])
 
   // Image file - metadata contains base64Data and mimeType
   const mimeType = metadata?.mimeType as string | undefined
   const base64Data = metadata?.base64Data as string | undefined
   if (mimeType?.startsWith('image/') && base64Data) {
+    const src = `data:${mimeType};base64,${base64Data}`
     return (
-      <div className={`rounded overflow-hidden border border-border ${heightExpanded ? '' : 'max-h-[45vh]'} flex items-center justify-center`}>
-        <img
-          src={`data:${mimeType};base64,${base64Data}`}
+      <>
+        <div
+          className={`rounded overflow-hidden border border-border ${heightExpanded ? '' : 'max-h-[45vh]'} flex items-center justify-center cursor-pointer hover:border-accent-primary transition-colors`}
+          onClick={() => setModalOpen(true)}
+        >
+          <img
+            src={src}
+            alt={filePath}
+            className="max-w-full max-h-[45vh] object-contain"
+          />
+        </div>
+        <ImageModal
+          src={src}
           alt={filePath}
-          className="max-w-full max-h-[45vh] object-contain"
+          isOpen={modalOpen}
+          onClose={() => setModalOpen(false)}
         />
-      </div>
+      </>
     )
   }
 
