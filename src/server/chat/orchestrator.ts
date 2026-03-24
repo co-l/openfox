@@ -696,7 +696,7 @@ export async function runVerifierTurn(
 
   // Emit context content
   const contextMsgId = crypto.randomUUID()
-  eventStore.append(sessionId, createMessageStartEvent(contextMsgId, 'user', initialContext.messages[0].content, {
+  eventStore.append(sessionId, createMessageStartEvent(contextMsgId, 'user', initialContext.messages[0]!.content, {
     ...(currentWindowMessageOptions ?? {}),
     isSystemGenerated: true,
     messageKind: 'auto-prompt',

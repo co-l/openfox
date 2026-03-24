@@ -78,7 +78,7 @@ describe('SubAgentManager', () => {
     const context = verifier!.createContext(session, { prompt: 'Verify criteria' })
     
     expect(context.messages).toHaveLength(2)
-    expect(context.messages[0].content).toContain('Implement user authentication')
+    expect(context.messages[0]!.content).toContain('Implement user authentication')
     expect(context.requestOptions.disableThinking).toBe(true)
   })
 

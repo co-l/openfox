@@ -66,12 +66,12 @@ describe('Verifier Sub-Agent Integration', () => {
     
     // Verify context contains only fresh data, not conversation history
     expect(context.messages).toHaveLength(2) // context + prompt
-    expect(context.messages[0].content).toContain('Test summary')
-    expect(context.messages[0].content).toContain('Test criterion')
-    expect(context.messages[0].content).toContain('src/test.ts')
+    expect(context.messages[0]!.content).toContain('Test summary')
+    expect(context.messages[0]!.content).toContain('Test criterion')
+    expect(context.messages[0]!.content).toContain('src/test.ts')
     
     // Verify no conversation history is included
-    expect(context.messages[0].content).not.toContain('conversation')
-    expect(context.messages[0].content).not.toContain('history')
+    expect(context.messages[0]!.content).not.toContain('conversation')
+    expect(context.messages[0]!.content).not.toContain('history')
   })
 })

@@ -87,19 +87,19 @@ describe('createVerifierContext', () => {
     expect(context.messages).toHaveLength(2)
     
     // Verify first message contains summary
-    expect(context.messages[0].content).toContain('Implement user authentication')
+    expect(context.messages[0]!.content).toContain('Implement user authentication')
     
     // Verify criteria are included with status markers
-    expect(context.messages[0].content).toContain('[NEEDS VERIFICATION]')
-    expect(context.messages[0].content).toContain('auth-login')
-    expect(context.messages[0].content).toContain('auth-register')
+    expect(context.messages[0]!.content).toContain('[NEEDS VERIFICATION]')
+    expect(context.messages[0]!.content).toContain('auth-login')
+    expect(context.messages[0]!.content).toContain('auth-register')
     
     // Verify modified files are included
-    expect(context.messages[0].content).toContain('src/auth.ts')
-    expect(context.messages[0].content).toContain('src/user-service.ts')
+    expect(context.messages[0]!.content).toContain('src/auth.ts')
+    expect(context.messages[0]!.content).toContain('src/user-service.ts')
     
     // Verify second message is the prompt
-    expect(context.messages[1].content).toBe('Verify login criteria')
+    expect(context.messages[1]!.content).toBe('Verify login criteria')
     
     // Verify tools array is empty (will be filled by tool registry)
     expect(context.tools).toEqual([])
@@ -131,7 +131,7 @@ describe('createVerifierContext', () => {
     
     const context = verifier!.createContext(session, { prompt: 'Test' })
     
-    expect(context.messages[0].content).toContain('(none)')
+    expect(context.messages[0]!.content).toContain('(none)')
   })
 
   it('should handle missing summary', () => {
@@ -145,7 +145,7 @@ describe('createVerifierContext', () => {
     
     const context = verifier!.createContext(session, { prompt: 'Test' })
     
-    expect(context.messages[0].content).toContain('No summary available')
+    expect(context.messages[0]!.content).toContain('No summary available')
   })
 
   it('should mark criteria with correct status indicators', () => {
@@ -184,10 +184,10 @@ describe('createVerifierContext', () => {
     
     const context = verifier!.createContext(session, { prompt: 'Test' })
     
-    expect(context.messages[0].content).toContain('[PASSED]')
-    expect(context.messages[0].content).toContain('[FAILED]')
-    expect(context.messages[0].content).toContain('[NEEDS VERIFICATION]')
-    expect(context.messages[0].content).toContain('[NOT COMPLETED]')
+    expect(context.messages[0]!.content).toContain('[PASSED]')
+    expect(context.messages[0]!.content).toContain('[FAILED]')
+    expect(context.messages[0]!.content).toContain('[NEEDS VERIFICATION]')
+    expect(context.messages[0]!.content).toContain('[NOT COMPLETED]')
   })
 })
 
@@ -213,8 +213,8 @@ describe('createCodeReviewerContext', () => {
     const context = codeReviewer!.createContext(session, { prompt: 'Review for security issues' })
     
     expect(context.systemPrompt).toContain('You are a senior code reviewer')
-    expect(context.messages[0].content).toContain('src/foo.ts')
-    expect(context.messages[0].content).toContain('Review for security issues')
+    expect(context.messages[0]!.content).toContain('src/foo.ts')
+    expect(context.messages[0]!.content).toContain('Review for security issues')
   })
 })
 
@@ -228,7 +228,7 @@ describe('createTestGeneratorContext', () => {
     const context = testGenerator!.createContext(session, { prompt: 'Generate tests for auth module' })
     
     expect(context.systemPrompt).toContain('You are a test generation specialist')
-    expect(context.messages[0].content).toContain('Generate tests for auth module')
+    expect(context.messages[0]!.content).toContain('Generate tests for auth module')
   })
 })
 
@@ -242,6 +242,6 @@ describe('createDebuggerContext', () => {
     const context = debuggerAgent!.createContext(session, { prompt: 'Fix null pointer exception' })
     
     expect(context.systemPrompt).toContain('You are an expert debugger')
-    expect(context.messages[0].content).toContain('Fix null pointer exception')
+    expect(context.messages[0]!.content).toContain('Fix null pointer exception')
   })
 })
