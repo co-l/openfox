@@ -29,10 +29,26 @@ export function MessageOptionsMenu({ content, promptContext, align = 'right' }: 
   }, [showMenu])
 
   const handleCopy = async () => {
-    await navigator.clipboard.writeText(content)
-    setCopied(true)
-    setShowMenu(false)
-    window.setTimeout(() => setCopied(false), 1500)
+    try {
+      if (navigator.clipboard) {
+        await navigator.clipboard.writeText(content)
+      } else {
+        // Fallback for non-secure contexts where clipboard API is unavailable
+        const textArea = document.createElement('textarea')
+        textArea.value = content
+        textArea.style.position = 'fixed'
+        textArea.style.left = '-999999px'
+        document.body.appendChild(textArea)
+        textArea.select()
+        document.execCommand('copy')
+        document.body.removeChild(textArea)
+      }
+      setCopied(true)
+      setShowMenu(false)
+      window.setTimeout(() => setCopied(false), 1500)
+    } catch (err) {
+      console.error('Failed to copy:', err)
+    }
   }
 
   const isRightAligned = align === 'right'
