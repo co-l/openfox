@@ -1,6 +1,12 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { SummaryDisplay } from './SummaryDisplay'
+
+vi.mock('../../stores/session', () => ({
+  useSessionStore: vi.fn(() => ({
+    currentSession: null,
+  })),
+}))
 
 describe('SummaryDisplay', () => {
   it('renders summary content when provided', () => {
@@ -26,5 +32,17 @@ describe('SummaryDisplay', () => {
     const html = renderToStaticMarkup(<SummaryDisplay summary="test" messages={[]} />)
     
     expect(html).toContain('Summary')
+  })
+
+  it('shows Progress section header', () => {
+    const html = renderToStaticMarkup(<SummaryDisplay summary="test" messages={[]} />)
+    
+    expect(html).toContain('Progress')
+  })
+
+  it('shows "No criteria yet" when there are no criteria', () => {
+    const html = renderToStaticMarkup(<SummaryDisplay summary="test" messages={[]} />)
+    
+    expect(html).toContain('No criteria yet')
   })
 })
