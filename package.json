@@ -46,6 +46,7 @@
     "cors": "^2.8.5",
     "express": "^4.21.2",
     "fast-glob": "^3.3.3",
+    "gray-matter": "^4.0.3",
     "html2canvas": "^1.4.1",
     "ignore": "^7.0.5",
     "open": "^11.0.0",

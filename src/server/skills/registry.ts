@@ -9,13 +9,14 @@ import { readdir, readFile, writeFile, copyFile, mkdir, access, unlink } from 'n
 import { join, dirname } from 'node:path'
 import { constants } from 'node:fs'
 import { fileURLToPath } from 'node:url'
+import matter from 'gray-matter'
 import type { SkillDefinition, SkillMetadata } from './types.js'
 import { getSetting, setSetting } from '../db/settings.js'
 import { logger } from '../utils/logger.js'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const DEFAULTS_DIR = join(__dirname, 'defaults')
-const SKILL_EXTENSION = '.skill.json'
+const SKILL_EXTENSION = '.skill.md'
 const SKILL_SETTING_PREFIX = 'skill.enabled.'
 
 // ============================================================================
@@ -97,10 +98,11 @@ export async function loadAllSkills(configDir: string): Promise<SkillDefinition[
   const skills: SkillDefinition[] = []
   for (const file of files) {
     try {
-      const content = await readFile(join(skillsDir, file), 'utf-8')
-      const parsed = JSON.parse(content) as SkillDefinition
-      if (parsed.metadata?.id && parsed.prompt) {
-        skills.push(parsed)
+      const raw = await readFile(join(skillsDir, file), 'utf-8')
+      const { data, content } = matter(raw)
+      const metadata = data as SkillMetadata
+      if (metadata.id && content.trim()) {
+        skills.push({ metadata, prompt: content.trim() })
       } else {
         logger.warn('Skipping invalid skill file', { file })
       }
@@ -180,7 +182,8 @@ export async function saveSkill(configDir: string, skill: SkillDefinition): Prom
     await mkdir(skillsDir, { recursive: true })
   }
   const filePath = join(skillsDir, `${skill.metadata.id}${SKILL_EXTENSION}`)
-  await writeFile(filePath, JSON.stringify(skill, null, 2), 'utf-8')
+  const content = matter.stringify(skill.prompt, skill.metadata)
+  await writeFile(filePath, content, 'utf-8')
 }
 
 /**
