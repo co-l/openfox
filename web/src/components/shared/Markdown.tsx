@@ -19,7 +19,7 @@ export const Markdown = memo(function Markdown({ content, className = '' }: Mark
   }, [content])
 
   return (
-    <div className={`markdown-content ${className}`}>
+    <div className={`markdown-content [&_li>p]:inline ${className}`}>
       <ReactMarkdown
         remarkPlugins={[remarkGfm]}
         components={{

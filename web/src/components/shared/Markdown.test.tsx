@@ -81,11 +81,27 @@ describe('Markdown', () => {
     })
 
     it('handles mixed Unicode bullets and numbered lists', () => {
-      const content = '1.\n**tool** - description\n• Use when: testing\n• Has access to: `read_file`'
+      const content = '1.\n**tool** - description\n- Use when: testing\n- Has access to: `read_file`'
       const html = renderToString(<Markdown content={content} />)
 
       expect(html).toContain('tool')
       expect(html).toContain('Use when: testing')
+    })
+  })
+
+  describe('loose list rendering', () => {
+    it('applies inline style to paragraphs inside list items via container class', () => {
+      // Loose lists (blank lines between items) cause ReactMarkdown to wrap content in <p> tags
+      // The [&_li>p]:inline class prevents the marker from appearing on its own line
+      const content = '1. **verifier** - Verify criteria\n   - Use when: testing\n\n2. **reviewer** - Review code\n   - Use when: reviewing'
+      const html = renderToString(<Markdown content={content} />)
+
+      // Verify the container has the inline fix class
+      expect(html).toContain('[&amp;_li&gt;p]:inline')
+      // Verify list structure is intact
+      expect(html).toContain('<ol')
+      expect(html).toContain('verifier')
+      expect(html).toContain('reviewer')
     })
   })
 })
