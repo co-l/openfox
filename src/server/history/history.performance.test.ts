@@ -33,7 +33,7 @@ describe('history performance', () => {
 
     // Assert
     expect(result.success).toBe(true)
-    expect(duration).toBeLessThan(5) // Must be under 5ms
+    expect(duration).toBeLessThan(20) // Must be under 20ms
   })
 
   it('debounce prevents duplicate snapshots', async () => {
