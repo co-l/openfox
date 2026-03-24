@@ -129,7 +129,7 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
         tsxBinary,
         [HISTORY_PROCESS_ENTRYPOINT, workdir],
         {
-          cwd: workdir,
+          cwd: process.cwd(), // Don't use workdir - test projects get deleted
           env: process.env,
           stdio: ['ignore', 'inherit', 'inherit'],
         }
