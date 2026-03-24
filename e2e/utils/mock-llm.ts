@@ -232,6 +232,13 @@ export function createMockLLMClient(config: MockLLMConfig = {}): MockLLMClient {
       toolCalls: [{ name: 'complete_criterion', arguments: { id: 'mock-crit' } }],
       response: 'I completed the criterion.',
     },
+    // Verifier sub-agent workflow (for builder mode)
+    {
+      promptMatch: /launch.*runner|runner.*launch|start.*verification|verify.*implementation/i,
+      toolCalls: [{ name: 'launch_runner', arguments: {} }],
+      thinking: 'Starting the verifier to check implementation against criteria.',
+      response: 'I launched the verifier.',
+    },
   ]
   
   let rules: MockToolCallRule[] = [...defaultRules]
