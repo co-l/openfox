@@ -278,11 +278,11 @@ export const ReadFileView = memo(function ReadFileView({ result, metadata, fileP
   const base64Data = metadata?.base64Data as string | undefined
   if (mimeType?.startsWith('image/') && base64Data) {
     return (
-      <div className={`rounded overflow-hidden border border-border ${heightExpanded ? '' : 'max-h-[45vh]'} overflow-y-auto`}>
+      <div className={`rounded overflow-hidden border border-border ${heightExpanded ? '' : 'max-h-[45vh]'} flex items-center justify-center`}>
         <img
           src={`data:${mimeType};base64,${base64Data}`}
           alt={filePath}
-          className="max-w-full h-auto"
+          className="max-w-full max-h-[45vh] object-contain"
         />
       </div>
     )
