@@ -52,12 +52,40 @@ describe('Markdown', () => {
     it('maintains list styling (decimal for ol, disc for ul)', () => {
       const olContent = '1. Item 1\n2. Item 2'
       const ulContent = '- Item A\n- Item B'
-      
+
       const olHtml = renderToString(<Markdown content={olContent} />)
       const ulHtml = renderToString(<Markdown content={ulContent} />)
-      
+
       expect(olHtml).toContain('list-decimal')
       expect(ulHtml).toContain('list-disc')
+    })
+  })
+
+  describe('preprocessing', () => {
+    it('converts Unicode bullets to markdown list items', () => {
+      const content = '• First item\n• Second item'
+      const html = renderToString(<Markdown content={content} />)
+
+      expect(html).toContain('<ul')
+      expect(html).toContain('<li')
+      expect(html).toContain('First item')
+    })
+
+    it('fixes numbered list items with content on next line', () => {
+      const content = '1.\n**verifier** - desc\n2.\n**reviewer** - desc'
+      const html = renderToString(<Markdown content={content} />)
+
+      expect(html).toContain('<ol')
+      expect(html).toContain('verifier')
+      expect(html).toContain('reviewer')
+    })
+
+    it('handles mixed Unicode bullets and numbered lists', () => {
+      const content = '1.\n**tool** - description\n• Use when: testing\n• Has access to: `read_file`'
+      const html = renderToString(<Markdown content={content} />)
+
+      expect(html).toContain('tool')
+      expect(html).toContain('Use when: testing')
     })
   })
 })

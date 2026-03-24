@@ -11,10 +11,11 @@ interface MarkdownProps {
 
 // Memoize to prevent re-renders during streaming from causing flicker
 export const Markdown = memo(function Markdown({ content, className = '' }: MarkdownProps) {
-  // For streaming: if we have an unclosed code block, close it temporarily
-  // This prevents raw markdown from showing during streaming
+  // Preprocess markdown to fix common LLM formatting quirks
   const processedContent = useMemo(() => {
-    return fixUnclosedCodeBlocks(content)
+    let processed = preprocessMarkdown(content)
+    processed = fixUnclosedCodeBlocks(processed)
+    return processed
   }, [content])
 
   return (
@@ -163,6 +164,22 @@ export const Markdown = memo(function Markdown({ content, className = '' }: Mark
     </div>
   )
 })
+
+/**
+ * Preprocess markdown to fix common LLM formatting issues:
+ * - Unicode bullets (•) → markdown bullets (-)
+ * - Numbered items with content on next line (1.\n**text**) → same line (1. **text**)
+ */
+function preprocessMarkdown(content: string): string {
+  // Convert Unicode bullets to markdown list markers
+  let processed = content.replace(/^(\s*)•\s/gm, '$1- ')
+
+  // Fix numbered list items where content is on the next line
+  // e.g., "1.\n**verifier**" → "1. **verifier**"
+  processed = processed.replace(/^(\d+)\.\s*\n(?=\S)/gm, '$1. ')
+
+  return processed
+}
 
 /**
  * Fix unclosed code blocks during streaming.
