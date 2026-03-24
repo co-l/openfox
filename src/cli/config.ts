@@ -78,6 +78,10 @@ const databaseSchema = z.object({
   path: z.string().default(''),
 })
 
+const workspaceSchema = z.object({
+  workdir: z.string().default(process.cwd()),
+})
+
 // New config schema with providers array
 const configSchema = z.object({
   providers: z.array(providerSchema).default([]),
@@ -85,6 +89,7 @@ const configSchema = z.object({
   server: serverSchema.default({}),
   logging: loggingSchema.default({}),
   database: databaseSchema.default({}),
+  workspace: workspaceSchema.default({}),
 })
 
 // Old config schema (for migration detection)
@@ -148,6 +153,7 @@ export function migrateConfig(raw: unknown): GlobalConfig {
       server: oldConfig.server,
       logging: oldConfig.logging,
       database: oldConfig.database,
+      workspace: { workdir: process.cwd() },
     }
   }
   
@@ -203,6 +209,7 @@ export function addProvider(config: GlobalConfig, provider: Omit<Provider, 'id' 
       { ...newProvider, isActive: shouldActivate },
     ],
     activeProviderId: shouldActivate ? newProvider.id : config.activeProviderId,
+    workspace: config.workspace ?? { workdir: process.cwd() },
   }
 }
 

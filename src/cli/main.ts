@@ -124,6 +124,7 @@ export async function runCli(options: { mode: Mode }): Promise<void> {
             server: { port: 10369, host: '127.0.0.1', openBrowser: true },
             logging: { level: 'info' as const },
             database: { path: '' },
+            workspace: { workdir: process.cwd() },
           }
           const configWithProvider = addProvider(baseConfig, {
             name: 'Default',

@@ -4,6 +4,7 @@ import { useProjectStore } from '../stores/project'
 import { Button } from './shared/Button'
 import { Input } from './shared/Input'
 import { DeleteProjectConfirmationModal } from './DeleteProjectConfirmationModal.js'
+import { CreateProjectModal } from './CreateProjectModal.js'
 
 interface DirectoryEntry {
   name: string
@@ -17,8 +18,6 @@ interface DirectoryListing {
   basename: string
 }
 
-const DEFAULT_BASE_PATH = '/home/conrad/dev'
-
 interface OpenProjectModalProps {
   isOpen: boolean
   onClose: () => void
@@ -26,9 +25,11 @@ interface OpenProjectModalProps {
 
 export function OpenProjectModal({ isOpen, onClose }: OpenProjectModalProps) {
   const [, navigate] = useLocation()
+  const [showCreateModal, setShowCreateModal] = useState(false)
   const [searchQuery, setSearchQuery] = useState('')
   const [listing, setListing] = useState<DirectoryListing | null>(null)
   const [loading, setLoading] = useState(false)
+  const [baseWorkdir, setBaseWorkdir] = useState<string | null>(null)
   
   const projects = useProjectStore(state => state.projects)
   const createProject = useProjectStore(state => state.createProject)
@@ -39,13 +40,24 @@ export function OpenProjectModal({ isOpen, onClose }: OpenProjectModalProps) {
   const [projectToDelete, setProjectToDelete] = useState<{ id: string; name: string } | null>(null)
   const itemsRef = useRef<HTMLButtonElement[]>([])
   
+  // Fetch workdir from config on mount
+  useEffect(() => {
+    fetch('/api/config')
+      .then(res => res.json())
+      .then(data => {
+        if (data.workdir) {
+          setBaseWorkdir(data.workdir)
+        }
+      })
+  }, [])
+  
   // Fetch directory listing
   const fetchDirectory = useCallback(async (path?: string) => {
     setLoading(true)
     try {
       const url = path 
         ? `/api/directories?path=${encodeURIComponent(path)}`
-        : '/api/directories'
+        : baseWorkdir ? `/api/directories?path=${encodeURIComponent(baseWorkdir)}` : '/api/directories'
       const response = await fetch(url)
       const data = await response.json()
       setListing(data)
@@ -54,15 +66,15 @@ export function OpenProjectModal({ isOpen, onClose }: OpenProjectModalProps) {
     } finally {
       setLoading(false)
     }
-  }, [])
+  }, [baseWorkdir])
   
   // Load initial directory when modal opens
   useEffect(() => {
-    if (isOpen) {
-      fetchDirectory(DEFAULT_BASE_PATH)
+    if (isOpen && baseWorkdir) {
+      fetchDirectory(baseWorkdir)
       listProjects()
     }
-  }, [isOpen, fetchDirectory, listProjects])
+  }, [isOpen, baseWorkdir, fetchDirectory, listProjects])
   
   // Filter directories based on search query
   const filteredDirectories = listing?.directories.filter(dir => 
@@ -349,12 +361,23 @@ export function OpenProjectModal({ isOpen, onClose }: OpenProjectModalProps) {
         </div>
         
         {/* Footer Actions */}
-        <div className="p-4 border-t border-border flex justify-end gap-2">
+        <div className="p-4 border-t border-border flex justify-between gap-2">
+          <Button variant="secondary" onClick={() => setShowCreateModal(true)}>
+            Create Project
+          </Button>
           <Button variant="secondary" onClick={onClose}>
             Cancel
           </Button>
         </div>
       </div>
+      
+      {/* Create Project Modal */}
+      {showCreateModal && (
+        <CreateProjectModal
+          isOpen={showCreateModal}
+          onClose={() => setShowCreateModal(false)}
+        />
+      )}
       
       {/* Delete Confirmation Modal */}
       {projectToDelete && (

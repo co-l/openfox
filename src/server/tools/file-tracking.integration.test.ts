@@ -28,6 +28,7 @@ function createTestConfig(): Config {
     agent: { maxIterations: 10, maxConsecutiveFailures: 3, toolTimeout: 1000 },
     server: { port: 3000, host: 'localhost' },
     database: { path: ':memory:' },
+    workdir: process.cwd(),
   }
 }
 

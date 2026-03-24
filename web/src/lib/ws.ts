@@ -59,6 +59,7 @@ class WebSocketClient {
         this.ws.onmessage = (event) => {
           try {
             const data = JSON.parse(event.data)
+            console.log('[WS Client] Received message:', data)
             if (isServerMessage(data)) {
               this.handlers.forEach(handler => handler(data))
             }
@@ -103,6 +104,7 @@ class WebSocketClient {
     
     const id = generateUUID()
     const message: ClientMessage<T> = { id, type, payload }
+    console.log('[WS Client] Sending message:', { id, type, payload })
     this.ws.send(JSON.stringify(message))
     return id
   }

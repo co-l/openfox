@@ -69,6 +69,7 @@ describe('init', () => {
         server: { port: 10369, host: '127.0.0.1', openBrowser: true },
         logging: { level: 'info' as const },
         database: { path: '' },
+        workspace: { workdir: process.cwd() },
       }
 
       await saveGlobalConfig('production', existingConfig)
@@ -108,6 +109,7 @@ describe('init', () => {
         server: { port: 10369, host: '127.0.0.1', openBrowser: true },
         logging: { level: 'info' as const },
         database: { path: '' },
+        workspace: { workdir: process.cwd() },
       }
 
       await saveGlobalConfig('production', existingConfig)
@@ -145,6 +147,7 @@ describe('init', () => {
         server: { port: 10369, host: '0.0.0.0', openBrowser: true },
         logging: { level: 'info' as const },
         database: { path: '' },
+        workspace: { workdir: process.cwd() },
       }
 
       await saveGlobalConfig('production', existingConfig)
@@ -189,6 +192,7 @@ describe('init', () => {
         server: { port: 10369, host: '127.0.0.1', openBrowser: true },
         logging: { level: 'warn' as const },
         database: { path: '' },
+        workspace: { workdir: process.cwd() },
       }
 
       await saveGlobalConfig('production', existingConfig)
@@ -259,6 +263,7 @@ describe('init', () => {
         server: { port: 10369, host: '127.0.0.1', openBrowser: true },
         logging: { level: 'info' as const },
         database: { path: '' },
+        workspace: { workdir: process.cwd() },
       }
 
       await saveGlobalConfig('production', existingConfig)

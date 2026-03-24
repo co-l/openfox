@@ -12,7 +12,7 @@ const envSchema = z.object({
   OPENFOX_MAX_CONTEXT: z.coerce.number().default(200000),
   OPENFOX_PORT: z.coerce.number().default(10369),
   OPENFOX_HOST: z.string().default('0.0.0.0'),
-  OPENFOX_WORKDIR: z.string().default(process.cwd()),
+  OPENFOX_WORKDIR: z.string().optional(),
   OPENFOX_DB_PATH: z.string().default('./openfox.db'),
   OPENFOX_LOG_LEVEL: z.enum(['debug', 'info', 'warn', 'error']).default('info'),
   OPENFOX_DISABLE_THINKING: z.coerce.boolean().default(false),
@@ -24,6 +24,9 @@ export function loadConfig(): Config {
   
   // Use new env var, fall back to old one, then default
   const llmUrl = env.OPENFOX_LLM_URL ?? env.OPENFOX_VLLM_URL ?? 'http://localhost:8000/v1'
+  
+  // Workdir from env only (serve.ts will merge with global config)
+  const workdir = env.OPENFOX_WORKDIR ?? process.cwd()
   
   return {
     llm: {
@@ -51,6 +54,7 @@ export function loadConfig(): Config {
       path: env.OPENFOX_DB_PATH,
     },
     mode: env.OPENFOX_DEV ? 'development' : 'production',
+    workdir,
   }
 }
 

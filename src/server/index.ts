@@ -326,6 +326,7 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
       llmUrl: activeProvider?.url ?? config.llm.baseUrl,
       llmStatus: getLlmStatus(),
       backend: llmClient.getBackend(),
+      workdir: config.workdir,
       // Include provider info
       providers: providerManager.getProviders(),
       activeProviderId: providerManager.getActiveProviderId(),

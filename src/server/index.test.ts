@@ -27,6 +27,7 @@ const TEST_CONFIG: Config = {
     path: ':memory:',
   },
   mode: 'production',
+  workdir: process.cwd(),
 }
 
 describe('server history watcher isolation', () => {

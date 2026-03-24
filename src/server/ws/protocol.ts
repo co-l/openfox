@@ -2,6 +2,7 @@ import type {
   ClientMessage,
   ServerMessage,
   ProjectCreatePayload,
+  ProjectCreateWithDirPayload,
   ProjectLoadPayload,
   ProjectUpdatePayload,
   ProjectDeletePayload,
@@ -251,6 +252,10 @@ export function createSessionNameGeneratedMessage(name: string, sessionId?: stri
 // Project payloads
 export function isProjectCreatePayload(payload: unknown): payload is ProjectCreatePayload {
   return typeof payload === 'object' && payload !== null && 'name' in payload && 'workdir' in payload
+}
+
+export function isProjectCreateWithDirPayload(payload: unknown): payload is ProjectCreateWithDirPayload {
+  return typeof payload === 'object' && payload !== null && 'name' in payload && typeof payload.name === 'string'
 }
 
 export function isProjectLoadPayload(payload: unknown): payload is ProjectLoadPayload {

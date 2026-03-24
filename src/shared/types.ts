@@ -521,4 +521,6 @@ export interface Config {
   providers?: Provider[] | undefined
   /** ID of the active provider */
   activeProviderId?: string | undefined
+  /** Workspace directory for projects */
+  workdir: string
 }

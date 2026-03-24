@@ -6,6 +6,7 @@ import { useProjectStore } from './stores/project'
 import { useConfigStore } from './stores/config'
 import { Header } from './components/layout/Header'
 import { Sidebar } from './components/layout/Sidebar'
+import { PageTitle } from './components/layout/PageTitle'
 import { HomePage } from './components/HomePage'
 import { EmptyProjectView } from './components/EmptyProjectView'
 import { PlanPanel } from './components/plan/PlanPanel'
@@ -149,6 +150,7 @@ function App() {
 
   return (
     <div className="h-screen flex flex-col">
+      <PageTitle />
       <Header onMenuClick={() => setSidebarOpen(!sidebarOpen)} />
 
       <div className="flex-1 flex overflow-hidden">

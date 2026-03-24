@@ -46,6 +46,7 @@ describe('config', () => {
         server: { port: 10369, host: '127.0.0.1', openBrowser: true },
         logging: { level: 'info' as const },
         database: { path: '' },
+        workspace: { workdir: process.cwd() },
       }
 
       const migrated = migrateConfig(oldConfig)
@@ -81,6 +82,7 @@ describe('config', () => {
         server: { port: 10369, host: '127.0.0.1', openBrowser: true },
         logging: { level: 'info' as const },
         database: { path: '' },
+        workspace: { workdir: process.cwd() },
       }
 
       const migrated = migrateConfig(newConfig)
@@ -101,7 +103,7 @@ describe('config', () => {
         llm: {
           url: 'https://api.openai.com/v1',
           model: 'gpt-4',
-          backend: 'vllm' as const, // backend in old config was limited
+          backend: 'vllm' as const,
           apiKey: 'sk-test-key',
           maxContext: 128000,
           disableThinking: false,
@@ -109,6 +111,7 @@ describe('config', () => {
         server: { port: 10369, host: '127.0.0.1', openBrowser: true },
         logging: { level: 'info' as const },
         database: { path: '' },
+        workspace: { workdir: process.cwd() },
       }
 
       const migrated = migrateConfig(oldConfig)
@@ -130,6 +133,7 @@ describe('config', () => {
         server: { port: 10369, host: '127.0.0.1', openBrowser: true },
         logging: { level: 'info' },
         database: { path: '' },
+        workspace: { workdir: process.cwd() },
       }
 
       await writeFile(
@@ -170,6 +174,7 @@ describe('config', () => {
         server: { port: 10369, host: '127.0.0.1', openBrowser: true },
         logging: { level: 'info' as const },
         database: { path: '' },
+        workspace: { workdir: process.cwd() },
       }
 
       await saveGlobalConfig('production', config)
@@ -189,6 +194,7 @@ describe('config', () => {
         server: { port: 10369, host: '0.0.0.0', openBrowser: true },
         logging: { level: 'info' as const },
         database: { path: '' },
+        workspace: { workdir: process.cwd() },
       }
 
       await saveGlobalConfig('production', config)
@@ -204,6 +210,7 @@ describe('config', () => {
         server: { port: 10369, host: '127.0.0.1', openBrowser: true },
         logging: { level: 'info' as const },
         database: { path: '' },
+        workspace: { workdir: process.cwd() },
       }
 
       await saveGlobalConfig('production', config)
@@ -229,6 +236,7 @@ describe('config', () => {
         server: { port: 10369, host: '0.0.0.0', openBrowser: true },
         logging: { level: 'warn' as const },
         database: { path: '' },
+        workspace: { workdir: process.cwd() },
       }
 
       await saveGlobalConfig('production', originalConfig)

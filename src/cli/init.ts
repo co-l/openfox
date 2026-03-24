@@ -18,6 +18,7 @@ function createBaseConfig(): GlobalConfig {
     server: { port: 10369, host: '127.0.0.1', openBrowser: true },
     logging: { level: 'info' as const },
     database: { path: '' },
+    workspace: { workdir: process.cwd() },
   }
 }
 
@@ -188,6 +189,18 @@ export async function runInitWithSelect(mode: Mode, existingConfig?: GlobalConfi
   // Ask about network accessibility
   const host = await promptNetworkAccessibility()
   config.server.host = host
+  
+  // Ask about workspace directory
+  const workdirChoice = await text({
+    message: 'Workspace directory for new projects',
+    placeholder: 'Directory where new projects will be created',
+    initialValue: config.workspace?.workdir || process.cwd(),
+    validate: (value) => {
+      if (!value || value.length === 0) return 'Workspace directory is required'
+    },
+  })
+  // Normalize: remove trailing slash to prevent double slashes in paths
+  config.workspace = { workdir: String(workdirChoice).replace(/\/$/, '') }
   
   // Save the configuration
   await saveGlobalConfig(mode, config)

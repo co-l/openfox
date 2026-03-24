@@ -47,6 +47,7 @@ describe('ProviderManager - Integration', () => {
       llm: { baseUrl: 'http://localhost:8000/v1', model: 'model-a', timeout: 120000, backend: 'vllm' },
       context: { maxTokens: 4096, compactionThreshold: 10000, compactionTarget: 8000 },
       agent: { maxIterations: 100, maxConsecutiveFailures: 5, toolTimeout: 30000 },
+      workdir: process.cwd(),
     }
 
     providerManager = createProviderManager(config)

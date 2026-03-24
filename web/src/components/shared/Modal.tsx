@@ -1,4 +1,4 @@
-import { useEffect, useCallback, type ReactNode } from 'react'
+import { useEffect, useCallback, useRef, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 
 interface ModalProps {
@@ -10,6 +10,9 @@ interface ModalProps {
 }
 
 export function Modal({ isOpen, onClose, title, children, size = 'md' }: ModalProps) {
+  const modalRef = useRef<HTMLDivElement>(null)
+  const previousActiveElement = useRef<HTMLElement | null>(null)
+  
   const handleEscape = useCallback((e: KeyboardEvent) => {
     if (e.key === 'Escape') {
       onClose()
@@ -18,9 +21,22 @@ export function Modal({ isOpen, onClose, title, children, size = 'md' }: ModalPr
 
   useEffect(() => {
     if (isOpen) {
+      // Store the currently focused element
+      previousActiveElement.current = document.activeElement as HTMLElement
+      
+      // Focus the modal container
+      modalRef.current?.focus()
+      
       document.addEventListener('keydown', handleEscape)
       document.body.style.overflow = 'hidden'
+    } else {
+      // Restore focus to the previously focused element
+      previousActiveElement.current?.focus()
+      
+      document.removeEventListener('keydown', handleEscape)
+      document.body.style.overflow = ''
     }
+    
     return () => {
       document.removeEventListener('keydown', handleEscape)
       document.body.style.overflow = ''
@@ -45,7 +61,11 @@ export function Modal({ isOpen, onClose, title, children, size = 'md' }: ModalPr
       />
 
       {/* Modal */}
-      <div className={`relative w-full ${sizeClasses[size]} bg-bg-secondary border border-border rounded shadow-xl flex flex-col max-h-[90vh]`}>
+      <div 
+        ref={modalRef}
+        tabIndex={-1}
+        className={`relative w-full ${sizeClasses[size]} bg-bg-secondary border border-border rounded shadow-xl flex flex-col max-h-[90vh]`}
+      >
         {/* Header */}
         <div className="flex items-center justify-between px-4 py-3 border-b border-border flex-shrink-0">
           <h2 className="text-lg font-semibold text-text-primary truncate">{title}</h2>

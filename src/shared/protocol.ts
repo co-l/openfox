@@ -24,6 +24,7 @@ import type {
 export type ClientMessageType =
   // Project management
   | 'project.create'
+  | 'project.create-with-dir'
   | 'project.list'
   | 'project.load'
   | 'project.update'
@@ -67,6 +68,10 @@ export interface ClientMessage<T = unknown> {
 export interface ProjectCreatePayload {
   name: string
   workdir: string
+}
+
+export interface ProjectCreateWithDirPayload {
+  name: string
 }
 
 export interface ProjectLoadPayload {

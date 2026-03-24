@@ -5,10 +5,12 @@ import { useProjectStore } from '../stores/project'
 import { Button } from './shared/Button'
 import { OpenProjectModal } from './CreateSessionModal'
 import { DeleteProjectConfirmationModal } from './DeleteProjectConfirmationModal.js'
+import { CreateProjectModal } from './CreateProjectModal.js'
 
 export function HomePage() {
   const [, navigate] = useLocation()
   const [showOpenModal, setShowOpenModal] = useState(false)
+  const [showCreateModal, setShowCreateModal] = useState(false)
   const [projectToDelete, setProjectToDelete] = useState<{ id: string; name: string } | null>(null)
 
   const sessions = useSessionStore(state => state.sessions)
@@ -203,6 +205,14 @@ export function HomePage() {
         <OpenProjectModal
           isOpen={showOpenModal}
           onClose={() => setShowOpenModal(false)}
+        />
+      )}
+
+      {/* Create Project Modal */}
+      {showCreateModal && (
+        <CreateProjectModal
+          isOpen={showCreateModal}
+          onClose={() => setShowCreateModal(false)}
         />
       )}
 

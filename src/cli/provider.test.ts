@@ -43,6 +43,7 @@ describe('provider commands', () => {
         server: { port: 10369, host: '127.0.0.1', openBrowser: true },
         logging: { level: 'info' as const },
         database: { path: '' },
+        workspace: { workdir: process.cwd() },
       }
 
       const updated = addProvider(config, {
@@ -74,6 +75,7 @@ describe('provider commands', () => {
         server: { port: 10369, host: '127.0.0.1', openBrowser: true },
         logging: { level: 'info' as const },
         database: { path: '' },
+        workspace: { workdir: process.cwd() },
       }
 
       const updated = addProvider(config, {
@@ -105,6 +107,7 @@ describe('provider commands', () => {
         server: { port: 10369, host: '127.0.0.1', openBrowser: true },
         logging: { level: 'info' as const },
         database: { path: '' },
+        workspace: { workdir: process.cwd() },
       }
 
       const updated = addProvider(config, {
@@ -149,6 +152,7 @@ describe('provider commands', () => {
         server: { port: 10369, host: '127.0.0.1', openBrowser: true },
         logging: { level: 'info' as const },
         database: { path: '' },
+        workspace: { workdir: process.cwd() },
       }
 
       const updated = removeProvider(config, 'first-id')
@@ -185,6 +189,7 @@ describe('provider commands', () => {
         server: { port: 10369, host: '127.0.0.1', openBrowser: true },
         logging: { level: 'info' as const },
         database: { path: '' },
+        workspace: { workdir: process.cwd() },
       }
 
       const updated = removeProvider(config, 'second-id')
@@ -209,6 +214,7 @@ describe('provider commands', () => {
         server: { port: 10369, host: '127.0.0.1', openBrowser: true },
         logging: { level: 'info' as const },
         database: { path: '' },
+        workspace: { workdir: process.cwd() },
       }
 
       const updated = removeProvider(config, 'only-id')
@@ -245,6 +251,7 @@ describe('provider commands', () => {
         server: { port: 10369, host: '127.0.0.1', openBrowser: true },
         logging: { level: 'info' as const },
         database: { path: '' },
+        workspace: { workdir: process.cwd() },
       }
 
       const updated = activateProvider(config, 'second-id')
@@ -269,6 +276,7 @@ describe('provider commands', () => {
         server: { port: 10369, host: '127.0.0.1', openBrowser: true },
         logging: { level: 'info' as const },
         database: { path: '' },
+        workspace: { workdir: process.cwd() },
       }
 
       const updated = activateProvider(config, 'non-existent')
@@ -295,6 +303,7 @@ describe('provider commands', () => {
         server: { port: 10369, host: '127.0.0.1', openBrowser: true },
         logging: { level: 'info' as const },
         database: { path: '' },
+        workspace: { workdir: process.cwd() },
       }
 
       const active = getActiveProvider(config)
@@ -310,6 +319,7 @@ describe('provider commands', () => {
         server: { port: 10369, host: '127.0.0.1', openBrowser: true },
         logging: { level: 'info' as const },
         database: { path: '' },
+        workspace: { workdir: process.cwd() },
       }
 
       const active = getActiveProvider(config)
@@ -334,6 +344,7 @@ describe('provider commands', () => {
         server: { port: 10369, host: '127.0.0.1', openBrowser: true },
         logging: { level: 'info' as const },
         database: { path: '' },
+        workspace: { workdir: process.cwd() },
       }
 
       await saveGlobalConfig('production', config)

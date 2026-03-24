@@ -52,6 +52,7 @@ import {
   createCriteriaUpdatedMessage,
   createContextStateMessage,
   isProjectCreatePayload,
+  isProjectCreateWithDirPayload,
   isProjectLoadPayload,
   isProjectUpdatePayload,
   isProjectDeletePayload,
@@ -305,9 +306,36 @@ async function handleClientMessage(
       break
     }
     
+    case 'project.create-with-dir': {
+      console.log('[WS Server] Received project.create-with-dir:', message.payload)
+      if (!isProjectCreateWithDirPayload(message.payload)) {
+        console.error('[WS Server] Invalid payload for project.create-with-dir')
+        send(createErrorMessage('INVALID_PAYLOAD', 'Invalid project.create-with-dir payload', message.id))
+        return
+      }
+      
+      try {
+        const workdir = config.workdir
+        console.log('[WS Server] Creating directory with git, name:', message.payload.name, 'workdir:', workdir)
+        const { createDirectoryWithGit } = await import('../utils/project-creator.js')
+        const project = await createDirectoryWithGit(message.payload.name, workdir)
+        console.log('[WS Server] Project created successfully:', project.id, project.name)
+        send(createProjectStateMessage(project, message.id))
+        console.log('[WS Server] Sent project.state message with ID:', message.id)
+      } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : 'Unknown error'
+        console.error('[WS Server] Error creating project:', errorMessage)
+        send(createErrorMessage('PROJECT_CREATION_FAILED', errorMessage, message.id))
+      }
+      break
+    }
+    
     case 'project.list': {
+      console.log('[WS Server] Received project.list request, ID:', message.id)
       const projects = listProjects()
+      console.log('[WS Server] Found', projects.length, 'projects:', projects.map(p => ({ id: p.id, name: p.name })))
       send(createProjectListMessage(projects, message.id))
+      console.log('[WS Server] Sent project.list message with ID:', message.id)
       break
     }
     
