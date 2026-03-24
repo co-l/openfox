@@ -39,7 +39,7 @@ export interface Message {
 // Display item: either a single message, a grouped sub-agent run, criteria batch, or a context window divider
 export type DisplayItem = 
   | { type: 'message'; message: Message }
-  | { type: 'subagent'; subAgentId: string; subAgentType: 'verifier'; messages: Message[] }
+  | { type: 'subagent'; subAgentId: string; subAgentType: string; messages: Message[] }
   | { type: 'criteria-batch'; toolCalls: ToolCall[] }
   | { type: 'context-divider'; windowSequence: number }
 
@@ -67,7 +67,7 @@ function isCriteriaOnlyMessage(msg: Message): boolean {
  */
 export function groupMessages(messages: Message[], previousItems: DisplayItem[] = []): DisplayItem[] {
   const items: DisplayItem[] = []
-  let currentSubAgentGroup: { subAgentId: string; subAgentType: 'verifier'; messages: Message[] } | null = null
+  let currentSubAgentGroup: { subAgentId: string; subAgentType: string; messages: Message[] } | null = null
   let criteriaBuffer: ToolCall[] = []
   let lastContextWindowId: string | undefined
   let windowSequence = 1
@@ -172,7 +172,7 @@ export function groupMessages(messages: Message[], previousItems: DisplayItem[] 
       } else {
         // Start new group
         flushSubAgentGroup()
-        currentSubAgentGroup = { subAgentId: msg.subAgentId, subAgentType: msg.subAgentType as 'verifier', messages: [msg] }
+        currentSubAgentGroup = { subAgentId: msg.subAgentId, subAgentType: msg.subAgentType!, messages: [msg] }
       }
     } else {
       // Regular message - flush any pending group

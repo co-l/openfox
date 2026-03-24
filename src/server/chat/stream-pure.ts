@@ -289,7 +289,7 @@ export function createMessageStartEvent(
   options?: {
     contextWindowId?: string
     subAgentId?: string
-    subAgentType?: 'verifier'
+    subAgentType?: 'verifier' | 'code_reviewer' | 'test_generator' | 'debugger'
     isSystemGenerated?: boolean
     messageKind?: 'correction' | 'auto-prompt' | 'context-reset'
   }

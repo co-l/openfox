@@ -1,18 +1,13 @@
 /**
  * Call Sub-Agent Tool
- * 
+ *
  * Allows main agents to invoke specialized sub-agents for specific tasks.
  */
 
 import type { Tool, ToolResult, ToolContext } from './types.js'
 import type { SubAgentType } from '../sub-agents/types.js'
-import { createSubAgentManager } from '../sub-agents/manager.js'
-import type { LLMClientWithModel } from '../llm/client.js'
-
-// Extend ToolContext to include LLM client for sub-agent execution
-interface SubAgentToolContext extends ToolContext {
-  llmClient: LLMClientWithModel
-}
+import { executeSubAgent } from '../sub-agents/manager.js'
+import { TurnMetrics } from '../chat/stream-pure.js'
 
 export const callSubAgentTool: Tool = {
   name: 'call_sub_agent',
@@ -40,8 +35,7 @@ export const callSubAgentTool: Tool = {
   },
   async execute(args: Record<string, unknown>, context: ToolContext): Promise<ToolResult> {
     const startTime = Date.now()
-    
-    // Validate arguments
+
     if (!args['subAgentType']) {
       return {
         success: false,
@@ -63,7 +57,6 @@ export const callSubAgentTool: Tool = {
     const subAgentType = args['subAgentType'] as SubAgentType
     const prompt = args['prompt'] as string
 
-    // Validate sub-agent type
     const validTypes: SubAgentType[] = ['verifier', 'code_reviewer', 'test_generator', 'debugger']
     if (!validTypes.includes(subAgentType)) {
       return {
@@ -74,44 +67,48 @@ export const callSubAgentTool: Tool = {
       }
     }
 
-    try {
-      // Create sub-agent manager
-      const subAgentManager = createSubAgentManager()
-      
-      // Get session and LLM client from context
-      const sessionId = context.sessionId
-      const sessionManager = context.sessionManager
-      const llmClient = (context as SubAgentToolContext).llmClient
+    const { sessionId, sessionManager, llmClient, statsIdentity } = context
 
-      if (!sessionId || !sessionManager || !llmClient) {
-        return {
-          success: false,
-          error: 'Missing required context: sessionId, sessionManager, or llmClient',
-          durationMs: Date.now() - startTime,
-          truncated: false,
-        }
+    if (!sessionId || !sessionManager || !llmClient) {
+      return {
+        success: false,
+        error: 'Missing required context: sessionId, sessionManager, or llmClient',
+        durationMs: Date.now() - startTime,
+        truncated: false,
       }
+    }
 
-      // For now, use verifier tool registry for all sub-agents
-      // In the future, each sub-agent type should have its own tool registry
-      // We'll need to import getToolRegistryForMode here, but that would create circular dependency
-      // So we'll pass the verifier registry which has the necessary tools
-      const { getToolRegistryForMode } = await import('../tools/index.js')
-      const toolRegistry = getToolRegistryForMode('verifier')
+    try {
+      // Build per-subagent tool registry from the registry definition
+      const { getToolRegistryForSubAgent } = await import('../tools/index.js')
+      const { createSubAgentRegistry } = await import('../sub-agents/registry.js')
+      const registry = createSubAgentRegistry()
+      const toolNames = registry.getToolRegistry(subAgentType)
+      const toolRegistry = getToolRegistryForSubAgent(toolNames)
 
-      // Execute sub-agent
-      const result = await subAgentManager.executeSubAgent(
+      const turnMetrics = new TurnMetrics()
+
+      const result = await executeSubAgent({
         subAgentType,
         prompt,
         sessionManager,
         sessionId,
         llmClient,
-        toolRegistry
-      )
+        toolRegistry,
+        turnMetrics,
+        statsIdentity: statsIdentity ?? {
+          providerId: 'unknown',
+          providerName: 'Unknown',
+          backend: 'unknown',
+          model: llmClient.getModel(),
+        },
+        signal: context.signal,
+        onMessage: context.onEvent,
+      })
 
       return {
         success: true,
-        output: result,
+        output: result.content,
         durationMs: Date.now() - startTime,
         truncated: false,
       }

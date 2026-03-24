@@ -1,9 +1,10 @@
-import type { ToolResult } from '../../shared/types.js'
+import type { ToolResult, StatsIdentity } from '../../shared/types.js'
 export type { ToolResult } from '../../shared/types.js'
 import type { ServerMessage } from '../../shared/protocol.js'
 import type { LLMToolDefinition } from '../llm/types.js'
 import type { LspManagerInterface } from '../lsp/types.js'
 import type { SessionManager } from '../session/manager.js'
+import type { LLMClientWithModel } from '../llm/client.js'
 
 export interface ToolContext {
   workdir: string
@@ -13,6 +14,8 @@ export interface ToolContext {
   onProgress?: ((message: string) => void) | undefined
   onEvent?: ((event: ServerMessage) => void) | undefined  // For sending events to client (e.g., path confirmation)
   lspManager?: LspManagerInterface | undefined  // Optional LSP manager for file diagnostics
+  llmClient?: LLMClientWithModel | undefined  // For tools that need to spawn LLM calls (e.g., call_sub_agent)
+  statsIdentity?: StatsIdentity | undefined  // For tools that track metrics
 }
 
 export interface Tool {

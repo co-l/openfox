@@ -5,16 +5,22 @@ import { ChatMessage } from './ChatMessage'
 
 interface SubAgentContainerProps {
   messages: Message[]
-  subAgentType: 'verifier'
+  subAgentType: string
   isStreaming: boolean
 }
 
 const LABELS: Record<string, string> = {
   verifier: 'Verification',
+  code_reviewer: 'Code Review',
+  test_generator: 'Test Generation',
+  debugger: 'Debug',
 }
 
 const HEADER_COLORS: Record<string, string> = {
   verifier: 'bg-green-500/20 text-green-400 border-green-500/30',
+  code_reviewer: 'bg-blue-500/20 text-blue-400 border-blue-500/30',
+  test_generator: 'bg-amber-500/20 text-amber-400 border-amber-500/30',
+  debugger: 'bg-orange-500/20 text-orange-400 border-orange-500/30',
 }
 
 /**

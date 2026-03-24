@@ -137,6 +137,17 @@ const plannerRegistry = createRegistryFromTools(plannerTools)
 const builderRegistry = createRegistryFromTools(builderTools)
 const verifierRegistry = createRegistryFromTools(verifierTools)
 
+// All tools by name for dynamic subagent registry creation
+const allToolsByName = new Map<string, Tool>([
+  ...[
+    readFileTool, writeFileTool, editFileTool, runCommandTool,
+    globTool, grepTool, gitTool, askUserTool,
+    completeCriterionTool, passCriterionTool, failCriterionTool,
+    getCriteriaTool, addCriterionTool, updateCriterionTool, removeCriterionTool,
+    todoWriteTool, callSubAgentTool, loadSkillTool,
+  ].map(t => [t.name, t] as const),
+])
+
 /**
  * Get the tool registry for a specific mode
  */
@@ -149,6 +160,21 @@ export function getToolRegistryForMode(mode: ToolMode): ToolRegistry {
     case 'verifier':
       return verifierRegistry
   }
+}
+
+/**
+ * Create a tool registry for a subagent from a list of tool names.
+ * Used by SubAgentManager to give each subagent type its own tool set.
+ */
+export function getToolRegistryForSubAgent(toolNames: string[]): ToolRegistry {
+  const tools: Tool[] = []
+  for (const name of toolNames) {
+    const tool = allToolsByName.get(name)
+    if (tool) {
+      tools.push(tool)
+    }
+  }
+  return createRegistryFromTools(tools)
 }
 
 /**
