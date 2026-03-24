@@ -18,7 +18,7 @@ describe('Markdown', () => {
       expect(html).toContain('<li')
       
       // The li elements should have the 'block' class (in HTML it's 'class' not 'className')
-      expect(html).toContain('class="text-text-primary text-sm block"')
+      expect(html).toContain('class="text-text-primary text-sm list-item"')
     })
 
     it('renders unordered lists with block class on li elements', () => {
@@ -34,7 +34,7 @@ describe('Markdown', () => {
       expect(html).toContain('<li')
       
       // The li elements should have the 'block' class
-      expect(html).toContain('class="text-text-primary text-sm block"')
+      expect(html).toContain('class="text-text-primary text-sm list-item"')
     })
 
     it('maintains consistent spacing between list items', () => {

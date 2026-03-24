@@ -76,7 +76,7 @@ export const Markdown = memo(function Markdown({ content, className = '' }: Mark
         },
         
         li({ children }) {
-          return <li className="text-text-primary text-sm block">{children}</li>
+          return <li className="text-text-primary text-sm list-item">{children}</li>
         },
         
         h1({ children }) {
