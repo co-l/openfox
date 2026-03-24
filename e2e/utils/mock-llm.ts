@@ -234,8 +234,14 @@ export function createMockLLMClient(config: MockLLMConfig = {}): MockLLMClient {
     },
     // Verifier sub-agent workflow (for builder mode)
     {
-      promptMatch: /launch.*runner|runner.*launch|start.*verification|verify.*implementation/i,
-      toolCalls: [{ name: 'launch_runner', arguments: {} }],
+      promptMatch: /launch.*runner|runner.*launch|start.*verification|verify.*implementation|call.*verifier/i,
+      toolCalls: [{ 
+        name: 'call_sub_agent', 
+        arguments: { 
+          subAgentType: 'verifier',
+          prompt: 'Verify completed criteria against implementation' 
+        } 
+      }],
       thinking: 'Starting the verifier to check implementation against criteria.',
       response: 'I launched the verifier.',
     },
