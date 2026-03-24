@@ -36,6 +36,7 @@ import type {
 } from '../../../src/shared/protocol.js'
 import { wsClient, type ConnectionStatus } from '../lib/ws'
 import { playNotification, playAchievement, playIntervention, playWaitingForUser } from '../lib/sound'
+import { savePromptToHistory } from '../lib/cross-session-history.js'
 
 // Track subscription to prevent duplicates
 let isSubscribed = false
@@ -455,6 +456,12 @@ export const useSessionStore = create<SessionState>((set, get) => ({
           break
         }
         const payload = message.payload as ChatMessagePayload
+        
+        // Save user messages to cross-session history
+        if (payload.message.role === 'user') {
+          savePromptToHistory(payload.message)
+        }
+        
         set(state => {
           // Don't add duplicates
           if (state.messages.some(m => m.id === payload.message.id)) {

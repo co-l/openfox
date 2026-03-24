@@ -26,9 +26,20 @@ npm run clean        # Remove dist/
 ### Single Test File
 
 ```bash
+# Server tests
 npx vitest run src/tools/read.test.ts           # Run one test file
 npx vitest run src/tools/read.test.ts -t "name" # Run specific test by name
-npx vitest --watch src/tools/                   # Watch mode for directory
+
+# Web tests
+npx vitest run web/src/hooks/usePromptHistory.test.ts
+npx vitest run web/src/components/shared/PromptHistory.test.tsx
+
+# Multiple related test files (e.g., hook + component)
+npx vitest run web/src/hooks/usePromptHistory.test.ts web/src/components/shared/PromptHistory.test.tsx
+
+# Watch mode
+npx vitest --watch src/tools/        # Watch server tests
+npx vitest --watch web/src/          # Watch web tests
 ```
 
 ## Code Style
@@ -173,12 +184,14 @@ OPENFOX_LOG_LEVEL=info  # debug, info, warn, error
 When fixing or refactoring: write/update the failing test FIRST, then make it pass.
 
 ```bash
-# 1. Write failing test
+# Server tests
 npx vitest run src/tools/myfeature.test.ts  # Should fail
+npx vitest run src/tools/myfeature.test.ts  # After fix - should pass
 
-# 2. Implement feature
-# 3. Run test again - should pass
-npx vitest run src/tools/myfeature.test.ts
+# Web tests
+npx vitest run web/src/hooks/myhook.test.ts           # Should fail
+npx vitest run web/src/components/MyComponent.test.tsx # Should fail
+npx vitest run web/src/hooks/myhook.test.ts web/src/components/MyComponent.test.tsx # Multiple files
 ```
 
 ## E2E Tests
