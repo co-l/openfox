@@ -32,7 +32,14 @@ export interface SnapshotEvent {
  */
 const BUILTIN_EXCLUDE_PATTERNS = [
   '.openfox/**',
+  '.git/**',
+  'node_modules/**',
 ]
+
+type WatchOptionsWithIgnore = {
+  recursive: true
+  ignore?: string[]
+}
 
 // ============================================================================
 // File Watcher
@@ -49,6 +56,7 @@ export class FileWatcher {
   private gitignorePatterns: string[] = []
   
   onSnapshot: ((event: SnapshotEvent) => void) | null = null
+  onError: ((error: unknown) => void) | null = null
 
   constructor(
     private workdir: string,
@@ -80,65 +88,82 @@ export class FileWatcher {
       this.gitignorePatterns = []
     }
 
-    this.watcher = watch(this.workdir, { recursive: true }, async (eventType, filename) => {
-      if (!filename) return
-
-      // Normalize path - filename from fs.watch is already relative to workdir
-      const relativePath = filename.startsWith('/') || filename.startsWith('\\')
-        ? relative(this.workdir, filename)
-        : filename
-
-      // Normalize path separators to forward slashes
-      const normalizedPath = relativePath.replace(/\\/g, '/')
-
-      const filePath = join(this.workdir, normalizedPath)
-
-      // Check if path should be excluded
-      if (this.shouldExclude(normalizedPath)) {
-        return
+    try {
+      const watchOptions: WatchOptionsWithIgnore = {
+        recursive: true,
+        ignore: this.getWatchIgnorePatterns(),
       }
 
-      // Skip binary files
-      if (this.isBinaryFile(filename)) {
-        return
-      }
+      this.watcher = watch(
+        this.workdir,
+        watchOptions as never,
+        async (eventType, filename) => {
+          if (!filename) return
 
-      // Determine change type by checking file existence
-      let changeType: ChangeType = 'modify'
+          // Normalize path - filename from fs.watch is already relative to workdir
+          const relativePath = filename.startsWith('/') || filename.startsWith('\\')
+            ? relative(this.workdir, filename)
+            : filename
 
-      try {
-        const stats = await stat(filePath)
-        if (stats.isFile()) {
-          // File exists - check if it's a new file (created in this debounce window)
-          const mtime = stats.mtimeMs
-          const now = Date.now()
+          // Normalize path separators to forward slashes
+          const normalizedPath = relativePath.replace(/\\/g, '/')
 
-          // If file was created very recently (within debounce window), treat as create
-          if (now - mtime < this.config.debounceMs + 100) {
-            changeType = 'create'
-          } else {
-            changeType = eventType === 'change' ? 'modify' : 'modify'
+          const filePath = join(this.workdir, normalizedPath)
+
+          // Check if path should be excluded
+          if (this.shouldExclude(normalizedPath)) {
+            return
           }
+
+          // Skip binary files
+          if (this.isBinaryFile(filename)) {
+            return
+          }
+
+          // Determine change type by checking file existence
+          let changeType: ChangeType = 'modify'
+
+          try {
+            const stats = await stat(filePath)
+            if (stats.isFile()) {
+              // File exists - check if it's a new file (created in this debounce window)
+              const mtime = stats.mtimeMs
+              const now = Date.now()
+
+              // If file was created very recently (within debounce window), treat as create
+              if (now - mtime < this.config.debounceMs + 100) {
+                changeType = 'create'
+              } else {
+                changeType = eventType === 'change' ? 'modify' : 'modify'
+              }
+            }
+          } catch {
+            // File doesn't exist - it was deleted
+            changeType = 'delete'
+          }
+
+          // Debounce: clear existing timer for this file
+          const existingTimer = this.debounceTimers.get(filePath)
+          if (existingTimer) {
+            clearTimeout(existingTimer)
+          }
+
+          // Create new timer
+          const timer = setTimeout(async () => {
+            this.debounceTimers.delete(filePath)
+            await this.createSnapshot(filePath, normalizedPath, changeType)
+          }, this.config.debounceMs)
+
+          this.debounceTimers.set(filePath, timer)
         }
-      } catch (error) {
-        // File doesn't exist - it was deleted
-        changeType = 'delete'
-      }
+      )
 
-      // Debounce: clear existing timer for this file
-      const existingTimer = this.debounceTimers.get(filePath)
-      if (existingTimer) {
-        clearTimeout(existingTimer)
-      }
-
-      // Create new timer
-      const timer = setTimeout(async () => {
-        this.debounceTimers.delete(filePath)
-        await this.createSnapshot(filePath, normalizedPath, changeType)
-      }, this.config.debounceMs)
-
-      this.debounceTimers.set(filePath, timer)
-    })
+      this.watcher.on('error', (error) => {
+        this.handleWatcherError(error)
+      })
+    } catch (error) {
+      this.handleWatcherError(error)
+    }
   }
 
   /**
@@ -172,6 +197,17 @@ export class FileWatcher {
     }
     
     return false
+  }
+
+  private getWatchIgnorePatterns(): string[] {
+    return [...this.gitignorePatterns, ...this.config.excludePatterns]
+      .flatMap(pattern => normalizeWatchPattern(pattern))
+  }
+
+  private handleWatcherError(error: unknown): void {
+    console.error('History watcher error; disabling watcher for workdir:', this.workdir, error)
+    this.stop()
+    this.onError?.(error)
   }
 
   /**
@@ -231,4 +267,18 @@ export class FileWatcher {
       console.error('Error creating snapshot:', error)
     }
   }
+}
+
+function normalizeWatchPattern(pattern: string): string[] {
+  const normalizedPattern = pattern.replace(/\\/g, '/').trim()
+
+  if (!normalizedPattern) {
+    return []
+  }
+
+  if (normalizedPattern.endsWith('/')) {
+    return [normalizedPattern, `${normalizedPattern}**`]
+  }
+
+  return [normalizedPattern]
 }

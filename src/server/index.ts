@@ -1,5 +1,6 @@
 import express from 'express'
 import cors from 'cors'
+import { spawn, type ChildProcess } from 'node:child_process'
 import { createServer as createHttpServer } from 'node:http'
 import { fileURLToPath } from 'node:url'
 import { dirname, resolve, join } from 'node:path'
@@ -10,7 +11,6 @@ import type { Config, Provider } from '../shared/types.js'
 import type { ServerHandle } from './context.js'
 import { initDatabase, closeDatabase, getDatabase } from './db/index.js'
 import { initEventStore } from './events/index.js'
-import { listSessions } from './db/sessions.js'
 import { createLLMClient, detectModel, getLlmStatus, detectBackend, getBackendDisplayName, type Backend } from './llm/index.js'
 import { createMockLLMClient } from './llm/mock.js'
 import { createProviderManager } from './provider-manager.js'
@@ -19,8 +19,10 @@ import { createWebSocketServer } from './ws/index.js'
 import { SessionManager } from './session/manager.js'
 import { setRuntimeConfig } from './runtime-config.js'
 import { logger, setLogLevel } from './utils/logger.js'
+import { terminateProcessTree } from './utils/process-tree.js'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
+const HISTORY_PROCESS_ENTRYPOINT = getHistoryProcessEntrypoint()
 
 /**
  * Create a server handle that can be started on any port.
@@ -93,58 +95,171 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
 
   initLLM().catch(err => logger.error('LLM initialization failed', { error: err instanceof Error ? err.message : String(err) }))
 
-  // Initialize history service for each workdir
-  // We'll track watchers by workdir
-  const historyWatchers = new Map<string, InstanceType<typeof import('./history/history.watcher.js').FileWatcher>>()
-  
-  // Helper to start/stop history watcher for a workdir
-  async function initHistoryForWorkdir(workdir: string): Promise<void> {
-    const { FileWatcher } = await import('./history/history.watcher.js')
-    const { loadConfig } = await import('./history/history.config.js')
-    const { startCleanupScheduler } = await import('./history/history.retention.js')
-    const { ensureDirectory } = await import('./history/history.snapshot.js')
-    
-    const snapshotDir = workdir ? `${workdir}/.openfox/history` : ''
-    
-    // Ensure snapshot directory exists before any operations
-    if (snapshotDir) {
-      await ensureDirectory(snapshotDir)
-    }
-    
-    // Load config
-    const config = await loadConfig(workdir)
-    
-    // Start cleanup scheduler
-    startCleanupScheduler(snapshotDir, config)
-    
-    // Create and start watcher
-    const watcher = new FileWatcher(workdir, snapshotDir, config.excludePatterns)
-    await watcher.start()
-    historyWatchers.set(workdir, watcher)
-    
-    logger.info('History watcher started', { workdir })
+  type HistoryService = {
+    process: ChildProcess
+    stopping: boolean
+    stopPromise: Promise<void> | null
   }
 
-  // Initialize history watchers for all existing sessions' workdirs
-  const allSessions = listSessions()
-  const uniqueWorkdirs = new Set<string>()
-  
-  // Add default workdir (for sessions without explicit workdir or for backward compatibility)
-  const defaultWorkdir = process.cwd()
-  uniqueWorkdirs.add(defaultWorkdir)
-  
-  // Extract unique workdirs from all sessions
-  for (const session of allSessions) {
-    if (session.workdir) {
-      uniqueWorkdirs.add(session.workdir)
+  const historyServices = new Map<string, HistoryService>()
+  const pendingHistoryStarts = new Map<string, Promise<void>>()
+  const sessionWorkdirs = new Map(sessionManager.listSessions().map(session => [session.id, session.workdir]))
+  const pinnedHistoryWorkdirs = new Set<string>()
+
+  async function initHistoryForWorkdir(workdir: string): Promise<void> {
+    const pendingStart = pendingHistoryStarts.get(workdir)
+    if (pendingStart) {
+      await pendingStart
+      return
+    }
+
+    const existingService = historyServices.get(workdir)
+    if (existingService) {
+      if (!existingService.stopping) {
+        return
+      }
+
+      await existingService.stopPromise
+    }
+
+    const startup = (async () => {
+      const child = spawn(
+        process.execPath,
+        [...process.execArgv, HISTORY_PROCESS_ENTRYPOINT, workdir],
+        {
+          cwd: workdir,
+          env: process.env,
+          stdio: ['ignore', 'inherit', 'inherit'],
+        }
+      )
+
+      const service: HistoryService = {
+        process: child,
+        stopping: false,
+        stopPromise: null,
+      }
+
+      historyServices.set(workdir, service)
+
+      child.on('error', (error) => {
+        handleHistoryProcessError(workdir, child, error)
+      })
+
+      child.on('exit', (code, signal) => {
+        handleHistoryProcessExit(workdir, child, code, signal)
+      })
+
+      logger.info('History watcher started', { workdir, pid: child.pid })
+    })()
+
+    pendingHistoryStarts.set(workdir, startup)
+
+    try {
+      await startup
+    } catch (error) {
+      logger.error('Failed to start history watcher', {
+        workdir,
+        error: error instanceof Error ? error.message : String(error),
+      })
+    } finally {
+      pendingHistoryStarts.delete(workdir)
     }
   }
-  
-  // Initialize history watcher for each unique workdir
-  for (const workdir of uniqueWorkdirs) {
-    if (!historyWatchers.has(workdir)) {
-      await initHistoryForWorkdir(workdir)
+
+  async function stopHistoryForWorkdir(workdir: string): Promise<void> {
+    const service = historyServices.get(workdir)
+    if (!service) {
+      return
     }
+
+    if (service.stopping) {
+      await service.stopPromise
+      return
+    }
+
+    service.stopping = true
+    service.stopPromise = terminateProcessTree(service.process, {
+      exited: () => service.process.exitCode !== null || service.process.signalCode !== null,
+    })
+      .catch((error) => {
+        logger.error('Failed to stop history watcher', {
+          workdir,
+          error: error instanceof Error ? error.message : String(error),
+        })
+      })
+      .finally(() => {
+        const current = historyServices.get(workdir)
+        if (current?.process === service.process) {
+          historyServices.delete(workdir)
+        }
+
+        logger.info('History watcher stopped', { workdir, pid: service.process.pid })
+      })
+
+    await service.stopPromise
+  }
+
+  function maybeStopHistoryForWorkdir(workdir: string): void {
+    if (pinnedHistoryWorkdirs.has(workdir)) {
+      return
+    }
+
+    const hasRemainingSessions = sessionManager.listSessions().some(session => session.workdir === workdir)
+    if (hasRemainingSessions) {
+      return
+    }
+
+    void stopHistoryForWorkdir(workdir)
+  }
+
+  function handleHistoryProcessError(workdir: string, proc: ChildProcess, error: unknown): void {
+    const service = historyServices.get(workdir)
+    if (service?.process === proc && !service.stopping) {
+      historyServices.delete(workdir)
+      logger.error('History watcher process failed', {
+        workdir,
+        pid: proc.pid,
+        error: error instanceof Error ? error.message : String(error),
+      })
+    }
+  }
+
+  function handleHistoryProcessExit(
+    workdir: string,
+    proc: ChildProcess,
+    code: number | null,
+    signal: NodeJS.Signals | null
+  ): void {
+    const service = historyServices.get(workdir)
+    if (service?.process === proc && !service.stopping) {
+      historyServices.delete(workdir)
+      logger.warn('History watcher process exited', { workdir, pid: proc.pid, code, signal })
+    }
+  }
+
+  const defaultWorkdir = process.cwd()
+
+  pinnedHistoryWorkdirs.add(defaultWorkdir)
+
+  const unsubscribeSessionEvents = sessionManager.subscribe((event) => {
+    if (event.type === 'session_created') {
+      sessionWorkdirs.set(event.session.id, event.session.workdir)
+      void initHistoryForWorkdir(event.session.workdir)
+      return
+    }
+
+    if (event.type === 'session_deleted') {
+      const workdir = sessionWorkdirs.get(event.sessionId)
+      sessionWorkdirs.delete(event.sessionId)
+
+      if (workdir) {
+        maybeStopHistoryForWorkdir(workdir)
+      }
+    }
+  })
+
+  if (!historyServices.has(defaultWorkdir)) {
+    await initHistoryForWorkdir(defaultWorkdir)
   }
 
   const toolRegistry = createToolRegistry()
@@ -168,12 +283,7 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
 
   app.post('/api/sessions', async (req, res) => {
     const { workdir, title } = req.body
-    
-    // Initialize history watcher for this workdir if not already running
-    if (!historyWatchers.has(workdir)) {
-      await initHistoryForWorkdir(workdir)
-    }
-    
+
     const session = sessionManager.createSession(workdir, title)
     res.status(201).json({ session })
   })
@@ -486,25 +596,29 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
     
     close: () => new Promise<void>((resolve) => {
       logger.info('Shutting down...')
-      viteServer?.close()
-      
-      // Stop all history watchers
-      for (const [workdir, watcher] of historyWatchers) {
-        watcher.stop()
-        logger.info('History watcher stopped', { workdir })
-      }
-      historyWatchers.clear()
-      
-      // Note: Not closing database here - it's a singleton shared across servers.
-      // Database should only be closed when the application exits.
-      // Terminate all WebSocket connections to allow clean shutdown
-      for (const client of wss.clients) {
-        client.terminate()
-      }
-      wss.close()
-      httpServer.close(() => resolve())
+      void (async () => {
+        viteServer?.close()
+        unsubscribeSessionEvents()
+
+        await Promise.all([...historyServices.keys()].map(async (workdir) => stopHistoryForWorkdir(workdir)))
+
+        // Note: Not closing database here - it's a singleton shared across servers.
+        // Database should only be closed when the application exits.
+        // Terminate all WebSocket connections to allow clean shutdown
+        for (const client of wss.clients) {
+          client.terminate()
+        }
+        wss.close()
+        httpServer.close(() => resolve())
+      })()
     }),
   }
+}
+
+function getHistoryProcessEntrypoint(): string {
+  const currentFile = fileURLToPath(import.meta.url)
+  const extension = currentFile.endsWith('.ts') ? 'ts' : 'js'
+  return resolve(__dirname, 'history', `process-entry.${extension}`)
 }
 
 /**

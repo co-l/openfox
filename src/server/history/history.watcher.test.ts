@@ -42,7 +42,7 @@ describe('file watcher', () => {
     await writeFile(filePath, 'content1')
     
     // Wait for debounce period
-    await new Promise(resolve => setTimeout(resolve, 600))
+    await new Promise(resolve => setTimeout(resolve, 900))
     
     // Assert
     expect(snapshotCallback).toHaveBeenCalled()
