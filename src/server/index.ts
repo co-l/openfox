@@ -123,9 +123,11 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
     }
 
     const startup = (async () => {
+      // Use tsx binary from project node_modules to run TypeScript entrypoint
+      const tsxBinary = resolve(__dirname, '../../node_modules/.bin/tsx')
       const child = spawn(
-        process.execPath,
-        [...process.execArgv, '--import', 'tsx/esm', HISTORY_PROCESS_ENTRYPOINT, workdir],
+        tsxBinary,
+        [HISTORY_PROCESS_ENTRYPOINT, workdir],
         {
           cwd: workdir,
           env: process.env,
