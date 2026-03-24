@@ -62,6 +62,12 @@ export interface SessionMetadata {
   iterationCount: number
 }
 
+export interface RecentUserPrompt {
+  id: string
+  content: string
+  timestamp: string
+}
+
 export interface SessionSummary {
   id: string
   projectId: string
@@ -74,6 +80,7 @@ export interface SessionSummary {
   updatedAt: string
   criteriaCount: number
   criteriaCompleted: number
+  recentUserPrompts?: RecentUserPrompt[]
 }
 
 // ============================================================================

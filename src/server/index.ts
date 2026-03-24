@@ -285,10 +285,6 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
   })
 
   // Session endpoints (REST)
-  app.get('/api/sessions', (_req, res) => {
-    const sessions = sessionManager.listSessions()
-    res.json({ sessions })
-  })
 
   app.post('/api/sessions', async (req, res) => {
     const { workdir, title } = req.body

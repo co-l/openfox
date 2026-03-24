@@ -641,4 +641,73 @@ describe('useSessionStore session isolation', () => {
 
     expect(useSessionStore.getState().unreadSessionIds).toEqual([])
   })
+
+  it('preserves recentUserPrompts from incoming sessions', async () => {
+    const useSessionStore = await loadSessionStore()
+
+    const incomingSessions = [
+      {
+        id: 'session-1',
+        projectId: 'project-1',
+        workdir: '/tmp/project-1',
+        mode: 'planner' as const,
+        phase: 'plan' as const,
+        isRunning: false,
+        createdAt: '2024-01-01T00:00:00.000Z',
+        updatedAt: '2024-01-01T00:00:00.000Z',
+        criteriaCount: 0,
+        criteriaCompleted: 0,
+        recentUserPrompts: [
+          { id: 'msg-1', content: 'First prompt', timestamp: '2024-01-01T10:00:00.000Z' },
+          { id: 'msg-2', content: 'Second prompt', timestamp: '2024-01-01T11:00:00.000Z' },
+        ],
+      },
+      {
+        id: 'session-2',
+        projectId: 'project-1',
+        workdir: '/tmp/project-2',
+        mode: 'builder' as const,
+        phase: 'build' as const,
+        isRunning: true,
+        createdAt: '2024-01-02T00:00:00.000Z',
+        updatedAt: '2024-01-02T00:00:00.000Z',
+        criteriaCount: 0,
+        criteriaCompleted: 0,
+        recentUserPrompts: [
+          { id: 'msg-3', content: 'Third prompt', timestamp: '2024-01-02T12:00:00.000Z' },
+        ],
+      },
+    ]
+
+    useSessionStore.setState({
+      sessions: [],
+      currentSession: null,
+      unreadSessionIds: [],
+      messages: [],
+      streamingMessageId: null,
+      currentTodos: [],
+      contextState: null,
+      pendingPathConfirmation: null,
+      error: null,
+    })
+
+    // Handle session.list message
+    useSessionStore.getState().handleServerMessage({
+      type: 'session.list',
+      payload: {
+        sessions: incomingSessions as any,
+      },
+    })
+
+    const result = useSessionStore.getState().sessions
+
+    // Verify recentUserPrompts are preserved
+    expect(result[0].recentUserPrompts).toEqual([
+      { id: 'msg-1', content: 'First prompt', timestamp: '2024-01-01T10:00:00.000Z' },
+      { id: 'msg-2', content: 'Second prompt', timestamp: '2024-01-01T11:00:00.000Z' },
+    ])
+    expect(result[1].recentUserPrompts).toEqual([
+      { id: 'msg-3', content: 'Third prompt', timestamp: '2024-01-02T12:00:00.000Z' },
+    ])
+  })
 })

@@ -5,7 +5,7 @@ import type { Config } from '../config.js'
 import type { LLMClientWithModel } from '../llm/client.js'
 import type { ToolRegistry } from '../tools/index.js'
 import type { SessionManager } from '../session/index.js'
-import { getEventStore, getCurrentContextWindowId } from '../events/index.js'
+import { getEventStore, getCurrentContextWindowId, getRecentUserPromptsForSession } from '../events/index.js'
 import { buildContextMessagesFromEventHistory, buildMessagesFromStoredEvents } from '../events/folding.js'
 import type { Message, Provider, StatsIdentity } from '../../shared/types.js'
 import { runChatTurn, createMessageStartEvent, createChatDoneEvent } from '../chat/orchestrator.js'
@@ -449,7 +449,14 @@ async function handleClientMessage(
     
     case 'session.list': {
       const sessions = sessionManager.listSessions()
-      send(createSessionListMessage(sessions, message.id))
+      
+      // Add recent user prompts to each session
+      const sessionsWithPrompts = sessions.map(session => ({
+        ...session,
+        recentUserPrompts: getRecentUserPromptsForSession(session.id, 10),
+      }))
+      
+      send(createSessionListMessage(sessionsWithPrompts, message.id))
       break
     }
     

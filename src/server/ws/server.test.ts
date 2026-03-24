@@ -114,6 +114,20 @@ function createEventStore() {
   const eventsBySession = new Map<string, Array<{ seq: number; sessionId: string; timestamp: number; type: string; data: unknown }>>()
   const subscribers = new Map<string, { resolve: (event: { seq: number; sessionId: string; timestamp: number; type: string; data: unknown }) => void; event: { seq: number; sessionId: string; timestamp: number; type: string; data: unknown } }>()
 
+  const mockDb = {
+    prepare: vi.fn((query: string) => ({
+      all: vi.fn((...args: unknown[]) => {
+        // Mock query for recent user prompts - return empty array
+        if (query.includes('SELECT payload') && query.includes('chat.message')) {
+          return []
+        }
+        return []
+      }),
+      get: vi.fn(() => undefined),
+      run: vi.fn(() => ({ changes: 0 })),
+    })),
+  }
+
   return {
     append: vi.fn((sessionId: string, event: { type: string; data: unknown }) => {
       const existing = eventsBySession.get(sessionId) ?? []
@@ -178,6 +192,7 @@ function createEventStore() {
         }),
       }
     }),
+    db: mockDb,
   }
 }
 

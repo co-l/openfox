@@ -107,6 +107,8 @@ function mergeSessionList(
       mode: currentSessionOverride?.mode ?? existingSession?.mode ?? incomingSession.mode,
       phase: currentSessionOverride?.phase ?? existingSession?.phase ?? incomingSession.phase,
       isRunning: currentSessionOverride?.isRunning ?? existingSession?.isRunning ?? incomingSession.isRunning,
+      // Preserve recentUserPrompts from incoming session (server source of truth)
+      recentUserPrompts: incomingSession.recentUserPrompts,
     }
   })
 }
@@ -455,6 +457,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
           break
         }
         const payload = message.payload as ChatMessagePayload
+        
         set(state => {
           // Don't add duplicates
           if (state.messages.some(m => m.id === payload.message.id)) {

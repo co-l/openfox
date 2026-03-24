@@ -13,11 +13,13 @@ import { PathConfirmationDialog } from '../shared/PathConfirmationDialog'
 import { RunningIndicator } from '../shared/RunningIndicator'
 import { CriteriaGroupDisplay } from '../shared/CriteriaGroupDisplay'
 import { AttachmentPreview } from '../shared/AttachmentPreview.js'
+import { PromptHistoryList } from '../shared/PromptHistory.js'
 import { compressImage, isValidImageType, validateImageSize } from '../../lib/image-compression.js'
 import { buildPromptContextByUserMessageId } from './prompt-context-linking.js'
 import { ProviderSelector } from '../settings/ProviderSelector'
 import { generateUUID } from '../../lib/uuid.js'
 import { groupMessages, type DisplayItem } from './groupMessages.js'
+import { usePromptHistory } from '../../hooks/usePromptHistory.js'
 
 export function PlanPanel() {
   const [criteriaSidebarOpen, setCriteriaSidebarOpen] = useState(true)
@@ -33,6 +35,7 @@ export function PlanPanel() {
   
   const session = useSessionStore(state => state.currentSession)
   const messages = useSessionStore(state => state.messages)
+  const sessions = useSessionStore(state => state.sessions)
   const error = useSessionStore(state => state.error)
   const pendingPathConfirmation = useSessionStore(state => state.pendingPathConfirmation)
   
@@ -43,6 +46,18 @@ export function PlanPanel() {
   const acceptAndBuild = useSessionStore(state => state.acceptAndBuild)
   const stopGeneration = useSessionStore(state => state.stopGeneration)
   const launchRunner = useSessionStore(state => state.launchRunner)
+  
+  // Prompt history navigation
+  const {
+    history,
+    selectedIndex,
+    showHistory,
+    openHistory,
+    closeHistory,
+    navigateUp,
+    navigateDown,
+    selectCurrent,
+  } = usePromptHistory(messages, sessions, session?.id)
   
   // Ref to store previous displayItems for identity preservation
   const previousDisplayItemsRef = useRef<DisplayItem[]>([])
@@ -277,6 +292,33 @@ export function PlanPanel() {
   }
   
   const handleKeyDown = (e: React.KeyboardEvent) => {
+    // Handle prompt history navigation when history is visible
+    if (showHistory) {
+      switch (e.key) {
+        case 'Enter':
+          e.preventDefault()
+          const selectedContent = selectCurrent()
+          if (selectedContent) {
+            setInput(selectedContent)
+            closeHistory()
+          }
+          return
+        case 'Escape':
+          e.preventDefault()
+          closeHistory()
+          return
+        case 'ArrowUp':
+          e.preventDefault()
+          navigateUp()
+          return
+        case 'ArrowDown':
+          e.preventDefault()
+          navigateDown()
+          return
+      }
+    }
+    
+    // Normal textarea behavior
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault()
       handleSubmit(e)
@@ -567,6 +609,26 @@ export function PlanPanel() {
           </div>
         )}
         
+        {/* Prompt history list */}
+        {showHistory && (
+          <PromptHistoryList
+            history={history}
+            selectedIndex={selectedIndex}
+            onSelect={(content) => {
+              setInput(content)
+              closeHistory()
+            }}
+            onEscape={closeHistory}
+            onNavigate={(direction) => {
+              if (direction === 'up') {
+                navigateUp()
+              } else {
+                navigateDown()
+              }
+            }}
+          />
+        )}
+        
         <div 
           className={`flex items-end gap-3 p-3 rounded border transition-colors ${
             dragOver 
@@ -595,8 +657,21 @@ export function PlanPanel() {
           <textarea
             ref={textareaRef}
             value={input}
-            onChange={(e) => setInput(e.target.value)}
+            onChange={(e) => {
+              setInput(e.target.value)
+              // Hide history when user starts typing
+              if (showHistory) {
+                closeHistory()
+              }
+            }}
             onKeyDown={handleKeyDown}
+            onKeyUp={(e) => {
+              // Handle Arrow Up on empty textarea to show history
+              if (e.key === 'ArrowUp' && input.trim() === '' && !showHistory) {
+                e.preventDefault()
+                openHistory()
+              }
+            }}
             placeholder={
               isPlanning 
                 ? "What would you like to build?" 

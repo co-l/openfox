@@ -633,3 +633,55 @@ export function compactContext(
 
   return { newWindowId, summaryMessageId }
 }
+
+// ============================================================================
+// Recent User Prompts
+// ============================================================================
+
+/**
+ * Get the most recent user prompts for a session.
+ * Queries the events table directly for efficiency, returning only necessary fields.
+ * 
+ * @param sessionId - The session ID
+ * @param limit - Maximum number of prompts to return (default: 10)
+ * @returns Array of recent user prompts with id, content, and timestamp
+ */
+export function getRecentUserPromptsForSession(sessionId: string, limit: number = 10): { id: string, content: string, timestamp: string }[] {
+  try {
+    const eventStore = getEventStore()
+    const db = (eventStore as any).db as import('better-sqlite3').Database | undefined
+    
+    // If no db available (e.g., in tests), return empty array
+    if (!db) {
+      return []
+    }
+    
+    // Query only message.start events with user role, ordered by timestamp descending
+    // Uses indexed columns (session_id, event_type) and LIMIT for efficiency
+    const rows = db
+      .prepare(`
+        SELECT payload, timestamp 
+        FROM events 
+        WHERE session_id = ? AND event_type = 'message.start'
+        ORDER BY timestamp DESC
+        LIMIT ?
+      `)
+      .all(sessionId, limit) as { payload: string, timestamp: number }[]
+    
+    return rows.map(row => {
+      const message = JSON.parse(row.payload) as { messageId: string, role: string, content: string }
+      // Skip non-user messages
+      if (message.role !== 'user') {
+        return null
+      }
+      return {
+        id: message.messageId,
+        content: message.content,
+        timestamp: new Date(row.timestamp).toISOString(),
+      }
+    }).filter((p): p is { id: string, content: string, timestamp: string } => p !== null)
+  } catch (error) {
+    // If any error occurs (e.g., in tests), return empty array
+    return []
+  }
+}

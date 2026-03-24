@@ -18,12 +18,11 @@ export interface Message {
   role: 'user' | 'assistant' | 'system' | 'tool'
   content: string
   thinkingContent?: string
-  createdAt: string
-  updatedAt: string
+  timestamp: string
   isStreaming?: boolean
   isCompacted?: boolean
   isSystemGenerated?: boolean
-  messageKind?: 'auto-prompt' | 'context-reset'
+  messageKind?: 'correction' | 'auto-prompt' | 'context-reset'
   toolName?: string
   subAgentId?: string
   subAgentType?: string
@@ -34,6 +33,7 @@ export interface Message {
   attachments?: Array<{ id: string; filename: string; mimeType: string; size: number; data: string }>
   stats?: unknown
   partial?: boolean
+  promptContext?: unknown
 }
 
 // Display item: either a single message, a grouped sub-agent run, criteria batch, or a context window divider

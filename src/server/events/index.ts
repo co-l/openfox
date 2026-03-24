@@ -97,4 +97,5 @@ export {
   emitFormatRetry,
   emitTurnSnapshot,
   compactContext,
+  getRecentUserPromptsForSession,
 } from './session.js'
