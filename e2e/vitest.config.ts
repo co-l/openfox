@@ -24,6 +24,9 @@ export default defineConfig({
     // No retries needed with deterministic mock
     retry: 0,
     
+    // Use tsx to resolve TypeScript imports with .js extensions
+    execArgv: ['--import', 'tsx/esm'],
+    
     coverage: {
       provider: 'v8',
       reporter: ['text', 'text-summary'],

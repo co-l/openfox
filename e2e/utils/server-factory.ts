@@ -62,6 +62,7 @@ export async function createTestServer(options: { maxContext?: number } = {}): P
   process.env['OPENFOX_MOCK_LLM'] = 'true'
   
   // Dynamic import to ensure fresh module state and env vars are applied
+  // Use src/ - tsx loader in vitest config will resolve TypeScript files
   const { createServerHandle } = await import('../../src/server/index.js')
   
   const config = createTestConfig(options)

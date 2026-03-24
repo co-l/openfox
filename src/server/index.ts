@@ -125,7 +125,7 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
     const startup = (async () => {
       const child = spawn(
         process.execPath,
-        [...process.execArgv, HISTORY_PROCESS_ENTRYPOINT, workdir],
+        [...process.execArgv, '--import', 'tsx/esm', HISTORY_PROCESS_ENTRYPOINT, workdir],
         {
           cwd: workdir,
           env: process.env,
