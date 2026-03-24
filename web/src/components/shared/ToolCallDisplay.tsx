@@ -1,7 +1,7 @@
 import { memo, useState } from 'react'
 import type { Diagnostic, EditContextRegion } from '../../../src/shared/types.js'
 import { ToolIcon } from './ToolIcon'
-import { DiffView, FilePreview, EditContextView } from './DiffView'
+import { DiffView, FilePreview, EditContextView, ReadFileView } from './DiffView'
 import { DiagnosticsView } from './DiagnosticsView'
 import { RunCommandView } from './RunCommandView'
 import { formatToolArgsFull, formatToolArgsWithMetadata } from '../../lib/formatToolArgs'
@@ -71,6 +71,7 @@ export const ToolCallDisplay = memo(function ToolCallDisplay({
   // Auto-expand file operations and running commands so content is immediately visible
   const isFileOperation = tool === 'edit_file' || tool === 'write_file'
   const isRunningCommand = tool === 'run_command' && status === 'pending'
+  const isReadFile = tool === 'read_file'
   const [expanded, setExpanded] = useState(isFileOperation || isRunningCommand)
   const config = statusConfig[status]
   
@@ -106,7 +107,7 @@ export const ToolCallDisplay = memo(function ToolCallDisplay({
         <span className="text-text-muted text-xs">{expanded ? '▼' : '▶'}</span>
       </button>
       
-      {expanded && (
+      {(expanded || isReadFile) && (
         <div className="p-2 bg-bg-secondary border-t border-border space-y-2 min-w-0">
           {/* Specialized rendering for run_command with streaming output */}
           {tool === 'run_command' && (
@@ -156,8 +157,18 @@ export const ToolCallDisplay = memo(function ToolCallDisplay({
             </>
           )}
           
+          {/* Specialized rendering for read_file operations */}
+          {tool === 'read_file' && status === 'success' && (
+            <ReadFileView
+              result={result}
+              metadata={metadata}
+              filePath={String(args.path ?? '')}
+              heightExpanded={expanded}
+            />
+          )}
+
           {/* Show arguments for other operations or errors */}
-          {tool !== 'edit_file' && tool !== 'write_file' && tool !== 'run_command' && (
+          {tool !== 'edit_file' && tool !== 'write_file' && tool !== 'run_command' && tool !== 'read_file' && (
             <>
               <div>
                 <div className="text-[10px] text-text-muted mb-0.5">Arguments:</div>
@@ -181,7 +192,7 @@ export const ToolCallDisplay = memo(function ToolCallDisplay({
           )}
           
           {/* Duration badge for file operations */}
-          {status === 'success' && (tool === 'edit_file' || tool === 'write_file') && durationMs !== undefined && (
+          {status === 'success' && (tool === 'edit_file' || tool === 'write_file' || tool === 'read_file') && durationMs !== undefined && (
             <div className="text-[10px] text-text-muted">
               Completed in {durationMs}ms
             </div>

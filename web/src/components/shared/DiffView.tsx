@@ -3,7 +3,7 @@ import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter'
 import { oneDark } from 'react-syntax-highlighter/dist/esm/styles/prism'
 
 // Custom oneDark theme with transparent backgrounds and word wrapping
-const oneDarkTransparent: Record<string, any> = {
+export const oneDarkTransparent: Record<string, any> = {
   ...oneDark,
   'pre[class*="language-"]': {
     ...(oneDark['pre[class*="language-"]'] as Record<string, unknown>),
@@ -85,7 +85,7 @@ const extensionToLanguage: Record<string, string> = {
   svelte: 'svelte',
 }
 
-function getLanguageFromPath(filePath?: string): string {
+export function getLanguageFromPath(filePath?: string): string {
   if (!filePath) return 'text'
   
   const fileName = filePath.split('/').pop() ?? ''
@@ -401,6 +401,78 @@ const DisplayItemRow = memo(function DisplayItemRow({ item, language, lineNumWid
         >
           {item.content || ' '}
         </SyntaxHighlighter>
+      </div>
+    </div>
+  )
+})
+
+// Read file view - shows syntax-highlighted text or inline image
+interface ReadFileViewProps {
+  result?: string
+  metadata?: Record<string, unknown>
+  filePath: string
+  heightExpanded?: boolean
+}
+
+export const ReadFileView = memo(function ReadFileView({ result, metadata, filePath, heightExpanded = false }: ReadFileViewProps) {
+  const language = useMemo(() => getLanguageFromPath(filePath), [filePath])
+
+  // Image file - metadata contains base64Data and mimeType
+  const mimeType = metadata?.mimeType as string | undefined
+  const base64Data = metadata?.base64Data as string | undefined
+  if (mimeType?.startsWith('image/') && base64Data) {
+    return (
+      <div className={`rounded overflow-hidden border border-border ${heightExpanded ? '' : 'max-h-[45vh]'} overflow-y-auto`}>
+        <img
+          src={`data:${mimeType};base64,${base64Data}`}
+          alt={filePath}
+          className="max-w-full h-auto"
+        />
+      </div>
+    )
+  }
+
+  // Text file - show with syntax highlighting
+  if (!result) {
+    return (
+      <div className="text-xs text-text-muted italic p-2">
+        Empty file
+      </div>
+    )
+  }
+
+  // Strip line numbers prefix (format: "1: content") for syntax highlighting
+  const lines = result.split('\n')
+  const strippedContent = lines
+    .filter(l => !l.startsWith('\n[') && !l.startsWith('['))
+    .map(l => l.replace(/^\d+: /, ''))
+    .join('\n')
+
+  return (
+    <div className={`rounded overflow-hidden border border-border ${heightExpanded ? '' : 'max-h-[45vh]'} overflow-y-auto`}>
+      <div className="grid grid-cols-[2.5rem_1fr]">
+        <div className="bg-bg-tertiary text-text-muted text-xs font-mono text-right pr-2 select-none py-0.5">
+          {lines
+            .filter(l => !l.startsWith('\n[') && !l.startsWith('['))
+            .map((l, i) => {
+              const match = l.match(/^(\d+): /)
+              return (
+                <div key={i} className="leading-[1.5rem]">
+                  {match ? match[1] : i + 1}
+                </div>
+              )
+            })}
+        </div>
+        <div className="min-w-0 overflow-x-hidden py-0.5">
+          <SyntaxHighlighter
+            style={oneDarkTransparent}
+            language={language}
+            PreTag="pre"
+            customStyle={wrappedCodeStyle as React.CSSProperties}
+          >
+            {strippedContent}
+          </SyntaxHighlighter>
+        </div>
       </div>
     </div>
   )
