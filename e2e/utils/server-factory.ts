@@ -16,6 +16,7 @@ function createTestConfig(options: { maxContext?: number } = {}): Config {
   process.env['OPENFOX_LOG_LEVEL'] = 'error'
   process.env['OPENFOX_HOST'] = '127.0.0.1'
   process.env['OPENFOX_PORT'] = '0' // Will be overridden by start(0) anyway
+  process.env['OPENFOX_HISTORY'] = 'false' // Disable history watcher for tests
   if (options.maxContext !== undefined) {
     process.env['OPENFOX_MAX_CONTEXT'] = String(options.maxContext)
   }

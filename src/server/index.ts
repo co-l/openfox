@@ -106,7 +106,14 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
   const sessionWorkdirs = new Map(sessionManager.listSessions().map(session => [session.id, session.workdir]))
   const pinnedHistoryWorkdirs = new Set<string>()
 
+  // Skip history watcher if disabled (useful for tests)
+  const skipHistory = process.env['OPENFOX_HISTORY'] === 'false'
+
   async function initHistoryForWorkdir(workdir: string): Promise<void> {
+    if (skipHistory) {
+      return
+    }
+
     const pendingStart = pendingHistoryStarts.get(workdir)
     if (pendingStart) {
       await pendingStart
