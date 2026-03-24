@@ -29,7 +29,7 @@ export function SessionLayout({ children, criteriaSidebarOpen = true, messages }
           ${criteriaSidebarOpen ? 'md:block' : 'md:hidden'}
         `}
       >
-        <SummaryDisplay summary={session?.summary ?? null} messages={messages} />
+        <SummaryDisplay summary={session?.summary ?? null} messages={messages} workdir={session?.workdir} />
       </aside>
     </div>
   )

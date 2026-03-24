@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { useSessionStats } from '../../hooks/useSessionStats'
+import { useCurrentBranch } from '../../hooks/useCurrentBranch'
 import { formatTime, formatSpeed } from '../../lib/format-stats'
 import { StatsModal } from './StatsModal'
 import type { Message } from '../../../src/shared/types.js'
@@ -7,12 +8,14 @@ import type { Message } from '../../../src/shared/types.js'
 interface SummaryDisplayProps {
   summary: string | null
   messages: Message[]
+  workdir?: string
 }
 
-export function SummaryDisplay({ summary, messages }: SummaryDisplayProps) {
+export function SummaryDisplay({ summary, messages, workdir }: SummaryDisplayProps) {
   const [showStatsModal, setShowStatsModal] = useState(false)
   const stats = useSessionStats(messages)
-  
+  const { branch } = useCurrentBranch(workdir)
+
   return (
     <div className="flex flex-col h-full">
       {/* AI Stats at the top */}
@@ -59,6 +62,20 @@ export function SummaryDisplay({ summary, messages }: SummaryDisplayProps) {
           </div>
         )}
       </div>
+
+      {/* Branch info footer */}
+      {branch && (
+        <div className="mt-4 pt-3 border-t border-border flex items-center gap-2 text-xs text-text-muted">
+          <svg className="w-3.5 h-3.5 flex-shrink-0" fill="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+            <path
+              fillRule="evenodd"
+              d="M11.5 7V4a1 1 0 011 1v14a1 1 0 01-1-1v-3c-1.65 0-3.15.5-4.5 1.5V19a1 1 0 01-1-1V5a1 1 0 011 1v3c1.35-1 2.85-1.5 4.5-1.5zm6 0a1 1 0 011 1v11a1 1 0 01-1 1v-3c-1.65 0-3.15.5-4.5 1.5V19a1 1 0 01-1-1V5a1 1 0 011 1v3c1.35-1 2.85-1.5 4.5-1.5z"
+              clipRule="evenodd"
+            />
+          </svg>
+          <span className="truncate">{branch}</span>
+        </div>
+      )}
     </div>
   )
 }

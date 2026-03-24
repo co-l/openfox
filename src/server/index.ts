@@ -271,13 +271,20 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
     })
   })
 
+  // Branch API endpoint
+  const { getCurrentBranch } = await import('./branch.api.js')
+
+  app.get('/api/branch', async (req, res) => {
+    await getCurrentBranch(req, res)
+  })
+
   // History API endpoints
   const { getHistory, getHistorySnapshot } = await import('./history/history.api.js')
-  
+
   app.get('/api/history', async (req, res) => {
     await getHistory(req, res)
   })
-  
+
   app.get('/api/history/:snapshotId', async (req, res) => {
     await getHistorySnapshot(req, res)
   })
