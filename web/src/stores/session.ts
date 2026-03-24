@@ -36,7 +36,6 @@ import type {
 } from '../../../src/shared/protocol.js'
 import { wsClient, type ConnectionStatus } from '../lib/ws'
 import { playNotification, playAchievement, playIntervention, playWaitingForUser } from '../lib/sound'
-import { savePromptToHistory } from '../lib/cross-session-history.js'
 
 // Track subscription to prevent duplicates
 let isSubscribed = false
@@ -108,6 +107,8 @@ function mergeSessionList(
       mode: currentSessionOverride?.mode ?? existingSession?.mode ?? incomingSession.mode,
       phase: currentSessionOverride?.phase ?? existingSession?.phase ?? incomingSession.phase,
       isRunning: currentSessionOverride?.isRunning ?? existingSession?.isRunning ?? incomingSession.isRunning,
+      // Preserve recentUserPrompts from incoming session (server source of truth)
+      recentUserPrompts: incomingSession.recentUserPrompts,
     }
   })
 }
@@ -456,11 +457,6 @@ export const useSessionStore = create<SessionState>((set, get) => ({
           break
         }
         const payload = message.payload as ChatMessagePayload
-        
-        // Save user messages to cross-session history
-        if (payload.message.role === 'user') {
-          savePromptToHistory(payload.message)
-        }
         
         set(state => {
           // Don't add duplicates

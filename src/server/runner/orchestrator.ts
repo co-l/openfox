@@ -109,7 +109,9 @@ export async function runOrchestrator(options: OrchestratorOptions): Promise<Orc
         // Inject nudge message if this is a retry (not first iteration)
         if (iterations > 1) {
           const nudgeMsgId = crypto.randomUUID()
-          eventStore.append(sessionId, createMessageStartEvent(nudgeMsgId, 'user', `Continue working on the acceptance criteria. ${action.reason}.`, {
+          eventStore.append(sessionId, createMessageStartEvent(nudgeMsgId, 'user', `Continue working on the acceptance criteria.
+${action.reason}.
+Don't forget to mark the criteria as complete with complete_criterion`, {
             ...(currentWindowMessageOptions ?? {}),
             isSystemGenerated: true,
             messageKind: 'correction',
