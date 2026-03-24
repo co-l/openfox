@@ -103,13 +103,10 @@ export function startCleanupScheduler(
   intervalMs: number = 3600000 // Default: 1 hour
 ): NodeJS.Timeout {
   // Run immediately
-  cleanupSnapshots(snapshotDir, config).then(result => {
-    console.log('History cleanup completed:', result)
-  })
+  cleanupSnapshots(snapshotDir, config).catch(() => {})
   
   // Schedule periodic cleanup
   return setInterval(async () => {
-    const result = await cleanupSnapshots(snapshotDir, config)
-    console.log('Scheduled history cleanup completed:', result)
+    await cleanupSnapshots(snapshotDir, config)
   }, intervalMs)
 }
