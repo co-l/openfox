@@ -122,7 +122,7 @@ export function groupMessages(messages: Message[], previousItems: DisplayItem[] 
       previousSubAgentItem &&
       previousSubAgentItem.type === 'subagent' &&
       previousSubAgentItem.messages.length === group.messages.length &&
-      previousSubAgentItem.messages.every((m, i) => m.id === group.messages[i]?.id)
+      previousSubAgentItem.messages.every((m, i) => m === group.messages[i])
     
     if (messagesMatch) {
       // Reuse the previous item
