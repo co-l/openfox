@@ -7,6 +7,7 @@ import type {
   PromptRequestOptions,
 } from '../../shared/types.js'
 import type { LLMToolDefinition } from '../llm/types.js'
+import type { SkillMetadata } from '../skills/types.js'
 import {
   buildBuilderPrompt,
   buildBuilderReminder,
@@ -22,6 +23,7 @@ interface BaseAssemblyInput {
   messages: RequestContextMessage[]
   injectedFiles: InjectedFile[]
   customInstructions?: string
+  skills?: SkillMetadata[]
   includeRuntimeReminder?: boolean
   promptTools: LLMToolDefinition[]
   requestTools?: LLMToolDefinition[]
@@ -42,7 +44,7 @@ interface AssemblyResult {
 }
 
 export function assemblePlannerRequest(input: BaseAssemblyInput): AssemblyResult {
-  const systemPrompt = buildPlannerPrompt(input.workdir, input.promptTools, input.customInstructions)
+  const systemPrompt = buildPlannerPrompt(input.workdir, input.promptTools, input.customInstructions, input.skills)
   return createAssemblyResult({
     systemPrompt,
     messages: input.messages,
@@ -55,7 +57,7 @@ export function assemblePlannerRequest(input: BaseAssemblyInput): AssemblyResult
 }
 
 export function assembleBuilderRequest(input: BaseAssemblyInput): AssemblyResult {
-  const systemPrompt = buildBuilderPrompt(input.workdir, input.promptTools, input.customInstructions)
+  const systemPrompt = buildBuilderPrompt(input.workdir, input.promptTools, input.customInstructions, input.skills)
   return createAssemblyResult({
     systemPrompt,
     messages: input.messages,

@@ -17,7 +17,10 @@ import { createProviderManager } from './provider-manager.js'
 import { createToolRegistry } from './tools/index.js'
 import { createWebSocketServer } from './ws/index.js'
 import { SessionManager } from './session/manager.js'
-import { setRuntimeConfig } from './runtime-config.js'
+import { setRuntimeConfig, getRuntimeConfig } from './runtime-config.js'
+import { ensureDefaultSkills, loadAllSkills, isSkillEnabled, setSkillEnabled, findSkillById, saveSkill, deleteSkill, skillExists } from './skills/registry.js'
+import type { SkillDefinition } from './skills/types.js'
+import { getGlobalConfigDir } from '../cli/paths.js'
 import { logger, setLogLevel } from './utils/logger.js'
 import { terminateProcessTree } from './utils/process-tree.js'
 
@@ -43,6 +46,10 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
 
   // Initialize event store
   initEventStore(db)
+
+  // Initialize skills (copy defaults to config dir)
+  const configDir = getGlobalConfigDir(config.mode ?? 'production')
+  await ensureDefaultSkills(configDir)
 
   // Create SessionManager instance (not singleton!)
   const sessionManager = new SessionManager()
@@ -385,6 +392,77 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
       model: llmClient.getModel(),
       backend: llmClient.getBackend(),
     })
+  })
+
+  // Skills endpoints
+  app.get('/api/skills', async (_req, res) => {
+    const skills = await loadAllSkills(configDir)
+    res.json({
+      skills: skills.map(s => ({
+        ...s.metadata,
+        enabled: isSkillEnabled(s.metadata.id),
+      })),
+    })
+  })
+
+  app.post('/api/skills/:id/toggle', (req, res) => {
+    const { id } = req.params
+    const currentlyEnabled = isSkillEnabled(id as string)
+    setSkillEnabled(id as string, !currentlyEnabled)
+    res.json({ id, enabled: !currentlyEnabled })
+  })
+
+  app.get('/api/skills/:id', async (req, res) => {
+    const { id } = req.params
+    const skills = await loadAllSkills(configDir)
+    const skill = findSkillById(id as string, skills)
+    if (!skill) {
+      return res.status(404).json({ error: 'Skill not found' })
+    }
+    res.json(skill)
+  })
+
+  app.post('/api/skills', async (req, res) => {
+    const body = req.body as SkillDefinition
+    if (!body.metadata?.id || !body.metadata?.name || !body.prompt) {
+      return res.status(400).json({ error: 'Missing required fields: metadata.id, metadata.name, prompt' })
+    }
+    if (!/^[a-z0-9-]+$/.test(body.metadata.id)) {
+      return res.status(400).json({ error: 'Skill ID must be lowercase alphanumeric with hyphens only' })
+    }
+    if (await skillExists(configDir, body.metadata.id)) {
+      return res.status(409).json({ error: 'A skill with this ID already exists' })
+    }
+    await saveSkill(configDir, body)
+    res.status(201).json(body)
+  })
+
+  app.put('/api/skills/:id', async (req, res) => {
+    const { id } = req.params
+    if (!await skillExists(configDir, id as string)) {
+      return res.status(404).json({ error: 'Skill not found' })
+    }
+    const body = req.body as Partial<SkillDefinition>
+    const skills = await loadAllSkills(configDir)
+    const existing = findSkillById(id as string, skills)
+    if (!existing) {
+      return res.status(404).json({ error: 'Skill not found' })
+    }
+    const updated: SkillDefinition = {
+      metadata: { ...existing.metadata, ...body.metadata, id: id as string },
+      prompt: body.prompt ?? existing.prompt,
+    }
+    await saveSkill(configDir, updated)
+    res.json(updated)
+  })
+
+  app.delete('/api/skills/:id', async (req, res) => {
+    const { id } = req.params
+    const deleted = await deleteSkill(configDir, id as string)
+    if (!deleted) {
+      return res.status(404).json({ error: 'Skill not found' })
+    }
+    res.json({ success: true })
   })
 
   // Branch API endpoint

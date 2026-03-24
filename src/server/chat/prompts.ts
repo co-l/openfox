@@ -1,6 +1,7 @@
 import type { LLMToolDefinition } from '../llm/types.js'
+import type { SkillMetadata } from '../skills/types.js'
 
-function buildPrimaryPrompt(workdir: string, customInstructions?: string): string {
+function buildPrimaryPrompt(workdir: string, customInstructions?: string, skills?: SkillMetadata[]): string {
   const instructionsSection = customInstructions
     ? `\n\n## CUSTOM INSTRUCTIONS\n\n${customInstructions}`
     : ''
@@ -58,7 +59,7 @@ Platform: ${process.platform} (${process.arch})
 ## WORKFLOW
 - If the current runtime reminder says planning mode, focus on understanding, exploration, clarification, and criteria quality.
 - If the current runtime reminder says build mode, focus on implementation, verification, and completing approved criteria.
-- Respect tool and permission constraints enforced by the server even if the conversation suggests otherwise.${instructionsSection}${subAgentsSection}
+- Respect tool and permission constraints enforced by the server even if the conversation suggests otherwise.${instructionsSection}${subAgentsSection}${buildSkillsSection(skills)}
 
 ## IMPORTANT GUARDRAILS
 - NEVER delete/git checkout an already modified file: that would result in a data loss.
@@ -69,9 +70,27 @@ Platform: ${process.platform} (${process.arch})
 // Planner Mode Prompt
 // ============================================================================
 
-export function buildPlannerPrompt(workdir: string, tools: LLMToolDefinition[], customInstructions?: string): string {
+function buildSkillsSection(skills?: SkillMetadata[]): string {
+  if (!skills || skills.length === 0) return ''
+
+  const listing = skills
+    .map((s, i) => `${i + 1}. **${s.id}** - ${s.description}`)
+    .join('\n')
+
+  return `
+## AVAILABLE SKILLS
+
+You can load specialized knowledge using the load_skill tool. Only load a skill when you need its instructions for the current task.
+
+${listing}
+
+To load a skill, call load_skill with the skill ID. The skill's detailed instructions will be returned as a tool result.
+`
+}
+
+export function buildPlannerPrompt(workdir: string, tools: LLMToolDefinition[], customInstructions?: string, skills?: SkillMetadata[]): string {
   void tools
-  return buildPrimaryPrompt(workdir, customInstructions)
+  return buildPrimaryPrompt(workdir, customInstructions, skills)
 }
 
 // ============================================================================
@@ -81,10 +100,11 @@ export function buildPlannerPrompt(workdir: string, tools: LLMToolDefinition[], 
 export function buildBuilderPrompt(
   workdir: string,
   tools: LLMToolDefinition[],
-  customInstructions?: string
+  customInstructions?: string,
+  skills?: SkillMetadata[]
 ): string {
   void tools
-  return buildPrimaryPrompt(workdir, customInstructions)
+  return buildPrimaryPrompt(workdir, customInstructions, skills)
 }
 
 export function buildPlannerReminder(): string {

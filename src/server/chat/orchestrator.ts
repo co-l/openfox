@@ -23,6 +23,9 @@ import { streamLLMPure, consumeStreamGenerator, TurnMetrics, createMessageStartE
 import { createToolProgressHandler } from './tool-streaming.js'
 import { maybeAutoCompactContext } from '../context/auto-compaction.js'
 import { getAllInstructions } from '../context/instructions.js'
+import { getEnabledSkillMetadata } from '../skills/registry.js'
+import { getRuntimeConfig } from '../runtime-config.js'
+import { getGlobalConfigDir } from '../../cli/paths.js'
 import { logger } from '../utils/logger.js'
 import { assembleBuilderRequest, assemblePlannerRequest, assembleVerifierRequest, type RequestContextMessage } from './request-context.js'
 import { createSubAgentRegistry } from '../sub-agents/registry.js'
@@ -248,6 +251,9 @@ async function runPlannerTurn(
     requestMessages.push({ role: 'user', content: FORMAT_CORRECTION_PROMPT, source: 'runtime' })
   }
 
+  const configDir = getGlobalConfigDir(getRuntimeConfig().mode ?? 'production')
+  const skills = await getEnabledSkillMetadata(configDir)
+
   const assembledRequest = assemblePlannerRequest({
     workdir: session.workdir,
     messages: requestMessages,
@@ -255,6 +261,7 @@ async function runPlannerTurn(
     promptTools: toolRegistry.definitions,
     toolChoice: 'auto',
     ...(instructionContent ? { customInstructions: instructionContent } : {}),
+    ...(skills.length > 0 ? { skills } : {}),
   })
 
   // Create assistant message with current context window ID
@@ -478,6 +485,9 @@ export async function runBuilderTurn(
     requestMessages.push({ role: 'user', content: FORMAT_CORRECTION_PROMPT, source: 'runtime' })
   }
 
+  const configDir = getGlobalConfigDir(getRuntimeConfig().mode ?? 'production')
+  const skills = await getEnabledSkillMetadata(configDir)
+
   const assembledRequest = assembleBuilderRequest({
     workdir: session.workdir,
     messages: requestMessages,
@@ -485,6 +495,7 @@ export async function runBuilderTurn(
     promptTools: toolRegistry.definitions,
     toolChoice: 'auto',
     ...(instructionContent ? { customInstructions: instructionContent } : {}),
+    ...(skills.length > 0 ? { skills } : {}),
   })
 
   // Create assistant message with current context window ID

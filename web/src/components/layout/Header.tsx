@@ -4,6 +4,7 @@ import { useSessionStore } from '../../stores/session'
 import { useProjectStore } from '../../stores/project'
 import { useConfigStore } from '../../stores/config'
 import { GlobalSettingsModal } from '../settings/GlobalSettingsModal'
+import { SkillsModal } from '../settings/SkillsModal'
 import { HistoryModal } from '../history/HistoryModal'
 
 interface HeaderProps {
@@ -14,6 +15,7 @@ interface HeaderProps {
 
 export function Header({ onMenuClick, onCriteriaToggle, hasCriteria }: HeaderProps) {
   const [showSettings, setShowSettings] = useState(false)
+  const [showSkills, setShowSkills] = useState(false)
   const [showHistory, setShowHistory] = useState(false)
   const connectionStatus = useSessionStore(state => state.connectionStatus)
   const session = useSessionStore(state => state.currentSession)
@@ -96,6 +98,17 @@ export function Header({ onMenuClick, onCriteriaToggle, hasCriteria }: HeaderPro
           </svg>
         </button>
 
+        {/* Skills Button */}
+        <button
+          onClick={() => setShowSkills(true)}
+          className="p-2.5 rounded hover:bg-bg-tertiary text-text-muted hover:text-text-primary transition-colors"
+          title="Skills"
+        >
+          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+          </svg>
+        </button>
+
         {/* History Button */}
         {workdir && (
           <button
@@ -128,6 +141,12 @@ export function Header({ onMenuClick, onCriteriaToggle, hasCriteria }: HeaderPro
       <GlobalSettingsModal
         isOpen={showSettings}
         onClose={() => setShowSettings(false)}
+      />
+
+      {/* Skills Modal */}
+      <SkillsModal
+        isOpen={showSkills}
+        onClose={() => setShowSkills(false)}
       />
 
       {/* History Modal */}

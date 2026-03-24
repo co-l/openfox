@@ -55,6 +55,25 @@ vi.mock('../context/instructions.js', () => ({
   getAllInstructions: getAllInstructionsMock,
 }))
 
+vi.mock('../skills/registry.js', () => ({
+  getEnabledSkillMetadata: vi.fn(async () => []),
+}))
+
+vi.mock('../runtime-config.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../runtime-config.js')>()
+  return {
+    ...actual,
+    getRuntimeConfig: vi.fn(() => ({
+      ...actual.getRuntimeConfig(),
+      mode: 'development',
+    })),
+  }
+})
+
+vi.mock('../../cli/paths.js', () => ({
+  getGlobalConfigDir: vi.fn(() => '/tmp/openfox-test'),
+}))
+
 vi.mock('../tools/index.js', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../tools/index.js')>()
   return {

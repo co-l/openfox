@@ -17,6 +17,7 @@ import { completeCriterionTool, passCriterionTool, failCriterionTool } from './c
 import { getCriteriaTool, addCriterionTool, updateCriterionTool, removeCriterionTool } from './planner-criteria.js'
 import { todoWriteTool, setTodoUpdateCallback, getTodos, clearTodos } from './todo.js'
 import { callSubAgentTool } from './sub-agent.js'
+import { loadSkillTool } from './load-skill.js'
 import { logger } from '../utils/logger.js'
 
 // ============================================================================
@@ -40,6 +41,7 @@ const plannerTools: Tool[] = [
   updateCriterionTool,
   removeCriterionTool,
   callSubAgentTool,
+  loadSkillTool,
 ]
 
 // Builder mode: full write access + criterion completion + task tracking + criteria reading + sub-agents
@@ -53,6 +55,7 @@ const builderTools: Tool[] = [
   getCriteriaTool,
   todoWriteTool,
   callSubAgentTool,
+  loadSkillTool,
 ]
 
 // Verifier mode: read + run commands (for testing) + criterion pass/fail

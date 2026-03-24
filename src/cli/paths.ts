@@ -39,6 +39,10 @@ export function getDatabasePath(mode: Mode): string {
   return join(getGlobalDataDir(mode), 'sessions.db')
 }
 
+export function getSkillsDir(mode: Mode): string {
+  return join(getGlobalConfigDir(mode), 'skills')
+}
+
 export async function ensureDataDirExists(mode: Mode): Promise<void> {
   const dataDir = getGlobalDataDir(mode)
   try {
