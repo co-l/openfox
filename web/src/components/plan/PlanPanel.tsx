@@ -87,20 +87,41 @@ export function PlanPanel() {
   }, [])
 
   // Scroll to bottom when a session's messages first load.
-  // Track per-session so it only fires once (not on every new streaming message).
-  // Uses double-rAF: first frame lets Virtuoso render items with estimated heights,
-  // second frame lets it measure actual DOM heights, then we scroll to the true bottom.
+  // As Virtuoso measures real item heights (which differ from defaultItemHeight),
+  // the scroll position drifts. We repeatedly pin to bottom until heights stabilize.
   const scrolledSessionRef = useRef<string | null>(null)
+  const settleTimerRef = useRef<ReturnType<typeof setInterval> | null>(null)
   useEffect(() => {
     const sessionId = session?.id ?? null
     if (!sessionId || displayItems.length === 0) return
     if (scrolledSessionRef.current === sessionId) return
     scrolledSessionRef.current = sessionId
-    requestAnimationFrame(() => {
-      requestAnimationFrame(() => {
-        virtuosoRef.current?.scrollToIndex({ index: 'LAST', align: 'end' })
-      })
-    })
+
+    // Clear any previous settle timer
+    if (settleTimerRef.current) clearInterval(settleTimerRef.current)
+
+    const scrollToEnd = () => {
+      virtuosoRef.current?.scrollToIndex({ index: 'LAST', align: 'end' })
+    }
+
+    // Pin to bottom repeatedly for 2 seconds while heights settle
+    scrollToEnd()
+    let elapsed = 0
+    settleTimerRef.current = setInterval(() => {
+      elapsed += 100
+      scrollToEnd()
+      if (elapsed >= 2000) {
+        if (settleTimerRef.current) clearInterval(settleTimerRef.current)
+        settleTimerRef.current = null
+      }
+    }, 100)
+
+    return () => {
+      if (settleTimerRef.current) {
+        clearInterval(settleTimerRef.current)
+        settleTimerRef.current = null
+      }
+    }
   }, [session?.id, displayItems.length])
 
   // Auto-resize textarea based on content, up to 200px max
