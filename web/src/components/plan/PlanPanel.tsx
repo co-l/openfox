@@ -711,7 +711,13 @@ export function PlanPanel() {
                 </button>
               )}
               <button
-                type="submit"
+                type="button"
+                onClick={() => {
+                  if (!input.trim() && attachments.length === 0) return
+                  virtuosoRef.current?.scrollToIndex({ index: 'LAST', behavior: 'smooth' })
+                  sendMessage(input, attachments)
+                  clearInput()
+                }}
                 disabled={(!input.trim() && attachments.length === 0)}
                 className="px-4 py-1.5 rounded bg-accent-primary/20 text-sm text-accent-primary font-medium hover:bg-accent-primary/30 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
               >
