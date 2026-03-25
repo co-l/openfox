@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect, useCallback, useMemo } from 'react'
+import { Virtuoso, type VirtuosoHandle } from 'react-virtuoso'
 import { useSessionStore, useIsRunning } from '../../stores/session'
 // @ts-ignore
 import type { Message, ToolCall, Attachment } from '@shared/types.js'
@@ -24,17 +25,17 @@ import { usePromptHistory } from '../../hooks/usePromptHistory.js'
 export function PlanPanel() {
   const [criteriaSidebarOpen, setCriteriaSidebarOpen] = useState(true)
   const [input, setInput] = useState('')
-  const [userScrolledUp, setUserScrolledUp] = useState(false)
+  const [atBottom, setAtBottom] = useState(true)
   const [attachments, setAttachments] = useState<Attachment[]>([])
   const [dragOver, setDragOver] = useState(false)
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
-  const messagesEndRef = useRef<HTMLDivElement>(null)
-  const scrollContainerRef = useRef<HTMLDivElement>(null)
+  const virtuosoRef = useRef<VirtuosoHandle>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   
   const session = useSessionStore(state => state.currentSession)
-  const messages = useSessionStore(state => state.messages)
+  const rawMessages = useSessionStore(state => state.messages)
+  const streamingMessage = useSessionStore(state => state.streamingMessage)
   const sessions = useSessionStore(state => state.sessions)
   const error = useSessionStore(state => state.error)
   const pendingPathConfirmation = useSessionStore(state => state.pendingPathConfirmation)
@@ -57,11 +58,19 @@ export function PlanPanel() {
     navigateUp,
     navigateDown,
     selectCurrent,
-  } = usePromptHistory(messages, sessions, session?.id)
+  } = usePromptHistory(rawMessages, sessions, session?.id)
   
+  // Merge streamingMessage into the messages array for rendering.
+  // When streaming, only the streamingMessage changes — rawMessages stays stable,
+  // so groupMessages() and promptContext skip recomputation for non-streaming items.
+  const messages = useMemo(() => {
+    if (!streamingMessage) return rawMessages
+    return rawMessages.map(m => m.id === streamingMessage.id ? streamingMessage : m)
+  }, [rawMessages, streamingMessage])
+
   // Ref to store previous displayItems for identity preservation
   const previousDisplayItemsRef = useRef<DisplayItem[]>([])
-  
+
   // Group messages for display, collapsing sub-agent messages into containers
   const displayItems = useMemo((): DisplayItem[] => {
     const items = groupMessages(messages, previousDisplayItemsRef.current)
@@ -69,39 +78,13 @@ export function PlanPanel() {
     return items
   }, [messages])
 
-  const promptContextByUserMessageId = useMemo(() => buildPromptContextByUserMessageId(messages), [messages])
+  // Use rawMessages (stable during streaming) since prompt context only depends on user messages
+  const promptContextByUserMessageId = useMemo(() => buildPromptContextByUserMessageId(rawMessages), [rawMessages])
   
-  const scrollToBottom = useCallback(() => {
-    const container = scrollContainerRef.current
-    if (container) {
-      container.scrollTop = container.scrollHeight
-    }
+  // Virtuoso auto-scroll: follow output when user is at the bottom
+  const followOutput = useCallback((isAtBottom: boolean) => {
+    return isAtBottom ? 'smooth' : false
   }, [])
-  
-  // Detect user scrolling via wheel event
-  const handleWheel = useCallback((e: React.WheelEvent) => {
-    const container = scrollContainerRef.current
-    if (!container) return
-    
-    if (e.deltaY < 0) {
-      setUserScrolledUp(true)
-    } else if (e.deltaY > 0 && userScrolledUp) {
-      requestAnimationFrame(() => {
-        const threshold = 150
-        const distanceFromBottom = container.scrollHeight - container.scrollTop - container.clientHeight
-        if (distanceFromBottom < threshold) {
-          setUserScrolledUp(false)
-        }
-      })
-    }
-  }, [userScrolledUp])
-  
-  // Auto-scroll only if user hasn't scrolled up
-  useEffect(() => {
-    if (!userScrolledUp) {
-      scrollToBottom()
-    }
-  }, [displayItems, userScrolledUp, scrollToBottom])
   
 
   
@@ -228,8 +211,9 @@ export function PlanPanel() {
     e.preventDefault()
     if ((!input.trim() && attachments.length === 0) || isRunning) return
 
-    setUserScrolledUp(false)
-    
+    // Scroll to bottom when sending a message
+    virtuosoRef.current?.scrollToIndex({ index: 'LAST', behavior: 'smooth' })
+
     sendMessage(input, attachments)
     setInput('')
     setAttachments([])
@@ -426,18 +410,19 @@ export function PlanPanel() {
         onCriteriaSidebarToggle={() => setCriteriaSidebarOpen(!criteriaSidebarOpen)}
       />
       
-      <div
-        ref={scrollContainerRef}
-        onWheel={handleWheel}
-        className="flex-1 min-w-0 overflow-y-auto overflow-x-hidden px-2 md:px-4 pt-4"
-      >
-        {displayItems.map((item) => {
+      <Virtuoso
+        ref={virtuosoRef}
+        data={displayItems}
+        className="flex-1 min-w-0 overflow-x-hidden"
+        increaseViewportBy={{ top: 500, bottom: 200 }}
+        followOutput={followOutput}
+        atBottomStateChange={setAtBottom}
+        atBottomThreshold={150}
+        defaultItemHeight={120}
+        itemContent={(_index, item) => {
           if (item.type === 'context-divider') {
             return (
-              <div 
-                key={`divider-${item.windowSequence}`}
-                className="flex items-center gap-2 feed-item px-2"
-              >
+              <div className="flex items-center gap-2 feed-item px-2 md:px-4">
                 <div className="flex-1 border-t border-border" />
                 <span className="text-[10px] text-text-muted font-medium px-2">
                   Earlier context summarized
@@ -446,86 +431,91 @@ export function PlanPanel() {
               </div>
             )
           }
-          
+
           if (item.type === 'subagent') {
-            // Check if any message in the group is streaming
             const groupIsStreaming = item.messages.some(m => m.isStreaming)
             return (
-              <SubAgentContainer
-                key={item.subAgentId}
-                messages={item.messages}
-                subAgentType={item.subAgentType}
-                isStreaming={groupIsStreaming}
-              />
+              <div className="px-2 md:px-4">
+                <SubAgentContainer
+                  messages={item.messages}
+                  subAgentType={item.subAgentType}
+                  isStreaming={groupIsStreaming}
+                />
+              </div>
             )
           }
-          
+
           if (item.type === 'criteria-batch') {
             return (
-              <div key={`criteria-${item.toolCalls[0]?.id ?? 'batch'}`} className="feed-item">
+              <div className="feed-item px-2 md:px-4">
                 <CriteriaGroupDisplay toolCalls={item.toolCalls} criteria={session?.criteria} />
               </div>
             )
           }
-          
+
           const message = item.message
           if (message.role === 'assistant') {
             return (
-              <AssistantMessage 
-                key={message.id}
-                message={message}
-                showStats={true}
-              />
+              <div className="px-2 md:px-4">
+                <AssistantMessage
+                  message={message}
+                  showStats={true}
+                />
+              </div>
             )
           }
-          
-          // User or system messages
+
           return (
-            <ChatMessage 
-              key={message.id} 
-              message={message} 
-              isLastAssistantMessage={false}
-              promptContext={message.role === 'user' ? promptContextByUserMessageId[message.id] : undefined}
-            />
-          )
-        })}
-        
-        {error && (
-          <div className="feed-item bg-red-500/10 border border-red-500/50 rounded p-2">
-            <div className="flex items-start justify-between gap-2">
-              <div>
-                <div className="text-red-400 text-sm font-medium">{error.code}</div>
-                <div className="text-red-300 text-xs mt-0.5">{error.message}</div>
-              </div>
-              <button
-                onClick={clearError}
-                className="text-red-400 hover:text-red-300 p-0.5"
-                aria-label="Dismiss error"
-              >
-                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                </svg>
-              </button>
+            <div className="px-2 md:px-4">
+              <ChatMessage
+                message={message}
+                isLastAssistantMessage={false}
+                promptContext={message.role === 'user' ? promptContextByUserMessageId[message.id] : undefined}
+              />
             </div>
-          </div>
-        )}
-        
-        {showStartBuilding && (
-          <div className="flex justify-center feed-item">
-            <Button
-              variant="primary"
-              onClick={acceptAndBuild}
-              className="bg-blue-600 hover:bg-blue-700 px-4 py-1 text-sm"
-            >
-              ▶ Start
-            </Button>
-          </div>
-        )}
-        
-        {isRunning && <RunningIndicator />}
-        
-        <div ref={messagesEndRef} />
-      </div>
+          )
+        }}
+        components={{
+          Header: () => <div className="pt-4" />,
+          Footer: () => (
+            <div className="px-2 md:px-4">
+              {error && (
+                <div className="feed-item bg-red-500/10 border border-red-500/50 rounded p-2">
+                  <div className="flex items-start justify-between gap-2">
+                    <div>
+                      <div className="text-red-400 text-sm font-medium">{error.code}</div>
+                      <div className="text-red-300 text-xs mt-0.5">{error.message}</div>
+                    </div>
+                    <button
+                      onClick={clearError}
+                      className="text-red-400 hover:text-red-300 p-0.5"
+                      aria-label="Dismiss error"
+                    >
+                      <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                      </svg>
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {showStartBuilding && (
+                <div className="flex justify-center feed-item">
+                  <Button
+                    variant="primary"
+                    onClick={acceptAndBuild}
+                    className="bg-blue-600 hover:bg-blue-700 px-4 py-1 text-sm"
+                  >
+                    ▶ Start
+                  </Button>
+                </div>
+              )}
+
+              {isRunning && <RunningIndicator />}
+            </div>
+          ),
+        }}
+      />
       
       <form onSubmit={handleSubmit} className="p-2 md:p-4 border-t border-border bg-gradient-to-t from-bg-secondary/50 to-transparent">
         {/* Hidden file input */}

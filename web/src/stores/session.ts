@@ -41,6 +41,41 @@ import { playNotification, playAchievement, playIntervention, playWaitingForUser
 // Track subscription to prevent duplicates
 let isSubscribed = false
 
+// --- Streaming update batching ---
+// Buffer high-frequency streaming events and flush once per animation frame
+// to reduce renders from 50+/sec to ~16/sec during fast streaming.
+interface StreamingBuffer {
+  messageId: string | null
+  deltaContent: string
+  thinkingContent: string
+  toolOutput: { messageId: string; callId: string; stream: 'stdout' | 'stderr'; content: string }[]
+}
+
+const streamingBuffer: StreamingBuffer = {
+  messageId: null,
+  deltaContent: '',
+  thinkingContent: '',
+  toolOutput: [],
+}
+let streamingRafId: number | null = null
+// Will be set once the store is created
+let flushStreamingBuffer: (() => void) | null = null
+
+function scheduleStreamingFlush() {
+  if (streamingRafId !== null) return
+  streamingRafId = requestAnimationFrame(() => {
+    streamingRafId = null
+    flushStreamingBuffer?.()
+  })
+}
+
+function cancelStreamingFlush() {
+  if (streamingRafId !== null) {
+    cancelAnimationFrame(streamingRafId)
+    streamingRafId = null
+  }
+}
+
 function isMessageForCurrentSession(message: ServerMessage, currentSessionId: string | null): boolean {
   return currentSessionId !== null && message.sessionId === currentSessionId
 }
@@ -138,6 +173,10 @@ interface SessionState {
   
   // Track which message is currently streaming (for applying deltas)
   streamingMessageId: string | null
+
+  // Separate streaming message object — updated independently from messages[]
+  // to avoid O(n) array mapping on every delta. Folded back on chat.done.
+  streamingMessage: Message | null
   
   // Current todos (displayed in chat)
   currentTodos: Todo[]
@@ -233,13 +272,64 @@ export const soundTestExports = {
   handleGlobalSoundEffects,
 }
 
-export const useSessionStore = create<SessionState>((set, get) => ({
+export const useSessionStore = create<SessionState>((set, get) => {
+  // Wire up the streaming buffer flush function with access to set/get
+  flushStreamingBuffer = () => {
+    const buf = streamingBuffer
+    if (!buf.messageId) return
+
+    const hasDelta = buf.deltaContent.length > 0
+    const hasThinking = buf.thinkingContent.length > 0
+    const hasToolOutput = buf.toolOutput.length > 0
+
+    if (!hasDelta && !hasThinking && !hasToolOutput) return
+
+    const delta = buf.deltaContent
+    const thinking = buf.thinkingContent
+    const toolOutputs = buf.toolOutput
+
+    // Clear the buffer before set() to avoid reentrancy issues
+    buf.deltaContent = ''
+    buf.thinkingContent = ''
+    buf.toolOutput = []
+
+    // Update the separate streamingMessage object — no messages[] array mapping
+    set(state => {
+      const sm = state.streamingMessage
+      if (!sm || sm.id !== buf.messageId) return state
+
+      let updated = { ...sm }
+      if (hasDelta) {
+        updated.content = updated.content + delta
+      }
+      if (hasThinking) {
+        updated.thinkingContent = (updated.thinkingContent ?? '') + thinking
+      }
+      if (hasToolOutput) {
+        updated.toolCalls = updated.toolCalls?.map(tc => {
+          const outputs = toolOutputs.filter(o => o.callId === tc.id)
+          if (outputs.length === 0) return tc
+          return {
+            ...tc,
+            streamingOutput: [
+              ...(tc.streamingOutput ?? []),
+              ...outputs.map(o => ({ stream: o.stream, content: o.content }))
+            ]
+          }
+        })
+      }
+      return { streamingMessage: updated }
+    })
+  }
+
+  return ({
   connectionStatus: 'disconnected',
   sessions: [],
   currentSession: null,
   unreadSessionIds: [],
   messages: [],
   streamingMessageId: null,
+  streamingMessage: null,
   currentTodos: [],
   contextState: null,
   pendingPathConfirmation: null,
@@ -285,11 +375,13 @@ export const useSessionStore = create<SessionState>((set, get) => ({
     
     // Clear state when loading a different session
     if (!currentSession || currentSession.id !== sessionId) {
-      set({ 
+      cancelStreamingFlush()
+      set({
         currentSession: null,
         unreadSessionIds: removeUnreadSessionId(get().unreadSessionIds, sessionId),
         messages: [],
         streamingMessageId: null,
+        streamingMessage: null,
         currentTodos: [],
         contextState: null,
         pendingPathConfirmation: null,
@@ -314,10 +406,12 @@ export const useSessionStore = create<SessionState>((set, get) => ({
   },
   
   clearSession: () => {
-    set(state => ({ 
-      currentSession: null, 
+    cancelStreamingFlush()
+    set(state => ({
+      currentSession: null,
       messages: [],
       streamingMessageId: null,
+      streamingMessage: null,
       currentTodos: [],
       contextState: null,
       unreadSessionIds: state.currentSession
@@ -333,6 +427,9 @@ export const useSessionStore = create<SessionState>((set, get) => ({
   },
   
   stopGeneration: () => {
+    // Flush any buffered streaming content before stopping
+    cancelStreamingFlush()
+    flushStreamingBuffer?.()
     wsClient.send('chat.stop', {})
   },
   
@@ -397,13 +494,15 @@ export const useSessionStore = create<SessionState>((set, get) => ({
         }
         // Server sends complete state: session + messages
         // This is the source of truth on load/reconnect
+        cancelStreamingFlush()
+        const streamingMsg = payload.messages.find(m => m.isStreaming) ?? null
         set({
           currentSession: payload.session,
           sessions: mergeSessionIntoSummary(get().sessions, payload.session),
           unreadSessionIds: removeUnreadSessionId(get().unreadSessionIds, payload.session.id),
           messages: payload.messages,
-          // If any message is streaming, track it
-          streamingMessageId: payload.messages.find(m => m.isStreaming)?.id ?? null,
+          streamingMessageId: streamingMsg?.id ?? null,
+          streamingMessage: streamingMsg,
           currentTodos: [],
           pendingPathConfirmation: null,
           error: null,
@@ -474,7 +573,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
           break
         }
         const payload = message.payload as ChatMessagePayload
-        
+
         set(state => {
           // Don't add duplicates
           if (state.messages.some(m => m.id === payload.message.id)) {
@@ -483,9 +582,13 @@ export const useSessionStore = create<SessionState>((set, get) => ({
           return {
             messages: [...state.messages, payload.message],
             // Track streaming message if it's marked as streaming
-            streamingMessageId: payload.message.isStreaming 
-              ? payload.message.id 
+            streamingMessageId: payload.message.isStreaming
+              ? payload.message.id
               : state.streamingMessageId,
+            // Initialize separate streaming message for independent updates
+            streamingMessage: payload.message.isStreaming
+              ? payload.message
+              : state.streamingMessage,
           }
         })
         break
@@ -498,54 +601,67 @@ export const useSessionStore = create<SessionState>((set, get) => ({
           break
         }
         const payload = message.payload as ChatMessageUpdatedPayload
-        set(state => ({
-          messages: state.messages.map(m => 
-            m.id === payload.messageId
-              ? { ...m, ...payload.updates }
-              : m
-          ),
-          // Clear streaming if the updated message was streaming and is now not
-          streamingMessageId: 
-            state.streamingMessageId === payload.messageId && payload.updates.isStreaming === false
-              ? null
-              : state.streamingMessageId,
-        }))
+        const isEndingStreaming =
+          payload.updates.isStreaming === false &&
+          get().streamingMessageId === payload.messageId
+
+        // If streaming is ending, flush buffer and fold streamingMessage back
+        if (isEndingStreaming) {
+          cancelStreamingFlush()
+          flushStreamingBuffer?.()
+        }
+
+        set(state => {
+          const sm = state.streamingMessage
+          const stoppedStreaming = isEndingStreaming
+
+          // If we have a streamingMessage for this ID, fold it back with updates
+          if (sm && sm.id === payload.messageId) {
+            const finalMessage = { ...sm, ...payload.updates }
+            return {
+              messages: state.messages.map(m =>
+                m.id === payload.messageId ? finalMessage : m
+              ),
+              streamingMessageId: stoppedStreaming ? null : state.streamingMessageId,
+              streamingMessage: stoppedStreaming ? null : { ...sm, ...payload.updates },
+            }
+          }
+
+          return {
+            messages: state.messages.map(m =>
+              m.id === payload.messageId
+                ? { ...m, ...payload.updates }
+                : m
+            ),
+            streamingMessageId: stoppedStreaming ? null : state.streamingMessageId,
+          }
+        })
         break
       }
       
       case 'chat.delta': {
-        // Append text content to the message with this messageId
+        // Append text content — buffered and flushed once per animation frame
         if (!isMessageForCurrentSession(message, get().currentSession?.id ?? null)) {
           markBackgroundSessionUnread()
           break
         }
         const payload = message.payload as ChatDeltaPayload
-        set(state => ({
-          messages: state.messages.map(m => 
-            m.id === payload.messageId
-              ? { ...m, content: m.content + payload.content }
-              : m
-          ),
-          streamingMessageId: payload.messageId,
-        }))
+        streamingBuffer.messageId = payload.messageId
+        streamingBuffer.deltaContent += payload.content
+        scheduleStreamingFlush()
         break
       }
       
       case 'chat.thinking': {
-        // Append thinking content to the message with this messageId
+        // Append thinking content — buffered and flushed once per animation frame
         if (!isMessageForCurrentSession(message, get().currentSession?.id ?? null)) {
           markBackgroundSessionUnread()
           break
         }
         const payload = message.payload as ChatThinkingPayload
-        set(state => ({
-          messages: state.messages.map(m => 
-            m.id === payload.messageId
-              ? { ...m, thinkingContent: (m.thinkingContent ?? '') + payload.content }
-              : m
-          ),
-          streamingMessageId: payload.messageId,
-        }))
+        streamingBuffer.messageId = payload.messageId
+        streamingBuffer.thinkingContent += payload.content
+        scheduleStreamingFlush()
         break
       }
       
@@ -556,19 +672,34 @@ export const useSessionStore = create<SessionState>((set, get) => ({
           break
         }
         const payload = message.payload as ChatToolPreparingPayload
-        set(state => ({
-          messages: state.messages.map(m => 
-            m.id === payload.messageId
-              ? {
-                  ...m,
-                  preparingToolCalls: [
-                    ...(m.preparingToolCalls ?? []),
-                    { index: payload.index, name: payload.name }
-                  ]
-                }
-              : m
-          ),
-        }))
+        set(state => {
+          const sm = state.streamingMessage
+          if (sm && sm.id === payload.messageId) {
+            return {
+              streamingMessage: {
+                ...sm,
+                preparingToolCalls: [
+                  ...(sm.preparingToolCalls ?? []),
+                  { index: payload.index, name: payload.name }
+                ]
+              }
+            }
+          }
+          // Fallback: update in messages array if no streaming message
+          return {
+            messages: state.messages.map(m =>
+              m.id === payload.messageId
+                ? {
+                    ...m,
+                    preparingToolCalls: [
+                      ...(m.preparingToolCalls ?? []),
+                      { index: payload.index, name: payload.name }
+                    ]
+                  }
+                : m
+            ),
+          }
+        })
         break
       }
       
@@ -580,59 +711,56 @@ export const useSessionStore = create<SessionState>((set, get) => ({
           break
         }
         const payload = message.payload as ChatToolCallPayload
-        set(state => ({
-          messages: state.messages.map(m => {
-            if (m.id !== payload.messageId) return m
-            
-            // Remove the first matching preparing tool call by name
-            const preparingToolCalls = m.preparingToolCalls?.filter((ptc, idx) => {
-              // Remove the first match with this name
-              if (ptc.name === payload.tool) {
-                const hasEarlierMatch = m.preparingToolCalls?.slice(0, idx).some(p => p.name === payload.tool)
-                return hasEarlierMatch // Keep if there was an earlier match (only remove first)
-              }
-              return true
-            })
-            
-            return {
-              ...m,
-              toolCalls: [
-                ...(m.toolCalls ?? []),
-                { id: payload.callId, name: payload.tool, arguments: payload.args, startedAt: Date.now() }
-              ],
-              // Only include preparingToolCalls if there are any left
-              ...(preparingToolCalls && preparingToolCalls.length > 0 
-                ? { preparingToolCalls } 
-                : { preparingToolCalls: undefined }),
+
+        const applyToolCall = (m: Message): Message => {
+          const preparingToolCalls = m.preparingToolCalls?.filter((ptc, idx) => {
+            if (ptc.name === payload.tool) {
+              const hasEarlierMatch = m.preparingToolCalls?.slice(0, idx).some(p => p.name === payload.tool)
+              return hasEarlierMatch
             }
-          }),
-        }))
+            return true
+          })
+          return {
+            ...m,
+            toolCalls: [
+              ...(m.toolCalls ?? []),
+              { id: payload.callId, name: payload.tool, arguments: payload.args, startedAt: Date.now() }
+            ],
+            ...(preparingToolCalls && preparingToolCalls.length > 0
+              ? { preparingToolCalls }
+              : { preparingToolCalls: undefined }),
+          }
+        }
+
+        set(state => {
+          const sm = state.streamingMessage
+          if (sm && sm.id === payload.messageId) {
+            return { streamingMessage: applyToolCall(sm) }
+          }
+          return {
+            messages: state.messages.map(m =>
+              m.id === payload.messageId ? applyToolCall(m) : m
+            ),
+          }
+        })
         break
       }
       
       case 'chat.tool_output': {
-        // Append streaming output to the tool call (run_command only)
+        // Append streaming output — buffered and flushed once per animation frame
         if (!isMessageForCurrentSession(message, get().currentSession?.id ?? null)) {
           markBackgroundSessionUnread()
           break
         }
         const payload = message.payload as ChatToolOutputPayload
-        set(state => ({
-          messages: state.messages.map(m => {
-            if (m.id !== payload.messageId) return m
-            const toolCalls = m.toolCalls?.map(tc => {
-              if (tc.id !== payload.callId) return tc
-              return {
-                ...tc,
-                streamingOutput: [
-                  ...(tc.streamingOutput ?? []),
-                  { stream: payload.stream, content: payload.output }
-                ]
-              }
-            })
-            return { ...m, toolCalls }
-          }),
-        }))
+        streamingBuffer.messageId = payload.messageId
+        streamingBuffer.toolOutput.push({
+          messageId: payload.messageId,
+          callId: payload.callId,
+          stream: payload.stream,
+          content: payload.output,
+        })
+        scheduleStreamingFlush()
         break
       }
       
@@ -644,18 +772,27 @@ export const useSessionStore = create<SessionState>((set, get) => ({
           break
         }
         const payload = message.payload as ChatToolResultPayload
-        set(state => ({
-          messages: state.messages.map(m => {
-            if (m.id !== payload.messageId) return m
-            // Update the tool call with result
-            const toolCalls = m.toolCalls?.map(tc => 
-              tc.id === payload.callId
-                ? { ...tc, result: payload.result }
-                : tc
-            )
-            return { ...m, toolCalls }
-          }),
-        }))
+
+        const applyToolResult = (m: Message): Message => {
+          const toolCalls = m.toolCalls?.map(tc =>
+            tc.id === payload.callId
+              ? { ...tc, result: payload.result }
+              : tc
+          )
+          return { ...m, toolCalls }
+        }
+
+        set(state => {
+          const sm = state.streamingMessage
+          if (sm && sm.id === payload.messageId) {
+            return { streamingMessage: applyToolResult(sm) }
+          }
+          return {
+            messages: state.messages.map(m =>
+              m.id === payload.messageId ? applyToolResult(m) : m
+            ),
+          }
+        })
         break
       }
       
@@ -711,19 +848,36 @@ export const useSessionStore = create<SessionState>((set, get) => ({
           markBackgroundSessionUnread()
           break
         }
+        // Flush any buffered streaming content before finalizing
+        cancelStreamingFlush()
+        flushStreamingBuffer?.()
+
         const payload = message.payload as ChatDonePayload
         const messageStats = payload.stats as Message['stats']
-        
-        // Mark the message as no longer streaming and add stats if present
-        // Note: isRunning is now updated via session.running event, not here
-        set(state => ({
-          messages: state.messages.map(m => 
-            m.id === payload.messageId
-              ? { ...m, isStreaming: false, stats: messageStats ?? m.stats }
-              : m
-          ),
-          streamingMessageId: null,
-        }))
+
+        // Reset streaming buffer
+        streamingBuffer.messageId = null
+        streamingBuffer.deltaContent = ''
+        streamingBuffer.thinkingContent = ''
+        streamingBuffer.toolOutput = []
+
+        // Fold streamingMessage back into messages[] and mark as done
+        set(state => {
+          const sm = state.streamingMessage
+          const finalMessage = sm && sm.id === payload.messageId
+            ? { ...sm, isStreaming: false, stats: messageStats ?? sm.stats }
+            : null
+
+          return {
+            messages: state.messages.map(m =>
+              m.id === payload.messageId
+                ? (finalMessage ?? { ...m, isStreaming: false, stats: messageStats ?? m.stats })
+                : m
+            ),
+            streamingMessageId: null,
+            streamingMessage: null,
+          }
+        })
         break
       }
       
@@ -732,12 +886,29 @@ export const useSessionStore = create<SessionState>((set, get) => ({
           markBackgroundSessionUnread()
           break
         }
+        // Flush buffered content so nothing is lost
+        cancelStreamingFlush()
+        flushStreamingBuffer?.()
+
         const payload = message.payload as ChatErrorPayload
         console.error('Chat error:', payload.error, 'recoverable:', payload.recoverable)
-        set({ 
+        if (!payload.recoverable) {
+          streamingBuffer.messageId = null
+          streamingBuffer.deltaContent = ''
+          streamingBuffer.thinkingContent = ''
+          streamingBuffer.toolOutput = []
+        }
+        set(state => ({
           error: { code: 'CHAT_ERROR', message: payload.error },
-          streamingMessageId: payload.recoverable ? get().streamingMessageId : null,
-        })
+          streamingMessageId: payload.recoverable ? state.streamingMessageId : null,
+          // Fold streamingMessage back into messages on non-recoverable error
+          ...(payload.recoverable ? {} : {
+            messages: state.streamingMessage
+              ? state.messages.map(m => m.id === state.streamingMessage!.id ? state.streamingMessage! : m)
+              : state.messages,
+            streamingMessage: null,
+          }),
+        }))
         break
       }
       
@@ -860,7 +1031,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
       }
     }
   },
-}))
+})})
 
 // Helper selector: is the session currently running (agent active)?
 export function useIsRunning() {

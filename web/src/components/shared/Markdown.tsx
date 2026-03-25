@@ -1,12 +1,147 @@
 import { memo, useMemo } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
-import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter'
-import { oneDark } from 'react-syntax-highlighter/dist/esm/styles/prism'
+import { SyntaxHighlighter, oneDark } from '../../lib/syntax-highlighter'
 
 interface MarkdownProps {
   content: string
   className?: string
+}
+
+// Static components object — hoisted to module scope so ReactMarkdown
+// receives a referentially stable prop and skips internal reconciliation.
+const MARKDOWN_COMPONENTS = {
+  code({ className, children, ...props }: any) {
+    const match = /language-(\w+)/.exec(className || '')
+    const isInline = !match && !String(children).includes('\n')
+
+    if (isInline) {
+      return (
+        <code
+          className="bg-bg-tertiary px-1 py-0.5 rounded text-accent-secondary font-mono text-xs"
+          {...props}
+        >
+          {children}
+        </code>
+      )
+    }
+
+    const language = match?.[1] || 'text'
+    const codeString = String(children).replace(/\n$/, '')
+
+    return (
+      <div className="relative group my-1.5">
+        <div className="absolute top-0 right-0 px-1.5 py-0.5 text-[10px] text-text-muted bg-bg-tertiary rounded-bl">
+          {language}
+        </div>
+        <SyntaxHighlighter
+          style={oneDark}
+          language={language}
+          PreTag="div"
+          customStyle={{
+            margin: 0,
+            borderRadius: '0.375rem',
+            fontSize: '0.75rem',
+          } as React.CSSProperties}
+        >
+          {codeString}
+        </SyntaxHighlighter>
+      </div>
+    )
+  },
+
+  p({ children }: any) {
+    return <p className="mb-1.5 last:mb-0 leading-tight">{children}</p>
+  },
+
+  ul({ children }: any) {
+    return <ul className="list-disc list-inside mb-1.5 space-y-0.5">{children}</ul>
+  },
+
+  ol({ children }: any) {
+    return <ol className="list-decimal list-inside mb-1.5 space-y-0.5">{children}</ol>
+  },
+
+  li({ children }: any) {
+    return <li className="text-text-primary text-sm list-item">{children}</li>
+  },
+
+  h1({ children }: any) {
+    return <h1 className="text-base font-bold mb-1.5 mt-2 first:mt-0 text-sky-400">{children}</h1>
+  },
+
+  h2({ children }: any) {
+    return <h2 className="text-sm font-bold mb-1.5 mt-2 first:mt-0 text-sky-400">{children}</h2>
+  },
+
+  h3({ children }: any) {
+    return <h3 className="text-sm font-bold mb-1.5 mt-1.5 first:mt-0 text-sky-400">{children}</h3>
+  },
+
+  h4({ children }: any) {
+    return <h4 className="text-sm font-bold mb-1.5 mt-1.5 first:mt-0 text-sky-400">{children}</h4>
+  },
+
+  strong({ children }: any) {
+    return <strong className="font-bold text-amber-400">{children}</strong>
+  },
+
+  a({ href, children }: any) {
+    return (
+      <a
+        href={href}
+        className="text-accent-primary hover:underline text-sm"
+        target="_blank"
+        rel="noopener noreferrer"
+      >
+        {children}
+      </a>
+    )
+  },
+
+  blockquote({ children }: any) {
+    return (
+      <blockquote className="border-l-2 border-accent-primary pl-2 my-1.5 text-text-secondary italic text-sm">
+        {children}
+      </blockquote>
+    )
+  },
+
+  table({ children }: any) {
+    return (
+      <div className="overflow-x-auto my-1.5">
+        <table className="min-w-full border border-border">{children}</table>
+      </div>
+    )
+  },
+
+  th({ children }: any) {
+    return (
+      <th className="border border-border bg-bg-tertiary px-2 py-1 text-left font-semibold text-sm">
+        {children}
+      </th>
+    )
+  },
+
+  td({ children }: any) {
+    return <td className="border border-border px-2 py-1 text-sm">{children}</td>
+  },
+
+  hr() {
+    return <hr className="border-border my-2" />
+  },
+
+  input({ checked, ...props }: any) {
+    return (
+      <input
+        type="checkbox"
+        checked={checked}
+        disabled
+        className="mr-1.5 w-3.5 h-3.5"
+        {...props}
+      />
+    )
+  },
 }
 
 // Memoize to prevent re-renders during streaming from causing flicker
@@ -22,142 +157,7 @@ export const Markdown = memo(function Markdown({ content, className = '' }: Mark
     <div className={`markdown-content [&_li>p]:inline ${className}`}>
       <ReactMarkdown
         remarkPlugins={[remarkGfm]}
-        components={{
-          // Code blocks with syntax highlighting
-          code({ className, children, ...props }) {
-            const match = /language-(\w+)/.exec(className || '')
-            const isInline = !match && !String(children).includes('\n')
-            
-            if (isInline) {
-              return (
-                <code
-                  className="bg-bg-tertiary px-1 py-0.5 rounded text-accent-secondary font-mono text-xs"
-                  {...props}
-                >
-                  {children}
-                </code>
-              )
-            }
-            
-            const language = match?.[1] || 'text'
-            const codeString = String(children).replace(/\n$/, '')
-            
-            return (
-              <div className="relative group my-1.5">
-                <div className="absolute top-0 right-0 px-1.5 py-0.5 text-[10px] text-text-muted bg-bg-tertiary rounded-bl">
-                  {language}
-                </div>
-                <SyntaxHighlighter
-                  style={oneDark}
-                  language={language}
-                  PreTag="div"
-                  customStyle={{
-                    margin: 0,
-                    borderRadius: '0.375rem',
-                    fontSize: '0.75rem',
-                  } as React.CSSProperties}
-                >
-                  {codeString}
-                </SyntaxHighlighter>
-              </div>
-            )
-          },
-        
-        // Style other elements
-        p({ children }) {
-          return <p className="mb-1.5 last:mb-0 leading-tight">{children}</p>
-        },
-        
-        ul({ children }) {
-          return <ul className="list-disc list-inside mb-1.5 space-y-0.5">{children}</ul>
-        },
-        
-        ol({ children }) {
-          return <ol className="list-decimal list-inside mb-1.5 space-y-0.5">{children}</ol>
-        },
-        
-        li({ children }) {
-          return <li className="text-text-primary text-sm list-item">{children}</li>
-        },
-        
-        h1({ children }) {
-          return <h1 className="text-base font-bold mb-1.5 mt-2 first:mt-0 text-sky-400">{children}</h1>
-        },
-        
-        h2({ children }) {
-          return <h2 className="text-sm font-bold mb-1.5 mt-2 first:mt-0 text-sky-400">{children}</h2>
-        },
-        
-        h3({ children }) {
-          return <h3 className="text-sm font-bold mb-1.5 mt-1.5 first:mt-0 text-sky-400">{children}</h3>
-        },
-        
-        h4({ children }) {
-          return <h4 className="text-sm font-bold mb-1.5 mt-1.5 first:mt-0 text-sky-400">{children}</h4>
-        },
-        
-        strong({ children }) {
-          return <strong className="font-bold text-amber-400">{children}</strong>
-        },
-        
-        a({ href, children }) {
-          return (
-            <a
-              href={href}
-              className="text-accent-primary hover:underline text-sm"
-              target="_blank"
-              rel="noopener noreferrer"
-            >
-              {children}
-            </a>
-          )
-        },
-        
-        blockquote({ children }) {
-          return (
-            <blockquote className="border-l-2 border-accent-primary pl-2 my-1.5 text-text-secondary italic text-sm">
-              {children}
-            </blockquote>
-          )
-        },
-        
-        table({ children }) {
-          return (
-            <div className="overflow-x-auto my-1.5">
-              <table className="min-w-full border border-border">{children}</table>
-            </div>
-          )
-        },
-        
-        th({ children }) {
-          return (
-            <th className="border border-border bg-bg-tertiary px-2 py-1 text-left font-semibold text-sm">
-              {children}
-            </th>
-          )
-        },
-        
-        td({ children }) {
-          return <td className="border border-border px-2 py-1 text-sm">{children}</td>
-        },
-        
-        hr() {
-          return <hr className="border-border my-2" />
-        },
-        
-        // Task list items (GFM)
-        input({ checked, ...props }) {
-          return (
-            <input
-              type="checkbox"
-              checked={checked}
-              disabled
-              className="mr-1.5 w-3.5 h-3.5"
-              {...props}
-            />
-          )
-        },
-      }}
+        components={MARKDOWN_COMPONENTS}
       >
         {processedContent}
       </ReactMarkdown>
