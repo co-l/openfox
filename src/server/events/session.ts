@@ -650,36 +650,72 @@ export function getRecentUserPromptsForSession(sessionId: string, limit: number 
   try {
     const eventStore = getEventStore()
     const db = (eventStore as any).db as import('better-sqlite3').Database | undefined
-    
+
     // If no db available (e.g., in tests), return empty array
     if (!db) {
       return []
     }
-    
-    // Query only message.start events with user role, ordered by timestamp descending
-    // Uses indexed columns (session_id, event_type) and LIMIT for efficiency
+
+    const isRealUserMessage = (msg: { role: string, isSystemGenerated?: boolean, messageKind?: string, subAgentType?: string }) =>
+      msg.role === 'user' && !msg.isSystemGenerated && !msg.messageKind && !msg.subAgentType
+
+    // Collect user prompts from both snapshots and message.start events.
+    // After a snapshot is created, older message.start events may be deleted,
+    // so we must extract messages from the latest snapshot as well.
+    const promptMap = new Map<string, { id: string, content: string, timestamp: string }>()
+
+    // 1. Extract user messages from the latest snapshot (if any)
+    const snapshotRow = db
+      .prepare(`
+        SELECT payload, timestamp
+        FROM events
+        WHERE session_id = ? AND event_type = 'turn.snapshot'
+        ORDER BY timestamp DESC
+        LIMIT 1
+      `)
+      .get(sessionId) as { payload: string, timestamp: number } | undefined
+
+    if (snapshotRow) {
+      const snapshot = JSON.parse(snapshotRow.payload) as { messages: Array<{ id: string, role: string, content: string, timestamp: number, isSystemGenerated?: boolean, messageKind?: string, subAgentType?: string }> }
+      for (const msg of snapshot.messages) {
+        if (isRealUserMessage(msg)) {
+          promptMap.set(msg.id, {
+            id: msg.id,
+            content: msg.content,
+            timestamp: new Date(msg.timestamp).toISOString(),
+          })
+        }
+      }
+    }
+
+    // 2. Add/override with message.start events (these may be newer than the snapshot)
     const rows = db
       .prepare(`
-        SELECT payload, timestamp 
-        FROM events 
+        SELECT payload, timestamp
+        FROM events
         WHERE session_id = ? AND event_type = 'message.start'
+          AND json_extract(payload, '$.role') = 'user'
+          AND json_extract(payload, '$.isSystemGenerated') IS NULL
+          AND json_extract(payload, '$.messageKind') IS NULL
+          AND json_extract(payload, '$.subAgentType') IS NULL
         ORDER BY timestamp DESC
         LIMIT ?
       `)
       .all(sessionId, limit) as { payload: string, timestamp: number }[]
-    
-    return rows.map(row => {
-      const message = JSON.parse(row.payload) as { messageId: string, role: string, content: string }
-      // Skip non-user messages
-      if (message.role !== 'user') {
-        return null
-      }
-      return {
+
+    for (const row of rows) {
+      const message = JSON.parse(row.payload) as { messageId: string, content: string }
+      promptMap.set(message.messageId, {
         id: message.messageId,
         content: message.content,
         timestamp: new Date(row.timestamp).toISOString(),
-      }
-    }).filter((p): p is { id: string, content: string, timestamp: string } => p !== null)
+      })
+    }
+
+    // Sort by timestamp descending (newest first) and take top N
+    return [...promptMap.values()]
+      .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
+      .slice(0, limit)
   } catch (error) {
     // If any error occurs (e.g., in tests), return empty array
     return []
