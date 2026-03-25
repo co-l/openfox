@@ -916,17 +916,26 @@ async function handleClientMessage(
       const eventStore = getEventStore()
       
       // Trigger summary generation when switching to builder mode for the first time
+      // Only if there are actual conversation messages to summarize
       if (message.payload.mode === 'builder' && needsSummaryGeneration(session.summary)) {
-        // Generate summary in parallel - don't block the mode switch
         const events = eventStore.getEvents(sessionId)
-        const contextMessages = buildContextMessagesFromEventHistory(events)
+        
+        // Filter out system-generated messages (like "Waiting for user input...")
+        const nonSystemEvents = events.filter(event => {
+          if (event.type !== 'message.start') return true
+          return (event.data as any).isSystemGenerated !== true
+        })
+        
+        const contextMessages = buildContextMessagesFromEventHistory(nonSystemEvents)
         const summaryMessages = contextMessages.filter(m => m.role === 'user' || m.role === 'assistant')
           .map(m => ({ role: m.role as 'user' | 'assistant', content: m.content }))
         
-        generateSessionSummary({
-          messages: summaryMessages,
-          llmClient: llmForSession(sessionId),
-        })
+        // Only generate summary if there are conversation messages
+        if (summaryMessages.length > 0) {
+          generateSessionSummary({
+            messages: summaryMessages,
+            llmClient: llmForSession(sessionId),
+          })
           .then(async (result) => {
             if (result.success && result.summary) {
               // Update DB with the generated summary
@@ -947,6 +956,7 @@ async function handleClientMessage(
             logger.warn('Session summary generation failed', { sessionId, error: error instanceof Error ? error.message : error })
             // Don't propagate error - summary generation is optional
           })
+        }
       }
       
       sessionManager.setMode(sessionId, message.payload.mode)
@@ -1008,27 +1018,37 @@ async function handleClientMessage(
       sendForSession(sessionId, createSessionRunningMessage(true))
       
       // Generate summary if needed (summary generation on first entry to builder mode)
+      // Only if there are actual conversation messages to summarize
       const currentSession = sessionManager.requireSession(sessionId)
       if (needsSummaryGeneration(currentSession.summary)) {
-        // Generate summary in parallel - don't block the mode switch
         const events = eventStore.getEvents(sessionId)
-        const contextMessages = buildContextMessagesFromEventHistory(events)
+        
+        // Filter out system-generated messages (like "Waiting for user input...")
+        const nonSystemEvents = events.filter(event => {
+          if (event.type !== 'message.start') return true
+          return (event.data as any).isSystemGenerated !== true
+        })
+        
+        const contextMessages = buildContextMessagesFromEventHistory(nonSystemEvents)
         const summaryMessages = contextMessages.filter(m => m.role === 'user' || m.role === 'assistant')
           .map(m => ({ role: m.role as 'user' | 'assistant', content: m.content }))
         
-        generateSessionSummary({
-          messages: summaryMessages,
-          llmClient: llmForSession(sessionId),
-        })
-          .then(async (result) => {
-            if (result.success && result.summary) {
-              // Update DB with the generated summary
-              sessionManager.setSummary(sessionId, result.summary)
-            }
+        // Only generate summary if there are conversation messages
+        if (summaryMessages.length > 0) {
+          generateSessionSummary({
+            messages: summaryMessages,
+            llmClient: llmForSession(sessionId),
           })
-          .catch((error) => {
-            logger.warn('Session summary generation failed', { sessionId, error: error instanceof Error ? error.message : error })
-          })
+            .then(async (result) => {
+              if (result.success && result.summary) {
+                // Update DB with the generated summary
+                sessionManager.setSummary(sessionId, result.summary)
+              }
+            })
+            .catch((error) => {
+              logger.warn('Session summary generation failed', { sessionId, error: error instanceof Error ? error.message : error })
+            })
+        }
       }
 
       // Start builder asynchronously (summary already generated on mode.switch if needed)

@@ -197,6 +197,9 @@ interface SessionState {
   // Error state
   error: { code: string; message: string } | null
   
+  // Track if we're waiting for a new session to be created
+  pendingSessionCreate: boolean
+  
   // Actions
   connect: () => Promise<void>
   disconnect: () => void
@@ -371,6 +374,7 @@ export const useSessionStore = create<SessionState>((set, get) => {
   queuedMessages: [],
   abortInProgress: false,
   error: null,
+  pendingSessionCreate: false,
 
   connect: async () => {
     const status = get().connectionStatus
@@ -404,6 +408,7 @@ export const useSessionStore = create<SessionState>((set, get) => {
   },
   
   createSession: (projectId, title) => {
+    set({ pendingSessionCreate: true })
     wsClient.send('session.create', { projectId, title })
   },
   
@@ -564,6 +569,7 @@ export const useSessionStore = create<SessionState>((set, get) => {
           currentTodos: [],
           pendingPathConfirmation: null,
           error: null,
+          pendingSessionCreate: false, // Reset after receiving session state
         })
 
         // Sync config store with session's provider/model for header display

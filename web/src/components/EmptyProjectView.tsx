@@ -7,21 +7,26 @@ import { Button } from './shared/Button'
 export function EmptyProjectView() {
   const [, navigate] = useLocation()
   const currentProject = useProjectStore(state => state.currentProject)
-  const currentSession = useSessionStore(state => state.currentSession)
   const createSession = useSessionStore(state => state.createSession)
+  const currentSession = useSessionStore(state => state.currentSession)
+  const pendingSessionCreate = useSessionStore(state => state.pendingSessionCreate)
   
   const handleCreateSession = () => {
     if (currentProject) {
       createSession(currentProject.id)
     }
   }
-  
-  // Navigate to new session when it's created
+
+  // Navigate to the new session when it's created
+  // Only navigate if we're waiting for a new session to be created
   useEffect(() => {
-    if (currentProject && currentSession) {
-      navigate(`/p/${currentProject.id}/s/${currentSession.id}`)
+    if (pendingSessionCreate && currentProject && currentSession) {
+      const sessionPath = `/p/${currentProject.id}/s/${currentSession.id}`
+      navigate(sessionPath)
+      // Reset the flag after navigation
+      // Note: We can't call set here, so we rely on the session.state handler to reset it
     }
-  }, [currentSession, currentProject, navigate])
+  }, [pendingSessionCreate, currentSession, currentProject, navigate])
   
   return (
     <div className="h-full flex flex-col items-center justify-center p-8 text-center">

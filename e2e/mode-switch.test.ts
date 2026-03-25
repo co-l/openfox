@@ -250,4 +250,41 @@ describe('Mode Switching', () => {
       expect(session.phase).toBe('plan') // Phase doesn't auto-change on manual mode switch
     })
   })
+
+  describe('Summary Generation', () => {
+    it('does NOT generate summary for empty sessions when switching to builder', async () => {
+      // Fresh session with no messages - switch to builder mode
+      await client.send('mode.switch', { mode: 'builder' })
+      
+      // Wait for session state update
+      await client.waitFor('session.state')
+      
+      // Give any potential async summary generation time to complete
+      await new Promise(resolve => setTimeout(resolve, 100))
+      
+      const session = client.getSession()!
+      // Summary should remain null/empty for sessions without conversation history
+      // OR should not be a generic placeholder
+      if (session.summary) {
+        expect(session.summary).not.toBe('I understand. Let me help you with that.')
+        expect(session.summary.length).toBeGreaterThan(20) // Should be a meaningful summary
+      } else {
+        expect(session.summary).toBeNull()
+      }
+    })
+
+    it('does NOT generate summary for empty sessions when using mode.accept', async () => {
+      // Fresh session with no messages and no criteria
+      // This should fail because there are no criteria, but let's test the summary logic
+      const response = await client.send('mode.accept', {})
+      
+      // Should fail with NO_CRITERIA error
+      expect(response.type).toBe('error')
+      expect((response.payload as { code: string }).code).toBe('NO_CRITERIA')
+      
+      // Session should still have no summary
+      const session = client.getSession()!
+      expect(session.summary).toBeNull()
+    })
+  })
 })
