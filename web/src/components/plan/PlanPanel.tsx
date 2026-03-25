@@ -25,7 +25,7 @@ import { usePromptHistory } from '../../hooks/usePromptHistory.js'
 export function PlanPanel() {
   const [criteriaSidebarOpen, setCriteriaSidebarOpen] = useState(true)
   const [input, setInput] = useState('')
-  const [, setAtBottom] = useState(true)
+  const atBottomRef = useRef(true)
   const [attachments, setAttachments] = useState<Attachment[]>([])
   const [dragOver, setDragOver] = useState(false)
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
@@ -85,9 +85,38 @@ export function PlanPanel() {
   // Use rawMessages (stable during streaming) since prompt context only depends on user messages
   const promptContextByUserMessageId = useMemo(() => buildPromptContextByUserMessageId(rawMessages), [rawMessages])
   
-  // Virtuoso auto-scroll: follow new streaming output when user is at the bottom.
+  // Virtuoso auto-scroll: follow new items when user is at the bottom.
   const followOutput = useCallback((isAtBottom: boolean) => {
     return isAtBottom ? 'auto' : false
+  }, [])
+
+  const handleAtBottomStateChange = useCallback((bottom: boolean) => {
+    atBottomRef.current = bottom
+  }, [])
+
+  // Scroll to bottom when streaming content changes (followOutput only fires on item count changes,
+  // not when an existing item's content grows). We use rAF to wait for the DOM to reflect the new
+  // content height before scrolling.
+  const streamingScrollRafRef = useRef<number | null>(null)
+  useEffect(() => {
+    if (!streamingMessage) return
+    if (!atBottomRef.current) return
+    if (streamingScrollRafRef.current !== null) return // already scheduled
+    streamingScrollRafRef.current = requestAnimationFrame(() => {
+      streamingScrollRafRef.current = null
+      const scroller = document.querySelector('[data-virtuoso-scroller]') as HTMLElement | null
+      if (scroller) {
+        scroller.scrollTop = scroller.scrollHeight
+      }
+    })
+  }, [streamingMessage])
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      if (streamingScrollRafRef.current !== null) {
+        cancelAnimationFrame(streamingScrollRafRef.current)
+      }
+    }
   }, [])
 
   // Scroll to bottom when session data first loads.
@@ -475,7 +504,7 @@ export function PlanPanel() {
         className="flex-1 min-w-0 overflow-x-hidden"
         increaseViewportBy={{ top: 500, bottom: 200 }}
         followOutput={followOutput}
-        atBottomStateChange={setAtBottom}
+        atBottomStateChange={handleAtBottomStateChange}
         atBottomThreshold={150}
         defaultItemHeight={120}
         alignToBottom
