@@ -244,13 +244,10 @@ interface SessionState {
   handleServerMessage: (message: ServerMessage) => void
 }
 
-function getKnownPhase(state: SessionState, sessionId: string): SessionSummary['phase'] | Session['phase'] | null {
-  if (state.currentSession?.id === sessionId) {
-    return state.currentSession.phase
-  }
-
-  return state.sessions.find(session => session.id === sessionId)?.phase ?? null
-}
+// Track last phase seen per session via phase.changed events only.
+// This avoids races where session.state (direct WS) updates currentSession.phase
+// to 'done' before the EventStore phase.changed event arrives.
+const lastSeenPhase = new Map<string, string>()
 
 function resolveAgentType(state: SessionState, sessionId?: string): AgentType | undefined {
   const session = sessionId === state.currentSession?.id
@@ -278,16 +275,15 @@ function handleGlobalSoundEffects(message: ServerMessage, state: SessionState): 
 
   if (message.type === 'phase.changed' && message.sessionId) {
     const payload = message.payload as PhaseChangedPayload
-    const previousPhase = getKnownPhase(state, message.sessionId)
-    console.debug('[sound] phase.changed:', payload.phase, 'previous:', previousPhase, 'sessionId:', message.sessionId)
+    const previousPhase = lastSeenPhase.get(message.sessionId) ?? null
+    lastSeenPhase.set(message.sessionId, payload.phase)
+
     if (previousPhase === payload.phase) {
-      console.debug('[sound] skipping duplicate phase:', payload.phase)
       return
     }
 
     const agent = resolveAgentType(state, message.sessionId)
     if (payload.phase === 'done') {
-      console.debug('[sound] playing achievement')
       playAchievement(agent)
     }
     if (payload.phase === 'blocked') {
