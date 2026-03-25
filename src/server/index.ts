@@ -137,11 +137,10 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
     }
 
     const startup = (async () => {
-      // Use tsx binary from project node_modules to run TypeScript entrypoint
-      const tsxBinary = resolve(__dirname, '../../node_modules/.bin/tsx')
+      // Use npx to resolve tsx, avoiding hardcoded paths that break on global installation
       const child = spawn(
-        tsxBinary,
-        [HISTORY_PROCESS_ENTRYPOINT, workdir],
+        'npx',
+        ['tsx', HISTORY_PROCESS_ENTRYPOINT, workdir],
         {
           cwd: process.cwd(), // Don't use workdir - test projects get deleted
           env: process.env,
@@ -702,7 +701,9 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
 function getHistoryProcessEntrypoint(): string {
   const currentFile = fileURLToPath(import.meta.url)
   const extension = currentFile.endsWith('.ts') ? 'ts' : 'js'
-  return resolve(__dirname, 'history', `process-entry.${extension}`)
+  // __dirname is dist/ (chunks are bundled directly in dist/)
+  // So we resolve to dist/server/history/process-entry.{js,ts}
+  return resolve(__dirname, 'server', 'history', `process-entry.${extension}`)
 }
 
 /**
