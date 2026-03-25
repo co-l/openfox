@@ -1,5 +1,4 @@
 import os from 'node:os'
-import { logger } from './logger.js'
 
 export interface NetworkInterface {
   ip: string
@@ -71,19 +70,27 @@ export function displayStartupBanner(config: {
   const { host, port, databasePath, configPath } = config
   const isLocalhost = host === '127.0.0.1'
   
-  logger.info('OpenFox server startup', { version: 'v0.1.0', host, port })
+  console.log('\n🦊 OpenFox v0.1.0\n')
   
   if (isLocalhost) {
-    logger.info('Server listening on localhost', { port })
+    console.log(`  🌐 Server: http://localhost:${port}`)
+    console.log('  🔒 Access: Localhost only')
   } else {
     const ips = getValidIPv4Addresses()
     
     if (ips.length === 0) {
-      logger.warn('No valid network interfaces detected', { host: '0.0.0.0', port })
+      console.log(`  🌐 Server: http://0.0.0.0:${port}`)
+      console.warn('  ⚠️  Warning: No valid network interfaces detected')
     } else {
-      logger.info('Server listening on network interfaces', { ips, port })
+      console.log('  🌐 Server:')
+      for (const ip of ips) {
+        console.log(`     • http://${ip}:${port}`)
+      }
+      console.log('  🌍 Access: Local network')
     }
   }
   
-  logger.debug('Database and config paths', { databasePath, configPath })
+  console.log(`  💾 Database: ${databasePath}`)
+  console.log(`  ⚙️  Config:  ${configPath}`)
+  console.log('\n💡 Tip: Press Ctrl+C to stop the server\n')
 }
