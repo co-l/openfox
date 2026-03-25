@@ -25,7 +25,7 @@ import { usePromptHistory } from '../../hooks/usePromptHistory.js'
 export function PlanPanel() {
   const [criteriaSidebarOpen, setCriteriaSidebarOpen] = useState(true)
   const [input, setInput] = useState('')
-  const [atBottom, setAtBottom] = useState(true)
+  const [, setAtBottom] = useState(true)
   const [attachments, setAttachments] = useState<Attachment[]>([])
   const [dragOver, setDragOver] = useState(false)
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
@@ -415,10 +415,12 @@ export function PlanPanel() {
         data={displayItems}
         className="flex-1 min-w-0 overflow-x-hidden"
         increaseViewportBy={{ top: 500, bottom: 200 }}
+        initialTopMostItemIndex={displayItems.length - 1}
         followOutput={followOutput}
         atBottomStateChange={setAtBottom}
         atBottomThreshold={150}
         defaultItemHeight={120}
+        alignToBottom
         itemContent={(_index, item) => {
           if (item.type === 'context-divider') {
             return (
@@ -478,7 +480,7 @@ export function PlanPanel() {
         components={{
           Header: () => <div className="pt-4" />,
           Footer: () => (
-            <div className="px-2 md:px-4">
+            <div className="px-2 md:px-4 pb-4">
               {error && (
                 <div className="feed-item bg-red-500/10 border border-red-500/50 rounded p-2">
                   <div className="flex items-start justify-between gap-2">
