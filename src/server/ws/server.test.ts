@@ -886,13 +886,19 @@ describe('createWebSocketServer', () => {
     harness.send({ id: 'sc-ok', type: 'session.create', payload: { projectId: 'project-1' } })
     await harness.nextMessage((message) => message.id === 'sc-ok')
 
+    // Seed conversation events so summary generation has messages to summarize
+    harness.eventStore.append('session-1', { type: 'message.start', data: { messageId: 'u1', role: 'user', content: 'Fix the deleted session bug' } })
+    harness.eventStore.append('session-1', { type: 'message.done', data: { messageId: 'u1' } })
+    harness.eventStore.append('session-1', { type: 'message.start', data: { messageId: 'a1', role: 'assistant', content: 'I will fix the navigation issue.' } })
+    harness.eventStore.append('session-1', { type: 'message.done', data: { messageId: 'a1' } })
+
     harness.send({ id: 'mode-switch-builder', type: 'mode.switch', payload: { mode: 'builder' } })
     expect(await harness.nextMessage((message) => message.type === 'mode.changed')).toMatchObject({ payload: { mode: 'builder', auto: false } })
     await harness.nextMessage((message) => message.type === 'session.state')
-    
+
     // Wait for async summary generation
     await new Promise<void>((resolve) => setTimeout(resolve, 10))
-    
+
     expect(sessionManager.setSummary).toHaveBeenCalled()
   })
 
