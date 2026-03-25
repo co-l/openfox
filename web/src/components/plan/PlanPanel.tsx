@@ -88,15 +88,18 @@ export function PlanPanel() {
 
   // Scroll to bottom when a session's messages first load.
   // Track per-session so it only fires once (not on every new streaming message).
+  // Uses double-rAF: first frame lets Virtuoso render items with estimated heights,
+  // second frame lets it measure actual DOM heights, then we scroll to the true bottom.
   const scrolledSessionRef = useRef<string | null>(null)
   useEffect(() => {
     const sessionId = session?.id ?? null
     if (!sessionId || displayItems.length === 0) return
     if (scrolledSessionRef.current === sessionId) return
     scrolledSessionRef.current = sessionId
-    // requestAnimationFrame lets Virtuoso render the items before we scroll
     requestAnimationFrame(() => {
-      virtuosoRef.current?.scrollToIndex({ index: 'LAST', align: 'end' })
+      requestAnimationFrame(() => {
+        virtuosoRef.current?.scrollToIndex({ index: 'LAST', align: 'end' })
+      })
     })
   }, [session?.id, displayItems.length])
 
