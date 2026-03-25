@@ -213,7 +213,7 @@ interface SessionState {
   clearSession: () => void
   
   // Unified chat (works in any mode)
-  sendMessage: (content: string, attachments?: Attachment[]) => void
+  sendMessage: (content: string, attachments?: Attachment[], opts?: { messageKind?: 'command'; isSystemGenerated?: boolean }) => void
   stopGeneration: () => void
   continueGeneration: () => void
   
@@ -464,10 +464,10 @@ export const useSessionStore = create<SessionState>((set, get) => {
     }))
   },
   
-  sendMessage: (content, attachments) => {
+  sendMessage: (content, attachments, opts) => {
     // No optimistic update needed - server will send chat.message with user message
     set({ streamingMessageId: null })
-    wsClient.send('chat.send', { content, attachments })
+    wsClient.send('chat.send', { content, attachments, ...opts })
   },
   
   stopGeneration: () => {

@@ -69,7 +69,7 @@ export type TurnEvent =
         subAgentId?: string
         subAgentType?: 'verifier' | 'code_reviewer' | 'test_generator' | 'debugger'
         isSystemGenerated?: boolean
-        messageKind?: 'correction' | 'auto-prompt' | 'context-reset' | 'task-completed'
+        messageKind?: 'correction' | 'auto-prompt' | 'context-reset' | 'task-completed' | 'command'
         isCompactionSummary?: boolean // True if this is the summary message after compaction
         tokenCount?: number // Known upfront for user messages
         attachments?: Attachment[] // Optional image attachments
@@ -333,7 +333,7 @@ export interface SnapshotMessage {
   subAgentId?: string
   subAgentType?: 'verifier' | 'code_reviewer' | 'test_generator' | 'debugger'
   isSystemGenerated?: boolean
-  messageKind?: 'correction' | 'auto-prompt' | 'context-reset' | 'task-completed'
+  messageKind?: 'correction' | 'auto-prompt' | 'context-reset' | 'task-completed' | 'command'
   contextWindowId?: string
   isCompactionSummary?: boolean
   promptContext?: PromptContext

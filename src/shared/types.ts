@@ -280,7 +280,7 @@ export interface Message {
   partial?: boolean            // true if message was interrupted mid-stream
   isSystemGenerated?: boolean  // true for auto-injected messages (retry prompts, etc.)
   isStreaming?: boolean        // true while assistant is still generating
-  messageKind?: 'correction' | 'auto-prompt' | 'context-reset' | 'task-completed'  // Visual styling hint for system-generated messages
+  messageKind?: 'correction' | 'auto-prompt' | 'context-reset' | 'task-completed' | 'command'  // Visual styling hint for system-generated messages
   isCompactionSummary?: boolean  // true if this is the summary message after compaction
   subAgentId?: string          // If set, this message belongs to a sub-agent process
   subAgentType?: 'verifier' | 'code_reviewer' | 'test_generator' | 'debugger'  // Type of sub-agent

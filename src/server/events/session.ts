@@ -221,7 +221,7 @@ export function emitUserMessage(
   options?: {
     contextWindowId?: string
     isSystemGenerated?: boolean
-    messageKind?: 'correction' | 'auto-prompt' | 'context-reset' | 'task-completed'
+    messageKind?: 'correction' | 'auto-prompt' | 'context-reset' | 'task-completed' | 'command'
     isCompactionSummary?: boolean
     tokenCount?: number
     attachments?: Attachment[] // Optional image attachments

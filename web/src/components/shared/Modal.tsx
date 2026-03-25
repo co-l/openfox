@@ -19,27 +19,26 @@ export function Modal({ isOpen, onClose, title, children, size = 'md' }: ModalPr
     }
   }, [onClose])
 
+  // Focus management — only on open/close transitions
   useEffect(() => {
     if (isOpen) {
-      // Store the currently focused element
       previousActiveElement.current = document.activeElement as HTMLElement
-      
-      // Focus the modal container
       modalRef.current?.focus()
-      
-      document.addEventListener('keydown', handleEscape)
       document.body.style.overflow = 'hidden'
     } else {
-      // Restore focus to the previously focused element
       previousActiveElement.current?.focus()
-      
-      document.removeEventListener('keydown', handleEscape)
       document.body.style.overflow = ''
     }
-    
     return () => {
-      document.removeEventListener('keydown', handleEscape)
       document.body.style.overflow = ''
+    }
+  }, [isOpen])
+
+  // Escape key listener — updates when handler changes without stealing focus
+  useEffect(() => {
+    if (isOpen) {
+      document.addEventListener('keydown', handleEscape)
+      return () => document.removeEventListener('keydown', handleEscape)
     }
   }, [isOpen, handleEscape])
 

@@ -18,6 +18,8 @@ import { PromptHistoryList } from '../shared/PromptHistory.js'
 import { compressImage, isValidImageType, validateImageSize } from '../../lib/image-compression.js'
 import { buildPromptContextByUserMessageId } from './prompt-context-linking.js'
 import { ProviderSelector } from '../settings/ProviderSelector'
+import { CommandMenu } from './CommandMenu'
+import { CommandsModal } from '../settings/CommandsModal'
 import { generateUUID } from '../../lib/uuid.js'
 import { groupMessages, type DisplayItem } from './groupMessages.js'
 import { usePromptHistory } from '../../hooks/usePromptHistory.js'
@@ -29,6 +31,7 @@ export function PlanPanel() {
   const [attachments, setAttachments] = useState<Attachment[]>([])
   const [dragOver, setDragOver] = useState(false)
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
+  const [showCommandsModal, setShowCommandsModal] = useState(false)
   const virtuosoRef = useRef<VirtuosoHandle>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -715,32 +718,41 @@ export function PlanPanel() {
             style={{ minHeight: '24px', maxHeight: '200px' }}
           />
           {!isRunning ? (
-            <div className="flex items-center gap-2">
-              {showLaunchButton && (
+            <div className="flex flex-col items-end gap-1">
+              <CommandMenu
+                onSendCommand={(content) => {
+                  virtuosoRef.current?.scrollToIndex({ index: 'LAST', behavior: 'smooth' })
+                  sendMessage(content, undefined, { messageKind: 'command', isSystemGenerated: true })
+                }}
+                onOpenManager={() => setShowCommandsModal(true)}
+              />
+              <div className="flex items-center gap-2">
+                {showLaunchButton && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      launchRunner(input, attachments.length > 0 ? attachments : undefined)
+                      clearInput()
+                    }}
+                    className="px-4 py-1.5 rounded bg-accent-success/20 text-sm text-accent-success font-medium hover:bg-accent-success/30 transition-colors"
+                  >
+                    Launch
+                  </button>
+                )}
                 <button
                   type="button"
                   onClick={() => {
-                    launchRunner(input, attachments.length > 0 ? attachments : undefined)
+                    if (!input.trim() && attachments.length === 0) return
+                    virtuosoRef.current?.scrollToIndex({ index: 'LAST', behavior: 'smooth' })
+                    sendMessage(input, attachments)
                     clearInput()
                   }}
-                  className="px-4 py-1.5 rounded bg-accent-success/20 text-sm text-accent-success font-medium hover:bg-accent-success/30 transition-colors"
+                  disabled={(!input.trim() && attachments.length === 0)}
+                  className="px-4 py-1.5 rounded bg-accent-primary/20 text-sm text-accent-primary font-medium hover:bg-accent-primary/30 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
                 >
-                  Launch
+                  Send
                 </button>
-              )}
-              <button
-                type="button"
-                onClick={() => {
-                  if (!input.trim() && attachments.length === 0) return
-                  virtuosoRef.current?.scrollToIndex({ index: 'LAST', behavior: 'smooth' })
-                  sendMessage(input, attachments)
-                  clearInput()
-                }}
-                disabled={(!input.trim() && attachments.length === 0)}
-                className="px-4 py-1.5 rounded bg-accent-primary/20 text-sm text-accent-primary font-medium hover:bg-accent-primary/30 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
-              >
-                Send
-              </button>
+              </div>
             </div>
           ) : (
             <div className="flex items-center gap-1.5">
@@ -780,6 +792,7 @@ export function PlanPanel() {
           <ProviderSelector />
         </div>
       </form>
+      <CommandsModal isOpen={showCommandsModal} onClose={() => setShowCommandsModal(false)} />
     </SessionLayout>
   )
 }

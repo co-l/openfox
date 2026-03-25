@@ -20,6 +20,8 @@ import { SessionManager } from './session/manager.js'
 import { setRuntimeConfig, getRuntimeConfig } from './runtime-config.js'
 import { ensureDefaultSkills, loadAllSkills, isSkillEnabled, setSkillEnabled, findSkillById, saveSkill, deleteSkill, skillExists } from './skills/registry.js'
 import type { SkillDefinition } from './skills/types.js'
+import { ensureDefaultCommands, loadAllCommands, findCommandById, saveCommand, deleteCommand, commandExists } from './commands/registry.js'
+import type { CommandDefinition } from './commands/types.js'
 import { getGlobalConfigDir } from '../cli/paths.js'
 import { logger, setLogLevel } from './utils/logger.js'
 import { terminateProcessTree } from './utils/process-tree.js'
@@ -47,9 +49,10 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
   // Initialize event store
   initEventStore(db)
 
-  // Initialize skills (copy defaults to config dir)
+  // Initialize skills and commands (copy defaults to config dir)
   const configDir = getGlobalConfigDir(config.mode ?? 'production')
   await ensureDefaultSkills(configDir)
+  await ensureDefaultCommands(configDir)
 
   // Create SessionManager instance (not singleton!)
   const sessionManager = new SessionManager()
@@ -460,6 +463,67 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
     const deleted = await deleteSkill(configDir, id as string)
     if (!deleted) {
       return res.status(404).json({ error: 'Skill not found' })
+    }
+    res.json({ success: true })
+  })
+
+  // Commands endpoints
+  app.get('/api/commands', async (_req, res) => {
+    const commands = await loadAllCommands(configDir)
+    res.json({
+      commands: commands.map(c => c.metadata),
+    })
+  })
+
+  app.get('/api/commands/:id', async (req, res) => {
+    const { id } = req.params
+    const commands = await loadAllCommands(configDir)
+    const command = findCommandById(id as string, commands)
+    if (!command) {
+      return res.status(404).json({ error: 'Command not found' })
+    }
+    res.json(command)
+  })
+
+  app.post('/api/commands', async (req, res) => {
+    const body = req.body as CommandDefinition
+    if (!body.metadata?.id || !body.metadata?.name || !body.prompt) {
+      return res.status(400).json({ error: 'Missing required fields: metadata.id, metadata.name, prompt' })
+    }
+    if (!/^[a-z0-9-]+$/.test(body.metadata.id)) {
+      return res.status(400).json({ error: 'Command ID must be lowercase alphanumeric with hyphens only' })
+    }
+    if (await commandExists(configDir, body.metadata.id)) {
+      return res.status(409).json({ error: 'A command with this ID already exists' })
+    }
+    await saveCommand(configDir, body)
+    res.status(201).json(body)
+  })
+
+  app.put('/api/commands/:id', async (req, res) => {
+    const { id } = req.params
+    if (!await commandExists(configDir, id as string)) {
+      return res.status(404).json({ error: 'Command not found' })
+    }
+    const body = req.body as Partial<CommandDefinition>
+    const commands = await loadAllCommands(configDir)
+    const existing = findCommandById(id as string, commands)
+    if (!existing) {
+      return res.status(404).json({ error: 'Command not found' })
+    }
+    const updated: CommandDefinition = {
+      metadata: { ...existing.metadata, ...body.metadata, id: id as string },
+      prompt: body.prompt ?? existing.prompt,
+    }
+    await saveCommand(configDir, updated)
+    res.json(updated)
+  })
+
+  app.delete('/api/commands/:id', async (req, res) => {
+    const { id } = req.params
+    const deleted = await deleteCommand(configDir, id as string)
+    if (!deleted) {
+      return res.status(404).json({ error: 'Command not found' })
     }
     res.json({ success: true })
   })

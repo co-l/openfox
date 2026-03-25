@@ -144,7 +144,6 @@ export function ProviderSelector() {
         className="flex items-center gap-1 px-1.5 py-0.5 rounded hover:bg-bg-tertiary transition-colors group"
         title={isLlmOffline ? 'LLM server is offline. Click to retry.' : (model ?? 'Click to refresh model')}
       >
-        <span className="text-sm text-text-muted">Model:</span>
         {isLlmOffline ? (
           <span className="text-sm text-accent-error animate-pulse">
             LLM offline
@@ -152,9 +151,6 @@ export function ProviderSelector() {
         ) : (
           <span className="text-sm text-accent-primary">
             {shortModelName}
-            {backendName && (
-              <span className="text-text-muted ml-1">({backendName})</span>
-            )}
           </span>
         )}
         <span className="text-text-muted opacity-0 group-hover:opacity-100 transition-opacity">
@@ -173,24 +169,13 @@ export function ProviderSelector() {
         title="Click to switch provider or model"
       >
         {isLlmOffline ? (
-          <>
-            <span className="text-sm text-text-muted">Provider:</span>
-            <span className="text-sm text-accent-error animate-pulse">
-              offline
-            </span>
-          </>
+          <span className="text-sm text-accent-error animate-pulse">
+            offline
+          </span>
         ) : (
-          <>
-            <span className="text-sm text-text-muted">
-              {activeProvider?.name ?? 'Provider'}:
-            </span>
-            <span className="text-sm text-accent-primary">
-              {shortModelName}
-              {backendName && (
-                <span className="text-text-muted ml-1">({backendName})</span>
-              )}
-            </span>
-          </>
+          <span className="text-sm text-accent-primary">
+            {shortModelName}
+          </span>
         )}
         <svg 
           className={`w-3 h-3 text-text-muted transition-transform ${isOpen ? 'rotate-180' : ''}`} 

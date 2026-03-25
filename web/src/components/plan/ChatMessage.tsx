@@ -20,8 +20,9 @@ interface UserMessageProps {
 
 function UserMessage({ message, promptContext }: UserMessageProps) {
   const isAutoPrompt = message.messageKind === 'auto-prompt'
+  const isCommand = message.messageKind === 'command'
   const isSystemGenerated = message.isSystemGenerated
-  
+
   return (
     <div className="flex justify-end items-start gap-1.5 feed-item">
       {!isSystemGenerated && (
@@ -30,21 +31,23 @@ function UserMessage({ message, promptContext }: UserMessageProps) {
 
       <div className={`max-w-[75%] rounded p-2 ${
         isSystemGenerated
-          ? isAutoPrompt 
-            ? 'bg-slate-500/10 border border-slate-500/30' 
-            : 'bg-amber-500/10 border border-amber-500/30'
+          ? isCommand
+            ? 'bg-teal-500/10 border border-teal-500/30'
+            : isAutoPrompt
+              ? 'bg-slate-500/10 border border-slate-500/30'
+              : 'bg-amber-500/10 border border-amber-500/30'
           : 'bg-accent-primary/15 text-white'
       }`}>
         {isSystemGenerated && (
           <span className={`text-[10px] block mb-0.5 ${
-            isAutoPrompt ? 'text-slate-400' : 'text-amber-400'
+            isCommand ? 'text-teal-400' : isAutoPrompt ? 'text-slate-400' : 'text-amber-400'
           }`}>
-            {isAutoPrompt ? 'Auto' : 'System'}
+            {isCommand ? 'Command' : isAutoPrompt ? 'Auto' : 'System'}
           </span>
         )}
         <div className={`whitespace-pre-wrap text-sm ${
           isSystemGenerated
-            ? `${isAutoPrompt ? 'text-slate-200' : 'text-amber-200 italic'}`
+            ? `${isCommand ? 'text-teal-200' : isAutoPrompt ? 'text-slate-200' : 'text-amber-200 italic'}`
             : ''
         }`}>
           {message.content}

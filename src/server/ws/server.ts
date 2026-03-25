@@ -745,6 +745,8 @@ async function handleClientMessage(
         role: 'user',
         content: message.payload.content,
         ...(message.payload.attachments && { attachments: message.payload.attachments }),
+        ...(message.payload.messageKind && { messageKind: message.payload.messageKind }),
+        ...(message.payload.isSystemGenerated && { isSystemGenerated: message.payload.isSystemGenerated }),
       })
       
       // Check if we need to generate a session name (first message with default/empty title)

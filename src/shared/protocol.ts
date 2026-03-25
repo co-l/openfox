@@ -109,6 +109,8 @@ export interface SessionDeleteAllPayload {
 export interface ChatSendPayload {
   content: string
   attachments?: Attachment[]
+  messageKind?: 'command'
+  isSystemGenerated?: boolean
 }
 
 export interface ModeSwitchPayload {
