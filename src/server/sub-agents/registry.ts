@@ -145,7 +145,7 @@ const verifierDefinition: SubAgentDefinition = {
   name: 'Verifier',
   description: 'Verify completed criteria against implementation',
   systemPrompt: buildVerifierPrompt('/tmp'), // Will be overridden with actual workdir
-  tools: ['read_file', 'run_command', 'pass_criterion', 'fail_criterion'],
+  tools: ['read_file', 'run_command', 'pass_criterion', 'fail_criterion', 'web_fetch'],
   createContext: createVerifierContext,
 }
 
@@ -162,7 +162,7 @@ Review the provided code changes for:
 - Missing edge cases
 
 Provide clear, actionable feedback.`,
-  tools: ['read_file', 'grep'],
+  tools: ['read_file', 'grep', 'web_fetch'],
   createContext: createCodeReviewerContext,
 }
 
@@ -179,7 +179,7 @@ Guidelines:
 - Use the appropriate test framework
 - Ensure tests are deterministic and isolated
 - Include descriptive test names`,
-  tools: ['read_file', 'write_file', 'run_command'],
+  tools: ['read_file', 'write_file', 'run_command', 'web_fetch'],
   createContext: createTestGeneratorContext,
 }
 
@@ -195,7 +195,7 @@ Analyze the provided error and code to:
 4. Recommend prevention strategies
 
 Be precise and provide code examples when applicable.`,
-  tools: ['read_file', 'run_command', 'grep'],
+  tools: ['read_file', 'run_command', 'grep', 'web_fetch'],
   createContext: createDebuggerContext,
 }
 

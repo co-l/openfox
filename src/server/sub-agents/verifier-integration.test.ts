@@ -17,7 +17,7 @@ describe('Verifier Sub-Agent Integration', () => {
     expect(verifier?.name).toBe('Verifier')
     expect(typeof verifier?.description).toBe('string')
     expect(typeof verifier?.systemPrompt).toBe('string')
-    expect(verifier?.tools).toEqual(['read_file', 'run_command', 'pass_criterion', 'fail_criterion'])
+    expect(verifier?.tools).toEqual(['read_file', 'run_command', 'pass_criterion', 'fail_criterion', 'web_fetch'])
   })
 
   it('should create verifier context with fresh data only', () => {

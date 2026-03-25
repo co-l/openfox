@@ -362,6 +362,8 @@ export type ToolName =
   | 'fail_criterion'      // Verifier rejects criterion
   // Task tracking
   | 'todo_write'
+  // Web
+  | 'web_fetch'
 
 // ============================================================================
 // Criterion Types

@@ -19,6 +19,7 @@ import { todoWriteTool, setTodoUpdateCallback, getTodos, clearTodos } from './to
 import { callSubAgentTool } from './sub-agent.js'
 import { loadSkillTool } from './load-skill.js'
 import { returnValueTool } from './return-value.js'
+import { webFetchTool } from './web-fetch.js'
 import { logger } from '../utils/logger.js'
 
 // ============================================================================
@@ -30,6 +31,7 @@ const readOnlyTools: Tool[] = [
   readFileTool,
   globTool,
   grepTool,
+  webFetchTool,
 ]
 
 // Planner mode: read-only exploration + criteria management + git inspection + sub-agents
@@ -145,7 +147,7 @@ const allToolsByName = new Map<string, Tool>([
     globTool, grepTool, gitTool, askUserTool,
     completeCriterionTool, passCriterionTool, failCriterionTool,
     getCriteriaTool, addCriterionTool, updateCriterionTool, removeCriterionTool,
-    todoWriteTool, callSubAgentTool, loadSkillTool, returnValueTool,
+    todoWriteTool, callSubAgentTool, loadSkillTool, returnValueTool, webFetchTool,
   ].map(t => [t.name, t] as const),
 ])
 

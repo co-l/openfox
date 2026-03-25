@@ -18,6 +18,7 @@ const {
   removeCriterionExecuteMock,
   todoExecuteMock,
   loadSkillExecuteMock,
+  webFetchExecuteMock,
 } = vi.hoisted(() => ({
   readExecuteMock: vi.fn(async () => ({ success: true, output: 'read', durationMs: 1, truncated: false })),
   writeExecuteMock: vi.fn(async () => ({ success: true, output: 'write', durationMs: 1, truncated: false })),
@@ -36,6 +37,7 @@ const {
   removeCriterionExecuteMock: vi.fn(async () => ({ success: true, output: 'remove criterion', durationMs: 1, truncated: false })),
   todoExecuteMock: vi.fn(async () => ({ success: true, output: 'todo', durationMs: 1, truncated: false })),
   loadSkillExecuteMock: vi.fn(async () => ({ success: true, output: 'skill', durationMs: 1, truncated: false })),
+  webFetchExecuteMock: vi.fn(async () => ({ success: true, output: 'web_fetch', durationMs: 1, truncated: false })),
 }))
 
 vi.mock('./read.js', () => ({ readFileTool: { name: 'read_file', definition: { type: 'function', function: { name: 'read_file', description: 'Read', parameters: {} } }, execute: readExecuteMock } }))
@@ -72,6 +74,9 @@ vi.mock('./todo.js', () => ({
 vi.mock('./load-skill.js', () => ({
   loadSkillTool: { name: 'load_skill', definition: { type: 'function', function: { name: 'load_skill', description: 'Load Skill', parameters: {} } }, execute: loadSkillExecuteMock },
 }))
+vi.mock('./web-fetch.js', () => ({
+  webFetchTool: { name: 'web_fetch', definition: { type: 'function', function: { name: 'web_fetch', description: 'Web Fetch', parameters: {} } }, execute: webFetchExecuteMock },
+}))
 
 import { AskUserInterrupt } from './ask.js'
 import { PathAccessDeniedError } from './path-security.js'
@@ -80,13 +85,13 @@ import { createToolRegistry, getToolRegistryForMode } from './index.js'
 describe('tool registries', () => {
   it('returns the correct tool sets for each mode', () => {
     expect(getToolRegistryForMode('planner').tools.map((tool) => tool.name)).toEqual([
-      'read_file', 'glob', 'grep', 'run_command', 'git', 'get_criteria', 'add_criterion', 'update_criterion', 'remove_criterion', 'call_sub_agent', 'load_skill',
+      'read_file', 'glob', 'grep', 'web_fetch', 'run_command', 'git', 'get_criteria', 'add_criterion', 'update_criterion', 'remove_criterion', 'call_sub_agent', 'load_skill',
     ])
     expect(getToolRegistryForMode('builder').tools.map((tool) => tool.name)).toEqual([
-      'read_file', 'glob', 'grep', 'write_file', 'edit_file', 'run_command', 'ask_user', 'complete_criterion', 'get_criteria', 'todo_write', 'call_sub_agent', 'load_skill',
+      'read_file', 'glob', 'grep', 'web_fetch', 'write_file', 'edit_file', 'run_command', 'ask_user', 'complete_criterion', 'get_criteria', 'todo_write', 'call_sub_agent', 'load_skill',
     ])
     expect(getToolRegistryForMode('verifier').tools.map((tool) => tool.name)).toEqual([
-      'read_file', 'glob', 'grep', 'run_command', 'pass_criterion', 'fail_criterion',
+      'read_file', 'glob', 'grep', 'web_fetch', 'run_command', 'pass_criterion', 'fail_criterion',
     ])
     expect(createToolRegistry()).toBe(getToolRegistryForMode('builder'))
   })

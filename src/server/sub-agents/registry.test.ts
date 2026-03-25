@@ -15,7 +15,7 @@ describe('SubAgentRegistry', () => {
     expect(verifier?.name).toBe('Verifier')
     expect(typeof verifier?.description).toBe('string')
     expect(typeof verifier?.systemPrompt).toBe('string')
-    expect(verifier?.tools).toEqual(['read_file', 'run_command', 'pass_criterion', 'fail_criterion'])
+    expect(verifier?.tools).toEqual(['read_file', 'run_command', 'pass_criterion', 'fail_criterion', 'web_fetch'])
     expect(typeof verifier?.createContext).toBe('function')
   })
 
@@ -28,7 +28,7 @@ describe('SubAgentRegistry', () => {
     expect(codeReviewer?.name).toBe('Code Reviewer')
     expect(typeof codeReviewer?.description).toBe('string')
     expect(typeof codeReviewer?.systemPrompt).toBe('string')
-    expect(codeReviewer?.tools).toEqual(['read_file', 'grep'])
+    expect(codeReviewer?.tools).toEqual(['read_file', 'grep', 'web_fetch'])
     expect(typeof codeReviewer?.createContext).toBe('function')
   })
 
@@ -41,7 +41,7 @@ describe('SubAgentRegistry', () => {
     expect(testGenerator?.name).toBe('Test Generator')
     expect(typeof testGenerator?.description).toBe('string')
     expect(typeof testGenerator?.systemPrompt).toBe('string')
-    expect(testGenerator?.tools).toEqual(['read_file', 'write_file', 'run_command'])
+    expect(testGenerator?.tools).toEqual(['read_file', 'write_file', 'run_command', 'web_fetch'])
     expect(typeof testGenerator?.createContext).toBe('function')
   })
 
@@ -54,7 +54,7 @@ describe('SubAgentRegistry', () => {
     expect(debuggerAgent?.name).toBe('Debugger')
     expect(typeof debuggerAgent?.description).toBe('string')
     expect(typeof debuggerAgent?.systemPrompt).toBe('string')
-    expect(debuggerAgent?.tools).toEqual(['read_file', 'run_command', 'grep'])
+    expect(debuggerAgent?.tools).toEqual(['read_file', 'run_command', 'grep', 'web_fetch'])
     expect(typeof debuggerAgent?.createContext).toBe('function')
   })
 

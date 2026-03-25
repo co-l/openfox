@@ -47,4 +47,7 @@ export const OUTPUT_LIMITS = {
   grep: {
     maxMatches: 200,
   },
+  web_fetch: {
+    maxBytes: 100_000,
+  },
 }

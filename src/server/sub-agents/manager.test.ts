@@ -97,23 +97,27 @@ describe('SubAgentManager', () => {
       'run_command',
       'pass_criterion',
       'fail_criterion',
+      'web_fetch',
     ])
-    
+
     expect(registry.getToolRegistry('code_reviewer')).toEqual([
       'read_file',
       'grep',
+      'web_fetch',
     ])
-    
+
     expect(registry.getToolRegistry('test_generator')).toEqual([
       'read_file',
       'write_file',
       'run_command',
+      'web_fetch',
     ])
-    
+
     expect(registry.getToolRegistry('debugger')).toEqual([
       'read_file',
       'run_command',
       'grep',
+      'web_fetch',
     ])
   })
 })
