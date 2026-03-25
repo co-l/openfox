@@ -1,5 +1,5 @@
 import { useMemo } from 'react'
-import { buildSparklineChart } from '../../../../src/shared/sparkline.js'
+import { buildSparklineChart } from '@shared/sparkline.js'
 
 interface DataPoint {
   x: number

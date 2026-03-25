@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import type { Attachment } from '../../../../src/shared/types.js'
+import type { Attachment } from '@shared/types.js'
 import { ImageModal } from './ImageModal'
 
 interface MessageAttachmentsProps {

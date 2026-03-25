@@ -1,4 +1,4 @@
-import type { Attachment } from '../../../../src/shared/types.js'
+import type { Attachment } from '@shared/types.js'
 
 interface AttachmentPreviewProps {
   attachment: Attachment

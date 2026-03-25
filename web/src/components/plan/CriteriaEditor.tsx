@@ -1,4 +1,4 @@
-import type { Criterion } from '../../../src/shared/types.js'
+import type { Criterion } from '@shared/types.js'
 
 interface CriteriaEditorProps {
   criteria: Criterion[]

@@ -702,11 +702,11 @@ describe('useSessionStore session isolation', () => {
     const result = useSessionStore.getState().sessions
 
     // Verify recentUserPrompts are preserved
-    expect(result[0].recentUserPrompts).toEqual([
+    expect(result[0]!.recentUserPrompts).toEqual([
       { id: 'msg-1', content: 'First prompt', timestamp: '2024-01-01T10:00:00.000Z' },
       { id: 'msg-2', content: 'Second prompt', timestamp: '2024-01-01T11:00:00.000Z' },
     ])
-    expect(result[1].recentUserPrompts).toEqual([
+    expect(result[1]!.recentUserPrompts).toEqual([
       { id: 'msg-3', content: 'Third prompt', timestamp: '2024-01-02T12:00:00.000Z' },
     ])
   })

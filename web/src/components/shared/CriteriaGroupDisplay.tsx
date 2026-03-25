@@ -1,5 +1,5 @@
 import { memo } from 'react'
-import type { ToolCall, Criterion } from '../../../src/shared/types.js'
+import type { ToolCall, Criterion } from '@shared/types.js'
 
 interface CriteriaGroupDisplayProps {
   toolCalls: ToolCall[]

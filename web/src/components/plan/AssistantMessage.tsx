@@ -1,6 +1,6 @@
 import { memo } from 'react'
 // @ts-ignore
-import type { Message, MessageSegment, ToolCall, PreparingToolCall } from '../../../src/shared/types.js'
+import type { Message, MessageSegment, ToolCall, PreparingToolCall } from '@shared/types.js'
 import { Markdown } from '../shared/Markdown'
 import { ThinkingBlock } from '../shared/ThinkingBlock'
 import { ToolCallDisplay } from '../shared/ToolCallDisplay'

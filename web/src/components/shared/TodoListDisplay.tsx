@@ -1,5 +1,5 @@
 import { memo } from 'react'
-import type { Todo } from '../../../src/shared/types.js'
+import type { Todo } from '@shared/types.js'
 
 interface TodoListDisplayProps {
   todos: Todo[]

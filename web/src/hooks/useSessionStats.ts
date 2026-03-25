@@ -1,6 +1,6 @@
 import { useMemo } from 'react'
-import { computeSessionStats } from '../../../src/shared/stats.js'
-import type { Message, SessionStats } from '../../../src/shared/types.js'
+import { computeSessionStats } from '@shared/stats.js'
+import type { Message, SessionStats } from '@shared/types.js'
 
 /**
  * Hook to compute aggregated session stats from messages.

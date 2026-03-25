@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import type { ServerMessage, SettingsValuePayload } from '../../../src/shared/protocol.js'
+import type { ServerMessage, SettingsValuePayload } from '@shared/protocol.js'
 import { wsClient } from '../lib/ws'
 
 // Well-known settings keys (should match server's SETTINGS_KEYS)

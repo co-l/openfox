@@ -1,5 +1,5 @@
 import { memo } from 'react'
-import type { Message, PromptContext } from '../../../src/shared/types.js'
+import type { Message, PromptContext } from '@shared/types.js'
 import { Markdown } from '../shared/Markdown'
 import { AssistantMessage } from './AssistantMessage'
 import { MessageAttachments } from '../shared/MessageAttachments.js'

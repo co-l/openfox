@@ -65,19 +65,19 @@ class MockFileReader {
 describe('Image Compression', () => {
   beforeAll(() => {
     // Mock global objects
-    ;(global as any).Image = MockImage
-    ;(global as any).HTMLImageElement = MockImage
-    ;(global as any).FileReader = MockFileReader
-    ;(global as any).document = {
+    ;(globalThis as any).Image = MockImage
+    ;(globalThis as any).HTMLImageElement = MockImage
+    ;(globalThis as any).FileReader = MockFileReader
+    ;(globalThis as any).document = {
       createElement: () => new MockCanvas(),
     }
   })
 
   afterEach(() => {
-    ;(global as any).Image = MockImage
-    ;(global as any).HTMLImageElement = MockImage
-    ;(global as any).FileReader = MockFileReader
-    ;(global as any).document = {
+    ;(globalThis as any).Image = MockImage
+    ;(globalThis as any).HTMLImageElement = MockImage
+    ;(globalThis as any).FileReader = MockFileReader
+    ;(globalThis as any).document = {
       createElement: () => new MockCanvas(),
     }
   })
@@ -142,7 +142,7 @@ describe('Image Compression', () => {
     })
 
     it('fails clearly when browser image APIs are unavailable', async () => {
-      ;(global as any).FileReader = undefined
+      ;(globalThis as any).FileReader = undefined
 
       const pngFile = new File(['png data'], 'test.png', { type: 'image/png' })
 

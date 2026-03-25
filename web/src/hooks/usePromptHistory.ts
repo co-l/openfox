@@ -1,5 +1,5 @@
 import { useState, useCallback, useMemo } from 'react'
-import type { Message, SessionSummary } from '../../../src/shared/types.js'
+import type { Message, SessionSummary } from '@shared/types.js'
 import { 
   formatTimestampLocal as formatTimestamp,
   trimContent

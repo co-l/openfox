@@ -1,4 +1,4 @@
-import type { SessionMode } from '../../../src/shared/types.js'
+import type { SessionMode } from '@shared/types.js'
 import { useSessionStore, useIsRunning } from '../../stores/session'
 
 const modes: { mode: SessionMode; label: string; activeClass: string }[] = [

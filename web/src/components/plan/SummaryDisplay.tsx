@@ -5,7 +5,7 @@ import { useSessionStore } from '../../stores/session'
 import { formatTime, formatSpeed } from '../../lib/format-stats'
 import { StatsModal } from './StatsModal'
 import { CriteriaProgressSummary } from '../shared/CriteriaProgressSummary'
-import type { Message } from '../../../src/shared/types.js'
+import type { Message } from '@shared/types.js'
 
 interface SummaryDisplayProps {
   summary: string | null

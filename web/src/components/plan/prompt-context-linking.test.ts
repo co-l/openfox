@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import type { Message, PromptContext } from '../../../../src/shared/types.js'
+import type { Message, PromptContext } from '@shared/types.js'
 import { buildPromptContextByUserMessageId } from './prompt-context-linking.js'
 
 const promptContext: PromptContext = {
@@ -8,7 +8,7 @@ const promptContext: PromptContext = {
   userMessage: 'Ship it',
   messages: [{ role: 'user', content: 'Ship it', source: 'history' }],
   tools: [],
-  requestOptions: { toolChoice: 'auto', enableThinking: true },
+  requestOptions: { toolChoice: 'auto', disableThinking: false },
 }
 
 function createMessage(partial: Partial<Message> & Pick<Message, 'id' | 'role' | 'content'>): Message {

@@ -1,5 +1,5 @@
 import { memo, useState } from 'react'
-import type { Diagnostic, EditContextRegion } from '../../../src/shared/types.js'
+import type { Diagnostic, EditContextRegion } from '@shared/types.js'
 import { ToolIcon } from './ToolIcon'
 import { DiffView, FilePreview, EditContextView, ReadFileView } from './DiffView'
 import { DiagnosticsView } from './DiagnosticsView'

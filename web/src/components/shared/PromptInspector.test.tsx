@@ -29,7 +29,7 @@ describe('PromptInspector', () => {
             { role: 'user', content: 'Runtime state', source: 'runtime' },
           ],
           tools: [{ name: 'read_file', description: 'Read a file', parameters: { path: { type: 'string' } } }],
-          requestOptions: { toolChoice: 'auto', enableThinking: true },
+          requestOptions: { toolChoice: 'auto', disableThinking: false },
         }}
       />,
     )

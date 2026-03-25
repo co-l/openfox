@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { groupMessages } from './groupMessages'
-import type { Message } from '../../../../src/shared/types.js'
+import type { Message } from '@shared/types.js'
 
 // Helper to create test messages
 function createMessage(

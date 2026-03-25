@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import type { InjectedFile, PromptContext, PromptContextMessage, PromptContextTool } from '../../../src/shared/types.js'
+import type { InjectedFile, PromptContext, PromptContextMessage, PromptContextTool } from '@shared/types.js'
 import { Modal } from './Modal'
 
 interface PromptInspectorProps {

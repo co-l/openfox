@@ -8,11 +8,8 @@ import type {
   Criterion,
   Message,
   Todo,
-  ValidationResult,
   Diagnostic,
-  ToolCall,
   ToolResult,
-  CriterionStatus,
   ContextState,
   Attachment,
 } from './types.js'

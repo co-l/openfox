@@ -1,7 +1,7 @@
 import { memo, useMemo, useState } from 'react'
 import { CodeHighlight, getLanguageFromPath } from './CodeHighlight'
 export { getLanguageFromPath, wrappedCodeStyle, oneDarkTransparent } from './CodeHighlight'
-import type { EditContextRegion } from '../../../src/shared/types.js'
+import type { EditContextRegion } from '@shared/types.js'
 import { ImageModal } from './ImageModal'
 
 interface DiffViewProps {

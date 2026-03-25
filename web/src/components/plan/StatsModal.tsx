@@ -1,8 +1,8 @@
 import { Fragment, useRef, useCallback, useEffect, useMemo, useState } from 'react'
 import { Modal } from '../shared/Modal'
 import { DualSparkline } from '../shared/Sparkline'
-import { buildPerformanceChartData, buildResponseLogRows, type ResponseLogRow } from '../../../../src/shared/stats-view.js'
-import type { CallStatsDataPoint, ModelSessionStats, SessionStats } from '../../../../src/shared/types.js'
+import { buildPerformanceChartData, buildResponseLogRows, type ResponseLogRow } from '@shared/stats-view.js'
+import type { CallStatsDataPoint, ModelSessionStats, SessionStats } from '@shared/types.js'
 
 interface StatsModalProps {
   isOpen: boolean

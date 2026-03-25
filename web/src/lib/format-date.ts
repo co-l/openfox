@@ -1,4 +1,4 @@
-import type { SessionSummary } from '../../../src/shared/types.js'
+import type { SessionSummary } from '@shared/types.js'
 
 /**
  * Format a date string to "Dayname YYYY/MM/DD" format

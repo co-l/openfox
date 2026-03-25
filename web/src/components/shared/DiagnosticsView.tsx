@@ -1,5 +1,5 @@
 import { memo } from 'react'
-import type { Diagnostic } from '../../../src/shared/types.js'
+import type { Diagnostic } from '@shared/types.js'
 
 interface DiagnosticsViewProps {
   diagnostics: Diagnostic[]

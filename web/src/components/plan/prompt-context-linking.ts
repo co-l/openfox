@@ -1,4 +1,4 @@
-import type { Message, PromptContext } from '../../../../src/shared/types.js'
+import type { Message, PromptContext } from '@shared/types.js'
 
 export function buildPromptContextByUserMessageId(messages: Message[]): Record<string, PromptContext> {
   const promptContextByUserMessageId: Record<string, PromptContext> = {}

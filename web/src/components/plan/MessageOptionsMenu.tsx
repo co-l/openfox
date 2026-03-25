@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import type { PromptContext } from '../../../src/shared/types.js'
+import type { PromptContext } from '@shared/types.js'
 import { PromptInspector } from '../shared/PromptInspector'
 
 interface MessageOptionsMenuProps {

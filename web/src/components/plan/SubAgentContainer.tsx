@@ -1,5 +1,5 @@
 import { memo, useRef, useEffect, useState, useCallback } from 'react'
-import type { Message } from '../../../src/shared/types.js'
+import type { Message } from '@shared/types.js'
 import { AssistantMessage } from './AssistantMessage'
 import { ChatMessage } from './ChatMessage'
 

@@ -1,6 +1,12 @@
 import { defineConfig } from 'vitest/config'
+import path from 'path'
 
 export default defineConfig({
+  resolve: {
+    alias: {
+      '@shared': path.resolve(import.meta.dirname, 'src/shared'),
+    },
+  },
   test: {
     include: ['src/**/*.test.ts', 'web/src/**/*.test.ts', 'web/src/**/*.test.tsx'],
     exclude: ['e2e/**', 'node_modules/**'],

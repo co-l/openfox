@@ -8,6 +8,7 @@ export default defineConfig({
   resolve: {
     alias: {
       '@': path.resolve(__dirname, './src'),
+      '@shared': path.resolve(__dirname, '../src/shared'),
     },
   },
   root: path.resolve(__dirname),  // Use web/ directory as root

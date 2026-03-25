@@ -1,5 +1,5 @@
-import type { ClientMessage, ServerMessage, ClientMessageType } from '../../../src/shared/protocol.js'
-import { isServerMessage } from '../../../src/shared/protocol.js'
+import type { ClientMessage, ServerMessage, ClientMessageType } from '@shared/protocol.js'
+import { isServerMessage } from '@shared/protocol.js'
 import { generateUUID } from './uuid.js'
 
 export type ConnectionStatus = 'connected' | 'disconnected' | 'reconnecting'

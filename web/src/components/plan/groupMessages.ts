@@ -1,40 +1,6 @@
-// Minimal type definitions for testing
-// In production, these would come from '../../../src/shared/types.js'
-export interface ToolCall {
-  id: string
-  name: string
-  arguments: Record<string, unknown>
-  startedAt?: number
-  result?: {
-    success: boolean
-    output?: string
-    error?: string
-  }
-  streamingOutput?: Array<{ stream: 'stdout' | 'stderr'; content: string }>
-}
+import type { Message, ToolCall } from '@shared/types.js'
 
-export interface Message {
-  id: string
-  role: 'user' | 'assistant' | 'system' | 'tool'
-  content: string
-  thinkingContent?: string
-  timestamp: string
-  isStreaming?: boolean
-  isCompacted?: boolean
-  isSystemGenerated?: boolean
-  messageKind?: 'correction' | 'auto-prompt' | 'context-reset'
-  toolName?: string
-  subAgentId?: string
-  subAgentType?: string
-  toolCalls?: ToolCall[]
-  preparingToolCalls?: Array<{ index: number; name: string }>
-  segments?: Array<{ type: 'text' | 'thinking' | 'tool_call'; content?: string; toolCallId?: string }>
-  contextWindowId?: string
-  attachments?: Array<{ id: string; filename: string; mimeType: string; size: number; data: string }>
-  stats?: unknown
-  partial?: boolean
-  promptContext?: unknown
-}
+export type { Message, ToolCall }
 
 // Display item: either a single message, a grouped sub-agent run, criteria batch, or a context window divider
 export type DisplayItem = 

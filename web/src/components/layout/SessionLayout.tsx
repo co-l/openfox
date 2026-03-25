@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react'
 import { useSessionStore } from '../../stores/session'
 import { SummaryDisplay } from '../plan/SummaryDisplay'
-import type { Message } from '../../../src/shared/types.js'
+import type { Message } from '@shared/types.js'
 
 interface SessionLayoutProps {
   children: ReactNode

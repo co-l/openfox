@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { useLocation } from 'wouter'
 import { useSessionStore } from '../../stores/session'
 import { useProjectStore } from '../../stores/project'
-import type { SessionSummary } from '../../../src/shared/types.js'
+import type { SessionSummary } from '@shared/types.js'
 import { Button } from '../shared/Button'
 import { ProjectSettingsModal } from '../settings/ProjectSettingsModal'
 import { DropdownMenu } from '../shared/DropdownMenu'
@@ -208,7 +208,7 @@ function renderSessionGroups(
                   items={[
                     {
                       label: 'Delete session',
-                      onClick: (e: React.MouseEvent) => handleDeleteSession(session.id, e),
+                      onClick: (e?: React.MouseEvent) => handleDeleteSession(session.id, e),
                       danger: true,
                     },
                   ]}

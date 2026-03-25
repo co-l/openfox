@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react'
-import type { PromptHistoryItem } from '../hooks/usePromptHistory'
+import type { PromptHistoryItem } from '../../hooks/usePromptHistory'
 
 interface PromptHistoryListProps {
   history: PromptHistoryItem[]

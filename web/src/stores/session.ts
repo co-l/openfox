@@ -8,7 +8,7 @@ import type {
   Message,
   ContextState,
   Attachment,
-} from '../../../src/shared/types.js'
+} from '@shared/types.js'
 import type {
   ServerMessage,
   SessionStatePayload,
@@ -33,7 +33,7 @@ import type {
   PhaseChangedPayload,
   CriteriaUpdatedPayload,
   ContextStatePayload,
-} from '../../../src/shared/protocol.js'
+} from '@shared/protocol.js'
 import { wsClient, type ConnectionStatus } from '../lib/ws'
 import { useConfigStore } from './config'
 import { playNotification, playAchievement, playIntervention, playWaitingForUser } from '../lib/sound'

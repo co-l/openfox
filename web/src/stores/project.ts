@@ -1,10 +1,10 @@
 import { create } from 'zustand'
-import type { Project } from '../../../src/shared/types.js'
+import type { Project } from '@shared/types.js'
 import type {
   ServerMessage,
   ProjectStatePayload,
   ProjectListPayload,
-} from '../../../src/shared/protocol.js'
+} from '@shared/protocol.js'
 import { wsClient } from '../lib/ws'
 
 interface ProjectState {

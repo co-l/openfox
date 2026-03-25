@@ -1,4 +1,4 @@
-import type { Project } from '../../../src/shared/types.js'
+import type { Project } from '@shared/types.js'
 import { InstructionsModal } from './InstructionsModal'
 import { useProjectStore } from '../../stores/project'
 

@@ -1,5 +1,5 @@
 import { memo } from 'react'
-import type { Criterion } from '../../../src/shared/types.js'
+import type { Criterion } from '@shared/types.js'
 
 interface CriteriaProgressSummaryProps {
   criteria: Criterion[]
