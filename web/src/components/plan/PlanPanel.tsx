@@ -88,24 +88,34 @@ export function PlanPanel() {
   // Simple auto-scroll: stay pinned to bottom unless user scrolls up.
   // A MutationObserver on the scroller fires on every DOM change (new content,
   // streaming growth, Virtuoso layout). A scroll listener detects user intent.
+  // We use a flag to ignore scroll events caused by our own programmatic scrolls.
   useEffect(() => {
     const scroller = document.querySelector('[data-virtuoso-scroller]') as HTMLElement | null
     if (!scroller) return
 
     const THRESHOLD = 150
+    let programmaticScroll = false
 
     const isNearBottom = () =>
       scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight < THRESHOLD
 
-    // Scroll listener: track whether user is at the bottom
+    // Scroll listener: only update atBottom for user-initiated scrolls
     const onScroll = () => {
+      if (programmaticScroll) return
       atBottomRef.current = isNearBottom()
+    }
+
+    const scrollToBottom = () => {
+      programmaticScroll = true
+      scroller.scrollTop = scroller.scrollHeight
+      // Reset flag after the browser processes the scroll
+      requestAnimationFrame(() => { programmaticScroll = false })
     }
 
     // DOM observer: whenever content changes, scroll to bottom if pinned
     const observer = new MutationObserver(() => {
       if (atBottomRef.current) {
-        scroller.scrollTop = scroller.scrollHeight
+        scrollToBottom()
       }
     })
 
@@ -113,7 +123,7 @@ export function PlanPanel() {
     observer.observe(scroller, { childList: true, subtree: true, characterData: true })
 
     // Initial scroll to bottom
-    scroller.scrollTop = scroller.scrollHeight
+    scrollToBottom()
     atBottomRef.current = true
 
     return () => {
