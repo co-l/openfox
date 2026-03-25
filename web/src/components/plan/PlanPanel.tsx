@@ -85,52 +85,56 @@ export function PlanPanel() {
   // Use rawMessages (stable during streaming) since prompt context only depends on user messages
   const promptContextByUserMessageId = useMemo(() => buildPromptContextByUserMessageId(rawMessages), [rawMessages])
   
-  // Simple auto-scroll: stay pinned to bottom unless user scrolls up.
-  // A MutationObserver on the scroller fires on every DOM change (new content,
-  // streaming growth, Virtuoso layout). A scroll listener detects user intent.
-  // We use a flag to ignore scroll events caused by our own programmatic scrolls.
+  // Auto-scroll: track user scroll position via scroll listener on the Virtuoso scroller.
+  // Pinned to bottom by default; user scrolling up unpins.
   useEffect(() => {
     const scroller = document.querySelector('[data-virtuoso-scroller]') as HTMLElement | null
     if (!scroller) return
 
     const THRESHOLD = 150
-    let programmaticScroll = false
-
-    const isNearBottom = () =>
-      scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight < THRESHOLD
-
-    // Scroll listener: only update atBottom for user-initiated scrolls
     const onScroll = () => {
-      if (programmaticScroll) return
-      atBottomRef.current = isNearBottom()
+      atBottomRef.current =
+        scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight < THRESHOLD
     }
-
-    const scrollToBottom = () => {
-      programmaticScroll = true
-      scroller.scrollTop = scroller.scrollHeight
-      // Reset flag after the browser processes the scroll
-      requestAnimationFrame(() => { programmaticScroll = false })
-    }
-
-    // DOM observer: whenever content changes, scroll to bottom if pinned
-    const observer = new MutationObserver(() => {
-      if (atBottomRef.current) {
-        scrollToBottom()
-      }
-    })
 
     scroller.addEventListener('scroll', onScroll, { passive: true })
-    observer.observe(scroller, { childList: true, subtree: true, characterData: true })
 
-    // Initial scroll to bottom
+    // Initial load: use a one-shot MutationObserver to wait for Virtuoso to finish
+    // rendering, then scroll to bottom. Disconnects once settled (150ms no mutations)
+    // or after 3s safety timeout.
+    let settleTimer: ReturnType<typeof setTimeout> | null = null
+    const scrollToBottom = () => { scroller.scrollTop = scroller.scrollHeight }
+    const observer = new MutationObserver(() => {
+      if (settleTimer) clearTimeout(settleTimer)
+      settleTimer = setTimeout(() => {
+        scrollToBottom()
+        observer.disconnect()
+      }, 150)
+    })
+    observer.observe(scroller, { childList: true, subtree: true })
     scrollToBottom()
     atBottomRef.current = true
+    const safetyTimer = setTimeout(() => { scrollToBottom(); observer.disconnect() }, 3000)
 
     return () => {
       scroller.removeEventListener('scroll', onScroll)
       observer.disconnect()
+      if (settleTimer) clearTimeout(settleTimer)
+      clearTimeout(safetyTimer)
     }
   }, [session?.id])
+
+  // When content changes (streaming or new items), scroll to bottom if pinned.
+  // Depend on displayItems.length (not the array ref) to avoid firing on Virtuoso re-renders.
+  const displayItemsLength = displayItems.length
+  useEffect(() => {
+    if (!atBottomRef.current) return
+    const scroller = document.querySelector('[data-virtuoso-scroller]') as HTMLElement | null
+    if (!scroller) return
+    requestAnimationFrame(() => {
+      scroller.scrollTop = scroller.scrollHeight
+    })
+  }, [streamingMessage, displayItemsLength])
 
   // Auto-resize textarea based on content, up to 200px max
   const resizeTextarea = useCallback(() => {
