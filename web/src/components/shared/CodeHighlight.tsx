@@ -8,15 +8,15 @@ export const oneDarkTransparent: Record<string, any> = {
   'pre[class*="language-"]': {
     ...(oneDark['pre[class*="language-"]'] as Record<string, unknown>),
     background: 'transparent',
-    whiteSpace: 'pre-wrap !important' as any,
-    overflowWrap: 'break-word !important' as any,
-    overflowX: 'hidden !important' as any,
+    whiteSpace: 'pre-wrap',
+    overflowWrap: 'break-word',
+    overflowX: 'hidden',
   },
   'code[class*="language-"]': {
     ...(oneDark['code[class*="language-"]'] as Record<string, unknown>),
     background: 'transparent',
-    whiteSpace: 'pre-wrap !important' as any,
-    overflowWrap: 'break-word !important' as any,
+    whiteSpace: 'pre-wrap',
+    overflowWrap: 'break-word',
   },
 }
 
@@ -96,6 +96,8 @@ const codeStyle: React.CSSProperties = {
   fontSize: '0.875rem',    // 14px to match text-sm
   lineHeight: '1.5rem',    // 24px for consistent line alignment
   background: 'transparent',
+  whiteSpace: 'pre-wrap',
+  overflowWrap: 'break-word',
 }
 
 const inlineCodeStyle: React.CSSProperties = {
