@@ -701,9 +701,17 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
 function getHistoryProcessEntrypoint(): string {
   const currentFile = fileURLToPath(import.meta.url)
   const extension = currentFile.endsWith('.ts') ? 'ts' : 'js'
-  // __dirname is dist/ (chunks are bundled directly in dist/)
-  // So we resolve to dist/server/history/process-entry.{js,ts}
-  return resolve(__dirname, 'server', 'history', `process-entry.${extension}`)
+  
+  // Detect if we're in dev mode (src/) or prod mode (dist/)
+  const isDevMode = currentFile.includes('/src/')
+  
+  if (isDevMode) {
+    // In dev mode, __dirname is src/server/, so resolve directly
+    return resolve(__dirname, 'history', `process-entry.${extension}`)
+  } else {
+    // In prod mode, chunks are in dist/, so we need to go into dist/server/history/
+    return resolve(__dirname, 'server', 'history', `process-entry.${extension}`)
+  }
 }
 
 /**
