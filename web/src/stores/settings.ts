@@ -5,6 +5,7 @@ import { wsClient } from '../lib/ws'
 // Well-known settings keys (should match server's SETTINGS_KEYS)
 export const SETTINGS_KEYS = {
   GLOBAL_INSTRUCTIONS: 'global_instructions',
+  NOTIFICATION_SETTINGS: 'notification_settings',
 } as const
 
 interface SettingsState {

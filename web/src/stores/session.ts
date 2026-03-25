@@ -39,6 +39,7 @@ import type {
 import { wsClient, type ConnectionStatus } from '../lib/ws'
 import { useConfigStore } from './config'
 import { playNotification, playAchievement, playIntervention, playWaitingForUser } from '../lib/sound'
+import type { AgentType } from './notifications'
 
 // Track subscription to prevent duplicates
 let isSubscribed = false
@@ -251,14 +252,26 @@ function getKnownPhase(state: SessionState, sessionId: string): SessionSummary['
   return state.sessions.find(session => session.id === sessionId)?.phase ?? null
 }
 
+function resolveAgentType(state: SessionState, sessionId?: string): AgentType | undefined {
+  const session = sessionId === state.currentSession?.id
+    ? state.currentSession
+    : null
+  const summary = state.sessions.find(s => s.id === sessionId)
+  const mode = session?.mode ?? summary?.mode
+  if (mode === 'planner') return 'planner'
+  if (mode === 'builder') return 'build'
+  return undefined
+}
+
 function handleGlobalSoundEffects(message: ServerMessage, state: SessionState): void {
   if (message.type === 'chat.done') {
     const payload = message.payload as ChatDonePayload
+    const agent = resolveAgentType(state, message.sessionId)
     if (payload.reason === 'complete') {
-      playNotification()
+      playNotification(agent)
     }
     if (payload.reason === 'waiting_for_user') {
-      playWaitingForUser()
+      playWaitingForUser(agent)
     }
     return
   }
@@ -270,11 +283,12 @@ function handleGlobalSoundEffects(message: ServerMessage, state: SessionState): 
       return
     }
 
+    const agent = resolveAgentType(state, message.sessionId)
     if (payload.phase === 'done') {
-      playAchievement()
+      playAchievement(agent)
     }
     if (payload.phase === 'blocked') {
-      playIntervention()
+      playIntervention(agent)
     }
   }
 }

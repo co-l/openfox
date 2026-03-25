@@ -1,31 +1,85 @@
-const notificationSound = new Audio('/sounds/notification.mp3')
-notificationSound.volume = 0.5
+import {
+  useNotificationSettingsStore,
+  resolveEventConfig,
+  DEFAULT_SOUNDS,
+  type SoundEvent,
+  type AgentType,
+} from '../stores/notifications'
 
-const achievementSound = new Audio('/sounds/achievement.mp3')
-achievementSound.volume = 0.6
+// Audio cache: keyed by URL so custom sounds are also cached
+const audioCache = new Map<string, HTMLAudioElement>()
 
-const interventionSound = new Audio('/sounds/intervention.mp3')
-interventionSound.volume = 0.6
-
-const waitingForUserSound = new Audio('/sounds/waiting-for-user.mp3')
-waitingForUserSound.volume = 0.6
-
-export const playNotification = () => {
-  notificationSound.currentTime = 0
-  notificationSound.play().catch(() => {}) // Ignore autoplay errors
+function getAudio(url: string): HTMLAudioElement {
+  let audio = audioCache.get(url)
+  if (!audio) {
+    audio = new Audio(url)
+    audio.volume = 0.5
+    audioCache.set(url, audio)
+  }
+  return audio
 }
 
-export const playAchievement = () => {
-  achievementSound.currentTime = 0
-  achievementSound.play().catch(() => {}) // Ignore autoplay errors
+// Browser notification permission state
+let notificationPermission: NotificationPermission = typeof Notification !== 'undefined'
+  ? Notification.permission
+  : 'denied'
+
+export function requestNotificationPermission(): Promise<NotificationPermission> {
+  if (typeof Notification === 'undefined') return Promise.resolve('denied')
+  return Notification.requestPermission().then(perm => {
+    notificationPermission = perm
+    return perm
+  })
 }
 
-export const playIntervention = () => {
-  interventionSound.currentTime = 0
-  interventionSound.play().catch(() => {}) // Ignore autoplay errors
+const NOTIFICATION_TITLES: Record<SoundEvent, string> = {
+  complete: 'Task Complete',
+  waiting_for_user: 'Waiting for Input',
+  phase_done: 'Phase Complete',
+  phase_blocked: 'Phase Blocked',
 }
 
-export const playWaitingForUser = () => {
-  waitingForUserSound.currentTime = 0
-  waitingForUserSound.play().catch(() => {}) // Ignore autoplay errors
+const NOTIFICATION_BODIES: Record<SoundEvent, string> = {
+  complete: 'The agent has finished its work.',
+  waiting_for_user: 'The agent needs your input to continue.',
+  phase_done: 'The build phase completed successfully.',
+  phase_blocked: 'The build phase is blocked and needs intervention.',
 }
+
+function sendBrowserNotification(event: SoundEvent) {
+  if (typeof Notification === 'undefined') return
+  if (notificationPermission !== 'granted') return
+  if (document.hasFocus()) return // Don't notify if the window is focused
+
+  new Notification(NOTIFICATION_TITLES[event], {
+    body: NOTIFICATION_BODIES[event],
+    icon: '/fox.svg',
+    tag: `openfox-${event}`, // Prevents duplicate notifications
+  })
+}
+
+function playEvent(event: SoundEvent, agent?: AgentType) {
+  const { settings } = useNotificationSettingsStore.getState()
+
+  // Master sound toggle
+  const eventConfig = resolveEventConfig(settings, event, agent)
+
+  // Play sound if enabled
+  if (settings.soundEnabled && eventConfig.soundEnabled) {
+    const soundUrl = eventConfig.customSoundUrl ?? DEFAULT_SOUNDS[event]
+    const audio = getAudio(soundUrl)
+    audio.currentTime = 0
+    audio.play().catch(() => {}) // Ignore autoplay errors
+  }
+
+  // Browser notification if enabled
+  if (settings.browserNotificationEnabled && eventConfig.browserNotification) {
+    sendBrowserNotification(event)
+  }
+}
+
+// Public API — same function names for backward compat, but now accept optional agent
+export const playNotification = (agent?: AgentType) => playEvent('complete', agent)
+export const playAchievement = (agent?: AgentType) => playEvent('phase_done', agent)
+export const playIntervention = (agent?: AgentType) => playEvent('phase_blocked', agent)
+export const playWaitingForUser = (agent?: AgentType) => playEvent('waiting_for_user', agent)

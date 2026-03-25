@@ -1,13 +1,60 @@
-import { useEffect } from 'react'
-import { InstructionsModal } from './InstructionsModal'
+import { useState, useEffect } from 'react'
+import { Modal } from '../shared/Modal'
+import { Button } from '../shared/Button'
 import { useSettingsStore, SETTINGS_KEYS } from '../../stores/settings'
+import { NotificationSettings } from './NotificationSettings'
 
 interface GlobalSettingsModalProps {
   isOpen: boolean
   onClose: () => void
 }
 
+type Tab = 'instructions' | 'notifications'
+
 export function GlobalSettingsModal({ isOpen, onClose }: GlobalSettingsModalProps) {
+  const [activeTab, setActiveTab] = useState<Tab>('instructions')
+
+  return (
+    <Modal isOpen={isOpen} onClose={onClose} title="Global Settings" size="lg">
+      <div className="flex flex-col h-full">
+        {/* Tab bar */}
+        <div className="flex border-b border-border mb-4 -mt-1">
+          <TabButton
+            label="Instructions"
+            active={activeTab === 'instructions'}
+            onClick={() => setActiveTab('instructions')}
+          />
+          <TabButton
+            label="Notifications"
+            active={activeTab === 'notifications'}
+            onClick={() => setActiveTab('notifications')}
+          />
+        </div>
+
+        {/* Tab content */}
+        {activeTab === 'instructions' && <InstructionsTab isOpen={isOpen} onClose={onClose} />}
+        {activeTab === 'notifications' && <NotificationSettings />}
+      </div>
+    </Modal>
+  )
+}
+
+function TabButton({ label, active, onClick }: { label: string; active: boolean; onClick: () => void }) {
+  return (
+    <button
+      onClick={onClick}
+      className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
+        active
+          ? 'border-accent-primary text-accent-primary'
+          : 'border-transparent text-text-muted hover:text-text-secondary hover:border-border'
+      }`}
+    >
+      {label}
+    </button>
+  )
+}
+
+function InstructionsTab({ isOpen, onClose }: { isOpen: boolean; onClose: () => void }) {
   const settings = useSettingsStore(state => state.settings)
   const loading = useSettingsStore(state => state.loading)
   const getSetting = useSettingsStore(state => state.getSetting)
@@ -16,28 +63,61 @@ export function GlobalSettingsModal({ isOpen, onClose }: GlobalSettingsModalProp
   const globalInstructions = settings[SETTINGS_KEYS.GLOBAL_INSTRUCTIONS] ?? ''
   const isLoading = loading[SETTINGS_KEYS.GLOBAL_INSTRUCTIONS] ?? false
 
-  // Fetch current value when modal opens
+  const [localValue, setLocalValue] = useState(globalInstructions)
+  const [isDirty, setIsDirty] = useState(false)
+  const [saving, setSaving] = useState(false)
+
   useEffect(() => {
     if (isOpen) {
       getSetting(SETTINGS_KEYS.GLOBAL_INSTRUCTIONS)
     }
   }, [isOpen, getSetting])
 
-  const handleSave = (value: string) => {
-    setSetting(SETTINGS_KEYS.GLOBAL_INSTRUCTIONS, value)
+  useEffect(() => {
+    setLocalValue(globalInstructions)
+    setIsDirty(false)
+  }, [globalInstructions])
+
+  const handleSave = async () => {
+    setSaving(true)
+    setSetting(SETTINGS_KEYS.GLOBAL_INSTRUCTIONS, localValue)
+    setSaving(false)
+    setIsDirty(false)
+    onClose()
   }
 
+  const isBusy = isLoading || saving
+
   return (
-    <InstructionsModal
-      isOpen={isOpen}
-      onClose={onClose}
-      title="Global Settings"
-      label="Global Instructions"
-      description="These instructions are injected into every prompt, regardless of project."
-      placeholder="Enter global instructions that apply to all projects..."
-      value={globalInstructions}
-      isLoading={isLoading}
-      onSave={handleSave}
-    />
+    <div className="space-y-4">
+      <div>
+        <label className="block text-sm font-medium text-text-primary mb-2">
+          Global Instructions
+        </label>
+        <p className="text-sm text-text-muted mb-2">
+          These instructions are injected into every prompt, regardless of project.
+        </p>
+        <textarea
+          value={localValue}
+          onChange={(e) => { setLocalValue(e.target.value); setIsDirty(true) }}
+          placeholder="Enter global instructions that apply to all projects..."
+          className="w-full h-64 px-3 py-2 bg-bg-tertiary border border-border rounded text-sm font-mono resize-none focus:outline-none focus:ring-1 focus:ring-accent-primary"
+          disabled={isBusy}
+        />
+      </div>
+
+      <div className="flex justify-end gap-2 pt-2 border-t border-border">
+        <Button variant="secondary" onClick={onClose}>
+          Cancel
+        </Button>
+        <Button
+          variant="primary"
+          onClick={handleSave}
+          disabled={!isDirty || isBusy}
+        >
+          {saving ? 'Saving...' : 'Save'}
+        </Button>
+      </div>
+    </div>
   )
 }
