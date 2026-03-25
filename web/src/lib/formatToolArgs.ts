@@ -33,6 +33,12 @@ export function formatToolArgs(tool: string, args: Record<string, unknown>): str
     return String(args.command ?? '')
   }
   
+  // Return value - show truncated content preview
+  if (tool === 'return_value') {
+    const content = String(args.content ?? '')
+    return content.length > 60 ? content.slice(0, 60) + '...' : content
+  }
+
   // Fallback: stringify with truncation
   const str = JSON.stringify(args)
   return str.length > 50 ? str.slice(0, 50) + '...' : str

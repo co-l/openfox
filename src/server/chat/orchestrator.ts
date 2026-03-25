@@ -693,6 +693,7 @@ export async function runBuilderTurn(
 export interface VerifierResult {
   allPassed: boolean
   failed: Array<{ id: string; reason: string }>
+  content?: string
 }
 
 /**
@@ -733,6 +734,7 @@ export async function runVerifierTurn(
   return {
     allPassed: result.allPassed ?? true,
     failed: result.failed ?? [],
+    content: result.content,
   }
 }
 

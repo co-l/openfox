@@ -42,7 +42,15 @@ function createEventStore() {
 
 function createSessionManager(criteria: Array<Record<string, unknown>>) {
   return {
-    requireSession: vi.fn(() => ({ criteria })),
+    requireSession: vi.fn(() => ({
+      criteria: criteria.map(c => ({
+        status: { type: 'passed' },
+        description: '',
+        attempts: [],
+        ...c,
+      })),
+      messages: [],
+    })),
     setPhase: vi.fn(),
   }
 }
@@ -55,6 +63,7 @@ describe('runner orchestrator', () => {
     getCurrentContextWindowIdMock.mockReturnValue(undefined)
     runBuilderTurnMock.mockReset()
     runVerifierTurnMock.mockReset()
+    runVerifierTurnMock.mockResolvedValue({ allPassed: true, failed: [] })
   })
 
   it('returns done immediately when all criteria pass', async () => {
@@ -70,7 +79,7 @@ describe('runner orchestrator', () => {
     })
 
     expect(sessionManager.setPhase).toHaveBeenCalledWith('session-1', 'done')
-    expect(eventStore.append).toHaveBeenCalledWith('session-1', { type: 'phase.changed', data: { phase: 'done' } })
+    expect(eventStore.append.mock.calls.some(([_, event]) => event.type === 'task.completed')).toBe(true)
     expect(result.finalAction).toEqual({ type: 'DONE', reason: 'All criteria passed' })
   })
 

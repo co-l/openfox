@@ -21,6 +21,17 @@ import { PathAccessDeniedError } from '../tools/path-security.js'
 import { logger } from '../utils/logger.js'
 
 // ============================================================================
+// Constants
+// ============================================================================
+
+const RETURN_VALUE_INSTRUCTION = `
+
+## RETURN VALUE
+As the very last thing you do, call \`return_value\` with a structured summary of your work. This is how your findings get passed back to the calling agent. Do not finish without calling return_value.`
+
+const RETURN_VALUE_NUDGE = 'You must call return_value with a summary of your findings before finishing. Call return_value now.'
+
+// ============================================================================
 // Types
 // ============================================================================
 
@@ -151,6 +162,8 @@ export async function executeSubAgent(options: SubAgentExecutionOptions): Promis
 
   let consecutiveEmptyStops = 0
   let finalContent = ''
+  let returnValueContent: string | null = null
+  let returnValueNudged = false
 
   for (;;) {
     if (signal?.aborted) {
@@ -194,10 +207,10 @@ export async function executeSubAgent(options: SubAgentExecutionOptions): Promis
           },
         }
 
-    // Stream LLM response
+    // Stream LLM response — append return_value instruction to all subagent prompts
     const streamGen = streamLLMPure({
       messageId: assistantMsgId,
-      systemPrompt: assembledRequest.systemPrompt,
+      systemPrompt: assembledRequest.systemPrompt + RETURN_VALUE_INSTRUCTION,
       llmClient,
       messages: assembledRequest.messages,
       tools: toolRegistry.definitions,
@@ -273,6 +286,26 @@ export async function executeSubAgent(options: SubAgentExecutionOptions): Promis
           }))
           eventStore.append(sessionId, { type: 'message.done', data: { messageId: stalledMsgId } })
         }
+      }
+
+      // Nudge once if return_value was never called
+      if (!returnValueContent && !returnValueNudged) {
+        returnValueNudged = true
+        const nudgeMsgId = crypto.randomUUID()
+        eventStore.append(sessionId, createMessageDoneEvent(assistantMsgId, {
+          segments: result.segments,
+          promptContext: assembledRequest.promptContext,
+        }))
+        eventStore.append(sessionId, createMessageStartEvent(nudgeMsgId, 'user', RETURN_VALUE_NUDGE, {
+          ...(currentWindowMessageOptions ?? {}),
+          isSystemGenerated: true,
+          messageKind: 'correction',
+          subAgentId,
+          subAgentType,
+        }))
+        eventStore.append(sessionId, { type: 'message.done', data: { messageId: nudgeMsgId } })
+        customMessages = [...customMessages, { role: 'user', content: RETURN_VALUE_NUDGE, source: 'runtime' }]
+        continue
       }
 
       const stats = turnMetrics.buildStats(statsIdentity, subAgentType as 'verifier')
@@ -359,6 +392,11 @@ export async function executeSubAgent(options: SubAgentExecutionOptions): Promis
       turnMetrics.addToolTime(toolResult.durationMs)
       eventStore.append(sessionId, createToolResultEvent(assistantMsgId, toolCall.id, toolResult))
 
+      // Capture return_value tool content
+      if (toolCall.name === 'return_value' && !toolCall.parseError) {
+        returnValueContent = (toolCall.arguments as Record<string, unknown>)['content'] as string
+      }
+
       // Add tool result to custom context
       customMessages.push({
         role: 'tool',
@@ -405,13 +443,13 @@ export async function executeSubAgent(options: SubAgentExecutionOptions): Promis
         reason: c.status.type === 'failed' ? c.status.reason : 'unknown',
       }))
     return {
-      content: finalContent,
+      content: returnValueContent ?? finalContent,
       allPassed: failed.length === 0 && remaining.length === 0,
       failed,
     }
   }
 
-  return { content: finalContent }
+  return { content: returnValueContent ?? finalContent }
 }
 
 // Backward-compatible factory (used by sub-agent.ts)

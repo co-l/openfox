@@ -4,6 +4,7 @@ import { ToolIcon } from './ToolIcon'
 import { DiffView, FilePreview, EditContextView, ReadFileView } from './DiffView'
 import { DiagnosticsView } from './DiagnosticsView'
 import { RunCommandView } from './RunCommandView'
+import { Markdown } from './Markdown'
 import { formatToolArgsFull, formatToolArgsWithMetadata } from '../../lib/formatToolArgs'
 
 type ToolStatus = 'pending' | 'success' | 'error' | 'interrupted'
@@ -72,7 +73,8 @@ export const ToolCallDisplay = memo(function ToolCallDisplay({
   const isFileOperation = tool === 'edit_file' || tool === 'write_file'
   const isRunningCommand = tool === 'run_command' && status === 'pending'
   const isReadFile = tool === 'read_file'
-  const [expanded, setExpanded] = useState(isFileOperation || isRunningCommand)
+  const isReturnValue = tool === 'return_value'
+  const [expanded, setExpanded] = useState(isFileOperation || isRunningCommand || isReturnValue)
   const config = statusConfig[status]
   
   // Compact variant - single line, no expansion
@@ -167,8 +169,27 @@ export const ToolCallDisplay = memo(function ToolCallDisplay({
             />
           )}
 
+          {/* Specialized rendering for return_value */}
+          {tool === 'return_value' && (() => {
+            // During streaming, show accumulated streaming output; when done, show final args
+            const streamedContent = streamingOutput?.map(c => c.content).join('') ?? ''
+            const displayContent = status === 'pending' && streamedContent
+              ? streamedContent
+              : String(args.content ?? '')
+            return (
+              <div>
+                <div className="text-[10px] text-accent-primary font-medium mb-1 uppercase tracking-wide">
+                  Sub-Agent Summary
+                </div>
+                <div className="text-xs prose prose-invert prose-sm max-w-none">
+                  <Markdown content={displayContent} />
+                </div>
+              </div>
+            )
+          })()}
+
           {/* Show arguments for other operations or errors */}
-          {tool !== 'edit_file' && tool !== 'write_file' && tool !== 'run_command' && tool !== 'read_file' && (
+          {tool !== 'edit_file' && tool !== 'write_file' && tool !== 'run_command' && tool !== 'read_file' && tool !== 'return_value' && (
             <>
               <div>
                 <div className="text-[10px] text-text-muted mb-0.5">Arguments:</div>

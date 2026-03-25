@@ -94,6 +94,9 @@ export async function* streamLLMPure(
   // Track tool call indices we've emitted preparing events for
   const seenToolIndices = new Set<number>()
   const toolNames = new Map<number, string>()
+  const toolIds = new Map<number, string>()
+  // Accumulate raw JSON arguments for return_value to extract content
+  const returnValueArgs = new Map<number, string>()
 
   let result: Awaited<ReturnType<typeof stream.next>>['value'] = null
   let aborted = false
@@ -130,10 +133,13 @@ export async function* streamLLMPure(
           break
 
         case 'tool_call_delta': {
-          // Accumulate tool name if provided
+          // Accumulate tool name and id if provided
           if (value.name) {
             const existingName = toolNames.get(value.index) ?? ''
             toolNames.set(value.index, existingName + value.name)
+          }
+          if (value.id) {
+            toolIds.set(value.index, value.id)
           }
 
           // Emit preparing event on first delta for this index (when we have a complete name)
@@ -143,6 +149,44 @@ export async function* streamLLMPure(
             yield {
               type: 'tool.preparing',
               data: { messageId, index: value.index, name: fullName },
+            }
+          }
+
+          // Stream return_value content fragments as tool.output for live display
+          if (fullName === 'return_value' && value.arguments) {
+            const toolCallId = toolIds.get(value.index)
+            if (toolCallId) {
+              const prevRaw = returnValueArgs.get(value.index) ?? ''
+              const newRaw = prevRaw + value.arguments
+              returnValueArgs.set(value.index, newRaw)
+
+              // Extract the "content" value from partial JSON: {"content":"...text..."}
+              // Find the start of the content string value
+              const contentStart = newRaw.indexOf('"content"')
+              if (contentStart >= 0) {
+                // Find the opening quote of the value (after "content":)
+                const colonPos = newRaw.indexOf(':', contentStart + 9)
+                if (colonPos >= 0) {
+                  const valueStart = newRaw.indexOf('"', colonPos + 1)
+                  if (valueStart >= 0) {
+                    // Everything after the opening quote (minus trailing `"}` if complete)
+                    const prevContent = prevRaw.length > valueStart + 1
+                      ? prevRaw.slice(valueStart + 1).replace(/"\s*\}\s*$/, '')
+                      : ''
+                    const currentContent = newRaw.slice(valueStart + 1).replace(/"\s*\}\s*$/, '')
+                    // Emit only the new delta
+                    const delta = currentContent.slice(prevContent.length)
+                    if (delta) {
+                      // Unescape JSON string escapes
+                      const unescaped = delta.replace(/\\n/g, '\n').replace(/\\t/g, '\t').replace(/\\"/g, '"').replace(/\\\\/g, '\\')
+                      yield {
+                        type: 'tool.output',
+                        data: { toolCallId, stream: 'stdout' as const, content: unescaped },
+                      }
+                    }
+                  }
+                }
+              }
             }
           }
           break

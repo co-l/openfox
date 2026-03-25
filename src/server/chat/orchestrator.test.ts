@@ -942,7 +942,7 @@ describe('chat orchestrator', () => {
       sessionManager: emptyManager as never,
       sessionId: 'session-1',
       llmClient: { getModel: () => 'qwen3-32b' } as never,
-    }, new TurnMetrics())).resolves.toEqual({ allPassed: true, failed: [] })
+    }, new TurnMetrics())).resolves.toMatchObject({ allPassed: true, failed: [] })
 
     const eventStore = createEventStore()
     getEventStoreMock.mockReturnValue(eventStore)
@@ -995,7 +995,7 @@ describe('chat orchestrator', () => {
       onMessage: vi.fn(),
     }, new TurnMetrics())
 
-    expect(result).toEqual({ allPassed: false, failed: [{ id: 'tests-pass', reason: 'still broken' }] })
+    expect(result).toMatchObject({ allPassed: false, failed: [{ id: 'tests-pass', reason: 'still broken' }] })
     const types = eventStore.append.mock.calls.map(([, event]) => event.type)
     expect(types).toContain('tool.call')
     expect(types).toContain('tool.result')
@@ -1069,7 +1069,7 @@ describe('chat orchestrator', () => {
       onMessage: vi.fn(),
     }, new TurnMetrics())
 
-    expect(result).toEqual({ allPassed: false, failed: [{ id: 'tests-pass', reason: 'still broken' }] })
+    expect(result).toMatchObject({ allPassed: false, failed: [{ id: 'tests-pass', reason: 'still broken' }] })
     expect(execute).toHaveBeenCalledTimes(1)
 
     expect(streamLLMPureMock.mock.calls).toHaveLength(3)
@@ -1177,7 +1177,7 @@ describe('chat orchestrator', () => {
       onMessage: vi.fn(),
     }, new TurnMetrics())
 
-    expect(result).toEqual({ allPassed: false, failed: [{ id: 'tests-pass', reason: 'still broken' }] })
+    expect(result).toMatchObject({ allPassed: false, failed: [{ id: 'tests-pass', reason: 'still broken' }] })
 
     // Verify NO nudge messages were sent after tool calls
     const nudgeMessages = eventStore.append.mock.calls.filter(
@@ -1242,7 +1242,7 @@ describe('chat orchestrator', () => {
       onMessage: vi.fn(),
     }, new TurnMetrics())
 
-    expect(result).toEqual({ allPassed: false, failed: [] })
+    expect(result).toMatchObject({ allPassed: false, failed: [] })
     expect(sessionManager.updateCriterionStatus).not.toHaveBeenCalled()
     expect(sessionManager.addCriterionAttempt).not.toHaveBeenCalled()
     expect(streamLLMPureMock.mock.calls).toHaveLength(11)
@@ -1341,7 +1341,7 @@ describe('chat orchestrator', () => {
     }, new TurnMetrics())
 
     // Should pass - criterion was terminalized
-    expect(result).toEqual({ allPassed: true, failed: [] })
+    expect(result).toMatchObject({ allPassed: true, failed: [] })
     expect(execute).toHaveBeenCalledTimes(2) // 1 read_file + 1 pass_criterion
 
     // Verify NO nudge messages were emitted (criteria were terminalized)
@@ -1459,7 +1459,7 @@ describe('chat orchestrator', () => {
       onMessage: vi.fn(),
     }, new TurnMetrics())
 
-    expect(result).toEqual({ allPassed: true, failed: [] })
+    expect(result).toMatchObject({ allPassed: true, failed: [] })
     expect(sessionManager.updateCriterionStatus).not.toHaveBeenCalledWith(
       'session-1',
       'tests-pass',
@@ -1543,7 +1543,7 @@ describe('chat orchestrator', () => {
       onMessage: vi.fn(),
     }, new TurnMetrics())
 
-    expect(result).toEqual({ allPassed: false, failed: [] })
+    expect(result).toMatchObject({ allPassed: false, failed: [] })
     expect(sessionManager.updateCriterionStatus).not.toHaveBeenCalled()
     expect(sessionManager.addCriterionAttempt).not.toHaveBeenCalled()
 
@@ -1618,7 +1618,7 @@ describe('chat orchestrator', () => {
       onMessage: vi.fn(),
     }, new TurnMetrics())
 
-    expect(result).toEqual({ allPassed: false, failed: [] })
+    expect(result).toMatchObject({ allPassed: false, failed: [] })
     expect(execute).not.toHaveBeenCalled()
     expect(sessionManager.updateCriterionStatus).not.toHaveBeenCalled()
     expect(sessionManager.addCriterionAttempt).not.toHaveBeenCalled()
@@ -1705,7 +1705,7 @@ describe('chat orchestrator', () => {
       onMessage: vi.fn(),
     }, new TurnMetrics())
 
-    expect(result).toEqual({ allPassed: true, failed: [] })
+    expect(result).toMatchObject({ allPassed: true, failed: [] })
     const toolResultEvent = eventStore.append.mock.calls.find(([, event]) => event.type === 'tool.result')?.[1]
     expect(toolResultEvent).toMatchObject({
       data: {

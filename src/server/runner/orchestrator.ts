@@ -35,7 +35,8 @@ export async function runOrchestrator(options: OrchestratorOptions): Promise<Orc
   const eventStore = getEventStore()
   const startTime = performance.now()
   let iterations = 0
-  
+  let lastVerifierContent: string | null = null
+
   logger.debug('Orchestrator starting', { sessionId })
   
   while (true) {
@@ -126,11 +127,12 @@ export async function runOrchestrator(options: OrchestratorOptions): Promise<Orc
       
       case 'RUN_VERIFIER': {
         sessionManager.setPhase(sessionId, 'verification')
-        
+
         // Run verification step
         const turnMetrics = new TurnMetrics()
-        await runVerifierTurn({ sessionManager, sessionId, llmClient, ...(options.statsIdentity ? { statsIdentity: options.statsIdentity } : {}), ...(signal ? { signal } : {}), ...(onMessage ? { onMessage } : {}) }, turnMetrics)
-        
+        const verifierResult = await runVerifierTurn({ sessionManager, sessionId, llmClient, ...(options.statsIdentity ? { statsIdentity: options.statsIdentity } : {}), ...(signal ? { signal } : {}), ...(onMessage ? { onMessage } : {}) }, turnMetrics)
+        lastVerifierContent = verifierResult.content ?? null
+
         // Loop continues to check result
         break
       }
@@ -140,9 +142,13 @@ export async function runOrchestrator(options: OrchestratorOptions): Promise<Orc
         
         // Inject nudge message if this is a retry (not first iteration)
         if (iterations > 1) {
+          const verifierDetail = lastVerifierContent
+            ? `\n\nVerifier findings:\n${lastVerifierContent}`
+            : ''
+          lastVerifierContent = null
           const nudgeMsgId = crypto.randomUUID()
           eventStore.append(sessionId, createMessageStartEvent(nudgeMsgId, 'user', `Continue working on the acceptance criteria.
-${action.reason}.
+${action.reason}.${verifierDetail}
 Don't forget to mark the criteria as complete with complete_criterion`, {
             ...(currentWindowMessageOptions ?? {}),
             isSystemGenerated: true,

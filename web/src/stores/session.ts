@@ -334,9 +334,11 @@ export const useSessionStore = create<SessionState>((set, get) => {
         updated.thinkingContent = (updated.thinkingContent ?? '') + thinking
       }
       if (hasToolOutput) {
+        const matchedCallIds = new Set<string>()
         updated.toolCalls = updated.toolCalls?.map(tc => {
           const outputs = toolOutputs.filter(o => o.callId === tc.id)
           if (outputs.length === 0) return tc
+          matchedCallIds.add(tc.id)
           return {
             ...tc,
             streamingOutput: [
@@ -345,6 +347,11 @@ export const useSessionStore = create<SessionState>((set, get) => {
             ]
           }
         })
+        // Re-buffer unmatched outputs (e.g. return_value outputs arriving before tool.call)
+        const unmatched = toolOutputs.filter(o => !matchedCallIds.has(o.callId))
+        if (unmatched.length > 0) {
+          streamingBuffer.toolOutput.push(...unmatched)
+        }
       }
       return { streamingMessage: updated }
     })
@@ -773,11 +780,19 @@ export const useSessionStore = create<SessionState>((set, get) => {
             }
             return true
           })
+          // Drain any buffered streaming outputs for this tool call (e.g. return_value content)
+          const bufferedOutputs = streamingBuffer.toolOutput.filter(o => o.callId === payload.callId)
+          if (bufferedOutputs.length > 0) {
+            streamingBuffer.toolOutput = streamingBuffer.toolOutput.filter(o => o.callId !== payload.callId)
+          }
           return {
             ...m,
             toolCalls: [
               ...(m.toolCalls ?? []),
-              { id: payload.callId, name: payload.tool, arguments: payload.args, startedAt: Date.now() }
+              {
+                id: payload.callId, name: payload.tool, arguments: payload.args, startedAt: Date.now(),
+                ...(bufferedOutputs.length > 0 ? { streamingOutput: bufferedOutputs.map(o => ({ stream: o.stream, content: o.content })) } : {}),
+              }
             ],
             ...(preparingToolCalls && preparingToolCalls.length > 0
               ? { preparingToolCalls }

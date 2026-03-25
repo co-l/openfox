@@ -18,6 +18,7 @@ import { getCriteriaTool, addCriterionTool, updateCriterionTool, removeCriterion
 import { todoWriteTool, setTodoUpdateCallback, getTodos, clearTodos } from './todo.js'
 import { callSubAgentTool } from './sub-agent.js'
 import { loadSkillTool } from './load-skill.js'
+import { returnValueTool } from './return-value.js'
 import { logger } from '../utils/logger.js'
 
 // ============================================================================
@@ -144,7 +145,7 @@ const allToolsByName = new Map<string, Tool>([
     globTool, grepTool, gitTool, askUserTool,
     completeCriterionTool, passCriterionTool, failCriterionTool,
     getCriteriaTool, addCriterionTool, updateCriterionTool, removeCriterionTool,
-    todoWriteTool, callSubAgentTool, loadSkillTool,
+    todoWriteTool, callSubAgentTool, loadSkillTool, returnValueTool,
   ].map(t => [t.name, t] as const),
 ])
 
@@ -173,6 +174,11 @@ export function getToolRegistryForSubAgent(toolNames: string[]): ToolRegistry {
     if (tool) {
       tools.push(tool)
     }
+  }
+  // Always include return_value — it's part of the default subagent toolkit
+  if (!tools.some(t => t.name === 'return_value')) {
+    const rv = allToolsByName.get('return_value')
+    if (rv) tools.push(rv)
   }
   return createRegistryFromTools(tools)
 }
