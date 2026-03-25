@@ -85,9 +85,20 @@ export function PlanPanel() {
   const followOutput = useCallback((isAtBottom: boolean) => {
     return isAtBottom ? 'smooth' : false
   }, [])
-  
 
-  
+  // Scroll to bottom when session messages are loaded (e.g. loading an existing session)
+  const prevSessionIdRef = useRef<string | null>(null)
+  useEffect(() => {
+    const sessionId = session?.id ?? null
+    if (sessionId !== prevSessionIdRef.current && displayItems.length > 0) {
+      prevSessionIdRef.current = sessionId
+      // Use setTimeout to let Virtuoso measure items first
+      setTimeout(() => {
+        virtuosoRef.current?.scrollToIndex({ index: 'LAST', align: 'end' })
+      }, 0)
+    }
+  }, [session?.id, displayItems.length])
+
   // Auto-resize textarea based on content, up to 200px max
   const resizeTextarea = useCallback(() => {
     const textarea = textareaRef.current
