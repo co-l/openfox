@@ -12,8 +12,9 @@ import matter from 'gray-matter'
 import type { CommandDefinition, CommandMetadata } from './types.js'
 import { logger } from '../utils/logger.js'
 
-const __dirname = dirname(fileURLToPath(import.meta.url))
-const DEFAULTS_DIR = join(__dirname, 'defaults')
+const __bundleDir = dirname(fileURLToPath(import.meta.url))
+const DEFAULTS_DIR = join(__bundleDir, 'defaults')
+const DEFAULTS_DIR_ALT = join(__bundleDir, 'command-defaults')
 const COMMAND_EXTENSION = '.command.md'
 
 // ============================================================================
@@ -47,19 +48,27 @@ export async function ensureDefaultCommands(configDir: string): Promise<void> {
     await mkdir(commandsDir, { recursive: true })
   }
 
+  // Find bundled defaults (try dev path first, then production path)
   let defaultFiles: string[]
+  let sourceDir: string
   try {
     defaultFiles = (await readdir(DEFAULTS_DIR)).filter(f => f.endsWith(COMMAND_EXTENSION))
+    sourceDir = DEFAULTS_DIR
   } catch {
-    logger.warn('No bundled command defaults found', { dir: DEFAULTS_DIR })
-    return
+    try {
+      defaultFiles = (await readdir(DEFAULTS_DIR_ALT)).filter(f => f.endsWith(COMMAND_EXTENSION))
+      sourceDir = DEFAULTS_DIR_ALT
+    } catch {
+      logger.warn('No bundled command defaults found', { dir: DEFAULTS_DIR })
+      return
+    }
   }
 
   for (const file of defaultFiles) {
     const targetPath = join(commandsDir, file)
     if (!await dirExists(targetPath)) {
       try {
-        await copyFile(join(DEFAULTS_DIR, file), targetPath)
+        await copyFile(join(sourceDir, file), targetPath)
         logger.info('Installed default command', { file })
       } catch (err) {
         logger.error('Failed to copy default command', { file, error: err instanceof Error ? err.message : String(err) })

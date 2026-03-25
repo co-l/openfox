@@ -14,8 +14,9 @@ import type { SkillDefinition, SkillMetadata } from './types.js'
 import { getSetting, setSetting } from '../db/settings.js'
 import { logger } from '../utils/logger.js'
 
-const __dirname = dirname(fileURLToPath(import.meta.url))
-const DEFAULTS_DIR = join(__dirname, 'defaults')
+const __bundleDir = dirname(fileURLToPath(import.meta.url))
+const DEFAULTS_DIR = join(__bundleDir, 'defaults')
+const DEFAULTS_DIR_ALT = join(__bundleDir, 'skill-defaults')
 const SKILL_EXTENSION = '.skill.md'
 const SKILL_SETTING_PREFIX = 'skill.enabled.'
 
@@ -51,13 +52,20 @@ export async function ensureDefaultSkills(configDir: string): Promise<void> {
     await mkdir(skillsDir, { recursive: true })
   }
 
-  // Find bundled defaults
+  // Find bundled defaults (try dev path first, then production path)
   let defaultFiles: string[]
+  let sourceDir: string
   try {
     defaultFiles = (await readdir(DEFAULTS_DIR)).filter(f => f.endsWith(SKILL_EXTENSION))
+    sourceDir = DEFAULTS_DIR
   } catch {
-    logger.warn('No bundled skill defaults found', { dir: DEFAULTS_DIR })
-    return
+    try {
+      defaultFiles = (await readdir(DEFAULTS_DIR_ALT)).filter(f => f.endsWith(SKILL_EXTENSION))
+      sourceDir = DEFAULTS_DIR_ALT
+    } catch {
+      logger.warn('No bundled skill defaults found', { dir: DEFAULTS_DIR })
+      return
+    }
   }
 
   // Copy each default that doesn't already exist in the target
@@ -65,7 +73,7 @@ export async function ensureDefaultSkills(configDir: string): Promise<void> {
     const targetPath = join(skillsDir, file)
     if (!await dirExists(targetPath)) {
       try {
-        await copyFile(join(DEFAULTS_DIR, file), targetPath)
+        await copyFile(join(sourceDir, file), targetPath)
         logger.info('Installed default skill', { file })
       } catch (err) {
         logger.error('Failed to copy default skill', { file, error: err instanceof Error ? err.message : String(err) })
