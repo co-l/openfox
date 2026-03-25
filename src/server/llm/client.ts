@@ -189,6 +189,7 @@ export function createLLMClient(config: Config, initialBackend: Backend = 'unkno
         let fullContent = ''
         let fullThinking = ''
         let inThinking = false
+        let tagBuffer = '' // Buffer for parsing <think> tags across chunk boundaries
         const toolCalls: Map<number, { id: string; name: string; arguments: string }> = new Map()
         let finishReason: LLMCompletionResponse['finishReason'] = 'stop'
         let usage = { promptTokens: 0, completionTokens: 0, totalTokens: 0 }
@@ -244,9 +245,71 @@ export function createLLMClient(config: Config, initialBackend: Backend = 'unkno
           // Handle content delta
           if (delta.content) {
             fullContent += delta.content
-            // For backends without reasoning field, we'll extract <think> tags at the end
-            // For now, emit all content as text (thinking will be stripped at end)
-            yield { type: 'text_delta', content: delta.content }
+
+            // For backends without reasoning field (ollama/llama.cpp), parse <think> tags in real-time
+            if (!capabilities.supportsReasoningField && profile.supportsReasoning && !profile.reasoningAsContent) {
+              // Feed content through the think tag parser
+              tagBuffer += delta.content
+
+              while (tagBuffer.length > 0) {
+                if (inThinking) {
+                  // Look for </think>
+                  const closeIdx = tagBuffer.indexOf('</think>')
+                  if (closeIdx !== -1) {
+                    // Emit thinking content before the close tag
+                    const thinkText = tagBuffer.slice(0, closeIdx)
+                    if (thinkText) {
+                      fullThinking += thinkText
+                      yield { type: 'thinking_delta', content: thinkText }
+                    }
+                    tagBuffer = tagBuffer.slice(closeIdx + '</think>'.length)
+                    inThinking = false
+                  } else if (tagBuffer.includes('</')) {
+                    // Might be a partial </think> tag - emit everything before it
+                    const partialIdx = tagBuffer.lastIndexOf('</')
+                    const before = tagBuffer.slice(0, partialIdx)
+                    if (before) {
+                      fullThinking += before
+                      yield { type: 'thinking_delta', content: before }
+                    }
+                    tagBuffer = tagBuffer.slice(partialIdx)
+                    break // wait for more data
+                  } else {
+                    // No close tag at all, emit all as thinking
+                    fullThinking += tagBuffer
+                    yield { type: 'thinking_delta', content: tagBuffer }
+                    tagBuffer = ''
+                  }
+                } else {
+                  // Look for <think>
+                  const openIdx = tagBuffer.indexOf('<think>')
+                  if (openIdx !== -1) {
+                    // Emit text content before the open tag
+                    const textBefore = tagBuffer.slice(0, openIdx)
+                    if (textBefore) {
+                      yield { type: 'text_delta', content: textBefore }
+                    }
+                    tagBuffer = tagBuffer.slice(openIdx + '<think>'.length)
+                    inThinking = true
+                  } else if (tagBuffer.includes('<')) {
+                    // Might be a partial <think> tag - emit everything before it
+                    const partialIdx = tagBuffer.lastIndexOf('<')
+                    const before = tagBuffer.slice(0, partialIdx)
+                    if (before) {
+                      yield { type: 'text_delta', content: before }
+                    }
+                    tagBuffer = tagBuffer.slice(partialIdx)
+                    break // wait for more data
+                  } else {
+                    // No open tag at all, emit all as text
+                    yield { type: 'text_delta', content: tagBuffer }
+                    tagBuffer = ''
+                  }
+                }
+              }
+            } else {
+              yield { type: 'text_delta', content: delta.content }
+            }
           }
           
           // Handle tool call deltas
@@ -277,6 +340,14 @@ export function createLLMClient(config: Config, initialBackend: Backend = 'unkno
           }
         }
         
+        // Flush any remaining tag buffer content
+        if (tagBuffer) {
+          if (inThinking) {
+            fullThinking += tagBuffer
+          }
+          tagBuffer = ''
+        }
+
         // For backends without reasoning field, extract <think> tags from accumulated content
         let finalContent = fullContent.trim()
         let finalThinking = fullThinking.trim()

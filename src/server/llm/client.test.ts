@@ -246,7 +246,7 @@ describe('llm client', () => {
     ])
   })
 
-  it('streams content-only backends by stripping think tags at the end', async () => {
+  it('streams content-only backends by emitting thinking_delta for think tags in real-time', async () => {
     openAiCreateMock.mockResolvedValueOnce((async function* () {
       yield createChunk({
         choices: [{
@@ -268,16 +268,65 @@ describe('llm client', () => {
       events.push(event as Record<string, unknown>)
     }
 
-    expect(events.at(-1)).toEqual({
-      type: 'done',
-      response: {
-        id: 'resp-1',
-        content: 'done',
-        thinkingContent: 'plan',
-        finishReason: 'stop',
-        usage: { promptTokens: 3, completionTokens: 1, totalTokens: 4 },
+    expect(events).toEqual([
+      { type: 'thinking_delta', content: 'plan' },
+      { type: 'text_delta', content: 'done' },
+      {
+        type: 'done',
+        response: {
+          id: 'resp-1',
+          content: 'done',
+          thinkingContent: 'plan',
+          finishReason: 'stop',
+          usage: { promptTokens: 3, completionTokens: 1, totalTokens: 4 },
+        },
       },
-    })
+    ])
+  })
+
+  it('streams content-only backends with think tags split across chunks', async () => {
+    openAiCreateMock.mockResolvedValueOnce((async function* () {
+      yield createChunk({
+        choices: [{
+          delta: { content: '<think>first ' },
+          finish_reason: null,
+        }],
+      })
+      yield createChunk({
+        choices: [{
+          delta: { content: 'second</think>answer' },
+          finish_reason: 'stop',
+        }],
+        usage: {
+          prompt_tokens: 3,
+          completion_tokens: 2,
+          total_tokens: 5,
+        },
+      })
+    })())
+
+    const client = createLLMClient(createConfig(), 'ollama')
+    const events = [] as Array<Record<string, unknown>>
+
+    for await (const event of client.stream({ messages: [{ role: 'user', content: 'hello' }] })) {
+      events.push(event as Record<string, unknown>)
+    }
+
+    expect(events).toEqual([
+      { type: 'thinking_delta', content: 'first ' },
+      { type: 'thinking_delta', content: 'second' },
+      { type: 'text_delta', content: 'answer' },
+      {
+        type: 'done',
+        response: {
+          id: 'resp-1',
+          content: 'answer',
+          thinkingContent: 'first second',
+          finishReason: 'stop',
+          usage: { promptTokens: 3, completionTokens: 2, totalTokens: 5 },
+        },
+      },
+    ])
   })
 
   it('treats reasoning field as text for non-reasoning models and includes tool calls with parseError for invalid tool args', async () => {
