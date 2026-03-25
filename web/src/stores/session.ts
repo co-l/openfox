@@ -243,6 +243,9 @@ interface SessionState {
 
   clearError: () => void
   
+  // Reset pending session create flag (called after navigation)
+  resetPendingSessionCreate: () => void
+  
   // Internal
   handleServerMessage: (message: ServerMessage) => void
 }
@@ -535,6 +538,10 @@ export const useSessionStore = create<SessionState>((set, get) => {
   clearError: () => {
     set({ error: null })
   },
+
+  resetPendingSessionCreate: () => {
+    set({ pendingSessionCreate: false })
+  },
   
   handleServerMessage: (message) => {
     const stateSnapshot = get()
@@ -569,7 +576,7 @@ export const useSessionStore = create<SessionState>((set, get) => {
           currentTodos: [],
           pendingPathConfirmation: null,
           error: null,
-          pendingSessionCreate: false, // Reset after receiving session state
+          // Don't reset pendingSessionCreate here - let the component handle navigation first
         })
 
         // Sync config store with session's provider/model for header display

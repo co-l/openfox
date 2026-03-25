@@ -10,6 +10,7 @@ export function EmptyProjectView() {
   const createSession = useSessionStore(state => state.createSession)
   const currentSession = useSessionStore(state => state.currentSession)
   const pendingSessionCreate = useSessionStore(state => state.pendingSessionCreate)
+  const resetPendingSessionCreate = useSessionStore(state => state.resetPendingSessionCreate)
   
   const handleCreateSession = () => {
     if (currentProject) {
@@ -24,9 +25,9 @@ export function EmptyProjectView() {
       const sessionPath = `/p/${currentProject.id}/s/${currentSession.id}`
       navigate(sessionPath)
       // Reset the flag after navigation
-      // Note: We can't call set here, so we rely on the session.state handler to reset it
+      resetPendingSessionCreate()
     }
-  }, [pendingSessionCreate, currentSession, currentProject, navigate])
+  }, [pendingSessionCreate, currentSession, currentProject, navigate, resetPendingSessionCreate])
   
   return (
     <div className="h-full flex flex-col items-center justify-center p-8 text-center">

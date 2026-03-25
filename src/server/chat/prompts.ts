@@ -38,6 +38,8 @@ To call a sub-agent, use the call_sub_agent tool with:
 
   return `You are OpenFox, an agentic assistant.
 
+Today's date is ${new Date().toISOString().split('T')[0]!.replace(/-/g, '/')}
+
 ## ENVIRONMENT
 Working directory: ${workdir}
 Platform: ${process.platform} (${process.arch})
