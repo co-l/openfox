@@ -2,6 +2,7 @@ import { readFile, writeFile, existsSync, readdirSync, rename } from 'node:fs'
 import { join } from 'node:path'
 import { promisify } from 'node:util'
 import type { SnapshotData } from './history.snapshot.js'
+import { logger } from '../utils/logger.js'
 
 const readFileAsync = promisify(readFile)
 const writeFileAsync = promisify(writeFile)
@@ -80,12 +81,12 @@ export async function loadIndex(snapshotDir: string): Promise<IndexEntry[]> {
     const parsed = JSON.parse(content) as IndexEntry[]
     // Validate that it's an array
     if (!Array.isArray(parsed)) {
-      console.error('Index file is not an array, resetting to empty')
+      logger.warn('History index file is not an array, resetting to empty')
       return []
     }
     return parsed
   } catch (error) {
-    console.error('Error loading index:', error)
+    logger.error('Error loading history index', { error: error instanceof Error ? error.message : String(error) })
     // If JSON is corrupted, return empty array to allow recovery
     return []
   }
@@ -184,7 +185,7 @@ export async function getAllSnapshotFiles(snapshotDir: string): Promise<string[]
         }
       }
     } catch (error) {
-      console.error('Error scanning directory:', error)
+      logger.error('Error scanning history directory', { error: error instanceof Error ? error.message : String(error) })
     }
   }
   
@@ -200,7 +201,7 @@ export async function loadSnapshot(filePath: string): Promise<SnapshotData | nul
     const content = await readFileAsync(filePath, 'utf-8')
     return JSON.parse(content) as SnapshotData
   } catch (error) {
-    console.error('Error loading snapshot:', error)
+    logger.error('Error loading snapshot', { error: error instanceof Error ? error.message : String(error) })
     return null
   }
 }

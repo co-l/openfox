@@ -3,6 +3,7 @@ import { join } from 'node:path'
 import { loadIndex, loadSnapshot, saveIndex, type IndexEntry } from './history.index.js'
 import { loadConfig } from './history.config.js'
 import { isPathExcluded, loadGitignore } from './history.utils.js'
+import { logger } from '../utils/logger.js'
 
 // ============================================================================
 // Types
@@ -77,7 +78,7 @@ export async function getHistory(req: Request, res: Response): Promise<void> {
     
     res.json(response)
   } catch (error) {
-    console.error('Error getting history:', error)
+    logger.error('Error getting history', { error: error instanceof Error ? error.message : String(error) })
     res.status(500).json({ error: 'Internal server error' })
   }
 }
@@ -132,7 +133,7 @@ export async function getHistorySnapshot(req: Request, res: Response): Promise<v
       },
     })
   } catch (error) {
-    console.error('Error getting snapshot:', error)
+    logger.error('Error getting snapshot', { error: error instanceof Error ? error.message : String(error) })
     res.status(500).json({ error: 'Internal server error' })
   }
 }

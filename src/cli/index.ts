@@ -1,3 +1,4 @@
 #!/usr/bin/env node
 import { runCli } from './main.js'
-runCli({ mode: 'production' }).catch(console.error)
+import { logger } from '../server/utils/logger.js'
+runCli({ mode: 'production' }).catch(logger.error)

@@ -307,35 +307,35 @@ async function handleClientMessage(
     }
     
     case 'project.create-with-dir': {
-      console.log('[WS Server] Received project.create-with-dir:', message.payload)
+      logger.debug('WS project.create-with-dir received', { payload: message.payload })
       if (!isProjectCreateWithDirPayload(message.payload)) {
-        console.error('[WS Server] Invalid payload for project.create-with-dir')
+        logger.error('WS project.create-with-dir invalid payload')
         send(createErrorMessage('INVALID_PAYLOAD', 'Invalid project.create-with-dir payload', message.id))
         return
       }
       
       try {
         const workdir = config.workdir
-        console.log('[WS Server] Creating directory with git, name:', message.payload.name, 'workdir:', workdir)
+        logger.debug('WS creating project directory', { name: message.payload.name, workdir })
         const { createDirectoryWithGit } = await import('../utils/project-creator.js')
         const project = await createDirectoryWithGit(message.payload.name, workdir)
-        console.log('[WS Server] Project created successfully:', project.id, project.name)
+        logger.debug('WS project created', { id: project.id, name: project.name })
         send(createProjectStateMessage(project, message.id))
-        console.log('[WS Server] Sent project.state message with ID:', message.id)
+        logger.debug('WS sent project.state', { messageId: message.id })
       } catch (error) {
         const errorMessage = error instanceof Error ? error.message : 'Unknown error'
-        console.error('[WS Server] Error creating project:', errorMessage)
+        logger.error('WS project creation failed', { error: errorMessage })
         send(createErrorMessage('PROJECT_CREATION_FAILED', errorMessage, message.id))
       }
       break
     }
     
     case 'project.list': {
-      console.log('[WS Server] Received project.list request, ID:', message.id)
+      logger.debug('WS project.list received', { messageId: message.id })
       const projects = listProjects()
-      console.log('[WS Server] Found', projects.length, 'projects:', projects.map(p => ({ id: p.id, name: p.name })))
+      logger.debug('WS projects found', { count: projects.length, projects: projects.map(p => ({ id: p.id, name: p.name })) })
       send(createProjectListMessage(projects, message.id))
-      console.log('[WS Server] Sent project.list message with ID:', message.id)
+      logger.debug('WS sent project.list', { messageId: message.id })
       break
     }
     

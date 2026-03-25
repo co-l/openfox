@@ -2,6 +2,7 @@ import { readFile, existsSync } from 'node:fs'
 import { join } from 'node:path'
 import { promisify } from 'node:util'
 import ignore from 'ignore'
+import { logger } from '../utils/logger.js'
 
 const readFileAsync = promisify(readFile)
 
@@ -25,7 +26,7 @@ export async function loadGitignore(workdir: string): Promise<string[]> {
       .map((line: string) => line.trim())
       .filter((line: string) => line && !line.startsWith('#'))
   } catch (error) {
-    console.error('Error reading .gitignore:', error)
+    logger.error('Error reading .gitignore', { error: error instanceof Error ? error.message : String(error) })
     return []
   }
 }
@@ -44,7 +45,7 @@ export function isPathExcluded(relativePath: string, patterns: string[]): boolea
   try {
     return ignore().add(patterns).ignores(normalizedPath)
   } catch (error) {
-    console.error('Error matching ignore patterns:', error)
+    logger.error('Error matching ignore patterns', { error: error instanceof Error ? error.message : String(error) })
     return false
   }
 }

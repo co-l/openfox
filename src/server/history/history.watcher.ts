@@ -4,6 +4,7 @@ import { stat } from 'node:fs/promises'
 import { join, relative, extname } from 'node:path'
 import { createSnapshot, type ChangeType } from './history.snapshot.js'
 import { loadGitignore, isPathExcluded } from './history.utils.js'
+import { logger } from '../utils/logger.js'
 
 // ============================================================================
 // Types
@@ -84,7 +85,7 @@ export class FileWatcher {
     try {
       this.gitignorePatterns = await loadGitignore(this.workdir)
     } catch (err) {
-      console.error('Error loading .gitignore:', err)
+      logger.error('Error loading .gitignore', { error: err instanceof Error ? err.message : String(err) })
       this.gitignorePatterns = []
     }
 
@@ -205,7 +206,7 @@ export class FileWatcher {
   }
 
   private handleWatcherError(error: unknown): void {
-    console.error('History watcher error; disabling watcher for workdir:', this.workdir, error)
+    logger.error('History watcher error', { workdir: this.workdir, error: error instanceof Error ? error.message : String(error) })
     this.stop()
     this.onError?.(error)
   }
@@ -264,7 +265,7 @@ export class FileWatcher {
       }
     } catch (error) {
       // Log error but don't crash the watcher
-      console.error('Error creating snapshot:', error)
+      logger.error('Error creating snapshot', { error: error instanceof Error ? error.message : String(error) })
     }
   }
 }

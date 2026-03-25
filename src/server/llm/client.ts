@@ -160,7 +160,6 @@ export function createLLMClient(config: Config, initialBackend: Backend = 'unkno
           },
         }
       } catch (error) {
-        console.log("LLM complete error", error)
         logger.error('LLM complete error', { error })
         throw new LLMError(
           error instanceof Error ? error.message : 'Unknown LLM error',

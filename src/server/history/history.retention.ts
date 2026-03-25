@@ -2,6 +2,7 @@ import { readdirSync, statSync, unlinkSync, mkdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { getAllSnapshotFiles, loadSnapshot } from './history.index.js'
 import type { HistoryConfig } from './history.config.js'
+import { logger } from '../utils/logger.js'
 
 // ============================================================================
 // Retention Policy
@@ -32,7 +33,7 @@ export async function cleanupSnapshots(
       totalBytes += size
       fileSizes.set(file, size)
     } catch (error) {
-      console.error(`Error getting file size for ${file}:`, error)
+      logger.error('Error getting history snapshot file size', { file, error: error instanceof Error ? error.message : String(error) })
     }
   }
   
@@ -65,7 +66,7 @@ export async function cleanupSnapshots(
         freedBytes += file.size
         totalBytes -= file.size
       } catch (error) {
-        console.error(`Error deleting ${file.path}:`, error)
+        logger.error('Error deleting history snapshot', { file: file.path, error: error instanceof Error ? error.message : String(error) })
       }
     }
     
@@ -85,7 +86,7 @@ export async function cleanupSnapshots(
         totalBytes -= oldest.size
         sortedFiles.pop()
       } catch (error) {
-        console.error(`Error deleting ${oldest.path}:`, error)
+        logger.error('Error deleting history snapshot', { file: oldest.path, error: error instanceof Error ? error.message : String(error) })
         break
       }
     }

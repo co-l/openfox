@@ -1,6 +1,7 @@
 import type { Request, Response } from 'express'
 import { spawn } from 'node:child_process'
 import { resolve } from 'node:path'
+import { logger } from './utils/logger.js'
 
 /**
  * GET /api/branch
@@ -19,7 +20,7 @@ export async function getCurrentBranch(req: Request, res: Response): Promise<voi
       res.json({ branch: null, workdir: resolvedWorkdir, error: 'Not a git repository' })
     }
   } catch (error) {
-    console.error('Error getting current branch:', error)
+    logger.error('Error getting current branch', { error: error instanceof Error ? error.message : String(error) })
     res.status(500).json({ error: 'Failed to get branch', branch: null })
   }
 }

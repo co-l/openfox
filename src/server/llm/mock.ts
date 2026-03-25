@@ -15,6 +15,7 @@ import type { LLMCompletionRequest, LLMCompletionResponse, LLMStreamEvent } from
 import type { ToolCall } from '../../shared/types.js'
 import { getModelProfile } from './profiles.js'
 import { type Backend } from './backend.js'
+import { logger } from '../utils/logger.js'
 
 // ============================================================================
 // Types
@@ -1024,7 +1025,7 @@ export function createMockLLMClient(): LLMClientWithModel {
       const response = buildMockResponse(request)
 
       if (process.env['OPENFOX_TEST_VERBOSE'] === 'true') {
-        console.error(`[MockLLM] "${prompt.slice(0, 50)}..." → ${response.toolCalls.length > 0 ? response.toolCalls.map(toolCall => toolCall.name).join(', ') : 'text'}`)
+        logger.debug('MockLLM completion', { prompt: prompt.slice(0, 50), hasTools: response.toolCalls.length > 0, tools: response.toolCalls.map(tc => tc.name) })
       }
 
       return {
@@ -1044,7 +1045,7 @@ export function createMockLLMClient(): LLMClientWithModel {
       const response = buildMockResponse(request)
 
       if (process.env['OPENFOX_TEST_VERBOSE'] === 'true') {
-        console.error(`[MockLLM] "${prompt.slice(0, 50)}..." → ${response.toolCalls.length > 0 ? response.toolCalls.map(toolCall => toolCall.name).join(', ') : 'text'}`)
+        logger.debug('MockLLM stream', { prompt: prompt.slice(0, 50), hasTools: response.toolCalls.length > 0, tools: response.toolCalls.map(tc => tc.name) })
       }
 
       // Stream tool calls

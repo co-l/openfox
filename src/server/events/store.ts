@@ -16,6 +16,7 @@
 
 import type Database from 'better-sqlite3'
 import type { TurnEvent, StoredEvent, SessionSnapshot } from './types.js'
+import { logger } from '../utils/logger.js'
 
 // ============================================================================
 // Types
@@ -491,8 +492,7 @@ function resetStaleRunningSessions(eventStore: EventStore, db: Database.Database
   }
 
   if (resetCount > 0) {
-    // Log using console.log since logger may not be initialized yet
-    console.log(`[EventStore] Reset ${resetCount} stale running session(s)`)
+    logger.info('EventStore reset stale running sessions', { count: resetCount })
   }
 }
 

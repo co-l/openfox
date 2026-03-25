@@ -1,6 +1,7 @@
 import { readFile, writeFile, existsSync, mkdir } from 'node:fs'
 import { join } from 'node:path'
 import { promisify } from 'node:util'
+import { logger } from '../utils/logger.js'
 
 const readFileAsync = promisify(readFile)
 const writeFileAsync = promisify(writeFile)
@@ -55,7 +56,7 @@ export async function loadConfig(workdir: string): Promise<HistoryConfig> {
       ...config,
     }
   } catch (error) {
-    console.error('Error loading history config:', error)
+    logger.error('Error loading history config', { error: error instanceof Error ? error.message : String(error) })
     return DEFAULT_CONFIG
   }
 }
