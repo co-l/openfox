@@ -85,87 +85,42 @@ export function PlanPanel() {
   // Use rawMessages (stable during streaming) since prompt context only depends on user messages
   const promptContextByUserMessageId = useMemo(() => buildPromptContextByUserMessageId(rawMessages), [rawMessages])
   
-  // Virtuoso auto-scroll: follow new items when user is at the bottom.
-  const followOutput = useCallback((isAtBottom: boolean) => {
-    return isAtBottom ? 'auto' : false
-  }, [])
-
-  const handleAtBottomStateChange = useCallback((bottom: boolean) => {
-    atBottomRef.current = bottom
-  }, [])
-
-  // Scroll to bottom when streaming content changes (followOutput only fires on item count changes,
-  // not when an existing item's content grows). We use rAF to wait for the DOM to reflect the new
-  // content height before scrolling.
-  const streamingScrollRafRef = useRef<number | null>(null)
+  // Simple auto-scroll: stay pinned to bottom unless user scrolls up.
+  // A MutationObserver on the scroller fires on every DOM change (new content,
+  // streaming growth, Virtuoso layout). A scroll listener detects user intent.
   useEffect(() => {
-    if (!streamingMessage) return
-    if (!atBottomRef.current) return
-    if (streamingScrollRafRef.current !== null) return // already scheduled
-    streamingScrollRafRef.current = requestAnimationFrame(() => {
-      streamingScrollRafRef.current = null
-      const scroller = document.querySelector('[data-virtuoso-scroller]') as HTMLElement | null
-      if (scroller) {
-        scroller.scrollTop = scroller.scrollHeight
-      }
-    })
-  }, [streamingMessage])
-  // Cleanup on unmount
-  useEffect(() => {
-    return () => {
-      if (streamingScrollRafRef.current !== null) {
-        cancelAnimationFrame(streamingScrollRafRef.current)
-      }
-    }
-  }, [])
-
-  // Scroll to bottom when session data first loads.
-  // followOutput + alignToBottom don't reliably reach the true DOM bottom,
-  // so we observe DOM mutations on the Virtuoso scroller and force-scroll
-  // once Virtuoso finishes its layout cycle (mutations stop for 150ms).
-  const initialScrollDoneRef = useRef<string | null>(null)
-  useEffect(() => {
-    const sid = session?.id ?? null
-    if (!sid || displayItems.length === 0) return
-    if (initialScrollDoneRef.current === sid) return
-    initialScrollDoneRef.current = sid
-
     const scroller = document.querySelector('[data-virtuoso-scroller]') as HTMLElement | null
     if (!scroller) return
 
-    let settleTimer: ReturnType<typeof setTimeout> | null = null
+    const THRESHOLD = 150
 
-    const scrollToBottom = () => {
-      scroller.scrollTop = scroller.scrollHeight
+    const isNearBottom = () =>
+      scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight < THRESHOLD
+
+    // Scroll listener: track whether user is at the bottom
+    const onScroll = () => {
+      atBottomRef.current = isNearBottom()
     }
 
-    // Observe DOM changes — Virtuoso adds/removes items and changes padding
-    // as it measures. Once mutations stop for 150ms, layout has settled.
+    // DOM observer: whenever content changes, scroll to bottom if pinned
     const observer = new MutationObserver(() => {
-      if (settleTimer) clearTimeout(settleTimer)
-      settleTimer = setTimeout(() => {
-        scrollToBottom()
-        observer.disconnect()
-      }, 150)
+      if (atBottomRef.current) {
+        scroller.scrollTop = scroller.scrollHeight
+      }
     })
 
-    observer.observe(scroller, { childList: true, subtree: true, attributes: true })
+    scroller.addEventListener('scroll', onScroll, { passive: true })
+    observer.observe(scroller, { childList: true, subtree: true, characterData: true })
 
-    // Also do an immediate scroll attempt
-    scrollToBottom()
-
-    // Safety: disconnect after 3 seconds regardless
-    const safetyTimer = setTimeout(() => {
-      scrollToBottom()
-      observer.disconnect()
-    }, 3000)
+    // Initial scroll to bottom
+    scroller.scrollTop = scroller.scrollHeight
+    atBottomRef.current = true
 
     return () => {
+      scroller.removeEventListener('scroll', onScroll)
       observer.disconnect()
-      if (settleTimer) clearTimeout(settleTimer)
-      clearTimeout(safetyTimer)
     }
-  }, [session?.id, displayItems.length])
+  }, [session?.id])
 
   // Auto-resize textarea based on content, up to 200px max
   const resizeTextarea = useCallback(() => {
@@ -513,11 +468,7 @@ export function PlanPanel() {
         data={displayItems}
         className="flex-1 min-w-0 overflow-x-hidden"
         increaseViewportBy={{ top: 500, bottom: 200 }}
-        followOutput={followOutput}
-        atBottomStateChange={handleAtBottomStateChange}
-        atBottomThreshold={150}
         defaultItemHeight={120}
-        alignToBottom
         itemContent={(_index, item) => {
           if (item.type === 'context-divider') {
             return (
