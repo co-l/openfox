@@ -81,12 +81,58 @@ export function PlanPanel() {
   // Use rawMessages (stable during streaming) since prompt context only depends on user messages
   const promptContextByUserMessageId = useMemo(() => buildPromptContextByUserMessageId(rawMessages), [rawMessages])
   
-  // Virtuoso auto-scroll: follow output when user is at the bottom.
-  // This handles BOTH initial load (empty→populated, list is "at bottom")
-  // and streaming (new content appended). Uses 'auto' for instant jump.
+  // Virtuoso auto-scroll: follow new streaming output when user is at the bottom.
   const followOutput = useCallback((isAtBottom: boolean) => {
     return isAtBottom ? 'auto' : false
   }, [])
+
+  // Scroll to bottom when session data first loads.
+  // followOutput + alignToBottom don't reliably reach the true DOM bottom,
+  // so we observe DOM mutations on the Virtuoso scroller and force-scroll
+  // once Virtuoso finishes its layout cycle (mutations stop for 150ms).
+  const initialScrollDoneRef = useRef<string | null>(null)
+  useEffect(() => {
+    const sid = session?.id ?? null
+    if (!sid || displayItems.length === 0) return
+    if (initialScrollDoneRef.current === sid) return
+    initialScrollDoneRef.current = sid
+
+    const scroller = document.querySelector('[data-virtuoso-scroller]') as HTMLElement | null
+    if (!scroller) return
+
+    let settleTimer: ReturnType<typeof setTimeout> | null = null
+
+    const scrollToBottom = () => {
+      scroller.scrollTop = scroller.scrollHeight
+    }
+
+    // Observe DOM changes — Virtuoso adds/removes items and changes padding
+    // as it measures. Once mutations stop for 150ms, layout has settled.
+    const observer = new MutationObserver(() => {
+      if (settleTimer) clearTimeout(settleTimer)
+      settleTimer = setTimeout(() => {
+        scrollToBottom()
+        observer.disconnect()
+      }, 150)
+    })
+
+    observer.observe(scroller, { childList: true, subtree: true, attributes: true })
+
+    // Also do an immediate scroll attempt
+    scrollToBottom()
+
+    // Safety: disconnect after 3 seconds regardless
+    const safetyTimer = setTimeout(() => {
+      scrollToBottom()
+      observer.disconnect()
+    }, 3000)
+
+    return () => {
+      observer.disconnect()
+      if (settleTimer) clearTimeout(settleTimer)
+      clearTimeout(safetyTimer)
+    }
+  }, [session?.id, displayItems.length])
 
   // Auto-resize textarea based on content, up to 200px max
   const resizeTextarea = useCallback(() => {
