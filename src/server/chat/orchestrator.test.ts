@@ -187,6 +187,7 @@ function createSessionManager(state: Record<string, any>) {
     addAssistantMessage: vi.fn((_: string, __: any) => ({ id: crypto.randomUUID(), role: 'assistant', content: '', timestamp: new Date().toISOString(), isStreaming: true })),
     updateMessage: vi.fn(),
     updateMessageStats: vi.fn(),
+    drainAsapMessages: vi.fn(() => []),
   }
 }
 
@@ -987,6 +988,16 @@ describe('chat orchestrator', () => {
         aborted: false,
         xmlFormatError: false,
       })
+      // Extra response for return_value nudge
+      .mockResolvedValueOnce({
+        content: 'summary',
+        toolCalls: [],
+        segments: [{ type: 'text', content: 'summary' }],
+        usage: { promptTokens: 5, completionTokens: 1 },
+        timing: { ttft: 1, completionTime: 1, tps: 1, prefillTps: 5 },
+        aborted: false,
+        xmlFormatError: false,
+      })
 
     const result = await runVerifierTurn({
       sessionManager: sessionManager as never,
@@ -1061,6 +1072,16 @@ describe('chat orchestrator', () => {
         aborted: false,
         xmlFormatError: false,
       })
+      // Extra response for return_value nudge
+      .mockResolvedValueOnce({
+        content: 'summary',
+        toolCalls: [],
+        segments: [{ type: 'text', content: 'summary' }],
+        usage: { promptTokens: 5, completionTokens: 1 },
+        timing: { ttft: 1, completionTime: 1, tps: 1, prefillTps: 5 },
+        aborted: false,
+        xmlFormatError: false,
+      })
 
     const result = await runVerifierTurn({
       sessionManager: sessionManager as never,
@@ -1072,7 +1093,7 @@ describe('chat orchestrator', () => {
     expect(result).toMatchObject({ allPassed: false, failed: [{ id: 'tests-pass', reason: 'still broken' }] })
     expect(execute).toHaveBeenCalledTimes(1)
 
-    expect(streamLLMPureMock.mock.calls).toHaveLength(3)
+    expect(streamLLMPureMock.mock.calls).toHaveLength(4)
     expect(streamLLMPureMock.mock.calls[1]?.[0]).toMatchObject({
       messages: expect.arrayContaining([
         expect.objectContaining({ role: 'assistant', content: 'I need to keep verifying.' }),
@@ -1169,6 +1190,16 @@ describe('chat orchestrator', () => {
         aborted: false,
         xmlFormatError: false,
       })
+      // Extra response for return_value nudge
+      .mockResolvedValueOnce({
+        content: 'summary',
+        toolCalls: [],
+        segments: [{ type: 'text', content: 'summary' }],
+        usage: { promptTokens: 5, completionTokens: 1 },
+        timing: { ttft: 1, completionTime: 1, tps: 1, prefillTps: 5 },
+        aborted: false,
+        xmlFormatError: false,
+      })
 
     const result = await runVerifierTurn({
       sessionManager: sessionManager as never,
@@ -1223,7 +1254,8 @@ describe('chat orchestrator', () => {
       execute: vi.fn(),
     })
     streamLLMPureMock.mockReturnValue({ kind: 'stream' })
-    for (let index = 0; index < 11; index++) {
+    // 11 for verifier nudges/stall + 1 for return_value nudge = 12
+    for (let index = 0; index < 12; index++) {
       consumeStreamGeneratorMock.mockResolvedValueOnce({
         content: `stopped-${index}`,
         toolCalls: [],
@@ -1245,7 +1277,7 @@ describe('chat orchestrator', () => {
     expect(result).toMatchObject({ allPassed: false, failed: [] })
     expect(sessionManager.updateCriterionStatus).not.toHaveBeenCalled()
     expect(sessionManager.addCriterionAttempt).not.toHaveBeenCalled()
-    expect(streamLLMPureMock.mock.calls).toHaveLength(11)
+    expect(streamLLMPureMock.mock.calls).toHaveLength(12)
 
     const nudgeMessages = eventStore.append.mock.calls.filter(
       ([, event]) => event.type === 'message.start'
@@ -1329,6 +1361,16 @@ describe('chat orchestrator', () => {
       segments: [{ type: 'text', content: 'All criteria verified' }],
       usage: { promptTokens: 8, completionTokens: 1 },
       timing: { ttft: 1, completionTime: 1, tps: 1, prefillTps: 8 },
+      aborted: false,
+      xmlFormatError: false,
+    })
+    // Extra response for return_value nudge
+    consumeStreamGeneratorMock.mockResolvedValueOnce({
+      content: 'summary',
+      toolCalls: [],
+      segments: [{ type: 'text', content: 'summary' }],
+      usage: { promptTokens: 5, completionTokens: 1 },
+      timing: { ttft: 1, completionTime: 1, tps: 1, prefillTps: 5 },
       aborted: false,
       xmlFormatError: false,
     })
@@ -1466,13 +1508,13 @@ describe('chat orchestrator', () => {
       expect.objectContaining({ type: 'failed' }),
     )
 
-    const nudgeMessages = eventStore.append.mock.calls.filter(
+    const verifierNudgeMessages = eventStore.append.mock.calls.filter(
       ([, event]) => event.type === 'message.start' &&
         (event.data as any).messageKind === 'correction' &&
-        (event.data as any).subAgentType === 'verifier'
+        (event.data as any).subAgentType === 'verifier' &&
+        (event.data as any).content?.includes('Use pass_criterion or fail_criterion')
     )
-    expect(nudgeMessages).toHaveLength(1)
-    expect((nudgeMessages[0]?.[1].data as any).content).toContain('Use pass_criterion or fail_criterion')
+    expect(verifierNudgeMessages).toHaveLength(1)
   })
 
   it('fails verifier only after repeated empty stops even after exploratory tool calls', async () => {
@@ -1552,8 +1594,8 @@ describe('chat orchestrator', () => {
         (event.data as any).messageKind === 'correction' &&
         (event.data as any).subAgentType === 'verifier'
     )
-    // 10 nudges + 1 stall restart message = 11
-    expect(correctionMessages).toHaveLength(11)
+    // 10 nudges + 1 stall restart message + 1 return_value nudge + 1 return_value stall = 13
+    expect(correctionMessages).toHaveLength(13)
   })
 
   it('does not consume the empty-stop budget for malformed verifier tool calls', async () => {
@@ -1599,7 +1641,8 @@ describe('chat orchestrator', () => {
       xmlFormatError: false,
     })
 
-    for (let index = 0; index < 11; index++) {
+    // 11 for verifier nudges/stall + 1 for return_value nudge = 12
+    for (let index = 0; index < 12; index++) {
       consumeStreamGeneratorMock.mockResolvedValueOnce({
         content: `stopped-${index}`,
         toolCalls: [],
@@ -1622,7 +1665,7 @@ describe('chat orchestrator', () => {
     expect(execute).not.toHaveBeenCalled()
     expect(sessionManager.updateCriterionStatus).not.toHaveBeenCalled()
     expect(sessionManager.addCriterionAttempt).not.toHaveBeenCalled()
-    expect(streamLLMPureMock.mock.calls).toHaveLength(12)
+    expect(streamLLMPureMock.mock.calls).toHaveLength(13)
   })
 
   it('handles verifier path denial and nudges until verification reaches a terminal state', async () => {
@@ -1692,6 +1735,16 @@ describe('chat orchestrator', () => {
         content: 'verified',
         toolCalls: [],
         segments: [{ type: 'text', content: 'verified' }],
+        usage: { promptTokens: 5, completionTokens: 1 },
+        timing: { ttft: 1, completionTime: 1, tps: 1, prefillTps: 5 },
+        aborted: false,
+        xmlFormatError: false,
+      })
+      // Extra response for return_value nudge
+      .mockResolvedValueOnce({
+        content: 'summary',
+        toolCalls: [],
+        segments: [{ type: 'text', content: 'summary' }],
         usage: { promptTokens: 5, completionTokens: 1 },
         timing: { ttft: 1, completionTime: 1, tps: 1, prefillTps: 5 },
         aborted: false,

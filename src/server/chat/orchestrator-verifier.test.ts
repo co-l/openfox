@@ -121,8 +121,8 @@ describe('runVerifierTurn - Sub-Agent Registry Integration', () => {
     })
 
     // LLM returns no tool calls - verifier is done (criteria will be nudged then stalled)
-    // Need enough responses for nudges (MAX_CONSECUTIVE_VERIFIER_NUDGES = 10) + final stall = 11
-    for (let i = 0; i < 11; i++) {
+    // Need enough responses for nudges (10) + final stall + return_value nudge = 12
+    for (let i = 0; i < 12; i++) {
       consumeStreamGeneratorMock.mockResolvedValueOnce({
         content: 'All verified',
         toolCalls: [],

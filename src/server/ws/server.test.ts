@@ -229,6 +229,9 @@ function createSessionManager(overrides: Record<string, unknown> = {}) {
     updateMessageStats: vi.fn(),
     updateMessage: vi.fn(),
     getCurrentWindowMessages: vi.fn(() => []),
+    drainAsapMessages: vi.fn(() => []),
+    drainCompletionMessages: vi.fn(() => []),
+    clearMessageQueue: vi.fn(),
     ...overrides,
   }
 
