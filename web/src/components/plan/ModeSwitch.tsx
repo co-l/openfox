@@ -1,5 +1,5 @@
 import type { SessionMode } from '@shared/types.js'
-import { useSessionStore, useIsRunning } from '../../stores/session'
+import { useSessionStore } from '../../stores/session'
 
 const modes: { mode: SessionMode; label: string; activeClass: string }[] = [
   { mode: 'planner', label: 'Planner', activeClass: 'bg-purple-500 text-white' },
@@ -9,7 +9,6 @@ const modes: { mode: SessionMode; label: string; activeClass: string }[] = [
 export function ModeSwitch() {
   const currentMode = useSessionStore(state => state.currentSession?.mode)
   const switchMode = useSessionStore(state => state.switchMode)
-  const isRunning = useIsRunning()
 
   if (!currentMode) return null
 
@@ -22,15 +21,13 @@ export function ModeSwitch() {
             type="button"
             key={mode}
             onClick={() => !isActive && switchMode(mode)}
-            disabled={isRunning}
             className={`
               px-3 py-1.5 text-sm font-medium transition-colors
-              ${isActive 
-                ? activeClass 
+              ${isActive
+                ? activeClass
                 : 'text-text-muted hover:text-text-primary hover:bg-bg-tertiary cursor-pointer'
               }
               ${!isActive && 'border-l border-border first:border-l-0'}
-              disabled:opacity-50 disabled:cursor-not-allowed
             `}
           >
             {label}

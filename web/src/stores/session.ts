@@ -33,6 +33,8 @@ import type {
   PhaseChangedPayload,
   CriteriaUpdatedPayload,
   ContextStatePayload,
+  QueuedMessage,
+  QueueStatePayload,
 } from '@shared/protocol.js'
 import { wsClient, type ConnectionStatus } from '../lib/ws'
 import { useConfigStore } from './config'
@@ -186,7 +188,11 @@ interface SessionState {
   
   // Pending path confirmation (outside-workdir access request)
   pendingPathConfirmation: PendingPathConfirmation | null
-  
+
+  // Message queue (while agent is running)
+  queuedMessages: QueuedMessage[]
+  abortInProgress: boolean
+
   // Error state
   error: { code: string; message: string } | null
   
@@ -225,7 +231,12 @@ interface SessionState {
 
   // Path confirmation
   confirmPath: (callId: string, approved: boolean) => void
-  
+
+  // Message queue
+  queueAsap: (content: string, attachments?: Attachment[]) => void
+  queueCompletion: (content: string, attachments?: Attachment[]) => void
+  cancelQueued: (queueId: string) => void
+
   clearError: () => void
   
   // Internal
@@ -333,6 +344,8 @@ export const useSessionStore = create<SessionState>((set, get) => {
   currentTodos: [],
   contextState: null,
   pendingPathConfirmation: null,
+  queuedMessages: [],
+  abortInProgress: false,
   error: null,
   
   connect: async () => {
@@ -385,6 +398,8 @@ export const useSessionStore = create<SessionState>((set, get) => {
         currentTodos: [],
         contextState: null,
         pendingPathConfirmation: null,
+        queuedMessages: [],
+        abortInProgress: false,
         error: null,
       })
     } else {
@@ -427,10 +442,12 @@ export const useSessionStore = create<SessionState>((set, get) => {
   },
   
   stopGeneration: () => {
+    if (get().abortInProgress) return
     // Flush any buffered streaming content before stopping
     cancelStreamingFlush()
     flushStreamingBuffer?.()
     wsClient.send('chat.stop', {})
+    set({ abortInProgress: true })
   },
   
   continueGeneration: () => {
@@ -468,7 +485,19 @@ export const useSessionStore = create<SessionState>((set, get) => {
     wsClient.send('path.confirm', { callId, approved })
     set({ pendingPathConfirmation: null })
   },
-  
+
+  queueAsap: (content, attachments) => {
+    wsClient.send('queue.asap', { content, attachments })
+  },
+
+  queueCompletion: (content, attachments) => {
+    wsClient.send('queue.completion', { content, attachments })
+  },
+
+  cancelQueued: (queueId) => {
+    wsClient.send('queue.cancel', { queueId })
+  },
+
   clearError: () => {
     set({ error: null })
   },
@@ -561,6 +590,8 @@ export const useSessionStore = create<SessionState>((set, get) => {
               ? { ...state.currentSession, isRunning: payload.isRunning }
               : null,
             pendingPathConfirmation: payload.isRunning ? state.pendingPathConfirmation : null,
+            // Reset abort and queue state when agent stops running
+            ...(!payload.isRunning ? { abortInProgress: false, queuedMessages: [] } : {}),
           }))
         }
         break
@@ -1020,10 +1051,16 @@ export const useSessionStore = create<SessionState>((set, get) => {
         break
       }
       
+      case 'queue.state': {
+        const payload = message.payload as QueueStatePayload
+        set({ queuedMessages: payload.messages })
+        break
+      }
+
       case 'error': {
         const payload = message.payload as { code: string; message: string }
         console.error('Server error:', payload)
-        set({ 
+        set({
           error: { code: payload.code, message: payload.message },
           streamingMessageId: null,
         })
@@ -1036,4 +1073,12 @@ export const useSessionStore = create<SessionState>((set, get) => {
 // Helper selector: is the session currently running (agent active)?
 export function useIsRunning() {
   return useSessionStore(state => state.currentSession?.isRunning ?? false)
+}
+
+export function useQueuedMessages() {
+  return useSessionStore(state => state.queuedMessages)
+}
+
+export function useAbortInProgress() {
+  return useSessionStore(state => state.abortInProgress)
 }

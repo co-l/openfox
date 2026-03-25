@@ -42,6 +42,11 @@ import type {
   SettingsGetPayload,
   SettingsSetPayload,
   SettingsValuePayload,
+  QueueAsapPayload,
+  QueueCompletionPayload,
+  QueueCancelPayload,
+  QueueStatePayload,
+  QueuedMessage,
 } from '../../shared/protocol.js'
 import { isClientMessage, createServerMessage } from '../../shared/protocol.js'
 import type { Project, Session, SessionSummary, SessionMode, SessionPhase, Criterion, Todo, ToolResult, Message, ContextState, ToolCall } from '../../shared/types.js'
@@ -314,6 +319,24 @@ export function isSessionSetProviderPayload(payload: unknown): payload is Sessio
 
 export function createSettingsValueMessage(key: string, value: string | null, correlationId?: string): ServerMessage {
   return createServerMessage<SettingsValuePayload>('settings.value', { key, value }, correlationId)
+}
+
+// Queue messages
+export function createQueueStateMessage(messages: QueuedMessage[]): ServerMessage<QueueStatePayload> {
+  return createServerMessage('queue.state', { messages })
+}
+
+// Queue payload type guards
+export function isQueueAsapPayload(payload: unknown): payload is QueueAsapPayload {
+  return typeof payload === 'object' && payload !== null && 'content' in payload && typeof (payload as QueueAsapPayload).content === 'string'
+}
+
+export function isQueueCompletionPayload(payload: unknown): payload is QueueCompletionPayload {
+  return typeof payload === 'object' && payload !== null && 'content' in payload && typeof (payload as QueueCompletionPayload).content === 'string'
+}
+
+export function isQueueCancelPayload(payload: unknown): payload is QueueCancelPayload {
+  return typeof payload === 'object' && payload !== null && 'queueId' in payload && typeof (payload as QueueCancelPayload).queueId === 'string'
 }
 
 // ============================================================================

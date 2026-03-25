@@ -17,6 +17,7 @@ import type {
   ContextState,
   Attachment,
 } from '../../shared/types.js'
+import type { QueuedMessage } from '../../shared/protocol.js'
 import {
   createSession as dbCreateSession,
   getSession as dbGetSession,
@@ -664,6 +665,59 @@ export class SessionManager {
     emitCriteriaSet(sessionId, updatedCriteria)
 
     return updatedCriteria
+  }
+
+  // ============================================================================
+  // Message Queue (runtime state, transient while agent is running)
+  // ============================================================================
+
+  private messageQueues = new Map<string, QueuedMessage[]>()
+
+  queueMessage(sessionId: string, mode: 'asap' | 'completion', content: string, attachments?: Attachment[]): QueuedMessage {
+    const queue = this.messageQueues.get(sessionId) ?? []
+    const msg: QueuedMessage = {
+      queueId: crypto.randomUUID(),
+      mode,
+      content,
+      ...(attachments ? { attachments } : {}),
+      queuedAt: new Date().toISOString(),
+    }
+    queue.push(msg)
+    this.messageQueues.set(sessionId, queue)
+    return msg
+  }
+
+  cancelQueuedMessage(sessionId: string, queueId: string): boolean {
+    const queue = this.messageQueues.get(sessionId)
+    if (!queue) return false
+    const idx = queue.findIndex(m => m.queueId === queueId)
+    if (idx === -1) return false
+    queue.splice(idx, 1)
+    return true
+  }
+
+  drainAsapMessages(sessionId: string): QueuedMessage[] {
+    const queue = this.messageQueues.get(sessionId)
+    if (!queue) return []
+    const asap = queue.filter(m => m.mode === 'asap')
+    this.messageQueues.set(sessionId, queue.filter(m => m.mode !== 'asap'))
+    return asap
+  }
+
+  drainCompletionMessages(sessionId: string): QueuedMessage[] {
+    const queue = this.messageQueues.get(sessionId)
+    if (!queue) return []
+    const completion = queue.filter(m => m.mode === 'completion')
+    this.messageQueues.set(sessionId, queue.filter(m => m.mode !== 'completion'))
+    return completion
+  }
+
+  getQueueState(sessionId: string): QueuedMessage[] {
+    return this.messageQueues.get(sessionId) ?? []
+  }
+
+  clearMessageQueue(sessionId: string): void {
+    this.messageQueues.delete(sessionId)
   }
 
   // ============================================================================

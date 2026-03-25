@@ -12,6 +12,7 @@
 
 import type { Attachment, ContextState, InjectedFile, MessageStats, PromptContext, StatsIdentity, Todo, ToolCall, ToolMode, ToolResult } from '../../shared/types.js'
 import type { ServerMessage } from '../../shared/protocol.js'
+import { createQueueStateMessage } from '../ws/protocol.js'
 import type { LLMClientWithModel } from '../llm/client.js'
 import type { SessionSnapshot } from '../events/types.js'
 import { getEventStore, getContextMessages, getCurrentContextWindowId } from '../events/index.js'
@@ -401,6 +402,20 @@ async function runPlannerTurn(
       throw new Error('Aborted')
     }
 
+    // Inject ASAP messages before next LLM call
+    const asapMessages = options.sessionManager.drainAsapMessages(sessionId)
+    for (const asap of asapMessages) {
+      const asapMsgId = crypto.randomUUID()
+      eventStore.append(sessionId, createMessageStartEvent(asapMsgId, 'user', asap.content, {
+        ...getCurrentWindowMessageOptions(sessionId),
+        ...(asap.attachments ? { attachments: asap.attachments } : {}),
+      }))
+      eventStore.append(sessionId, { type: 'message.done', data: { messageId: asapMsgId } })
+    }
+    if (asapMessages.length > 0) {
+      options.onMessage?.(createQueueStateMessage(options.sessionManager.getQueueState(sessionId)))
+    }
+
     // Continue with another response
     return runPlannerTurn(options, turnMetrics)
   }
@@ -641,6 +656,20 @@ export async function runBuilderTurn(
       }))
       eventStore.append(sessionId, createChatDoneEvent(assistantMsgId, 'stopped', stats))
       throw new Error('Aborted')
+    }
+
+    // Inject ASAP messages before next LLM call
+    const asapMessages = options.sessionManager.drainAsapMessages(sessionId)
+    for (const asap of asapMessages) {
+      const asapMsgId = crypto.randomUUID()
+      eventStore.append(sessionId, createMessageStartEvent(asapMsgId, 'user', asap.content, {
+        ...getCurrentWindowMessageOptions(sessionId),
+        ...(asap.attachments ? { attachments: asap.attachments } : {}),
+      }))
+      eventStore.append(sessionId, { type: 'message.done', data: { messageId: asapMsgId } })
+    }
+    if (asapMessages.length > 0) {
+      options.onMessage?.(createQueueStateMessage(options.sessionManager.getQueueState(sessionId)))
     }
 
     // Continue with another response

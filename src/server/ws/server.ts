@@ -69,6 +69,10 @@ import {
   isSessionSetProviderPayload,
   createSettingsValueMessage,
   storedEventToServerMessage,
+  createQueueStateMessage,
+  isQueueAsapPayload,
+  isQueueCompletionPayload,
+  isQueueCancelPayload,
 } from './protocol.js'
 
 function getCurrentWindowMessageOptions(sessionId: string): { contextWindowId: string } | undefined {
@@ -342,6 +346,62 @@ async function handleClientMessage(
 
   const statsForSession = (sessionId: string): StatsIdentity =>
     getSessionStatsIdentity?.(sessionId) ?? resolveStatsIdentity(getLLMClient(), getActiveProvider)
+
+  /**
+   * Start a chat turn with completion queue continuation.
+   * When a turn finishes, checks for queued completion messages and auto-starts the next turn.
+   */
+  const startTurnWithCompletionChain = (sessionId: string, controller: AbortController) => {
+    runChatTurn({
+      sessionManager,
+      sessionId,
+      llmClient: llmForSession(sessionId),
+      statsIdentity: statsForSession(sessionId),
+      signal: controller.signal,
+      onMessage: (msg) => sendForSession(sessionId, msg),
+    }).catch((error) => {
+      if (error instanceof Error && error.message === 'Aborted') {
+        return
+      }
+      logger.error('Chat turn error', { error })
+    }).finally(() => {
+      if (activeAgents.get(sessionId) !== controller) {
+        return
+      }
+      activeAgents.delete(sessionId)
+
+      // Check completion queue before going idle
+      const completionMsgs = sessionManager.drainCompletionMessages(sessionId)
+      const next = completionMsgs[0]
+      if (next) {
+        // Re-queue remaining completion messages
+        for (const remaining of completionMsgs.slice(1)) {
+          sessionManager.queueMessage(sessionId, 'completion', remaining.content, remaining.attachments)
+        }
+        // Broadcast updated queue state
+        sendForSession(sessionId, createQueueStateMessage(sessionManager.getQueueState(sessionId)))
+
+        // Add user message and start new turn
+        const userMessage = sessionManager.addMessage(sessionId, {
+          role: 'user',
+          content: next.content,
+          ...(next.attachments ? { attachments: next.attachments } : {}),
+        })
+        sendForSession(sessionId, createChatMessageMessage(userMessage))
+
+        const newController = new AbortController()
+        activeAgents.set(sessionId, newController)
+        startTurnWithCompletionChain(sessionId, newController)
+        return // Keep isRunning=true
+      }
+
+      // No more queued messages — go idle
+      sessionManager.clearMessageQueue(sessionId)
+      sessionManager.setRunning(sessionId, false)
+      const contextState = sessionManager.getContextState(sessionId)
+      sendForSession(sessionId, createContextStateMessage(contextState))
+    })
+  }
 
   const ensureEventStoreSubscription = (sessionId: string) => {
     if (client.eventStoreSubscriptions.has(sessionId)) {
@@ -744,31 +804,8 @@ async function handleClientMessage(
       send({ type: 'ack', payload: {}, id: message.id })
       
       // Use NEW orchestrator (events go through EventStore → WS subscription)
-      runChatTurn({
-        sessionManager,
-        sessionId,
-        llmClient: llmForSession(sessionId),
-        statsIdentity: statsForSession(sessionId),
-        signal: controller.signal,
-         onMessage: (msg) => sendForSession(sessionId, msg),  // For path confirmation dialogs
-      }).catch((error) => {
-        // Don't create error message for controlled abort
-        if (error instanceof Error && error.message === 'Aborted') {
-          return
-        }
-        logger.error('Continue error', { error })
-        // Errors are handled inside runChatTurn and appended to EventStore
-      }).finally(() => {
-        if (activeAgents.get(sessionId) !== controller) {
-          return
-        }
-        activeAgents.delete(sessionId)
-        // setRunning emits running.changed event
-        sessionManager.setRunning(sessionId, false)
-        // Send updated context state to frontend
-        const contextState = sessionManager.getContextState(sessionId)
-        sendForSession(sessionId, createContextStateMessage(contextState))
-      })
+      // Completion queue auto-sends next message when turn finishes
+      startTurnWithCompletionChain(sessionId, controller)
       
       break
     }
@@ -781,6 +818,57 @@ async function handleClientMessage(
 
       abortSessionExecution(client.activeSessionId, 'Session aborted by user')
 
+      send({ type: 'ack', payload: {}, id: message.id })
+      break
+    }
+
+    // =========================================================================
+    // Message Queue
+    // =========================================================================
+
+    case 'queue.asap': {
+      if (!client.activeSessionId) {
+        send(createErrorMessage('NO_SESSION', 'No active session', message.id))
+        return
+      }
+      if (!isQueueAsapPayload(message.payload)) {
+        send(createErrorMessage('INVALID_PAYLOAD', 'Invalid queue.asap payload', message.id))
+        return
+      }
+      const { content, attachments } = message.payload
+      sessionManager.queueMessage(client.activeSessionId, 'asap', content, attachments)
+      sendForSession(client.activeSessionId, createQueueStateMessage(sessionManager.getQueueState(client.activeSessionId)))
+      send({ type: 'ack', payload: {}, id: message.id })
+      break
+    }
+
+    case 'queue.completion': {
+      if (!client.activeSessionId) {
+        send(createErrorMessage('NO_SESSION', 'No active session', message.id))
+        return
+      }
+      if (!isQueueCompletionPayload(message.payload)) {
+        send(createErrorMessage('INVALID_PAYLOAD', 'Invalid queue.completion payload', message.id))
+        return
+      }
+      const { content, attachments } = message.payload
+      sessionManager.queueMessage(client.activeSessionId, 'completion', content, attachments)
+      sendForSession(client.activeSessionId, createQueueStateMessage(sessionManager.getQueueState(client.activeSessionId)))
+      send({ type: 'ack', payload: {}, id: message.id })
+      break
+    }
+
+    case 'queue.cancel': {
+      if (!client.activeSessionId) {
+        send(createErrorMessage('NO_SESSION', 'No active session', message.id))
+        return
+      }
+      if (!isQueueCancelPayload(message.payload)) {
+        send(createErrorMessage('INVALID_PAYLOAD', 'Invalid queue.cancel payload', message.id))
+        return
+      }
+      sessionManager.cancelQueuedMessage(client.activeSessionId, message.payload.queueId)
+      sendForSession(client.activeSessionId, createQueueStateMessage(sessionManager.getQueueState(client.activeSessionId)))
       send({ type: 'ack', payload: {}, id: message.id })
       break
     }
@@ -998,9 +1086,30 @@ async function handleClientMessage(
             return
           }
           activeAgents.delete(sessionId)
+
+          // Check completion queue before going idle
+          const completionMsgs = sessionManager.drainCompletionMessages(sessionId)
+          const nextCompletion = completionMsgs[0]
+          if (nextCompletion) {
+            for (const remaining of completionMsgs.slice(1)) {
+              sessionManager.queueMessage(sessionId, 'completion', remaining.content, remaining.attachments)
+            }
+            sendForSession(sessionId, createQueueStateMessage(sessionManager.getQueueState(sessionId)))
+            const userMessage = sessionManager.addMessage(sessionId, {
+              role: 'user',
+              content: nextCompletion.content,
+              ...(nextCompletion.attachments ? { attachments: nextCompletion.attachments } : {}),
+            })
+            sendForSession(sessionId, createChatMessageMessage(userMessage))
+            const newController = new AbortController()
+            activeAgents.set(sessionId, newController)
+            startTurnWithCompletionChain(sessionId, newController)
+            return
+          }
+
+          sessionManager.clearMessageQueue(sessionId)
           sessionManager.setRunning(sessionId, false)
           eventStore.append(sessionId, { type: 'running.changed', data: { isRunning: false } })
-          // Send updated context state to frontend
           const contextState = sessionManager.getContextState(sessionId)
           sendForSession(sessionId, createContextStateMessage(contextState))
         }
@@ -1173,7 +1282,28 @@ async function handleClientMessage(
           return
         }
         activeAgents.delete(sessionId)
-        // setRunning emits running.changed event
+
+        // Check completion queue before going idle
+        const completionMsgs = sessionManager.drainCompletionMessages(sessionId)
+        const nextCompletion = completionMsgs[0]
+        if (nextCompletion) {
+          for (const remaining of completionMsgs.slice(1)) {
+            sessionManager.queueMessage(sessionId, 'completion', remaining.content, remaining.attachments)
+          }
+          sendForSession(sessionId, createQueueStateMessage(sessionManager.getQueueState(sessionId)))
+          const userMessage = sessionManager.addMessage(sessionId, {
+            role: 'user',
+            content: nextCompletion.content,
+            ...(nextCompletion.attachments ? { attachments: nextCompletion.attachments } : {}),
+          })
+          sendForSession(sessionId, createChatMessageMessage(userMessage))
+          const newController = new AbortController()
+          activeAgents.set(sessionId, newController)
+          startTurnWithCompletionChain(sessionId, newController)
+          return
+        }
+
+        sessionManager.clearMessageQueue(sessionId)
         sessionManager.setRunning(sessionId, false)
       })
       

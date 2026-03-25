@@ -53,6 +53,10 @@ export type ClientMessageType =
   // Provider management
   | 'provider.activate'   // Switch to a different provider
   | 'session.setProvider'  // Set provider/model for current session
+  // Message queue (while agent is running)
+  | 'queue.asap'          // Queue message for ASAP injection (between tool calls)
+  | 'queue.completion'    // Queue message for delivery on turn completion
+  | 'queue.cancel'        // Cancel a queued message
 
 export interface ClientMessage<T = unknown> {
   id: string
@@ -141,6 +145,30 @@ export interface SessionSetProviderPayload {
   model?: string  // If omitted, use provider's default model
 }
 
+// Queue payloads
+export interface QueueAsapPayload {
+  content: string
+  attachments?: Attachment[]
+}
+
+export interface QueueCompletionPayload {
+  content: string
+  attachments?: Attachment[]
+}
+
+export interface QueueCancelPayload {
+  queueId: string
+}
+
+// Shared queue types
+export interface QueuedMessage {
+  queueId: string
+  mode: 'asap' | 'completion'
+  content: string
+  attachments?: Attachment[]
+  queuedAt: string
+}
+
 // ============================================================================
 // Server → Client Messages
 // ============================================================================
@@ -185,6 +213,8 @@ export type ServerMessageType =
   | 'settings.value'      // Setting value response
   // Provider events
   | 'provider.changed'    // Active provider was switched
+  // Message queue events
+  | 'queue.state'         // Broadcast current queue state to client
   // Other
   | 'lsp.diagnostics'
   | 'error'
@@ -363,6 +393,11 @@ export interface ProviderChangedPayload {
   providerName: string
   model: string
   backend: string
+}
+
+// Queue payloads (server → client)
+export interface QueueStatePayload {
+  messages: QueuedMessage[]
 }
 
 // Other payloads

@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useCallback, useMemo } from 'react'
 import { Virtuoso, type VirtuosoHandle } from 'react-virtuoso'
-import { useSessionStore, useIsRunning } from '../../stores/session'
+import { useSessionStore, useIsRunning, useQueuedMessages } from '../../stores/session'
 // @ts-ignore
 import type { Message, ToolCall, Attachment } from '@shared/types.js'
 import { SessionLayout } from '../layout/SessionLayout'
@@ -47,6 +47,10 @@ export function PlanPanel() {
   const acceptAndBuild = useSessionStore(state => state.acceptAndBuild)
   const stopGeneration = useSessionStore(state => state.stopGeneration)
   const launchRunner = useSessionStore(state => state.launchRunner)
+  const queueAsap = useSessionStore(state => state.queueAsap)
+  const queueCompletion = useSessionStore(state => state.queueCompletion)
+  const cancelQueued = useSessionStore(state => state.cancelQueued)
+  const queuedMessages = useQueuedMessages()
   
   // Prompt history navigation
   const {
@@ -255,7 +259,15 @@ export function PlanPanel() {
   
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
-    if ((!input.trim() && attachments.length === 0) || isRunning) return
+    if (!input.trim() && attachments.length === 0) return
+
+    if (isRunning) {
+      // Default Enter key to ASAP queue when agent is running
+      queueAsap(input, attachments.length > 0 ? attachments : undefined)
+      setInput('')
+      setAttachments([])
+      return
+    }
 
     // Scroll to bottom when sending a message
     virtuosoRef.current?.scrollToIndex({ index: 'LAST', behavior: 'smooth' })
@@ -285,6 +297,7 @@ export function PlanPanel() {
         case 'Escape':
           e.preventDefault()
           closeHistory()
+          if (isRunning) stopGeneration()
           return
         case 'ArrowUp':
           e.preventDefault()
@@ -615,12 +628,40 @@ export function PlanPanel() {
           />
         )}
         
-        <div 
+        {/* Queued messages display */}
+        {queuedMessages.length > 0 && (
+          <div className="mb-2 flex flex-wrap gap-1.5">
+            {queuedMessages.map((qm) => (
+              <div
+                key={qm.queueId}
+                className={`inline-flex items-center gap-1.5 px-2 py-1 rounded text-xs ${
+                  qm.mode === 'asap'
+                    ? 'bg-amber-500/15 text-amber-300 border border-amber-500/30'
+                    : 'bg-blue-500/15 text-blue-300 border border-blue-500/30'
+                }`}
+              >
+                <span className="font-medium">{qm.mode === 'asap' ? 'ASAP' : 'Queue'}:</span>
+                <span className="truncate max-w-[200px]">{qm.content}</span>
+                <button
+                  type="button"
+                  onClick={() => cancelQueued(qm.queueId)}
+                  className="hover:text-white transition-colors"
+                >
+                  <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+
+        <div
           className={`flex items-end gap-3 p-3 rounded border transition-colors ${
-            dragOver 
-              ? 'border-accent-primary/50 bg-accent-primary/10' 
-              : isRunning 
-                ? 'border-accent-warning/30 bg-accent-warning/5' 
+            dragOver
+              ? 'border-accent-primary/50 bg-accent-primary/10'
+              : isRunning
+                ? 'border-accent-warning/30 bg-accent-warning/5'
                 : 'border-border bg-bg-tertiary/50'
           }`}
           onDragOver={handleDragOver}
@@ -631,8 +672,7 @@ export function PlanPanel() {
           <button
             type="button"
             onClick={handleAttachClick}
-            disabled={isRunning}
-            className="p-3 rounded hover:bg-bg-tertiary text-text-muted hover:text-text-primary disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+            className="p-3 rounded hover:bg-bg-tertiary text-text-muted hover:text-text-primary transition-colors"
             title="Attach image file"
           >
             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -686,13 +726,36 @@ export function PlanPanel() {
               </button>
             </div>
           ) : (
-            <button
-              type="button"
-              onClick={stopGeneration}
-              className="px-4 py-1.5 rounded bg-accent-error/20 text-sm text-accent-error font-medium hover:bg-accent-error/30 transition-colors animate-pulse"
-            >
-              Stop
-            </button>
+            <div className="flex items-center gap-1.5">
+              <button
+                type="button"
+                onClick={() => {
+                  if (input.trim() || attachments.length > 0) {
+                    queueAsap(input, attachments.length > 0 ? attachments : undefined)
+                    setInput('')
+                    setAttachments([])
+                  }
+                }}
+                disabled={!input.trim() && attachments.length === 0}
+                className="px-3 py-1.5 rounded bg-amber-500/20 text-sm text-amber-400 font-medium hover:bg-amber-500/30 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+              >
+                Send ASAP
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  if (input.trim() || attachments.length > 0) {
+                    queueCompletion(input, attachments.length > 0 ? attachments : undefined)
+                    setInput('')
+                    setAttachments([])
+                  }
+                }}
+                disabled={!input.trim() && attachments.length === 0}
+                className="px-3 py-1.5 rounded bg-blue-500/20 text-sm text-blue-400 font-medium hover:bg-blue-500/30 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+              >
+                Queue
+              </button>
+            </div>
           )}
         </div>
         <div className="mt-3 flex items-center justify-between">
