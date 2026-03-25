@@ -1,7 +1,9 @@
 import { memo } from 'react'
 import type { Message, PromptContext } from '@shared/types.js'
+import type { TaskCompletedPayload } from '@shared/protocol.js'
 import { Markdown } from '../shared/Markdown'
 import { AssistantMessage } from './AssistantMessage'
+import { TaskCompletedCard } from './TaskCompletedCard'
 import { MessageAttachments } from '../shared/MessageAttachments.js'
 import { MessageOptionsMenu } from './MessageOptionsMenu'
 
@@ -105,6 +107,16 @@ export const ChatMessage = memo(function ChatMessage({ message, isLastAssistantM
     )
   }
   
+  // Task completed card — rendered from marker message
+  if (message.messageKind === 'task-completed') {
+    try {
+      const data = JSON.parse(message.content) as TaskCompletedPayload
+      return <TaskCompletedCard data={data} />
+    } catch {
+      // Fall through to default rendering
+    }
+  }
+
   // Context reset separator (full-width divider for fresh context)
   if (message.messageKind === 'context-reset') {
     return (

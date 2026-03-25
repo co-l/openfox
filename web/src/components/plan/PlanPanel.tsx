@@ -39,7 +39,6 @@ export function PlanPanel() {
   const sessions = useSessionStore(state => state.sessions)
   const error = useSessionStore(state => state.error)
   const pendingPathConfirmation = useSessionStore(state => state.pendingPathConfirmation)
-  
   const isRunning = useIsRunning()
   
   const sendMessage = useSessionStore(state => state.sendMessage)

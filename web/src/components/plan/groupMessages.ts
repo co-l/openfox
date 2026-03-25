@@ -3,7 +3,7 @@ import type { Message, ToolCall } from '@shared/types.js'
 export type { Message, ToolCall }
 
 // Display item: either a single message, a grouped sub-agent run, criteria batch, or a context window divider
-export type DisplayItem = 
+export type DisplayItem =
   | { type: 'message'; message: Message }
   | { type: 'subagent'; subAgentId: string; subAgentType: string; messages: Message[] }
   | { type: 'criteria-batch'; toolCalls: ToolCall[] }

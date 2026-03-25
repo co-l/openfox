@@ -444,6 +444,11 @@ export function storedEventToServerMessage(event: StoredEvent): ServerMessage | 
       return createPhaseChangedMessage(data.phase)
     }
 
+    case 'task.completed': {
+      const data = event.data as Extract<TurnEvent, { type: 'task.completed' }>['data']
+      return createServerMessage('task.completed', data)
+    }
+
     case 'mode.changed': {
       const data = event.data as Extract<TurnEvent, { type: 'mode.changed' }>['data']
       return createModeChangedMessage(data.mode, data.auto, data.reason)

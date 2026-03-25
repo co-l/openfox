@@ -205,6 +205,8 @@ export type ServerMessageType =
   | 'mode.changed'        // Mode was changed
   // Phase events
   | 'phase.changed'       // Workflow phase changed (plan/build/verification/done)
+  // Task completion
+  | 'task.completed'      // Task finished with summary stats
   // Criteria events
   | 'criteria.updated'    // Criteria changed
   // Context events
@@ -374,6 +376,19 @@ export interface ModeChangedPayload {
 // Phase payloads
 export interface PhaseChangedPayload {
   phase: SessionPhase
+}
+
+// Task completion payloads
+export interface TaskCompletedPayload {
+  summary: string | null
+  iterations: number
+  totalTimeSeconds: number
+  totalToolCalls: number
+  totalTokensGenerated: number
+  avgGenerationSpeed: number
+  responseCount: number
+  llmCallCount: number
+  criteria: Array<{ id: string; description: string; status: string }>
 }
 
 // Criteria payloads

@@ -13,6 +13,7 @@ import { decideNextAction } from './decision.js'
 import type { SessionManager } from '../session/index.js'
 import { getEventStore, getCurrentContextWindowId } from '../events/index.js'
 import { logger } from '../utils/logger.js'
+import { computeSessionStats } from '../../shared/stats.js'
 
 // Import from chat orchestrator (EventStore-based)
 import { runBuilderTurn, runVerifierTurn, TurnMetrics, createMessageStartEvent } from '../chat/orchestrator.js'
@@ -60,18 +61,51 @@ export async function runOrchestrator(options: OrchestratorOptions): Promise<Orc
     switch (action.type) {
       case 'DONE': {
         sessionManager.setPhase(sessionId, 'done')
-        eventStore.append(sessionId, { type: 'phase.changed', data: { phase: 'done' } })
+
+        // Emit task.completed event with summary stats
+        const totalTimeSeconds = Math.round((performance.now() - startTime) / 100) / 10
+        const completedSession = sessionManager.requireSession(sessionId)
+        const sessionStats = computeSessionStats(completedSession.messages)
+        // Count tool calls from assistant messages (metadata counter is unused)
+        const totalToolCalls = completedSession.messages.reduce(
+          (sum, m) => sum + (m.toolCalls?.length ?? 0), 0
+        )
+        const taskCompletedData = {
+          summary: completedSession.summary,
+          iterations,
+          totalTimeSeconds,
+          totalToolCalls,
+          totalTokensGenerated: sessionStats?.generationTokens ?? 0,
+          avgGenerationSpeed: sessionStats?.avgGenerationSpeed ?? 0,
+          responseCount: sessionStats?.responseCount ?? 0,
+          llmCallCount: sessionStats?.llmCallCount ?? 0,
+          criteria: completedSession.criteria.map(c => ({
+            id: c.id,
+            description: c.description,
+            status: c.status.type,
+          })),
+        }
+        eventStore.append(sessionId, { type: 'task.completed', data: taskCompletedData })
+
+        // Emit a marker message so the card has a natural position in the timeline
+        const markerMsgId = crypto.randomUUID()
+        eventStore.append(sessionId, createMessageStartEvent(markerMsgId, 'user', JSON.stringify(taskCompletedData), {
+          ...(currentWindowMessageOptions ?? {}),
+          isSystemGenerated: true,
+          messageKind: 'task-completed',
+        }))
+        eventStore.append(sessionId, { type: 'message.done', data: { messageId: markerMsgId } })
+
         logger.debug('Orchestrator complete', { sessionId, iterations })
         return {
           finalAction: action,
           iterations,
-          totalTime: (performance.now() - startTime) / 1000,
+          totalTime: totalTimeSeconds,
         }
       }
       
       case 'BLOCKED': {
         sessionManager.setPhase(sessionId, 'blocked')
-        eventStore.append(sessionId, { type: 'phase.changed', data: { phase: 'blocked' } })
         
         // Inject message explaining why blocked
         const blockedMsgId = crypto.randomUUID()
@@ -92,7 +126,6 @@ export async function runOrchestrator(options: OrchestratorOptions): Promise<Orc
       
       case 'RUN_VERIFIER': {
         sessionManager.setPhase(sessionId, 'verification')
-        eventStore.append(sessionId, { type: 'phase.changed', data: { phase: 'verification' } })
         
         // Run verification step
         const turnMetrics = new TurnMetrics()
@@ -104,7 +137,6 @@ export async function runOrchestrator(options: OrchestratorOptions): Promise<Orc
       
       case 'RUN_BUILDER': {
         sessionManager.setPhase(sessionId, 'build')
-        eventStore.append(sessionId, { type: 'phase.changed', data: { phase: 'build' } })
         
         // Inject nudge message if this is a retry (not first iteration)
         if (iterations > 1) {

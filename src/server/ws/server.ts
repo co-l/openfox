@@ -232,8 +232,8 @@ export function createWebSocketServer(
             // Get messages from EventStore
             const eventStore = getEventStore()
             const events = eventStore.getEvents(sessionId)
-            const messages = events.length > 0 
-              ? buildMessagesFromStoredEvents(events) 
+            const messages = events.length > 0
+              ? buildMessagesFromStoredEvents(events)
               : []
             ws.send(serializeServerMessage({ ...createSessionStateMessage(session, messages), sessionId }))
           }
@@ -608,7 +608,7 @@ async function handleClientMessage(
       // Build messages from EventStore
       messages = buildMessagesFromStoredEvents(events)
       logger.debug('Loaded messages from EventStore', { sessionId: session.id, eventCount: events.length, messageCount: messages.length })
-      
+
       sendForSession(session.id, createSessionStateMessage(session, messages, message.id))
       
       // Send context state

@@ -273,6 +273,13 @@ function handleGlobalSoundEffects(message: ServerMessage, state: SessionState): 
     return
   }
 
+  // task.completed is emitted exactly once per orchestrator run — reliable trigger
+  if (message.type === 'task.completed') {
+    const agent = resolveAgentType(state, message.sessionId)
+    playAchievement(agent)
+    return
+  }
+
   if (message.type === 'phase.changed' && message.sessionId) {
     const payload = message.payload as PhaseChangedPayload
     const previousPhase = lastSeenPhase.get(message.sessionId) ?? null
@@ -283,9 +290,6 @@ function handleGlobalSoundEffects(message: ServerMessage, state: SessionState): 
     }
 
     const agent = resolveAgentType(state, message.sessionId)
-    if (payload.phase === 'done') {
-      playAchievement(agent)
-    }
     if (payload.phase === 'blocked') {
       playIntervention(agent)
     }
@@ -360,7 +364,7 @@ export const useSessionStore = create<SessionState>((set, get) => {
   queuedMessages: [],
   abortInProgress: false,
   error: null,
-  
+
   connect: async () => {
     const status = get().connectionStatus
     if (status === 'connected' || status === 'reconnecting') return

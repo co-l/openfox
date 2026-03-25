@@ -69,7 +69,7 @@ export type TurnEvent =
         subAgentId?: string
         subAgentType?: 'verifier' | 'code_reviewer' | 'test_generator' | 'debugger'
         isSystemGenerated?: boolean
-        messageKind?: 'correction' | 'auto-prompt' | 'context-reset'
+        messageKind?: 'correction' | 'auto-prompt' | 'context-reset' | 'task-completed'
         isCompactionSummary?: boolean // True if this is the summary message after compaction
         tokenCount?: number // Known upfront for user messages
         attachments?: Attachment[] // Optional image attachments
@@ -220,6 +220,28 @@ export type TurnEvent =
     }
 
   // ----------------------------------------------------------------------------
+  // Task completion
+  // ----------------------------------------------------------------------------
+  | {
+      type: 'task.completed'
+      data: {
+        summary: string | null
+        iterations: number
+        totalTimeSeconds: number
+        totalToolCalls: number
+        totalTokensGenerated: number
+        avgGenerationSpeed: number
+        responseCount: number
+        llmCallCount: number
+        criteria: Array<{
+          id: string
+          description: string
+          status: string
+        }>
+      }
+    }
+
+  // ----------------------------------------------------------------------------
   // Errors and control flow
   // ----------------------------------------------------------------------------
   | {
@@ -311,7 +333,7 @@ export interface SnapshotMessage {
   subAgentId?: string
   subAgentType?: 'verifier' | 'code_reviewer' | 'test_generator' | 'debugger'
   isSystemGenerated?: boolean
-  messageKind?: 'correction' | 'auto-prompt' | 'context-reset'
+  messageKind?: 'correction' | 'auto-prompt' | 'context-reset' | 'task-completed'
   contextWindowId?: string
   isCompactionSummary?: boolean
   promptContext?: PromptContext

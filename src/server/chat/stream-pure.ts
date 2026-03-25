@@ -291,7 +291,7 @@ export function createMessageStartEvent(
     subAgentId?: string
     subAgentType?: 'verifier' | 'code_reviewer' | 'test_generator' | 'debugger'
     isSystemGenerated?: boolean
-    messageKind?: 'correction' | 'auto-prompt' | 'context-reset'
+    messageKind?: 'correction' | 'auto-prompt' | 'context-reset' | 'task-completed'
   }
 ): TurnEvent {
   return {
