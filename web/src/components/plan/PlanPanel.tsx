@@ -86,17 +86,18 @@ export function PlanPanel() {
     return isAtBottom ? 'smooth' : false
   }, [])
 
-  // Scroll to bottom when session messages are loaded (e.g. loading an existing session)
-  const prevSessionIdRef = useRef<string | null>(null)
+  // Scroll to bottom when a session's messages first load.
+  // Track per-session so it only fires once (not on every new streaming message).
+  const scrolledSessionRef = useRef<string | null>(null)
   useEffect(() => {
     const sessionId = session?.id ?? null
-    if (sessionId !== prevSessionIdRef.current && displayItems.length > 0) {
-      prevSessionIdRef.current = sessionId
-      // Use setTimeout to let Virtuoso measure items first
-      setTimeout(() => {
-        virtuosoRef.current?.scrollToIndex({ index: 'LAST', align: 'end' })
-      }, 0)
-    }
+    if (!sessionId || displayItems.length === 0) return
+    if (scrolledSessionRef.current === sessionId) return
+    scrolledSessionRef.current = sessionId
+    // requestAnimationFrame lets Virtuoso render the items before we scroll
+    requestAnimationFrame(() => {
+      virtuosoRef.current?.scrollToIndex({ index: 'LAST', align: 'end' })
+    })
   }, [session?.id, displayItems.length])
 
   // Auto-resize textarea based on content, up to 200px max
@@ -426,7 +427,7 @@ export function PlanPanel() {
         data={displayItems}
         className="flex-1 min-w-0 overflow-x-hidden"
         increaseViewportBy={{ top: 500, bottom: 200 }}
-        initialTopMostItemIndex={displayItems.length - 1}
+        initialTopMostItemIndex={Math.max(0, displayItems.length - 1)}
         followOutput={followOutput}
         atBottomStateChange={setAtBottom}
         atBottomThreshold={150}
