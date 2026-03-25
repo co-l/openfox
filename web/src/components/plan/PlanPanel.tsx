@@ -286,8 +286,24 @@ export function PlanPanel() {
     return () => textarea.removeEventListener('paste', handlePaste)
   }, [])
   
+  const clearInput = () => {
+    setInput('')
+    setAttachments([])
+    if (session?.id) {
+      localStorage.removeItem(`openfox:draft:${session.id}`)
+    }
+  }
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
+
+    // If Launch is available, Enter triggers launch (with or without a message)
+    if (showLaunchButton) {
+      launchRunner(input, attachments.length > 0 ? attachments : undefined)
+      clearInput()
+      return
+    }
+
     if (!input.trim() && attachments.length === 0) return
 
     if (isRunning) {
@@ -302,13 +318,7 @@ export function PlanPanel() {
     virtuosoRef.current?.scrollToIndex({ index: 'LAST', behavior: 'smooth' })
 
     sendMessage(input, attachments)
-    setInput('')
-    setAttachments([])
-    
-    // Clear draft from localStorage after sending
-    if (session?.id) {
-      localStorage.removeItem(`openfox:draft:${session.id}`)
-    }
+    clearInput()
   }
   
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -742,13 +752,7 @@ export function PlanPanel() {
                   type="button"
                   onClick={() => {
                     launchRunner(input, attachments.length > 0 ? attachments : undefined)
-                    if (input.trim() || attachments.length > 0) {
-                      setInput('')
-                      setAttachments([])
-                      if (session?.id) {
-                        localStorage.removeItem(`openfox:draft:${session.id}`)
-                      }
-                    }
+                    clearInput()
                   }}
                   className="px-4 py-1.5 rounded bg-accent-success/20 text-sm text-accent-success font-medium hover:bg-accent-success/30 transition-colors"
                 >
