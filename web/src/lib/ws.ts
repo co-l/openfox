@@ -104,7 +104,6 @@ class WebSocketClient {
     
     const id = generateUUID()
     const message: ClientMessage<T> = { id, type, payload }
-    console.log('[WS Client] Sending message:', { id, type, payload })
     this.ws.send(JSON.stringify(message))
     return id
   }
