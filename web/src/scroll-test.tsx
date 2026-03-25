@@ -59,33 +59,26 @@ function ScrollTestApp() {
 
     const THRESHOLD = 150
     let userScrolling = false
+    let userScrollTimer: ReturnType<typeof setTimeout> | null = null
 
-    const isNearBottom = () =>
-      scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight < THRESHOLD
-
-    // Scroll listener: update atBottom state
     const onScroll = () => {
-      atBottomRef.current = isNearBottom()
+      atBottomRef.current =
+        scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight < THRESHOLD
     }
 
-    // Wheel listener: fires synchronously before DOM mutations.
-    // Suppresses the observer from snapping back during user scrolls.
-    const onWheel = () => {
+    // Debounced guard: keep userScrolling=true for 200ms after the last
+    // wheel/touch event. This gives scroll events time to fire and update
+    // atBottomRef before the MutationObserver is allowed to act again.
+    const startUserScroll = () => {
       userScrolling = true
-      requestAnimationFrame(() => { userScrolling = false })
+      if (userScrollTimer) clearTimeout(userScrollTimer)
+      userScrollTimer = setTimeout(() => { userScrolling = false }, 200)
     }
 
-    // Touch support: same guard for touch scrolling
-    const onTouchStart = () => {
-      userScrolling = true
-    }
-    const onTouchEnd = () => {
-      requestAnimationFrame(() => { userScrolling = false })
-    }
+    const onWheel = () => startUserScroll()
+    const onTouchStart = () => startUserScroll()
+    const onTouchEnd = () => startUserScroll()
 
-    // Persistent observer: scroll to bottom on any DOM change when pinned.
-    // Uses atBottomRef (captures state before mutation) + wheel guard (prevents
-    // feedback loop during real user scrolls).
     const observer = new MutationObserver(() => {
       if (atBottomRef.current && !userScrolling) {
         scroller.scrollTop = scroller.scrollHeight
@@ -108,6 +101,7 @@ function ScrollTestApp() {
       scroller.removeEventListener('touchstart', onTouchStart)
       scroller.removeEventListener('touchend', onTouchEnd)
       observer.disconnect()
+      if (userScrollTimer) clearTimeout(userScrollTimer)
     }
   }, []) // session?.id equivalent — only one "session" in test
 

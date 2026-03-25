@@ -95,21 +95,25 @@ export function PlanPanel() {
 
     const THRESHOLD = 150
     let userScrolling = false
+    let userScrollTimer: ReturnType<typeof setTimeout> | null = null
 
     const onScroll = () => {
       atBottomRef.current =
         scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight < THRESHOLD
     }
 
-    const onWheel = () => {
+    // Debounced guard: keep userScrolling=true for 200ms after the last
+    // wheel/touch event. This gives scroll events time to fire and update
+    // atBottomRef before the MutationObserver is allowed to act again.
+    const startUserScroll = () => {
       userScrolling = true
-      requestAnimationFrame(() => { userScrolling = false })
+      if (userScrollTimer) clearTimeout(userScrollTimer)
+      userScrollTimer = setTimeout(() => { userScrolling = false }, 200)
     }
 
-    const onTouchStart = () => { userScrolling = true }
-    const onTouchEnd = () => {
-      requestAnimationFrame(() => { userScrolling = false })
-    }
+    const onWheel = () => startUserScroll()
+    const onTouchStart = () => startUserScroll()
+    const onTouchEnd = () => startUserScroll()
 
     const observer = new MutationObserver(() => {
       if (atBottomRef.current && !userScrolling) {
@@ -132,6 +136,7 @@ export function PlanPanel() {
       scroller.removeEventListener('touchstart', onTouchStart)
       scroller.removeEventListener('touchend', onTouchEnd)
       observer.disconnect()
+      if (userScrollTimer) clearTimeout(userScrollTimer)
     }
   }, [session?.id])
 
