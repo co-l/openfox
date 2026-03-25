@@ -1231,7 +1231,7 @@ async function handleClientMessage(
       
       const sessionId = client.activeSessionId
       const eventStore = getEventStore()
-      
+
       // Check if session is blocked - user intervention resets it
       if (session.phase === 'blocked') {
         logger.info('User launched runner - resetting blocked state', { sessionId })
@@ -1239,11 +1239,22 @@ async function handleClientMessage(
         sessionManager.setPhase(sessionId, 'build')
         sessionManager.resetAllCriteriaAttempts(sessionId)
       }
-      
+
+      // If the user included a message with the launch, add it as a user message
+      const launchPayload = message.payload as { content?: string; attachments?: unknown[] } | undefined
+      const hasUserMessage = launchPayload?.content && typeof launchPayload.content === 'string' && launchPayload.content.trim()
+      if (hasUserMessage) {
+        sessionManager.addMessage(sessionId, {
+          role: 'user',
+          content: launchPayload.content!,
+          ...(launchPayload.attachments ? { attachments: launchPayload.attachments } : {}),
+        })
+      }
+
       // Mark session as running (emits running.changed event)
       sessionManager.setRunning(sessionId, true)
       sendForSession(sessionId, createSessionRunningMessage(true))
-      
+
       // Create AbortController for this run (abort existing if any - defense in depth)
       const controller = new AbortController()
       const existingController = activeAgents.get(sessionId)
@@ -1252,22 +1263,22 @@ async function handleClientMessage(
         existingController.abort()
       }
       activeAgents.set(sessionId, controller)
-      
+
       // Acknowledge immediately
       send({ type: 'ack', payload: {}, id: message.id })
-      
+
       // Ensure client is subscribed to EventStore (tab model - additive)
       ensureEventStoreSubscription(sessionId)
-      
+
       // Run orchestrator asynchronously
       logger.info('Runner launching', { sessionId, pendingCriteria: pendingCriteria.length })
-      
+
       runOrchestrator({
         sessionManager,
         sessionId,
         llmClient: llmForSession(sessionId),
         statsIdentity: statsForSession(sessionId),
-        injectBuilderKickoff: true,
+        injectBuilderKickoff: !hasUserMessage,
         signal: controller.signal,
          onMessage: (msg) => sendForSession(sessionId, msg),  // For path confirmation dialogs
       }).catch((error) => {

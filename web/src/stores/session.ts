@@ -214,7 +214,7 @@ interface SessionState {
   continueGeneration: () => void
   
   // Runner (auto-loop)
-  launchRunner: () => void
+  launchRunner: (content?: string, attachments?: Attachment[]) => void
   
   // Mode switching
   switchMode: (mode: SessionMode) => void
@@ -455,9 +455,14 @@ export const useSessionStore = create<SessionState>((set, get) => {
     wsClient.send('chat.continue', {})
   },
   
-  launchRunner: () => {
+  launchRunner: (content?: string, attachments?: Attachment[]) => {
     set({ streamingMessageId: null })
-    wsClient.send('runner.launch', {})
+    const payload: Record<string, unknown> = {}
+    if (content?.trim()) {
+      payload.content = content
+      if (attachments && attachments.length > 0) payload.attachments = attachments
+    }
+    wsClient.send('runner.launch', payload)
   },
   
   switchMode: (mode) => {

@@ -740,7 +740,16 @@ export function PlanPanel() {
               {showLaunchButton && (
                 <button
                   type="button"
-                  onClick={launchRunner}
+                  onClick={() => {
+                    launchRunner(input, attachments.length > 0 ? attachments : undefined)
+                    if (input.trim() || attachments.length > 0) {
+                      setInput('')
+                      setAttachments([])
+                      if (session?.id) {
+                        localStorage.removeItem(`openfox:draft:${session.id}`)
+                      }
+                    }
+                  }}
                   className="px-4 py-1.5 rounded bg-accent-success/20 text-sm text-accent-success font-medium hover:bg-accent-success/30 transition-colors"
                 >
                   Launch
