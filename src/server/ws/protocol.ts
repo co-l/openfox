@@ -8,6 +8,7 @@ import type {
   ProjectDeletePayload,
   SessionCreatePayload,
   SessionLoadPayload,
+  SessionSetProviderPayload,
   ChatSendPayload,
   ModeSwitchPayload,
   CriteriaEditPayload,
@@ -304,6 +305,11 @@ export function isSettingsGetPayload(payload: unknown): payload is SettingsGetPa
 
 export function isSettingsSetPayload(payload: unknown): payload is SettingsSetPayload {
   return typeof payload === 'object' && payload !== null && 'key' in payload && 'value' in payload
+}
+
+// Session provider payload
+export function isSessionSetProviderPayload(payload: unknown): payload is SessionSetProviderPayload {
+  return typeof payload === 'object' && payload !== null && 'providerId' in payload
 }
 
 export function createSettingsValueMessage(key: string, value: string | null, correlationId?: string): ServerMessage {

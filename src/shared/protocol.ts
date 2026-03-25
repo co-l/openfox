@@ -55,6 +55,7 @@ export type ClientMessageType =
   | 'settings.set'        // Set a setting value
   // Provider management
   | 'provider.activate'   // Switch to a different provider
+  | 'session.setProvider'  // Set provider/model for current session
 
 export interface ClientMessage<T = unknown> {
   id: string
@@ -136,6 +137,11 @@ export interface SettingsValuePayload {
 // Provider payloads
 export interface ProviderActivatePayload {
   providerId: string
+}
+
+export interface SessionSetProviderPayload {
+  providerId: string
+  model?: string  // If omitted, use provider's default model
 }
 
 // ============================================================================

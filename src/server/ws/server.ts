@@ -7,7 +7,9 @@ import type { ToolRegistry } from '../tools/index.js'
 import type { SessionManager } from '../session/index.js'
 import { getEventStore, getCurrentContextWindowId, getRecentUserPromptsForSession } from '../events/index.js'
 import { buildContextMessagesFromEventHistory, buildMessagesFromStoredEvents } from '../events/folding.js'
-import type { Message, Provider, StatsIdentity } from '../../shared/types.js'
+import type { Message, Provider, ProviderBackend, StatsIdentity } from '../../shared/types.js'
+import type { ProviderManager } from '../provider-manager.js'
+import { createLLMClient } from '../llm/index.js'
 import { runChatTurn, createMessageStartEvent, createChatDoneEvent } from '../chat/orchestrator.js'
 import { runOrchestrator } from '../runner/index.js'
 import { maybeAutoCompactContext, performManualContextCompaction } from '../context/auto-compaction.js'
@@ -64,6 +66,7 @@ import {
   isPathConfirmPayload,
   isSettingsGetPayload,
   isSettingsSetPayload,
+  isSessionSetProviderPayload,
   createSettingsValueMessage,
   storedEventToServerMessage,
 } from './protocol.js'
@@ -126,10 +129,75 @@ export function createWebSocketServer(
   getLLMClient: () => LLMClientWithModel,
   getActiveProvider: (() => Provider | undefined) | undefined,
   toolRegistry: ToolRegistry,
-  sessionManager: SessionManager
+  sessionManager: SessionManager,
+  providerManager?: ProviderManager,
 ): WebSocketServer {
   const wss = new WebSocketServer({ server: httpServer, path: '/ws' })
   const clients = new Map<WebSocket, ClientConnection>()
+
+  // Per-session LLM client cache: sessionId -> { cacheKey, client }
+  const sessionLLMClients = new Map<string, { key: string; client: LLMClientWithModel }>()
+
+  function getSessionLLMClient(sessionId: string): LLMClientWithModel {
+    const session = sessionManager.getSession(sessionId)
+    if (!session?.providerId || !session?.providerModel || !providerManager) {
+      return getLLMClient()
+    }
+
+    const cacheKey = `${session.providerId}:${session.providerModel}`
+    const cached = sessionLLMClients.get(sessionId)
+    if (cached && cached.key === cacheKey) {
+      return cached.client
+    }
+
+    // Look up the provider to get URL, apiKey, backend
+    const provider = providerManager.getProviders().find(p => p.id === session.providerId)
+    if (!provider) {
+      // Provider was deleted — clear preference and fall back to global
+      logger.warn('Session references deleted provider, falling back to global', {
+        sessionId, providerId: session.providerId,
+      })
+      sessionManager.setSessionProvider(sessionId, null, null)
+      sessionLLMClients.delete(sessionId)
+      return getLLMClient()
+    }
+
+    // Create a new LLM client for this session
+    const baseUrl = provider.url.includes('/v1') ? provider.url : `${provider.url}/v1`
+    const sessionConfig: Config = {
+      ...config,
+      llm: { ...config.llm, baseUrl, model: session.providerModel! },
+    }
+    const client = createLLMClient(sessionConfig)
+    // Set backend from provider (skip auto-detect for cached clients)
+    if (provider.backend !== 'auto') {
+      client.setBackend(provider.backend as import('../llm/index.js').Backend)
+    }
+    client.setModel(session.providerModel!)
+
+    sessionLLMClients.set(sessionId, { key: cacheKey, client })
+    return client
+  }
+
+  function getSessionStatsIdentity(sessionId: string): StatsIdentity {
+    const session = sessionManager.getSession(sessionId)
+    if (!session?.providerId || !providerManager) {
+      return resolveStatsIdentity(getLLMClient(), getActiveProvider)
+    }
+
+    const provider = providerManager.getProviders().find(p => p.id === session.providerId)
+    const client = getSessionLLMClient(sessionId)
+    return {
+      providerId: provider?.id ?? session.providerId!,
+      providerName: provider?.name ?? 'Unknown Provider',
+      backend: (provider?.backend ?? client.getBackend()) as ProviderBackend,
+      model: client.getModel(),
+    }
+  }
+
+  function invalidateSessionLLMClient(sessionId: string): void {
+    sessionLLMClients.delete(sessionId)
+  }
   const isSubscribedToSession = (client: ClientConnection, sessionId: string) => {
     return client.activeSessionId === sessionId || client.eventStoreSubscriptions.has(sessionId)
   }
@@ -190,7 +258,7 @@ export function createWebSocketServer(
       const client = clients.get(ws)!
       
       try {
-          await handleClientMessage(ws, client, message, config, getLLMClient, getActiveProvider, toolRegistry, sessionManager, broadcastForSession)
+          await handleClientMessage(ws, client, message, config, getLLMClient, getActiveProvider, toolRegistry, sessionManager, broadcastForSession, providerManager, getSessionLLMClient, getSessionStatsIdentity, invalidateSessionLLMClient)
       } catch (error) {
         logger.error('Error handling client message', { error, type: message.type })
         ws.send(serializeServerMessage(
@@ -236,6 +304,10 @@ async function handleClientMessage(
   toolRegistry: ToolRegistry,
   sessionManager: SessionManager,
   broadcastForSession: (sessionId: string, msg: ServerMessage) => void,
+  providerManager?: ProviderManager,
+  getSessionLLMClient?: (sessionId: string) => LLMClientWithModel,
+  getSessionStatsIdentity?: (sessionId: string) => StatsIdentity,
+  invalidateSessionLLMClient?: (sessionId: string) => void,
 ): Promise<void> {
   const send = (msg: ServerMessage) => {
     if (ws.readyState === WebSocket.OPEN) {
@@ -263,6 +335,13 @@ async function handleClientMessage(
     sendForSession(sessionId, createContextStateMessage(contextState))
     return true
   }
+
+  // Per-session LLM resolution helpers
+  const llmForSession = (sessionId: string): LLMClientWithModel =>
+    getSessionLLMClient?.(sessionId) ?? getLLMClient()
+
+  const statsForSession = (sessionId: string): StatsIdentity =>
+    getSessionStatsIdentity?.(sessionId) ?? resolveStatsIdentity(getLLMClient(), getActiveProvider)
 
   const ensureEventStoreSubscription = (sessionId: string) => {
     if (client.eventStoreSubscriptions.has(sessionId)) {
@@ -426,9 +505,14 @@ async function handleClientMessage(
         return
       }
       
+      // Snapshot current global provider/model into new session
+      const currentProvider = providerManager?.getActiveProvider()
+      const currentModel = currentProvider ? getLLMClient().getModel() : null
       const session = sessionManager.createSession(
         message.payload.projectId,
-        message.payload.title
+        message.payload.title,
+        currentProvider?.id ?? null,
+        currentModel,
       )
       client.activeSessionId = session.id
       // New session has no events yet
@@ -514,7 +598,46 @@ async function handleClientMessage(
       send({ type: 'session.deletedAll', payload: { projectId: payload.projectId }, id: message.id })
       break
     }
-    
+
+    case 'session.setProvider': {
+      if (!client.activeSessionId) {
+        send(createErrorMessage('NO_SESSION', 'No active session', message.id))
+        return
+      }
+
+      if (!isSessionSetProviderPayload(message.payload)) {
+        send(createErrorMessage('INVALID_PAYLOAD', 'Invalid session.setProvider payload', message.id))
+        return
+      }
+
+      if (!providerManager) {
+        send(createErrorMessage('NO_PROVIDERS', 'Provider management not available', message.id))
+        return
+      }
+
+      const { providerId, model: requestedModel } = message.payload
+      const provider = providerManager.getProviders().find(p => p.id === providerId)
+      if (!provider) {
+        send(createErrorMessage('PROVIDER_NOT_FOUND', 'Provider not found', message.id))
+        return
+      }
+
+      // Resolve model: use requested, or provider's default
+      const resolvedModel = requestedModel ?? provider.model
+
+      const sessionId = client.activeSessionId
+      sessionManager.setSessionProvider(sessionId, providerId, resolvedModel)
+      invalidateSessionLLMClient?.(sessionId)
+
+      // Send updated session state
+      const eventStore = getEventStore()
+      const updatedSession = sessionManager.requireSession(sessionId)
+      const events = eventStore.getEvents(sessionId)
+      const messages = buildMessagesFromStoredEvents(events)
+      sendForSession(sessionId, createSessionStateMessage(updatedSession, messages, message.id))
+      break
+    }
+
     // =========================================================================
     // Unified Chat (replaces plan.message, agent.start, etc.)
     // =========================================================================
@@ -553,8 +676,8 @@ async function handleClientMessage(
       await maybeAutoCompactContext({
         sessionManager,
         sessionId,
-        llmClient: getLLMClient(),
-        statsIdentity: resolveStatsIdentity(getLLMClient(), getActiveProvider),
+        llmClient: llmForSession(sessionId),
+        statsIdentity: statsForSession(sessionId),
       })
       
       // Add user message with attachments (emits events to EventStore)
@@ -571,7 +694,7 @@ async function handleClientMessage(
         // Use the active LLM client (respects user's selected model)
         generateSessionName({
           userMessage: message.payload.content,
-          llmClient: getLLMClient(),
+          llmClient: llmForSession(sessionId),
         })
           .then(async (result) => {
             if (result.success && result.name) {
@@ -624,8 +747,8 @@ async function handleClientMessage(
       runChatTurn({
         sessionManager,
         sessionId,
-        llmClient: getLLMClient(),
-        statsIdentity: resolveStatsIdentity(getLLMClient(), getActiveProvider),
+        llmClient: llmForSession(sessionId),
+        statsIdentity: statsForSession(sessionId),
         signal: controller.signal,
          onMessage: (msg) => sendForSession(sessionId, msg),  // For path confirmation dialogs
       }).catch((error) => {
@@ -714,13 +837,13 @@ async function handleClientMessage(
         
         generateSessionSummary({
           messages: summaryMessages,
-          llmClient: getLLMClient(),
+          llmClient: llmForSession(sessionId),
         })
           .then(async (result) => {
             if (result.success && result.summary) {
               // Update DB with the generated summary
               sessionManager.setSummary(sessionId, result.summary)
-              
+
               // Broadcast updated session state to all WebSocket clients
               const updatedSession = sessionManager.getSession(sessionId)
               if (updatedSession) {
@@ -807,7 +930,7 @@ async function handleClientMessage(
         
         generateSessionSummary({
           messages: summaryMessages,
-          llmClient: getLLMClient(),
+          llmClient: llmForSession(sessionId),
         })
           .then(async (result) => {
             if (result.success && result.summary) {
@@ -819,7 +942,7 @@ async function handleClientMessage(
             logger.warn('Session summary generation failed', { sessionId, error: error instanceof Error ? error.message : error })
           })
       }
-      
+
       // Start builder asynchronously (summary already generated on mode.switch if needed)
       ;(async () => {
         let controller: AbortController | null = null
@@ -829,7 +952,7 @@ async function handleClientMessage(
           sessionManager.setPhase(sessionId, 'build')
           eventStore.append(sessionId, { type: 'mode.changed', data: { mode: 'builder', auto: false, reason: 'Criteria accepted' } })
           eventStore.append(sessionId, { type: 'phase.changed', data: { phase: 'build' } })
-          
+
           // Create AbortController for builder (abort existing if any - defense in depth)
           controller = new AbortController()
           const existingController = activeAgents.get(sessionId)
@@ -838,13 +961,13 @@ async function handleClientMessage(
             existingController.abort()
           }
           activeAgents.set(sessionId, controller)
-          
+
           // Auto-start orchestrator (full state machine with verification)
           await runOrchestrator({
             sessionManager,
             sessionId,
-            llmClient: getLLMClient(),
-            statsIdentity: resolveStatsIdentity(getLLMClient(), getActiveProvider),
+            llmClient: llmForSession(sessionId),
+            statsIdentity: statsForSession(sessionId),
             injectBuilderKickoff: true,
             signal: controller.signal,
             onMessage: (msg) => sendForSession(sessionId, msg),  // For path confirmation dialogs
@@ -939,8 +1062,8 @@ async function handleClientMessage(
           await performManualContextCompaction({
             sessionManager,
             sessionId,
-            llmClient: getLLMClient(),
-            statsIdentity: resolveStatsIdentity(getLLMClient(), getActiveProvider),
+            llmClient: llmForSession(sessionId),
+            statsIdentity: statsForSession(sessionId),
             tokenCountAtClose: tokensBefore,
           })
           
@@ -1033,8 +1156,8 @@ async function handleClientMessage(
       runOrchestrator({
         sessionManager,
         sessionId,
-        llmClient: getLLMClient(),
-        statsIdentity: resolveStatsIdentity(getLLMClient(), getActiveProvider),
+        llmClient: llmForSession(sessionId),
+        statsIdentity: statsForSession(sessionId),
         injectBuilderKickoff: true,
         signal: controller.signal,
          onMessage: (msg) => sendForSession(sessionId, msg),  // For path confirmation dialogs

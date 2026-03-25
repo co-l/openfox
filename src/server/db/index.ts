@@ -158,5 +158,16 @@ function runMigrations(db: Database.Database): void {
     CREATE INDEX IF NOT EXISTS idx_events_session_type ON events(session_id, event_type)
   `)
   
+  // Migration: Add per-session provider/model columns
+  if (!columnNames.includes('provider_id')) {
+    logger.info('Migrating sessions table: adding provider_id column')
+    db.exec(`ALTER TABLE sessions ADD COLUMN provider_id TEXT`)
+  }
+
+  if (!columnNames.includes('provider_model')) {
+    logger.info('Migrating sessions table: adding provider_model column')
+    db.exec(`ALTER TABLE sessions ADD COLUMN provider_model TEXT`)
+  }
+
   logger.info('Database migrations completed')
 }

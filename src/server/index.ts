@@ -654,7 +654,7 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
   const httpServer = createHttpServer(app)
 
   // Create WebSocket server attached to HTTP server
-  const wss = createWebSocketServer(httpServer, config, getLLMClient, () => providerManager.getActiveProvider(), toolRegistry, sessionManager)
+  const wss = createWebSocketServer(httpServer, config, getLLMClient, () => providerManager.getActiveProvider(), toolRegistry, sessionManager, providerManager)
 
   // Return the handle with start/close methods
   return {

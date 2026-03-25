@@ -17,16 +17,16 @@ import { getDatabase } from './index.js'
 // Session Operations
 // ============================================================================
 
-export function createSession(projectId: string, workdir: string, title?: string): Session {
+export function createSession(projectId: string, workdir: string, title?: string, providerId?: string | null, providerModel?: string | null): Session {
   const db = getDatabase()
   const now = new Date().toISOString()
   const id = crypto.randomUUID()
-  
+
   db.prepare(`
-    INSERT INTO sessions (id, project_id, workdir, phase, mode, workflow_phase, is_running, created_at, updated_at, title)
-    VALUES (?, ?, ?, 'idle', 'planner', 'plan', 0, ?, ?, ?)
-  `).run(id, projectId, workdir, now, now, title ?? null)
-  
+    INSERT INTO sessions (id, project_id, workdir, phase, mode, workflow_phase, is_running, created_at, updated_at, title, provider_id, provider_model)
+    VALUES (?, ?, ?, 'idle', 'planner', 'plan', 0, ?, ?, ?, ?, ?)
+  `).run(id, projectId, workdir, now, now, title ?? null, providerId ?? null, providerModel ?? null)
+
   return {
     id,
     projectId,
@@ -35,6 +35,8 @@ export function createSession(projectId: string, workdir: string, title?: string
     phase: 'plan',
     isRunning: false,
     summary: null,
+    providerId: providerId ?? null,
+    providerModel: providerModel ?? null,
     createdAt: now,
     updatedAt: now,
     messages: [],
@@ -71,6 +73,8 @@ export function getSession(id: string): Session | null {
     phase: (row.workflow_phase ?? 'plan') as SessionPhase,
     isRunning: Boolean(row.is_running),
     summary: row.summary ?? null,
+    providerId: row.provider_id ?? null,
+    providerModel: row.provider_model ?? null,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
     messages: [],
@@ -84,6 +88,15 @@ export function getSession(id: string): Session | null {
       iterationCount: row.iteration_count,
     },
   }
+}
+
+export function updateSessionProvider(id: string, providerId: string | null, providerModel: string | null): void {
+  const db = getDatabase()
+  const now = new Date().toISOString()
+
+  db.prepare(`
+    UPDATE sessions SET provider_id = ?, provider_model = ?, updated_at = ? WHERE id = ?
+  `).run(providerId, providerModel, now, id)
 }
 
 export function updateSessionMode(id: string, mode: SessionMode): void {
@@ -162,7 +175,7 @@ export function listSessions(): SessionSummary[] {
   // Note: criteriaCount and criteriaCompleted are now derived from events
   // For now, return 0 as placeholders - the frontend will get real data from session state
   const rows = db.prepare(`
-    SELECT 
+    SELECT
       s.id,
       s.project_id,
       s.workdir,
@@ -171,11 +184,13 @@ export function listSessions(): SessionSummary[] {
       s.is_running,
       s.created_at,
       s.updated_at,
-      s.title
+      s.title,
+      s.provider_id,
+      s.provider_model
     FROM sessions s
     ORDER BY s.updated_at DESC
   `).all() as SessionSummaryRow[]
-  
+
   return rows.map(row => ({
     id: row.id,
     projectId: row.project_id,
@@ -184,6 +199,8 @@ export function listSessions(): SessionSummary[] {
     mode: (row.mode ?? 'planner') as SessionMode,
     phase: (row.workflow_phase ?? 'plan') as SessionPhase,
     isRunning: Boolean(row.is_running),
+    providerId: row.provider_id ?? null,
+    providerModel: row.provider_model ?? null,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
     criteriaCount: 0, // Derived from events
@@ -196,7 +213,7 @@ export function listSessionsByProject(projectId: string, projectWorkdir: string)
   
   // Get sessions where workdir starts with projectWorkdir (includes subdirectories)
   const rows = db.prepare(`
-    SELECT 
+    SELECT
       s.id,
       s.project_id,
       s.workdir,
@@ -205,12 +222,14 @@ export function listSessionsByProject(projectId: string, projectWorkdir: string)
       s.is_running,
       s.created_at,
       s.updated_at,
-      s.title
+      s.title,
+      s.provider_id,
+      s.provider_model
     FROM sessions s
     WHERE s.project_id = ? OR s.workdir LIKE ? || '%'
     ORDER BY s.updated_at DESC
   `).all(projectId, projectWorkdir) as SessionSummaryRow[]
-  
+
   return rows.map(row => ({
     id: row.id,
     projectId: row.project_id,
@@ -219,6 +238,8 @@ export function listSessionsByProject(projectId: string, projectWorkdir: string)
     mode: (row.mode ?? 'planner') as SessionMode,
     phase: (row.workflow_phase ?? 'plan') as SessionPhase,
     isRunning: Boolean(row.is_running),
+    providerId: row.provider_id ?? null,
+    providerModel: row.provider_model ?? null,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
     criteriaCount: 0, // Derived from events
@@ -244,6 +265,8 @@ interface SessionRow {
   workflow_phase: string  // UI phase: plan/build/verification/done
   is_running: number
   summary: string | null
+  provider_id: string | null
+  provider_model: string | null
   created_at: string
   updated_at: string
   title: string | null
@@ -262,4 +285,6 @@ interface SessionSummaryRow {
   created_at: string
   updated_at: string
   title: string | null
+  provider_id: string | null
+  provider_model: string | null
 }

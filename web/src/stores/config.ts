@@ -37,9 +37,10 @@ interface ConfigState {
   fetchConfig: () => Promise<void>
   refreshModel: () => Promise<void>
   activateProvider: (providerId: string) => Promise<boolean>
+  syncFromSession: (providerId: string, model: string) => void
   startAutoRefresh: () => void
   stopAutoRefresh: () => void
-  
+
   // Selectors
   getActiveProvider: () => Provider | undefined
 }
@@ -166,7 +167,19 @@ export const useConfigStore = create<ConfigState>((set, get) => ({
       return false
     }
   },
-  
+
+  syncFromSession: (providerId: string, model: string) => {
+    const { providers } = get()
+    set({
+      activeProviderId: providerId,
+      model,
+      providers: providers.map(p => ({
+        ...p,
+        isActive: p.id === providerId,
+      })),
+    })
+  },
+
   startAutoRefresh: () => {
     const { autoRefreshInterval, refreshModel } = get()
     if (autoRefreshInterval) return // Already running

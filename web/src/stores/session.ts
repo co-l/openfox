@@ -35,6 +35,7 @@ import type {
   ContextStatePayload,
 } from '../../../src/shared/protocol.js'
 import { wsClient, type ConnectionStatus } from '../lib/ws'
+import { useConfigStore } from './config'
 import { playNotification, playAchievement, playIntervention, playWaitingForUser } from '../lib/sound'
 
 // Track subscription to prevent duplicates
@@ -180,6 +181,9 @@ interface SessionState {
   // Context management
   compactContext: () => void
   
+  // Per-session provider/model
+  setSessionProvider: (providerId: string, model?: string) => void
+
   // Path confirmation
   confirmPath: (callId: string, approved: boolean) => void
   
@@ -359,6 +363,10 @@ export const useSessionStore = create<SessionState>((set, get) => ({
     wsClient.send('context.compact', {})
   },
   
+  setSessionProvider: (providerId, model) => {
+    wsClient.send('session.setProvider', { providerId, ...(model ? { model } : {}) })
+  },
+
   confirmPath: (callId, approved) => {
     wsClient.send('path.confirm', { callId, approved })
     set({ pendingPathConfirmation: null })
@@ -389,7 +397,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
         }
         // Server sends complete state: session + messages
         // This is the source of truth on load/reconnect
-        set({ 
+        set({
           currentSession: payload.session,
           sessions: mergeSessionIntoSummary(get().sessions, payload.session),
           unreadSessionIds: removeUnreadSessionId(get().unreadSessionIds, payload.session.id),
@@ -400,6 +408,15 @@ export const useSessionStore = create<SessionState>((set, get) => ({
           pendingPathConfirmation: null,
           error: null,
         })
+
+        // Sync config store with session's provider/model for header display
+        if (payload.session.providerId && payload.session.providerModel) {
+          const configStore = useConfigStore.getState()
+          const sessionProvider = configStore.providers.find(p => p.id === payload.session.providerId)
+          if (sessionProvider) {
+            configStore.syncFromSession(payload.session.providerId, payload.session.providerModel)
+          }
+        }
         break
       }
       

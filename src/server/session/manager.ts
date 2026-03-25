@@ -25,6 +25,7 @@ import {
   deleteSession as dbDeleteSession,
   updateSessionSummary,
   updateSessionMetadata,
+  updateSessionProvider,
 } from '../db/sessions.js'
 import { getProject } from '../db/projects.js'
 import { SessionNotFoundError } from '../utils/errors.js'
@@ -86,7 +87,7 @@ export class SessionManager {
   /**
    * Create a new session. Emits session.initialized event.
    */
-  createSession(projectId: string, title?: string): Session {
+  createSession(projectId: string, title?: string, providerId?: string | null, providerModel?: string | null): Session {
     const project = getProject(projectId)
     if (!project) {
       throw new Error(`Project not found: ${projectId}`)
@@ -102,7 +103,7 @@ export class SessionManager {
     logger.debug('Creating session', { projectId, workdir: project.workdir, title: sessionTitle })
 
     // Create session in DB (minimal: id, projectId, workdir, title, timestamps)
-    const dbSession = dbCreateSession(projectId, project.workdir, sessionTitle)
+    const dbSession = dbCreateSession(projectId, project.workdir, sessionTitle, providerId, providerModel)
 
     // Emit session.initialized event to EventStore
     const contextWindowId = crypto.randomUUID()
@@ -278,6 +279,20 @@ export class SessionManager {
     logger.debug('Setting session summary', { sessionId, summaryLength: summary.length })
 
     updateSessionSummary(sessionId, summary)
+
+    const updatedSession = this.requireSession(sessionId)
+    this.emit({ type: 'session_updated', session: updatedSession })
+
+    return updatedSession
+  }
+
+  /**
+   * Set session provider/model. Updates DB directly.
+   */
+  setSessionProvider(sessionId: string, providerId: string | null, providerModel: string | null): Session {
+    logger.debug('Setting session provider', { sessionId, providerId, providerModel })
+
+    updateSessionProvider(sessionId, providerId, providerModel)
 
     const updatedSession = this.requireSession(sessionId)
     this.emit({ type: 'session_updated', session: updatedSession })

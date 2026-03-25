@@ -1,7 +1,10 @@
 import { useState, useRef, useEffect } from 'react'
 import { useConfigStore, getBackendDisplayName, type Provider } from '../../stores/config'
+import { useSessionStore } from '../../stores/session'
 
 export function ProviderSelector() {
+  const currentSession = useSessionStore(state => state.currentSession)
+  const setSessionProvider = useSessionStore(state => state.setSessionProvider)
   const [isOpen, setIsOpen] = useState(false)
   const [expandedProviderId, setExpandedProviderId] = useState<string | null>(null)
   const [providerModels, setProviderModels] = useState<Record<string, string[]>>({})
@@ -73,10 +76,19 @@ export function ProviderSelector() {
     }
     
     // Switch to different provider
-    const success = await activateProvider(provider.id)
-    if (success) {
+    if (currentSession) {
+      // Session-scoped: persist provider choice to session
+      setSessionProvider(provider.id, provider.model !== 'auto' ? provider.model : undefined)
+      // Optimistically update UI
+      useConfigStore.getState().syncFromSession(provider.id, provider.model)
       setIsOpen(false)
       setExpandedProviderId(null)
+    } else {
+      const success = await activateProvider(provider.id)
+      if (success) {
+        setIsOpen(false)
+        setExpandedProviderId(null)
+      }
     }
   }
 
@@ -93,6 +105,16 @@ export function ProviderSelector() {
   }
 
   const handleModelClick = async (providerId: string, newModel: string) => {
+    if (currentSession) {
+      // Session-scoped: persist model choice to session
+      setSessionProvider(providerId, newModel)
+      // Optimistically update UI
+      useConfigStore.getState().syncFromSession(providerId, newModel)
+      setExpandedProviderId(null)
+      setIsOpen(false)
+      return
+    }
+
     setLoadingModels('activating')
     try {
       const response = await fetch(`/api/providers/${providerId}/activate`, {
