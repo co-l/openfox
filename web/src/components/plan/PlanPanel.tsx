@@ -81,48 +81,10 @@ export function PlanPanel() {
   // Use rawMessages (stable during streaming) since prompt context only depends on user messages
   const promptContextByUserMessageId = useMemo(() => buildPromptContextByUserMessageId(rawMessages), [rawMessages])
   
-  // Virtuoso auto-scroll: follow output when user is at the bottom
+  // Virtuoso auto-scroll: follow new output when user is at the bottom
   const followOutput = useCallback((isAtBottom: boolean) => {
     return isAtBottom ? 'smooth' : false
   }, [])
-
-  // Scroll to bottom when a session's messages first load.
-  // As Virtuoso measures real item heights (which differ from defaultItemHeight),
-  // the scroll position drifts. We repeatedly pin to bottom until heights stabilize.
-  const scrolledSessionRef = useRef<string | null>(null)
-  const settleTimerRef = useRef<ReturnType<typeof setInterval> | null>(null)
-  useEffect(() => {
-    const sessionId = session?.id ?? null
-    if (!sessionId || displayItems.length === 0) return
-    if (scrolledSessionRef.current === sessionId) return
-    scrolledSessionRef.current = sessionId
-
-    // Clear any previous settle timer
-    if (settleTimerRef.current) clearInterval(settleTimerRef.current)
-
-    const scrollToEnd = () => {
-      virtuosoRef.current?.scrollToIndex({ index: 'LAST', align: 'end' })
-    }
-
-    // Pin to bottom repeatedly for 2 seconds while heights settle
-    scrollToEnd()
-    let elapsed = 0
-    settleTimerRef.current = setInterval(() => {
-      elapsed += 100
-      scrollToEnd()
-      if (elapsed >= 2000) {
-        if (settleTimerRef.current) clearInterval(settleTimerRef.current)
-        settleTimerRef.current = null
-      }
-    }, 100)
-
-    return () => {
-      if (settleTimerRef.current) {
-        clearInterval(settleTimerRef.current)
-        settleTimerRef.current = null
-      }
-    }
-  }, [session?.id, displayItems.length])
 
   // Auto-resize textarea based on content, up to 200px max
   const resizeTextarea = useCallback(() => {
@@ -451,11 +413,11 @@ export function PlanPanel() {
         data={displayItems}
         className="flex-1 min-w-0 overflow-x-hidden"
         increaseViewportBy={{ top: 500, bottom: 200 }}
-        initialTopMostItemIndex={Math.max(0, displayItems.length - 1)}
         followOutput={followOutput}
         atBottomStateChange={setAtBottom}
         atBottomThreshold={150}
         defaultItemHeight={120}
+        initialTopMostItemIndex={Infinity}
         alignToBottom
         itemContent={(_index, item) => {
           if (item.type === 'context-divider') {
