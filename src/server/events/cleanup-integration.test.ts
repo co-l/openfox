@@ -203,15 +203,14 @@ describe('Event Cleanup Integration', () => {
     // Clean up after turn 2
     eventStore.cleanupOldEvents(sessionId)
 
-    // Verify: session.initialized + both snapshots remain
+    // Verify: session.initialized + only the latest snapshot remain
     const events = eventStore.getEvents(sessionId)
-    expect(events).toHaveLength(3)
+    expect(events).toHaveLength(2)
     expect(events[0]!.type).toBe('session.initialized')
     expect(events[1]!.type).toBe('turn.snapshot')
-    expect(events[2]!.type).toBe('turn.snapshot')
 
     // Verify both messages are accessible from the latest snapshot
-    const latestSnapshot = events[2]!.data as any
+    const latestSnapshot = events[1]!.data as any
     expect(latestSnapshot.messages).toHaveLength(2)
     expect(latestSnapshot.messages[0]!.content).toBe('First message')
     expect(latestSnapshot.messages[1]!.content).toBe('Second message')

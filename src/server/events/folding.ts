@@ -736,6 +736,32 @@ interface LegacySessionState {
   executionState?: { currentTokenCount?: number; compactionCount?: number } | null
 }
 
+/**
+ * Strip the `messages` array from `promptContext` on all but the last assistant message.
+ * Each promptContext.messages contains the full conversation history at that turn,
+ * so storing it on every message causes O(n²) snapshot growth.
+ * Mutates the array in place.
+ */
+function stripPromptContextMessages(messages: SnapshotMessage[]): void {
+  // Find the last assistant message with promptContext
+  let lastAssistantIdx = -1
+  for (let i = messages.length - 1; i >= 0; i--) {
+    if (messages[i].role === 'assistant' && messages[i].promptContext) {
+      lastAssistantIdx = i
+      break
+    }
+  }
+
+  for (let i = 0; i < messages.length; i++) {
+    const pc = messages[i].promptContext
+    if (pc && i !== lastAssistantIdx) {
+      // Keep everything except the heavy messages array
+      const { messages: _msgs, ...rest } = pc
+      messages[i].promptContext = { ...rest, messages: [] }
+    }
+  }
+}
+
 export function buildSnapshotFromSessionState(input: {
   session: LegacySessionState
   events: EventLike[]
@@ -766,6 +792,12 @@ export function buildSnapshotFromSessionState(input: {
         events.slice(latestSnapshotIndex + 1),
       )
     : foldedState.messages
+
+  // Strip the conversation history from promptContext on older messages.
+  // Each promptContext.messages duplicates the full conversation up to that turn,
+  // causing O(n²) growth. We keep the lightweight metadata (systemPrompt, tools,
+  // injectedFiles, requestOptions, userMessage) for the Prompt Inspector UI.
+  stripPromptContextMessages(messages)
 
   // Override with legacy session values where provided
   return {

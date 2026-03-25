@@ -406,14 +406,14 @@ export class EventStore {
 
     // Delete all events before the latest snapshot, except:
     // - seq 1 (session.initialized)
-    // - All snapshot events (turn.snapshot)
     // - State-changing events that define session state
+    // Old snapshots are also deleted — the latest snapshot is always a
+    // superset of all previous ones (messages are cumulative).
     const result = this.db
       .prepare(`
-        DELETE FROM events 
-        WHERE session_id = ? AND seq > 1 AND seq < ? 
+        DELETE FROM events
+        WHERE session_id = ? AND seq > 1 AND seq < ?
         AND event_type NOT IN (
-          'turn.snapshot',
           'criteria.set',
           'criterion.updated',
           'mode.changed',
@@ -442,6 +442,73 @@ export class EventStore {
 
     return row?.seq ?? 0
   }
+
+  /**
+   * One-time storage optimization: delete old snapshots and strip
+   * promptContext.messages from remaining snapshots across all sessions.
+   * Safe to run multiple times (idempotent).
+   */
+  optimizeStorage(): { deletedSnapshots: number; strippedSnapshots: number } {
+    let deletedSnapshots = 0
+    let strippedSnapshots = 0
+
+    // 1. Delete all non-latest snapshots per session
+    const deleteResult = this.db
+      .prepare(`
+        DELETE FROM events
+        WHERE event_type = 'turn.snapshot'
+        AND id NOT IN (
+          SELECT e1.id FROM events e1
+          WHERE e1.event_type = 'turn.snapshot'
+          AND e1.seq = (
+            SELECT MAX(e2.seq) FROM events e2
+            WHERE e2.session_id = e1.session_id
+            AND e2.event_type = 'turn.snapshot'
+          )
+        )
+      `)
+      .run()
+    deletedSnapshots = deleteResult.changes as number
+
+    // 2. Strip promptContext.messages from all but the last assistant message
+    //    in each remaining snapshot
+    const snapshots = this.db
+      .prepare(`SELECT id, payload FROM events WHERE event_type = 'turn.snapshot'`)
+      .all() as Array<{ id: number; payload: string }>
+
+    const updateStmt = this.db.prepare(`UPDATE events SET payload = ? WHERE id = ?`)
+
+    for (const row of snapshots) {
+      const data = JSON.parse(row.payload)
+      const messages = data.messages as Array<{ role: string; promptContext?: { messages?: unknown[] } }>
+      if (!messages) continue
+
+      // Find last assistant message with promptContext
+      let lastAssistantIdx = -1
+      for (let i = messages.length - 1; i >= 0; i--) {
+        if (messages[i].role === 'assistant' && messages[i].promptContext) {
+          lastAssistantIdx = i
+          break
+        }
+      }
+
+      let changed = false
+      for (let i = 0; i < messages.length; i++) {
+        const pc = messages[i].promptContext
+        if (pc?.messages && pc.messages.length > 0 && i !== lastAssistantIdx) {
+          pc.messages = []
+          changed = true
+        }
+      }
+
+      if (changed) {
+        updateStmt.run(JSON.stringify(data), row.id)
+        strippedSnapshots++
+      }
+    }
+
+    return { deletedSnapshots, strippedSnapshots }
+  }
 }
 
 // ============================================================================
@@ -457,6 +524,13 @@ export function initEventStore(db: Database.Database): EventStore {
   // Sessions cannot actually be running when server starts - any session
   // that shows as running was interrupted (crash, restart, etc.).
   resetStaleRunningSessions(eventStoreInstance, db)
+
+  // Optimize storage: remove old snapshots and strip bloated promptContext data.
+  // Idempotent — fast no-op on already-optimized databases.
+  const result = eventStoreInstance.optimizeStorage()
+  if (result.deletedSnapshots > 0 || result.strippedSnapshots > 0) {
+    logger.info('Storage optimized', result)
+  }
 
   return eventStoreInstance
 }
