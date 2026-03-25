@@ -1,4 +1,5 @@
 import os from 'node:os'
+import { statSync } from 'node:fs'
 
 export interface NetworkInterface {
   ip: string
@@ -61,6 +62,31 @@ export function getValidIPv4Addresses(): string[] {
   return sorted
 }
 
+export function formatFileSize(bytes: number): string {
+  if (bytes === 0) return '0KB'
+  
+  const KB = 1024
+  const MB = KB * 1024
+  const GB = MB * 1024
+  
+  if (bytes >= GB) {
+    return `${(bytes / GB).toFixed(1)}GB`
+  } else if (bytes >= MB) {
+    return `${(bytes / MB).toFixed(1)}MB`
+  } else {
+    return `${Math.round(bytes / KB)}KB`
+  }
+}
+
+export function getDatabaseSize(databasePath: string): string {
+  try {
+    const stats = statSync(databasePath)
+    return formatFileSize(stats.size)
+  } catch {
+    return '0KB'
+  }
+}
+
 export function displayStartupBanner(config: {
   host: string
   port: number
@@ -90,7 +116,8 @@ export function displayStartupBanner(config: {
     }
   }
   
-  console.log(`  💾 Database: ${databasePath}`)
+  const size = getDatabaseSize(databasePath)
+  console.log(`  💾 Database: ${databasePath} (${size})`)
   console.log(`  ⚙️  Config:  ${configPath}`)
   console.log('\n💡 Tip: Press Ctrl+C to stop the server\n')
 }
