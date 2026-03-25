@@ -3,6 +3,7 @@ import {
   useNotificationSettingsStore,
   SOUND_EVENTS,
   AGENT_TYPES,
+  AVAILABLE_SOUNDS,
   DEFAULT_SOUNDS,
   resolveEventConfig,
   type SoundEvent,
@@ -10,6 +11,50 @@ import {
   type EventNotificationConfig,
 } from '../../stores/notifications'
 import { requestNotificationPermission } from '../../lib/sound'
+
+function playPreview(url: string) {
+  const audio = new Audio(url)
+  audio.volume = 0.5
+  audio.play().catch(() => {})
+}
+
+function SoundPicker({ value, defaultUrl, disabled, onChange }: {
+  value: string | null
+  defaultUrl: string
+  disabled?: boolean
+  onChange: (url: string | null) => void
+}) {
+  const effectiveUrl = value ?? defaultUrl
+  return (
+    <div className="flex items-center gap-1.5">
+      <select
+        value={effectiveUrl}
+        disabled={disabled}
+        onChange={(e) => {
+          const url = e.target.value
+          onChange(url === defaultUrl ? null : url)
+        }}
+        className="px-2 py-1 text-xs bg-bg-tertiary border border-border rounded focus:outline-none focus:ring-1 focus:ring-accent-primary disabled:opacity-40"
+      >
+        {AVAILABLE_SOUNDS.map(({ url, label }) => (
+          <option key={url} value={url}>
+            {label}{url === defaultUrl ? ' (default)' : ''}
+          </option>
+        ))}
+      </select>
+      <button
+        onClick={() => playPreview(effectiveUrl)}
+        disabled={disabled}
+        className="p-1 rounded hover:bg-bg-tertiary text-text-muted hover:text-text-primary disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+        title="Preview sound"
+      >
+        <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.536 8.464a5 5 0 010 7.072M17.95 6.05a8 8 0 010 11.9M6.5 8.8h-2a1 1 0 00-1 1v4.4a1 1 0 001 1h2l4.5 3.5V5.3L6.5 8.8z" />
+        </svg>
+      </button>
+    </div>
+  )
+}
 
 export function NotificationSettings() {
   const settings = useNotificationSettingsStore(s => s.settings)
@@ -29,14 +74,6 @@ export function NotificationSettings() {
     if (perm === 'granted') {
       update({ ...settings, browserNotificationEnabled: true })
     }
-  }
-
-  const handleTestSound = (event: SoundEvent) => {
-    const config = resolveEventConfig(settings, event)
-    const url = config.customSoundUrl ?? DEFAULT_SOUNDS[event]
-    const audio = new Audio(url)
-    audio.volume = 0.5
-    audio.play().catch(() => {})
   }
 
   return (
@@ -80,7 +117,6 @@ export function NotificationSettings() {
             description={description}
             config={settings.events[key]}
             onUpdate={(cfg) => updateEvent(key, cfg)}
-            onTest={() => handleTestSound(key)}
             soundMasterEnabled={settings.soundEnabled}
             browserMasterEnabled={settings.browserNotificationEnabled}
           />
@@ -108,49 +144,64 @@ export function NotificationSettings() {
               </svg>
             </button>
             {expandedAgent === key && (
-              <div className="px-3 pb-3 space-y-2 border-t border-border pt-2">
+              <div className="px-3 pb-3 space-y-3 border-t border-border pt-2">
                 {SOUND_EVENTS.map(({ key: eventKey, label: eventLabel }) => {
                   const override = settings.agentOverrides[key]?.[eventKey]
                   const hasOverride = override !== undefined
                   const effective = resolveEventConfig(settings, eventKey, key)
+                  const globalDefault = DEFAULT_SOUNDS[eventKey]
                   return (
-                    <div key={eventKey} className="flex items-center gap-2 text-xs">
-                      <input
-                        type="checkbox"
-                        checked={hasOverride}
-                        onChange={(e) => {
-                          if (e.target.checked) {
-                            updateAgentOverride(key, eventKey, { soundEnabled: effective.soundEnabled })
-                          } else {
-                            updateAgentOverride(key, eventKey, null)
-                          }
-                        }}
-                        className="rounded border-border"
-                      />
-                      <span className={`flex-1 ${hasOverride ? 'text-text-primary' : 'text-text-muted'}`}>
-                        {eventLabel}
-                      </span>
-                      {hasOverride && (
-                        <>
-                          <label className="flex items-center gap-1 text-text-secondary">
-                            <input
-                              type="checkbox"
-                              checked={effective.soundEnabled}
-                              onChange={(e) => updateAgentOverride(key, eventKey, { soundEnabled: e.target.checked })}
-                              className="rounded border-border"
-                            />
-                            Sound
-                          </label>
-                          <label className="flex items-center gap-1 text-text-secondary">
-                            <input
-                              type="checkbox"
-                              checked={effective.browserNotification}
-                              onChange={(e) => updateAgentOverride(key, eventKey, { browserNotification: e.target.checked })}
-                              className="rounded border-border"
-                            />
-                            Browser
-                          </label>
-                        </>
+                    <div key={eventKey} className="space-y-1">
+                      <div className="flex items-center gap-2 text-xs">
+                        <input
+                          type="checkbox"
+                          checked={hasOverride}
+                          onChange={(e) => {
+                            if (e.target.checked) {
+                              updateAgentOverride(key, eventKey, {
+                                soundEnabled: effective.soundEnabled,
+                                browserNotification: effective.browserNotification,
+                              })
+                            } else {
+                              updateAgentOverride(key, eventKey, null)
+                            }
+                          }}
+                          className="rounded border-border"
+                        />
+                        <span className={`flex-1 ${hasOverride ? 'text-text-primary' : 'text-text-muted'}`}>
+                          {eventLabel}
+                        </span>
+                        {hasOverride && (
+                          <>
+                            <label className="flex items-center gap-1 text-text-secondary">
+                              <input
+                                type="checkbox"
+                                checked={effective.soundEnabled}
+                                onChange={(e) => updateAgentOverride(key, eventKey, { soundEnabled: e.target.checked })}
+                                className="rounded border-border"
+                              />
+                              Sound
+                            </label>
+                            <label className="flex items-center gap-1 text-text-secondary">
+                              <input
+                                type="checkbox"
+                                checked={effective.browserNotification}
+                                onChange={(e) => updateAgentOverride(key, eventKey, { browserNotification: e.target.checked })}
+                                className="rounded border-border"
+                              />
+                              Browser
+                            </label>
+                          </>
+                        )}
+                      </div>
+                      {hasOverride && effective.soundEnabled && (
+                        <div className="ml-6">
+                          <SoundPicker
+                            value={override?.customSoundUrl ?? null}
+                            defaultUrl={globalDefault}
+                            onChange={(url) => updateAgentOverride(key, eventKey, { customSoundUrl: url })}
+                          />
+                        </div>
                       )}
                     </div>
                   )
@@ -196,33 +247,20 @@ function Toggle({ label, description, checked, onChange }: {
   )
 }
 
-function EventConfig({ event, label, description, config, onUpdate, onTest, soundMasterEnabled, browserMasterEnabled }: {
+function EventConfig({ event, label, description, config, onUpdate, soundMasterEnabled, browserMasterEnabled }: {
   event: SoundEvent
   label: string
   description: string
   config: EventNotificationConfig
   onUpdate: (cfg: Partial<EventNotificationConfig>) => void
-  onTest: () => void
   soundMasterEnabled: boolean
   browserMasterEnabled: boolean
 }) {
-  const [showCustomUrl, setShowCustomUrl] = useState(false)
-
   return (
     <div className="border border-border rounded px-3 py-2 space-y-2">
-      <div className="flex items-center justify-between">
-        <div>
-          <div className="text-sm text-text-primary">{label}</div>
-          <div className="text-xs text-text-muted">{description}</div>
-        </div>
-        <button
-          onClick={onTest}
-          disabled={!soundMasterEnabled || !config.soundEnabled}
-          className="text-xs px-2 py-1 rounded border border-border text-text-secondary hover:bg-bg-tertiary disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
-          title="Test this sound"
-        >
-          Test
-        </button>
+      <div>
+        <div className="text-sm text-text-primary">{label}</div>
+        <div className="text-xs text-text-muted">{description}</div>
       </div>
       <div className="flex items-center gap-4">
         <label className="flex items-center gap-1.5 text-xs text-text-secondary">
@@ -245,30 +283,16 @@ function EventConfig({ event, label, description, config, onUpdate, onTest, soun
           />
           Browser notification {!browserMasterEnabled && <span className="text-text-muted">(master off)</span>}
         </label>
-        <button
-          onClick={() => setShowCustomUrl(!showCustomUrl)}
-          className="text-xs text-accent-primary hover:underline ml-auto"
-        >
-          {config.customSoundUrl ? 'Custom sound' : 'Custom sound...'}
-        </button>
       </div>
-      {showCustomUrl && (
+      {config.soundEnabled && (
         <div className="flex items-center gap-2">
-          <input
-            type="text"
-            value={config.customSoundUrl ?? ''}
-            onChange={(e) => onUpdate({ customSoundUrl: e.target.value || null })}
-            placeholder={DEFAULT_SOUNDS[event]}
-            className="flex-1 px-2 py-1 text-xs bg-bg-tertiary border border-border rounded focus:outline-none focus:ring-1 focus:ring-accent-primary font-mono"
+          <span className="text-xs text-text-muted">Sound:</span>
+          <SoundPicker
+            value={config.customSoundUrl}
+            defaultUrl={DEFAULT_SOUNDS[event]}
+            disabled={!soundMasterEnabled}
+            onChange={(url) => onUpdate({ customSoundUrl: url })}
           />
-          {config.customSoundUrl && (
-            <button
-              onClick={() => onUpdate({ customSoundUrl: null })}
-              className="text-xs text-accent-error hover:underline"
-            >
-              Reset
-            </button>
-          )}
         </div>
       )}
     </div>

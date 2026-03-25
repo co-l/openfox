@@ -42,6 +42,14 @@ export const AGENT_TYPES: { key: AgentType; label: string }[] = [
   { key: 'sub-agent', label: 'Sub-agent' },
 ]
 
+// All available sounds shipped with the app
+export const AVAILABLE_SOUNDS: { url: string; label: string }[] = [
+  { url: '/sounds/notification.mp3', label: 'Notification' },
+  { url: '/sounds/waiting-for-user.mp3', label: 'Waiting for User' },
+  { url: '/sounds/achievement.mp3', label: 'Achievement' },
+  { url: '/sounds/intervention.mp3', label: 'Intervention' },
+]
+
 // Default sound paths (shipped with the app)
 export const DEFAULT_SOUNDS: Record<SoundEvent, string> = {
   complete: '/sounds/notification.mp3',

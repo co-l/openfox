@@ -279,12 +279,15 @@ function handleGlobalSoundEffects(message: ServerMessage, state: SessionState): 
   if (message.type === 'phase.changed' && message.sessionId) {
     const payload = message.payload as PhaseChangedPayload
     const previousPhase = getKnownPhase(state, message.sessionId)
+    console.debug('[sound] phase.changed:', payload.phase, 'previous:', previousPhase, 'sessionId:', message.sessionId)
     if (previousPhase === payload.phase) {
+      console.debug('[sound] skipping duplicate phase:', payload.phase)
       return
     }
 
     const agent = resolveAgentType(state, message.sessionId)
     if (payload.phase === 'done') {
+      console.debug('[sound] playing achievement')
       playAchievement(agent)
     }
     if (payload.phase === 'blocked') {
