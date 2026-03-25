@@ -421,8 +421,7 @@ export function PlanPanel() {
         atBottomStateChange={setAtBottom}
         atBottomThreshold={150}
         defaultItemHeight={120}
-        initialTopMostItemIndex={Infinity}
-        alignToBottom
+        initialTopMostItemIndex={displayItems.length - 1}
         itemContent={(_index, item) => {
           if (item.type === 'context-divider') {
             return (
