@@ -408,7 +408,11 @@ export function PlanPanel() {
         onCriteriaSidebarToggle={() => setCriteriaSidebarOpen(!criteriaSidebarOpen)}
       />
       
-      <Virtuoso
+      {displayItems.length === 0 && (
+        <div className="flex-1 min-w-0" />
+      )}
+      {displayItems.length > 0 && <Virtuoso
+        key={session?.id ?? 'none'}
         ref={virtuosoRef}
         data={displayItems}
         className="flex-1 min-w-0 overflow-x-hidden"
@@ -515,8 +519,8 @@ export function PlanPanel() {
             </div>
           ),
         }}
-      />
-      
+      />}
+
       <form onSubmit={handleSubmit} className="p-2 md:p-4 border-t border-border bg-gradient-to-t from-bg-secondary/50 to-transparent">
         {/* Hidden file input */}
         <input
