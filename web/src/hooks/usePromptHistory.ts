@@ -32,8 +32,9 @@ export function extractUserMessages(messages: Message[]): Message[] {
  */
 export function buildHistoryFromMessages(messages: Message[], maxCount: number): PromptHistoryItem[] {
   // Get user messages sorted by timestamp descending (newest first)
+  // Exclude auto-prompts and system-generated messages
   const userMessages = messages
-    .filter(msg => msg.role === 'user')
+    .filter(msg => msg.role === 'user' && !msg.isSystemGenerated && msg.messageKind !== 'auto-prompt')
     .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
   
   // Take the maxCount most recent messages
@@ -115,8 +116,10 @@ export function buildCombinedHistory(
 ): PromptHistoryItem[] {
   const allPrompts: Array<{ id: string, content: string, timestamp: string, sessionId: string | null, sessionName?: string }> = []
   
-  // Add current session messages
-  const currentUserMessages = messages.filter(msg => msg.role === 'user')
+  // Add current session messages (exclude auto-prompts and system-generated)
+  const currentUserMessages = messages.filter(msg =>
+    msg.role === 'user' && !msg.isSystemGenerated && msg.messageKind !== 'auto-prompt'
+  )
   for (const msg of currentUserMessages) {
     allPrompts.push({
       id: msg.id,

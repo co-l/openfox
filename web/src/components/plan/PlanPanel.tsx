@@ -318,6 +318,13 @@ export function PlanPanel() {
       }
     }
     
+    // Arrow Up on empty textarea opens history
+    if (e.key === 'ArrowUp' && input.trim() === '' && !showHistory) {
+      e.preventDefault()
+      openHistory()
+      return
+    }
+
     // Normal textarea behavior
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault()
@@ -695,13 +702,6 @@ export function PlanPanel() {
               }
             }}
             onKeyDown={handleKeyDown}
-            onKeyUp={(e) => {
-              // Handle Arrow Up on empty textarea to show history
-              if (e.key === 'ArrowUp' && input.trim() === '' && !showHistory) {
-                e.preventDefault()
-                openHistory()
-              }
-            }}
             placeholder={
               isPlanning 
                 ? "What would you like to build?" 
