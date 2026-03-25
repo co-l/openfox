@@ -81,9 +81,11 @@ export function PlanPanel() {
   // Use rawMessages (stable during streaming) since prompt context only depends on user messages
   const promptContextByUserMessageId = useMemo(() => buildPromptContextByUserMessageId(rawMessages), [rawMessages])
   
-  // Virtuoso auto-scroll: follow new output when user is at the bottom
+  // Virtuoso auto-scroll: follow output when user is at the bottom.
+  // This handles BOTH initial load (empty→populated, list is "at bottom")
+  // and streaming (new content appended). Uses 'auto' for instant jump.
   const followOutput = useCallback((isAtBottom: boolean) => {
-    return isAtBottom ? 'smooth' : false
+    return isAtBottom ? 'auto' : false
   }, [])
 
   // Auto-resize textarea based on content, up to 200px max
@@ -408,11 +410,7 @@ export function PlanPanel() {
         onCriteriaSidebarToggle={() => setCriteriaSidebarOpen(!criteriaSidebarOpen)}
       />
       
-      {displayItems.length === 0 && (
-        <div className="flex-1 min-w-0" />
-      )}
-      {displayItems.length > 0 && <Virtuoso
-        key={session?.id ?? 'none'}
+      <Virtuoso
         ref={virtuosoRef}
         data={displayItems}
         className="flex-1 min-w-0 overflow-x-hidden"
@@ -421,7 +419,7 @@ export function PlanPanel() {
         atBottomStateChange={setAtBottom}
         atBottomThreshold={150}
         defaultItemHeight={120}
-        initialTopMostItemIndex={displayItems.length - 1}
+        alignToBottom
         itemContent={(_index, item) => {
           if (item.type === 'context-divider') {
             return (
@@ -518,7 +516,7 @@ export function PlanPanel() {
             </div>
           ),
         }}
-      />}
+      />
 
       <form onSubmit={handleSubmit} className="p-2 md:p-4 border-t border-border bg-gradient-to-t from-bg-secondary/50 to-transparent">
         {/* Hidden file input */}
