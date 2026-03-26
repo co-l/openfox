@@ -482,7 +482,6 @@ export interface Provider {
   id: string              // UUID
   name: string            // User-defined display name (e.g., "Local vLLM", "Anthropic Claude")
   url: string             // API endpoint (e.g., "http://localhost:8000/v1")
-  model: string           // Default model (can be "auto" for auto-detect)
   backend: ProviderBackend
   apiKey?: string | undefined   // Optional, for cloud providers
   maxContext?: number | undefined  // Max context window (optional, defaults to 200000)
@@ -495,6 +494,7 @@ export interface Config {
     baseUrl: string
     model: string
     timeout: number
+    idleTimeout: number
     /** Backend type - 'auto' for auto-detection, or explicit backend name */
     backend: LlmBackend | 'auto'
     /** Disable thinking/reasoning globally (for e2e tests) */
@@ -525,7 +525,9 @@ export interface Config {
   dev?: boolean  // true when running in dev mode (OPENFOX_DEV=true or mode='development')
   /** Configured providers (loaded from global config) */
   providers?: Provider[] | undefined
-  /** ID of the active provider */
+  /** Default model selection in format "providerId/modelName" */
+  defaultModelSelection?: string | undefined
+  /** ID of the active provider (deprecated, use defaultModelSelection) */
   activeProviderId?: string | undefined
   /** Workspace directory for projects */
   workdir: string

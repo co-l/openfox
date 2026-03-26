@@ -1,5 +1,6 @@
 import { parseArgs } from 'node:util'
 import type { Mode } from './main.js'
+import { getActiveProvider, getDefaultModel } from './config.js'
 
 export function printHelp(): void {
   console.log(`
@@ -28,6 +29,7 @@ export async function runConfig(mode: Mode): Promise<void> {
   const config = await loadGlobalConfig(mode)
   const configPath = getGlobalConfigPath(mode)
   const activeProvider = getActiveProvider(config)
+  const defaultModel = getDefaultModel(config)
   
   console.log(`Configuration (${mode}):`)
   console.log(`  Location: ${configPath}`)
@@ -35,7 +37,7 @@ export async function runConfig(mode: Mode): Promise<void> {
   if (activeProvider) {
     console.log(`  Active: ${activeProvider.name}`)
     console.log(`    URL: ${activeProvider.url}`)
-    console.log(`    Model: ${activeProvider.model}`)
+    console.log(`    Model: ${defaultModel ?? 'auto'}`)
     console.log(`    Backend: ${activeProvider.backend}`)
   } else {
     console.log(`  Active: (none configured)`)

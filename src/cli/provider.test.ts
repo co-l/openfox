@@ -49,7 +49,7 @@ describe('provider commands', () => {
       const updated = addProvider(config, {
         name: 'Test Provider',
         url: 'http://localhost:8000/v1',
-        model: 'test-model',
+
         backend: 'vllm',
         isActive: false, // Should become active anyway (first provider)
       })
@@ -66,7 +66,7 @@ describe('provider commands', () => {
           id: 'first-id',
           name: 'First',
           url: 'http://localhost:8000/v1',
-          model: 'model-1',
+  
           backend: 'vllm' as const,
           isActive: true,
           createdAt: new Date().toISOString(),
@@ -81,7 +81,7 @@ describe('provider commands', () => {
       const updated = addProvider(config, {
         name: 'Second',
         url: 'http://localhost:11434',
-        model: 'model-2',
+
         backend: 'ollama',
         isActive: false,
       })
@@ -98,7 +98,7 @@ describe('provider commands', () => {
           id: 'first-id',
           name: 'First',
           url: 'http://localhost:8000/v1',
-          model: 'model-1',
+  
           backend: 'vllm' as const,
           isActive: true,
           createdAt: new Date().toISOString(),
@@ -113,7 +113,7 @@ describe('provider commands', () => {
       const updated = addProvider(config, {
         name: 'Second',
         url: 'http://localhost:11434',
-        model: 'model-2',
+
         backend: 'ollama',
         isActive: true, // Make this one active
       })
@@ -133,7 +133,7 @@ describe('provider commands', () => {
             id: 'first-id',
             name: 'First',
             url: 'http://localhost:8000/v1',
-            model: 'model-1',
+    
             backend: 'vllm' as const,
             isActive: true,
             createdAt: new Date().toISOString(),
@@ -142,7 +142,7 @@ describe('provider commands', () => {
             id: 'second-id',
             name: 'Second',
             url: 'http://localhost:11434',
-            model: 'model-2',
+    
             backend: 'ollama' as const,
             isActive: false,
             createdAt: new Date().toISOString(),
@@ -170,7 +170,7 @@ describe('provider commands', () => {
             id: 'first-id',
             name: 'First',
             url: 'http://localhost:8000/v1',
-            model: 'model-1',
+    
             backend: 'vllm' as const,
             isActive: true,
             createdAt: new Date().toISOString(),
@@ -179,7 +179,7 @@ describe('provider commands', () => {
             id: 'second-id',
             name: 'Second',
             url: 'http://localhost:11434',
-            model: 'model-2',
+    
             backend: 'ollama' as const,
             isActive: false,
             createdAt: new Date().toISOString(),
@@ -205,7 +205,7 @@ describe('provider commands', () => {
           id: 'only-id',
           name: 'Only',
           url: 'http://localhost:8000/v1',
-          model: 'model-1',
+  
           backend: 'vllm' as const,
           isActive: true,
           createdAt: new Date().toISOString(),
@@ -232,7 +232,7 @@ describe('provider commands', () => {
             id: 'first-id',
             name: 'First',
             url: 'http://localhost:8000/v1',
-            model: 'model-1',
+    
             backend: 'vllm' as const,
             isActive: true,
             createdAt: new Date().toISOString(),
@@ -241,7 +241,7 @@ describe('provider commands', () => {
             id: 'second-id',
             name: 'Second',
             url: 'http://localhost:11434',
-            model: 'model-2',
+    
             backend: 'ollama' as const,
             isActive: false,
             createdAt: new Date().toISOString(),
@@ -267,7 +267,7 @@ describe('provider commands', () => {
           id: 'first-id',
           name: 'First',
           url: 'http://localhost:8000/v1',
-          model: 'model-1',
+  
           backend: 'vllm' as const,
           isActive: true,
           createdAt: new Date().toISOString(),
@@ -293,7 +293,7 @@ describe('provider commands', () => {
             id: 'first-id',
             name: 'First',
             url: 'http://localhost:8000/v1',
-            model: 'model-1',
+    
             backend: 'vllm' as const,
             isActive: true,
             createdAt: new Date().toISOString(),
@@ -335,7 +335,7 @@ describe('provider commands', () => {
           id: 'test-id',
           name: 'Test Provider',
           url: 'http://localhost:8000/v1',
-          model: 'test-model',
+  
           backend: 'vllm' as const,
           isActive: true,
           createdAt: new Date().toISOString(),

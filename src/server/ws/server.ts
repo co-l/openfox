@@ -683,8 +683,8 @@ async function handleClientMessage(
         return
       }
 
-      // Resolve model: use requested, or provider's default
-      const resolvedModel = requestedModel ?? provider.model
+      // Resolve model: use requested, or default to 'auto'
+      const resolvedModel = requestedModel ?? 'auto'
 
       const sessionId = client.activeSessionId
       sessionManager.setSessionProvider(sessionId, providerId, resolvedModel)

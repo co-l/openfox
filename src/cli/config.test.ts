@@ -55,12 +55,11 @@ describe('config', () => {
       expect(migrated.providers[0]).toMatchObject({
         name: 'Default',
         url: 'http://localhost:8000/v1',
-        model: 'qwen3-32b',
         backend: 'vllm',
         maxContext: 200000,
         isActive: true,
       })
-      expect(migrated.activeProviderId).toBe(migrated.providers[0]?.id)
+      expect(migrated.defaultModelSelection).toMatch(/^[a-f0-9-]+\/qwen3-32b$/)
       // Old llm key should be removed
       expect('llm' in migrated).toBe(false)
     })
@@ -72,13 +71,12 @@ describe('config', () => {
             id: 'test-id',
             name: 'My Provider',
             url: 'http://localhost:8000/v1',
-            model: 'qwen3-32b',
             backend: 'vllm' as const,
             isActive: true,
             createdAt: '2024-01-01T00:00:00Z',
           },
         ],
-        activeProviderId: 'test-id',
+        defaultModelSelection: 'test-id/qwen3-32b',
         server: { port: 10369, host: '127.0.0.1', openBrowser: true },
         logging: { level: 'info' as const },
         database: { path: '' },
@@ -144,8 +142,8 @@ describe('config', () => {
       const loaded = await loadGlobalConfig('production')
 
       expect(loaded.providers).toHaveLength(1)
-      expect(loaded.providers[0]?.model).toBe('test-model')
-      expect(loaded.activeProviderId).toBeDefined()
+      expect(loaded.defaultModelSelection).toMatch(/^[a-f0-9-]+\/test-model$/)
+      expect(loaded.activeProviderId).toBeUndefined()
     })
 
     it('returns empty providers for fresh install', async () => {

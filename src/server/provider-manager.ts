@@ -38,64 +38,47 @@ export async function fetchAvailableModelsFromBackend(baseUrl: string, apiKey?: 
 }
 
 export interface ProviderManager {
-  /** Get all configured providers */
   getProviders(): Provider[]
-  
-  /** Get the active provider */
   getActiveProvider(): Provider | undefined
-  
-  /** Get the active provider ID */
   getActiveProviderId(): string | undefined
-  
-  /** Get the LLM client for the active provider */
+  getCurrentModel(): string | undefined
   getLLMClient(): LLMClientWithModel
-  
-  /** Switch to a different provider */
   activateProvider(providerId: string, options?: { model?: string }): Promise<{ success: boolean; error?: string }>
-  
-  /** Add a new provider */
   addProvider(provider: Omit<Provider, 'id' | 'createdAt'>): Provider
-  
-  /** Remove a provider */
   removeProvider(providerId: string): boolean
-  
-  /** Update provider list (e.g., from external config change) */
-  setProviders(providers: Provider[], activeProviderId?: string): void
-  
-  /** Get provider status (for UI) */
+  setProviders(providers: Provider[], defaultModelSelection?: string): void
   getProviderStatus(providerId: string): 'connected' | 'disconnected' | 'unknown'
-
-  /** Get available models for a provider (fetches from backend) */
   getProviderModels(providerId: string): Promise<string[]>
+  setDefaultModelSelection(providerId: string, model: string): Promise<{ success: boolean; error?: string }>
+}
 
-  /** Set the model for a provider */
-  setProviderModel(providerId: string, model: string): Promise<{ success: boolean; error?: string }>
+function parseDefaultModelSelection(selection?: string): { providerId: string | undefined; model: string | undefined } {
+  if (!selection) return { providerId: undefined, model: undefined }
+  const parts = selection.split('/')
+  return {
+    providerId: parts[0],
+    model: parts[1] ?? 'auto',
+  }
 }
 
 export function createProviderManager(config: Config): ProviderManager {
-  // Copy providers from config
   let providers: Provider[] = [...(config.providers ?? [])]
-  let activeProviderId: string | undefined = config.activeProviderId
-  
-  // Create initial LLM client from config (may be from active provider or env vars)
+  const { providerId: initialProviderId, model: initialModel } = parseDefaultModelSelection(config.defaultModelSelection)
+  let defaultModelSelection: string | undefined = config.defaultModelSelection
   let llmClient = createLLMClient(config)
-  
-  // Track connection status for each provider
   const providerStatus = new Map<string, 'connected' | 'disconnected' | 'unknown'>()
   
-  // Initialize status for all providers
   for (const p of providers) {
     providerStatus.set(p.id, 'unknown')
   }
   
-  // Helper to create a config for a specific provider
-  function createConfigForProvider(provider: Provider): Config {
+  function createConfigForProvider(provider: Provider, model: string): Config {
     return {
       ...config,
       llm: {
         ...config.llm,
         baseUrl: provider.url.includes('/v1') ? provider.url : `${provider.url}/v1`,
-        model: provider.model,
+        model,
         backend: provider.backend as LlmBackend | 'auto',
       },
     }
@@ -107,12 +90,19 @@ export function createProviderManager(config: Config): ProviderManager {
     },
     
     getActiveProvider() {
-      if (!activeProviderId) return undefined
-      return providers.find(p => p.id === activeProviderId)
+      const { providerId } = parseDefaultModelSelection(defaultModelSelection)
+      if (!providerId) return undefined
+      return providers.find(p => p.id === providerId)
     },
     
     getActiveProviderId() {
-      return activeProviderId
+      const { providerId } = parseDefaultModelSelection(defaultModelSelection)
+      return providerId
+    },
+    
+    getCurrentModel() {
+      const { model } = parseDefaultModelSelection(defaultModelSelection)
+      return model
     },
     
     getLLMClient() {
@@ -125,31 +115,27 @@ export function createProviderManager(config: Config): ProviderManager {
         return { success: false, error: 'Provider not found' }
       }
 
-      // Determine which model to use (option overrides provider's default)
-      const targetModel = options?.model ?? provider.model
-      const isModelSwitch = providerId === activeProviderId && options?.model && options.model !== provider.model
+      const currentModel = parseDefaultModelSelection(defaultModelSelection).model ?? 'auto'
+      const targetModel = options?.model ?? currentModel
+      const isModelSwitch = providerId === parseDefaultModelSelection(defaultModelSelection).providerId && options?.model && options.model !== currentModel
       
-      if (providerId === activeProviderId && !isModelSwitch) {
-        return { success: true } // Already active and not switching model
+      if (providerId === parseDefaultModelSelection(defaultModelSelection).providerId && !isModelSwitch) {
+        return { success: true }
       }
 
       logger.info('Switching provider', {
-        from: activeProviderId,
+        from: parseDefaultModelSelection(defaultModelSelection).providerId,
         to: providerId,
         providerName: provider.name,
         url: provider.url,
         model: targetModel,
       })
 
-      // Create new LLM client for this provider
-      const providerConfig = createConfigForProvider({ ...provider, model: targetModel })
+      const providerConfig = createConfigForProvider(provider, targetModel)
       const newClient = createLLMClient(providerConfig)
 
-      // Try to detect backend and model
       try {
         const url = provider.url.includes('/v1') ? provider.url.replace('/v1', '') : provider.url
-
-        // Clear cache for this URL to force fresh detection
         clearModelCache(url)
 
         if (provider.backend === 'auto') {
@@ -165,7 +151,6 @@ export function createProviderManager(config: Config): ProviderManager {
             newClient.setModel(detected)
           }
         } else {
-          // Explicitly set the model if it's not auto
           newClient.setModel(targetModel)
         }
 
@@ -176,16 +161,13 @@ export function createProviderManager(config: Config): ProviderManager {
           error: err instanceof Error ? err.message : String(err),
         })
         providerStatus.set(providerId, 'disconnected')
-        // Still switch - user may want to use it anyway
       }
 
-      // Update state
       providers = providers.map(p => ({
         ...p,
         isActive: p.id === providerId,
-        model: p.id === providerId ? targetModel : p.model,
       }))
-      activeProviderId = providerId
+      defaultModelSelection = `${providerId}/${targetModel}`
       llmClient = newClient
 
       logger.info('Provider activated', {
@@ -206,11 +188,10 @@ export function createProviderManager(config: Config): ProviderManager {
         createdAt: new Date().toISOString(),
       }
       
-      // If this is the first provider or marked active, make it active
       if (providerData.isActive || providers.length === 0) {
         providers = providers.map(p => ({ ...p, isActive: false }))
         provider.isActive = true
-        activeProviderId = id
+        defaultModelSelection = `${id}/auto`
       }
       
       providers.push(provider)
@@ -227,22 +208,20 @@ export function createProviderManager(config: Config): ProviderManager {
       providers.splice(index, 1)
       providerStatus.delete(providerId)
       
-      // If we removed the active provider, activate the first remaining one
       if (wasActive && providers.length > 0) {
         providers[0]!.isActive = true
-        activeProviderId = providers[0]!.id
+        defaultModelSelection = `${providers[0]!.id}/auto`
       } else if (providers.length === 0) {
-        activeProviderId = undefined
+        defaultModelSelection = undefined
       }
       
       return true
     },
     
-    setProviders(newProviders, newActiveId) {
+    setProviders(newProviders, newDefaultModelSelection) {
       providers = [...newProviders]
-      activeProviderId = newActiveId
+      defaultModelSelection = newDefaultModelSelection
       
-      // Reset status for all providers
       providerStatus.clear()
       for (const p of providers) {
         providerStatus.set(p.id, 'unknown')
@@ -263,23 +242,21 @@ export function createProviderManager(config: Config): ProviderManager {
       return fetchAvailableModelsFromBackend(url, provider.apiKey)
     },
 
-    async setProviderModel(providerId: string, model: string) {
+    async setDefaultModelSelection(providerId: string, model: string) {
       const provider = providers.find(p => p.id === providerId)
       if (!provider) {
         return { success: false, error: 'Provider not found' }
       }
 
-      logger.info('Setting provider model', { providerId, model, providerName: provider.name })
+      logger.info('Setting default model selection', { providerId, model, providerName: provider.name })
 
-      // Update provider's model
-      providers = providers.map(p =>
-        p.id === providerId ? { ...p, model } : p
-      )
+      defaultModelSelection = `${providerId}/${model}`
+      providers = providers.map(p => ({ ...p, isActive: p.id === providerId }))
 
-      // If this is the active provider, update the LLM client
-      if (providerId === activeProviderId) {
+      const currentProviderId = parseDefaultModelSelection(defaultModelSelection).providerId
+      if (currentProviderId === providerId) {
         llmClient.setModel(model)
-        logger.info('Provider model updated', { providerId, model })
+        logger.info('Model updated', { providerId, model })
       }
 
       return { success: true }

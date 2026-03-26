@@ -56,12 +56,13 @@ const providerSchema = z.object({
   id: z.string(),
   name: z.string(),
   url: z.string(),
-  model: z.string(),
   backend: backendSchema,
   apiKey: z.string().optional(),
   maxContext: z.number().optional(),
   isActive: z.boolean(),
   createdAt: z.string(),
+  // Deprecated: model field kept for migration, will be removed after migration
+  model: z.string().optional(),
 })
 
 const serverSchema = z.object({
@@ -85,6 +86,7 @@ const workspaceSchema = z.object({
 // New config schema with providers array
 const configSchema = z.object({
   providers: z.array(providerSchema).default([]),
+  defaultModelSelection: z.string().optional(),
   activeProviderId: z.string().optional(),
   activeWorkflowId: z.string().optional(),
   server: serverSchema.default({}),
@@ -123,12 +125,51 @@ export type OldGlobalConfig = z.infer<typeof oldConfigSchema>
 
 /**
  * Migrate old config format (single llm object) to new format (providers array).
- * If already in new format, returns as-is.
+ * Also migrates provider.model to global defaultModelSelection.
+ * If already in new format with defaultModelSelection, returns as-is.
  */
 export function migrateConfig(raw: unknown): GlobalConfig {
+  type RawProvider = { id: string; name: string; url: string; model?: string; backend: string; apiKey?: string; maxContext?: number; isActive: boolean; createdAt: string }
+  type RawConfig = { providers: RawProvider[]; activeProviderId?: string; defaultModelSelection?: string; [key: string]: unknown }
+  
   // Check if it's already the new format (has providers array)
   if (typeof raw === 'object' && raw !== null && 'providers' in raw) {
-    return configSchema.parse(raw)
+    const obj = raw as RawConfig
+    
+    // If already has defaultModelSelection, just parse and return
+    if (obj.defaultModelSelection) {
+      // Strip model from providers before parsing
+      const providers = obj.providers.map(p => {
+        const { model, ...rest } = p
+        return rest
+      })
+      return configSchema.parse({
+        ...obj,
+        providers,
+      })
+    }
+    
+    // Migrate from activeProviderId + provider.model to defaultModelSelection
+    const providers = obj.providers.map(p => {
+      const { model, ...rest } = p
+      return rest
+    })
+    
+    let defaultModelSelection: string | undefined
+    if (obj.activeProviderId) {
+      const activeProvider = obj.providers.find(p => p.id === obj.activeProviderId)
+      if (activeProvider?.model) {
+        defaultModelSelection = `${obj.activeProviderId}/${activeProvider.model}`
+      } else {
+        defaultModelSelection = `${obj.activeProviderId}/auto`
+      }
+    }
+    
+    return configSchema.parse({
+      ...obj,
+      providers,
+      defaultModelSelection,
+    })
   }
   
   // Check if it's the old format (has llm object)
@@ -140,7 +181,6 @@ export function migrateConfig(raw: unknown): GlobalConfig {
       id: providerId,
       name: 'Default',
       url: oldConfig.llm.url,
-      model: oldConfig.llm.model,
       backend: oldConfig.llm.backend as ProviderBackend,
       apiKey: oldConfig.llm.apiKey,
       maxContext: oldConfig.llm.maxContext,
@@ -148,9 +188,11 @@ export function migrateConfig(raw: unknown): GlobalConfig {
       createdAt: new Date().toISOString(),
     }
     
+    const model = oldConfig.llm.model || 'auto'
+    
     return {
       providers: [provider],
-      activeProviderId: providerId,
+      defaultModelSelection: `${providerId}/${model}`,
       server: oldConfig.server,
       logging: oldConfig.logging,
       database: oldConfig.database,
@@ -189,8 +231,30 @@ export async function saveGlobalConfig(mode: Mode, config: GlobalConfig): Promis
 // ============================================================================
 
 export function getActiveProvider(config: GlobalConfig): Provider | undefined {
+  // Use defaultModelSelection if available
+  if (config.defaultModelSelection) {
+    const [providerId] = config.defaultModelSelection.split('/')
+    return config.providers?.find(p => p.id === providerId)
+  }
+  // Fallback to activeProviderId for backwards compatibility
   if (!config.activeProviderId) return undefined
-  return config.providers.find(p => p.id === config.activeProviderId)
+  return config.providers?.find(p => p.id === config.activeProviderId)
+}
+
+export function getDefaultModel(config: GlobalConfig): string | undefined {
+  if (!config.defaultModelSelection) return undefined
+  const parts = config.defaultModelSelection.split('/')
+  return parts[1] ?? 'auto'
+}
+
+export function setDefaultModelSelection(config: GlobalConfig, providerId: string, model: string): GlobalConfig {
+  const defaultModelSelection = `${providerId}/${model}`
+  return {
+    ...config,
+    defaultModelSelection,
+    activeProviderId: providerId, // Keep for backwards compatibility
+    providers: config.providers?.map(p => ({ ...p, isActive: p.id === providerId })) ?? [],
+  }
 }
 
 export function addProvider(config: GlobalConfig, provider: Omit<Provider, 'id' | 'createdAt'>): GlobalConfig {
@@ -200,22 +264,35 @@ export function addProvider(config: GlobalConfig, provider: Omit<Provider, 'id' 
     createdAt: new Date().toISOString(),
   }
   
-  // If this is the first provider or marked active, update activeProviderId
-  const shouldActivate = provider.isActive || config.providers.length === 0
+  // If this is the first provider or marked active, update defaultModelSelection
+  const shouldActivate = provider.isActive || config.providers?.length === 0
   
   return {
     ...config,
     providers: [
-      ...config.providers.map(p => shouldActivate ? { ...p, isActive: false } : p),
+      ...(config.providers ?? []).map(p => shouldActivate ? { ...p, isActive: false } : p),
       { ...newProvider, isActive: shouldActivate },
     ],
+    defaultModelSelection: shouldActivate ? `${newProvider.id}/auto` : config.defaultModelSelection,
     activeProviderId: shouldActivate ? newProvider.id : config.activeProviderId,
     workspace: config.workspace ?? { workdir: process.cwd() },
   }
 }
 
 export function removeProvider(config: GlobalConfig, providerId: string): GlobalConfig {
-  const filtered = config.providers.filter(p => p.id !== providerId)
+  const currentProviders = config.providers ?? []
+  const filtered = currentProviders.filter(p => p.id !== providerId)
+  
+  // Check if we're removing the default model selection's provider
+  let newDefaultModelSelection = config.defaultModelSelection
+  if (config.defaultModelSelection) {
+    const [selectedProviderId] = config.defaultModelSelection.split('/')
+    if (selectedProviderId === providerId) {
+      // Reset to first available provider with auto
+      newDefaultModelSelection = filtered.length > 0 ? `${filtered[0]!.id}/auto` : undefined
+    }
+  }
+  
   const wasActive = config.activeProviderId === providerId
   
   // If we removed the active provider, activate the first remaining one
@@ -227,16 +304,17 @@ export function removeProvider(config: GlobalConfig, providerId: string): Global
     ...config,
     providers: filtered.map(p => ({ ...p, isActive: p.id === newActiveId })),
     activeProviderId: newActiveId,
+    defaultModelSelection: newDefaultModelSelection,
   }
 }
 
 export function activateProvider(config: GlobalConfig, providerId: string): GlobalConfig {
-  const provider = config.providers.find(p => p.id === providerId)
+  const provider = config.providers?.find(p => p.id === providerId)
   if (!provider) return config
   
   return {
     ...config,
-    providers: config.providers.map(p => ({ ...p, isActive: p.id === providerId })),
+    providers: (config.providers ?? []).map(p => ({ ...p, isActive: p.id === providerId })),
     activeProviderId: providerId,
   }
 }

@@ -109,7 +109,7 @@ export async function runInitWithSelect(mode: Mode, existingConfig?: GlobalConfi
       config = addProvider(config, {
         name: 'Default',
         url: found.url,
-        model: found.model,
+
         backend: found.backend as ProviderBackend,
         maxContext: 200000,
         isActive: true,
@@ -151,11 +151,13 @@ export async function runInitWithSelect(mode: Mode, existingConfig?: GlobalConfi
         config = addProvider(config, {
           name: 'Default',
           url,
-          model: model ?? 'auto',
           backend: backend as ProviderBackend,
           maxContext: 200000,
           isActive: true,
         })
+        // Set the default model selection
+        const { setDefaultModelSelection } = await import('./config.js')
+        config = setDefaultModelSelection(config, config.providers[config.providers.length - 1]!.id, model ?? 'auto')
       } catch {
         s2.stop('Server isn\'t available')
         
@@ -177,11 +179,13 @@ export async function runInitWithSelect(mode: Mode, existingConfig?: GlobalConfi
         config = addProvider(config, {
           name: 'Default',
           url,
-          model: 'auto',
           backend: 'auto',
           maxContext: 200000,
           isActive: true,
         })
+        // Set the default model selection
+        const { setDefaultModelSelection } = await import('./config.js')
+        config = setDefaultModelSelection(config, config.providers[config.providers.length - 1]!.id, 'auto')
       }
     }
   }
@@ -201,6 +205,12 @@ export async function runInitWithSelect(mode: Mode, existingConfig?: GlobalConfi
   })
   // Normalize: remove trailing slash to prevent double slashes in paths
   config.workspace = { workdir: String(workdirChoice).replace(/\/$/, '') }
+  
+  // If a provider was added and no default model selection exists, set it
+  if (config.providers.length > 0 && !config.defaultModelSelection) {
+    const { setDefaultModelSelection } = await import('./config.js')
+    config = setDefaultModelSelection(config, config.providers[0]!.id, 'auto')
+  }
   
   // Save the configuration
   await saveGlobalConfig(mode, config)

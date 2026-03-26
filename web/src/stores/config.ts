@@ -8,7 +8,6 @@ interface Provider {
   id: string
   name: string
   url: string
-  model: string
   backend: Backend
   apiKey?: string
   maxContext?: number
@@ -18,7 +17,7 @@ interface Provider {
 }
 
 interface ConfigState {
-  // Current active model/backend (derived from active provider)
+  // Current active model/backend
   model: string | null
   maxContext: number
   llmUrl: string | null
@@ -27,6 +26,7 @@ interface ConfigState {
   // Provider management
   providers: Provider[]
   activeProviderId: string | null
+  defaultModelSelection: string | null
   // Loading/error state
   loading: boolean
   activating: boolean
@@ -45,9 +45,8 @@ interface ConfigState {
   getActiveProvider: () => Provider | undefined
 }
 
-const AUTO_REFRESH_INTERVAL_MS = 30_000 // 30 seconds
+const AUTO_REFRESH_INTERVAL_MS = 30_000
 
-/** Display name for each backend */
 function getBackendDisplayName(backend: Backend): string {
   switch (backend) {
     case 'vllm': return 'vLLM'
@@ -72,6 +71,7 @@ export const useConfigStore = create<ConfigState>((set, get) => ({
   backend: 'unknown',
   providers: [],
   activeProviderId: null,
+  defaultModelSelection: null,
   loading: false,
   activating: false,
   error: null,
@@ -92,6 +92,7 @@ export const useConfigStore = create<ConfigState>((set, get) => ({
         backend: Backend
         providers: Provider[]
         activeProviderId: string | null
+        defaultModelSelection: string | null
       }
       set({
         model: data.model,
@@ -101,6 +102,7 @@ export const useConfigStore = create<ConfigState>((set, get) => ({
         backend: data.backend,
         providers: data.providers ?? [],
         activeProviderId: data.activeProviderId ?? null,
+        defaultModelSelection: data.defaultModelSelection ?? null,
         loading: false,
       })
     } catch (error) {
@@ -131,7 +133,7 @@ export const useConfigStore = create<ConfigState>((set, get) => ({
   
   activateProvider: async (providerId: string) => {
     const { activeProviderId, providers } = get()
-    if (providerId === activeProviderId) return true // Already active
+    if (providerId === activeProviderId) return true
     
     set({ activating: true, error: null })
     try {
@@ -147,7 +149,6 @@ export const useConfigStore = create<ConfigState>((set, get) => ({
         backend: Backend
       }
       
-      // Update local state
       set({
         activeProviderId: data.activeProviderId,
         model: data.model,
@@ -173,6 +174,7 @@ export const useConfigStore = create<ConfigState>((set, get) => ({
     set({
       activeProviderId: providerId,
       model,
+      defaultModelSelection: `${providerId}/${model}`,
       providers: providers.map(p => ({
         ...p,
         isActive: p.id === providerId,
@@ -182,7 +184,7 @@ export const useConfigStore = create<ConfigState>((set, get) => ({
 
   startAutoRefresh: () => {
     const { autoRefreshInterval, refreshModel } = get()
-    if (autoRefreshInterval) return // Already running
+    if (autoRefreshInterval) return
     
     const interval = setInterval(() => {
       refreshModel()

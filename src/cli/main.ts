@@ -27,12 +27,13 @@ Options:
 }
 
 export async function runConfig(mode: Mode): Promise<void> {
-  const { loadGlobalConfig, getActiveProvider } = await import('./config.js')
+  const { loadGlobalConfig, getActiveProvider, getDefaultModel } = await import('./config.js')
   const { getGlobalConfigPath } = await import('./paths.js')
   
   const config = await loadGlobalConfig(mode)
   const configPath = getGlobalConfigPath(mode)
   const activeProvider = getActiveProvider(config)
+  const defaultModel = getDefaultModel(config)
   
   console.log(`Configuration (${mode}):`)
   console.log(`  Location: ${configPath}`)
@@ -40,7 +41,7 @@ export async function runConfig(mode: Mode): Promise<void> {
   if (activeProvider) {
     console.log(`  Active: ${activeProvider.name}`)
     console.log(`    URL: ${activeProvider.url}`)
-    console.log(`    Model: ${activeProvider.model}`)
+    console.log(`    Model: ${defaultModel ?? 'auto'}`)
     console.log(`    Backend: ${activeProvider.backend}`)
   } else {
     console.log(`  Active: (none configured)`)
@@ -120,7 +121,6 @@ export async function runCli(options: { mode: Mode }): Promise<void> {
           console.log(`✓ Found ${detected.backend} (${detected.model}) at ${detected.url}`)
           const baseConfig = {
             providers: [],
-            activeProviderId: undefined as string | undefined,
             server: { port: 10369, host: '127.0.0.1', openBrowser: true },
             logging: { level: 'info' as const },
             database: { path: '' },
@@ -129,12 +129,14 @@ export async function runCli(options: { mode: Mode }): Promise<void> {
           const configWithProvider = addProvider(baseConfig, {
             name: 'Default',
             url: detected.url,
-            model: detected.model,
             backend: detected.backend as 'auto' | 'vllm' | 'sglang' | 'ollama' | 'llamacpp',
             maxContext: 200000,
             isActive: true,
           })
-          await saveGlobalConfig(mode, configWithProvider)
+          // Set the default model selection after adding provider
+          const { setDefaultModelSelection } = await import('./config.js')
+          const finalConfig = setDefaultModelSelection(configWithProvider, configWithProvider.providers[0]!.id, detected.model)
+          await saveGlobalConfig(mode, finalConfig)
           console.log('Configuration saved!\n')
         } else {
           console.log('✗ No LLM server detected\n')

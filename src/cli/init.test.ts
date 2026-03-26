@@ -206,7 +206,6 @@ describe('init', () => {
         id: 'provider-1',
         name: 'Test Provider',
         url: 'http://test:8000',
-        model: 'test-model',
         backend: 'vllm',
         maxContext: 100000,
       })
@@ -214,7 +213,6 @@ describe('init', () => {
         id: 'provider-2',
         name: 'Second Provider',
         url: 'http://second:8000',
-        model: 'second-model',
         backend: 'ollama',
         maxContext: 50000,
       })

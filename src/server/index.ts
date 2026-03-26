@@ -345,18 +345,20 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
       // Include provider info
       providers: providerManager.getProviders(),
       activeProviderId: providerManager.getActiveProviderId(),
+      defaultModelSelection: config.defaultModelSelection,
     })
   })
 
   // Model refresh endpoint
   app.post('/api/model/refresh', async (_req, res) => {
     const llmClient = getLLMClient()
-    const activeProvider = providerManager.getActiveProvider()
+    const currentModel = providerManager.getCurrentModel()
     
-    // Only auto-detect if the provider has model: 'auto'
+    // Only auto-detect if the current model is 'auto'
     // Otherwise, preserve the explicitly selected model
-    if (activeProvider?.model === 'auto') {
-      const baseUrl = activeProvider.url ?? config.llm.baseUrl
+    if (currentModel === 'auto') {
+      const activeProvider = providerManager.getActiveProvider()
+      const baseUrl = activeProvider?.url ?? config.llm.baseUrl
       const detected = await detectModel(baseUrl)
       if (detected) {
         llmClient.setModel(detected)
@@ -393,7 +395,14 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
     if (!result.success) {
       return res.status(400).json({ error: result.error })
     }
+    
+    // Persist the model selection to config
     const llmClient = getLLMClient()
+    const { loadGlobalConfig, saveGlobalConfig, setDefaultModelSelection } = await import('../cli/config.js')
+    const globalConfig = await loadGlobalConfig(config.mode ?? 'production')
+    const updatedConfig = setDefaultModelSelection(globalConfig, id as string, llmClient.getModel())
+    await saveGlobalConfig(config.mode ?? 'production', updatedConfig)
+    
     res.json({
       success: true,
       activeProviderId: id,

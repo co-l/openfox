@@ -230,15 +230,20 @@ export async function runProviderAdd(mode: Mode): Promise<void> {
     return choice === 'yes'
   })()
 
-  const newConfig = addProvider(config, {
+  let newConfig = addProvider(config, {
     name: name as string,
     url: url as string,
-    model: selectedModel,
     backend: finalBackend as ProviderBackend,
     apiKey,
     maxContext: 200000,
     isActive: makeActive as boolean,
   })
+
+  // If making active, set the default model selection
+  if (makeActive) {
+    const { setDefaultModelSelection } = await import('./config.js')
+    newConfig = setDefaultModelSelection(newConfig, newConfig.providers[newConfig.providers.length - 1]!.id, selectedModel)
+  }
 
   await saveGlobalConfig(mode, newConfig)
   outro(`✓ Provider "${name}" added${makeActive ? ' and activated' : ''}`)

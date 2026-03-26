@@ -2,7 +2,7 @@ import { createServer } from '../server/index.js'
 import { loadConfig } from '../server/config.js'
 import { logger } from '../server/utils/logger.js'
 import { displayStartupBanner } from '../server/utils/network.js'
-import { loadGlobalConfig, getActiveProvider } from './config.js'
+import { loadGlobalConfig, getActiveProvider, getDefaultModel } from './config.js'
 import { getDatabasePath, getGlobalConfigPath, ensureDataDirExists } from './paths.js'
 import open from 'open'
 import type { Mode } from './main.js'
@@ -37,7 +37,7 @@ export async function runServe(options: ServeOptions): Promise<void> {
   
   // Get provider values with fallbacks
   const providerUrl = activeProvider?.url ?? envUrl
-  const providerModel = activeProvider?.model ?? envModel
+  const defaultModel = getDefaultModel(globalConfig) ?? envModel
   const providerBackend = (activeProvider?.backend ?? envBackend) as LlmBackend | 'auto'
   
   const merged = {
@@ -45,7 +45,7 @@ export async function runServe(options: ServeOptions): Promise<void> {
     llm: { 
       ...env.llm, 
       baseUrl: isEnvUrlExplicit ? envUrl : providerUrl,
-      model: isEnvModelExplicit ? envModel : providerModel,
+      model: isEnvModelExplicit ? envModel : defaultModel,
       backend: isEnvBackendExplicit ? envBackend : providerBackend,
     },
     server: { 

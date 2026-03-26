@@ -30,7 +30,6 @@ describe('ProviderManager - Model Selection', () => {
       id: 'provider-1',
       name: 'Test Provider',
       url: 'http://localhost:8000',
-      model: 'model-a',
       backend: 'vllm',
       apiKey: undefined,
       maxContext: 200000,
@@ -42,7 +41,6 @@ describe('ProviderManager - Model Selection', () => {
       id: 'provider-2',
       name: 'Another Provider',
       url: 'http://localhost:9000',
-      model: 'model-b',
       backend: 'ollama',
       apiKey: undefined,
       maxContext: 200000,
@@ -52,11 +50,11 @@ describe('ProviderManager - Model Selection', () => {
 
     config = {
       providers: [provider1, provider2],
-      activeProviderId: 'provider-1',
+      defaultModelSelection: 'provider-1/model-a',
       server: { port: 10369, host: '127.0.0.1', openBrowser: true },
       logging: { level: 'info' as const },
       database: { path: '' },
-      llm: { baseUrl: 'http://localhost:8000/v1', model: 'model-a', timeout: 120000, backend: 'vllm' },
+      llm: { baseUrl: 'http://localhost:8000/v1', model: 'model-a', timeout: 120000, idleTimeout: 30000, backend: 'vllm' },
       context: { maxTokens: 4096, compactionThreshold: 10000, compactionTarget: 8000 },
       agent: { maxIterations: 100, maxConsecutiveFailures: 5, toolTimeout: 30000 },
       workdir: process.cwd(),
@@ -135,12 +133,10 @@ describe('ProviderManager - Model Selection', () => {
         json: async () => ({ data: [{ id: 'model-a' }] }),
       })
 
-      // Provider with URL that already has /v1
       const provider: Provider = {
         id: 'provider-1',
         name: 'Test Provider',
         url: 'http://localhost:8000/v1',
-        model: 'model-a',
         backend: 'vllm',
         apiKey: undefined,
         maxContext: 200000,
@@ -155,7 +151,6 @@ describe('ProviderManager - Model Selection', () => {
       
       await pm.getProviderModels('provider-1')
       
-      // Should fetch from http://localhost:8000/v1/models (not double /v1)
       expect(mockFetch).toHaveBeenCalledWith(
         'http://localhost:8000/v1/models',
         expect.any(Object)
@@ -163,41 +158,37 @@ describe('ProviderManager - Model Selection', () => {
     })
   })
 
-  describe('setProviderModel', () => {
+  describe('setDefaultModelSelection', () => {
     it('returns error for non-existent provider', async () => {
-      const result = await providerManager.setProviderModel('non-existent', 'new-model')
+      const result = await providerManager.setDefaultModelSelection('non-existent', 'new-model')
       
       expect(result).toEqual({ success: false, error: 'Provider not found' })
     })
 
-    it('updates model for existing provider', async () => {
-      const result = await providerManager.setProviderModel('provider-1', 'new-model')
+    it('updates default model selection for existing provider', async () => {
+      const result = await providerManager.setDefaultModelSelection('provider-1', 'new-model')
       
       expect(result).toEqual({ success: true })
-      
-      const providers = providerManager.getProviders()
-      const updatedProvider = providers.find(p => p.id === 'provider-1')
-      
-      expect(updatedProvider?.model).toBe('new-model')
+      expect(providerManager.getCurrentModel()).toBe('new-model')
     })
 
     it('updates LLM client when setting model for active provider', async () => {
       const mockClient = providerManager.getLLMClient()
       
-      await providerManager.setProviderModel('provider-1', 'new-model')
+      await providerManager.setDefaultModelSelection('provider-1', 'new-model')
       
       expect(mockClient.setModel).toHaveBeenCalledWith('new-model')
     })
 
-    it('does not update LLM client for inactive provider', async () => {
-      const mockClient = providerManager.getLLMClient()
+    it('updates active provider when changing to different provider', async () => {
+      await providerManager.setDefaultModelSelection('provider-2', 'new-model')
       
-      await providerManager.setProviderModel('provider-2', 'new-model')
-      
-      expect(mockClient.setModel).not.toHaveBeenCalled()
+      expect(providerManager.getActiveProviderId()).toBe('provider-2')
+      expect(providerManager.getCurrentModel()).toBe('new-model')
       
       const providers = providerManager.getProviders()
-      expect(providers.find(p => p.id === 'provider-2')?.model).toBe('new-model')
+      expect(providers.find(p => p.id === 'provider-2')?.isActive).toBe(true)
+      expect(providers.find(p => p.id === 'provider-1')?.isActive).toBe(false)
     })
   })
 
@@ -212,9 +203,8 @@ describe('ProviderManager - Model Selection', () => {
       
       expect(result).toEqual({ success: true })
       
-      const activeProvider = providerManager.getActiveProvider()
-      expect(activeProvider?.id).toBe('provider-2')
-      expect(activeProvider?.model).toBe('model-x')
+      expect(providerManager.getActiveProviderId()).toBe('provider-2')
+      expect(providerManager.getCurrentModel()).toBe('model-x')
     })
 
     it('switches model for currently active provider', async () => {
@@ -226,9 +216,7 @@ describe('ProviderManager - Model Selection', () => {
       const result = await providerManager.activateProvider('provider-1', { model: 'model-y' })
       
       expect(result).toEqual({ success: true })
-      
-      const activeProvider = providerManager.getActiveProvider()
-      expect(activeProvider?.model).toBe('model-y')
+      expect(providerManager.getCurrentModel()).toBe('model-y')
     })
 
     it('returns error for non-existent provider', async () => {

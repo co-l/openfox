@@ -223,8 +223,7 @@ export function ProviderSelector() {
                       {provider.name}
                     </span>
                     <span className="text-xs text-text-muted truncate">
-                      {provider.model === 'auto' ? 'Auto-detect' : provider.model.split('/').pop()?.replace(/-/g, ' ')}
-                      {provider.backend !== 'auto' && ` (${getBackendDisplayName(provider.backend)})`}
+                      {provider.backend !== 'auto' && getBackendDisplayName(provider.backend)}
                     </span>
                   </div>
                   <div className="flex items-center gap-2 flex-shrink-0">
