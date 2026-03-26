@@ -18,6 +18,12 @@ export default defineConfig({
   server: {
     port: 5173,
     strictPort: true,
+    fs: {
+      allow: [
+        path.resolve(__dirname),
+        path.resolve(__dirname, '../node_modules'),
+      ],
+    },
     watch: createViteWatchOptions(),
     // In dev mode, users access Vite directly (for HMR to work)
     // Vite proxies API/WS to the backend server
