@@ -6,6 +6,7 @@ import { useConfigStore } from '../../stores/config'
 import { GlobalSettingsModal } from '../settings/GlobalSettingsModal'
 import { SkillsModal } from '../settings/SkillsModal'
 import { AgentsModal } from '../settings/AgentsModal'
+import { PipelinesModal } from '../settings/PipelinesModal'
 import { HistoryModal } from '../history/HistoryModal'
 
 interface HeaderProps {
@@ -18,6 +19,7 @@ export function Header({ onMenuClick, onCriteriaToggle, hasCriteria }: HeaderPro
   const [showSettings, setShowSettings] = useState(false)
   const [showSkills, setShowSkills] = useState(false)
   const [showAgents, setShowAgents] = useState(false)
+  const [showPipelines, setShowPipelines] = useState(false)
   const [showHistory, setShowHistory] = useState(false)
   const connectionStatus = useSessionStore(state => state.connectionStatus)
   const session = useSessionStore(state => state.currentSession)
@@ -122,6 +124,17 @@ export function Header({ onMenuClick, onCriteriaToggle, hasCriteria }: HeaderPro
           </svg>
         </button>
 
+        {/* Pipelines Button */}
+        <button
+          onClick={() => setShowPipelines(true)}
+          className="p-2.5 rounded hover:bg-bg-tertiary text-text-muted hover:text-text-primary transition-colors"
+          title="Pipelines"
+        >
+          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 10h16M4 14h16M4 18h16" />
+          </svg>
+        </button>
+
         {/* History Button */}
         {workdir && (
           <button
@@ -166,6 +179,12 @@ export function Header({ onMenuClick, onCriteriaToggle, hasCriteria }: HeaderPro
       <AgentsModal
         isOpen={showAgents}
         onClose={() => setShowAgents(false)}
+      />
+
+      {/* Pipelines Modal */}
+      <PipelinesModal
+        isOpen={showPipelines}
+        onClose={() => setShowPipelines(false)}
       />
 
       {/* History Modal */}

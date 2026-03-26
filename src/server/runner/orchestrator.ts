@@ -1,23 +1,27 @@
 /**
  * Runner Orchestrator (EventStore Version)
- * 
+ *
  * Coordinates the build → verify → done/blocked cycle.
- * Uses decideNextAction() to determine what to do next,
- * then calls the appropriate worker function.
- * 
+ *
+ * If an active pipeline is configured, delegates to the pipeline executor
+ * (state machine driven). Otherwise falls back to the hardcoded
+ * decideNextAction() loop.
+ *
  * All events are appended to EventStore - no onMessage callback needed.
  */
 
 import type { OrchestratorOptions, OrchestratorResult } from './types.js'
 import { decideNextAction } from './decision.js'
-import type { SessionManager } from '../session/index.js'
 import { getEventStore, getCurrentContextWindowId } from '../events/index.js'
 import { logger } from '../utils/logger.js'
 import { computeSessionStats } from '../../shared/stats.js'
+import { getRuntimeConfig } from '../runtime-config.js'
+import { getGlobalConfigDir } from '../../cli/paths.js'
+import { loadAllPipelines, findPipelineById } from '../pipelines/registry.js'
+import { executePipeline } from '../pipelines/executor.js'
 
 // Import from chat orchestrator (EventStore-based)
 import { runBuilderTurn, runVerifierTurn, TurnMetrics, createMessageStartEvent } from '../chat/orchestrator.js'
-import type { LLMClientWithModel } from '../llm/client.js'
 
 function getCurrentWindowMessageOptions(sessionId: string): { contextWindowId: string } | undefined {
   const contextWindowId = getCurrentContextWindowId(sessionId)
@@ -26,19 +30,44 @@ function getCurrentWindowMessageOptions(sessionId: string): { contextWindowId: s
 
 /**
  * Run the orchestrator loop until done, blocked, or aborted.
- * 
+ *
  * This is the main entry point for the "Launch" button.
  * It keeps calling builder/verifier until all criteria pass.
  */
 export async function runOrchestrator(options: OrchestratorOptions): Promise<OrchestratorResult> {
+  // Try pipeline-driven execution first
+  const runtimeConfig = getRuntimeConfig()
+  const activePipelineId = runtimeConfig.activePipelineId ?? 'default'
+  const configDir = getGlobalConfigDir(runtimeConfig.mode ?? 'production')
+
+  try {
+    const pipelines = await loadAllPipelines(configDir)
+    const pipeline = findPipelineById(activePipelineId, pipelines)
+
+    if (pipeline) {
+      logger.debug('Using pipeline executor', { sessionId: options.sessionId, pipeline: pipeline.metadata.id })
+      return await executePipeline(pipeline, options)
+    }
+  } catch (err) {
+    logger.warn('Failed to load pipeline, falling back to hardcoded loop', {
+      pipelineId: activePipelineId,
+      error: err instanceof Error ? err.message : String(err),
+    })
+  }
+
+  // Fallback: hardcoded build → verify → done/blocked loop
+  return runHardcodedLoop(options)
+}
+
+async function runHardcodedLoop(options: OrchestratorOptions): Promise<OrchestratorResult> {
   const { sessionManager, sessionId, llmClient, signal, onMessage } = options
   const eventStore = getEventStore()
   const startTime = performance.now()
   let iterations = 0
   let lastVerifierContent: string | null = null
 
-  logger.debug('Orchestrator starting', { sessionId })
-  
+  logger.debug('Orchestrator starting (hardcoded loop)', { sessionId })
+
   while (true) {
     // Check abort signal
     if (signal?.aborted) {
@@ -49,16 +78,16 @@ export async function runOrchestrator(options: OrchestratorOptions): Promise<Orc
         totalTime: (performance.now() - startTime) / 1000,
       }
     }
-    
+
     iterations++
-    
+
     // Get current session state and decide next action
     const session = sessionManager.requireSession(sessionId)
     const currentWindowMessageOptions = getCurrentWindowMessageOptions(sessionId)
     const action = decideNextAction(session.criteria)
-    
+
     logger.debug('Orchestrator decision', { sessionId, iteration: iterations, action: action.type })
-    
+
     switch (action.type) {
       case 'DONE': {
         sessionManager.setPhase(sessionId, 'done')
@@ -104,10 +133,10 @@ export async function runOrchestrator(options: OrchestratorOptions): Promise<Orc
           totalTime: totalTimeSeconds,
         }
       }
-      
+
       case 'BLOCKED': {
         sessionManager.setPhase(sessionId, 'blocked')
-        
+
         // Inject message explaining why blocked
         const blockedMsgId = crypto.randomUUID()
         eventStore.append(sessionId, createMessageStartEvent(blockedMsgId, 'user', `Runner blocked: ${action.reason}`, {
@@ -116,7 +145,7 @@ export async function runOrchestrator(options: OrchestratorOptions): Promise<Orc
           messageKind: 'correction',
         }))
         eventStore.append(sessionId, { type: 'message.done', data: { messageId: blockedMsgId } })
-        
+
         logger.warn('Orchestrator blocked', { sessionId, iterations, reason: action.reason })
         return {
           finalAction: action,
@@ -124,7 +153,7 @@ export async function runOrchestrator(options: OrchestratorOptions): Promise<Orc
           totalTime: (performance.now() - startTime) / 1000,
         }
       }
-      
+
       case 'RUN_VERIFIER': {
         sessionManager.setPhase(sessionId, 'verification')
 
@@ -136,10 +165,10 @@ export async function runOrchestrator(options: OrchestratorOptions): Promise<Orc
         // Loop continues to check result
         break
       }
-      
+
       case 'RUN_BUILDER': {
         sessionManager.setPhase(sessionId, 'build')
-        
+
         // Inject nudge message if this is a retry (not first iteration)
         if (iterations > 1) {
           const verifierDetail = lastVerifierContent
@@ -156,7 +185,7 @@ Don't forget to mark the criteria as complete with complete_criterion`, {
           }))
           eventStore.append(sessionId, { type: 'message.done', data: { messageId: nudgeMsgId } })
         }
-        
+
         // Run builder step
         const turnMetrics = new TurnMetrics()
         await runBuilderTurn({
@@ -168,7 +197,7 @@ Don't forget to mark the criteria as complete with complete_criterion`, {
           ...(signal ? { signal } : {}),
           ...(onMessage ? { onMessage } : {}),
         }, turnMetrics)
-        
+
         // Loop continues to check if more work needed
         break
       }

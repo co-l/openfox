@@ -65,6 +65,7 @@ export async function runServe(options: ServeOptions): Promise<void> {
     // Pass providers for the server to use
     providers: globalConfig.providers,
     activeProviderId: globalConfig.activeProviderId,
+    activePipelineId: globalConfig.activePipelineId,
     // Workdir precedence: .env override → global config → process.cwd()
     // Normalize: remove trailing slash to prevent double slashes in paths
     workdir: (process.env['OPENFOX_WORKDIR'] ?? globalConfig.workspace?.workdir ?? process.cwd()).replace(/\/$/, ''),

@@ -14,6 +14,20 @@ const {
   runVerifierTurnMock: vi.fn(),
 }))
 
+// Mock pipeline loading to return empty (forces hardcoded loop fallback)
+vi.mock('../pipelines/registry.js', () => ({
+  loadAllPipelines: vi.fn().mockResolvedValue([]),
+  findPipelineById: vi.fn().mockReturnValue(undefined),
+}))
+
+vi.mock('../runtime-config.js', () => ({
+  getRuntimeConfig: vi.fn().mockReturnValue({ mode: 'production' }),
+}))
+
+vi.mock('../../cli/paths.js', () => ({
+  getGlobalConfigDir: vi.fn().mockReturnValue('/tmp/test-config'),
+}))
+
 vi.mock('./decision.js', () => ({
   decideNextAction: decideNextActionMock,
 }))

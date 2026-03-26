@@ -24,6 +24,8 @@ import { ensureDefaultCommands, loadAllCommands, findCommandById, saveCommand, d
 import type { CommandDefinition } from './commands/types.js'
 import { ensureDefaultAgents, loadAllAgents, findAgentById, getSubAgents, getTopLevelAgents, saveAgent, deleteAgent, agentExists } from './agents/registry.js'
 import type { AgentDefinition } from './agents/types.js'
+import { ensureDefaultPipelines, loadAllPipelines, findPipelineById, savePipeline, deletePipeline, pipelineExists } from './pipelines/registry.js'
+import type { PipelineDefinition } from './pipelines/types.js'
 import { getGlobalConfigDir } from '../cli/paths.js'
 import { logger, setLogLevel } from './utils/logger.js'
 import { terminateProcessTree } from './utils/process-tree.js'
@@ -56,6 +58,7 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
   await ensureDefaultSkills(configDir)
   await ensureDefaultCommands(configDir)
   await ensureDefaultAgents(configDir)
+  await ensureDefaultPipelines(configDir)
 
   // Create SessionManager instance (not singleton!)
   const sessionManager = new SessionManager()
@@ -587,6 +590,80 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
       return res.status(404).json({ error: 'Agent not found' })
     }
     res.json({ success: true })
+  })
+
+  // Pipelines endpoints
+  app.get('/api/pipelines', async (_req, res) => {
+    const pipelines = await loadAllPipelines(configDir)
+    res.json({
+      pipelines: pipelines.map(p => p.metadata),
+      activePipelineId: config.activePipelineId ?? 'default',
+    })
+  })
+
+  app.get('/api/pipelines/:id', async (req, res) => {
+    const { id } = req.params
+    const pipelines = await loadAllPipelines(configDir)
+    const pipeline = findPipelineById(id as string, pipelines)
+    if (!pipeline) {
+      return res.status(404).json({ error: 'Pipeline not found' })
+    }
+    res.json(pipeline)
+  })
+
+  app.post('/api/pipelines', async (req, res) => {
+    const body = req.body as PipelineDefinition
+    if (!body?.metadata?.id || !body?.steps?.length) {
+      return res.status(400).json({ error: 'Missing required fields: metadata.id, steps' })
+    }
+    if (await pipelineExists(configDir, body.metadata.id)) {
+      return res.status(409).json({ error: 'A pipeline with this ID already exists' })
+    }
+    await savePipeline(configDir, body)
+    res.status(201).json(body)
+  })
+
+  app.put('/api/pipelines/:id', async (req, res) => {
+    const { id } = req.params
+    if (!await pipelineExists(configDir, id as string)) {
+      return res.status(404).json({ error: 'Pipeline not found' })
+    }
+    const body = req.body as PipelineDefinition
+    // Ensure the ID matches the URL parameter
+    const updated: PipelineDefinition = {
+      ...body,
+      metadata: { ...body.metadata, id: id as string },
+    }
+    await savePipeline(configDir, updated)
+    res.json(updated)
+  })
+
+  app.delete('/api/pipelines/:id', async (req, res) => {
+    const { id } = req.params
+    if (id === 'default') {
+      return res.status(400).json({ error: 'Cannot delete the default pipeline' })
+    }
+    const deleted = await deletePipeline(configDir, id as string)
+    if (!deleted) {
+      return res.status(404).json({ error: 'Pipeline not found' })
+    }
+    res.json({ success: true })
+  })
+
+  app.post('/api/pipelines/:id/activate', async (req, res) => {
+    const { id } = req.params
+    const pipelines = await loadAllPipelines(configDir)
+    if (!findPipelineById(id as string, pipelines)) {
+      return res.status(404).json({ error: 'Pipeline not found' })
+    }
+    // Update config's active pipeline ID
+    config.activePipelineId = id as string
+    // Persist to global config
+    const { loadGlobalConfig, saveGlobalConfig } = await import('../cli/config.js')
+    const globalConfig = await loadGlobalConfig(config.mode ?? 'production')
+    globalConfig.activePipelineId = id as string
+    await saveGlobalConfig(config.mode ?? 'production', globalConfig)
+    res.json({ success: true, activePipelineId: id })
   })
 
   // Branch API endpoint
