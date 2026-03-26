@@ -6,7 +6,7 @@ export function ProviderSelector() {
   const currentSession = useSessionStore(state => state.currentSession)
   const setSessionProvider = useSessionStore(state => state.setSessionProvider)
   const [isOpen, setIsOpen] = useState(false)
-  const [expandedProviderId, setExpandedProviderId] = useState<string | null>(null)
+  const [expandedProviderIds, setExpandedProviderIds] = useState<string[]>([])
   const [providerModels, setProviderModels] = useState<Record<string, string[]>>({})
   const [loadingModels, setLoadingModels] = useState<string | null>(null)
   const dropdownRef = useRef<HTMLDivElement>(null)
@@ -25,12 +25,26 @@ export function ProviderSelector() {
     function handleClickOutside(event: MouseEvent) {
       if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
         setIsOpen(false)
-        setExpandedProviderId(null)
+        setExpandedProviderIds([])
       }
     }
     document.addEventListener('mousedown', handleClickOutside)
     return () => document.removeEventListener('mousedown', handleClickOutside)
   }, [])
+
+  // Auto-expand all providers when menu opens and load their models
+  useEffect(() => {
+    if (isOpen) {
+      const allProviderIds = providers.map(p => p.id)
+      setExpandedProviderIds(allProviderIds)
+      // Load models for all providers
+      allProviderIds.forEach(providerId => {
+        if (!providerModels[providerId]) {
+          loadProviderModels(providerId)
+        }
+      })
+    }
+  }, [isOpen, providers])
 
   const activeProvider = providers.find(p => p.id === activeProviderId)
   const isLlmOffline = llmStatus === 'disconnected'
@@ -64,11 +78,11 @@ export function ProviderSelector() {
   const handleProviderClick = async (provider: Provider) => {
     if (provider.id === activeProviderId) {
       // Toggle model expansion for active provider
-      if (expandedProviderId === provider.id) {
-        setExpandedProviderId(null)
+      if (expandedProviderIds.includes(provider.id)) {
+        setExpandedProviderIds(expandedProviderIds.filter(id => id !== provider.id))
       } else {
         // Show submenu immediately for instant feedback
-        setExpandedProviderId(provider.id)
+        setExpandedProviderIds([...expandedProviderIds, provider.id])
         // Load models in background without blocking UI
         loadProviderModels(provider.id)
       }
@@ -82,23 +96,23 @@ export function ProviderSelector() {
       // Optimistically update UI
       useConfigStore.getState().syncFromSession(provider.id, provider.model)
       setIsOpen(false)
-      setExpandedProviderId(null)
+      setExpandedProviderIds([])
     } else {
       const success = await activateProvider(provider.id)
       if (success) {
         setIsOpen(false)
-        setExpandedProviderId(null)
+        setExpandedProviderIds([])
       }
     }
   }
 
   const handleChevronClick = (provider: Provider) => {
     // Toggle model expansion for any provider
-    if (expandedProviderId === provider.id) {
-      setExpandedProviderId(null)
+    if (expandedProviderIds.includes(provider.id)) {
+      setExpandedProviderIds(expandedProviderIds.filter(id => id !== provider.id))
     } else {
       // Show submenu immediately for instant feedback
-      setExpandedProviderId(provider.id)
+      setExpandedProviderIds([...expandedProviderIds, provider.id])
       // Load models in background without blocking UI
       loadProviderModels(provider.id)
     }
@@ -110,7 +124,7 @@ export function ProviderSelector() {
       setSessionProvider(providerId, newModel)
       // Optimistically update UI
       useConfigStore.getState().syncFromSession(providerId, newModel)
-      setExpandedProviderId(null)
+      setExpandedProviderIds([])
       setIsOpen(false)
       return
     }
@@ -125,7 +139,7 @@ export function ProviderSelector() {
       if (response.ok) {
         const store = useConfigStore.getState()
         await store.fetchConfig()
-        setExpandedProviderId(null)
+        setExpandedProviderIds([])
         setIsOpen(false)
       }
     } catch {
@@ -230,7 +244,7 @@ export function ProviderSelector() {
                       title="Show models"
                     >
                       <svg 
-                        className={`w-4 h-4 transition-transform ${expandedProviderId === provider.id ? 'rotate-180' : ''} ${
+                        className={`w-4 h-4 transition-transform ${expandedProviderIds.includes(provider.id) ? 'rotate-180' : ''} ${
                           provider.id === activeProviderId ? 'text-accent-primary' : 'text-text-muted'
                         }`}
                         fill="none" 
@@ -244,7 +258,7 @@ export function ProviderSelector() {
                 </div>
                 
                 {/* Model submenu - shown for expanded provider */}
-                {expandedProviderId === provider.id && (
+                {expandedProviderIds.includes(provider.id) && (
                   <div className="bg-bg-primary border-t border-border">
                     {loadingModels === provider.id ? (
                       <div className="px-4 py-2 text-xs text-text-muted">
