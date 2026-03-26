@@ -99,6 +99,7 @@ function parseAgentFile(raw: string, filename: string): AgentDefinition | undefi
     description: String(meta['description'] ?? ''),
     subagent: meta['subagent'] === true,
     tools: Array.isArray(meta['tools']) ? meta['tools'].map(String) : [],
+    ...(typeof meta['color'] === 'string' ? { color: meta['color'] } : {}),
   }
 
   return { metadata, prompt: content.trim() }

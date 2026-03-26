@@ -263,7 +263,7 @@ function resolveAgentType(state: SessionState, sessionId?: string): AgentType | 
   const mode = session?.mode ?? summary?.mode
   if (mode === 'planner') return 'planner'
   if (mode === 'builder') return 'build'
-  return undefined
+  return 'planner' // default sound profile for custom agents
 }
 
 function handleGlobalSoundEffects(message: ServerMessage, state: SessionState): void {

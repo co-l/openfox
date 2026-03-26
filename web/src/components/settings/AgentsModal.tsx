@@ -38,6 +38,7 @@ export function AgentsModal({ isOpen, onClose }: AgentsModalProps) {
   const [formDescription, setFormDescription] = useState('')
   const [formSubagent, setFormSubagent] = useState(true)
   const [formTools, setFormTools] = useState<string[]>([])
+  const [formColor, setFormColor] = useState('#6b7280')
   const [formPrompt, setFormPrompt] = useState('')
   const [formError, setFormError] = useState('')
   const [saving, setSaving] = useState(false)
@@ -58,6 +59,7 @@ export function AgentsModal({ isOpen, onClose }: AgentsModalProps) {
     setFormDescription('')
     setFormSubagent(true)
     setFormTools(['read_file'])
+    setFormColor('#6b7280')
     setFormPrompt('')
     setFormError('')
     setView('edit')
@@ -72,6 +74,7 @@ export function AgentsModal({ isOpen, onClose }: AgentsModalProps) {
     setFormDescription(agent.metadata.description)
     setFormSubagent(agent.metadata.subagent)
     setFormTools(agent.metadata.tools)
+    setFormColor(agent.metadata.color ?? '#6b7280')
     setFormPrompt(agent.prompt)
     setFormError('')
     setView('edit')
@@ -99,6 +102,7 @@ export function AgentsModal({ isOpen, onClose }: AgentsModalProps) {
         description: formDescription,
         subagent: formSubagent,
         tools: formTools,
+        color: formColor,
       },
       prompt: formPrompt,
     }
@@ -197,6 +201,15 @@ export function AgentsModal({ isOpen, onClose }: AgentsModalProps) {
                 >
                   Top-level
                 </button>
+                <div className="flex items-center gap-1.5 ml-auto">
+                  <label className="text-xs text-text-secondary">Color</label>
+                  <input
+                    type="color"
+                    value={formColor}
+                    onChange={e => setFormColor(e.target.value)}
+                    className="w-6 h-6 rounded cursor-pointer border border-border bg-transparent"
+                  />
+                </div>
               </div>
             </div>
           </div>
@@ -312,7 +325,7 @@ function AgentListItem({
   onConfirmDelete,
   onCancelDelete,
 }: {
-  agent: { id: string; name: string; description: string; tools: string[] }
+  agent: { id: string; name: string; description: string; tools: string[]; color?: string }
   confirmDeleteId: string | null
   onEdit: () => void
   onDelete: () => void
@@ -323,6 +336,7 @@ function AgentListItem({
     <div className="flex items-center justify-between p-3 rounded border border-border bg-bg-tertiary">
       <div className="min-w-0 flex-1 mr-3">
         <div className="flex items-center gap-2">
+          <span className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: agent.color ?? '#6b7280' }} />
           <span className="text-text-primary text-sm font-medium">{agent.name}</span>
           <span className="text-text-muted text-xs font-mono">{agent.id}</span>
         </div>

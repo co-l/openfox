@@ -11,6 +11,7 @@ import type { Message, Provider, ProviderBackend, StatsIdentity, Attachment } fr
 import type { ProviderManager } from '../provider-manager.js'
 import { createLLMClient } from '../llm/index.js'
 import { runChatTurn, createMessageStartEvent, createChatDoneEvent } from '../chat/orchestrator.js'
+import { loadAllAgentsDefault, findAgentById } from '../agents/registry.js'
 import { runOrchestrator } from '../runner/index.js'
 import { maybeAutoCompactContext, performManualContextCompaction } from '../context/auto-compaction.js'
 import {
@@ -912,7 +913,15 @@ async function handleClientMessage(
         send(createErrorMessage('INVALID_PAYLOAD', 'Invalid mode.switch payload', message.id))
         return
       }
-      
+
+      // Validate that the target agent exists and is a top-level agent
+      const allAgents = await loadAllAgentsDefault()
+      const targetAgent = findAgentById(message.payload.mode, allAgents)
+      if (!targetAgent || targetAgent.metadata.subagent) {
+        send(createErrorMessage('INVALID_AGENT', `Agent '${message.payload.mode}' not found or is a sub-agent`, message.id))
+        return
+      }
+
       const sessionId = client.activeSessionId
       const session = sessionManager.requireSession(sessionId)
       const eventStore = getEventStore()

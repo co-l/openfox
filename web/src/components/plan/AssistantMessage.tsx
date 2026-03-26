@@ -8,6 +8,7 @@ import { ToolCallPreparing } from '../shared/ToolCallPreparing'
 import { TodoListDisplay } from '../shared/TodoListDisplay'
 import { CriteriaGroupDisplay, isCriterionTool } from '../shared/CriteriaGroupDisplay'
 import { useSessionStore } from '../../stores/session'
+import { useAgentsStore, getAgentColor } from '../../stores/agents'
 
 interface AssistantMessageProps {
   message: Message
@@ -133,6 +134,7 @@ function segmentsToElements(
 
 export const AssistantMessage = memo(function AssistantMessage({ message, showStats = true }: AssistantMessageProps) {
   const criteria = useSessionStore(state => state.currentSession?.criteria)
+  const agents = useAgentsStore(state => state.agents)
   const rawElements = messageToElements(message, showStats)
   const elements = groupConsecutiveCriteria(rawElements)
   
@@ -200,9 +202,7 @@ export const AssistantMessage = memo(function AssistantMessage({ message, showSt
           case 'stats': {
             const stats = element.stats
             const shortModel = stats.model.split('/').pop()?.split('-').slice(0, 2).join('-') ?? stats.model
-            const modeColor = stats.mode === 'planner' ? 'text-purple-400' 
-              : stats.mode === 'builder' ? 'text-blue-400' 
-              : 'text-green-400'
+            const modeColor = getAgentColor(agents, stats.mode)
             const formatTokens = (n: number) => n >= 1000 ? `${(n / 1000).toFixed(1)}k` : n.toString()
             const formatSpeed = (n: number) => n >= 1000 ? `${(n / 1000).toFixed(1)}k` : n.toFixed(1)
             
@@ -211,7 +211,7 @@ export const AssistantMessage = memo(function AssistantMessage({ message, showSt
                 <span className="flex-1 h-px bg-border" />
                 <span className="text-text-secondary">{shortModel}</span>
                 <span className="text-text-muted">·</span>
-                <span className={modeColor}>{stats.mode}</span>
+                <span style={{ color: modeColor }}>{stats.mode}</span>
                 <span className="text-text-muted">·</span>
                 <span>{stats.totalTime.toFixed(1)}s</span>
                 {stats.toolTime > 0 && (

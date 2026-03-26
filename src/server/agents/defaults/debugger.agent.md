@@ -3,6 +3,7 @@ id: debugger
 name: Debugger
 description: Analyze errors and suggest fixes
 subagent: true
+color: '#f97316'
 tools:
   - read_file
   - run_command

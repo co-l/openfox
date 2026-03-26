@@ -90,14 +90,11 @@ export async function runChatTurn(options: OrchestratorOptions): Promise<void> {
   const turnMetrics = new TurnMetrics()
 
   try {
-    // Run the appropriate handler based on mode
-    switch (mode) {
-      case 'planner':
-        await runPlannerTurn(options, turnMetrics)
-        break
-      case 'builder':
-        await runBuilderTurn(options, turnMetrics)
-        break
+    // Run the appropriate handler based on mode (agent ID)
+    if (mode === 'builder') {
+      await runBuilderTurn(options, turnMetrics)
+    } else {
+      await runGenericAgentTurn(options, turnMetrics, mode)
     }
 
     // Create end-of-turn snapshot
@@ -169,28 +166,29 @@ export async function runChatTurn(options: OrchestratorOptions): Promise<void> {
 }
 
 // ============================================================================
-// Planner Turn
+// Generic Agent Turn (works for planner, custom agents, etc.)
 // ============================================================================
 
-async function runPlannerTurn(
+async function runGenericAgentTurn(
   options: OrchestratorOptions,
   turnMetrics: TurnMetrics,
+  agentId: string,
 ): Promise<void> {
   const statsIdentity = resolveStatsIdentity(options)
   const allAgents = await loadAllAgentsDefault()
-  const plannerDef = findAgentById('planner', allAgents)!
+  const agentDef = findAgentById(agentId, allAgents) ?? findAgentById('planner', allAgents)!
   const subAgentDefs = getSubAgents(allAgents)
 
   await runTopLevelAgentLoop({
-    mode: 'planner',
+    mode: agentId,
     sessionManager: options.sessionManager,
     sessionId: options.sessionId,
     llmClient: options.llmClient,
     statsIdentity,
     signal: options.signal,
     onMessage: options.onMessage,
-    assembleRequest: (input) => assembleAgentRequest({ ...input, agentDef: plannerDef, subAgentDefs }),
-    getToolRegistry: () => getToolRegistryForAgent(plannerDef),
+    assembleRequest: (input) => assembleAgentRequest({ ...input, agentDef, subAgentDefs }),
+    getToolRegistry: () => getToolRegistryForAgent(agentDef),
   }, turnMetrics)
 }
 

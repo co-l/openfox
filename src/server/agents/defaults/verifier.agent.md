@@ -3,6 +3,7 @@ id: verifier
 name: Verifier
 description: Verifies completed criteria against actual code changes
 subagent: true
+color: '#22c55e'
 tools:
   - read_file
   - run_command

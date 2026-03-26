@@ -8,7 +8,7 @@ import { SessionHeader } from './SessionHeader'
 import { ChatMessage } from './ChatMessage'
 import { AssistantMessage } from './AssistantMessage'
 import { SubAgentContainer } from './SubAgentContainer'
-import { ModeSwitch } from './ModeSwitch'
+import { AgentSelector } from './AgentSelector'
 import { Button } from '../shared/Button'
 import { PathConfirmationDialog } from '../shared/PathConfirmationDialog'
 import { RunningIndicator } from '../shared/RunningIndicator'
@@ -788,7 +788,7 @@ export function PlanPanel() {
           )}
         </div>
         <div className="mt-3 flex items-center justify-between">
-          <ModeSwitch />
+          <AgentSelector />
           <ProviderSelector />
         </div>
       </form>

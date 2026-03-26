@@ -301,7 +301,7 @@ export class TurnMetrics {
   }
 
   /** Build final stats object */
-  buildStats(identity: StatsIdentity, mode: 'planner' | 'builder' | 'verifier'): MessageStats {
+  buildStats(identity: StatsIdentity, mode: string): MessageStats {
     return computeAggregatedStats({
       identity,
       mode,

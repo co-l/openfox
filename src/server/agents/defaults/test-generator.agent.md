@@ -3,6 +3,7 @@ id: test_generator
 name: Test Generator
 description: Generate tests for implemented features
 subagent: true
+color: '#f59e0b'
 tools:
   - read_file
   - write_file

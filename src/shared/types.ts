@@ -15,10 +15,10 @@ export interface Project {
 // Session Types
 // ============================================================================
 
-export type SessionMode = 'planner' | 'builder'
+export type SessionMode = string
 
 // Tool mode includes 'verifier' for the verification sub-agent (which uses distinct tools but runs inline within builder)
-export type ToolMode = SessionMode | 'verifier'
+export type ToolMode = string
 
 // Workflow phase shown to user (more granular than mode)
 export type SessionPhase = 'plan' | 'build' | 'verification' | 'blocked' | 'done'
