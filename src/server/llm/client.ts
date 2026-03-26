@@ -38,7 +38,6 @@ export function createLLMClient(config: Config, initialBackend: Backend = 'unkno
   const openai = new OpenAI({
     baseURL,
     apiKey: 'not-needed', // Most local backends don't require API key
-    timeout: config.llm.timeout,
   })
   
   let model = config.llm.model
@@ -46,6 +45,7 @@ export function createLLMClient(config: Config, initialBackend: Backend = 'unkno
   let backend = initialBackend
   let capabilities = getBackendCapabilities(backend)
   const disableThinking = config.llm.disableThinking ?? false
+  const idleTimeout = config.llm.idleTimeout ?? 30_000
   
   return {
     getModel() {
@@ -174,6 +174,7 @@ export function createLLMClient(config: Config, initialBackend: Backend = 'unkno
         hasTools: !!request.tools?.length,
         profile: profile.name,
         disableThinking,
+        idleTimeout,
       })
       
       try {
@@ -195,149 +196,174 @@ export function createLLMClient(config: Config, initialBackend: Backend = 'unkno
         let usage = { promptTokens: 0, completionTokens: 0, totalTokens: 0 }
         let responseId = ''
         
-        for await (const chunk of stream) {
-          responseId = chunk.id
-          
-          if (chunk.usage) {
-            usage = {
-              promptTokens: chunk.usage.prompt_tokens,
-              completionTokens: chunk.usage.completion_tokens,
-              totalTokens: chunk.usage.total_tokens,
+        // Idle timeout tracking
+        let lastChunkTime = Date.now()
+        const idleTimeoutController = new AbortController()
+        
+        // Start idle timeout timer
+        const idleTimer = setInterval(() => {
+          const idleDuration = Date.now() - lastChunkTime
+          if (idleDuration > idleTimeout) {
+            logger.warn('LLM stream idle timeout triggered', { idleDuration, idleTimeout })
+            idleTimeoutController.abort()
+          }
+        }, 100) // Check every 100ms
+        
+        try {
+          for await (const chunk of stream) {
+            // Check if idle timeout was triggered
+            if (idleTimeoutController.signal.aborted) {
+              throw new Error(`LLM stream idle timeout: no chunks received for ${idleTimeout}ms`)
             }
-          }
-          
-          const choice = chunk.choices[0]
-          if (!choice) continue
-          
-          if (choice.finish_reason) {
-            finishReason = mapFinishReason(choice.finish_reason)
-          }
-          
-          const delta = choice.delta as {
-            content?: string | null
-            reasoning_content?: string | null
-            reasoning?: string | null
-            tool_calls?: Array<{
-              index: number
-              id?: string
-              function?: { name?: string; arguments?: string }
-            }>
-          }
-          
-          // Handle reasoning/thinking delta
-          // vLLM/SGLang: reasoning comes as separate field
-          // Ollama/llama.cpp: reasoning is embedded as <think> tags in content
-          if (capabilities.supportsReasoningField) {
-            const reasoning = delta.reasoning_content ?? delta.reasoning
-            if (reasoning) {
-              // Only emit thinking if model supports reasoning
-              if (profile.supportsReasoning && !profile.reasoningAsContent) {
-                fullThinking += reasoning
-                yield { type: 'thinking_delta', content: reasoning }
-              } else {
-                // Model doesn't support reasoning or outputs it as content
-                fullContent += reasoning
-                yield { type: 'text_delta', content: reasoning }
+            
+            // Reset idle timer on each chunk
+            lastChunkTime = Date.now()
+            
+            responseId = chunk.id
+            
+            if (chunk.usage) {
+              usage = {
+                promptTokens: chunk.usage.prompt_tokens,
+                completionTokens: chunk.usage.completion_tokens,
+                totalTokens: chunk.usage.total_tokens,
               }
             }
-          }
-          
-          // Handle content delta
-          if (delta.content) {
-            fullContent += delta.content
-
-            // For backends without reasoning field (ollama/llama.cpp), parse <think> tags in real-time
-            if (!capabilities.supportsReasoningField && profile.supportsReasoning && !profile.reasoningAsContent) {
-              // Feed content through the think tag parser
-              tagBuffer += delta.content
-
-              while (tagBuffer.length > 0) {
-                if (inThinking) {
-                  // Look for </think>
-                  const closeIdx = tagBuffer.indexOf('</think>')
-                  if (closeIdx !== -1) {
-                    // Emit thinking content before the close tag
-                    const thinkText = tagBuffer.slice(0, closeIdx)
-                    if (thinkText) {
-                      fullThinking += thinkText
-                      yield { type: 'thinking_delta', content: thinkText }
-                    }
-                    tagBuffer = tagBuffer.slice(closeIdx + '</think>'.length)
-                    inThinking = false
-                  } else if (tagBuffer.includes('</')) {
-                    // Might be a partial </think> tag - emit everything before it
-                    const partialIdx = tagBuffer.lastIndexOf('</')
-                    const before = tagBuffer.slice(0, partialIdx)
-                    if (before) {
-                      fullThinking += before
-                      yield { type: 'thinking_delta', content: before }
-                    }
-                    tagBuffer = tagBuffer.slice(partialIdx)
-                    break // wait for more data
-                  } else {
-                    // No close tag at all, emit all as thinking
-                    fullThinking += tagBuffer
-                    yield { type: 'thinking_delta', content: tagBuffer }
-                    tagBuffer = ''
-                  }
+            
+            const choice = chunk.choices[0]
+            if (!choice) continue
+            
+            if (choice.finish_reason) {
+              finishReason = mapFinishReason(choice.finish_reason)
+            }
+            
+            const delta = choice.delta as {
+              content?: string | null
+              reasoning_content?: string | null
+              reasoning?: string | null
+              tool_calls?: Array<{
+                index: number
+                id?: string
+                function?: { name?: string; arguments?: string }
+              }>
+            }
+            
+            // Handle reasoning/thinking delta
+            // vLLM/SGLang: reasoning comes as separate field
+            // Ollama/llama.cpp: reasoning is embedded as <think> tags in content
+            if (capabilities.supportsReasoningField) {
+              const reasoning = delta.reasoning_content ?? delta.reasoning
+              if (reasoning) {
+                // Only emit thinking if model supports reasoning
+                if (profile.supportsReasoning && !profile.reasoningAsContent) {
+                  fullThinking += reasoning
+                  yield { type: 'thinking_delta', content: reasoning }
                 } else {
-                  // Look for <think>
-                  const openIdx = tagBuffer.indexOf('<think>')
-                  if (openIdx !== -1) {
-                    // Emit text content before the open tag
-                    const textBefore = tagBuffer.slice(0, openIdx)
-                    if (textBefore) {
-                      yield { type: 'text_delta', content: textBefore }
-                    }
-                    tagBuffer = tagBuffer.slice(openIdx + '<think>'.length)
-                    inThinking = true
-                  } else if (tagBuffer.includes('<')) {
-                    // Might be a partial <think> tag - emit everything before it
-                    const partialIdx = tagBuffer.lastIndexOf('<')
-                    const before = tagBuffer.slice(0, partialIdx)
-                    if (before) {
-                      yield { type: 'text_delta', content: before }
-                    }
-                    tagBuffer = tagBuffer.slice(partialIdx)
-                    break // wait for more data
-                  } else {
-                    // No open tag at all, emit all as text
-                    yield { type: 'text_delta', content: tagBuffer }
-                    tagBuffer = ''
-                  }
+                  // Model doesn't support reasoning or outputs it as content
+                  fullContent += reasoning
+                  yield { type: 'text_delta', content: reasoning }
                 }
               }
-            } else {
-              yield { type: 'text_delta', content: delta.content }
             }
-          }
-          
-          // Handle tool call deltas
-          if (delta.tool_calls) {
-            for (const tc of delta.tool_calls) {
-              const existing = toolCalls.get(tc.index)
-              
-              if (!existing) {
-                toolCalls.set(tc.index, {
-                  id: tc.id ?? '',
-                  name: tc.function?.name ?? '',
-                  arguments: tc.function?.arguments ?? '',
-                })
+            
+            // Handle content delta
+            if (delta.content) {
+              fullContent += delta.content
+
+              // For backends without reasoning field (ollama/llama.cpp), parse <think> tags in real-time
+              if (!capabilities.supportsReasoningField && profile.supportsReasoning && !profile.reasoningAsContent) {
+                // Feed content through the think tag parser
+                tagBuffer += delta.content
+
+                while (tagBuffer.length > 0) {
+                  if (inThinking) {
+                    // Look for </think>
+                    const closeIdx = tagBuffer.indexOf('</think>')
+                    if (closeIdx !== -1) {
+                      // Emit thinking content before the close tag
+                      const thinkText = tagBuffer.slice(0, closeIdx)
+                      if (thinkText) {
+                        fullThinking += thinkText
+                        yield { type: 'thinking_delta', content: thinkText }
+                      }
+                      tagBuffer = tagBuffer.slice(closeIdx + '</think>'.length)
+                      inThinking = false
+                    } else if (tagBuffer.includes('</')) {
+                      // Might be a partial </think> tag - emit everything before it
+                      const partialIdx = tagBuffer.lastIndexOf('</')
+                      const before = tagBuffer.slice(0, partialIdx)
+                      if (before) {
+                        fullThinking += before
+                        yield { type: 'thinking_delta', content: before }
+                      }
+                      tagBuffer = tagBuffer.slice(partialIdx)
+                      break // wait for more data
+                    } else {
+                      // No close tag at all, emit all as thinking
+                      fullThinking += tagBuffer
+                      yield { type: 'thinking_delta', content: tagBuffer }
+                      tagBuffer = ''
+                    }
+                  } else {
+                    // Look for <think>
+                    const openIdx = tagBuffer.indexOf('<think>')
+                    if (openIdx !== -1) {
+                      // Emit text content before the open tag
+                      const textBefore = tagBuffer.slice(0, openIdx)
+                      if (textBefore) {
+                        yield { type: 'text_delta', content: textBefore }
+                      }
+                      tagBuffer = tagBuffer.slice(openIdx + '<think>'.length)
+                      inThinking = true
+                    } else if (tagBuffer.includes('<')) {
+                      // Might be a partial <think> tag - emit everything before it
+                      const partialIdx = tagBuffer.lastIndexOf('<')
+                      const before = tagBuffer.slice(0, partialIdx)
+                      if (before) {
+                        yield { type: 'text_delta', content: before }
+                      }
+                      tagBuffer = tagBuffer.slice(partialIdx)
+                      break // wait for more data
+                    } else {
+                      // No open tag at all, emit all as text
+                      yield { type: 'text_delta', content: tagBuffer }
+                      tagBuffer = ''
+                    }
+                  }
+                }
               } else {
-                if (tc.id) existing.id = tc.id
-                if (tc.function?.name) existing.name += tc.function.name
-                if (tc.function?.arguments) existing.arguments += tc.function.arguments
+                yield { type: 'text_delta', content: delta.content }
               }
-              
-              yield {
-                type: 'tool_call_delta' as const,
-                index: tc.index,
-                ...(tc.id ? { id: tc.id } : {}),
-                ...(tc.function?.name ? { name: tc.function.name } : {}),
-                ...(tc.function?.arguments ? { arguments: tc.function.arguments } : {}),
+            }
+            
+            // Handle tool call deltas
+            if (delta.tool_calls) {
+              for (const tc of delta.tool_calls) {
+                const existing = toolCalls.get(tc.index)
+                
+                if (!existing) {
+                  toolCalls.set(tc.index, {
+                    id: tc.id ?? '',
+                    name: tc.function?.name ?? '',
+                    arguments: tc.function?.arguments ?? '',
+                  })
+                } else {
+                  if (tc.id) existing.id = tc.id
+                  if (tc.function?.name) existing.name += tc.function.name
+                  if (tc.function?.arguments) existing.arguments += tc.function.arguments
+                }
+                
+                yield {
+                  type: 'tool_call_delta' as const,
+                  index: tc.index,
+                  ...(tc.id ? { id: tc.id } : {}),
+                  ...(tc.function?.name ? { name: tc.function.name } : {}),
+                  ...(tc.function?.arguments ? { arguments: tc.function.arguments } : {}),
+                }
               }
             }
           }
+        } finally {
+          clearInterval(idleTimer)
         }
         
         // Flush any remaining tag buffer content

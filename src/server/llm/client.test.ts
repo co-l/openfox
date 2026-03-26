@@ -79,8 +79,8 @@ describe('llm client', () => {
     expect(openAiCtorArgs[0]).toMatchObject({
       baseURL: 'http://localhost:8000/v1',
       apiKey: 'not-needed',
-      timeout: 12_000,
     })
+    expect(openAiCtorArgs[0]).not.toHaveProperty('timeout')
     expect(openAiCreateMock).toHaveBeenCalledWith(expect.objectContaining({
       model: 'qwen3-32b',
       stream: false,
@@ -439,5 +439,84 @@ describe('llm client', () => {
       parseError: expect.stringContaining('JSON'),
       rawArguments: '{bad-json',
     })
+  })
+
+  it('does not include timeout in OpenAI client constructor when idleTimeout is configured', async () => {
+    openAiCreateMock.mockResolvedValueOnce({
+      id: 'resp-1',
+      choices: [{
+        finish_reason: 'stop',
+        message: { content: 'test' },
+      }],
+      usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 },
+    })
+
+    const client = createLLMClient(createConfig({ idleTimeout: 30_000 }), 'vllm')
+    await client.complete({ messages: [{ role: 'user', content: 'hello' }] })
+
+    expect(openAiCtorArgs[0]).not.toHaveProperty('timeout')
+    expect(openAiCtorArgs[0]).toMatchObject({
+      baseURL: 'http://localhost:8000/v1',
+      apiKey: 'not-needed',
+    })
+  })
+
+  it('triggers idle timeout when no chunks arrive for the configured duration', async () => {
+    const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms))
+
+    openAiCreateMock.mockResolvedValueOnce((async function* () {
+      yield createChunk({
+        choices: [{ delta: { content: 'first chunk' }, finish_reason: null }],
+      })
+      await delay(50)
+      yield createChunk({
+        choices: [{ delta: { content: 'second chunk' }, finish_reason: null }],
+      })
+      await delay(500) // Long enough to trigger idle timeout
+      yield createChunk({
+        choices: [{ delta: { content: 'third chunk' }, finish_reason: 'stop' }],
+        usage: { prompt_tokens: 3, completion_tokens: 3, total_tokens: 6 },
+      })
+    })())
+
+    const client = createLLMClient(createConfig({ idleTimeout: 150 }), 'vllm')
+    const events = [] as Array<Record<string, unknown>>
+
+    for await (const event of client.stream({ messages: [{ role: 'user', content: 'hello' }] })) {
+      events.push(event as Record<string, unknown>)
+    }
+
+    expect(events).toEqual([
+      { type: 'text_delta', content: 'first chunk' },
+      { type: 'text_delta', content: 'second chunk' },
+      { type: 'error', error: expect.stringContaining('idle timeout') },
+    ])
+  })
+
+  it('allows active streams to continue beyond the idle timeout when chunks arrive frequently', async () => {
+    const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms))
+
+    openAiCreateMock.mockResolvedValueOnce((async function* () {
+      for (let i = 0; i < 10; i++) {
+        yield createChunk({
+          choices: [{ delta: { content: `chunk ${i} ` }, finish_reason: i === 9 ? 'stop' : null }],
+        })
+        await delay(50)
+      }
+      yield createChunk({
+        usage: { prompt_tokens: 10, completion_tokens: 10, total_tokens: 20 },
+      })
+    })())
+
+    const client = createLLMClient(createConfig({ idleTimeout: 100 }), 'vllm')
+    const events = [] as Array<Record<string, unknown>>
+
+    for await (const event of client.stream({ messages: [{ role: 'user', content: 'hello' }] })) {
+      events.push(event as Record<string, unknown>)
+    }
+
+    expect(events.filter(e => e['type'] === 'text_delta')).toHaveLength(10)
+    expect(events.find(e => e['type'] === 'done')).toBeDefined()
+    expect(events.find(e => e['type'] === 'error')).toBeUndefined()
   })
 })

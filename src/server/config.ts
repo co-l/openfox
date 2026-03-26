@@ -32,7 +32,8 @@ export function loadConfig(): Config {
     llm: {
       baseUrl: llmUrl,
       model: env.OPENFOX_MODEL_NAME,
-      timeout: 300_000, // 5 minutes
+      timeout: 300_000, // 5 minutes (deprecated, kept for backward compatibility)
+      idleTimeout: 30_000, // 30 seconds of inactivity
       backend: env.OPENFOX_BACKEND as LlmBackend | 'auto',
       disableThinking: env.OPENFOX_DISABLE_THINKING,
     },

@@ -23,7 +23,7 @@ function createTestContext(sessionId: string, workdir: string): ToolContext {
 // Create test config with in-memory database
 function createTestConfig(): Config {
   return {
-    llm: { baseUrl: 'http://localhost:8000/v1', model: 'test', timeout: 1000, backend: 'vllm' },
+    llm: { baseUrl: 'http://localhost:8000/v1', model: 'test', timeout: 1000, idleTimeout: 30000, backend: 'vllm' },
     context: { maxTokens: 100000, compactionThreshold: 0.85, compactionTarget: 0.6 },
     agent: { maxIterations: 10, maxConsecutiveFailures: 3, toolTimeout: 1000 },
     server: { port: 3000, host: 'localhost' },
