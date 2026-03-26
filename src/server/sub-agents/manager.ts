@@ -13,7 +13,6 @@ import type { ToolRegistry } from '../tools/types.js'
 import type { ServerMessage } from '../../shared/protocol.js'
 import type { AgentDefinition } from '../agents/types.js'
 import { loadAllAgentsDefault, findAgentById } from '../agents/registry.js'
-import { buildSubAgentContextMessages } from './context-builders.js'
 import { buildSubAgentSystemPrompt } from '../chat/prompts.js'
 import { streamLLMPure, consumeStreamGenerator, TurnMetrics, createMessageStartEvent, createMessageDoneEvent, createChatDoneEvent } from '../chat/stream-pure.js'
 import { executeToolBatch } from '../chat/agent-loop.js'
@@ -114,8 +113,10 @@ export async function executeSubAgent(options: SubAgentExecutionOptions): Promis
   let session = sessionManager.requireSession(sessionId)
   const currentWindowMessageOptions = getCurrentWindowMessageOptions(sessionId)
 
-  // Build initial context messages from session state
-  const contextMessages = buildSubAgentContextMessages(subAgentType, session, prompt)
+  // Build initial context messages — prompt arrives pre-resolved with template variables
+  const contextMessages: RequestContextMessage[] = [
+    { role: 'user', content: prompt, source: 'runtime' },
+  ]
 
   logger.debug('Sub-agent starting', { subAgentType, subAgentId, sessionId })
 
@@ -130,32 +131,18 @@ export async function executeSubAgent(options: SubAgentExecutionOptions): Promis
   }))
   eventStore.append(sessionId, { type: 'message.done', data: { messageId: resetMsgId } })
 
-  // Emit context content (first message from context builder)
-  if (contextMessages.length > 0) {
-    const contextMsgId = crypto.randomUUID()
-    eventStore.append(sessionId, createMessageStartEvent(contextMsgId, 'user', contextMessages[0]!.content, {
+  // Emit context messages as events for the UI feed
+  for (const msg of contextMessages) {
+    const msgId = crypto.randomUUID()
+    eventStore.append(sessionId, createMessageStartEvent(msgId, 'user', msg.content, {
       ...(currentWindowMessageOptions ?? {}),
       isSystemGenerated: true,
       messageKind: 'auto-prompt',
       subAgentId,
       subAgentType,
     }))
-    eventStore.append(sessionId, { type: 'message.done', data: { messageId: contextMsgId } })
+    eventStore.append(sessionId, { type: 'message.done', data: { messageId: msgId } })
   }
-
-  // Emit kickoff prompt (last message from context builder, or the prompt itself)
-  const kickoffContent = contextMessages.length > 1
-    ? contextMessages[contextMessages.length - 1]!.content
-    : prompt
-  const kickoffMsgId = crypto.randomUUID()
-  eventStore.append(sessionId, createMessageStartEvent(kickoffMsgId, 'user', kickoffContent, {
-    ...(currentWindowMessageOptions ?? {}),
-    isSystemGenerated: true,
-    messageKind: 'auto-prompt',
-    subAgentId,
-    subAgentType,
-  }))
-  eventStore.append(sessionId, { type: 'message.done', data: { messageId: kickoffMsgId } })
 
   // Load instructions and skills for the sub-agent system prompt
   const { content: instructionContent, files } = await getAllInstructions(session.workdir, session.projectId)

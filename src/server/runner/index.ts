@@ -1,11 +1,10 @@
 /**
  * Runner Module
- * 
- * Orchestrates the build → verify → done/blocked cycle.
+ *
+ * Orchestrates workflow execution via the workflow state machine.
  */
 
 export { runOrchestrator } from './orchestrator.js'
-export { decideNextAction } from './decision.js'
 export type {
   NextAction,
   OrchestratorOptions,

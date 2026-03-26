@@ -391,6 +391,9 @@ export interface TaskCompletedPayload {
   responseCount: number
   llmCallCount: number
   criteria: Array<{ id: string; description: string; status: string }>
+  workflowName?: string
+  workflowId?: string
+  workflowColor?: string
 }
 
 // Criteria payloads

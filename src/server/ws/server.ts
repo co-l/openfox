@@ -1082,12 +1082,14 @@ async function handleClientMessage(
           activeAgents.set(sessionId, controller)
 
           // Auto-start orchestrator (full state machine with verification)
+          const acceptPayload = message.payload as { workflowId?: string } | undefined
           await runOrchestrator({
             sessionManager,
             sessionId,
             llmClient: llmForSession(sessionId),
             statsIdentity: statsForSession(sessionId),
             injectBuilderKickoff: true,
+            ...(acceptPayload?.workflowId ? { workflowId: acceptPayload.workflowId } : {}),
             signal: controller.signal,
             onMessage: (msg) => sendForSession(sessionId, msg),  // For path confirmation dialogs
           })
@@ -1272,7 +1274,7 @@ async function handleClientMessage(
       }
 
       // If the user included a message with the launch, add it as a user message
-      const launchPayload = message.payload as { content?: string; attachments?: unknown[] } | undefined
+      const launchPayload = message.payload as { content?: string; attachments?: unknown[]; workflowId?: string } | undefined
       const hasUserMessage = launchPayload?.content && typeof launchPayload.content === 'string' && launchPayload.content.trim()
       if (hasUserMessage) {
         const attachments = launchPayload.attachments as Attachment[] | undefined
@@ -1311,8 +1313,9 @@ async function handleClientMessage(
         llmClient: llmForSession(sessionId),
         statsIdentity: statsForSession(sessionId),
         injectBuilderKickoff: !hasUserMessage,
+        ...(launchPayload?.workflowId ? { workflowId: launchPayload.workflowId } : {}),
         signal: controller.signal,
-         onMessage: (msg) => sendForSession(sessionId, msg),  // For path confirmation dialogs
+        onMessage: (msg) => sendForSession(sessionId, msg),  // For path confirmation dialogs
       }).catch((error) => {
         // Don't create error message for controlled abort
         if (error instanceof Error && error.message === 'Aborted') {

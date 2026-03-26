@@ -6,20 +6,25 @@
  * state ($done or $blocked) is reached.
  */
 
-import type { Criterion } from '../../shared/types.js'
+import type { Criterion, Session } from '../../shared/types.js'
 import type { OrchestratorOptions, OrchestratorResult, NextAction } from '../runner/types.js'
+import { RUNNER_CONFIG } from '../runner/types.js'
 import type {
   WorkflowDefinition,
   WorkflowStep,
   Transition,
   TransitionCondition,
-  LLMTurnStep,
+  AgentStep,
   SubAgentStep,
   ShellStep,
 } from './types.js'
 import { TERMINAL_DONE, TERMINAL_BLOCKED } from './types.js'
 import { getEventStore, getCurrentContextWindowId } from '../events/index.js'
-import { runBuilderTurn, runVerifierTurn, TurnMetrics, createMessageStartEvent } from '../chat/orchestrator.js'
+import { runBuilderTurn, TurnMetrics, createMessageStartEvent } from '../chat/orchestrator.js'
+import { executeSubAgent } from '../sub-agents/manager.js'
+import { createVerifierNudgeConfig } from '../sub-agents/verifier-helpers.js'
+import { loadAllAgentsDefault, findAgentById } from '../agents/registry.js'
+import { getToolRegistryForAgent } from '../tools/index.js'
 import { computeSessionStats } from '../../shared/stats.js'
 import { executeShellCommand } from './shell.js'
 import { logger } from '../utils/logger.js'
@@ -35,6 +40,27 @@ interface TemplateContext {
   previousStepOutput: string
   criteriaCount: number
   pendingCount: number
+  summary: string
+  criteriaList: string
+  modifiedFiles: string
+}
+
+function formatCriteriaList(criteria: Criterion[]): string {
+  if (criteria.length === 0) return '(none)'
+  return criteria
+    .map(c => {
+      const status = c.status.type === 'passed' ? '[PASSED]'
+        : c.status.type === 'completed' ? '[NEEDS VERIFICATION]'
+        : c.status.type === 'failed' ? '[FAILED]'
+        : '[NOT COMPLETED]'
+      return `- **${c.id}** ${status}: ${c.description}`
+    })
+    .join('\n')
+}
+
+function formatModifiedFiles(session: Session): string {
+  const files = session.executionState?.modifiedFiles ?? []
+  return files.length > 0 ? files.map(f => `- ${f}`).join('\n') : '(none)'
 }
 
 function resolveTemplate(template: string, ctx: TemplateContext): string {
@@ -45,6 +71,9 @@ function resolveTemplate(template: string, ctx: TemplateContext): string {
     .replace(/\{\{previousStepOutput\}\}/g, ctx.previousStepOutput)
     .replace(/\{\{criteriaCount\}\}/g, String(ctx.criteriaCount))
     .replace(/\{\{pendingCount\}\}/g, String(ctx.pendingCount))
+    .replace(/\{\{summary\}\}/g, ctx.summary)
+    .replace(/\{\{criteriaList\}\}/g, ctx.criteriaList)
+    .replace(/\{\{modifiedFiles\}\}/g, ctx.modifiedFiles)
 }
 
 // ============================================================================
@@ -58,7 +87,6 @@ interface StepOutcome {
 function evaluateCondition(
   condition: TransitionCondition,
   criteria: Criterion[],
-  maxVerifyRetries: number,
   stepOutcome: StepOutcome | null,
 ): boolean {
   switch (condition.type) {
@@ -71,7 +99,7 @@ function evaluateCondition(
     case 'any_criteria_blocked':
       return criteria.some(c =>
         c.status.type === 'failed' &&
-        c.attempts.filter(a => a.status === 'failed').length >= maxVerifyRetries
+        c.attempts.filter(a => a.status === 'failed').length >= RUNNER_CONFIG.maxVerifyRetries
       )
 
     case 'has_pending_criteria':
@@ -89,11 +117,10 @@ function evaluateCondition(
 function evaluateTransitions(
   transitions: Transition[],
   criteria: Criterion[],
-  maxVerifyRetries: number,
   stepOutcome: StepOutcome | null,
 ): string {
   for (const transition of transitions) {
-    if (evaluateCondition(transition.when, criteria, maxVerifyRetries, stepOutcome)) {
+    if (evaluateCondition(transition.when, criteria, stepOutcome)) {
       return transition.goto
     }
   }
@@ -129,9 +156,12 @@ export async function executeWorkflow(
   let iterations = 0
 
   let currentStepId = workflow.entryStep
-  let lastVerifierContent = ''
+  let lastSubAgentContent = ''
   let lastShellOutput = ''
   let isFirstBuilderEntry = true
+
+  // Snapshot message count so we can compute workflow-scoped stats (not session-wide)
+  const messagesBeforeWorkflow = sessionManager.requireSession(sessionId).messages.length
 
   const stepsById = new Map<string, WorkflowStep>()
   for (const step of workflow.steps) {
@@ -139,6 +169,34 @@ export async function executeWorkflow(
   }
 
   logger.debug('Workflow executor starting', { sessionId, workflow: workflow.metadata.id })
+
+  // Evaluate start condition if present
+  if (workflow.startCondition && workflow.startCondition.type !== 'always') {
+    const session = sessionManager.requireSession(sessionId)
+    const criteria = session.criteria
+    const conditionMet = evaluateCondition(
+      workflow.startCondition as TransitionCondition,
+      criteria,
+      null,
+    )
+    if (!conditionMet) {
+      logger.debug('Workflow start condition not met', { sessionId, condition: workflow.startCondition.type })
+      return {
+        finalAction: { type: 'BLOCKED', reason: `Start condition not met: ${workflow.startCondition.type}`, blockedCriteria: [] },
+        iterations: 0,
+        totalTime: (performance.now() - startTime) / 1000,
+      }
+    }
+  }
+
+  // Emit workflow-started marker into the feed
+  const startMsgId = crypto.randomUUID()
+  const startWindowOpts = getCurrentWindowMessageOptions(sessionId)
+  eventStore.append(sessionId, createMessageStartEvent(startMsgId, 'user',
+    JSON.stringify({ workflowName: workflow.metadata.name, workflowId: workflow.metadata.id, workflowColor: workflow.metadata.color }),
+    { ...(startWindowOpts ?? {}), isSystemGenerated: true, messageKind: 'workflow-started' },
+  ))
+  eventStore.append(sessionId, { type: 'message.done', data: { messageId: startMsgId } })
 
   while (iterations < workflow.settings.maxIterations) {
     // Check abort
@@ -171,10 +229,13 @@ export async function executeWorkflow(
     const templateCtx: TemplateContext = {
       workdir: session.workdir,
       reason: buildReason(criteria),
-      verifierFindings: lastVerifierContent,
+      verifierFindings: lastSubAgentContent,
       previousStepOutput: lastShellOutput,
       criteriaCount: criteria.length,
       pendingCount: criteria.filter(c => c.status.type !== 'passed').length,
+      summary: session.summary ?? 'No summary available',
+      criteriaList: formatCriteriaList(criteria),
+      modifiedFiles: formatModifiedFiles(session),
     }
 
     // Set session phase
@@ -186,12 +247,20 @@ export async function executeWorkflow(
 
     // Execute step
     switch (step.type) {
-      case 'llm_turn': {
-        const llmStep = step as LLMTurnStep
+      case 'agent': {
+        const agentStep = step as AgentStep
 
-        // Inject nudge/kickoff prompt
-        if (!isFirstBuilderEntry && llmStep.nudgePrompt) {
-          const nudgeContent = resolveTemplate(llmStep.nudgePrompt, templateCtx)
+        if (isFirstBuilderEntry && agentStep.prompt) {
+          const promptContent = resolveTemplate(agentStep.prompt, templateCtx)
+          const promptMsgId = crypto.randomUUID()
+          eventStore.append(sessionId, createMessageStartEvent(promptMsgId, 'user', promptContent, {
+            ...(currentWindowMessageOptions ?? {}),
+            isSystemGenerated: true,
+            messageKind: 'auto-prompt',
+          }))
+          eventStore.append(sessionId, { type: 'message.done', data: { messageId: promptMsgId } })
+        } else if (!isFirstBuilderEntry && agentStep.nudgePrompt) {
+          const nudgeContent = resolveTemplate(agentStep.nudgePrompt, templateCtx)
           const nudgeMsgId = crypto.randomUUID()
           eventStore.append(sessionId, createMessageStartEvent(nudgeMsgId, 'user', nudgeContent, {
             ...(currentWindowMessageOptions ?? {}),
@@ -207,7 +276,7 @@ export async function executeWorkflow(
           sessionId,
           llmClient,
           ...(options.statsIdentity ? { statsIdentity: options.statsIdentity } : {}),
-          ...(isFirstBuilderEntry && options.injectBuilderKickoff === true ? { injectBuilderKickoff: true } : {}),
+          ...(isFirstBuilderEntry && !agentStep.prompt && options.injectBuilderKickoff === true ? { injectBuilderKickoff: true } : {}),
           ...(signal ? { signal } : {}),
           ...(onMessage ? { onMessage } : {}),
         }, turnMetrics)
@@ -221,22 +290,39 @@ export async function executeWorkflow(
         const subStep = step as SubAgentStep
         const turnMetrics = new TurnMetrics()
 
-        if (subStep.subAgentType === 'verifier') {
-          const verifierResult = await runVerifierTurn({
-            sessionManager,
-            sessionId,
-            llmClient,
-            ...(options.statsIdentity ? { statsIdentity: options.statsIdentity } : {}),
-            ...(signal ? { signal } : {}),
-            ...(onMessage ? { onMessage } : {}),
-          }, turnMetrics)
-          lastVerifierContent = verifierResult.content ?? ''
-          stepOutcome = { success: verifierResult.allPassed }
-        } else {
-          // Custom sub-agent types can be added here in the future
-          logger.warn('Unknown sub-agent type', { subAgentType: subStep.subAgentType })
+        const promptTemplate = subStep.prompt ?? 'Perform your task.'
+        const resolvedPrompt = resolveTemplate(promptTemplate, templateCtx)
+
+        const allAgents = await loadAllAgentsDefault()
+        const agentDef = findAgentById(subStep.subAgentType, allAgents)
+        if (!agentDef) {
+          logger.error('Sub-agent definition not found', { subAgentType: subStep.subAgentType })
           stepOutcome = { success: false }
+          break
         }
+
+        const toolRegistry = getToolRegistryForAgent(agentDef)
+
+        const nudgeConfig = subStep.subAgentType === 'verifier' && !subStep.nudgePrompt
+          ? createVerifierNudgeConfig()
+          : undefined
+
+        const result = await executeSubAgent({
+          subAgentType: subStep.subAgentType,
+          prompt: resolvedPrompt,
+          sessionManager,
+          sessionId,
+          llmClient,
+          toolRegistry,
+          turnMetrics,
+          statsIdentity: options.statsIdentity ?? { providerId: '', providerName: '', backend: 'unknown', model: llmClient.getModel() },
+          ...(signal ? { signal } : {}),
+          ...(onMessage ? { onMessage } : {}),
+          nudgeConfig,
+        })
+
+        lastSubAgentContent = result.content ?? ''
+        stepOutcome = { success: result.allPassed ?? true }
         break
       }
 
@@ -283,7 +369,6 @@ export async function executeWorkflow(
     const nextStepId = evaluateTransitions(
       step.transitions,
       refreshedSession.criteria,
-      workflow.settings.maxVerifyRetries,
       stepOutcome,
     )
 
@@ -293,24 +378,25 @@ export async function executeWorkflow(
 
       const totalTimeSeconds = Math.round((performance.now() - startTime) / 100) / 10
       const completedSession = sessionManager.requireSession(sessionId)
-      const sessionStats = computeSessionStats(completedSession.messages)
-      const totalToolCalls = completedSession.messages.reduce(
+      // Only aggregate stats for messages created during this workflow run
+      const workflowMessages = completedSession.messages.slice(messagesBeforeWorkflow)
+      const workflowStats = computeSessionStats(workflowMessages)
+      const totalToolCalls = workflowMessages.reduce(
         (sum, m) => sum + (m.toolCalls?.length ?? 0), 0
       )
       const taskCompletedData = {
-        summary: completedSession.summary,
+        summary: null,
         iterations,
         totalTimeSeconds,
         totalToolCalls,
-        totalTokensGenerated: sessionStats?.generationTokens ?? 0,
-        avgGenerationSpeed: sessionStats?.avgGenerationSpeed ?? 0,
-        responseCount: sessionStats?.responseCount ?? 0,
-        llmCallCount: sessionStats?.llmCallCount ?? 0,
-        criteria: completedSession.criteria.map(c => ({
-          id: c.id,
-          description: c.description,
-          status: c.status.type,
-        })),
+        totalTokensGenerated: workflowStats?.generationTokens ?? 0,
+        avgGenerationSpeed: workflowStats?.avgGenerationSpeed ?? 0,
+        responseCount: workflowStats?.responseCount ?? 0,
+        llmCallCount: workflowStats?.llmCallCount ?? 0,
+        criteria: [] as Array<{ id: string; description: string; status: string }>,
+        workflowName: workflow.metadata.name,
+        workflowId: workflow.metadata.id,
+        ...(workflow.metadata.color ? { workflowColor: workflow.metadata.color } : {}),
       }
       eventStore.append(sessionId, { type: 'task.completed', data: taskCompletedData })
 
@@ -336,7 +422,7 @@ export async function executeWorkflow(
 
       const blockedCriteria = refreshedSession.criteria
         .filter(c => c.status.type === 'failed' &&
-          c.attempts.filter(a => a.status === 'failed').length >= workflow.settings.maxVerifyRetries)
+          c.attempts.filter(a => a.status === 'failed').length >= RUNNER_CONFIG.maxVerifyRetries)
         .map(c => c.id)
       const reason = blockedCriteria.length > 0
         ? `Retry limit reached for: ${blockedCriteria.join(', ')}`

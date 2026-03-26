@@ -49,7 +49,7 @@ export function Modal({ isOpen, onClose, title, children, size = 'md' }: ModalPr
     md: 'max-w-[90vw] md:max-w-md',
     lg: 'max-w-[90vw] md:max-w-2xl',
     xl: 'max-w-[90vw] md:max-w-4xl',
-    full: 'max-w-[95vw] md:max-w-6xl',
+    full: 'max-w-[95vw]',
   }
 
   return createPortal(

@@ -69,7 +69,7 @@ export type TurnEvent =
         subAgentId?: string
         subAgentType?: string
         isSystemGenerated?: boolean
-        messageKind?: 'correction' | 'auto-prompt' | 'context-reset' | 'task-completed' | 'command'
+        messageKind?: 'correction' | 'auto-prompt' | 'context-reset' | 'task-completed' | 'workflow-started' | 'command'
         isCompactionSummary?: boolean // True if this is the summary message after compaction
         tokenCount?: number // Known upfront for user messages
         attachments?: Attachment[] // Optional image attachments
@@ -238,6 +238,9 @@ export type TurnEvent =
           description: string
           status: string
         }>
+        workflowName?: string
+        workflowId?: string
+        workflowColor?: string
       }
     }
 
@@ -333,7 +336,7 @@ export interface SnapshotMessage {
   subAgentId?: string
   subAgentType?: string
   isSystemGenerated?: boolean
-  messageKind?: 'correction' | 'auto-prompt' | 'context-reset' | 'task-completed' | 'command'
+  messageKind?: 'correction' | 'auto-prompt' | 'context-reset' | 'task-completed' | 'workflow-started' | 'command'
   contextWindowId?: string
   isCompactionSummary?: boolean
   promptContext?: PromptContext

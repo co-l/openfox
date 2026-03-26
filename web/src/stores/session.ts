@@ -218,11 +218,11 @@ interface SessionState {
   continueGeneration: () => void
   
   // Runner (auto-loop)
-  launchRunner: (content?: string, attachments?: Attachment[]) => void
-  
+  launchRunner: (content?: string, attachments?: Attachment[], workflowId?: string) => void
+
   // Mode switching
   switchMode: (mode: SessionMode) => void
-  acceptAndBuild: () => void
+  acceptAndBuild: (workflowId?: string) => void
   
   // Criteria (from UI)
   editCriteria: (criteria: Criterion[]) => void
@@ -487,23 +487,24 @@ export const useSessionStore = create<SessionState>((set, get) => {
     wsClient.send('chat.continue', {})
   },
   
-  launchRunner: (content?: string, attachments?: Attachment[]) => {
+  launchRunner: (content?: string, attachments?: Attachment[], workflowId?: string) => {
     set({ streamingMessageId: null })
     const payload: Record<string, unknown> = {}
     if (content?.trim()) {
       payload.content = content
       if (attachments && attachments.length > 0) payload.attachments = attachments
     }
+    if (workflowId) payload.workflowId = workflowId
     wsClient.send('runner.launch', payload)
   },
-  
+
   switchMode: (mode) => {
     wsClient.send('mode.switch', { mode })
   },
-  
-  acceptAndBuild: () => {
+
+  acceptAndBuild: (workflowId?: string) => {
     set({ streamingMessageId: null })
-    wsClient.send('mode.accept', {})
+    wsClient.send('mode.accept', workflowId ? { workflowId } : {})
   },
   
   editCriteria: (criteria) => {

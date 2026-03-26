@@ -66,13 +66,10 @@ export async function ensureDefaultWorkflows(configDir: string): Promise<void> {
 
   for (const file of defaultFiles) {
     const targetPath = join(workflowsDir, file)
-    if (!await pathExists(targetPath)) {
-      try {
-        await copyFile(join(sourceDir, file), targetPath)
-        logger.info('Installed default workflow', { file })
-      } catch (err) {
-        logger.error('Failed to copy default workflow', { file, error: err instanceof Error ? err.message : String(err) })
-      }
+    try {
+      await copyFile(join(sourceDir, file), targetPath)
+    } catch (err) {
+      logger.error('Failed to copy default workflow', { file, error: err instanceof Error ? err.message : String(err) })
     }
   }
 }

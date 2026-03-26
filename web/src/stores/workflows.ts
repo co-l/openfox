@@ -5,21 +5,22 @@ export interface WorkflowInfo {
   name: string
   description: string
   version: string
+  color?: string
 }
 
 export interface WorkflowStep {
   id: string
   name: string
-  type: 'llm_turn' | 'sub_agent' | 'shell'
+  type: 'agent' | 'sub_agent' | 'shell'
   phase: string
   transitions: Array<{ when: { type: string; result?: string }; goto: string }>
-  // llm_turn fields
+  // agent fields
   toolMode?: 'builder' | 'planner'
-  kickoffPrompt?: string
-  nudgePrompt?: string
   // sub_agent fields
   subAgentType?: string
+  // shared prompt fields (agent + sub_agent)
   prompt?: string
+  nudgePrompt?: string
   // shell fields
   command?: string
   timeout?: number
@@ -27,14 +28,16 @@ export interface WorkflowStep {
 }
 
 export interface WorkflowFull {
-  metadata: { id: string; name: string; description: string; version: string }
+  metadata: { id: string; name: string; description: string; version: string; color?: string }
   entryStep: string
-  settings: { maxIterations: number; maxVerifyRetries: number }
+  settings: { maxIterations: number }
   steps: WorkflowStep[]
+  startCondition?: { type: string; result?: string }
 }
 
 interface WorkflowsState {
   workflows: WorkflowInfo[]
+  activeWorkflowId: string
   loading: boolean
   fetchWorkflows: () => Promise<void>
   fetchWorkflow: (id: string) => Promise<WorkflowFull | null>
@@ -46,6 +49,7 @@ interface WorkflowsState {
 
 export const useWorkflowsStore = create<WorkflowsState>((set, get) => ({
   workflows: [],
+  activeWorkflowId: 'default',
   loading: false,
 
   fetchWorkflows: async () => {
@@ -53,7 +57,7 @@ export const useWorkflowsStore = create<WorkflowsState>((set, get) => ({
     try {
       const res = await fetch('/api/workflows')
       const data = await res.json()
-      set({ workflows: data.workflows ?? [], loading: false })
+      set({ workflows: data.workflows ?? [], activeWorkflowId: data.activeWorkflowId ?? 'default', loading: false })
     } catch {
       set({ loading: false })
     }

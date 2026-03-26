@@ -32,6 +32,8 @@ export interface OrchestratorOptions {
   statsIdentity?: StatsIdentity
   signal?: AbortSignal
   injectBuilderKickoff?: boolean
+  /** Override the globally active workflow for this session */
+  workflowId?: string
   /** For path confirmation dialogs (sent directly, not through EventStore) */
   onMessage?: (msg: ServerMessage) => void
 }

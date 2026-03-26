@@ -1,5 +1,6 @@
 import { memo } from 'react'
 import type { TaskCompletedPayload } from '@shared/protocol.js'
+import { useWorkflowsStore } from '../../stores/workflows'
 
 interface TaskCompletedCardProps {
   data: TaskCompletedPayload
@@ -18,67 +19,38 @@ function formatTokens(n: number): string {
   return String(n)
 }
 
-function StatusIcon({ status }: { status: string }) {
-  if (status === 'passed') {
-    return (
-      <svg className="w-3.5 h-3.5 text-emerald-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-      </svg>
-    )
-  }
-  if (status === 'failed') {
-    return (
-      <svg className="w-3.5 h-3.5 text-red-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-      </svg>
-    )
-  }
-  return (
-    <svg className="w-3.5 h-3.5 text-emerald-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-    </svg>
-  )
+function hexToRgba(hex: string, alpha: number): string {
+  const r = parseInt(hex.slice(1, 3), 16)
+  const g = parseInt(hex.slice(3, 5), 16)
+  const b = parseInt(hex.slice(5, 7), 16)
+  return `rgba(${r},${g},${b},${alpha})`
 }
 
 export const TaskCompletedCard = memo(function TaskCompletedCard({ data }: TaskCompletedCardProps) {
+  const workflows = useWorkflowsStore(state => state.workflows)
+  const color = workflows.find(w => w.id === data.workflowId)?.color ?? data.workflowColor ?? '#8b949e'
+
   return (
-    <div className="feed-item bg-emerald-500/10 border border-emerald-500/30 rounded p-3">
+    <div
+      className="feed-item rounded p-3 border"
+      style={{ borderColor: hexToRgba(color, 0.3), backgroundColor: hexToRgba(color, 0.08) }}
+    >
       {/* Header */}
       <div className="flex items-center gap-2 mb-2">
-        <svg className="w-4 h-4 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <svg className="w-3.5 h-3.5 shrink-0" fill="none" stroke={color} viewBox="0 0 24 24">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
         </svg>
-        <span className="text-emerald-400 text-sm font-medium">Task Completed</span>
+        <span className="text-sm font-medium" style={{ color }}>{data.workflowName ?? 'Task Completed'}</span>
       </div>
 
-      {/* Summary */}
-      {data.summary && (
-        <p className="text-text-secondary text-xs mb-3 leading-relaxed">{data.summary}</p>
-      )}
-
       {/* Stats grid */}
-      <div className="grid grid-cols-3 sm:grid-cols-5 gap-2 mb-3">
-        <Stat label="Prompts" value={String(data.responseCount)} />
+      <div className="grid grid-cols-3 sm:grid-cols-5 gap-2">
+        <Stat label="Iterations" value={String(data.iterations)} />
         <Stat label="Total time" value={formatTime(data.totalTimeSeconds)} />
         <Stat label="Tool calls" value={String(data.totalToolCalls)} />
         <Stat label="Tokens" value={formatTokens(data.totalTokensGenerated)} />
         <Stat label="Speed" value={data.avgGenerationSpeed > 0 ? `${data.avgGenerationSpeed} tok/s` : '-'} />
       </div>
-
-      {/* Acceptance criteria */}
-      {data.criteria.length > 0 && (
-        <div className="border-t border-emerald-500/20 pt-2">
-          <div className="text-[10px] text-text-muted uppercase tracking-wide mb-1.5">Acceptance Criteria</div>
-          <ul className="space-y-1">
-            {data.criteria.map(c => (
-              <li key={c.id} className="flex items-start gap-1.5 text-xs text-text-secondary">
-                <StatusIcon status={c.status} />
-                <span>{c.description}</span>
-              </li>
-            ))}
-          </ul>
-        </div>
-      )}
     </div>
   )
 })
@@ -86,8 +58,8 @@ export const TaskCompletedCard = memo(function TaskCompletedCard({ data }: TaskC
 function Stat({ label, value }: { label: string; value: string }) {
   return (
     <div className="bg-bg-primary/50 rounded px-2 py-1">
-      <div className="text-[10px] text-text-muted">{label}</div>
-      <div className="text-xs text-text-primary font-medium">{value}</div>
+      <div className="text-sm text-text-muted">{label}</div>
+      <div className="text-sm text-text-primary font-medium">{value}</div>
     </div>
   )
 }

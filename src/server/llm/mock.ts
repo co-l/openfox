@@ -869,6 +869,16 @@ function getConversationAwareToolResponse(request: LLMCompletionRequest): MockMa
   }
 
   if (/Verify each criterion marked \[NEEDS VERIFICATION\]\./i.test(prompt)) {
+    // Only return verifier tools on the first call — if we already called pass/fail, stop
+    const alreadyVerified = request.messages.some(m =>
+      m.role === 'assistant' && m.toolCalls?.some(tc =>
+        tc.name === 'pass_criterion' || tc.name === 'fail_criterion'
+      )
+    )
+    if (alreadyVerified) {
+      return null
+    }
+
     const tools: Array<{ name: string; arguments: Record<string, unknown> }> = []
     const terminalizedCriteria: string[] = []
 
@@ -898,6 +908,7 @@ function getConversationAwareToolResponse(request: LLMCompletionRequest): MockMa
     }
 
     if (tools.length > 0) {
+      tools.push({ name: 'return_value', arguments: { summary: `Terminalized verifier work for: ${terminalizedCriteria.join(', ')}.` } })
       return {
         tools,
         response: `Terminalized verifier work for: ${terminalizedCriteria.join(', ')}.`,

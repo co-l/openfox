@@ -193,6 +193,7 @@ describe('mock llm runtime reminders', () => {
 
     expect(response.toolCalls).toEqual([
       expect.objectContaining({ name: 'pass_criterion', arguments: { id: 'inspect-src', reason: 'Verified the src directory was inspected successfully' } }),
+      expect.objectContaining({ name: 'return_value', arguments: { summary: 'Terminalized verifier work for: inspect-src.' } }),
     ])
   })
 
@@ -271,6 +272,7 @@ describe('mock llm runtime reminders', () => {
     expect(response.toolCalls).toEqual([
       expect.objectContaining({ name: 'pass_criterion', arguments: { id: 'trivial-pass', reason: 'Verified successfully' } }),
       expect.objectContaining({ name: 'pass_criterion', arguments: { id: 'file-created', reason: 'Verified the file was created successfully' } }),
+      expect.objectContaining({ name: 'return_value', arguments: { summary: 'Terminalized verifier work for: trivial-pass, file-created.' } }),
     ])
   })
 

@@ -15,13 +15,12 @@ export interface WorkflowMetadata {
   name: string
   description: string
   version: string
+  color?: string
 }
 
 export interface WorkflowSettings {
   /** Safety limit on total state-machine iterations (default 50) */
   maxIterations: number
-  /** Per-criterion retry cap before marking blocked (default 4) */
-  maxVerifyRetries: number
 }
 
 export interface WorkflowDefinition {
@@ -31,13 +30,15 @@ export interface WorkflowDefinition {
   settings: WorkflowSettings
   /** Ordered for display; execution follows transitions, not array order */
   steps: WorkflowStep[]
+  /** Condition that must be met before the workflow starts (default: always) */
+  startCondition?: TransitionCondition
 }
 
 // ============================================================================
 // Steps
 // ============================================================================
 
-export type WorkflowStep = LLMTurnStep | SubAgentStep | ShellStep
+export type WorkflowStep = AgentStep | SubAgentStep | ShellStep
 
 interface StepBase {
   /** Unique within this workflow */
@@ -51,13 +52,13 @@ interface StepBase {
 }
 
 /** Full LLM call + tool execution loop (like the current builder turn) */
-export interface LLMTurnStep extends StepBase {
-  type: 'llm_turn'
+export interface AgentStep extends StepBase {
+  type: 'agent'
   /** Which tool registry to use */
   toolMode: 'builder' | 'planner'
-  /** Injected as user message on first entry */
-  kickoffPrompt?: string
-  /** Injected when re-entering after a failed verify */
+  /** Injected as user message on first entry. Supports template variables. */
+  prompt?: string
+  /** Injected when re-entering after a failed verify. Supports template variables. */
   nudgePrompt?: string
 }
 
@@ -66,8 +67,10 @@ export interface SubAgentStep extends StepBase {
   type: 'sub_agent'
   /** e.g. "verifier" or a custom sub-agent type */
   subAgentType: string
-  /** Override the default kickoff prompt */
+  /** Injected as user message on first entry. Supports template variables. */
   prompt?: string
+  /** Injected when nudging the sub-agent. Supports template variables. */
+  nudgePrompt?: string
   /** Tool set override */
   toolMode?: 'verifier' | 'builder'
 }

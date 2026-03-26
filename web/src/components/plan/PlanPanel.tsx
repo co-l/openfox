@@ -9,12 +9,12 @@ import { ChatMessage } from './ChatMessage'
 import { AssistantMessage } from './AssistantMessage'
 import { SubAgentContainer } from './SubAgentContainer'
 import { AgentSelector } from './AgentSelector'
-import { Button } from '../shared/Button'
 import { PathConfirmationDialog } from '../shared/PathConfirmationDialog'
 import { RunningIndicator } from '../shared/RunningIndicator'
 import { CriteriaGroupDisplay } from '../shared/CriteriaGroupDisplay'
 import { AttachmentPreview } from '../shared/AttachmentPreview.js'
 import { PromptHistoryList } from '../shared/PromptHistory.js'
+import { useWorkflowsStore } from '../../stores/workflows'
 import { compressImage, isValidImageType, validateImageSize } from '../../lib/image-compression.js'
 import { buildPromptContextByUserMessageId } from './prompt-context-linking.js'
 import { ProviderSelector } from '../settings/ProviderSelector'
@@ -53,7 +53,11 @@ export function PlanPanel() {
   const queueCompletion = useSessionStore(state => state.queueCompletion)
   const cancelQueued = useSessionStore(state => state.cancelQueued)
   const queuedMessages = useQueuedMessages()
-  
+
+  const workflows = useWorkflowsStore(state => state.workflows)
+  const fetchWorkflows = useWorkflowsStore(state => state.fetchWorkflows)
+  useEffect(() => { fetchWorkflows() }, [fetchWorkflows])
+
   // Prompt history navigation
   const {
     history,
@@ -578,14 +582,26 @@ export function PlanPanel() {
               )}
 
               {showStartBuilding && (
-                <div className="flex justify-center feed-item">
-                  <Button
-                    variant="primary"
-                    onClick={acceptAndBuild}
-                    className="bg-blue-600 hover:bg-blue-700 px-4 py-1 text-sm"
-                  >
-                    ▶ Start
-                  </Button>
+                <div className="flex justify-center gap-2 feed-item flex-wrap">
+                  {workflows.map(w => {
+                    const c = w.color ?? '#3b82f6'
+                    const r = parseInt(c.slice(1, 3), 16), g = parseInt(c.slice(3, 5), 16), b = parseInt(c.slice(5, 7), 16)
+                    const bg = `rgba(${r},${g},${b},0.12)`
+                    const bgHover = `rgba(${r},${g},${b},0.22)`
+                    const border = `rgba(${r},${g},${b},0.25)`
+                    return (
+                      <button
+                        key={w.id}
+                        onClick={() => acceptAndBuild(w.id)}
+                        className="px-4 py-1.5 rounded text-sm font-medium transition-colors"
+                        style={{ backgroundColor: bg, color: c, border: `1px solid ${border}` }}
+                        onMouseEnter={e => { e.currentTarget.style.backgroundColor = bgHover }}
+                        onMouseLeave={e => { e.currentTarget.style.backgroundColor = bg }}
+                      >
+                        ▶ {w.name}
+                      </button>
+                    )
+                  })}
                 </div>
               )}
 

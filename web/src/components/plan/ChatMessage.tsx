@@ -4,6 +4,7 @@ import type { TaskCompletedPayload } from '@shared/protocol.js'
 import { Markdown } from '../shared/Markdown'
 import { AssistantMessage } from './AssistantMessage'
 import { TaskCompletedCard } from './TaskCompletedCard'
+import { WorkflowStartedCard } from './WorkflowStartedCard'
 import { MessageAttachments } from '../shared/MessageAttachments.js'
 import { MessageOptionsMenu } from './MessageOptionsMenu'
 
@@ -110,6 +111,16 @@ export const ChatMessage = memo(function ChatMessage({ message, isLastAssistantM
     )
   }
   
+  // Workflow started card
+  if (message.messageKind === 'workflow-started') {
+    try {
+      const data = JSON.parse(message.content) as { workflowName: string; workflowId: string; workflowColor?: string }
+      return <WorkflowStartedCard data={data} />
+    } catch {
+      // Fall through to default rendering
+    }
+  }
+
   // Task completed card — rendered from marker message
   if (message.messageKind === 'task-completed') {
     try {
