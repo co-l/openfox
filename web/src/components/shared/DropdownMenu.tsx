@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 
 export interface DropdownMenuItem {
   label: string
+  icon?: React.ReactNode
   onClick: (event?: React.MouseEvent) => void
   danger?: boolean
 }
@@ -47,10 +48,11 @@ export function DropdownMenu({ items, trigger }: DropdownMenuProps) {
                 item.onClick(e)
                 setIsOpen(false)
               }}
-              className={`w-full px-3 py-2 text-left text-sm hover:bg-bg-tertiary transition-colors ${
+              className={`w-full px-3 py-2 text-left text-sm hover:bg-bg-tertiary transition-colors flex items-center gap-2 ${
                 item.danger ? 'text-accent-error hover:bg-accent-error/10' : 'text-text-primary'
               } ${index !== items.length - 1 ? 'border-b border-border' : ''}`}
             >
+              {item.icon && <span className="w-4 h-4 flex-shrink-0">{item.icon}</span>}
               {item.label}
             </button>
           ))}

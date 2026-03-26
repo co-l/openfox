@@ -529,6 +529,6 @@ export interface Config {
   activeProviderId?: string | undefined
   /** Workspace directory for projects */
   workdir: string
-  /** Active pipeline ID (defaults to "default") */
-  activePipelineId?: string | undefined
+  /** Active workflow ID (defaults to "default") */
+  activeWorkflowId?: string | undefined
 }

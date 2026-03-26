@@ -24,8 +24,8 @@ import { ensureDefaultCommands, loadAllCommands, findCommandById, saveCommand, d
 import type { CommandDefinition } from './commands/types.js'
 import { ensureDefaultAgents, loadAllAgents, findAgentById, getSubAgents, getTopLevelAgents, saveAgent, deleteAgent, agentExists } from './agents/registry.js'
 import type { AgentDefinition } from './agents/types.js'
-import { ensureDefaultPipelines, loadAllPipelines, findPipelineById, savePipeline, deletePipeline, pipelineExists } from './pipelines/registry.js'
-import type { PipelineDefinition } from './pipelines/types.js'
+import { ensureDefaultWorkflows, loadAllWorkflows, findWorkflowById, saveWorkflow, deleteWorkflow, workflowExists } from './workflows/registry.js'
+import type { WorkflowDefinition } from './workflows/types.js'
 import { getGlobalConfigDir } from '../cli/paths.js'
 import { logger, setLogLevel } from './utils/logger.js'
 import { terminateProcessTree } from './utils/process-tree.js'
@@ -58,7 +58,7 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
   await ensureDefaultSkills(configDir)
   await ensureDefaultCommands(configDir)
   await ensureDefaultAgents(configDir)
-  await ensureDefaultPipelines(configDir)
+  await ensureDefaultWorkflows(configDir)
 
   // Create SessionManager instance (not singleton!)
   const sessionManager = new SessionManager()
@@ -592,78 +592,78 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
     res.json({ success: true })
   })
 
-  // Pipelines endpoints
-  app.get('/api/pipelines', async (_req, res) => {
-    const pipelines = await loadAllPipelines(configDir)
+  // Workflows endpoints
+  app.get('/api/workflows', async (_req, res) => {
+    const workflows = await loadAllWorkflows(configDir)
     res.json({
-      pipelines: pipelines.map(p => p.metadata),
-      activePipelineId: config.activePipelineId ?? 'default',
+      workflows: workflows.map(p => p.metadata),
+      activeWorkflowId: config.activeWorkflowId ?? 'default',
     })
   })
 
-  app.get('/api/pipelines/:id', async (req, res) => {
+  app.get('/api/workflows/:id', async (req, res) => {
     const { id } = req.params
-    const pipelines = await loadAllPipelines(configDir)
-    const pipeline = findPipelineById(id as string, pipelines)
-    if (!pipeline) {
-      return res.status(404).json({ error: 'Pipeline not found' })
+    const workflows = await loadAllWorkflows(configDir)
+    const workflow = findWorkflowById(id as string, workflows)
+    if (!workflow) {
+      return res.status(404).json({ error: 'Workflow not found' })
     }
-    res.json(pipeline)
+    res.json(workflow)
   })
 
-  app.post('/api/pipelines', async (req, res) => {
-    const body = req.body as PipelineDefinition
+  app.post('/api/workflows', async (req, res) => {
+    const body = req.body as WorkflowDefinition
     if (!body?.metadata?.id || !body?.steps?.length) {
       return res.status(400).json({ error: 'Missing required fields: metadata.id, steps' })
     }
-    if (await pipelineExists(configDir, body.metadata.id)) {
-      return res.status(409).json({ error: 'A pipeline with this ID already exists' })
+    if (await workflowExists(configDir, body.metadata.id)) {
+      return res.status(409).json({ error: 'A workflow with this ID already exists' })
     }
-    await savePipeline(configDir, body)
+    await saveWorkflow(configDir, body)
     res.status(201).json(body)
   })
 
-  app.put('/api/pipelines/:id', async (req, res) => {
+  app.put('/api/workflows/:id', async (req, res) => {
     const { id } = req.params
-    if (!await pipelineExists(configDir, id as string)) {
-      return res.status(404).json({ error: 'Pipeline not found' })
+    if (!await workflowExists(configDir, id as string)) {
+      return res.status(404).json({ error: 'Workflow not found' })
     }
-    const body = req.body as PipelineDefinition
+    const body = req.body as WorkflowDefinition
     // Ensure the ID matches the URL parameter
-    const updated: PipelineDefinition = {
+    const updated: WorkflowDefinition = {
       ...body,
       metadata: { ...body.metadata, id: id as string },
     }
-    await savePipeline(configDir, updated)
+    await saveWorkflow(configDir, updated)
     res.json(updated)
   })
 
-  app.delete('/api/pipelines/:id', async (req, res) => {
+  app.delete('/api/workflows/:id', async (req, res) => {
     const { id } = req.params
     if (id === 'default') {
-      return res.status(400).json({ error: 'Cannot delete the default pipeline' })
+      return res.status(400).json({ error: 'Cannot delete the default workflow' })
     }
-    const deleted = await deletePipeline(configDir, id as string)
+    const deleted = await deleteWorkflow(configDir, id as string)
     if (!deleted) {
-      return res.status(404).json({ error: 'Pipeline not found' })
+      return res.status(404).json({ error: 'Workflow not found' })
     }
     res.json({ success: true })
   })
 
-  app.post('/api/pipelines/:id/activate', async (req, res) => {
+  app.post('/api/workflows/:id/activate', async (req, res) => {
     const { id } = req.params
-    const pipelines = await loadAllPipelines(configDir)
-    if (!findPipelineById(id as string, pipelines)) {
-      return res.status(404).json({ error: 'Pipeline not found' })
+    const workflows = await loadAllWorkflows(configDir)
+    if (!findWorkflowById(id as string, workflows)) {
+      return res.status(404).json({ error: 'Workflow not found' })
     }
-    // Update config's active pipeline ID
-    config.activePipelineId = id as string
+    // Update config's active workflow ID
+    config.activeWorkflowId = id as string
     // Persist to global config
     const { loadGlobalConfig, saveGlobalConfig } = await import('../cli/config.js')
     const globalConfig = await loadGlobalConfig(config.mode ?? 'production')
-    globalConfig.activePipelineId = id as string
+    globalConfig.activeWorkflowId = id as string
     await saveGlobalConfig(config.mode ?? 'production', globalConfig)
-    res.json({ success: true, activePipelineId: id })
+    res.json({ success: true, activeWorkflowId: id })
   })
 
   // Branch API endpoint

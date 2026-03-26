@@ -86,7 +86,7 @@ const workspaceSchema = z.object({
 const configSchema = z.object({
   providers: z.array(providerSchema).default([]),
   activeProviderId: z.string().optional(),
-  activePipelineId: z.string().optional(),
+  activeWorkflowId: z.string().optional(),
   server: serverSchema.default({}),
   logging: loggingSchema.default({}),
   database: databaseSchema.default({}),

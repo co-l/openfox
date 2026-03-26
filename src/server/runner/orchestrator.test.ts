@@ -14,10 +14,10 @@ const {
   runVerifierTurnMock: vi.fn(),
 }))
 
-// Mock pipeline loading to return empty (forces hardcoded loop fallback)
-vi.mock('../pipelines/registry.js', () => ({
-  loadAllPipelines: vi.fn().mockResolvedValue([]),
-  findPipelineById: vi.fn().mockReturnValue(undefined),
+// Mock workflow loading to return empty (forces hardcoded loop fallback)
+vi.mock('../workflows/registry.js', () => ({
+  loadAllWorkflows: vi.fn().mockResolvedValue([]),
+  findWorkflowById: vi.fn().mockReturnValue(undefined),
 }))
 
 vi.mock('../runtime-config.js', () => ({

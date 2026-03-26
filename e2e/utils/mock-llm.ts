@@ -3,7 +3,7 @@
  * 
  * Provides deterministic LLM responses for testing the system without
  * depending on real LLM inference. Use this to test:
- * - Tool execution pipelines
+ * - Tool execution workflows
  * - Session state management
  * - Criteria/plan/verifier workflows
  * - Error handling

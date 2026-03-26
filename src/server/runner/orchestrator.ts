@@ -3,7 +3,7 @@
  *
  * Coordinates the build → verify → done/blocked cycle.
  *
- * If an active pipeline is configured, delegates to the pipeline executor
+ * If an active workflow is configured, delegates to the workflow executor
  * (state machine driven). Otherwise falls back to the hardcoded
  * decideNextAction() loop.
  *
@@ -17,8 +17,8 @@ import { logger } from '../utils/logger.js'
 import { computeSessionStats } from '../../shared/stats.js'
 import { getRuntimeConfig } from '../runtime-config.js'
 import { getGlobalConfigDir } from '../../cli/paths.js'
-import { loadAllPipelines, findPipelineById } from '../pipelines/registry.js'
-import { executePipeline } from '../pipelines/executor.js'
+import { loadAllWorkflows, findWorkflowById } from '../workflows/registry.js'
+import { executeWorkflow } from '../workflows/executor.js'
 
 // Import from chat orchestrator (EventStore-based)
 import { runBuilderTurn, runVerifierTurn, TurnMetrics, createMessageStartEvent } from '../chat/orchestrator.js'
@@ -35,22 +35,22 @@ function getCurrentWindowMessageOptions(sessionId: string): { contextWindowId: s
  * It keeps calling builder/verifier until all criteria pass.
  */
 export async function runOrchestrator(options: OrchestratorOptions): Promise<OrchestratorResult> {
-  // Try pipeline-driven execution first
+  // Try workflow-driven execution first
   const runtimeConfig = getRuntimeConfig()
-  const activePipelineId = runtimeConfig.activePipelineId ?? 'default'
+  const activeWorkflowId = runtimeConfig.activeWorkflowId ?? 'default'
   const configDir = getGlobalConfigDir(runtimeConfig.mode ?? 'production')
 
   try {
-    const pipelines = await loadAllPipelines(configDir)
-    const pipeline = findPipelineById(activePipelineId, pipelines)
+    const workflows = await loadAllWorkflows(configDir)
+    const workflow = findWorkflowById(activeWorkflowId, workflows)
 
-    if (pipeline) {
-      logger.debug('Using pipeline executor', { sessionId: options.sessionId, pipeline: pipeline.metadata.id })
-      return await executePipeline(pipeline, options)
+    if (workflow) {
+      logger.debug('Using workflow executor', { sessionId: options.sessionId, workflow: workflow.metadata.id })
+      return await executeWorkflow(workflow, options)
     }
   } catch (err) {
-    logger.warn('Failed to load pipeline, falling back to hardcoded loop', {
-      pipelineId: activePipelineId,
+    logger.warn('Failed to load workflow, falling back to hardcoded loop', {
+      workflowId: activeWorkflowId,
       error: err instanceof Error ? err.message : String(err),
     })
   }
