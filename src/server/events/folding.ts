@@ -746,18 +746,22 @@ function stripPromptContextMessages(messages: SnapshotMessage[]): void {
   // Find the last assistant message with promptContext
   let lastAssistantIdx = -1
   for (let i = messages.length - 1; i >= 0; i--) {
-    if (messages[i].role === 'assistant' && messages[i].promptContext) {
+    const msg = messages[i]
+    if (!msg) continue
+    if (msg.role === 'assistant' && msg.promptContext) {
       lastAssistantIdx = i
       break
     }
   }
 
   for (let i = 0; i < messages.length; i++) {
-    const pc = messages[i].promptContext
+    const msg = messages[i]
+    if (!msg) continue
+    const pc = msg.promptContext
     if (pc && i !== lastAssistantIdx) {
       // Keep everything except the heavy messages array
       const { messages: _msgs, ...rest } = pc
-      messages[i].promptContext = { ...rest, messages: [] }
+      msg.promptContext = { ...rest, messages: [] }
     }
   }
 }

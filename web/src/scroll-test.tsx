@@ -121,7 +121,9 @@ function ScrollTestApp() {
     // Create or use last item as streaming target
     setItems(prev => {
       const last = prev[prev.length - 1]
-      setStreamingItem({ ...last })
+      if (last) {
+        setStreamingItem({ id: last.id, content: last.content, type: last.type })
+      }
       return prev
     })
     let counter = 0

@@ -7,7 +7,7 @@ import type { ToolRegistry } from '../tools/index.js'
 import type { SessionManager } from '../session/index.js'
 import { getEventStore, getCurrentContextWindowId, getRecentUserPromptsForSession } from '../events/index.js'
 import { buildContextMessagesFromEventHistory, buildMessagesFromStoredEvents } from '../events/folding.js'
-import type { Message, Provider, ProviderBackend, StatsIdentity } from '../../shared/types.js'
+import type { Message, Provider, ProviderBackend, StatsIdentity, Attachment } from '../../shared/types.js'
 import type { ProviderManager } from '../provider-manager.js'
 import { createLLMClient } from '../llm/index.js'
 import { runChatTurn, createMessageStartEvent, createChatDoneEvent } from '../chat/orchestrator.js'
@@ -1266,10 +1266,11 @@ async function handleClientMessage(
       const launchPayload = message.payload as { content?: string; attachments?: unknown[] } | undefined
       const hasUserMessage = launchPayload?.content && typeof launchPayload.content === 'string' && launchPayload.content.trim()
       if (hasUserMessage) {
+        const attachments = launchPayload.attachments as Attachment[] | undefined
         sessionManager.addMessage(sessionId, {
           role: 'user',
           content: launchPayload.content!,
-          ...(launchPayload.attachments ? { attachments: launchPayload.attachments } : {}),
+          ...(attachments ? { attachments } : {}),
         })
       }
 

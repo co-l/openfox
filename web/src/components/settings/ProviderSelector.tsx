@@ -47,6 +47,7 @@ export function ProviderSelector() {
   }, [isOpen, providers])
 
   const activeProvider = providers.find(p => p.id === activeProviderId)
+  void activeProvider
   const isLlmOffline = llmStatus === 'disconnected'
   
   // Short model name for display
@@ -55,6 +56,8 @@ export function ProviderSelector() {
     : 'detecting...'
   
   const backendName = getBackendDisplayName(backend)
+  void isLlmOffline
+  void backendName
 
   const loadProviderModels = async (providerId: string) => {
     if (providerModels[providerId]) return providerModels[providerId]

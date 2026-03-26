@@ -34,7 +34,9 @@
     "test:cov": "vitest run --reporter=dot --silent=passed-only --coverage && vitest run --reporter=dot --silent=passed-only --config e2e/vitest.config.ts --coverage",
     "test:cov:unit": "vitest run --reporter=dot --silent=passed-only --coverage",
     "test:cov:e2e": "vitest run --reporter=dot --silent=passed-only --config e2e/vitest.config.ts --coverage",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "npm run typecheck:server && npm run typecheck:web",
+"typecheck:server": "tsc --noEmit",
+"typecheck:web": "cd web && tsc --noEmit",
     "clean": "rm -rf dist",
     "prepublishOnly": "npm run build"
   },

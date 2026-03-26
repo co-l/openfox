@@ -486,7 +486,9 @@ export class EventStore {
       // Find last assistant message with promptContext
       let lastAssistantIdx = -1
       for (let i = messages.length - 1; i >= 0; i--) {
-        if (messages[i].role === 'assistant' && messages[i].promptContext) {
+        const msg = messages[i]
+        if (!msg) continue
+        if (msg.role === 'assistant' && msg.promptContext) {
           lastAssistantIdx = i
           break
         }
@@ -494,7 +496,9 @@ export class EventStore {
 
       let changed = false
       for (let i = 0; i < messages.length; i++) {
-        const pc = messages[i].promptContext
+        const msg = messages[i]
+        if (!msg) continue
+        const pc = msg.promptContext
         if (pc?.messages && pc.messages.length > 0 && i !== lastAssistantIdx) {
           pc.messages = []
           changed = true
