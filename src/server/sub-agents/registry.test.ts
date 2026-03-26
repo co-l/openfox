@@ -1,75 +1,83 @@
 /**
  * Sub-Agent Registry Tests
+ *
+ * Tests that the agent registry provides correct sub-agent definitions.
+ * This replaces the old hardcoded registry tests with tests against the
+ * new file-based agent registry (.agent.md files).
  */
 
 import { describe, it, expect } from 'vitest'
-import { createSubAgentRegistry } from './registry.js'
+import { loadBuiltinAgents, findAgentById, getSubAgents } from '../agents/registry.js'
 
-describe('SubAgentRegistry', () => {
-  it('should define verifier with correct structure', () => {
-    const registry = createSubAgentRegistry()
-    const verifier = registry.getSubAgent('verifier')
-    
+describe('SubAgentRegistry (via agent registry)', () => {
+  it('should define verifier with correct structure', async () => {
+    const agents = await loadBuiltinAgents()
+    const verifier = findAgentById('verifier', agents)
+
     expect(verifier).toBeDefined()
-    expect(verifier?.id).toBe('verifier')
-    expect(verifier?.name).toBe('Verifier')
-    expect(typeof verifier?.description).toBe('string')
-    expect(typeof verifier?.systemPrompt).toBe('string')
-    expect(verifier?.tools).toEqual(['read_file', 'run_command', 'pass_criterion', 'fail_criterion', 'web_fetch'])
-    expect(typeof verifier?.createContext).toBe('function')
+    expect(verifier?.metadata.id).toBe('verifier')
+    expect(verifier?.metadata.name).toBe('Verifier')
+    expect(typeof verifier?.metadata.description).toBe('string')
+    expect(typeof verifier?.prompt).toBe('string')
+    expect(verifier?.metadata.tools).toEqual(['read_file', 'run_command', 'pass_criterion', 'fail_criterion', 'web_fetch'])
+    expect(verifier?.metadata.subagent).toBe(true)
   })
 
-  it('should define code_reviewer with correct structure', () => {
-    const registry = createSubAgentRegistry()
-    const codeReviewer = registry.getSubAgent('code_reviewer')
-    
+  it('should define code_reviewer with correct structure', async () => {
+    const agents = await loadBuiltinAgents()
+    const codeReviewer = findAgentById('code_reviewer', agents)
+
     expect(codeReviewer).toBeDefined()
-    expect(codeReviewer?.id).toBe('code_reviewer')
-    expect(codeReviewer?.name).toBe('Code Reviewer')
-    expect(typeof codeReviewer?.description).toBe('string')
-    expect(typeof codeReviewer?.systemPrompt).toBe('string')
-    expect(codeReviewer?.tools).toEqual(['read_file', 'grep', 'web_fetch'])
-    expect(typeof codeReviewer?.createContext).toBe('function')
+    expect(codeReviewer?.metadata.id).toBe('code_reviewer')
+    expect(codeReviewer?.metadata.name).toBe('Code Reviewer')
+    expect(typeof codeReviewer?.metadata.description).toBe('string')
+    expect(typeof codeReviewer?.prompt).toBe('string')
+    expect(codeReviewer?.metadata.tools).toEqual(['read_file', 'grep', 'web_fetch'])
+    expect(codeReviewer?.metadata.subagent).toBe(true)
   })
 
-  it('should define test_generator with correct structure', () => {
-    const registry = createSubAgentRegistry()
-    const testGenerator = registry.getSubAgent('test_generator')
-    
+  it('should define test_generator with correct structure', async () => {
+    const agents = await loadBuiltinAgents()
+    const testGenerator = findAgentById('test_generator', agents)
+
     expect(testGenerator).toBeDefined()
-    expect(testGenerator?.id).toBe('test_generator')
-    expect(testGenerator?.name).toBe('Test Generator')
-    expect(typeof testGenerator?.description).toBe('string')
-    expect(typeof testGenerator?.systemPrompt).toBe('string')
-    expect(testGenerator?.tools).toEqual(['read_file', 'write_file', 'run_command', 'web_fetch'])
-    expect(typeof testGenerator?.createContext).toBe('function')
+    expect(testGenerator?.metadata.id).toBe('test_generator')
+    expect(testGenerator?.metadata.name).toBe('Test Generator')
+    expect(typeof testGenerator?.metadata.description).toBe('string')
+    expect(typeof testGenerator?.prompt).toBe('string')
+    expect(testGenerator?.metadata.tools).toEqual(['read_file', 'write_file', 'run_command', 'web_fetch'])
+    expect(testGenerator?.metadata.subagent).toBe(true)
   })
 
-  it('should define debugger with correct structure', () => {
-    const registry = createSubAgentRegistry()
-    const debuggerAgent = registry.getSubAgent('debugger')
-    
+  it('should define debugger with correct structure', async () => {
+    const agents = await loadBuiltinAgents()
+    const debuggerAgent = findAgentById('debugger', agents)
+
     expect(debuggerAgent).toBeDefined()
-    expect(debuggerAgent?.id).toBe('debugger')
-    expect(debuggerAgent?.name).toBe('Debugger')
-    expect(typeof debuggerAgent?.description).toBe('string')
-    expect(typeof debuggerAgent?.systemPrompt).toBe('string')
-    expect(debuggerAgent?.tools).toEqual(['read_file', 'run_command', 'grep', 'web_fetch'])
-    expect(typeof debuggerAgent?.createContext).toBe('function')
+    expect(debuggerAgent?.metadata.id).toBe('debugger')
+    expect(debuggerAgent?.metadata.name).toBe('Debugger')
+    expect(typeof debuggerAgent?.metadata.description).toBe('string')
+    expect(typeof debuggerAgent?.prompt).toBe('string')
+    expect(debuggerAgent?.metadata.tools).toEqual(['read_file', 'run_command', 'grep', 'web_fetch'])
+    expect(debuggerAgent?.metadata.subagent).toBe(true)
   })
 
-  it('should return undefined for unknown sub-agent types', () => {
-    const registry = createSubAgentRegistry()
-    const unknown = registry.getSubAgent('unknown')
-    
+  it('should return undefined for unknown sub-agent types', async () => {
+    const agents = await loadBuiltinAgents()
+    const unknown = findAgentById('unknown', agents)
+
     expect(unknown).toBeUndefined()
   })
 
-  it('should return all registered sub-agents', () => {
-    const registry = createSubAgentRegistry()
-    const all = registry.getAllSubAgents()
-    
-    expect(all).toHaveLength(4)
-    expect(all.map(a => a.id)).toEqual(['verifier', 'code_reviewer', 'test_generator', 'debugger'])
+  it('should return all registered sub-agents', async () => {
+    const agents = await loadBuiltinAgents()
+    const all = getSubAgents(agents)
+
+    expect(all.length).toBeGreaterThanOrEqual(4)
+    const ids = all.map(a => a.metadata.id)
+    expect(ids).toContain('verifier')
+    expect(ids).toContain('code_reviewer')
+    expect(ids).toContain('test_generator')
+    expect(ids).toContain('debugger')
   })
 })

@@ -22,6 +22,8 @@ import { ensureDefaultSkills, loadAllSkills, isSkillEnabled, setSkillEnabled, fi
 import type { SkillDefinition } from './skills/types.js'
 import { ensureDefaultCommands, loadAllCommands, findCommandById, saveCommand, deleteCommand, commandExists } from './commands/registry.js'
 import type { CommandDefinition } from './commands/types.js'
+import { ensureDefaultAgents, loadAllAgents, findAgentById, getSubAgents, getTopLevelAgents, saveAgent, deleteAgent, agentExists } from './agents/registry.js'
+import type { AgentDefinition } from './agents/types.js'
 import { getGlobalConfigDir } from '../cli/paths.js'
 import { logger, setLogLevel } from './utils/logger.js'
 import { terminateProcessTree } from './utils/process-tree.js'
@@ -53,6 +55,7 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
   const configDir = getGlobalConfigDir(config.mode ?? 'production')
   await ensureDefaultSkills(configDir)
   await ensureDefaultCommands(configDir)
+  await ensureDefaultAgents(configDir)
 
   // Create SessionManager instance (not singleton!)
   const sessionManager = new SessionManager()
@@ -524,6 +527,64 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
     const deleted = await deleteCommand(configDir, id as string)
     if (!deleted) {
       return res.status(404).json({ error: 'Command not found' })
+    }
+    res.json({ success: true })
+  })
+
+  // Agents endpoints
+  app.get('/api/agents', async (_req, res) => {
+    const agents = await loadAllAgents(configDir)
+    res.json({
+      agents: agents.map(a => a.metadata),
+    })
+  })
+
+  app.get('/api/agents/:id', async (req, res) => {
+    const { id } = req.params
+    const agents = await loadAllAgents(configDir)
+    const agent = findAgentById(id as string, agents)
+    if (!agent) {
+      return res.status(404).json({ error: 'Agent not found' })
+    }
+    res.json(agent)
+  })
+
+  app.post('/api/agents', async (req, res) => {
+    const body = req.body as AgentDefinition
+    if (!body?.metadata?.id || !body?.prompt) {
+      return res.status(400).json({ error: 'Missing required fields: metadata.id, prompt' })
+    }
+    if (await agentExists(configDir, body.metadata.id)) {
+      return res.status(409).json({ error: 'An agent with this ID already exists' })
+    }
+    await saveAgent(configDir, body)
+    res.status(201).json(body)
+  })
+
+  app.put('/api/agents/:id', async (req, res) => {
+    const { id } = req.params
+    if (!id) {
+      return res.status(400).json({ error: 'Missing agent ID' })
+    }
+    const body = req.body as Partial<AgentDefinition>
+    const agents = await loadAllAgents(configDir)
+    const existing = findAgentById(id as string, agents)
+    if (!existing) {
+      return res.status(404).json({ error: 'Agent not found' })
+    }
+    const updated: AgentDefinition = {
+      metadata: { ...existing.metadata, ...body.metadata, id: id as string },
+      prompt: body.prompt ?? existing.prompt,
+    }
+    await saveAgent(configDir, updated)
+    res.json(updated)
+  })
+
+  app.delete('/api/agents/:id', async (req, res) => {
+    const { id } = req.params
+    const deleted = await deleteAgent(configDir, id as string)
+    if (!deleted) {
+      return res.status(404).json({ error: 'Agent not found' })
     }
     res.json({ success: true })
   })

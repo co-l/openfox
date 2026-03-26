@@ -17,12 +17,13 @@ const getStatsIdentity = (model: string) => ({
   model,
 })
 import type { SessionManager } from '../session/index.js'
-import { getToolRegistryForMode } from '../tools/index.js'
+import { getToolRegistryForAgent } from '../tools/index.js'
 import { BUILDER_KICKOFF_PROMPT } from './prompts.js'
 import { streamLLMResponse } from './stream.js'
 import { computeAggregatedStats } from './stats.js'
 import { getAllInstructions } from '../context/instructions.js'
-import { assembleBuilderRequest, type RequestContextMessage } from './request-context.js'
+import { assembleAgentRequest, type RequestContextMessage } from './request-context.js'
+import { loadAllAgentsDefault, findAgentById, getSubAgents } from '../agents/registry.js'
 import {
   createChatToolCallMessage,
   createChatToolResultMessage,
@@ -71,8 +72,11 @@ export async function runBuilderStep(options: BuilderStepOptions): Promise<StepR
     session = sessionManager.requireSession(sessionId)
   }
   
-  const toolRegistry = getToolRegistryForMode('builder')
-  
+  const allAgents = await loadAllAgentsDefault()
+  const builderDef = findAgentById('builder', allAgents)!
+  const subAgentDefs = getSubAgents(allAgents)
+  const toolRegistry = getToolRegistryForAgent(builderDef)
+
   // Track cumulative stats across the entire agent loop
   let totalToolTime = 0
   let totalPromptTokens = 0
@@ -119,7 +123,9 @@ export async function runBuilderStep(options: BuilderStepOptions): Promise<StepR
       ...(message.toolCallId ? { toolCallId: message.toolCallId } : {}),
       ...(message.attachments ? { attachments: message.attachments } : {}),
     }))
-    const assembledRequest = assembleBuilderRequest({
+    const assembledRequest = assembleAgentRequest({
+      agentDef: builderDef,
+      subAgentDefs,
       workdir: session.workdir,
       messages: requestMessages,
       injectedFiles: instructionFiles.map(file => ({ path: file.path, content: file.content ?? '', source: file.source })),

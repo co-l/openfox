@@ -2,12 +2,14 @@
  * Call Sub-Agent Tool
  *
  * Allows main agents to invoke specialized sub-agents for specific tasks.
+ * Resolves sub-agent definitions from the agent registry (.agent.md files).
  */
 
 import type { Tool, ToolResult, ToolContext } from './types.js'
 import type { SubAgentType } from '../sub-agents/types.js'
 import { executeSubAgent } from '../sub-agents/manager.js'
 import { TurnMetrics } from '../chat/stream-pure.js'
+import { loadAllAgentsDefault, getSubAgents, findAgentById } from '../agents/registry.js'
 
 export const callSubAgentTool: Tool = {
   name: 'call_sub_agent',
@@ -22,7 +24,6 @@ export const callSubAgentTool: Tool = {
           subAgentType: {
             type: 'string',
             description: 'Type of sub-agent to call',
-            enum: ['verifier', 'code_reviewer', 'test_generator', 'debugger'],
           },
           prompt: {
             type: 'string',
@@ -54,14 +55,18 @@ export const callSubAgentTool: Tool = {
       }
     }
 
-    const subAgentType = args['subAgentType'] as SubAgentType
+    const subAgentType = args['subAgentType'] as string
     const prompt = args['prompt'] as string
 
-    const validTypes: SubAgentType[] = ['verifier', 'code_reviewer', 'test_generator', 'debugger']
-    if (!validTypes.includes(subAgentType)) {
+    // Resolve agent definition from the registry (built-in + user-defined)
+    const agents = await loadAllAgentsDefault()
+    const agentDef = findAgentById(subAgentType, agents)
+
+    if (!agentDef || !agentDef.metadata.subagent) {
+      const validIds = getSubAgents(agents).map(a => a.metadata.id)
       return {
         success: false,
-        error: `Unknown sub-agent type: ${subAgentType}. Available types: ${validTypes.join(', ')}`,
+        error: `Unknown sub-agent type: ${subAgentType}. Available types: ${validIds.join(', ')}`,
         durationMs: Date.now() - startTime,
         truncated: false,
       }
@@ -79,17 +84,14 @@ export const callSubAgentTool: Tool = {
     }
 
     try {
-      // Build per-subagent tool registry from the registry definition
-      const { getToolRegistryForSubAgent } = await import('../tools/index.js')
-      const { createSubAgentRegistry } = await import('../sub-agents/registry.js')
-      const registry = createSubAgentRegistry()
-      const toolNames = registry.getToolRegistry(subAgentType)
-      const toolRegistry = getToolRegistryForSubAgent(toolNames)
+      // Build tool registry from the agent definition's tools list
+      const { getToolRegistryForAgent } = await import('../tools/index.js')
+      const toolRegistry = getToolRegistryForAgent(agentDef)
 
       const turnMetrics = new TurnMetrics()
 
       const result = await executeSubAgent({
-        subAgentType,
+        subAgentType: subAgentType as SubAgentType,
         prompt,
         sessionManager,
         sessionId,

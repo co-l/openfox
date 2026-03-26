@@ -5,7 +5,7 @@ import { getEventStore, getContextMessages, getCurrentContextWindowId } from '..
 import { getAllInstructions } from './instructions.js'
 import { shouldCompact } from './compactor.js'
 import { COMPACTION_PROMPT, FORMAT_CORRECTION_PROMPT, MAX_FORMAT_RETRIES } from '../chat/prompts.js'
-import { assemblePlannerRequest, type RequestContextMessage } from '../chat/request-context.js'
+import { assembleAgentRequest, type RequestContextMessage } from '../chat/request-context.js'
 import {
   TurnMetrics,
   createMessageStartEvent,
@@ -13,6 +13,7 @@ import {
   createChatDoneEvent,
 } from '../chat/stream-pure.js'
 import { streamLLMPure, consumeStreamGenerator } from '../chat/stream-pure.js'
+import { loadAllAgentsDefault, findAgentById, getSubAgents } from '../agents/registry.js'
 import { getRuntimeConfig } from '../runtime-config.js'
 import { logger } from '../utils/logger.js'
 
@@ -84,7 +85,14 @@ async function performContextCompaction(options: ContextCompactionOptions & {
     source: file.source,
   }))
   const requestMessages = toRequestContextMessages(getContextMessages(sessionId))
-  const assembledRequest = assemblePlannerRequest({
+
+  const allAgents = await loadAllAgentsDefault()
+  const plannerDef = findAgentById('planner', allAgents)!
+  const subAgentDefs = getSubAgents(allAgents)
+
+  const assembledRequest = assembleAgentRequest({
+    agentDef: plannerDef,
+    subAgentDefs,
     workdir: session.workdir,
     messages: requestMessages,
     includeRuntimeReminder: false,

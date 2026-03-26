@@ -333,7 +333,7 @@ export function createMessageStartEvent(
   options?: {
     contextWindowId?: string
     subAgentId?: string
-    subAgentType?: 'verifier' | 'code_reviewer' | 'test_generator' | 'debugger'
+    subAgentType?: string
     isSystemGenerated?: boolean
     messageKind?: 'correction' | 'auto-prompt' | 'context-reset' | 'task-completed' | 'command'
   }

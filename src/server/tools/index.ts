@@ -1,5 +1,6 @@
-import type { ToolResult, ToolMode } from '../../shared/types.js'
+import type { ToolResult } from '../../shared/types.js'
 import type { Tool, ToolRegistry, ToolContext } from './types.js'
+import type { AgentDefinition } from '../agents/types.js'
 import { readFileTool } from './read.js'
 import { writeFileTool } from './write.js'
 import { editFileTool } from './edit.js'
@@ -23,74 +24,27 @@ import { webFetchTool } from './web-fetch.js'
 import { logger } from '../utils/logger.js'
 
 // ============================================================================
-// Tool Sets by Mode
-// ============================================================================
-
-// Read-only tools available in all modes
-const readOnlyTools: Tool[] = [
-  readFileTool,
-  globTool,
-  grepTool,
-  webFetchTool,
-]
-
-// Planner mode: read-only exploration + criteria management + git inspection + sub-agents
-const plannerTools: Tool[] = [
-  ...readOnlyTools,
-  runCommandTool,
-  gitTool,
-  getCriteriaTool,
-  addCriterionTool,
-  updateCriterionTool,
-  removeCriterionTool,
-  callSubAgentTool,
-  loadSkillTool,
-]
-
-// Builder mode: full write access + criterion completion + task tracking + criteria reading + sub-agents
-const builderTools: Tool[] = [
-  ...readOnlyTools,
-  writeFileTool,
-  editFileTool,
-  runCommandTool,
-  askUserTool,
-  completeCriterionTool,
-  getCriteriaTool,
-  todoWriteTool,
-  callSubAgentTool,
-  loadSkillTool,
-]
-
-// Verifier mode: read + run commands (for testing) + criterion pass/fail
-const verifierTools: Tool[] = [
-  ...readOnlyTools,
-  runCommandTool,
-  passCriterionTool,
-  failCriterionTool,
-]
-
-// ============================================================================
 // Registry Creation
 // ============================================================================
 
 function createRegistryFromTools(tools: Tool[]): ToolRegistry {
   const toolMap = new Map<string, Tool>()
-  
+
   for (const tool of tools) {
     toolMap.set(tool.name, tool)
   }
-  
+
   return {
     tools,
     definitions: tools.map(t => t.definition),
-    
+
     async execute(
       name: string,
       args: Record<string, unknown>,
       context: ToolContext
     ): Promise<ToolResult> {
       const tool = toolMap.get(name)
-      
+
       if (!tool) {
         return {
           success: false,
@@ -99,31 +53,29 @@ function createRegistryFromTools(tools: Tool[]): ToolRegistry {
           truncated: false,
         }
       }
-      
+
       logger.debug('Executing tool', { tool: name, args })
-      
+
       try {
         const result = await tool.execute(args, context)
-        
+
         logger.debug('Tool completed', {
           tool: name,
           success: result.success,
           durationMs: result.durationMs,
         })
-        
+
         return result
       } catch (error) {
-        // Re-throw interrupts - they're not real errors, they pause execution
         if (error instanceof AskUserInterrupt) {
           throw error
         }
-        // PathAccessDeniedError: user denied path access, abort the run
         if (error instanceof PathAccessDeniedError) {
           throw error
         }
-        
+
         logger.error('Tool execution error', { tool: name, error })
-        
+
         return {
           success: false,
           error: error instanceof Error ? error.message : 'Unknown error',
@@ -135,12 +87,7 @@ function createRegistryFromTools(tools: Tool[]): ToolRegistry {
   }
 }
 
-// Create mode-specific registries
-const plannerRegistry = createRegistryFromTools(plannerTools)
-const builderRegistry = createRegistryFromTools(builderTools)
-const verifierRegistry = createRegistryFromTools(verifierTools)
-
-// All tools by name for dynamic subagent registry creation
+// All tools by name for dynamic registry creation
 const allToolsByName = new Map<string, Tool>([
   ...[
     readFileTool, writeFileTool, editFileTool, runCommandTool,
@@ -151,23 +98,13 @@ const allToolsByName = new Map<string, Tool>([
   ].map(t => [t.name, t] as const),
 ])
 
-/**
- * Get the tool registry for a specific mode
- */
-export function getToolRegistryForMode(mode: ToolMode): ToolRegistry {
-  switch (mode) {
-    case 'planner':
-      return plannerRegistry
-    case 'builder':
-      return builderRegistry
-    case 'verifier':
-      return verifierRegistry
-  }
-}
+// ============================================================================
+// Agent-Based Registry Creation
+// ============================================================================
 
 /**
  * Create a tool registry for a subagent from a list of tool names.
- * Used by SubAgentManager to give each subagent type its own tool set.
+ * Sub-agents automatically get return_value added.
  */
 export function getToolRegistryForSubAgent(toolNames: string[]): ToolRegistry {
   const tools: Tool[] = []
@@ -177,7 +114,6 @@ export function getToolRegistryForSubAgent(toolNames: string[]): ToolRegistry {
       tools.push(tool)
     }
   }
-  // Always include return_value — it's part of the default subagent toolkit
   if (!tools.some(t => t.name === 'return_value')) {
     const rv = allToolsByName.get('return_value')
     if (rv) tools.push(rv)
@@ -186,10 +122,29 @@ export function getToolRegistryForSubAgent(toolNames: string[]): ToolRegistry {
 }
 
 /**
- * Create a generic tool registry (all tools) - for backward compatibility
+ * Create a tool registry for an agent definition.
+ * Uses the agent's tools list to filter from the global tool registry.
+ * Sub-agents automatically get return_value added.
+ */
+export function getToolRegistryForAgent(agentDef: AgentDefinition): ToolRegistry {
+  if (agentDef.metadata.subagent) {
+    return getToolRegistryForSubAgent(agentDef.metadata.tools)
+  }
+  const tools: Tool[] = []
+  for (const name of agentDef.metadata.tools) {
+    const tool = allToolsByName.get(name)
+    if (tool) {
+      tools.push(tool)
+    }
+  }
+  return createRegistryFromTools(tools)
+}
+
+/**
+ * Create a generic tool registry with all available tools.
  */
 export function createToolRegistry(): ToolRegistry {
-  return builderRegistry
+  return createRegistryFromTools(Array.from(allToolsByName.values()))
 }
 
 // Re-export types and utilities

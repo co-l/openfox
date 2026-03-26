@@ -1,29 +1,30 @@
 /**
- * Verifier Migration Tests - Testing that verifier uses sub-agent framework
+ * Verifier Sub-Agent Integration Tests
+ *
+ * Tests that the verifier is properly defined in the agent registry
+ * and that context building works correctly.
  */
 
 import { describe, it, expect } from 'vitest'
 import type { Session } from '../../shared/types.js'
-import { createSubAgentRegistry } from './registry.js'
+import { loadBuiltinAgents, findAgentById } from '../agents/registry.js'
+import { buildVerifierContextMessages } from './context-builders.js'
 
 describe('Verifier Sub-Agent Integration', () => {
-  it('should have verifier defined in registry', () => {
-    const registry = createSubAgentRegistry()
-    const verifier = registry.getSubAgent('verifier')
-    
+  it('should have verifier defined in agent registry', async () => {
+    const agents = await loadBuiltinAgents()
+    const verifier = findAgentById('verifier', agents)
+
     expect(verifier).toBeDefined()
-    expect(verifier?.id).toBe('verifier')
-    expect(verifier?.createContext).toBeDefined()
-    expect(verifier?.name).toBe('Verifier')
-    expect(typeof verifier?.description).toBe('string')
-    expect(typeof verifier?.systemPrompt).toBe('string')
-    expect(verifier?.tools).toEqual(['read_file', 'run_command', 'pass_criterion', 'fail_criterion', 'web_fetch'])
+    expect(verifier?.metadata.id).toBe('verifier')
+    expect(verifier?.metadata.subagent).toBe(true)
+    expect(verifier?.metadata.name).toBe('Verifier')
+    expect(typeof verifier?.metadata.description).toBe('string')
+    expect(typeof verifier?.prompt).toBe('string')
+    expect(verifier?.metadata.tools).toEqual(['read_file', 'run_command', 'pass_criterion', 'fail_criterion', 'web_fetch'])
   })
 
-  it('should create verifier context with fresh data only', () => {
-    const registry = createSubAgentRegistry()
-    const verifier = registry.getSubAgent('verifier')!
-    
+  it('should create verifier context with fresh data only', async () => {
     const mockSession: Session = {
       id: 'test-session',
       projectId: 'test-project',
@@ -62,16 +63,13 @@ describe('Verifier Sub-Agent Integration', () => {
       },
     }
 
-    const context = verifier.createContext(mockSession, { prompt: 'Verify test' })
-    
-    // Verify context contains only fresh data, not conversation history
-    expect(context.messages).toHaveLength(2) // context + prompt
-    expect(context.messages[0]!.content).toContain('Test summary')
-    expect(context.messages[0]!.content).toContain('Test criterion')
-    expect(context.messages[0]!.content).toContain('src/test.ts')
-    
-    // Verify no conversation history is included
-    expect(context.messages[0]!.content).not.toContain('conversation')
-    expect(context.messages[0]!.content).not.toContain('history')
+    const messages = buildVerifierContextMessages(mockSession, 'Verify test')
+
+    expect(messages).toHaveLength(2)
+    expect(messages[0]!.content).toContain('Test summary')
+    expect(messages[0]!.content).toContain('Test criterion')
+    expect(messages[0]!.content).toContain('src/test.ts')
+    expect(messages[0]!.content).not.toContain('conversation')
+    expect(messages[0]!.content).not.toContain('history')
   })
 })

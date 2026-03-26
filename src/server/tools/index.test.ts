@@ -80,24 +80,50 @@ vi.mock('./web-fetch.js', () => ({
 
 import { AskUserInterrupt } from './ask.js'
 import { PathAccessDeniedError } from './path-security.js'
-import { createToolRegistry, getToolRegistryForMode } from './index.js'
+import { createToolRegistry, getToolRegistryForAgent } from './index.js'
+import type { AgentDefinition } from '../agents/types.js'
+
+const builderDef: AgentDefinition = {
+  metadata: { id: 'builder', name: 'Builder', description: 'Builds', subagent: false, tools: ['read_file', 'glob', 'grep', 'web_fetch', 'write_file', 'edit_file', 'run_command', 'ask_user', 'complete_criterion', 'get_criteria', 'todo_write', 'call_sub_agent', 'load_skill'] },
+  prompt: 'Build mode.',
+}
+
+const verifierDef: AgentDefinition = {
+  metadata: { id: 'verifier', name: 'Verifier', description: 'Verifies', subagent: true, tools: ['read_file', 'run_command', 'pass_criterion', 'fail_criterion', 'web_fetch'] },
+  prompt: 'Verify.',
+}
 
 describe('tool registries', () => {
-  it('returns the correct tool sets for each mode', () => {
-    expect(getToolRegistryForMode('planner').tools.map((tool) => tool.name)).toEqual([
-      'read_file', 'glob', 'grep', 'web_fetch', 'run_command', 'git', 'get_criteria', 'add_criterion', 'update_criterion', 'remove_criterion', 'call_sub_agent', 'load_skill',
-    ])
-    expect(getToolRegistryForMode('builder').tools.map((tool) => tool.name)).toEqual([
-      'read_file', 'glob', 'grep', 'web_fetch', 'write_file', 'edit_file', 'run_command', 'ask_user', 'complete_criterion', 'get_criteria', 'todo_write', 'call_sub_agent', 'load_skill',
-    ])
-    expect(getToolRegistryForMode('verifier').tools.map((tool) => tool.name)).toEqual([
-      'read_file', 'glob', 'grep', 'web_fetch', 'run_command', 'pass_criterion', 'fail_criterion',
-    ])
-    expect(createToolRegistry()).toBe(getToolRegistryForMode('builder'))
+  it('getToolRegistryForAgent returns correct tools for top-level agent', () => {
+    const registry = getToolRegistryForAgent(builderDef)
+    const toolNames = registry.tools.map(t => t.name)
+    expect(toolNames).toContain('read_file')
+    expect(toolNames).toContain('write_file')
+    expect(toolNames).toContain('edit_file')
+    expect(toolNames).toContain('run_command')
+    expect(toolNames).not.toContain('return_value')
+  })
+
+  it('getToolRegistryForAgent returns correct tools for sub-agent with return_value', () => {
+    const registry = getToolRegistryForAgent(verifierDef)
+    const toolNames = registry.tools.map(t => t.name)
+    expect(toolNames).toContain('read_file')
+    expect(toolNames).toContain('pass_criterion')
+    expect(toolNames).toContain('fail_criterion')
+    expect(toolNames).toContain('return_value')
+  })
+
+  it('createToolRegistry returns all available tools', () => {
+    const registry = createToolRegistry()
+    const toolNames = registry.tools.map(t => t.name)
+    expect(toolNames).toContain('read_file')
+    expect(toolNames).toContain('write_file')
+    expect(toolNames).toContain('run_command')
+    expect(toolNames).toContain('pass_criterion')
   })
 
   it('executes tools, reports unknown tools, and catches generic failures', async () => {
-    const registry = getToolRegistryForMode('builder')
+    const registry = getToolRegistryForAgent(builderDef)
     const context = { workdir: '/tmp/project', sessionId: 'session-1', sessionManager: {} as never }
 
     await expect(registry.execute('write_file', { path: 'a.ts' }, context)).resolves.toMatchObject({ success: true, output: 'write' })
@@ -111,7 +137,7 @@ describe('tool registries', () => {
   })
 
   it('rethrows ask-user and path access interrupts instead of swallowing them', async () => {
-    const registry = getToolRegistryForMode('builder')
+    const registry = getToolRegistryForAgent(builderDef)
     const context = { workdir: '/tmp/project', sessionId: 'session-1', sessionManager: {} as never }
 
     askExecuteMock.mockRejectedValueOnce(new AskUserInterrupt('call-1', 'Need input?'))

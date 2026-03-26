@@ -59,16 +59,13 @@ vi.mock('../skills/registry.js', () => ({
   getEnabledSkillMetadata: vi.fn(async () => []),
 }))
 
-vi.mock('../runtime-config.js', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('../runtime-config.js')>()
-  return {
-    ...actual,
-    getRuntimeConfig: vi.fn(() => ({
-      ...actual.getRuntimeConfig(),
-      mode: 'development',
-    })),
-  }
-})
+vi.mock('../runtime-config.js', () => ({
+  getRuntimeConfig: vi.fn(() => ({
+    mode: 'development',
+    context: { maxTokens: 200000, compactionThreshold: 0.85, compactionTarget: 0.6 },
+  })),
+  setRuntimeConfig: vi.fn(),
+}))
 
 vi.mock('../../cli/paths.js', () => ({
   getGlobalConfigDir: vi.fn(() => '/tmp/openfox-test'),
@@ -79,6 +76,7 @@ vi.mock('../tools/index.js', async (importOriginal) => {
   return {
     ...actual,
     getToolRegistryForMode: getToolRegistryForModeMock,
+    getToolRegistryForAgent: (...args: unknown[]) => getToolRegistryForModeMock(...args),
   }
 })
 
@@ -103,27 +101,28 @@ vi.mock('./stream.js', async (importOriginal) => {
   }
 })
 
-vi.mock('../sub-agents/registry.js', () => ({
-  createSubAgentRegistry: () => ({
-    getSubAgent: () => ({
-      id: 'verifier',
-      name: 'Verifier',
-      systemPrompt: 'You are a verifier',
-      tools: ['read_file', 'run_command', 'pass_criterion', 'fail_criterion'],
-      createContext: (session: any, args: any) => ({
-        systemPrompt: 'You are a verifier',
-        injectedFiles: [],
-        userMessage: args.prompt,
-        messages: [
-          { role: 'user', content: `Context for ${session.summary ?? 'task'}`, source: 'runtime' },
-          { role: 'user', content: args.prompt, source: 'runtime' },
-        ],
-        tools: [],
-        requestOptions: { toolChoice: 'auto', disableThinking: true },
-      }),
-    }),
-  }),
-}))
+vi.mock('../agents/registry.js', () => {
+  const agents = [
+    {
+      metadata: { id: 'planner', name: 'Planner', description: 'Plans work', subagent: false, tools: ['read_file', 'glob', 'grep', 'web_fetch', 'run_command', 'git', 'get_criteria', 'add_criterion', 'update_criterion', 'remove_criterion', 'call_sub_agent', 'load_skill'] },
+      prompt: '# Plan Mode\nPlan mode ACTIVE - read-only phase.',
+    },
+    {
+      metadata: { id: 'builder', name: 'Builder', description: 'Builds work', subagent: false, tools: ['read_file', 'glob', 'grep', 'web_fetch', 'write_file', 'edit_file', 'run_command', 'ask_user', 'complete_criterion', 'get_criteria', 'todo_write', 'call_sub_agent', 'load_skill'] },
+      prompt: '# Build Mode\nBuild mode ACTIVE - implementation allowed.',
+    },
+    {
+      metadata: { id: 'verifier', name: 'Verifier', description: 'Verify criteria', subagent: true, tools: ['read_file', 'run_command', 'pass_criterion', 'fail_criterion'] },
+      prompt: 'You are a verifier',
+    },
+  ]
+  return {
+    loadBuiltinAgents: vi.fn(async () => agents),
+    loadAllAgentsDefault: vi.fn(async () => agents),
+    findAgentById: vi.fn((id: string, list: any[]) => list.find((a: any) => a.metadata.id === id)),
+    getSubAgents: vi.fn((list: any[]) => list.filter((a: any) => a.metadata.subagent)),
+  }
+})
 
 import { AskUserInterrupt } from '../tools/ask.js'
 import { PathAccessDeniedError } from '../tools/path-security.js'

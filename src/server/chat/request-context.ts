@@ -8,17 +8,16 @@ import type {
 } from '../../shared/types.js'
 import type { LLMToolDefinition } from '../llm/types.js'
 import type { SkillMetadata } from '../skills/types.js'
+import type { AgentDefinition } from '../agents/types.js'
 import {
-  buildBuilderPrompt,
-  buildBuilderReminder,
-  buildPlannerPrompt,
-  buildPlannerReminder,
-  buildVerifierPrompt,
+  buildTopLevelSystemPrompt,
+  buildSubAgentSystemPrompt,
+  buildAgentReminder,
 } from './prompts.js'
 
 export type RequestContextMessage = PromptContextMessage
 
-interface BaseAssemblyInput {
+export interface BaseAssemblyInput {
   workdir: string
   messages: RequestContextMessage[]
   injectedFiles: InjectedFile[]
@@ -41,44 +40,6 @@ interface AssemblyResult {
     attachments?: Attachment[]
   }>
   promptContext: PromptContext
-}
-
-export function assemblePlannerRequest(input: BaseAssemblyInput): AssemblyResult {
-  const systemPrompt = buildPlannerPrompt(input.workdir, input.promptTools, input.customInstructions, input.skills)
-  return createAssemblyResult({
-    systemPrompt,
-    messages: input.messages,
-    ...(input.includeRuntimeReminder === false ? {} : { runtimeReminder: buildPlannerReminder() }),
-    injectedFiles: input.injectedFiles,
-    requestTools: input.requestTools ?? input.promptTools,
-    toolChoice: input.toolChoice ?? 'auto',
-    disableThinking: input.disableThinking ?? false,
-  })
-}
-
-export function assembleBuilderRequest(input: BaseAssemblyInput): AssemblyResult {
-  const systemPrompt = buildBuilderPrompt(input.workdir, input.promptTools, input.customInstructions, input.skills)
-  return createAssemblyResult({
-    systemPrompt,
-    messages: input.messages,
-    ...(input.includeRuntimeReminder === false ? {} : { runtimeReminder: buildBuilderReminder() }),
-    injectedFiles: input.injectedFiles,
-    requestTools: input.requestTools ?? input.promptTools,
-    toolChoice: input.toolChoice ?? 'auto',
-    disableThinking: input.disableThinking ?? false,
-  })
-}
-
-export function assembleVerifierRequest(input: BaseAssemblyInput): AssemblyResult {
-  const systemPrompt = buildVerifierPrompt(input.workdir)
-  return createAssemblyResult({
-    systemPrompt,
-    messages: input.messages,
-    injectedFiles: input.injectedFiles,
-    requestTools: input.requestTools ?? input.promptTools,
-    toolChoice: input.toolChoice ?? 'auto',
-    disableThinking: input.disableThinking ?? false,
-  })
 }
 
 export function createPromptContext(input: {
@@ -183,4 +144,64 @@ function getTriggerUserMessage(messages: RequestContextMessage[]): string {
   }
 
   return ''
+}
+
+// ============================================================================
+// Unified Agent Request Assembly
+// ============================================================================
+
+export interface AgentAssemblyInput extends BaseAssemblyInput {
+  agentDef: AgentDefinition
+  subAgentDefs?: AgentDefinition[]
+}
+
+/**
+ * Unified request assembly for any agent type.
+ *
+ * Top-level agents (subagent: false):
+ *   - System prompt = buildTopLevelSystemPrompt() (shared, cacheable)
+ *   - Runtime reminder = agent's prompt body (injected into user message)
+ *
+ * Sub-agents (subagent: true):
+ *   - System prompt = buildSubAgentSystemPrompt() (base + agent body)
+ *   - No runtime reminder
+ */
+export function assembleAgentRequest(input: AgentAssemblyInput): AssemblyResult {
+  const { agentDef, subAgentDefs, ...baseInput } = input
+
+  if (agentDef.metadata.subagent) {
+    const systemPrompt = buildSubAgentSystemPrompt(
+      baseInput.workdir,
+      agentDef,
+      baseInput.skills,
+    )
+    return createAssemblyResult({
+      systemPrompt,
+      messages: baseInput.messages,
+      injectedFiles: baseInput.injectedFiles,
+      requestTools: baseInput.requestTools ?? baseInput.promptTools,
+      toolChoice: baseInput.toolChoice ?? 'auto',
+      disableThinking: baseInput.disableThinking ?? false,
+    })
+  }
+
+  const systemPrompt = buildTopLevelSystemPrompt(
+    baseInput.workdir,
+    baseInput.customInstructions,
+    baseInput.skills,
+    subAgentDefs,
+  )
+  const runtimeReminder = baseInput.includeRuntimeReminder === false
+    ? undefined
+    : buildAgentReminder(agentDef)
+
+  return createAssemblyResult({
+    systemPrompt,
+    messages: baseInput.messages,
+    ...(runtimeReminder ? { runtimeReminder } : {}),
+    injectedFiles: baseInput.injectedFiles,
+    requestTools: baseInput.requestTools ?? baseInput.promptTools,
+    toolChoice: baseInput.toolChoice ?? 'auto',
+    disableThinking: baseInput.disableThinking ?? false,
+  })
 }

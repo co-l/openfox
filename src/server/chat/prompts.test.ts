@@ -1,106 +1,153 @@
 import { describe, it, expect } from 'vitest'
 import {
-  buildBuilderPrompt,
-  buildBuilderReminder,
-  buildPlannerPrompt,
-  buildPlannerReminder,
-  buildVerifierPrompt,
+  buildBasePrompt,
+  buildTopLevelSystemPrompt,
+  buildSubAgentSystemPrompt,
+  buildAgentReminder,
+  buildSubAgentsSection,
 } from './prompts.js'
+import type { AgentDefinition } from '../agents/types.js'
 
-describe('buildPlannerPrompt', () => {
-  it('includes workdir in prompt', () => {
-    const prompt = buildPlannerPrompt('/home/user/project', [], undefined)
-    expect(prompt).toContain('/home/user/project')
-    expect(prompt).toMatch(/working directory/i)
-  })
+const mockVerifier: AgentDefinition = {
+  metadata: {
+    id: 'verifier',
+    name: 'Verifier',
+    description: 'Verifies completed criteria',
+    subagent: true,
+    tools: ['read_file', 'pass_criterion'],
+  },
+  prompt: 'Verify each criterion carefully.',
+}
 
-  it('includes platform info in prompt', () => {
-    const prompt = buildPlannerPrompt('/tmp', [], undefined)
+const mockCodeReviewer: AgentDefinition = {
+  metadata: {
+    id: 'code_reviewer',
+    name: 'Code Reviewer',
+    description: 'Reviews code changes',
+    subagent: true,
+    tools: ['read_file', 'grep'],
+  },
+  prompt: 'Review the code.',
+}
+
+const mockPlanner: AgentDefinition = {
+  metadata: {
+    id: 'planner',
+    name: 'Planner',
+    description: 'Plans work',
+    subagent: false,
+    tools: ['read_file', 'glob'],
+  },
+  prompt: '# Plan Mode\nCRITICAL: Plan mode ACTIVE - read-only phase.',
+}
+
+const mockBuilder: AgentDefinition = {
+  metadata: {
+    id: 'builder',
+    name: 'Builder',
+    description: 'Builds work',
+    subagent: false,
+    tools: ['read_file', 'write_file'],
+  },
+  prompt: '# Build Mode\nCRITICAL: Build mode ACTIVE - implementation allowed.',
+}
+
+describe('buildBasePrompt', () => {
+  it('includes environment info', () => {
+    const prompt = buildBasePrompt('/tmp/project')
+    expect(prompt).toContain('/tmp/project')
     expect(prompt).toContain(process.platform)
-    expect(prompt).toContain(process.arch)
   })
 
   it('includes custom instructions when provided', () => {
-    const prompt = buildPlannerPrompt('/tmp', [], 'Custom rule: always use tabs')
-    expect(prompt).toContain('Custom rule: always use tabs')
+    const prompt = buildBasePrompt('/tmp', 'Use tabs')
     expect(prompt).toContain('CUSTOM INSTRUCTIONS')
+    expect(prompt).toContain('Use tabs')
   })
 
-  it('does not include tool list (tools are passed via structured API)', () => {
-    const tools = [
-      { type: 'function' as const, function: { name: 'read_file', description: 'Read a file', parameters: {} } },
-      { type: 'function' as const, function: { name: 'glob', description: 'Find files', parameters: {} } },
-    ]
-    const prompt = buildPlannerPrompt('/tmp', tools, undefined)
-    expect(prompt).not.toContain('## AVAILABLE TOOLS')
-    // Note: Sub-agents section may mention tool names, but that's different from tool list
-  })
-})
-
-describe('buildBuilderPrompt', () => {
-  it('includes workdir in prompt', () => {
-    const prompt = buildBuilderPrompt('/home/user/myapp', [], undefined)
-    expect(prompt).toContain('/home/user/myapp')
-    expect(prompt).toMatch(/working directory/i)
+  it('does not include sub-agents section', () => {
+    const prompt = buildBasePrompt('/tmp')
+    expect(prompt).not.toContain('AVAILABLE SUB-AGENTS')
   })
 
-  it('includes platform info in prompt', () => {
-    const prompt = buildBuilderPrompt('/tmp', [], undefined)
-    expect(prompt).toContain(process.platform)
-    expect(prompt).toContain(process.arch)
-  })
-
-  it('keeps the system prompt stable without runtime state', () => {
-    const prompt = buildBuilderPrompt('/tmp', [], undefined)
-    // System prompt should not contain criteria-specific content
-    expect(prompt).not.toContain('[PENDING]')
-    expect(prompt).not.toContain('[COMPLETED')
-    expect(prompt).not.toContain('Files modified')
-  })
-
-  it('matches the planner system prompt to preserve cache reuse', () => {
-    expect(buildBuilderPrompt('/tmp', [], 'Follow project rules')).toBe(
-      buildPlannerPrompt('/tmp', [], 'Follow project rules'),
-    )
-  })
-
-  it('treats runtime reminders as OpenFox-authored control messages', () => {
-    const prompt = buildBuilderPrompt('/tmp', [], undefined)
-    expect(prompt).toContain('OpenFox may append system-generated runtime control messages as USER-role messages')
-    expect(prompt).toContain('Do not describe them as "the user reminded me"')
+  it('includes skills section when provided', () => {
+    const prompt = buildBasePrompt('/tmp', undefined, [
+      { id: 'playwright', name: 'Playwright', description: 'Browser automation', version: '1.0' },
+    ])
+    expect(prompt).toContain('AVAILABLE SKILLS')
+    expect(prompt).toContain('playwright')
   })
 })
 
-describe('mode reminders', () => {
-  it('builds a planner reminder that keeps execution disabled', () => {
-    const reminder = buildPlannerReminder()
-    expect(reminder).toContain('Plan mode ACTIVE')
-    expect(reminder).toContain('MUST NOT make any edits')
+describe('buildTopLevelSystemPrompt', () => {
+  it('includes base prompt + dynamic sub-agents section', () => {
+    const prompt = buildTopLevelSystemPrompt('/tmp', undefined, undefined, [mockVerifier, mockCodeReviewer])
+    expect(prompt).toContain('AVAILABLE SUB-AGENTS')
+    expect(prompt).toContain('verifier')
+    expect(prompt).toContain('code_reviewer')
+    expect(prompt).toContain('read_file, pass_criterion')
   })
 
-  it('builds a builder reminder that enables execution', () => {
-    const reminder = buildBuilderReminder()
-    expect(reminder).toContain('Build mode ACTIVE')
-    expect(reminder).toContain('implementation is now allowed')
-    expect(reminder).toContain('write or update the failing test first')
+  it('is identical regardless of which top-level agent calls it', () => {
+    const subAgents = [mockVerifier]
+    const prompt1 = buildTopLevelSystemPrompt('/tmp', 'Instructions', undefined, subAgents)
+    const prompt2 = buildTopLevelSystemPrompt('/tmp', 'Instructions', undefined, subAgents)
+    expect(prompt1).toBe(prompt2)
+  })
+
+  it('omits sub-agents section when no sub-agents provided', () => {
+    const prompt = buildTopLevelSystemPrompt('/tmp')
+    expect(prompt).not.toContain('AVAILABLE SUB-AGENTS')
   })
 })
 
-describe('buildVerifierPrompt', () => {
-  it('includes workdir in prompt', () => {
-    const prompt = buildVerifierPrompt('/var/project')
-    expect(prompt).toContain('/var/project')
-    expect(prompt).toMatch(/working directory/i)
+describe('buildSubAgentSystemPrompt', () => {
+  it('includes base prompt + agent body', () => {
+    const prompt = buildSubAgentSystemPrompt('/tmp', mockVerifier)
+    expect(prompt).toContain('/tmp')
+    expect(prompt).toContain('Verify each criterion carefully.')
   })
 
-  it('includes platform info in prompt', () => {
-    const prompt = buildVerifierPrompt('/tmp')
-    expect(prompt).toContain(process.platform)
-    expect(prompt).toContain(process.arch)
+  it('does not include sub-agents section', () => {
+    const prompt = buildSubAgentSystemPrompt('/tmp', mockVerifier)
+    expect(prompt).not.toContain('AVAILABLE SUB-AGENTS')
   })
 
-  it('does not include custom instructions section', () => {
-    const prompt = buildVerifierPrompt('/tmp')
+  it('does not include custom instructions', () => {
+    const prompt = buildSubAgentSystemPrompt('/tmp', mockVerifier)
     expect(prompt).not.toContain('CUSTOM INSTRUCTIONS')
+  })
+})
+
+describe('buildAgentReminder', () => {
+  it('wraps the agent prompt in system-reminder tags', () => {
+    const reminder = buildAgentReminder(mockVerifier)
+    expect(reminder).toContain('<system-reminder>')
+    expect(reminder).toContain('Verify each criterion carefully.')
+    expect(reminder).toContain('</system-reminder>')
+  })
+
+  it('generates planner reminder with Plan mode ACTIVE', () => {
+    const reminder = buildAgentReminder(mockPlanner)
+    expect(reminder).toContain('Plan mode ACTIVE')
+  })
+
+  it('generates builder reminder with Build mode ACTIVE', () => {
+    const reminder = buildAgentReminder(mockBuilder)
+    expect(reminder).toContain('Build mode ACTIVE')
+  })
+})
+
+describe('buildSubAgentsSection', () => {
+  it('generates listing from agent definitions', () => {
+    const section = buildSubAgentsSection([mockVerifier, mockCodeReviewer])
+    expect(section).toContain('**verifier**')
+    expect(section).toContain('**code_reviewer**')
+    expect(section).toContain('read_file, pass_criterion')
+    expect(section).toContain('read_file, grep')
+  })
+
+  it('returns empty string for no agents', () => {
+    expect(buildSubAgentsSection([])).toBe('')
   })
 })

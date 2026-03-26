@@ -1,5 +1,5 @@
 /**
- * Test that runVerifierTurn uses the sub-agent registry for context building
+ * Test that runVerifierTurn uses the agent registry for context building
  */
 
 import { describe, it, expect, vi } from 'vitest'
@@ -11,7 +11,6 @@ const {
   getToolRegistryForModeMock,
   streamLLMPureMock,
   consumeStreamGeneratorMock,
-  createSubAgentRegistryMock,
 } = vi.hoisted(() => ({
   getEventStoreMock: vi.fn(),
   getCurrentContextWindowIdMock: vi.fn(),
@@ -19,7 +18,6 @@ const {
   getToolRegistryForModeMock: vi.fn(),
   streamLLMPureMock: vi.fn(),
   consumeStreamGeneratorMock: vi.fn(),
-  createSubAgentRegistryMock: vi.fn(),
 }))
 
 vi.mock('../events/index.js', () => ({
@@ -53,8 +51,31 @@ vi.mock('./stream-pure.js', async (importOriginal) => {
   }
 })
 
-vi.mock('../sub-agents/registry.js', () => ({
-  createSubAgentRegistry: createSubAgentRegistryMock,
+vi.mock('../agents/registry.js', () => {
+  const agents = [
+    {
+      metadata: { id: 'verifier', name: 'Verifier', description: 'Verify criteria', subagent: true, tools: ['read_file', 'pass_criterion'] },
+      prompt: 'You are a verifier',
+    },
+  ]
+  return {
+    loadBuiltinAgents: vi.fn(async () => agents),
+    loadAllAgentsDefault: vi.fn(async () => agents),
+    findAgentById: vi.fn((id: string, list: any[]) => list.find((a: any) => a.metadata.id === id)),
+    getSubAgents: vi.fn((list: any[]) => list.filter((a: any) => a.metadata.subagent)),
+  }
+})
+
+vi.mock('../skills/registry.js', () => ({
+  getEnabledSkillMetadata: vi.fn(async () => []),
+}))
+
+vi.mock('../runtime-config.js', () => ({
+  getRuntimeConfig: vi.fn(() => ({ mode: 'development' })),
+}))
+
+vi.mock('../../cli/paths.js', () => ({
+  getGlobalConfigDir: vi.fn(() => '/tmp/openfox-test'),
 }))
 
 import { runVerifierTurn } from './orchestrator.js'
@@ -89,8 +110,8 @@ function createSessionManager(state: any) {
   }
 }
 
-describe('runVerifierTurn - Sub-Agent Registry Integration', () => {
-  it('should use sub-agent registry for context building', async () => {
+describe('runVerifierTurn - Agent Registry Integration', () => {
+  it('should use agent registry for sub-agent definition and build context', async () => {
     const eventStore = createEventStore()
     getEventStoreMock.mockReturnValue(eventStore)
     getCurrentContextWindowIdMock.mockReturnValue(undefined)
@@ -98,29 +119,6 @@ describe('runVerifierTurn - Sub-Agent Registry Integration', () => {
     getToolRegistryForModeMock.mockReturnValue({ definitions: [], execute: vi.fn() })
     streamLLMPureMock.mockReturnValue({ kind: 'stream' })
 
-    const mockCreateContext = vi.fn().mockReturnValue({
-      systemPrompt: 'You are a verifier',
-      injectedFiles: [],
-      userMessage: 'Verify criteria',
-      messages: [
-        { role: 'user', content: 'Context content', source: 'runtime' },
-        { role: 'user', content: 'Verify criteria', source: 'runtime' },
-      ],
-      tools: [],
-      requestOptions: { toolChoice: 'auto', disableThinking: true },
-    })
-
-    createSubAgentRegistryMock.mockReturnValue({
-      getSubAgent: vi.fn().mockReturnValue({
-        id: 'verifier',
-        name: 'Verifier',
-        systemPrompt: 'You are a verifier',
-        tools: ['read_file', 'pass_criterion'],
-        createContext: mockCreateContext,
-      }),
-    })
-
-    // LLM returns no tool calls - verifier is done (criteria will be nudged then stalled)
     // Need enough responses for nudges (10) + final stall + return_value nudge = 12
     for (let i = 0; i < 12; i++) {
       consumeStreamGeneratorMock.mockResolvedValueOnce({
@@ -162,10 +160,6 @@ describe('runVerifierTurn - Sub-Agent Registry Integration', () => {
       onMessage: vi.fn(),
     }, new TurnMetrics())
 
-    // Verify registry was used
-    expect(createSubAgentRegistryMock).toHaveBeenCalled()
-    expect(mockCreateContext).toHaveBeenCalled()
-
     // Verify result structure
     expect(result).toHaveProperty('allPassed')
     expect(result).toHaveProperty('failed')
@@ -175,5 +169,9 @@ describe('runVerifierTurn - Sub-Agent Registry Integration', () => {
     const eventTypes = eventStore.append.mock.calls.map(([, event]: any) => event.type)
     expect(eventTypes).toContain('message.start')
     expect(eventTypes).toContain('message.done')
+
+    // Verify system prompt includes the agent definition's prompt body
+    const systemPromptUsed = streamLLMPureMock.mock.calls[0]?.[0]?.systemPrompt as string
+    expect(systemPromptUsed).toContain('You are a verifier')
   })
 })

@@ -20,7 +20,26 @@ vi.mock('./stream.js', () => ({
 
 vi.mock('../tools/index.js', () => ({
   getToolRegistryForMode: getToolRegistryForModeMock,
+  getToolRegistryForAgent: (...args: unknown[]) => getToolRegistryForModeMock(...args),
 }))
+
+vi.mock('../agents/registry.js', () => {
+  const agents = [
+    {
+      metadata: { id: 'builder', name: 'Builder', description: 'Builds', subagent: false, tools: ['read_file', 'write_file', 'edit_file', 'run_command'] },
+      prompt: '# Build Mode\nBuild mode ACTIVE.',
+    },
+    {
+      metadata: { id: 'verifier', name: 'Verifier', description: 'Verifies', subagent: true, tools: ['read_file'] },
+      prompt: 'Verify.',
+    },
+  ]
+  return {
+    loadAllAgentsDefault: vi.fn(async () => agents),
+    findAgentById: vi.fn((id: string, list: any[]) => list.find((a: any) => a.metadata.id === id)),
+    getSubAgents: vi.fn((list: any[]) => list.filter((a: any) => a.metadata.subagent)),
+  }
+})
 
 vi.mock('../context/instructions.js', () => ({
   getAllInstructions: getAllInstructionsMock,

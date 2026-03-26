@@ -5,6 +5,7 @@ import { useProjectStore } from '../../stores/project'
 import { useConfigStore } from '../../stores/config'
 import { GlobalSettingsModal } from '../settings/GlobalSettingsModal'
 import { SkillsModal } from '../settings/SkillsModal'
+import { AgentsModal } from '../settings/AgentsModal'
 import { HistoryModal } from '../history/HistoryModal'
 
 interface HeaderProps {
@@ -16,6 +17,7 @@ interface HeaderProps {
 export function Header({ onMenuClick, onCriteriaToggle, hasCriteria }: HeaderProps) {
   const [showSettings, setShowSettings] = useState(false)
   const [showSkills, setShowSkills] = useState(false)
+  const [showAgents, setShowAgents] = useState(false)
   const [showHistory, setShowHistory] = useState(false)
   const connectionStatus = useSessionStore(state => state.connectionStatus)
   const session = useSessionStore(state => state.currentSession)
@@ -109,6 +111,17 @@ export function Header({ onMenuClick, onCriteriaToggle, hasCriteria }: HeaderPro
           </svg>
         </button>
 
+        {/* Agents Button */}
+        <button
+          onClick={() => setShowAgents(true)}
+          className="p-2.5 rounded hover:bg-bg-tertiary text-text-muted hover:text-text-primary transition-colors"
+          title="Agents"
+        >
+          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z" />
+          </svg>
+        </button>
+
         {/* History Button */}
         {workdir && (
           <button
@@ -147,6 +160,12 @@ export function Header({ onMenuClick, onCriteriaToggle, hasCriteria }: HeaderPro
       <SkillsModal
         isOpen={showSkills}
         onClose={() => setShowSkills(false)}
+      />
+
+      {/* Agents Modal */}
+      <AgentsModal
+        isOpen={showAgents}
+        onClose={() => setShowAgents(false)}
       />
 
       {/* History Modal */}

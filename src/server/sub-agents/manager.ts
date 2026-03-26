@@ -2,7 +2,8 @@
  * Sub-Agent Manager
  *
  * Executes sub-agents with isolated context and restricted tool sets.
- * Uses EventStore-based streaming (streamLLMPure + consumeStreamGenerator).
+ * Uses the agent registry (.agent.md files) for agent definitions and
+ * standalone context builders for fresh context assembly.
  */
 
 import type { Criterion, InjectedFile, StatsIdentity, ToolResult } from '../../shared/types.js'
@@ -10,14 +11,18 @@ import type { SessionManager } from '../session/index.js'
 import type { LLMClientWithModel } from '../llm/client.js'
 import type { ToolRegistry } from '../tools/types.js'
 import type { ServerMessage } from '../../shared/protocol.js'
-import type { SubAgentType } from './types.js'
-import { createSubAgentRegistry } from './registry.js'
-import { streamLLMPure, consumeStreamGenerator, TurnMetrics, createMessageStartEvent, createMessageDoneEvent, createToolCallEvent, createToolResultEvent, createChatDoneEvent } from '../chat/stream-pure.js'
-import { assembleVerifierRequest, type RequestContextMessage } from '../chat/request-context.js'
-import { createToolProgressHandler } from '../chat/tool-streaming.js'
+import type { AgentDefinition } from '../agents/types.js'
+import { loadAllAgentsDefault, findAgentById } from '../agents/registry.js'
+import { buildSubAgentContextMessages } from './context-builders.js'
+import { buildSubAgentSystemPrompt } from '../chat/prompts.js'
+import { streamLLMPure, consumeStreamGenerator, TurnMetrics, createMessageStartEvent, createMessageDoneEvent, createChatDoneEvent } from '../chat/stream-pure.js'
+import { executeToolBatch } from '../chat/agent-loop.js'
+import { assembleAgentRequest, type RequestContextMessage } from '../chat/request-context.js'
 import { getAllInstructions } from '../context/instructions.js'
+import { getEnabledSkillMetadata } from '../skills/registry.js'
+import { getRuntimeConfig } from '../runtime-config.js'
+import { getGlobalConfigDir } from '../../cli/paths.js'
 import { getEventStore, getCurrentContextWindowId } from '../events/index.js'
-import { PathAccessDeniedError } from '../tools/path-security.js'
 import { logger } from '../utils/logger.js'
 
 // ============================================================================
@@ -43,7 +48,7 @@ export interface NudgeConfig {
 }
 
 export interface SubAgentExecutionOptions {
-  subAgentType: SubAgentType
+  subAgentType: string
   prompt: string
   sessionManager: SessionManager
   sessionId: string
@@ -60,6 +65,22 @@ export interface SubAgentResult {
   content: string
   allPassed?: boolean
   failed?: Array<{ id: string; reason: string }>
+}
+
+// ============================================================================
+// Agent Definition Resolution
+// ============================================================================
+
+async function resolveAgentDef(agentId: string): Promise<AgentDefinition> {
+  const allAgents = await loadAllAgentsDefault()
+  const def = findAgentById(agentId, allAgents)
+  if (!def) {
+    throw new Error(`Unknown sub-agent type: ${agentId}`)
+  }
+  if (!def.metadata.subagent) {
+    throw new Error(`Agent '${agentId}' is not a sub-agent`)
+  }
+  return def
 }
 
 // ============================================================================
@@ -86,25 +107,21 @@ export async function executeSubAgent(options: SubAgentExecutionOptions): Promis
     nudgeConfig,
   } = options
 
-  const registry = createSubAgentRegistry()
-  const definition = registry.getSubAgent(subAgentType)
-  if (!definition) {
-    throw new Error(`Unknown sub-agent type: ${subAgentType}`)
-  }
+  const agentDef = await resolveAgentDef(subAgentType)
 
   const eventStore = getEventStore()
   const subAgentId = crypto.randomUUID()
   let session = sessionManager.requireSession(sessionId)
   const currentWindowMessageOptions = getCurrentWindowMessageOptions(sessionId)
 
-  // Build initial context
-  const initialContext = definition.createContext(session, { prompt })
+  // Build initial context messages from session state
+  const contextMessages = buildSubAgentContextMessages(subAgentType, session, prompt)
 
   logger.debug('Sub-agent starting', { subAgentType, subAgentId, sessionId })
 
   // Emit context reset marker
   const resetMsgId = crypto.randomUUID()
-  eventStore.append(sessionId, createMessageStartEvent(resetMsgId, 'user', `Fresh Context - ${definition.name} Sub-Agent`, {
+  eventStore.append(sessionId, createMessageStartEvent(resetMsgId, 'user', `Fresh Context - ${agentDef.metadata.name} Sub-Agent`, {
     ...(currentWindowMessageOptions ?? {}),
     isSystemGenerated: true,
     messageKind: 'context-reset',
@@ -113,10 +130,10 @@ export async function executeSubAgent(options: SubAgentExecutionOptions): Promis
   }))
   eventStore.append(sessionId, { type: 'message.done', data: { messageId: resetMsgId } })
 
-  // Emit context content (first message from createContext)
-  if (initialContext.messages.length > 0) {
+  // Emit context content (first message from context builder)
+  if (contextMessages.length > 0) {
     const contextMsgId = crypto.randomUUID()
-    eventStore.append(sessionId, createMessageStartEvent(contextMsgId, 'user', initialContext.messages[0]!.content, {
+    eventStore.append(sessionId, createMessageStartEvent(contextMsgId, 'user', contextMessages[0]!.content, {
       ...(currentWindowMessageOptions ?? {}),
       isSystemGenerated: true,
       messageKind: 'auto-prompt',
@@ -126,9 +143,9 @@ export async function executeSubAgent(options: SubAgentExecutionOptions): Promis
     eventStore.append(sessionId, { type: 'message.done', data: { messageId: contextMsgId } })
   }
 
-  // Emit kickoff prompt (last message from createContext, or the prompt itself)
-  const kickoffContent = initialContext.messages.length > 1
-    ? initialContext.messages[initialContext.messages.length - 1]!.content
+  // Emit kickoff prompt (last message from context builder, or the prompt itself)
+  const kickoffContent = contextMessages.length > 1
+    ? contextMessages[contextMessages.length - 1]!.content
     : prompt
   const kickoffMsgId = crypto.randomUUID()
   eventStore.append(sessionId, createMessageStartEvent(kickoffMsgId, 'user', kickoffContent, {
@@ -140,25 +157,26 @@ export async function executeSubAgent(options: SubAgentExecutionOptions): Promis
   }))
   eventStore.append(sessionId, { type: 'message.done', data: { messageId: kickoffMsgId } })
 
-  // Load instructions for verifier (other types use simpler prompts)
-  let instructionContent: string | undefined
-  let injectedFiles: InjectedFile[] = []
-  if (subAgentType === 'verifier') {
-    const instructions = await getAllInstructions(session.workdir, session.projectId)
-    instructionContent = instructions.content
-    injectedFiles = instructions.files.map(file => ({
-      path: file.path,
-      content: file.content ?? '',
-      source: file.source,
-    }))
-  }
+  // Load instructions and skills for the sub-agent system prompt
+  const { content: instructionContent, files } = await getAllInstructions(session.workdir, session.projectId)
+  const injectedFiles: InjectedFile[] = files.map(file => ({
+    path: file.path,
+    content: file.content ?? '',
+    source: file.source,
+  }))
+
+  const configDir = getGlobalConfigDir(getRuntimeConfig().mode ?? 'production')
+  const skills = await getEnabledSkillMetadata(configDir)
+
+  // Build system prompt from the agent definition
+  const systemPrompt = buildSubAgentSystemPrompt(
+    session.workdir,
+    agentDef,
+    skills.length > 0 ? skills : undefined,
+  )
 
   // Build custom messages for isolated context
-  let customMessages: RequestContextMessage[] = initialContext.messages.map(m => ({
-    role: m.role as 'user' | 'assistant' | 'tool',
-    content: m.content,
-    source: m.source as 'runtime' | 'history',
-  }))
+  let customMessages: RequestContextMessage[] = [...contextMessages]
 
   let consecutiveEmptyStops = 0
   let finalContent = ''
@@ -178,45 +196,31 @@ export async function executeSubAgent(options: SubAgentExecutionOptions): Promis
       subAgentType,
     }))
 
-    // Assemble request — verifier uses assembleVerifierRequest for injected files; others build directly
-    const assembledRequest = subAgentType === 'verifier'
-      ? assembleVerifierRequest({
-          workdir: session.workdir,
-          messages: customMessages,
-          injectedFiles,
-          promptTools: toolRegistry.definitions,
-          toolChoice: 'auto',
-          disableThinking: true,
-          ...(instructionContent ? { customInstructions: instructionContent } : {}),
-        })
-      : {
-          systemPrompt: definition.systemPrompt,
-          messages: customMessages.map(m => ({
-            role: m.role,
-            content: m.content,
-            ...(m.toolCalls ? { toolCalls: m.toolCalls.map(tc => ({ id: tc.id, name: tc.name, arguments: tc.arguments })) } : {}),
-            ...(m.toolCallId ? { toolCallId: m.toolCallId } : {}),
-          })),
-          promptContext: {
-            systemPrompt: definition.systemPrompt,
-            injectedFiles: [],
-            userMessage: prompt,
-            messages: customMessages.map(m => ({ role: m.role, content: m.content, source: m.source })),
-            tools: toolRegistry.definitions.map(t => ({ name: t.function.name, description: t.function.description, parameters: t.function.parameters })),
-            requestOptions: { toolChoice: 'auto' as const, disableThinking: initialContext.requestOptions.disableThinking },
-          },
-        }
+    // Build prompt context for diagnostics
+    const promptContext = {
+      systemPrompt,
+      injectedFiles,
+      userMessage: prompt,
+      messages: customMessages.map(m => ({ role: m.role, content: m.content, source: m.source })),
+      tools: toolRegistry.definitions.map(t => ({ name: t.function.name, description: t.function.description, parameters: t.function.parameters })),
+      requestOptions: { toolChoice: 'auto' as const, disableThinking: true },
+    }
 
     // Stream LLM response — append return_value instruction to all subagent prompts
     const streamGen = streamLLMPure({
       messageId: assistantMsgId,
-      systemPrompt: assembledRequest.systemPrompt + RETURN_VALUE_INSTRUCTION,
+      systemPrompt: systemPrompt + RETURN_VALUE_INSTRUCTION,
       llmClient,
-      messages: assembledRequest.messages,
+      messages: customMessages.map(m => ({
+        role: m.role,
+        content: m.content,
+        ...(m.toolCalls ? { toolCalls: m.toolCalls.map(tc => ({ id: tc.id, name: tc.name, arguments: tc.arguments })) } : {}),
+        ...(m.toolCallId ? { toolCallId: m.toolCallId } : {}),
+      })),
       tools: toolRegistry.definitions,
       toolChoice: 'auto',
       signal,
-      disableThinking: initialContext.requestOptions.disableThinking,
+      disableThinking: true,
     })
 
     const result = await consumeStreamGenerator(streamGen, event => {
@@ -224,11 +228,11 @@ export async function executeSubAgent(options: SubAgentExecutionOptions): Promis
     })
 
     if (result.aborted) {
-      const stats = turnMetrics.buildStats(statsIdentity, subAgentType as 'verifier')
+      const stats = turnMetrics.buildStats(statsIdentity, 'verifier')
       eventStore.append(sessionId, createMessageDoneEvent(assistantMsgId, {
         stats,
         partial: true,
-        promptContext: assembledRequest.promptContext,
+        promptContext,
       }))
       eventStore.append(sessionId, createChatDoneEvent(assistantMsgId, 'stopped', stats))
       throw new Error('Aborted')
@@ -249,7 +253,7 @@ export async function executeSubAgent(options: SubAgentExecutionOptions): Promis
 
     session = sessionManager.requireSession(sessionId)
 
-    // If no tool calls, check nudge/stall logic (verifier) or finish
+    // If no tool calls, check nudge/stall logic or finish
     if (result.toolCalls.length === 0) {
       if (nudgeConfig) {
         const criteriaAwaiting = nudgeConfig.getCriteriaAwaiting(session.criteria)
@@ -261,7 +265,7 @@ export async function executeSubAgent(options: SubAgentExecutionOptions): Promis
 
             eventStore.append(sessionId, createMessageDoneEvent(assistantMsgId, {
               segments: result.segments,
-              promptContext: assembledRequest.promptContext,
+              promptContext,
             }))
             eventStore.append(sessionId, createMessageStartEvent(nudgeMsgId, 'user', nudgeContent, {
               ...(currentWindowMessageOptions ?? {}),
@@ -294,7 +298,7 @@ export async function executeSubAgent(options: SubAgentExecutionOptions): Promis
         const nudgeMsgId = crypto.randomUUID()
         eventStore.append(sessionId, createMessageDoneEvent(assistantMsgId, {
           segments: result.segments,
-          promptContext: assembledRequest.promptContext,
+          promptContext,
         }))
         eventStore.append(sessionId, createMessageStartEvent(nudgeMsgId, 'user', RETURN_VALUE_NUDGE, {
           ...(currentWindowMessageOptions ?? {}),
@@ -308,11 +312,11 @@ export async function executeSubAgent(options: SubAgentExecutionOptions): Promis
         continue
       }
 
-      const stats = turnMetrics.buildStats(statsIdentity, subAgentType as 'verifier')
+      const stats = turnMetrics.buildStats(statsIdentity, 'verifier')
       eventStore.append(sessionId, createMessageDoneEvent(assistantMsgId, {
         segments: result.segments,
         stats,
-        promptContext: assembledRequest.promptContext,
+        promptContext,
       }))
       eventStore.append(sessionId, createChatDoneEvent(assistantMsgId, 'complete', stats))
       break
@@ -321,108 +325,34 @@ export async function executeSubAgent(options: SubAgentExecutionOptions): Promis
     // Emit message done (intermediate, no stats)
     eventStore.append(sessionId, createMessageDoneEvent(assistantMsgId, {
       segments: result.segments,
-      promptContext: assembledRequest.promptContext,
+      promptContext,
     }))
 
-    // Execute tool calls
-    for (const toolCall of result.toolCalls) {
-      if (signal?.aborted) {
-        const stats = turnMetrics.buildStats(statsIdentity, subAgentType as 'verifier')
-        eventStore.append(sessionId, createMessageDoneEvent(assistantMsgId, {
-          stats,
-          partial: true,
-          promptContext: assembledRequest.promptContext,
-        }))
-        eventStore.append(sessionId, createChatDoneEvent(assistantMsgId, 'stopped', stats))
-        throw new Error('Aborted')
-      }
+    // Execute tool calls using shared helper
+    const batchResult = await executeToolBatch(assistantMsgId, result.toolCalls, {
+      toolRegistry,
+      sessionManager,
+      sessionId,
+      workdir: session.workdir,
+      turnMetrics,
+      signal,
+      onMessage,
+    })
 
-      eventStore.append(sessionId, createToolCallEvent(assistantMsgId, toolCall))
-
-      // Check for parse error
-      if (toolCall.parseError) {
-        const toolResult: ToolResult = {
-          success: false,
-          error: `Failed to parse tool call arguments: ${toolCall.parseError}. Please ensure your JSON function call arguments are valid.`,
-          durationMs: 0,
-          truncated: false,
-        }
-        turnMetrics.addToolTime(toolResult.durationMs)
-        eventStore.append(sessionId, createToolResultEvent(assistantMsgId, toolCall.id, toolResult))
-        customMessages.push({
-          role: 'tool',
-          content: `Error: ${toolResult.error}`,
-          source: 'history',
-          toolCallId: toolCall.id,
-        })
-        continue
-      }
-
-      // Create progress handler for streaming output (run_command only)
-      const onProgress = onMessage ? createToolProgressHandler(assistantMsgId, toolCall.id, onMessage) : undefined
-
-      let toolResult: ToolResult
-      try {
-        toolResult = await toolRegistry.execute(
-          toolCall.name,
-          toolCall.arguments,
-          {
-            sessionManager,
-            workdir: session.workdir,
-            sessionId,
-            signal,
-            lspManager: sessionManager.getLspManager(sessionId),
-            onEvent: onMessage,
-            onProgress,
-          }
-        )
-      } catch (error) {
-        if (error instanceof PathAccessDeniedError) {
-          toolResult = {
-            success: false,
-            error: `User denied access to ${error.paths.join(', ')}. If you need this file, explain why and ask for permission.`,
-            durationMs: 0,
-            truncated: false,
-          }
-        } else {
-          throw error
-        }
-      }
-
-      turnMetrics.addToolTime(toolResult.durationMs)
-      eventStore.append(sessionId, createToolResultEvent(assistantMsgId, toolCall.id, toolResult))
-
-      // Capture return_value tool content
-      if (toolCall.name === 'return_value' && !toolCall.parseError) {
-        returnValueContent = (toolCall.arguments as Record<string, unknown>)['content'] as string
-      }
-
-      // Add tool result to custom context
-      customMessages.push({
-        role: 'tool',
-        content: toolResult.success ? (toolResult.output ?? 'Success') : `Error: ${toolResult.error}`,
-        source: 'history',
-        toolCallId: toolCall.id,
-      })
-
-      // Check criteria changes
-      const updatedSession = sessionManager.requireSession(sessionId)
-      if (JSON.stringify(updatedSession.criteria) !== JSON.stringify(session.criteria)) {
-        eventStore.append(sessionId, { type: 'criteria.set', data: { criteria: updatedSession.criteria } })
-        session = updatedSession
-      }
+    // Capture return_value content
+    if (batchResult.returnValueContent) {
+      returnValueContent = batchResult.returnValueContent
     }
+
+    // Add tool results to custom context
+    customMessages = [...customMessages, ...batchResult.toolMessages]
+
+    // Check criteria changes
+    session = sessionManager.requireSession(sessionId)
 
     // Reset nudge counter when tools were called
     if (nudgeConfig) {
-      session = sessionManager.requireSession(sessionId)
-      const remaining = nudgeConfig.getCriteriaAwaiting(session.criteria)
-      if (remaining.length === 0) {
-        consecutiveEmptyStops = 0
-      } else {
-        // Tool calls made but criteria didn't change — still not an empty stop
-        consecutiveEmptyStops = 0
-      }
+      consecutiveEmptyStops = 0
     }
   }
 

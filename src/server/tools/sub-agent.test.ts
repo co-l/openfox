@@ -15,12 +15,7 @@ describe('call_sub_agent tool', () => {
     expect(callSubAgentTool.definition.function.name).toBe('call_sub_agent')
     
     const params = callSubAgentTool.definition.function.parameters as any
-    expect(params.properties.subAgentType.enum).toEqual([
-      'verifier',
-      'code_reviewer',
-      'test_generator',
-      'debugger',
-    ])
+    expect(params.properties.subAgentType.type).toBe('string')
     expect(params.required).toContain('subAgentType')
     expect(params.required).toContain('prompt')
   })

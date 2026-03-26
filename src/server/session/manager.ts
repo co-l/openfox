@@ -349,7 +349,7 @@ export class SessionManager {
       tokenCount?: number
       attachments?: Attachment[] // Optional image attachments
       subAgentId?: string
-      subAgentType?: 'verifier' | 'code_reviewer' | 'test_generator' | 'debugger'
+      subAgentType?: string
     } = {}
     if (contextWindowId !== undefined) options.contextWindowId = contextWindowId
     if (message.isSystemGenerated !== undefined) options.isSystemGenerated = message.isSystemGenerated
@@ -398,7 +398,7 @@ export class SessionManager {
     const options: {
       contextWindowId?: string
       subAgentId?: string
-      subAgentType?: 'verifier' | 'code_reviewer' | 'test_generator' | 'debugger'
+      subAgentType?: string
     } = {}
     if (contextWindowId !== undefined) options.contextWindowId = contextWindowId
     if (message.subAgentId !== undefined) options.subAgentId = message.subAgentId

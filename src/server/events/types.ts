@@ -67,7 +67,7 @@ export type TurnEvent =
         content?: string // For user/system messages, content is known upfront
         contextWindowId?: string
         subAgentId?: string
-        subAgentType?: 'verifier' | 'code_reviewer' | 'test_generator' | 'debugger'
+        subAgentType?: string
         isSystemGenerated?: boolean
         messageKind?: 'correction' | 'auto-prompt' | 'context-reset' | 'task-completed' | 'command'
         isCompactionSummary?: boolean // True if this is the summary message after compaction
@@ -331,7 +331,7 @@ export interface SnapshotMessage {
   isStreaming?: boolean
   partial?: boolean
   subAgentId?: string
-  subAgentType?: 'verifier' | 'code_reviewer' | 'test_generator' | 'debugger'
+  subAgentType?: string
   isSystemGenerated?: boolean
   messageKind?: 'correction' | 'auto-prompt' | 'context-reset' | 'task-completed' | 'command'
   contextWindowId?: string

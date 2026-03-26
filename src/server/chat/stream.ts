@@ -44,7 +44,7 @@ export interface StreamOptions {
   /** Optional: sub-agent ID to tag the created assistant message */
   subAgentId?: string
   /** Optional: sub-agent type to tag the created assistant message */
-  subAgentType?: 'verifier' | 'code_reviewer' | 'test_generator' | 'debugger'
+  subAgentType?: string
   /** Optional: disable thinking/reasoning for this call (default: false) */
   disableThinking?: boolean
   /** Optional: reuse an existing message ID instead of creating a new one */
