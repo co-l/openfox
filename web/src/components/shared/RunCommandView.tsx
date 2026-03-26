@@ -65,14 +65,14 @@ export const RunCommandView = memo(function RunCommandView({
   return (
     <div className="space-y-2">
       {/* Command header with timeout indicator */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-2 text-xs">
-          <span className="text-text-muted">$</span>
-          <code className="text-text-primary">{truncateCommand(command)}</code>
+      <div className="flex items-center justify-between gap-4">
+        <div className="flex items-center gap-2 text-xs flex-1 min-w-0">
+          <span className="text-text-muted flex-shrink-0">$</span>
+          <code className="text-text-primary break-all">{command}</code>
         </div>
         
-        {/* Timeout indicator */}
-        <div className="flex items-center gap-2 text-xs text-text-muted">
+        {/* Timeout indicator - fixed width to prevent layout shifts */}
+        <div className="flex items-center gap-2 text-xs text-text-muted flex-shrink-0">
           {status === 'pending' && (
             <span className="animate-pulse text-accent-warning">running</span>
           )}
@@ -136,12 +136,3 @@ export const RunCommandView = memo(function RunCommandView({
     </div>
   )
 })
-
-/**
- * Truncate long commands for display in header
- */
-function truncateCommand(command: string): string {
-  const maxLen = 80
-  if (command.length <= maxLen) return command
-  return command.slice(0, maxLen - 3) + '...'
-}
