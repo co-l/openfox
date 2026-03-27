@@ -165,14 +165,18 @@ describe('db sessions', () => {
     expect(sessions.map(s => s.title)).toContain('Session B')
   })
 
-  it('lists sessions by project including nested workdirs', () => {
+  it('lists sessions by project using project_id only', () => {
     const sessionA = createSession(projectAId, rootA, 'Session A')
-    const sessionNested = createSession(projectBId, join(rootA, 'nested'), 'Nested Session')
-    createSession(projectBId, rootB, 'Session B')
+    const sessionANested = createSession(projectAId, join(rootA, 'nested'), 'Nested Session A')
+    const sessionB = createSession(projectBId, rootB, 'Session B')
+    // This session belongs to projectB but has a workdir nested under projectA
+    // It should NOT appear when listing sessions for projectA
+    createSession(projectBId, join(rootA, 'nested'), 'Nested Session B')
 
-    const filtered = listSessionsByProject(projectAId, rootA)
+    const filtered = listSessionsByProject(projectAId)
     expect(filtered.map(s => s.id)).toContain(sessionA.id)
-    expect(filtered.map(s => s.id)).toContain(sessionNested.id)
+    expect(filtered.map(s => s.id)).toContain(sessionANested.id)
+    expect(filtered.map(s => s.id)).not.toContain(sessionB.id)
     expect(filtered).toHaveLength(2)
   })
 
@@ -193,5 +197,34 @@ describe('db sessions', () => {
 
     const retrieved = getSession(session.id)
     expect(retrieved?.metadata.title).toBeUndefined()
+  })
+
+  it('prevents session leakage between projects with similar names', () => {
+    // Simulate the bug scenario: projects with similar names (e.g., "openfox" and "openfox-agent2")
+    // Create sessions in both projects
+    const sessionA1 = createSession(projectAId, rootA, 'Session A1')
+    const sessionA2 = createSession(projectAId, rootA, 'Session A2')
+    const sessionB1 = createSession(projectBId, rootB, 'Session B1')
+    const sessionB2 = createSession(projectBId, rootB, 'Session B2')
+
+    // List sessions for project A - should only return A sessions
+    const projectASessions = listSessionsByProject(projectAId)
+    expect(projectASessions).toHaveLength(2)
+    expect(projectASessions.map(s => s.id)).toContain(sessionA1.id)
+    expect(projectASessions.map(s => s.id)).toContain(sessionA2.id)
+    expect(projectASessions.map(s => s.id)).not.toContain(sessionB1.id)
+    expect(projectASessions.map(s => s.id)).not.toContain(sessionB2.id)
+
+    // List sessions for project B - should only return B sessions
+    const projectBSessions = listSessionsByProject(projectBId)
+    expect(projectBSessions).toHaveLength(2)
+    expect(projectBSessions.map(s => s.id)).toContain(sessionB1.id)
+    expect(projectBSessions.map(s => s.id)).toContain(sessionB2.id)
+    expect(projectBSessions.map(s => s.id)).not.toContain(sessionA1.id)
+    expect(projectBSessions.map(s => s.id)).not.toContain(sessionA2.id)
+
+    // Verify all sessions exist in the global list
+    const allSessions = listSessions()
+    expect(allSessions).toHaveLength(4)
   })
 })

@@ -29,11 +29,8 @@ export function Sidebar({ projectId, isOpen = true, onClose }: SidebarProps) {
 
   const currentProject = useProjectStore(state => state.currentProject)
 
-  // Filter sessions to those under project workdir
-  const projectSessions = sessions.filter(session => {
-    if (!currentProject) return false
-    return session.workdir.startsWith(currentProject.workdir)
-  })
+  // Filter sessions to those belonging to the current project by ID
+  const projectSessions = sessions.filter(session => session.projectId === currentProject?.id)
 
   // Navigate to new session when created
   useEffect(() => {

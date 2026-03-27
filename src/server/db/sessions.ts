@@ -208,10 +208,10 @@ export function listSessions(): SessionSummary[] {
   }))
 }
 
-export function listSessionsByProject(projectId: string, projectWorkdir: string): SessionSummary[] {
+export function listSessionsByProject(projectId: string): SessionSummary[] {
   const db = getDatabase()
   
-  // Get sessions where workdir starts with projectWorkdir (includes subdirectories)
+  // Get sessions where project_id matches (workdir check removed to prevent session leakage)
   const rows = db.prepare(`
     SELECT
       s.id,
@@ -226,9 +226,9 @@ export function listSessionsByProject(projectId: string, projectWorkdir: string)
       s.provider_id,
       s.provider_model
     FROM sessions s
-    WHERE s.project_id = ? OR s.workdir LIKE ? || '%'
+    WHERE s.project_id = ?
     ORDER BY s.updated_at DESC
-  `).all(projectId, projectWorkdir) as SessionSummaryRow[]
+  `).all(projectId) as SessionSummaryRow[]
 
   return rows.map(row => ({
     id: row.id,
