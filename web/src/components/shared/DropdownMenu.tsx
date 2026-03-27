@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 
 export interface DropdownMenuItem {
-  label: string
+  label: string | React.ReactNode
   icon?: React.ReactNode
   onClick: (event?: React.MouseEvent) => void
   danger?: boolean
@@ -10,9 +10,10 @@ export interface DropdownMenuItem {
 interface DropdownMenuProps {
   items: DropdownMenuItem[]
   trigger: React.ReactNode
+  minWidth?: string
 }
 
-export function DropdownMenu({ items, trigger }: DropdownMenuProps) {
+export function DropdownMenu({ items, trigger, minWidth = '120px' }: DropdownMenuProps) {
   const [isOpen, setIsOpen] = useState(false)
   const menuRef = useRef<HTMLDivElement>(null)
 
@@ -40,7 +41,7 @@ export function DropdownMenu({ items, trigger }: DropdownMenuProps) {
       }}>{trigger}</div>
 
       {isOpen && (
-        <div className="absolute right-0 top-full mt-1 bg-bg-secondary border border-border rounded shadow-lg z-50 min-w-[120px]">
+        <div className="absolute left-0 top-full mt-1 bg-bg-secondary border border-border rounded shadow-lg z-50" style={{ minWidth }}>
           {items.map((item, index) => (
             <button
               key={index}
