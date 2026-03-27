@@ -751,14 +751,20 @@ export function PlanPanel() {
             <div className="flex flex-col items-end gap-1">
               <div className="flex items-center gap-3">
                 <CommandMenu
-                  onSendCommand={(content, agentMode) => {
+                  onSendCommand={(content, agentMode, textareaContent, attachments) => {
                     if (agentMode && session?.mode !== agentMode) {
                       useSessionStore.getState().switchMode(agentMode)
                     }
+                    const combinedContent = textareaContent && textareaContent.trim()
+                      ? `${textareaContent.trim()}\n\n${content}`
+                      : content
                     virtuosoRef.current?.scrollToIndex({ index: 'LAST', behavior: 'smooth' })
-                    sendMessage(content, undefined, { messageKind: 'command', isSystemGenerated: true })
+                    sendMessage(combinedContent, attachments?.length ? attachments : undefined, { messageKind: 'command', isSystemGenerated: true })
+                    clearInput()
                   }}
                   onOpenManager={() => setShowCommandsModal(true)}
+                  textareaContent={input}
+                  attachments={attachments.length > 0 ? attachments : undefined}
                 />
                 <WorkflowMenu
                   onSelectWorkflow={handleSelectWorkflow}

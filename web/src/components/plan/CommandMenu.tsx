@@ -1,14 +1,18 @@
 import { useEffect, useRef, useState } from 'react'
+// @ts-ignore
+import type { Attachment } from '@shared/types.js'
 import { useCommandsStore } from '../../stores/commands'
 import { CommandsModal } from '../settings/CommandsModal'
 import { EditButton } from '../shared/IconButton'
 
 interface CommandMenuProps {
-  onSendCommand: (content: string, agentMode?: string) => void
+  onSendCommand: (content: string, agentMode?: string, textareaContent?: string, attachments?: Attachment[]) => void
   onOpenManager: () => void
+  textareaContent?: string
+  attachments?: Attachment[]
 }
 
-export function CommandMenu({ onSendCommand, onOpenManager }: CommandMenuProps) {
+export function CommandMenu({ onSendCommand, onOpenManager, textareaContent, attachments }: CommandMenuProps) {
   const [isOpen, setIsOpen] = useState(false)
   const [search, setSearch] = useState('')
   const [selectedIndex, setSelectedIndex] = useState(0)
@@ -73,7 +77,7 @@ export function CommandMenu({ onSendCommand, onOpenManager }: CommandMenuProps) 
   const handleSelect = async (commandId: string) => {
     const full = await useCommandsStore.getState().fetchCommand(commandId)
     if (full) {
-      onSendCommand(full.prompt, full.metadata.agentMode)
+      onSendCommand(full.prompt, full.metadata.agentMode, textareaContent, attachments)
     }
     setIsOpen(false)
   }
