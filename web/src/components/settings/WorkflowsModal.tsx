@@ -2,7 +2,7 @@ import { useEffect, useState, useMemo, useCallback, useRef } from 'react'
 import { Modal } from '../shared/Modal'
 import { Button } from '../shared/Button'
 import { EditButton } from '../shared/IconButton'
-import { useWorkflowsStore, type WorkflowFull, type WorkflowStep } from '../../stores/workflows'
+import { useWorkflowsStore, type WorkflowFull, type WorkflowStep, type TemplateVariable } from '../../stores/workflows'
 import type { AgentInfo } from '../../stores/agents'
 
 interface WorkflowsModalProps {
@@ -757,14 +757,34 @@ function TransitionPanel({
 // Step Properties Panel
 // ============================================================================
 
+function TemplateVariablesHint({ variables, onInsert }: { variables: TemplateVariable[]; onInsert: (name: string) => void }) {
+  if (variables.length === 0) return null
+  return (
+    <div className="flex flex-wrap gap-1 mt-1">
+      {variables.map(v => (
+        <button
+          key={v.name}
+          type="button"
+          onClick={() => onInsert(v.name)}
+          title={v.description}
+          className="px-1.5 py-0.5 rounded text-[10px] font-mono bg-bg-primary border border-border text-text-secondary hover:text-accent-primary hover:border-accent-primary/40 transition-colors"
+        >
+          {`{{${v.name}}}`}
+        </button>
+      ))}
+    </div>
+  )
+}
+
 function StepPanel({
-  step, isEntry, agentTypes, transitionCount,
+  step, isEntry, agentTypes, transitionCount, templateVariables,
   onUpdate, onRemove, onSetEntry,
 }: {
   step: WorkflowStep
   isEntry: boolean
   agentTypes: AgentInfo[]
   transitionCount: number
+  templateVariables: TemplateVariable[]
   onUpdate: (step: WorkflowStep) => void
   onRemove: () => void
   onSetEntry: () => void
@@ -839,11 +859,13 @@ function StepPanel({
         <>
           <div>
             <label className={labelClass}>Prompt</label>
-            <textarea value={step.prompt ?? ''} onChange={e => onUpdate({ ...step, prompt: e.target.value || undefined })} rows={6} className={`${inputClass} resize-y text-xs`} placeholder="Injected on first entry. Supports {{summary}}, {{criteriaList}}, {{modifiedFiles}}, {{workdir}}, {{reason}}, {{criteriaCount}}, {{pendingCount}}..." />
+            <textarea value={step.prompt ?? ''} onChange={e => onUpdate({ ...step, prompt: e.target.value || undefined })} rows={6} className={`${inputClass} resize-y text-xs`} placeholder="Injected on first entry..." />
+            <TemplateVariablesHint variables={templateVariables} onInsert={name => onUpdate({ ...step, prompt: (step.prompt ?? '') + `{{${name}}}` })} />
           </div>
           <div>
             <label className={labelClass}>Nudge Prompt</label>
-            <textarea value={step.nudgePrompt ?? ''} onChange={e => onUpdate({ ...step, nudgePrompt: e.target.value || undefined })} rows={6} className={`${inputClass} resize-y text-xs`} placeholder="Injected on re-entry. Supports {{verifierFindings}}, {{previousStepOutput}} and all prompt variables..." />
+            <textarea value={step.nudgePrompt ?? ''} onChange={e => onUpdate({ ...step, nudgePrompt: e.target.value || undefined })} rows={6} className={`${inputClass} resize-y text-xs`} placeholder="Injected on re-entry..." />
+            <TemplateVariablesHint variables={templateVariables} onInsert={name => onUpdate({ ...step, nudgePrompt: (step.nudgePrompt ?? '') + `{{${name}}}` })} />
           </div>
         </>
       )}
@@ -853,6 +875,7 @@ function StepPanel({
           <div>
             <label className={labelClass}>Command</label>
             <textarea value={step.command ?? ''} onChange={e => onUpdate({ ...step, command: e.target.value })} rows={3} className={`${inputClass} font-mono text-xs resize-y`} placeholder="cd {{workdir}} && npm run lint" />
+            <TemplateVariablesHint variables={templateVariables} onInsert={name => onUpdate({ ...step, command: (step.command ?? '') + `{{${name}}}` })} />
           </div>
           <div className="grid grid-cols-2 gap-2">
             <div>
@@ -891,8 +914,10 @@ export function WorkflowsModal({ isOpen, onClose, initialEditId }: WorkflowsModa
   const workflows = useWorkflowsStore(state => state.workflows)
   const modifiedIds = useWorkflowsStore(state => state.modifiedIds)
   const loading = useWorkflowsStore(state => state.loading)
+  const templateVariables = useWorkflowsStore(state => state.templateVariables)
   const fetchWorkflows = useWorkflowsStore(state => state.fetchWorkflows)
   const fetchWorkflow = useWorkflowsStore(state => state.fetchWorkflow)
+  const fetchTemplateVariables = useWorkflowsStore(state => state.fetchTemplateVariables)
   const createWorkflow = useWorkflowsStore(state => state.createWorkflow)
   const updateWorkflow = useWorkflowsStore(state => state.updateWorkflow)
   const deleteWorkflowAction = useWorkflowsStore(state => state.deleteWorkflow)
@@ -926,6 +951,7 @@ export function WorkflowsModal({ isOpen, onClose, initialEditId }: WorkflowsModa
   useEffect(() => {
     if (isOpen) {
       fetchWorkflows()
+      fetchTemplateVariables()
       fetch('/api/agents').then(r => r.json()).then(d => setAgentTypes(d.agents ?? [])).catch(() => {})
       setConfirmDeleteId(null)
       setConfirmRestoreId(null)
@@ -953,7 +979,7 @@ export function WorkflowsModal({ isOpen, onClose, initialEditId }: WorkflowsModa
         setEditingId(null)
       }
     }
-  }, [isOpen, fetchWorkflows, fetchWorkflow, initialEditId])
+  }, [isOpen, fetchWorkflows, fetchWorkflow, fetchTemplateVariables, initialEditId])
 
   const handleNew = () => {
     setEditingId(null)
@@ -1299,6 +1325,7 @@ export function WorkflowsModal({ isOpen, onClose, initialEditId }: WorkflowsModa
                   isEntry={selectedStep.id === formEntryStep}
                   agentTypes={agentTypes}
                   transitionCount={selectedStep.transitions.length}
+                  templateVariables={templateVariables}
                   onUpdate={updateStep}
                   onRemove={() => {
                     if (selectedStep) {

@@ -1,4 +1,5 @@
 import { create } from 'zustand'
+import { useSessionStore } from './session'
 
 type LlmStatus = 'connected' | 'disconnected' | 'unknown'
 type Backend = 'vllm' | 'sglang' | 'ollama' | 'llamacpp' | 'openai' | 'anthropic' | 'auto' | 'unknown'
@@ -125,6 +126,17 @@ export const useConfigStore = create<ConfigState>((set, get) => ({
         llmStatus: LlmStatus
         backend: Backend
       }
+      
+      // Check if current session has a provider/model override
+      // If yes, preserve the session-specific model and don't overwrite it
+      const sessionStore = useSessionStore.getState()
+      const currentSession = sessionStore.currentSession
+      if (currentSession?.providerId && currentSession.providerModel) {
+        // Session has explicit model selection - preserve it
+        set({ llmStatus: data.llmStatus, backend: data.backend })
+        return
+      }
+      
       set({ model: data.model, llmStatus: data.llmStatus, backend: data.backend })
     } catch (error) {
       console.error('Failed to refresh model:', error)

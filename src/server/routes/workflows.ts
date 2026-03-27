@@ -1,5 +1,6 @@
 import { Router } from 'express'
 import { loadAllWorkflows, findWorkflowById, saveWorkflow, deleteWorkflow, workflowExists, getDefaultWorkflowIds, getModifiedDefaultWorkflowIds, restoreDefaultWorkflow, restoreAllDefaultWorkflows } from '../workflows/registry.js'
+import { TEMPLATE_VARIABLES } from '../workflows/executor.js'
 import type { WorkflowDefinition } from '../workflows/types.js'
 import type { Config } from '../../shared/types.js'
 
@@ -18,6 +19,10 @@ export function createWorkflowRoutes(configDir: string, config: Config): Router 
       defaultIds,
       modifiedIds,
     })
+  })
+
+  router.get('/template-variables', (_req, res) => {
+    res.json({ variables: TEMPLATE_VARIABLES })
   })
 
   router.get('/default-ids', async (_req, res) => {

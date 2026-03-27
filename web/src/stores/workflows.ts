@@ -36,14 +36,21 @@ export interface WorkflowFull {
   startCondition?: { type: string; result?: string }
 }
 
+export interface TemplateVariable {
+  name: string
+  description: string
+}
+
 interface WorkflowsState {
   workflows: WorkflowInfo[]
   defaultIds: string[]
   modifiedIds: string[]
   activeWorkflowId: string
   loading: boolean
+  templateVariables: TemplateVariable[]
   fetchWorkflows: () => Promise<void>
   fetchDefaultIds: () => Promise<void>
+  fetchTemplateVariables: () => Promise<void>
   fetchWorkflow: (id: string) => Promise<WorkflowFull | null>
   createWorkflow: (workflow: WorkflowFull) => Promise<{ success: boolean; error?: string }>
   updateWorkflow: (id: string, workflow: Partial<WorkflowFull>) => Promise<{ success: boolean; error?: string }>
@@ -58,6 +65,15 @@ export const useWorkflowsStore = create<WorkflowsState>((set, get) => ({
   modifiedIds: [],
   activeWorkflowId: 'default',
   loading: false,
+  templateVariables: [],
+
+  fetchTemplateVariables: async () => {
+    try {
+      const res = await fetch('/api/workflows/template-variables')
+      const data = await res.json()
+      set({ templateVariables: data.variables ?? [] })
+    } catch { /* ignore */ }
+  },
 
   fetchDefaultIds: async () => {
     try {
