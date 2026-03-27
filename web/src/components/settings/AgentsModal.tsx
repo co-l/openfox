@@ -1,11 +1,13 @@
 import { useEffect, useState } from 'react'
 import { Modal } from '../shared/Modal'
 import { Button } from '../shared/Button'
+import { EditButton } from '../shared/IconButton'
 import { useAgentsStore, type AgentFull } from '../../stores/agents'
 
 interface AgentsModalProps {
   isOpen: boolean
   onClose: () => void
+  initialEditId?: string | null
 }
 
 const ALL_TOOLS = [
@@ -20,7 +22,7 @@ function toSlug(name: string): string {
   return name.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '')
 }
 
-export function AgentsModal({ isOpen, onClose }: AgentsModalProps) {
+export function AgentsModal({ isOpen, onClose, initialEditId }: AgentsModalProps) {
   const agents = useAgentsStore(state => state.agents)
   const modifiedIds = useAgentsStore(state => state.modifiedIds)
   const loading = useAgentsStore(state => state.loading)
@@ -52,13 +54,29 @@ export function AgentsModal({ isOpen, onClose }: AgentsModalProps) {
   useEffect(() => {
     if (isOpen) {
       fetchAgents()
-      setView('list')
-      setEditingId(null)
       setConfirmDeleteId(null)
       setConfirmRestoreId(null)
       setConfirmRestoreAll(false)
+      if (initialEditId) {
+        setView('edit')
+        setEditingId(initialEditId)
+        setFormError('')
+        fetchAgent(initialEditId).then(agent => {
+          if (!agent) return
+          setFormName(agent.metadata.name)
+          setFormId(agent.metadata.id)
+          setFormDescription(agent.metadata.description)
+          setFormSubagent(agent.metadata.subagent)
+          setFormTools(agent.metadata.tools)
+          setFormColor(agent.metadata.color ?? '#6b7280')
+          setFormPrompt(agent.prompt)
+        })
+      } else {
+        setView('list')
+        setEditingId(null)
+      }
     }
-  }, [isOpen, fetchAgents])
+  }, [isOpen, fetchAgents, fetchAgent, initialEditId])
 
   const handleNew = () => {
     setEditingId(null)
@@ -126,11 +144,15 @@ export function AgentsModal({ isOpen, onClose }: AgentsModalProps) {
       return
     }
 
-    setView('list')
+    initialEditId ? onClose() : setView('list')
   }
 
   const handleCancel = () => {
-    setView('list')
+    if (initialEditId) {
+      onClose()
+    } else {
+      setView('list')
+    }
   }
 
   const handleNameChange = (name: string) => {
@@ -148,7 +170,7 @@ export function AgentsModal({ isOpen, onClose }: AgentsModalProps) {
 
   if (view === 'edit') {
     return (
-      <Modal isOpen={isOpen} onClose={handleCancel} title={editingId ? 'Edit Agent' : 'New Agent'} size="lg">
+      <Modal isOpen={isOpen} onClose={handleCancel} title={editingId ? 'Edit Agent' : 'New Agent'} size="xl">
         <div className="space-y-3">
           {formError && (
             <div className="text-accent-error text-sm px-3 py-2 bg-accent-error/10 rounded">{formError}</div>
@@ -266,7 +288,7 @@ export function AgentsModal({ isOpen, onClose }: AgentsModalProps) {
   const topLevelAgents = agents.filter(a => !a.subagent)
 
   return (
-    <Modal isOpen={isOpen} onClose={onClose} title="Agents" size="md">
+    <Modal isOpen={isOpen} onClose={onClose} title="Agents" size="lg">
       <div className="flex items-center justify-between mb-4">
         <p className="text-text-secondary text-sm">
           Agents define behavior, tools, and prompts for top-level modes and sub-agents.
@@ -445,15 +467,7 @@ function AgentListItem({
           )
         )}
 
-        <button
-          onClick={onEdit}
-          className="p-1.5 rounded hover:bg-bg-primary text-text-muted hover:text-text-primary transition-colors"
-          title="Edit agent"
-        >
-          <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-          </svg>
-        </button>
+        <EditButton onClick={onEdit} />
 
         {confirmDeleteId === agent.id ? (
           <div className="flex items-center gap-1">

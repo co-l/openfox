@@ -3,19 +3,20 @@ import { Modal } from '../shared/Modal'
 import { Button } from '../shared/Button'
 import { useSettingsStore, SETTINGS_KEYS } from '../../stores/settings'
 import { NotificationSettings } from './NotificationSettings'
+import { SkillsContent } from './SkillsModal'
 
 interface GlobalSettingsModalProps {
   isOpen: boolean
   onClose: () => void
 }
 
-type Tab = 'instructions' | 'notifications'
+type Tab = 'instructions' | 'skills' | 'notifications'
 
 export function GlobalSettingsModal({ isOpen, onClose }: GlobalSettingsModalProps) {
   const [activeTab, setActiveTab] = useState<Tab>('instructions')
 
   return (
-    <Modal isOpen={isOpen} onClose={onClose} title="Global Settings" size="lg">
+    <Modal isOpen={isOpen} onClose={onClose} title="Settings" size="lg">
       <div className="flex flex-col h-full">
         {/* Tab bar */}
         <div className="flex border-b border-border mb-4 -mt-1">
@@ -25,6 +26,11 @@ export function GlobalSettingsModal({ isOpen, onClose }: GlobalSettingsModalProp
             onClick={() => setActiveTab('instructions')}
           />
           <TabButton
+            label="Skills"
+            active={activeTab === 'skills'}
+            onClick={() => setActiveTab('skills')}
+          />
+          <TabButton
             label="Notifications"
             active={activeTab === 'notifications'}
             onClick={() => setActiveTab('notifications')}
@@ -32,7 +38,8 @@ export function GlobalSettingsModal({ isOpen, onClose }: GlobalSettingsModalProp
         </div>
 
         {/* Tab content */}
-        {activeTab === 'instructions' && <InstructionsTab isOpen={isOpen} onClose={onClose} />}
+        {activeTab === 'instructions' && <InstructionsTab isOpen={isOpen} />}
+        {activeTab === 'skills' && <SkillsContent isOpen={isOpen} />}
         {activeTab === 'notifications' && <NotificationSettings />}
       </div>
     </Modal>
@@ -54,7 +61,7 @@ function TabButton({ label, active, onClick }: { label: string; active: boolean;
   )
 }
 
-function InstructionsTab({ isOpen, onClose }: { isOpen: boolean; onClose: () => void }) {
+function InstructionsTab({ isOpen }: { isOpen: boolean }) {
   const settings = useSettingsStore(state => state.settings)
   const loading = useSettingsStore(state => state.loading)
   const getSetting = useSettingsStore(state => state.getSetting)
@@ -83,7 +90,11 @@ function InstructionsTab({ isOpen, onClose }: { isOpen: boolean; onClose: () => 
     setSetting(SETTINGS_KEYS.GLOBAL_INSTRUCTIONS, localValue)
     setSaving(false)
     setIsDirty(false)
-    onClose()
+  }
+
+  const handleDiscard = () => {
+    setLocalValue(globalInstructions)
+    setIsDirty(false)
   }
 
   const isBusy = isLoading || saving
@@ -106,9 +117,9 @@ function InstructionsTab({ isOpen, onClose }: { isOpen: boolean; onClose: () => 
         />
       </div>
 
-      <div className="flex justify-end gap-2 pt-2 border-t border-border">
-        <Button variant="secondary" onClick={onClose}>
-          Cancel
+      <div className="flex justify-end gap-2">
+        <Button variant="secondary" onClick={handleDiscard} disabled={!isDirty}>
+          Discard
         </Button>
         <Button
           variant="primary"

@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { useWorkflowsStore, type WorkflowInfo } from '../../stores/workflows'
+import { WorkflowsModal } from '../settings/WorkflowsModal'
+import { EditButton } from '../shared/IconButton'
 import type { Criterion } from '@shared/types.js'
 
 interface WorkflowMenuProps {
@@ -34,6 +36,7 @@ export function WorkflowMenu({ onSelectWorkflow, onOpenManager, criteria }: Work
   const [isOpen, setIsOpen] = useState(false)
   const [search, setSearch] = useState('')
   const [selectedIndex, setSelectedIndex] = useState(0)
+  const [editId, setEditId] = useState<string | null>(null)
   const containerRef = useRef<HTMLDivElement>(null)
   const searchRef = useRef<HTMLInputElement>(null)
 
@@ -140,29 +143,41 @@ export function WorkflowMenu({ onSelectWorkflow, onOpenManager, criteria }: Work
                 const condMet = isConditionMet(workflow, criteria)
                 const color = workflow.color ?? '#3b82f6'
                 return (
-                  <button
+                  <div
                     key={workflow.id}
-                    type="button"
-                    onClick={() => handleSelect(workflow.id)}
-                    className={`w-full text-left px-3 py-2 rounded transition-colors flex items-center gap-2 ${
+                    className={`flex items-center gap-2 px-3 py-2 rounded transition-colors group ${
                       index === selectedIndex
                         ? 'bg-accent-primary/20'
                         : 'hover:bg-bg-tertiary'
                     }`}
                   >
-                    <span
-                      className="w-2 h-2 rounded-full flex-shrink-0"
-                      style={{ backgroundColor: color }}
-                    />
-                    <span className="text-sm text-text-primary font-medium flex-1">{workflow.name}</span>
-                    {condMet !== null && (
+                    <button
+                      type="button"
+                      onClick={() => handleSelect(workflow.id)}
+                      className="flex-1 text-left flex items-center gap-2"
+                    >
                       <span
-                        className="w-1.5 h-1.5 rounded-full flex-shrink-0"
-                        style={{ backgroundColor: condMet ? '#22c55e' : '#6b7280' }}
-                        title={condMet ? 'Entry condition met' : 'Entry condition not met'}
+                        className="w-2 h-2 rounded-full flex-shrink-0"
+                        style={{ backgroundColor: color }}
                       />
-                    )}
-                  </button>
+                      <span className="text-sm text-text-primary font-medium flex-1">{workflow.name}</span>
+                      {condMet !== null && (
+                        <span
+                          className="w-1.5 h-1.5 rounded-full flex-shrink-0"
+                          style={{ backgroundColor: condMet ? '#22c55e' : '#6b7280' }}
+                          title={condMet ? 'Entry condition met' : 'Entry condition not met'}
+                        />
+                      )}
+                    </button>
+                    <EditButton
+                      className="opacity-0 group-hover:opacity-100"
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        setIsOpen(false)
+                        setEditId(workflow.id)
+                      }}
+                    />
+                  </div>
                 )
               })
             )}
@@ -180,6 +195,8 @@ export function WorkflowMenu({ onSelectWorkflow, onOpenManager, criteria }: Work
           </div>
         </div>
       )}
+
+      <WorkflowsModal isOpen={!!editId} onClose={() => setEditId(null)} initialEditId={editId} />
     </div>
   )
 }

@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Modal } from '../shared/Modal'
 import { Button } from '../shared/Button'
+import { EditButton } from '../shared/IconButton'
 import { useSkillsStore, type SkillFull } from '../../stores/skills'
 
 interface SkillsModalProps {
@@ -8,11 +9,16 @@ interface SkillsModalProps {
   onClose: () => void
 }
 
+interface SkillsContentProps {
+  isOpen: boolean
+}
+
 function toSlug(name: string): string {
   return name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')
 }
 
-export function SkillsModal({ isOpen, onClose }: SkillsModalProps) {
+/** Standalone skills content for embedding as a tab in another modal. */
+export function SkillsContent({ isOpen }: SkillsContentProps) {
   const skills = useSkillsStore(state => state.skills)
   const modifiedIds = useSkillsStore(state => state.modifiedIds)
   const loading = useSkillsStore(state => state.loading)
@@ -123,78 +129,89 @@ export function SkillsModal({ isOpen, onClose }: SkillsModalProps) {
 
   if (view === 'edit') {
     return (
-      <Modal isOpen={isOpen} onClose={handleCancel} title={editingId ? 'Edit Skill' : 'New Skill'} size="lg">
-        <div className="space-y-3">
-          {formError && (
-            <div className="text-accent-error text-sm px-3 py-2 bg-accent-error/10 rounded">{formError}</div>
-          )}
+      <div className="space-y-3">
+        <div className="flex items-center gap-2 mb-2">
+          <button
+            onClick={handleCancel}
+            className="p-1 rounded hover:bg-bg-tertiary text-text-muted hover:text-text-primary transition-colors"
+            title="Back to list"
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+            </svg>
+          </button>
+          <span className="text-sm font-medium text-text-primary">{editingId ? 'Edit Skill' : 'New Skill'}</span>
+        </div>
 
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="block text-xs text-text-secondary mb-1">Name</label>
-              <input
-                value={formName}
-                onChange={e => handleNameChange(e.target.value)}
-                placeholder="My Skill"
-                className="w-full px-2 py-1.5 bg-bg-tertiary border border-border rounded text-sm focus:outline-none focus:ring-1 focus:ring-accent-primary"
-              />
-            </div>
-            <div>
-              <label className="block text-xs text-text-secondary mb-1">ID {editingId && <span className="text-text-muted">(read-only)</span>}</label>
-              <input
-                value={formId}
-                onChange={e => !editingId && setFormId(e.target.value)}
-                readOnly={!!editingId}
-                placeholder="my-skill"
-                className={`w-full px-2 py-1.5 bg-bg-tertiary border border-border rounded text-sm font-mono focus:outline-none focus:ring-1 focus:ring-accent-primary ${editingId ? 'opacity-60' : ''}`}
-              />
-            </div>
-          </div>
+        {formError && (
+          <div className="text-accent-error text-sm px-3 py-2 bg-accent-error/10 rounded">{formError}</div>
+        )}
 
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="block text-xs text-text-secondary mb-1">Description</label>
-              <input
-                value={formDescription}
-                onChange={e => setFormDescription(e.target.value)}
-                placeholder="Short description of what this skill provides"
-                className="w-full px-2 py-1.5 bg-bg-tertiary border border-border rounded text-sm focus:outline-none focus:ring-1 focus:ring-accent-primary"
-              />
-            </div>
-            <div>
-              <label className="block text-xs text-text-secondary mb-1">Version</label>
-              <input
-                value={formVersion}
-                onChange={e => setFormVersion(e.target.value)}
-                placeholder="1.0.0"
-                className="w-full px-2 py-1.5 bg-bg-tertiary border border-border rounded text-sm font-mono focus:outline-none focus:ring-1 focus:ring-accent-primary"
-              />
-            </div>
-          </div>
-
+        <div className="grid grid-cols-2 gap-3">
           <div>
-            <label className="block text-xs text-text-secondary mb-1">Prompt</label>
-            <textarea
-              value={formPrompt}
-              onChange={e => setFormPrompt(e.target.value)}
-              placeholder="Instructions the agent receives when this skill is loaded..."
-              className="w-full h-64 px-3 py-2 bg-bg-tertiary border border-border rounded text-sm font-mono resize-none focus:outline-none focus:ring-1 focus:ring-accent-primary"
+            <label className="block text-xs text-text-secondary mb-1">Name</label>
+            <input
+              value={formName}
+              onChange={e => handleNameChange(e.target.value)}
+              placeholder="My Skill"
+              className="w-full px-2 py-1.5 bg-bg-tertiary border border-border rounded text-sm focus:outline-none focus:ring-1 focus:ring-accent-primary"
             />
           </div>
-
-          <div className="flex justify-end gap-2 pt-2 border-t border-border">
-            <Button variant="secondary" onClick={handleCancel}>Cancel</Button>
-            <Button variant="primary" onClick={handleSave} disabled={saving || !formName || !formPrompt}>
-              {saving ? 'Saving...' : 'Save'}
-            </Button>
+          <div>
+            <label className="block text-xs text-text-secondary mb-1">ID {editingId && <span className="text-text-muted">(read-only)</span>}</label>
+            <input
+              value={formId}
+              onChange={e => !editingId && setFormId(e.target.value)}
+              readOnly={!!editingId}
+              placeholder="my-skill"
+              className={`w-full px-2 py-1.5 bg-bg-tertiary border border-border rounded text-sm font-mono focus:outline-none focus:ring-1 focus:ring-accent-primary ${editingId ? 'opacity-60' : ''}`}
+            />
           </div>
         </div>
-      </Modal>
+
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <label className="block text-xs text-text-secondary mb-1">Description</label>
+            <input
+              value={formDescription}
+              onChange={e => setFormDescription(e.target.value)}
+              placeholder="Short description of what this skill provides"
+              className="w-full px-2 py-1.5 bg-bg-tertiary border border-border rounded text-sm focus:outline-none focus:ring-1 focus:ring-accent-primary"
+            />
+          </div>
+          <div>
+            <label className="block text-xs text-text-secondary mb-1">Version</label>
+            <input
+              value={formVersion}
+              onChange={e => setFormVersion(e.target.value)}
+              placeholder="1.0.0"
+              className="w-full px-2 py-1.5 bg-bg-tertiary border border-border rounded text-sm font-mono focus:outline-none focus:ring-1 focus:ring-accent-primary"
+            />
+          </div>
+        </div>
+
+        <div>
+          <label className="block text-xs text-text-secondary mb-1">Prompt</label>
+          <textarea
+            value={formPrompt}
+            onChange={e => setFormPrompt(e.target.value)}
+            placeholder="Instructions the agent receives when this skill is loaded..."
+            className="w-full h-64 px-3 py-2 bg-bg-tertiary border border-border rounded text-sm font-mono resize-none focus:outline-none focus:ring-1 focus:ring-accent-primary"
+          />
+        </div>
+
+        <div className="flex justify-end gap-2 pt-2 border-t border-border">
+          <Button variant="secondary" onClick={handleCancel}>Cancel</Button>
+          <Button variant="primary" onClick={handleSave} disabled={saving || !formName || !formPrompt}>
+            {saving ? 'Saving...' : 'Save'}
+          </Button>
+        </div>
+      </div>
     )
   }
 
   return (
-    <Modal isOpen={isOpen} onClose={onClose} title="Skills" size="md">
+    <div>
       <div className="flex items-center justify-between mb-4">
         <p className="text-text-secondary text-sm">
           Skills provide domain-specific knowledge that agents can load on demand.
@@ -285,16 +302,7 @@ export function SkillsModal({ isOpen, onClose }: SkillsModalProps) {
                   )
                 )}
 
-                {/* Edit button */}
-                <button
-                  onClick={() => handleEdit(skill.id)}
-                  className="p-1.5 rounded hover:bg-bg-primary text-text-muted hover:text-text-primary transition-colors"
-                  title="Edit skill"
-                >
-                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-                  </svg>
-                </button>
+                <EditButton onClick={() => handleEdit(skill.id)} />
 
                 {/* Delete button */}
                 {confirmDeleteId === skill.id ? (
@@ -343,6 +351,14 @@ export function SkillsModal({ isOpen, onClose }: SkillsModalProps) {
           ))}
         </div>
       )}
+    </div>
+  )
+}
+
+export function SkillsModal({ isOpen, onClose }: SkillsModalProps) {
+  return (
+    <Modal isOpen={isOpen} onClose={onClose} title="Skills" size="lg">
+      <SkillsContent isOpen={isOpen} />
     </Modal>
   )
 }

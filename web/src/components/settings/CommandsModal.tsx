@@ -1,19 +1,21 @@
 import { useEffect, useState } from 'react'
 import { Modal } from '../shared/Modal'
 import { Button } from '../shared/Button'
+import { EditButton } from '../shared/IconButton'
 import { useCommandsStore, type CommandFull } from '../../stores/commands'
 import { useAgentsStore } from '../../stores/agents'
 
 interface CommandsModalProps {
   isOpen: boolean
   onClose: () => void
+  initialEditId?: string | null
 }
 
 function toSlug(name: string): string {
   return name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')
 }
 
-export function CommandsModal({ isOpen, onClose }: CommandsModalProps) {
+export function CommandsModal({ isOpen, onClose, initialEditId }: CommandsModalProps) {
   const commands = useCommandsStore(state => state.commands)
   const modifiedIds = useCommandsStore(state => state.modifiedIds)
   const loading = useCommandsStore(state => state.loading)
@@ -48,13 +50,26 @@ export function CommandsModal({ isOpen, onClose }: CommandsModalProps) {
     if (isOpen) {
       fetchCommands()
       fetchAgents()
-      setView('list')
-      setEditingId(null)
       setConfirmDeleteId(null)
       setConfirmRestoreId(null)
       setConfirmRestoreAll(false)
+      if (initialEditId) {
+        setView('edit')
+        setEditingId(initialEditId)
+        setFormError('')
+        fetchCommand(initialEditId).then(command => {
+          if (!command) return
+          setFormName(command.metadata.name)
+          setFormId(command.metadata.id)
+          setFormPrompt(command.prompt)
+          setFormAgentMode(command.metadata.agentMode ?? '')
+        })
+      } else {
+        setView('list')
+        setEditingId(null)
+      }
     }
-  }, [isOpen, fetchCommands, fetchAgents])
+  }, [isOpen, fetchCommands, fetchAgents, fetchCommand, initialEditId])
 
   const handleNew = () => {
     setEditingId(null)
@@ -109,11 +124,15 @@ export function CommandsModal({ isOpen, onClose }: CommandsModalProps) {
       return
     }
 
-    setView('list')
+    initialEditId ? onClose() : setView('list')
   }
 
   const handleCancel = () => {
-    setView('list')
+    if (initialEditId) {
+      onClose()
+    } else {
+      setView('list')
+    }
   }
 
   const handleNameChange = (name: string) => {
@@ -125,7 +144,7 @@ export function CommandsModal({ isOpen, onClose }: CommandsModalProps) {
 
   if (view === 'edit') {
     return (
-      <Modal isOpen={isOpen} onClose={handleCancel} title={editingId ? 'Edit Command' : 'New Command'} size="lg">
+      <Modal isOpen={isOpen} onClose={handleCancel} title={editingId ? 'Edit Command' : 'New Command'} size="xl">
         <div className="space-y-3">
           {formError && (
             <div className="text-accent-error text-sm px-3 py-2 bg-accent-error/10 rounded">{formError}</div>
@@ -189,7 +208,7 @@ export function CommandsModal({ isOpen, onClose }: CommandsModalProps) {
   }
 
   return (
-    <Modal isOpen={isOpen} onClose={onClose} title="Commands" size="md">
+    <Modal isOpen={isOpen} onClose={onClose} title="Commands" size="lg">
       <div className="flex items-center justify-between mb-4">
         <p className="text-text-secondary text-sm">
           Commands are pre-defined messages you can send with a single click.
@@ -278,15 +297,7 @@ export function CommandsModal({ isOpen, onClose }: CommandsModalProps) {
                   )
                 )}
 
-                <button
-                  onClick={() => handleEdit(command.id)}
-                  className="p-1.5 rounded hover:bg-bg-primary text-text-muted hover:text-text-primary transition-colors"
-                  title="Edit command"
-                >
-                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-                  </svg>
-                </button>
+                <EditButton onClick={() => handleEdit(command.id)} />
 
                 {confirmDeleteId === command.id ? (
                   <div className="flex items-center gap-1">

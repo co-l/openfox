@@ -47,9 +47,9 @@ export function Modal({ isOpen, onClose, title, children, size = 'md' }: ModalPr
   const sizeClasses = {
     sm: 'max-w-sm md:max-w-sm',
     md: 'max-w-[90vw] md:max-w-md',
-    lg: 'max-w-[90vw] md:max-w-2xl',
-    xl: 'max-w-[90vw] md:max-w-4xl',
-    full: 'max-w-[95vw]',
+    lg: 'max-w-[90vw] md:max-w-2xl h-[80vh]',
+    xl: 'max-w-[90vw] md:max-w-4xl h-[80vh]',
+    full: 'max-w-[95vw] h-[90vh]',
   }
 
   return createPortal(

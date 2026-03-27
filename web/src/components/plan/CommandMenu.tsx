@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { useCommandsStore } from '../../stores/commands'
+import { CommandsModal } from '../settings/CommandsModal'
+import { EditButton } from '../shared/IconButton'
 
 interface CommandMenuProps {
   onSendCommand: (content: string, agentMode?: string) => void
@@ -10,6 +12,7 @@ export function CommandMenu({ onSendCommand, onOpenManager }: CommandMenuProps) 
   const [isOpen, setIsOpen] = useState(false)
   const [search, setSearch] = useState('')
   const [selectedIndex, setSelectedIndex] = useState(0)
+  const [editId, setEditId] = useState<string | null>(null)
   const containerRef = useRef<HTMLDivElement>(null)
   const searchRef = useRef<HTMLInputElement>(null)
 
@@ -117,18 +120,30 @@ export function CommandMenu({ onSendCommand, onOpenManager }: CommandMenuProps) 
               </div>
             ) : (
               filtered.map((command, index) => (
-                <button
+                <div
                   key={command.id}
-                  type="button"
-                  onClick={() => handleSelect(command.id)}
-                  className={`w-full text-left px-3 py-2 rounded transition-colors ${
+                  className={`flex items-center gap-1 px-3 py-2 rounded transition-colors group ${
                     index === selectedIndex
                       ? 'bg-accent-primary/20'
                       : 'hover:bg-bg-tertiary'
                   }`}
                 >
-                  <div className="text-sm text-text-primary font-medium">{command.name}</div>
-                </button>
+                  <button
+                    type="button"
+                    onClick={() => handleSelect(command.id)}
+                    className="flex-1 text-left"
+                  >
+                    <div className="text-sm text-text-primary font-medium">{command.name}</div>
+                  </button>
+                  <EditButton
+                    className="opacity-0 group-hover:opacity-100"
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      setIsOpen(false)
+                      setEditId(command.id)
+                    }}
+                  />
+                </div>
               ))
             )}
           </div>
@@ -145,6 +160,8 @@ export function CommandMenu({ onSendCommand, onOpenManager }: CommandMenuProps) 
           </div>
         </div>
       )}
+
+      <CommandsModal isOpen={!!editId} onClose={() => setEditId(null)} initialEditId={editId} />
     </div>
   )
 }

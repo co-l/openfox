@@ -1,12 +1,14 @@
 import { useEffect, useState, useMemo, useCallback, useRef } from 'react'
 import { Modal } from '../shared/Modal'
 import { Button } from '../shared/Button'
+import { EditButton } from '../shared/IconButton'
 import { useWorkflowsStore, type WorkflowFull, type WorkflowStep } from '../../stores/workflows'
 import type { AgentInfo } from '../../stores/agents'
 
 interface WorkflowsModalProps {
   isOpen: boolean
   onClose: () => void
+  initialEditId?: string | null
 }
 
 function toSlug(name: string): string {
@@ -885,7 +887,7 @@ const DEFAULT_STEPS: WorkflowStep[] = []
 // Main Modal
 // ============================================================================
 
-export function WorkflowsModal({ isOpen, onClose }: WorkflowsModalProps) {
+export function WorkflowsModal({ isOpen, onClose, initialEditId }: WorkflowsModalProps) {
   const workflows = useWorkflowsStore(state => state.workflows)
   const modifiedIds = useWorkflowsStore(state => state.modifiedIds)
   const loading = useWorkflowsStore(state => state.loading)
@@ -925,15 +927,33 @@ export function WorkflowsModal({ isOpen, onClose }: WorkflowsModalProps) {
     if (isOpen) {
       fetchWorkflows()
       fetch('/api/agents').then(r => r.json()).then(d => setAgentTypes(d.agents ?? [])).catch(() => {})
-      setView('list')
-      setEditingId(null)
       setConfirmDeleteId(null)
       setConfirmRestoreId(null)
       setConfirmRestoreAll(false)
       setSelectedNodeKey(null)
       setSelectedEdgeKey(null)
+      if (initialEditId) {
+        setView('edit')
+        setEditingId(initialEditId)
+        setFormError('')
+        fetchWorkflow(initialEditId).then(workflow => {
+          if (!workflow) return
+          setFormName(workflow.metadata.name)
+          setFormId(workflow.metadata.id)
+          setFormDescription(workflow.metadata.description)
+          setFormVersion(workflow.metadata.version)
+          setFormColor(workflow.metadata.color ?? '#3b82f6')
+          setFormEntryStep(workflow.entryStep)
+          setFormMaxIterations(workflow.settings.maxIterations)
+          setFormSteps(workflow.steps)
+          setFormStartCondition(workflow.startCondition ?? { type: 'always' })
+        })
+      } else {
+        setView('list')
+        setEditingId(null)
+      }
     }
-  }, [isOpen, fetchWorkflows])
+  }, [isOpen, fetchWorkflows, fetchWorkflow, initialEditId])
 
   const handleNew = () => {
     setEditingId(null)
@@ -983,7 +1003,15 @@ export function WorkflowsModal({ isOpen, onClose }: WorkflowsModalProps) {
   }
 
   const handleSave = async () => { await doSave() }
-  const handleSaveAndClose = async () => { if (await doSave()) setView('list') }
+  const handleSaveAndClose = async () => { if (await doSave()) { initialEditId ? onClose() : setView('list') } }
+
+  const handleCancelEdit = () => {
+    if (initialEditId) {
+      onClose()
+    } else {
+      setView('list')
+    }
+  }
 
   const handleNameChange = (name: string) => {
     setFormName(name)
@@ -1136,7 +1164,7 @@ export function WorkflowsModal({ isOpen, onClose }: WorkflowsModalProps) {
     const edgeInfo = getSelectedEdgeInfo()
 
     return (
-      <Modal isOpen={isOpen} onClose={() => setView('list')} title={editingId ? 'Edit Workflow' : 'New Workflow'} size="full">
+      <Modal isOpen={isOpen} onClose={handleCancelEdit} title={editingId ? 'Edit Workflow' : 'New Workflow'} size="full">
         {formError && (
           <div className="text-accent-error text-sm px-3 py-2 bg-accent-error/10 rounded mb-3">{formError}</div>
         )}
@@ -1293,7 +1321,7 @@ export function WorkflowsModal({ isOpen, onClose }: WorkflowsModalProps) {
 
         {/* Footer */}
         <div className="flex justify-end gap-2 pt-3 mt-3 border-t border-border">
-          <Button variant="secondary" onClick={() => setView('list')}>Cancel</Button>
+          <Button variant="secondary" onClick={handleCancelEdit}>Cancel</Button>
           <Button variant="secondary" onClick={handleSave} disabled={saving || !formName}>
             {saving ? 'Saving...' : 'Save'}
           </Button>
@@ -1310,7 +1338,7 @@ export function WorkflowsModal({ isOpen, onClose }: WorkflowsModalProps) {
   // ============================================================================
 
   return (
-    <Modal isOpen={isOpen} onClose={onClose} title="Workflows" size="md">
+    <Modal isOpen={isOpen} onClose={onClose} title="Workflows" size="lg">
       <div className="flex items-center justify-between mb-4">
         <p className="text-text-secondary text-sm">
           Workflows define the orchestrator's step sequence when running tasks.
@@ -1394,9 +1422,7 @@ export function WorkflowsModal({ isOpen, onClose }: WorkflowsModalProps) {
                     </button>
                   )
                 )}
-                <button onClick={() => handleEdit(workflow.id)} className="p-1.5 rounded hover:bg-bg-primary text-text-muted hover:text-text-primary transition-colors">
-                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" /></svg>
-                </button>
+                <EditButton onClick={() => handleEdit(workflow.id)} />
                 {workflow.id !== 'default' && (
                   confirmDeleteId === workflow.id ? (
                     <div className="flex items-center gap-1">
