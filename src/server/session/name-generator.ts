@@ -39,6 +39,7 @@ User message: {message}`
 export interface GenerateSessionNameOptions {
   userMessage: string
   llmClient: LLMClientWithModel
+  signal?: AbortSignal
 }
 
 export interface GenerateSessionNameResult {
@@ -55,13 +56,13 @@ export interface GenerateSessionNameResult {
 export async function generateSessionName(
   options: GenerateSessionNameOptions
 ): Promise<GenerateSessionNameResult> {
-  const { userMessage, llmClient } = options
-  
+  const { userMessage, llmClient, signal } = options
+
   try {
     // Use non-thinking variant by disabling thinking
     // This ensures only the name is returned, no reasoning
     const prompt = SESSION_NAME_PROMPT.replace('{message}', userMessage)
-    
+
     const messages: LLMMessage[] = [
       {
         role: 'user',
@@ -69,10 +70,15 @@ export async function generateSessionName(
       },
     ]
 
+    const timeoutSignal = AbortSignal.timeout(60000)
+    const composedSignal = signal
+      ? AbortSignal.any([timeoutSignal, signal])
+      : timeoutSignal
+
     const response = await llmClient.complete({
       messages,
       tools: [],
-      signal: AbortSignal.timeout(60000),
+      signal: composedSignal,
       disableThinking: true
     })
 

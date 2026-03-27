@@ -244,6 +244,8 @@ export async function runTopLevelAgentLoop(
       ...(signal ? { signal } : {}),
     })
 
+    if (signal?.aborted) throw new Error('Aborted')
+
     const session = sessionManager.requireSession(sessionId)
 
     // Inject kickoff prompt (e.g., builder kickoff) on first iteration
@@ -252,6 +254,8 @@ export async function runTopLevelAgentLoop(
     }
 
     const { content: instructionContent, files } = await getAllInstructions(session.workdir, session.projectId)
+    if (signal?.aborted) throw new Error('Aborted')
+
     const injectedFiles: InjectedFile[] = files.map(f => ({
       path: f.path,
       content: f.content ?? '',
@@ -276,6 +280,7 @@ export async function runTopLevelAgentLoop(
 
     const configDir = getGlobalConfigDir(getRuntimeConfig().mode ?? 'production')
     const skills = await getEnabledSkillMetadata(configDir)
+    if (signal?.aborted) throw new Error('Aborted')
 
     const assembledRequest = config.assembleRequest({
       workdir: session.workdir,

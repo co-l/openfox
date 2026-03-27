@@ -357,6 +357,7 @@ async function handleClientMessage(
     controller.abort()
     cancelQuestionsForSession(sessionId, reason)
     cancelPathConfirmationsForSession(sessionId, reason)
+    sessionManager.clearMessageQueue(sessionId)
     sessionManager.setRunning(sessionId, false)
     sendForSession(sessionId, createSessionRunningMessage(false))
     const contextState = sessionManager.getContextState(sessionId)
@@ -756,67 +757,7 @@ async function handleClientMessage(
 
       ensureEventStoreSubscription(sessionId)
 
-      await maybeAutoCompactContext({
-        sessionManager,
-        sessionId,
-        llmClient: llmForSession(sessionId),
-        statsIdentity: statsForSession(sessionId),
-      })
-      
-      // Add user message with attachments (emits events to EventStore)
-      const userMessage = sessionManager.addMessage(sessionId, {
-        role: 'user',
-        content: message.payload.content,
-        ...(message.payload.attachments && { attachments: message.payload.attachments }),
-        ...(message.payload.messageKind && { messageKind: message.payload.messageKind }),
-        ...(message.payload.isSystemGenerated && { isSystemGenerated: message.payload.isSystemGenerated }),
-      })
-      
-      // Check if we need to generate a session name (first message with default/empty title)
-      const messageCount = getSessionMessageCount(sessionId)
-      if (needsNameGeneration(currentSession.metadata.title, messageCount)) {
-        // Generate name in parallel - don't block the chat turn
-        // Use the active LLM client (respects user's selected model)
-        generateSessionName({
-          userMessage: message.payload.content,
-          llmClient: llmForSession(sessionId),
-        })
-          .then(async (result) => {
-            if (result.success && result.name) {
-              // Update DB with the generated name
-              updateSessionMetadata(sessionId, { title: result.name })
-              
-              // Emit session.name_generated event to EventStore
-              eventStore.append(sessionId, {
-                type: 'session.name_generated',
-                data: { name: result.name },
-              })
-              
-              // Broadcast updated session state to all WebSocket clients
-              const updatedSession = sessionManager.getSession(sessionId)
-              if (updatedSession) {
-                const events = eventStore.getEvents(sessionId)
-                const messages = buildMessagesFromStoredEvents(events)
-                broadcastForSession(sessionId, createSessionStateMessage(updatedSession, messages))
-              }
-              
-              logger.info('Session name generated', { sessionId, name: result.name })
-            }
-          })
-          .catch((error) => {
-            logger.warn('Session name generation failed', { sessionId, error: error instanceof Error ? error.message : error })
-            // Don't propagate error - name generation is optional
-          })
-      }
-      
-      // Mark session as running (emits running.changed event)
-      sessionManager.setRunning(sessionId, true)
-      
-      // Send user message directly to client (don't rely on EventStore subscription for this)
-      sendForSession(sessionId, createChatMessageMessage(userMessage))
-      sendForSession(sessionId, createSessionRunningMessage(true))
-      
-      // Create AbortController for this chat (abort existing if any - defense in depth)
+      // Create AbortController EARLY so escape works during all phases (including compaction)
       const controller = new AbortController()
       const existingController = activeAgents.get(sessionId)
       if (existingController) {
@@ -824,14 +765,96 @@ async function handleClientMessage(
         existingController.abort()
       }
       activeAgents.set(sessionId, controller)
-      
+
+      // Mark session as running immediately so UI shows stop button
+      sessionManager.setRunning(sessionId, true)
+      sendForSession(sessionId, createSessionRunningMessage(true))
+
       // Acknowledge immediately
       send({ type: 'ack', payload: {}, id: message.id })
-      
-      // Use NEW orchestrator (events go through EventStore → WS subscription)
-      // Completion queue auto-sends next message when turn finishes
-      startTurnWithCompletionChain(sessionId, controller)
-      
+
+      try {
+        await maybeAutoCompactContext({
+          sessionManager,
+          sessionId,
+          llmClient: llmForSession(sessionId),
+          statsIdentity: statsForSession(sessionId),
+          signal: controller.signal,
+        })
+
+        // Check if aborted during compaction
+        if (controller.signal.aborted) {
+          break
+        }
+
+        // Add user message with attachments (emits events to EventStore)
+        const userMessage = sessionManager.addMessage(sessionId, {
+          role: 'user',
+          content: message.payload.content,
+          ...(message.payload.attachments && { attachments: message.payload.attachments }),
+          ...(message.payload.messageKind && { messageKind: message.payload.messageKind }),
+          ...(message.payload.isSystemGenerated && { isSystemGenerated: message.payload.isSystemGenerated }),
+        })
+
+        // Send user message directly to client (don't rely on EventStore subscription for this)
+        sendForSession(sessionId, createChatMessageMessage(userMessage))
+
+        // Check if we need to generate a session name (first message with default/empty title)
+        const messageCount = getSessionMessageCount(sessionId)
+        if (needsNameGeneration(currentSession.metadata.title, messageCount)) {
+          // Generate name in parallel - don't block the chat turn
+          // Use the active LLM client (respects user's selected model)
+          generateSessionName({
+            userMessage: message.payload.content,
+            llmClient: llmForSession(sessionId),
+            signal: controller.signal,
+          })
+            .then(async (result) => {
+              if (result.success && result.name) {
+                // Update DB with the generated name
+                updateSessionMetadata(sessionId, { title: result.name })
+
+                // Emit session.name_generated event to EventStore
+                eventStore.append(sessionId, {
+                  type: 'session.name_generated',
+                  data: { name: result.name },
+                })
+
+                // Broadcast updated session state to all WebSocket clients
+                const updatedSession = sessionManager.getSession(sessionId)
+                if (updatedSession) {
+                  const events = eventStore.getEvents(sessionId)
+                  const messages = buildMessagesFromStoredEvents(events)
+                  broadcastForSession(sessionId, createSessionStateMessage(updatedSession, messages))
+                }
+
+                logger.info('Session name generated', { sessionId, name: result.name })
+              }
+            })
+            .catch((error) => {
+              logger.warn('Session name generation failed', { sessionId, error: error instanceof Error ? error.message : error })
+              // Don't propagate error - name generation is optional
+            })
+        }
+
+        // Use NEW orchestrator (events go through EventStore → WS subscription)
+        // Completion queue auto-sends next message when turn finishes
+        startTurnWithCompletionChain(sessionId, controller)
+      } catch (error) {
+        // Clean up on failure (including abort during pre-turn phase)
+        if (activeAgents.get(sessionId) === controller) {
+          activeAgents.delete(sessionId)
+        }
+        sessionManager.setRunning(sessionId, false)
+        sendForSession(sessionId, createSessionRunningMessage(false))
+        const contextState = sessionManager.getContextState(sessionId)
+        sendForSession(sessionId, createContextStateMessage(contextState))
+
+        if (!(error instanceof Error && error.message === 'Aborted')) {
+          logger.error('Chat send pre-turn error', { sessionId, error })
+        }
+      }
+
       break
     }
 
