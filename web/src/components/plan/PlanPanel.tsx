@@ -19,7 +19,9 @@ import { compressImage, isValidImageType, validateImageSize } from '../../lib/im
 import { buildPromptContextByUserMessageId } from './prompt-context-linking.js'
 import { ProviderSelector } from '../settings/ProviderSelector'
 import { CommandMenu } from './CommandMenu'
+import { WorkflowMenu } from './WorkflowMenu'
 import { CommandsModal } from '../settings/CommandsModal'
+import { WorkflowsModal } from '../settings/WorkflowsModal'
 import { generateUUID } from '../../lib/uuid.js'
 import { groupMessages, type DisplayItem } from './groupMessages.js'
 import { usePromptHistory } from '../../hooks/usePromptHistory.js'
@@ -32,6 +34,7 @@ export function PlanPanel() {
   const [dragOver, setDragOver] = useState(false)
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
   const [showCommandsModal, setShowCommandsModal] = useState(false)
+  const [showWorkflowsModal, setShowWorkflowsModal] = useState(false)
   const virtuosoRef = useRef<VirtuosoHandle>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -484,7 +487,18 @@ export function PlanPanel() {
   
   // Show Launch button in builder mode when there are pending criteria
   const showLaunchButton = isBuilding && hasPendingCriteria && !isRunning && !isDone
-  
+
+  const handleSelectWorkflow = (workflowId: string) => {
+    const content = input.trim() ? input : undefined
+    const atts = attachments.length > 0 ? attachments : undefined
+    if (isPlanning) {
+      acceptAndBuild(workflowId, content, atts)
+    } else if (isBuilding) {
+      launchRunner(content, atts, workflowId)
+    }
+    clearInput()
+  }
+
   return (
     <SessionLayout criteriaSidebarOpen={criteriaSidebarOpen} messages={messages}>
       {pendingPathConfirmation && (
@@ -735,16 +749,23 @@ export function PlanPanel() {
           />
           {!isRunning ? (
             <div className="flex flex-col items-end gap-1">
-              <CommandMenu
-                onSendCommand={(content, agentMode) => {
-                  if (agentMode && session?.mode !== agentMode) {
-                    useSessionStore.getState().switchMode(agentMode)
-                  }
-                  virtuosoRef.current?.scrollToIndex({ index: 'LAST', behavior: 'smooth' })
-                  sendMessage(content, undefined, { messageKind: 'command', isSystemGenerated: true })
-                }}
-                onOpenManager={() => setShowCommandsModal(true)}
-              />
+              <div className="flex items-center gap-3">
+                <CommandMenu
+                  onSendCommand={(content, agentMode) => {
+                    if (agentMode && session?.mode !== agentMode) {
+                      useSessionStore.getState().switchMode(agentMode)
+                    }
+                    virtuosoRef.current?.scrollToIndex({ index: 'LAST', behavior: 'smooth' })
+                    sendMessage(content, undefined, { messageKind: 'command', isSystemGenerated: true })
+                  }}
+                  onOpenManager={() => setShowCommandsModal(true)}
+                />
+                <WorkflowMenu
+                  onSelectWorkflow={handleSelectWorkflow}
+                  onOpenManager={() => setShowWorkflowsModal(true)}
+                  criteria={session?.criteria ?? []}
+                />
+              </div>
               <div className="flex items-center gap-2">
                 {showLaunchButton && (
                   <button
@@ -812,6 +833,7 @@ export function PlanPanel() {
         </div>
       </form>
       <CommandsModal isOpen={showCommandsModal} onClose={() => setShowCommandsModal(false)} />
+      <WorkflowsModal isOpen={showWorkflowsModal} onClose={() => setShowWorkflowsModal(false)} />
     </SessionLayout>
   )
 }

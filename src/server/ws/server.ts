@@ -992,14 +992,17 @@ async function handleClientMessage(
         return
       }
       
-      if (session.criteria.length === 0) {
+      // Skip criteria check when a specific workflow is requested (workflow's own
+      // startCondition will be evaluated by the executor)
+      const acceptPayloadEarly = message.payload as { workflowId?: string } | undefined
+      if (!acceptPayloadEarly?.workflowId && session.criteria.length === 0) {
         send(createErrorMessage('NO_CRITERIA', 'Cannot accept: no criteria defined', message.id))
         return
       }
-      
+
       const sessionId = client.activeSessionId
       const eventStore = getEventStore()
-      
+
       // Acknowledge immediately
       send({ type: 'ack', payload: {}, id: message.id })
       
@@ -1081,14 +1084,26 @@ async function handleClientMessage(
           }
           activeAgents.set(sessionId, controller)
 
+          // If the user included a message with accept, add it as a user message
+          const acceptPayload = message.payload as { content?: string; attachments?: unknown[]; workflowId?: string } | undefined
+          const acceptAttachments = acceptPayload?.attachments as Attachment[] | undefined
+          const hasAcceptContent = acceptPayload?.content && typeof acceptPayload.content === 'string' && acceptPayload.content.trim()
+          const hasAcceptAttachments = acceptAttachments && acceptAttachments.length > 0
+          if (hasAcceptContent || hasAcceptAttachments) {
+            sessionManager.addMessage(sessionId, {
+              role: 'user',
+              content: hasAcceptContent ? acceptPayload.content! : '',
+              ...(hasAcceptAttachments ? { attachments: acceptAttachments } : {}),
+            })
+          }
+
           // Auto-start orchestrator (full state machine with verification)
-          const acceptPayload = message.payload as { workflowId?: string } | undefined
           await runOrchestrator({
             sessionManager,
             sessionId,
             llmClient: llmForSession(sessionId),
             statsIdentity: statsForSession(sessionId),
-            injectBuilderKickoff: true,
+            injectBuilderKickoff: !(hasAcceptContent || hasAcceptAttachments),
             ...(acceptPayload?.workflowId ? { workflowId: acceptPayload.workflowId } : {}),
             signal: controller.signal,
             onMessage: (msg) => sendForSession(sessionId, msg),  // For path confirmation dialogs
@@ -1255,13 +1270,15 @@ async function handleClientMessage(
         return
       }
       
-      // Check if there are pending criteria
+      // Check if there are pending criteria (skip when a specific workflow is
+      // requested — the workflow's own startCondition handles validation)
+      const launchPayloadEarly = message.payload as { workflowId?: string } | undefined
       const pendingCriteria = session.criteria.filter(c => c.status.type !== 'passed')
-      if (pendingCriteria.length === 0) {
+      if (!launchPayloadEarly?.workflowId && pendingCriteria.length === 0) {
         send(createErrorMessage('NO_WORK', 'No pending criteria to work on', message.id))
         return
       }
-      
+
       const sessionId = client.activeSessionId
       const eventStore = getEventStore()
 
@@ -1273,17 +1290,12 @@ async function handleClientMessage(
         sessionManager.resetAllCriteriaAttempts(sessionId)
       }
 
-      // If the user included a message with the launch, add it as a user message
+      // Parse launch payload early
       const launchPayload = message.payload as { content?: string; attachments?: unknown[]; workflowId?: string } | undefined
-      const hasUserMessage = launchPayload?.content && typeof launchPayload.content === 'string' && launchPayload.content.trim()
-      if (hasUserMessage) {
-        const attachments = launchPayload.attachments as Attachment[] | undefined
-        sessionManager.addMessage(sessionId, {
-          role: 'user',
-          content: launchPayload.content!,
-          ...(attachments ? { attachments } : {}),
-        })
-      }
+      const launchAttachments = launchPayload?.attachments as Attachment[] | undefined
+      const hasUserContent = launchPayload?.content && typeof launchPayload.content === 'string' && launchPayload.content.trim()
+      const hasUserAttachments = launchAttachments && launchAttachments.length > 0
+      const hasUserMessage = hasUserContent || hasUserAttachments
 
       // Mark session as running (emits running.changed event)
       sessionManager.setRunning(sessionId, true)
@@ -1303,6 +1315,15 @@ async function handleClientMessage(
 
       // Ensure client is subscribed to EventStore (tab model - additive)
       ensureEventStoreSubscription(sessionId)
+
+      // Add user message AFTER subscription so it appears in the feed
+      if (hasUserMessage) {
+        sessionManager.addMessage(sessionId, {
+          role: 'user',
+          content: hasUserContent ? launchPayload!.content! : '',
+          ...(hasUserAttachments ? { attachments: launchAttachments } : {}),
+        })
+      }
 
       // Run orchestrator asynchronously
       logger.info('Runner launching', { sessionId, pendingCriteria: pendingCriteria.length })

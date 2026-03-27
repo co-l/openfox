@@ -72,22 +72,15 @@ function SessionDropdown({ sessions, currentProject, currentSession }: SessionDr
   const createSession = useSessionStore(state => state.createSession)
   const pendingSessionCreate = useSessionStore(state => state.pendingSessionCreate)
   const resetPendingSessionCreate = useSessionStore(state => state.resetPendingSessionCreate)
-  const sessionsList = useSessionStore(state => state.sessions)
 
-  const [previousSessionId, setPreviousSessionId] = useState(currentSession?.id)
-
-  // Navigate to new session when it's created
+  // Navigate to new session when server confirms creation.
+  // pendingSessionCreate transitions: false → true (waiting) → sessionId (ready to navigate) → false (done)
   useEffect(() => {
-    if (pendingSessionCreate && currentProject) {
-      // Find the newest session for this project
-      const newSession = sessionsList.find(s => s.projectId === currentProject.id)
-      if (newSession && newSession.id !== previousSessionId) {
-        navigate(`/p/${currentProject.id}/s/${newSession.id}`)
-        setPreviousSessionId(newSession.id)
-        resetPendingSessionCreate()
-      }
+    if (typeof pendingSessionCreate === 'string' && currentProject) {
+      navigate(`/p/${currentProject.id}/s/${pendingSessionCreate}`)
+      resetPendingSessionCreate()
     }
-  }, [pendingSessionCreate, sessionsList, currentProject, previousSessionId, navigate, resetPendingSessionCreate])
+  }, [pendingSessionCreate, currentProject, navigate, resetPendingSessionCreate])
 
   // Filter sessions to those belonging to the current project by ID
   const projectSessions = sessions.filter(session => session.projectId === currentProject.id).slice(0, 15)

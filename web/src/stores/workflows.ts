@@ -6,6 +6,7 @@ export interface WorkflowInfo {
   description: string
   version: string
   color?: string
+  startCondition?: { type: string; result?: string }
 }
 
 export interface WorkflowStep {

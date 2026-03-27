@@ -197,8 +197,8 @@ interface SessionState {
   // Error state
   error: { code: string; message: string } | null
   
-  // Track if we're waiting for a new session to be created
-  pendingSessionCreate: boolean
+  // Track new session creation: true while waiting for server, session ID once created (for navigation)
+  pendingSessionCreate: boolean | string
   
   // Actions
   connect: () => Promise<void>
@@ -222,7 +222,7 @@ interface SessionState {
 
   // Mode switching
   switchMode: (mode: SessionMode) => void
-  acceptAndBuild: (workflowId?: string) => void
+  acceptAndBuild: (workflowId?: string, content?: string, attachments?: Attachment[]) => void
   
   // Criteria (from UI)
   editCriteria: (criteria: Criterion[]) => void
@@ -243,7 +243,7 @@ interface SessionState {
 
   clearError: () => void
   
-  // Reset pending session create flag (called after navigation)
+  // Reset pending session create state (called after navigation)
   resetPendingSessionCreate: () => void
   
   // Internal
@@ -406,7 +406,7 @@ export const useSessionStore = create<SessionState>((set, get) => {
   queuedMessages: [],
   abortInProgress: false,
   error: null,
-  pendingSessionCreate: false,
+  pendingSessionCreate: false as boolean | string,
 
   connect: async () => {
     const status = get().connectionStatus
@@ -519,10 +519,8 @@ export const useSessionStore = create<SessionState>((set, get) => {
   launchRunner: (content?: string, attachments?: Attachment[], workflowId?: string) => {
     set({ streamingMessageId: null })
     const payload: Record<string, unknown> = {}
-    if (content?.trim()) {
-      payload.content = content
-      if (attachments && attachments.length > 0) payload.attachments = attachments
-    }
+    if (content?.trim()) payload.content = content
+    if (attachments && attachments.length > 0) payload.attachments = attachments
     if (workflowId) payload.workflowId = workflowId
     wsClient.send('runner.launch', payload)
   },
@@ -531,9 +529,13 @@ export const useSessionStore = create<SessionState>((set, get) => {
     wsClient.send('mode.switch', { mode })
   },
 
-  acceptAndBuild: (workflowId?: string) => {
+  acceptAndBuild: (workflowId?: string, content?: string, attachments?: Attachment[]) => {
     set({ streamingMessageId: null })
-    wsClient.send('mode.accept', workflowId ? { workflowId } : {})
+    const payload: Record<string, unknown> = {}
+    if (workflowId) payload.workflowId = workflowId
+    if (content?.trim()) payload.content = content
+    if (attachments && attachments.length > 0) payload.attachments = attachments
+    wsClient.send('mode.accept', payload)
   },
   
   editCriteria: (criteria) => {
@@ -570,7 +572,7 @@ export const useSessionStore = create<SessionState>((set, get) => {
   },
 
   resetPendingSessionCreate: () => {
-    set({ pendingSessionCreate: false })
+    set({ pendingSessionCreate: false as boolean | string })
   },
   
   handleServerMessage: (message) => {
@@ -596,6 +598,7 @@ export const useSessionStore = create<SessionState>((set, get) => {
         // This is the source of truth on load/reconnect
         cancelStreamingFlush()
         const streamingMsg = payload.messages.find(m => m.isStreaming) ?? null
+        const wasPendingCreate = get().pendingSessionCreate === true
         set({
           currentSession: payload.session,
           sessions: mergeSessionIntoSummary(get().sessions, payload.session),
@@ -606,7 +609,8 @@ export const useSessionStore = create<SessionState>((set, get) => {
           currentTodos: [],
           pendingPathConfirmation: null,
           error: null,
-          // Don't reset pendingSessionCreate here - let the component handle navigation first
+          // When this is the response to a session.create, store the new session ID for navigation
+          ...(wasPendingCreate ? { pendingSessionCreate: payload.session.id } : {}),
         })
 
         // Sync config store with session's provider/model for header display

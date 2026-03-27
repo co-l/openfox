@@ -8,7 +8,6 @@ export function EmptyProjectView() {
   const [, navigate] = useLocation()
   const currentProject = useProjectStore(state => state.currentProject)
   const createSession = useSessionStore(state => state.createSession)
-  const currentSession = useSessionStore(state => state.currentSession)
   const pendingSessionCreate = useSessionStore(state => state.pendingSessionCreate)
   const resetPendingSessionCreate = useSessionStore(state => state.resetPendingSessionCreate)
   
@@ -18,16 +17,14 @@ export function EmptyProjectView() {
     }
   }
 
-  // Navigate to the new session when it's created
-  // Only navigate if we're waiting for a new session to be created
+  // Navigate to the new session when server confirms creation.
+  // pendingSessionCreate transitions: false → true (waiting) → sessionId (ready) → false (done)
   useEffect(() => {
-    if (pendingSessionCreate && currentProject && currentSession) {
-      const sessionPath = `/p/${currentProject.id}/s/${currentSession.id}`
-      navigate(sessionPath)
-      // Reset the flag after navigation
+    if (typeof pendingSessionCreate === 'string' && currentProject) {
+      navigate(`/p/${currentProject.id}/s/${pendingSessionCreate}`)
       resetPendingSessionCreate()
     }
-  }, [pendingSessionCreate, currentSession, currentProject, navigate, resetPendingSessionCreate])
+  }, [pendingSessionCreate, currentProject, navigate, resetPendingSessionCreate])
   
   return (
     <div className="h-full flex flex-col items-center justify-center p-8 text-center">

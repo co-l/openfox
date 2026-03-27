@@ -505,7 +505,7 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
       getModifiedDefaultWorkflowIds(configDir),
     ])
     res.json({
-      workflows: workflows.map(p => p.metadata),
+      workflows: workflows.map(p => ({ ...p.metadata, startCondition: p.startCondition })),
       activeWorkflowId: config.activeWorkflowId ?? 'default',
       defaultIds,
       modifiedIds,

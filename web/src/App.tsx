@@ -75,6 +75,7 @@ function ProjectSessionView({
   const session = useSessionStore(state => state.currentSession)
   const loadSession = useSessionStore(state => state.loadSession)
   const listSessions = useSessionStore(state => state.listSessions)
+  const pendingSessionCreate = useSessionStore(state => state.pendingSessionCreate)
   const error = useSessionStore(state => state.error)
   const clearError = useSessionStore(state => state.clearError)
 
@@ -90,13 +91,13 @@ function ProjectSessionView({
 
   // Load session and session list
   useEffect(() => {
-    if (connectionStatus === 'connected' && sessionId && session?.id !== sessionId) {
+    if (connectionStatus === 'connected' && sessionId && session?.id !== sessionId && !pendingSessionCreate) {
       loadSession(sessionId)
     }
     if (connectionStatus === 'connected') {
       listSessions()
     }
-  }, [connectionStatus, sessionId, session?.id, loadSession, listSessions])
+  }, [connectionStatus, sessionId, session?.id, loadSession, listSessions, pendingSessionCreate])
 
   // Redirect to project view if session not found
   useEffect(() => {
