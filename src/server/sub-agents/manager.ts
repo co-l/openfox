@@ -31,7 +31,7 @@ import { logger } from '../utils/logger.js'
 const RETURN_VALUE_INSTRUCTION = `
 
 ## RETURN VALUE
-As the very last thing you do, call \`return_value\` with a structured summary of your work. This is how your findings get passed back to the calling agent. Do not finish without calling return_value.`
+As the very last thing you do, call \`return_value\` ONCE with a structured summary of your work. This is how your findings get passed back to the calling agent. Do not finish without calling return_value.`
 
 const RETURN_VALUE_NUDGE = 'You must call return_value with a summary of your findings before finishing. Call return_value now.'
 
