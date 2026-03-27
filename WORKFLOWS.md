@@ -64,7 +64,10 @@ Step results allow fine-grained control over workflow branching based on what a 
 
 ### How It Works
 
-1. A step (agent/sub-agent/shell) returns a result via the `return_value` tool
+1. A step (agent/sub-agent/shell) returns a result:
+   - **Agents**: Use `return_value` tool with `content` and optional `result`
+   - **Sub-agents**: Use `return_value` tool (automatically available)
+   - **Shell**: Exit code determines result (`success` for 0, `failure` otherwise)
 2. The next transition checks if the result matches the expected value
 3. Different results can route to different follow-up steps
 

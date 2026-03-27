@@ -199,7 +199,7 @@ async function runGenericAgentTurn(
 export async function runBuilderTurn(
   options: OrchestratorOptions,
   turnMetrics: TurnMetrics,
-): Promise<void> {
+): Promise<{ returnValueContent?: string; returnValueResult?: string }> {
   const { sessionManager, sessionId } = options
   const statsIdentity = resolveStatsIdentity(options)
   const eventStore = getEventStore()
@@ -207,7 +207,7 @@ export async function runBuilderTurn(
   const builderDef = findAgentById('builder', allAgents)!
   const subAgentDefs = getSubAgents(allAgents)
 
-  await runTopLevelAgentLoop({
+  return await runTopLevelAgentLoop({
     mode: 'builder',
     sessionManager,
     sessionId,

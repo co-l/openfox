@@ -299,7 +299,7 @@ export async function executeWorkflow(
         }
 
         const turnMetrics = new TurnMetrics()
-        await runBuilderTurn({
+        const agentResult = await runBuilderTurn({
           sessionManager,
           sessionId,
           llmClient,
@@ -310,7 +310,9 @@ export async function executeWorkflow(
         }, turnMetrics)
 
         isFirstBuilderEntry = false
-        stepOutcome = { result: 'completed', output: {} }
+        const agentReturnValue = agentResult.returnValueResult ?? 'completed'
+        lastStepOutput = { ...(agentResult.returnValueContent ? { content: agentResult.returnValueContent } : {}), ...(agentResult.returnValueResult ? { result: agentResult.returnValueResult } : {}) }
+        stepOutcome = { result: agentReturnValue, output: lastStepOutput }
         break
       }
 

@@ -227,11 +227,13 @@ function toRequestContextMessages(messages: Array<{
 export async function runTopLevelAgentLoop(
   config: TopLevelLoopConfig,
   turnMetrics: TurnMetrics,
-): Promise<void> {
+): Promise<{ returnValueContent?: string; returnValueResult?: string }> {
   const { mode, sessionManager, sessionId, llmClient, signal, onMessage, statsIdentity } = config
   const eventStore = getEventStore()
 
   let formatRetryCount = 0
+  let returnValueContent: string | undefined
+  let returnValueResult: string | undefined
 
   for (;;) {
     await maybeAutoCompactContext({
@@ -337,7 +339,7 @@ export async function runTopLevelAgentLoop(
       }))
 
       try {
-        await executeToolBatch(assistantMsgId, result.toolCalls, {
+        const batchResult = await executeToolBatch(assistantMsgId, result.toolCalls, {
           toolRegistry,
           sessionManager,
           sessionId,
@@ -349,6 +351,12 @@ export async function runTopLevelAgentLoop(
           statsIdentity,
           onToolExecuted: config.onToolExecuted,
         })
+        if (batchResult.returnValueContent) {
+          returnValueContent = batchResult.returnValueContent
+        }
+        if (batchResult.returnValueResult) {
+          returnValueResult = batchResult.returnValueResult
+        }
       } catch (error) {
         if (error instanceof Error && error.message === 'Aborted') {
           const stats = turnMetrics.buildStats(statsIdentity, mode)
@@ -399,5 +407,10 @@ export async function runTopLevelAgentLoop(
     }))
     eventStore.append(sessionId, createChatDoneEvent(assistantMsgId, 'complete', stats))
     break
+  }
+
+  return {
+    ...(returnValueContent ? { returnValueContent } : {}),
+    ...(returnValueResult ? { returnValueResult } : {}),
   }
 }
