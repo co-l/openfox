@@ -110,7 +110,7 @@ export function WorkflowMenu({ onSelectWorkflow, onOpenManager, criteria }: Work
         onClick={() => setIsOpen(o => !o)}
         className="text-sm text-text-muted hover:text-text-primary transition-colors"
       >
-        Workflows &rsaquo;
+        Workflows &darr;
       </button>
 
       {isOpen && (

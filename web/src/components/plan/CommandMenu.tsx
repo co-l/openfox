@@ -94,7 +94,7 @@ export function CommandMenu({ onSendCommand, onOpenManager, textareaContent, att
         onClick={() => setIsOpen(o => !o)}
         className="text-sm text-text-muted hover:text-text-primary transition-colors"
       >
-        Commands &rsaquo;
+        Commands &darr;
       </button>
 
       {isOpen && (
