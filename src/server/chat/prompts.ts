@@ -243,6 +243,8 @@ export const COMPACTION_PROMPT = `Summarize the conversation history concisely, 
 2. All errors encountered and how they were resolved
 3. Current progress on each task
 4. Any important decisions or learnings
+5. Next steps or pending actions that should be continued after compaction
+6. The user's current question, prompt, or active request
 
 Be thorough but concise. Output as a structured summary.
 
