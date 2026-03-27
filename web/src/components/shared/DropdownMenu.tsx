@@ -35,10 +35,7 @@ export function DropdownMenu({ items, trigger, minWidth = '120px' }: DropdownMen
 
   return (
     <div className="relative" ref={menuRef}>
-      <div onClick={(e) => {
-        e.stopPropagation()
-        setIsOpen(!isOpen)
-      }}>{trigger}</div>
+      <div onClick={() => setIsOpen(!isOpen)}>{trigger}</div>
 
       {isOpen && (
         <div className="absolute left-0 top-full mt-1 bg-bg-secondary border border-border rounded shadow-lg z-50" style={{ minWidth }}>
