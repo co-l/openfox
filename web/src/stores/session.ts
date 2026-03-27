@@ -37,6 +37,7 @@ import type {
   QueueStatePayload,
 } from '@shared/protocol.js'
 import { wsClient, type ConnectionStatus } from '../lib/ws'
+import { useDevServerStore } from './dev-server'
 import { useConfigStore } from './config'
 import { playNotification, playAchievement, playIntervention, playWaitingForUser } from '../lib/sound'
 import type { AgentType } from './notifications'
@@ -1138,6 +1139,12 @@ export const useSessionStore = create<SessionState>((set, get) => {
       case 'queue.state': {
         const payload = message.payload as QueueStatePayload
         set({ queuedMessages: payload.messages })
+        break
+      }
+
+      case 'devServer.output':
+      case 'devServer.state': {
+        useDevServerStore.getState().handleMessage(message)
         break
       }
 

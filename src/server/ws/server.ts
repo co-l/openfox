@@ -1,6 +1,7 @@
 import { WebSocketServer, WebSocket } from 'ws'
 import type { Server } from 'node:http'
 import type { ServerMessage } from '../../shared/protocol.js'
+import { createServerMessage } from '../../shared/protocol.js'
 import type { Config } from '../config.js'
 import type { LLMClientWithModel } from '../llm/client.js'
 import type { ToolRegistry } from '../tools/index.js'
@@ -20,6 +21,7 @@ import {
   cancelPathConfirmationsForSession,
 } from '../tools/index.js'
 import { logger } from '../utils/logger.js'
+import { devServerManager } from '../dev-server/manager.js'
 import {
   createProject,
   getProject,
@@ -242,6 +244,33 @@ export function createWebSocketServer(
     }
   })
   
+  // Broadcast dev server events to all connected clients
+  const broadcastAll = (msg: ServerMessage) => {
+    const serialized = serializeServerMessage(msg)
+    for (const [clientWs] of clients) {
+      if (clientWs.readyState === WebSocket.OPEN) {
+        clientWs.send(serialized)
+      }
+    }
+  }
+
+  // Global dev server event listeners — broadcast to all WS clients
+  devServerManager.onOutput((workdir, chunk) => {
+    broadcastAll(createServerMessage('devServer.output', {
+      workdir,
+      stream: chunk.stream,
+      content: chunk.content,
+    }))
+  })
+
+  devServerManager.onStateChange((workdir, state, errorMessage) => {
+    broadcastAll(createServerMessage('devServer.state', {
+      workdir,
+      state,
+      errorMessage,
+    }))
+  })
+
   wss.on('connection', (ws) => {
     logger.debug('WebSocket client connected')
     clients.set(ws, { ws, activeSessionId: null, subscribedSessions: new Map(), eventStoreSubscriptions: new Map() })

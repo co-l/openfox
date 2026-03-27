@@ -25,6 +25,8 @@ import { createSkillRoutes } from './routes/skills.js'
 import { createCommandRoutes } from './routes/commands.js'
 import { createAgentRoutes } from './routes/agents.js'
 import { createWorkflowRoutes } from './routes/workflows.js'
+import { createDevServerRoutes } from './routes/dev-server.js'
+import { devServerManager } from './dev-server/manager.js'
 import { getGlobalConfigDir } from '../cli/paths.js'
 import { logger, setLogLevel } from './utils/logger.js'
 const __dirname = dirname(fileURLToPath(import.meta.url))
@@ -118,6 +120,11 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
   // Health check
   app.get('/api/health', (_req, res) => {
     res.json({ status: 'ok', timestamp: new Date().toISOString() })
+  })
+
+  // Available tool names
+  app.get('/api/tools', (_req, res) => {
+    res.json({ tools: toolRegistry.tools.map(t => t.name) })
   })
 
   // Session endpoints (REST)
@@ -237,6 +244,7 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
   app.use('/api/commands', createCommandRoutes(configDir))
   app.use('/api/agents', createAgentRoutes(configDir))
   app.use('/api/workflows', createWorkflowRoutes(configDir, config))
+  app.use('/api/dev-server', createDevServerRoutes())
 
 
   // Branch API endpoint
@@ -444,6 +452,7 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
     close: () => new Promise<void>((resolve) => {
       logger.info('Shutting down...')
       void (async () => {
+        await devServerManager.stopAll()
         viteServer?.close()
 
         // Note: Not closing database here - it's a singleton shared across servers.

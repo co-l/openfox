@@ -5,6 +5,7 @@ import { useSessionStore } from '../../stores/session'
 import { formatTime, formatSpeed } from '../../lib/format-stats'
 import { StatsModal } from './StatsModal'
 import { CriteriaProgressSummary } from '../shared/CriteriaProgressSummary'
+import { DevServerFooter } from './DevServerFooter'
 import type { Message } from '@shared/types.js'
 
 interface SummaryDisplayProps {
@@ -70,19 +71,18 @@ export function SummaryDisplay({ summary, messages, workdir }: SummaryDisplayPro
         </div>
       </div>
 
-      {/* Branch info footer */}
+      {/* Git branch — above separator */}
       {branch && (
-        <div className="mt-4 pt-3 border-t border-border flex items-center gap-2 text-xs text-text-muted">
-          <svg className="w-3.5 h-3.5 flex-shrink-0" fill="currentColor" viewBox="0 0 24 24" aria-hidden="true">
-            <path
-              fillRule="evenodd"
-              d="M11.5 7V4a1 1 0 011 1v14a1 1 0 01-1-1v-3c-1.65 0-3.15.5-4.5 1.5V19a1 1 0 01-1-1V5a1 1 0 011 1v3c1.35-1 2.85-1.5 4.5-1.5zm6 0a1 1 0 011 1v11a1 1 0 01-1 1v-3c-1.65 0-3.15.5-4.5 1.5V19a1 1 0 01-1-1V5a1 1 0 011 1v3c1.35-1 2.85-1.5 4.5-1.5z"
-              clipRule="evenodd"
-            />
+        <div className="mt-4 flex items-center gap-2 text-sm">
+          <svg className="w-4 h-4 flex-shrink-0 text-text-muted" viewBox="0 0 16 16" fill="currentColor">
+            <path d="M9.5 3.25a2.25 2.25 0 1 1 3 2.122V6A2.5 2.5 0 0 1 10 8.5H6a1 1 0 0 0-1 1v1.128a2.251 2.251 0 1 1-1.5 0V5.372a2.25 2.25 0 1 1 1.5 0v1.836A2.493 2.493 0 0 1 6 7h4a1 1 0 0 0 1-1v-.628A2.25 2.25 0 0 1 9.5 3.25Zm-6 0a.75.75 0 1 0 1.5 0 .75.75 0 0 0-1.5 0Zm8.25-.75a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5ZM4.25 12a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5Z" />
           </svg>
-          <span className="truncate">{branch}</span>
+          <span className="truncate text-text-secondary" title={branch}>{branch}</span>
         </div>
       )}
+
+      {/* Dev Server — below separator */}
+      <DevServerFooter workdir={workdir} />
     </div>
   )
 }

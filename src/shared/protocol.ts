@@ -219,6 +219,9 @@ export type ServerMessageType =
   | 'provider.changed'    // Active provider was switched
   // Message queue events
   | 'queue.state'         // Broadcast current queue state to client
+  // Dev server events
+  | 'devServer.output'    // Streaming log chunk from dev server
+  | 'devServer.state'     // Dev server state change
   // Other
   | 'lsp.diagnostics'
   | 'error'
@@ -418,6 +421,19 @@ export interface ProviderChangedPayload {
 // Queue payloads (server → client)
 export interface QueueStatePayload {
   messages: QueuedMessage[]
+}
+
+// Dev server payloads
+export interface DevServerOutputPayload {
+  workdir: string
+  stream: 'stdout' | 'stderr'
+  content: string
+}
+
+export interface DevServerStatePayload {
+  workdir: string
+  state: 'off' | 'running' | 'warning' | 'error'
+  errorMessage?: string
 }
 
 // Other payloads

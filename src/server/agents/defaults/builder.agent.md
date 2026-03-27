@@ -18,6 +18,7 @@ tools:
   - todo_write
   - call_sub_agent
   - load_skill
+  - dev_server
 ---
 
 # Build Mode

@@ -10,14 +10,6 @@ interface AgentsModalProps {
   initialEditId?: string | null
 }
 
-const ALL_TOOLS = [
-  'read_file', 'write_file', 'edit_file', 'run_command',
-  'glob', 'grep', 'git', 'ask_user', 'web_fetch',
-  'complete_criterion', 'pass_criterion', 'fail_criterion',
-  'get_criteria', 'add_criterion', 'update_criterion', 'remove_criterion',
-  'todo_write', 'call_sub_agent', 'load_skill',
-]
-
 function toSlug(name: string): string {
   return name.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '')
 }
@@ -50,10 +42,12 @@ export function AgentsModal({ isOpen, onClose, initialEditId }: AgentsModalProps
 
   const [confirmRestoreId, setConfirmRestoreId] = useState<string | null>(null)
   const [confirmRestoreAll, setConfirmRestoreAll] = useState(false)
+  const [availableTools, setAvailableTools] = useState<string[]>([])
 
   useEffect(() => {
     if (isOpen) {
       fetchAgents()
+      fetch('/api/tools').then(r => r.json()).then(d => setAvailableTools(d.tools)).catch(() => {})
       setConfirmDeleteId(null)
       setConfirmRestoreId(null)
       setConfirmRestoreAll(false)
@@ -247,7 +241,7 @@ export function AgentsModal({ isOpen, onClose, initialEditId }: AgentsModalProps
           <div>
             <label className="block text-xs text-text-secondary mb-1">Tools</label>
             <div className="flex flex-wrap gap-1.5 p-2 bg-bg-tertiary border border-border rounded max-h-24 overflow-y-auto">
-              {ALL_TOOLS.map(tool => (
+              {availableTools.map(tool => (
                 <button
                   key={tool}
                   onClick={() => toggleTool(tool)}
