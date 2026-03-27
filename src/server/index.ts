@@ -649,7 +649,7 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
     app.use(viteServer.middlewares)
     
     // Handle CSS files explicitly - Vite middleware doesn't catch them
-    app.get('/src/styles/*.css', async (req, res) => {
+    app.get('/src/styles/{*path}.css', async (req, res) => {
       try {
         const result = await viteServer!.transformRequest(req.path.substring(1))
         if (!result) {
@@ -673,7 +673,7 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
       })
     })
     
-    app.get('/sounds/*', (req, res) => {
+    app.get('/sounds/{*path}', (req, res) => {
       const fullPath = join(webDir, req.path.substring(1))
       readFile(fullPath).then(content => {
         res.set('Content-Type', 'audio/mpeg')
@@ -684,7 +684,7 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
     })
     
     // SPA fallback for non-API routes (must be last)
-    app.get('*', (req, res) => {
+    app.get('{*path}', (req, res) => {
       if (req.path.startsWith('/api/')) {
         return
       }
@@ -723,7 +723,7 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
       })
     })
     
-    app.get('/sounds/*', (req, res) => {
+    app.get('/sounds/{*path}', (req, res) => {
       const fullPath = join(distWebDir, req.path.substring(1))
       readFile(fullPath).then(content => {
         res.set('Content-Type', 'audio/mpeg')
@@ -743,7 +743,7 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
     })
     
     // SPA fallback - serve index.html for any unmatched path
-    app.get('*', (req, res) => {
+    app.get('{*path}', (req, res) => {
       if (req.path.startsWith('/api/') || req.path.startsWith('/assets/') || req.path.startsWith('/sounds/') || req.path === '/fox.svg') {
         return
       }

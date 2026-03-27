@@ -89,10 +89,10 @@ const configSchema = z.object({
   defaultModelSelection: z.string().optional(),
   activeProviderId: z.string().optional(),
   activeWorkflowId: z.string().optional(),
-  server: serverSchema.default({}),
-  logging: loggingSchema.default({}),
-  database: databaseSchema.default({}),
-  workspace: workspaceSchema.default({}),
+  server: serverSchema.default({ port: 10369, host: '127.0.0.1', openBrowser: true }),
+  logging: loggingSchema.default({ level: 'info' as const }),
+  database: databaseSchema.default({ path: '' }),
+  workspace: workspaceSchema.default(() => ({ workdir: process.cwd() })),
 })
 
 // Old config schema (for migration detection)
@@ -107,9 +107,9 @@ const oldLlmSchema = z.object({
 
 const oldConfigSchema = z.object({
   llm: oldLlmSchema,
-  server: serverSchema.default({}),
-  logging: loggingSchema.default({}),
-  database: databaseSchema.default({}),
+  server: serverSchema.default({ port: 10369, host: '127.0.0.1', openBrowser: true }),
+  logging: loggingSchema.default({ level: 'info' as const }),
+  database: databaseSchema.default({ path: '' }),
 })
 
 // ============================================================================
