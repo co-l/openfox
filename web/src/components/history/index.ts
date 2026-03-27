@@ -1,1 +1,0 @@
-export { HistoryModal } from './HistoryModal'
