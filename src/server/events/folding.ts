@@ -431,7 +431,11 @@ export function buildContextMessagesFromStoredEvents(
           messages.push({
             id: `tool-${data.toolCallId}`,
             role: 'tool',
-            content: data.result.success ? (data.result.output ?? 'Success') : `Error: ${data.result.error}`,
+            content: data.result.success 
+              ? (data.result.output ?? 'Success')
+              : data.result.output 
+                ? `${data.result.output}\n\nError: ${data.result.error}`
+                : `Error: ${data.result.error}`,
             toolCallId: data.toolCallId,
           })
         }

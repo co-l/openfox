@@ -229,7 +229,11 @@ export async function runBuilderStep(options: BuilderStepOptions): Promise<StepR
       // Save tool result as separate message for LLM context
       const toolMsg = sessionManager.addMessage(sessionId, {
         role: 'tool',
-        content: toolResult.success ? (toolResult.output ?? 'Success') : `Error: ${toolResult.error}`,
+        content: toolResult.success 
+          ? (toolResult.output ?? 'Success')
+          : toolResult.output 
+            ? `${toolResult.output}\n\nError: ${toolResult.error}`
+            : `Error: ${toolResult.error}`,
         toolCallId: toolCall.id,
         toolName: toolCall.name,
         toolResult,
