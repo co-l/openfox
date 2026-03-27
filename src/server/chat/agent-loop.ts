@@ -177,7 +177,11 @@ export async function executeToolBatch(
 
     toolMessages.push({
       role: 'tool',
-      content: toolResult.success ? (toolResult.output ?? 'Success') : `Error: ${toolResult.error}`,
+      content: toolResult.success 
+        ? (toolResult.output ?? 'Success')
+        : toolResult.output 
+          ? `${toolResult.output}\n\nError: ${toolResult.error}`
+          : `Error: ${toolResult.error}`,
       source: 'history',
       toolCallId: toolCall.id,
     })
