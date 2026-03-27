@@ -184,13 +184,13 @@ function executeCommand(
     proc.stdout.on('data', (data: Buffer) => {
       const chunk = data.toString()
       stdout += chunk
-      onProgress?.(`[stdout] ${chunk.trim()}`)
+      onProgress?.(`[stdout] ${chunk}`)
     })
     
     proc.stderr.on('data', (data: Buffer) => {
       const chunk = data.toString()
       stderr += chunk
-      onProgress?.(`[stderr] ${chunk.trim()}`)
+      onProgress?.(`[stderr] ${chunk}`)
     })
     
     proc.on('close', (code) => {
