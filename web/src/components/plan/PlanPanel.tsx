@@ -736,7 +736,10 @@ export function PlanPanel() {
           {!isRunning ? (
             <div className="flex flex-col items-end gap-1">
               <CommandMenu
-                onSendCommand={(content) => {
+                onSendCommand={(content, agentMode) => {
+                  if (agentMode && session?.mode !== agentMode) {
+                    useSessionStore.getState().switchMode(agentMode)
+                  }
                   virtuosoRef.current?.scrollToIndex({ index: 'LAST', behavior: 'smooth' })
                   sendMessage(content, undefined, { messageKind: 'command', isSystemGenerated: true })
                 }}

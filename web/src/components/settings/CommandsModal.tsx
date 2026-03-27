@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { Modal } from '../shared/Modal'
 import { Button } from '../shared/Button'
 import { useCommandsStore, type CommandFull } from '../../stores/commands'
+import { useAgentsStore } from '../../stores/agents'
 
 interface CommandsModalProps {
   isOpen: boolean
@@ -25,27 +26,34 @@ export function CommandsModal({ isOpen, onClose }: CommandsModalProps) {
   const [editingId, setEditingId] = useState<string | null>(null)
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null)
 
+  const agents = useAgentsStore(state => state.agents)
+  const fetchAgents = useAgentsStore(state => state.fetchAgents)
+  const topLevelAgents = agents.filter(a => !a.subagent)
+
   // Form state
   const [formName, setFormName] = useState('')
   const [formId, setFormId] = useState('')
   const [formPrompt, setFormPrompt] = useState('')
+  const [formAgentMode, setFormAgentMode] = useState('')
   const [formError, setFormError] = useState('')
   const [saving, setSaving] = useState(false)
 
   useEffect(() => {
     if (isOpen) {
       fetchCommands()
+      fetchAgents()
       setView('list')
       setEditingId(null)
       setConfirmDeleteId(null)
     }
-  }, [isOpen, fetchCommands])
+  }, [isOpen, fetchCommands, fetchAgents])
 
   const handleNew = () => {
     setEditingId(null)
     setFormName('')
     setFormId('')
     setFormPrompt('')
+    setFormAgentMode('')
     setFormError('')
     setView('edit')
   }
@@ -57,6 +65,7 @@ export function CommandsModal({ isOpen, onClose }: CommandsModalProps) {
     setFormName(command.metadata.name)
     setFormId(command.metadata.id)
     setFormPrompt(command.prompt)
+    setFormAgentMode(command.metadata.agentMode ?? '')
     setFormError('')
     setView('edit')
   }
@@ -77,7 +86,7 @@ export function CommandsModal({ isOpen, onClose }: CommandsModalProps) {
     setFormError('')
 
     const command: CommandFull = {
-      metadata: { id, name: formName },
+      metadata: { id, name: formName, ...(formAgentMode ? { agentMode: formAgentMode } : {}) },
       prompt: formPrompt,
     }
 
@@ -134,6 +143,20 @@ export function CommandsModal({ isOpen, onClose }: CommandsModalProps) {
                 className={`w-full px-2 py-1.5 bg-bg-tertiary border border-border rounded text-sm font-mono focus:outline-none focus:ring-1 focus:ring-accent-primary ${editingId ? 'opacity-60' : ''}`}
               />
             </div>
+          </div>
+
+          <div>
+            <label className="block text-xs text-text-secondary mb-1">Agent Mode <span className="text-text-muted">(optional)</span></label>
+            <select
+              value={formAgentMode}
+              onChange={e => setFormAgentMode(e.target.value)}
+              className="w-full px-2 py-1.5 bg-bg-tertiary border border-border rounded text-sm focus:outline-none focus:ring-1 focus:ring-accent-primary"
+            >
+              <option value="">None (keep current mode)</option>
+              {topLevelAgents.map(agent => (
+                <option key={agent.id} value={agent.id}>{agent.name}</option>
+              ))}
+            </select>
           </div>
 
           <div>

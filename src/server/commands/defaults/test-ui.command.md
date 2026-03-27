@@ -1,6 +1,7 @@
 ---
 id: test-ui
 name: Test UI
+agentMode: builder
 ---
 
 Test the feature we've been working on in the browser using the `playwright-cli` skill.

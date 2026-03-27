@@ -1,6 +1,7 @@
 ---
 id: commit-push
 name: Commit & Push
+agentMode: builder
 ---
 
 Commit and push:

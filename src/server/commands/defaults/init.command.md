@@ -1,6 +1,7 @@
 ---
 id: init
 name: Init
+agentMode: builder
 ---
 
 Read the entire codebase and generate or refresh the `AGENTS.md` file at the project root.

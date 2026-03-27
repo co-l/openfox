@@ -3,10 +3,11 @@ import { create } from 'zustand'
 export interface CommandInfo {
   id: string
   name: string
+  agentMode?: string
 }
 
 export interface CommandFull {
-  metadata: { id: string; name: string }
+  metadata: { id: string; name: string; agentMode?: string }
   prompt: string
 }
 

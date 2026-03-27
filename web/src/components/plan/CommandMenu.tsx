@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { useCommandsStore } from '../../stores/commands'
 
 interface CommandMenuProps {
-  onSendCommand: (content: string) => void
+  onSendCommand: (content: string, agentMode?: string) => void
   onOpenManager: () => void
 }
 
@@ -70,7 +70,7 @@ export function CommandMenu({ onSendCommand, onOpenManager }: CommandMenuProps) 
   const handleSelect = async (commandId: string) => {
     const full = await useCommandsStore.getState().fetchCommand(commandId)
     if (full) {
-      onSendCommand(full.prompt)
+      onSendCommand(full.prompt, full.metadata.agentMode)
     }
     setIsOpen(false)
   }
