@@ -111,12 +111,6 @@ function SessionDropdown({ sessions, currentProject, currentSession }: SessionDr
     },
   })
 
-  // Add divider
-  items.push({
-    label: <div className="border-t border-border my-1" />,
-    onClick: () => {},
-  })
-
   for (const [_dateKey, daySessions] of groupedSessions) {
     const firstSession = daySessions[0]
     if (!firstSession) continue
