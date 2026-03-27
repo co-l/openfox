@@ -62,6 +62,7 @@ export interface SubAgentExecutionOptions {
 
 export interface SubAgentResult {
   content: string
+  result?: string
   allPassed?: boolean
   failed?: Array<{ id: string; reason: string }>
 }
@@ -168,6 +169,7 @@ export async function executeSubAgent(options: SubAgentExecutionOptions): Promis
   let consecutiveEmptyStops = 0
   let finalContent = ''
   let returnValueContent: string | null = null
+  let returnValueResult: string | undefined = undefined
   let returnValueNudged = false
 
   for (;;) {
@@ -326,9 +328,12 @@ export async function executeSubAgent(options: SubAgentExecutionOptions): Promis
       onMessage,
     })
 
-    // Capture return_value content
+    // Capture return_value content and result
     if (batchResult.returnValueContent) {
       returnValueContent = batchResult.returnValueContent
+    }
+    if (batchResult.returnValueResult) {
+      returnValueResult = batchResult.returnValueResult
     }
 
     // Add tool results to custom context
@@ -361,12 +366,13 @@ export async function executeSubAgent(options: SubAgentExecutionOptions): Promis
       }))
     return {
       content: returnValueContent ?? finalContent,
+      ...(returnValueResult ? { result: returnValueResult } : {}),
       allPassed: failed.length === 0 && remaining.length === 0,
       failed,
     }
   }
 
-  return { content: returnValueContent ?? finalContent }
+  return { content: returnValueContent ?? finalContent, ...(returnValueResult ? { result: returnValueResult } : { result: 'success' }) }
 }
 
 // Backward-compatible factory (used by sub-agent.ts)

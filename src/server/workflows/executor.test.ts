@@ -43,6 +43,7 @@ function makeTemplateContext(overrides: Partial<TemplateContext> = {}): Template
     summary: 'Build a widget',
     criteriaList: '- c1 [PASSED]: do thing',
     modifiedFiles: '- src/index.ts',
+    stepOutput: { content: 'Some findings', stdout: 'exit 0' },
     ...overrides,
   }
 }
@@ -190,27 +191,37 @@ describe('evaluateCondition', () => {
   describe('step_result', () => {
     it('returns true when condition is success and step succeeded', () => {
       const condition: TransitionCondition = { type: 'step_result', result: 'success' }
-      expect(evaluateCondition(condition, [], { success: true })).toBe(true)
+      expect(evaluateCondition(condition, [], { result: 'success', output: {} })).toBe(true)
     })
 
     it('returns false when condition is success and step failed', () => {
       const condition: TransitionCondition = { type: 'step_result', result: 'success' }
-      expect(evaluateCondition(condition, [], { success: false })).toBe(false)
+      expect(evaluateCondition(condition, [], { result: 'failure', output: {} })).toBe(false)
     })
 
     it('returns true when condition is failure and step failed', () => {
       const condition: TransitionCondition = { type: 'step_result', result: 'failure' }
-      expect(evaluateCondition(condition, [], { success: false })).toBe(true)
+      expect(evaluateCondition(condition, [], { result: 'failure', output: {} })).toBe(true)
     })
 
     it('returns false when condition is failure and step succeeded', () => {
       const condition: TransitionCondition = { type: 'step_result', result: 'failure' }
-      expect(evaluateCondition(condition, [], { success: true })).toBe(false)
+      expect(evaluateCondition(condition, [], { result: 'success', output: {} })).toBe(false)
     })
 
     it('returns false when stepOutcome is null', () => {
       const condition: TransitionCondition = { type: 'step_result', result: 'success' }
       expect(evaluateCondition(condition, [], null)).toBe(false)
+    })
+
+    it('returns true when condition matches custom result string', () => {
+      const condition: TransitionCondition = { type: 'step_result', result: 'passed' }
+      expect(evaluateCondition(condition, [], { result: 'passed', output: {} })).toBe(true)
+    })
+
+    it('returns false when condition does not match custom result string', () => {
+      const condition: TransitionCondition = { type: 'step_result', result: 'passed' }
+      expect(evaluateCondition(condition, [], { result: 'failed', output: {} })).toBe(false)
     })
   })
 
@@ -276,7 +287,7 @@ describe('evaluateTransitions', () => {
       { when: { type: 'step_result', result: 'success' }, goto: 'verify' },
       { when: { type: 'step_result', result: 'failure' }, goto: 'retry' },
     ]
-    expect(evaluateTransitions(transitions, [], { success: false })).toBe('retry')
+    expect(evaluateTransitions(transitions, [], { result: 'failure', output: {} })).toBe('retry')
   })
 })
 
@@ -310,6 +321,20 @@ describe('resolveTemplate', () => {
     const ctx = makeTemplateContext({ workdir: '/home/user' })
     const template = 'cd {{workdir}} && ls {{workdir}}'
     expect(resolveTemplate(template, ctx)).toBe('cd /home/user && ls /home/user')
+  })
+
+  it('resolves stepOutput.* template variables', () => {
+    const ctx = makeTemplateContext({
+      stepOutput: { content: 'Test passed', stdout: 'output', stderr: 'error', exitCode: '0' },
+    })
+    const template = 'Content: {{stepOutput.content}}, Stdout: {{stepOutput.stdout}}, Stderr: {{stepOutput.stderr}}, ExitCode: {{stepOutput.exitCode}}'
+    expect(resolveTemplate(template, ctx)).toBe('Content: Test passed, Stdout: output, Stderr: error, ExitCode: 0')
+  })
+
+  it('resolves stepOutput.* with partial data', () => {
+    const ctx = makeTemplateContext({ stepOutput: { content: 'Only content' } })
+    const template = 'Content: {{stepOutput.content}}, Stdout: {{stepOutput.stdout}}'
+    expect(resolveTemplate(template, ctx)).toBe('Content: Only content, Stdout: ')
   })
 
   it('converts numeric values to strings', () => {
@@ -405,5 +430,84 @@ describe('buildReason', () => {
 
   it('handles empty criteria', () => {
     expect(buildReason([])).toBe('0 criteria remaining')
+  })
+})
+
+// ============================================================================
+// Backwards Compatibility Tests
+// ============================================================================
+
+describe('Backwards Compatibility', () => {
+  it('step_result with success/failure still works', () => {
+    const successCondition: TransitionCondition = { type: 'step_result', result: 'success' }
+    const failureCondition: TransitionCondition = { type: 'step_result', result: 'failure' }
+    
+    expect(evaluateCondition(successCondition, [], { result: 'success', output: {} })).toBe(true)
+    expect(evaluateCondition(failureCondition, [], { result: 'failure', output: {} })).toBe(true)
+  })
+
+  it('verifierFindings and previousStepOutput still resolve', () => {
+    const ctx = makeTemplateContext({
+      stepOutput: { content: 'New content', stdout: 'new stdout' },
+    })
+    const template = 'Findings: {{verifierFindings}}, Prev: {{previousStepOutput}}'
+    const result = resolveTemplate(template, ctx)
+    expect(result).toBe('Findings: New content, Prev: new stdout')
+  })
+
+  it('sub-agent without result defaults to success', () => {
+    const transitions: Transition[] = [
+      { when: { type: 'step_result', result: 'success' }, goto: 'next' },
+    ]
+    expect(evaluateTransitions(transitions, [], { result: 'success', output: {} })).toBe('next')
+  })
+})
+
+describe('Agent completed result', () => {
+  it('agent steps produce result: completed', () => {
+    const transitions: Transition[] = [
+      { when: { type: 'step_result', result: 'completed' }, goto: 'test' },
+    ]
+    expect(evaluateTransitions(transitions, [], { result: 'completed', output: {} })).toBe('test')
+  })
+})
+
+describe('Example workflow: build → test → fix', () => {
+  it('routes correctly based on test result', () => {
+    const buildTransitions: Transition[] = [
+      { when: { type: 'always' }, goto: 'test' },
+    ]
+    const testTransitions: Transition[] = [
+      { when: { type: 'step_result', result: 'passed' }, goto: '$done' },
+      { when: { type: 'step_result', result: 'failed' }, goto: 'fix' },
+      { when: { type: 'step_result', result: 'error' }, goto: '$blocked' },
+    ]
+    const fixTransitions: Transition[] = [
+      { when: { type: 'always' }, goto: 'test' },
+    ]
+
+    const buildOutcome = { result: 'completed', output: {} }
+    expect(evaluateTransitions(buildTransitions, [], buildOutcome)).toBe('test')
+
+    const testFailedOutcome = { result: 'failed', output: { content: 'Test failures:\n- foo.test.ts' } }
+    expect(evaluateTransitions(testTransitions, [], testFailedOutcome)).toBe('fix')
+
+    const testPassedOutcome = { result: 'passed', output: { content: 'All tests passed' } }
+    expect(evaluateTransitions(testTransitions, [], testPassedOutcome)).toBe('$done')
+
+    const testErrorOutcome = { result: 'error', output: { content: 'Test suite crashed' } }
+    expect(evaluateTransitions(testTransitions, [], testErrorOutcome)).toBe('$blocked')
+
+    const fixOutcome = { result: 'completed', output: {} }
+    expect(evaluateTransitions(fixTransitions, [], fixOutcome)).toBe('test')
+  })
+
+  it('supports stepOutput template variables in nudge prompt', () => {
+    const nudgeTemplate = 'Fix the failures:\n\n{{stepOutput.content}}'
+    const ctx: TemplateContext = makeTemplateContext({
+      stepOutput: { content: 'Test failures:\n- foo.test.ts: expect(1).toBe(2)' },
+    })
+    const resolved = resolveTemplate(nudgeTemplate, ctx)
+    expect(resolved).toBe('Fix the failures:\n\nTest failures:\n- foo.test.ts: expect(1).toBe(2)')
   })
 })

@@ -24,6 +24,11 @@ export const returnValueTool: Tool = {
             description:
               'The return value content — a structured summary of findings, results, or recommendations',
           },
+          result: {
+            type: 'string',
+            description:
+              'Result classification (e.g. "passed", "failed", "error"). Used for workflow routing.',
+          },
         },
         required: ['content'],
       },

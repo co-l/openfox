@@ -9,6 +9,7 @@ export interface AgentMetadata {
   subagent: boolean
   tools: string[]
   color?: string
+  results?: string[]
 }
 
 export interface AgentDefinition {

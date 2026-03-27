@@ -101,7 +101,7 @@ export type TransitionCondition =
   | { type: 'all_criteria_completed_or_passed' }
   | { type: 'any_criteria_blocked' }
   | { type: 'has_pending_criteria' }
-  | { type: 'step_result'; result: 'success' | 'failure' }
+  | { type: 'step_result'; result: string }
   | { type: 'always' }
 
 // ============================================================================

@@ -7,10 +7,11 @@ export interface AgentInfo {
   subagent: boolean
   tools: string[]
   color?: string
+  results?: string[]
 }
 
 export interface AgentFull {
-  metadata: { id: string; name: string; description: string; subagent: boolean; tools: string[]; color?: string }
+  metadata: { id: string; name: string; description: string; subagent: boolean; tools: string[]; color?: string; results?: string[] }
   prompt: string
 }
 

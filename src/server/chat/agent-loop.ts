@@ -59,6 +59,7 @@ export interface ToolBatchResult {
   toolMessages: RequestContextMessage[]
   criteriaChanged: boolean
   returnValueContent?: string | undefined
+  returnValueResult?: string | undefined
 }
 
 export interface TopLevelLoopConfig {
@@ -111,6 +112,7 @@ export async function executeToolBatch(
   const toolMessages: RequestContextMessage[] = []
   let criteriaChanged = false
   let returnValueContent: string | undefined
+  let returnValueResult: string | undefined
   let session = ctx.sessionManager.requireSession(ctx.sessionId)
 
   for (const toolCall of toolCalls) {
@@ -173,6 +175,7 @@ export async function executeToolBatch(
 
     if (toolCall.name === 'return_value' && !toolCall.parseError) {
       returnValueContent = (toolCall.arguments as Record<string, unknown>)['content'] as string
+      returnValueResult = (toolCall.arguments as Record<string, unknown>)['result'] as string | undefined
     }
 
     toolMessages.push({
@@ -194,7 +197,7 @@ export async function executeToolBatch(
     }
   }
 
-  return { toolMessages, criteriaChanged, returnValueContent }
+  return { toolMessages, criteriaChanged, returnValueContent, returnValueResult }
 }
 
 // ============================================================================

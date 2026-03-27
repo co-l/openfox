@@ -703,15 +703,22 @@ const selectClass = 'w-full px-2 py-1.5 bg-bg-tertiary border border-border roun
 const labelClass = 'block text-[11px] text-text-secondary mb-0.5'
 
 function TransitionPanel({
-  fromLabel, toLabel, condition,
+  fromLabel, toLabel, condition, fromStep, agentTypes,
   onUpdateCondition, onDelete,
 }: {
   fromLabel: string
   toLabel: string
   condition: { type: string; result?: string }
+  fromStep?: WorkflowStep
+  agentTypes: AgentInfo[]
   onUpdateCondition: (when: { type: string; result?: string }) => void
   onDelete: () => void
 }) {
+  const stepAgent = fromStep && (fromStep.type === 'sub_agent' || fromStep.type === 'agent')
+    ? agentTypes.find(a => a.id === (fromStep.type === 'sub_agent' ? fromStep.subAgentType : fromStep.toolMode))
+    : undefined
+  const hasResults = stepAgent?.results && stepAgent.results.length > 0
+
   return (
     <div className="space-y-3 text-sm">
       <div className="flex items-center justify-between">
@@ -739,12 +746,21 @@ function TransitionPanel({
       {condition.type === 'step_result' && (
         <div>
           <label className={labelClass}>Result</label>
-          <select value={condition.result ?? 'success'} onChange={e => {
-            onUpdateCondition({ type: 'step_result', result: e.target.value })
-          }} className={selectClass}>
-            <option value="success">success</option>
-            <option value="failure">failure</option>
-          </select>
+          {hasResults ? (
+            <select value={condition.result ?? stepAgent!.results![0]} onChange={e => {
+              onUpdateCondition({ type: 'step_result', result: e.target.value })
+            }} className={selectClass}>
+              {stepAgent!.results!.map(r => <option key={r} value={r}>{r}</option>)}
+            </select>
+          ) : (
+            <input
+              type="text"
+              value={condition.result ?? 'success'}
+              onChange={e => onUpdateCondition({ type: 'step_result', result: e.target.value })}
+              placeholder="e.g. success, passed, failed"
+              className={inputClass}
+            />
+          )}
         </div>
       )}
 
@@ -1301,10 +1317,27 @@ export function WorkflowsModal({ isOpen, onClose, initialEditId }: WorkflowsModa
                     {formStartCondition.type === 'step_result' && (
                       <div>
                         <label className={labelClass}>Result</label>
-                        <select value={formStartCondition.result ?? 'success'} onChange={e => setFormStartCondition({ type: 'step_result', result: e.target.value })} className={selectClass}>
-                          <option value="success">success</option>
-                          <option value="failure">failure</option>
-                        </select>
+                        {formEntryStep && (() => {
+                          const entryStep = formSteps.find(s => s.id === formEntryStep)
+                          const stepAgent = entryStep && (entryStep.type === 'sub_agent' || entryStep.type === 'agent')
+                            ? agentTypes.find(a => a.id === (entryStep.type === 'sub_agent' ? entryStep.subAgentType : entryStep.toolMode))
+                            : undefined
+                          const hasResults = stepAgent?.results && stepAgent.results.length > 0
+                          const results = stepAgent?.results ?? []
+                          return hasResults ? (
+                            <select value={formStartCondition.result ?? results[0]} onChange={e => setFormStartCondition({ type: 'step_result', result: e.target.value })} className={selectClass}>
+                              {results.map(r => <option key={r} value={r}>{r}</option>)}
+                            </select>
+                          ) : (
+                            <input
+                              type="text"
+                              value={formStartCondition.result ?? 'success'}
+                              onChange={e => setFormStartCondition({ type: 'step_result', result: e.target.value })}
+                              placeholder="e.g. success, passed, failed"
+                              className={inputClass}
+                            />
+                          )
+                        })()}
                       </div>
                     )}
                     <p className="text-text-muted text-[10px]">Workflow only proceeds when this condition is met. Drag the target handle to change entry step.</p>
@@ -1315,6 +1348,8 @@ export function WorkflowsModal({ isOpen, onClose, initialEditId }: WorkflowsModa
                     fromLabel={edgeInfo.fromLabel}
                     toLabel={edgeInfo.toLabel}
                     condition={edgeInfo.condition}
+                    fromStep={edgeInfo.type === 'step' ? formSteps.find(s => s.id === edgeInfo.fromLabel) : undefined}
+                    agentTypes={agentTypes}
                     onUpdateCondition={(when) => handleUpdateTransitionCondition(selectedEdgeKey!, when)}
                     onDelete={() => handleDeleteTransition(selectedEdgeKey!)}
                   />
