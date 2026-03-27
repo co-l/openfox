@@ -1,6 +1,5 @@
 import express from 'express'
 import cors from 'cors'
-import { spawn, type ChildProcess } from 'node:child_process'
 import { createServer as createHttpServer } from 'node:http'
 import { fileURLToPath } from 'node:url'
 import { dirname, resolve, join } from 'node:path'
@@ -28,10 +27,7 @@ import { ensureDefaultWorkflows, loadAllWorkflows, findWorkflowById, saveWorkflo
 import type { WorkflowDefinition } from './workflows/types.js'
 import { getGlobalConfigDir } from '../cli/paths.js'
 import { logger, setLogLevel } from './utils/logger.js'
-import { terminateProcessTree } from './utils/process-tree.js'
-
 const __dirname = dirname(fileURLToPath(import.meta.url))
-const HISTORY_PROCESS_ENTRYPOINT = getHistoryProcessEntrypoint()
 
 /**
  * Create a server handle that can be started on any port.
@@ -110,181 +106,6 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
   }
 
   initLLM().catch(err => logger.error('LLM initialization failed', { error: err instanceof Error ? err.message : String(err) }))
-
-  type HistoryService = {
-    process: ChildProcess
-    stopping: boolean
-    stopPromise: Promise<void> | null
-  }
-
-  const historyServices = new Map<string, HistoryService>()
-  const pendingHistoryStarts = new Map<string, Promise<void>>()
-  const sessionWorkdirs = new Map(sessionManager.listSessions().map(session => [session.id, session.workdir]))
-  const pinnedHistoryWorkdirs = new Set<string>()
-
-  // Skip history watcher if disabled (useful for tests)
-  const skipHistory = process.env['OPENFOX_HISTORY'] === 'false'
-
-  async function initHistoryForWorkdir(workdir: string): Promise<void> {
-    if (skipHistory) {
-      return
-    }
-
-    const pendingStart = pendingHistoryStarts.get(workdir)
-    if (pendingStart) {
-      await pendingStart
-      return
-    }
-
-    const existingService = historyServices.get(workdir)
-    if (existingService) {
-      if (!existingService.stopping) {
-        return
-      }
-
-      await existingService.stopPromise
-    }
-
-    const startup = (async () => {
-      // Use npx to resolve tsx, avoiding hardcoded paths that break on global installation
-      const child = spawn(
-        'npx',
-        ['tsx', HISTORY_PROCESS_ENTRYPOINT, workdir],
-        {
-          cwd: process.cwd(), // Don't use workdir - test projects get deleted
-          env: process.env,
-          stdio: ['ignore', 'inherit', 'inherit'],
-        }
-      )
-
-      const service: HistoryService = {
-        process: child,
-        stopping: false,
-        stopPromise: null,
-      }
-
-      historyServices.set(workdir, service)
-
-      child.on('error', (error) => {
-        handleHistoryProcessError(workdir, child, error)
-      })
-
-      child.on('exit', (code, signal) => {
-        handleHistoryProcessExit(workdir, child, code, signal)
-      })
-
-      logger.info('History watcher started', { workdir, pid: child.pid })
-    })()
-
-    pendingHistoryStarts.set(workdir, startup)
-
-    try {
-      await startup
-    } catch (error) {
-      logger.error('Failed to start history watcher', {
-        workdir,
-        error: error instanceof Error ? error.message : String(error),
-      })
-    } finally {
-      pendingHistoryStarts.delete(workdir)
-    }
-  }
-
-  async function stopHistoryForWorkdir(workdir: string): Promise<void> {
-    const service = historyServices.get(workdir)
-    if (!service) {
-      return
-    }
-
-    if (service.stopping) {
-      await service.stopPromise
-      return
-    }
-
-    service.stopping = true
-    service.stopPromise = terminateProcessTree(service.process, {
-      exited: () => service.process.exitCode !== null || service.process.signalCode !== null,
-    })
-      .catch((error) => {
-        logger.error('Failed to stop history watcher', {
-          workdir,
-          error: error instanceof Error ? error.message : String(error),
-        })
-      })
-      .finally(() => {
-        const current = historyServices.get(workdir)
-        if (current?.process === service.process) {
-          historyServices.delete(workdir)
-        }
-
-        logger.info('History watcher stopped', { workdir, pid: service.process.pid })
-      })
-
-    await service.stopPromise
-  }
-
-  function maybeStopHistoryForWorkdir(workdir: string): void {
-    if (pinnedHistoryWorkdirs.has(workdir)) {
-      return
-    }
-
-    const hasRemainingSessions = sessionManager.listSessions().some(session => session.workdir === workdir)
-    if (hasRemainingSessions) {
-      return
-    }
-
-    void stopHistoryForWorkdir(workdir)
-  }
-
-  function handleHistoryProcessError(workdir: string, proc: ChildProcess, error: unknown): void {
-    const service = historyServices.get(workdir)
-    if (service?.process === proc && !service.stopping) {
-      historyServices.delete(workdir)
-      logger.error('History watcher process failed', {
-        workdir,
-        pid: proc.pid,
-        error: error instanceof Error ? error.message : String(error),
-      })
-    }
-  }
-
-  function handleHistoryProcessExit(
-    workdir: string,
-    proc: ChildProcess,
-    code: number | null,
-    signal: NodeJS.Signals | null
-  ): void {
-    const service = historyServices.get(workdir)
-    if (service?.process === proc && !service.stopping) {
-      historyServices.delete(workdir)
-      logger.warn('History watcher process exited', { workdir, pid: proc.pid, code, signal })
-    }
-  }
-
-  const defaultWorkdir = process.cwd()
-
-  pinnedHistoryWorkdirs.add(defaultWorkdir)
-
-  const unsubscribeSessionEvents = sessionManager.subscribe((event) => {
-    if (event.type === 'session_created') {
-      sessionWorkdirs.set(event.session.id, event.session.workdir)
-      void initHistoryForWorkdir(event.session.workdir)
-      return
-    }
-
-    if (event.type === 'session_deleted') {
-      const workdir = sessionWorkdirs.get(event.sessionId)
-      sessionWorkdirs.delete(event.sessionId)
-
-      if (workdir) {
-        maybeStopHistoryForWorkdir(workdir)
-      }
-    }
-  })
-
-  if (!historyServices.has(defaultWorkdir)) {
-    await initHistoryForWorkdir(defaultWorkdir)
-  }
 
   const toolRegistry = createToolRegistry()
   
@@ -682,17 +503,6 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
     await getCurrentBranch(req, res)
   })
 
-  // History API endpoints
-  const { getHistory, getHistorySnapshot } = await import('./history/history.api.js')
-
-  app.get('/api/history', async (req, res) => {
-    await getHistory(req, res)
-  })
-
-  app.get('/api/history/:snapshotId', async (req, res) => {
-    await getHistorySnapshot(req, res)
-  })
-
   // Directory browser endpoint
   const DEFAULT_BASE_PATH = process.cwd()
 
@@ -892,9 +702,6 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
       logger.info('Shutting down...')
       void (async () => {
         viteServer?.close()
-        unsubscribeSessionEvents()
-
-        await Promise.all([...historyServices.keys()].map(async (workdir) => stopHistoryForWorkdir(workdir)))
 
         // Note: Not closing database here - it's a singleton shared across servers.
         // Database should only be closed when the application exits.
@@ -906,22 +713,6 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
         httpServer.close(() => resolve())
       })()
     }),
-  }
-}
-
-function getHistoryProcessEntrypoint(): string {
-  const currentFile = fileURLToPath(import.meta.url)
-  const extension = currentFile.endsWith('.ts') ? 'ts' : 'js'
-  
-  // Detect if we're in dev mode (src/) or prod mode (dist/)
-  const isDevMode = currentFile.includes('/src/')
-  
-  if (isDevMode) {
-    // In dev mode, __dirname is src/server/, so resolve directly
-    return resolve(__dirname, 'history', `process-entry.${extension}`)
-  } else {
-    // In prod mode, chunks are in dist/, so we need to go into dist/server/history/
-    return resolve(__dirname, 'server', 'history', `process-entry.${extension}`)
   }
 }
 

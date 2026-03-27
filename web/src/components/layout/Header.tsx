@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { Link, useLocation } from 'wouter'
+import { Link } from 'wouter'
 import { useSessionStore } from '../../stores/session'
 import { useProjectStore } from '../../stores/project'
 import { useConfigStore } from '../../stores/config'
@@ -7,10 +7,7 @@ import { GlobalSettingsModal } from '../settings/GlobalSettingsModal'
 import { SkillsModal } from '../settings/SkillsModal'
 import { AgentsModal } from '../settings/AgentsModal'
 import { WorkflowsModal } from '../settings/WorkflowsModal'
-import { HistoryModal } from '../history/HistoryModal'
-import { DropdownMenu, DropdownMenuItem } from '../shared/DropdownMenu'
-import { groupSessionsByDate, formatDateHeader, formatTime } from '../../lib/format-date'
-import type { SessionSummary } from '@shared/types.js'
+import { DropdownMenu } from '../shared/DropdownMenu'
 
 interface HeaderProps {
   onMenuClick?: () => void
@@ -18,148 +15,27 @@ interface HeaderProps {
   hasCriteria?: boolean
 }
 
-interface ProjectDropdownProps {
-  projects: Array<{ id: string; name: string; workdir: string }>
-  currentProject: { id: string; name: string; workdir: string }
-}
-
-function ProjectDropdown({ projects, currentProject }: ProjectDropdownProps) {
-  const [, navigate] = useLocation()
-  const loadProject = useProjectStore(state => state.loadProject)
-
-  const sortedProjects = [...projects].sort((a, b) => a.name.localeCompare(b.name))
-
-  const items: DropdownMenuItem[] = sortedProjects.map(proj => ({
-    label: proj.name,
-    icon: proj.id === currentProject.id ? (
-      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-      </svg>
-    ) : undefined,
-    onClick: () => {
-      loadProject(proj.id)
-      navigate(`/p/${proj.id}`)
-    },
-  }))
-
-  return (
-    <DropdownMenu
-      items={items}
-      trigger={
-        <button
-          className="text-text-secondary hover:text-text-primary hover:underline text-sm truncate flex items-center gap-1"
-          title={currentProject.name}
-        >
-          {currentProject.name}
-          <svg className="w-3 h-3 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-          </svg>
-        </button>
-      }
-      minWidth="250px"
-    />
-  )
-}
-
-interface SessionDropdownProps {
-  sessions: SessionSummary[]
-  currentProject: { id: string; name: string; workdir: string }
-  currentSession: { id: string; metadata?: { title?: string } } | null
-}
-
-function SessionDropdown({ sessions, currentProject, currentSession }: SessionDropdownProps) {
-  const [, navigate] = useLocation()
-  const loadSession = useSessionStore(state => state.loadSession)
-
-  const projectSessions = sessions
-    .filter(session => session.workdir.startsWith(currentProject.workdir))
-    .slice(0, 15)
-
-  const groupedSessions = groupSessionsByDate(projectSessions)
-
-  const items: DropdownMenuItem[] = []
-
-  for (const [_dateKey, daySessions] of groupedSessions) {
-    const firstSession = daySessions[0]
-    if (!firstSession) continue
-
-    items.push({
-      label: (
-        <div className="px-3 py-2 text-text-muted text-xs font-medium cursor-default">
-          {formatDateHeader(firstSession.updatedAt)}
-        </div>
-      ),
-      onClick: () => {},
-    })
-
-    for (const session of daySessions) {
-      items.push({
-        label: (
-          <div className="min-w-[160px]">
-            <div className="truncate text-sm">{session.title ?? session.id.slice(0, 8)}</div>
-            <div className="text-text-muted text-xs">{formatTime(session.updatedAt)}</div>
-          </div>
-        ),
-        icon: session.id === currentSession?.id ? (
-          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-          </svg>
-        ) : undefined,
-        onClick: () => {
-          loadSession(session.id)
-          navigate(`/p/${currentProject.id}/s/${session.id}`)
-        },
-      })
-    }
-  }
-
-  const triggerLabel = currentSession
-    ? (currentSession.metadata?.title ?? currentSession.id.slice(0, 8))
-    : 'No session selected'
-
-  return (
-    <DropdownMenu
-      items={items}
-      trigger={
-        <button
-          className="text-text-secondary hover:text-text-primary hover:underline text-sm truncate flex items-center gap-1"
-          title={triggerLabel}
-        >
-          {triggerLabel}
-          <svg className="w-3 h-3 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-          </svg>
-        </button>
-      }
-      minWidth="280px"
-    />
-  )
-}
-
 export function Header({ onMenuClick, onCriteriaToggle, hasCriteria }: HeaderProps) {
   const [showSettings, setShowSettings] = useState(false)
   const [showSkills, setShowSkills] = useState(false)
   const [showAgents, setShowAgents] = useState(false)
   const [showWorkflows, setShowWorkflows] = useState(false)
-  const [showHistory, setShowHistory] = useState(false)
   const connectionStatus = useSessionStore(state => state.connectionStatus)
   const session = useSessionStore(state => state.currentSession)
-  const sessions = useSessionStore(state => state.sessions)
   const project = useProjectStore(state => state.currentProject)
-  const projects = useProjectStore(state => state.projects)
   const startAutoRefresh = useConfigStore(state => state.startAutoRefresh)
   const stopAutoRefresh = useConfigStore(state => state.stopAutoRefresh)
 
+  // Start auto-refresh on mount
   useEffect(() => {
     startAutoRefresh()
     return () => stopAutoRefresh()
   }, [startAutoRefresh, stopAutoRefresh])
 
-  const workdir = project?.workdir || session?.workdir || ''
-
   return (
     <header className="h-8 bg-bg-secondary border-b border-border flex items-center justify-between px-2">
       <div className="flex items-center gap-2 flex-1 min-w-0">
+        {/* Hamburger menu button - visible on mobile and tablet */}
         {onMenuClick && (
           <button
             onClick={onMenuClick}
@@ -175,30 +51,29 @@ export function Header({ onMenuClick, onCriteriaToggle, hasCriteria }: HeaderPro
         <Link href="/" className="text-accent-primary font-semibold text-base hover:underline flex-shrink-0">
           OpenFox
         </Link>
-
         {project && (
           <>
             <span className="text-text-muted flex-shrink-0">/</span>
-            <ProjectDropdown
-              projects={projects}
-              currentProject={project}
-            />
+            <Link
+              href={`/p/${project.id}`}
+              className="text-text-secondary hover:text-text-primary hover:underline text-sm truncate"
+            >
+              {project.name}
+            </Link>
           </>
         )}
-
-        {project && (
+        {session && (
           <>
             <span className="text-text-muted flex-shrink-0">/</span>
-            <SessionDropdown
-              sessions={sessions}
-              currentProject={project}
-              currentSession={session}
-            />
+            <span className="text-text-secondary text-sm truncate">
+              {session.metadata.title ?? session.id.slice(0, 8)}
+            </span>
           </>
         )}
       </div>
 
       <div className="flex items-center gap-2 flex-shrink-0">
+        {/* Criteria toggle button - only visible when there are criteria */}
         {onCriteriaToggle && hasCriteria && (
           <button
             onClick={onCriteriaToggle}
@@ -233,11 +108,6 @@ export function Header({ onMenuClick, onCriteriaToggle, hasCriteria }: HeaderPro
               icon: <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 10h16M4 14h16M4 18h16" /></svg>,
               onClick: () => setShowWorkflows(true),
             },
-            ...(workdir ? [{
-              label: 'History',
-              icon: <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>,
-              onClick: () => setShowHistory(true),
-            }] as DropdownMenuItem[] : []),
           ]}
           trigger={
             <button
@@ -253,6 +123,7 @@ export function Header({ onMenuClick, onCriteriaToggle, hasCriteria }: HeaderPro
           }
         />
 
+        {/* Connection status - icon-only on mobile, full on desktop */}
         <div className="flex items-center gap-1.5">
           <div className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${
             connectionStatus === 'connected' ? 'bg-accent-success' :
@@ -267,31 +138,30 @@ export function Header({ onMenuClick, onCriteriaToggle, hasCriteria }: HeaderPro
         </div>
       </div>
 
+      {/* Global Settings Modal */}
       <GlobalSettingsModal
         isOpen={showSettings}
         onClose={() => setShowSettings(false)}
       />
 
+      {/* Skills Modal */}
       <SkillsModal
         isOpen={showSkills}
         onClose={() => setShowSkills(false)}
       />
 
+      {/* Agents Modal */}
       <AgentsModal
         isOpen={showAgents}
         onClose={() => setShowAgents(false)}
       />
 
+      {/* Workflows Modal */}
       <WorkflowsModal
         isOpen={showWorkflows}
         onClose={() => setShowWorkflows(false)}
       />
 
-      <HistoryModal
-        isOpen={showHistory}
-        onClose={() => setShowHistory(false)}
-        workdir={workdir}
-      />
     </header>
   )
 }

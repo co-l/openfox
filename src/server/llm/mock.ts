@@ -950,6 +950,15 @@ function buildMockResponse(request: LLMCompletionRequest): {
   toolCalls: ToolCall[]
   finishReason: LLMCompletionResponse['finishReason']
 } {
+  // Detect compaction requests: no tools, toolChoice 'none' (summary generation)
+  if (request.toolChoice === 'none' && (!request.tools || request.tools.length === 0)) {
+    return {
+      content: 'Summary of conversation: The user has been working on the project. Files were modified and progress was made on all tasks. No errors were encountered during the session.',
+      toolCalls: [],
+      finishReason: 'stop',
+    }
+  }
+
   const lastMsg = request.messages[request.messages.length - 1]
   if (lastMsg?.role === 'tool') {
     return {
