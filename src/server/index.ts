@@ -339,15 +339,11 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
       })
     })
     
-    app.get('/sounds/{*path}', (req, res) => {
-      const fullPath = join(webDir, req.path.substring(1))
-      readFile(fullPath).then(content => {
+    app.use('/sounds', express.static(join(webDir, 'public', 'sounds'), {
+      setHeaders: (res) => {
         res.set('Content-Type', 'audio/mpeg')
-        res.send(content)
-      }).catch(() => {
-        res.status(404).send('Not found')
-      })
-    })
+      }
+    }))
     
     // SPA fallback for non-API routes (must be last)
     app.get('/{*path}', (req, res) => {
@@ -389,16 +385,12 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
       })
     })
     
-    app.get('/sounds/{*path}', (req, res) => {
-      const fullPath = join(distWebDir, req.path.substring(1))
-      readFile(fullPath).then(content => {
+    app.use('/sounds', express.static(join(distWebDir, 'sounds'), {
+      setHeaders: (res) => {
         res.set('Content-Type', 'audio/mpeg')
-        res.send(content)
-      }).catch(() => {
-        res.status(404).send('Not found')
-      })
-    })
-    
+      }
+    }))
+
     // Root serves index.html
     app.get('/', (_req, res) => {
       readFile(join(distWebDir, 'index.html'), 'utf-8')
