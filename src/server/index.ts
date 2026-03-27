@@ -17,13 +17,13 @@ import { createToolRegistry } from './tools/index.js'
 import { createWebSocketServer } from './ws/index.js'
 import { SessionManager } from './session/manager.js'
 import { setRuntimeConfig, getRuntimeConfig } from './runtime-config.js'
-import { ensureDefaultSkills, loadAllSkills, isSkillEnabled, setSkillEnabled, findSkillById, saveSkill, deleteSkill, skillExists } from './skills/registry.js'
+import { ensureDefaultSkills, loadAllSkills, isSkillEnabled, setSkillEnabled, findSkillById, saveSkill, deleteSkill, skillExists, getDefaultSkillIds, getModifiedDefaultSkillIds, restoreDefaultSkill, restoreAllDefaultSkills } from './skills/registry.js'
 import type { SkillDefinition } from './skills/types.js'
-import { ensureDefaultCommands, loadAllCommands, findCommandById, saveCommand, deleteCommand, commandExists } from './commands/registry.js'
+import { ensureDefaultCommands, loadAllCommands, findCommandById, saveCommand, deleteCommand, commandExists, getDefaultCommandIds, getModifiedDefaultCommandIds, restoreDefaultCommand, restoreAllDefaultCommands } from './commands/registry.js'
 import type { CommandDefinition } from './commands/types.js'
-import { ensureDefaultAgents, loadAllAgents, findAgentById, getSubAgents, getTopLevelAgents, saveAgent, deleteAgent, agentExists } from './agents/registry.js'
+import { ensureDefaultAgents, loadAllAgents, findAgentById, getSubAgents, getTopLevelAgents, saveAgent, deleteAgent, agentExists, getDefaultAgentIds, getModifiedDefaultAgentIds, restoreDefaultAgent, restoreAllDefaultAgents } from './agents/registry.js'
 import type { AgentDefinition } from './agents/types.js'
-import { ensureDefaultWorkflows, loadAllWorkflows, findWorkflowById, saveWorkflow, deleteWorkflow, workflowExists } from './workflows/registry.js'
+import { ensureDefaultWorkflows, loadAllWorkflows, findWorkflowById, saveWorkflow, deleteWorkflow, workflowExists, getDefaultWorkflowIds, getModifiedDefaultWorkflowIds, restoreDefaultWorkflow, restoreAllDefaultWorkflows } from './workflows/registry.js'
 import type { WorkflowDefinition } from './workflows/types.js'
 import { getGlobalConfigDir } from '../cli/paths.js'
 import { logger, setLogLevel } from './utils/logger.js'
@@ -234,13 +234,38 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
 
   // Skills endpoints
   app.get('/api/skills', async (_req, res) => {
-    const skills = await loadAllSkills(configDir)
+    const [skills, defaultIds, modifiedIds] = await Promise.all([
+      loadAllSkills(configDir),
+      getDefaultSkillIds(),
+      getModifiedDefaultSkillIds(configDir),
+    ])
     res.json({
       skills: skills.map(s => ({
         ...s.metadata,
         enabled: isSkillEnabled(s.metadata.id),
       })),
+      defaultIds,
+      modifiedIds,
     })
+  })
+
+  app.get('/api/skills/default-ids', async (_req, res) => {
+    const ids = await getDefaultSkillIds()
+    res.json({ ids })
+  })
+
+  app.post('/api/skills/restore-all-defaults', async (_req, res) => {
+    const count = await restoreAllDefaultSkills(configDir)
+    res.json({ success: true, count })
+  })
+
+  app.post('/api/skills/:id/restore-default', async (req, res) => {
+    const { id } = req.params
+    const restored = await restoreDefaultSkill(configDir, id as string)
+    if (!restored) {
+      return res.status(404).json({ error: 'No bundled default found for this skill' })
+    }
+    res.json({ success: true })
   })
 
   app.post('/api/skills/:id/toggle', (req, res) => {
@@ -305,10 +330,35 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
 
   // Commands endpoints
   app.get('/api/commands', async (_req, res) => {
-    const commands = await loadAllCommands(configDir)
+    const [commands, defaultIds, modifiedIds] = await Promise.all([
+      loadAllCommands(configDir),
+      getDefaultCommandIds(),
+      getModifiedDefaultCommandIds(configDir),
+    ])
     res.json({
       commands: commands.map(c => c.metadata),
+      defaultIds,
+      modifiedIds,
     })
+  })
+
+  app.get('/api/commands/default-ids', async (_req, res) => {
+    const ids = await getDefaultCommandIds()
+    res.json({ ids })
+  })
+
+  app.post('/api/commands/restore-all-defaults', async (_req, res) => {
+    const count = await restoreAllDefaultCommands(configDir)
+    res.json({ success: true, count })
+  })
+
+  app.post('/api/commands/:id/restore-default', async (req, res) => {
+    const { id } = req.params
+    const restored = await restoreDefaultCommand(configDir, id as string)
+    if (!restored) {
+      return res.status(404).json({ error: 'No bundled default found for this command' })
+    }
+    res.json({ success: true })
   })
 
   app.get('/api/commands/:id', async (req, res) => {
@@ -366,10 +416,35 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
 
   // Agents endpoints
   app.get('/api/agents', async (_req, res) => {
-    const agents = await loadAllAgents(configDir)
+    const [agents, defaultIds, modifiedIds] = await Promise.all([
+      loadAllAgents(configDir),
+      getDefaultAgentIds(),
+      getModifiedDefaultAgentIds(configDir),
+    ])
     res.json({
       agents: agents.map(a => a.metadata),
+      defaultIds,
+      modifiedIds,
     })
+  })
+
+  app.get('/api/agents/default-ids', async (_req, res) => {
+    const ids = await getDefaultAgentIds()
+    res.json({ ids })
+  })
+
+  app.post('/api/agents/restore-all-defaults', async (_req, res) => {
+    const count = await restoreAllDefaultAgents(configDir)
+    res.json({ success: true, count })
+  })
+
+  app.post('/api/agents/:id/restore-default', async (req, res) => {
+    const { id } = req.params
+    const restored = await restoreDefaultAgent(configDir, id as string)
+    if (!restored) {
+      return res.status(404).json({ error: 'No bundled default found for this agent' })
+    }
+    res.json({ success: true })
   })
 
   app.get('/api/agents/:id', async (req, res) => {
@@ -424,11 +499,36 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
 
   // Workflows endpoints
   app.get('/api/workflows', async (_req, res) => {
-    const workflows = await loadAllWorkflows(configDir)
+    const [workflows, defaultIds, modifiedIds] = await Promise.all([
+      loadAllWorkflows(configDir),
+      getDefaultWorkflowIds(),
+      getModifiedDefaultWorkflowIds(configDir),
+    ])
     res.json({
       workflows: workflows.map(p => p.metadata),
       activeWorkflowId: config.activeWorkflowId ?? 'default',
+      defaultIds,
+      modifiedIds,
     })
+  })
+
+  app.get('/api/workflows/default-ids', async (_req, res) => {
+    const ids = await getDefaultWorkflowIds()
+    res.json({ ids })
+  })
+
+  app.post('/api/workflows/restore-all-defaults', async (_req, res) => {
+    const count = await restoreAllDefaultWorkflows(configDir)
+    res.json({ success: true, count })
+  })
+
+  app.post('/api/workflows/:id/restore-default', async (req, res) => {
+    const { id } = req.params
+    const restored = await restoreDefaultWorkflow(configDir, id as string)
+    if (!restored) {
+      return res.status(404).json({ error: 'No bundled default found for this workflow' })
+    }
+    res.json({ success: true })
   })
 
   app.get('/api/workflows/:id', async (req, res) => {

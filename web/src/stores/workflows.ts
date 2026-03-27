@@ -37,27 +37,48 @@ export interface WorkflowFull {
 
 interface WorkflowsState {
   workflows: WorkflowInfo[]
+  defaultIds: string[]
+  modifiedIds: string[]
   activeWorkflowId: string
   loading: boolean
   fetchWorkflows: () => Promise<void>
+  fetchDefaultIds: () => Promise<void>
   fetchWorkflow: (id: string) => Promise<WorkflowFull | null>
   createWorkflow: (workflow: WorkflowFull) => Promise<{ success: boolean; error?: string }>
   updateWorkflow: (id: string, workflow: Partial<WorkflowFull>) => Promise<{ success: boolean; error?: string }>
   deleteWorkflow: (id: string) => Promise<boolean>
   activateWorkflow: (id: string) => Promise<boolean>
+  restoreDefault: (workflowId: string) => Promise<boolean>
+  restoreAllDefaults: () => Promise<boolean>
 }
 
 export const useWorkflowsStore = create<WorkflowsState>((set, get) => ({
   workflows: [],
+  defaultIds: [],
+  modifiedIds: [],
   activeWorkflowId: 'default',
   loading: false,
+
+  fetchDefaultIds: async () => {
+    try {
+      const res = await fetch('/api/workflows/default-ids')
+      const data = await res.json()
+      set({ defaultIds: data.ids ?? [] })
+    } catch { /* ignore */ }
+  },
 
   fetchWorkflows: async () => {
     set({ loading: true })
     try {
       const res = await fetch('/api/workflows')
       const data = await res.json()
-      set({ workflows: data.workflows ?? [], activeWorkflowId: data.activeWorkflowId ?? 'default', loading: false })
+      set({
+        workflows: data.workflows ?? [],
+        activeWorkflowId: data.activeWorkflowId ?? 'default',
+        defaultIds: data.defaultIds ?? get().defaultIds,
+        modifiedIds: data.modifiedIds ?? [],
+        loading: false,
+      })
     } catch {
       set({ loading: false })
     }
@@ -126,6 +147,32 @@ export const useWorkflowsStore = create<WorkflowsState>((set, get) => ({
     try {
       const res = await fetch(`/api/workflows/${id}/activate`, { method: 'POST' })
       return res.ok
+    } catch {
+      return false
+    }
+  },
+
+  restoreDefault: async (workflowId: string) => {
+    try {
+      const res = await fetch(`/api/workflows/${workflowId}/restore-default`, { method: 'POST' })
+      if (res.ok) {
+        await get().fetchWorkflows()
+        return true
+      }
+      return false
+    } catch {
+      return false
+    }
+  },
+
+  restoreAllDefaults: async () => {
+    try {
+      const res = await fetch('/api/workflows/restore-all-defaults', { method: 'POST' })
+      if (res.ok) {
+        await get().fetchWorkflows()
+        return true
+      }
+      return false
     } catch {
       return false
     }

@@ -118,6 +118,84 @@ export async function loadAllCommands(configDir: string): Promise<CommandDefinit
 }
 
 // ============================================================================
+// Default Restoration
+// ============================================================================
+
+/**
+ * Get the list of command IDs that have bundled defaults.
+ */
+export async function getDefaultCommandIds(): Promise<string[]> {
+  for (const dir of [DEFAULTS_DIR, DEFAULTS_DIR_ALT]) {
+    try {
+      const files = (await readdir(dir)).filter(f => f.endsWith(COMMAND_EXTENSION))
+      return files.map(f => f.replace(COMMAND_EXTENSION, ''))
+    } catch { /* try next */ }
+  }
+  return []
+}
+
+/**
+ * Restore a single command to its bundled default by re-copying from defaults.
+ */
+export async function restoreDefaultCommand(configDir: string, commandId: string): Promise<boolean> {
+  const filename = `${commandId}${COMMAND_EXTENSION}`
+  for (const dir of [DEFAULTS_DIR, DEFAULTS_DIR_ALT]) {
+    const sourcePath = join(dir, filename)
+    if (await dirExists(sourcePath)) {
+      const targetPath = join(getCommandsDir(configDir), filename)
+      await copyFile(sourcePath, targetPath)
+      return true
+    }
+  }
+  return false
+}
+
+/**
+ * Return the IDs of default commands whose user copy differs from the bundled version.
+ */
+export async function getModifiedDefaultCommandIds(configDir: string): Promise<string[]> {
+  const defaultIds = await getDefaultCommandIds()
+  const modified: string[] = []
+
+  for (const id of defaultIds) {
+    const filename = `${id}${COMMAND_EXTENSION}`
+    const userPath = join(getCommandsDir(configDir), filename)
+
+    let bundledContent: string | null = null
+    for (const dir of [DEFAULTS_DIR, DEFAULTS_DIR_ALT]) {
+      try {
+        bundledContent = await readFile(join(dir, filename), 'utf-8')
+        break
+      } catch { /* try next */ }
+    }
+    if (!bundledContent) continue
+
+    try {
+      const userContent = await readFile(userPath, 'utf-8')
+      if (userContent !== bundledContent) {
+        modified.push(id)
+      }
+    } catch {
+      // User file doesn't exist
+    }
+  }
+
+  return modified
+}
+
+/**
+ * Restore all commands to their bundled defaults.
+ */
+export async function restoreAllDefaultCommands(configDir: string): Promise<number> {
+  const ids = await getDefaultCommandIds()
+  let count = 0
+  for (const id of ids) {
+    if (await restoreDefaultCommand(configDir, id)) count++
+  }
+  return count
+}
+
+// ============================================================================
 // Command Lookup
 // ============================================================================
 

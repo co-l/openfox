@@ -23,24 +23,44 @@ export function getAgentColor(agents: AgentInfo[], agentId: string): string {
 
 interface AgentsState {
   agents: AgentInfo[]
+  defaultIds: string[]
+  modifiedIds: string[]
   loading: boolean
   fetchAgents: () => Promise<void>
+  fetchDefaultIds: () => Promise<void>
   fetchAgent: (agentId: string) => Promise<AgentFull | null>
   createAgent: (agent: AgentFull) => Promise<{ success: boolean; error?: string }>
   updateAgent: (id: string, agent: Partial<AgentFull>) => Promise<{ success: boolean; error?: string }>
   deleteAgent: (agentId: string) => Promise<boolean>
+  restoreDefault: (agentId: string) => Promise<boolean>
+  restoreAllDefaults: () => Promise<boolean>
 }
 
 export const useAgentsStore = create<AgentsState>((set, get) => ({
   agents: [],
+  defaultIds: [],
+  modifiedIds: [],
   loading: false,
+
+  fetchDefaultIds: async () => {
+    try {
+      const res = await fetch('/api/agents/default-ids')
+      const data = await res.json()
+      set({ defaultIds: data.ids ?? [] })
+    } catch { /* ignore */ }
+  },
 
   fetchAgents: async () => {
     set({ loading: true })
     try {
       const res = await fetch('/api/agents')
       const data = await res.json()
-      set({ agents: data.agents ?? [], loading: false })
+      set({
+        agents: data.agents ?? [],
+        defaultIds: data.defaultIds ?? get().defaultIds,
+        modifiedIds: data.modifiedIds ?? [],
+        loading: false,
+      })
     } catch {
       set({ loading: false })
     }
@@ -97,6 +117,32 @@ export const useAgentsStore = create<AgentsState>((set, get) => ({
       const res = await fetch(`/api/agents/${agentId}`, { method: 'DELETE' })
       if (res.ok) {
         set({ agents: get().agents.filter(a => a.id !== agentId) })
+        return true
+      }
+      return false
+    } catch {
+      return false
+    }
+  },
+
+  restoreDefault: async (agentId: string) => {
+    try {
+      const res = await fetch(`/api/agents/${agentId}/restore-default`, { method: 'POST' })
+      if (res.ok) {
+        await get().fetchAgents()
+        return true
+      }
+      return false
+    } catch {
+      return false
+    }
+  },
+
+  restoreAllDefaults: async () => {
+    try {
+      const res = await fetch('/api/agents/restore-all-defaults', { method: 'POST' })
+      if (res.ok) {
+        await get().fetchAgents()
         return true
       }
       return false

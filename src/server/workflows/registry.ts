@@ -114,6 +114,84 @@ export async function loadAllWorkflows(configDir: string): Promise<WorkflowDefin
 }
 
 // ============================================================================
+// Default Restoration
+// ============================================================================
+
+/**
+ * Get the list of workflow IDs that have bundled defaults.
+ */
+export async function getDefaultWorkflowIds(): Promise<string[]> {
+  for (const dir of [DEFAULTS_DIR, DEFAULTS_DIR_ALT]) {
+    try {
+      const files = (await readdir(dir)).filter(f => f.endsWith(WORKFLOW_EXTENSION))
+      return files.map(f => f.replace(WORKFLOW_EXTENSION, ''))
+    } catch { /* try next */ }
+  }
+  return []
+}
+
+/**
+ * Restore a single workflow to its bundled default by re-copying from defaults.
+ */
+export async function restoreDefaultWorkflow(configDir: string, workflowId: string): Promise<boolean> {
+  const filename = `${workflowId}${WORKFLOW_EXTENSION}`
+  for (const dir of [DEFAULTS_DIR, DEFAULTS_DIR_ALT]) {
+    const sourcePath = join(dir, filename)
+    if (await pathExists(sourcePath)) {
+      const targetPath = join(getWorkflowsDir(configDir), filename)
+      await copyFile(sourcePath, targetPath)
+      return true
+    }
+  }
+  return false
+}
+
+/**
+ * Return the IDs of default workflows whose user copy differs from the bundled version.
+ */
+export async function getModifiedDefaultWorkflowIds(configDir: string): Promise<string[]> {
+  const defaultIds = await getDefaultWorkflowIds()
+  const modified: string[] = []
+
+  for (const id of defaultIds) {
+    const filename = `${id}${WORKFLOW_EXTENSION}`
+    const userPath = join(getWorkflowsDir(configDir), filename)
+
+    let bundledContent: string | null = null
+    for (const dir of [DEFAULTS_DIR, DEFAULTS_DIR_ALT]) {
+      try {
+        bundledContent = await readFile(join(dir, filename), 'utf-8')
+        break
+      } catch { /* try next */ }
+    }
+    if (!bundledContent) continue
+
+    try {
+      const userContent = await readFile(userPath, 'utf-8')
+      if (userContent !== bundledContent) {
+        modified.push(id)
+      }
+    } catch {
+      // User file doesn't exist
+    }
+  }
+
+  return modified
+}
+
+/**
+ * Restore all workflows to their bundled defaults.
+ */
+export async function restoreAllDefaultWorkflows(configDir: string): Promise<number> {
+  const ids = await getDefaultWorkflowIds()
+  let count = 0
+  for (const id of ids) {
+    if (await restoreDefaultWorkflow(configDir, id)) count++
+  }
+  return count
+}
+
+// ============================================================================
 // Workflow Lookup
 // ============================================================================
 

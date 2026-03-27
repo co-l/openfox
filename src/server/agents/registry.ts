@@ -182,6 +182,87 @@ export async function loadBuiltinAgents(): Promise<AgentDefinition[]> {
 }
 
 // ============================================================================
+// Default Restoration
+// ============================================================================
+
+/**
+ * Get the list of agent IDs that have bundled defaults.
+ */
+export async function getDefaultAgentIds(): Promise<string[]> {
+  for (const dir of [DEFAULTS_DIR, DEFAULTS_DIR_ALT]) {
+    try {
+      const files = (await readdir(dir)).filter(f => f.endsWith(AGENT_EXTENSION))
+      return files.map(f => f.replace(AGENT_EXTENSION, ''))
+    } catch { /* try next */ }
+  }
+  return []
+}
+
+/**
+ * Restore a single agent to its bundled default.
+ * For agents, this deletes the user override so the built-in shows through.
+ * Returns true if the agent had a bundled default.
+ */
+export async function restoreDefaultAgent(configDir: string, agentId: string): Promise<boolean> {
+  const defaultIds = await getDefaultAgentIds()
+  if (!defaultIds.includes(agentId)) return false
+
+  // Delete user override if it exists
+  const userPath = join(getAgentsDir(configDir), `${agentId}${AGENT_EXTENSION}`)
+  try {
+    await unlink(userPath)
+  } catch { /* no user override to remove */ }
+  return true
+}
+
+/**
+ * Return the IDs of default agents whose user copy differs from the bundled version.
+ * For agents, a user file existing for a built-in ID means it's been overridden.
+ */
+export async function getModifiedDefaultAgentIds(configDir: string): Promise<string[]> {
+  const defaultIds = await getDefaultAgentIds()
+  const modified: string[] = []
+
+  for (const id of defaultIds) {
+    const filename = `${id}${AGENT_EXTENSION}`
+    const userPath = join(getAgentsDir(configDir), filename)
+
+    // Find bundled source
+    let bundledContent: string | null = null
+    for (const dir of [DEFAULTS_DIR, DEFAULTS_DIR_ALT]) {
+      try {
+        bundledContent = await readFile(join(dir, filename), 'utf-8')
+        break
+      } catch { /* try next */ }
+    }
+    if (!bundledContent) continue
+
+    try {
+      const userContent = await readFile(userPath, 'utf-8')
+      if (userContent !== bundledContent) {
+        modified.push(id)
+      }
+    } catch {
+      // No user override — not modified
+    }
+  }
+
+  return modified
+}
+
+/**
+ * Restore all agents to their bundled defaults.
+ */
+export async function restoreAllDefaultAgents(configDir: string): Promise<number> {
+  const ids = await getDefaultAgentIds()
+  let count = 0
+  for (const id of ids) {
+    if (await restoreDefaultAgent(configDir, id)) count++
+  }
+  return count
+}
+
+// ============================================================================
 // Lookup Helpers
 // ============================================================================
 

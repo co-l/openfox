@@ -159,6 +159,86 @@ export function setSkillEnabled(skillId: string, enabled: boolean): void {
 }
 
 // ============================================================================
+// Default Restoration
+// ============================================================================
+
+/**
+ * Get the list of skill IDs that have bundled defaults.
+ */
+export async function getDefaultSkillIds(): Promise<string[]> {
+  for (const dir of [DEFAULTS_DIR, DEFAULTS_DIR_ALT]) {
+    try {
+      const files = (await readdir(dir)).filter(f => f.endsWith(SKILL_EXTENSION))
+      return files.map(f => f.replace(SKILL_EXTENSION, ''))
+    } catch { /* try next */ }
+  }
+  return []
+}
+
+/**
+ * Restore a single skill to its bundled default by re-copying from defaults.
+ * Returns true if the default was found and restored.
+ */
+export async function restoreDefaultSkill(configDir: string, skillId: string): Promise<boolean> {
+  const filename = `${skillId}${SKILL_EXTENSION}`
+  for (const dir of [DEFAULTS_DIR, DEFAULTS_DIR_ALT]) {
+    const sourcePath = join(dir, filename)
+    if (await dirExists(sourcePath)) {
+      const targetPath = join(getSkillsDir(configDir), filename)
+      await copyFile(sourcePath, targetPath)
+      return true
+    }
+  }
+  return false
+}
+
+/**
+ * Return the IDs of default skills whose user copy differs from the bundled version.
+ */
+export async function getModifiedDefaultSkillIds(configDir: string): Promise<string[]> {
+  const defaultIds = await getDefaultSkillIds()
+  const modified: string[] = []
+
+  for (const id of defaultIds) {
+    const filename = `${id}${SKILL_EXTENSION}`
+    const userPath = join(getSkillsDir(configDir), filename)
+
+    // Find bundled source
+    let bundledContent: string | null = null
+    for (const dir of [DEFAULTS_DIR, DEFAULTS_DIR_ALT]) {
+      try {
+        bundledContent = await readFile(join(dir, filename), 'utf-8')
+        break
+      } catch { /* try next */ }
+    }
+    if (!bundledContent) continue
+
+    try {
+      const userContent = await readFile(userPath, 'utf-8')
+      if (userContent !== bundledContent) {
+        modified.push(id)
+      }
+    } catch {
+      // User file doesn't exist — treat as not modified (will be re-created)
+    }
+  }
+
+  return modified
+}
+
+/**
+ * Restore all skills to their bundled defaults.
+ */
+export async function restoreAllDefaultSkills(configDir: string): Promise<number> {
+  const ids = await getDefaultSkillIds()
+  let count = 0
+  for (const id of ids) {
+    if (await restoreDefaultSkill(configDir, id)) count++
+  }
+  return count
+}
+
+// ============================================================================
 // Skill Lookup
 // ============================================================================
 
