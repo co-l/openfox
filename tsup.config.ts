@@ -8,7 +8,7 @@ export default defineConfig({
     'shared/index': 'src/shared/index.ts',
   },
   format: ['esm'],
-  dts: false,
+  dts: true,
   clean: true,
   sourcemap: true,
   external: ['better-sqlite3', 'vscode-jsonrpc', 'vscode-languageserver-protocol', 'ws'],
