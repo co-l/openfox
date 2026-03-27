@@ -17,44 +17,6 @@ import { loadAllAgentsDefault, findAgentById, getSubAgents } from '../agents/reg
 import { getRuntimeConfig } from '../runtime-config.js'
 import { logger } from '../utils/logger.js'
 
-// ============================================================================
-// Compaction failure cooldown (prevents retry storms)
-// ============================================================================
-
-const MIN_SUMMARY_LENGTH = 50
-
-interface CompactionCooldown {
-  failedAt: number
-  attempts: number
-}
-
-const compactionCooldowns = new Map<string, CompactionCooldown>()
-const COOLDOWN_BASE_MS = 30_000   // 30 seconds
-const MAX_COOLDOWN_MS = 300_000   // 5 minutes
-
-function isInCooldown(sessionId: string): boolean {
-  const cooldown = compactionCooldowns.get(sessionId)
-  if (!cooldown) return false
-  const backoff = Math.min(COOLDOWN_BASE_MS * Math.pow(2, cooldown.attempts - 1), MAX_COOLDOWN_MS)
-  return Date.now() - cooldown.failedAt < backoff
-}
-
-function recordCooldown(sessionId: string): void {
-  const prev = compactionCooldowns.get(sessionId)
-  compactionCooldowns.set(sessionId, {
-    failedAt: Date.now(),
-    attempts: (prev?.attempts ?? 0) + 1,
-  })
-}
-
-function clearCooldown(sessionId: string): void {
-  compactionCooldowns.delete(sessionId)
-}
-
-export function clearCompactionCooldown(sessionId: string): void {
-  clearCooldown(sessionId)
-}
-
 function getCurrentWindowMessageOptions(sessionId: string): { contextWindowId: string } | undefined {
   const contextWindowId = getCurrentContextWindowId(sessionId)
   return contextWindowId ? { contextWindowId } : undefined
@@ -92,21 +54,12 @@ export async function maybeAutoCompactContext(options: ContextCompactionOptions)
     return false
   }
 
-  if (isInCooldown(options.sessionId)) {
-    logger.warn('Skipping auto-compaction (in cooldown after previous failure)', {
-      sessionId: options.sessionId,
-      currentTokens: contextState.currentTokens,
-    })
-    return false
-  }
-
   try {
     await performContextCompaction({
       ...options,
       tokenCountAtClose: contextState.currentTokens,
       trigger: 'auto',
     })
-    clearCooldown(options.sessionId)
     return true
   } catch (error) {
     // Abort errors should still propagate (user cancelled)
@@ -120,8 +73,6 @@ export async function maybeAutoCompactContext(options: ContextCompactionOptions)
       currentTokens: contextState.currentTokens,
       maxTokens: contextState.maxTokens,
     })
-
-    recordCooldown(options.sessionId)
 
     // Emit a visible warning so the user knows compaction failed
     const eventStore = getEventStore()
@@ -191,7 +142,6 @@ async function performContextCompaction(options: ContextCompactionOptions & {
     subAgentDefs,
     workdir: session.workdir,
     messages: requestMessages,
-    includeRuntimeReminder: false,
     injectedFiles,
     promptTools: [],
     requestTools: [],
@@ -199,6 +149,14 @@ async function performContextCompaction(options: ContextCompactionOptions & {
     disableThinking: true,
     ...(instructions ? { customInstructions: instructions } : {}),
   })
+
+  // Append compaction instruction as a system-reminder user message
+  // (same pattern as planner/builder mode transitions — preserves cache prefix)
+  const compactionReminder = `<system-reminder>\n${COMPACTION_PROMPT}\n</system-reminder>`
+  const llmMessages = [
+    ...assembledRequest.messages,
+    { role: 'user' as const, content: compactionReminder },
+  ]
 
   const compactPromptMsgId = crypto.randomUUID()
   eventStore.append(sessionId, createMessageStartEvent(compactPromptMsgId, 'user', COMPACTION_PROMPT, {
@@ -220,7 +178,7 @@ async function performContextCompaction(options: ContextCompactionOptions & {
       messageId: assistantMsgId,
       systemPrompt: assembledRequest.systemPrompt,
       llmClient,
-      messages: [...assembledRequest.messages, ...correctionMessages],
+      messages: [...llmMessages, ...correctionMessages],
       tools: [],
       toolChoice: 'none',
       disableThinking: true,
@@ -268,11 +226,8 @@ async function performContextCompaction(options: ContextCompactionOptions & {
     summary = result.thinkingContent.trim()
   }
 
-  if (!summary || summary.length < MIN_SUMMARY_LENGTH) {
-    throw new Error(
-      `Compaction produced insufficient summary (length=${summary.length}, completionTokens=${result.usage.completionTokens}). `
-      + 'The model may not support the required context size.'
-    )
+  if (!summary) {
+    throw new Error('Compaction produced empty summary')
   }
 
   sessionManager.compactContext(sessionId, summary, tokenCountAtClose)
