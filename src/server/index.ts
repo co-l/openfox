@@ -6,25 +6,25 @@ import { dirname, resolve, join } from 'node:path'
 import { readFile } from 'node:fs/promises'
 import { createServer as createViteServer, type ViteDevServer } from 'vite'
 
-import type { Config, Provider } from '../shared/types.js'
+import type { Config } from '../shared/types.js'
 import type { ServerHandle } from './context.js'
-import { initDatabase, closeDatabase, getDatabase } from './db/index.js'
+import { initDatabase } from './db/index.js'
 import { initEventStore } from './events/index.js'
-import { createLLMClient, detectModel, getLlmStatus, detectBackend, getBackendDisplayName, type Backend } from './llm/index.js'
+import { detectModel, getLlmStatus, detectBackend, getBackendDisplayName, type Backend } from './llm/index.js'
 import { createMockLLMClient } from './llm/mock.js'
 import { createProviderManager } from './provider-manager.js'
 import { createToolRegistry } from './tools/index.js'
 import { createWebSocketServer } from './ws/index.js'
 import { SessionManager } from './session/manager.js'
-import { setRuntimeConfig, getRuntimeConfig } from './runtime-config.js'
-import { ensureDefaultSkills, loadAllSkills, isSkillEnabled, setSkillEnabled, findSkillById, saveSkill, deleteSkill, skillExists, getDefaultSkillIds, getModifiedDefaultSkillIds, restoreDefaultSkill, restoreAllDefaultSkills } from './skills/registry.js'
-import type { SkillDefinition } from './skills/types.js'
-import { ensureDefaultCommands, loadAllCommands, findCommandById, saveCommand, deleteCommand, commandExists, getDefaultCommandIds, getModifiedDefaultCommandIds, restoreDefaultCommand, restoreAllDefaultCommands } from './commands/registry.js'
-import type { CommandDefinition } from './commands/types.js'
-import { ensureDefaultAgents, loadAllAgents, findAgentById, getSubAgents, getTopLevelAgents, saveAgent, deleteAgent, agentExists, getDefaultAgentIds, getModifiedDefaultAgentIds, restoreDefaultAgent, restoreAllDefaultAgents } from './agents/registry.js'
-import type { AgentDefinition } from './agents/types.js'
-import { ensureDefaultWorkflows, loadAllWorkflows, findWorkflowById, saveWorkflow, deleteWorkflow, workflowExists, getDefaultWorkflowIds, getModifiedDefaultWorkflowIds, restoreDefaultWorkflow, restoreAllDefaultWorkflows } from './workflows/registry.js'
-import type { WorkflowDefinition } from './workflows/types.js'
+import { setRuntimeConfig } from './runtime-config.js'
+import { ensureDefaultSkills } from './skills/registry.js'
+import { ensureDefaultCommands } from './commands/registry.js'
+import { ensureDefaultAgents } from './agents/registry.js'
+import { ensureDefaultWorkflows } from './workflows/registry.js'
+import { createSkillRoutes } from './routes/skills.js'
+import { createCommandRoutes } from './routes/commands.js'
+import { createAgentRoutes } from './routes/agents.js'
+import { createWorkflowRoutes } from './routes/workflows.js'
 import { getGlobalConfigDir } from '../cli/paths.js'
 import { logger, setLogLevel } from './utils/logger.js'
 const __dirname = dirname(fileURLToPath(import.meta.url))
@@ -75,7 +75,7 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
   // Auto-detect backend and model from LLM server
   async function initLLM(): Promise<void> {
     const llmClient = getLLMClient()
-    let backend: Backend = 'unknown'
+    let backend: Backend
     const useMock = process.env['OPENFOX_MOCK_LLM'] === 'true'
     
     if (config.llm.backend === 'auto') {
@@ -232,353 +232,11 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
     })
   })
 
-  // Skills endpoints
-  app.get('/api/skills', async (_req, res) => {
-    const [skills, defaultIds, modifiedIds] = await Promise.all([
-      loadAllSkills(configDir),
-      getDefaultSkillIds(),
-      getModifiedDefaultSkillIds(configDir),
-    ])
-    res.json({
-      skills: skills.map(s => ({
-        ...s.metadata,
-        enabled: isSkillEnabled(s.metadata.id),
-      })),
-      defaultIds,
-      modifiedIds,
-    })
-  })
-
-  app.get('/api/skills/default-ids', async (_req, res) => {
-    const ids = await getDefaultSkillIds()
-    res.json({ ids })
-  })
-
-  app.post('/api/skills/restore-all-defaults', async (_req, res) => {
-    const count = await restoreAllDefaultSkills(configDir)
-    res.json({ success: true, count })
-  })
-
-  app.post('/api/skills/:id/restore-default', async (req, res) => {
-    const { id } = req.params
-    const restored = await restoreDefaultSkill(configDir, id as string)
-    if (!restored) {
-      return res.status(404).json({ error: 'No bundled default found for this skill' })
-    }
-    res.json({ success: true })
-  })
-
-  app.post('/api/skills/:id/toggle', (req, res) => {
-    const { id } = req.params
-    const currentlyEnabled = isSkillEnabled(id as string)
-    setSkillEnabled(id as string, !currentlyEnabled)
-    res.json({ id, enabled: !currentlyEnabled })
-  })
-
-  app.get('/api/skills/:id', async (req, res) => {
-    const { id } = req.params
-    const skills = await loadAllSkills(configDir)
-    const skill = findSkillById(id as string, skills)
-    if (!skill) {
-      return res.status(404).json({ error: 'Skill not found' })
-    }
-    res.json(skill)
-  })
-
-  app.post('/api/skills', async (req, res) => {
-    const body = req.body as SkillDefinition
-    if (!body.metadata?.id || !body.metadata?.name || !body.prompt) {
-      return res.status(400).json({ error: 'Missing required fields: metadata.id, metadata.name, prompt' })
-    }
-    if (!/^[a-z0-9-]+$/.test(body.metadata.id)) {
-      return res.status(400).json({ error: 'Skill ID must be lowercase alphanumeric with hyphens only' })
-    }
-    if (await skillExists(configDir, body.metadata.id)) {
-      return res.status(409).json({ error: 'A skill with this ID already exists' })
-    }
-    await saveSkill(configDir, body)
-    res.status(201).json(body)
-  })
-
-  app.put('/api/skills/:id', async (req, res) => {
-    const { id } = req.params
-    if (!await skillExists(configDir, id as string)) {
-      return res.status(404).json({ error: 'Skill not found' })
-    }
-    const body = req.body as Partial<SkillDefinition>
-    const skills = await loadAllSkills(configDir)
-    const existing = findSkillById(id as string, skills)
-    if (!existing) {
-      return res.status(404).json({ error: 'Skill not found' })
-    }
-    const updated: SkillDefinition = {
-      metadata: { ...existing.metadata, ...body.metadata, id: id as string },
-      prompt: body.prompt ?? existing.prompt,
-    }
-    await saveSkill(configDir, updated)
-    res.json(updated)
-  })
-
-  app.delete('/api/skills/:id', async (req, res) => {
-    const { id } = req.params
-    const deleted = await deleteSkill(configDir, id as string)
-    if (!deleted) {
-      return res.status(404).json({ error: 'Skill not found' })
-    }
-    res.json({ success: true })
-  })
-
-  // Commands endpoints
-  app.get('/api/commands', async (_req, res) => {
-    const [commands, defaultIds, modifiedIds] = await Promise.all([
-      loadAllCommands(configDir),
-      getDefaultCommandIds(),
-      getModifiedDefaultCommandIds(configDir),
-    ])
-    res.json({
-      commands: commands.map(c => c.metadata),
-      defaultIds,
-      modifiedIds,
-    })
-  })
-
-  app.get('/api/commands/default-ids', async (_req, res) => {
-    const ids = await getDefaultCommandIds()
-    res.json({ ids })
-  })
-
-  app.post('/api/commands/restore-all-defaults', async (_req, res) => {
-    const count = await restoreAllDefaultCommands(configDir)
-    res.json({ success: true, count })
-  })
-
-  app.post('/api/commands/:id/restore-default', async (req, res) => {
-    const { id } = req.params
-    const restored = await restoreDefaultCommand(configDir, id as string)
-    if (!restored) {
-      return res.status(404).json({ error: 'No bundled default found for this command' })
-    }
-    res.json({ success: true })
-  })
-
-  app.get('/api/commands/:id', async (req, res) => {
-    const { id } = req.params
-    const commands = await loadAllCommands(configDir)
-    const command = findCommandById(id as string, commands)
-    if (!command) {
-      return res.status(404).json({ error: 'Command not found' })
-    }
-    res.json(command)
-  })
-
-  app.post('/api/commands', async (req, res) => {
-    const body = req.body as CommandDefinition
-    if (!body.metadata?.id || !body.metadata?.name || !body.prompt) {
-      return res.status(400).json({ error: 'Missing required fields: metadata.id, metadata.name, prompt' })
-    }
-    if (!/^[a-z0-9-]+$/.test(body.metadata.id)) {
-      return res.status(400).json({ error: 'Command ID must be lowercase alphanumeric with hyphens only' })
-    }
-    if (await commandExists(configDir, body.metadata.id)) {
-      return res.status(409).json({ error: 'A command with this ID already exists' })
-    }
-    await saveCommand(configDir, body)
-    res.status(201).json(body)
-  })
-
-  app.put('/api/commands/:id', async (req, res) => {
-    const { id } = req.params
-    if (!await commandExists(configDir, id as string)) {
-      return res.status(404).json({ error: 'Command not found' })
-    }
-    const body = req.body as Partial<CommandDefinition>
-    const commands = await loadAllCommands(configDir)
-    const existing = findCommandById(id as string, commands)
-    if (!existing) {
-      return res.status(404).json({ error: 'Command not found' })
-    }
-    const updated: CommandDefinition = {
-      metadata: { ...existing.metadata, ...body.metadata, id: id as string },
-      prompt: body.prompt ?? existing.prompt,
-    }
-    await saveCommand(configDir, updated)
-    res.json(updated)
-  })
-
-  app.delete('/api/commands/:id', async (req, res) => {
-    const { id } = req.params
-    const deleted = await deleteCommand(configDir, id as string)
-    if (!deleted) {
-      return res.status(404).json({ error: 'Command not found' })
-    }
-    res.json({ success: true })
-  })
-
-  // Agents endpoints
-  app.get('/api/agents', async (_req, res) => {
-    const [agents, defaultIds, modifiedIds] = await Promise.all([
-      loadAllAgents(configDir),
-      getDefaultAgentIds(),
-      getModifiedDefaultAgentIds(configDir),
-    ])
-    res.json({
-      agents: agents.map(a => a.metadata),
-      defaultIds,
-      modifiedIds,
-    })
-  })
-
-  app.get('/api/agents/default-ids', async (_req, res) => {
-    const ids = await getDefaultAgentIds()
-    res.json({ ids })
-  })
-
-  app.post('/api/agents/restore-all-defaults', async (_req, res) => {
-    const count = await restoreAllDefaultAgents(configDir)
-    res.json({ success: true, count })
-  })
-
-  app.post('/api/agents/:id/restore-default', async (req, res) => {
-    const { id } = req.params
-    const restored = await restoreDefaultAgent(configDir, id as string)
-    if (!restored) {
-      return res.status(404).json({ error: 'No bundled default found for this agent' })
-    }
-    res.json({ success: true })
-  })
-
-  app.get('/api/agents/:id', async (req, res) => {
-    const { id } = req.params
-    const agents = await loadAllAgents(configDir)
-    const agent = findAgentById(id as string, agents)
-    if (!agent) {
-      return res.status(404).json({ error: 'Agent not found' })
-    }
-    res.json(agent)
-  })
-
-  app.post('/api/agents', async (req, res) => {
-    const body = req.body as AgentDefinition
-    if (!body?.metadata?.id || !body?.prompt) {
-      return res.status(400).json({ error: 'Missing required fields: metadata.id, prompt' })
-    }
-    if (await agentExists(configDir, body.metadata.id)) {
-      return res.status(409).json({ error: 'An agent with this ID already exists' })
-    }
-    await saveAgent(configDir, body)
-    res.status(201).json(body)
-  })
-
-  app.put('/api/agents/:id', async (req, res) => {
-    const { id } = req.params
-    if (!id) {
-      return res.status(400).json({ error: 'Missing agent ID' })
-    }
-    const body = req.body as Partial<AgentDefinition>
-    const agents = await loadAllAgents(configDir)
-    const existing = findAgentById(id as string, agents)
-    if (!existing) {
-      return res.status(404).json({ error: 'Agent not found' })
-    }
-    const updated: AgentDefinition = {
-      metadata: { ...existing.metadata, ...body.metadata, id: id as string },
-      prompt: body.prompt ?? existing.prompt,
-    }
-    await saveAgent(configDir, updated)
-    res.json(updated)
-  })
-
-  app.delete('/api/agents/:id', async (req, res) => {
-    const { id } = req.params
-    const deleted = await deleteAgent(configDir, id as string)
-    if (!deleted) {
-      return res.status(404).json({ error: 'Agent not found' })
-    }
-    res.json({ success: true })
-  })
-
-  // Workflows endpoints
-  app.get('/api/workflows', async (_req, res) => {
-    const [workflows, defaultIds, modifiedIds] = await Promise.all([
-      loadAllWorkflows(configDir),
-      getDefaultWorkflowIds(),
-      getModifiedDefaultWorkflowIds(configDir),
-    ])
-    res.json({
-      workflows: workflows.map(p => ({ ...p.metadata, startCondition: p.startCondition })),
-      activeWorkflowId: config.activeWorkflowId ?? 'default',
-      defaultIds,
-      modifiedIds,
-    })
-  })
-
-  app.get('/api/workflows/default-ids', async (_req, res) => {
-    const ids = await getDefaultWorkflowIds()
-    res.json({ ids })
-  })
-
-  app.post('/api/workflows/restore-all-defaults', async (_req, res) => {
-    const count = await restoreAllDefaultWorkflows(configDir)
-    res.json({ success: true, count })
-  })
-
-  app.post('/api/workflows/:id/restore-default', async (req, res) => {
-    const { id } = req.params
-    const restored = await restoreDefaultWorkflow(configDir, id as string)
-    if (!restored) {
-      return res.status(404).json({ error: 'No bundled default found for this workflow' })
-    }
-    res.json({ success: true })
-  })
-
-  app.get('/api/workflows/:id', async (req, res) => {
-    const { id } = req.params
-    const workflows = await loadAllWorkflows(configDir)
-    const workflow = findWorkflowById(id as string, workflows)
-    if (!workflow) {
-      return res.status(404).json({ error: 'Workflow not found' })
-    }
-    res.json(workflow)
-  })
-
-  app.post('/api/workflows', async (req, res) => {
-    const body = req.body as WorkflowDefinition
-    if (!body?.metadata?.id || !body?.steps?.length) {
-      return res.status(400).json({ error: 'Missing required fields: metadata.id, steps' })
-    }
-    if (await workflowExists(configDir, body.metadata.id)) {
-      return res.status(409).json({ error: 'A workflow with this ID already exists' })
-    }
-    await saveWorkflow(configDir, body)
-    res.status(201).json(body)
-  })
-
-  app.put('/api/workflows/:id', async (req, res) => {
-    const { id } = req.params
-    if (!await workflowExists(configDir, id as string)) {
-      return res.status(404).json({ error: 'Workflow not found' })
-    }
-    const body = req.body as WorkflowDefinition
-    // Ensure the ID matches the URL parameter
-    const updated: WorkflowDefinition = {
-      ...body,
-      metadata: { ...body.metadata, id: id as string },
-    }
-    await saveWorkflow(configDir, updated)
-    res.json(updated)
-  })
-
-  app.delete('/api/workflows/:id', async (req, res) => {
-    const { id } = req.params
-    if (id === 'default') {
-      return res.status(400).json({ error: 'Cannot delete the default workflow' })
-    }
-    const deleted = await deleteWorkflow(configDir, id as string)
-    if (!deleted) {
-      return res.status(404).json({ error: 'Workflow not found' })
-    }
-    res.json({ success: true })
-  })
+  // CRUD routes (extracted to routes/)
+  app.use('/api/skills', createSkillRoutes(configDir))
+  app.use('/api/commands', createCommandRoutes(configDir))
+  app.use('/api/agents', createAgentRoutes(configDir))
+  app.use('/api/workflows', createWorkflowRoutes(configDir, config))
 
 
   // Branch API endpoint

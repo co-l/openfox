@@ -33,7 +33,7 @@ import { logger } from '../utils/logger.js'
 // Template Variables
 // ============================================================================
 
-interface TemplateContext {
+export interface TemplateContext {
   workdir: string
   reason: string
   verifierFindings: string
@@ -45,7 +45,7 @@ interface TemplateContext {
   modifiedFiles: string
 }
 
-function formatCriteriaList(criteria: Criterion[]): string {
+export function formatCriteriaList(criteria: Criterion[]): string {
   if (criteria.length === 0) return '(none)'
   return criteria
     .map(c => {
@@ -58,12 +58,12 @@ function formatCriteriaList(criteria: Criterion[]): string {
     .join('\n')
 }
 
-function formatModifiedFiles(session: Session): string {
+export function formatModifiedFiles(session: Session): string {
   const files = session.executionState?.modifiedFiles ?? []
   return files.length > 0 ? files.map(f => `- ${f}`).join('\n') : '(none)'
 }
 
-function resolveTemplate(template: string, ctx: TemplateContext): string {
+export function resolveTemplate(template: string, ctx: TemplateContext): string {
   return template
     .replace(/\{\{workdir\}\}/g, ctx.workdir)
     .replace(/\{\{reason\}\}/g, ctx.reason)
@@ -80,11 +80,11 @@ function resolveTemplate(template: string, ctx: TemplateContext): string {
 // Transition Evaluation
 // ============================================================================
 
-interface StepOutcome {
+export interface StepOutcome {
   success: boolean
 }
 
-function evaluateCondition(
+export function evaluateCondition(
   condition: TransitionCondition,
   criteria: Criterion[],
   stepOutcome: StepOutcome | null,
@@ -114,7 +114,7 @@ function evaluateCondition(
   }
 }
 
-function evaluateTransitions(
+export function evaluateTransitions(
   transitions: Transition[],
   criteria: Criterion[],
   stepOutcome: StepOutcome | null,
@@ -137,7 +137,7 @@ function getCurrentWindowMessageOptions(sessionId: string): { contextWindowId: s
   return contextWindowId ? { contextWindowId } : undefined
 }
 
-function buildReason(criteria: Criterion[]): string {
+export function buildReason(criteria: Criterion[]): string {
   const remaining = criteria.filter(c => c.status.type !== 'passed')
   return `${remaining.length} criteria remaining`
 }

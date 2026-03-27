@@ -42,7 +42,8 @@
     "format": "prettier --check 'src/**/*.ts'",
     "format:fix": "prettier --write 'src/**/*.ts'",
     "clean": "rm -rf dist",
-    "prepublishOnly": "npm run build"
+    "prepublishOnly": "npm run build",
+    "prepare": "husky"
   },
   "dependencies": {
     "@clack/prompts": "^1.1.0",
@@ -91,6 +92,8 @@
     "concurrently": "^9.2.1",
     "dotenv": "^17.3.1",
     "eslint": "^10.1.0",
+    "husky": "^9.1.7",
+    "lint-staged": "^16.4.0",
     "postcss": "^8.5.1",
     "prettier": "^3.8.1",
     "react": "^19.0.0",
@@ -101,6 +104,11 @@
     "typescript": "^5.7.3",
     "typescript-eslint": "^8.57.2",
     "vitest": "^4.1.2"
+  },
+  "lint-staged": {
+    "src/**/*.ts": [
+      "eslint --no-warn-ignored"
+    ]
   },
   "engines": {
     "node": ">=24.0.0"
