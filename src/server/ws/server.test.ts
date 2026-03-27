@@ -612,9 +612,9 @@ describe('createWebSocketServer', () => {
     getAllInstructionsMock.mockResolvedValue({ content: '', files: [] })
     streamLLMPureMock.mockReturnValue({ kind: 'stream' })
     consumeStreamGeneratorMock.mockResolvedValue({
-      content: 'Compacted summary',
+      content: 'Compacted summary of the session including all file modifications and current progress on tasks',
       toolCalls: [],
-      segments: [{ type: 'text', content: 'Compacted summary' }],
+      segments: [{ type: 'text', content: 'Compacted summary of the session including all file modifications and current progress on tasks' }],
       usage: { promptTokens: 190000, completionTokens: 100 },
       timing: { ttft: 1, completionTime: 1, tps: 100, prefillTps: 190000 },
       aborted: false,
@@ -639,7 +639,7 @@ describe('createWebSocketServer', () => {
     expect(await harness.nextMessage((message) => message.id === 'chat-ok')).toMatchObject({ type: 'ack' })
 
     expect(consumeStreamGeneratorMock).toHaveBeenCalledTimes(1)
-    expect(sessionManager.compactContext).toHaveBeenCalledWith('session-1', 'Compacted summary', 190000)
+    expect(sessionManager.compactContext).toHaveBeenCalledWith('session-1', 'Compacted summary of the session including all file modifications and current progress on tasks', 190000)
     const compactOrder = sessionManager.compactContext.mock.invocationCallOrder[0]
     const addMessageOrder = sessionManager.addMessage.mock.invocationCallOrder[0]
     expect(compactOrder).toBeDefined()
@@ -673,7 +673,7 @@ describe('createWebSocketServer', () => {
     streamLLMPureMock.mockReturnValue({ kind: 'stream' })
     consumeStreamGeneratorMock
       .mockResolvedValueOnce({
-        content: 'Compacted summary',
+        content: 'Compacted summary of the session including all file modifications and current progress on tasks',
         toolCalls: [],
         segments: [],
         usage: { promptTokens: 10, completionTokens: 4 },
@@ -715,7 +715,7 @@ describe('createWebSocketServer', () => {
     expect(await harness.nextMessage((message) => message.type === 'chat.done')).toMatchObject({ payload: { reason: 'complete' } })
     expect(await harness.nextMessage((message) => message.type === 'context.state')).toMatchObject({ type: 'context.state' })
     expect(await harness.nextMessage((message) => message.type === 'session.state')).toMatchObject({ type: 'session.state' })
-    expect(sessionManager.compactContext).toHaveBeenCalledWith('session-1', 'Compacted summary', 10)
+    expect(sessionManager.compactContext).toHaveBeenCalledWith('session-1', 'Compacted summary of the session including all file modifications and current progress on tasks', 10)
     expect(streamLLMPureMock.mock.calls[1]?.[0]?.messages).toEqual(expect.not.arrayContaining([
       expect.objectContaining({ content: expect.stringContaining('Plan mode ACTIVE') }),
       expect.objectContaining({ content: expect.stringContaining('Build mode ACTIVE') }),

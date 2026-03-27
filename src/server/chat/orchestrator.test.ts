@@ -271,9 +271,9 @@ describe('chat orchestrator', () => {
     streamLLMPureMock.mockReturnValue({ kind: 'stream' })
     consumeStreamGeneratorMock
       .mockResolvedValueOnce({
-        content: 'Compacted summary',
+        content: 'Compacted summary of the session including all file modifications and current progress on tasks',
         toolCalls: [],
-        segments: [{ type: 'text', content: 'Compacted summary' }],
+        segments: [{ type: 'text', content: 'Compacted summary of the session including all file modifications and current progress on tasks' }],
         usage: { promptTokens: 190000, completionTokens: 100 },
         timing: { ttft: 1, completionTime: 1, tps: 100, prefillTps: 190000 },
         aborted: false,
@@ -319,7 +319,7 @@ describe('chat orchestrator', () => {
     expect(consumeStreamGeneratorMock).toHaveBeenCalledTimes(2)
     expect(streamLLMPureMock.mock.calls[0]?.[0]).toMatchObject({ toolChoice: 'none', disableThinking: true, tools: [] })
     expect(streamLLMPureMock.mock.calls[1]?.[0]).toMatchObject({ toolChoice: 'auto' })
-    expect(sessionManager.compactContext).toHaveBeenCalledWith('session-1', 'Compacted summary', 190000)
+    expect(sessionManager.compactContext).toHaveBeenCalledWith('session-1', 'Compacted summary of the session including all file modifications and current progress on tasks', 190000)
   })
 
   it('persists provider and model identity in emitted stats', async () => {
@@ -1973,9 +1973,9 @@ describe('chat orchestrator', () => {
       streamLLMPureMock.mockReturnValue({ kind: 'stream' })
       consumeStreamGeneratorMock
         .mockResolvedValueOnce({
-          content: 'Compacted summary',
+          content: 'Compacted summary of the session including all file modifications and current progress on tasks',
           toolCalls: [],
-          segments: [{ type: 'text', content: 'Compacted summary' }],
+          segments: [{ type: 'text', content: 'Compacted summary of the session including all file modifications and current progress on tasks' }],
           usage: { promptTokens: 190000, completionTokens: 100 },
           timing: { ttft: 1, completionTime: 1, tps: 100, prefillTps: 190000 },
           aborted: false,
@@ -2021,7 +2021,7 @@ describe('chat orchestrator', () => {
       expect(consumeStreamGeneratorMock).toHaveBeenCalledTimes(2)
       expect(streamLLMPureMock.mock.calls[0]?.[0]).toMatchObject({ toolChoice: 'none', disableThinking: true, tools: [] })
       expect(streamLLMPureMock.mock.calls[1]?.[0]).toMatchObject({ toolChoice: 'auto' })
-      expect(sessionManager.compactContext).toHaveBeenCalledWith('session-1', 'Compacted summary', 190000)
+      expect(sessionManager.compactContext).toHaveBeenCalledWith('session-1', 'Compacted summary of the session including all file modifications and current progress on tasks', 190000)
     })
 
     it('assistant messages include contextWindowId', async () => {

@@ -17,6 +17,44 @@ import { loadAllAgentsDefault, findAgentById, getSubAgents } from '../agents/reg
 import { getRuntimeConfig } from '../runtime-config.js'
 import { logger } from '../utils/logger.js'
 
+// ============================================================================
+// Compaction failure cooldown (prevents retry storms)
+// ============================================================================
+
+const MIN_SUMMARY_LENGTH = 50
+
+interface CompactionCooldown {
+  failedAt: number
+  attempts: number
+}
+
+const compactionCooldowns = new Map<string, CompactionCooldown>()
+const COOLDOWN_BASE_MS = 30_000   // 30 seconds
+const MAX_COOLDOWN_MS = 300_000   // 5 minutes
+
+function isInCooldown(sessionId: string): boolean {
+  const cooldown = compactionCooldowns.get(sessionId)
+  if (!cooldown) return false
+  const backoff = Math.min(COOLDOWN_BASE_MS * Math.pow(2, cooldown.attempts - 1), MAX_COOLDOWN_MS)
+  return Date.now() - cooldown.failedAt < backoff
+}
+
+function recordCooldown(sessionId: string): void {
+  const prev = compactionCooldowns.get(sessionId)
+  compactionCooldowns.set(sessionId, {
+    failedAt: Date.now(),
+    attempts: (prev?.attempts ?? 0) + 1,
+  })
+}
+
+function clearCooldown(sessionId: string): void {
+  compactionCooldowns.delete(sessionId)
+}
+
+export function clearCompactionCooldown(sessionId: string): void {
+  clearCooldown(sessionId)
+}
+
 function getCurrentWindowMessageOptions(sessionId: string): { contextWindowId: string } | undefined {
   const contextWindowId = getCurrentContextWindowId(sessionId)
   return contextWindowId ? { contextWindowId } : undefined
@@ -54,12 +92,49 @@ export async function maybeAutoCompactContext(options: ContextCompactionOptions)
     return false
   }
 
-  await performContextCompaction({
-    ...options,
-    tokenCountAtClose: contextState.currentTokens,
-    trigger: 'auto',
-  })
-  return true
+  if (isInCooldown(options.sessionId)) {
+    logger.warn('Skipping auto-compaction (in cooldown after previous failure)', {
+      sessionId: options.sessionId,
+      currentTokens: contextState.currentTokens,
+    })
+    return false
+  }
+
+  try {
+    await performContextCompaction({
+      ...options,
+      tokenCountAtClose: contextState.currentTokens,
+      trigger: 'auto',
+    })
+    clearCooldown(options.sessionId)
+    return true
+  } catch (error) {
+    // Abort errors should still propagate (user cancelled)
+    if (error instanceof Error && error.message === 'Aborted') {
+      throw error
+    }
+
+    logger.error('Auto-compaction failed, continuing without compaction', {
+      sessionId: options.sessionId,
+      error: error instanceof Error ? error.message : String(error),
+      currentTokens: contextState.currentTokens,
+      maxTokens: contextState.maxTokens,
+    })
+
+    recordCooldown(options.sessionId)
+
+    // Emit a visible warning so the user knows compaction failed
+    const eventStore = getEventStore()
+    eventStore.append(options.sessionId, {
+      type: 'chat.error',
+      data: {
+        error: `Auto-compaction failed: ${error instanceof Error ? error.message : 'Unknown error'}. Continuing with full context.`,
+        recoverable: true,
+      },
+    })
+
+    return false
+  }
 }
 
 export async function performManualContextCompaction(options: ContextCompactionOptions & {
@@ -84,7 +159,28 @@ async function performContextCompaction(options: ContextCompactionOptions & {
     content: file.content ?? '',
     source: file.source,
   }))
-  const requestMessages = toRequestContextMessages(getContextMessages(sessionId))
+  let requestMessages = toRequestContextMessages(getContextMessages(sessionId))
+
+  // Truncate context for the compaction call to avoid overwhelming the model.
+  // Models with limited effective context (e.g. Ollama models with rope scaling)
+  // may produce empty/1-token responses when fed too many tokens.
+  const config = getRuntimeConfig()
+  const safeInputLimit = Math.floor(config.context.maxTokens * 0.75)
+  if (tokenCountAtClose > safeInputLimit && requestMessages.length > 4) {
+    const avgTokensPerMessage = tokenCountAtClose / requestMessages.length
+    const messagesToDrop = Math.ceil((tokenCountAtClose - safeInputLimit) / avgTokensPerMessage)
+    if (messagesToDrop > 0 && messagesToDrop < requestMessages.length - 2) {
+      const kept = requestMessages.length - messagesToDrop
+      logger.info('Truncating compaction input to fit model context', {
+        sessionId,
+        originalMessages: requestMessages.length,
+        keptMessages: kept,
+        estimatedTokensSaved: Math.round(messagesToDrop * avgTokensPerMessage),
+      })
+      // Keep first message (task setup context) + most recent messages (current state)
+      requestMessages = [requestMessages[0]!, ...requestMessages.slice(-kept + 1)]
+    }
+  }
 
   const allAgents = await loadAllAgentsDefault()
   const plannerDef = findAgentById('planner', allAgents)!
@@ -164,12 +260,28 @@ async function performContextCompaction(options: ContextCompactionOptions & {
   }))
   eventStore.append(sessionId, createChatDoneEvent(assistantMsgId, 'complete', compactionStats))
 
-  sessionManager.compactContext(sessionId, result.content, tokenCountAtClose)
+  // Use thinking content as fallback if text content is empty
+  // (Ollama models may produce thinking via <think> tags even with disableThinking)
+  let summary = (result.content ?? '').trim()
+  if (!summary && result.thinkingContent) {
+    logger.info('Using thinking content as compaction summary (text content was empty)', { sessionId })
+    summary = result.thinkingContent.trim()
+  }
+
+  if (!summary || summary.length < MIN_SUMMARY_LENGTH) {
+    throw new Error(
+      `Compaction produced insufficient summary (length=${summary.length}, completionTokens=${result.usage.completionTokens}). `
+      + 'The model may not support the required context size.'
+    )
+  }
+
+  sessionManager.compactContext(sessionId, summary, tokenCountAtClose)
 
   logger.info(`${trigger === 'auto' ? 'Auto' : 'Manual'} compaction complete`, {
     sessionId,
     trigger,
     tokensBefore: tokenCountAtClose,
+    summaryLength: summary.length,
     summaryTokens: result.usage.completionTokens,
   })
 }
