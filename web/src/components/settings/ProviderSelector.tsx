@@ -94,10 +94,10 @@ export function ProviderSelector() {
     
     // Switch to different provider
     if (currentSession) {
-      // Session-scoped: persist provider choice to session
-      setSessionProvider(provider.id, provider.model !== 'auto' ? provider.model : undefined)
-      // Optimistically update UI
-      useConfigStore.getState().syncFromSession(provider.id, provider.model)
+      // Session-scoped: persist provider choice to session (no model specified)
+      setSessionProvider(provider.id, undefined)
+      // Optimistically update UI with just the provider
+      useConfigStore.getState().syncFromSession(provider.id, '')
       setIsOpen(false)
       setExpandedProviderIds([])
     } else {
