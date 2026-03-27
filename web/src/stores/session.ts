@@ -330,36 +330,65 @@ export const useSessionStore = create<SessionState>((set, get) => {
     // Update the separate streamingMessage object — no messages[] array mapping
     set(state => {
       const sm = state.streamingMessage
-      if (!sm || sm.id !== buf.messageId) return state
+      if (sm && sm.id === buf.messageId) {
+        let updated = { ...sm }
+        if (hasDelta) {
+          updated.content = updated.content + delta
+        }
+        if (hasThinking) {
+          updated.thinkingContent = (updated.thinkingContent ?? '') + thinking
+        }
+        if (hasToolOutput) {
+          const matchedCallIds = new Set<string>()
+          updated.toolCalls = updated.toolCalls?.map(tc => {
+            const outputs = toolOutputs.filter(o => o.callId === tc.id)
+            if (outputs.length === 0) return tc
+            matchedCallIds.add(tc.id)
+            return {
+              ...tc,
+              streamingOutput: [
+                ...(tc.streamingOutput ?? []),
+                ...outputs.map(o => ({ stream: o.stream, content: o.content }))
+              ]
+            }
+          })
+          // Re-buffer unmatched outputs (e.g. return_value outputs arriving before tool.call)
+          const unmatched = toolOutputs.filter(o => !matchedCallIds.has(o.callId))
+          if (unmatched.length > 0) {
+            streamingBuffer.toolOutput.push(...unmatched)
+          }
+        }
+        return { streamingMessage: updated }
+      }
 
-      let updated = { ...sm }
-      if (hasDelta) {
-        updated.content = updated.content + delta
-      }
-      if (hasThinking) {
-        updated.thinkingContent = (updated.thinkingContent ?? '') + thinking
-      }
+      // streamingMessage was already folded back (message.done arrived) but tool
+      // output is still coming in from running tools. Apply directly to messages[].
       if (hasToolOutput) {
         const matchedCallIds = new Set<string>()
-        updated.toolCalls = updated.toolCalls?.map(tc => {
-          const outputs = toolOutputs.filter(o => o.callId === tc.id)
-          if (outputs.length === 0) return tc
-          matchedCallIds.add(tc.id)
-          return {
-            ...tc,
-            streamingOutput: [
-              ...(tc.streamingOutput ?? []),
-              ...outputs.map(o => ({ stream: o.stream, content: o.content }))
-            ]
-          }
+        const updatedMessages = state.messages.map(m => {
+          if (m.id !== buf.messageId) return m
+          const updatedToolCalls = m.toolCalls?.map(tc => {
+            const outputs = toolOutputs.filter(o => o.callId === tc.id)
+            if (outputs.length === 0) return tc
+            matchedCallIds.add(tc.id)
+            return {
+              ...tc,
+              streamingOutput: [
+                ...(tc.streamingOutput ?? []),
+                ...outputs.map(o => ({ stream: o.stream, content: o.content }))
+              ]
+            }
+          })
+          return { ...m, toolCalls: updatedToolCalls }
         })
-        // Re-buffer unmatched outputs (e.g. return_value outputs arriving before tool.call)
         const unmatched = toolOutputs.filter(o => !matchedCallIds.has(o.callId))
         if (unmatched.length > 0) {
           streamingBuffer.toolOutput.push(...unmatched)
         }
+        return { messages: updatedMessages }
       }
-      return { streamingMessage: updated }
+
+      return state
     })
   }
 
