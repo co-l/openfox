@@ -47,7 +47,6 @@ interface WorkflowsState {
   createWorkflow: (workflow: WorkflowFull) => Promise<{ success: boolean; error?: string }>
   updateWorkflow: (id: string, workflow: Partial<WorkflowFull>) => Promise<{ success: boolean; error?: string }>
   deleteWorkflow: (id: string) => Promise<boolean>
-  activateWorkflow: (id: string) => Promise<boolean>
   restoreDefault: (workflowId: string) => Promise<boolean>
   restoreAllDefaults: () => Promise<boolean>
 }
@@ -138,15 +137,6 @@ export const useWorkflowsStore = create<WorkflowsState>((set, get) => ({
         return true
       }
       return false
-    } catch {
-      return false
-    }
-  },
-
-  activateWorkflow: async (id: string) => {
-    try {
-      const res = await fetch(`/api/workflows/${id}/activate`, { method: 'POST' })
-      return res.ok
     } catch {
       return false
     }

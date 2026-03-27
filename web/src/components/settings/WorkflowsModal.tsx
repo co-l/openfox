@@ -894,10 +894,8 @@ export function WorkflowsModal({ isOpen, onClose }: WorkflowsModalProps) {
   const createWorkflow = useWorkflowsStore(state => state.createWorkflow)
   const updateWorkflow = useWorkflowsStore(state => state.updateWorkflow)
   const deleteWorkflowAction = useWorkflowsStore(state => state.deleteWorkflow)
-  const activateWorkflow = useWorkflowsStore(state => state.activateWorkflow)
   const restoreDefault = useWorkflowsStore(state => state.restoreDefault)
   const restoreAllDefaults = useWorkflowsStore(state => state.restoreAllDefaults)
-  const handleActivate = async (id: string) => { await activateWorkflow(id) }
 
   const [view, setView] = useState<'list' | 'edit'>('list')
   const [editingId, setEditingId] = useState<string | null>(null)
@@ -1367,7 +1365,6 @@ export function WorkflowsModal({ isOpen, onClose }: WorkflowsModalProps) {
                 <p className="text-text-secondary text-xs mt-0.5 truncate">{workflow.description}</p>
               </div>
               <div className="flex items-center gap-1.5 flex-shrink-0">
-                <button onClick={() => handleActivate(workflow.id)} className="px-2 py-1 rounded text-xs bg-accent-primary/10 text-accent-primary hover:bg-accent-primary/20 transition-colors">Activate</button>
                 {/* Restore default button — only shown when modified */}
                 {modifiedIds.includes(workflow.id) && (
                   confirmRestoreId === workflow.id ? (

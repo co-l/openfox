@@ -580,21 +580,6 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
     res.json({ success: true })
   })
 
-  app.post('/api/workflows/:id/activate', async (req, res) => {
-    const { id } = req.params
-    const workflows = await loadAllWorkflows(configDir)
-    if (!findWorkflowById(id as string, workflows)) {
-      return res.status(404).json({ error: 'Workflow not found' })
-    }
-    // Update config's active workflow ID
-    config.activeWorkflowId = id as string
-    // Persist to global config
-    const { loadGlobalConfig, saveGlobalConfig } = await import('../cli/config.js')
-    const globalConfig = await loadGlobalConfig(config.mode ?? 'production')
-    globalConfig.activeWorkflowId = id as string
-    await saveGlobalConfig(config.mode ?? 'production', globalConfig)
-    res.json({ success: true, activeWorkflowId: id })
-  })
 
   // Branch API endpoint
   const { getCurrentBranch } = await import('./branch.api.js')
