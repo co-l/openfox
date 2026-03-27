@@ -1,5 +1,6 @@
 import { memo } from 'react'
 import type { ToolCall, Criterion } from '@shared/types.js'
+import { Markdown } from './Markdown'
 
 interface CriteriaGroupDisplayProps {
   toolCalls: ToolCall[]
@@ -64,11 +65,9 @@ export const CriteriaGroupDisplay = memo(function CriteriaGroupDisplay({ toolCal
                 {config.icon}
               </span>
               <div className="flex-1 min-w-0">
-                <span className={`text-sm leading-tight ${
-                  isRemoved ? 'line-through text-text-muted' : 'text-text-primary'
-                }`}>
-                  {displayText}
-                </span>
+                <div className={isRemoved ? 'line-through text-text-muted' : ''}>
+                  <Markdown content={displayText} />
+                </div>
                 
                 {/* Show reason for complete/pass/fail */}
                 {reason && (

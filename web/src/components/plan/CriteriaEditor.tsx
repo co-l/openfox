@@ -1,4 +1,5 @@
 import type { Criterion } from '@shared/types.js'
+import { Markdown } from '../shared/Markdown'
 
 interface CriteriaEditorProps {
   criteria: Criterion[]
@@ -41,9 +42,11 @@ export function CriteriaEditor({ criteria }: CriteriaEditorProps) {
               className="bg-bg-tertiary rounded p-2 border border-border"
             >
               <div className="flex items-start gap-1.5">
-                <span className="text-text-muted text-sm">{index + 1}.</span>
+                <span className="text-text-muted text-sm flex-shrink-0">{index + 1}.</span>
                 {getStatusIcon(criterion.status)}
-                <p className="flex-1 text-sm leading-tight">{criterion.description}</p>
+                <div className="flex-1 min-w-0">
+                  <Markdown content={criterion.description} />
+                </div>
               </div>
             </div>
           ))
