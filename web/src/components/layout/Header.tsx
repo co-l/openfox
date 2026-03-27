@@ -69,6 +69,25 @@ interface SessionDropdownProps {
 function SessionDropdown({ sessions, currentProject, currentSession }: SessionDropdownProps) {
   const [, navigate] = useLocation()
   const loadSession = useSessionStore(state => state.loadSession)
+  const createSession = useSessionStore(state => state.createSession)
+  const pendingSessionCreate = useSessionStore(state => state.pendingSessionCreate)
+  const resetPendingSessionCreate = useSessionStore(state => state.resetPendingSessionCreate)
+  const sessionsList = useSessionStore(state => state.sessions)
+
+  const [previousSessionId, setPreviousSessionId] = useState(currentSession?.id)
+
+  // Navigate to new session when it's created
+  useEffect(() => {
+    if (pendingSessionCreate && currentProject) {
+      // Find the newest session for this project
+      const newSession = sessionsList.find(s => s.projectId === currentProject.id)
+      if (newSession && newSession.id !== previousSessionId) {
+        navigate(`/p/${currentProject.id}/s/${newSession.id}`)
+        setPreviousSessionId(newSession.id)
+        resetPendingSessionCreate()
+      }
+    }
+  }, [pendingSessionCreate, sessionsList, currentProject, previousSessionId, navigate, resetPendingSessionCreate])
 
   // Filter sessions to those belonging to the current project by ID
   const projectSessions = sessions.filter(session => session.projectId === currentProject.id).slice(0, 15)
@@ -76,6 +95,27 @@ function SessionDropdown({ sessions, currentProject, currentSession }: SessionDr
   const groupedSessions = groupSessionsByDate(projectSessions)
 
   const items: DropdownMenuItem[] = []
+
+  // Add "New session" as the first item
+  items.push({
+    label: (
+      <div className="flex items-center gap-2 px-3 py-2 min-w-[160px]">
+        <svg className="w-4 h-4 text-accent-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+        </svg>
+        <span className="text-sm">New session</span>
+      </div>
+    ),
+    onClick: () => {
+      createSession(currentProject.id)
+    },
+  })
+
+  // Add divider
+  items.push({
+    label: <div className="border-t border-border my-1" />,
+    onClick: () => {},
+  })
 
   for (const [_dateKey, daySessions] of groupedSessions) {
     const firstSession = daySessions[0]
