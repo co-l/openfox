@@ -198,6 +198,16 @@ export async function executeWorkflow(
   ))
   eventStore.append(sessionId, { type: 'message.done', data: { messageId: startMsgId } })
 
+  // Inject user-provided message after the workflow-started marker
+  // Both go through EventStore so ordering is preserved
+  if (options.userMessage) {
+    sessionManager.addMessage(sessionId, {
+      role: 'user',
+      content: options.userMessage.content,
+      ...(options.userMessage.attachments ? { attachments: options.userMessage.attachments } : {}),
+    })
+  }
+
   while (iterations < workflow.settings.maxIterations) {
     // Check abort
     if (signal?.aborted) {

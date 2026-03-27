@@ -5,7 +5,7 @@
  * State is derived from session criteria, not persisted separately.
  */
 
-import type { Criterion, MessageStats, StatsIdentity } from '../../shared/types.js'
+import type { Attachment, Criterion, MessageStats, StatsIdentity } from '../../shared/types.js'
 import type { ServerMessage } from '../../shared/protocol.js'
 import type { LLMClientWithModel } from '../llm/client.js'
 import type { StreamTiming } from '../llm/streaming.js'
@@ -34,6 +34,8 @@ export interface OrchestratorOptions {
   injectBuilderKickoff?: boolean
   /** Override the globally active workflow for this session */
   workflowId?: string
+  /** User-provided message to inject after workflow-started marker */
+  userMessage?: { content: string; attachments?: Attachment[] }
   /** For path confirmation dialogs (sent directly, not through EventStore) */
   onMessage?: (msg: ServerMessage) => void
 }

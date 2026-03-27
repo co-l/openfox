@@ -1077,18 +1077,12 @@ async function handleClientMessage(
           }
           activeAgents.set(sessionId, controller)
 
-          // If the user included a message with accept, add it as a user message
+          // Pass user message through to orchestrator (injected after workflow-started marker)
           const acceptPayload = message.payload as { content?: string; attachments?: unknown[]; workflowId?: string } | undefined
           const acceptAttachments = acceptPayload?.attachments as Attachment[] | undefined
           const hasAcceptContent = acceptPayload?.content && typeof acceptPayload.content === 'string' && acceptPayload.content.trim()
           const hasAcceptAttachments = acceptAttachments && acceptAttachments.length > 0
-          if (hasAcceptContent || hasAcceptAttachments) {
-            sessionManager.addMessage(sessionId, {
-              role: 'user',
-              content: hasAcceptContent ? acceptPayload.content! : '',
-              ...(hasAcceptAttachments ? { attachments: acceptAttachments } : {}),
-            })
-          }
+          const hasAcceptMessage = hasAcceptContent || hasAcceptAttachments
 
           // Auto-start orchestrator (full state machine with verification)
           await runOrchestrator({
@@ -1096,8 +1090,9 @@ async function handleClientMessage(
             sessionId,
             llmClient: llmForSession(sessionId),
             statsIdentity: statsForSession(sessionId),
-            injectBuilderKickoff: !(hasAcceptContent || hasAcceptAttachments),
+            injectBuilderKickoff: !hasAcceptMessage,
             ...(acceptPayload?.workflowId ? { workflowId: acceptPayload.workflowId } : {}),
+            ...(hasAcceptMessage ? { userMessage: { content: hasAcceptContent ? acceptPayload!.content! : '', ...(hasAcceptAttachments ? { attachments: acceptAttachments! } : {}) } } : {}),
             signal: controller.signal,
             onMessage: (msg) => sendForSession(sessionId, msg),  // For path confirmation dialogs
           })
@@ -1307,15 +1302,6 @@ async function handleClientMessage(
       // Ensure client is subscribed to EventStore (tab model - additive)
       ensureEventStoreSubscription(sessionId)
 
-      // Add user message AFTER subscription so it appears in the feed
-      if (hasUserMessage) {
-        sessionManager.addMessage(sessionId, {
-          role: 'user',
-          content: hasUserContent ? launchPayload!.content! : '',
-          ...(hasUserAttachments ? { attachments: launchAttachments } : {}),
-        })
-      }
-
       // Run orchestrator asynchronously
       logger.info('Runner launching', { sessionId, pendingCriteria: pendingCriteria.length })
 
@@ -1326,6 +1312,7 @@ async function handleClientMessage(
         statsIdentity: statsForSession(sessionId),
         injectBuilderKickoff: !hasUserMessage,
         ...(launchPayload?.workflowId ? { workflowId: launchPayload.workflowId } : {}),
+        ...(hasUserMessage ? { userMessage: { content: hasUserContent ? launchPayload!.content! : '', ...(hasUserAttachments ? { attachments: launchAttachments! } : {}) } } : {}),
         signal: controller.signal,
         onMessage: (msg) => sendForSession(sessionId, msg),  // For path confirmation dialogs
       }).catch((error) => {

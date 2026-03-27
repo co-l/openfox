@@ -373,6 +373,7 @@ export function storedEventToServerMessage(event: StoredEvent): ServerMessage | 
         ...(data.isSystemGenerated ? { isSystemGenerated: data.isSystemGenerated } : {}),
         ...(data.messageKind ? { messageKind: data.messageKind } : {}),
         ...(data.isCompactionSummary ? { isCompactionSummary: data.isCompactionSummary } : {}),
+        ...(data.attachments ? { attachments: data.attachments } : {}),
       }
       return createChatMessageMessage(message)
     }
