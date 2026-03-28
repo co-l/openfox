@@ -315,7 +315,7 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
     app.use(viteServer.middlewares)
     
     // Handle CSS files explicitly - Vite middleware doesn't catch them
-    app.get('/src/styles/{*path}', async (req, res) => {
+    app.get('/src/styles/*path', async (req, res) => {
       try {
         const result = await viteServer!.transformRequest(req.path.substring(1))
         if (!result) {
@@ -346,7 +346,7 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
     }))
     
     // SPA fallback for non-API routes (must be last)
-    app.get('/{*path}', (req, res) => {
+    app.get('/*path', (req, res) => {
       if (req.path.startsWith('/api/')) {
         return
       }
@@ -401,7 +401,7 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
     })
     
     // SPA fallback - serve index.html for any unmatched path
-    app.get('(*)', (req, res) => {
+    app.get('/*path', (req, res) => {
       if (req.path.startsWith('/api/') || req.path.startsWith('/assets/') || req.path.startsWith('/sounds/') || req.path === '/fox.svg') {
         return
       }
