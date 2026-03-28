@@ -19,6 +19,7 @@ tools:
   - call_sub_agent
   - load_skill
   - dev_server
+  - step_done
   - return_value
 ---
 

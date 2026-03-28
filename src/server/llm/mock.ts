@@ -722,6 +722,7 @@ function getPromptAwareToolResponse(prompt: string): MockMatchResult | null {
         { name: 'get_criteria', arguments: {} },
         { name: 'write_file', arguments: { path: 'src/test.ts', content: 'export const created = true' } },
         { name: 'complete_criterion', arguments: { id: 'test-file', reason: 'Created the requested file' } },
+        { name: 'step_done', arguments: {} },
       ],
       response: 'Reviewed the criteria, created the file, and completed the criterion.',
     }
@@ -732,6 +733,7 @@ function getPromptAwareToolResponse(prompt: string): MockMatchResult | null {
       tools: [
         { name: 'write_file', arguments: { path: 'src/utils.ts', content: 'export const created = true' } },
         { name: 'complete_criterion', arguments: { id: 'file-created', reason: 'Created the requested file' } },
+        { name: 'step_done', arguments: {} },
       ],
       response: 'Created the file and completed the criterion.',
     }
@@ -827,6 +829,7 @@ function getConversationAwareToolResponse(request: LLMCompletionRequest): MockMa
   const prompt = getLastUserPrompt(request)
   const conversationText = getConversationText(request)
 
+  // Builder workflow: implement criteria and call step_done
   if (
     /Implement the task and make sure you fulfil the \d+ criteria\./i.test(prompt)
     || /Continue working on the acceptance criteria\./i.test(prompt)
@@ -860,11 +863,57 @@ function getConversationAwareToolResponse(request: LLMCompletionRequest): MockMa
       completedCriteria.push('file-created')
     }
 
-    if (tools.length > 0) {
-      return {
-        tools,
-        response: `Completed builder work for: ${completedCriteria.join(', ')}.`,
+    // Fallback: if no specific criterion matched, just complete a mock one
+    if (tools.length === 0) {
+      tools.push({ name: 'complete_criterion', arguments: { id: 'mock-crit', reason: 'Completed for testing' } })
+      completedCriteria.push('mock-crit')
+    }
+
+    // Always add step_done at the end to signal workflow step completion
+    tools.push({ name: 'step_done', arguments: {} })
+    return {
+      tools,
+      response: `Completed builder work for: ${completedCriteria.join(', ')}.`,
+    }
+  }
+  
+  // Fallback: workflow builder prompts with criteria count should complete and call step_done
+  if (/fulfil the \d+ criteria/i.test(prompt)) {
+    return {
+      tools: [
+        { name: 'complete_criterion', arguments: { id: 'mock-crit', reason: 'Completed for testing' } },
+        { name: 'step_done', arguments: {} },
+      ],
+      response: 'Completed criterion and finished step.',
+    }
+  }
+  
+  // Builder retry prompts should also call step_done
+  if (/Continue working on the acceptance criteria/i.test(prompt)) {
+    const tools: Array<{ name: string; arguments: Record<string, unknown> }> = []
+    
+    if (conversationText.includes('file-created')) {
+      tools.push(
+        { name: 'write_file', arguments: { path: 'src/utils.ts', content: 'export const created = true' } },
+        { name: 'complete_criterion', arguments: { id: 'file-created', reason: 'Created the requested file' } },
+      )
+    } else if (conversationText.includes('trivial-pass')) {
+      tools.push({ name: 'complete_criterion', arguments: { id: 'trivial-pass', reason: 'Trivial criterion passes immediately' } })
+    } else if (conversationText.includes('verify-fail')) {
+      tools.push({ name: 'complete_criterion', arguments: { id: 'verify-fail', reason: 'Prepared criterion for verification' } })
+    } else {
+      // Check prompt for criteria count hint
+      if (/1 criteria remaining/i.test(prompt)) {
+        tools.push({ name: 'complete_criterion', arguments: { id: 'trivial-pass', reason: 'Trivial criterion passes immediately' } })
+      } else {
+        tools.push({ name: 'complete_criterion', arguments: { id: 'mock-crit', reason: 'Completed for testing' } })
       }
+    }
+    
+    tools.push({ name: 'step_done', arguments: {} })
+    return {
+      tools,
+      response: 'Completed builder work.',
     }
   }
 

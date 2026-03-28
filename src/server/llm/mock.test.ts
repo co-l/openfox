@@ -78,6 +78,7 @@ describe('mock llm runtime reminders', () => {
           reason: 'Trivial criterion passes immediately',
         },
       }),
+      expect.objectContaining({ name: 'step_done', arguments: {} }),
     ])
   })
 
@@ -96,6 +97,7 @@ describe('mock llm runtime reminders', () => {
     expect(response.toolCalls).toEqual([
       expect.objectContaining({ name: 'write_file' }),
       expect.objectContaining({ name: 'complete_criterion' }),
+      expect.objectContaining({ name: 'step_done' }),
     ])
   })
 
@@ -162,6 +164,7 @@ describe('mock llm runtime reminders', () => {
     expect(response.toolCalls).toEqual([
       expect.objectContaining({ name: 'read_file' }),
       expect.objectContaining({ name: 'complete_criterion', arguments: { id: 'inspect-src', reason: 'Inspected the src directory and reported what exists' } }),
+      expect.objectContaining({ name: 'step_done', arguments: {} }),
     ])
   })
 
@@ -226,6 +229,7 @@ describe('mock llm runtime reminders', () => {
     expect(response.toolCalls).toEqual([
       expect.objectContaining({ name: 'write_file', arguments: { path: 'src/utils.ts', content: 'export const created = true' } }),
       expect.objectContaining({ name: 'complete_criterion', arguments: { id: 'file-created', reason: 'Created the requested file' } }),
+      expect.objectContaining({ name: 'step_done', arguments: {} }),
     ])
   })
 
@@ -276,6 +280,38 @@ describe('mock llm runtime reminders', () => {
     ])
   })
 
+  it('builder workflow includes step_done', async () => {
+    const client = createMockLLMClient()
+
+    const response = await client.complete({
+      messages: [
+        {
+          role: 'user',
+          content: 'Add criterion ID "trivial-pass": "Trivial pass criterion". Use add_criterion.',
+        },
+        {
+          role: 'assistant',
+          content: 'Added the criterion.',
+          toolCalls: [{ id: 'call-1', name: 'add_criterion', arguments: { id: 'trivial-pass', description: 'Trivial pass criterion' } }],
+        },
+        {
+          role: 'tool',
+          content: 'Added criterion "trivial-pass".',
+          toolCallId: 'call-1',
+        },
+        {
+          role: 'user',
+          content: 'Continue working on the acceptance criteria. Complete the trivial-pass criterion. 1 criteria remaining.',
+        },
+      ],
+    })
+
+    expect(response.toolCalls).toEqual([
+      expect.objectContaining({ name: 'complete_criterion', arguments: { id: 'trivial-pass', reason: 'Trivial criterion passes immediately' } }),
+      expect.objectContaining({ name: 'step_done', arguments: {} }),
+    ])
+  })
+
   it('returns get_criteria before completing a criterion when the prompt asks for both', async () => {
     const client = createMockLLMClient()
 
@@ -292,6 +328,7 @@ describe('mock llm runtime reminders', () => {
       expect.objectContaining({ name: 'get_criteria', arguments: {} }),
       expect.objectContaining({ name: 'write_file', arguments: { path: 'src/test.ts', content: 'export const created = true' } }),
       expect.objectContaining({ name: 'complete_criterion', arguments: { id: 'test-file', reason: 'Created the requested file' } }),
+      expect.objectContaining({ name: 'step_done', arguments: {} }),
     ])
   })
 

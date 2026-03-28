@@ -22,6 +22,7 @@ import { loadSkillTool } from './load-skill.js'
 import { returnValueTool } from './return-value.js'
 import { webFetchTool } from './web-fetch.js'
 import { devServerTool } from './dev-server.js'
+import { stepDoneTool } from './step-done.js'
 import { logger } from '../utils/logger.js'
 
 // ============================================================================
@@ -96,7 +97,7 @@ const allToolsByName = new Map<string, Tool>([
     completeCriterionTool, passCriterionTool, failCriterionTool,
     getCriteriaTool, addCriterionTool, updateCriterionTool, removeCriterionTool,
     todoWriteTool, callSubAgentTool, loadSkillTool, returnValueTool, webFetchTool,
-    devServerTool,
+    devServerTool, stepDoneTool,
   ].map(t => [t.name, t] as const),
 ])
 
@@ -162,3 +163,4 @@ export {
   clearAllowedPaths,
   requestPathAccess,
 } from './path-security.js'
+export { stepDoneTool } from './step-done.js'

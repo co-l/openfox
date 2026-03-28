@@ -20,7 +20,7 @@ import type {
 } from './types.js'
 import { TERMINAL_DONE, TERMINAL_BLOCKED } from './types.js'
 import { getEventStore, getCurrentContextWindowId } from '../events/index.js'
-import { runBuilderTurn, TurnMetrics, createMessageStartEvent } from '../chat/orchestrator.js'
+import { runBuilderTurn, TurnMetrics, createMessageStartEvent, type BuilderTurnOptions } from '../chat/orchestrator.js'
 import { executeSubAgent } from '../sub-agents/manager.js'
 import { createVerifierNudgeConfig } from '../sub-agents/verifier-helpers.js'
 import { loadAllAgentsDefault, findAgentById } from '../agents/registry.js'
@@ -277,9 +277,16 @@ export async function executeWorkflow(
     switch (step.type) {
       case 'agent': {
         const agentStep = step as AgentStep
+        const STEP_DONE_PROMPT = '\n\nOnce you\'re done, call step_done()'
+        const STEP_DONE_NUDGE = 'You haven\'t called step_done(). If you haven\'t finished the task, continue and when you\'re finished call step_done()'
+
+        // Build prompt content
+        let promptContent: string | null = null
+        let nudgeContent: string | null = null
 
         if (isFirstBuilderEntry && agentStep.prompt) {
-          const promptContent = resolveTemplate(agentStep.prompt, templateCtx)
+          const resolvedPrompt = resolveTemplate(agentStep.prompt, templateCtx)
+          promptContent = resolvedPrompt + STEP_DONE_PROMPT
           const promptMsgId = crypto.randomUUID()
           eventStore.append(sessionId, createMessageStartEvent(promptMsgId, 'user', promptContent, {
             ...(currentWindowMessageOptions ?? {}),
@@ -287,8 +294,16 @@ export async function executeWorkflow(
             messageKind: 'auto-prompt',
           }))
           eventStore.append(sessionId, { type: 'message.done', data: { messageId: promptMsgId } })
-        } else if (!isFirstBuilderEntry && agentStep.nudgePrompt) {
-          const nudgeContent = resolveTemplate(agentStep.nudgePrompt, templateCtx)
+        } else if (!isFirstBuilderEntry) {
+          // Build nudge: nudgePrompt first (if exists), then step_done nudge
+          const parts: string[] = []
+          if (agentStep.nudgePrompt) {
+            const resolvedNudge = resolveTemplate(agentStep.nudgePrompt, templateCtx)
+            parts.push(resolvedNudge)
+          }
+          parts.push(STEP_DONE_NUDGE)
+          nudgeContent = parts.join('\n\n')
+          
           const nudgeMsgId = crypto.randomUUID()
           eventStore.append(sessionId, createMessageStartEvent(nudgeMsgId, 'user', nudgeContent, {
             ...(currentWindowMessageOptions ?? {}),
@@ -303,16 +318,25 @@ export async function executeWorkflow(
           sessionManager,
           sessionId,
           llmClient,
+          injectStepDone: true,
           ...(options.statsIdentity ? { statsIdentity: options.statsIdentity } : {}),
           ...(isFirstBuilderEntry && !agentStep.prompt && options.injectBuilderKickoff === true ? { injectBuilderKickoff: true } : {}),
           ...(signal ? { signal } : {}),
           ...(onMessage ? { onMessage } : {}),
-        }, turnMetrics)
+        } as BuilderTurnOptions, turnMetrics)
 
         isFirstBuilderEntry = false
         const agentReturnValue = agentResult.returnValueResult ?? 'completed'
-        lastStepOutput = { ...(agentResult.returnValueContent ? { content: agentResult.returnValueContent } : {}), ...(agentResult.returnValueResult ? { result: agentResult.returnValueResult } : {}) }
+        const stepDoneCalled = agentResult.stepDoneCalled ?? false
+        lastStepOutput = { ...(agentResult.returnValueContent ? { content: agentResult.returnValueContent } : {}), ...(agentResult.returnValueResult ? { result: agentResult.returnValueResult } : {}), stepDoneCalled: String(stepDoneCalled) }
         stepOutcome = { result: agentReturnValue, output: lastStepOutput }
+        
+        // If step_done was not called, loop back to continue the agent step
+        if (!stepDoneCalled) {
+          logger.debug('step_done not called, looping agent step', { sessionId, stepId: step.id, iteration: iterations })
+          continue
+        }
+        
         break
       }
 
@@ -332,6 +356,12 @@ export async function executeWorkflow(
         }
 
         const toolRegistry = getToolRegistryForAgent(agentDef)
+        // Filter out step_done tool from sub-agents (it's workflow-executor-only)
+        const filteredToolRegistry = {
+          tools: toolRegistry.tools.filter(t => t.name !== 'step_done'),
+          definitions: toolRegistry.definitions.filter(d => d.type === 'function' && d.function.name !== 'step_done'),
+          execute: toolRegistry.execute,
+        }
 
         const nudgeConfig = subStep.subAgentType === 'verifier' && !subStep.nudgePrompt
           ? createVerifierNudgeConfig()
@@ -343,7 +373,7 @@ export async function executeWorkflow(
           sessionManager,
           sessionId,
           llmClient,
-          toolRegistry,
+          toolRegistry: filteredToolRegistry,
           turnMetrics,
           statsIdentity: options.statsIdentity ?? { providerId: '', providerName: '', backend: 'unknown', model: llmClient.getModel() },
           ...(signal ? { signal } : {}),

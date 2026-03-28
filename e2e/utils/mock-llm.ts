@@ -226,11 +226,20 @@ export function createMockLLMClient(config: MockLLMConfig = {}): MockLLMClient {
       toolCalls: [{ name: 'get_criteria', arguments: {} }],
       response: 'Here are the criteria.',
     },
-    // Complete criterion (for builder)
+    // Complete criterion + step done (for workflow builder steps)
     {
-      promptMatch: /complete.*criterion|mark.*complete|complete_criterion/i,
-      toolCalls: [{ name: 'complete_criterion', arguments: { id: 'mock-crit' } }],
-      response: 'I completed the criterion.',
+      promptMatch: /complete.*criterion|mark.*complete|complete_criterion|fulfil.*criteria/i,
+      toolCalls: [
+        { name: 'complete_criterion', arguments: { id: 'mock-crit' } },
+        { name: 'step_done', arguments: {} },
+      ],
+      response: 'I completed the criterion and finished the step.',
+    },
+    // Step done only (for generic workflow steps)
+    {
+      promptMatch: /call step_done|step_done\(\)|Once you're done/i,
+      toolCalls: [{ name: 'step_done', arguments: {} }],
+      response: 'I am done with this step.',
     },
     // Verifier sub-agent workflow (for builder mode)
     {

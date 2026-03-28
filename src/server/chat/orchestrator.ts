@@ -196,10 +196,16 @@ async function runGenericAgentTurn(
 // Builder Turn
 // ============================================================================
 
+export interface BuilderTurnOptions extends OrchestratorOptions {
+  injectBuilderKickoff?: boolean
+  injectStepDone?: boolean
+  stepDonePrompt?: string
+}
+
 export async function runBuilderTurn(
-  options: OrchestratorOptions,
+  options: BuilderTurnOptions,
   turnMetrics: TurnMetrics,
-): Promise<{ returnValueContent?: string; returnValueResult?: string }> {
+): Promise<{ returnValueContent?: string; returnValueResult?: string; stepDoneCalled?: boolean }> {
   const { sessionManager, sessionId } = options
   const statsIdentity = resolveStatsIdentity(options)
   const eventStore = getEventStore()
@@ -207,44 +213,63 @@ export async function runBuilderTurn(
   const builderDef = findAgentById('builder', allAgents)!
   const subAgentDefs = getSubAgents(allAgents)
 
-  return await runTopLevelAgentLoop({
-    mode: 'builder',
-    sessionManager,
-    sessionId,
-    llmClient: options.llmClient,
-    statsIdentity,
-    signal: options.signal,
-    onMessage: options.onMessage,
-    assembleRequest: (input) => assembleAgentRequest({ ...input, agentDef: builderDef, subAgentDefs }),
-    getToolRegistry: () => getToolRegistryForAgent(builderDef),
-    onToolExecuted: (toolCall: ToolCall, toolResult: ToolResult) => {
-      if (toolResult.success && ['write_file', 'edit_file'].includes(toolCall.name)) {
-        const path = toolCall.arguments['path'] as string
-        sessionManager.addModifiedFile(sessionId, path)
-      }
-    },
-    injectKickoff: () => {
-      if (options.injectBuilderKickoff !== true) return
-      const session = sessionManager.requireSession(sessionId)
-      const events = eventStore.getEvents(sessionId)
-      const hasBuilderKickoff = events.some(e => {
-        if (e.type !== 'message.start') return false
-        const data = e.data as { messageKind?: string; content?: string }
-        return data.messageKind === 'auto-prompt' && data.content?.includes('fulfil the')
-      })
+  let stepDoneCalled = false
 
-      if (!hasBuilderKickoff) {
-        const kickoffMsgId = crypto.randomUUID()
-        const kickoffContent = BUILDER_KICKOFF_PROMPT(session.criteria.length)
-        eventStore.append(sessionId, createMessageStartEvent(kickoffMsgId, 'user', kickoffContent, {
-          ...(getCurrentWindowMessageOptions(sessionId) ?? {}),
-          isSystemGenerated: true,
-          messageKind: 'auto-prompt',
-        }))
-        eventStore.append(sessionId, { type: 'message.done', data: { messageId: kickoffMsgId } })
-      }
-    },
-  }, turnMetrics)
+  return {
+    ...(await runTopLevelAgentLoop({
+      mode: 'builder',
+      sessionManager,
+      sessionId,
+      llmClient: options.llmClient,
+      statsIdentity,
+      signal: options.signal,
+      onMessage: options.onMessage,
+      assembleRequest: (input) => assembleAgentRequest({ ...input, agentDef: builderDef, subAgentDefs }),
+      getToolRegistry: () => {
+        const baseRegistry = getToolRegistryForAgent(builderDef)
+        if (options.injectStepDone === true) {
+          return baseRegistry
+        }
+        // Filter out step_done tool for direct chat (non-workflow) turns
+        return {
+          tools: baseRegistry.tools.filter(t => t.name !== 'step_done'),
+          definitions: baseRegistry.definitions.filter(d => d.type === 'function' && d.function.name !== 'step_done'),
+          execute: baseRegistry.execute,
+        }
+      },
+      onToolExecuted: (toolCall: ToolCall, toolResult: ToolResult) => {
+        if (toolCall.name === 'step_done' && toolResult.success) {
+          stepDoneCalled = true
+        }
+        if (toolResult.success && ['write_file', 'edit_file'].includes(toolCall.name)) {
+          const path = toolCall.arguments['path'] as string
+          sessionManager.addModifiedFile(sessionId, path)
+        }
+      },
+      injectKickoff: () => {
+        if (options.injectBuilderKickoff !== true) return
+        const session = sessionManager.requireSession(sessionId)
+        const events = eventStore.getEvents(sessionId)
+        const hasBuilderKickoff = events.some(e => {
+          if (e.type !== 'message.start') return false
+          const data = e.data as { messageKind?: string; content?: string }
+          return data.messageKind === 'auto-prompt' && data.content?.includes('fulfil the')
+        })
+
+        if (!hasBuilderKickoff) {
+          const kickoffMsgId = crypto.randomUUID()
+          const kickoffContent = BUILDER_KICKOFF_PROMPT(session.criteria.length)
+          eventStore.append(sessionId, createMessageStartEvent(kickoffMsgId, 'user', kickoffContent, {
+            ...(getCurrentWindowMessageOptions(sessionId) ?? {}),
+            isSystemGenerated: true,
+            messageKind: 'auto-prompt',
+          }))
+          eventStore.append(sessionId, { type: 'message.done', data: { messageId: kickoffMsgId } })
+        }
+      },
+    }, turnMetrics)),
+    stepDoneCalled,
+  }
 }
 
 // ============================================================================

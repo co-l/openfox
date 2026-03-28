@@ -596,6 +596,7 @@ describe('chat orchestrator', () => {
       return { success: true, output: 'written', durationMs: 25, truncated: false }
     })
     getToolRegistryForModeMock.mockImplementation((mode: string) => ({
+      tools: [{ name: mode === 'builder' ? 'write_file' : 'noop', definition: { type: 'function', function: { name: mode === 'builder' ? 'write_file' : 'noop', description: 'Tool', parameters: {} } } }],
       definitions: [{ type: 'function', function: { name: mode === 'builder' ? 'write_file' : 'noop', description: 'Tool', parameters: {} } }],
       execute,
     }))
@@ -664,6 +665,7 @@ describe('chat orchestrator', () => {
     }
     const deniedManager = createSessionManager(deniedState)
     getToolRegistryForModeMock.mockImplementation((mode: string) => ({
+      tools: [{ name: mode === 'builder' ? 'edit_file' : 'noop', definition: { type: 'function', function: { name: mode === 'builder' ? 'edit_file' : 'noop', description: 'Tool', parameters: {} } } }],
       definitions: [{ type: 'function', function: { name: mode === 'builder' ? 'edit_file' : 'noop', description: 'Tool', parameters: {} } }],
       execute: vi.fn(async () => {
         throw new PathAccessDeniedError(['/etc/passwd'], 'edit_file')
@@ -722,6 +724,7 @@ describe('chat orchestrator', () => {
     }
     const errorManager = createSessionManager(errorState)
     getToolRegistryForModeMock.mockImplementation((mode: string) => ({
+      tools: [{ name: mode === 'builder' ? 'edit_file' : 'noop', definition: { type: 'function', function: { name: mode === 'builder' ? 'edit_file' : 'noop', description: 'Tool', parameters: {} } } }],
       definitions: [{ type: 'function', function: { name: mode === 'builder' ? 'edit_file' : 'noop', description: 'Tool', parameters: {} } }],
       execute: vi.fn(async () => {
         throw new Error('unexpected builder failure')
@@ -756,6 +759,7 @@ describe('chat orchestrator', () => {
     ])
     const execute = vi.fn()
     getToolRegistryForModeMock.mockReturnValue({
+      tools: [{ name: 'glob', definition: { type: 'function', function: { name: 'glob', description: 'Tool', parameters: {} } } }],
       definitions: [{ type: 'function', function: { name: 'glob', description: 'Tool', parameters: {} } }],
       execute,
     })
@@ -821,6 +825,125 @@ describe('chat orchestrator', () => {
     expect(toolResultData.result.error).toContain('Please ensure your JSON function call arguments are valid')
   })
 
+  it('does not inject step_done tool by default in builder turns', async () => {
+    const eventStore = createEventStore()
+    getEventStoreMock.mockReturnValue(eventStore)
+    getCurrentContextWindowIdMock.mockReturnValue('window-1')
+    getAllInstructionsMock.mockResolvedValue({ content: 'Build carefully', files: [] })
+    getContextMessagesMock.mockReturnValue([
+      { role: 'user' as const, content: 'Do something' },
+    ])
+    
+    let capturedTools: any[] = []
+    getToolRegistryForModeMock.mockImplementation(() => ({
+      tools: [
+        { name: 'read_file', definition: { type: 'function', function: { name: 'read_file', description: 'Read', parameters: {} } } },
+        { name: 'step_done', definition: { type: 'function', function: { name: 'step_done', description: 'Step done', parameters: {} } } },
+      ],
+      definitions: [
+        { type: 'function', function: { name: 'read_file', description: 'Read', parameters: {} } },
+        { type: 'function', function: { name: 'step_done', description: 'Step done', parameters: {} } },
+      ],
+      execute: vi.fn(),
+    }))
+    streamLLMPureMock.mockImplementation((options: any) => {
+      capturedTools = options.tools?.map((t: any) => t.function?.name) || []
+      return { kind: 'stream' }
+    })
+    consumeStreamGeneratorMock.mockResolvedValueOnce({
+      content: 'Done',
+      toolCalls: [],
+      segments: [{ type: 'text', content: 'Done' }],
+      usage: { promptTokens: 10, completionTokens: 3 },
+      timing: { ttft: 1, completionTime: 1, tps: 3, prefillTps: 10 },
+      aborted: false,
+      xmlFormatError: false,
+    })
+
+    const sessionManager = createSessionManager({
+      current: {
+        id: 'session-1',
+        projectId: 'project-1',
+        workdir: '/tmp/project',
+        mode: 'builder',
+        phase: 'build',
+        isRunning: true,
+        criteria: [{ id: 'c1', description: 'Test', status: { type: 'pending' }, attempts: [] }],
+        executionState: { modifiedFiles: [] },
+        messages: [{ id: 'user-1', role: 'user', content: 'Do something' }],
+      },
+    })
+
+    await runBuilderTurn({
+      sessionManager: sessionManager as never,
+      sessionId: 'session-1',
+      llmClient: { getModel: () => 'qwen3-32b' } as never,
+      onMessage: vi.fn(),
+    }, new TurnMetrics())
+
+    expect(capturedTools).not.toContain('step_done')
+  })
+
+  it('injects step_done tool when injectStepDone is true', async () => {
+    const eventStore = createEventStore()
+    getEventStoreMock.mockReturnValue(eventStore)
+    getCurrentContextWindowIdMock.mockReturnValue('window-1')
+    getAllInstructionsMock.mockResolvedValue({ content: 'Build carefully', files: [] })
+    getContextMessagesMock.mockReturnValue([
+      { role: 'user' as const, content: 'Do something' },
+    ])
+    
+    let capturedTools: any[] = []
+    getToolRegistryForModeMock.mockImplementation(() => ({
+      tools: [
+        { name: 'read_file', definition: { type: 'function', function: { name: 'read_file', description: 'Read', parameters: {} } } },
+        { name: 'step_done', definition: { type: 'function', function: { name: 'step_done', description: 'Step done', parameters: {} } } },
+      ],
+      definitions: [
+        { type: 'function', function: { name: 'read_file', description: 'Read', parameters: {} } },
+        { type: 'function', function: { name: 'step_done', description: 'Step done', parameters: {} } },
+      ],
+      execute: vi.fn(),
+    }))
+    streamLLMPureMock.mockImplementation((options: any) => {
+      capturedTools = options.tools?.map((t: any) => t.function?.name) || []
+      return { kind: 'stream' }
+    })
+    consumeStreamGeneratorMock.mockResolvedValueOnce({
+      content: 'Done',
+      toolCalls: [],
+      segments: [{ type: 'text', content: 'Done' }],
+      usage: { promptTokens: 10, completionTokens: 3 },
+      timing: { ttft: 1, completionTime: 1, tps: 3, prefillTps: 10 },
+      aborted: false,
+      xmlFormatError: false,
+    })
+
+    const sessionManager = createSessionManager({
+      current: {
+        id: 'session-1',
+        projectId: 'project-1',
+        workdir: '/tmp/project',
+        mode: 'builder',
+        phase: 'build',
+        isRunning: true,
+        criteria: [{ id: 'c1', description: 'Test', status: { type: 'pending' }, attempts: [] }],
+        executionState: { modifiedFiles: [] },
+        messages: [{ id: 'user-1', role: 'user', content: 'Do something' }],
+      },
+    })
+
+    await runBuilderTurn({
+      sessionManager: sessionManager as never,
+      sessionId: 'session-1',
+      llmClient: { getModel: () => 'qwen3-32b' } as never,
+      onMessage: vi.fn(),
+      injectStepDone: true,
+    }, new TurnMetrics())
+
+    expect(capturedTools).toContain('step_done')
+  })
+
   it('does not inject a builder kickoff prompt for manual builder turns', async () => {
     const eventStore = createEventStore()
     getEventStoreMock.mockReturnValue(eventStore)
@@ -829,7 +952,7 @@ describe('chat orchestrator', () => {
     getContextMessagesMock.mockReturnValue([
       { role: 'user' as const, content: 'Rename the helper function' },
     ])
-    getToolRegistryForModeMock.mockReturnValue({ definitions: [], execute: vi.fn() })
+    getToolRegistryForModeMock.mockReturnValue({ tools: [], definitions: [], execute: vi.fn() })
     streamLLMPureMock.mockReturnValue({ kind: 'stream' })
     consumeStreamGeneratorMock.mockResolvedValueOnce({
       content: 'Done',
@@ -878,7 +1001,7 @@ describe('chat orchestrator', () => {
     getContextMessagesMock.mockReturnValue([
       { role: 'user' as const, content: 'Rename the helper function' },
     ])
-    getToolRegistryForModeMock.mockReturnValue({ definitions: [], execute: vi.fn() })
+    getToolRegistryForModeMock.mockReturnValue({ tools: [], definitions: [], execute: vi.fn() })
     streamLLMPureMock.mockReturnValue({ kind: 'stream' })
     consumeStreamGeneratorMock.mockResolvedValueOnce({
       content: 'Done',
@@ -1919,7 +2042,7 @@ describe('chat orchestrator', () => {
       getCurrentContextWindowIdMock.mockReturnValue('window-2')
       
       getAllInstructionsMock.mockResolvedValue({ content: '', files: [] })
-      getToolRegistryForModeMock.mockReturnValue({ definitions: [], execute: vi.fn() })
+      getToolRegistryForModeMock.mockReturnValue({ tools: [], definitions: [], execute: vi.fn() })
       streamLLMPureMock.mockReturnValue({ kind: 'stream' })
       consumeStreamGeneratorMock.mockResolvedValue({
         content: 'Built',
@@ -1963,13 +2086,133 @@ describe('chat orchestrator', () => {
       expect(streamLLMPureMock.mock.calls[0]?.[0]?.messages[0]?.content).toContain('Build mode ACTIVE')
     })
 
+    it('does not inject step_done tool by default in builder turns', async () => {
+      const eventStore = createEventStore()
+      getEventStoreMock.mockReturnValue(eventStore)
+      
+      getContextMessagesMock.mockReturnValue([{ role: 'user' as const, content: 'Build this' }])
+      getAllInstructionsMock.mockResolvedValue({ content: '', files: [] })
+      
+      const mockToolRegistry = { 
+        definitions: [{ type: 'function' as const, function: { name: 'read_file', parameters: {} } }], 
+        execute: vi.fn(),
+        tools: []
+      }
+      getToolRegistryForModeMock.mockReturnValue(mockToolRegistry)
+      streamLLMPureMock.mockReturnValue({ kind: 'stream' })
+      consumeStreamGeneratorMock.mockResolvedValue({
+        content: 'Built',
+        toolCalls: [],
+        segments: [{ type: 'text', content: 'Built' }],
+        usage: { promptTokens: 10, completionTokens: 5 },
+        timing: { ttft: 1, completionTime: 1, tps: 5, prefillTps: 10 },
+        aborted: false,
+        xmlFormatError: false,
+      })
+
+      const sessionManager = createSessionManager({
+        current: {
+          id: 'session-1',
+          projectId: 'project-1',
+          workdir: '/tmp/project',
+          mode: 'builder',
+          phase: 'build',
+          isRunning: true,
+          criteria: [{ id: 'c1', description: 'Test', status: { type: 'pending' }, attempts: [] }],
+          executionState: { modifiedFiles: [] },
+          messages: [],
+        },
+      })
+
+      await runBuilderTurn({
+        sessionManager: sessionManager as never,
+        sessionId: 'session-1',
+        llmClient: { getModel: () => 'qwen3-32b' } as never,
+      }, new TurnMetrics())
+
+      expect(getToolRegistryForModeMock).toHaveBeenCalled()
+      expect(streamLLMPureMock).toHaveBeenCalledWith(
+        expect.objectContaining({
+          tools: expect.arrayContaining([
+            expect.objectContaining({ type: 'function', function: expect.objectContaining({ name: 'read_file' }) }),
+          ]),
+        })
+      )
+      const calledTools = streamLLMPureMock.mock.calls[0]?.[0]?.tools
+      expect(calledTools).not.toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ function: expect.objectContaining({ name: 'step_done' }) }),
+        ])
+      )
+    })
+
+    it('injects step_done tool when injectStepDone is true', async () => {
+      const eventStore = createEventStore()
+      getEventStoreMock.mockReturnValue(eventStore)
+      
+      getContextMessagesMock.mockReturnValue([{ role: 'user' as const, content: 'Build this' }])
+      getAllInstructionsMock.mockResolvedValue({ content: '', files: [] })
+      
+      const mockToolRegistry = { 
+        tools: [
+          { name: 'read_file', definition: { type: 'function' as const, function: { name: 'read_file', parameters: {} } } },
+          { name: 'step_done', definition: { type: 'function' as const, function: { name: 'step_done', parameters: {} } } },
+        ],
+        definitions: [
+          { type: 'function' as const, function: { name: 'read_file', parameters: {} } },
+          { type: 'function' as const, function: { name: 'step_done', parameters: {} } },
+        ],
+        execute: vi.fn(),
+      }
+      getToolRegistryForModeMock.mockReturnValue(mockToolRegistry)
+      streamLLMPureMock.mockReturnValue({ kind: 'stream' })
+      consumeStreamGeneratorMock.mockResolvedValue({
+        content: 'Built',
+        toolCalls: [],
+        segments: [{ type: 'text', content: 'Built' }],
+        usage: { promptTokens: 10, completionTokens: 5 },
+        timing: { ttft: 1, completionTime: 1, tps: 5, prefillTps: 10 },
+        aborted: false,
+        xmlFormatError: false,
+      })
+
+      const sessionManager = createSessionManager({
+        current: {
+          id: 'session-1',
+          projectId: 'project-1',
+          workdir: '/tmp/project',
+          mode: 'builder',
+          phase: 'build',
+          isRunning: true,
+          criteria: [{ id: 'c1', description: 'Test', status: { type: 'pending' }, attempts: [] }],
+          executionState: { modifiedFiles: [] },
+          messages: [],
+        },
+      })
+
+      await runBuilderTurn({
+        sessionManager: sessionManager as never,
+        sessionId: 'session-1',
+        llmClient: { getModel: () => 'qwen3-32b' } as never,
+        injectStepDone: true,
+      }, new TurnMetrics())
+
+      expect(streamLLMPureMock).toHaveBeenCalledWith(
+        expect.objectContaining({
+          tools: expect.arrayContaining([
+            expect.objectContaining({ function: expect.objectContaining({ name: 'step_done' }) }),
+          ]),
+        })
+      )
+    })
+
     it('auto-compacts builder context before the next LLM call when over threshold', async () => {
       const eventStore = createEventStore()
       getEventStoreMock.mockReturnValue(eventStore)
 
       getContextMessagesMock.mockReturnValue([{ role: 'user' as const, content: 'Build this' }])
       getAllInstructionsMock.mockResolvedValue({ content: '', files: [] })
-      getToolRegistryForModeMock.mockReturnValue({ definitions: [], execute: vi.fn() })
+      getToolRegistryForModeMock.mockReturnValue({ tools: [], definitions: [], execute: vi.fn() })
       streamLLMPureMock.mockReturnValue({ kind: 'stream' })
       consumeStreamGeneratorMock
         .mockResolvedValueOnce({
