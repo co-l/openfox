@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, useCallback } from 'react'
 
 export interface DropdownMenuItem {
   label: string | React.ReactNode
@@ -15,6 +15,8 @@ interface DropdownMenuProps {
 
 export function DropdownMenu({ items, trigger, minWidth = '120px' }: DropdownMenuProps) {
   const [isOpen, setIsOpen] = useState(false)
+  const [position, setPosition] = useState<{ top: number; left: number; alignToTop: boolean } | null>(null)
+  const triggerRef = useRef<HTMLDivElement>(null)
   const menuRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -33,12 +35,45 @@ export function DropdownMenu({ items, trigger, minWidth = '120px' }: DropdownMen
     }
   }, [isOpen])
 
-  return (
-    <div className="relative" ref={menuRef}>
-      <div onClick={() => setIsOpen(!isOpen)}>{trigger}</div>
+  const calculatePosition = useCallback(() => {
+    if (!triggerRef.current) return
 
-      {isOpen && (
-        <div className="absolute left-0 top-full mt-1 bg-bg-secondary border border-border rounded shadow-lg z-50" style={{ minWidth }}>
+    const triggerRect = triggerRef.current.getBoundingClientRect()
+    const menuHeight = 200
+
+    const spaceBelow = window.innerHeight - triggerRect.bottom
+    const alignToTop = spaceBelow < menuHeight
+
+    setPosition({
+      top: alignToTop ? triggerRect.top - menuHeight - 4 : triggerRect.bottom + 4,
+      left: triggerRect.left,
+      alignToTop,
+    })
+  }, [])
+
+  const handleTriggerClick = () => {
+    if (!isOpen) {
+      calculatePosition()
+    }
+    setIsOpen(!isOpen)
+  }
+
+  return (
+    <div className="relative">
+      <div ref={triggerRef} onClick={handleTriggerClick}>{trigger}</div>
+
+      {isOpen && position && (
+        <div
+          ref={menuRef}
+          className={`fixed bg-bg-secondary border border-border rounded shadow-lg z-50 ${
+            position.alignToTop ? 'mb-1' : 'mt-1'
+          }`}
+          style={{
+            top: position.top,
+            left: position.left,
+            minWidth,
+          }}
+        >
           {items.map((item, index) => (
             <button
               key={index}
