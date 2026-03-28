@@ -20,7 +20,8 @@
   "files": [
     "dist",
     "!dist/**/*.map",
-    "dist/**/*.md"
+    "dist/**/*.md",
+    "package.json"
   ],
   "scripts": {
     "dev": "OPENFOX_DEV=true tsx watch src/cli/dev.ts --no-browser",
