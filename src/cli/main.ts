@@ -75,7 +75,14 @@ export async function runCli(options: { mode: Mode }): Promise<void> {
   }
 
   if (values.version) {
-    console.log('0.1.0')
+    const { readFileSync } = await import('node:fs')
+    const { fileURLToPath } = await import('node:url')
+    const { dirname, join } = await import('node:path')
+    const __filename = fileURLToPath(import.meta.url)
+    const __dirname = dirname(__filename)
+    const packageJsonPath = join(__dirname, '../package.json')
+    const packageJson = JSON.parse(readFileSync(packageJsonPath, 'utf-8'))
+    console.log(packageJson.version)
     process.exit(0)
   }
 
