@@ -1,6 +1,8 @@
-import { useEffect } from 'react'
+import { useEffect, useRef } from 'react'
 import { useProjectStore } from '../../stores/project'
-import { useSessionStore } from '../../stores/session'
+import { useSessionStore, useIsRunning } from '../../stores/session'
+
+const SPINNER_CHARS = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴']
 
 /**
  * PageTitle component - updates document.title reactively based on current project and session context.
@@ -9,23 +11,47 @@ import { useSessionStore } from '../../stores/session'
 export function PageTitle() {
   const project = useProjectStore(state => state.currentProject)
   const session = useSessionStore(state => state.currentSession)
+  const isRunning = useIsRunning()
   const isDev = import.meta.env.DEV
+  const spinnerIndexRef = useRef(0)
+  const intervalRef = useRef<number | null>(null)
 
   useEffect(() => {
+    if (isRunning) {
+      intervalRef.current = window.setInterval(() => {
+        spinnerIndexRef.current = (spinnerIndexRef.current + 1) % SPINNER_CHARS.length
+        updateTitle()
+      }, 150)
+      updateTitle()
+    } else {
+      if (intervalRef.current) {
+        clearInterval(intervalRef.current)
+        intervalRef.current = null
+      }
+      updateTitle()
+    }
+
+    return () => {
+      if (intervalRef.current) {
+        clearInterval(intervalRef.current)
+        intervalRef.current = null
+      }
+    }
+  }, [isRunning, project, session, isDev])
+
+  const updateTitle = () => {
     const devPrefix = isDev ? 'dev- ' : ''
     const sessionTitle = session?.metadata?.title
+    const spinnerPrefix = isRunning ? `${SPINNER_CHARS[spinnerIndexRef.current]} ` : ''
     
     if (project && sessionTitle) {
-      // Session view: "dev-ProjectName - SessionTitle | OpenFox" or "ProjectName - SessionTitle | OpenFox"
-      document.title = `${devPrefix}${project.name} - ${sessionTitle} | OpenFox`
+      document.title = `${spinnerPrefix}${devPrefix}${project.name} - ${sessionTitle} | OpenFox`
     } else if (project) {
-      // Project view (no session): "dev-ProjectName | OpenFox" or "ProjectName | OpenFox"
-      document.title = `${devPrefix}${project.name} | OpenFox`
+      document.title = `${spinnerPrefix}${devPrefix}${project.name} | OpenFox`
     } else {
-      // Home page: "OpenFox"
-      document.title = 'OpenFox'
+      document.title = `${spinnerPrefix}OpenFox`
     }
-  }, [project, session, isDev])
+  }
 
   return null
 }
