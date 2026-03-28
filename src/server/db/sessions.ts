@@ -172,8 +172,8 @@ export function updateSessionMetadata(
 export function listSessions(): SessionSummary[] {
   const db = getDatabase()
   
-  // Note: criteriaCount and criteriaCompleted are now derived from events
-  // For now, return 0 as placeholders - the frontend will get real data from session state
+  // Count messages per session from events table (only user and assistant messages)
+  // Messages can be in message.start events OR embedded in turn.snapshot events
   const rows = db.prepare(`
     SELECT
       s.id,
@@ -186,7 +186,22 @@ export function listSessions(): SessionSummary[] {
       s.updated_at,
       s.title,
       s.provider_id,
-      s.provider_model
+      s.provider_model,
+      COALESCE(
+        (SELECT COUNT(*) FROM events e 
+         WHERE e.session_id = s.id 
+         AND e.event_type = 'message.start'
+         AND json_extract(e.payload, '$.role') IN ('user', 'assistant'))
+        +
+        COALESCE(
+          (SELECT SUM(json_array_length(json_extract(e.payload, '$.messages'))) FROM events e
+           WHERE e.session_id = s.id
+           AND e.event_type = 'turn.snapshot'
+           AND json_extract(e.payload, '$.messages') IS NOT NULL),
+          0
+        ),
+        0
+      ) as message_count
     FROM sessions s
     ORDER BY s.updated_at DESC
   `).all() as SessionSummaryRow[]
@@ -205,6 +220,7 @@ export function listSessions(): SessionSummary[] {
     updatedAt: row.updated_at,
     criteriaCount: 0, // Derived from events
     criteriaCompleted: 0, // Derived from events
+    messageCount: row.message_count,
   }))
 }
 
@@ -212,6 +228,7 @@ export function listSessionsByProject(projectId: string): SessionSummary[] {
   const db = getDatabase()
   
   // Get sessions where project_id matches (workdir check removed to prevent session leakage)
+  // Messages can be in message.start events OR embedded in turn.snapshot events
   const rows = db.prepare(`
     SELECT
       s.id,
@@ -224,7 +241,22 @@ export function listSessionsByProject(projectId: string): SessionSummary[] {
       s.updated_at,
       s.title,
       s.provider_id,
-      s.provider_model
+      s.provider_model,
+      COALESCE(
+        (SELECT COUNT(*) FROM events e 
+         WHERE e.session_id = s.id 
+         AND e.event_type = 'message.start'
+         AND json_extract(e.payload, '$.role') IN ('user', 'assistant'))
+        +
+        COALESCE(
+          (SELECT SUM(json_array_length(json_extract(e.payload, '$.messages'))) FROM events e
+           WHERE e.session_id = s.id
+           AND e.event_type = 'turn.snapshot'
+           AND json_extract(e.payload, '$.messages') IS NOT NULL),
+          0
+        ),
+        0
+      ) as message_count
     FROM sessions s
     WHERE s.project_id = ?
     ORDER BY s.updated_at DESC
@@ -244,6 +276,7 @@ export function listSessionsByProject(projectId: string): SessionSummary[] {
     updatedAt: row.updated_at,
     criteriaCount: 0, // Derived from events
     criteriaCompleted: 0, // Derived from events
+    messageCount: row.message_count,
   }))
 }
 
@@ -287,4 +320,5 @@ interface SessionSummaryRow {
   title: string | null
   provider_id: string | null
   provider_model: string | null
+  message_count: number
 }

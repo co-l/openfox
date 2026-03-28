@@ -72,6 +72,7 @@ describe('useSessionStore session isolation', () => {
       isRunning: true,
       criteria: [],
       summary: null,
+      messages: [],
     }
     const sessionTwo: any = {
       id: 'session-2',
@@ -82,6 +83,7 @@ describe('useSessionStore session isolation', () => {
       isRunning: false,
       criteria: [],
       summary: null,
+      messages: [],
     }
 
     useSessionStore.setState((state) => ({
@@ -219,6 +221,7 @@ describe('useSessionStore session isolation', () => {
           updatedAt: 'b',
           criteriaCount: 0,
           criteriaCompleted: 0,
+          messageCount: 0,
         },
         {
           id: 'session-2',
@@ -231,6 +234,7 @@ describe('useSessionStore session isolation', () => {
           updatedAt: 'b',
           criteriaCount: 0,
           criteriaCompleted: 0,
+          messageCount: 0,
         },
       ],
       currentSession: sessionTwo,
@@ -265,6 +269,7 @@ describe('useSessionStore session isolation', () => {
         updatedAt: 'b',
         criteriaCount: 0,
         criteriaCompleted: 0,
+        messageCount: 0,
       },
       {
         id: 'session-2',
@@ -277,6 +282,7 @@ describe('useSessionStore session isolation', () => {
         updatedAt: 'b',
         criteriaCount: 0,
         criteriaCompleted: 0,
+        messageCount: 0,
       },
     ])
     expect(useSessionStore.getState().currentSession).toEqual(sessionTwo)
@@ -300,6 +306,7 @@ describe('useSessionStore session isolation', () => {
           updatedAt: 'b',
           criteriaCount: 0,
           criteriaCompleted: 0,
+          messageCount: 0,
         },
         {
           id: 'session-2',
@@ -312,6 +319,7 @@ describe('useSessionStore session isolation', () => {
           updatedAt: 'b',
           criteriaCount: 0,
           criteriaCompleted: 0,
+          messageCount: 0,
         },
       ],
       currentSession: {
@@ -449,6 +457,7 @@ describe('useSessionStore session isolation', () => {
           updatedAt: 'b',
           criteriaCount: 0,
           criteriaCompleted: 0,
+          messageCount: 0,
         },
       ],
     }))
@@ -467,6 +476,7 @@ describe('useSessionStore session isolation', () => {
           isRunning: true,
           criteria: [],
           summary: null,
+          messages: [],
         },
         messages: [],
       },
@@ -484,6 +494,7 @@ describe('useSessionStore session isolation', () => {
         updatedAt: 'b',
         criteriaCount: 0,
         criteriaCompleted: 0,
+        messageCount: 0,
       },
     ])
   })
@@ -505,6 +516,7 @@ describe('useSessionStore session isolation', () => {
           updatedAt: 'b',
           criteriaCount: 0,
           criteriaCompleted: 0,
+          messageCount: 0,
         },
       ],
     }))
@@ -657,6 +669,7 @@ describe('useSessionStore session isolation', () => {
         updatedAt: '2024-01-01T00:00:00.000Z',
         criteriaCount: 0,
         criteriaCompleted: 0,
+        messageCount: 5,
         recentUserPrompts: [
           { id: 'msg-1', content: 'First prompt', timestamp: '2024-01-01T10:00:00.000Z' },
           { id: 'msg-2', content: 'Second prompt', timestamp: '2024-01-01T11:00:00.000Z' },
@@ -673,6 +686,7 @@ describe('useSessionStore session isolation', () => {
         updatedAt: '2024-01-02T00:00:00.000Z',
         criteriaCount: 0,
         criteriaCompleted: 0,
+        messageCount: 12,
         recentUserPrompts: [
           { id: 'msg-3', content: 'Third prompt', timestamp: '2024-01-02T12:00:00.000Z' },
         ],
@@ -709,5 +723,67 @@ describe('useSessionStore session isolation', () => {
     expect(result[1]!.recentUserPrompts).toEqual([
       { id: 'msg-3', content: 'Third prompt', timestamp: '2024-01-02T12:00:00.000Z' },
     ])
+    
+    // Verify messageCount is preserved
+    expect(result[0]!.messageCount).toBe(5)
+    expect(result[1]!.messageCount).toBe(12)
+  })
+  
+  it('preserves messageCount from incoming sessions even when existing session has different count', async () => {
+    const useSessionStore = await loadSessionStore()
+
+    useSessionStore.setState({
+      sessions: [
+        {
+          id: 'session-1',
+          projectId: 'project-1',
+          workdir: '/tmp/project-1',
+          mode: 'planner' as const,
+          phase: 'plan' as const,
+          isRunning: false,
+          createdAt: '2024-01-01T00:00:00.000Z',
+          updatedAt: '2024-01-01T00:00:00.000Z',
+          criteriaCount: 0,
+          criteriaCompleted: 0,
+          messageCount: 0,
+        },
+      ],
+      currentSession: null,
+      unreadSessionIds: [],
+      messages: [],
+      streamingMessageId: null,
+      currentTodos: [],
+      contextState: null,
+      pendingPathConfirmation: null,
+      error: null,
+    })
+
+    const incomingSessions = [
+      {
+        id: 'session-1',
+        projectId: 'project-1',
+        workdir: '/tmp/project-1',
+        mode: 'planner' as const,
+        phase: 'plan' as const,
+        isRunning: false,
+        createdAt: '2024-01-01T00:00:00.000Z',
+        updatedAt: '2024-01-01T00:00:00.000Z',
+        criteriaCount: 0,
+        criteriaCompleted: 0,
+        messageCount: 15,
+        recentUserPrompts: [],
+      },
+    ]
+
+    useSessionStore.getState().handleServerMessage({
+      type: 'session.list',
+      payload: {
+        sessions: incomingSessions as any,
+      },
+    })
+
+    const result = useSessionStore.getState().sessions
+
+    expect(result[0]!.messageCount).toBe(15)
   })
 })

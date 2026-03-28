@@ -24,6 +24,7 @@ import {
   updateSessionRunning,
   updateSessionSummary,
 } from './sessions.js'
+import { getDatabase } from './index.js'
 
 describe('db sessions', () => {
   let rootA: string
@@ -226,5 +227,58 @@ describe('db sessions', () => {
     // Verify all sessions exist in the global list
     const allSessions = listSessions()
     expect(allSessions).toHaveLength(4)
+  })
+
+  it('includes messageCount in session summaries', () => {
+    const sessionA = createSession(projectAId, rootA, 'Session A')
+    const sessionB = createSession(projectBId, rootB, 'Session B')
+
+    const allSessions = listSessions()
+    expect(allSessions).toHaveLength(2)
+    
+    const sessionASummary = allSessions.find(s => s.id === sessionA.id)
+    const sessionBSummary = allSessions.find(s => s.id === sessionB.id)
+    
+    expect(sessionASummary).toBeDefined()
+    expect(sessionASummary?.messageCount).toBe(0)
+    expect(sessionBSummary).toBeDefined()
+    expect(sessionBSummary?.messageCount).toBe(0)
+  })
+
+  it('counts messages correctly in session summaries', () => {
+    const session = createSession(projectAId, rootA, 'Test Session')
+    
+    const db = getDatabase()
+    db.prepare(`
+      INSERT INTO events (session_id, event_type, payload, timestamp, seq)
+      VALUES (?, 'message.start', ?, ?, 1)
+    `).run(
+      session.id,
+      JSON.stringify({ messageId: 'msg1', role: 'user', content: 'Hello' }),
+      Date.now()
+    )
+    db.prepare(`
+      INSERT INTO events (session_id, event_type, payload, timestamp, seq)
+      VALUES (?, 'message.start', ?, ?, 2)
+    `).run(
+      session.id,
+      JSON.stringify({ messageId: 'msg2', role: 'assistant', content: 'Hi there' }),
+      Date.now() + 1000
+    )
+    // Tool messages should NOT be counted
+    db.prepare(`
+      INSERT INTO events (session_id, event_type, payload, timestamp, seq)
+      VALUES (?, 'message.start', ?, ?, 3)
+    `).run(
+      session.id,
+      JSON.stringify({ messageId: 'msg3', role: 'tool', content: 'Tool result' }),
+      Date.now() + 2000
+    )
+
+    const sessions = listSessionsByProject(projectAId)
+    const sessionSummary = sessions.find(s => s.id === session.id)
+    
+    expect(sessionSummary).toBeDefined()
+    expect(sessionSummary?.messageCount).toBe(2) // Only user and assistant messages
   })
 })

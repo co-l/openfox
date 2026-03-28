@@ -84,6 +84,7 @@ export interface SessionSummary {
   updatedAt: string
   criteriaCount: number
   criteriaCompleted: number
+  messageCount: number
   recentUserPrompts?: RecentUserPrompt[]
 }
 

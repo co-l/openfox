@@ -18,6 +18,7 @@ const sessionStoreState = {
       updatedAt: 'b',
       criteriaCount: 0,
       criteriaCompleted: 0,
+      messageCount: 0,
     },
     {
       id: 'session-2',
@@ -30,6 +31,7 @@ const sessionStoreState = {
       updatedAt: 'b',
       criteriaCount: 0,
       criteriaCompleted: 0,
+      messageCount: 0,
     },
     {
       id: 'session-3',
@@ -42,6 +44,7 @@ const sessionStoreState = {
       updatedAt: 'b',
       criteriaCount: 0,
       criteriaCompleted: 0,
+      messageCount: 0,
     },
   ],
   currentSession: { id: 'session-2' },
@@ -96,5 +99,20 @@ describe('Sidebar', () => {
     expect(html).not.toContain('float-right')
     // Verify options menu trigger is present
     expect(html).toContain('Options')
+  })
+
+  it('displays message count in session list', () => {
+    vi.mock('../../stores/session', () => ({
+      useSessionStore: (selector: (state: typeof sessionStoreState) => unknown) => selector({
+        ...sessionStoreState,
+        sessions: sessionStoreState.sessions.map(s => ({
+          ...s,
+          messageCount: 5,
+        })),
+      }),
+    }))
+
+    const html = renderToStaticMarkup(<Sidebar projectId="project-1" />)
+    expect(html).toContain('5 messages')
   })
 })

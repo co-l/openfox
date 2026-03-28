@@ -247,6 +247,10 @@ function renderSessionGroups(
                 <span className="text-text-muted text-xs flex-shrink-0">
                   {formatTime(session.updatedAt)}
                 </span>
+                {/* Message count in muted style */}
+                <span className="text-text-muted text-xs flex-shrink-0">
+                  {session.messageCount} messages
+                </span>
               </div>
             </div>
           )

@@ -111,6 +111,9 @@ function mergeSessionIntoSummary(
         mode: session.mode,
         phase: session.phase,
         isRunning: session.isRunning,
+        messageCount: session.messages.length,
+        criteriaCount: session.criteria.length,
+        criteriaCompleted: session.criteria.filter(criterion => criterion.status.type === 'passed').length,
       }
     : {
         id: session.id,
@@ -123,6 +126,7 @@ function mergeSessionIntoSummary(
         updatedAt: '',
         criteriaCount: session.criteria.length,
         criteriaCompleted: session.criteria.filter(criterion => criterion.status.type === 'passed').length,
+        messageCount: session.messages.length,
       }
 
   return existingSession
@@ -147,6 +151,7 @@ function mergeSessionList(
       mode: currentSessionOverride?.mode ?? existingSession?.mode ?? incomingSession.mode,
       phase: currentSessionOverride?.phase ?? existingSession?.phase ?? incomingSession.phase,
       isRunning: currentSessionOverride?.isRunning ?? existingSession?.isRunning ?? incomingSession.isRunning,
+      messageCount: incomingSession.messageCount,
       // Preserve recentUserPrompts from incoming session (server source of truth)
       recentUserPrompts: incomingSession.recentUserPrompts,
     }
