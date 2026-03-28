@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, useCallback } from 'react'
+import { createPortal } from 'react-dom'
 
 export interface DropdownMenuItem {
   label: string | React.ReactNode
@@ -51,46 +52,50 @@ export function DropdownMenu({ items, trigger, minWidth = '120px' }: DropdownMen
     })
   }, [])
 
-  const handleTriggerClick = () => {
+  const handleTriggerClick = (e: React.MouseEvent) => {
+    e.stopPropagation()
     if (!isOpen) {
       calculatePosition()
     }
     setIsOpen(!isOpen)
   }
 
-  return (
-    <div className="relative">
-      <div ref={triggerRef} onClick={handleTriggerClick}>{trigger}</div>
-
-      {isOpen && position && (
-        <div
-          ref={menuRef}
-          className={`fixed bg-bg-secondary border border-border rounded shadow-lg z-50 ${
-            position.alignToTop ? 'mb-1' : 'mt-1'
-          }`}
-          style={{
-            top: position.top,
-            left: position.left,
-            minWidth,
+  const menuContent = position && (
+    <div
+      ref={menuRef}
+      className={`fixed bg-bg-secondary border border-border rounded shadow-lg z-50 ${
+        position.alignToTop ? 'mb-1' : 'mt-1'
+      }`}
+      style={{
+        top: position.top,
+        left: position.left,
+        minWidth,
+      }}
+    >
+      {items.map((item, index) => (
+        <button
+          key={index}
+          onClick={(e) => {
+            item.onClick(e)
+            setIsOpen(false)
           }}
+          className={`w-full px-3 py-2 text-left text-sm hover:bg-bg-tertiary transition-colors flex items-center gap-2 ${
+            item.danger ? 'text-accent-error hover:bg-accent-error/10' : 'text-text-primary'
+          } ${index !== items.length - 1 ? 'border-b border-border' : ''}`}
         >
-          {items.map((item, index) => (
-            <button
-              key={index}
-              onClick={(e) => {
-                item.onClick(e)
-                setIsOpen(false)
-              }}
-              className={`w-full px-3 py-2 text-left text-sm hover:bg-bg-tertiary transition-colors flex items-center gap-2 ${
-                item.danger ? 'text-accent-error hover:bg-accent-error/10' : 'text-text-primary'
-              } ${index !== items.length - 1 ? 'border-b border-border' : ''}`}
-            >
-              {item.icon && <span className="w-4 h-4 flex-shrink-0">{item.icon}</span>}
-              {item.label}
-            </button>
-          ))}
-        </div>
-      )}
+          {item.icon && <span className="w-4 h-4 flex-shrink-0">{item.icon}</span>}
+          {item.label}
+        </button>
+      ))}
     </div>
+  )
+
+  return (
+    <>
+      <div className="relative">
+        <div ref={triggerRef} onClick={handleTriggerClick}>{trigger}</div>
+      </div>
+      {isOpen && createPortal(menuContent, document.body)}
+    </>
   )
 }
