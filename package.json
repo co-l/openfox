@@ -1,6 +1,6 @@
 {
   "name": "openfox",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Local-LLM-first agentic coding assistant",
   "type": "module",
   "bin": {
@@ -26,7 +26,7 @@
     "dev": "OPENFOX_DEV=true tsx watch src/cli/dev.ts --no-browser",
     "dev:web": "vite --config web/vite.config.ts",
     "build": "FORCE_COLOR=1 npm run build:server && FORCE_COLOR=1 npm run build:web",
-    "build:server": "FORCE_COLOR=1 tsup && mkdir -p dist/skill-defaults dist/command-defaults dist/agent-defaults && cp src/server/skills/defaults/*.md dist/skill-defaults/ && cp src/server/commands/defaults/*.md dist/command-defaults/ && cp src/server/agents/defaults/*.md dist/agent-defaults/",
+    "build:server": "FORCE_COLOR=1 tsup && mkdir -p dist/skill-defaults dist/command-defaults dist/agent-defaults dist/workflow-defaults && cp src/server/skills/defaults/*.md dist/skill-defaults/ && cp src/server/commands/defaults/*.md dist/command-defaults/ && cp src/server/agents/defaults/*.md dist/agent-defaults/ && cp src/server/workflows/defaults/*.json dist/workflow-defaults/",
     "build:web": "cd web && FORCE_COLOR=1 vite build --outDir ../dist/web",
     "start": "node dist/cli/index.js",
     "start:dev": "node dist/cli/dev.js",
