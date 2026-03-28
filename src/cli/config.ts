@@ -72,7 +72,7 @@ const serverSchema = z.object({
 })
 
 const loggingSchema = z.object({
-  level: z.enum(['debug', 'info', 'warn', 'error']).default('info'),
+  level: z.enum(['debug', 'info', 'warn', 'error']).default('error'),
 })
 
 const databaseSchema = z.object({
