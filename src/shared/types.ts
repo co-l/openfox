@@ -255,7 +255,7 @@ export interface PreparingToolCall {
 export interface Attachment {
   id: string
   filename: string
-  mimeType: 'image/png' | 'image/jpeg' | 'image/gif'
+  mimeType: 'image/png' | 'image/jpeg' | 'image/gif' | 'image/webp' | 'image/bmp' | 'image/svg+xml'
   size: number
   data: string  // base64-encoded image data
 }

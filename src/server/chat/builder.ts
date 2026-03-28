@@ -5,7 +5,7 @@
  * naturally stops (returns no tool calls). This is the standard agent loop.
  */
 
-import type { ToolCall } from '../../shared/types.js'
+import type { Attachment, ToolCall } from '../../shared/types.js'
 import type { ServerMessage } from '../../shared/protocol.js'
 import type { LLMClientWithModel } from '../llm/client.js'
 import type { StepResult } from '../runner/types.js'
@@ -227,17 +227,29 @@ export async function runBuilderStep(options: BuilderStepOptions): Promise<StepR
       onMessage(createChatToolResultMessage(result.messageId, toolCall.id, toolCall.name, toolResult))
       
       // Save tool result as separate message for LLM context
-      const toolMsg = sessionManager.addMessage(sessionId, {
+      // If the tool result contains image metadata, attach it so the LLM can see the image
+      const imageMeta = toolResult.metadata as { mimeType?: string; dataUrl?: string; path?: string; size?: number } | undefined
+      const toolMsgData: Parameters<typeof sessionManager.addMessage>[1] = {
         role: 'tool',
-        content: toolResult.success 
+        content: toolResult.success
           ? (toolResult.output ?? 'Success')
-          : toolResult.output 
+          : toolResult.output
             ? `${toolResult.output}\n\nError: ${toolResult.error}`
             : `Error: ${toolResult.error}`,
         toolCallId: toolCall.id,
         toolName: toolCall.name,
         toolResult,
-      })
+      }
+      if (imageMeta?.dataUrl && imageMeta?.mimeType?.startsWith('image/')) {
+        toolMsgData.attachments = [{
+          id: crypto.randomUUID(),
+          filename: imageMeta.path ?? 'image',
+          mimeType: imageMeta.mimeType as Attachment['mimeType'],
+          size: imageMeta.size ?? 0,
+          data: imageMeta.dataUrl,
+        }]
+      }
+      const toolMsg = sessionManager.addMessage(sessionId, toolMsgData)
       onMessage(createChatMessageMessage(toolMsg))
       
       // Track modified files

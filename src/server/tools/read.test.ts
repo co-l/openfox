@@ -61,11 +61,12 @@ describe('readFileTool - Image Support', () => {
       )
 
       expect(result.success).toBe(true)
-      expect(result.output).toBeUndefined() // Images don't use output field
+      expect(result.output).toBe(`[Image: test.png (image/png, ${mockPngBuffer.length} bytes)]`)
       expect(result.metadata).toBeDefined()
       expect(result.metadata?.['mimeType']).toBe('image/png')
       expect(result.metadata?.['size']).toBe(mockPngBuffer.length)
       expect(result.metadata?.['base64Data']).toBeDefined()
+      expect(result.metadata?.['dataUrl']).toMatch(/^data:image\/png;base64,/)
       expect(result.metadata?.['path']).toBe('/test/workdir/test.png')
     })
 

@@ -138,24 +138,27 @@ export const readFileTool = createTool<ReadFileArgs>(
     if (mimeType) {
       // Handle as image
       const base64Data = rawBuffer.toString('base64')
-      
+      const dataUrl = `data:${mimeType};base64,${base64Data}`
+
       // Record file read with content hash for write validation
       const contentHash = await computeFileHash(fullPath)
       if (contentHash) {
         context.sessionManager.recordFileRead(context.sessionId, fullPath, contentHash)
       }
-      
-      return {
-        success: true,
-        durationMs: Date.now() - startTime,
-        truncated: false,
-        metadata: {
-          mimeType,
-          size: rawBuffer.length,
-          base64Data,
-          path: fullPath,
-        },
-      }
+
+      return helpers.success(
+        `[Image: ${args.path} (${mimeType}, ${rawBuffer.length} bytes)]`,
+        false,
+        {
+          metadata: {
+            mimeType,
+            size: rawBuffer.length,
+            base64Data,
+            dataUrl,
+            path: fullPath,
+          },
+        }
+      )
     }
     
     // Handle as text file

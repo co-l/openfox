@@ -428,16 +428,27 @@ export function buildContextMessagesFromStoredEvents(
       case 'tool.result': {
         const data = event.data as Extract<TurnEvent, { type: 'tool.result' }>['data']
         if (messageMap.has(data.messageId)) {
-          messages.push({
+          const imageMeta = data.result.metadata as { mimeType?: string; dataUrl?: string; path?: string; size?: number } | undefined
+          const msg: ContextMessage & { id: string } = {
             id: `tool-${data.toolCallId}`,
             role: 'tool',
-            content: data.result.success 
+            content: data.result.success
               ? (data.result.output ?? 'Success')
-              : data.result.output 
+              : data.result.output
                 ? `${data.result.output}\n\nError: ${data.result.error}`
                 : `Error: ${data.result.error}`,
             toolCallId: data.toolCallId,
-          })
+          }
+          if (imageMeta?.dataUrl && imageMeta?.mimeType?.startsWith('image/')) {
+            msg.attachments = [{
+              id: crypto.randomUUID(),
+              filename: imageMeta.path ?? 'image',
+              mimeType: imageMeta.mimeType as Attachment['mimeType'],
+              size: imageMeta.size ?? 0,
+              data: imageMeta.dataUrl,
+            }]
+          }
+          messages.push(msg)
         }
         break
       }

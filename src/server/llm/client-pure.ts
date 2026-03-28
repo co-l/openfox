@@ -19,6 +19,24 @@ export function convertMessages(messages: LLMMessage[]): ChatCompletionMessagePa
 
   return filtered.map((msg): ChatCompletionMessageParam => {
     if (msg.role === 'tool') {
+      // If tool result includes image attachments, send multimodal content
+      if (msg.attachments && msg.attachments.length > 0) {
+        const content: Array<{ type: 'text'; text: string } | { type: 'image_url'; image_url: { url: string } }> = []
+        if (msg.content?.trim()) {
+          content.push({ type: 'text', text: msg.content })
+        }
+        for (const attachment of msg.attachments) {
+          content.push({
+            type: 'image_url',
+            image_url: { url: attachment.data },
+          })
+        }
+        return {
+          role: 'tool',
+          content,
+          tool_call_id: msg.toolCallId!,
+        } as ChatCompletionMessageParam
+      }
       return {
         role: 'tool',
         content: msg.content,
