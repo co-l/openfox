@@ -616,6 +616,39 @@ describe('useSessionStore session isolation', () => {
     expect(playNotificationMock).not.toHaveBeenCalled()
   })
 
+  it('plays the waiting for user sound when a path confirmation is requested', async () => {
+    const useSessionStore = await loadSessionStore()
+
+    useSessionStore.setState((state) => ({
+      ...state,
+      currentSession: {
+        id: 'session-1',
+        projectId: 'project-1',
+        workdir: '/tmp/project-1',
+        mode: 'builder',
+        phase: 'build',
+        isRunning: true,
+        criteria: [],
+        summary: null,
+      } as any,
+    }))
+
+    useSessionStore.getState().handleServerMessage({
+      type: 'chat.path_confirmation',
+      sessionId: 'session-1',
+      payload: {
+        callId: 'call-1',
+        tool: 'write_file',
+        paths: ['/tmp/secret.txt'],
+        workdir: '/tmp/project-1',
+        reason: 'sensitive_file',
+      },
+    })
+
+    expect(playWaitingForUserMock).toHaveBeenCalledTimes(1)
+    expect(playNotificationMock).not.toHaveBeenCalled()
+  })
+
   it('does not mark a background session unread when it only receives session state', async () => {
     const useSessionStore = await loadSessionStore()
 

@@ -285,6 +285,13 @@ function handleGlobalSoundEffects(message: ServerMessage, state: SessionState): 
     return
   }
 
+  // Path confirmation requires user input - play waiting sound
+  if (message.type === 'chat.path_confirmation') {
+    const agent = resolveAgentType(state, message.sessionId)
+    playWaitingForUser(agent)
+    return
+  }
+
   // task.completed is emitted exactly once per orchestrator run — reliable trigger
   if (message.type === 'task.completed') {
     const agent = resolveAgentType(state, message.sessionId)
