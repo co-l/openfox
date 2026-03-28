@@ -39,11 +39,14 @@ import type {
 import { wsClient, type ConnectionStatus } from '../lib/ws'
 import { useDevServerStore } from './dev-server'
 import { useConfigStore } from './config'
-import { playNotification, playAchievement, playIntervention, playWaitingForUser } from '../lib/sound'
+import { playNotification, playAchievement, playIntervention, playWaitingForUser, playNewMessage } from '../lib/sound'
 import type { AgentType } from './notifications'
 
 // Track subscription to prevent duplicates
 let isSubscribed = false
+
+// Track which messageIds have already triggered the new_message sound
+const triggeredNewMessageSound = new Set<string>()
 
 // --- Streaming update batching ---
 // Buffer high-frequency streaming events and flush once per animation frame
@@ -766,6 +769,12 @@ export const useSessionStore = create<SessionState>((set, get) => {
           break
         }
         const payload = message.payload as ChatDeltaPayload
+        // Play new_message sound on first delta for this messageId
+        if (!triggeredNewMessageSound.has(payload.messageId)) {
+          triggeredNewMessageSound.add(payload.messageId)
+          const agent = resolveAgentType(get(), message.sessionId)
+          playNewMessage(agent)
+        }
         streamingBuffer.messageId = payload.messageId
         streamingBuffer.deltaContent += payload.content
         scheduleStreamingFlush()
@@ -779,6 +788,12 @@ export const useSessionStore = create<SessionState>((set, get) => {
           break
         }
         const payload = message.payload as ChatThinkingPayload
+        // Play new_message sound on first thinking for this messageId
+        if (!triggeredNewMessageSound.has(payload.messageId)) {
+          triggeredNewMessageSound.add(payload.messageId)
+          const agent = resolveAgentType(get(), message.sessionId)
+          playNewMessage(agent)
+        }
         streamingBuffer.messageId = payload.messageId
         streamingBuffer.thinkingContent += payload.content
         scheduleStreamingFlush()
@@ -983,11 +998,12 @@ export const useSessionStore = create<SessionState>((set, get) => {
         const payload = message.payload as ChatDonePayload
         const messageStats = payload.stats as Message['stats']
 
-        // Reset streaming buffer
+        // Reset streaming buffer and clear the new_message sound trigger for this messageId
         streamingBuffer.messageId = null
         streamingBuffer.deltaContent = ''
         streamingBuffer.thinkingContent = ''
         streamingBuffer.toolOutput = []
+        triggeredNewMessageSound.delete(payload.messageId)
 
         // Fold streamingMessage back into messages[] and mark as done
         set(state => {

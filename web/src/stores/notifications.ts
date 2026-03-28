@@ -2,7 +2,7 @@ import { create } from 'zustand'
 import { useSettingsStore, SETTINGS_KEYS } from './settings'
 
 // Sound event types
-export type SoundEvent = 'complete' | 'waiting_for_user' | 'phase_done' | 'phase_blocked'
+export type SoundEvent = 'complete' | 'waiting_for_user' | 'phase_done' | 'phase_blocked' | 'new_message'
 
 // Agent types that can have per-agent overrides
 export type AgentType = 'planner' | 'build' | 'sub-agent'
@@ -34,6 +34,7 @@ export const SOUND_EVENTS: { key: SoundEvent; label: string; description: string
   { key: 'waiting_for_user', label: 'Waiting for Input', description: 'When the agent needs your input' },
   { key: 'phase_done', label: 'Phase Done', description: 'When a build phase completes successfully' },
   { key: 'phase_blocked', label: 'Phase Blocked', description: 'When a build phase is blocked and needs intervention' },
+  { key: 'new_message', label: 'New Message', description: 'When a new assistant message starts arriving' },
 ]
 
 export const AGENT_TYPES: { key: AgentType; label: string }[] = [
@@ -48,6 +49,7 @@ export const AVAILABLE_SOUNDS: { url: string; label: string }[] = [
   { url: '/sounds/waiting-for-user.mp3', label: 'Waiting for User' },
   { url: '/sounds/achievement.mp3', label: 'Achievement' },
   { url: '/sounds/intervention.mp3', label: 'Intervention' },
+  { url: '/sounds/typing.mp3', label: 'Typing' },
 ]
 
 // Default sound paths (shipped with the app)
@@ -56,6 +58,7 @@ export const DEFAULT_SOUNDS: Record<SoundEvent, string> = {
   waiting_for_user: '/sounds/waiting-for-user.mp3',
   phase_done: '/sounds/achievement.mp3',
   phase_blocked: '/sounds/intervention.mp3',
+  new_message: '/sounds/typing.mp3',
 }
 
 const DEFAULT_EVENT_CONFIG: EventNotificationConfig = {
@@ -72,6 +75,7 @@ export const DEFAULT_SETTINGS: NotificationSettings = {
     waiting_for_user: { ...DEFAULT_EVENT_CONFIG },
     phase_done: { ...DEFAULT_EVENT_CONFIG },
     phase_blocked: { ...DEFAULT_EVENT_CONFIG },
+    new_message: { ...DEFAULT_EVENT_CONFIG },
   },
   agentOverrides: {},
 }
@@ -207,6 +211,7 @@ function mergeWithDefaults(partial: Partial<NotificationSettings>): Notification
       waiting_for_user: { ...DEFAULT_EVENT_CONFIG, ...partial.events?.waiting_for_user },
       phase_done: { ...DEFAULT_EVENT_CONFIG, ...partial.events?.phase_done },
       phase_blocked: { ...DEFAULT_EVENT_CONFIG, ...partial.events?.phase_blocked },
+      new_message: { ...DEFAULT_EVENT_CONFIG, ...partial.events?.new_message },
     },
     agentOverrides: partial.agentOverrides ?? {},
   }

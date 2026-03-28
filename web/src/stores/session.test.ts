@@ -1,5 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
+vi.stubGlobal('requestAnimationFrame', (cb: () => void) => setTimeout(cb, 0))
+vi.stubGlobal('cancelAnimationFrame', (id: number) => clearTimeout(id))
+
 const {
   wsSendMock,
   wsSubscribeMock,
@@ -10,6 +13,7 @@ const {
   playAchievementMock,
   playInterventionMock,
   playWaitingForUserMock,
+  playNewMessageMock,
 } = vi.hoisted(() => ({
   wsSendMock: vi.fn(() => 'message-id'),
   wsSubscribeMock: vi.fn(() => () => undefined),
@@ -20,6 +24,7 @@ const {
   playAchievementMock: vi.fn(),
   playInterventionMock: vi.fn(),
   playWaitingForUserMock: vi.fn(),
+  playNewMessageMock: vi.fn(),
 }))
 
 vi.mock('../lib/ws', () => ({
@@ -37,6 +42,7 @@ vi.mock('../lib/sound', () => ({
   playAchievement: playAchievementMock,
   playIntervention: playInterventionMock,
   playWaitingForUser: playWaitingForUserMock,
+  playNewMessage: playNewMessageMock,
 }))
 
 type SessionStoreModule = typeof import('./session')
@@ -58,6 +64,7 @@ describe('useSessionStore session isolation', () => {
     playAchievementMock.mockClear()
     playInterventionMock.mockClear()
     playWaitingForUserMock.mockClear()
+    playNewMessageMock.mockClear()
   })
 
   it('clears the previous session while loading and ignores background streaming updates', async () => {
@@ -818,5 +825,127 @@ describe('useSessionStore session isolation', () => {
     const result = useSessionStore.getState().sessions
 
     expect(result[0]!.messageCount).toBe(15)
+  })
+
+  it('plays new_message sound on first chat.delta for a new assistant message', async () => {
+    const useSessionStore = await loadSessionStore()
+
+    useSessionStore.setState({
+      currentSession: {
+        id: 'session-1',
+        projectId: 'project-1',
+        workdir: '/tmp/project-1',
+        mode: 'planner',
+        phase: 'plan',
+        isRunning: true,
+        criteria: [],
+        summary: null,
+      } as any,
+    })
+
+    useSessionStore.getState().handleServerMessage({
+      type: 'chat.delta',
+      sessionId: 'session-1',
+      payload: { messageId: 'msg-1', content: 'Hello' },
+    })
+
+    expect(playNewMessageMock).toHaveBeenCalledTimes(1)
+  })
+
+  it('plays new_message sound on first chat.thinking for a new assistant message', async () => {
+    const useSessionStore = await loadSessionStore()
+
+    useSessionStore.setState({
+      currentSession: {
+        id: 'session-1',
+        projectId: 'project-1',
+        workdir: '/tmp/project-1',
+        mode: 'planner',
+        phase: 'plan',
+        isRunning: true,
+        criteria: [],
+        summary: null,
+      } as any,
+    })
+
+    useSessionStore.getState().handleServerMessage({
+      type: 'chat.thinking',
+      sessionId: 'session-1',
+      payload: { messageId: 'msg-1', content: 'Let me think' },
+    })
+
+    expect(playNewMessageMock).toHaveBeenCalledTimes(1)
+  })
+
+  it('does not replay new_message sound on subsequent deltas for the same messageId', async () => {
+    const useSessionStore = await loadSessionStore()
+
+    useSessionStore.setState({
+      currentSession: {
+        id: 'session-1',
+        projectId: 'project-1',
+        workdir: '/tmp/project-1',
+        mode: 'planner',
+        phase: 'plan',
+        isRunning: true,
+        criteria: [],
+        summary: null,
+      } as any,
+    })
+
+    useSessionStore.getState().handleServerMessage({
+      type: 'chat.delta',
+      sessionId: 'session-1',
+      payload: { messageId: 'msg-1', content: 'Hello' },
+    })
+    useSessionStore.getState().handleServerMessage({
+      type: 'chat.delta',
+      sessionId: 'session-1',
+      payload: { messageId: 'msg-1', content: ' world' },
+    })
+    useSessionStore.getState().handleServerMessage({
+      type: 'chat.delta',
+      sessionId: 'session-1',
+      payload: { messageId: 'msg-1', content: '!' },
+    })
+
+    expect(playNewMessageMock).toHaveBeenCalledTimes(1)
+  })
+
+  it('plays new_message sound again for a different messageId after chat.done', async () => {
+    const useSessionStore = await loadSessionStore()
+
+    useSessionStore.setState({
+      currentSession: {
+        id: 'session-1',
+        projectId: 'project-1',
+        workdir: '/tmp/project-1',
+        mode: 'planner',
+        phase: 'plan',
+        isRunning: true,
+        criteria: [],
+        summary: null,
+      } as any,
+    })
+
+    useSessionStore.getState().handleServerMessage({
+      type: 'chat.delta',
+      sessionId: 'session-1',
+      payload: { messageId: 'msg-1', content: 'First message' },
+    })
+
+    useSessionStore.getState().handleServerMessage({
+      type: 'chat.done',
+      sessionId: 'session-1',
+      payload: { messageId: 'msg-1', reason: 'complete' },
+    })
+
+    useSessionStore.getState().handleServerMessage({
+      type: 'chat.delta',
+      sessionId: 'session-1',
+      payload: { messageId: 'msg-2', content: 'Second message' },
+    })
+
+    expect(playNewMessageMock).toHaveBeenCalledTimes(2)
   })
 })

@@ -37,6 +37,7 @@ const NOTIFICATION_TITLES: Record<SoundEvent, string> = {
   waiting_for_user: 'Waiting for Input',
   phase_done: 'Phase Complete',
   phase_blocked: 'Phase Blocked',
+  new_message: 'New Message',
 }
 
 const NOTIFICATION_BODIES: Record<SoundEvent, string> = {
@@ -44,6 +45,7 @@ const NOTIFICATION_BODIES: Record<SoundEvent, string> = {
   waiting_for_user: 'The agent needs your input to continue.',
   phase_done: 'The build phase completed successfully.',
   phase_blocked: 'The build phase is blocked and needs intervention.',
+  new_message: 'A new assistant message is arriving.',
 }
 
 function sendBrowserNotification(event: SoundEvent) {
@@ -83,3 +85,4 @@ export const playNotification = (agent?: AgentType) => playEvent('complete', age
 export const playAchievement = (agent?: AgentType) => playEvent('phase_done', agent)
 export const playIntervention = (agent?: AgentType) => playEvent('phase_blocked', agent)
 export const playWaitingForUser = (agent?: AgentType) => playEvent('waiting_for_user', agent)
+export const playNewMessage = (agent?: AgentType) => playEvent('new_message', agent)
