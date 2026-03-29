@@ -85,9 +85,13 @@ export const useAutoScroll = (
       is_user_touching = false
       is_forced_scroll_to_bottom = true
       scroll_to_bottom()
+      setTimeout(() => scroll_to_bottom(), 250)
+      setTimeout(() => scroll_to_bottom(), 500)
+      setTimeout(() => scroll_to_bottom(), 750)
+      setTimeout(() => scroll_to_bottom(), 1000)
       setTimeout(() => {
         is_forced_scroll_to_bottom = false
-      }, 500)
+      }, 1250)
 
     },
   }
