@@ -1,82 +1,104 @@
 import { create } from 'zustand'
 import type { Project } from '@shared/types.js'
-import type {
-  ServerMessage,
-  ProjectStatePayload,
-  ProjectListPayload,
-} from '@shared/protocol.js'
-import { wsClient } from '../lib/ws'
 
 interface ProjectState {
   // Projects
   projects: Project[]
   currentProject: Project | null
+  loading: boolean
   
   // Actions
-  listProjects: () => void
-  createProject: (name: string, workdir: string) => void
-  loadProject: (projectId: string) => void
-  updateProject: (projectId: string, updates: { name?: string; customInstructions?: string | null }) => void
-  deleteProject: (projectId: string) => void
+  listProjects: () => Promise<void>
+  createProject: (name: string, workdir: string) => Promise<Project | null>
+  loadProject: (projectId: string) => Promise<Project | null>
+  updateProject: (projectId: string, updates: { name?: string; customInstructions?: string | null }) => Promise<Project | null>
+  deleteProject: (projectId: string) => Promise<boolean>
   clearProject: () => void
-  
-  // Internal
-  handleServerMessage: (message: ServerMessage) => void
 }
 
 export const useProjectStore = create<ProjectState>((set, get) => ({
   projects: [],
   currentProject: null,
+  loading: false,
   
-  listProjects: () => {
-    wsClient.send('project.list', {})
+  listProjects: async () => {
+    set({ loading: true })
+    try {
+      const res = await fetch('/api/projects')
+      const data = await res.json()
+      set({ projects: data.projects ?? [], loading: false })
+    } catch {
+      set({ loading: false })
+    }
   },
   
-  createProject: (name, workdir) => {
-    wsClient.send('project.create', { name, workdir })
+  createProject: async (name, workdir) => {
+    try {
+      const res = await fetch('/api/projects', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name, workdir }),
+      })
+      if (!res.ok) return null
+      const data = await res.json()
+      // Refresh project list
+      await get().listProjects()
+      return data.project
+    } catch {
+      return null
+    }
   },
   
-  loadProject: (projectId) => {
-    wsClient.send('project.load', { projectId })
+  loadProject: async (projectId) => {
+    try {
+      const res = await fetch(`/api/projects/${projectId}`)
+      if (!res.ok) return null
+      const data = await res.json()
+      set({ currentProject: data.project })
+      return data.project
+    } catch {
+      return null
+    }
   },
   
-  updateProject: (projectId, updates) => {
-    wsClient.send('project.update', { projectId, ...updates })
+  updateProject: async (projectId, updates) => {
+    try {
+      const res = await fetch(`/api/projects/${projectId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(updates),
+      })
+      if (!res.ok) return null
+      const data = await res.json()
+      // Update current project if it's the one being updated
+      if (get().currentProject?.id === projectId) {
+        set({ currentProject: data.project })
+      }
+      // Refresh project list
+      await get().listProjects()
+      return data.project
+    } catch {
+      return null
+    }
   },
   
-  deleteProject: (projectId) => {
-    wsClient.send('project.delete', { projectId })
+  deleteProject: async (projectId) => {
+    try {
+      const res = await fetch(`/api/projects/${projectId}`, { method: 'DELETE' })
+      if (!res.ok) return false
+      // Refresh project list
+      await get().listProjects()
+      // Clear current project if it was deleted
+      if (get().currentProject?.id === projectId) {
+        set({ currentProject: null })
+      }
+      return true
+    } catch {
+      return false
+    }
   },
   
   clearProject: () => {
     set({ currentProject: null })
-  },
-  
-  handleServerMessage: (message) => {
-    switch (message.type) {
-      case 'project.state': {
-        const payload = message.payload as ProjectStatePayload
-        set({ currentProject: payload.project })
-        break
-      }
-      
-      case 'project.list': {
-        const payload = message.payload as ProjectListPayload
-        set({ projects: payload.projects })
-        break
-      }
-      
-      case 'project.deleted': {
-        // Refresh project list
-        get().listProjects()
-        // Clear current project if it was deleted
-        const currentProject = get().currentProject
-        const deletedId = (message.payload as { projectId: string }).projectId
-        if (currentProject?.id === deletedId) {
-          set({ currentProject: null })
-        }
-        break
-      }
-    }
   },
 }))

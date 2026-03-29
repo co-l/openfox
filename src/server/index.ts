@@ -135,25 +135,119 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
     res.json({ tools: toolRegistry.tools.map(t => t.name) })
   })
 
+  // Project endpoints (REST)
+  app.get('/api/projects', async (_req, res) => {
+    const { listProjects } = await import('./db/projects.js')
+    const projects = listProjects()
+    res.json({ projects })
+  })
+
+  app.post('/api/projects', async (req, res) => {
+    const { name, workdir } = req.body
+    if (!name || !workdir) {
+      return res.status(400).json({ error: 'name and workdir are required' })
+    }
+    const { createProject } = await import('./db/projects.js')
+    const project = createProject(name, workdir)
+    res.status(201).json({ project })
+  })
+
+  app.get('/api/projects/:id', async (req, res) => {
+    const { getProject } = await import('./db/projects.js')
+    const project = getProject(req.params.id)
+    if (!project) {
+      return res.status(404).json({ error: 'Project not found' })
+    }
+    res.json({ project })
+  })
+
+  app.put('/api/projects/:id', async (req, res) => {
+    const { updateProject } = await import('./db/projects.js')
+    const { name, customInstructions } = req.body
+    const updates: { name?: string; customInstructions?: string | null } = {}
+    if (name !== undefined) updates.name = name
+    if (customInstructions !== undefined) updates.customInstructions = customInstructions
+    const updated = updateProject(req.params.id, updates)
+    if (!updated) {
+      return res.status(404).json({ error: 'Project not found' })
+    }
+    res.json({ project: updated })
+  })
+
+  app.delete('/api/projects/:id', async (req, res) => {
+    const { getProject, deleteProject } = await import('./db/projects.js')
+    const project = getProject(req.params.id)
+    if (!project) {
+      return res.status(404).json({ error: 'Project not found' })
+    }
+    deleteProject(req.params.id)
+    res.json({ success: true })
+  })
+
   // Session endpoints (REST)
 
-  app.post('/api/sessions', async (req, res) => {
-    const { workdir, title } = req.body
+  app.get('/api/sessions', async (req, res) => {
+    const { getEventStore } = await import('./events/index.js')
+    const { buildMessagesFromStoredEvents } = await import('./events/folding.js')
+    const { getRecentUserPromptsForSession } = await import('./events/index.js')
+    
+    const projectId = req.query['projectId'] as string | undefined
+    const allSessions = sessionManager.listSessions()
+    const sessions = projectId ? allSessions.filter(s => s.projectId === projectId) : allSessions
+    
+    // Add recent user prompts to each session
+    const eventStore = getEventStore()
+    const sessionsWithPrompts = sessions.map(session => {
+      const events = eventStore.getEvents(session.id)
+      const messages = buildMessagesFromStoredEvents(events)
+      return {
+        ...session,
+        recentUserPrompts: getRecentUserPromptsForSession(session.id, 10),
+        messages,
+      }
+    })
+    
+    res.json({ sessions: sessionsWithPrompts })
+  })
 
+  app.post('/api/sessions', async (req, res) => {
+    const { projectId, title } = req.body
+    if (!projectId) {
+      return res.status(400).json({ error: 'projectId is required' })
+    }
+    
+    const project = sessionManager.getProject(projectId)
+    if (!project) {
+      return res.status(404).json({ error: 'Project not found' })
+    }
+    
     // maxTokens is no longer passed - it comes from providerManager.getCurrentModelContext() at query time
-    const session = sessionManager.createSession(workdir, title, null, null)
+    const session = sessionManager.createSession(projectId, title, null, null)
     res.status(201).json({ session })
   })
 
-  app.get('/api/sessions/:id', (req, res) => {
+  app.get('/api/sessions/:id', async (req, res) => {
+    const { getEventStore } = await import('./events/index.js')
+    const { buildMessagesFromStoredEvents } = await import('./events/folding.js')
+    
     const session = sessionManager.getSession(req.params.id)
     if (!session) {
       return res.status(404).json({ error: 'Session not found' })
     }
-    res.json({ session })
+    
+    const eventStore = getEventStore()
+    const events = eventStore.getEvents(req.params.id)
+    const messages = buildMessagesFromStoredEvents(events)
+    const contextState = sessionManager.getContextState(req.params.id)
+    
+    res.json({ session, messages, contextState })
   })
 
   app.delete('/api/sessions/:id', (req, res) => {
+    const session = sessionManager.getSession(req.params['id'] as string)
+    if (!session) {
+      return res.status(404).json({ error: 'Session not found' })
+    }
     sessionManager.deleteSession(req.params['id'] as string)
     res.json({ success: true })
   })
@@ -166,6 +260,58 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
     }
     sessionManager.deleteAllSessions(projectId, project.workdir)
     res.json({ success: true })
+  })
+
+  // Session provider configuration
+  app.post('/api/sessions/:id/provider', async (req, res) => {
+    const { getEventStore } = await import('./events/index.js')
+    const { buildMessagesFromStoredEvents } = await import('./events/folding.js')
+    
+    const sessionId = req.params.id
+    const session = sessionManager.getSession(sessionId)
+    if (!session) {
+      return res.status(404).json({ error: 'Session not found' })
+    }
+    
+    const { providerId, model } = req.body
+    if (!providerId) {
+      return res.status(400).json({ error: 'providerId is required' })
+    }
+    
+    // Set provider for session
+    sessionManager.setSessionProvider(sessionId, providerId, model ?? 'auto')
+    
+    // Invalidate session LLM client cache (handled internally by setSessionProvider)
+    
+    // Get updated context state
+    const contextState = sessionManager.getContextState(sessionId)
+    
+    // Get updated session with messages
+    const eventStore = getEventStore()
+    const events = eventStore.getEvents(sessionId)
+    const messages = buildMessagesFromStoredEvents(events)
+    const updatedSession = sessionManager.getSession(sessionId)
+    
+    res.json({ session: updatedSession, messages, contextState })
+  })
+
+  // Settings endpoints (REST)
+  app.get('/api/settings/:key', async (req, res) => {
+    const { getSetting } = await import('./db/settings.js')
+    const key = req.params.key
+    const value = getSetting(key)
+    res.json({ key, value })
+  })
+
+  app.put('/api/settings/:key', async (req, res) => {
+    const { setSetting } = await import('./db/settings.js')
+    const key = req.params.key
+    const { value } = req.body
+    if (value === undefined) {
+      return res.status(400).json({ error: 'value is required' })
+    }
+    setSetting(key, value)
+    res.json({ key, value })
   })
 
   // Config endpoint

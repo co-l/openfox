@@ -223,11 +223,11 @@ interface SessionState {
   disconnect: () => void
   
   // Session management
-  createSession: (projectId: string, title?: string) => void
-  loadSession: (sessionId: string) => void
-  listSessions: () => void
-  deleteSession: (sessionId: string) => void
-  deleteAllSessions: (projectId: string) => void
+  createSession: (projectId: string, title?: string) => Promise<Session | null>
+  loadSession: (sessionId: string) => Promise<void>
+  listSessions: () => Promise<void>
+  deleteSession: (sessionId: string) => Promise<boolean>
+  deleteAllSessions: (projectId: string) => Promise<boolean>
   clearSession: () => void
   
   // Unified chat (works in any mode)
@@ -249,7 +249,7 @@ interface SessionState {
   compactContext: () => void
   
   // Per-session provider/model
-  setSessionProvider: (providerId: string, model?: string) => void
+  setSessionProvider: (providerId: string, model?: string) => Promise<Session | null>
 
   // Path confirmation
   confirmPath: (callId: string, approved: boolean) => void
@@ -468,46 +468,100 @@ export const useSessionStore = create<SessionState>((set, get) => {
     set({ connectionStatus: 'disconnected' })
   },
   
-  createSession: (projectId, title) => {
-    set({ pendingSessionCreate: true })
-    wsClient.send('session.create', { projectId, title })
-  },
-  
-  loadSession: (sessionId) => {
-    const currentSession = get().currentSession
-    
-    // Clear state when loading a different session
-    if (!currentSession || currentSession.id !== sessionId) {
-      cancelStreamingFlush()
-      set({
-        currentSession: null,
-        unreadSessionIds: removeUnreadSessionId(get().unreadSessionIds, sessionId),
-        messages: [],
-        streamingMessageId: null,
-        streamingMessage: null,
-        currentTodos: [],
-        contextState: null,
-        pendingPathConfirmation: null,
-        queuedMessages: [],
-        abortInProgress: false,
-        error: null,
+  createSession: async (projectId, title) => {
+    try {
+      const res = await fetch('/api/sessions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ projectId, title }),
       })
-    } else {
-      set({ unreadSessionIds: removeUnreadSessionId(get().unreadSessionIds, sessionId) })
+      if (!res.ok) return null
+      const data = await res.json()
+      // Refresh session list
+      await get().listSessions()
+      return data.session
+    } catch {
+      return null
     }
-    wsClient.send('session.load', { sessionId })
   },
   
-  listSessions: () => {
-    wsClient.send('session.list', {})
+  loadSession: async (sessionId) => {
+    try {
+      const currentSession = get().currentSession
+      
+      // Clear state when loading a different session
+      if (!currentSession || currentSession.id !== sessionId) {
+        cancelStreamingFlush()
+        set({
+          currentSession: null,
+          unreadSessionIds: removeUnreadSessionId(get().unreadSessionIds, sessionId),
+          messages: [],
+          streamingMessageId: null,
+          streamingMessage: null,
+          currentTodos: [],
+          contextState: null,
+          pendingPathConfirmation: null,
+          queuedMessages: [],
+          abortInProgress: false,
+          error: null,
+        })
+      } else {
+        set({ unreadSessionIds: removeUnreadSessionId(get().unreadSessionIds, sessionId) })
+      }
+      
+      const res = await fetch(`/api/sessions/${sessionId}`)
+      if (!res.ok) return
+      
+      const data = await res.json()
+      set({
+        currentSession: data.session,
+        messages: data.messages ?? [],
+        contextState: data.contextState,
+      })
+      
+      // Subscribe to WS events for this session (real-time updates)
+      // WS subscription already established in connect()
+    } catch {
+      // ignore
+    }
   },
   
-  deleteSession: (sessionId) => {
-    wsClient.send('session.delete', { sessionId })
+  listSessions: async () => {
+    try {
+      const res = await fetch('/api/sessions')
+      const data = await res.json()
+      set({ sessions: data.sessions ?? [] })
+    } catch {
+      // ignore
+    }
   },
   
-  deleteAllSessions: (projectId) => {
-    wsClient.send('session.deleteAll', { projectId })
+  deleteSession: async (sessionId) => {
+    try {
+      const res = await fetch(`/api/sessions/${sessionId}`, { method: 'DELETE' })
+      if (!res.ok) return false
+      // Refresh session list
+      await get().listSessions()
+      // Clear current session if it was deleted
+      if (get().currentSession?.id === sessionId) {
+        get().clearSession()
+      }
+      return true
+    } catch {
+      return false
+    }
+  },
+  
+  deleteAllSessions: async (projectId) => {
+    try {
+      const res = await fetch(`/api/projects/${projectId}/sessions`, { method: 'DELETE' })
+      if (!res.ok) return false
+      // Refresh session list
+      await get().listSessions()
+      return true
+    } catch {
+      return false
+    }
   },
   
   clearSession: () => {
@@ -575,9 +629,28 @@ export const useSessionStore = create<SessionState>((set, get) => {
     wsClient.send('context.compact', {})
   },
   
-  setSessionProvider: (providerId, model) => {
-    console.log('[session.setSessionProvider] Sending WebSocket message:', { providerId, model })
-    wsClient.send('session.setProvider', { providerId, ...(model ? { model } : {}) })
+  setSessionProvider: async (providerId, model) => {
+    try {
+      const sessionId = get().currentSession?.id
+      if (!sessionId) return null
+      
+      const res = await fetch(`/api/sessions/${sessionId}/provider`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ providerId, ...(model ? { model } : {}) }),
+      })
+      if (!res.ok) return null
+      const data = await res.json()
+      // Update current session
+      set({
+        currentSession: data.session,
+        messages: data.messages ?? [],
+        contextState: data.contextState,
+      })
+      return data.session
+    } catch {
+      return null
+    }
   },
 
   confirmPath: (callId, approved) => {

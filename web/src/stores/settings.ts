@@ -1,6 +1,4 @@
 import { create } from 'zustand'
-import type { ServerMessage, SettingsValuePayload } from '@shared/protocol.js'
-import { wsClient } from '../lib/ws'
 
 // Well-known settings keys (should match server's SETTINGS_KEYS)
 export const SETTINGS_KEYS = {
@@ -14,37 +12,45 @@ interface SettingsState {
   loading: Record<string, boolean>
   
   // Actions
-  getSetting: (key: string) => void
-  setSetting: (key: string, value: string) => void
-  
-  // Internal
-  handleServerMessage: (message: ServerMessage) => void
+  getSetting: (key: string) => Promise<string | null>
+  setSetting: (key: string, value: string) => Promise<void>
 }
 
-export const useSettingsStore = create<SettingsState>((set) => ({
+export const useSettingsStore = create<SettingsState>((set, get) => ({
   settings: {},
   loading: {},
   
-  getSetting: (key) => {
+  getSetting: async (key) => {
     set(state => ({ loading: { ...state.loading, [key]: true } }))
-    wsClient.send('settings.get', { key })
+    try {
+      const res = await fetch(`/api/settings/${key}`)
+      const data = await res.json()
+      set(state => ({
+        settings: { ...state.settings, [key]: data.value ?? '' },
+        loading: { ...state.loading, [key]: false },
+      }))
+      return data.value
+    } catch {
+      set(state => ({ loading: { ...state.loading, [key]: false } }))
+      return null
+    }
   },
   
-  setSetting: (key, value) => {
+  setSetting: async (key, value) => {
     set(state => ({ loading: { ...state.loading, [key]: true } }))
-    wsClient.send('settings.set', { key, value })
-  },
-  
-  handleServerMessage: (message) => {
-    switch (message.type) {
-      case 'settings.value': {
-        const payload = message.payload as SettingsValuePayload
-        set(state => ({
-          settings: { ...state.settings, [payload.key]: payload.value ?? '' },
-          loading: { ...state.loading, [payload.key]: false },
-        }))
-        break
-      }
+    try {
+      const res = await fetch(`/api/settings/${key}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ value }),
+      })
+      const data = await res.json()
+      set(state => ({
+        settings: { ...state.settings, [key]: data.value ?? '' },
+        loading: { ...state.loading, [key]: false },
+      }))
+    } catch {
+      set(state => ({ loading: { ...state.loading, [key]: false } }))
     }
   },
 }))

@@ -34,7 +34,6 @@ import { getSetting, setSetting } from '../db/settings.js'
 import { updateSessionMetadata } from '../db/sessions.js'
 import { generateSessionName, needsNameGeneration } from '../session/name-generator.js'
 import { generateSessionSummary, needsSummaryGeneration } from '../session/summary-generator.js'
-// Messages are now retrieved from EventStore, not DB
 import {
   parseClientMessage,
   serializeServerMessage,
@@ -458,7 +457,7 @@ async function handleClientMessage(
   
   switch (message.type) {
     // =========================================================================
-    // Project Management
+    // DEPRECATED: Project Management (use REST API instead)
     // =========================================================================
     
     case 'project.create': {
@@ -557,7 +556,7 @@ async function handleClientMessage(
     }
     
     // =========================================================================
-    // Settings Management
+    // DEPRECATED: Settings Management (use REST API instead)
     // =========================================================================
     
     case 'settings.get': {
@@ -583,7 +582,7 @@ async function handleClientMessage(
     }
     
     // =========================================================================
-    // Session Management
+    // DEPRECATED: Session Management (use REST API instead)
     // =========================================================================
     
     case 'session.create': {
@@ -732,7 +731,7 @@ async function handleClientMessage(
     }
 
     // =========================================================================
-    // Unified Chat (replaces plan.message, agent.start, etc.)
+    // Unified Chat (replaces plan.message, agent.start, etc.) - WS REQUIRED
     // =========================================================================
     
     case 'chat.send': {
