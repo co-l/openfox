@@ -53,6 +53,15 @@ describe('Ask User Tool', () => {
         content: 'Please ask the user a question before proceeding with the task.' 
       })
       
+      // Wait for ask_user event and send answer immediately
+      const askUserEvent = await client.waitFor('chat.ask_user', (payload: { callId: string; question: string }) => {
+        return Boolean(payload.callId && payload.question)
+      })
+      
+      const callId = (askUserEvent.payload as { callId: string }).callId
+      await client.send('ask.answer', { callId, answer: 'Proceed with the task' })
+      
+      // Now collect events after agent completes
       const events = await collectChatEvents(client)
       
       // Should have tool call events
@@ -67,10 +76,10 @@ describe('Ask User Tool', () => {
         const args = (askUserCall.payload as { args: { question?: string } }).args
         expect(args.question).toBeDefined()
         expect(args.question!.length).toBeGreaterThan(0)
-      } else {
-        // If mock didn't trigger ask_user, verify no errors occurred
-        const errorEvents = events.all.filter(e => e.type === 'chat.error')
-        expect(errorEvents.length).toBe(0)
+        
+        // Agent should complete after receiving answer (not stuck)
+        const doneEvents = events.get('chat.done')
+        expect(doneEvents.length).toBeGreaterThan(0)
       }
     })
 
@@ -112,6 +121,14 @@ describe('Ask User Tool', () => {
         content: 'Ask the user what they want to do next.' 
       })
       
+      // Wait for ask_user and answer immediately
+      const askUserEvent = await client.waitFor('chat.ask_user', (payload: { callId: string }) => {
+        return Boolean(payload.callId)
+      })
+      const callId = (askUserEvent.payload as { callId: string }).callId
+      await client.send('ask.answer', { callId, answer: 'Continue with the task' })
+      
+      // Now collect events
       const events = await collectChatEvents(client)
       
       const toolCalls = events.get('chat.tool_call')
@@ -134,6 +151,14 @@ describe('Ask User Tool', () => {
         content: 'Confirm with the user about the database migration.' 
       })
       
+      // Wait for ask_user and answer immediately
+      const askUserEvent = await client.waitFor('chat.ask_user', (payload: { callId: string }) => {
+        return Boolean(payload.callId)
+      })
+      const callId = (askUserEvent.payload as { callId: string }).callId
+      await client.send('ask.answer', { callId, answer: 'Yes, proceed' })
+      
+      // Now collect events
       const events = await collectChatEvents(client)
       
       const toolCalls = events.get('chat.tool_call')
@@ -156,14 +181,22 @@ describe('Ask User Tool', () => {
         content: 'Ask the user a question before continuing.' 
       })
       
-      // Wait for chat to finish (will be waiting_for_user or complete)
-      await client.waitFor('chat.done').catch(() => null)
+      // Wait for chat.ask_user event
+      const askUserEvent = await client.waitFor('chat.ask_user', (payload: { callId: string }) => {
+        return Boolean(payload.callId)
+      })
       
-      // Session should not be running after interrupt
+      const callId = (askUserEvent.payload as { callId: string }).callId
+      
+      // Send answer immediately so agent completes
+      await client.send('ask.answer', { callId, answer: 'Continue' })
+      
+      // Wait for chat to finish
+      await client.waitFor('chat.done')
+      
+      // Session should not be running after completion
       const session = client.getSession()
       if (session) {
-        // After any chat.done, isRunning should be false
-        // (may need to wait for session.running event)
         await new Promise(r => setTimeout(r, 100))
         const updatedSession = client.getSession()
         expect(updatedSession?.isRunning).toBe(false)
@@ -177,13 +210,25 @@ describe('Ask User Tool', () => {
       await client.send('chat.send', { 
         content: 'Ask the user what framework they prefer.' 
       })
-      await client.waitForChatDone()
       
-      // Second question (would normally be triggered after user answers)
+      // Wait for ask_user and answer
+      const askUserEvent1 = await client.waitFor('chat.ask_user', (payload: { callId: string }) => {
+        return Boolean(payload.callId)
+      })
+      await client.send('ask.answer', { callId: (askUserEvent1.payload as { callId: string }).callId, answer: 'React' })
+      await client.waitFor('chat.done')
+      
+      // Second question
       await client.send('chat.send', { 
         content: 'Now ask the user about the database choice.' 
       })
-      await client.waitForChatDone()
+      
+      // Wait for ask_user and answer
+      const askUserEvent2 = await client.waitFor('chat.ask_user', (payload: { callId: string }) => {
+        return Boolean(payload.callId)
+      })
+      await client.send('ask.answer', { callId: (askUserEvent2.payload as { callId: string }).callId, answer: 'PostgreSQL' })
+      await client.waitFor('chat.done')
       
       // Both should complete without errors
       const allEvents = client.allEvents()
@@ -199,57 +244,77 @@ describe('Ask User Tool', () => {
         content: 'Please ask the user a question before proceeding with the task.' 
       })
       
-      // Collect all events to see what happened
-      const events = await collectChatEvents(client)
+      // Wait for chat.ask_user event first
+      const askUserEvent = await client.waitFor('chat.ask_user', (payload: { callId: string; question: string }) => {
+        return Boolean(payload.callId && payload.question)
+      })
       
-      // Check if ask_user tool was called
-      const toolCalls = events.get('chat.tool_call')
-      const askUserCall = toolCalls.find(e => 
-        (e.payload as { tool: string }).tool === 'ask_user'
-      )
+      const callId = (askUserEvent.payload as { callId: string }).callId
       
-      if (askUserCall) {
-        // Verify the tool call has the right structure
-        const args = (askUserCall.payload as { args: { question?: string } }).args
-        expect(args.question).toBeDefined()
-        
-        const callId = (askUserCall.payload as { callId: string }).callId
-        
-        // Wait for chat.ask_user event
-        const askUserEvent = await client.waitFor('chat.ask_user', (payload: { callId: string; question: string }) => {
-          return Boolean(payload.callId && payload.question)
-        })
-        
-        // Verify the ask_user event has the right structure
-        expect(askUserEvent.payload).toHaveProperty('callId', callId)
-        expect(askUserEvent.payload).toHaveProperty('question')
-        
-        // Wait for chat.done with waiting_for_user
-        await client.waitFor('chat.done', (payload: { reason: string }) => {
-          return payload.reason === 'waiting_for_user'
-        })
-        
-        // Send the answer
-        await client.send('ask.answer', { 
-          callId, 
-          answer: 'Please implement a feature' 
-        })
-        
-        // Wait for ack
-        await client.waitFor('ack')
-        
-        // The agent should continue and complete
-        await client.waitForChatDone()
-        
-        // Verify no errors occurred
-        const allEvents = client.allEvents()
-        const errorEvents = allEvents.filter(e => e.type === 'chat.error')
-        expect(errorEvents.length).toBe(0)
-      } else {
-        // If mock didn't trigger ask_user, verify no errors occurred
-        const errorEvents = events.all.filter(e => e.type === 'chat.error')
-        expect(errorEvents.length).toBe(0)
-      }
+      // Verify the ask_user event has the right structure
+      expect(askUserEvent.payload).toHaveProperty('callId')
+      expect(askUserEvent.payload).toHaveProperty('question')
+      
+      // Send the answer immediately
+      await client.send('ask.answer', { 
+        callId, 
+        answer: 'Please implement a feature' 
+      })
+      
+      // Wait for ack
+      await client.waitFor('ack')
+      
+      // The agent should continue and complete
+      await client.waitForChatDone()
+      
+      // Verify no errors occurred
+      const allEvents = client.allEvents()
+      const errorEvents = allEvents.filter(e => e.type === 'chat.error')
+      expect(errorEvents.length).toBe(0)
+    })
+
+    it('agent continues after user answers ask_user question', async () => {
+      // Use a prompt that matches the mock LLM rule for ask_user
+      // The mock matches: /ask.*user|ask.*question|clarif/i
+      // This test demonstrates the bug: after sending ask.answer, the agent should continue
+      // but currently it gets stuck because the answer is not fed back to the model
+      await client.send('chat.send', { 
+        content: 'I need clarification. Please ask the user a question.' 
+      })
+      
+      // Wait for chat.ask_user event
+      const askUserEvent = await client.waitFor('chat.ask_user', (payload: { callId: string; question: string }) => {
+        return Boolean(payload.callId && payload.question)
+      }, 10000)
+      
+      expect(askUserEvent.payload).toHaveProperty('callId')
+      expect(askUserEvent.payload).toHaveProperty('question')
+      
+      const callId = (askUserEvent.payload as { callId: string }).callId
+      
+      // CRITICAL FIX: Send the answer immediately after receiving chat.ask_user
+      // Don't wait for chat.done first - that causes a deadlock
+      await client.send('ask.answer', { 
+        callId, 
+        answer: 'Use React' 
+      })
+      
+      // Wait for ack
+      await client.waitFor('ack')
+      
+      // CRITICAL: The agent should continue and complete after receiving the answer
+      // This test will FAIL if the answer is not sent back to the model properly
+      const doneEvent = await client.waitFor('chat.done', (payload: { reason: string }) => {
+        return payload.reason === 'complete' || payload.reason === 'error'
+      })
+      
+      // Verify the agent completed (not stuck)
+      expect(doneEvent.payload.reason).toBe('complete')
+      
+      // Verify no errors occurred
+      const allEvents = client.allEvents()
+      const errorEvents = allEvents.filter(e => e.type === 'chat.error')
+      expect(errorEvents.length).toBe(0)
     })
   })
 })

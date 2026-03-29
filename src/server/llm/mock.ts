@@ -468,6 +468,20 @@ const RULES: MockRule[] = [
   },
 
   // -------------------------------------------------------------------------
+  // Ask User Tool
+  // -------------------------------------------------------------------------
+  {
+    match: /ask.*user|ask.*question|clarif/i,
+    tools: [{ name: 'ask_user', arguments: { question: 'What would you like me to do?' } }],
+    response: 'I asked the user.',
+  },
+  {
+    match: /confirm.*with.*user/i,
+    tools: [{ name: 'ask_user', arguments: { question: 'Should I proceed with this action?' } }],
+    response: 'I asked for confirmation.',
+  },
+  
+  // -------------------------------------------------------------------------
   // Default Responses (no tools)
   // -------------------------------------------------------------------------
   {

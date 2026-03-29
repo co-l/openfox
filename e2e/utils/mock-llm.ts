@@ -139,7 +139,12 @@ export function createMockLLMClient(config: MockLLMConfig = {}): MockLLMClient {
       toolCalls: [{ name: 'git', arguments: { command: 'git reset --hard HEAD' } }],
       response: 'I tried to reset.',
     },
-    // Ask user tool rules
+    // Ask user tool rules - must come BEFORE generic rules to match first
+    {
+      promptMatch: /framework.*prefer/i,
+      toolCalls: [{ name: 'ask_user', arguments: { question: 'Which framework would you prefer?' } }],
+      response: 'I asked about framework preference.',
+    },
     {
       promptMatch: /ask.*user|ask.*question|clarif/i,
       toolCalls: [{ name: 'ask_user', arguments: { question: 'What would you like me to do?' } }],
