@@ -697,9 +697,10 @@ export function foldSessionState(
   }
 
   // Ensure compactionCount is up-to-date from events (in case compaction happened after last context.state)
-  const contextState: ContextState = baseContextState.compactionCount !== contextResult.compactionCount
-    ? { ...baseContextState, compactionCount: contextResult.compactionCount }
-    : baseContextState
+  // Also ensure maxTokens is always from the parameter (current model config), not from cached event data
+  const contextState: ContextState = baseContextState.compactionCount !== contextResult.compactionCount || baseContextState.maxTokens !== maxTokens
+    ? { ...baseContextState, compactionCount: contextResult.compactionCount, maxTokens }
+    : { ...baseContextState, maxTokens }
 
   return {
     mode,
