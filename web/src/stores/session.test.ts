@@ -948,4 +948,62 @@ describe('useSessionStore session isolation', () => {
 
     expect(playNewMessageMock).toHaveBeenCalledTimes(2)
   })
+
+  it('sends ask.answer WebSocket message when answerQuestion is called', async () => {
+    const useSessionStore = await loadSessionStore()
+
+    useSessionStore.setState({
+      currentSession: {
+        id: 'session-1',
+        projectId: 'project-1',
+        workdir: '/tmp/project-1',
+        mode: 'builder',
+        phase: 'build',
+        isRunning: true,
+        criteria: [],
+        summary: null,
+      } as any,
+      pendingQuestion: {
+        callId: 'call-123',
+        question: 'What is your name?',
+      },
+    })
+
+    useSessionStore.getState().answerQuestion('call-123', 'My name is Conrad')
+
+    expect(wsSendMock).toHaveBeenCalledWith('ask.answer', {
+      callId: 'call-123',
+      answer: 'My name is Conrad',
+    })
+    expect(useSessionStore.getState().pendingQuestion).toBeNull()
+  })
+
+  it('clears pendingQuestion when answerQuestion is called with empty answer (skip)', async () => {
+    const useSessionStore = await loadSessionStore()
+
+    useSessionStore.setState({
+      currentSession: {
+        id: 'session-1',
+        projectId: 'project-1',
+        workdir: '/tmp/project-1',
+        mode: 'builder',
+        phase: 'build',
+        isRunning: true,
+        criteria: [],
+        summary: null,
+      } as any,
+      pendingQuestion: {
+        callId: 'call-456',
+        question: 'Do you want to continue?',
+      },
+    })
+
+    useSessionStore.getState().answerQuestion('call-456', '')
+
+    expect(wsSendMock).toHaveBeenCalledWith('ask.answer', {
+      callId: 'call-456',
+      answer: '',
+    })
+    expect(useSessionStore.getState().pendingQuestion).toBeNull()
+  })
 })

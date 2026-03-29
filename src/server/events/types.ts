@@ -263,6 +263,13 @@ export type TurnEvent =
       }
     }
   | {
+      type: 'chat.ask_user'
+      data: {
+        callId: string
+        question: string
+      }
+    }
+  | {
       type: 'format.retry'
       data: {
         attempt: number

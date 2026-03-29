@@ -170,6 +170,12 @@ export interface PendingPathConfirmation {
   reason: 'outside_workdir' | 'sensitive_file' | 'both'
 }
 
+// Pending ask_user question from server
+export interface PendingQuestion {
+  callId: string
+  question: string
+}
+
 interface SessionState {
   // Connection
   connectionStatus: ConnectionStatus
@@ -198,6 +204,9 @@ interface SessionState {
   
   // Pending path confirmation (outside-workdir access request)
   pendingPathConfirmation: PendingPathConfirmation | null
+  
+  // Pending ask_user question
+  pendingQuestion: PendingQuestion | null
 
   // Message queue (while agent is running)
   queuedMessages: QueuedMessage[]
@@ -244,6 +253,9 @@ interface SessionState {
 
   // Path confirmation
   confirmPath: (callId: string, approved: boolean) => void
+
+  // Ask user question
+  answerQuestion: (callId: string, answer: string) => void
 
   // Message queue
   queueAsap: (content: string, attachments?: Attachment[]) => void
@@ -419,6 +431,7 @@ export const useSessionStore = create<SessionState>((set, get) => {
   currentTodos: [],
   contextState: null,
   pendingPathConfirmation: null,
+  pendingQuestion: null,
   queuedMessages: [],
   abortInProgress: false,
   error: null,
@@ -569,6 +582,11 @@ export const useSessionStore = create<SessionState>((set, get) => {
   confirmPath: (callId, approved) => {
     wsClient.send('path.confirm', { callId, approved })
     set({ pendingPathConfirmation: null })
+  },
+
+  answerQuestion: (callId: string, answer: string) => {
+    wsClient.send('ask.answer', { callId, answer })
+    set({ pendingQuestion: null })
   },
 
   queueAsap: (content, attachments) => {
@@ -1069,6 +1087,21 @@ export const useSessionStore = create<SessionState>((set, get) => {
             paths: payload.paths,
             workdir: payload.workdir,
             reason: payload.reason,
+          },
+        })
+        break
+      }
+      
+      case 'chat.ask_user': {
+        if (!isMessageForCurrentSession(message, get().currentSession?.id ?? null)) {
+          markBackgroundSessionUnread()
+          return
+        }
+        const payload = message.payload as { callId: string; question: string }
+        set({
+          pendingQuestion: {
+            callId: payload.callId,
+            question: payload.question,
           },
         })
         break

@@ -4,6 +4,7 @@ import { createDeferred } from '../utils/async.js'
 
 // Store pending questions by call ID
 const pendingQuestions = new Map<string, {
+  promise: Promise<string>
   resolve: (answer: string) => void
   reject: (error: Error) => void
   sessionId: string
@@ -30,7 +31,6 @@ export const askUserTool: Tool = {
   },
   
   async execute(args: Record<string, unknown>, context: ToolContext): Promise<ToolResult> {
-    const startTime = Date.now()
     const question = args['question'] as string
     
     // Generate a unique ID for this question
@@ -41,6 +41,7 @@ export const askUserTool: Tool = {
     void deferred.promise.catch(() => {})
     
     pendingQuestions.set(callId, {
+      promise: deferred.promise,
       resolve: deferred.resolve,
       reject: deferred.reject,
       sessionId: context.sessionId,
@@ -108,4 +109,10 @@ export function cancelQuestionsForSession(sessionId: string, reason: string): nu
 // Check if there's a pending question
 export function hasPendingQuestion(callId: string): boolean {
   return pendingQuestions.has(callId)
+}
+
+// Await the answer for a pending question
+export function awaitAnswer(callId: string): Promise<string> | null {
+  const pending = pendingQuestions.get(callId)
+  return pending?.promise ?? null
 }

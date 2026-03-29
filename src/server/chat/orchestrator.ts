@@ -107,17 +107,6 @@ export async function runChatTurn(options: OrchestratorOptions): Promise<void> {
     }
 
   } catch (error) {
-    if (error instanceof AskUserInterrupt) {
-      const waitMsgId = crypto.randomUUID()
-      eventStore.append(sessionId, createMessageStartEvent(waitMsgId, 'user', 'Waiting for user input...', {
-        ...(getCurrentWindowMessageOptions(sessionId) ?? {}),
-        isSystemGenerated: true,
-        messageKind: 'auto-prompt',
-      }))
-      eventStore.append(sessionId, createChatDoneEvent(waitMsgId, 'waiting_for_user'))
-      return
-    }
-
     if (error instanceof PathAccessDeniedError) {
       const errorMsgId = crypto.randomUUID()
       const reasonText = error.reason === 'sensitive_file'

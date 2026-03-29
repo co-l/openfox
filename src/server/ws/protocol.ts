@@ -12,6 +12,7 @@ import type {
   ChatSendPayload,
   ModeSwitchPayload,
   CriteriaEditPayload,
+  AskAnswerPayload,
   ProjectStatePayload,
   ProjectListPayload,
   SessionStatePayload,
@@ -33,6 +34,7 @@ import type {
   ChatDonePayload,
   ChatErrorPayload,
   ChatPathConfirmationPayload,
+  ChatAskUserPayload,
   PathConfirmPayload,
   ModeChangedPayload,
   PhaseChangedPayload,
@@ -221,6 +223,14 @@ export function createChatPathConfirmationMessage(
   return createServerMessage('chat.path_confirmation', { callId, tool, paths, workdir, reason })
 }
 
+// Ask user messages
+export function createChatAskUserMessage(
+  callId: string,
+  question: string
+): ServerMessage<ChatAskUserPayload> {
+  return createServerMessage('chat.ask_user', { callId, question })
+}
+
 // Mode messages
 export function createModeChangedMessage(mode: SessionMode, auto: boolean, reason?: string): ServerMessage<ModeChangedPayload> {
   return createServerMessage('mode.changed', { mode, auto, ...(reason ? { reason } : {}) })
@@ -301,6 +311,11 @@ export function isCriteriaEditPayload(payload: unknown): payload is CriteriaEdit
 // Path confirmation payloads
 export function isPathConfirmPayload(payload: unknown): payload is PathConfirmPayload {
   return typeof payload === 'object' && payload !== null && 'callId' in payload && 'approved' in payload
+}
+
+// Ask user payloads
+export function isAskAnswerPayload(payload: unknown): payload is AskAnswerPayload {
+  return typeof payload === 'object' && payload !== null && 'callId' in payload && 'answer' in payload
 }
 
 // Settings payloads
@@ -498,6 +513,11 @@ export function storedEventToServerMessage(event: StoredEvent): ServerMessage | 
     case 'chat.error': {
       const data = event.data as Extract<TurnEvent, { type: 'chat.error' }>['data']
       return createChatErrorMessage(data.error, data.recoverable)
+    }
+
+    case 'chat.ask_user': {
+      const data = event.data as Extract<TurnEvent, { type: 'chat.ask_user' }>['data']
+      return createChatAskUserMessage(data.callId, data.question)
     }
 
     case 'format.retry': {

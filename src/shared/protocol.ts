@@ -47,6 +47,8 @@ export type ClientMessageType =
   | 'runner.launch'       // Start the auto-loop runner (build → verify → done)
   // Path confirmation
   | 'path.confirm'        // User response to path confirmation request
+  // Ask user
+  | 'ask.answer'          // User response to ask_user question
   // Settings management
   | 'settings.get'        // Get a setting value
   | 'settings.set'        // Set a setting value
@@ -162,6 +164,12 @@ export interface QueueCancelPayload {
   queueId: string
 }
 
+// Ask user payload
+export interface AskAnswerPayload {
+  callId: string
+  answer: string
+}
+
 // Shared queue types
 export interface QueuedMessage {
   queueId: string
@@ -203,6 +211,7 @@ export type ServerMessageType =
   | 'chat.done'           // Current generation complete
   | 'chat.error'          // Error during generation
   | 'chat.path_confirmation' // Request user confirmation for outside-workdir path access
+  | 'chat.ask_user'       // Request user answer to a question
   // Mode events
   | 'mode.changed'        // Mode was changed
   // Phase events
@@ -369,6 +378,12 @@ export interface ChatPathConfirmationPayload {
 export interface PathConfirmPayload {
   callId: string
   approved: boolean
+}
+
+// Ask user payloads
+export interface ChatAskUserPayload {
+  callId: string
+  question: string
 }
 
 // Mode payloads

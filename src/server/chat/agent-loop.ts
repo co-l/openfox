@@ -15,7 +15,7 @@ import type { LLMToolDefinition } from '../llm/types.js'
 import type { SessionManager } from '../session/index.js'
 import type { ToolRegistry } from '../tools/types.js'
 import type { RequestContextMessage } from './request-context.js'
-import { PathAccessDeniedError } from '../tools/path-security.js'
+import { PathAccessDeniedError, AskUserInterrupt } from '../tools/index.js'
 import { createToolProgressHandler } from './tool-streaming.js'
 import {
   streamLLMPure,
@@ -160,6 +160,26 @@ export async function executeToolBatch(
         toolResult = {
           success: false,
           error: `User denied access to ${error.paths.join(', ')}. If you need this file, explain why and ask for permission.`,
+          durationMs: 0,
+          truncated: false,
+        }
+      } else if (error instanceof AskUserInterrupt) {
+        // Emit chat.ask_user event so client can show the question
+        eventStore.append(ctx.sessionId, {
+          type: 'chat.ask_user',
+          data: { callId: error.callId, question: error.question },
+        })
+        
+        // Wait for user to provide answer via ask.answer
+        const { awaitAnswer } = await import('../tools/ask.js')
+        const answerPromise = awaitAnswer(error.callId)
+        if (!answerPromise) {
+          throw new Error(`No pending question found for callId: ${error.callId}`)
+        }
+        const answer = await answerPromise
+        toolResult = {
+          success: true,
+          output: answer,
           durationMs: 0,
           truncated: false,
         }

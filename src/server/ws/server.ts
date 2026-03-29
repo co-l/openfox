@@ -17,6 +17,7 @@ import { runOrchestrator } from '../runner/index.js'
 import { maybeAutoCompactContext, performManualContextCompaction } from '../context/auto-compaction.js'
 import {
   providePathConfirmation,
+  provideAnswer,
   cancelQuestionsForSession,
   cancelPathConfirmationsForSession,
 } from '../tools/index.js'
@@ -61,6 +62,7 @@ import {
   isModeSwitchPayload,
   isCriteriaEditPayload,
   isPathConfirmPayload,
+  isAskAnswerPayload,
   isSettingsGetPayload,
   isSettingsSetPayload,
   isSessionSetProviderPayload,
@@ -1439,6 +1441,40 @@ async function handleClientMessage(
       // Just acknowledge - the Promise resolution will resume tool execution automatically.
       // If approved: paths were added to allowlist, tool continues.
       // If denied: requestPathAccess throws PathAccessDeniedError, handled by existing error catch.
+      send({ type: 'ack', payload: {}, id: message.id })
+      break
+    }
+    
+    // =========================================================================
+    // Ask User
+    // =========================================================================
+    
+    case 'ask.answer': {
+      if (!client.activeSessionId) {
+        send(createErrorMessage('NO_SESSION', 'No active session', message.id))
+        return
+      }
+      
+      if (!isAskAnswerPayload(message.payload)) {
+        send(createErrorMessage('INVALID_PAYLOAD', 'Invalid ask.answer payload', message.id))
+        return
+      }
+      
+      const { callId, answer } = message.payload
+      const found = provideAnswer(callId, answer)
+      
+      if (!found) {
+        send(createErrorMessage('NOT_FOUND', 'No pending question with that ID', message.id))
+        return
+      }
+      
+      logger.debug('Ask user answer received', { 
+        sessionId: client.activeSessionId, 
+        callId, 
+        answerLength: answer.length 
+      })
+      
+      // Just acknowledge - the Promise resolution will resume tool execution automatically.
       send({ type: 'ack', payload: {}, id: message.id })
       break
     }
