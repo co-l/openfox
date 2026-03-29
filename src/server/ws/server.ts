@@ -715,6 +715,10 @@ async function handleClientMessage(
       sessionManager.setSessionProvider(sessionId, providerId, resolvedModel)
       invalidateSessionLLMClient?.(sessionId)
 
+      // Send updated context state with new maxTokens
+      const contextState = sessionManager.getContextState(sessionId)
+      sendForSession(sessionId, createContextStateMessage(contextState))
+
       // Send updated session state
       const eventStore = getEventStore()
       const updatedSession = sessionManager.requireSession(sessionId)

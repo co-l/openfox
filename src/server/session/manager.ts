@@ -819,7 +819,36 @@ export class SessionManager {
    * Get the current context state for a session.
    */
   getContextState(sessionId: string): ContextState {
-    const maxTokens = this.providerManager.getCurrentModelContext()
+    const session = this.getSession(sessionId)
+    const providerManager = this.providerManager
+    
+    // Get maxTokens from session's provider/model if set, otherwise use global
+    let maxTokens: number
+    if (session?.providerId && session.providerModel) {
+      // Session has explicit provider/model - get context from that
+      const providers = providerManager.getProviders()
+      const provider = providers.find(p => p.id === session.providerId)
+      if (provider) {
+        // Try exact match first
+        let modelConfig = provider.models.find(m => m.id === session.providerModel)
+        // If not found, try partial match (for model names with variations)
+        if (!modelConfig && session.providerModel) {
+          const sessionModel = session.providerModel.toLowerCase()
+          modelConfig = provider.models.find(m => {
+            const modelId = m.id.toLowerCase()
+            const modelBase = modelId.split(':')[0] ?? modelId
+            return modelId.includes(sessionModel) || sessionModel.includes(modelBase)
+          })
+        }
+        maxTokens = modelConfig?.contextWindow ?? providerManager.getCurrentModelContext()
+      } else {
+        maxTokens = providerManager.getCurrentModelContext()
+      }
+    } else {
+      // Use global provider/model
+      maxTokens = providerManager.getCurrentModelContext()
+    }
+    
     const state = getSessionState(sessionId, maxTokens)
     if (!state) {
       return {
