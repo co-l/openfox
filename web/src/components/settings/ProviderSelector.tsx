@@ -147,8 +147,10 @@ export function ProviderSelector() {
   }
 
   const handleModelClick = async (providerId: string, newModel: string) => {
+    console.log('[ProviderSelector.handleModelClick] providerId:', providerId, 'model:', newModel)
     if (currentSession) {
       // Session-scoped: persist model choice to session
+      console.log('[ProviderSelector.handleModelClick] Calling setSessionProvider')
       setSessionProvider(providerId, newModel)
       // Optimistically update UI
       useConfigStore.getState().syncFromSession(providerId, newModel)

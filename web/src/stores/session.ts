@@ -576,6 +576,7 @@ export const useSessionStore = create<SessionState>((set, get) => {
   },
   
   setSessionProvider: (providerId, model) => {
+    console.log('[session.setSessionProvider] Sending WebSocket message:', { providerId, model })
     wsClient.send('session.setProvider', { providerId, ...(model ? { model } : {}) })
   },
 
@@ -1166,6 +1167,7 @@ export const useSessionStore = create<SessionState>((set, get) => {
           break
         }
         const payload = message.payload as ContextStatePayload
+        console.log('[session.handleServerMessage.context.state] Received context state:', payload.context)
         set({ contextState: payload.context })
         break
       }

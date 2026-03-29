@@ -686,6 +686,7 @@ async function handleClientMessage(
     }
 
     case 'session.setProvider': {
+      console.log('[server.session.setProvider] Received:', message.payload)
       if (!client.activeSessionId) {
         send(createErrorMessage('NO_SESSION', 'No active session', message.id))
         return
@@ -712,11 +713,13 @@ async function handleClientMessage(
       const resolvedModel = requestedModel ?? 'auto'
 
       const sessionId = client.activeSessionId
+      console.log('[server.session.setProvider] Calling setSessionProvider for sessionId:', sessionId, 'providerId:', providerId, 'model:', resolvedModel)
       sessionManager.setSessionProvider(sessionId, providerId, resolvedModel)
       invalidateSessionLLMClient?.(sessionId)
 
       // Send updated context state with new maxTokens
       const contextState = sessionManager.getContextState(sessionId)
+      console.log('[server.session.setProvider] getContextState returned:', contextState)
       sendForSession(sessionId, createContextStateMessage(contextState))
 
       // Send updated session state

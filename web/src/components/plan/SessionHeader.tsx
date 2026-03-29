@@ -38,6 +38,7 @@ export function SessionHeader({ criteriaSidebarOpen = true, onCriteriaSidebarTog
     return null
   }
   
+  console.log('[SessionHeader] Rendering with contextState:', contextState)
   const { currentTokens, maxTokens, compactionCount, dangerZone } = contextState
   const percent = Math.round((currentTokens / maxTokens) * 100)
   const isRunning = currentSession.isRunning
