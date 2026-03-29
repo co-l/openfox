@@ -265,12 +265,24 @@ export function createProviderManager(config: Config): ProviderManager {
         const backend = provider.backend as 'ollama' | 'vllm' | 'sglang' | 'llamacpp' | 'unknown'
         const modelsWithContext = await fetchModelsWithContext(url, provider.apiKey, backend)
         if (modelsWithContext.length > 0) {
-          // Update provider's models with fresh data from backend
+          // Normalize function for fuzzy matching (handles spaces/dashes/underscores)
+          const normalize = (s: string) => s.toLowerCase().replace(/[-_\s]+/g, '')
+          
+          // Update provider's models with fresh data from backend, preserving user overrides with fuzzy matching
           const updatedModels = modelsWithContext.map(m => {
-            // Preserve user overrides
-            const existingModel = provider.models.find(pm => pm.id === m.id)
+            // Try exact match first
+            let existingModel = provider.models.find(pm => pm.id === m.id)
+            // If not found, try fuzzy match for user-set models
+            if (!existingModel) {
+              const normalizedId = normalize(m.id)
+              existingModel = provider.models.find(pm => {
+                if (pm.source !== 'user') return false
+                return normalize(pm.id) === normalizedId
+              })
+            }
             if (existingModel && existingModel.source === 'user') {
-              return existingModel
+              // Preserve user-set context window but update the ID to match backend
+              return { ...existingModel, id: m.id }
             }
             return m
           })
