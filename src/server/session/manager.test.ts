@@ -19,6 +19,11 @@ import { createProject } from '../db/projects.js'
 import { initEventStore } from '../events/index.js'
 import { SessionManager } from './manager.js'
 
+// Mock provider manager
+const mockProviderManager = {
+  getCurrentModelContext: vi.fn(() => 200000),
+}
+
 describe('SessionManager', () => {
   let workdir: string
   let projectId: string
@@ -34,9 +39,10 @@ describe('SessionManager', () => {
 
     workdir = await mkdtemp(join(tmpdir(), 'openfox-session-manager-'))
     projectId = createProject('OpenFox', workdir).id
-    manager = new SessionManager()
+    manager = new SessionManager(mockProviderManager as any)
     getLspManagerMock.mockClear()
     shutdownLspManagerMock.mockClear()
+    mockProviderManager.getCurrentModelContext.mockClear()
   })
 
   afterEach(async () => {
@@ -358,5 +364,22 @@ describe('SessionManager', () => {
     expect(verifierMessages).toHaveLength(3)
     expect(verifierMessages.every(m => m.subAgentId === verifierId)).toBe(true)
     expect(verifierMessages.every(m => m.subAgentType === 'verifier')).toBe(true)
+  })
+
+  it('uses maxTokens from providerManager when provided', () => {
+    const customMaxTokens = 262144
+    mockProviderManager.getCurrentModelContext.mockReturnValue(customMaxTokens)
+    const session = manager.createSession(projectId, 'Test Session')
+
+    const contextState = manager.getContextState(session.id)
+    expect(contextState.maxTokens).toBe(customMaxTokens)
+  })
+
+  it('uses providerManager default when maxTokens is not provided', () => {
+    mockProviderManager.getCurrentModelContext.mockReturnValue(200000)
+    const session = manager.createSession(projectId, 'Test Session')
+
+    const contextState = manager.getContextState(session.id)
+    expect(contextState.maxTokens).toBe(200000)
   })
 })

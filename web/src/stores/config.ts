@@ -5,13 +5,19 @@ type LlmStatus = 'connected' | 'disconnected' | 'unknown'
 type Backend = 'vllm' | 'sglang' | 'ollama' | 'llamacpp' | 'openai' | 'anthropic' | 'auto' | 'unknown'
 type ProviderStatus = 'connected' | 'disconnected' | 'unknown'
 
+interface ModelConfig {
+  id: string
+  contextWindow: number
+  source: 'backend' | 'user' | 'default'
+}
+
 interface Provider {
   id: string
   name: string
   url: string
   backend: Backend
   apiKey?: string
-  maxContext?: number
+  models: ModelConfig[]
   isActive: boolean
   createdAt: string
   status?: ProviderStatus
@@ -41,9 +47,12 @@ interface ConfigState {
   syncFromSession: (providerId: string, model: string) => void
   startAutoRefresh: () => void
   stopAutoRefresh: () => void
+  updateModelContext: (providerId: string, modelId: string, contextWindow: number) => Promise<boolean>
+  refreshProviderModels: (providerId: string) => Promise<boolean>
 
   // Selectors
   getActiveProvider: () => Provider | undefined
+  getModelContext: (modelId: string) => number
 }
 
 const AUTO_REFRESH_INTERVAL_MS = 30_000
@@ -194,6 +203,62 @@ export const useConfigStore = create<ConfigState>((set, get) => ({
     })
   },
 
+  updateModelContext: async (providerId: string, modelId: string, contextWindow: number) => {
+    set({ activating: true, error: null })
+    try {
+      const response = await fetch(`/api/providers/${providerId}/models/${modelId}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ contextWindow }),
+      })
+      if (!response.ok) {
+        const errorData = await response.json() as { error?: string }
+        throw new Error(errorData.error ?? 'Failed to update model context')
+      }
+      
+      const { providers } = get()
+      set({
+        providers: providers.map(p => p.id === providerId
+          ? { ...p, models: p.models.map(m => m.id === modelId ? { ...m, contextWindow, source: 'user' as const } : m) }
+          : p,
+        ),
+        activating: false,
+      })
+      return true
+    } catch (error) {
+      set({
+        error: error instanceof Error ? error.message : 'Failed to update model context',
+        activating: false,
+      })
+      return false
+    }
+  },
+
+  refreshProviderModels: async (providerId: string) => {
+    set({ activating: true, error: null })
+    try {
+      const response = await fetch(`/api/providers/${providerId}/refresh`, { method: 'POST' })
+      if (!response.ok) {
+        const errorData = await response.json() as { error?: string }
+        throw new Error(errorData.error ?? 'Failed to refresh models')
+      }
+      const data = await response.json() as { models: ModelConfig[] }
+      
+      const { providers } = get()
+      set({
+        providers: providers.map(p => p.id === providerId ? { ...p, models: data.models } : p),
+        activating: false,
+      })
+      return true
+    } catch (error) {
+      set({
+        error: error instanceof Error ? error.message : 'Failed to refresh models',
+        activating: false,
+      })
+      return false
+    }
+  },
+
   startAutoRefresh: () => {
     const { autoRefreshInterval, refreshModel } = get()
     if (autoRefreshInterval) return
@@ -216,5 +281,13 @@ export const useConfigStore = create<ConfigState>((set, get) => ({
   getActiveProvider: () => {
     const { providers, activeProviderId } = get()
     return providers.find(p => p.id === activeProviderId)
+  },
+  
+  getModelContext: (modelId: string) => {
+    const { providers, activeProviderId } = get()
+    const activeProvider = providers.find(p => p.id === activeProviderId)
+    if (!activeProvider) return 200000
+    const model = activeProvider.models.find(m => m.id === modelId)
+    return model?.contextWindow ?? 200000
   },
 }))

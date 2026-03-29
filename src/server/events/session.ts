@@ -32,6 +32,7 @@ import type {
 } from '../../shared/types.js'
 import type { SessionSnapshot, SnapshotMessage, ReadFileEntry } from './types.js'
 import { getEventStore } from './store.js'
+import { getRuntimeConfig } from '../runtime-config.js'
 import {
   foldSessionState,
   foldTurnEventsToSnapshotMessages,
@@ -82,8 +83,13 @@ function toSnapshotMessage(message: import('../../shared/types.js').Message): Sn
  * 
  * If a snapshot exists, messages are loaded from the snapshot instead of
  * reconstructing from individual events (which may have been deleted).
+ * 
+ * maxTokens should come from providerManager.getCurrentModelContext()
  */
-export function getSessionState(sessionId: string): FoldedSessionState | undefined {
+export function getSessionState(
+  sessionId: string,
+  maxTokens?: number
+): FoldedSessionState | undefined {
   const eventStore = getEventStore()
   
   // Check for the latest snapshot first
@@ -110,9 +116,13 @@ export function getSessionState(sessionId: string): FoldedSessionState | undefin
     return undefined
   }
 
+  // Get maxTokens from parameter or fall back to config default
+  const config = getRuntimeConfig()
+  const effectiveMaxTokens = maxTokens ?? config.context.maxTokens
+
   // If we have a snapshot, use it as the base for messages and replay newer events
   if (latestSnapshotEvent) {
-    const state = foldSessionState(events, initialWindowId)
+    const state = foldSessionState(events, initialWindowId, effectiveMaxTokens)
     
     // Override folded messages with the latest snapshot plus replayed events.
     return {
@@ -121,7 +131,7 @@ export function getSessionState(sessionId: string): FoldedSessionState | undefin
     }
   }
 
-  return foldSessionState(events, initialWindowId)
+  return foldSessionState(events, initialWindowId, effectiveMaxTokens)
 }
 
 /**
@@ -192,6 +202,7 @@ export function isFileInCache(sessionId: string, path: string): boolean {
 
 /**
  * Emit session.initialized event (called once when session is created)
+ * Note: maxTokens is no longer stored here - it's a property of the model, not the session
  */
 export function emitSessionInitialized(
   sessionId: string,

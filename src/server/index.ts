@@ -58,11 +58,11 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
   await ensureDefaultAgents(configDir)
   await ensureDefaultWorkflows(configDir)
 
-  // Create SessionManager instance (not singleton!)
-  const sessionManager = new SessionManager()
-
   // Create Provider Manager (handles LLM client lifecycle)
   const providerManager = createProviderManager(config)
+  
+  // Create SessionManager instance (not singleton!)
+  const sessionManager = new SessionManager(providerManager)
   
   // Create LLM client - use mock if OPENFOX_MOCK_LLM is set
   const useMock = process.env['OPENFOX_MOCK_LLM'] === 'true'
@@ -105,6 +105,14 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
         logger.warn('Could not auto-detect model, using config', { model: config.llm.model })
       }
     }
+    
+    // Refetch models with context windows on startup
+    const activeProvider = providerManager.getActiveProvider()
+    if (activeProvider) {
+      await providerManager.refreshProviderModels(activeProvider.id).catch(err => {
+        logger.debug('Startup model refetch failed', { providerId: activeProvider.id, error: err instanceof Error ? err.message : String(err) })
+      })
+    }
   }
 
   initLLM().catch(err => logger.error('LLM initialization failed', { error: err instanceof Error ? err.message : String(err) }))
@@ -132,7 +140,8 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
   app.post('/api/sessions', async (req, res) => {
     const { workdir, title } = req.body
 
-    const session = sessionManager.createSession(workdir, title)
+    // maxTokens is no longer passed - it comes from providerManager.getCurrentModelContext() at query time
+    const session = sessionManager.createSession(workdir, title, null, null)
     res.status(201).json({ session })
   })
 
@@ -165,7 +174,7 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
     const activeProvider = providerManager.getActiveProvider()
     res.json({
       model: llmClient.getModel(),
-      maxContext: config.context.maxTokens,
+      maxContext: providerManager.getCurrentModelContext(),
       llmUrl: activeProvider?.url ?? config.llm.baseUrl,
       llmStatus: getLlmStatus(),
       backend: llmClient.getBackend(),
@@ -236,6 +245,49 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
       activeProviderId: id,
       model: llmClient.getModel(),
       backend: llmClient.getBackend(),
+    })
+  })
+
+  app.post('/api/providers/:id/models/:modelId', async (req, res) => {
+    const { id, modelId } = req.params
+    const body = req.body as { contextWindow?: number }
+    
+    if (!body.contextWindow) {
+      return res.status(400).json({ error: 'contextWindow is required' })
+    }
+    
+    const result = await providerManager.updateModelContext(id as string, modelId as string, body.contextWindow)
+    if (!result.success) {
+      return res.status(400).json({ error: result.error })
+    }
+    
+    // Persist to config.json
+    const { loadGlobalConfig, saveGlobalConfig } = await import('../cli/config.js')
+    const globalConfig = await loadGlobalConfig(config.mode ?? 'production')
+    const updatedProviders = providerManager.getProviders()
+    const updatedConfig = {
+      ...globalConfig,
+      providers: updatedProviders,
+      activeProviderId: providerManager.getActiveProviderId(),
+      defaultModelSelection: providerManager.getActiveProviderId() ? `${providerManager.getActiveProviderId()}/${providerManager.getCurrentModel()}` : undefined,
+    }
+    await saveGlobalConfig(config.mode ?? 'production', updatedConfig)
+    
+    res.json({ success: true, providerId: id, modelId, contextWindow: body.contextWindow })
+  })
+
+  app.post('/api/providers/:id/refresh', async (req, res) => {
+    const { id } = req.params
+    const result = await providerManager.refreshProviderModels(id as string)
+    if (!result.success) {
+      return res.status(400).json({ error: result.error })
+    }
+    
+    const updatedProvider = providerManager.getProviders().find(p => p.id === id)
+    res.json({ 
+      success: true, 
+      providerId: id,
+      models: updatedProvider?.models ?? [],
     })
   })
 

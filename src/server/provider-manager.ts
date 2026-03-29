@@ -1,8 +1,8 @@
-import type { Provider, Config, LlmBackend } from '../shared/types.js'
+import type { Provider, Config, LlmBackend, ModelConfig } from '../shared/types.js'
 import { createLLMClient, detectBackend, detectModel, clearModelCache, type LLMClientWithModel } from './llm/index.js'
 import { logger } from './utils/logger.js'
 
-/** Fetch available models from a provider's backend */
+/** Fetch available models from a provider's backend with context windows */
 export async function fetchAvailableModelsFromBackend(baseUrl: string, apiKey?: string): Promise<string[]> {
   const url = baseUrl.includes('/v1') ? `${baseUrl}/models` : `${baseUrl}/v1/models`
 
@@ -37,19 +37,142 @@ export async function fetchAvailableModelsFromBackend(baseUrl: string, apiKey?: 
   }
 }
 
+/** Fetch models with context window metadata */
+export async function fetchModelsWithContext(baseUrl: string, apiKey?: string, backend?: 'ollama' | 'vllm' | 'sglang' | 'llamacpp' | 'unknown'): Promise<ModelConfig[]> {
+  // Ollama uses /api/show for context detection
+  if (backend === 'ollama') {
+    return fetchOllamaModelsWithContext(baseUrl, apiKey)
+  }
+  
+  // vLLM/SGLang/llama.cpp use /v1/models with max_model_len
+  const url = baseUrl.includes('/v1') ? `${baseUrl}/models` : `${baseUrl}/v1/models`
+
+  try {
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+    }
+    if (apiKey) {
+      headers['Authorization'] = `Bearer ${apiKey}`
+    }
+
+    const response = await fetch(url, {
+      method: 'GET',
+      headers,
+      signal: AbortSignal.timeout(10000),
+    })
+
+    if (!response.ok) {
+      logger.debug('Failed to fetch models with context', { url, status: response.status })
+      return []
+    }
+
+    const data = await response.json() as { data?: Array<{ id: string; max_model_len?: number }> }
+    if (data.data && Array.isArray(data.data)) {
+      return data.data.map(m => ({
+        id: m.id,
+        contextWindow: m.max_model_len ?? 200000,
+        source: m.max_model_len ? 'backend' : 'default' as const,
+      }))
+    }
+
+    return []
+  } catch (error) {
+    logger.debug('Error fetching models with context', { url, error: error instanceof Error ? error.message : String(error) })
+    return []
+  }
+}
+
+/** Fetch Ollama models with context windows via /api/show */
+async function fetchOllamaModelsWithContext(baseUrl: string, apiKey?: string): Promise<ModelConfig[]> {
+  // First get list of models from /api/tags
+  const tagsUrl = `${baseUrl}/api/tags`
+  
+  try {
+    const tagsResponse = await fetch(tagsUrl, {
+      signal: AbortSignal.timeout(10000),
+    })
+    
+    if (!tagsResponse.ok) {
+      logger.debug('Failed to fetch Ollama tags', { url: tagsUrl })
+      return []
+    }
+    
+    const tagsData = await tagsResponse.json() as { models?: Array<{ name: string }> }
+    if (!tagsData.models || !Array.isArray(tagsData.models)) {
+      return []
+    }
+    
+    // Fetch context info for each model via /api/show
+    const modelsWithContext: ModelConfig[] = []
+    for (const model of tagsData.models) {
+      try {
+        const showUrl = `${baseUrl}/api/show`
+        const showResponse = await fetch(showUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name: model.name, verbose: true }),
+          signal: AbortSignal.timeout(5000),
+        })
+        
+        if (showResponse.ok) {
+          const showData = await showResponse.json() as { 
+            model_info?: { 
+              llama?: { context_length?: number }
+              context_length?: number
+            }
+          }
+          
+          const contextLength = showData.model_info?.llama?.context_length ?? showData.model_info?.context_length ?? 200000
+          modelsWithContext.push({
+            id: model.name,
+            contextWindow: contextLength,
+            source: contextLength !== 200000 ? 'backend' : 'default' as const,
+          })
+        } else {
+          // Fall back to default if /api/show fails
+          modelsWithContext.push({
+            id: model.name,
+            contextWindow: 200000,
+            source: 'default' as const,
+          })
+        }
+      } catch (error) {
+        logger.debug('Failed to fetch Ollama model context', { 
+          model: model.name, 
+          error: error instanceof Error ? error.message : String(error) 
+        })
+        // Fall back to default
+        modelsWithContext.push({
+          id: model.name,
+          contextWindow: 200000,
+          source: 'default' as const,
+        })
+      }
+    }
+    
+    return modelsWithContext
+  } catch (error) {
+    logger.debug('Error fetching Ollama models', { url: baseUrl, error: error instanceof Error ? error.message : String(error) })
+    return []
+  }
+}
+
 export interface ProviderManager {
   getProviders(): Provider[]
   getActiveProvider(): Provider | undefined
   getActiveProviderId(): string | undefined
   getCurrentModel(): string | undefined
+  getCurrentModelContext(): number
   getLLMClient(): LLMClientWithModel
   activateProvider(providerId: string, options?: { model?: string }): Promise<{ success: boolean; error?: string }>
   addProvider(provider: Omit<Provider, 'id' | 'createdAt'>): Provider
   removeProvider(providerId: string): boolean
   setProviders(providers: Provider[], defaultModelSelection?: string): void
   getProviderStatus(providerId: string): 'connected' | 'disconnected' | 'unknown'
-  getProviderModels(providerId: string): Promise<string[]>
+  getProviderModels(providerId: string): Promise<ModelConfig[]>
   setDefaultModelSelection(providerId: string, model: string): Promise<{ success: boolean; error?: string }>
+  updateModelContext(providerId: string, modelId: string, contextWindow: number): Promise<{ success: boolean; error?: string }>
+  refreshProviderModels(providerId: string): Promise<{ success: boolean; error?: string }>
 }
 
 function parseDefaultModelSelection(selection?: string): { providerId: string | undefined; model: string | undefined } {
@@ -137,6 +260,22 @@ export function createProviderManager(config: Config): ProviderManager {
       try {
         const url = provider.url.includes('/v1') ? provider.url.replace('/v1', '') : provider.url
         clearModelCache(url)
+
+        // Refetch models from backend when switching providers
+        const backend = provider.backend as 'ollama' | 'vllm' | 'sglang' | 'llamacpp' | 'unknown'
+        const modelsWithContext = await fetchModelsWithContext(url, provider.apiKey, backend)
+        if (modelsWithContext.length > 0) {
+          // Update provider's models with fresh data from backend
+          const updatedModels = modelsWithContext.map(m => {
+            // Preserve user overrides
+            const existingModel = provider.models.find(pm => pm.id === m.id)
+            if (existingModel && existingModel.source === 'user') {
+              return existingModel
+            }
+            return m
+          })
+          providers = providers.map(p => p.id === providerId ? { ...p, models: updatedModels } : p)
+        }
 
         if (provider.backend === 'auto') {
           const detected = await detectBackend(url)
@@ -232,14 +371,21 @@ export function createProviderManager(config: Config): ProviderManager {
       return providerStatus.get(providerId) ?? 'unknown'
     },
 
-    async getProviderModels(providerId: string): Promise<string[]> {
+    async getProviderModels(providerId: string): Promise<ModelConfig[]> {
       const provider = providers.find(p => p.id === providerId)
       if (!provider) {
         return []
       }
 
+      // Return stored models with context info
+      if (provider.models && provider.models.length > 0) {
+        return provider.models
+      }
+
+      // Fallback: fetch from backend if no stored models
       const url = provider.url.includes('/v1') ? provider.url.replace('/v1', '') : provider.url
-      return fetchAvailableModelsFromBackend(url, provider.apiKey)
+      const backend = provider.backend as 'ollama' | 'vllm' | 'sglang' | 'llamacpp' | 'unknown'
+      return fetchModelsWithContext(url, provider.apiKey, backend)
     },
 
     async setDefaultModelSelection(providerId: string, model: string) {
@@ -259,6 +405,69 @@ export function createProviderManager(config: Config): ProviderManager {
         logger.info('Model updated', { providerId, model })
       }
 
+      return { success: true }
+    },
+
+    getCurrentModelContext(): number {
+      const { providerId, model } = parseDefaultModelSelection(defaultModelSelection)
+      if (!providerId || !model) return config.context.maxTokens
+      
+      const provider = providers.find(p => p.id === providerId)
+      if (!provider) return config.context.maxTokens
+      
+      const modelConfig = provider.models.find(m => m.id === model)
+      return modelConfig?.contextWindow ?? config.context.maxTokens
+    },
+
+    async updateModelContext(providerId: string, modelId: string, contextWindow: number) {
+      const provider = providers.find(p => p.id === providerId)
+      if (!provider) {
+        return { success: false, error: 'Provider not found' }
+      }
+
+      const modelIndex = provider.models.findIndex(m => m.id === modelId)
+      if (modelIndex === -1) {
+        // Model not found, add it
+        providers = providers.map(p => p.id === providerId 
+          ? { ...p, models: [...p.models, { id: modelId, contextWindow, source: 'user' as const }] }
+          : p
+        )
+      } else {
+        providers = providers.map(p => p.id === providerId 
+          ? { ...p, models: p.models.map((m, i) => i === modelIndex ? { ...m, contextWindow, source: 'user' as const } : m) }
+          : p
+        )
+      }
+
+      logger.info('Model context updated', { providerId, modelId, contextWindow })
+      return { success: true }
+    },
+
+    async refreshProviderModels(providerId: string) {
+      const provider = providers.find(p => p.id === providerId)
+      if (!provider) {
+        return { success: false, error: 'Provider not found' }
+      }
+
+      const url = provider.url.includes('/v1') ? provider.url.replace('/v1', '') : provider.url
+      const backend = provider.backend as 'ollama' | 'vllm' | 'sglang' | 'llamacpp' | 'unknown'
+      const modelsWithContext = await fetchModelsWithContext(url, provider.apiKey, backend)
+      
+      if (modelsWithContext.length === 0) {
+        return { success: false, error: 'No models returned from backend' }
+      }
+
+      // Update provider's models, preserving user overrides
+      const updatedModels = modelsWithContext.map(m => {
+        const existingModel = provider.models.find(pm => pm.id === m.id)
+        if (existingModel && existingModel.source === 'user') {
+          return existingModel
+        }
+        return m
+      })
+
+      providers = providers.map(p => p.id === providerId ? { ...p, models: updatedModels } : p)
+      logger.info('Provider models refreshed', { providerId, modelCount: updatedModels.length })
       return { success: true }
     },
   }

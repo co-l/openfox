@@ -230,12 +230,47 @@ export async function runProviderAdd(mode: Mode): Promise<void> {
     return choice === 'yes'
   })()
 
+  // Fetch models with context windows
+  const modelsWithContent: Array<{ id: string; contextWindow: number; source: 'backend' | 'user' | 'default' }> = []
+  if (availableModels.length > 0) {
+    const modelFetchSpinner = spinner()
+    modelFetchSpinner.start('Fetching model metadata...')
+    try {
+      const urlWithV1 = url.includes('/v1') ? url : `${url}/v1`
+      const response = await fetch(`${urlWithV1}/models`, {
+        signal: AbortSignal.timeout(10000),
+      })
+      if (response.ok) {
+        const data = await response.json() as { data?: Array<{ id: string; max_model_len?: number }> }
+        if (data.data && Array.isArray(data.data)) {
+          for (const modelData of data.data) {
+            modelsWithContent.push({
+              id: modelData.id,
+              contextWindow: modelData.max_model_len ?? 200000,
+              source: modelData.max_model_len ? 'backend' : 'default',
+            })
+          }
+          modelFetchSpinner.stop(`✓ Fetched ${modelsWithContent.length} model(s) with context windows`)
+        } else {
+          modelFetchSpinner.stop('⚠ No models in response')
+        }
+      } else {
+        modelFetchSpinner.stop('⚠ Could not fetch model metadata')
+      }
+    } catch {
+      modelFetchSpinner.stop('⚠ Failed to fetch model metadata')
+    }
+  }
+
+  // If no models fetched, create empty array (will be populated on first switch)
+  const models = modelsWithContent.length > 0 ? modelsWithContent : []
+
   let newConfig = addProvider(config, {
     name: name as string,
     url: url as string,
     backend: finalBackend as ProviderBackend,
     apiKey,
-    maxContext: 200000,
+    models,
     isActive: makeActive as boolean,
   })
 

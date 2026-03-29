@@ -478,6 +478,13 @@ export type LlmBackend = 'vllm' | 'sglang' | 'ollama' | 'llamacpp' | 'unknown'
 /** Extended backend type including cloud providers */
 export type ProviderBackend = LlmBackend | 'openai' | 'anthropic' | 'auto'
 
+/** Model configuration with context window */
+export interface ModelConfig {
+  id: string              // Model ID from backend (e.g., "qwen3.5-27b-int4-autoround")
+  contextWindow: number   // Context window size in tokens
+  source: 'backend' | 'user' | 'default'  // Where the value came from
+}
+
 /** LLM provider configuration */
 export interface Provider {
   id: string              // UUID
@@ -485,7 +492,7 @@ export interface Provider {
   url: string             // API endpoint (e.g., "http://localhost:8000/v1")
   backend: ProviderBackend
   apiKey?: string | undefined   // Optional, for cloud providers
-  maxContext?: number | undefined  // Max context window (optional, defaults to 200000)
+  models: ModelConfig[]   // Available models with their context windows
   isActive: boolean       // Currently selected provider
   createdAt: string       // ISO timestamp
 }

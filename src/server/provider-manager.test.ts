@@ -32,7 +32,7 @@ describe('ProviderManager - Model Selection', () => {
       url: 'http://localhost:8000',
       backend: 'vllm',
       apiKey: undefined,
-      maxContext: 200000,
+      models: [{ id: 'model-a', contextWindow: 200000, source: 'default' as const }],
       isActive: true,
       createdAt: new Date().toISOString(),
     }
@@ -43,7 +43,7 @@ describe('ProviderManager - Model Selection', () => {
       url: 'http://localhost:9000',
       backend: 'ollama',
       apiKey: undefined,
-      maxContext: 200000,
+      models: [],
       isActive: false,
       createdAt: new Date().toISOString(),
     }
@@ -73,88 +73,71 @@ describe('ProviderManager - Model Selection', () => {
       expect(models).toEqual([])
     })
 
-    it('fetches models from provider backend', async () => {
+    it('returns stored models from provider', async () => {
+      const models = await providerManager.getProviderModels('provider-1')
+      
+      expect(models).toEqual([
+        { id: 'model-a', contextWindow: 200000, source: 'default' },
+      ])
+    })
+
+    it('fetches from backend when no stored models', async () => {
       mockFetch.mockResolvedValueOnce({
         ok: true,
         json: async () => ({
           data: [
-            { id: 'model-x' },
-            { id: 'model-y' },
-            { id: 'model-z' },
+            { id: 'model-x', max_model_len: 128000 },
+            { id: 'model-y', max_model_len: 256000 },
           ],
         }),
       })
 
-      const models = await providerManager.getProviderModels('provider-1')
-      
-      expect(models).toEqual(['model-x', 'model-y', 'model-z'])
-      expect(mockFetch).toHaveBeenCalledWith(
-        'http://localhost:8000/v1/models',
-        expect.objectContaining({
-          method: 'GET',
-          headers: { 'Content-Type': 'application/json' },
-        })
-      )
-    })
-
-    it('handles missing apiKey when fetching models', async () => {
-      mockFetch.mockResolvedValueOnce({
-        ok: true,
-        json: async () => ({ data: [{ id: 'model-1' }] }),
-      })
-
-      const models = await providerManager.getProviderModels('provider-1')
-      
-      expect(models).toEqual(['model-1'])
-    })
-
-    it('returns empty array on fetch failure', async () => {
-      mockFetch.mockRejectedValueOnce(new Error('Network error'))
-
-      const models = await providerManager.getProviderModels('provider-1')
-      
-      expect(models).toEqual([])
-    })
-
-    it('returns empty array when response is not ok', async () => {
-      mockFetch.mockResolvedValueOnce({
-        ok: false,
-        status: 500,
-      })
-
-      const models = await providerManager.getProviderModels('provider-1')
-      
-      expect(models).toEqual([])
-    })
-
-    it('handles backend without /v1 in URL', async () => {
-      mockFetch.mockResolvedValueOnce({
-        ok: true,
-        json: async () => ({ data: [{ id: 'model-a' }] }),
-      })
-
       const provider: Provider = {
-        id: 'provider-1',
-        name: 'Test Provider',
-        url: 'http://localhost:8000/v1',
+        id: 'provider-no-models',
+        name: 'Test Provider No Models',
+        url: 'http://localhost:8000',
         backend: 'vllm',
         apiKey: undefined,
-        maxContext: 200000,
-        isActive: true,
+        models: [],
+        isActive: false,
         createdAt: new Date().toISOString(),
       }
-      const configWithV1: Config = {
+      const configWithNoModels: Config = {
         ...config,
-        providers: [provider],
+        providers: [...(config.providers ?? []), provider],
       }
-      const pm = createProviderManager(configWithV1)
+      const pm = createProviderManager(configWithNoModels)
       
-      await pm.getProviderModels('provider-1')
+      const models = await pm.getProviderModels('provider-no-models')
       
-      expect(mockFetch).toHaveBeenCalledWith(
-        'http://localhost:8000/v1/models',
-        expect.any(Object)
-      )
+      expect(models).toEqual([
+        { id: 'model-x', contextWindow: 128000, source: 'backend' },
+        { id: 'model-y', contextWindow: 256000, source: 'backend' },
+      ])
+    })
+
+    it('returns empty array for provider with no models and fetch failure', async () => {
+      mockFetch.mockRejectedValueOnce(new Error('Network error'))
+
+      const provider: Provider = {
+        id: 'provider-no-models',
+        name: 'Test Provider No Models',
+        url: 'http://localhost:8000',
+        backend: 'vllm',
+        apiKey: undefined,
+        models: [],
+        isActive: false,
+        createdAt: new Date().toISOString(),
+      }
+      const configWithNoModels: Config = {
+        ...config,
+        providers: [...(config.providers ?? []), provider],
+      }
+      const pm = createProviderManager(configWithNoModels)
+      
+      const models = await pm.getProviderModels('provider-no-models')
+      
+      expect(models).toEqual([])
     })
   })
 
@@ -223,6 +206,119 @@ describe('ProviderManager - Model Selection', () => {
       const result = await providerManager.activateProvider('non-existent', { model: 'test' })
       
       expect(result).toEqual({ success: false, error: 'Provider not found' })
+    })
+  })
+
+  describe('updateModelContext', () => {
+    it('returns error for non-existent provider', async () => {
+      const result = await providerManager.updateModelContext('non-existent', 'model-1', 100000)
+      
+      expect(result).toEqual({ success: false, error: 'Provider not found' })
+    })
+
+    it('updates context for existing model', async () => {
+      const result = await providerManager.updateModelContext('provider-1', 'model-a', 100000)
+      
+      expect(result).toEqual({ success: true })
+      
+      const providers = providerManager.getProviders()
+      const model = providers.find(p => p.id === 'provider-1')?.models.find(m => m.id === 'model-a')
+      expect(model?.contextWindow).toBe(100000)
+      expect(model?.source).toBe('user')
+    })
+
+    it('adds new model if not found', async () => {
+      const result = await providerManager.updateModelContext('provider-1', 'new-model', 150000)
+      
+      expect(result).toEqual({ success: true })
+      
+      const providers = providerManager.getProviders()
+      const model = providers.find(p => p.id === 'provider-1')?.models.find(m => m.id === 'new-model')
+      expect(model).toEqual({ id: 'new-model', contextWindow: 150000, source: 'user' })
+    })
+  })
+
+  describe('refreshProviderModels', () => {
+    it('returns error for non-existent provider', async () => {
+      const result = await providerManager.refreshProviderModels('non-existent')
+      
+      expect(result).toEqual({ success: false, error: 'Provider not found' })
+    })
+
+    it('refreshes models from backend', async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          data: [
+            { id: 'model-x', max_model_len: 128000 },
+            { id: 'model-y', max_model_len: 256000 },
+          ],
+        }),
+      })
+
+      const result = await providerManager.refreshProviderModels('provider-1')
+      
+      expect(result).toEqual({ success: true })
+      
+      const providers = providerManager.getProviders()
+      const models = providers.find(p => p.id === 'provider-1')?.models
+      expect(models).toEqual([
+        { id: 'model-x', contextWindow: 128000, source: 'backend' },
+        { id: 'model-y', contextWindow: 256000, source: 'backend' },
+      ])
+    })
+
+    it('preserves user overrides during refresh', async () => {
+      await providerManager.updateModelContext('provider-1', 'model-a', 150000)
+      
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          data: [
+            { id: 'model-a', max_model_len: 200000 },
+            { id: 'model-b', max_model_len: 100000 },
+          ],
+        }),
+      })
+
+      await providerManager.refreshProviderModels('provider-1')
+      
+      const providers = providerManager.getProviders()
+      const models = providers.find(p => p.id === 'provider-1')?.models
+      const modelA = models?.find(m => m.id === 'model-a')
+      expect(modelA?.contextWindow).toBe(150000)
+      expect(modelA?.source).toBe('user')
+    })
+
+    it('returns error when backend returns no models', async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ data: [] }),
+      })
+
+      const result = await providerManager.refreshProviderModels('provider-1')
+      
+      expect(result).toEqual({ success: false, error: 'No models returned from backend' })
+    })
+  })
+
+  describe('getCurrentModelContext', () => {
+    it('returns default when no provider is active', async () => {
+      await providerManager.setDefaultModelSelection('provider-2', 'model-x')
+      const context = providerManager.getCurrentModelContext()
+      expect(context).toBe(config.context.maxTokens)
+    })
+
+    it('returns model context from provider', async () => {
+      await providerManager.updateModelContext('provider-1', 'model-a', 128000)
+      const context = providerManager.getCurrentModelContext()
+      expect(context).toBe(128000)
+    })
+
+    it('returns default when model not found', async () => {
+      await providerManager.setDefaultModelSelection('provider-1', 'non-existent-model')
+      const context = providerManager.getCurrentModelContext()
+      expect(context).toBe(config.context.maxTokens)
     })
   })
 })

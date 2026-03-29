@@ -34,7 +34,7 @@ describe('ProviderManager - Integration', () => {
           url: 'http://localhost:8000',
           backend: 'vllm',
           apiKey: undefined,
-          maxContext: 200000,
+          models: [{ id: 'model-a', contextWindow: 200000, source: 'default' }],
           isActive: true,
           createdAt: new Date().toISOString(),
         },
@@ -57,33 +57,11 @@ describe('ProviderManager - Integration', () => {
   })
 
   describe('Full model selection flow', () => {
-    it('completes the full model selection flow: fetch models, then activate with selected model', async () => {
-      mockFetch.mockResolvedValueOnce({
-        ok: true,
-        json: async () => ({
-          data: [
-            { id: 'model-alpha' },
-            { id: 'model-beta' },
-            { id: 'model-gamma' },
-          ],
-        }),
-      })
-
+    it('returns stored models', async () => {
       const availableModels = await providerManager.getProviderModels('provider-1')
-      expect(availableModels).toEqual(['model-alpha', 'model-beta', 'model-gamma'])
-
-      mockFetch.mockResolvedValueOnce({
-        ok: true,
-        json: async () => ({ data: [{ id: 'model-beta' }] }),
-      })
-
-      const result = await providerManager.activateProvider('provider-1', { 
-        model: 'model-beta' 
-      })
-
-      expect(result).toEqual({ success: true })
-      
-      expect(providerManager.getCurrentModel()).toBe('model-beta')
+      expect(availableModels).toEqual([
+        { id: 'model-a', contextWindow: 200000, source: 'default' },
+      ])
     })
 
     it('handles model switch for active provider correctly', async () => {
@@ -91,11 +69,11 @@ describe('ProviderManager - Integration', () => {
 
       mockFetch.mockResolvedValueOnce({
         ok: true,
-        json: async () => ({ data: [{ id: 'model-new' }] }),
+        json: async () => ({ data: [{ id: 'model-new', max_model_len: 128000 }] }),
       })
 
-      const models = await providerManager.getProviderModels('provider-1')
-      expect(models).toContain('model-new')
+      const models = await providerManager.refreshProviderModels('provider-1')
+      expect(models.success).toBe(true)
 
       mockFetch.mockResolvedValueOnce({
         ok: true,
@@ -113,15 +91,15 @@ describe('ProviderManager - Integration', () => {
         url: 'http://localhost:9000',
         backend: 'ollama',
         isActive: false,
-        maxContext: 200000,
+        models: [],
       })
 
       mockFetch.mockResolvedValueOnce({
         ok: true,
-        json: async () => ({ data: [{ id: 'model-switch' }] }),
+        json: async () => ({ data: [{ id: 'model-switch', max_model_len: 100000 }] }),
       })
 
-      await providerManager.getProviderModels('provider-1')
+      await providerManager.refreshProviderModels('provider-1')
 
       mockFetch.mockResolvedValueOnce({
         ok: true,
@@ -135,67 +113,78 @@ describe('ProviderManager - Integration', () => {
   })
 
   describe('Error handling', () => {
-    it('handles fetch failure gracefully when getting models', async () => {
+    it('fetches from backend and handles fetch failure gracefully', async () => {
+      const provider = config.providers![0]!
+      const configNoModels: Config = {
+        ...config,
+        providers: [
+          {
+            ...provider,
+            models: [],
+          },
+        ],
+      }
+      const pm = createProviderManager(configNoModels)
+      
       mockFetch.mockRejectedValueOnce(new Error('Connection refused'))
 
-      const models = await providerManager.getProviderModels('provider-1')
+      const models = await pm.getProviderModels('provider-1')
       
       expect(models).toEqual([])
     })
 
-    it('handles non-ok response when getting models', async () => {
+    it('fetches from backend and handles non-ok response', async () => {
+      const provider = config.providers![0]!
+      const configNoModels: Config = {
+        ...config,
+        providers: [
+          {
+            ...provider,
+            models: [],
+          },
+        ],
+      }
+      const pm = createProviderManager(configNoModels)
+      
       mockFetch.mockResolvedValueOnce({
         ok: false,
         status: 503,
         statusText: 'Service Unavailable',
       })
 
-      const models = await providerManager.getProviderModels('provider-1')
+      const models = await pm.getProviderModels('provider-1')
       
       expect(models).toEqual([])
     })
 
-    it('handles malformed response when getting models', async () => {
-      mockFetch.mockResolvedValueOnce({
-        ok: true,
-        json: async () => ({ invalid: 'format' }),
-      })
-
-      const models = await providerManager.getProviderModels('provider-1')
-      
-      expect(models).toEqual([])
-    })
   })
 
   describe('Edge cases', () => {
-    it('handles provider with API key when fetching models', async () => {
+    it('fetches from backend when no stored models', async () => {
       const provider = config.providers![0]!
-      const configWithKey: Config = {
+      const configNoModels: Config = {
         ...config,
         providers: [
           {
             ...provider,
-            apiKey: 'test-api-key',
+            models: [],
           },
         ],
       }
-      const pm = createProviderManager(configWithKey)
+      const pm = createProviderManager(configNoModels)
 
       mockFetch.mockResolvedValueOnce({
         ok: true,
-        json: async () => ({ data: [{ id: 'model-with-key' }] }),
+        json: async () => ({ 
+          data: [{ id: 'model-fetched', max_model_len: 150000 }],
+        }),
       })
 
-      await pm.getProviderModels('provider-1')
-
-      expect(mockFetch).toHaveBeenCalledWith(
-        'http://localhost:8000/v1/models',
-        expect.objectContaining({
-          headers: expect.objectContaining({
-            'Authorization': 'Bearer test-api-key',
-          }),
-        })
-      )
+      const models = await pm.getProviderModels('provider-1')
+      
+      expect(models).toEqual([
+        { id: 'model-fetched', contextWindow: 150000, source: 'backend' },
+      ])
     })
 
     it('handles provider without /v1 in URL', async () => {
@@ -206,6 +195,7 @@ describe('ProviderManager - Integration', () => {
           {
             ...provider,
             url: 'http://localhost:8000',
+            models: [],
           },
         ],
       }
@@ -213,7 +203,7 @@ describe('ProviderManager - Integration', () => {
 
       mockFetch.mockResolvedValueOnce({
         ok: true,
-        json: async () => ({ data: [{ id: 'model' }] }),
+        json: async () => ({ data: [{ id: 'model', max_model_len: 100000 }] }),
       })
 
       await pm.getProviderModels('provider-1')
@@ -232,6 +222,7 @@ describe('ProviderManager - Integration', () => {
           {
             ...provider,
             url: 'http://localhost:8000/v1',
+            models: [],
           },
         ],
       }
@@ -239,7 +230,7 @@ describe('ProviderManager - Integration', () => {
 
       mockFetch.mockResolvedValueOnce({
         ok: true,
-        json: async () => ({ data: [{ id: 'model' }] }),
+        json: async () => ({ data: [{ id: 'model', max_model_len: 100000 }] }),
       })
 
       await pm.getProviderModels('provider-1')

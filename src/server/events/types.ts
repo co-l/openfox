@@ -53,6 +53,7 @@ export type TurnEvent =
         workdir: string
         title?: string
         contextWindowId: string // First window created with session
+        maxTokens?: number // Initial max context from provider
       }
     }
 

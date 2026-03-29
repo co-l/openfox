@@ -61,6 +61,7 @@ describe('init', () => {
             url: 'http://existing:8000',
             model: 'existing-model',
             backend: 'vllm',
+            models: [],
             isActive: true,
             createdAt: '2024-01-01T00:00:00Z',
           },
@@ -101,6 +102,7 @@ describe('init', () => {
             url: 'http://existing:8000',
             model: 'existing-model',
             backend: 'vllm',
+            models: [],
             isActive: true,
             createdAt: '2024-01-01T00:00:00Z',
           },
@@ -139,6 +141,7 @@ describe('init', () => {
             url: 'http://existing:8000',
             model: 'existing-model',
             backend: 'vllm',
+            models: [],
             isActive: true,
             createdAt: '2024-01-01T00:00:00Z',
           },
@@ -174,6 +177,7 @@ describe('init', () => {
             model: 'test-model',
             backend: 'vllm',
             maxContext: 100000,
+            models: [],
             isActive: true,
             createdAt: '2024-01-01T00:00:00Z',
           },
@@ -184,6 +188,7 @@ describe('init', () => {
             model: 'second-model',
             backend: 'ollama',
             maxContext: 50000,
+            models: [],
             isActive: false,
             createdAt: '2024-01-02T00:00:00Z',
           },
@@ -207,15 +212,19 @@ describe('init', () => {
         name: 'Test Provider',
         url: 'http://test:8000',
         backend: 'vllm',
-        maxContext: 100000,
       })
+      expect(loaded.providers[0]?.models).toEqual([
+        { id: 'test-model', contextWindow: 100000, source: 'user' },
+      ])
       expect(loaded.providers[1]).toMatchObject({
         id: 'provider-2',
         name: 'Second Provider',
         url: 'http://second:8000',
         backend: 'ollama',
-        maxContext: 50000,
       })
+      expect(loaded.providers[1]?.models).toEqual([
+        { id: 'second-model', contextWindow: 50000, source: 'user' },
+      ])
       expect(loaded.activeProviderId).toBe('provider-1')
       expect(loaded.server.port).toBe(10369)
       expect(loaded.logging.level).toBe('warn')
@@ -253,6 +262,7 @@ describe('init', () => {
             url: 'http://old:8000',
             model: 'old-model',
             backend: 'vllm',
+            models: [],
             isActive: true,
             createdAt: '2024-01-01T00:00:00Z',
           },

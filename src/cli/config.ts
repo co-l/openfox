@@ -5,7 +5,7 @@ import { dirname } from 'node:path'
 import type { Mode } from './main.js'
 import { getGlobalConfigPath } from './paths.js'
 import { detectBackend, detectModel } from '../server/llm/index.js'
-import type { Provider, ProviderBackend } from '../shared/types.js'
+import type { Provider, ProviderBackend, ModelConfig } from '../shared/types.js'
 
 const SMART_DEFAULTS = [
   'http://localhost:8000',
@@ -52,17 +52,25 @@ export async function configFileExists(mode: Mode): Promise<boolean> {
 
 const backendSchema = z.enum(['auto', 'vllm', 'sglang', 'ollama', 'llamacpp', 'openai', 'anthropic', 'unknown'])
 
+const modelConfigSchema = z.object({
+  id: z.string(),
+  contextWindow: z.number(),
+  source: z.enum(['backend', 'user', 'default']),
+})
+
 const providerSchema = z.object({
   id: z.string(),
   name: z.string(),
   url: z.string(),
   backend: backendSchema,
   apiKey: z.string().optional(),
-  maxContext: z.number().optional(),
+  models: z.array(modelConfigSchema).default([]),
   isActive: z.boolean(),
   createdAt: z.string(),
   // Deprecated: model field kept for migration, will be removed after migration
   model: z.string().optional(),
+  // Deprecated: maxContext kept for migration
+  maxContext: z.number().optional(),
 })
 
 const serverSchema = z.object({
@@ -129,20 +137,42 @@ export type OldGlobalConfig = z.infer<typeof oldConfigSchema>
  * If already in new format with defaultModelSelection, returns as-is.
  */
 export function migrateConfig(raw: unknown): GlobalConfig {
-  type RawProvider = { id: string; name: string; url: string; model?: string; backend: string; apiKey?: string; maxContext?: number; isActive: boolean; createdAt: string }
+  type RawProvider = { id: string; name: string; url: string; model?: string; backend: string; apiKey?: string; maxContext?: number; isActive: boolean; createdAt: string; models?: Array<{ id: string; contextWindow: number; source: 'backend' | 'user' | 'default' }> }
   type RawConfig = { providers: RawProvider[]; activeProviderId?: string; defaultModelSelection?: string; [key: string]: unknown }
   
   // Check if it's already the new format (has providers array)
   if (typeof raw === 'object' && raw !== null && 'providers' in raw) {
     const obj = raw as RawConfig
     
+    // Migrate legacy maxContext to models array
+    let migrationOccurred = false
+    const providers = obj.providers.map(p => {
+      const { model, maxContext, ...rest } = p
+      
+      // If provider has legacy maxContext, migrate to models array
+      let models: Array<{ id: string; contextWindow: number; source: 'backend' | 'user' | 'default' }> = []
+      if (maxContext !== undefined) {
+        migrationOccurred = true
+        // Use the model field value if available, otherwise default to 'auto'
+        models = [{
+          id: model ?? 'auto',
+          contextWindow: maxContext,
+          source: 'user' as const,
+        }]
+      }
+      
+      return {
+        ...rest,
+        models,
+      }
+    })
+    
+    if (migrationOccurred) {
+      console.warn('Migrating legacy maxContext to model-specific config')
+    }
+    
     // If already has defaultModelSelection, just parse and return
     if (obj.defaultModelSelection) {
-      // Strip model from providers before parsing
-      const providers = obj.providers.map(p => {
-        const { model, ...rest } = p
-        return rest
-      })
       return configSchema.parse({
         ...obj,
         providers,
@@ -150,11 +180,6 @@ export function migrateConfig(raw: unknown): GlobalConfig {
     }
     
     // Migrate from activeProviderId + provider.model to defaultModelSelection
-    const providers = obj.providers.map(p => {
-      const { model, ...rest } = p
-      return rest
-    })
-    
     let defaultModelSelection: string | undefined
     if (obj.activeProviderId) {
       const activeProvider = obj.providers.find(p => p.id === obj.activeProviderId)
@@ -177,13 +202,20 @@ export function migrateConfig(raw: unknown): GlobalConfig {
     const oldConfig = oldConfigSchema.parse(raw)
     const providerId = randomUUID()
     
+    // Migrate legacy maxContext to models array
+    const models: ModelConfig[] = [{
+      id: oldConfig.llm.model || 'auto',
+      contextWindow: oldConfig.llm.maxContext,
+      source: 'user',
+    }]
+    
     const provider: Provider = {
       id: providerId,
       name: 'Default',
       url: oldConfig.llm.url,
       backend: oldConfig.llm.backend as ProviderBackend,
       apiKey: oldConfig.llm.apiKey,
-      maxContext: oldConfig.llm.maxContext,
+      models,
       isActive: true,
       createdAt: new Date().toISOString(),
     }

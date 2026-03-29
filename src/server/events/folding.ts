@@ -8,12 +8,10 @@
 import type {
   Message,
   Criterion,
-  CriterionStatus,
   SessionMode,
   SessionPhase,
   ContextState,
   Todo,
-  ToolCall,
   Attachment,
 } from '../../shared/types.js'
 import type {
@@ -24,7 +22,6 @@ import type {
   ToolCallWithResult,
   ReadFileEntry,
 } from './types.js'
-import { getRuntimeConfig } from '../runtime-config.js'
 
 function cloneMessage(message: Message): Message {
   return {
@@ -556,6 +553,7 @@ interface ContextFoldResult {
 
 /**
  * Fold context state from events
+ * Note: maxTokens is NOT stored in events - it comes from the current model config
  */
 export function foldContextState(events: EventLike[], initialWindowId: string): ContextFoldResult {
   let currentContextWindowId = initialWindowId
@@ -673,9 +671,13 @@ export function foldIsRunning(events: EventLike[]): boolean {
 
 /**
  * Fold full session state from events
+ * maxTokens is passed in from caller (should come from providerManager.getCurrentModelContext())
  */
-export function foldSessionState(events: EventLike[], initialWindowId: string): FoldedSessionState {
-  const maxTokens = getRuntimeConfig().context.maxTokens
+export function foldSessionState(
+  events: EventLike[],
+  initialWindowId: string,
+  maxTokens: number
+): FoldedSessionState {
   const mode = foldMode(events)
   const phase = foldPhase(events)
   const isRunning = foldIsRunning(events)
@@ -786,8 +788,9 @@ export function buildSnapshotFromSessionState(input: {
   events: EventLike[]
   latestSeq: number
   snapshotAt?: number
+  maxTokens?: number
 }): SessionSnapshot {
-  const { session, events, latestSeq, snapshotAt = Date.now() } = input
+  const { session, events, latestSeq, snapshotAt = Date.now(), maxTokens = 200000 } = input
 
   // Get initial context window ID from session.initialized event or generate one
   let initialWindowId = ''
@@ -802,7 +805,7 @@ export function buildSnapshotFromSessionState(input: {
     initialWindowId = 'legacy-window-1'
   }
 
-  const foldedState = foldSessionState(events, initialWindowId)
+  const foldedState = foldSessionState(events, initialWindowId, maxTokens)
   const latestSnapshotIndex = events.map((event) => event.type).lastIndexOf('turn.snapshot')
   const latestSnapshotEvent = latestSnapshotIndex >= 0 ? events[latestSnapshotIndex] : undefined
   const messages = latestSnapshotEvent

@@ -6,13 +6,18 @@ import { readFileTool } from './read.js'
 import { writeFileTool } from './write.js'
 import { editFileTool } from './edit.js'
 import type { ToolContext } from './types.js'
-import { sessionManager } from '../session/index.js'
+import { SessionManager } from '../session/manager.js'
 import { initDatabase, closeDatabase, getDatabase } from '../db/index.js'
 import { initEventStore } from '../events/index.js'
 import type { Config } from '../../shared/types.js'
 
+// Mock provider manager
+const mockProviderManager = {
+  getCurrentModelContext: () => 200000,
+}
+
 // Create a minimal test context
-function createTestContext(sessionId: string, workdir: string): ToolContext {
+function createTestContext(sessionManager: SessionManager, sessionId: string, workdir: string): ToolContext {
   return {
     sessionManager,
     sessionId,
@@ -36,6 +41,7 @@ describe('file tracking integration', () => {
   let testDir: string
   let sessionId: string
   let context: ToolContext
+  let sessionManager: SessionManager
 
   beforeEach(async () => {
     // Initialize database for session manager
@@ -48,11 +54,12 @@ describe('file tracking integration', () => {
     await mkdir(testDir, { recursive: true })
     
     // Create a test project and session
+    sessionManager = new SessionManager(mockProviderManager as any)
     const { createProject } = await import('../db/projects.js')
     const project = createProject('test-project', testDir)
     const session = sessionManager.createSession(project.id)
     sessionId = session.id
-    context = createTestContext(sessionId, testDir)
+    context = createTestContext(sessionManager, sessionId, testDir)
   })
 
   afterEach(async () => {

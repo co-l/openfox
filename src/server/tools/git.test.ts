@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os'
 import { exec } from 'node:child_process'
 import { promisify } from 'node:util'
 import { gitTool } from './git.js'
-import { sessionManager } from '../session/index.js'
+import { SessionManager } from '../session/manager.js'
 import { createProject } from '../db/projects.js'
 import { getDatabase, initDatabase } from '../db/index.js'
 import { initEventStore } from '../events/index.js'
@@ -13,10 +13,16 @@ import { loadConfig } from '../config.js'
 
 const execAsync = promisify(exec)
 
+// Mock provider manager
+const mockProviderManager = {
+  getCurrentModelContext: () => 200000,
+}
+
 describe('git tool', () => {
   let testDir: string
   let sessionId: string
   let context: any
+  let sessionManager: SessionManager
 
   beforeEach(async () => {
     // Initialize in-memory database
@@ -43,6 +49,7 @@ describe('git tool', () => {
     await execAsync('git commit -m "Initial commit"', { cwd: testDir })
 
     // Create project and session
+    sessionManager = new SessionManager(mockProviderManager as any)
     const project = createProject('test-git-project', testDir)
     const session = sessionManager.createSession(project.id, 'Test Git Session')
     sessionId = session.id

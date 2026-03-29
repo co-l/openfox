@@ -526,6 +526,7 @@ describe('event folding', () => {
       events,
       latestSeq: 42,
       snapshotAt: 999,
+      maxTokens: 200000,
     })).toEqual({
       mode: 'builder',
       phase: 'build',

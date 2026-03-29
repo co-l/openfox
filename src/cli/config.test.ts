@@ -56,12 +56,39 @@ describe('config', () => {
         name: 'Default',
         url: 'http://localhost:8000/v1',
         backend: 'vllm',
-        maxContext: 200000,
         isActive: true,
       })
+      expect(migrated.providers[0]?.models).toEqual([
+        { id: 'qwen3-32b', contextWindow: 200000, source: 'user' },
+      ])
       expect(migrated.defaultModelSelection).toMatch(/^[a-f0-9-]+\/qwen3-32b$/)
       // Old llm key should be removed
       expect('llm' in migrated).toBe(false)
+    })
+
+    it('logs warning when migrating legacy maxContext', () => {
+      const oldConfig = {
+        providers: [
+          {
+            id: 'test-id',
+            name: 'Test Provider',
+            url: 'http://localhost:8000/v1',
+            backend: 'vllm' as const,
+            maxContext: 128000,
+            isActive: true,
+            createdAt: '2024-01-01T00:00:00Z',
+          },
+        ],
+        server: { port: 10369, host: '127.0.0.1', openBrowser: true },
+        logging: { level: 'info' as const },
+        database: { path: '' },
+        workspace: { workdir: process.cwd() },
+      }
+
+      const consoleWarnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
+      migrateConfig(oldConfig)
+      expect(consoleWarnSpy).toHaveBeenCalledWith('Migrating legacy maxContext to model-specific config')
+      consoleWarnSpy.mockRestore()
     })
 
     it('preserves new providers format unchanged', () => {
@@ -72,6 +99,7 @@ describe('config', () => {
             name: 'My Provider',
             url: 'http://localhost:8000/v1',
             backend: 'vllm' as const,
+            models: [],
             isActive: true,
             createdAt: '2024-01-01T00:00:00Z',
           },
@@ -164,6 +192,7 @@ describe('config', () => {
             url: 'http://localhost:8000/v1',
             model: 'test-model',
             backend: 'vllm' as const,
+            models: [],
             isActive: true,
             createdAt: new Date().toISOString(),
           },
@@ -226,6 +255,7 @@ describe('config', () => {
             url: 'http://localhost:8000/v1',
             model: 'test-model',
             backend: 'vllm' as const,
+            models: [],
             isActive: true,
             createdAt: new Date().toISOString(),
           },

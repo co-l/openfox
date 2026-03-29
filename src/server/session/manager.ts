@@ -80,6 +80,11 @@ type SessionEvents = {
 export class SessionManager {
   private events = new EventEmitter<SessionEvents>()
   private activeSessionId: string | null = null
+  private providerManager: import('../provider-manager.js').ProviderManager
+
+  constructor(providerManager: import('../provider-manager.js').ProviderManager) {
+    this.providerManager = providerManager
+  }
 
   // ============================================================================
   // Session Lifecycle
@@ -87,6 +92,7 @@ export class SessionManager {
 
   /**
    * Create a new session. Emits session.initialized event.
+   * Note: maxTokens is no longer stored in the session - it comes from the current model config
    */
   createSession(projectId: string, title?: string, providerId?: string | null, providerModel?: string | null): Session {
     const project = getProject(projectId)
@@ -107,6 +113,7 @@ export class SessionManager {
     const dbSession = dbCreateSession(projectId, project.workdir, sessionTitle, providerId, providerModel)
 
     // Emit session.initialized event to EventStore
+    // maxTokens is NOT stored here - it comes from providerManager.getCurrentModelContext() at query time
     const contextWindowId = crypto.randomUUID()
     emitSessionInitialized(dbSession.id, projectId, project.workdir, contextWindowId, sessionTitle)
 
@@ -505,11 +512,11 @@ export class SessionManager {
   /**
    * Set current context size (for token tracking).
    * Emits a context.state event with the real promptTokens from the LLM.
+   * maxTokens comes from providerManager.getCurrentModelContext() - the currently selected model's limit.
    */
   setCurrentContextSize(sessionId: string, promptTokens: number): void {
-    const config = getRuntimeConfig()
-    const maxTokens = config.context.maxTokens
-    const state = getSessionState(sessionId)
+    const state = getSessionState(sessionId, this.providerManager.getCurrentModelContext())
+    const maxTokens = this.providerManager.getCurrentModelContext()
     const compactionCount = state?.contextState.compactionCount ?? 0
 
     emitContextState(
@@ -812,12 +819,12 @@ export class SessionManager {
    * Get the current context state for a session.
    */
   getContextState(sessionId: string): ContextState {
-    const state = getSessionState(sessionId)
+    const maxTokens = this.providerManager.getCurrentModelContext()
+    const state = getSessionState(sessionId, maxTokens)
     if (!state) {
-      const config = getRuntimeConfig()
       return {
         currentTokens: 0,
-        maxTokens: config.context.maxTokens,
+        maxTokens,
         compactionCount: 0,
         dangerZone: false,
         canCompact: false,
@@ -880,7 +887,8 @@ export class SessionManager {
    * Build a full Session object from DB session + EventStore state
    */
   private buildSessionFromDb(dbSession: Session): Session {
-    const eventState = getSessionState(dbSession.id)
+    const maxTokens = this.providerManager.getCurrentModelContext()
+    const eventState = getSessionState(dbSession.id, maxTokens)
 
     if (!eventState) {
       // No events yet - return defaults
@@ -934,4 +942,14 @@ export class SessionManager {
 }
 
 // Singleton for gradual migration
-export const sessionManager = new SessionManager()
+// Note: This is deprecated - use the SessionManager from createServerHandle instead
+let _sessionManager: SessionManager | null = null
+export function getSessionManager(): SessionManager {
+  if (!_sessionManager) {
+    throw new Error('SessionManager not initialized. Use createServerHandle to get a SessionManager instance.')
+  }
+  return _sessionManager
+}
+export function setSessionManager(sm: SessionManager): void {
+  _sessionManager = sm
+}

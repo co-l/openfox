@@ -1,15 +1,28 @@
 import { useState, useRef, useEffect } from 'react'
 import { useConfigStore, getBackendDisplayName, type Provider } from '../../stores/config'
 import { useSessionStore } from '../../stores/session'
+import { ModelPropertiesModal } from './ModelPropertiesModal'
+
+function formatContextWindow(context: number): string {
+  if (context >= 1000000) return `${(context / 1000000).toFixed(1)}M`
+  if (context >= 1000) return `${(context / 1000).toFixed(0)}K`
+  return `${context}`
+}
 
 export function ProviderSelector() {
   const currentSession = useSessionStore(state => state.currentSession)
   const setSessionProvider = useSessionStore(state => state.setSessionProvider)
   const [isOpen, setIsOpen] = useState(false)
   const [expandedProviderIds, setExpandedProviderIds] = useState<string[]>([])
-  const [providerModels, setProviderModels] = useState<Record<string, string[]>>({})
+  interface ModelWithConfig {
+    id: string
+    contextWindow: number
+    source: 'backend' | 'user' | 'default'
+  }
   const [loadingModels, setLoadingModels] = useState<string | null>(null)
   const dropdownRef = useRef<HTMLDivElement>(null)
+  const [editingModel, setEditingModel] = useState<{ providerId: string; model: ModelWithConfig } | null>(null)
+  const loadedProvidersRef = useRef<Set<string>>(new Set())
   
   const providers = useConfigStore(state => state.providers)
   const activeProviderId = useConfigStore(state => state.activeProviderId)
@@ -19,6 +32,7 @@ export function ProviderSelector() {
   const activating = useConfigStore(state => state.activating)
   const activateProvider = useConfigStore(state => state.activateProvider)
   const refreshModel = useConfigStore(state => state.refreshModel)
+  const refreshProviderModels = useConfigStore(state => state.refreshProviderModels)
   
   // Close dropdown when clicking outside
   useEffect(() => {
@@ -26,20 +40,23 @@ export function ProviderSelector() {
       if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
         setIsOpen(false)
         setExpandedProviderIds([])
+        // Reset loaded providers when closing
+        loadedProvidersRef.current = new Set()
       }
     }
     document.addEventListener('mousedown', handleClickOutside)
     return () => document.removeEventListener('mousedown', handleClickOutside)
   }, [])
 
-  // Auto-expand all providers when menu opens and load their models
+  // Auto-expand all providers when menu opens and load their models (once per session)
   useEffect(() => {
     if (isOpen) {
       const allProviderIds = providers.map(p => p.id)
       setExpandedProviderIds(allProviderIds)
-      // Load models for all providers
+      // Load models for all providers (only once per provider per session)
       allProviderIds.forEach(providerId => {
-        if (!providerModels[providerId]) {
+        if (!loadedProvidersRef.current.has(providerId)) {
+          loadedProvidersRef.current.add(providerId)
           loadProviderModels(providerId)
         }
       })
@@ -60,22 +77,14 @@ export function ProviderSelector() {
   void backendName
 
   const loadProviderModels = async (providerId: string) => {
-    if (providerModels[providerId]) return providerModels[providerId]
-    
     setLoadingModels(providerId)
     try {
-      const response = await fetch(`/api/providers/${providerId}/models`)
-      if (response.ok) {
-        const data = await response.json() as { models: string[] }
-        setProviderModels(prev => ({ ...prev, [providerId]: data.models }))
-        return data.models
-      }
+      await refreshProviderModels(providerId)
     } catch {
-      // Silently fail
+      // Silently fail - will retry next time dropdown is opened
     } finally {
       setLoadingModels(null)
     }
-    return null
   }
 
   const handleProviderClick = async (provider: Provider) => {
@@ -119,6 +128,22 @@ export function ProviderSelector() {
       // Load models in background without blocking UI
       loadProviderModels(provider.id)
     }
+  }
+
+  const handleRefreshClick = async (e: React.MouseEvent, providerId: string) => {
+    e.stopPropagation()
+    // Allow retry on manual refresh
+    loadedProvidersRef.current.delete(providerId)
+    await refreshProviderModels(providerId)
+    await loadProviderModels(providerId)
+  }
+  
+  const handleEditModel = (providerId: string, model: ModelWithConfig) => {
+    setEditingModel({ providerId, model })
+  }
+  
+  const handleCloseEditModal = () => {
+    setEditingModel(null)
   }
 
   const handleModelClick = async (providerId: string, newModel: string) => {
@@ -240,6 +265,26 @@ export function ProviderSelector() {
                       type="button"
                       onClick={(e) => {
                         e.stopPropagation()
+                        handleRefreshClick(e, provider.id)
+                      }}
+                      className="p-0.5 hover:bg-bg-tertiary rounded transition-colors"
+                      title="Refresh models"
+                    >
+                      <svg 
+                        className={`w-4 h-4 ${loadingModels === provider.id ? 'animate-spin' : ''} ${
+                          provider.id === activeProviderId ? 'text-accent-primary' : 'text-text-muted'
+                        }`}
+                        fill="none" 
+                        stroke="currentColor" 
+                        viewBox="0 0 24 24"
+                      >
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                      </svg>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation()
                         handleChevronClick(provider)
                       }}
                       className="p-0.5 hover:bg-bg-tertiary rounded transition-colors"
@@ -266,24 +311,42 @@ export function ProviderSelector() {
                       <div className="px-4 py-2 text-xs text-text-muted">
                         Loading models...
                       </div>
-                    ) : providerModels[provider.id]?.length ? (
-                      providerModels[provider.id]!.map(modelName => (
+                    ) : provider.models?.length ? (
+                      provider.models.map(modelConfig => (
                         <button
-                          key={modelName}
+                          key={modelConfig.id}
                           type="button"
-                          onClick={() => handleModelClick(provider.id, modelName)}
+                          onClick={() => handleModelClick(provider.id, modelConfig.id)}
                           disabled={loadingModels === 'activating'}
-                          className={`w-full px-4 py-1.5 text-left hover:bg-bg-tertiary transition-colors text-sm flex items-center justify-between ${
+                          className={`w-full px-4 py-1.5 text-left hover:bg-bg-tertiary transition-colors text-sm flex items-center justify-between group ${
                             loadingModels === 'activating' ? 'opacity-50 cursor-wait' : ''
                           } ${
-                            model === modelName ? 'text-accent-primary' : 'text-text-secondary'
+                            model === modelConfig.id ? 'text-accent-primary' : 'text-text-secondary'
                           }`}
                         >
-                          <span className="truncate">
-                            {modelName.split('/').pop()?.replace(/-/g, ' ') ?? modelName}
+                          <span className="truncate flex-1">
+                            {modelConfig.id.split('/').pop()?.replace(/-/g, ' ') ?? modelConfig.id}
                           </span>
-                          {model === modelName && (
-                            <span className="text-accent-success flex-shrink-0">
+                          <div className="flex items-center gap-2 flex-shrink-0">
+                            <span className="text-xs text-text-muted">
+                              {formatContextWindow(modelConfig.contextWindow)}
+                            </span>
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                handleEditModel(provider.id, modelConfig)
+                              }}
+                              className="opacity-0 group-hover:opacity-100 p-0.5 hover:bg-bg-tertiary rounded transition-opacity"
+                              title="Edit model context"
+                            >
+                              <svg className="w-3 h-3 text-text-muted" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                              </svg>
+                            </button>
+                          </div>
+                          {model === modelConfig.id && (
+                            <span className="text-accent-success flex-shrink-0 ml-1">
                               <svg className="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 20 20">
                                 <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
                               </svg>
@@ -307,6 +370,14 @@ export function ProviderSelector() {
             </p>
           </div>
         </div>
+      )}
+      {editingModel && (
+        <ModelPropertiesModal
+          isOpen={true}
+          onClose={handleCloseEditModal}
+          providerId={editingModel!.providerId}
+          model={editingModel!.model}
+        />
       )}
     </div>
   )
