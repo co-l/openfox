@@ -20,6 +20,7 @@ function mockSession(partial: Partial<SessionSummary> & Pick<SessionSummary, 'id
     updatedAt: '2026-03-24T10:00:00Z',
     criteriaCount: 0,
     criteriaCompleted: 0,
+    messageCount: 0,
     ...partial,
   }
 }

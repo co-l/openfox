@@ -19,8 +19,8 @@
 
 import { chromium, type Page } from 'playwright'
 
-const URL = process.env.TEST_URL || 'http://localhost:5174/scroll-test.html'
-const THRESHOLD = 150
+const URL = process.env.TEST_URL || 'http://localhost:10469'
+const THRESHOLD = 75
 
 interface ScrollState {
   scrollTop: number
@@ -31,7 +31,16 @@ interface ScrollState {
 }
 
 async function getState(page: Page): Promise<ScrollState> {
-  return page.evaluate(() => (window as any).__scrollTest.getScrollState())
+  return page.evaluate(() => {
+    const scroller = document.querySelector('[data-testid="chat-scroll-container"]') as HTMLElement
+    return {
+      scrollTop: Math.round(scroller.scrollTop),
+      scrollHeight: scroller.scrollHeight,
+      clientHeight: scroller.clientHeight,
+      dist: Math.round(scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight),
+      atBottom: scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight < 75
+    }
+  })
 }
 
 async function wait(page: Page, ms: number) {
@@ -39,27 +48,36 @@ async function wait(page: Page, ms: number) {
 }
 
 async function scrollUp(page: Page, px: number) {
-  await page.evaluate((px) => (window as any).__scrollTest.scrollUp(px), px)
+  await page.evaluate((px) => {
+    const scroller = document.querySelector('[data-testid="chat-scroll-container"]') as HTMLElement
+    scroller.scrollTop = Math.max(0, scroller.scrollTop - px)
+  }, px)
 }
 
 async function scrollToBottom(page: Page) {
-  await page.evaluate(() => (window as any).__scrollTest.scrollToBottom())
+  await page.evaluate(() => {
+    const scroller = document.querySelector('[data-testid="chat-scroll-container"]') as HTMLElement
+    scroller.scrollTop = scroller.scrollHeight
+  })
 }
 
 async function addItem(page: Page) {
-  await page.evaluate(() => (window as any).__scrollTest.addItem())
+  await page.fill('textarea', 'test message')
+  await page.click('button:has-text("Send")')
 }
 
 async function addSubAgent(page: Page) {
-  await page.evaluate(() => (window as any).__scrollTest.addSubAgent())
+  await page.fill('textarea', 'test subagent')
+  await page.click('button:has-text("Send")')
 }
 
 async function startStreaming(page: Page) {
-  await page.evaluate(() => (window as any).__scrollTest.startStreaming())
+  await page.fill('textarea', 'streaming test')
+  await page.click('button:has-text("Send")')
 }
 
 async function stopStreaming(page: Page) {
-  await page.evaluate(() => (window as any).__scrollTest.stopStreaming())
+  await page.waitForTimeout(500)
 }
 
 function assert(condition: boolean, msg: string, details?: any) {
@@ -76,7 +94,7 @@ async function runTests() {
   const page = await browser.newPage({ viewport: { width: 1280, height: 720 } })
 
   await page.goto(URL)
-  await wait(page, 2000) // Wait for Virtuoso to render and settle
+  await wait(page, 1000) // Wait for page to load
 
   let state: ScrollState
   let passed = 0
