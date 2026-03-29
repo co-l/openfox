@@ -457,11 +457,24 @@ export function createProviderManager(config: Config): ProviderManager {
         return { success: false, error: 'No models returned from backend' }
       }
 
-      // Update provider's models, preserving user overrides
+      // Normalize function for fuzzy matching (handles spaces/dashes/underscores)
+      const normalize = (s: string) => s.toLowerCase().replace(/[-_\s]+/g, '')
+
+      // Update provider's models, preserving user overrides with fuzzy matching
       const updatedModels = modelsWithContext.map(m => {
-        const existingModel = provider.models.find(pm => pm.id === m.id)
+        // Try exact match first
+        let existingModel = provider.models.find(pm => pm.id === m.id)
+        // If not found, try fuzzy match for user-set models
+        if (!existingModel) {
+          const normalizedId = normalize(m.id)
+          existingModel = provider.models.find(pm => {
+            if (pm.source !== 'user') return false
+            return normalize(pm.id) === normalizedId
+          })
+        }
         if (existingModel && existingModel.source === 'user') {
-          return existingModel
+          // Preserve user-set context window but update the ID to match backend
+          return { ...existingModel, id: m.id }
         }
         return m
       })
