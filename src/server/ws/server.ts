@@ -595,14 +595,11 @@ async function handleClientMessage(
       // Snapshot current global provider/model into new session
       const currentProvider = providerManager?.getActiveProvider()
       const currentModel = currentProvider ? getLLMClient().getModel() : null
-      const currentContextWindow = providerManager?.getCurrentModelContext()
-      console.log('[WS] Creating session with contextWindow:', currentContextWindow, 'from provider:', currentProvider?.id)
       const session = sessionManager.createSession(
         message.payload.projectId,
         message.payload.title,
         currentProvider?.id ?? null,
         currentModel,
-        currentContextWindow,
       )
       client.activeSessionId = session.id
       // New session has no events yet
