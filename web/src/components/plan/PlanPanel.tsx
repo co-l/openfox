@@ -38,7 +38,9 @@ export function PlanPanel() {
   const scrollContainerRef = useRef<HTMLDivElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
-  
+  const testInterval = useRef<NodeJS.Timeout | null>(null)
+  const [testMessageCount, setTestMessageCount] = useState(0)
+
   const session = useSessionStore(state => state.currentSession)
   const rawMessages = useSessionStore(state => state.messages)
   const streamingMessage = useSessionStore(state => state.streamingMessage)
@@ -47,7 +49,7 @@ export function PlanPanel() {
   const pendingPathConfirmation = useSessionStore(state => state.pendingPathConfirmation)
   const pendingQuestion = useSessionStore(state => state.pendingQuestion)
   const isRunning = useIsRunning()
-  
+
   const sendMessage = useSessionStore(state => state.sendMessage)
   const clearError = useSessionStore(state => state.clearError)
   const acceptAndBuild = useSessionStore(state => state.acceptAndBuild)
@@ -60,7 +62,9 @@ export function PlanPanel() {
 
   const workflows = useWorkflowsStore(state => state.workflows)
   const fetchWorkflows = useWorkflowsStore(state => state.fetchWorkflows)
-  useEffect(() => { fetchWorkflows() }, [fetchWorkflows])
+  useEffect(() => {
+    fetchWorkflows()
+  }, [fetchWorkflows])
 
   // Prompt history navigation
   const {
@@ -73,7 +77,7 @@ export function PlanPanel() {
     navigateDown,
     selectCurrent,
   } = usePromptHistory(rawMessages, sessions, session?.id)
-  
+
   // Merge streamingMessage into the messages array for rendering.
   // When streaming, only the streamingMessage changes — rawMessages stays stable,
   // so groupMessages() and promptContext skip recomputation for non-streaming items.
@@ -94,60 +98,62 @@ export function PlanPanel() {
 
   // Use rawMessages (stable during streaming) since prompt context only depends on user messages
   const promptContextByUserMessageId = useMemo(() => buildPromptContextByUserMessageId(rawMessages), [rawMessages])
-  
-  // Auto-scroll: scroll listener tracks user position, ResizeObserver detects content changes
-  const THRESHOLD = 75
+
+  // TEMP: Auto-start test messages on page load
+  useEffect(() => {
+    testInterval.current = setInterval(() => {
+      setTestMessageCount(prev => prev + 1)
+    }, 2000)
+    return () => {
+      if (testInterval.current) clearInterval(testInterval.current)
+    }
+  }, [])
+
   useEffect(() => {
     const scroller = scrollContainerRef.current
     if (!scroller) return
 
-    let userScrolling = false
-    let userScrollTimer: ReturnType<typeof setTimeout> | null = null
-    let lastScrollHeight = scroller.scrollHeight
-
-    const onScroll = () => {
-      atBottomRef.current =
-        scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight < THRESHOLD
-    }
-
-    // Debounced guard: keep userScrolling=true for 200ms after the last
-    // wheel/touch event to prevent feedback loop during user-initiated scrolls.
-    const startUserScroll = () => {
-      userScrolling = true
-      if (userScrollTimer) clearTimeout(userScrollTimer)
-      userScrollTimer = setTimeout(() => { userScrolling = false }, 200)
-    }
-
-    const onWheel = () => startUserScroll()
-    const onTouchStart = () => startUserScroll()
-    const onTouchEnd = () => startUserScroll()
-
-    const resizeObserver = new ResizeObserver(() => {
-      const newScrollHeight = scroller.scrollHeight
-      if (newScrollHeight !== lastScrollHeight && atBottomRef.current && !userScrolling) {
-        scroller.scrollTop = newScrollHeight
-        lastScrollHeight = newScrollHeight
+    let last_raf: number
+    let is_user_scrolling = false
+    let is_user_touching = false
+    const observer = new MutationObserver(() => {
+      if (is_user_scrolling || is_user_touching) {
+        cancelAnimationFrame(last_raf)
+        return
       }
+      last_raf = requestAnimationFrame(() => {
+        scroller.scrollTop = scroller.scrollHeight
+      })
     })
 
-    scroller.addEventListener('scroll', onScroll, { passive: true })
-    scroller.addEventListener('wheel', onWheel, { passive: true })
-    scroller.addEventListener('touchstart', onTouchStart, { passive: true })
-    scroller.addEventListener('touchend', onTouchEnd, { passive: true })
-    resizeObserver.observe(scroller)
+    observer.observe(scroller, {
+      childList: true,
+      subtree: true,
+      characterData: true,
+    })
 
-    // Initial scroll to bottom on mount
-    scroller.scrollTop = scroller.scrollHeight
-    lastScrollHeight = scroller.scrollHeight
-    atBottomRef.current = true
+    const start_user_scroll = () => {
+      const distance = scroller.scrollHeight - scroller.scrollTop - scroller.offsetHeight
+      if (distance > 50) {
+        cancelAnimationFrame(last_raf)
+        is_user_scrolling = true
+      } else {
+        is_user_scrolling = false
+      }
+    }
+
+    const touch_start = () => is_user_touching = true
+    const touch_end = () => is_user_touching = false
+
+    scroller.addEventListener('scroll', start_user_scroll, { passive: true })
+    scroller.addEventListener('touchstart', touch_start, { passive: true })
+    scroller.addEventListener('touchend', touch_end, { passive: true })
 
     return () => {
-      scroller.removeEventListener('scroll', onScroll)
-      scroller.removeEventListener('wheel', onWheel)
-      scroller.removeEventListener('touchstart', onTouchStart)
-      scroller.removeEventListener('touchend', onTouchEnd)
-      resizeObserver.disconnect()
-      if (userScrollTimer) clearTimeout(userScrollTimer)
+      scroller.removeEventListener('scroll', start_user_scroll)
+      scroller.removeEventListener('touchstart', touch_start)
+      scroller.removeEventListener('touchend', touch_end)
+      observer.disconnect()
     }
   }, [session?.id])
 
@@ -155,7 +161,7 @@ export function PlanPanel() {
   const resizeTextarea = useCallback(() => {
     const textarea = textareaRef.current
     if (!textarea) return
-    
+
     // Reset height to auto to get correct scrollHeight
     textarea.style.height = 'auto'
     // Calculate new height based on content
@@ -197,7 +203,7 @@ export function PlanPanel() {
   useEffect(() => {
     resizeTextarea()
   }, [input, resizeTextarea])
-  
+
   // Escape key to stop generation
   useEffect(() => {
     const handleEscape = (e: KeyboardEvent) => {
@@ -213,41 +219,42 @@ export function PlanPanel() {
   useEffect(() => {
     const textarea = textareaRef.current
     if (!textarea) return
-    
+
     const handlePaste = (e: ClipboardEvent) => {
       // Only handle if the textarea is focused
       if (document.activeElement !== textarea) return
-      
+
       const items = e.clipboardData?.items
       if (!items) return
-      
+
       for (const item of Array.from(items)) {
         if (item.type.startsWith('image/')) {
           e.preventDefault()
           const file = item.getAsFile()
           if (!file) continue
-          
-          // Process the pasted image (inline function to access state)
-          ;(async () => {
+
+            // Process the pasted image (inline function to access state)
+            ;
+          (async () => {
             try {
               if (!isValidImageType(file)) {
                 setErrorMessage('Only PNG, JPG, and GIF images are supported.')
                 return
               }
-              
+
               const sizeValidation = validateImageSize(file, 50 * 1024 * 1024)
               if (!sizeValidation.valid) {
                 setErrorMessage(sizeValidation.error ?? 'Image file is too large')
                 return
               }
-              
+
               const compressed = await compressImage(file, {
                 maxWidth: 1920,
                 maxHeight: 1920,
                 quality: 0.85,
                 maxSizeBytes: 1048576,
               })
-              
+
               const attachment: Attachment = {
                 id: generateUUID(),
                 filename: 'pasted-image',
@@ -255,7 +262,7 @@ export function PlanPanel() {
                 size: compressed.size,
                 data: compressed.dataUrl,
               }
-              
+
               setAttachments(prev => [...prev, attachment])
             } catch (err) {
               const errorMsg = err instanceof Error ? (err.message ?? 'Failed to process image') : 'Failed to process image'
@@ -265,11 +272,11 @@ export function PlanPanel() {
         }
       }
     }
-    
+
     textarea.addEventListener('paste', handlePaste)
     return () => textarea.removeEventListener('paste', handlePaste)
   }, [])
-  
+
   const clearInput = () => {
     setInput('')
     setAttachments([])
@@ -304,7 +311,7 @@ export function PlanPanel() {
     sendMessage(input, attachments)
     clearInput()
   }
-  
+
   const handleKeyDown = (e: React.KeyboardEvent) => {
     // Handle prompt history navigation when history is visible
     if (showHistory) {
@@ -332,7 +339,7 @@ export function PlanPanel() {
           return
       }
     }
-    
+
     // Arrow Up on empty textarea opens history
     if (e.key === 'ArrowUp' && input.trim() === '' && !showHistory) {
       e.preventDefault()
@@ -346,14 +353,14 @@ export function PlanPanel() {
       handleSubmit(e)
     }
   }
-  
+
   // Handle file selection from file picker
   const handleFileSelect = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files
     if (!files || files.length === 0) return
-    
+
     setErrorMessage(null)
-    
+
     for (const file of Array.from(files)) {
       try {
         // Validate file type
@@ -361,14 +368,14 @@ export function PlanPanel() {
           setErrorMessage(`Unsupported file type: ${file.type}. Only PNG, JPG, and GIF are supported.`)
           continue
         }
-        
+
         // Validate file size (before compression)
         const sizeValidation = validateImageSize(file, 50 * 1024 * 1024) // 50MB max
         if (!sizeValidation.valid) {
           setErrorMessage(sizeValidation.error ?? 'Image file is too large')
           continue
         }
-        
+
         // Compress the image
         const compressed = await compressImage(file, {
           maxWidth: 1920,
@@ -376,7 +383,7 @@ export function PlanPanel() {
           quality: 0.85,
           maxSizeBytes: 1048576, // 1MB target
         })
-        
+
         // Create attachment
         const attachment: Attachment = {
           id: generateUUID(),
@@ -385,14 +392,14 @@ export function PlanPanel() {
           size: compressed.size,
           data: compressed.dataUrl,
         }
-        
+
         setAttachments(prev => [...prev, attachment])
       } catch (err) {
         const errorMsg = err instanceof Error ? (err.message ?? 'Failed to process image') : 'Failed to process image'
         setErrorMessage(errorMsg)
       }
     }
-    
+
     // Reset file input
     if (fileInputRef.current) {
       fileInputRef.current.value = ''
@@ -405,22 +412,22 @@ export function PlanPanel() {
     e.stopPropagation()
     setDragOver(true)
   }, [])
-  
+
   const handleDragLeave = useCallback((e: React.DragEvent) => {
     e.preventDefault()
     e.stopPropagation()
     setDragOver(false)
   }, [])
-  
+
   const handleDrop = useCallback(async (e: React.DragEvent) => {
     e.preventDefault()
     e.stopPropagation()
     setDragOver(false)
     setErrorMessage(null)
-    
+
     const files = e.dataTransfer.files
     if (!files || files.length === 0) return
-    
+
     for (const file of Array.from(files)) {
       try {
         // Validate file type
@@ -428,14 +435,14 @@ export function PlanPanel() {
           setErrorMessage(`Unsupported file type: ${file.type}. Only PNG, JPG, and GIF are supported.`)
           continue
         }
-        
+
         // Validate file size
         const sizeValidation = validateImageSize(file, 50 * 1024 * 1024)
         if (!sizeValidation.valid) {
           setErrorMessage(sizeValidation.error ?? 'Image file is too large')
           continue
         }
-        
+
         // Compress the image
         const compressed = await compressImage(file, {
           maxWidth: 1920,
@@ -443,7 +450,7 @@ export function PlanPanel() {
           quality: 0.85,
           maxSizeBytes: 1048576,
         })
-        
+
         const attachment: Attachment = {
           id: generateUUID(),
           filename: file.name,
@@ -451,7 +458,7 @@ export function PlanPanel() {
           size: compressed.size,
           data: compressed.dataUrl,
         }
-        
+
         setAttachments(prev => [...prev, attachment])
       } catch (err) {
         const errorMsg = err instanceof Error ? (err.message ?? 'Failed to process image') : 'Failed to process image'
@@ -459,33 +466,33 @@ export function PlanPanel() {
       }
     }
   }, [])
-  
+
   // Handle remove attachment
   const handleRemoveAttachment = useCallback((id: string) => {
     setAttachments(prev => prev.filter(att => att.id !== id))
   }, [])
-  
+
   // Handle attach button click
   const handleAttachClick = useCallback(() => {
     fileInputRef.current?.click()
   }, [])
-  
+
   const isPlanning = session?.mode === 'planner'
   const isBuilding = session?.mode === 'builder'
   const hasCriteria = (session?.criteria.length ?? 0) > 0
   const isDone = session?.phase === 'done'
-  
+
   // Count pending criteria (not passed)
   const pendingCriteria = session?.criteria.filter(c => c.status.type !== 'passed') ?? []
   const hasPendingCriteria = pendingCriteria.length > 0
-  
+
   // Show "Start Building" when in planner with criteria and assistant has responded
   // Don't show if already done (all criteria verified)
-  const hasAssistantResponse = displayItems.some(item => 
-    item.type === 'message' && item.message.role === 'assistant'
+  const hasAssistantResponse = displayItems.some(item =>
+    item.type === 'message' && item.message.role === 'assistant',
   )
   const showStartBuilding = isPlanning && hasCriteria && !isRunning && hasAssistantResponse && !isDone
-  
+
   // Show Launch button in builder mode when there are pending criteria
   const showLaunchButton = isBuilding && hasPendingCriteria && !isRunning && !isDone
 
@@ -508,13 +515,21 @@ export function PlanPanel() {
       {pendingQuestion && (
         <AskUserDialog question={pendingQuestion} />
       )}
-      <SessionHeader 
+      <SessionHeader
         criteriaSidebarOpen={criteriaSidebarOpen}
         onCriteriaSidebarToggle={() => setCriteriaSidebarOpen(!criteriaSidebarOpen)}
       />
-      
+
       <div ref={scrollContainerRef} data-testid="chat-scroll-container" className="flex-1 min-w-0 overflow-y-auto">
         <div className="pt-4">
+          {testMessageCount > 0 && Array.from({ length: testMessageCount }, (_, i) => (
+            <div key={`test-${i}`} className="px-2 md:px-4 feed-item">
+              <div className="max-w-[75%] rounded p-2 bg-bg-tertiary text-text-primary">
+                <div className="text-xs text-text-muted mb-1">Test Message {i + 1}</div>
+                <div className="text-sm">This is a test message {i + 1}</div>
+              </div>
+            </div>
+          ))}
           {displayItems.map((item, index) => {
             if (item.type === 'context-divider') {
               return (
@@ -607,8 +622,12 @@ export function PlanPanel() {
                     onClick={() => acceptAndBuild(w.id)}
                     className="px-4 py-1.5 rounded text-sm font-medium transition-colors"
                     style={{ backgroundColor: bg, color: c, border: `1px solid ${border}` }}
-                    onMouseEnter={e => { e.currentTarget.style.backgroundColor = bgHover }}
-                    onMouseLeave={e => { e.currentTarget.style.backgroundColor = bg }}
+                    onMouseEnter={e => {
+                      e.currentTarget.style.backgroundColor = bgHover
+                    }}
+                    onMouseLeave={e => {
+                      e.currentTarget.style.backgroundColor = bg
+                    }}
                   >
                     ▶ {w.name}
                   </button>
@@ -621,7 +640,8 @@ export function PlanPanel() {
         </div>
       </div>
 
-      <form onSubmit={handleSubmit} className="p-2 md:p-4 border-t border-border bg-gradient-to-t from-bg-secondary/50 to-transparent">
+      <form onSubmit={handleSubmit}
+            className="p-2 md:p-4 border-t border-border bg-gradient-to-t from-bg-secondary/50 to-transparent">
         {/* Hidden file input */}
         <input
           ref={fileInputRef}
@@ -631,14 +651,14 @@ export function PlanPanel() {
           className="hidden"
           multiple
         />
-        
+
         {/* Error message */}
         {errorMessage && (
           <div className="mb-2 p-2 bg-red-500/10 border border-red-500/50 rounded text-red-300 text-sm">
             {errorMessage}
           </div>
         )}
-        
+
         {/* Attachments preview area */}
         {attachments.length > 0 && (
           <div className="mb-3 flex flex-wrap gap-2">
@@ -651,7 +671,7 @@ export function PlanPanel() {
             ))}
           </div>
         )}
-        
+
         {/* Prompt history list */}
         {showHistory && (
           <PromptHistoryList
@@ -671,7 +691,7 @@ export function PlanPanel() {
             }}
           />
         )}
-        
+
         {/* Queued messages display */}
         {queuedMessages.length > 0 && (
           <div className="mb-2 flex flex-wrap gap-1.5">
@@ -720,10 +740,11 @@ export function PlanPanel() {
             title="Attach image file"
           >
             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" />
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                    d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" />
             </svg>
           </button>
-          
+
           <textarea
             ref={textareaRef}
             value={input}
@@ -736,8 +757,8 @@ export function PlanPanel() {
             }}
             onKeyDown={handleKeyDown}
             placeholder={
-              isPlanning 
-                ? "What would you like to build?" 
+              isPlanning
+                ? "What would you like to build?"
                 : "Send a message..."
             }
             className="flex-1 bg-transparent text-sm placeholder:text-text-muted resize-none overflow-y-auto focus:outline-none"
@@ -754,8 +775,14 @@ export function PlanPanel() {
                     const combinedContent = textareaContent && textareaContent.trim()
                       ? `${textareaContent.trim()}\n\n${content}`
                       : content
-                    scrollContainerRef.current?.scrollTo({ top: scrollContainerRef.current.scrollHeight, behavior: 'smooth' })
-                    sendMessage(combinedContent, attachments?.length ? attachments : undefined, { messageKind: 'command', isSystemGenerated: true })
+                    scrollContainerRef.current?.scrollTo({
+                      top: scrollContainerRef.current.scrollHeight,
+                      behavior: 'smooth',
+                    })
+                    sendMessage(combinedContent, attachments?.length ? attachments : undefined, {
+                      messageKind: 'command',
+                      isSystemGenerated: true,
+                    })
                     clearInput()
                   }}
                   onOpenManager={() => setShowCommandsModal(true)}
@@ -785,7 +812,10 @@ export function PlanPanel() {
                   type="button"
                   onClick={() => {
                     if (!input.trim() && attachments.length === 0) return
-                    scrollContainerRef.current?.scrollTo({ top: scrollContainerRef.current.scrollHeight, behavior: 'smooth' })
+                    scrollContainerRef.current?.scrollTo({
+                      top: scrollContainerRef.current.scrollHeight,
+                      behavior: 'smooth',
+                    })
                     sendMessage(input, attachments)
                     clearInput()
                   }}
