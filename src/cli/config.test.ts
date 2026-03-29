@@ -2,7 +2,6 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { mkdir, writeFile, rm } from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
-import type { Provider } from '../shared/types.js'
 
 const TEST_DIR = join(tmpdir(), `openfox-config-test-${Date.now()}`)
 
@@ -49,7 +48,8 @@ describe('config', () => {
         workspace: { workdir: process.cwd() },
       }
 
-      const migrated = migrateConfig(oldConfig)
+      const result = migrateConfig(oldConfig)
+      const migrated = result.config
 
       expect(migrated.providers).toHaveLength(1)
       expect(migrated.providers[0]).toMatchObject({
@@ -64,6 +64,7 @@ describe('config', () => {
       expect(migrated.defaultModelSelection).toMatch(/^[a-f0-9-]+\/qwen3-32b$/)
       // Old llm key should be removed
       expect('llm' in migrated).toBe(false)
+      expect(result.migrated).toBe(true)
     })
 
     it('logs warning when migrating legacy maxContext', () => {
@@ -86,8 +87,9 @@ describe('config', () => {
       }
 
       const consoleWarnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
-      migrateConfig(oldConfig)
+      const result = migrateConfig(oldConfig)
       expect(consoleWarnSpy).toHaveBeenCalledWith('Migrating legacy maxContext to model-specific config')
+      expect(result.migrated).toBe(true)
       consoleWarnSpy.mockRestore()
     })
 
@@ -111,17 +113,19 @@ describe('config', () => {
         workspace: { workdir: process.cwd() },
       }
 
-      const migrated = migrateConfig(newConfig)
+      const result = migrateConfig(newConfig)
 
-      expect(migrated).toEqual(newConfig)
+      expect(result.config).toEqual(newConfig)
+      expect(result.migrated).toBe(false)
     })
 
     it('handles empty config with defaults', () => {
-      const migrated = migrateConfig({})
+      const result = migrateConfig({})
 
-      expect(migrated.providers).toEqual([])
-      expect(migrated.activeProviderId).toBeUndefined()
-      expect(migrated.server).toBeDefined()
+      expect(result.config.providers).toEqual([])
+      expect(result.config.activeProviderId).toBeUndefined()
+      expect(result.config.server).toBeDefined()
+      expect(result.migrated).toBe(false)
     })
 
     it('preserves apiKey from old config if present', () => {
@@ -140,9 +144,9 @@ describe('config', () => {
         workspace: { workdir: process.cwd() },
       }
 
-      const migrated = migrateConfig(oldConfig)
+      const result = migrateConfig(oldConfig)
 
-      expect(migrated.providers[0]?.apiKey).toBe('sk-test-key')
+      expect(result.config.providers[0]?.apiKey).toBe('sk-test-key')
     })
   })
 

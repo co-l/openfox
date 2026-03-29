@@ -136,7 +136,7 @@ export type OldGlobalConfig = z.infer<typeof oldConfigSchema>
  * Also migrates provider.model to global defaultModelSelection.
  * If already in new format with defaultModelSelection, returns as-is.
  */
-export function migrateConfig(raw: unknown): GlobalConfig {
+export function migrateConfig(raw: unknown): { config: GlobalConfig; migrated: boolean } {
   type RawProvider = { id: string; name: string; url: string; model?: string; backend: string; apiKey?: string; maxContext?: number; isActive: boolean; createdAt: string; models?: Array<{ id: string; contextWindow: number; source: 'backend' | 'user' | 'default' }> }
   type RawConfig = { providers: RawProvider[]; activeProviderId?: string; defaultModelSelection?: string; [key: string]: unknown }
   
@@ -173,10 +173,13 @@ export function migrateConfig(raw: unknown): GlobalConfig {
     
     // If already has defaultModelSelection, just parse and return
     if (obj.defaultModelSelection) {
-      return configSchema.parse({
-        ...obj,
-        providers,
-      })
+      return {
+        config: configSchema.parse({
+          ...obj,
+          providers,
+        }),
+        migrated: migrationOccurred,
+      }
     }
     
     // Migrate from activeProviderId + provider.model to defaultModelSelection
@@ -190,11 +193,14 @@ export function migrateConfig(raw: unknown): GlobalConfig {
       }
     }
     
-    return configSchema.parse({
-      ...obj,
-      providers,
-      defaultModelSelection,
-    })
+    return {
+      config: configSchema.parse({
+        ...obj,
+        providers,
+        defaultModelSelection,
+      }),
+      migrated: migrationOccurred,
+    }
   }
   
   // Check if it's the old format (has llm object)
@@ -223,17 +229,23 @@ export function migrateConfig(raw: unknown): GlobalConfig {
     const model = oldConfig.llm.model || 'auto'
     
     return {
-      providers: [provider],
-      defaultModelSelection: `${providerId}/${model}`,
-      server: oldConfig.server,
-      logging: oldConfig.logging,
-      database: oldConfig.database,
-      workspace: { workdir: process.cwd() },
+      config: configSchema.parse({
+        providers: [provider],
+        defaultModelSelection: `${providerId}/${model}`,
+        server: oldConfig.server,
+        logging: oldConfig.logging,
+        database: oldConfig.database,
+        workspace: { workdir: process.cwd() },
+      }),
+      migrated: true,
     }
   }
   
   // Empty or minimal config - return defaults
-  return configSchema.parse(raw)
+  return {
+    config: configSchema.parse(raw),
+    migrated: false,
+  }
 }
 
 // ============================================================================
@@ -246,7 +258,11 @@ export async function loadGlobalConfig(mode: Mode): Promise<GlobalConfig> {
   try {
     const content = await readFile(configPath, 'utf-8')
     const parsed = JSON.parse(content)
-    return migrateConfig(parsed)
+    const { config, migrated } = migrateConfig(parsed)
+    if (migrated) {
+      await saveGlobalConfig(mode, config)
+    }
+    return config
   } catch {
     return configSchema.parse({})
   }
