@@ -90,16 +90,19 @@ function createRegistryFromTools(tools: Tool[]): ToolRegistry {
 }
 
 // All tools by name for dynamic registry creation
-const allToolsByName = new Map<string, Tool>([
-  ...[
-    readFileTool, writeFileTool, editFileTool, runCommandTool,
-    globTool, grepTool, gitTool, askUserTool,
-    completeCriterionTool, passCriterionTool, failCriterionTool,
-    getCriteriaTool, addCriterionTool, updateCriterionTool, removeCriterionTool,
-    todoWriteTool, callSubAgentTool, loadSkillTool, returnValueTool, webFetchTool,
-    devServerTool, stepDoneTool,
-  ].map(t => [t.name, t] as const),
-])
+// Lazy initialization to avoid circular dependency issues during module load
+function getAllToolsMap(): Map<string, Tool> {
+  return new Map<string, Tool>([
+    ...[
+      readFileTool, writeFileTool, editFileTool, runCommandTool,
+      globTool, grepTool, gitTool, askUserTool,
+      completeCriterionTool, passCriterionTool, failCriterionTool,
+      getCriteriaTool, addCriterionTool, updateCriterionTool, removeCriterionTool,
+      todoWriteTool, callSubAgentTool, loadSkillTool, returnValueTool, webFetchTool,
+      devServerTool, stepDoneTool,
+    ].map(t => [t.name, t] as const),
+  ])
+}
 
 // ============================================================================
 // Agent-Based Registry Creation
@@ -110,15 +113,16 @@ const allToolsByName = new Map<string, Tool>([
  * Sub-agents automatically get return_value added.
  */
 export function getToolRegistryForSubAgent(toolNames: string[]): ToolRegistry {
+  const allTools = getAllToolsMap()
   const tools: Tool[] = []
   for (const name of toolNames) {
-    const tool = allToolsByName.get(name)
+    const tool = allTools.get(name)
     if (tool) {
       tools.push(tool)
     }
   }
   if (!tools.some(t => t.name === 'return_value')) {
-    const rv = allToolsByName.get('return_value')
+    const rv = allTools.get('return_value')
     if (rv) tools.push(rv)
   }
   return createRegistryFromTools(tools)
@@ -133,9 +137,10 @@ export function getToolRegistryForAgent(agentDef: AgentDefinition): ToolRegistry
   if (agentDef.metadata.subagent) {
     return getToolRegistryForSubAgent(agentDef.metadata.tools)
   }
+  const allTools = getAllToolsMap()
   const tools: Tool[] = []
   for (const name of agentDef.metadata.tools) {
-    const tool = allToolsByName.get(name)
+    const tool = allTools.get(name)
     if (tool) {
       tools.push(tool)
     }
@@ -147,7 +152,7 @@ export function getToolRegistryForAgent(agentDef: AgentDefinition): ToolRegistry
  * Create a generic tool registry with all available tools.
  */
 export function createToolRegistry(): ToolRegistry {
-  return createRegistryFromTools(Array.from(allToolsByName.values()))
+  return createRegistryFromTools(Array.from(getAllToolsMap().values()))
 }
 
 // Re-export types and utilities

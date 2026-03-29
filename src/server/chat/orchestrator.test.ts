@@ -381,22 +381,50 @@ describe('chat orchestrator', () => {
     const eventStore = createEventStore()
     getEventStoreMock.mockReturnValue(eventStore)
     getAllInstructionsMock.mockResolvedValue({ content: '', files: [] })
+    
+    // Mock ask_user tool to simulate the new behavior: emit event, wait for answer, return it
+    const executeMock = vi.fn(async (name: string, args: Record<string, unknown>) => {
+      if (name === 'ask_user') {
+        // Emit chat.ask_user event
+        eventStore.append('session-1', {
+          type: 'chat.ask_user',
+          data: { callId: 'call-1', question: args['question'] },
+        })
+        // Simulate waiting for and receiving an answer
+        return {
+          success: true,
+          output: 'User answered: yes',
+          durationMs: 0,
+          truncated: false,
+        }
+      }
+      return { success: true, output: 'ok', durationMs: 0, truncated: false }
+    })
+    
     getToolRegistryForModeMock.mockReturnValue({
       definitions: [{ type: 'function', function: { name: 'ask_user', description: 'Ask', parameters: {} } }],
-      execute: vi.fn(async () => {
-        throw new AskUserInterrupt('call-1', 'Need help?')
-      }),
+      execute: executeMock,
     })
     streamLLMPureMock.mockReturnValue({ kind: 'stream' })
-    consumeStreamGeneratorMock.mockResolvedValue({
-      content: '',
-      toolCalls: [{ id: 'call-1', name: 'ask_user', arguments: { question: 'Need help?' } }],
-      segments: [],
-      usage: { promptTokens: 5, completionTokens: 1 },
-      timing: { ttft: 1, completionTime: 1, tps: 1, prefillTps: 5 },
-      aborted: false,
-      xmlFormatError: false,
-    })
+    consumeStreamGeneratorMock
+      .mockResolvedValueOnce({
+        content: '',
+        toolCalls: [{ id: 'call-1', name: 'ask_user', arguments: { question: 'Need help?' } }],
+        segments: [],
+        usage: { promptTokens: 5, completionTokens: 1 },
+        timing: { ttft: 1, completionTime: 1, tps: 1, prefillTps: 5 },
+        aborted: false,
+        xmlFormatError: false,
+      })
+      .mockResolvedValueOnce({
+        content: 'Thanks for the answer',
+        toolCalls: [],
+        segments: [{ type: 'text', content: 'Thanks for the answer' }],
+        usage: { promptTokens: 5, completionTokens: 3 },
+        timing: { ttft: 1, completionTime: 1, tps: 3, prefillTps: 5 },
+        aborted: false,
+        xmlFormatError: false,
+      })
 
     const sessionManager = createSessionManager({
       current: {
@@ -418,9 +446,19 @@ describe('chat orchestrator', () => {
       llmClient: { getModel: () => 'qwen3-32b' } as never,
     })
 
-    const waitEvent = eventStore.append.mock.calls.find(([, event]) => event.type === 'chat.done' && (event.data as any).reason === 'waiting_for_user')
-    expect(waitEvent).toBeDefined()
-    expect(eventStore.append.mock.calls.some(([, event]) => event.type === 'turn.snapshot')).toBe(false)
+    // Verify chat.ask_user event was emitted
+    const askUserEvent = eventStore.append.mock.calls.find(([, event]) => event.type === 'chat.ask_user')
+    expect(askUserEvent).toBeDefined()
+    expect((askUserEvent![1].data as any).question).toBe('Need help?')
+    
+    // Verify tool.result event was emitted with the answer
+    const toolResultEvent = eventStore.append.mock.calls.find(([, event]) => event.type === 'tool.result')
+    expect(toolResultEvent).toBeDefined()
+    expect((toolResultEvent![1].data as any).result.success).toBe(true)
+    
+    // Agent should complete normally (not stop with waiting_for_user)
+    const doneEvent = eventStore.append.mock.calls.find(([, event]) => event.type === 'chat.done')
+    expect(doneEvent).toBeDefined()
   })
 
   it('converts path access denial into correction events and handles unknown errors', async () => {
