@@ -39,8 +39,6 @@ export function PlanPanel() {
   const scrollContainerRef = useRef<HTMLDivElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
-  const testInterval = useRef<NodeJS.Timeout | null>(null)
-  const [testMessageCount, setTestMessageCount] = useState(0)
 
   const session = useSessionStore(state => state.currentSession)
   const rawMessages = useSessionStore(state => state.messages)
