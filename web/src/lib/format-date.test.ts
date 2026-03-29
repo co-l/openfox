@@ -64,6 +64,7 @@ describe('groupSessionsByDate', () => {
     updatedAt,
     criteriaCount: 0,
     criteriaCompleted: 0,
+    messageCount: 0,
   })
 
   it('groups sessions by date', () => {

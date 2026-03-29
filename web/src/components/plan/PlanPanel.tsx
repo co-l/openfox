@@ -1,5 +1,4 @@
 import { useState, useRef, useEffect, useCallback, useMemo } from 'react'
-import { Virtuoso, type VirtuosoHandle } from 'react-virtuoso'
 import { useSessionStore, useIsRunning, useQueuedMessages } from '../../stores/session'
 // @ts-ignore
 import type { Message, ToolCall, Attachment } from '@shared/types.js'
@@ -36,7 +35,7 @@ export function PlanPanel() {
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
   const [showCommandsModal, setShowCommandsModal] = useState(false)
   const [showWorkflowsModal, setShowWorkflowsModal] = useState(false)
-  const virtuosoRef = useRef<VirtuosoHandle>(null)
+  const scrollContainerRef = useRef<HTMLDivElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   
@@ -96,18 +95,15 @@ export function PlanPanel() {
   // Use rawMessages (stable during streaming) since prompt context only depends on user messages
   const promptContextByUserMessageId = useMemo(() => buildPromptContextByUserMessageId(rawMessages), [rawMessages])
   
-  // Auto-scroll: persistent MutationObserver catches all Virtuoso async renders
-  // (initial load, streaming growth, new items, sub-agents).
-  // Scroll listener tracks if user is at bottom.
-  // Wheel/touch listeners prevent feedback loop: they fire synchronously BEFORE
-  // DOM mutations, suppressing the observer during user-initiated scrolls.
+  // Auto-scroll: scroll listener tracks user position, ResizeObserver detects content changes
+  const THRESHOLD = 75
   useEffect(() => {
-    const scroller = document.querySelector('[data-virtuoso-scroller]') as HTMLElement | null
+    const scroller = scrollContainerRef.current
     if (!scroller) return
 
-    const THRESHOLD = 150
     let userScrolling = false
     let userScrollTimer: ReturnType<typeof setTimeout> | null = null
+    let lastScrollHeight = scroller.scrollHeight
 
     const onScroll = () => {
       atBottomRef.current =
@@ -115,8 +111,7 @@ export function PlanPanel() {
     }
 
     // Debounced guard: keep userScrolling=true for 200ms after the last
-    // wheel/touch event. This gives scroll events time to fire and update
-    // atBottomRef before the MutationObserver is allowed to act again.
+    // wheel/touch event to prevent feedback loop during user-initiated scrolls.
     const startUserScroll = () => {
       userScrolling = true
       if (userScrollTimer) clearTimeout(userScrollTimer)
@@ -127,9 +122,11 @@ export function PlanPanel() {
     const onTouchStart = () => startUserScroll()
     const onTouchEnd = () => startUserScroll()
 
-    const observer = new MutationObserver(() => {
-      if (atBottomRef.current && !userScrolling) {
-        scroller.scrollTop = scroller.scrollHeight
+    const resizeObserver = new ResizeObserver(() => {
+      const newScrollHeight = scroller.scrollHeight
+      if (newScrollHeight !== lastScrollHeight && atBottomRef.current && !userScrolling) {
+        scroller.scrollTop = newScrollHeight
+        lastScrollHeight = newScrollHeight
       }
     })
 
@@ -137,9 +134,11 @@ export function PlanPanel() {
     scroller.addEventListener('wheel', onWheel, { passive: true })
     scroller.addEventListener('touchstart', onTouchStart, { passive: true })
     scroller.addEventListener('touchend', onTouchEnd, { passive: true })
-    observer.observe(scroller, { childList: true, subtree: true })
+    resizeObserver.observe(scroller)
 
+    // Initial scroll to bottom on mount
     scroller.scrollTop = scroller.scrollHeight
+    lastScrollHeight = scroller.scrollHeight
     atBottomRef.current = true
 
     return () => {
@@ -147,7 +146,7 @@ export function PlanPanel() {
       scroller.removeEventListener('wheel', onWheel)
       scroller.removeEventListener('touchstart', onTouchStart)
       scroller.removeEventListener('touchend', onTouchEnd)
-      observer.disconnect()
+      resizeObserver.disconnect()
       if (userScrollTimer) clearTimeout(userScrollTimer)
     }
   }, [session?.id])
@@ -300,7 +299,7 @@ export function PlanPanel() {
     }
 
     // Scroll to bottom when sending a message
-    virtuosoRef.current?.scrollToIndex({ index: 'LAST', behavior: 'smooth' })
+    scrollContainerRef.current?.scrollTo({ top: scrollContainerRef.current.scrollHeight, behavior: 'smooth' })
 
     sendMessage(input, attachments)
     clearInput()
@@ -514,121 +513,113 @@ export function PlanPanel() {
         onCriteriaSidebarToggle={() => setCriteriaSidebarOpen(!criteriaSidebarOpen)}
       />
       
-      <Virtuoso
-        ref={virtuosoRef}
-        data={displayItems}
-        className="flex-1 min-w-0 overflow-x-hidden"
-        increaseViewportBy={{ top: 500, bottom: 200 }}
-        defaultItemHeight={120}
-        itemContent={(_index, item) => {
-          if (item.type === 'context-divider') {
-            return (
-              <div className="flex items-center gap-2 feed-item px-2 md:px-4">
-                <div className="flex-1 border-t border-border" />
-                <span className="text-[10px] text-text-muted font-medium px-2">
-                  Earlier context summarized
-                </span>
-                <div className="flex-1 border-t border-border" />
-              </div>
-            )
-          }
+      <div ref={scrollContainerRef} data-testid="chat-scroll-container" className="flex-1 min-w-0 overflow-y-auto">
+        <div className="pt-4">
+          {displayItems.map((item, index) => {
+            if (item.type === 'context-divider') {
+              return (
+                <div key={index} className="flex items-center gap-2 feed-item px-2 md:px-4">
+                  <div className="flex-1 border-t border-border" />
+                  <span className="text-[10px] text-text-muted font-medium px-2">
+                    Earlier context summarized
+                  </span>
+                  <div className="flex-1 border-t border-border" />
+                </div>
+              )
+            }
 
-          if (item.type === 'subagent') {
-            const groupIsStreaming = item.messages.some(m => m.isStreaming)
-            return (
-              <div className="px-2 md:px-4">
-                <SubAgentContainer
-                  messages={item.messages}
-                  subAgentType={item.subAgentType}
-                  isStreaming={groupIsStreaming}
-                />
-              </div>
-            )
-          }
+            if (item.type === 'subagent') {
+              const groupIsStreaming = item.messages.some(m => m.isStreaming)
+              return (
+                <div key={index} className="px-2 md:px-4">
+                  <SubAgentContainer
+                    messages={item.messages}
+                    subAgentType={item.subAgentType}
+                    isStreaming={groupIsStreaming}
+                  />
+                </div>
+              )
+            }
 
-          if (item.type === 'criteria-batch') {
-            return (
-              <div className="feed-item px-2 md:px-4">
-                <CriteriaGroupDisplay toolCalls={item.toolCalls} criteria={session?.criteria} />
-              </div>
-            )
-          }
+            if (item.type === 'criteria-batch') {
+              return (
+                <div key={index} className="feed-item px-2 md:px-4">
+                  <CriteriaGroupDisplay toolCalls={item.toolCalls} criteria={session?.criteria} />
+                </div>
+              )
+            }
 
-          const message = item.message
-          if (message.role === 'assistant') {
+            const message = item.message
+            if (message.role === 'assistant') {
+              return (
+                <div key={index} className="px-2 md:px-4">
+                  <AssistantMessage
+                    message={message}
+                    showStats={true}
+                  />
+                </div>
+              )
+            }
+
             return (
-              <div className="px-2 md:px-4">
-                <AssistantMessage
+              <div key={index} className="px-2 md:px-4">
+                <ChatMessage
                   message={message}
-                  showStats={true}
+                  isLastAssistantMessage={false}
+                  promptContext={message.role === 'user' ? promptContextByUserMessageId[message.id] : undefined}
                 />
               </div>
             )
-          }
-
-          return (
-            <div className="px-2 md:px-4">
-              <ChatMessage
-                message={message}
-                isLastAssistantMessage={false}
-                promptContext={message.role === 'user' ? promptContextByUserMessageId[message.id] : undefined}
-              />
-            </div>
-          )
-        }}
-        components={{
-          Header: () => <div className="pt-4" />,
-          Footer: () => (
-            <div className="px-2 md:px-4 pb-4">
-              {error && (
-                <div className="feed-item bg-red-500/10 border border-red-500/50 rounded p-2">
-                  <div className="flex items-start justify-between gap-2">
-                    <div>
-                      <div className="text-red-400 text-sm font-medium">{error.code}</div>
-                      <div className="text-red-300 text-xs mt-0.5">{error.message}</div>
-                    </div>
-                    <button
-                      onClick={clearError}
-                      className="text-red-400 hover:text-red-300 p-0.5"
-                      aria-label="Dismiss error"
-                    >
-                      <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                      </svg>
-                    </button>
-                  </div>
+          })}
+        </div>
+        <div className="px-2 md:px-4 pb-4">
+          {error && (
+            <div className="feed-item bg-red-500/10 border border-red-500/50 rounded p-2">
+              <div className="flex items-start justify-between gap-2">
+                <div>
+                  <div className="text-red-400 text-sm font-medium">{error.code}</div>
+                  <div className="text-red-300 text-xs mt-0.5">{error.message}</div>
                 </div>
-              )}
-
-              {showStartBuilding && (
-                <div className="flex justify-center gap-2 feed-item flex-wrap">
-                  {workflows.map(w => {
-                    const c = w.color ?? '#3b82f6'
-                    const r = parseInt(c.slice(1, 3), 16), g = parseInt(c.slice(3, 5), 16), b = parseInt(c.slice(5, 7), 16)
-                    const bg = `rgba(${r},${g},${b},0.12)`
-                    const bgHover = `rgba(${r},${g},${b},0.22)`
-                    const border = `rgba(${r},${g},${b},0.25)`
-                    return (
-                      <button
-                        key={w.id}
-                        onClick={() => acceptAndBuild(w.id)}
-                        className="px-4 py-1.5 rounded text-sm font-medium transition-colors"
-                        style={{ backgroundColor: bg, color: c, border: `1px solid ${border}` }}
-                        onMouseEnter={e => { e.currentTarget.style.backgroundColor = bgHover }}
-                        onMouseLeave={e => { e.currentTarget.style.backgroundColor = bg }}
-                      >
-                        ▶ {w.name}
-                      </button>
-                    )
-                  })}
-                </div>
-              )}
-
-              {isRunning && <RunningIndicator />}
+                <button
+                  onClick={clearError}
+                  className="text-red-400 hover:text-red-300 p-0.5"
+                  aria-label="Dismiss error"
+                >
+                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
             </div>
-          ),
-        }}
-      />
+          )}
+
+          {showStartBuilding && (
+            <div className="flex justify-center gap-2 feed-item flex-wrap">
+              {workflows.map(w => {
+                const c = w.color ?? '#3b82f6'
+                const r = parseInt(c.slice(1, 3), 16), g = parseInt(c.slice(3, 5), 16), b = parseInt(c.slice(5, 7), 16)
+                const bg = `rgba(${r},${g},${b},0.12)`
+                const bgHover = `rgba(${r},${g},${b},0.22)`
+                const border = `rgba(${r},${g},${b},0.25)`
+                return (
+                  <button
+                    key={w.id}
+                    onClick={() => acceptAndBuild(w.id)}
+                    className="px-4 py-1.5 rounded text-sm font-medium transition-colors"
+                    style={{ backgroundColor: bg, color: c, border: `1px solid ${border}` }}
+                    onMouseEnter={e => { e.currentTarget.style.backgroundColor = bgHover }}
+                    onMouseLeave={e => { e.currentTarget.style.backgroundColor = bg }}
+                  >
+                    ▶ {w.name}
+                  </button>
+                )
+              })}
+            </div>
+          )}
+
+          {isRunning && <RunningIndicator />}
+        </div>
+      </div>
 
       <form onSubmit={handleSubmit} className="p-2 md:p-4 border-t border-border bg-gradient-to-t from-bg-secondary/50 to-transparent">
         {/* Hidden file input */}
@@ -763,7 +754,7 @@ export function PlanPanel() {
                     const combinedContent = textareaContent && textareaContent.trim()
                       ? `${textareaContent.trim()}\n\n${content}`
                       : content
-                    virtuosoRef.current?.scrollToIndex({ index: 'LAST', behavior: 'smooth' })
+                    scrollContainerRef.current?.scrollTo({ top: scrollContainerRef.current.scrollHeight, behavior: 'smooth' })
                     sendMessage(combinedContent, attachments?.length ? attachments : undefined, { messageKind: 'command', isSystemGenerated: true })
                     clearInput()
                   }}
@@ -794,7 +785,7 @@ export function PlanPanel() {
                   type="button"
                   onClick={() => {
                     if (!input.trim() && attachments.length === 0) return
-                    virtuosoRef.current?.scrollToIndex({ index: 'LAST', behavior: 'smooth' })
+                    scrollContainerRef.current?.scrollTo({ top: scrollContainerRef.current.scrollHeight, behavior: 'smooth' })
                     sendMessage(input, attachments)
                     clearInput()
                   }}
