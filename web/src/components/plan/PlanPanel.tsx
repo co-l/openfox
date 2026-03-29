@@ -475,14 +475,6 @@ export function PlanPanel() {
 
       <div ref={scrollContainerRef} data-testid="chat-scroll-container" className="flex-1 min-w-0 overflow-y-auto">
         <div className="pt-4">
-          {testMessageCount > 0 && Array.from({ length: testMessageCount }, (_, i) => (
-            <div key={`test-${i}`} className="px-2 md:px-4 feed-item">
-              <div className="max-w-[75%] rounded p-2 bg-bg-tertiary text-text-primary">
-                <div className="text-xs text-text-muted mb-1">Test Message {i + 1}</div>
-                <div className="text-sm">This is a test message {i + 1}</div>
-              </div>
-            </div>
-          ))}
           {displayItems.map((item, index) => {
             if (item.type === 'context-divider') {
               return (
