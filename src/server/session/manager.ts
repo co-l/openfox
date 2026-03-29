@@ -831,13 +831,16 @@ export class SessionManager {
       if (provider) {
         // Try exact match first
         let modelConfig = provider.models.find(m => m.id === session.providerModel)
-        // If not found, try partial match (for model names with variations)
+        // If not found, try fuzzy match (handle spaces/dashes/underscores variations)
         if (!modelConfig && session.providerModel) {
-          const sessionModel = session.providerModel.toLowerCase()
+          const normalize = (s: string) => s.toLowerCase().replace(/[-_\s]+/g, '')
+          const sessionModelNormalized = normalize(session.providerModel)
           modelConfig = provider.models.find(m => {
-            const modelId = m.id.toLowerCase()
-            const modelBase = modelId.split(':')[0] ?? modelId
-            return modelId.includes(sessionModel) || sessionModel.includes(modelBase)
+            const modelIdNormalized = normalize(m.id)
+            // Check if normalized IDs match or one contains the other
+            return modelIdNormalized === sessionModelNormalized || 
+                   modelIdNormalized.includes(sessionModelNormalized) ||
+                   sessionModelNormalized.includes(modelIdNormalized)
           })
         }
         maxTokens = modelConfig?.contextWindow ?? providerManager.getCurrentModelContext()
