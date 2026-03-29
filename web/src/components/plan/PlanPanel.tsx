@@ -25,11 +25,12 @@ import { WorkflowsModal } from '../settings/WorkflowsModal'
 import { generateUUID } from '../../lib/uuid.js'
 import { groupMessages, type DisplayItem } from './groupMessages.js'
 import { usePromptHistory } from '../../hooks/usePromptHistory.js'
+import { useAutoScroll } from "@/hooks/useAutoScroll.ts"
 
 export function PlanPanel() {
   const [criteriaSidebarOpen, setCriteriaSidebarOpen] = useState(true)
   const [input, setInput] = useState('')
-  const atBottomRef = useRef(true)
+
   const [attachments, setAttachments] = useState<Attachment[]>([])
   const [dragOver, setDragOver] = useState(false)
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
@@ -100,62 +101,16 @@ export function PlanPanel() {
   const promptContextByUserMessageId = useMemo(() => buildPromptContextByUserMessageId(rawMessages), [rawMessages])
 
   // TEMP: Auto-start test messages on page load
-  useEffect(() => {
+/*  useEffect(() => {
     testInterval.current = setInterval(() => {
       setTestMessageCount(prev => prev + 1)
     }, 2000)
     return () => {
       if (testInterval.current) clearInterval(testInterval.current)
     }
-  }, [])
+  }, [])*/
 
-  useEffect(() => {
-    const scroller = scrollContainerRef.current
-    if (!scroller) return
-
-    let last_raf: number
-    let is_user_scrolling = false
-    let is_user_touching = false
-    const observer = new MutationObserver(() => {
-      if (is_user_scrolling || is_user_touching) {
-        cancelAnimationFrame(last_raf)
-        return
-      }
-      last_raf = requestAnimationFrame(() => {
-        scroller.scrollTop = scroller.scrollHeight
-      })
-    })
-
-    observer.observe(scroller, {
-      childList: true,
-      subtree: true,
-      characterData: true,
-    })
-
-    const start_user_scroll = () => {
-      const distance = scroller.scrollHeight - scroller.scrollTop - scroller.offsetHeight
-      if (distance > 50) {
-        cancelAnimationFrame(last_raf)
-        is_user_scrolling = true
-      } else {
-        is_user_scrolling = false
-      }
-    }
-
-    const touch_start = () => is_user_touching = true
-    const touch_end = () => is_user_touching = false
-
-    scroller.addEventListener('scroll', start_user_scroll, { passive: true })
-    scroller.addEventListener('touchstart', touch_start, { passive: true })
-    scroller.addEventListener('touchend', touch_end, { passive: true })
-
-    return () => {
-      scroller.removeEventListener('scroll', start_user_scroll)
-      scroller.removeEventListener('touchstart', touch_start)
-      scroller.removeEventListener('touchend', touch_end)
-      observer.disconnect()
-    }
-  }, [session?.id])
+  const {force_scroll_to_bottom} = useAutoScroll(scrollContainerRef, session)
 
   // Auto-resize textarea based on content, up to 200px max
   const resizeTextarea = useCallback(() => {
@@ -306,7 +261,7 @@ export function PlanPanel() {
     }
 
     // Scroll to bottom when sending a message
-    scrollContainerRef.current?.scrollTo({ top: scrollContainerRef.current.scrollHeight, behavior: 'smooth' })
+    force_scroll_to_bottom()
 
     sendMessage(input, attachments)
     clearInput()
