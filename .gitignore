@@ -30,6 +30,7 @@ Thumbs.db
 
 # OpenFox internal files
 .openfox/
+e2e/.openfox-test/
 
 # Logs
 *.log

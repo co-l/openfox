@@ -147,11 +147,11 @@ export function migrateConfig(raw: unknown): { config: GlobalConfig; migrated: b
     // Migrate legacy maxContext to models array
     let migrationOccurred = false
     const providers = obj.providers.map(p => {
-      const { model, maxContext, ...rest } = p
+      const { model, maxContext, models: existingModels, ...rest } = p
       
-      // If provider has legacy maxContext, migrate to models array
-      let models: Array<{ id: string; contextWindow: number; source: 'backend' | 'user' | 'default' }> = []
-      if (maxContext !== undefined) {
+      // If provider has legacy maxContext but no existing models array, migrate to models array
+      let models: Array<{ id: string; contextWindow: number; source: 'backend' | 'user' | 'default' }> = existingModels ?? []
+      if (maxContext !== undefined && (existingModels === undefined || existingModels.length === 0)) {
         migrationOccurred = true
         // Use the model field value if available, otherwise default to 'auto'
         models = [{

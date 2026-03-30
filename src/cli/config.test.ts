@@ -217,6 +217,102 @@ describe('config', () => {
     })
   })
 
+  describe('user-defined model context preservation', () => {
+    it('preserves user-set contextWindow values across save/load cycle', async () => {
+      const configWithUserModels = {
+        providers: [
+          {
+            id: 'test-provider-123',
+            name: 'Test Provider',
+            url: 'http://localhost:8000/v1',
+            backend: 'vllm' as const,
+            models: [
+              { id: 'model-x', contextWindow: 128000, source: 'user' as const },
+              { id: 'model-y', contextWindow: 256000, source: 'user' as const },
+            ],
+            isActive: true,
+            createdAt: new Date().toISOString(),
+          },
+        ],
+        defaultModelSelection: 'test-provider-123/model-x',
+        server: { port: 10369, host: '127.0.0.1', openBrowser: true },
+        logging: { level: 'info' as const },
+        database: { path: '' },
+        workspace: { workdir: process.cwd() },
+      }
+
+      await saveGlobalConfig('production', configWithUserModels)
+      const loaded = await loadGlobalConfig('production')
+
+      expect(loaded.providers).toHaveLength(1)
+      expect(loaded.providers[0]?.models).toEqual([
+        { id: 'model-x', contextWindow: 128000, source: 'user' },
+        { id: 'model-y', contextWindow: 256000, source: 'user' },
+      ])
+    })
+
+    it('preserves existing models array when provider has both legacy maxContext and models', () => {
+      const configWithLegacyAndModels = {
+        providers: [
+          {
+            id: 'test-provider-456',
+            name: 'Test Provider',
+            url: 'http://localhost:8000/v1',
+            backend: 'vllm' as const,
+            maxContext: 200000,
+            models: [
+              { id: 'model-x', contextWindow: 128000, source: 'user' as const },
+              { id: 'model-y', contextWindow: 256000, source: 'user' as const },
+            ],
+            isActive: true,
+            createdAt: new Date().toISOString(),
+          },
+        ],
+        defaultModelSelection: 'test-provider-456/model-x',
+        server: { port: 10369, host: '127.0.0.1', openBrowser: true },
+        logging: { level: 'info' as const },
+        database: { path: '' },
+        workspace: { workdir: process.cwd() },
+      }
+
+      const result = migrateConfig(configWithLegacyAndModels)
+
+      expect(result.migrated).toBe(false)
+      expect(result.config.providers[0]?.models).toEqual([
+        { id: 'model-x', contextWindow: 128000, source: 'user' },
+        { id: 'model-y', contextWindow: 256000, source: 'user' },
+      ])
+    })
+
+    it('migrates legacy maxContext to models array when no models array exists', () => {
+      const configWithOnlyLegacyMaxContext = {
+        providers: [
+          {
+            id: 'test-provider-789',
+            name: 'Test Provider',
+            url: 'http://localhost:8000/v1',
+            backend: 'vllm' as const,
+            maxContext: 150000,
+            model: 'custom-model',
+            isActive: true,
+            createdAt: new Date().toISOString(),
+          },
+        ],
+        server: { port: 10369, host: '127.0.0.1', openBrowser: true },
+        logging: { level: 'info' as const },
+        database: { path: '' },
+        workspace: { workdir: process.cwd() },
+      }
+
+      const result = migrateConfig(configWithOnlyLegacyMaxContext)
+
+      expect(result.migrated).toBe(true)
+      expect(result.config.providers[0]?.models).toEqual([
+        { id: 'custom-model', contextWindow: 150000, source: 'user' },
+      ])
+    })
+  })
+
   describe('server host configuration', () => {
     it('saves and loads server.host = 0.0.0.0 for network access', async () => {
       const config = {
