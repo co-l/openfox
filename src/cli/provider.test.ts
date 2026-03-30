@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
-import { mkdir, writeFile, rm, readFile } from 'node:fs/promises'
+import { mkdir, rm } from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 
@@ -51,6 +51,7 @@ describe('provider commands', () => {
         url: 'http://localhost:8000/v1',
 
         backend: 'vllm',
+        models: [],
         isActive: false, // Should become active anyway (first provider)
       })
 
@@ -68,6 +69,7 @@ describe('provider commands', () => {
           url: 'http://localhost:8000/v1',
   
           backend: 'vllm' as const,
+          models: [],
           isActive: true,
           createdAt: new Date().toISOString(),
         }],
@@ -83,6 +85,7 @@ describe('provider commands', () => {
         url: 'http://localhost:11434',
 
         backend: 'ollama',
+        models: [],
         isActive: false,
       })
 
@@ -100,6 +103,7 @@ describe('provider commands', () => {
           url: 'http://localhost:8000/v1',
   
           backend: 'vllm' as const,
+          models: [],
           isActive: true,
           createdAt: new Date().toISOString(),
         }],
@@ -115,6 +119,7 @@ describe('provider commands', () => {
         url: 'http://localhost:11434',
 
         backend: 'ollama',
+        models: [],
         isActive: true, // Make this one active
       })
 
@@ -135,6 +140,7 @@ describe('provider commands', () => {
             url: 'http://localhost:8000/v1',
     
             backend: 'vllm' as const,
+            models: [],
             isActive: true,
             createdAt: new Date().toISOString(),
           },
@@ -144,6 +150,7 @@ describe('provider commands', () => {
             url: 'http://localhost:11434',
     
             backend: 'ollama' as const,
+            models: [],
             isActive: false,
             createdAt: new Date().toISOString(),
           },
@@ -172,6 +179,7 @@ describe('provider commands', () => {
             url: 'http://localhost:8000/v1',
     
             backend: 'vllm' as const,
+            models: [],
             isActive: true,
             createdAt: new Date().toISOString(),
           },
@@ -181,6 +189,7 @@ describe('provider commands', () => {
             url: 'http://localhost:11434',
     
             backend: 'ollama' as const,
+            models: [],
             isActive: false,
             createdAt: new Date().toISOString(),
           },
@@ -207,6 +216,7 @@ describe('provider commands', () => {
           url: 'http://localhost:8000/v1',
   
           backend: 'vllm' as const,
+          models: [],
           isActive: true,
           createdAt: new Date().toISOString(),
         }],
@@ -234,6 +244,7 @@ describe('provider commands', () => {
             url: 'http://localhost:8000/v1',
     
             backend: 'vllm' as const,
+            models: [],
             isActive: true,
             createdAt: new Date().toISOString(),
           },
@@ -243,6 +254,7 @@ describe('provider commands', () => {
             url: 'http://localhost:11434',
     
             backend: 'ollama' as const,
+            models: [],
             isActive: false,
             createdAt: new Date().toISOString(),
           },
@@ -269,6 +281,7 @@ describe('provider commands', () => {
           url: 'http://localhost:8000/v1',
   
           backend: 'vllm' as const,
+          models: [],
           isActive: true,
           createdAt: new Date().toISOString(),
         }],
@@ -295,6 +308,7 @@ describe('provider commands', () => {
             url: 'http://localhost:8000/v1',
     
             backend: 'vllm' as const,
+            models: [],
             isActive: true,
             createdAt: new Date().toISOString(),
           },
@@ -337,6 +351,7 @@ describe('provider commands', () => {
           url: 'http://localhost:8000/v1',
   
           backend: 'vllm' as const,
+          models: [],
           isActive: true,
           createdAt: new Date().toISOString(),
         }],

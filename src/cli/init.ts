@@ -111,7 +111,7 @@ export async function runInitWithSelect(mode: Mode, existingConfig?: GlobalConfi
         url: found.url,
 
         backend: found.backend as ProviderBackend,
-        maxContext: 200000,
+        models: [],
         isActive: true,
       })
     } else {
@@ -152,7 +152,7 @@ export async function runInitWithSelect(mode: Mode, existingConfig?: GlobalConfi
           name: 'Default',
           url,
           backend: backend as ProviderBackend,
-          maxContext: 200000,
+          models: [],
           isActive: true,
         })
         // Set the default model selection
@@ -180,7 +180,7 @@ export async function runInitWithSelect(mode: Mode, existingConfig?: GlobalConfi
           name: 'Default',
           url,
           backend: 'auto',
-          maxContext: 200000,
+          models: [],
           isActive: true,
         })
         // Set the default model selection

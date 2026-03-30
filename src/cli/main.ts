@@ -137,7 +137,7 @@ export async function runCli(options: { mode: Mode }): Promise<void> {
             name: 'Default',
             url: detected.url,
             backend: detected.backend as 'auto' | 'vllm' | 'sglang' | 'ollama' | 'llamacpp',
-            maxContext: 200000,
+            models: [],
             isActive: true,
           })
           // Set the default model selection after adding provider

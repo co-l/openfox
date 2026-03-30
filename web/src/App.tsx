@@ -126,19 +126,12 @@ function ProjectSessionView({
 function App() {
   const { connectionStatus } = useWebSocket()
   const fetchConfig = useConfigStore(state => state.fetchConfig)
-  const handleProjectMessage = useProjectStore(state => state.handleServerMessage)
   const [sidebarOpen, setSidebarOpen] = useState(false)
 
   // Fetch config on mount
   useEffect(() => {
     fetchConfig()
   }, [fetchConfig])
-
-  // Subscribe to project messages
-  useEffect(() => {
-    // The project store needs to handle server messages
-    // This is done via the session store's subscription, but we need to add project handling
-  }, [handleProjectMessage])
 
   // Block UI until connected
   if (connectionStatus !== 'connected') {

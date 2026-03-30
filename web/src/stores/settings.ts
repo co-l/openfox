@@ -16,7 +16,7 @@ interface SettingsState {
   setSetting: (key: string, value: string) => Promise<void>
 }
 
-export const useSettingsStore = create<SettingsState>((set, get) => ({
+export const useSettingsStore = create<SettingsState>((set) => ({
   settings: {},
   loading: {},
   
