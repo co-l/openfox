@@ -283,9 +283,12 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
 
     // Persist to global config as defaultModelSelection
     const { loadGlobalConfig, saveGlobalConfig, setDefaultModelSelection } = await import('../cli/config.js')
-    const globalConfig = await loadGlobalConfig(config.mode ?? 'development')
+    const globalConfig = await loadGlobalConfig(config.mode ?? 'production')
     const updatedConfig = setDefaultModelSelection(globalConfig, providerId, model ?? 'auto')
-    await saveGlobalConfig(config.mode ?? 'development', updatedConfig)
+    await saveGlobalConfig(config.mode ?? 'production', updatedConfig)
+    
+    // Update in-memory config so new sessions inherit the selection
+    config.defaultModelSelection = updatedConfig.defaultModelSelection
 
     // Invalidate session LLM client cache (handled internally by setSessionProvider)
 
@@ -398,9 +401,9 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
     // Persist the model selection to config
     const llmClient = getLLMClient()
     const { loadGlobalConfig, saveGlobalConfig, setDefaultModelSelection } = await import('../cli/config.js')
-    const globalConfig = await loadGlobalConfig(config.mode ?? 'development')
+    const globalConfig = await loadGlobalConfig(config.mode ?? 'production')
     const updatedConfig = setDefaultModelSelection(globalConfig, id as string, llmClient.getModel())
-    await saveGlobalConfig(config.mode ?? 'development', updatedConfig)
+    await saveGlobalConfig(config.mode ?? 'production', updatedConfig)
 
     res.json({
       success: true,
@@ -425,7 +428,7 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
 
     // Persist to config.json
     const { loadGlobalConfig, saveGlobalConfig } = await import('../cli/config.js')
-    const globalConfig = await loadGlobalConfig(config.mode ?? 'development')
+    const globalConfig = await loadGlobalConfig(config.mode ?? 'production')
     const updatedProviders = providerManager.getProviders()
     const updatedConfig = {
       ...globalConfig,
@@ -435,7 +438,7 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
         ? `${providerManager.getActiveProviderId()}/${providerManager.getCurrentModel()}`
         : undefined,
     }
-    await saveGlobalConfig(config.mode ?? 'development', updatedConfig)
+    await saveGlobalConfig(config.mode ?? 'production', updatedConfig)
 
     // Return updated context state for sessions using this provider/model
     // This allows the frontend to update the session header immediately via REST
