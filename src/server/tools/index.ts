@@ -8,15 +8,13 @@ import { runCommandTool } from './shell.js'
 import { globTool } from './glob.js'
 import { grepTool } from './grep.js'
 import { gitTool } from './git.js'
-import { askUserTool, AskUserInterrupt, provideAnswer, cancelQuestion } from './ask.js'
+import { askUserTool, AskUserInterrupt } from './ask.js'
 import {
   PathAccessDeniedError,
-  providePathConfirmation,
-  cancelPathConfirmation,
+  requestPathAccess,
 } from './path-security.js'
-import { completeCriterionTool, passCriterionTool, failCriterionTool } from './criterion.js'
-import { getCriteriaTool, addCriterionTool, updateCriterionTool, removeCriterionTool } from './planner-criteria.js'
-import { todoWriteTool, setTodoUpdateCallback, getTodos, clearTodos } from './todo.js'
+import { criterionTool } from './criterion.js'
+import { todoTool } from './todo.js'
 import { callSubAgentTool } from './sub-agent.js'
 import { loadSkillTool } from './load-skill.js'
 import { returnValueTool } from './return-value.js'
@@ -96,9 +94,7 @@ function getAllToolsMap(): Map<string, Tool> {
     ...[
       readFileTool, writeFileTool, editFileTool, runCommandTool,
       globTool, grepTool, gitTool, askUserTool,
-      completeCriterionTool, passCriterionTool, failCriterionTool,
-      getCriteriaTool, addCriterionTool, updateCriterionTool, removeCriterionTool,
-      todoWriteTool, callSubAgentTool, loadSkillTool, returnValueTool, webFetchTool,
+      criterionTool, todoTool, callSubAgentTool, loadSkillTool, returnValueTool, webFetchTool,
       devServerTool, stepDoneTool,
     ].map(t => [t.name, t] as const),
   ])
@@ -157,15 +153,11 @@ export function createToolRegistry(): ToolRegistry {
 
 // Re-export types and utilities
 export type { Tool, ToolRegistry, ToolContext } from './types.js'
-export { AskUserInterrupt, provideAnswer, cancelQuestion, cancelQuestionsForSession } from './ask.js'
-export { setTodoUpdateCallback, getTodos, clearTodos } from './todo.js'
+export { AskUserInterrupt, cancelQuestionsForSession, provideAnswer } from './ask.js'
 export {
   PathAccessDeniedError,
-  providePathConfirmation,
-  cancelPathConfirmation,
-  cancelPathConfirmationsForSession,
-  addAllowedPaths,
-  clearAllowedPaths,
   requestPathAccess,
+  cancelPathConfirmationsForSession,
+  providePathConfirmation,
 } from './path-security.js'
 export { stepDoneTool } from './step-done.js'

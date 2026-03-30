@@ -12,8 +12,7 @@ describe('SubAgentManager', () => {
 
     expect(verifier).toBeDefined()
     expect(verifier!.metadata.subagent).toBe(true)
-    expect(verifier!.metadata.tools).toContain('pass_criterion')
-    expect(verifier!.metadata.tools).toContain('fail_criterion')
+    expect(verifier!.metadata.tools).toContain('criterion')
   })
 
   it('should return undefined for unknown sub-agent type', async () => {
@@ -29,8 +28,7 @@ describe('SubAgentManager', () => {
     expect(findAgentById('verifier', agents)?.metadata.tools).toEqual([
       'read_file',
       'run_command',
-      'pass_criterion',
-      'fail_criterion',
+      'criterion',
       'web_fetch',
     ])
 

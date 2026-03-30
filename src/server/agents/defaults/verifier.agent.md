@@ -7,8 +7,7 @@ color: '#22c55e'
 tools:
   - read_file
   - run_command
-  - pass_criterion
-  - fail_criterion
+  - criterion
   - web_fetch
 ---
 
@@ -28,8 +27,8 @@ For each criterion marked [NEEDS VERIFICATION]:
 4. Run tests or commands only if applicable to the criterion
 
 Then call:
-- `pass_criterion` if the criterion is satisfied
-- `fail_criterion` if it is NOT satisfied (explain why clearly)
+- `criterion` with action "pass" if the criterion is satisfied
+- `criterion` with action "fail" if it is NOT satisfied (explain why clearly)
 
 ## IMPORTANT
 - Start by analyzing what each criterion actually requires

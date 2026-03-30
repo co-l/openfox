@@ -195,7 +195,7 @@ describe('Criteria System', () => {
     describe('complete_criterion', () => {
       it('marks criterion as completed', async () => {
         await client.send('chat.send', { 
-          content: 'Create the file src/utils.ts with any content, then call complete_criterion for "file-created".' 
+          content: 'Create the file src/utils.ts with any content, then call criterion with action "complete" for "file-created".' 
         })
         
         const events = await collectChatEvents(client)

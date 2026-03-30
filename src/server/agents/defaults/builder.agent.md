@@ -13,9 +13,9 @@ tools:
   - edit_file
   - run_command
   - ask_user
-  - complete_criterion
+  - criterion
   - get_criteria
-  - todo_write
+  - todo
   - call_sub_agent
   - load_skill
   - dev_server
