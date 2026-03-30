@@ -61,7 +61,7 @@ export const useAutoScroll = (
       scroll_to_bottom()
     }, 1000)
 
-    const start_user_scroll = () => {
+    const start_user_scroll = (e:Event) => {
       if (is_forced_scroll_to_bottom) {
         // discard event for forced scroll
         return
@@ -71,6 +71,7 @@ export const useAutoScroll = (
       if (distance > 50) {
         cancelAnimationFrame(last_raf)
         is_user_scrolling = true
+        console.log("Scroll detected!", e)
       } else {
         is_user_scrolling = false
       }

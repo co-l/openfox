@@ -34,7 +34,7 @@ const __dirname = dirname(fileURLToPath(import.meta.url))
 /**
  * Create a server handle that can be started on any port.
  * Returns a ServerHandle with start() and close() methods.
- * 
+ *
  * Use this for:
  * - In-process testing with isolated instances
  * - Programmatic server control
@@ -60,16 +60,16 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
 
   // Create Provider Manager (handles LLM client lifecycle)
   const providerManager = createProviderManager(config)
-  
+
   // Create SessionManager instance (not singleton!)
   const sessionManager = new SessionManager(providerManager)
-  
+
   // Create LLM client - use mock if OPENFOX_MOCK_LLM is set
   const useMock = process.env['OPENFOX_MOCK_LLM'] === 'true'
   // For mock mode, we bypass the provider manager
   const getMockClient = useMock ? createMockLLMClient : null
-  const getLLMClient = () => getMockClient ? getMockClient() : providerManager.getLLMClient()
-  
+  const getLLMClient = () => (getMockClient ? getMockClient() : providerManager.getLLMClient())
+
   if (useMock) {
     logger.info('Using MOCK LLM client - deterministic responses for testing')
   }
@@ -79,7 +79,7 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
     const llmClient = getLLMClient()
     let backend: Backend
     const useMock = process.env['OPENFOX_MOCK_LLM'] === 'true'
-    
+
     if (config.llm.backend === 'auto') {
       backend = await detectBackend(config.llm.baseUrl, undefined, useMock)
       llmClient.setBackend(backend)
@@ -93,7 +93,7 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
         logger.info('Using configured LLM backend', { backend: getBackendDisplayName(backend) })
       }
     }
-    
+
     const detected = await detectModel(config.llm.baseUrl)
     if (detected) {
       llmClient.setModel(detected)
@@ -105,20 +105,25 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
         logger.warn('Could not auto-detect model, using config', { model: config.llm.model })
       }
     }
-    
+
     // Refetch models with context windows on startup
     const activeProvider = providerManager.getActiveProvider()
     if (activeProvider) {
-      await providerManager.refreshProviderModels(activeProvider.id).catch(err => {
-        logger.debug('Startup model refetch failed', { providerId: activeProvider.id, error: err instanceof Error ? err.message : String(err) })
+      await providerManager.refreshProviderModels(activeProvider.id).catch((err) => {
+        logger.debug('Startup model refetch failed', {
+          providerId: activeProvider.id,
+          error: err instanceof Error ? err.message : String(err),
+        })
       })
     }
   }
 
-  initLLM().catch(err => logger.error('LLM initialization failed', { error: err instanceof Error ? err.message : String(err) }))
+  initLLM().catch((err) =>
+    logger.error('LLM initialization failed', { error: err instanceof Error ? err.message : String(err) }),
+  )
 
   const toolRegistry = createToolRegistry()
-  
+
   const app = express()
 
   // Middleware
@@ -132,7 +137,7 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
 
   // Available tool names
   app.get('/api/tools', (_req, res) => {
-    res.json({ tools: toolRegistry.tools.map(t => t.name) })
+    res.json({ tools: toolRegistry.tools.map((t) => t.name) })
   })
 
   // Project endpoints (REST)
@@ -187,26 +192,18 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
   // Session endpoints (REST)
 
   app.get('/api/sessions', async (req, res) => {
-    const { getEventStore } = await import('./events/index.js')
-    const { buildMessagesFromStoredEvents } = await import('./events/folding.js')
     const { getRecentUserPromptsForSession } = await import('./events/index.js')
-    
+
     const projectId = req.query['projectId'] as string | undefined
     const allSessions = sessionManager.listSessions()
-    const sessions = projectId ? allSessions.filter(s => s.projectId === projectId) : allSessions
-    
-    // Add recent user prompts to each session
-    const eventStore = getEventStore()
-    const sessionsWithPrompts = sessions.map(session => {
-      const events = eventStore.getEvents(session.id)
-      const messages = buildMessagesFromStoredEvents(events)
-      return {
-        ...session,
-        recentUserPrompts: getRecentUserPromptsForSession(session.id, 10),
-        messages,
-      }
-    })
-    
+    const sessions = projectId ? allSessions.filter((s) => s.projectId === projectId) : allSessions
+
+    // Add recent user prompts to each session (but not full messages - fetch those via /api/sessions/:id)
+    const sessionsWithPrompts = sessions.map((session) => ({
+      ...session,
+      recentUserPrompts: getRecentUserPromptsForSession(session.id, 10),
+    }))
+
     res.json({ sessions: sessionsWithPrompts })
   })
 
@@ -215,12 +212,12 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
     if (!projectId) {
       return res.status(400).json({ error: 'projectId is required' })
     }
-    
+
     const project = sessionManager.getProject(projectId)
     if (!project) {
       return res.status(404).json({ error: 'Project not found' })
     }
-    
+
     // maxTokens is no longer passed - it comes from providerManager.getCurrentModelContext() at query time
     const session = sessionManager.createSession(projectId, title, null, null)
     res.status(201).json({ session })
@@ -229,17 +226,17 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
   app.get('/api/sessions/:id', async (req, res) => {
     const { getEventStore } = await import('./events/index.js')
     const { buildMessagesFromStoredEvents } = await import('./events/folding.js')
-    
+
     const session = sessionManager.getSession(req.params.id)
     if (!session) {
       return res.status(404).json({ error: 'Session not found' })
     }
-    
+
     const eventStore = getEventStore()
     const events = eventStore.getEvents(req.params.id)
     const messages = buildMessagesFromStoredEvents(events)
     const contextState = sessionManager.getContextState(req.params.id)
-    
+
     res.json({ session, messages, contextState })
   })
 
@@ -266,32 +263,32 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
   app.post('/api/sessions/:id/provider', async (req, res) => {
     const { getEventStore } = await import('./events/index.js')
     const { buildMessagesFromStoredEvents } = await import('./events/folding.js')
-    
+
     const sessionId = req.params.id
     const session = sessionManager.getSession(sessionId)
     if (!session) {
       return res.status(404).json({ error: 'Session not found' })
     }
-    
+
     const { providerId, model } = req.body
     if (!providerId) {
       return res.status(400).json({ error: 'providerId is required' })
     }
-    
+
     // Set provider for session
     sessionManager.setSessionProvider(sessionId, providerId, model ?? 'auto')
-    
+
     // Invalidate session LLM client cache (handled internally by setSessionProvider)
-    
+
     // Get updated context state
     const contextState = sessionManager.getContextState(sessionId)
-    
+
     // Get updated session with messages
     const eventStore = getEventStore()
     const events = eventStore.getEvents(sessionId)
     const messages = buildMessagesFromStoredEvents(events)
     const updatedSession = sessionManager.getSession(sessionId)
-    
+
     res.json({ session: updatedSession, messages, contextState })
   })
 
@@ -336,7 +333,7 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
   app.post('/api/model/refresh', async (_req, res) => {
     const llmClient = getLLMClient()
     const currentModel = providerManager.getCurrentModel()
-    
+
     // Only auto-detect if the current model is 'auto'
     // Otherwise, preserve the explicitly selected model
     if (currentModel === 'auto') {
@@ -345,17 +342,27 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
       const detected = await detectModel(baseUrl)
       if (detected) {
         llmClient.setModel(detected)
-        return res.json({ model: detected, source: 'detected', llmStatus: getLlmStatus(), backend: llmClient.getBackend() })
+        return res.json({
+          model: detected,
+          source: 'detected',
+          llmStatus: getLlmStatus(),
+          backend: llmClient.getBackend(),
+        })
       }
     }
-    
+
     // Return current model without overwriting
-    res.json({ model: llmClient.getModel(), source: 'cached', llmStatus: getLlmStatus(), backend: llmClient.getBackend() })
+    res.json({
+      model: llmClient.getModel(),
+      source: 'cached',
+      llmStatus: getLlmStatus(),
+      backend: llmClient.getBackend(),
+    })
   })
 
   // Provider endpoints
   app.get('/api/providers', (_req, res) => {
-    const providers = providerManager.getProviders().map(p => ({
+    const providers = providerManager.getProviders().map((p) => ({
       ...p,
       status: providerManager.getProviderStatus(p.id),
     }))
@@ -378,14 +385,14 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
     if (!result.success) {
       return res.status(400).json({ error: result.error })
     }
-    
+
     // Persist the model selection to config
     const llmClient = getLLMClient()
     const { loadGlobalConfig, saveGlobalConfig, setDefaultModelSelection } = await import('../cli/config.js')
     const globalConfig = await loadGlobalConfig(config.mode ?? 'production')
     const updatedConfig = setDefaultModelSelection(globalConfig, id as string, llmClient.getModel())
     await saveGlobalConfig(config.mode ?? 'production', updatedConfig)
-    
+
     res.json({
       success: true,
       activeProviderId: id,
@@ -397,16 +404,16 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
   app.post('/api/providers/:id/models/:modelId', async (req, res) => {
     const { id, modelId } = req.params
     const body = req.body as { contextWindow?: number }
-    
+
     if (!body.contextWindow) {
       return res.status(400).json({ error: 'contextWindow is required' })
     }
-    
+
     const result = await providerManager.updateModelContext(id as string, modelId as string, body.contextWindow)
     if (!result.success) {
       return res.status(400).json({ error: result.error })
     }
-    
+
     // Persist to config.json
     const { loadGlobalConfig, saveGlobalConfig } = await import('../cli/config.js')
     const globalConfig = await loadGlobalConfig(config.mode ?? 'production')
@@ -415,10 +422,12 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
       ...globalConfig,
       providers: updatedProviders,
       activeProviderId: providerManager.getActiveProviderId(),
-      defaultModelSelection: providerManager.getActiveProviderId() ? `${providerManager.getActiveProviderId()}/${providerManager.getCurrentModel()}` : undefined,
+      defaultModelSelection: providerManager.getActiveProviderId()
+        ? `${providerManager.getActiveProviderId()}/${providerManager.getCurrentModel()}`
+        : undefined,
     }
     await saveGlobalConfig(config.mode ?? 'production', updatedConfig)
-    
+
     res.json({ success: true, providerId: id, modelId, contextWindow: body.contextWindow })
   })
 
@@ -428,10 +437,10 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
     if (!result.success) {
       return res.status(400).json({ error: result.error })
     }
-    
-    const updatedProvider = providerManager.getProviders().find(p => p.id === id)
-    res.json({ 
-      success: true, 
+
+    const updatedProvider = providerManager.getProviders().find((p) => p.id === id)
+    res.json({
+      success: true,
       providerId: id,
       models: updatedProvider?.models ?? [],
     })
@@ -444,7 +453,6 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
   app.use('/api/workflows', createWorkflowRoutes(configDir, config))
   app.use('/api/dev-server', createDevServerRoutes())
 
-
   // Branch API endpoint
   const { getCurrentBranch } = await import('./branch.api.js')
 
@@ -456,23 +464,23 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
   const DEFAULT_BASE_PATH = process.cwd()
 
   app.get('/api/directories', async (req, res) => {
-    const path = req.query['path'] as string || DEFAULT_BASE_PATH
-    
+    const path = (req.query['path'] as string) || DEFAULT_BASE_PATH
+
     try {
       const resolvedPath = resolve(path)
-      
-      const entries = await import('node:fs/promises').then(m => m.readdir(resolvedPath, { withFileTypes: true }))
+
+      const entries = await import('node:fs/promises').then((m) => m.readdir(resolvedPath, { withFileTypes: true }))
       const directories = entries
-        .filter(entry => entry.isDirectory() && !entry.name.startsWith('.'))
-        .map(entry => ({
+        .filter((entry) => entry.isDirectory() && !entry.name.startsWith('.'))
+        .map((entry) => ({
           name: entry.name,
           path: join(resolvedPath, entry.name),
         }))
         .sort((a, b) => a.name.localeCompare(b.name))
-      
+
       const parent = dirname(resolvedPath)
       const hasParent = parent !== resolvedPath
-      
+
       res.json({
         current: resolvedPath,
         parent: hasParent ? parent : null,
@@ -480,7 +488,7 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
         basename: basename(resolvedPath),
       })
     } catch {
-      res.status(400).json({ 
+      res.status(400).json({
         error: 'Cannot read directory',
         current: DEFAULT_BASE_PATH,
         parent: null,
@@ -493,13 +501,13 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
   // Serve static web UI
   const webDir = resolve(__dirname, '../../web')
   const isDev = config.mode === 'development'
-  
+
   let viteServer: ViteDevServer | undefined
-  
+
   // Dev mode: use Vite as middleware
   if (isDev) {
     logger.info('Dev mode: using Vite middleware')
-    
+
     // Create Vite server in middleware mode
     viteServer = await createViteServer({
       root: webDir,
@@ -508,10 +516,10 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
       appType: 'spa',
       logLevel: 'warn',
     })
-    
+
     // Mount Vite middleware - handles /@vite/*, /@react-refresh, /src/*, etc.
     app.use(viteServer.middlewares)
-    
+
     // Handle CSS files explicitly - Vite middleware doesn't catch them
     app.get('/src/styles/*path', async (req, res) => {
       try {
@@ -526,85 +534,103 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
         res.status(500).send('Transform error')
       }
     })
-    
+
     // Static files that Vite doesn't handle (after Vite middleware)
     app.get('/fox.svg', (_req, res) => {
-      readFile(join(webDir, 'fox.svg')).then(content => {
-        res.set('Content-Type', 'image/svg+xml')
-        res.send(content)
-      }).catch(() => {
-        res.status(404).send('Not found')
-      })
+      readFile(join(webDir, 'fox.svg'))
+        .then((content) => {
+          res.set('Content-Type', 'image/svg+xml')
+          res.send(content)
+        })
+        .catch(() => {
+          res.status(404).send('Not found')
+        })
     })
-    
-    app.use('/sounds', express.static(join(webDir, 'public', 'sounds'), {
-      setHeaders: (res) => {
-        res.set('Content-Type', 'audio/mpeg')
-      }
-    }))
-    
+
+    app.use(
+      '/sounds',
+      express.static(join(webDir, 'public', 'sounds'), {
+        setHeaders: (res) => {
+          res.set('Content-Type', 'audio/mpeg')
+        },
+      }),
+    )
+
     // SPA fallback for non-API routes (must be last)
     app.get('/*path', (req, res) => {
       if (req.path.startsWith('/api/')) {
         return
       }
       readFile(join(webDir, 'index.html'), 'utf-8')
-        .then(indexHtml => viteServer!.transformIndexHtml(req.originalUrl, indexHtml))
-        .then(transformed => res.send(transformed))
-        .catch(err => {
+        .then((indexHtml) => viteServer!.transformIndexHtml(req.originalUrl, indexHtml))
+        .then((transformed) => res.send(transformed))
+        .catch((err) => {
           logger.error('Error serving index.html', { error: err })
           res.status(500).send('Server error')
         })
     })
-    
+
     logger.info('Vite middleware ready', { port: config.server.port })
   }
-  
+
   // Production mode: serve static files from dist/web
   if (!isDev) {
     const distWebDir = resolve(__dirname, 'web')
-    
+
     // Serve static assets with proper caching
-    app.use('/assets', express.static(join(distWebDir, 'assets'), {
-      setHeaders: (res, filepath) => {
-        if (filepath.endsWith('.css')) {
-          res.set('Content-Type', 'text/css')
-        }
-      }
-    }))
-    
+    app.use(
+      '/assets',
+      express.static(join(distWebDir, 'assets'), {
+        setHeaders: (res, filepath) => {
+          if (filepath.endsWith('.css')) {
+            res.set('Content-Type', 'text/css')
+          }
+        },
+      }),
+    )
+
     // Static files
     app.get('/fox.svg', (_req, res) => {
-      readFile(join(distWebDir, 'fox.svg')).then(content => {
-        res.set('Content-Type', 'image/svg+xml')
-        res.send(content)
-      }).catch(() => {
-        res.status(404).send('Not found')
-      })
+      readFile(join(distWebDir, 'fox.svg'))
+        .then((content) => {
+          res.set('Content-Type', 'image/svg+xml')
+          res.send(content)
+        })
+        .catch(() => {
+          res.status(404).send('Not found')
+        })
     })
-    
-    app.use('/sounds', express.static(join(distWebDir, 'sounds'), {
-      setHeaders: (res) => {
-        res.set('Content-Type', 'audio/mpeg')
-      }
-    }))
+
+    app.use(
+      '/sounds',
+      express.static(join(distWebDir, 'sounds'), {
+        setHeaders: (res) => {
+          res.set('Content-Type', 'audio/mpeg')
+        },
+      }),
+    )
 
     // Root serves index.html
     app.get('/', (_req, res) => {
       readFile(join(distWebDir, 'index.html'), 'utf-8')
-        .then(content => res.send(content))
+        .then((content) => res.send(content))
         .catch(() => {
           res.status(404).send('Web UI not built. Run `npm run build:web`')
         })
     })
-    
+
     // SPA fallback - serve index.html for any unmatched path
     app.get('/*path', (req, res) => {
-      if (req.path.startsWith('/api/') || req.path.startsWith('/assets/') || req.path.startsWith('/sounds/') || req.path === '/fox.svg') {
+      if (
+        req.path.startsWith('/api/') ||
+        req.path.startsWith('/assets/') ||
+        req.path.startsWith('/sounds/') ||
+        req.path === '/fox.svg'
+      ) {
         return
       }
       readFile(join(distWebDir, 'index.html'), 'utf-8')
-        .then(content => res.send(content))
+        .then((content) => res.send(content))
         .catch(() => {
           res.status(404).send('Web UI not built')
         })
@@ -615,46 +641,55 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
   const httpServer = createHttpServer(app)
 
   // Create WebSocket server attached to HTTP server
-  const wss = createWebSocketServer(httpServer, config, getLLMClient, () => providerManager.getActiveProvider(), sessionManager, providerManager)
+  const wss = createWebSocketServer(
+    httpServer,
+    config,
+    getLLMClient,
+    () => providerManager.getActiveProvider(),
+    sessionManager,
+    providerManager,
+  )
 
   // Return the handle with start/close methods
   return {
     httpServer,
     ctx: { config, sessionManager, llmClient: getLLMClient(), toolRegistry, providerManager },
-    
-    start: (port?: number) => new Promise((resolve, reject) => {
-      const listenPort = port ?? config.server.port
-      const host = config.server.host
-      
-      httpServer.listen(listenPort, host, () => {
-        const addr = httpServer.address()
-        const actualPort = typeof addr === 'object' && addr ? addr.port : listenPort
-        const client = getLLMClient()
-        logger.info(`OpenFox server running at http://${host}:${actualPort}`)
-        logger.info(`WebSocket available at ws://${host}:${actualPort}/ws`)
-        logger.info(`LLM backend: ${client.getBackend()}, model: ${client.getModel()}, url: ${config.llm.baseUrl}`)
-        resolve({ port: actualPort })
-      })
-      
-      httpServer.on('error', reject)
-    }),
-    
-    close: () => new Promise<void>((resolve) => {
-      logger.info('Shutting down...')
-      void (async () => {
-        await devServerManager.stopAll()
-        viteServer?.close()
 
-        // Note: Not closing database here - it's a singleton shared across servers.
-        // Database should only be closed when the application exits.
-        // Terminate all WebSocket connections to allow clean shutdown
-        for (const client of wss.clients) {
-          client.terminate()
-        }
-        wss.close()
-        httpServer.close(() => resolve())
-      })()
-    }),
+    start: (port?: number) =>
+      new Promise((resolve, reject) => {
+        const listenPort = port ?? config.server.port
+        const host = config.server.host
+
+        httpServer.listen(listenPort, host, () => {
+          const addr = httpServer.address()
+          const actualPort = typeof addr === 'object' && addr ? addr.port : listenPort
+          const client = getLLMClient()
+          logger.info(`OpenFox server running at http://${host}:${actualPort}`)
+          logger.info(`WebSocket available at ws://${host}:${actualPort}/ws`)
+          logger.info(`LLM backend: ${client.getBackend()}, model: ${client.getModel()}, url: ${config.llm.baseUrl}`)
+          resolve({ port: actualPort })
+        })
+
+        httpServer.on('error', reject)
+      }),
+
+    close: () =>
+      new Promise<void>((resolve) => {
+        logger.info('Shutting down...')
+        void (async () => {
+          await devServerManager.stopAll()
+          viteServer?.close()
+
+          // Note: Not closing database here - it's a singleton shared across servers.
+          // Database should only be closed when the application exits.
+          // Terminate all WebSocket connections to allow clean shutdown
+          for (const client of wss.clients) {
+            client.terminate()
+          }
+          wss.close()
+          httpServer.close(() => resolve())
+        })()
+      }),
   }
 }
 
@@ -666,7 +701,7 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
 export async function createServer(config: Config): Promise<void> {
   const handle = await createServerHandle(config)
   await handle.start()
-  
+
   // Graceful shutdown with force exit timeout
   const shutdown = () => {
     // Force exit after 3 seconds if graceful shutdown hangs
@@ -675,10 +710,10 @@ export async function createServer(config: Config): Promise<void> {
       process.exit(1)
     }, 3000)
     forceExitTimer.unref() // Don't keep process alive just for this timer
-    
+
     handle.close().then(() => process.exit(0))
   }
-  
+
   process.on('SIGINT', shutdown)
   process.on('SIGTERM', shutdown)
 }
