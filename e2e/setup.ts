@@ -7,8 +7,14 @@
 import { spawn, execSync, type ChildProcess } from 'node:child_process'
 import { setTimeout as sleep } from 'node:timers/promises'
 import { config } from 'dotenv'
+import { rm, mkdir } from 'node:fs/promises'
+import { join, dirname } from 'node:path'
+import { fileURLToPath } from 'node:url'
 
 config({ path: new URL('../.env', import.meta.url).pathname })
+
+const __dirname = dirname(fileURLToPath(import.meta.url))
+const TEST_CONFIG_DIR = join(__dirname, '.openfox-test')
 
 const TEST_PORT = process.env['OPENFOX_TEST_PORT'] ?? '3999'
 let serverProcess: ChildProcess | null = null
@@ -35,6 +41,9 @@ async function waitForServer(url: string, maxAttempts = 40): Promise<void> {
 }
 
 export async function setup(): Promise<void> {
+  await rm(TEST_CONFIG_DIR, { recursive: true, force: true })
+  await mkdir(TEST_CONFIG_DIR, { recursive: true })
+  
   killProcessOnPort(TEST_PORT)
   await sleep(300)
 
@@ -54,6 +63,7 @@ export async function setup(): Promise<void> {
       OPENFOX_LOG_LEVEL: 'error',
       OPENFOX_MOCK_LLM: 'true',
       OPENFOX_MODEL_NAME: 'mock-model',
+      OPENFOX_MODE: 'test',
     },
     stdio: 'ignore',
     detached: true,
@@ -95,4 +105,6 @@ export async function teardown(): Promise<void> {
       console.log('✅ Stopped')
     }
   }
+  
+  await rm(TEST_CONFIG_DIR, { recursive: true, force: true })
 }

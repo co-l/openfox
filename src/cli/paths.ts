@@ -4,6 +4,9 @@ import { mkdir, access } from 'node:fs/promises'
 import type { Mode } from './main.js'
 
 export function getGlobalConfigDir(mode: Mode): string {
+  if (mode === 'test') {
+    return join(process.cwd(), 'e2e', '.openfox-test')
+  }
   const suffix = mode === 'development' ? '-dev' : ''
   const home = homedir()
   

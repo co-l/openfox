@@ -4,7 +4,7 @@ import { loadGlobalConfig, saveGlobalConfig, type GlobalConfig } from '../src/cl
 import type { Config } from '../src/shared/types.js'
 
 describe('Provider Context Restart', () => {
-  const testMode = 'production'
+  const testMode = 'test'
   let config: Config
   let serverHandle: Awaited<ReturnType<typeof createServerHandle>>
 

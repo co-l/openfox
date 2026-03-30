@@ -529,7 +529,7 @@ export interface Config {
   logging?: {
     level: 'debug' | 'info' | 'warn' | 'error'
   }
-  mode?: 'development' | 'production'
+  mode?: 'development' | 'production' | 'test'
   dev?: boolean  // true when running in dev mode (OPENFOX_DEV=true or mode='development')
   /** Configured providers (loaded from global config) */
   providers?: Provider[] | undefined

@@ -1,6 +1,6 @@
 import { parseArgs } from 'node:util'
 
-export type Mode = 'production' | 'development'
+export type Mode = 'production' | 'development' | 'test'
 
 export function printHelp(): void {
   console.log(`

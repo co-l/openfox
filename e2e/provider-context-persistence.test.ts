@@ -40,7 +40,7 @@ describe('Provider Context Persistence', () => {
     await client.waitFor('session.state', undefined, 5000)
 
     // Get initial config
-    const config = await loadGlobalConfig('production')
+    const config = await loadGlobalConfig('test')
     const activeProviderId = config.activeProviderId
     expect(activeProviderId).toBeDefined()
 
@@ -66,7 +66,7 @@ describe('Provider Context Persistence', () => {
     })
     
     // Verify config was updated (either via API or fallback)
-    const updatedConfig = await loadGlobalConfig('production')
+    const updatedConfig = await loadGlobalConfig('test')
     const updatedProvider = updatedConfig.providers?.find(p => p.id === activeProviderId)
     const updatedModel = updatedProvider?.models.find(m => m.id === modelId)
     
@@ -84,7 +84,7 @@ describe('Provider Context Persistence', () => {
     // This test verifies that model ID variations (spaces vs dashes) don't break
     // user context window settings
     
-    const config = await loadGlobalConfig('production')
+    const config = await loadGlobalConfig('test')
     const activeProviderId = config.activeProviderId
     expect(activeProviderId).toBeDefined()
 
@@ -111,7 +111,7 @@ describe('Provider Context Persistence', () => {
     // May fail in mock mode, but that's ok - we're testing the normalization logic
     // which is covered by the provider-manager unit tests
     if (response.ok) {
-      const updatedConfig = await loadGlobalConfig('production')
+      const updatedConfig = await loadGlobalConfig('test')
       const provider = updatedConfig.providers?.find(p => p.id === activeProviderId)
       const model = provider?.models.find(m => m.id === testModelId)
       expect(model?.contextWindow).toBe(customContext)
