@@ -175,7 +175,7 @@ export interface ProviderManager {
   refreshProviderModels(providerId: string): Promise<{ success: boolean; error?: string }>
 }
 
-function parseDefaultModelSelection(selection?: string): { providerId: string | undefined; model: string | undefined } {
+export function parseDefaultModelSelection(selection?: string): { providerId: string | undefined; model: string | undefined } {
   if (!selection) return { providerId: undefined, model: undefined }
   const parts = selection.split('/')
   return {

@@ -12,7 +12,7 @@ import { initDatabase } from './db/index.js'
 import { initEventStore } from './events/index.js'
 import { detectModel, getLlmStatus, detectBackend, getBackendDisplayName, type Backend } from './llm/index.js'
 import { createMockLLMClient } from './llm/mock.js'
-import { createProviderManager } from './provider-manager.js'
+import { createProviderManager, parseDefaultModelSelection } from './provider-manager.js'
 import { createToolRegistry } from './tools/index.js'
 import { createWebSocketServer } from './ws/index.js'
 import { SessionManager } from './session/manager.js'
@@ -218,8 +218,11 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
       return res.status(404).json({ error: 'Project not found' })
     }
 
+    // Inherit provider/model from defaultModelSelection config
+    const { providerId, model } = parseDefaultModelSelection(config.defaultModelSelection)
+
     // maxTokens is no longer passed - it comes from providerManager.getCurrentModelContext() at query time
-    const session = sessionManager.createSession(projectId, title, null, null)
+    const session = sessionManager.createSession(projectId, title, providerId ?? null, model ?? null)
     res.status(201).json({ session })
   })
 
@@ -277,6 +280,12 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
 
     // Set provider for session
     sessionManager.setSessionProvider(sessionId, providerId, model ?? 'auto')
+
+    // Persist to global config as defaultModelSelection
+    const { loadGlobalConfig, saveGlobalConfig, setDefaultModelSelection } = await import('../cli/config.js')
+    const globalConfig = await loadGlobalConfig(config.mode ?? 'development')
+    const updatedConfig = setDefaultModelSelection(globalConfig, providerId, model ?? 'auto')
+    await saveGlobalConfig(config.mode ?? 'development', updatedConfig)
 
     // Invalidate session LLM client cache (handled internally by setSessionProvider)
 
@@ -389,9 +398,9 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
     // Persist the model selection to config
     const llmClient = getLLMClient()
     const { loadGlobalConfig, saveGlobalConfig, setDefaultModelSelection } = await import('../cli/config.js')
-    const globalConfig = await loadGlobalConfig(config.mode ?? 'production')
+    const globalConfig = await loadGlobalConfig(config.mode ?? 'development')
     const updatedConfig = setDefaultModelSelection(globalConfig, id as string, llmClient.getModel())
-    await saveGlobalConfig(config.mode ?? 'production', updatedConfig)
+    await saveGlobalConfig(config.mode ?? 'development', updatedConfig)
 
     res.json({
       success: true,
@@ -416,7 +425,7 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
 
     // Persist to config.json
     const { loadGlobalConfig, saveGlobalConfig } = await import('../cli/config.js')
-    const globalConfig = await loadGlobalConfig(config.mode ?? 'production')
+    const globalConfig = await loadGlobalConfig(config.mode ?? 'development')
     const updatedProviders = providerManager.getProviders()
     const updatedConfig = {
       ...globalConfig,
@@ -426,7 +435,7 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
         ? `${providerManager.getActiveProviderId()}/${providerManager.getCurrentModel()}`
         : undefined,
     }
-    await saveGlobalConfig(config.mode ?? 'production', updatedConfig)
+    await saveGlobalConfig(config.mode ?? 'development', updatedConfig)
 
     // Return updated context state for sessions using this provider/model
     // This allows the frontend to update the session header immediately via REST
