@@ -197,14 +197,30 @@ export function createWebSocketServer(
     if (!sessionId) return
     
     for (const [ws, client] of clients) {
-      // Send events to all clients subscribed to this session (tab model)
-      if (isSubscribedToSession(client, sessionId) && ws.readyState === WebSocket.OPEN) {
-        // Only broadcast session.state for session_updated (not mode_changed)
-        // mode_changed is handled via the event queue to maintain ordering during streaming
+      if (ws.readyState !== WebSocket.OPEN) continue
+      
+      // Broadcast session.state for session_created events to ALL clients
+      // This allows frontend to navigate to newly created sessions even before subscription
+      if (event.type === 'session_created') {
+        const session = sessionManager.getSession(sessionId)
+        if (session) {
+          // Get messages from EventStore
+          const eventStore = getEventStore()
+          const events = eventStore.getEvents(sessionId)
+          const messages = events.length > 0
+            ? buildMessagesFromStoredEvents(events)
+            : []
+          ws.send(serializeServerMessage({ ...createSessionStateMessage(session, messages), sessionId }))
+        }
+        continue
+      }
+      
+      // For other events, only send to subscribed clients
+      if (isSubscribedToSession(client, sessionId)) {
+        // Broadcast session.state for session_updated events
         if (event.type === 'session_updated') {
           const session = sessionManager.getSession(sessionId)
           if (session) {
-            // Get messages from EventStore
             const eventStore = getEventStore()
             const events = eventStore.getEvents(sessionId)
             const messages = events.length > 0

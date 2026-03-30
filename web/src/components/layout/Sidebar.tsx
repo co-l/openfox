@@ -97,6 +97,7 @@ export function Sidebar({ projectId, isOpen = true, onClose }: SidebarProps) {
             variant="primary"
             className="flex-1 text-sm"
             onClick={handleNewSession}
+            data-testid="sidebar-new-session-button"
           >
             + New Session
           </Button>

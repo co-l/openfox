@@ -63,6 +63,7 @@ export function DropdownMenu({ items, trigger, minWidth = '120px' }: DropdownMen
   const menuContent = position && (
     <div
       ref={menuRef}
+      data-testid="session-dropdown-menu"
       className={`fixed bg-bg-secondary border border-border rounded shadow-lg z-50 ${
         position.alignToTop ? 'mb-1' : 'mt-1'
       }`}

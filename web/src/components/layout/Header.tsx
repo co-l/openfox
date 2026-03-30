@@ -89,7 +89,7 @@ function SessionDropdown({ sessions, currentProject, currentSession }: SessionDr
   // Add "New session" as the first item
   items.push({
     label: (
-      <div className="flex items-center gap-2 px-3 py-2 min-w-[160px]">
+      <div className="flex items-center gap-2 px-3 py-2 min-w-[160px]" data-testid="session-dropdown-new-session">
         <svg className="w-4 h-4 text-accent-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
         </svg>
@@ -146,6 +146,7 @@ function SessionDropdown({ sessions, currentProject, currentSession }: SessionDr
         <button
           className="text-text-secondary hover:text-text-primary hover:underline text-sm truncate flex items-center gap-1"
           title={triggerLabel}
+          data-testid="header-session-dropdown"
         >
           {triggerLabel}
           <svg className="w-3 h-3 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">

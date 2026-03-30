@@ -53,5 +53,10 @@ export function PageTitle() {
     }
   }
 
+  // Expose session title for E2E tests
+  if (typeof window !== 'undefined' && session?.metadata?.title) {
+    window.document.documentElement.setAttribute('data-session-title', session.metadata.title)
+  }
+
   return null
 }

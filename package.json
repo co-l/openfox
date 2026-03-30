@@ -34,6 +34,9 @@
     "test": "vitest run --reporter=dot --silent=passed-only && vitest run --reporter=dot --silent=passed-only --config e2e/vitest.config.ts",
     "test:unit": "vitest run --reporter=dot --silent=passed-only",
     "test:e2e": "vitest run --reporter=dot --silent=passed-only --config e2e/vitest.config.ts",
+    "test:playwright": "playwright test --config=e2e-playwright/playwright.config.ts",
+    "test:playwright:ui": "playwright test --config=e2e-playwright/playwright.config.ts --ui",
+    "test:playwright:headed": "playwright test --config=e2e-playwright/playwright.config.ts --headed",
     "test:cov": "vitest run --reporter=dot --silent=passed-only --coverage && vitest run --reporter=dot --silent=passed-only --config e2e/vitest.config.ts --coverage",
     "test:cov:unit": "vitest run --reporter=dot --silent=passed-only --coverage",
     "test:cov:e2e": "vitest run --reporter=dot --silent=passed-only --config e2e/vitest.config.ts --coverage",
@@ -81,6 +84,7 @@
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
+    "@playwright/test": "^1.58.2",
     "@types/better-sqlite3": "^7.6.13",
     "@types/node": "^22.19.15",
     "@types/react": "^19.0.8",

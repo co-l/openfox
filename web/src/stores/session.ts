@@ -87,8 +87,8 @@ function isMessageForCurrentSession(message: ServerMessage, currentSessionId: st
   return currentSessionId !== null && message.sessionId === currentSessionId
 }
 
-function isSessionStateForCurrentView(message: ServerMessage, currentSessionId: string | null): boolean {
-  return message.id !== undefined || isMessageForCurrentSession(message, currentSessionId)
+function isSessionStateForCurrentView(message: ServerMessage, currentSessionId: string | null, pendingSessionCreate: boolean | string): boolean {
+  return message.id !== undefined || isMessageForCurrentSession(message, currentSessionId) || (pendingSessionCreate === true && message.sessionId !== undefined)
 }
 
 function addUnreadSessionId(unreadSessionIds: string[], sessionId: string): string[] {
@@ -455,7 +455,8 @@ export const useSessionStore = create<SessionState>((set, get) => {
       
       if (!isSubscribed) {
         isSubscribed = true
-        wsClient.subscribe(get().handleServerMessage)
+        const handler = get().handleServerMessage
+        wsClient.subscribe(handler)
       }
     } catch (error) {
       console.error('Failed to connect:', error)
@@ -470,17 +471,24 @@ export const useSessionStore = create<SessionState>((set, get) => {
   
   createSession: async (projectId, title) => {
     try {
+      // Set pending flag BEFORE the API call to trigger navigation
+      set({ pendingSessionCreate: true })
+      
       const res = await fetch('/api/sessions', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ projectId, title }),
       })
-      if (!res.ok) return null
+      if (!res.ok) {
+        set({ pendingSessionCreate: false })
+        return null
+      }
       const data = await res.json()
-      // Refresh session list
-      await get().listSessions()
+      // DO NOT refresh session list here - wait for WS session.state to arrive
+      // await get().listSessions()
       return data.session
     } catch {
+      set({ pendingSessionCreate: false })
       return null
     }
   },
@@ -699,7 +707,7 @@ export const useSessionStore = create<SessionState>((set, get) => {
     switch (message.type) {
       case 'session.state': {
         const payload = message.payload as SessionStatePayload
-        if (!isSessionStateForCurrentView(message, activeSessionId)) {
+        if (!isSessionStateForCurrentView(message, activeSessionId, stateSnapshot.pendingSessionCreate)) {
           break
         }
         // Server sends complete state: session + messages

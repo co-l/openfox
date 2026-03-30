@@ -59,7 +59,6 @@ class WebSocketClient {
         this.ws.onmessage = (event) => {
           try {
             const data = JSON.parse(event.data)
-            // console.log('[WS Client] Received message:', data)
             if (isServerMessage(data)) {
               this.handlers.forEach(handler => handler(data))
             }
