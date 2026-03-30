@@ -256,6 +256,9 @@ interface SessionState {
   // Per-session provider/model
   setSessionProvider: (providerId: string, model?: string) => Promise<Session | null>
 
+  // Update context state (from REST API responses)
+  updateContextState: (contextState: ContextState) => void
+
   // Path confirmation
   confirmPath: (callId: string, approved: boolean) => void
 
@@ -664,6 +667,10 @@ export const useSessionStore = create<SessionState>((set, get) => {
       } catch {
         return null
       }
+    },
+
+    updateContextState: (contextState) => {
+      set({ contextState })
     },
 
     confirmPath: (callId, approved) => {

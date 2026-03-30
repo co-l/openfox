@@ -428,7 +428,29 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
     }
     await saveGlobalConfig(config.mode ?? 'production', updatedConfig)
 
-    res.json({ success: true, providerId: id, modelId, contextWindow: body.contextWindow })
+    // Return updated context state for sessions using this provider/model
+    // This allows the frontend to update the session header immediately via REST
+    let contextState = null
+    const sessions = sessionManager.listSessions()
+    if (sessions.length > 0) {
+      // Check if any session is using this provider
+      // Session uses this provider if: explicit providerId matches, OR uses global and global matches
+      for (const session of sessions) {
+        const sessionProviderId = session.providerId || providerManager.getActiveProviderId()
+        if (sessionProviderId === id) {
+          contextState = sessionManager.getContextState(session.id)
+          break
+        }
+      }
+    }
+
+    res.json({ 
+      success: true, 
+      providerId: id, 
+      modelId, 
+      contextWindow: body.contextWindow,
+      contextState,
+    })
   })
 
   app.post('/api/providers/:id/refresh', async (req, res) => {

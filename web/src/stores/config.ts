@@ -216,6 +216,11 @@ export const useConfigStore = create<ConfigState>((set, get) => ({
         throw new Error(errorData.error ?? 'Failed to update model context')
       }
       
+      const data = await response.json() as { 
+        success: boolean
+        contextState?: { currentTokens: number; maxTokens: number; compactionCount: number; dangerZone: boolean; canCompact: boolean } | null
+      }
+      
       const { providers } = get()
       set({
         providers: providers.map(p => p.id === providerId
@@ -224,6 +229,14 @@ export const useConfigStore = create<ConfigState>((set, get) => ({
         ),
         activating: false,
       })
+      
+      // Update session context state if returned from server
+      // This ensures the session header updates immediately without requiring a provider re-click
+      if (data.contextState) {
+        const sessionStore = useSessionStore.getState()
+        sessionStore.updateContextState(data.contextState)
+      }
+      
       return true
     } catch (error) {
       set({
