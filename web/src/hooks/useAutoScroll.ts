@@ -17,21 +17,7 @@ export const useAutoScroll = (
     }
   }
 
-  useEffect(() => {
-    const scroller = container_ref.current
-    if (!scroller) {
-      return
-    }
-
-    const observer = new MutationObserver(() => {
-      console.log("Mutation Observer", is_forced_scroll_to_bottom, is_user_scrolling, is_user_touching)
-      if (is_user_scrolling || is_user_touching) {
-        cancelAnimationFrame(last_raf)
-        return
-      }
-      last_raf = requestAnimationFrame(scroll_to_bottom)
-    })
-
+  const scroll_to_bottom_on_startup = () => {
     last_raf = requestAnimationFrame(scroll_to_bottom)
     setTimeout(() => {
       last_raf = requestAnimationFrame(scroll_to_bottom)
@@ -42,12 +28,38 @@ export const useAutoScroll = (
     setTimeout(() => {
       last_raf = requestAnimationFrame(scroll_to_bottom)
     }, 1000)
+  }
+
+  useEffect(() => {
+    const scroller = container_ref.current
+    if (!scroller) {
+      return
+    }
+
+    const observer = new MutationObserver(() => {
+      if (is_user_scrolling || is_user_touching) {
+        cancelAnimationFrame(last_raf)
+        return
+      }
+      last_raf = requestAnimationFrame(scroll_to_bottom)
+    })
+
+    scroll_to_bottom_on_startup()
 
     observer.observe(scroller, {
       childList: true,
       subtree: true,
       characterData: true,
     })
+
+    // add another regular reconnection to the scroll bottom
+    const scroll_to_bottom_interval = setInterval(() => {
+      if (is_user_scrolling || is_user_touching) {
+        cancelAnimationFrame(last_raf)
+        return
+      }
+      scroll_to_bottom()
+    }, 1000)
 
     const start_user_scroll = () => {
       if (is_forced_scroll_to_bottom) {
@@ -76,6 +88,7 @@ export const useAutoScroll = (
       scroller.removeEventListener('touchstart', touch_start)
       scroller.removeEventListener('touchend', touch_end)
       observer.disconnect()
+      clearInterval(scroll_to_bottom_interval)
     }
   }, [session?.id])
 
