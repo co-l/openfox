@@ -87,25 +87,28 @@ function isMessageForCurrentSession(message: ServerMessage, currentSessionId: st
   return currentSessionId !== null && message.sessionId === currentSessionId
 }
 
-function isSessionStateForCurrentView(message: ServerMessage, currentSessionId: string | null, pendingSessionCreate: boolean | string): boolean {
-  return message.id !== undefined || isMessageForCurrentSession(message, currentSessionId) || (pendingSessionCreate === true && message.sessionId !== undefined)
+function isSessionStateForCurrentView(
+  message: ServerMessage,
+  currentSessionId: string | null,
+  pendingSessionCreate: boolean | string,
+): boolean {
+  return (
+    message.id !== undefined ||
+    isMessageForCurrentSession(message, currentSessionId) ||
+    (pendingSessionCreate === true && message.sessionId !== undefined)
+  )
 }
 
 function addUnreadSessionId(unreadSessionIds: string[], sessionId: string): string[] {
-  return unreadSessionIds.includes(sessionId)
-    ? unreadSessionIds
-    : [...unreadSessionIds, sessionId]
+  return unreadSessionIds.includes(sessionId) ? unreadSessionIds : [...unreadSessionIds, sessionId]
 }
 
 function removeUnreadSessionId(unreadSessionIds: string[], sessionId: string): string[] {
-  return unreadSessionIds.filter(id => id !== sessionId)
+  return unreadSessionIds.filter((id) => id !== sessionId)
 }
 
-function mergeSessionIntoSummary(
-  sessions: SessionSummary[],
-  session: Session,
-): SessionSummary[] {
-  const existingSession = sessions.find(candidate => candidate.id === session.id)
+function mergeSessionIntoSummary(sessions: SessionSummary[], session: Session): SessionSummary[] {
+  const existingSession = sessions.find((candidate) => candidate.id === session.id)
   const nextSummary: SessionSummary = existingSession
     ? {
         ...existingSession,
@@ -116,7 +119,7 @@ function mergeSessionIntoSummary(
         isRunning: session.isRunning,
         messageCount: session.messages.length,
         criteriaCount: session.criteria.length,
-        criteriaCompleted: session.criteria.filter(criterion => criterion.status.type === 'passed').length,
+        criteriaCompleted: session.criteria.filter((criterion) => criterion.status.type === 'passed').length,
       }
     : {
         id: session.id,
@@ -128,12 +131,12 @@ function mergeSessionIntoSummary(
         createdAt: '',
         updatedAt: '',
         criteriaCount: session.criteria.length,
-        criteriaCompleted: session.criteria.filter(criterion => criterion.status.type === 'passed').length,
+        criteriaCompleted: session.criteria.filter((criterion) => criterion.status.type === 'passed').length,
         messageCount: session.messages.length,
       }
 
   return existingSession
-    ? sessions.map(candidate => candidate.id === session.id ? nextSummary : candidate)
+    ? sessions.map((candidate) => (candidate.id === session.id ? nextSummary : candidate))
     : [nextSummary, ...sessions]
 }
 
@@ -142,11 +145,9 @@ function mergeSessionList(
   existingSessions: SessionSummary[],
   currentSession: Session | null,
 ): SessionSummary[] {
-  return incomingSessions.map(incomingSession => {
-    const currentSessionOverride = currentSession?.id === incomingSession.id
-      ? currentSession
-      : null
-    const existingSession = existingSessions.find(candidate => candidate.id === incomingSession.id)
+  return incomingSessions.map((incomingSession) => {
+    const currentSessionOverride = currentSession?.id === incomingSession.id ? currentSession : null
+    const existingSession = existingSessions.find((candidate) => candidate.id === incomingSession.id)
 
     return {
       ...incomingSession,
@@ -179,32 +180,32 @@ export interface PendingQuestion {
 interface SessionState {
   // Connection
   connectionStatus: ConnectionStatus
-  
+
   // Sessions
   sessions: SessionSummary[]
   currentSession: Session | null
   unreadSessionIds: string[]
-  
+
   // Messages: server-authoritative, includes streaming state
   // Each message has isStreaming flag to indicate if it's being streamed
   messages: Message[]
-  
+
   // Track which message is currently streaming (for applying deltas)
   streamingMessageId: string | null
 
   // Separate streaming message object — updated independently from messages[]
   // to avoid O(n) array mapping on every delta. Folded back on chat.done.
   streamingMessage: Message | null
-  
+
   // Current todos (displayed in chat)
   currentTodos: Todo[]
-  
+
   // Context state (for header display)
   contextState: ContextState | null
-  
+
   // Pending path confirmation (outside-workdir access request)
   pendingPathConfirmation: PendingPathConfirmation | null
-  
+
   // Pending ask_user question
   pendingQuestion: PendingQuestion | null
 
@@ -214,14 +215,14 @@ interface SessionState {
 
   // Error state
   error: { code: string; message: string } | null
-  
+
   // Track new session creation: true while waiting for server, session ID once created (for navigation)
   pendingSessionCreate: boolean | string
-  
+
   // Actions
   connect: () => Promise<void>
   disconnect: () => void
-  
+
   // Session management
   createSession: (projectId: string, title?: string) => Promise<Session | null>
   loadSession: (sessionId: string) => Promise<void>
@@ -229,25 +230,29 @@ interface SessionState {
   deleteSession: (sessionId: string) => Promise<boolean>
   deleteAllSessions: (projectId: string) => Promise<boolean>
   clearSession: () => void
-  
+
   // Unified chat (works in any mode)
-  sendMessage: (content: string, attachments?: Attachment[], opts?: { messageKind?: 'command'; isSystemGenerated?: boolean }) => void
+  sendMessage: (
+    content: string,
+    attachments?: Attachment[],
+    opts?: { messageKind?: 'command'; isSystemGenerated?: boolean },
+  ) => void
   stopGeneration: () => void
   continueGeneration: () => void
-  
+
   // Runner (auto-loop)
   launchRunner: (content?: string, attachments?: Attachment[], workflowId?: string) => void
 
   // Mode switching
   switchMode: (mode: SessionMode) => void
   acceptAndBuild: (workflowId?: string, content?: string, attachments?: Attachment[]) => void
-  
+
   // Criteria (from UI)
   editCriteria: (criteria: Criterion[]) => void
-  
+
   // Context management
   compactContext: () => void
-  
+
   // Per-session provider/model
   setSessionProvider: (providerId: string, model?: string) => Promise<Session | null>
 
@@ -263,10 +268,10 @@ interface SessionState {
   cancelQueued: (queueId: string) => void
 
   clearError: () => void
-  
+
   // Reset pending session create state (called after navigation)
   resetPendingSessionCreate: () => void
-  
+
   // Internal
   handleServerMessage: (message: ServerMessage) => void
 }
@@ -277,10 +282,8 @@ interface SessionState {
 const lastSeenPhase = new Map<string, string>()
 
 function resolveAgentType(state: SessionState, sessionId?: string): AgentType | undefined {
-  const session = sessionId === state.currentSession?.id
-    ? state.currentSession
-    : null
-  const summary = state.sessions.find(s => s.id === sessionId)
+  const session = sessionId === state.currentSession?.id ? state.currentSession : null
+  const summary = state.sessions.find((s) => s.id === sessionId)
   const mode = session?.mode ?? summary?.mode
   if (mode === 'planner') return 'planner'
   if (mode === 'builder') return 'build'
@@ -356,7 +359,7 @@ export const useSessionStore = create<SessionState>((set, get) => {
     buf.toolOutput = []
 
     // Update the separate streamingMessage object — no messages[] array mapping
-    set(state => {
+    set((state) => {
       const sm = state.streamingMessage
       if (sm && sm.id === buf.messageId) {
         let updated = { ...sm }
@@ -368,20 +371,20 @@ export const useSessionStore = create<SessionState>((set, get) => {
         }
         if (hasToolOutput) {
           const matchedCallIds = new Set<string>()
-          updated.toolCalls = updated.toolCalls?.map(tc => {
-            const outputs = toolOutputs.filter(o => o.callId === tc.id)
+          updated.toolCalls = updated.toolCalls?.map((tc) => {
+            const outputs = toolOutputs.filter((o) => o.callId === tc.id)
             if (outputs.length === 0) return tc
             matchedCallIds.add(tc.id)
             return {
               ...tc,
               streamingOutput: [
                 ...(tc.streamingOutput ?? []),
-                ...outputs.map(o => ({ stream: o.stream, content: o.content }))
-              ]
+                ...outputs.map((o) => ({ stream: o.stream, content: o.content })),
+              ],
             }
           })
           // Re-buffer unmatched outputs (e.g. return_value outputs arriving before tool.call)
-          const unmatched = toolOutputs.filter(o => !matchedCallIds.has(o.callId))
+          const unmatched = toolOutputs.filter((o) => !matchedCallIds.has(o.callId))
           if (unmatched.length > 0) {
             streamingBuffer.toolOutput.push(...unmatched)
           }
@@ -393,23 +396,23 @@ export const useSessionStore = create<SessionState>((set, get) => {
       // output is still coming in from running tools. Apply directly to messages[].
       if (hasToolOutput) {
         const matchedCallIds = new Set<string>()
-        const updatedMessages = state.messages.map(m => {
+        const updatedMessages = state.messages.map((m) => {
           if (m.id !== buf.messageId) return m
-          const updatedToolCalls = m.toolCalls?.map(tc => {
-            const outputs = toolOutputs.filter(o => o.callId === tc.id)
+          const updatedToolCalls = m.toolCalls?.map((tc) => {
+            const outputs = toolOutputs.filter((o) => o.callId === tc.id)
             if (outputs.length === 0) return tc
             matchedCallIds.add(tc.id)
             return {
               ...tc,
               streamingOutput: [
                 ...(tc.streamingOutput ?? []),
-                ...outputs.map(o => ({ stream: o.stream, content: o.content }))
-              ]
+                ...outputs.map((o) => ({ stream: o.stream, content: o.content })),
+              ],
             }
           })
           return { ...m, toolCalls: updatedToolCalls }
         })
-        const unmatched = toolOutputs.filter(o => !matchedCallIds.has(o.callId))
+        const unmatched = toolOutputs.filter((o) => !matchedCallIds.has(o.callId))
         if (unmatched.length > 0) {
           streamingBuffer.toolOutput.push(...unmatched)
         }
@@ -420,900 +423,870 @@ export const useSessionStore = create<SessionState>((set, get) => {
     })
   }
 
-  return ({
-  connectionStatus: 'disconnected',
-  sessions: [],
-  currentSession: null,
-  unreadSessionIds: [],
-  messages: [],
-  streamingMessageId: null,
-  streamingMessage: null,
-  currentTodos: [],
-  contextState: null,
-  pendingPathConfirmation: null,
-  pendingQuestion: null,
-  queuedMessages: [],
-  abortInProgress: false,
-  error: null,
-  pendingSessionCreate: false as boolean | string,
+  return {
+    connectionStatus: 'disconnected',
+    sessions: [],
+    currentSession: null,
+    unreadSessionIds: [],
+    messages: [],
+    streamingMessageId: null,
+    streamingMessage: null,
+    currentTodos: [],
+    contextState: null,
+    pendingPathConfirmation: null,
+    pendingQuestion: null,
+    queuedMessages: [],
+    abortInProgress: false,
+    error: null,
+    pendingSessionCreate: false as boolean | string,
 
-  connect: async () => {
-    const status = get().connectionStatus
-    if (status === 'connected' || status === 'reconnecting') return
-    
-    set({ connectionStatus: 'reconnecting' })
-    
-    wsClient.onStatusChange((newStatus) => {
-      set({ connectionStatus: newStatus })
-      if (newStatus === 'connected') {
-        get().listSessions()
-      }
-    })
-    
-    try {
-      await wsClient.connect()
-      
-      if (!isSubscribed) {
-        isSubscribed = true
-        const handler = get().handleServerMessage
-        wsClient.subscribe(handler)
-      }
-    } catch (error) {
-      console.error('Failed to connect:', error)
-      set({ connectionStatus: 'disconnected' })
-    }
-  },
-  
-  disconnect: () => {
-    wsClient.disconnect()
-    set({ connectionStatus: 'disconnected' })
-  },
-  
-  createSession: async (projectId, title) => {
-    try {
-      // Set pending flag BEFORE the API call to trigger navigation
-      set({ pendingSessionCreate: true })
-      
-      const res = await fetch('/api/sessions', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ projectId, title }),
+    connect: async () => {
+      const status = get().connectionStatus
+      if (status === 'connected' || status === 'reconnecting') return
+
+      set({ connectionStatus: 'reconnecting' })
+
+      wsClient.onStatusChange((newStatus) => {
+        set({ connectionStatus: newStatus })
+        if (newStatus === 'connected') {
+          get().listSessions()
+        }
       })
-      if (!res.ok) {
+
+      try {
+        await wsClient.connect()
+
+        if (!isSubscribed) {
+          isSubscribed = true
+          const handler = get().handleServerMessage
+          wsClient.subscribe(handler)
+        }
+      } catch (error) {
+        console.error('Failed to connect:', error)
+        set({ connectionStatus: 'disconnected' })
+      }
+    },
+
+    disconnect: () => {
+      wsClient.disconnect()
+      set({ connectionStatus: 'disconnected' })
+    },
+
+    createSession: async (projectId, title) => {
+      try {
+        // Set pending flag BEFORE the API call to trigger navigation
+        set({ pendingSessionCreate: true })
+
+        const res = await fetch('/api/sessions', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ projectId, title }),
+        })
+        if (!res.ok) {
+          set({ pendingSessionCreate: false })
+          return null
+        }
+        const data = await res.json()
+        // Tell WS server which session is active (required for chat.send routing)
+        wsClient.send('session.load', { sessionId: data.session.id })
+        // DO NOT refresh session list here - wait for WS session.state to arrive
+        // await get().listSessions()
+        return data.session
+      } catch {
         set({ pendingSessionCreate: false })
         return null
       }
-      const data = await res.json()
-      // DO NOT refresh session list here - wait for WS session.state to arrive
-      // await get().listSessions()
-      return data.session
-    } catch {
-      set({ pendingSessionCreate: false })
-      return null
-    }
-  },
-  
-  loadSession: async (sessionId) => {
-    try {
-      const currentSession = get().currentSession
-      
-      // Clear state when loading a different session
-      if (!currentSession || currentSession.id !== sessionId) {
-        cancelStreamingFlush()
-        set({
-          currentSession: null,
-          unreadSessionIds: removeUnreadSessionId(get().unreadSessionIds, sessionId),
-          messages: [],
-          streamingMessageId: null,
-          streamingMessage: null,
-          currentTodos: [],
-          contextState: null,
-          pendingPathConfirmation: null,
-          queuedMessages: [],
-          abortInProgress: false,
-          error: null,
-        })
-      } else {
-        set({ unreadSessionIds: removeUnreadSessionId(get().unreadSessionIds, sessionId) })
-      }
-      
-      const res = await fetch(`/api/sessions/${sessionId}`)
-      if (!res.ok) return
-      
-      const data = await res.json()
-      set({
-        currentSession: data.session,
-        messages: data.messages ?? [],
-        contextState: data.contextState,
-      })
-      
-      // Subscribe to WS events for this session (real-time updates)
-      // WS subscription already established in connect()
-    } catch {
-      // ignore
-    }
-  },
-  
-  listSessions: async () => {
-    try {
-      const res = await fetch('/api/sessions')
-      const data = await res.json()
-      set({ sessions: data.sessions ?? [] })
-    } catch {
-      // ignore
-    }
-  },
-  
-  deleteSession: async (sessionId) => {
-    try {
-      const res = await fetch(`/api/sessions/${sessionId}`, { method: 'DELETE' })
-      if (!res.ok) return false
-      // Refresh session list
-      await get().listSessions()
-      // Clear current session if it was deleted
-      if (get().currentSession?.id === sessionId) {
-        get().clearSession()
-      }
-      return true
-    } catch {
-      return false
-    }
-  },
-  
-  deleteAllSessions: async (projectId) => {
-    try {
-      const res = await fetch(`/api/projects/${projectId}/sessions`, { method: 'DELETE' })
-      if (!res.ok) return false
-      // Refresh session list
-      await get().listSessions()
-      return true
-    } catch {
-      return false
-    }
-  },
-  
-  clearSession: () => {
-    cancelStreamingFlush()
-    set(state => ({
-      currentSession: null,
-      messages: [],
-      streamingMessageId: null,
-      streamingMessage: null,
-      currentTodos: [],
-      contextState: null,
-      unreadSessionIds: state.currentSession
-        ? removeUnreadSessionId(state.unreadSessionIds, state.currentSession.id)
-        : state.unreadSessionIds,
-    }))
-  },
-  
-  sendMessage: (content, attachments, opts) => {
-    // No optimistic update needed - server will send chat.message with user message
-    set({ streamingMessageId: null })
-    wsClient.send('chat.send', { content, attachments, ...opts })
-  },
-  
-  stopGeneration: () => {
-    if (get().abortInProgress) return
-    // Flush any buffered streaming content before stopping
-    cancelStreamingFlush()
-    flushStreamingBuffer?.()
-    wsClient.send('chat.stop', {})
-    set({ abortInProgress: true })
-  },
-  
-  continueGeneration: () => {
-    set({ streamingMessageId: null })
-    wsClient.send('chat.continue', {})
-  },
-  
-  launchRunner: (content?: string, attachments?: Attachment[], workflowId?: string) => {
-    set({ streamingMessageId: null })
-    const payload: Record<string, unknown> = {}
-    if (content?.trim()) payload.content = content
-    if (attachments && attachments.length > 0) payload.attachments = attachments
-    if (workflowId) payload.workflowId = workflowId
-    wsClient.send('runner.launch', payload)
-  },
+    },
 
-  switchMode: (mode) => {
-    wsClient.send('mode.switch', { mode })
-  },
+    loadSession: async (sessionId) => {
+      try {
+        const currentSession = get().currentSession
 
-  acceptAndBuild: (workflowId?: string, content?: string, attachments?: Attachment[]) => {
-    set({ streamingMessageId: null })
-    const payload: Record<string, unknown> = {}
-    if (workflowId) payload.workflowId = workflowId
-    if (content?.trim()) payload.content = content
-    if (attachments && attachments.length > 0) payload.attachments = attachments
-    wsClient.send('mode.accept', payload)
-  },
-  
-  editCriteria: (criteria) => {
-    wsClient.send('criteria.edit', { criteria })
-  },
-  
-  compactContext: () => {
-    wsClient.send('context.compact', {})
-  },
-  
-  setSessionProvider: async (providerId, model) => {
-    try {
-      const sessionId = get().currentSession?.id
-      if (!sessionId) return null
-      
-      const res = await fetch(`/api/sessions/${sessionId}/provider`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ providerId, ...(model ? { model } : {}) }),
-      })
-      if (!res.ok) return null
-      const data = await res.json()
-      // Update current session
-      set({
-        currentSession: data.session,
-        messages: data.messages ?? [],
-        contextState: data.contextState,
-      })
-      return data.session
-    } catch {
-      return null
-    }
-  },
-
-  confirmPath: (callId, approved) => {
-    wsClient.send('path.confirm', { callId, approved })
-    set({ pendingPathConfirmation: null })
-  },
-
-  answerQuestion: (callId: string, answer: string) => {
-    wsClient.send('ask.answer', { callId, answer })
-    set({ pendingQuestion: null })
-  },
-
-  queueAsap: (content, attachments) => {
-    wsClient.send('queue.asap', { content, attachments })
-  },
-
-  queueCompletion: (content, attachments) => {
-    wsClient.send('queue.completion', { content, attachments })
-  },
-
-  cancelQueued: (queueId) => {
-    wsClient.send('queue.cancel', { queueId })
-  },
-
-  clearError: () => {
-    set({ error: null })
-  },
-
-  resetPendingSessionCreate: () => {
-    set({ pendingSessionCreate: false as boolean | string })
-  },
-  
-  handleServerMessage: (message) => {
-    const stateSnapshot = get()
-    handleGlobalSoundEffects(message, stateSnapshot)
-
-    const activeSessionId = stateSnapshot.currentSession?.id ?? null
-    const markBackgroundSessionUnread = () => {
-      const eventSessionId = message.sessionId
-      if (!eventSessionId || eventSessionId === activeSessionId) {
-        return
-      }
-      set(state => ({ unreadSessionIds: addUnreadSessionId(state.unreadSessionIds, eventSessionId) }))
-    }
-
-    switch (message.type) {
-      case 'session.state': {
-        const payload = message.payload as SessionStatePayload
-        if (!isSessionStateForCurrentView(message, activeSessionId, stateSnapshot.pendingSessionCreate)) {
-          break
-        }
-        // Server sends complete state: session + messages
-        // This is the source of truth on load/reconnect
-        cancelStreamingFlush()
-        const streamingMsg = payload.messages.find(m => m.isStreaming) ?? null
-        const wasPendingCreate = get().pendingSessionCreate === true
-        set({
-          currentSession: payload.session,
-          sessions: mergeSessionIntoSummary(get().sessions, payload.session),
-          unreadSessionIds: removeUnreadSessionId(get().unreadSessionIds, payload.session.id),
-          messages: payload.messages,
-          streamingMessageId: streamingMsg?.id ?? null,
-          streamingMessage: streamingMsg,
-          currentTodos: [],
-          pendingPathConfirmation: null,
-          error: null,
-          // When this is the response to a session.create, store the new session ID for navigation
-          ...(wasPendingCreate ? { pendingSessionCreate: payload.session.id } : {}),
-        })
-
-        // Sync config store with session's provider/model for header display
-        if (payload.session.providerId && payload.session.providerModel) {
-          const configStore = useConfigStore.getState()
-          const sessionProvider = configStore.providers.find(p => p.id === payload.session.providerId)
-          if (sessionProvider) {
-            configStore.syncFromSession(payload.session.providerId, payload.session.providerModel)
-          }
-        }
-        break
-      }
-      
-      case 'session.list': {
-        const payload = message.payload as SessionListPayload
-        set(state => ({
-          sessions: mergeSessionList(payload.sessions, state.sessions, state.currentSession),
-        }))
-        break
-      }
-      
-      case 'session.deleted': {
-        const payload = message.payload as { sessionId: string }
-        set(state => ({ unreadSessionIds: removeUnreadSessionId(state.unreadSessionIds, payload.sessionId) }))
-        get().listSessions()
-        break
-      }
-      
-      case 'session.deletedAll': {
-        get().listSessions()
-        break
-      }
-      
-      case 'session.running': {
-        const payload = message.payload as SessionRunningPayload
-        const eventSessionId = message.sessionId
-        const activeSessionId = get().currentSession?.id
-        const isBackgroundSession = eventSessionId && eventSessionId !== activeSessionId
-        
-        // Always update sidebar running status
-        set(state => ({
-          sessions: state.sessions.map(s => 
-            s.id === eventSessionId 
-              ? { ...s, isRunning: payload.isRunning }
-              : s
-          ),
-        }))
-        
-        // Only update currentSession if this is the active session
-        if (!isBackgroundSession) {
-          set(state => ({
-            currentSession: state.currentSession
-              ? { ...state.currentSession, isRunning: payload.isRunning }
-              : null,
-            pendingPathConfirmation: payload.isRunning ? state.pendingPathConfirmation : null,
-            // Reset abort and queue state when agent stops running
-            ...(!payload.isRunning ? { abortInProgress: false, queuedMessages: [] } : {}),
-          }))
-        }
-        break
-      }
-      
-      case 'chat.message': {
-        // Server created a new message (user message or assistant message before streaming)
-        if (!isMessageForCurrentSession(message, get().currentSession?.id ?? null)) {
-          markBackgroundSessionUnread()
-          break
-        }
-        const payload = message.payload as ChatMessagePayload
-
-        set(state => {
-          // Don't add duplicates
-          if (state.messages.some(m => m.id === payload.message.id)) {
-            return state
-          }
-          return {
-            messages: [...state.messages, payload.message],
-            // Track streaming message if it's marked as streaming
-            streamingMessageId: payload.message.isStreaming
-              ? payload.message.id
-              : state.streamingMessageId,
-            // Initialize separate streaming message for independent updates
-            streamingMessage: payload.message.isStreaming
-              ? payload.message
-              : state.streamingMessage,
-          }
-        })
-        break
-      }
-      
-      case 'chat.message_updated': {
-        // Server updated a message (e.g., isStreaming changed after tool loop iteration)
-        if (!isMessageForCurrentSession(message, get().currentSession?.id ?? null)) {
-          markBackgroundSessionUnread()
-          break
-        }
-        const payload = message.payload as ChatMessageUpdatedPayload
-        const isEndingStreaming =
-          payload.updates.isStreaming === false &&
-          get().streamingMessageId === payload.messageId
-
-        // If streaming is ending, flush buffer and fold streamingMessage back
-        if (isEndingStreaming) {
+        // Clear state when loading a different session
+        if (!currentSession || currentSession.id !== sessionId) {
           cancelStreamingFlush()
-          flushStreamingBuffer?.()
-        }
-
-        set(state => {
-          const sm = state.streamingMessage
-          const stoppedStreaming = isEndingStreaming
-
-          // If we have a streamingMessage for this ID, fold it back with updates
-          if (sm && sm.id === payload.messageId) {
-            const finalMessage = { ...sm, ...payload.updates }
-            return {
-              messages: state.messages.map(m =>
-                m.id === payload.messageId ? finalMessage : m
-              ),
-              streamingMessageId: stoppedStreaming ? null : state.streamingMessageId,
-              streamingMessage: stoppedStreaming ? null : { ...sm, ...payload.updates },
-            }
-          }
-
-          return {
-            messages: state.messages.map(m =>
-              m.id === payload.messageId
-                ? { ...m, ...payload.updates }
-                : m
-            ),
-            streamingMessageId: stoppedStreaming ? null : state.streamingMessageId,
-          }
-        })
-        break
-      }
-      
-      case 'chat.delta': {
-        // Append text content — buffered and flushed once per animation frame
-        if (!isMessageForCurrentSession(message, get().currentSession?.id ?? null)) {
-          markBackgroundSessionUnread()
-          break
-        }
-        const payload = message.payload as ChatDeltaPayload
-        // Play new_message sound on first delta for this messageId
-        if (!triggeredNewMessageSound.has(payload.messageId)) {
-          triggeredNewMessageSound.add(payload.messageId)
-          const agent = resolveAgentType(get(), message.sessionId)
-          playNewMessage(agent)
-        }
-        streamingBuffer.messageId = payload.messageId
-        streamingBuffer.deltaContent += payload.content
-        scheduleStreamingFlush()
-        break
-      }
-      
-      case 'chat.thinking': {
-        // Append thinking content — buffered and flushed once per animation frame
-        if (!isMessageForCurrentSession(message, get().currentSession?.id ?? null)) {
-          markBackgroundSessionUnread()
-          break
-        }
-        const payload = message.payload as ChatThinkingPayload
-        // Play new_message sound on first thinking for this messageId
-        if (!triggeredNewMessageSound.has(payload.messageId)) {
-          triggeredNewMessageSound.add(payload.messageId)
-          const agent = resolveAgentType(get(), message.sessionId)
-          playNewMessage(agent)
-        }
-        streamingBuffer.messageId = payload.messageId
-        streamingBuffer.thinkingContent += payload.content
-        scheduleStreamingFlush()
-        break
-      }
-      
-      case 'chat.tool_preparing': {
-        // Add preparing tool call indicator (temporary, replaced when full tool call arrives)
-        if (!isMessageForCurrentSession(message, get().currentSession?.id ?? null)) {
-          markBackgroundSessionUnread()
-          break
-        }
-        const payload = message.payload as ChatToolPreparingPayload
-        set(state => {
-          const sm = state.streamingMessage
-          if (sm && sm.id === payload.messageId) {
-            return {
-              streamingMessage: {
-                ...sm,
-                preparingToolCalls: [
-                  ...(sm.preparingToolCalls ?? []),
-                  { index: payload.index, name: payload.name }
-                ]
-              }
-            }
-          }
-          // Fallback: update in messages array if no streaming message
-          return {
-            messages: state.messages.map(m =>
-              m.id === payload.messageId
-                ? {
-                    ...m,
-                    preparingToolCalls: [
-                      ...(m.preparingToolCalls ?? []),
-                      { index: payload.index, name: payload.name }
-                    ]
-                  }
-                : m
-            ),
-          }
-        })
-        break
-      }
-      
-      case 'chat.tool_call': {
-        // Add tool call to the message with this messageId
-        // Also remove any matching preparing tool call (by name match, since we don't have index in tool_call)
-        if (!isMessageForCurrentSession(message, get().currentSession?.id ?? null)) {
-          markBackgroundSessionUnread()
-          break
-        }
-        const payload = message.payload as ChatToolCallPayload
-
-        const applyToolCall = (m: Message): Message => {
-          const preparingToolCalls = m.preparingToolCalls?.filter((ptc, idx) => {
-            if (ptc.name === payload.tool) {
-              const hasEarlierMatch = m.preparingToolCalls?.slice(0, idx).some(p => p.name === payload.tool)
-              return hasEarlierMatch
-            }
-            return true
-          })
-          // Drain any buffered streaming outputs for this tool call (e.g. return_value content)
-          const bufferedOutputs = streamingBuffer.toolOutput.filter(o => o.callId === payload.callId)
-          if (bufferedOutputs.length > 0) {
-            streamingBuffer.toolOutput = streamingBuffer.toolOutput.filter(o => o.callId !== payload.callId)
-          }
-          return {
-            ...m,
-            toolCalls: [
-              ...(m.toolCalls ?? []),
-              {
-                id: payload.callId, name: payload.tool, arguments: payload.args, startedAt: Date.now(),
-                ...(bufferedOutputs.length > 0 ? { streamingOutput: bufferedOutputs.map(o => ({ stream: o.stream, content: o.content })) } : {}),
-              }
-            ],
-            ...(preparingToolCalls && preparingToolCalls.length > 0
-              ? { preparingToolCalls }
-              : { preparingToolCalls: undefined }),
-          }
-        }
-
-        set(state => {
-          const sm = state.streamingMessage
-          if (sm && sm.id === payload.messageId) {
-            return { streamingMessage: applyToolCall(sm) }
-          }
-          return {
-            messages: state.messages.map(m =>
-              m.id === payload.messageId ? applyToolCall(m) : m
-            ),
-          }
-        })
-        break
-      }
-      
-      case 'chat.tool_output': {
-        // Append streaming output — buffered and flushed once per animation frame
-        if (!isMessageForCurrentSession(message, get().currentSession?.id ?? null)) {
-          markBackgroundSessionUnread()
-          break
-        }
-        const payload = message.payload as ChatToolOutputPayload
-        streamingBuffer.messageId = payload.messageId
-        streamingBuffer.toolOutput.push({
-          messageId: payload.messageId,
-          callId: payload.callId,
-          stream: payload.stream,
-          content: payload.output,
-        })
-        scheduleStreamingFlush()
-        break
-      }
-      
-      case 'chat.tool_result': {
-        // Tool results come as separate chat.message events (tool role messages)
-        // This event is just for real-time display - can track in message's toolCalls
-        if (!isMessageForCurrentSession(message, get().currentSession?.id ?? null)) {
-          markBackgroundSessionUnread()
-          break
-        }
-        const payload = message.payload as ChatToolResultPayload
-
-        const applyToolResult = (m: Message): Message => {
-          const toolCalls = m.toolCalls?.map(tc =>
-            tc.id === payload.callId
-              ? { ...tc, result: payload.result }
-              : tc
-          )
-          return { ...m, toolCalls }
-        }
-
-        set(state => {
-          const sm = state.streamingMessage
-          if (sm && sm.id === payload.messageId) {
-            return { streamingMessage: applyToolResult(sm) }
-          }
-          return {
-            messages: state.messages.map(m =>
-              m.id === payload.messageId ? applyToolResult(m) : m
-            ),
-          }
-        })
-        break
-      }
-      
-      case 'chat.todo': {
-        if (!isMessageForCurrentSession(message, get().currentSession?.id ?? null)) {
-          markBackgroundSessionUnread()
-          break
-        }
-        const payload = message.payload as ChatTodoPayload
-        set({ currentTodos: payload.todos })
-        break
-      }
-      
-      case 'chat.summary': {
-        if (!isMessageForCurrentSession(message, get().currentSession?.id ?? null)) {
-          markBackgroundSessionUnread()
-          break
-        }
-        const payload = message.payload as ChatSummaryPayload
-        set(state => ({
-          currentSession: state.currentSession
-            ? { ...state.currentSession, summary: payload.summary }
-            : null,
-        }))
-        break
-      }
-      
-      case 'chat.progress': {
-        if (!isMessageForCurrentSession(message, get().currentSession?.id ?? null)) {
-          markBackgroundSessionUnread()
-          break
-        }
-        // Progress messages are transient - could add to a separate state if needed
-        // For now, just log
-        const payload = message.payload as ChatProgressPayload
-        console.log('Progress:', payload.message, payload.phase)
-        break
-      }
-      
-      case 'chat.format_retry': {
-        if (!isMessageForCurrentSession(message, get().currentSession?.id ?? null)) {
-          markBackgroundSessionUnread()
-          break
-        }
-        // Format retry - could show in UI
-        const payload = message.payload as ChatFormatRetryPayload
-        console.log('Format retry:', payload.attempt, '/', payload.maxAttempts)
-        break
-      }
-      
-      case 'chat.done': {
-        if (!isMessageForCurrentSession(message, get().currentSession?.id ?? null)) {
-          markBackgroundSessionUnread()
-          break
-        }
-        // Flush any buffered streaming content before finalizing
-        cancelStreamingFlush()
-        flushStreamingBuffer?.()
-
-        const payload = message.payload as ChatDonePayload
-        const messageStats = payload.stats as Message['stats']
-
-        // Reset streaming buffer and clear the new_message sound trigger for this messageId
-        streamingBuffer.messageId = null
-        streamingBuffer.deltaContent = ''
-        streamingBuffer.thinkingContent = ''
-        streamingBuffer.toolOutput = []
-        triggeredNewMessageSound.delete(payload.messageId)
-
-        // Fold streamingMessage back into messages[] and mark as done
-        set(state => {
-          const sm = state.streamingMessage
-          const finalMessage = sm && sm.id === payload.messageId
-            ? { ...sm, isStreaming: false, stats: messageStats ?? sm.stats }
-            : null
-
-          return {
-            messages: state.messages.map(m =>
-              m.id === payload.messageId
-                ? (finalMessage ?? { ...m, isStreaming: false, stats: messageStats ?? m.stats })
-                : m
-            ),
+          set({
+            currentSession: null,
+            unreadSessionIds: removeUnreadSessionId(get().unreadSessionIds, sessionId),
+            messages: [],
             streamingMessageId: null,
             streamingMessage: null,
-          }
+            currentTodos: [],
+            contextState: null,
+            pendingPathConfirmation: null,
+            queuedMessages: [],
+            abortInProgress: false,
+            error: null,
+          })
+        } else {
+          set({ unreadSessionIds: removeUnreadSessionId(get().unreadSessionIds, sessionId) })
+        }
+
+        const res = await fetch(`/api/sessions/${sessionId}`)
+        if (!res.ok) return
+
+        const data = await res.json()
+        set({
+          currentSession: data.session,
+          messages: data.messages ?? [],
+          contextState: data.contextState,
         })
-        break
+
+        // Tell WS server which session is active (required for chat.send routing)
+        wsClient.send('session.load', { sessionId })
+      } catch {
+        // ignore
       }
-      
-      case 'chat.error': {
-        if (!isMessageForCurrentSession(message, get().currentSession?.id ?? null)) {
-          markBackgroundSessionUnread()
+    },
+
+    listSessions: async () => {
+      try {
+        const res = await fetch('/api/sessions')
+        const data = await res.json()
+        set({ sessions: data.sessions ?? [] })
+      } catch {
+        // ignore
+      }
+    },
+
+    deleteSession: async (sessionId) => {
+      try {
+        const res = await fetch(`/api/sessions/${sessionId}`, { method: 'DELETE' })
+        if (!res.ok) return false
+        // Refresh session list
+        await get().listSessions()
+        // Clear current session if it was deleted
+        if (get().currentSession?.id === sessionId) {
+          get().clearSession()
+        }
+        return true
+      } catch {
+        return false
+      }
+    },
+
+    deleteAllSessions: async (projectId) => {
+      try {
+        const res = await fetch(`/api/projects/${projectId}/sessions`, { method: 'DELETE' })
+        if (!res.ok) return false
+        // Refresh session list
+        await get().listSessions()
+        return true
+      } catch {
+        return false
+      }
+    },
+
+    clearSession: () => {
+      cancelStreamingFlush()
+      set((state) => ({
+        currentSession: null,
+        messages: [],
+        streamingMessageId: null,
+        streamingMessage: null,
+        currentTodos: [],
+        contextState: null,
+        unreadSessionIds: state.currentSession
+          ? removeUnreadSessionId(state.unreadSessionIds, state.currentSession.id)
+          : state.unreadSessionIds,
+      }))
+    },
+
+    sendMessage: (content, attachments, opts) => {
+      // No optimistic update needed - server will send chat.message with user message
+      set({ streamingMessageId: null })
+      wsClient.send('chat.send', { content, attachments, ...opts })
+    },
+
+    stopGeneration: () => {
+      if (get().abortInProgress) return
+      // Flush any buffered streaming content before stopping
+      cancelStreamingFlush()
+      flushStreamingBuffer?.()
+      wsClient.send('chat.stop', {})
+      set({ abortInProgress: true })
+    },
+
+    continueGeneration: () => {
+      set({ streamingMessageId: null })
+      wsClient.send('chat.continue', {})
+    },
+
+    launchRunner: (content?: string, attachments?: Attachment[], workflowId?: string) => {
+      set({ streamingMessageId: null })
+      const payload: Record<string, unknown> = {}
+      if (content?.trim()) payload.content = content
+      if (attachments && attachments.length > 0) payload.attachments = attachments
+      if (workflowId) payload.workflowId = workflowId
+      wsClient.send('runner.launch', payload)
+    },
+
+    switchMode: (mode) => {
+      wsClient.send('mode.switch', { mode })
+    },
+
+    acceptAndBuild: (workflowId?: string, content?: string, attachments?: Attachment[]) => {
+      set({ streamingMessageId: null })
+      const payload: Record<string, unknown> = {}
+      if (workflowId) payload.workflowId = workflowId
+      if (content?.trim()) payload.content = content
+      if (attachments && attachments.length > 0) payload.attachments = attachments
+      wsClient.send('mode.accept', payload)
+    },
+
+    editCriteria: (criteria) => {
+      wsClient.send('criteria.edit', { criteria })
+    },
+
+    compactContext: () => {
+      wsClient.send('context.compact', {})
+    },
+
+    setSessionProvider: async (providerId, model) => {
+      try {
+        const sessionId = get().currentSession?.id
+        if (!sessionId) return null
+
+        const res = await fetch(`/api/sessions/${sessionId}/provider`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ providerId, ...(model ? { model } : {}) }),
+        })
+        if (!res.ok) return null
+        const data = await res.json()
+        // Update current session
+        set({
+          currentSession: data.session,
+          messages: data.messages ?? [],
+          contextState: data.contextState,
+        })
+        return data.session
+      } catch {
+        return null
+      }
+    },
+
+    confirmPath: (callId, approved) => {
+      wsClient.send('path.confirm', { callId, approved })
+      set({ pendingPathConfirmation: null })
+    },
+
+    answerQuestion: (callId: string, answer: string) => {
+      wsClient.send('ask.answer', { callId, answer })
+      set({ pendingQuestion: null })
+    },
+
+    queueAsap: (content, attachments) => {
+      wsClient.send('queue.asap', { content, attachments })
+    },
+
+    queueCompletion: (content, attachments) => {
+      wsClient.send('queue.completion', { content, attachments })
+    },
+
+    cancelQueued: (queueId) => {
+      wsClient.send('queue.cancel', { queueId })
+    },
+
+    clearError: () => {
+      set({ error: null })
+    },
+
+    resetPendingSessionCreate: () => {
+      set({ pendingSessionCreate: false as boolean | string })
+    },
+
+    handleServerMessage: (message) => {
+      const stateSnapshot = get()
+      handleGlobalSoundEffects(message, stateSnapshot)
+
+      const activeSessionId = stateSnapshot.currentSession?.id ?? null
+      const markBackgroundSessionUnread = () => {
+        const eventSessionId = message.sessionId
+        if (!eventSessionId || eventSessionId === activeSessionId) {
+          return
+        }
+        set((state) => ({ unreadSessionIds: addUnreadSessionId(state.unreadSessionIds, eventSessionId) }))
+      }
+
+      switch (message.type) {
+        case 'session.state': {
+          const payload = message.payload as SessionStatePayload
+          if (!isSessionStateForCurrentView(message, activeSessionId, stateSnapshot.pendingSessionCreate)) {
+            break
+          }
+          // Server sends complete state: session + messages
+          // This is the source of truth on load/reconnect
+          cancelStreamingFlush()
+          const streamingMsg = payload.messages.find((m) => m.isStreaming) ?? null
+          const wasPendingCreate = get().pendingSessionCreate === true
+          set({
+            currentSession: payload.session,
+            sessions: mergeSessionIntoSummary(get().sessions, payload.session),
+            unreadSessionIds: removeUnreadSessionId(get().unreadSessionIds, payload.session.id),
+            messages: payload.messages,
+            streamingMessageId: streamingMsg?.id ?? null,
+            streamingMessage: streamingMsg,
+            currentTodos: [],
+            pendingPathConfirmation: null,
+            error: null,
+            // When this is the response to a session.create, store the new session ID for navigation
+            ...(wasPendingCreate ? { pendingSessionCreate: payload.session.id } : {}),
+          })
+
+          // Sync config store with session's provider/model for header display
+          if (payload.session.providerId && payload.session.providerModel) {
+            const configStore = useConfigStore.getState()
+            const sessionProvider = configStore.providers.find((p) => p.id === payload.session.providerId)
+            if (sessionProvider) {
+              configStore.syncFromSession(payload.session.providerId, payload.session.providerModel)
+            }
+          }
           break
         }
-        // Flush buffered content so nothing is lost
-        cancelStreamingFlush()
-        flushStreamingBuffer?.()
 
-        const payload = message.payload as ChatErrorPayload
-        console.error('Chat error:', payload.error, 'recoverable:', payload.recoverable)
-        if (!payload.recoverable) {
+        case 'session.list': {
+          const payload = message.payload as SessionListPayload
+          set((state) => ({
+            sessions: mergeSessionList(payload.sessions, state.sessions, state.currentSession),
+          }))
+          break
+        }
+
+        case 'session.deleted': {
+          const payload = message.payload as { sessionId: string }
+          set((state) => ({ unreadSessionIds: removeUnreadSessionId(state.unreadSessionIds, payload.sessionId) }))
+          get().listSessions()
+          break
+        }
+
+        case 'session.deletedAll': {
+          get().listSessions()
+          break
+        }
+
+        case 'session.running': {
+          const payload = message.payload as SessionRunningPayload
+          const eventSessionId = message.sessionId
+          const activeSessionId = get().currentSession?.id
+          const isBackgroundSession = eventSessionId && eventSessionId !== activeSessionId
+
+          // Always update sidebar running status
+          set((state) => ({
+            sessions: state.sessions.map((s) => (s.id === eventSessionId ? { ...s, isRunning: payload.isRunning } : s)),
+          }))
+
+          // Only update currentSession if this is the active session
+          if (!isBackgroundSession) {
+            set((state) => ({
+              currentSession: state.currentSession ? { ...state.currentSession, isRunning: payload.isRunning } : null,
+              pendingPathConfirmation: payload.isRunning ? state.pendingPathConfirmation : null,
+              // Reset abort and queue state when agent stops running
+              ...(!payload.isRunning ? { abortInProgress: false, queuedMessages: [] } : {}),
+            }))
+          }
+          break
+        }
+
+        case 'chat.message': {
+          // Server created a new message (user message or assistant message before streaming)
+          if (!isMessageForCurrentSession(message, get().currentSession?.id ?? null)) {
+            markBackgroundSessionUnread()
+            break
+          }
+          const payload = message.payload as ChatMessagePayload
+
+          set((state) => {
+            // Don't add duplicates
+            if (state.messages.some((m) => m.id === payload.message.id)) {
+              return state
+            }
+            return {
+              messages: [...state.messages, payload.message],
+              // Track streaming message if it's marked as streaming
+              streamingMessageId: payload.message.isStreaming ? payload.message.id : state.streamingMessageId,
+              // Initialize separate streaming message for independent updates
+              streamingMessage: payload.message.isStreaming ? payload.message : state.streamingMessage,
+            }
+          })
+          break
+        }
+
+        case 'chat.message_updated': {
+          // Server updated a message (e.g., isStreaming changed after tool loop iteration)
+          if (!isMessageForCurrentSession(message, get().currentSession?.id ?? null)) {
+            markBackgroundSessionUnread()
+            break
+          }
+          const payload = message.payload as ChatMessageUpdatedPayload
+          const isEndingStreaming =
+            payload.updates.isStreaming === false && get().streamingMessageId === payload.messageId
+
+          // If streaming is ending, flush buffer and fold streamingMessage back
+          if (isEndingStreaming) {
+            cancelStreamingFlush()
+            flushStreamingBuffer?.()
+          }
+
+          set((state) => {
+            const sm = state.streamingMessage
+            const stoppedStreaming = isEndingStreaming
+
+            // If we have a streamingMessage for this ID, fold it back with updates
+            if (sm && sm.id === payload.messageId) {
+              const finalMessage = { ...sm, ...payload.updates }
+              return {
+                messages: state.messages.map((m) => (m.id === payload.messageId ? finalMessage : m)),
+                streamingMessageId: stoppedStreaming ? null : state.streamingMessageId,
+                streamingMessage: stoppedStreaming ? null : { ...sm, ...payload.updates },
+              }
+            }
+
+            return {
+              messages: state.messages.map((m) => (m.id === payload.messageId ? { ...m, ...payload.updates } : m)),
+              streamingMessageId: stoppedStreaming ? null : state.streamingMessageId,
+            }
+          })
+          break
+        }
+
+        case 'chat.delta': {
+          // Append text content — buffered and flushed once per animation frame
+          if (!isMessageForCurrentSession(message, get().currentSession?.id ?? null)) {
+            markBackgroundSessionUnread()
+            break
+          }
+          const payload = message.payload as ChatDeltaPayload
+          // Play new_message sound on first delta for this messageId
+          if (!triggeredNewMessageSound.has(payload.messageId)) {
+            triggeredNewMessageSound.add(payload.messageId)
+            const agent = resolveAgentType(get(), message.sessionId)
+            playNewMessage(agent)
+          }
+          streamingBuffer.messageId = payload.messageId
+          streamingBuffer.deltaContent += payload.content
+          scheduleStreamingFlush()
+          break
+        }
+
+        case 'chat.thinking': {
+          // Append thinking content — buffered and flushed once per animation frame
+          if (!isMessageForCurrentSession(message, get().currentSession?.id ?? null)) {
+            markBackgroundSessionUnread()
+            break
+          }
+          const payload = message.payload as ChatThinkingPayload
+          // Play new_message sound on first thinking for this messageId
+          if (!triggeredNewMessageSound.has(payload.messageId)) {
+            triggeredNewMessageSound.add(payload.messageId)
+            const agent = resolveAgentType(get(), message.sessionId)
+            playNewMessage(agent)
+          }
+          streamingBuffer.messageId = payload.messageId
+          streamingBuffer.thinkingContent += payload.content
+          scheduleStreamingFlush()
+          break
+        }
+
+        case 'chat.tool_preparing': {
+          // Add preparing tool call indicator (temporary, replaced when full tool call arrives)
+          if (!isMessageForCurrentSession(message, get().currentSession?.id ?? null)) {
+            markBackgroundSessionUnread()
+            break
+          }
+          const payload = message.payload as ChatToolPreparingPayload
+          set((state) => {
+            const sm = state.streamingMessage
+            if (sm && sm.id === payload.messageId) {
+              return {
+                streamingMessage: {
+                  ...sm,
+                  preparingToolCalls: [...(sm.preparingToolCalls ?? []), { index: payload.index, name: payload.name }],
+                },
+              }
+            }
+            // Fallback: update in messages array if no streaming message
+            return {
+              messages: state.messages.map((m) =>
+                m.id === payload.messageId
+                  ? {
+                      ...m,
+                      preparingToolCalls: [
+                        ...(m.preparingToolCalls ?? []),
+                        { index: payload.index, name: payload.name },
+                      ],
+                    }
+                  : m,
+              ),
+            }
+          })
+          break
+        }
+
+        case 'chat.tool_call': {
+          // Add tool call to the message with this messageId
+          // Also remove any matching preparing tool call (by name match, since we don't have index in tool_call)
+          if (!isMessageForCurrentSession(message, get().currentSession?.id ?? null)) {
+            markBackgroundSessionUnread()
+            break
+          }
+          const payload = message.payload as ChatToolCallPayload
+
+          const applyToolCall = (m: Message): Message => {
+            const preparingToolCalls = m.preparingToolCalls?.filter((ptc, idx) => {
+              if (ptc.name === payload.tool) {
+                const hasEarlierMatch = m.preparingToolCalls?.slice(0, idx).some((p) => p.name === payload.tool)
+                return hasEarlierMatch
+              }
+              return true
+            })
+            // Drain any buffered streaming outputs for this tool call (e.g. return_value content)
+            const bufferedOutputs = streamingBuffer.toolOutput.filter((o) => o.callId === payload.callId)
+            if (bufferedOutputs.length > 0) {
+              streamingBuffer.toolOutput = streamingBuffer.toolOutput.filter((o) => o.callId !== payload.callId)
+            }
+            return {
+              ...m,
+              toolCalls: [
+                ...(m.toolCalls ?? []),
+                {
+                  id: payload.callId,
+                  name: payload.tool,
+                  arguments: payload.args,
+                  startedAt: Date.now(),
+                  ...(bufferedOutputs.length > 0
+                    ? { streamingOutput: bufferedOutputs.map((o) => ({ stream: o.stream, content: o.content })) }
+                    : {}),
+                },
+              ],
+              ...(preparingToolCalls && preparingToolCalls.length > 0
+                ? { preparingToolCalls }
+                : { preparingToolCalls: undefined }),
+            }
+          }
+
+          set((state) => {
+            const sm = state.streamingMessage
+            if (sm && sm.id === payload.messageId) {
+              return { streamingMessage: applyToolCall(sm) }
+            }
+            return {
+              messages: state.messages.map((m) => (m.id === payload.messageId ? applyToolCall(m) : m)),
+            }
+          })
+          break
+        }
+
+        case 'chat.tool_output': {
+          // Append streaming output — buffered and flushed once per animation frame
+          if (!isMessageForCurrentSession(message, get().currentSession?.id ?? null)) {
+            markBackgroundSessionUnread()
+            break
+          }
+          const payload = message.payload as ChatToolOutputPayload
+          streamingBuffer.messageId = payload.messageId
+          streamingBuffer.toolOutput.push({
+            messageId: payload.messageId,
+            callId: payload.callId,
+            stream: payload.stream,
+            content: payload.output,
+          })
+          scheduleStreamingFlush()
+          break
+        }
+
+        case 'chat.tool_result': {
+          // Tool results come as separate chat.message events (tool role messages)
+          // This event is just for real-time display - can track in message's toolCalls
+          if (!isMessageForCurrentSession(message, get().currentSession?.id ?? null)) {
+            markBackgroundSessionUnread()
+            break
+          }
+          const payload = message.payload as ChatToolResultPayload
+
+          const applyToolResult = (m: Message): Message => {
+            const toolCalls = m.toolCalls?.map((tc) =>
+              tc.id === payload.callId ? { ...tc, result: payload.result } : tc,
+            )
+            return { ...m, toolCalls }
+          }
+
+          set((state) => {
+            const sm = state.streamingMessage
+            if (sm && sm.id === payload.messageId) {
+              return { streamingMessage: applyToolResult(sm) }
+            }
+            return {
+              messages: state.messages.map((m) => (m.id === payload.messageId ? applyToolResult(m) : m)),
+            }
+          })
+          break
+        }
+
+        case 'chat.todo': {
+          if (!isMessageForCurrentSession(message, get().currentSession?.id ?? null)) {
+            markBackgroundSessionUnread()
+            break
+          }
+          const payload = message.payload as ChatTodoPayload
+          set({ currentTodos: payload.todos })
+          break
+        }
+
+        case 'chat.summary': {
+          if (!isMessageForCurrentSession(message, get().currentSession?.id ?? null)) {
+            markBackgroundSessionUnread()
+            break
+          }
+          const payload = message.payload as ChatSummaryPayload
+          set((state) => ({
+            currentSession: state.currentSession ? { ...state.currentSession, summary: payload.summary } : null,
+          }))
+          break
+        }
+
+        case 'chat.progress': {
+          if (!isMessageForCurrentSession(message, get().currentSession?.id ?? null)) {
+            markBackgroundSessionUnread()
+            break
+          }
+          // Progress messages are transient - could add to a separate state if needed
+          // For now, just log
+          const payload = message.payload as ChatProgressPayload
+          console.log('Progress:', payload.message, payload.phase)
+          break
+        }
+
+        case 'chat.format_retry': {
+          if (!isMessageForCurrentSession(message, get().currentSession?.id ?? null)) {
+            markBackgroundSessionUnread()
+            break
+          }
+          // Format retry - could show in UI
+          const payload = message.payload as ChatFormatRetryPayload
+          console.log('Format retry:', payload.attempt, '/', payload.maxAttempts)
+          break
+        }
+
+        case 'chat.done': {
+          if (!isMessageForCurrentSession(message, get().currentSession?.id ?? null)) {
+            markBackgroundSessionUnread()
+            break
+          }
+          // Flush any buffered streaming content before finalizing
+          cancelStreamingFlush()
+          flushStreamingBuffer?.()
+
+          const payload = message.payload as ChatDonePayload
+          const messageStats = payload.stats as Message['stats']
+
+          // Reset streaming buffer and clear the new_message sound trigger for this messageId
           streamingBuffer.messageId = null
           streamingBuffer.deltaContent = ''
           streamingBuffer.thinkingContent = ''
           streamingBuffer.toolOutput = []
-        }
-        set(state => ({
-          error: { code: 'CHAT_ERROR', message: payload.error },
-          streamingMessageId: payload.recoverable ? state.streamingMessageId : null,
-          // Fold streamingMessage back into messages on non-recoverable error
-          ...(payload.recoverable ? {} : {
-            messages: state.streamingMessage
-              ? state.messages.map(m => m.id === state.streamingMessage!.id ? state.streamingMessage! : m)
-              : state.messages,
-            streamingMessage: null,
-          }),
-        }))
-        break
-      }
-      
-      case 'chat.path_confirmation': {
-        if (!isMessageForCurrentSession(message, get().currentSession?.id ?? null)) {
-          markBackgroundSessionUnread()
-          break
-        }
-        const payload = message.payload as ChatPathConfirmationPayload
-        set({
-          pendingPathConfirmation: {
-            callId: payload.callId,
-            tool: payload.tool,
-            paths: payload.paths,
-            workdir: payload.workdir,
-            reason: payload.reason,
-          },
-        })
-        break
-      }
-      
-      case 'chat.ask_user': {
-        if (!isMessageForCurrentSession(message, get().currentSession?.id ?? null)) {
-          markBackgroundSessionUnread()
-          return
-        }
-        const payload = message.payload as { callId: string; question: string }
-        set({
-          pendingQuestion: {
-            callId: payload.callId,
-            question: payload.question,
-          },
-        })
-        break
-      }
-      
-      case 'mode.changed': {
-        if (!isMessageForCurrentSession(message, get().currentSession?.id ?? null)) {
-          markBackgroundSessionUnread()
-          break
-        }
-        const payload = message.payload as ModeChangedPayload
-        set(state => ({
-          currentSession: state.currentSession
-            ? { ...state.currentSession, mode: payload.mode }
-            : null,
-        }))
-        break
-      }
-      
-      case 'phase.changed': {
-        const payload = message.payload as PhaseChangedPayload
-        const eventSessionId = message.sessionId
-        const activeSessionId = get().currentSession?.id
-        const isBackgroundSession = eventSessionId && eventSessionId !== activeSessionId
-        
-        // Always update sidebar status for the session
-        set(state => ({
-          sessions: state.sessions.map(s => 
-            s.id === eventSessionId 
-              ? { ...s, phase: payload.phase }
-              : s
-          ),
-        }))
+          triggeredNewMessageSound.delete(payload.messageId)
 
-        if (!isBackgroundSession) {
-          set(state => ({
-            currentSession: state.currentSession
-              ? { ...state.currentSession, phase: payload.phase }
-              : null,
-          }))
-        }
-        break
-      }
-      
-      case 'criteria.updated': {
-        if (!isMessageForCurrentSession(message, get().currentSession?.id ?? null)) {
-          markBackgroundSessionUnread()
+          // Fold streamingMessage back into messages[] and mark as done
+          set((state) => {
+            const sm = state.streamingMessage
+            const finalMessage =
+              sm && sm.id === payload.messageId ? { ...sm, isStreaming: false, stats: messageStats ?? sm.stats } : null
+
+            return {
+              messages: state.messages.map((m) =>
+                m.id === payload.messageId
+                  ? (finalMessage ?? { ...m, isStreaming: false, stats: messageStats ?? m.stats })
+                  : m,
+              ),
+              streamingMessageId: null,
+              streamingMessage: null,
+            }
+          })
           break
         }
-        const payload = message.payload as CriteriaUpdatedPayload
-        set(state => ({
-          currentSession: state.currentSession
-            ? { ...state.currentSession, criteria: payload.criteria }
-            : null,
-        }))
-        break
-      }
-      
-      case 'context.state': {
-        if (!isMessageForCurrentSession(message, get().currentSession?.id ?? null)) {
-          markBackgroundSessionUnread()
-          break
-        }
-        const payload = message.payload as ContextStatePayload
-        console.log('[session.handleServerMessage.context.state] Received context state:', payload.context)
-        set({ contextState: payload.context })
-        break
-      }
-      
-      case 'session.name_generated': {
-        // Session name was generated - update both currentSession and sessions list
-        const payload = message.payload as { name: string }
-        const eventSessionId = message.sessionId
-        const activeSessionId = get().currentSession?.id
-        
-        set(state => {
-          const updatedSessions = state.sessions.map(s =>
-            s.id === eventSessionId
-              ? { ...s, title: payload.name, updatedAt: new Date().toISOString() }
-              : s
-          )
-          
-          const updatedCurrentSession = activeSessionId === eventSessionId
-            ? state.currentSession
-              ? { ...state.currentSession, title: payload.name, updatedAt: new Date().toISOString() }
-              : null
-            : state.currentSession
-          
-          return {
-            sessions: updatedSessions,
-            currentSession: updatedCurrentSession,
+
+        case 'chat.error': {
+          if (!isMessageForCurrentSession(message, get().currentSession?.id ?? null)) {
+            markBackgroundSessionUnread()
+            break
           }
-        })
-        break
-      }
-      
-      case 'queue.state': {
-        const payload = message.payload as QueueStatePayload
-        set({ queuedMessages: payload.messages })
-        break
-      }
+          // Flush buffered content so nothing is lost
+          cancelStreamingFlush()
+          flushStreamingBuffer?.()
 
-      case 'devServer.output':
-      case 'devServer.state': {
-        useDevServerStore.getState().handleMessage(message)
-        break
-      }
+          const payload = message.payload as ChatErrorPayload
+          console.error('Chat error:', payload.error, 'recoverable:', payload.recoverable)
+          if (!payload.recoverable) {
+            streamingBuffer.messageId = null
+            streamingBuffer.deltaContent = ''
+            streamingBuffer.thinkingContent = ''
+            streamingBuffer.toolOutput = []
+          }
+          set((state) => ({
+            error: { code: 'CHAT_ERROR', message: payload.error },
+            streamingMessageId: payload.recoverable ? state.streamingMessageId : null,
+            // Fold streamingMessage back into messages on non-recoverable error
+            ...(payload.recoverable
+              ? {}
+              : {
+                  messages: state.streamingMessage
+                    ? state.messages.map((m) => (m.id === state.streamingMessage!.id ? state.streamingMessage! : m))
+                    : state.messages,
+                  streamingMessage: null,
+                }),
+          }))
+          break
+        }
 
-      case 'error': {
-        const payload = message.payload as { code: string; message: string }
-        console.error('Server error:', payload)
-        set({
-          error: { code: payload.code, message: payload.message },
-          streamingMessageId: null,
-        })
-        break
+        case 'chat.path_confirmation': {
+          if (!isMessageForCurrentSession(message, get().currentSession?.id ?? null)) {
+            markBackgroundSessionUnread()
+            break
+          }
+          const payload = message.payload as ChatPathConfirmationPayload
+          set({
+            pendingPathConfirmation: {
+              callId: payload.callId,
+              tool: payload.tool,
+              paths: payload.paths,
+              workdir: payload.workdir,
+              reason: payload.reason,
+            },
+          })
+          break
+        }
+
+        case 'chat.ask_user': {
+          if (!isMessageForCurrentSession(message, get().currentSession?.id ?? null)) {
+            markBackgroundSessionUnread()
+            return
+          }
+          const payload = message.payload as { callId: string; question: string }
+          set({
+            pendingQuestion: {
+              callId: payload.callId,
+              question: payload.question,
+            },
+          })
+          break
+        }
+
+        case 'mode.changed': {
+          if (!isMessageForCurrentSession(message, get().currentSession?.id ?? null)) {
+            markBackgroundSessionUnread()
+            break
+          }
+          const payload = message.payload as ModeChangedPayload
+          set((state) => ({
+            currentSession: state.currentSession ? { ...state.currentSession, mode: payload.mode } : null,
+          }))
+          break
+        }
+
+        case 'phase.changed': {
+          const payload = message.payload as PhaseChangedPayload
+          const eventSessionId = message.sessionId
+          const activeSessionId = get().currentSession?.id
+          const isBackgroundSession = eventSessionId && eventSessionId !== activeSessionId
+
+          // Always update sidebar status for the session
+          set((state) => ({
+            sessions: state.sessions.map((s) => (s.id === eventSessionId ? { ...s, phase: payload.phase } : s)),
+          }))
+
+          if (!isBackgroundSession) {
+            set((state) => ({
+              currentSession: state.currentSession ? { ...state.currentSession, phase: payload.phase } : null,
+            }))
+          }
+          break
+        }
+
+        case 'criteria.updated': {
+          if (!isMessageForCurrentSession(message, get().currentSession?.id ?? null)) {
+            markBackgroundSessionUnread()
+            break
+          }
+          const payload = message.payload as CriteriaUpdatedPayload
+          set((state) => ({
+            currentSession: state.currentSession ? { ...state.currentSession, criteria: payload.criteria } : null,
+          }))
+          break
+        }
+
+        case 'context.state': {
+          if (!isMessageForCurrentSession(message, get().currentSession?.id ?? null)) {
+            markBackgroundSessionUnread()
+            break
+          }
+          const payload = message.payload as ContextStatePayload
+          console.log('[session.handleServerMessage.context.state] Received context state:', payload.context)
+          set({ contextState: payload.context })
+          break
+        }
+
+        case 'session.name_generated': {
+          // Session name was generated - update both currentSession and sessions list
+          const payload = message.payload as { name: string }
+          const eventSessionId = message.sessionId
+          const activeSessionId = get().currentSession?.id
+
+          set((state) => {
+            const updatedSessions = state.sessions.map((s) =>
+              s.id === eventSessionId ? { ...s, title: payload.name, updatedAt: new Date().toISOString() } : s,
+            )
+
+            const updatedCurrentSession =
+              activeSessionId === eventSessionId
+                ? state.currentSession
+                  ? { ...state.currentSession, title: payload.name, updatedAt: new Date().toISOString() }
+                  : null
+                : state.currentSession
+
+            return {
+              sessions: updatedSessions,
+              currentSession: updatedCurrentSession,
+            }
+          })
+          break
+        }
+
+        case 'queue.state': {
+          const payload = message.payload as QueueStatePayload
+          set({ queuedMessages: payload.messages })
+          break
+        }
+
+        case 'devServer.output':
+        case 'devServer.state': {
+          useDevServerStore.getState().handleMessage(message)
+          break
+        }
+
+        case 'error': {
+          const payload = message.payload as { code: string; message: string }
+          console.error('Server error:', payload)
+          set({
+            error: { code: payload.code, message: payload.message },
+            streamingMessageId: null,
+          })
+          break
+        }
       }
-    }
-  },
-})})
+    },
+  }
+})
 
 // Helper selector: is the session currently running (agent active)?
 export function useIsRunning() {
-  return useSessionStore(state => state.currentSession?.isRunning ?? false)
+  return useSessionStore((state) => state.currentSession?.isRunning ?? false)
 }
 
 export function useQueuedMessages() {
-  return useSessionStore(state => state.queuedMessages)
+  return useSessionStore((state) => state.queuedMessages)
 }
 
 export function useAbortInProgress() {
-  return useSessionStore(state => state.abortInProgress)
+  return useSessionStore((state) => state.abortInProgress)
 }
