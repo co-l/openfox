@@ -15,3 +15,16 @@ export {
   assertNoErrors,
   type CollectedEvents,
 } from './event-collector.js'
+export {
+  createProject,
+  createSession,
+  getProject,
+  listProjects,
+  listSessions,
+  getSetting,
+  setSetting,
+  type Project,
+  type Session,
+  type CreateProjectOptions,
+  type CreateSessionOptions,
+} from './rest-client.js'

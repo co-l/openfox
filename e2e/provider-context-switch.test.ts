@@ -5,7 +5,7 @@
  */
 
 import { describe, it, expect, beforeAll, afterAll, beforeEach, afterEach } from 'vitest'
-import { createTestClient, createTestProject, createTestServer, type TestClient, type TestProject, type TestServerHandle } from './utils/index.js'
+import { createTestClient, createTestProject, createTestServer, createProject, createSession, type TestClient, type TestProject, type TestServerHandle } from './utils/index.js'
 
 describe('Provider Context Switch', () => {
   let server: TestServerHandle
@@ -31,16 +31,8 @@ describe('Provider Context Switch', () => {
   })
 
   it('context-state-updates-on-provider-switch: switching provider sends updated context.state', async () => {
-    // Create a project
-    await client.send('project.create', { name: 'test', workdir: project.path })
-    const projectState = client.getProject()
-    expect(projectState).not.toBeNull()
-
-    // Create a session
-    await client.send('session.create', {
-      projectId: projectState!.id,
-      title: 'Test session',
-    })
+    const restProject = await createProject(server.url, { name: 'test', workdir: project.path })
+    await createSession(server.url, { projectId: restProject.id, title: 'Test session' })
 
     // Wait for session.state
     await client.waitFor('session.state', undefined, 5000)
@@ -69,16 +61,8 @@ describe('Provider Context Switch', () => {
   })
 
   it('session-header-displays-correct-maxtokens: maxTokens in contextState matches provider model', async () => {
-    // Create a project
-    await client.send('project.create', { name: 'test', workdir: project.path })
-    const projectState = client.getProject()
-    expect(projectState).not.toBeNull()
-
-    // Create a session
-    await client.send('session.create', {
-      projectId: projectState!.id,
-      title: 'Test session',
-    })
+    const restProject = await createProject(server.url, { name: 'test', workdir: project.path })
+    await createSession(server.url, { projectId: restProject.id, title: 'Test session' })
 
     // Wait for session.state
     await client.waitFor('session.state', undefined, 5000)

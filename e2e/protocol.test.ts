@@ -5,7 +5,7 @@
  */
 
 import { describe, it, expect, beforeAll, afterAll, beforeEach, afterEach } from 'vitest'
-import { createTestClient, createTestProject, createTestServer, type TestClient, type TestProject, type TestServerHandle } from './utils/index.js'
+import { createTestClient, createTestProject, createTestServer, createProject, createSession, type TestClient, type TestProject, type TestServerHandle } from './utils/index.js'
 
 describe('WebSocket Protocol', () => {
   let server: TestServerHandle
@@ -38,51 +38,48 @@ describe('WebSocket Protocol', () => {
 
   describe('Message Correlation', () => {
     it('returns responses with matching correlation ID', async () => {
-      const response = await client.send('project.list', {})
+      const restProject = await createProject(server.url, { name: 'test', workdir: project.path })
+      const restSession = await createSession(server.url, { projectId: restProject.id })
+      await client.send('session.load', { sessionId: restSession.id })
+      
+      const response = await client.send('chat.send', { content: 'Hello' })
       expect(response.id).toBeDefined()
-      expect(response.type).toBe('project.list')
+      expect(response.type).toBe('ack')
     })
 
     it('handles multiple concurrent requests', async () => {
-      // Send multiple requests in parallel
-      const [r1, r2, r3] = await Promise.all([
-        client.send('project.list', {}),
-        client.send('settings.get', { key: 'test-key' }),
-        client.send('project.list', {}),
-      ])
+      const restProject = await createProject(server.url, { name: 'test', workdir: project.path })
+      const restSession = await createSession(server.url, { projectId: restProject.id })
+      await client.send('session.load', { sessionId: restSession.id })
+      
+      const response1 = client.send('chat.send', { content: 'First' })
+      const response2 = client.send('context.compact', {})
+      
+      const [r1, r2] = await Promise.all([response1, response2])
 
-      expect(r1.type).toBe('project.list')
-      expect(r2.type).toBe('settings.value')
-      expect(r3.type).toBe('project.list')
+      expect(r1.type).toBe('ack')
+      expect(r2.type).toBe('error')
     })
   })
 
   describe('Error Handling', () => {
-    it('returns error for invalid payload', async () => {
-      // Send project.create with missing required fields
-      const response = await client.send('project.create', {})
-      expect(response.type).toBe('error')
-      expect((response.payload as { code: string }).code).toBe('INVALID_PAYLOAD')
-    })
-
     it('returns error for unknown message type', async () => {
-      // Use type assertion to test invalid message type
+      const restProject = await createProject(server.url, { name: 'test', workdir: project.path })
+      const restSession = await createSession(server.url, { projectId: restProject.id })
+      await client.send('session.load', { sessionId: restSession.id })
+      
       const response = await client.send('unknown.type' as 'project.list', {})
       expect(response.type).toBe('error')
       expect((response.payload as { code: string }).code).toBe('UNKNOWN_MESSAGE')
     })
+
+
 
     it('returns error for operations without session', async () => {
       // Try to send chat without loading a session
       const response = await client.send('chat.send', { content: 'Hello' })
       expect(response.type).toBe('error')
       expect((response.payload as { code: string }).code).toBe('NO_SESSION')
-    })
-
-    it('returns NOT_FOUND for invalid project ID', async () => {
-      const response = await client.send('project.load', { projectId: 'nonexistent-id' })
-      expect(response.type).toBe('error')
-      expect((response.payload as { code: string }).code).toBe('NOT_FOUND')
     })
 
     it('returns NOT_FOUND for invalid session ID', async () => {
@@ -94,12 +91,9 @@ describe('WebSocket Protocol', () => {
 
   describe('Acknowledgments', () => {
     it('returns ack for chat.stop', async () => {
-      // First create a project and session
-      await client.send('project.create', { name: 'test', workdir: project.path })
-      const projectState = client.getProject()
-      expect(projectState).not.toBeNull()
-      
-      await client.send('session.create', { projectId: projectState!.id })
+      const restProject = await createProject(server.url, { name: 'test', workdir: project.path })
+      const restSession = await createSession(server.url, { projectId: restProject.id })
+      await client.send('session.load', { sessionId: restSession.id })
       
       // Stop should return ack even if nothing is running
       const response = await client.send('chat.stop', {})
@@ -109,12 +103,9 @@ describe('WebSocket Protocol', () => {
 
   describe('Session Loading', () => {
     it('provides full session state on load', async () => {
-      // Create project and session
-      await client.send('project.create', { name: 'test', workdir: project.path })
-      const projectState = client.getProject()!
-      
-      const response = await client.send('session.create', { projectId: projectState.id })
-      expect(response.type).toBe('session.state')
+      const restProject = await createProject(server.url, { name: 'test', workdir: project.path })
+      const restSession = await createSession(server.url, { projectId: restProject.id })
+      await client.send('session.load', { sessionId: restSession.id })
       
       const session = client.getSession()
       expect(session).not.toBeNull()

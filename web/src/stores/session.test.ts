@@ -118,7 +118,7 @@ describe('useSessionStore session isolation', () => {
 
     useSessionStore.getState().loadSession('session-2')
 
-    expect(wsSendMock).toHaveBeenCalledWith('session.load', { sessionId: 'session-2' })
+    // Session loading now uses REST API instead of WebSocket
     expect(useSessionStore.getState().currentSession).toBeNull()
     expect(useSessionStore.getState().messages).toEqual([])
     expect(useSessionStore.getState().currentTodos).toEqual([])

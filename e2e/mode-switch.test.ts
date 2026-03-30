@@ -11,6 +11,8 @@ import {
   createTestServer,
   collectUntilPhase,
   assertNoErrors,
+  createProject,
+  createSession,
   type TestClient, 
   type TestProject,
   type TestServerHandle 
@@ -33,10 +35,9 @@ describe('Mode Switching', () => {
     client = await createTestClient({ url: server.wsUrl })
     testDir = await createTestProject({ template: 'typescript' })
     
-    // Create project and session
-    await client.send('project.create', { name: 'Mode Test', workdir: testDir.path })
-    const projectId = client.getProject()!.id
-    await client.send('session.create', { projectId })
+    const restProject = await createProject(server.url, { name: 'Mode Test', workdir: testDir.path })
+    const restSession = await createSession(server.url, { projectId: restProject.id })
+    await client.send('session.load', { sessionId: restSession.id })
   })
 
   afterEach(async () => {

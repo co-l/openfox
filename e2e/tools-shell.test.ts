@@ -11,6 +11,8 @@ import {
   createTestServer,
   collectChatEvents,
   assertNoErrors,
+  createProject,
+  createSession,
   type TestClient, 
   type TestProject,
   type TestServerHandle 
@@ -33,10 +35,9 @@ describe('Shell Tools', () => {
     client = await createTestClient({ url: server.wsUrl })
     testDir = await createTestProject({ template: 'typescript' })
     
-    // Builder mode for run_command
-    await client.send('project.create', { name: 'Shell Test', workdir: testDir.path })
-    const projectId = client.getProject()!.id
-    await client.send('session.create', { projectId })
+    const restProject = await createProject(server.url, { name: 'Shell Test', workdir: testDir.path })
+    const restSession = await createSession(server.url, { projectId: restProject.id })
+    await client.send('session.load', { sessionId: restSession.id })
     await client.send('mode.switch', { mode: 'builder' })
   })
 

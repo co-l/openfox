@@ -4,9 +4,8 @@ import type { ServerMessage } from '../../shared/protocol.js'
 import { createServerMessage } from '../../shared/protocol.js'
 import type { Config } from '../config.js'
 import type { LLMClientWithModel } from '../llm/client.js'
-import type { ToolRegistry } from '../tools/index.js'
 import type { SessionManager } from '../session/index.js'
-import { getEventStore, getCurrentContextWindowId, getRecentUserPromptsForSession } from '../events/index.js'
+import { getEventStore, getCurrentContextWindowId } from '../events/index.js'
 import { buildContextMessagesFromEventHistory, buildMessagesFromStoredEvents } from '../events/folding.js'
 import type { Provider, ProviderBackend, StatsIdentity, Attachment } from '../../shared/types.js'
 import type { ProviderManager } from '../provider-manager.js'
@@ -23,14 +22,6 @@ import {
 } from '../tools/index.js'
 import { logger } from '../utils/logger.js'
 import { devServerManager } from '../dev-server/manager.js'
-import {
-  createProject,
-  getProject,
-  listProjects,
-  updateProject,
-  deleteProject,
-} from '../db/projects.js'
-import { getSetting, setSetting } from '../db/settings.js'
 import { updateSessionMetadata } from '../db/sessions.js'
 import { generateSessionName, needsNameGeneration } from '../session/name-generator.js'
 import { generateSessionSummary, needsSummaryGeneration } from '../session/summary-generator.js'
@@ -39,10 +30,7 @@ import {
   serializeServerMessage,
   createErrorMessage,
   createSessionStateMessage,
-  createSessionListMessage,
   createSessionRunningMessage,
-  createProjectStateMessage,
-  createProjectListMessage,
   createChatMessageMessage,
   createChatDoneMessage,
   createChatErrorMessage,
@@ -50,22 +38,12 @@ import {
   createPhaseChangedMessage,
   createCriteriaUpdatedMessage,
   createContextStateMessage,
-  isProjectCreatePayload,
-  isProjectCreateWithDirPayload,
-  isProjectLoadPayload,
-  isProjectUpdatePayload,
-  isProjectDeletePayload,
-  isSessionCreatePayload,
   isSessionLoadPayload,
   isChatSendPayload,
   isModeSwitchPayload,
   isCriteriaEditPayload,
   isPathConfirmPayload,
   isAskAnswerPayload,
-  isSettingsGetPayload,
-  isSettingsSetPayload,
-  isSessionSetProviderPayload,
-  createSettingsValueMessage,
   storedEventToServerMessage,
   createQueueStateMessage,
   isQueueAsapPayload,
@@ -130,7 +108,6 @@ export function createWebSocketServer(
   config: Config,
   getLLMClient: () => LLMClientWithModel,
   getActiveProvider: (() => Provider | undefined) | undefined,
-  toolRegistry: ToolRegistry,
   sessionManager: SessionManager,
   providerManager?: ProviderManager,
 ): WebSocketServer {
@@ -287,7 +264,7 @@ export function createWebSocketServer(
       const client = clients.get(ws)!
       
       try {
-          await handleClientMessage(ws, client, message, config, getLLMClient, getActiveProvider, toolRegistry, sessionManager, broadcastForSession, providerManager, getSessionLLMClient, getSessionStatsIdentity, invalidateSessionLLMClient)
+          await handleClientMessage(ws, client, message, getLLMClient, getActiveProvider, sessionManager, broadcastForSession, providerManager, getSessionLLMClient, getSessionStatsIdentity)
       } catch (error) {
         logger.error('Error handling client message', { error, type: message.type })
         ws.send(serializeServerMessage(
@@ -327,16 +304,13 @@ async function handleClientMessage(
   ws: WebSocket,
   client: ClientConnection,
   message: { id: string; type: string; payload: unknown },
-  config: Config,
   getLLMClient: () => LLMClientWithModel,
   getActiveProvider: (() => Provider | undefined) | undefined,
-  toolRegistry: ToolRegistry,
   sessionManager: SessionManager,
   broadcastForSession: (sessionId: string, msg: ServerMessage) => void,
   providerManager?: ProviderManager,
   getSessionLLMClient?: (sessionId: string) => LLMClientWithModel,
   getSessionStatsIdentity?: (sessionId: string) => StatsIdentity,
-  invalidateSessionLLMClient?: (sessionId: string) => void,
 ): Promise<void> {
   const send = (msg: ServerMessage) => {
     if (ws.readyState === WebSocket.OPEN) {
@@ -457,159 +431,32 @@ async function handleClientMessage(
   
   switch (message.type) {
     // =========================================================================
-    // DEPRECATED: Project Management (use REST API instead)
+    // DEPRECATED: All CRUD operations moved to REST API
+    // If you see this error, update your code to use REST endpoints instead.
+    // See docs/REST-API.md for details.
     // =========================================================================
     
-    case 'project.create': {
-      if (!isProjectCreatePayload(message.payload)) {
-        send(createErrorMessage('INVALID_PAYLOAD', 'Invalid project.create payload', message.id))
-        return
-      }
-      
-      const project = createProject(message.payload.name, message.payload.workdir)
-      send(createProjectStateMessage(project, message.id))
-      break
-    }
-    
-    case 'project.create-with-dir': {
-      logger.debug('WS project.create-with-dir received', { payload: message.payload })
-      if (!isProjectCreateWithDirPayload(message.payload)) {
-        logger.error('WS project.create-with-dir invalid payload')
-        send(createErrorMessage('INVALID_PAYLOAD', 'Invalid project.create-with-dir payload', message.id))
-        return
-      }
-      
-      try {
-        const workdir = config.workdir
-        logger.debug('WS creating project directory', { name: message.payload.name, workdir })
-        const { createDirectoryWithGit } = await import('../utils/project-creator.js')
-        const project = await createDirectoryWithGit(message.payload.name, workdir)
-        logger.debug('WS project created', { id: project.id, name: project.name })
-        send(createProjectStateMessage(project, message.id))
-        logger.debug('WS sent project.state', { messageId: message.id })
-      } catch (error) {
-        const errorMessage = error instanceof Error ? error.message : 'Unknown error'
-        logger.error('WS project creation failed', { error: errorMessage })
-        send(createErrorMessage('PROJECT_CREATION_FAILED', errorMessage, message.id))
-      }
-      break
-    }
-    
-    case 'project.list': {
-      logger.debug('WS project.list received', { messageId: message.id })
-      const projects = listProjects()
-      logger.debug('WS projects found', { count: projects.length, projects: projects.map(p => ({ id: p.id, name: p.name })) })
-      send(createProjectListMessage(projects, message.id))
-      logger.debug('WS sent project.list', { messageId: message.id })
-      break
-    }
-    
-    case 'project.load': {
-      if (!isProjectLoadPayload(message.payload)) {
-        send(createErrorMessage('INVALID_PAYLOAD', 'Invalid project.load payload', message.id))
-        return
-      }
-      
-      const project = getProject(message.payload.projectId)
-      if (!project) {
-        send(createErrorMessage('NOT_FOUND', 'Project not found', message.id))
-        return
-      }
-      
-      send(createProjectStateMessage(project, message.id))
-      break
-    }
-    
-    case 'project.update': {
-      if (!isProjectUpdatePayload(message.payload)) {
-        send(createErrorMessage('INVALID_PAYLOAD', 'Invalid project.update payload', message.id))
-        return
-      }
-      
-      const updates: { name?: string; customInstructions?: string | null } = {}
-      if (message.payload.name !== undefined) {
-        updates.name = message.payload.name
-      }
-      if (message.payload.customInstructions !== undefined) {
-        updates.customInstructions = message.payload.customInstructions
-      }
-      
-      const updated = updateProject(message.payload.projectId, updates)
-      if (!updated) {
-        send(createErrorMessage('NOT_FOUND', 'Project not found', message.id))
-        return
-      }
-      
-      send(createProjectStateMessage(updated, message.id))
-      break
-    }
-    
-    case 'project.delete': {
-      if (!isProjectDeletePayload(message.payload)) {
-        send(createErrorMessage('INVALID_PAYLOAD', 'Invalid project.delete payload', message.id))
-        return
-      }
-      
-      deleteProject(message.payload.projectId)
-      send({ type: 'project.deleted', payload: { projectId: message.payload.projectId }, id: message.id })
-      break
-    }
-    
+    case 'project.create':
+    case 'project.create-with-dir':
+    case 'project.list':
+    case 'project.load':
+    case 'project.update':
+    case 'project.delete':
+    case 'settings.get':
+    case 'settings.set':
+    case 'session.create':
+    case 'session.list':
+    case 'session.delete':
+    case 'session.deleteAll':
+    case 'session.setProvider':
+      send(createErrorMessage('DEPRECATED_MESSAGE_TYPE', `${message.type} removed. Use REST API instead. See docs/REST-API.md`, message.id))
+      return
+
     // =========================================================================
-    // DEPRECATED: Settings Management (use REST API instead)
+    // Session Load - Required for WS subscription mechanism
+    // Note: This is kept ONLY to set activeSessionId for event routing.
+    // For actual data loading, use REST API: GET /api/sessions/:id
     // =========================================================================
-    
-    case 'settings.get': {
-      if (!isSettingsGetPayload(message.payload)) {
-        send(createErrorMessage('INVALID_PAYLOAD', 'Invalid settings.get payload', message.id))
-        return
-      }
-      
-      const value = getSetting(message.payload.key)
-      send(createSettingsValueMessage(message.payload.key, value, message.id))
-      break
-    }
-    
-    case 'settings.set': {
-      if (!isSettingsSetPayload(message.payload)) {
-        send(createErrorMessage('INVALID_PAYLOAD', 'Invalid settings.set payload', message.id))
-        return
-      }
-      
-      setSetting(message.payload.key, message.payload.value)
-      send(createSettingsValueMessage(message.payload.key, message.payload.value, message.id))
-      break
-    }
-    
-    // =========================================================================
-    // DEPRECATED: Session Management (use REST API instead)
-    // =========================================================================
-    
-    case 'session.create': {
-      if (!isSessionCreatePayload(message.payload)) {
-        send(createErrorMessage('INVALID_PAYLOAD', 'Invalid session.create payload', message.id))
-        return
-      }
-      
-      // Snapshot current global provider/model into new session
-      const currentProvider = providerManager?.getActiveProvider()
-      const currentModel = currentProvider ? getLLMClient().getModel() : null
-      const session = sessionManager.createSession(
-        message.payload.projectId,
-        message.payload.title,
-        currentProvider?.id ?? null,
-        currentModel,
-      )
-      client.activeSessionId = session.id
-      // New session has no events yet
-      sendForSession(session.id, createSessionStateMessage(session, [], message.id))
-      
-      // Send initial context state
-      const contextState = sessionManager.getContextState(session.id)
-      sendForSession(session.id, createContextStateMessage(contextState))
-      break
-    }
-    
     case 'session.load': {
       if (!isSessionLoadPayload(message.payload)) {
         send(createErrorMessage('INVALID_PAYLOAD', 'Invalid session.load payload', message.id))
@@ -626,11 +473,9 @@ async function handleClientMessage(
       client.activeSessionId = session.id
       ensureEventStoreSubscription(session.id)
       
-      // Fetch messages - prefer EventStore if it has events, otherwise fall back to messages table
+      // Fetch messages from EventStore
       const eventStore = getEventStore()
       const events = eventStore.getEvents(session.id)
-      
-      // Build messages from EventStore
       const messages = buildMessagesFromStoredEvents(events)
       logger.debug('Loaded messages from EventStore', { sessionId: session.id, eventCount: events.length, messageCount: messages.length })
 
@@ -639,94 +484,6 @@ async function handleClientMessage(
       // Send context state
       const contextState = sessionManager.getContextState(session.id)
       sendForSession(session.id, createContextStateMessage(contextState))
-      
-      // No event replay needed - client stays subscribed to all sessions (tab model)
-      break
-    }
-    
-    case 'session.list': {
-      const sessions = sessionManager.listSessions()
-      
-      // Add recent user prompts to each session
-      const sessionsWithPrompts = sessions.map(session => ({
-        ...session,
-        recentUserPrompts: getRecentUserPromptsForSession(session.id, 10),
-      }))
-      
-      send(createSessionListMessage(sessionsWithPrompts, message.id))
-      break
-    }
-    
-    case 'session.delete': {
-      if (!isSessionLoadPayload(message.payload)) {
-        send(createErrorMessage('INVALID_PAYLOAD', 'Invalid session.delete payload', message.id))
-        return
-      }
-      
-      sessionManager.deleteSession(message.payload.sessionId)
-      send({ type: 'session.deleted', payload: { sessionId: message.payload.sessionId }, id: message.id })
-      break
-    }
-    
-    case 'session.deleteAll': {
-      if (!message.payload || typeof message.payload !== 'object' || !('projectId' in message.payload)) {
-        send(createErrorMessage('INVALID_PAYLOAD', 'Invalid session.deleteAll payload', message.id))
-        return
-      }
-      const payload = message.payload as { projectId: string }
-      const project = sessionManager.getProject(payload.projectId)
-      if (!project) {
-        send(createErrorMessage('PROJECT_NOT_FOUND', 'Project not found', message.id))
-        return
-      }
-      sessionManager.deleteAllSessions(payload.projectId, project.workdir)
-      send({ type: 'session.deletedAll', payload: { projectId: payload.projectId }, id: message.id })
-      break
-    }
-
-    case 'session.setProvider': {
-      console.log('[server.session.setProvider] Received:', message.payload)
-      if (!client.activeSessionId) {
-        send(createErrorMessage('NO_SESSION', 'No active session', message.id))
-        return
-      }
-
-      if (!isSessionSetProviderPayload(message.payload)) {
-        send(createErrorMessage('INVALID_PAYLOAD', 'Invalid session.setProvider payload', message.id))
-        return
-      }
-
-      if (!providerManager) {
-        send(createErrorMessage('NO_PROVIDERS', 'Provider management not available', message.id))
-        return
-      }
-
-      const { providerId, model: requestedModel } = message.payload
-      const provider = providerManager.getProviders().find(p => p.id === providerId)
-      if (!provider) {
-        send(createErrorMessage('PROVIDER_NOT_FOUND', 'Provider not found', message.id))
-        return
-      }
-
-      // Resolve model: use requested, or default to 'auto'
-      const resolvedModel = requestedModel ?? 'auto'
-
-      const sessionId = client.activeSessionId
-      console.log('[server.session.setProvider] Calling setSessionProvider for sessionId:', sessionId, 'providerId:', providerId, 'model:', resolvedModel)
-      sessionManager.setSessionProvider(sessionId, providerId, resolvedModel)
-      invalidateSessionLLMClient?.(sessionId)
-
-      // Send updated context state with new maxTokens
-      const contextState = sessionManager.getContextState(sessionId)
-      console.log('[server.session.setProvider] getContextState returned:', contextState)
-      sendForSession(sessionId, createContextStateMessage(contextState))
-
-      // Send updated session state
-      const eventStore = getEventStore()
-      const updatedSession = sessionManager.requireSession(sessionId)
-      const events = eventStore.getEvents(sessionId)
-      const messages = buildMessagesFromStoredEvents(events)
-      sendForSession(sessionId, createSessionStateMessage(updatedSession, messages, message.id))
       break
     }
 

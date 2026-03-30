@@ -18,6 +18,8 @@ import {
   createTestServer,
   collectChatEvents,
   assertNoErrors,
+  createProject,
+  createSession,
   type TestClient, 
   type TestProject,
   type TestServerHandle 
@@ -49,9 +51,9 @@ describe('Auto-Compaction', () => {
     client = await createTestClient({ url: server.wsUrl })
     testDir = await createTestProject({ template: 'typescript' })
     
-    await client.send('project.create', { name: 'Auto-Compaction Test', workdir: testDir.path })
-    const projectId = client.getProject()!.id
-    await client.send('session.create', { projectId })
+    const restProject = await createProject(server.url, { name: 'Auto-Compaction Test', workdir: testDir.path })
+    const restSession = await createSession(server.url, { projectId: restProject.id })
+    await client.send('session.load', { sessionId: restSession.id })
   })
 
   afterEach(async () => {

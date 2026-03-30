@@ -42,31 +42,28 @@ describe('REST + WebSocket Integration', () => {
     const createData: any = await createRes.json()
     projectId = createData.project.id
 
-    // Connect via WebSocket for real-time features
+    // Create session via REST
+    const sessionRes = await fetch(`${server.url}/api/sessions`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ projectId, title: 'Integration Session' }),
+    })
+    expect(sessionRes.status).toBe(201)
+    const sessionData: any = await sessionRes.json()
+    const sessionId = sessionData.session.id
+
+    // Load session via REST to get full state
+    const loadRes = await fetch(`${server.url}/api/sessions/${sessionId}`)
+    expect(loadRes.status).toBe(200)
+    const loadData: any = await loadRes.json()
+    expect(loadData.session.id).toBe(sessionId)
+    expect(Array.isArray(loadData.messages)).toBe(true)
+
+    // Connect via WebSocket and subscribe to session for real-time events
     const client = await createTestClient({ url: server.wsUrl })
     try {
-      // Load project (could also be done via REST, but WS works for backward compat)
-      await client.send('project.load', { projectId })
-      expect(client.getProject()?.id).toBe(projectId)
-
-      // Create session via REST
-      const sessionRes = await fetch(`${server.url}/api/sessions`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ projectId, title: 'Integration Session' }),
-      })
-      expect(sessionRes.status).toBe(201)
-      const sessionData: any = await sessionRes.json()
-      const sessionId = sessionData.session.id
-
-      // Load session via REST
-      const loadRes = await fetch(`${server.url}/api/sessions/${sessionId}`)
-      expect(loadRes.status).toBe(200)
-      const loadData: any = await loadRes.json()
-      expect(loadData.session.id).toBe(sessionId)
-      expect(Array.isArray(loadData.messages)).toBe(true)
-
-      // Subscribe to session via WS for real-time events
+      // Use session.load via WS to subscribe (sets activeSessionId for event routing)
+      // This is the only WS CRUD operation still needed for subscription mechanism
       await client.send('session.load', { sessionId })
       expect(client.getSession()?.id).toBe(sessionId)
 
@@ -102,7 +99,12 @@ describe('REST + WebSocket Integration', () => {
     // Connect via WS
     const client = await createTestClient({ url: server.wsUrl })
     try {
-      // Load session via WS to subscribe to events
+      // Load session via REST first, then subscribe via WS
+      const loadRes = await fetch(`${server.url}/api/sessions/${sessionId}`)
+      expect(loadRes.status).toBe(200)
+      const loadData: any = await loadRes.json()
+      
+      // Subscribe to session via WS for real-time events
       await client.send('session.load', { sessionId })
 
       // Update project via REST

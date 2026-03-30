@@ -5,7 +5,7 @@
  */
 
 import { describe, it, expect, beforeAll, afterAll, beforeEach, afterEach } from 'vitest'
-import { createTestClient, createTestProject, createTestServer, type TestClient, type TestProject, type TestServerHandle } from './utils/index.js'
+import { createTestClient, createTestProject, createTestServer, createProject, createSession, type TestClient, type TestProject, type TestServerHandle } from './utils/index.js'
 
 describe('Model Selection', () => {
   let server: TestServerHandle
@@ -32,16 +32,9 @@ describe('Model Selection', () => {
 
   describe('Explicit model selection persistence', () => {
     it('explicit-model-not-overwritten: model refresh does not overwrite explicit selection', async () => {
-      // Create a project
-      await client.send('project.create', { name: 'test', workdir: project.path })
-      const projectState = client.getProject()
-      expect(projectState).not.toBeNull()
+      const restProject = await createProject(server.url, { name: 'test', workdir: project.path })
 
-      // Create a session
-      await client.send('session.create', {
-        projectId: projectState!.id,
-        title: 'Test session',
-      })
+      await createSession(server.url, { projectId: restProject.id, title: 'Test session' })
 
       // Get initial config
       const initialConfigResponse = await fetch(`${server.url}/api/config`)
@@ -68,16 +61,8 @@ describe('Model Selection', () => {
     })
 
     it('model-selection-persists: model remains selected after multiple refreshes', async () => {
-      // Create a project
-      await client.send('project.create', { name: 'test', workdir: project.path })
-      const projectState = client.getProject()
-      expect(projectState).not.toBeNull()
-
-      // Create a session
-      await client.send('session.create', {
-        projectId: projectState!.id,
-        title: 'Test session',
-      })
+      const restProject = await createProject(server.url, { name: 'test', workdir: project.path })
+      await createSession(server.url, { projectId: restProject.id, title: 'Test session' })
 
       // Get initial config
       const initialConfigResponse = await fetch(`${server.url}/api/config`)
@@ -99,16 +84,7 @@ describe('Model Selection', () => {
     })
 
     it('auto-model-refresh-works: provider with auto model still gets refreshed', async () => {
-      // Create a project
-      await client.send('project.create', { name: 'test', workdir: project.path })
-      const projectState = client.getProject()
-      expect(projectState).not.toBeNull()
-
-      // Create a session
-      await client.send('session.create', {
-        projectId: projectState!.id,
-        title: 'Test session',
-      })
+      await createProject(server.url, { name: 'test', workdir: project.path })
 
       // Get initial config
       const initialConfigResponse = await fetch(`${server.url}/api/config`)
@@ -138,15 +114,7 @@ describe('Model Selection', () => {
       // For now, we'll skip this and focus on the core bug fix
       // The actual fix will be verified by the other tests
 
-      // Create a project and session
-      await client.send('project.create', { name: 'test', workdir: project.path })
-      const projectState = client.getProject()
-      expect(projectState).not.toBeNull()
-
-      await client.send('session.create', {
-        projectId: projectState!.id,
-        title: 'Test session',
-      })
+      await createProject(server.url, { name: 'test', workdir: project.path })
 
       // Verify config endpoint works
       const configResponse = await fetch(`${server.url}/api/config`)

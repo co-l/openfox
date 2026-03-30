@@ -1,14 +1,7 @@
 import type {
   ClientMessage,
   ServerMessage,
-  ProjectCreatePayload,
-  ProjectCreateWithDirPayload,
-  ProjectLoadPayload,
-  ProjectUpdatePayload,
-  ProjectDeletePayload,
-  SessionCreatePayload,
   SessionLoadPayload,
-  SessionSetProviderPayload,
   ChatSendPayload,
   ModeSwitchPayload,
   CriteriaEditPayload,
@@ -41,9 +34,6 @@ import type {
   CriteriaUpdatedPayload,
   ContextStatePayload,
   ErrorPayload,
-  SettingsGetPayload,
-  SettingsSetPayload,
-  SettingsValuePayload,
   QueueAsapPayload,
   QueueCompletionPayload,
   QueueCancelPayload,
@@ -265,32 +255,7 @@ export function createSessionNameGeneratedMessage(name: string, sessionId?: stri
 
 // Type guards for payloads
 
-// Project payloads
-export function isProjectCreatePayload(payload: unknown): payload is ProjectCreatePayload {
-  return typeof payload === 'object' && payload !== null && 'name' in payload && 'workdir' in payload
-}
-
-export function isProjectCreateWithDirPayload(payload: unknown): payload is ProjectCreateWithDirPayload {
-  return typeof payload === 'object' && payload !== null && 'name' in payload && typeof payload.name === 'string'
-}
-
-export function isProjectLoadPayload(payload: unknown): payload is ProjectLoadPayload {
-  return typeof payload === 'object' && payload !== null && 'projectId' in payload
-}
-
-export function isProjectUpdatePayload(payload: unknown): payload is ProjectUpdatePayload {
-  return typeof payload === 'object' && payload !== null && 'projectId' in payload
-}
-
-export function isProjectDeletePayload(payload: unknown): payload is ProjectDeletePayload {
-  return typeof payload === 'object' && payload !== null && 'projectId' in payload
-}
-
 // Session payloads
-export function isSessionCreatePayload(payload: unknown): payload is SessionCreatePayload {
-  return typeof payload === 'object' && payload !== null && 'projectId' in payload
-}
-
 export function isSessionLoadPayload(payload: unknown): payload is SessionLoadPayload {
   return typeof payload === 'object' && payload !== null && 'sessionId' in payload
 }
@@ -316,24 +281,6 @@ export function isPathConfirmPayload(payload: unknown): payload is PathConfirmPa
 // Ask user payloads
 export function isAskAnswerPayload(payload: unknown): payload is AskAnswerPayload {
   return typeof payload === 'object' && payload !== null && 'callId' in payload && 'answer' in payload
-}
-
-// Settings payloads
-export function isSettingsGetPayload(payload: unknown): payload is SettingsGetPayload {
-  return typeof payload === 'object' && payload !== null && 'key' in payload
-}
-
-export function isSettingsSetPayload(payload: unknown): payload is SettingsSetPayload {
-  return typeof payload === 'object' && payload !== null && 'key' in payload && 'value' in payload
-}
-
-// Session provider payload
-export function isSessionSetProviderPayload(payload: unknown): payload is SessionSetProviderPayload {
-  return typeof payload === 'object' && payload !== null && 'providerId' in payload
-}
-
-export function createSettingsValueMessage(key: string, value: string | null, correlationId?: string): ServerMessage {
-  return createServerMessage<SettingsValuePayload>('settings.value', { key, value }, correlationId)
 }
 
 // Queue messages

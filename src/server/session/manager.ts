@@ -976,6 +976,7 @@ export class SessionManager {
 // Singleton for gradual migration
 // Note: This is deprecated - use the SessionManager from createServerHandle instead
 let _sessionManager: SessionManager | null = null
+export const sessionManager: SessionManager = null as any
 export function getSessionManager(): SessionManager {
   if (!_sessionManager) {
     throw new Error('SessionManager not initialized. Use createServerHandle to get a SessionManager instance.')

@@ -25,6 +25,7 @@ import type { TestClient } from './ws-client.js'
 import type { TestProject, TestProjectOptions } from './project-factory.js'
 import { createTestClient } from './ws-client.js'
 import { createTestProject } from './project-factory.js'
+import { createProject, createSession, type Project } from './rest-client.js'
 
 // Re-derive the template type from TestProjectOptions
 type ProjectTemplate = NonNullable<TestProjectOptions['template']>
@@ -48,6 +49,8 @@ export interface SessionPoolOptions {
   initGit?: boolean
   /** WebSocket URL for the server (required for in-process testing) */
   wsUrl?: string
+  /** HTTP API URL (derived from wsUrl if not provided) */
+  apiUrl?: string
 }
 
 export interface SessionPoolContext {
@@ -75,12 +78,14 @@ export function createSessionPool(options: SessionPoolOptions = {}): SessionPool
     projectName = 'Test Project',
     initGit = false,
     wsUrl,
+    apiUrl,
   } = options
   
   let client: TestClient | null = null
   let testDir: TestProject | null = null
   let projectId: string | null = null
   let session: Session | null = null
+  let restProject: Project | null = null
   
   return {
     async setup(): Promise<void> {
@@ -88,10 +93,17 @@ export function createSessionPool(options: SessionPoolOptions = {}): SessionPool
       client = await createTestClient(wsUrl ? { url: wsUrl } : undefined)
       testDir = await createTestProject({ template, initGit })
       
-      await client.send('project.create', { name: projectName, workdir: testDir.path })
-      projectId = client.getProject()!.id
+      // Derive API URL from WebSocket URL
+      const baseUrl = apiUrl ?? (wsUrl ? wsUrl.replace('ws://', 'http://').replace('wss://', 'https://').replace('/ws', '') : 'http://localhost:3999')
       
-      await client.send('session.create', { projectId })
+      // Create project and session via REST API
+      restProject = await createProject(baseUrl, { name: projectName, workdir: testDir.path })
+      projectId = restProject.id
+      
+      const restSession = await createSession(baseUrl, { projectId })
+      
+      // Load session via WebSocket to subscribe to events
+      await client.send('session.load', { sessionId: restSession.id })
       session = client.getSession()!
       
       if (mode === 'builder') {
@@ -111,6 +123,7 @@ export function createSessionPool(options: SessionPoolOptions = {}): SessionPool
       }
       projectId = null
       session = null
+      restProject = null
     },
     
     async reset(): Promise<void> {
@@ -121,8 +134,14 @@ export function createSessionPool(options: SessionPoolOptions = {}): SessionPool
       // Clear collected events for fresh test
       client.clearEvents()
       
+      // Derive API URL from WebSocket URL
+      const baseUrl = apiUrl ?? (wsUrl ? wsUrl.replace('ws://', 'http://').replace('wss://', 'https://').replace('/ws', '') : 'http://localhost:3999')
+      
       // Create a fresh session for isolation (reuses WebSocket connection)
-      await client.send('session.create', { projectId })
+      const restSession = await createSession(baseUrl, { projectId })
+      
+      // Load session via WebSocket to subscribe to events
+      await client.send('session.load', { sessionId: restSession.id })
       session = client.getSession()!
       
       // Restore mode if needed

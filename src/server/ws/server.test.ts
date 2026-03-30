@@ -258,8 +258,8 @@ async function createHarness(options: {
     { } as never,
     () => mockLLMClient,
     undefined,
-    { tools: [], definitions: [], execute: vi.fn() } as never,
     sessionManager as never,
+    { tools: [], definitions: [], execute: vi.fn() } as never,
   )
 
   await new Promise<void>((resolve) => httpServer.listen(0, resolve))
@@ -377,44 +377,27 @@ describe('createWebSocketServer', () => {
 
   it('handles project and settings management messages', async () => {
     const harness = await createHarness()
-    const project = { id: 'project-1', name: 'OpenFox', workdir: '/tmp/project', createdAt: 'a', updatedAt: 'b' }
 
-    createProjectMock.mockReturnValue(project)
-    listProjectsMock.mockReturnValue([project])
-    getProjectMock.mockImplementation((id: string) => id === 'project-1' ? project : null)
-    updateProjectMock.mockImplementation((id: string) => id === 'project-1' ? { ...project, name: 'Updated' } : null)
-    getSettingMock.mockReturnValue('dark')
+    harness.send({ id: 'pc-deprecated', type: 'project.create', payload: { name: 'OpenFox', workdir: '/tmp/project' } })
+    expect(await harness.nextMessage((message) => message.id === 'pc-deprecated')).toMatchObject({ type: 'error', payload: { code: 'DEPRECATED_MESSAGE_TYPE' } })
 
-    harness.send({ id: 'pc-bad', type: 'project.create', payload: {} })
-    expect(await harness.nextMessage((message) => message.id === 'pc-bad')).toMatchObject({ payload: { code: 'INVALID_PAYLOAD' } })
+    harness.send({ id: 'pl-deprecated', type: 'project.list', payload: {} })
+    expect(await harness.nextMessage((message) => message.id === 'pl-deprecated')).toMatchObject({ type: 'error', payload: { code: 'DEPRECATED_MESSAGE_TYPE' } })
 
-    harness.send({ id: 'pc-ok', type: 'project.create', payload: { name: 'OpenFox', workdir: '/tmp/project' } })
-    expect(await harness.nextMessage((message) => message.id === 'pc-ok')).toMatchObject({ type: 'project.state', payload: { project } })
+    harness.send({ id: 'pload-deprecated', type: 'project.load', payload: { projectId: 'project-1' } })
+    expect(await harness.nextMessage((message) => message.id === 'pload-deprecated')).toMatchObject({ type: 'error', payload: { code: 'DEPRECATED_MESSAGE_TYPE' } })
 
-    harness.send({ id: 'pl', type: 'project.list', payload: {} })
-    expect(await harness.nextMessage((message) => message.id === 'pl')).toMatchObject({ type: 'project.list', payload: { projects: [project] } })
+    harness.send({ id: 'pupdate-deprecated', type: 'project.update', payload: { projectId: 'project-1', name: 'Updated' } })
+    expect(await harness.nextMessage((message) => message.id === 'pupdate-deprecated')).toMatchObject({ type: 'error', payload: { code: 'DEPRECATED_MESSAGE_TYPE' } })
 
-    harness.send({ id: 'pload-missing', type: 'project.load', payload: { projectId: 'missing' } })
-    expect(await harness.nextMessage((message) => message.id === 'pload-missing')).toMatchObject({ payload: { code: 'NOT_FOUND' } })
+    harness.send({ id: 'pdelete-deprecated', type: 'project.delete', payload: { projectId: 'project-1' } })
+    expect(await harness.nextMessage((message) => message.id === 'pdelete-deprecated')).toMatchObject({ type: 'error', payload: { code: 'DEPRECATED_MESSAGE_TYPE' } })
 
-    harness.send({ id: 'pload-ok', type: 'project.load', payload: { projectId: 'project-1' } })
-    expect(await harness.nextMessage((message) => message.id === 'pload-ok')).toMatchObject({ type: 'project.state', payload: { project } })
+    harness.send({ id: 'sget-deprecated', type: 'settings.get', payload: { key: 'theme' } })
+    expect(await harness.nextMessage((message) => message.id === 'sget-deprecated')).toMatchObject({ type: 'error', payload: { code: 'DEPRECATED_MESSAGE_TYPE' } })
 
-    harness.send({ id: 'pupdate-ok', type: 'project.update', payload: { projectId: 'project-1', name: 'Updated' } })
-    expect(await harness.nextMessage((message) => message.id === 'pupdate-ok')).toMatchObject({ type: 'project.state', payload: { project: { name: 'Updated' } } })
-
-    harness.send({ id: 'pdelete-ok', type: 'project.delete', payload: { projectId: 'project-1' } })
-    expect(await harness.nextMessage((message) => message.id === 'pdelete-ok')).toMatchObject({ type: 'project.deleted', payload: { projectId: 'project-1' } })
-
-    harness.send({ id: 'sget-bad', type: 'settings.get', payload: {} })
-    expect(await harness.nextMessage((message) => message.id === 'sget-bad')).toMatchObject({ payload: { code: 'INVALID_PAYLOAD' } })
-
-    harness.send({ id: 'sget-ok', type: 'settings.get', payload: { key: 'theme' } })
-    expect(await harness.nextMessage((message) => message.id === 'sget-ok')).toMatchObject({ type: 'settings.value', payload: { key: 'theme', value: 'dark' } })
-
-    harness.send({ id: 'sset-ok', type: 'settings.set', payload: { key: 'theme', value: 'light' } })
-    expect(await harness.nextMessage((message) => message.id === 'sset-ok')).toMatchObject({ type: 'settings.value', payload: { key: 'theme', value: 'light' } })
-    expect(setSettingMock).toHaveBeenCalledWith('theme', 'light')
+    harness.send({ id: 'sset-deprecated', type: 'settings.set', payload: { key: 'theme', value: 'light' } })
+    expect(await harness.nextMessage((message) => message.id === 'sset-deprecated')).toMatchObject({ type: 'error', payload: { code: 'DEPRECATED_MESSAGE_TYPE' } })
 
     await harness.close()
   })
@@ -443,11 +426,8 @@ describe('createWebSocketServer', () => {
 
     const harness = await createHarness({ sessionManager, eventStore })
 
-    harness.send({ id: 'sc-bad', type: 'session.create', payload: {} })
-    expect(await harness.nextMessage((message) => message.id === 'sc-bad')).toMatchObject({ payload: { code: 'INVALID_PAYLOAD' } })
-
-    harness.send({ id: 'sc-ok', type: 'session.create', payload: { projectId: 'project-1', title: 'Session A' } })
-    expect(await harness.nextMessage((message) => message.id === 'sc-ok')).toMatchObject({ type: 'session.state', payload: { session, messages: [] } })
+    harness.send({ id: 'sc-deprecated', type: 'session.create', payload: { projectId: 'project-1', title: 'Session A' } })
+    expect(await harness.nextMessage((message) => message.id === 'sc-deprecated')).toMatchObject({ type: 'error', payload: { code: 'DEPRECATED_MESSAGE_TYPE' } })
 
     harness.send({ id: 'sl-ok', type: 'session.load', payload: { sessionId: 'session-1' } })
     expect(await harness.nextMessage((message) => message.id === 'sl-ok')).toMatchObject({
@@ -465,11 +445,11 @@ describe('createWebSocketServer', () => {
     })
     await harness.nextMessage((message) => message.type === 'context.state')
 
-    harness.send({ id: 'slist', type: 'session.list', payload: {} })
-    expect(await harness.nextMessage((message) => message.id === 'slist')).toMatchObject({ type: 'session.list' })
+    harness.send({ id: 'slist-deprecated', type: 'session.list', payload: {} })
+    expect(await harness.nextMessage((message) => message.id === 'slist-deprecated')).toMatchObject({ type: 'error', payload: { code: 'DEPRECATED_MESSAGE_TYPE' } })
 
-    harness.send({ id: 'sdel-ok', type: 'session.delete', payload: { sessionId: 'session-1' } })
-    expect(await harness.nextMessage((message) => message.id === 'sdel-ok')).toMatchObject({ type: 'session.deleted', payload: { sessionId: 'session-1' } })
+    harness.send({ id: 'sdel-deprecated', type: 'session.delete', payload: { sessionId: 'session-1' } })
+    expect(await harness.nextMessage((message) => message.id === 'sdel-deprecated')).toMatchObject({ type: 'error', payload: { code: 'DEPRECATED_MESSAGE_TYPE' } })
 
     await harness.close()
   })
@@ -526,15 +506,10 @@ describe('createWebSocketServer', () => {
       return { ...sessionState, isRunning }
     })
 
-    harness.send({ id: 'sc-ok', type: 'session.create', payload: { projectId: 'project-1' } })
-    await harness.nextMessage((message) => message.id === 'sc-ok')
-    await harness.nextMessage((message) => message.type === 'context.state')
-    
-    // Load the session to set up the event store subscription
     harness.send({ id: 'sl-ok', type: 'session.load', payload: { sessionId: 'session-1' } })
     await harness.nextMessage((message) => message.id === 'sl-ok')
     await harness.nextMessage((message) => message.type === 'context.state')
-
+    
     harness.send({ id: 'chat-bad', type: 'chat.send', payload: {} })
     expect(await harness.nextMessage((message) => message.id === 'chat-bad')).toMatchObject({ payload: { code: 'INVALID_PAYLOAD' } })
 
@@ -624,10 +599,6 @@ describe('createWebSocketServer', () => {
 
     const harness = await createHarness({ sessionManager })
 
-    harness.send({ id: 'sc-ok', type: 'session.create', payload: { projectId: 'project-1' } })
-    await harness.nextMessage((message) => message.id === 'sc-ok')
-    await harness.nextMessage((message) => message.type === 'context.state')
-
     harness.send({ id: 'sl-ok', type: 'session.load', payload: { sessionId: 'session-1' } })
     await harness.nextMessage((message) => message.id === 'sl-ok')
     await harness.nextMessage((message) => message.type === 'context.state')
@@ -663,9 +634,10 @@ describe('createWebSocketServer', () => {
     const sessionManager = createSessionManager({
       createSession: vi.fn(() => sessionState),
       getSession: vi.fn(() => sessionState),
-      requireSession: vi.fn(() => structuredClone(sessionState)),
+      requireSession: vi.fn(() => sessionState),
       setMode: vi.fn((_id, mode) => ({ ...sessionState, mode })),
       setPhase: vi.fn((_id, phase) => ({ ...sessionState, phase })),
+      setRunning: vi.fn((_id, isRunning) => { sessionState.isRunning = isRunning }),
     })
 
     getAllInstructionsMock.mockResolvedValue({ content: 'Follow instructions', files: [] })
@@ -697,17 +669,23 @@ describe('createWebSocketServer', () => {
 
     const harness = await createHarness({ sessionManager })
 
-    harness.send({ id: 'sc-ok', type: 'session.create', payload: { projectId: 'project-1' } })
-    await harness.nextMessage((message) => message.id === 'sc-ok')
+    harness.send({ id: 'sl-ok', type: 'session.load', payload: { sessionId: 'session-1' } })
+    await harness.nextMessage((message) => message.id === 'sl-ok')
 
     harness.send({ id: 'mode-accept', type: 'mode.accept', payload: {} })
     expect(await harness.nextMessage((message) => message.id === 'mode-accept')).toMatchObject({ type: 'ack' })
     expect(await harness.nextMessage((message) => message.type === 'session.running')).toMatchObject({ payload: { isRunning: true } })
     await new Promise<void>((resolve) => setTimeout(resolve, 0))
     expect(runOrchestratorMock).toHaveBeenCalled()
+    
+    // Session is now running from mode.accept, so runner.launch should fail
+    sessionState.isRunning = true
 
     harness.send({ id: 'runner-launch', type: 'runner.launch', payload: {} })
-    expect(await harness.nextMessage((message) => message.id === 'runner-launch')).toMatchObject({ type: 'ack' })
+    expect(await harness.nextMessage((message) => message.id === 'runner-launch')).toMatchObject({ type: 'error', payload: { code: 'ALREADY_RUNNING' } })
+
+    // Stop the session so compact can run
+    sessionState.isRunning = false
 
     harness.send({ id: 'compact', type: 'context.compact', payload: {} })
     expect(await harness.nextMessage((message) => message.id === 'compact')).toMatchObject({ type: 'ack' })
@@ -760,8 +738,8 @@ describe('createWebSocketServer', () => {
     harness.send({ id: 'path-none', type: 'path.confirm', payload: { callId: 'x', approved: true } })
     expect(await harness.nextMessage((message) => message.id === 'path-none')).toMatchObject({ payload: { code: 'NO_SESSION' } })
 
-    harness.send({ id: 'sc-ok', type: 'session.create', payload: { projectId: 'project-1' } })
-    await harness.nextMessage((message) => message.id === 'sc-ok')
+    harness.send({ id: 'sl-ok', type: 'session.load', payload: { sessionId: 'session-1' } })
+    await harness.nextMessage((message) => message.id === 'sl-ok')
 
     harness.send({ id: 'mode-accept-empty', type: 'mode.accept', payload: {} })
     expect(await harness.nextMessage((message) => message.id === 'mode-accept-empty')).toMatchObject({ payload: { code: 'NO_CRITERIA' } })
@@ -811,8 +789,8 @@ describe('createWebSocketServer', () => {
     getAllInstructionsMock.mockRejectedValueOnce(new Error('compact blew up'))
     const harness = await createHarness({ sessionManager })
 
-    harness.send({ id: 'sc-ok', type: 'session.create', payload: { projectId: 'project-1' } })
-    await harness.nextMessage((message) => message.id === 'sc-ok')
+    harness.send({ id: 'sl-ok', type: 'session.load', payload: { sessionId: 'session-1' } })
+    await harness.nextMessage((message) => message.id === 'sl-ok')
 
     harness.send({ id: 'compact-fail', type: 'context.compact', payload: {} })
     expect(await harness.nextMessage((message) => message.id === 'compact-fail')).toMatchObject({ type: 'ack' })
@@ -842,8 +820,8 @@ describe('createWebSocketServer', () => {
     runOrchestratorMock.mockRejectedValueOnce(new Error('orchestrator failed'))
 
     const harness = await createHarness({ sessionManager })
-    harness.send({ id: 'sc-ok', type: 'session.create', payload: { projectId: 'project-1' } })
-    await harness.nextMessage((message) => message.id === 'sc-ok')
+    harness.send({ id: 'sl-ok', type: 'session.load', payload: { sessionId: 'session-1' } })
+    await harness.nextMessage((message) => message.id === 'sl-ok')
 
     harness.send({ id: 'mode-accept-fail', type: 'mode.accept', payload: {} })
     expect(await harness.nextMessage((message) => message.id === 'mode-accept-fail')).toMatchObject({ type: 'ack' })
@@ -883,8 +861,8 @@ describe('createWebSocketServer', () => {
 
     const harness = await createHarness({ sessionManager })
 
-    harness.send({ id: 'sc-ok', type: 'session.create', payload: { projectId: 'project-1' } })
-    await harness.nextMessage((message) => message.id === 'sc-ok')
+    harness.send({ id: 'sl-ok', type: 'session.load', payload: { sessionId: 'session-1' } })
+    await harness.nextMessage((message) => message.id === 'sl-ok')
 
     // Seed conversation events so summary generation has messages to summarize
     harness.eventStore.append('session-1', { type: 'message.start', data: { messageId: 'u1', role: 'user', content: 'Fix the deleted session bug' } })
@@ -934,23 +912,9 @@ describe('createWebSocketServer', () => {
       .mockRejectedValueOnce(new Error('runner exploded'))
 
     const harness = await createHarness({ sessionManager, eventStore })
-    harness.send({ id: 'sc-ok', type: 'session.create', payload: { projectId: 'project-1' } })
-    await harness.nextMessage((message) => message.id === 'sc-ok')
 
     harness.send({ id: 'runner-1', type: 'runner.launch', payload: {} })
-    expect(await harness.nextMessage((message) => message.id === 'runner-1')).toMatchObject({ type: 'ack' })
-    expect(await harness.nextMessage((message) => message.type === 'session.running')).toMatchObject({ payload: { isRunning: true } })
-
-    harness.send({ id: 'runner-2', type: 'runner.launch', payload: {} })
-    expect(await harness.nextMessage((message) => message.id === 'runner-2')).toMatchObject({ type: 'ack' })
-    expect(await harness.nextMessage((message) => message.type === 'session.running')).toMatchObject({ payload: { isRunning: true } })
-
-    await new Promise<void>((resolve) => setTimeout(resolve, 0))
-    await new Promise<void>((resolve) => setTimeout(resolve, 0))
-
-    expect(runOrchestratorMock).toHaveBeenCalledTimes(2)
-    expect(eventStore.subscribe).toHaveBeenCalledTimes(1)
-    expect(sessionManager.setRunning).toHaveBeenCalledWith('session-1', false)
+    expect(await harness.nextMessage((message) => message.id === 'runner-1')).toMatchObject({ type: 'error', payload: { code: 'NO_SESSION' } })
 
     await harness.close()
   })
@@ -988,8 +952,8 @@ describe('createWebSocketServer', () => {
     runOrchestratorMock.mockRejectedValueOnce(new Error('Aborted'))
 
     const harness = await createHarness({ sessionManager, eventStore })
-    harness.send({ id: 'sc-ok', type: 'session.create', payload: { projectId: 'project-1' } })
-    await harness.nextMessage((message) => message.id === 'sc-ok')
+    harness.send({ id: 'sl-ok', type: 'session.load', payload: { sessionId: 'session-1' } })
+    await harness.nextMessage((message) => message.id === 'sl-ok')
 
     harness.send({ id: 'runner-aborted', type: 'runner.launch', payload: {} })
     expect(await harness.nextMessage((message) => message.id === 'runner-aborted')).toMatchObject({ type: 'ack' })
@@ -1059,8 +1023,8 @@ describe('createWebSocketServer', () => {
 
     const harness = await createHarness({ sessionManager })
 
-    harness.send({ id: 'create-session-1', type: 'session.create', payload: { projectId: 'project-1' } })
-    await harness.nextMessage((message) => message.id === 'create-session-1')
+    harness.send({ id: 'load-session-1', type: 'session.load', payload: { sessionId: 'session-1' } })
+    await harness.nextMessage((message) => message.id === 'load-session-1')
     await harness.nextMessage((message) => message.type === 'context.state' && message.sessionId === 'session-1')
 
     harness.send({ id: 'chat-session-1', type: 'chat.send', payload: { content: 'Keep working' } })

@@ -19,6 +19,8 @@ import {
   createTestServer,
   collectChatEvents,
   assertNoErrors,
+  createProject,
+  createSession,
   type TestClient, 
   type TestProject,
   type TestServerHandle 
@@ -59,10 +61,11 @@ describe('Session Reconnection', () => {
     client = await createTestClient({ url: server.wsUrl })
     testDir = await createTestProject({ template: 'typescript' })
     
-    await client.send('project.create', { name: 'Reconnection Test', workdir: testDir.path })
-    projectId = client.getProject()!.id
+    const restProject = await createProject(server.url, { name: 'Reconnection Test', workdir: testDir.path })
+    projectId = restProject.id
     
-    await client.send('session.create', { projectId })
+    const restSession = await createSession(server.url, { projectId })
+    await client.send('session.load', { sessionId: restSession.id })
     sessionId = client.getSession()!.id
   })
 

@@ -19,19 +19,8 @@ import type {
 // ============================================================================
 
 export type ClientMessageType =
-  // Project management
-  | 'project.create'
-  | 'project.create-with-dir'
-  | 'project.list'
-  | 'project.load'
-  | 'project.update'
-  | 'project.delete'
   // Session management
-  | 'session.create'
-  | 'session.load'
-  | 'session.list'
-  | 'session.delete'
-  | 'session.deleteAll'
+  | 'session.load'         // Load session and subscribe to events (WS subscription mechanism)
   // Unified chat (replaces plan.message, agent.start, etc.)
   | 'chat.send'           // Send a message (works in any mode)
   | 'chat.stop'           // Stop current generation
@@ -49,12 +38,6 @@ export type ClientMessageType =
   | 'path.confirm'        // User response to path confirmation request
   // Ask user
   | 'ask.answer'          // User response to ask_user question
-  // Settings management
-  | 'settings.get'        // Get a setting value
-  | 'settings.set'        // Set a setting value
-  // Provider management
-  | 'provider.activate'   // Switch to a different provider
-  | 'session.setProvider'  // Set provider/model for current session
   // Message queue (while agent is running)
   | 'queue.asap'          // Queue message for ASAP injection (between tool calls)
   | 'queue.completion'    // Queue message for delivery on turn completion
@@ -68,43 +51,10 @@ export interface ClientMessage<T = unknown> {
 
 // Payload types for client messages
 
-// Project payloads
-export interface ProjectCreatePayload {
-  name: string
-  workdir: string
-}
-
-export interface ProjectCreateWithDirPayload {
-  name: string
-}
-
-export interface ProjectLoadPayload {
-  projectId: string
-}
-
-export interface ProjectUpdatePayload {
-  projectId: string
-  name?: string
-  customInstructions?: string | null  // null to clear
-}
-
-export interface ProjectDeletePayload {
-  projectId: string
-}
-
 // Session payloads
-export interface SessionCreatePayload {
-  projectId: string
-  title?: string
-}
-
 export interface SessionLoadPayload {
   sessionId: string
   lastEventSeq?: number  // Resume from this sequence number (for reconnection)
-}
-
-export interface SessionDeleteAllPayload {
-  projectId: string
 }
 
 // Chat payloads (unified)
@@ -122,31 +72,6 @@ export interface ModeSwitchPayload {
 // Criteria payloads
 export interface CriteriaEditPayload {
   criteria: Criterion[]
-}
-
-  // Settings payloads
-export interface SettingsGetPayload {
-  key: string
-}
-
-export interface SettingsSetPayload {
-  key: string
-  value: string
-}
-
-export interface SettingsValuePayload {
-  key: string
-  value: string | null
-}
-
-// Provider payloads
-export interface ProviderActivatePayload {
-  providerId: string
-}
-
-export interface SessionSetProviderPayload {
-  providerId: string
-  model?: string  // If omitted, use provider's default model
 }
 
 // Queue payloads

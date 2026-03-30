@@ -11,6 +11,8 @@ import {
   createTestClient, 
   createTestProject,
   createTestServer,
+  createProject,
+  createSession,
   type TestClient, 
   type TestProject,
   type TestServerHandle 
@@ -50,9 +52,9 @@ Always use TypeScript strict mode.
 Never use any type.`,
       })
       
-      await client.send('project.create', { name: 'Instructions Test', workdir: testDir.path })
-      const projectId = client.getProject()!.id
-      await client.send('session.create', { projectId })
+      const restProject = await createProject(server.url, { name: 'Instructions Test', workdir: testDir.path })
+      const restSession = await createSession(server.url, { projectId: restProject.id })
+      await client.send('session.load', { sessionId: restSession.id })
       
       // Send a message and check if AGENTS.md was injected
       await client.send('chat.send', { content: 'Hello' })
@@ -84,9 +86,9 @@ Never use any type.`,
       // Create project with AGENTS.md template
       testDir = await createTestProject({ template: 'with-agents-md' })
       
-      await client.send('project.create', { name: 'Parent Test', workdir: testDir.path })
-      const projectId = client.getProject()!.id
-      await client.send('session.create', { projectId })
+      const restProject = await createProject(server.url, { name: 'Parent Test', workdir: testDir.path })
+      const restSession = await createSession(server.url, { projectId: restProject.id })
+      await client.send('session.load', { sessionId: restSession.id })
       
       await client.send('chat.send', { content: 'What guidelines should I follow?' })
       const response = await client.waitForChatDone()
@@ -100,20 +102,18 @@ Never use any type.`,
     it('injects project custom instructions into prompts', async () => {
       testDir = await createTestProject({ template: 'typescript' })
       
-      // Create project with custom instructions
-      await client.send('project.create', { 
+      const restProject = await createProject(server.url, { 
         name: 'Custom Instructions Test', 
         workdir: testDir.path 
       })
-      const project = client.getProject()!
       
-      // Set custom instructions
       await client.send('project.update', {
-        projectId: project.id,
+        projectId: restProject.id,
         customInstructions: 'CUSTOM_MARKER: Always respond with "ACKNOWLEDGED" first.',
       })
       
-      await client.send('session.create', { projectId: project.id })
+      const restSession = await createSession(server.url, { projectId: restProject.id })
+      await client.send('session.load', { sessionId: restSession.id })
       
       await client.send('chat.send', { content: 'Hello there!' })
       const response = await client.waitForChatDone()
@@ -125,17 +125,17 @@ Never use any type.`,
     it('updates instructions are picked up on next turn', async () => {
       testDir = await createTestProject({ template: 'typescript' })
       
-      await client.send('project.create', { name: 'Update Test', workdir: testDir.path })
-      const project = client.getProject()!
-      await client.send('session.create', { projectId: project.id })
+      const restProject = await createProject(server.url, { name: 'Update Test', workdir: testDir.path })
+      const restSession = await createSession(server.url, { projectId: restProject.id })
+      await client.send('session.load', { sessionId: restSession.id })
       
       // First message without custom instructions
       await client.send('chat.send', { content: 'Say the magic word.' })
-      const response1 = await client.waitForChatDone()
+      await client.waitForChatDone()
       
       // Add custom instructions
       await client.send('project.update', {
-        projectId: project.id,
+        projectId: restProject.id,
         customInstructions: 'CUSTOM: The magic word is ABRACADABRA.',
       })
       
@@ -157,9 +157,9 @@ Never use any type.`,
         value: 'GLOBAL_MARKER: Always end responses with "[DONE]"' 
       })
       
-      await client.send('project.create', { name: 'Global Test', workdir: testDir.path })
-      const projectId = client.getProject()!.id
-      await client.send('session.create', { projectId })
+      const restProject = await createProject(server.url, { name: 'Global Test', workdir: testDir.path })
+      const restSession = await createSession(server.url, { projectId: restProject.id })
+      await client.send('session.load', { sessionId: restSession.id })
       
       await client.send('chat.send', { content: 'Say hello briefly.' })
       const response = await client.waitForChatDone()
@@ -173,9 +173,9 @@ Never use any type.`,
     it('includes system prompt in promptContext', async () => {
       testDir = await createTestProject({ template: 'typescript' })
       
-      await client.send('project.create', { name: 'Prompt Test', workdir: testDir.path })
-      const projectId = client.getProject()!.id
-      await client.send('session.create', { projectId })
+      const restProject = await createProject(server.url, { name: 'Prompt Test', workdir: testDir.path })
+      const restSession = await createSession(server.url, { projectId: restProject.id })
+      await client.send('session.load', { sessionId: restSession.id })
       
       await client.send('chat.send', { content: 'Hello' })
       await client.waitForChatDone()
@@ -206,9 +206,9 @@ Never use any type.`,
         agentsMd: 'Original instruction: say ORIGINAL',
       })
       
-      await client.send('project.create', { name: 'Live Edit Test', workdir: testDir.path })
-      const projectId = client.getProject()!.id
-      await client.send('session.create', { projectId })
+      const restProject = await createProject(server.url, { name: 'Live Edit Test', workdir: testDir.path })
+      const restSession = await createSession(server.url, { projectId: restProject.id })
+      await client.send('session.load', { sessionId: restSession.id })
       
       // First turn with original instruction
       await client.send('chat.send', { content: 'What should you say?' })

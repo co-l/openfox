@@ -15,6 +15,8 @@ import {
   createTestServer,
   collectChatEvents,
   assertNoErrors,
+  createProject,
+  createSession,
   type TestClient, 
   type TestProject,
   type TestServerHandle 
@@ -38,10 +40,9 @@ describe('Git Tool', () => {
     // Create a project with git initialized
     testDir = await createTestProject({ template: 'git-repo' })
     
-    // Create project and session in planner mode (git tool available)
-    await client.send('project.create', { name: 'Git Tool Test', workdir: testDir.path })
-    const projectId = client.getProject()!.id
-    await client.send('session.create', { projectId })
+    const restProject = await createProject(server.url, { name: 'Git Tool Test', workdir: testDir.path })
+    const restSession = await createSession(server.url, { projectId: restProject.id })
+    await client.send('session.load', { sessionId: restSession.id })
   })
 
   afterEach(async () => {
@@ -179,9 +180,9 @@ describe('Git Tool', () => {
       try {
         const client2 = await createTestClient({ url: server.wsUrl })
         try {
-          await client2.send('project.create', { name: 'Non-Git Test', workdir: nonGitDir.path })
-          const projectId = client2.getProject()!.id
-          await client2.send('session.create', { projectId })
+          const restProject = await createProject(server.url, { name: 'Non-Git Test', workdir: nonGitDir.path })
+          const restSession = await createSession(server.url, { projectId: restProject.id })
+          await client2.send('session.load', { sessionId: restSession.id })
           
           await client2.send('chat.send', { 
             content: 'Run git status to check the repository state.' 

@@ -6,7 +6,7 @@
  */
 
 import { describe, it, expect, beforeAll, afterAll, beforeEach, afterEach } from 'vitest'
-import { createTestClient, createTestProject, createTestServer, type TestClient, type TestProject, type TestServerHandle } from './utils/index.js'
+import { createTestClient, createTestProject, createTestServer, createProject, createSession, type TestClient, type TestProject, type TestServerHandle } from './utils/index.js'
 
 describe('Concurrency Guards', () => {
   let server: TestServerHandle
@@ -27,11 +27,11 @@ describe('Concurrency Guards', () => {
     client = await createTestClient({ url: server.wsUrl })
     testDir = await createTestProject({ template: 'typescript' })
     
-    // Create project and session
-    await client.send('project.create', { name: 'Test Project', workdir: testDir.path })
-    projectId = client.getProject()!.id
+    const restProject = await createProject(server.url, { name: 'Test Project', workdir: testDir.path })
+    projectId = restProject.id
     
-    await client.send('session.create', { projectId })
+    const restSession = await createSession(server.url, { projectId })
+    await client.send('session.load', { sessionId: restSession.id })
     sessionId = client.getSession()!.id
   })
 

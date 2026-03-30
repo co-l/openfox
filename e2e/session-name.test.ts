@@ -6,7 +6,7 @@
  */
 
 import { describe, it, expect, beforeAll, afterAll, beforeEach, afterEach } from 'vitest'
-import { createTestClient, createTestProject, createTestServer, type TestClient, type TestProject, type TestServerHandle } from './utils/index.js'
+import { createTestClient, createTestProject, createTestServer, createProject, createSession, type TestClient, type TestProject, type TestServerHandle } from './utils/index.js'
 
 describe('Auto Session Name', () => {
   let server: TestServerHandle
@@ -26,9 +26,8 @@ describe('Auto Session Name', () => {
     client = await createTestClient({ url: server.wsUrl })
     testDir = await createTestProject({ template: 'typescript' })
     
-    // Create a project for sessions
-    await client.send('project.create', { name: 'Test Project', workdir: testDir.path })
-    projectId = client.getProject()!.id
+    const restProject = await createProject(server.url, { name: 'Test Project', workdir: testDir.path })
+    projectId = restProject.id
   })
 
   afterEach(async () => {
@@ -38,8 +37,8 @@ describe('Auto Session Name', () => {
 
   describe('session.name_generated event', () => {
     it('should emit session.name_generated event after first message', { timeout: 8_000 }, async () => {
-      // Create session with default title
-      await client.send('session.create', { projectId })
+      const restSession = await createSession(server.url, { projectId })
+      await client.send('session.load', { sessionId: restSession.id })
       const session = client.getSession()!
       expect(session.metadata.title).toBe('Session 1')
 
@@ -66,10 +65,9 @@ describe('Auto Session Name', () => {
     })
 
     it('should update session title in database', { timeout: 8_000 }, async () => {
-      // Create session with default title
-      await client.send('session.create', { projectId })
+      const restSession = await createSession(server.url, { projectId })
+      await client.send('session.load', { sessionId: restSession.id })
       const session = client.getSession()!
-      const initialTitle = session.metadata.title
 
       // Send first message
       await client.send('chat.send', {
@@ -90,14 +88,12 @@ describe('Auto Session Name', () => {
     })
 
     it('should broadcast updated session state to WebSocket clients', { timeout: 8_000 }, async () => {
-      // Create session
-      await client.send('session.create', { projectId })
-      const session = client.getSession()!
-      const initialTitle = session.metadata.title
+      const restSession = await createSession(server.url, { projectId })
+      await client.send('session.load', { sessionId: restSession.id })
 
       // Create a second client to monitor broadcasts
       const client2 = await createTestClient({ url: server.wsUrl })
-      await client2.send('session.load', { sessionId: session.id })
+      await client2.send('session.load', { sessionId: restSession.id })
 
       // Send first message
       await client.send('chat.send', {
@@ -108,7 +104,7 @@ describe('Auto Session Name', () => {
 
       await client2.waitFor('session.state', (payload: unknown) => {
         const sessionPayload = payload as { session: { metadata: { title?: string | null } } }
-        return Boolean(sessionPayload.session.metadata.title && sessionPayload.session.metadata.title !== initialTitle)
+        return Boolean(sessionPayload.session.metadata.title && sessionPayload.session.metadata.title !== 'Session 1')
       }, 3_000)
 
       // Verify session.state was broadcast with updated title
@@ -122,8 +118,8 @@ describe('Auto Session Name', () => {
     })
 
     it('should not generate name for subsequent messages', { timeout: 8_000 }, async () => {
-      // Create session
-      await client.send('session.create', { projectId })
+      const restSession = await createSession(server.url, { projectId })
+      await client.send('session.load', { sessionId: restSession.id })
       const session = client.getSession()!
 
       // Send first message
@@ -161,9 +157,8 @@ describe('Auto Session Name', () => {
     })
 
     it('should handle name generation failure gracefully', { timeout: 8_000 }, async () => {
-      // Create session
-      await client.send('session.create', { projectId })
-      const session = client.getSession()!
+      const restSession = await createSession(server.url, { projectId })
+      await client.send('session.load', { sessionId: restSession.id })
 
       // This should not crash even if name generation fails
       await client.send('chat.send', {
@@ -181,8 +176,8 @@ describe('Auto Session Name', () => {
     })
 
     it('should generate descriptive name from message content', { timeout: 8_000 }, async () => {
-      // Create session
-      await client.send('session.create', { projectId })
+      const restSession = await createSession(server.url, { projectId })
+      await client.send('session.load', { sessionId: restSession.id })
       const session = client.getSession()!
 
       // Send a descriptive message

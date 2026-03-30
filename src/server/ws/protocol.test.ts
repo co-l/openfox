@@ -23,19 +23,11 @@ import {
   createSessionListMessage,
   createSessionRunningMessage,
   createSessionStateMessage,
-  createSettingsValueMessage,
   isChatSendPayload,
   isCriteriaEditPayload,
   isModeSwitchPayload,
   isPathConfirmPayload,
-  isProjectCreatePayload,
-  isProjectDeletePayload,
-  isProjectLoadPayload,
-  isProjectUpdatePayload,
-  isSessionCreatePayload,
   isSessionLoadPayload,
-  isSettingsGetPayload,
-  isSettingsSetPayload,
   parseClientMessage,
   serializeServerMessage,
   storedEventToServerMessage,
@@ -130,10 +122,10 @@ describe('ws/protocol', () => {
 
       expect(createProjectStateMessage(project, 'corr')).toEqual({ id: 'corr', type: 'project.state', payload: { project } })
       expect(createProjectListMessage([project])).toEqual({ type: 'project.list', payload: { projects: [project] } })
-      expect(createSessionListMessage([{ id: 'session-1', projectId: 'project-1', workdir: '/tmp/project', mode: 'planner', phase: 'plan', isRunning: false, createdAt: 'a', updatedAt: 'b', criteriaCount: 0, criteriaCompleted: 0 }], 'corr')).toEqual({
+      expect(createSessionListMessage([{ id: 'session-1', projectId: 'project-1', workdir: '/tmp/project', mode: 'planner', phase: 'plan', isRunning: false, createdAt: 'a', updatedAt: 'b', criteriaCount: 0, criteriaCompleted: 0, messageCount: 0 }], 'corr')).toEqual({
         id: 'corr',
         type: 'session.list',
-        payload: { sessions: [{ id: 'session-1', projectId: 'project-1', workdir: '/tmp/project', mode: 'planner', phase: 'plan', isRunning: false, createdAt: 'a', updatedAt: 'b', criteriaCount: 0, criteriaCompleted: 0 }] },
+        payload: { sessions: [{ id: 'session-1', projectId: 'project-1', workdir: '/tmp/project', mode: 'planner', phase: 'plan', isRunning: false, createdAt: 'a', updatedAt: 'b', criteriaCount: 0, criteriaCompleted: 0, messageCount: 0 }] },
       })
       expect(createSessionRunningMessage(true)).toEqual({ type: 'session.running', payload: { isRunning: true } })
     })
@@ -288,38 +280,23 @@ describe('ws/protocol', () => {
         type: 'context.state',
         payload: { context: { currentTokens: 100, maxTokens: 200000, dangerZone: false, canCompact: true, compactionCount: 0 } },
       })
-      expect(createSettingsValueMessage('theme', 'dark', 'corr')).toEqual({ id: 'corr', type: 'settings.value', payload: { key: 'theme', value: 'dark' } })
       expect(createErrorMessage('INVALID', 'bad payload', 'corr')).toEqual({ id: 'corr', type: 'error', payload: { code: 'INVALID', message: 'bad payload' } })
     })
   })
 
   describe('payload guards', () => {
     it('accepts valid payloads and rejects invalid ones', () => {
-      expect(isProjectCreatePayload({ name: 'openfox', workdir: '/tmp/project' })).toBe(true)
-      expect(isProjectLoadPayload({ projectId: 'project-1' })).toBe(true)
-      expect(isProjectUpdatePayload({ projectId: 'project-1', name: 'new' })).toBe(true)
-      expect(isProjectDeletePayload({ projectId: 'project-1' })).toBe(true)
-      expect(isSessionCreatePayload({ projectId: 'project-1' })).toBe(true)
       expect(isSessionLoadPayload({ sessionId: 'session-1' })).toBe(true)
       expect(isChatSendPayload({ content: 'hello' })).toBe(true)
       expect(isModeSwitchPayload({ mode: 'builder' })).toBe(true)
       expect(isCriteriaEditPayload({ criteria: [] })).toBe(true)
       expect(isPathConfirmPayload({ callId: 'call-1', approved: true })).toBe(true)
-      expect(isSettingsGetPayload({ key: 'theme' })).toBe(true)
-      expect(isSettingsSetPayload({ key: 'theme', value: 'dark' })).toBe(true)
 
-      expect(isProjectCreatePayload(null)).toBe(false)
-      expect(isProjectLoadPayload({})).toBe(false)
-      expect(isProjectUpdatePayload('bad')).toBe(false)
-      expect(isProjectDeletePayload({ nope: true })).toBe(false)
-      expect(isSessionCreatePayload({})).toBe(false)
       expect(isSessionLoadPayload({})).toBe(false)
       expect(isChatSendPayload({ nope: true })).toBe(false)
       expect(isModeSwitchPayload({})).toBe(false)
       expect(isCriteriaEditPayload({ nope: true })).toBe(false)
       expect(isPathConfirmPayload({ callId: 'call-1' })).toBe(false)
-      expect(isSettingsGetPayload({})).toBe(false)
-      expect(isSettingsSetPayload({ key: 'theme' })).toBe(false)
     })
   })
 

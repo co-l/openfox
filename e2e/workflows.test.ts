@@ -15,11 +15,13 @@ import {
   collectUntilPhase,
   collectChatEvents,
   assertNoErrors,
+  createProject,
+  createSession,
   type TestClient, 
   type TestProject,
   type TestServerHandle 
 } from './utils/index.js'
-import type { Criterion } from '@openfox/shared'
+import type { Criterion } from '../src/shared/types.js'
 
 describe('Full Workflows', () => {
   let server: TestServerHandle
@@ -46,12 +48,14 @@ describe('Full Workflows', () => {
 
   describe('Planning Session', () => {
     it('completes a full planning session with criteria', async () => {
-      // 1. Create project and session
-      await client.send('project.create', { name: 'Planning Workflow', workdir: testDir.path })
-      const projectId = client.getProject()!.id
-      await client.send('session.create', { projectId })
+      // 1. Create project and session via REST API
+      const project = await createProject(server.url, { name: 'Planning Workflow', workdir: testDir.path })
+      const session = await createSession(server.url, { projectId: project.id })
       
-      // 2. Describe the task
+      // 2. Load session via WebSocket to subscribe to events
+      await client.send('session.load', { sessionId: session.id })
+      
+      // 3. Describe the task
       await client.send('chat.send', { 
         content: `I want to add a multiply function to src/math.ts. 
 The function should:
@@ -65,14 +69,14 @@ Please explore the existing code and propose acceptance criteria using add_crite
       const events = await collectChatEvents(client)
       assertNoErrors(events)
       
-      // 3. Verify criteria were created
-      const session = client.getSession()!
-      expect(session.criteria.length).toBeGreaterThan(0)
-      expect(session.mode).toBe('planner')
-      expect(session.phase).toBe('plan')
+      // 4. Verify criteria were created
+      const currentSession = client.getSession()!
+      expect(currentSession.criteria.length).toBeGreaterThan(0)
+      expect(currentSession.mode).toBe('planner')
+      expect(currentSession.phase).toBe('plan')
       
-      // 4. Criteria should be descriptive
-      const criterion = session.criteria[0]!
+      // 5. Criteria should be descriptive
+      const criterion = currentSession.criteria[0]!
       expect(criterion.description.length).toBeGreaterThan(10)
       expect(criterion.status.type).toBe('pending')
     })
@@ -80,10 +84,10 @@ Please explore the existing code and propose acceptance criteria using add_crite
 
   describe('Accept and Build', () => {
     it('accepts criteria and builder implements the task', async () => {
-      // Setup: Create project, session, and add simple criteria
-      await client.send('project.create', { name: 'Build Workflow', workdir: testDir.path })
-      const projectId = client.getProject()!.id
-      await client.send('session.create', { projectId })
+      // Setup: Create project and session via REST
+      const project = await createProject(server.url, { name: 'Build Workflow', workdir: testDir.path })
+      const session = await createSession(server.url, { projectId: project.id })
+      await client.send('session.load', { sessionId: session.id })
       
       // Add a straightforward criterion the mock builder can satisfy automatically
       await client.send('chat.send', { 
@@ -98,9 +102,9 @@ Please explore the existing code and propose acceptance criteria using add_crite
       const events = await collectUntilPhase(client, 'done', 1_500)
       assertNoErrors(events)
 
-      const session = client.getSession()!
-      expect(session.mode).toBe('builder')
-      expect(session.phase).toBe('done')
+      const currentSession = client.getSession()!
+      expect(currentSession.mode).toBe('builder')
+      expect(currentSession.phase).toBe('done')
 
       const utilsContent = await readFile(join(testDir.path, 'src/utils.ts'), 'utf-8')
       expect(utilsContent).toContain('created')
@@ -110,9 +114,9 @@ Please explore the existing code and propose acceptance criteria using add_crite
 
   describe('Verification Cycle', () => {
     it('verifier passes criteria after successful implementation', async () => {
-      await client.send('project.create', { name: 'Verify Workflow', workdir: testDir.path })
-      const projectId = client.getProject()!.id
-      await client.send('session.create', { projectId })
+      const project = await createProject(server.url, { name: 'Verify Workflow', workdir: testDir.path })
+      const session = await createSession(server.url, { projectId: project.id })
+      await client.send('session.load', { sessionId: session.id })
 
       await client.send('chat.send', {
         content: 'Add criterion ID "trivial-pass": "Trivial pass criterion". Use add_criterion.',
@@ -123,16 +127,16 @@ Please explore the existing code and propose acceptance criteria using add_crite
 
       await collectUntilPhase(client, 'done', 1_500)
       
-      const session = client.getSession()!
-      const criterion = session.criteria[0]
-      expect(session.phase).toBe('done')
+      const currentSession = client.getSession()!
+      const criterion = currentSession.criteria[0]
+      expect(currentSession.phase).toBe('done')
       expect(criterion?.status.type).toBe('passed')
     })
 
     it('verifier fails and builder retries', { timeout: 20_000 }, async () => {
-      await client.send('project.create', { name: 'Retry Workflow', workdir: testDir.path })
-      const projectId = client.getProject()!.id
-      await client.send('session.create', { projectId })
+      const project = await createProject(server.url, { name: 'Retry Workflow', workdir: testDir.path })
+      const session = await createSession(server.url, { projectId: project.id })
+      await client.send('session.load', { sessionId: session.id })
 
       await client.send('chat.send', {
         content: 'Add criterion ID "verify-fail": "Verifier should fail this criterion". Use add_criterion.',
@@ -143,19 +147,19 @@ Please explore the existing code and propose acceptance criteria using add_crite
 
       await collectUntilPhase(client, 'blocked', 15_000)
       
-      const session = client.getSession()!
+      const currentSession = client.getSession()!
       const events = client.allEvents()
       const phaseChanges = events.filter(e => e.type === 'phase.changed')
-      expect(session.phase).toBe('blocked')
+      expect(currentSession.phase).toBe('blocked')
       expect(phaseChanges.length).toBeGreaterThan(1)
     })
   })
 
   describe('Multiple Criteria', () => {
     it('handles multiple criteria in sequence', { timeout: 20_000 }, async () => {
-      await client.send('project.create', { name: 'Multi Criteria', workdir: testDir.path })
-      const projectId = client.getProject()!.id
-      await client.send('session.create', { projectId })
+      const project = await createProject(server.url, { name: 'Multi Criteria', workdir: testDir.path })
+      const session = await createSession(server.url, { projectId: project.id })
+      await client.send('session.load', { sessionId: session.id })
 
       await client.send('chat.send', {
         content: 'Add criterion ID "file-created": "A new file utils.ts exists". Use add_criterion.',
@@ -180,10 +184,10 @@ Please explore the existing code and propose acceptance criteria using add_crite
 
   describe('Session Persistence', () => {
     it('preserves state across session load', async () => {
-      // Create and populate session
-      await client.send('project.create', { name: 'Persist Workflow', workdir: testDir.path })
-      const projectId = client.getProject()!.id
-      await client.send('session.create', { projectId })
+      // Create and populate session via REST
+      const project = await createProject(server.url, { name: 'Persist Workflow', workdir: testDir.path })
+      const session = await createSession(server.url, { projectId: project.id })
+      await client.send('session.load', { sessionId: session.id })
       
       // Add criteria
       await client.send('chat.send', { 
@@ -191,9 +195,9 @@ Please explore the existing code and propose acceptance criteria using add_crite
       })
       await client.waitForChatDone()
       
-      const session = client.getSession()!
-      const sessionId = session.id
-      const criteriaCount = session.criteria.length
+      const currentSession = client.getSession()!
+      const sessionId = currentSession.id
+      const criteriaCount = currentSession.criteria.length
       
       // Create new client and load session
       const client2 = await createTestClient({ url: server.wsUrl })
@@ -211,9 +215,9 @@ Please explore the existing code and propose acceptance criteria using add_crite
 
   describe('Error Recovery', () => {
     it('recovers from tool failures gracefully', async () => {
-      await client.send('project.create', { name: 'Error Recovery', workdir: testDir.path })
-      const projectId = client.getProject()!.id
-      await client.send('session.create', { projectId })
+      const project = await createProject(server.url, { name: 'Error Recovery', workdir: testDir.path })
+      const session = await createSession(server.url, { projectId: project.id })
+      await client.send('session.load', { sessionId: session.id })
       await client.send('mode.switch', { mode: 'builder' })
       
       // Ask to do something that will fail initially (use path inside workdir to avoid confirmation modal)
@@ -225,7 +229,7 @@ Please explore the existing code and propose acceptance criteria using add_crite
       
       // Should have handled the error gracefully
       const toolResults = events.get('chat.tool_result')
-      const failedRead = toolResults.find(e => {
+      const failedRead = toolResults?.find(e => {
         const payload = e.payload as { result: { success: boolean } }
         return !payload.result.success
       })
@@ -237,9 +241,9 @@ Please explore the existing code and propose acceptance criteria using add_crite
 
   describe('User Intervention', () => {
     it('resets blocked state on user message', { timeout: 10_000 }, async () => {
-      await client.send('project.create', { name: 'Intervention Test', workdir: testDir.path })
-      const projectId = client.getProject()!.id
-      await client.send('session.create', { projectId })
+      const project = await createProject(server.url, { name: 'Intervention Test', workdir: testDir.path })
+      const session = await createSession(server.url, { projectId: project.id })
+      await client.send('session.load', { sessionId: session.id })
       
       // Add impossible criterion to trigger blocked state
       await client.send('chat.send', { 

@@ -3,7 +3,6 @@ import { useLocation } from 'wouter'
 import { Modal } from './shared/Modal'
 import { Button } from './shared/Button'
 import { Input } from './shared/Input'
-import { wsClient } from '../lib/ws'
 
 interface CreateProjectModalProps {
   isOpen: boolean
@@ -36,10 +35,6 @@ export function CreateProjectModal({ isOpen, onClose }: CreateProjectModalProps)
   const [loading, setLoading] = useState(false)
   const [workdir, setWorkdir] = useState<string>('')
   const inputRef = useRef<HTMLInputElement>(null)
-  const responseResolver = useRef<((value: unknown) => void) | null>(null)
-  const responseRejector = useRef<((reason: Error) => void) | null>(null)
-  const currentMessageId = useRef<string | null>(null)
-  const currentUnsubscribe = useRef<(() => void) | null>(null)
   
   // Fetch workdir from config when modal opens
   useEffect(() => {
@@ -74,103 +69,23 @@ export function CreateProjectModal({ isOpen, onClose }: CreateProjectModalProps)
     setLoading(true)
     setError(null)
     
-    // Unsubscribe from any previous handler
-    if (currentUnsubscribe.current) {
-      currentUnsubscribe.current()
-      currentUnsubscribe.current = null
-    }
-    
     try {
-      // Set up response handler
-      const handleMessage = (message: unknown) => {
-        if (typeof message !== 'object' || message === null || !('id' in message)) {
-          return
-        }
-        
-        const msg = message as { id: string; type: string; payload?: unknown; code?: string; message?: string }
-        
-        // Only process messages matching the current request
-        if (msg.id !== currentMessageId.current) {
-          return
-        }
-        
-        if (msg.type === 'error') {
-          responseRejector.current?.(new Error(msg.message || 'Unknown error'))
-        } else if (msg.type === 'project.state') {
-          const payload = msg.payload as { project: { id: string } }
-          if (payload?.project) {
-            responseResolver.current?.(payload.project)
-          } else {
-            responseRejector.current?.(new Error('Invalid project state response'))
-          }
-        }
-      }
-      
-      currentUnsubscribe.current = wsClient.subscribe(handleMessage)
-      
-      // Create promise for response
-      const responsePromise = new Promise((resolve, reject) => {
-        responseResolver.current = resolve
-        responseRejector.current = reject
-        
-        // Timeout after 30 seconds
-        setTimeout(() => {
-          reject(new Error('Request timeout'))
-        }, 30000)
+      // Create project via REST API
+      const response = await fetch('/api/projects', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: projectName }),
       })
       
-      // Send the message and get the actual message ID
-      const sentMessageId = wsClient.send('project.create-with-dir', { name: projectName })
-      currentMessageId.current = sentMessageId
-      
-      // Wait for response
-      const result = await responsePromise
-      
-      // Unsubscribe from handler
-      if (currentUnsubscribe.current) {
-        currentUnsubscribe.current()
-        currentUnsubscribe.current = null
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}))
+        throw new Error(errorData.error || 'Failed to create project')
       }
       
-      // Refresh the project list and wait for it to complete
-      const listMessageId = wsClient.send('project.list', {})
-      
-      const listPromise = new Promise<void>((resolve, reject) => {
-        let listResolved = false
-        
-        const listHandler = (message: unknown) => {
-          if (listResolved || typeof message !== 'object' || message === null || !('id' in message)) {
-            return
-          }
-          
-          const msg = message as { id: string; type: string; payload?: unknown; code?: string; message?: string }
-          
-          if (msg.id === listMessageId) {
-            if (msg.type === 'project.list') {
-              listResolved = true
-              resolve()
-            } else if (msg.type === 'error') {
-              listResolved = true
-              reject(new Error(msg.message || 'Failed to refresh project list'))
-            }
-          }
-        }
-        
-        const listUnsubscribe = wsClient.subscribe(listHandler)
-        
-        // Timeout after 10 seconds
-        setTimeout(() => {
-          if (!listResolved) {
-            listUnsubscribe()
-            reject(new Error('Timeout waiting for project list'))
-          }
-        }, 10000)
-      })
-      
-      await listPromise
+      const data = await response.json()
+      const project = data.project
       
       // Navigate to the new project
-      const project = result as { id: string }
       // Close modal first, then navigate to avoid race conditions
       onClose()
       navigate(`/p/${project.id}`)
