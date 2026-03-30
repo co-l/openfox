@@ -191,6 +191,8 @@ export function createProviderManager(config: Config): ProviderManager {
   let llmClient = createLLMClient(config)
   const providerStatus = new Map<string, 'connected' | 'disconnected' | 'unknown'>()
   
+  logger.debug('ProviderManager created', { providers: providers.map(p => ({ id: p.id, models: p.models.map(m => ({ id: m.id, contextWindow: m.contextWindow, source: m.source })) })) })
+  
   for (const p of providers) {
     providerStatus.set(p.id, 'unknown')
   }
@@ -264,10 +266,15 @@ export function createProviderManager(config: Config): ProviderManager {
         // Refetch models from backend when switching providers
         const backend = provider.backend as 'ollama' | 'vllm' | 'sglang' | 'llamacpp' | 'unknown'
         const modelsWithContext = await fetchModelsWithContext(url, provider.apiKey, backend)
+        
+        // Normalize function for fuzzy matching (handles spaces/dashes/underscores/colons/periods)
+        const normalize = (s: string) => s.toLowerCase().replace(/[-_\s:.]+/g, '')
+        
+        // Preserve user-set models even if backend fetch fails
+        const userModels = provider.models.filter(m => m.source === 'user')
+        logger.debug('activateProvider', { providerId, backendModelsCount: modelsWithContext.length, userModelsCount: userModels.length, userModels: userModels.map(m => ({ id: m.id, contextWindow: m.contextWindow })) })
+        
         if (modelsWithContext.length > 0) {
-          // Normalize function for fuzzy matching (handles spaces/dashes/underscores)
-          const normalize = (s: string) => s.toLowerCase().replace(/[-_\s]+/g, '')
-          
           // Update provider's models with fresh data from backend, preserving user overrides with fuzzy matching
           const updatedModels = modelsWithContext.map(m => {
             // Try exact match first
@@ -286,7 +293,24 @@ export function createProviderManager(config: Config): ProviderManager {
             }
             return m
           })
+          
+          // Add any user models that weren't matched to backend models
+          for (const userModel of userModels) {
+            const normalizedUserId = normalize(userModel.id)
+            const matchedInUpdated = updatedModels.some(m => {
+              const normalizedBackendId = normalize(m.id)
+              return normalizedBackendId === normalizedUserId
+            })
+            if (!matchedInUpdated) {
+              updatedModels.push(userModel)
+            }
+          }
+          
           providers = providers.map(p => p.id === providerId ? { ...p, models: updatedModels } : p)
+        } else if (userModels.length > 0) {
+          // Backend unavailable but we have user models - preserve them
+          logger.debug('Backend unavailable during provider switch, preserving user models', { providerId, userModelsCount: userModels.length })
+          providers = providers.map(p => p.id === providerId ? { ...p, models: userModels } : p)
         }
 
         if (provider.backend === 'auto') {
@@ -465,12 +489,26 @@ export function createProviderManager(config: Config): ProviderManager {
       const backend = provider.backend as 'ollama' | 'vllm' | 'sglang' | 'llamacpp' | 'unknown'
       const modelsWithContext = await fetchModelsWithContext(url, provider.apiKey, backend)
       
+      // Normalize function for fuzzy matching (handles spaces/dashes/underscores/colons/periods)
+      const normalize = (s: string) => s.toLowerCase().replace(/[-_\s:.]+/g, '')
+      
+      // Preserve user-set models even if backend fetch fails or returns empty
+      const userModels = provider.models.filter(m => m.source === 'user')
+      const allModelsBefore = provider.models.map(m => ({ id: m.id, contextWindow: m.contextWindow, source: m.source }))
+      logger.debug('refreshProviderModels', { providerId, userModelsCount: userModels.length, backendModelsCount: modelsWithContext.length, userModels: userModels.map(m => ({ id: m.id, contextWindow: m.contextWindow, source: m.source })), allModelsBefore })
+      
       if (modelsWithContext.length === 0) {
+        // Keep existing user models when backend is unavailable
+        if (userModels.length > 0) {
+          logger.debug('Backend unavailable, preserving user models', { providerId, userModels: userModels.map(m => ({ id: m.id, contextWindow: m.contextWindow })) })
+          // Ensure user models are kept in the provider
+          providers = providers.map(p => p.id === providerId ? { ...p, models: userModels } : p)
+          const preservedProvider = providers.find(p => p.id === providerId)
+          logger.debug('After preservation', { providerId, models: preservedProvider?.models.map(m => ({ id: m.id, contextWindow: m.contextWindow, source: m.source })) })
+          return { success: true }
+        }
         return { success: false, error: 'No models returned from backend' }
       }
-
-      // Normalize function for fuzzy matching (handles spaces/dashes/underscores)
-      const normalize = (s: string) => s.toLowerCase().replace(/[-_\s]+/g, '')
 
       // Update provider's models, preserving user overrides with fuzzy matching
       const updatedModels = modelsWithContext.map(m => {
@@ -491,7 +529,30 @@ export function createProviderManager(config: Config): ProviderManager {
         return m
       })
 
+      // Add any user models that weren't matched to backend models
+      for (const userModel of userModels) {
+        const normalizedUserId = normalize(userModel.id)
+        const matchedInUpdated = updatedModels.some(m => {
+          const normalizedBackendId = normalize(m.id)
+          return normalizedBackendId === normalizedUserId
+        })
+        if (!matchedInUpdated) {
+          updatedModels.push(userModel)
+        }
+      }
+
       providers = providers.map(p => p.id === providerId ? { ...p, models: updatedModels } : p)
+      
+      // Update defaultModelSelection if the model ID was changed due to fuzzy matching
+      const { providerId: currentProviderId, model: currentModel } = parseDefaultModelSelection(defaultModelSelection)
+      if (currentProviderId === providerId && currentModel) {
+        const normalizedCurrentModel = normalize(currentModel)
+        const matchedModel = updatedModels.find(m => normalize(m.id) === normalizedCurrentModel)
+        if (matchedModel && matchedModel.id !== currentModel) {
+          defaultModelSelection = `${providerId}/${matchedModel.id}`
+          logger.debug('Updated defaultModelSelection after fuzzy match', { from: currentModel, to: matchedModel.id })
+        }
+      }
       logger.info('Provider models refreshed', { providerId, modelCount: updatedModels.length })
       return { success: true }
     },

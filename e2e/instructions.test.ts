@@ -107,10 +107,13 @@ Never use any type.`,
         workdir: testDir.path 
       })
       
-      await client.send('project.update', {
-        projectId: restProject.id,
-        customInstructions: 'CUSTOM_MARKER: Always respond with "ACKNOWLEDGED" first.',
+      // Update project via REST API
+      const updateRes = await fetch(`${server.url}/api/projects/${restProject.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ customInstructions: 'CUSTOM_MARKER: Always respond with "ACKNOWLEDGED" first.' }),
       })
+      expect(updateRes.status).toBe(200)
       
       const restSession = await createSession(server.url, { projectId: restProject.id })
       await client.send('session.load', { sessionId: restSession.id })
@@ -133,11 +136,13 @@ Never use any type.`,
       await client.send('chat.send', { content: 'Say the magic word.' })
       await client.waitForChatDone()
       
-      // Add custom instructions
-      await client.send('project.update', {
-        projectId: restProject.id,
-        customInstructions: 'CUSTOM: The magic word is ABRACADABRA.',
+      // Add custom instructions via REST API
+      const updateRes = await fetch(`${server.url}/api/projects/${restProject.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ customInstructions: 'CUSTOM: The magic word is ABRACADABRA.' }),
       })
+      expect(updateRes.status).toBe(200)
       
       // Second message should see new instructions
       await client.send('chat.send', { content: 'What is the magic word?' })
@@ -151,11 +156,13 @@ Never use any type.`,
     it('uses global instructions from settings', async () => {
       testDir = await createTestProject({ template: 'typescript' })
       
-      // Set global instructions
-      await client.send('settings.set', { 
-        key: 'global_instructions', 
-        value: 'GLOBAL_MARKER: Always end responses with "[DONE]"' 
+      // Set global instructions via REST API
+      const settingsRes = await fetch(`${server.url}/api/settings/global_instructions`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ value: 'GLOBAL_MARKER: Always end responses with "[DONE]"' }),
       })
+      expect(settingsRes.status).toBe(200)
       
       const restProject = await createProject(server.url, { name: 'Global Test', workdir: testDir.path })
       const restSession = await createSession(server.url, { projectId: restProject.id })

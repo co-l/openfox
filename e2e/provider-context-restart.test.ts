@@ -98,10 +98,10 @@ describe('Provider Context Restart', () => {
   it('preserves user context when switching providers with fuzzy model ID match', async () => {
     const globalConfig = await loadGlobalConfig(testMode)
     
-    // Set up a provider with a model that has a different ID format (spaces vs dashes)
+    // Set up a provider with a model that has a different ID format (spaces vs dashes/colons)
     const testProviderId = 'test-fuzzy-provider'
-    const userModelId = 'qwen3.5 397b cloud' // User sets with spaces
-    const backendModelId = 'qwen3.5:397b-cloud' // Backend returns with dashes/colons
+    const userModelId = 'qwen3.5 cloud' // User sets with spaces
+    const backendModelId = 'qwen3.5:cloud' // Backend returns with colons
     const customContextWindow = 300000
     
     const configWithFuzzy: GlobalConfig = {

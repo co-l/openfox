@@ -32,7 +32,10 @@ describe('Provider Context Switch', () => {
 
   it('context-state-updates-on-provider-switch: switching provider sends updated context.state', async () => {
     const restProject = await createProject(server.url, { name: 'test', workdir: project.path })
-    await createSession(server.url, { projectId: restProject.id, title: 'Test session' })
+    const restSession = await createSession(server.url, { projectId: restProject.id, title: 'Test session' })
+
+    // Load session via WebSocket to subscribe to events
+    await client.send('session.load', { sessionId: restSession.id })
 
     // Wait for session.state
     await client.waitFor('session.state', undefined, 5000)
@@ -62,7 +65,10 @@ describe('Provider Context Switch', () => {
 
   it('session-header-displays-correct-maxtokens: maxTokens in contextState matches provider model', async () => {
     const restProject = await createProject(server.url, { name: 'test', workdir: project.path })
-    await createSession(server.url, { projectId: restProject.id, title: 'Test session' })
+    const restSession = await createSession(server.url, { projectId: restProject.id, title: 'Test session' })
+
+    // Load session via WebSocket to subscribe to events
+    await client.send('session.load', { sessionId: restSession.id })
 
     // Wait for session.state
     await client.waitFor('session.state', undefined, 5000)
