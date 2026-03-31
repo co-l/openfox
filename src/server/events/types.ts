@@ -312,6 +312,9 @@ export interface SessionSnapshot {
   // File read cache (for current window)
   readFiles: ReadFileEntry[]
 
+  // Mode reminder tracking (to avoid re-injecting system reminders)
+  lastModeWithReminder?: SessionMode
+
   // Metadata
   snapshotSeq: number // The event seq this snapshot was taken at
   snapshotAt: number // Unix timestamp

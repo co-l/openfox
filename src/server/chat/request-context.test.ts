@@ -39,7 +39,7 @@ describe('assembleAgentRequest', () => {
     expect(plannerResult.systemPrompt).toBe(builderResult.systemPrompt)
   })
 
-  it('top-level agent injects runtime reminder from agent prompt', () => {
+  it('top-level agent does NOT inject runtime reminder (handled by orchestrator)', () => {
     const result = assembleAgentRequest({
       agentDef: plannerAgent,
       workdir: '/tmp/project',
@@ -48,8 +48,8 @@ describe('assembleAgentRequest', () => {
       injectedFiles,
     })
 
-    expect(result.messages[0]?.content).toContain('Plan it')
-    expect(result.messages[0]?.content).toContain('Plan mode ACTIVE')
+    expect(result.messages[0]?.content).toBe('Plan it')
+    expect(result.messages[0]?.content).not.toContain('system-reminder')
   })
 
   it('top-level system prompt includes sub-agents section', () => {
@@ -70,7 +70,7 @@ describe('assembleAgentRequest', () => {
     const result = assembleAgentRequest({
       agentDef: verifierAgent,
       workdir: '/tmp/project',
-      messages: [{ role: 'user', content: 'Verify criteria', source: 'runtime' }],
+      messages: [{ role: 'user', content: 'Verify criteria', source: 'history' }],
       promptTools: tools,
       injectedFiles,
     })
@@ -81,30 +81,32 @@ describe('assembleAgentRequest', () => {
     expect(result.messages[0]?.content).not.toContain('system-reminder')
   })
 
-  it('can disable runtime reminder for top-level agents', () => {
+  it('does not inject runtime reminder (parameter removed as it is handled by orchestrator)', () => {
     const result = assembleAgentRequest({
       agentDef: plannerAgent,
       workdir: '/tmp/project',
       messages: [{ role: 'user', content: 'Summarize', source: 'history' }],
       promptTools: tools,
       injectedFiles,
-      includeRuntimeReminder: false,
     })
 
     expect(result.messages[0]?.content).toBe('Summarize')
+    expect(result.messages[0]?.content).not.toContain('system-reminder')
   })
 
-  it('uses different runtime reminders for planner and builder', () => {
+  it('does NOT inject runtime reminders for planner or builder (handled by orchestrator)', () => {
     const messages: RequestContextMessage[] = [{ role: 'user', content: 'Add JSON output', source: 'history' }]
 
     const planner = assembleAgentRequest({ agentDef: plannerAgent, workdir: '/tmp/project', messages, promptTools: tools, injectedFiles })
     const builder = assembleAgentRequest({ agentDef: builderAgent, workdir: '/tmp/project', messages, promptTools: tools, injectedFiles })
 
-    expect(planner.messages[0]?.content).toContain('Plan mode ACTIVE')
-    expect(builder.messages[0]?.content).toContain('Build mode ACTIVE')
+    expect(planner.messages[0]?.content).toBe('Add JSON output')
+    expect(builder.messages[0]?.content).toBe('Add JSON output')
+    expect(planner.messages[0]?.content).not.toContain('system-reminder')
+    expect(builder.messages[0]?.content).not.toContain('system-reminder')
   })
 
-  it('keeps tool results as the final message while applying the reminder to the latest user turn', () => {
+  it('keeps tool results as the final message without modifying user messages', () => {
     const assembled = assembleAgentRequest({
       agentDef: builderAgent,
       workdir: '/tmp/project',
@@ -117,8 +119,9 @@ describe('assembleAgentRequest', () => {
       injectedFiles,
     })
 
-    expect(assembled.messages[0]?.content).toContain('Build mode ACTIVE')
+    expect(assembled.messages[0]?.content).toBe('List the files.')
     expect(assembled.messages.at(-1)?.role).toBe('tool')
+    expect(assembled.messages[0]?.content).not.toContain('system-reminder')
   })
 
   it('preserves attachments in the request context', () => {

@@ -968,7 +968,7 @@ export class SessionManager {
       messages,
       criteria: eventState.criteria,
       contextWindows: [], // Derived from events, not stored separately
-      executionState: null, // No longer using execution state
+      executionState: eventState.lastModeWithReminder ? { lastModeWithReminder: eventState.lastModeWithReminder } as any : null,
     }
   }
 }

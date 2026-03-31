@@ -12,7 +12,6 @@ import type { AgentDefinition } from '../agents/types.js'
 import {
   buildTopLevelSystemPrompt,
   buildSubAgentSystemPrompt,
-  buildAgentReminder,
 } from './prompts.js'
 
 export type RequestContextMessage = PromptContextMessage
@@ -23,7 +22,6 @@ export interface BaseAssemblyInput {
   injectedFiles: InjectedFile[]
   customInstructions?: string
   skills?: SkillMetadata[]
-  includeRuntimeReminder?: boolean
   promptTools: LLMToolDefinition[]
   requestTools?: LLMToolDefinition[]
   toolChoice?: PromptRequestOptions['toolChoice']
@@ -40,6 +38,17 @@ interface AssemblyResult {
     attachments?: Attachment[]
   }>
   promptContext: PromptContext
+}
+
+function getTriggerUserMessage(messages: RequestContextMessage[]): string {
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const message = messages[index]
+    if (message?.role === 'user' && message.source === 'history') {
+      return message.content
+    }
+  }
+
+  return ''
 }
 
 export function createPromptContext(input: {
@@ -78,20 +87,20 @@ export function createPromptContext(input: {
 function createAssemblyResult(input: {
   systemPrompt: string
   messages: RequestContextMessage[]
-  runtimeReminder?: string
   injectedFiles: InjectedFile[]
   requestTools: LLMToolDefinition[]
   toolChoice: PromptRequestOptions['toolChoice']
   disableThinking: boolean
 }): AssemblyResult {
   const triggerUserMessage = getTriggerUserMessage(input.messages)
-  const messages = input.runtimeReminder
-    ? injectRuntimeReminder(input.messages, input.runtimeReminder)
-    : input.messages
+  
+  // Filter out runtime messages (auto-prompts) from messages sent to LLM
+  // These are only for internal tracking, not part of conversation history
+  const messagesForLLM = input.messages.filter(m => m.source !== 'runtime')
 
   return {
     systemPrompt: input.systemPrompt,
-    messages: messages.map((message) => ({
+    messages: messagesForLLM.map((message) => ({
       role: message.role,
       content: message.content,
       ...(message.toolCalls ? { toolCalls: message.toolCalls } : {}),
@@ -100,50 +109,9 @@ function createAssemblyResult(input: {
     })),
     promptContext: createPromptContext({
       ...input,
-      messages,
       userMessage: triggerUserMessage,
     }),
   }
-}
-
-function injectRuntimeReminder(messages: RequestContextMessage[], runtimeReminder: string): RequestContextMessage[] {
-  for (let index = messages.length - 1; index >= 0; index -= 1) {
-    const message = messages[index]
-    if (message?.role !== 'user' || message.source !== 'history') {
-      continue
-    }
-
-    return messages.map((entry, entryIndex) => {
-      if (entryIndex !== index) {
-        return entry
-      }
-
-      return {
-        ...entry,
-        content: `${entry.content}\n\n${runtimeReminder}`,
-      }
-    })
-  }
-
-  return [...messages, { role: 'user', content: runtimeReminder, source: 'runtime' }]
-}
-
-function getTriggerUserMessage(messages: RequestContextMessage[]): string {
-  for (let index = messages.length - 1; index >= 0; index -= 1) {
-    const message = messages[index]
-    if (message?.role === 'user' && message.source === 'history') {
-      return message.content
-    }
-  }
-
-  for (let index = messages.length - 1; index >= 0; index -= 1) {
-    const message = messages[index]
-    if (message?.role === 'user') {
-      return message.content
-    }
-  }
-
-  return ''
 }
 
 // ============================================================================
@@ -160,11 +128,15 @@ export interface AgentAssemblyInput extends BaseAssemblyInput {
  *
  * Top-level agents (subagent: false):
  *   - System prompt = buildTopLevelSystemPrompt() (shared, cacheable)
- *   - Runtime reminder = agent's prompt body (injected into user message)
+ *   - Runtime reminder = NOT injected here (injected separately by orchestrator on mode switch only)
  *
  * Sub-agents (subagent: true):
  *   - System prompt = buildSubAgentSystemPrompt() (base + agent body)
  *   - No runtime reminder
+ * 
+ * NOTE: Runtime reminders are now injected by the orchestrator only on mode switch,
+ * not on every turn. This preserves vLLM prefix cache by keeping historical messages
+ * identical across turns within the same mode.
  */
 export function assembleAgentRequest(input: AgentAssemblyInput): AssemblyResult {
   const { agentDef, subAgentDefs, ...baseInput } = input
@@ -191,14 +163,12 @@ export function assembleAgentRequest(input: AgentAssemblyInput): AssemblyResult 
     baseInput.skills,
     subAgentDefs,
   )
-  const runtimeReminder = baseInput.includeRuntimeReminder === false
-    ? undefined
-    : buildAgentReminder(agentDef)
 
+  // DO NOT inject runtime reminder here - it's handled by orchestrator.injectModeReminderIfNeeded()
+  // which only injects on mode switch to preserve vLLM cache
   return createAssemblyResult({
     systemPrompt,
     messages: baseInput.messages,
-    ...(runtimeReminder ? { runtimeReminder } : {}),
     injectedFiles: baseInput.injectedFiles,
     requestTools: baseInput.requestTools ?? baseInput.promptTools,
     toolChoice: baseInput.toolChoice ?? 'auto',

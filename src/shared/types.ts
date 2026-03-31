@@ -416,6 +416,7 @@ export interface ExecutionState {
   compactionCount: number
   startedAt: string
   lastActivityAt: string
+  lastModeWithReminder?: string     // Track which mode last had a system reminder injected
 }
 
 // ============================================================================
