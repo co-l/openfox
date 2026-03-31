@@ -49,42 +49,42 @@ const RULES: MockRule[] = [
   {
     match: /ID\s*["']([a-z0-9-]+)["']:\s*["']([^"']+)["'][\s\S]*ID\s*["']([a-z0-9-]+)["']:\s*["']([^"']+)["']/i,
     tools: [
-      { name: 'add_criterion', arguments: { id: '$1', description: '$2' } },
-      { name: 'add_criterion', arguments: { id: '$3', description: '$4' } },
+      { name: 'criterion', arguments: { action: 'add', id: '$1', description: '$2' } },
+      { name: 'criterion', arguments: { action: 'add', id: '$3', description: '$4' } },
     ],
     response: 'Added both criteria.',
   },
   // Single criterion: ID "test-1" with/: description "The tests pass"
   {
     match: /ID\s*["']([a-z0-9-]+)["'].*description\s*["']([^"']+)["']/i,
-    tools: [{ name: 'add_criterion', arguments: { id: '$1', description: '$2' } }],
+    tools: [{ name: 'criterion', arguments: { action: 'add', id: '$1', description: '$2' } }],
     response: 'Added the criterion.',
   },
   {
-    match: /Add these two acceptance criteria:\s*1\.\s*([^\n]+)\s*2\.\s*([^\n]+)\s*Use add_criterion for each\./i,
+    match: /Add these two acceptance criteria:\s*1\.\s*([^\n]+)\s*2\.\s*([^\n]+)\s*Use criterion for each\./i,
     tools: [
-      { name: 'add_criterion', arguments: { id: 'criterion-1', description: '$1' } },
-      { name: 'add_criterion', arguments: { id: 'criterion-2', description: '$2' } },
+      { name: 'criterion', arguments: { action: 'add', id: 'criterion-1', description: '$1' } },
+      { name: 'criterion', arguments: { action: 'add', id: 'criterion-2', description: '$2' } },
     ],
     response: 'Added both criteria.',
   },
   {
-    match: /Add these two acceptance criteria:[\s\S]*?1\.\s*([^\n]+)[\s\S]*?2\.\s*([^\n]+)[\s\S]*?Use add_criterion for each one\./i,
+    match: /Add these two acceptance criteria:[\s\S]*?1\.\s*([^\n]+)[\s\S]*?2\.\s*([^\n]+)[\s\S]*?Use criterion for each one\./i,
     tools: [
-      { name: 'add_criterion', arguments: { id: 'criterion-1', description: '$1' } },
-      { name: 'add_criterion', arguments: { id: 'criterion-2', description: '$2' } },
+      { name: 'criterion', arguments: { action: 'add', id: 'criterion-1', description: '$1' } },
+      { name: 'criterion', arguments: { action: 'add', id: 'criterion-2', description: '$2' } },
     ],
     response: 'Added both criteria.',
   },
   {
-    match: /Add criterion:\s*([\s\S]+?)\s*Use add_criterion\.?/i,
-    tools: [{ name: 'add_criterion', arguments: { id: '$auto', description: '$1' } }],
+    match: /Add criterion:\s*([\s\S]+?)\s*Use criterion\.?/i,
+    tools: [{ name: 'criterion', arguments: { action: 'add', id: '$auto', description: '$1' } }],
     response: 'Added the criterion.',
   },
   // Single criterion: ID "test-1": "The tests pass" (colon format)
   {
     match: /ID\s*["']([a-z0-9-]+)["']\s*:\s*["']([^"']+)["']/i,
-    tools: [{ name: 'add_criterion', arguments: { id: '$1', description: '$2' } }],
+    tools: [{ name: 'criterion', arguments: { action: 'add', id: '$1', description: '$2' } }],
     response: 'Added the criterion.',
   },
   // complete_criterion to mark "id" as done
@@ -102,31 +102,31 @@ const RULES: MockRule[] = [
   // remove_criterion to remove "id"
   {
     match: /remove_criterion.*remove\s*["']([a-z0-9-]+)["']/i,
-    tools: [{ name: 'remove_criterion', arguments: { id: '$1' } }],
+    tools: [{ name: 'criterion', arguments: { action: 'remove', id: '$1' } }],
     response: 'Removed the criterion.',
   },
   // remove_criterion with ID
   {
     match: /remove_criterion.*["']([a-z0-9-]+)["']/i,
-    tools: [{ name: 'remove_criterion', arguments: { id: '$1' } }],
+    tools: [{ name: 'criterion', arguments: { action: 'remove', id: '$1' } }],
     response: 'Removed the criterion.',
   },
   // update_criterion to change "id" description to "new"
   {
     match: /update_criterion.*change\s*["']([a-z0-9-]+)["'].*to\s*["']([^"']+)["']/i,
-    tools: [{ name: 'update_criterion', arguments: { id: '$1', description: '$2' } }],
+    tools: [{ name: 'criterion', arguments: { action: 'update', id: '$1', description: '$2' } }],
     response: 'Updated the criterion.',
   },
   // update_criterion with ID and description
   {
     match: /update_criterion.*["']([a-z0-9-]+)["'].*["']([^"']+)["']/i,
-    tools: [{ name: 'update_criterion', arguments: { id: '$1', description: '$2' } }],
+    tools: [{ name: 'criterion', arguments: { action: 'update', id: '$1', description: '$2' } }],
     response: 'Updated the criterion.',
   },
   // get_criteria
   {
     match: /get_criteria/i,
-    tools: [{ name: 'get_criteria', arguments: {} }],
+    tools: [{ name: 'criterion', arguments: { action: 'get' } }],
     response: 'Here are the current criteria.',
   },
   // pass_criterion
@@ -144,7 +144,7 @@ const RULES: MockRule[] = [
   // Generic add criterion (fallback)
   {
     match: /add.*criterion/i,
-    tools: [{ name: 'add_criterion', arguments: { id: '$auto', description: 'Test criterion' } }],
+    tools: [{ name: 'criterion', arguments: { action: 'add', id: '$auto', description: 'Test criterion' } }],
     response: 'Added the criterion.',
   },
 
@@ -446,9 +446,10 @@ const RULES: MockRule[] = [
     tools: [{
       name: 'todo',
       arguments: {
+        action: 'write',
         todos: [
-          { content: 'Read files', status: 'in_progress', priority: 'high' },
-          { content: 'Make changes', status: 'pending', priority: 'medium' },
+          { content: 'Read files', status: 'in_progress' },
+          { content: 'Make changes', status: 'pending' },
         ],
       },
     }],
@@ -459,7 +460,8 @@ const RULES: MockRule[] = [
     tools: [{
       name: 'todo',
       arguments: {
-        todos: [{ content: 'Test task', status: 'pending', priority: 'medium' }],
+        action: 'write',
+        todos: [{ content: 'Test task', status: 'pending' }],
       },
     }],
     response: 'Created todo list.',

@@ -14,7 +14,6 @@ tools:
   - run_command
   - ask_user
   - criterion
-  - get_criteria
   - todo
   - call_sub_agent
   - load_skill

@@ -11,10 +11,7 @@ tools:
   - web_fetch
   - run_command
   - git
-  - get_criteria
-  - add_criterion
-  - update_criterion
-  - remove_criterion
+  - criterion
   - call_sub_agent
   - load_skill
   - return_value

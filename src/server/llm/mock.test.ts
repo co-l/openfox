@@ -21,8 +21,9 @@ describe('mock llm runtime reminders', () => {
 
     expect(response.toolCalls).toEqual([
       expect.objectContaining({
-        name: 'add_criterion',
+        name: 'criterion',
         arguments: {
+          action: 'add',
           id: 'inspect-src',
           description: 'Inspect the src directory and report what exists',
         },
@@ -44,8 +45,10 @@ describe('mock llm runtime reminders', () => {
 
     expect(response.toolCalls).toEqual([
       expect.objectContaining({
-        name: 'get_criteria',
-        arguments: {},
+        name: 'criterion',
+        arguments: {
+          action: 'get',
+        },
       }),
     ])
   })
@@ -109,12 +112,12 @@ describe('mock llm runtime reminders', () => {
       messages: [
         {
           role: 'user',
-          content: 'Add criterion ID "get-test": "For testing get". Use add_criterion.\n\n<system-reminder>\n# Plan Mode - System Reminder\n</system-reminder>',
+          content: 'Add criterion ID "get-test": "For testing get". Use criterion.\n\n<system-reminder>\n# Plan Mode - System Reminder\n</system-reminder>',
         },
         {
           role: 'assistant',
           content: 'Added the criterion.',
-          toolCalls: [{ id: 'call-1', name: 'add_criterion', arguments: { id: 'get-test', description: 'For testing get' } }],
+          toolCalls: [{ id: 'call-1', name: 'criterion', arguments: { action: 'add', id: 'get-test', description: 'For testing get' } }],
         },
         {
           role: 'tool',
@@ -130,8 +133,10 @@ describe('mock llm runtime reminders', () => {
 
     expect(response.toolCalls).toEqual([
       expect.objectContaining({
-        name: 'get_criteria',
-        arguments: {},
+        name: 'criterion',
+        arguments: {
+          action: 'get',
+        },
       }),
     ])
   })
