@@ -236,7 +236,7 @@ export const SUMMARY_REQUEST_PROMPT = `Write a 2-3 sentence summary of what the 
 export const BUILDER_KICKOFF_PROMPT = (criteriaCount: number) =>
   `Implement the task and make sure you fulfil the ${criteriaCount} criteria.`
 
-export const VERIFIER_KICKOFF_PROMPT = 'Verify each criterion marked [NEEDS VERIFICATION]. Read the code, run tests if applicable, then call pass_criterion or fail_criterion for each.'
+export const VERIFIER_KICKOFF_PROMPT = 'Verify each criterion marked [NEEDS VERIFICATION]. Read the code, run tests if applicable, then call criterion with action "pass" or "fail" for each.'
 
 export const COMPACTION_PROMPT = `Summarize the conversation history concisely, preserving:
 1. All file modifications made (file paths and what changed)

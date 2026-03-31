@@ -259,6 +259,23 @@ export function createMockLLMClient(config: MockLLMConfig = {}): MockLLMClient {
       thinking: 'Starting the verifier to check implementation against criteria.',
       response: 'I launched the verifier.',
     },
+    // Verifier sub-agent internal prompt (when verifier actually runs)
+    {
+      promptMatch: /Verify.*criterion.*NEEDS VERIFICATION/i,
+      toolCalls: [
+        { name: 'criterion', arguments: { action: 'pass', id: 'trivial-pass', reason: 'Verified successfully' } },
+        { name: 'return_value', arguments: { summary: 'Verified trivial-pass criterion.' } },
+      ],
+      response: 'Verified the criterion.',
+    },
+    {
+      promptMatch: /Verify.*verify-fail/i,
+      toolCalls: [
+        { name: 'criterion', arguments: { action: 'fail', id: 'verify-fail', reason: 'Verification failed for this criterion' } },
+        { name: 'return_value', arguments: { summary: 'Verification failed for verify-fail.' } },
+      ],
+      response: 'Verification completed with failures.',
+    },
   ]
   
   let rules: MockToolCallRule[] = [...defaultRules]

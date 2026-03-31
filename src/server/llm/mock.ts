@@ -147,6 +147,21 @@ const RULES: MockRule[] = [
     tools: [{ name: 'criterion', arguments: { action: 'add', id: '$auto', description: 'Test criterion' } }],
     response: 'Added the criterion.',
   },
+  // Verifier nudge: Use criterion with action "pass" or "fail" for criterion-id-1, criterion-id-2
+  {
+    match: /Use criterion with action ["']pass["'] or ["']fail["'].*criterion:\s*([a-z0-9-]+)/i,
+    tools: [{ name: 'criterion', arguments: { action: 'pass', id: '$1', reason: 'Verified successfully' } }],
+    response: 'Criterion passed.',
+  },
+  // Verifier nudge with multiple criteria
+  {
+    match: /Use criterion with action ["']pass["'] or ["']fail["'].*criterion:\s*([a-z0-9-]+),\s*([a-z0-9-]+)/i,
+    tools: [
+      { name: 'criterion', arguments: { action: 'pass', id: '$1', reason: 'Verified successfully' } },
+      { name: 'criterion', arguments: { action: 'pass', id: '$2', reason: 'Verified successfully' } },
+    ],
+    response: 'Criteria passed.',
+  },
 
   // -------------------------------------------------------------------------
   // File Read Tools
@@ -949,7 +964,7 @@ function getConversationAwareToolResponse(request: LLMCompletionRequest): MockMa
     // Only return verifier tools on the first call — if we already called pass/fail, stop
     const alreadyVerified = request.messages.some(m =>
       m.role === 'assistant' && m.toolCalls?.some(tc =>
-        tc.name === 'pass_criterion' || tc.name === 'fail_criterion'
+        tc.name === 'criterion' && (tc.arguments['action'] === 'pass' || tc.arguments['action'] === 'fail')
       )
     )
     if (alreadyVerified) {

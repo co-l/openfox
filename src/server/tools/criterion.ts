@@ -25,7 +25,7 @@ export const criterionTool: Tool = {
           },
           id: {
             type: 'string',
-            description: 'Criterion ID (required for: update, remove, complete, pass, fail)',
+            description: 'Criterion ID (required for: add, update, remove, complete, pass, fail)',
           },
           description: {
             type: 'string',

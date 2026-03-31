@@ -1270,7 +1270,7 @@ describe('chat orchestrator', () => {
         expect.objectContaining({ role: 'assistant', content: 'I need to keep verifying.' }),
         expect.objectContaining({
           role: 'user',
-          content: expect.stringContaining('Use pass_criterion or fail_criterion'),
+          content: expect.stringContaining('Use criterion with action'),
         }),
       ]),
     })
@@ -1393,7 +1393,7 @@ describe('chat orchestrator', () => {
     expect(streamLLMPureMock.mock.calls[1]?.[0]).toMatchObject({
       messages: expect.not.arrayContaining([
         expect.objectContaining({
-          content: expect.stringContaining('Use pass_criterion or fail_criterion'),
+          content: expect.stringContaining('Use criterion with action'),
         }),
       ]),
     })
@@ -1683,7 +1683,7 @@ describe('chat orchestrator', () => {
       ([, event]) => event.type === 'message.start' &&
         (event.data as any).messageKind === 'correction' &&
         (event.data as any).subAgentType === 'verifier' &&
-        (event.data as any).content?.includes('Use pass_criterion or fail_criterion')
+        (event.data as any).content?.includes('Use criterion with action')
     )
     expect(verifierNudgeMessages).toHaveLength(1)
   })
