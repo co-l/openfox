@@ -50,7 +50,7 @@ describe('Criteria System', () => {
     describe('add_criterion', () => {
       it('adds a criterion with ID and description', async () => {
         await client.send('chat.send', { 
-          content: 'Add criterion ID "test-1" with description "The tests pass". Use add_criterion.' 
+          content: 'Add criterion ID "test-1" with description "The tests pass". Use the criterion tool.' 
         })
         
         const events = await collectChatEvents(client)
@@ -94,13 +94,13 @@ describe('Criteria System', () => {
       it('returns current criteria list', async () => {
         // Add criteria first
         await client.send('chat.send', { 
-          content: 'Add criterion ID "get-test": "For testing get". Use add_criterion.' 
+          content: 'Add criterion ID "get-test": "For testing get".' 
         })
         await client.waitForChatDone()
         
         // Ask to get criteria
         await client.send('chat.send', { 
-          content: 'Use get_criteria to show the current criteria.' 
+          content: 'Show the current criteria.' 
         })
         
         await client.waitForChatDone()
@@ -108,10 +108,13 @@ describe('Criteria System', () => {
         // Small delay to ensure all events are received (mock LLM is fast)
         await new Promise(r => setTimeout(r, 100))
         
-        // Check all events for get_criteria tool call
+        // Check all events for criterion tool call with action "get"
         const allEvents = client.allEvents()
         const toolCallEvents = allEvents.filter(e => e.type === 'chat.tool_call')
-        const getCriteriaCall = toolCallEvents.find(e => (e.payload as any).tool === 'get_criteria')
+        const getCriteriaCall = toolCallEvents.find(e => {
+          const payload = e.payload as any
+          return payload.tool === 'criterion' && payload.args?.action === 'get'
+        })
         expect(getCriteriaCall).toBeDefined()
         
         // Check for successful result

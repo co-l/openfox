@@ -1,0 +1,85 @@
+{
+  "providers": [
+    {
+      "id": "test-context-update-provider",
+      "name": "Test Context Update Provider",
+      "url": "http://localhost:11434",
+      "backend": "ollama",
+      "models": [
+        {
+          "id": "qwen3.5:cloud",
+          "contextWindow": 200000,
+          "source": "default"
+        },
+        {
+          "id": "glm-4.7:cloud",
+          "contextWindow": 200000,
+          "source": "default"
+        },
+        {
+          "id": "minimax-m2.7:cloud",
+          "contextWindow": 200000,
+          "source": "default"
+        },
+        {
+          "id": "qwen3.5:397b-cloud",
+          "contextWindow": 200000,
+          "source": "default"
+        },
+        {
+          "id": "test-context-update-model",
+          "contextWindow": 500000,
+          "source": "user"
+        }
+      ],
+      "isActive": true,
+      "createdAt": "2026-04-01T16:12:53.101Z"
+    },
+    {
+      "id": "test-fuzzy-provider",
+      "name": "Test Fuzzy Provider",
+      "url": "http://localhost:11434",
+      "backend": "ollama",
+      "models": [
+        {
+          "id": "qwen3.5 cloud",
+          "contextWindow": 300000,
+          "source": "user"
+        }
+      ],
+      "isActive": true,
+      "createdAt": "2026-04-01T16:12:49.355Z"
+    },
+    {
+      "id": "test-restart-provider",
+      "name": "Test Restart Provider",
+      "url": "http://localhost:11434",
+      "backend": "ollama",
+      "models": [
+        {
+          "id": "test-model-restart",
+          "contextWindow": 262144,
+          "source": "user"
+        }
+      ],
+      "isActive": true,
+      "createdAt": "2026-04-01T16:12:48.333Z"
+    }
+  ],
+  "defaultModelSelection": "test-context-update-provider/test-context-update-model",
+  "activeProviderId": "test-context-update-provider",
+  "server": {
+    "port": 10369,
+    "host": "127.0.0.1",
+    "openBrowser": true
+  },
+  "logging": {
+    "level": "error"
+  },
+  "database": {
+    "path": ""
+  },
+  "workspace": {
+    "workdir": "/home/conrad/dev/openfox/e2e"
+  }
+}

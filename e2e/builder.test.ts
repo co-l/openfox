@@ -166,11 +166,11 @@ describe('Builder Mode', () => {
       const events = await collectChatEvents(client)
       assertNoErrors(events)
       
-      // Should have complete_criterion call
+      // Should have criterion tool call with action 'complete'
       const toolCalls = events.get('chat.tool_call')
       const completeCall = toolCalls.find(e => {
-        const payload = e.payload as { tool: string }
-        return payload.tool === 'complete_criterion'
+        const payload = e.payload as { tool: string; args: Record<string, unknown> }
+        return payload.tool === 'criterion' && (payload.args as any).action === 'complete'
       })
       expect(completeCall).toBeDefined()
       
@@ -203,21 +203,21 @@ describe('Builder Mode', () => {
       const events = await collectChatEvents(client)
       assertNoErrors(events)
       
-      // Should have get_criteria call before complete_criterion
+      // Should have criterion tool calls with actions 'get' and 'complete'
       const toolCalls = events.get('chat.tool_call')
       const getCall = toolCalls.find(e => {
-        const payload = e.payload as { tool: string }
-        return payload.tool === 'get_criteria'
+        const payload = e.payload as { tool: string; args: Record<string, unknown> }
+        return payload.tool === 'criterion' && (payload.args as any).action === 'get'
       })
       const completeCall = toolCalls.find(e => {
-        const payload = e.payload as { tool: string }
-        return payload.tool === 'complete_criterion'
+        const payload = e.payload as { tool: string; args: Record<string, unknown> }
+        return payload.tool === 'criterion' && (payload.args as any).action === 'complete'
       })
       
       expect(getCall).toBeDefined()
       expect(completeCall).toBeDefined()
       
-      // Verify get_criteria was called before complete_criterion
+      // Verify get was called before complete
       expect(toolCalls.indexOf(getCall)).toBeLessThan(toolCalls.indexOf(completeCall))
     })
   })
@@ -231,11 +231,11 @@ describe('Builder Mode', () => {
       const events = await collectChatEvents(client)
       assertNoErrors(events)
       
-      // Should have todo_write call
+      // Should have todo tool call with action 'write'
       const toolCalls = events.get('chat.tool_call')
       const todoCall = toolCalls.find(e => {
-        const payload = e.payload as { tool: string }
-        return payload.tool === 'todo_write'
+        const payload = e.payload as { tool: string; args: Record<string, unknown> }
+        return payload.tool === 'todo' && (payload.args as any).action === 'write'
       })
       expect(todoCall).toBeDefined()
       

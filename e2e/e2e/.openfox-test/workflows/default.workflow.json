@@ -1,0 +1,45 @@
+{
+  "metadata": {
+    "id": "default",
+    "name": "Build & Verify",
+    "description": "Standard build-verify loop. Builder implements criteria, verifier checks them.",
+    "version": "1.0.0",
+    "color": "#3b82f6"
+  },
+  "entryStep": "build",
+  "settings": {
+    "maxIterations": 50
+  },
+  "steps": [
+    {
+      "id": "build",
+      "name": "Builder",
+      "type": "agent",
+      "phase": "build",
+      "toolMode": "builder",
+      "prompt": "Implement the task and make sure you fulfil the {{criteriaCount}} criteria. Mark each criterion as complete using complete_criterion when done.",
+      "nudgePrompt": "Continue working on the acceptance criteria. {{reason}}.\n\n{{verifierFindings}}\nDon't forget to mark the criteria as complete with complete_criterion",
+      "transitions": [
+        { "when": { "type": "any_criteria_blocked" }, "goto": "$blocked" },
+        { "when": { "type": "all_criteria_completed_or_passed" }, "goto": "verify" },
+        { "when": { "type": "has_pending_criteria" }, "goto": "build" }
+      ]
+    },
+    {
+      "id": "verify",
+      "name": "Verifier",
+      "type": "sub_agent",
+      "phase": "verification",
+      "subAgentType": "verifier",
+      "prompt": "## Task Summary\n{{summary}}\n\n## Criteria\n{{criteriaList}}\n\n## Modified Files\n{{modifiedFiles}}\n\nVerify each criterion marked [NEEDS VERIFICATION]. Read the code, run tests if applicable, then call pass_criterion or fail_criterion for each.",
+      "transitions": [
+        { "when": { "type": "any_criteria_blocked" }, "goto": "$blocked" },
+        { "when": { "type": "all_criteria_passed" }, "goto": "$done" },
+        { "when": { "type": "has_pending_criteria" }, "goto": "build" }
+      ]
+    }
+  ],
+  "startCondition": {
+    "type": "has_pending_criteria"
+  }
+}

@@ -54,6 +54,12 @@ const RULES: MockRule[] = [
     ],
     response: 'Added both criteria.',
   },
+  // Single criterion: "Add criterion ID "test-1" with description "The tests pass""
+  {
+    match: /Add criterion ID\s*["']([a-z0-9-]+)["']\s*with description\s*["']([^"']+)["'][\s\S]*/i,
+    tools: [{ name: 'criterion', arguments: { action: 'add', id: '$1', description: '$2' } }],
+    response: 'Added the criterion.',
+  },
   // Single criterion: ID "test-1" with/: description "The tests pass"
   {
     match: /ID\s*["']([a-z0-9-]+)["'].*description\s*["']([^"']+)["']/i,
@@ -99,6 +105,12 @@ const RULES: MockRule[] = [
     tools: [{ name: 'criterion', arguments: { action: 'complete', id: '$1', reason: 'Completed successfully' } }],
     response: 'Marked criterion as complete.',
   },
+  // criterion with action "complete" for "id"
+  {
+    match: /criterion.*action\s*["']complete["'].*["']([a-z0-9-]+)["']/i,
+    tools: [{ name: 'criterion', arguments: { action: 'complete', id: '$1', reason: 'Completed successfully' } }],
+    response: 'Marked criterion as complete.',
+  },
   // remove_criterion to remove "id"
   {
     match: /remove_criterion.*remove\s*["']([a-z0-9-]+)["']/i,
@@ -125,7 +137,7 @@ const RULES: MockRule[] = [
   },
   // get_criteria
   {
-    match: /get_criteria/i,
+    match: /get_criteria|show.*criteria|list.*criteria/i,
     tools: [{ name: 'criterion', arguments: { action: 'get' } }],
     response: 'Here are the current criteria.',
   },
@@ -749,9 +761,10 @@ function getPromptAwareToolResponse(prompt: string): MockMatchResult | null {
       tools: [{
         name: 'todo',
         arguments: {
+          action: 'write',
           todos: [
-            { content: 'Read files', status: 'in_progress', priority: 'high' },
-            { content: 'Make changes', status: 'pending', priority: 'medium' },
+            { content: 'Read files', status: 'in_progress' },
+            { content: 'Make changes', status: 'pending' },
           ],
         },
       }],
@@ -762,7 +775,7 @@ function getPromptAwareToolResponse(prompt: string): MockMatchResult | null {
   if (/First call get_criteria to see what needs to be done, then create src\/test\.ts and call complete_criterion for ["']test-file["']\./i.test(prompt)) {
     return {
       tools: [
-        { name: 'get_criteria', arguments: {} },
+        { name: 'criterion', arguments: { action: 'get' } },
         { name: 'write_file', arguments: { path: 'src/test.ts', content: 'export const created = true' } },
         { name: 'criterion', arguments: { action: 'complete', id: 'test-file', reason: 'Created the requested file' } },
         { name: 'step_done', arguments: {} },
