@@ -122,3 +122,8 @@ Session state is derived from EventStore, not persisted directly:
 
 When fixing or refactoring: write/update the failing test FIRST, then make it pass.
 
+
+## Production Config
+
+NEVER modify production configuration files (e.g., `~/.config/openfox/`). These are user-specific and should only be changed by the user.
+
