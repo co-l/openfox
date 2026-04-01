@@ -75,7 +75,15 @@ const RULES: MockRule[] = [
     response: 'Added both criteria.',
   },
   {
-    match: /Add these two acceptance criteria:[\s\S]*?1\.\s*([^\n]+)[\s\S]*?2\.\s*([^\n]+)[\s\S]*?Use criterion for each one\./i,
+    match: /Add these two acceptance criteria:[\s\S]*?1\.\s*([^\n]+)[\s\S]*?2\.\s*([^\n]+)[\s\S]*?Use (?:add_)?criterion for each one\./i,
+    tools: [
+      { name: 'criterion', arguments: { action: 'add', id: 'criterion-1', description: '$1' } },
+      { name: 'criterion', arguments: { action: 'add', id: 'criterion-2', description: '$2' } },
+    ],
+    response: 'Added both criteria.',
+  },
+  {
+    match: /Add these two acceptance criteria:[\s\S]*?1\.\s*([^\n]+)[\s\S]*?2\.\s*([^\n]+)/i,
     tools: [
       { name: 'criterion', arguments: { action: 'add', id: 'criterion-1', description: '$1' } },
       { name: 'criterion', arguments: { action: 'add', id: 'criterion-2', description: '$2' } },
@@ -159,6 +167,12 @@ const RULES: MockRule[] = [
     tools: [{ name: 'criterion', arguments: { action: 'add', id: '$auto', description: 'Test criterion' } }],
     response: 'Added the criterion.',
   },
+  // Verifier nudge with fail criterion (check for "fail" in ID) - MUST come before general pass rule
+  {
+    match: /Use criterion with action ["']pass["'] or ["']fail["'].*criterion.*:\s*([a-z0-9-]*fail[a-z0-9-]*)/i,
+    tools: [{ name: 'criterion', arguments: { action: 'fail', id: '$1', reason: 'Verification failed' } }],
+    response: 'Criterion failed.',
+  },
   // Verifier nudge: Use criterion with action "pass" or "fail" for criterion-id-1, criterion-id-2
   {
     match: /Use criterion with action ["']pass["'] or ["']fail["'].*criterion:\s*([a-z0-9-]+)/i,
@@ -173,6 +187,18 @@ const RULES: MockRule[] = [
       { name: 'criterion', arguments: { action: 'pass', id: '$2', reason: 'Verified successfully' } },
     ],
     response: 'Criteria passed.',
+  },
+  // Verifier should fail a criterion
+  {
+    match: /Verifier should fail.*criterion.*ID\s*["']([a-z0-9-]+)["']/i,
+    tools: [{ name: 'criterion', arguments: { action: 'fail', id: '$1', reason: 'Verification failed' } }],
+    response: 'Criterion failed.',
+  },
+  // Verifier fail_criterion command
+  {
+    match: /fail_criterion.*ID\s*["']([a-z0-9-]+)["']/i,
+    tools: [{ name: 'criterion', arguments: { action: 'fail', id: '$1', reason: 'Verification failed' } }],
+    response: 'Criterion failed.',
   },
 
   // -------------------------------------------------------------------------
@@ -956,6 +982,7 @@ function getConversationAwareToolResponse(request: LLMCompletionRequest): MockMa
     } else if (conversationText.includes('trivial-pass')) {
       tools.push({ name: 'criterion', arguments: { action: 'complete', id: 'trivial-pass', reason: 'Trivial criterion passes immediately' } })
     } else if (conversationText.includes('verify-fail')) {
+      // Builder retry after verifier failed - just complete it again
       tools.push({ name: 'criterion', arguments: { action: 'complete', id: 'verify-fail', reason: 'Prepared criterion for verification' } })
     } else {
       // Check prompt for criteria count hint

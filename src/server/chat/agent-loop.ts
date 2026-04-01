@@ -431,6 +431,13 @@ export async function runTopLevelAgentLoop(
       promptContext: assembledRequest.promptContext,
     }))
     eventStore.append(sessionId, createChatDoneEvent(assistantMsgId, 'complete', stats))
+    
+    const currentWindowMessages = sessionManager.getCurrentWindowMessages(sessionId)
+    const lastUserMessage = [...currentWindowMessages].reverse().find(m => m.role === 'user')
+    if (lastUserMessage) {
+      sessionManager.updateMessage(sessionId, lastUserMessage.id, { promptContext: assembledRequest.promptContext })
+    }
+    
     break
   }
 

@@ -41,10 +41,17 @@ interface AssemblyResult {
 }
 
 function getTriggerUserMessage(messages: RequestContextMessage[]): string {
+  const stripRuntimeReminders = (content: string): string => {
+    return content.replace(/\n*<system-reminder>[\s\S]*<\/system-reminder>\s*/gi, '').trim()
+  }
+  
   for (let index = messages.length - 1; index >= 0; index -= 1) {
     const message = messages[index]
     if (message?.role === 'user' && message.source === 'history') {
-      return message.content
+      const stripped = stripRuntimeReminders(message.content)
+      if (stripped) {
+        return stripped
+      }
     }
   }
 
