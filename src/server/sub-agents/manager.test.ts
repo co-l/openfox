@@ -12,7 +12,7 @@ describe('SubAgentManager', () => {
 
     expect(verifier).toBeDefined()
     expect(verifier!.metadata.subagent).toBe(true)
-    expect(verifier!.metadata.tools).toContain('criterion')
+    expect(verifier!.metadata.allowedTools).toContain('criterion')
   })
 
   it('should return undefined for unknown sub-agent type', async () => {
@@ -25,27 +25,27 @@ describe('SubAgentManager', () => {
   it('should return correct tools for each sub-agent type', async () => {
     const agents = await loadBuiltinAgents()
 
-    expect(findAgentById('verifier', agents)?.metadata.tools).toEqual([
+    expect(findAgentById('verifier', agents)?.metadata.allowedTools).toEqual([
       'read_file',
       'run_command',
       'criterion',
       'web_fetch',
     ])
 
-    expect(findAgentById('code_reviewer', agents)?.metadata.tools).toEqual([
+    expect(findAgentById('code_reviewer', agents)?.metadata.allowedTools).toEqual([
       'read_file',
       'grep',
       'web_fetch',
     ])
 
-    expect(findAgentById('test_generator', agents)?.metadata.tools).toEqual([
+    expect(findAgentById('test_generator', agents)?.metadata.allowedTools).toEqual([
       'read_file',
       'write_file',
       'run_command',
       'web_fetch',
     ])
 
-    expect(findAgentById('debugger', agents)?.metadata.tools).toEqual([
+    expect(findAgentById('debugger', agents)?.metadata.allowedTools).toEqual([
       'read_file',
       'run_command',
       'grep',

@@ -21,7 +21,7 @@ vi.mock('../events/store.js', () => ({
 vi.mock('../agents/registry.js', () => ({
   loadAllAgentsDefault: vi.fn(),
   findAgentById: vi.fn((id: string) => ({
-    metadata: { id, name: id === 'planner' ? 'Planner' : 'Builder', description: '', tools: [], subagent: false },
+    metadata: { id, name: id === 'planner' ? 'Planner' : 'Builder', description: '', allowedTools: [], subagent: false },
     prompt: id === 'planner' ? '# Plan Mode\nPlan carefully' : '# Build Mode\nBuild carefully',
   })),
 }))

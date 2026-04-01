@@ -122,3 +122,99 @@ Session state is derived from EventStore, not persisted directly:
 
 When fixing or refactoring: write/update the failing test FIRST, then make it pass.
 
+## Tool Permission System
+
+OpenFox uses a tool permission system to achieve 0% cache invalidation:
+
+### Architecture
+
+- **Unified Tool Selection**: All top-level agents get the same tools, all sub-agents get the same tools
+- **Tool Permissions**: Each agent has an `allowedTools` list that restricts which tools it can execute
+- **Permissions in System Reminder**: Tool permissions are injected via `<system-reminder>` (dynamic, not cached)
+- **Enforcement at Execution Time**: Permissions are enforced in `ToolRegistry.execute()`, not just in prompts
+
+### Agent Definition Format
+
+Agent files (`.agent.md`) use the `allowedTools` field:
+
+```yaml
+---
+id: planner
+name: Planner
+description: Explores the codebase and defines criteria
+subagent: false
+allowedTools:
+  - read_file
+  - glob
+  - grep
+  - criterion
+  - return_value
+---
+```
+
+### Tool Pools
+
+- **Top-level agents** (planner, builder): Get all top-level tools
+- **Sub-agents** (verifier, debugger, etc.): Get all sub-agent tools
+
+### Error Messages
+
+When an agent tries to use an unauthorized tool:
+```
+Tool 'X' is not in your allowed tools list. Available: A, B, C
+```
+
+When `allowedTools` is empty and a tool is attempted:
+```
+Tool 'X' is not in your allowed tools list. No tools are allowed.
+```
+
+### Cache Invalidation
+
+By separating tool visibility (unified pools) from tool permissions (allowedTools), the system achieves:
+- Identical tool definitions in message history for all agents of the same type
+- No cache invalidation when changing agent tool permissions
+- Improved vLLM prefix cache hit rates
+
+### Example Agent File
+
+```yaml
+---
+id: researcher
+name: Researcher
+description: Researches topics using web fetch and analysis
+subagent: false
+allowedTools:
+  - web_fetch
+  - read_file
+  - write_file
+  - criterion
+  - return_value
+---
+
+# Research Agent
+
+You are a research assistant. Use web_fetch to gather information.
+```
+
+### Migration Guide
+
+To migrate an existing agent to use the permission system:
+
+1. **Add `allowedTools` to your agent definition:**
+   ```yaml
+   ---
+   id: my-agent
+   name: My Agent
+   allowedTools:
+     - read_file
+     - glob
+   ---
+   ```
+
+2. **List only the tools your agent needs:** Be specific to minimize the tool surface area.
+
+3. **Test thoroughly:** Ensure your agent can complete its tasks with the restricted tool set.
+
+4. **Verify error messages:** When your agent tries to use an unauthorized tool, you should see a clear error message.
+

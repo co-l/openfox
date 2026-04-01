@@ -4,7 +4,7 @@ name: Debugger
 description: Analyze errors and suggest fixes
 subagent: true
 color: '#f97316'
-tools:
+allowedTools:
   - read_file
   - run_command
   - grep

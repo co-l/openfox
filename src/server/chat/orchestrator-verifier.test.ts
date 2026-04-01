@@ -54,7 +54,7 @@ vi.mock('./stream-pure.js', async (importOriginal) => {
 vi.mock('../agents/registry.js', () => {
   const agents = [
     {
-      metadata: { id: 'verifier', name: 'Verifier', description: 'Verify criteria', subagent: true, tools: ['read_file', 'pass_criterion'] },
+      metadata: { id: 'verifier', name: 'Verifier', description: 'Verify criteria', subagent: true, allowedTools: ['read_file', 'pass_criterion'] },
       prompt: 'You are a verifier',
     },
   ]

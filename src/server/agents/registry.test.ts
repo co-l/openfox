@@ -50,7 +50,7 @@ describe('loadBuiltinAgents', () => {
     expect(verifier.metadata.name).toBe('Verifier')
     expect(verifier.metadata.description).toBe('Verifies completed criteria against actual code changes')
     expect(verifier.metadata.subagent).toBe(true)
-    expect(verifier.metadata.tools).toEqual(['read_file', 'run_command', 'criterion', 'web_fetch'])
+    expect(verifier.metadata.allowedTools).toEqual(['read_file', 'run_command', 'criterion', 'web_fetch'])
     expect(verifier.prompt).toContain('independent verification')
   })
 
@@ -144,7 +144,7 @@ describe('CRUD', () => {
         name: 'My Agent',
         description: 'Test agent',
         subagent: true,
-        tools: ['read_file'],
+        allowedTools: ['read_file'],
       },
       prompt: 'Do the thing.',
     }
@@ -165,7 +165,7 @@ describe('CRUD', () => {
         name: 'Delete Me',
         description: 'To be deleted',
         subagent: false,
-        tools: [],
+        allowedTools: [],
       },
       prompt: 'Temporary.',
     }

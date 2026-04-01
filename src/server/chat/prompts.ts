@@ -167,7 +167,7 @@ export function buildSubAgentsSection(subAgentDefs: AgentDefinition[]): string {
 
   const listing = subAgentDefs
     .map((agent, i) => {
-      const tools = agent.metadata.tools.join(', ')
+      const tools = (agent.metadata.allowedTools || []).join(', ')
       return `${i + 1}. **${agent.metadata.id}** - ${agent.metadata.description}
    - Has access to: ${tools}`
     })
@@ -220,11 +220,24 @@ export function buildSubAgentSystemPrompt(
 }
 
 /**
+ * Build the tool permissions section for the system reminder.
+ */
+function buildToolPermissionsSection(allowedTools: string[] | undefined): string {
+  if (!allowedTools || allowedTools.length === 0) {
+    return '\n\n## AVAILABLE TOOLS\n\nYou have no tools available.'
+  }
+  
+  const toolsList = allowedTools.join(', ')
+  return `\n\n## AVAILABLE TOOLS\n\nYou have access to these tools: ${toolsList}`
+}
+
+/**
  * Build a runtime reminder from an agent definition's prompt body.
  * Used for top-level agents to inject mode-specific behavior via user messages.
  */
 export function buildAgentReminder(agentDef: AgentDefinition): string {
-  return `<system-reminder>\n${agentDef.prompt}\n</system-reminder>`
+  const toolPermissions = buildToolPermissionsSection(agentDef.metadata.allowedTools)
+  return `<system-reminder>\n${agentDef.prompt}${toolPermissions}\n</system-reminder>`
 }
 
 // ============================================================================

@@ -84,7 +84,7 @@ export const callSubAgentTool: Tool = {
     }
 
     try {
-      // Build tool registry from the agent definition's tools list
+      // Build tool registry from the agent definition's allowedTools list
       const { getToolRegistryForAgent } = await import('../tools/index.js')
       const toolRegistry = getToolRegistryForAgent(agentDef)
 

@@ -19,7 +19,7 @@ describe('SubAgentRegistry (via agent registry)', () => {
     expect(verifier?.metadata.name).toBe('Verifier')
     expect(typeof verifier?.metadata.description).toBe('string')
     expect(typeof verifier?.prompt).toBe('string')
-    expect(verifier?.metadata.tools).toEqual(['read_file', 'run_command', 'criterion', 'web_fetch'])
+    expect(verifier?.metadata.allowedTools).toEqual(['read_file', 'run_command', 'criterion', 'web_fetch'])
     expect(verifier?.metadata.subagent).toBe(true)
   })
 
@@ -32,7 +32,7 @@ describe('SubAgentRegistry (via agent registry)', () => {
     expect(codeReviewer?.metadata.name).toBe('Code Reviewer')
     expect(typeof codeReviewer?.metadata.description).toBe('string')
     expect(typeof codeReviewer?.prompt).toBe('string')
-    expect(codeReviewer?.metadata.tools).toEqual(['read_file', 'grep', 'web_fetch'])
+    expect(codeReviewer?.metadata.allowedTools).toEqual(['read_file', 'grep', 'web_fetch'])
     expect(codeReviewer?.metadata.subagent).toBe(true)
   })
 
@@ -45,7 +45,7 @@ describe('SubAgentRegistry (via agent registry)', () => {
     expect(testGenerator?.metadata.name).toBe('Test Generator')
     expect(typeof testGenerator?.metadata.description).toBe('string')
     expect(typeof testGenerator?.prompt).toBe('string')
-    expect(testGenerator?.metadata.tools).toEqual(['read_file', 'write_file', 'run_command', 'web_fetch'])
+    expect(testGenerator?.metadata.allowedTools).toEqual(['read_file', 'write_file', 'run_command', 'web_fetch'])
     expect(testGenerator?.metadata.subagent).toBe(true)
   })
 
@@ -58,7 +58,7 @@ describe('SubAgentRegistry (via agent registry)', () => {
     expect(debuggerAgent?.metadata.name).toBe('Debugger')
     expect(typeof debuggerAgent?.metadata.description).toBe('string')
     expect(typeof debuggerAgent?.prompt).toBe('string')
-    expect(debuggerAgent?.metadata.tools).toEqual(['read_file', 'run_command', 'grep', 'web_fetch'])
+    expect(debuggerAgent?.metadata.allowedTools).toEqual(['read_file', 'run_command', 'grep', 'web_fetch'])
     expect(debuggerAgent?.metadata.subagent).toBe(true)
   })
 

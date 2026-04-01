@@ -4,7 +4,7 @@ name: Planner
 description: Explores the codebase and defines criteria for the task
 subagent: false
 color: '#a855f7'
-tools:
+allowedTools:
   - read_file
   - glob
   - grep
@@ -12,6 +12,10 @@ tools:
   - run_command
   - git
   - criterion
+  - add_criterion
+  - get_criteria
+  - update_criterion
+  - remove_criterion
   - call_sub_agent
   - load_skill
   - return_value

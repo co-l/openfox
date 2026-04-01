@@ -19,7 +19,7 @@ import { getEventStore, getCurrentContextWindowId } from '../events/index.js'
 import { buildSnapshotFromSessionState } from '../events/folding.js'
 import type { SessionManager } from '../session/index.js'
 import { getToolRegistryForAgent, PathAccessDeniedError } from '../tools/index.js'
-import { BUILDER_KICKOFF_PROMPT, VERIFIER_KICKOFF_PROMPT } from './prompts.js'
+import { BUILDER_KICKOFF_PROMPT, VERIFIER_KICKOFF_PROMPT, buildAgentReminder } from './prompts.js'
 import { TurnMetrics, createMessageStartEvent, createMessageDoneEvent, createToolCallEvent, createToolResultEvent, createChatDoneEvent } from './stream-pure.js'
 import { assembleAgentRequest } from './request-context.js'
 import { runTopLevelAgentLoop } from './agent-loop.js'
@@ -185,7 +185,7 @@ function injectModeReminderIfNeeded(
   const agentDef = findAgentById(agentId, allAgents)
   if (!agentDef) return
   
-  const reminderContent = `<system-reminder>\n${agentDef.prompt}\n</system-reminder>`
+  const reminderContent = buildAgentReminder(agentDef)
   const reminderMsgId = crypto.randomUUID()
   const currentWindowMessageOptions = getCurrentContextWindowId(sessionId)
     ? { contextWindowId: getCurrentContextWindowId(sessionId)! }

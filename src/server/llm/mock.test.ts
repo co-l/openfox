@@ -331,7 +331,7 @@ describe('mock llm runtime reminders', () => {
     })
 
     expect(response.toolCalls).toEqual([
-      expect.objectContaining({ name: 'get_criteria', arguments: {} }),
+      expect.objectContaining({ name: 'criterion', arguments: { action: 'get' } }),
       expect.objectContaining({ name: 'write_file', arguments: { path: 'src/test.ts', content: 'export const created = true' } }),
       expect.objectContaining({ name: 'criterion', arguments: { action: 'complete', id: 'test-file', reason: 'Created the requested file' } }),
       expect.objectContaining({ name: 'step_done', arguments: {} }),

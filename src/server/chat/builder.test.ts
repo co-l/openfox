@@ -26,11 +26,11 @@ vi.mock('../tools/index.js', () => ({
 vi.mock('../agents/registry.js', () => {
   const agents = [
     {
-      metadata: { id: 'builder', name: 'Builder', description: 'Builds', subagent: false, tools: ['read_file', 'write_file', 'edit_file', 'run_command'] },
+      metadata: { id: 'builder', name: 'Builder', description: 'Builds', subagent: false, allowedTools: ['read_file', 'write_file', 'edit_file', 'run_command'] },
       prompt: '# Build Mode\nBuild mode ACTIVE.',
     },
     {
-      metadata: { id: 'verifier', name: 'Verifier', description: 'Verifies', subagent: true, tools: ['read_file'] },
+      metadata: { id: 'verifier', name: 'Verifier', description: 'Verifies', subagent: true, allowedTools: ['read_file'] },
       prompt: 'Verify.',
     },
   ]

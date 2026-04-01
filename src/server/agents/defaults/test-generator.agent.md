@@ -4,7 +4,7 @@ name: Test Generator
 description: Generate tests for implemented features
 subagent: true
 color: '#f59e0b'
-tools:
+allowedTools:
   - read_file
   - write_file
   - run_command

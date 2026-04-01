@@ -14,6 +14,7 @@ import {
   requestPathAccess,
 } from './path-security.js'
 import { criterionTool } from './criterion.js'
+import { getCriteriaTool, addCriterionTool, updateCriterionTool, removeCriterionTool } from './planner-criteria.js'
 import { todoTool } from './todo.js'
 import { callSubAgentTool } from './sub-agent.js'
 import { loadSkillTool } from './load-skill.js'
@@ -27,8 +28,9 @@ import { logger } from '../utils/logger.js'
 // Registry Creation
 // ============================================================================
 
-function createRegistryFromTools(tools: Tool[]): ToolRegistry {
+export function createRegistryFromTools(tools: Tool[], allowedTools?: string[]): ToolRegistry {
   const toolMap = new Map<string, Tool>()
+  const allowedToolsSet = new Set(allowedTools || [])
 
   for (const tool of tools) {
     toolMap.set(tool.name, tool)
@@ -49,6 +51,19 @@ function createRegistryFromTools(tools: Tool[]): ToolRegistry {
         return {
           success: false,
           error: `Unknown tool: ${name}. Available tools: ${tools.map(t => t.name).join(', ')}`,
+          durationMs: 0,
+          truncated: false,
+        }
+      }
+
+      if (allowedTools && allowedTools.length > 0 && !allowedToolsSet.has(name)) {
+        logger.debug('Permission denied: tool not in allowed list', {
+          tool: name,
+          allowedTools,
+        })
+        return {
+          success: false,
+          error: createPermissionErrorMessage(name, allowedTools),
           durationMs: 0,
           truncated: false,
         }
@@ -94,10 +109,24 @@ function getAllToolsMap(): Map<string, Tool> {
     ...[
       readFileTool, writeFileTool, editFileTool, runCommandTool,
       globTool, grepTool, gitTool, askUserTool,
-      criterionTool, todoTool, callSubAgentTool, loadSkillTool, returnValueTool, webFetchTool,
+      criterionTool, getCriteriaTool, addCriterionTool, updateCriterionTool, removeCriterionTool,
+      todoTool, callSubAgentTool, loadSkillTool, returnValueTool, webFetchTool,
       devServerTool, stepDoneTool,
     ].map(t => [t.name, t] as const),
   ])
+}
+
+/**
+ * Creates a permission error message for unauthorized tool access
+ */
+function createPermissionErrorMessage(
+  toolName: string,
+  allowedTools: string[]
+): string {
+  if (allowedTools.length === 0) {
+    return `Tool '${toolName}' is not in your allowed tools list. No tools are allowed.`
+  }
+  return `Tool '${toolName}' is not in your allowed tools list. Available: ${allowedTools.join(', ')}`
 }
 
 // ============================================================================
@@ -115,33 +144,38 @@ export function getToolRegistryForSubAgent(toolNames: string[]): ToolRegistry {
     const tool = allTools.get(name)
     if (tool) {
       tools.push(tool)
+    } else {
+      logger.warn(`Unknown tool '${name}' in sub-agent allowedTools list`)
     }
   }
   if (!tools.some(t => t.name === 'return_value')) {
     const rv = allTools.get('return_value')
     if (rv) tools.push(rv)
   }
-  return createRegistryFromTools(tools)
+  return createRegistryFromTools(tools, toolNames)
 }
 
 /**
  * Create a tool registry for an agent definition.
- * Uses the agent's tools list to filter from the global tool registry.
+ * Uses the agent's allowedTools list to filter from the global tool registry.
  * Sub-agents automatically get return_value added.
+ * Logs warnings for unknown tool names.
  */
 export function getToolRegistryForAgent(agentDef: AgentDefinition): ToolRegistry {
   if (agentDef.metadata.subagent) {
-    return getToolRegistryForSubAgent(agentDef.metadata.tools)
+    return getToolRegistryForSubAgent(agentDef.metadata.allowedTools)
   }
   const allTools = getAllToolsMap()
   const tools: Tool[] = []
-  for (const name of agentDef.metadata.tools) {
+  for (const name of agentDef.metadata.allowedTools) {
     const tool = allTools.get(name)
     if (tool) {
       tools.push(tool)
+    } else {
+      logger.warn(`Unknown tool '${name}' in allowedTools for agent '${agentDef.metadata.id}'`)
     }
   }
-  return createRegistryFromTools(tools)
+  return createRegistryFromTools(tools, agentDef.metadata.allowedTools)
 }
 
 /**

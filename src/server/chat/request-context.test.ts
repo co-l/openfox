@@ -14,17 +14,17 @@ const injectedFiles: InjectedFile[] = [
 ]
 
 const plannerAgent: AgentDefinition = {
-  metadata: { id: 'planner', name: 'Planner', description: 'Plans work', subagent: false, tools: ['read_file', 'glob'] },
+  metadata: { id: 'planner', name: 'Planner', description: 'Plans work', subagent: false, allowedTools: ['read_file', 'glob'] },
   prompt: '# Plan Mode\nCRITICAL: Plan mode ACTIVE - read-only phase.',
 }
 
 const builderAgent: AgentDefinition = {
-  metadata: { id: 'builder', name: 'Builder', description: 'Builds work', subagent: false, tools: ['read_file', 'write_file'] },
+  metadata: { id: 'builder', name: 'Builder', description: 'Builds work', subagent: false, allowedTools: ['read_file', 'write_file'] },
   prompt: '# Build Mode\nCRITICAL: Build mode ACTIVE - implementation allowed.',
 }
 
 const verifierAgent: AgentDefinition = {
-  metadata: { id: 'verifier', name: 'Verifier', description: 'Verifies criteria', subagent: true, tools: ['read_file', 'pass_criterion'] },
+  metadata: { id: 'verifier', name: 'Verifier', description: 'Verifies criteria', subagent: true, allowedTools: ['read_file', 'pass_criterion'] },
   prompt: 'Verify each criterion.',
 }
 

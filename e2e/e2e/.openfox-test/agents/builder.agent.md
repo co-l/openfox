@@ -4,7 +4,7 @@ name: Builder
 description: Implements the task by writing code and completing criteria
 subagent: false
 color: '#3b82f6'
-tools:
+allowedTools:
   - read_file
   - glob
   - grep

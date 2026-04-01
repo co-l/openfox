@@ -57,16 +57,16 @@ vi.mock('./web-fetch.js', () => ({
 
 import { AskUserInterrupt } from './ask.js'
 import { PathAccessDeniedError } from './path-security.js'
-import { createToolRegistry, getToolRegistryForAgent } from './index.js'
+import { createToolRegistry, getToolRegistryForAgent, createRegistryFromTools } from './index.js'
 import type { AgentDefinition } from '../agents/types.js'
 
 const builderDef: AgentDefinition = {
-  metadata: { id: 'builder', name: 'Builder', description: 'Builds', subagent: false, tools: ['read_file', 'glob', 'grep', 'web_fetch', 'write_file', 'edit_file', 'run_command', 'ask_user', 'criterion', 'todo', 'call_sub_agent', 'load_skill'] },
+  metadata: { id: 'builder', name: 'Builder', description: 'Builds', subagent: false, allowedTools: ['read_file', 'glob', 'grep', 'web_fetch', 'write_file', 'edit_file', 'run_command', 'ask_user', 'criterion', 'todo', 'call_sub_agent', 'load_skill'] },
   prompt: 'Build mode.',
 }
 
 const verifierDef: AgentDefinition = {
-  metadata: { id: 'verifier', name: 'Verifier', description: 'Verifies', subagent: true, tools: ['read_file', 'run_command', 'criterion', 'web_fetch'] },
+  metadata: { id: 'verifier', name: 'Verifier', description: 'Verifies', subagent: true, allowedTools: ['read_file', 'run_command', 'criterion', 'web_fetch'] },
   prompt: 'Verify.',
 }
 
@@ -121,5 +121,94 @@ describe('tool registries', () => {
 
     criterionExecuteMock.mockRejectedValueOnce(new PathAccessDeniedError(['/etc/passwd'], 'criterion'))
     await expect(registry.execute('criterion', {}, context)).rejects.toBeInstanceOf(PathAccessDeniedError)
+  })
+
+  it('blocks execution of unauthorized tools with permission error', async () => {
+    const registry = getToolRegistryForAgent(builderDef)
+    const context = { workdir: '/tmp/project', sessionId: 'session-1', sessionManager: {} as never }
+
+    const result = await registry.execute('git', {}, context)
+
+    expect(result).toMatchObject({
+      success: false,
+      error: expect.stringContaining("Unknown tool: git"),
+    })
+  })
+
+  it('allows execution of authorized tools', async () => {
+    const registry = getToolRegistryForAgent(builderDef)
+    const context = { workdir: '/tmp/project', sessionId: 'session-1', sessionManager: {} as never }
+
+    const result = await registry.execute('read_file', { path: 'test.ts' }, context)
+
+    expect(result).toMatchObject({
+      success: true,
+      output: 'read',
+    })
+  })
+
+  it('handles empty allowedTools list by blocking all tools', async () => {
+    const emptyAgentDef: AgentDefinition = {
+      metadata: {
+        id: 'empty',
+        name: 'Empty',
+        description: 'No tools',
+        subagent: false,
+        allowedTools: [],
+      },
+      prompt: 'Empty',
+    }
+
+    const registry = getToolRegistryForAgent(emptyAgentDef)
+    const context = { workdir: '/tmp/project', sessionId: 'session-1', sessionManager: {} as never }
+
+    const result = await registry.execute('read_file', { path: 'test.ts' }, context)
+
+    expect(result).toMatchObject({
+      success: false,
+      error: expect.stringContaining("Unknown tool: read_file"),
+    })
+  })
+
+  it('enforces permissions when tool is in registry but not in allowed list', async () => {
+    const allToolsRegistry = createToolRegistry()
+    const context = { workdir: '/tmp/project', sessionId: 'session-1', sessionManager: {} as never }
+
+    const tools = allToolsRegistry.tools.filter(t => t.name === 'read_file')
+    const allowedTools = ['write_file']
+
+    const restrictedRegistry = createRegistryFromTools(tools, allowedTools)
+
+    const result = await restrictedRegistry.execute('read_file', { path: 'test.ts' }, context)
+
+    expect(result).toMatchObject({
+      success: false,
+      error: expect.stringContaining("Tool 'read_file' is not in your allowed tools list"),
+    })
+    expect(result.error).toContain('Available: write_file')
+  })
+
+  it('blocks unauthorized tools in sub-agent registry', async () => {
+    const verifierRegistry = getToolRegistryForAgent(verifierDef)
+    const context = { workdir: '/tmp/project', sessionId: 'session-1', sessionManager: {} as never }
+
+    const result = await verifierRegistry.execute('write_file', { path: 'test.ts' }, context)
+
+    expect(result).toMatchObject({
+      success: false,
+      error: expect.stringContaining("Unknown tool: write_file"),
+    })
+  })
+
+  it('allows authorized tools in sub-agent registry', async () => {
+    const verifierRegistry = getToolRegistryForAgent(verifierDef)
+    const context = { workdir: '/tmp/project', sessionId: 'session-1', sessionManager: {} as never }
+
+    const result = await verifierRegistry.execute('read_file', { path: 'test.ts' }, context)
+
+    expect(result).toMatchObject({
+      success: true,
+      output: 'read',
+    })
   })
 })

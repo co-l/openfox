@@ -14,7 +14,7 @@ const mockVerifier: AgentDefinition = {
     name: 'Verifier',
     description: 'Verifies completed criteria',
     subagent: true,
-    tools: ['read_file', 'pass_criterion'],
+    allowedTools: ['read_file', 'pass_criterion'],
   },
   prompt: 'Verify each criterion carefully.',
 }
@@ -25,7 +25,7 @@ const mockCodeReviewer: AgentDefinition = {
     name: 'Code Reviewer',
     description: 'Reviews code changes',
     subagent: true,
-    tools: ['read_file', 'grep'],
+    allowedTools: ['read_file', 'grep'],
   },
   prompt: 'Review the code.',
 }
@@ -36,7 +36,7 @@ const mockPlanner: AgentDefinition = {
     name: 'Planner',
     description: 'Plans work',
     subagent: false,
-    tools: ['read_file', 'glob'],
+    allowedTools: ['read_file', 'glob'],
   },
   prompt: '# Plan Mode\nCRITICAL: Plan mode ACTIVE - read-only phase.',
 }
@@ -47,7 +47,7 @@ const mockBuilder: AgentDefinition = {
     name: 'Builder',
     description: 'Builds work',
     subagent: false,
-    tools: ['read_file', 'write_file'],
+    allowedTools: ['read_file', 'write_file'],
   },
   prompt: '# Build Mode\nCRITICAL: Build mode ACTIVE - implementation allowed.',
 }
