@@ -18,7 +18,7 @@ import type { AgentDefinition } from '../agents/types.js'
 import { getEventStore, getCurrentContextWindowId } from '../events/index.js'
 import { buildSnapshotFromSessionState } from '../events/folding.js'
 import type { SessionManager } from '../session/index.js'
-import { getToolRegistryForAgent, PathAccessDeniedError } from '../tools/index.js'
+import { getToolRegistryForAgent, PathAccessDeniedError, type ToolRegistry } from '../tools/index.js'
 import { BUILDER_KICKOFF_PROMPT, VERIFIER_KICKOFF_PROMPT, buildAgentReminder } from './prompts.js'
 import { TurnMetrics, createMessageStartEvent, createMessageDoneEvent, createToolCallEvent, createToolResultEvent, createChatDoneEvent } from './stream-pure.js'
 import { assembleAgentRequest } from './request-context.js'
@@ -250,6 +250,19 @@ export interface BuilderTurnOptions extends OrchestratorOptions {
   stepDonePrompt?: string
 }
 
+/**
+ * Return tool registry as-is.
+ * The tools hash MUST remain stable regardless of injectStepDone.
+ * All tools must ALWAYS be available to maintain LLM context caching.
+ */
+export function filterToolRegistryForStepDone(
+  baseRegistry: ToolRegistry,
+  _injectStepDone: boolean,
+): ToolRegistry {
+  // Always return the base registry - do NOT filter tools
+  return baseRegistry
+}
+
 export async function runBuilderTurn(
   options: BuilderTurnOptions,
   turnMetrics: TurnMetrics,
@@ -279,15 +292,7 @@ export async function runBuilderTurn(
       assembleRequest: (input) => assembleAgentRequest({ ...input, agentDef: builderDef, subAgentDefs }),
       getToolRegistry: () => {
         const baseRegistry = getToolRegistryForAgent(builderDef)
-        if (options.injectStepDone === true) {
-          return baseRegistry
-        }
-        // Filter out step_done tool for direct chat (non-workflow) turns
-        return {
-          tools: baseRegistry.tools.filter(t => t.name !== 'step_done'),
-          definitions: baseRegistry.definitions.filter(d => d.type === 'function' && d.function.name !== 'step_done'),
-          execute: baseRegistry.execute,
-        }
+        return filterToolRegistryForStepDone(baseRegistry, options.injectStepDone === true)
       },
       onToolExecuted: (toolCall: ToolCall, toolResult: ToolResult) => {
         if (toolCall.name === 'step_done' && toolResult.success) {
