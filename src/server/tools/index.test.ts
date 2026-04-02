@@ -134,15 +134,15 @@ describe('tool registries', () => {
     await expect(registry.execute('criterion', {}, context)).rejects.toBeInstanceOf(PathAccessDeniedError)
   })
 
-  it('blocks execution of unauthorized tools with permission error', async () => {
+  it('allows execution of all tools for top-level agents', async () => {
     const registry = getToolRegistryForAgent(builderDef)
     const context = { workdir: '/tmp/project', sessionId: 'session-1', sessionManager: {} as never }
 
     const result = await registry.execute('git', {}, context)
 
     expect(result).toMatchObject({
-      success: false,
-      error: expect.stringContaining("Unknown tool: git"),
+      success: true,
+      output: 'git',
     })
   })
 
@@ -158,7 +158,7 @@ describe('tool registries', () => {
     })
   })
 
-  it('handles empty allowedTools list by blocking all tools', async () => {
+  it('handles empty allowedTools list by providing all tools to top-level agents', async () => {
     const emptyAgentDef: AgentDefinition = {
       metadata: {
         id: 'empty',
@@ -176,8 +176,8 @@ describe('tool registries', () => {
     const result = await registry.execute('read_file', { path: 'test.ts' }, context)
 
     expect(result).toMatchObject({
-      success: false,
-      error: expect.stringContaining("Unknown tool: read_file"),
+      success: true,
+      output: 'read',
     })
   })
 

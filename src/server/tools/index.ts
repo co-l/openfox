@@ -167,30 +167,38 @@ export function getToolRegistryForSubAgent(toolNames: string[]): ToolRegistry {
 
 /**
  * Create a tool registry for an agent definition.
- * Uses the agent's allowedTools list to filter from the global tool registry.
- * Sub-agents automatically get return_value added.
- * Top-level agents cannot use return_value (it's filtered out).
+ * 
+ * For top-level agents (subagent: false):
+ *   - Returns ALL tools to ensure vLLM prefix cache consistency across mode switches
+ *   - The allowedTools list is ignored for tool filtering
+ *   - return_value is excluded (top-level agents finish with chat.done, not return_value)
+ * 
+ * For sub-agents (subagent: true):
+ *   - Filters tools based on allowedTools list
+ *   - return_value is automatically added
+ *   - Sub-agents have isolated contexts, so filtering is safe
+ * 
  * Logs warnings for unknown tool names.
  */
 export function getToolRegistryForAgent(agentDef: AgentDefinition): ToolRegistry {
   if (agentDef.metadata.subagent) {
     return getToolRegistryForSubAgent(agentDef.metadata.allowedTools)
   }
+  
+  // Top-level agents: return ALL tools for vLLM cache consistency
   const allTools = getAllToolsMap()
   const tools: Tool[] = []
   const allowedTools: string[] = []
-  for (const name of agentDef.metadata.allowedTools) {
+  
+  for (const [name, tool] of allTools.entries()) {
+    // Exclude return_value from top-level agents
     if (name === 'return_value') {
       continue
     }
-    const tool = allTools.get(name)
-    if (tool) {
-      tools.push(tool)
-      allowedTools.push(name)
-    } else {
-      logger.warn(`Unknown tool '${name}' in allowedTools for agent '${agentDef.metadata.id}'`)
-    }
+    tools.push(tool)
+    allowedTools.push(name)
   }
+  
   return createRegistryFromTools(tools, allowedTools)
 }
 
