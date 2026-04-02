@@ -2,36 +2,28 @@
  * Session Summary Generator
  *
  * Generates concise summaries of user conversations when switching to builder mode.
- * Uses a non-thinking variant for minimal latency.
+ * Uses the same system prompt as compaction to preserve KV-cache.
  */
 
 import type { LLMClientWithModel } from '../llm/client.js'
 import type { LLMMessage } from '../llm/types.js'
+import { assembleAgentRequest } from '../chat/request-context.js'
+import type { AgentDefinition } from '../agents/types.js'
+import type { SkillMetadata } from '../skills/types.js'
+import type { RequestContextMessage } from '../chat/request-context.js'
 
 // ============================================================================
-// Summary Prompt
+// Constants
 // ============================================================================
 
-/**
- * Prompt for generating session summaries.
- * Focuses on WHAT and WHY, not HOW.
- * Returns only the summary, no preamble.
- */
-export const SESSION_SUMMARY_PROMPT = `Write a 2-3 sentence summary of what the user wants to accomplish. Focus on WHAT and WHY, not HOW. Output only the summary, no preamble.
-
-## Conversation History
-{messages}
-
-## Summary
-`
-
-// ============================================================================
-// Summary Generation
-// ============================================================================
+const SUMMARY_INSTRUCTION = 'Write a 2-3 sentence summary of what the user wants to accomplish. Focus on WHAT and WHY, not HOW. Output only the summary, no preamble.'
 
 export interface GenerateSessionSummaryOptions {
   messages: Array<{ role: 'user' | 'assistant'; content: string }>
   llmClient: LLMClientWithModel
+  workdir: string
+  customInstructions?: string | undefined
+  skills?: SkillMetadata[] | undefined
 }
 
 export interface GenerateSessionSummaryResult {
@@ -42,28 +34,57 @@ export interface GenerateSessionSummaryResult {
 
 /**
  * Generate a session summary from conversation messages.
+ * Uses the same system prompt as compaction to preserve KV-cache.
  * Uses the provided LLM client (respecting user's selected model).
  * Disables thinking output for minimal latency.
  */
 export async function generateSessionSummary(
   options: GenerateSessionSummaryOptions
 ): Promise<GenerateSessionSummaryResult> {
-  const { messages, llmClient } = options
+  const { messages, llmClient, workdir, customInstructions, skills } = options
   
   try {
-    // Format messages for the prompt
     const messagesText = messages
       .map(m => `${m.role}: ${m.content}`)
       .join('\n')
     
-    const prompt = SESSION_SUMMARY_PROMPT.replace('{messages}', messagesText)
+    const userPrompt = `${SUMMARY_INSTRUCTION}\n\n## Conversation History\n${messagesText}\n\n## Summary`
     
-    const llmMessages: LLMMessage[] = [
+    const contextMessages: RequestContextMessage[] = [
       {
         role: 'user',
-        content: prompt,
+        content: userPrompt,
+        source: 'history',
       },
     ]
+    
+    const mockAgentDef: AgentDefinition = {
+      metadata: {
+        id: 'summary',
+        name: 'Summary',
+        description: 'Session summary generator',
+        subagent: false,
+        allowedTools: [],
+      },
+      prompt: SUMMARY_INSTRUCTION,
+    }
+    
+    const assembledRequest = assembleAgentRequest({
+      agentDef: mockAgentDef,
+      workdir,
+      messages: contextMessages,
+      injectedFiles: [],
+      ...(customInstructions ? { customInstructions } : {}),
+      ...(skills ? { skills } : {}),
+      promptTools: [],
+      toolChoice: 'none',
+      disableThinking: true,
+    })
+    
+    const llmMessages: LLMMessage[] = assembledRequest.messages.map(msg => ({
+      role: msg.role as 'system' | 'user' | 'assistant' | 'tool',
+      content: msg.content,
+    }))
 
     const response = await llmClient.complete({
       messages: llmMessages,

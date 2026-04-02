@@ -165,7 +165,7 @@ describe('Provider Context Restart', () => {
     // After refresh/activation, the model ID should be updated to match backend format
     // but the context window should be preserved
     const matchedModel = fuzzyProvider?.models.find(m => 
-      m.id === backendModelId || m.id === userModelId || m.id.includes('qwen3.5')
+      m.id === backendModelId || m.id === userModelId
     )
     
     expect(matchedModel).toBeDefined()

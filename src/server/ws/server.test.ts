@@ -23,6 +23,10 @@ const {
   getEventStoreMock,
   getContextMessagesMock,
   getCurrentContextWindowIdMock,
+  getEnabledSkillMetadataMock,
+  getRuntimeConfigMock,
+  getGlobalConfigDirMock,
+  generateSessionSummaryMock,
 } = vi.hoisted(() => ({
   createProjectMock: vi.fn(),
   getProjectMock: vi.fn(),
@@ -42,6 +46,10 @@ const {
   getEventStoreMock: vi.fn(),
   getContextMessagesMock: vi.fn(),
   getCurrentContextWindowIdMock: vi.fn(),
+  getEnabledSkillMetadataMock: vi.fn(),
+  getRuntimeConfigMock: vi.fn(),
+  getGlobalConfigDirMock: vi.fn(),
+  generateSessionSummaryMock: vi.fn(),
 }))
 
 vi.mock('../db/projects.js', () => ({
@@ -61,6 +69,23 @@ vi.mock('../db/settings.js', () => ({
 
 vi.mock('../context/instructions.js', () => ({
   getAllInstructions: getAllInstructionsMock,
+}))
+
+vi.mock('../skills/registry.js', () => ({
+  getEnabledSkillMetadata: getEnabledSkillMetadataMock,
+}))
+
+vi.mock('../runtime-config.js', () => ({
+  getRuntimeConfig: getRuntimeConfigMock,
+}))
+
+vi.mock('../../cli/paths.js', () => ({
+  getGlobalConfigDir: getGlobalConfigDirMock,
+}))
+
+vi.mock('../session/summary-generator.js', () => ({
+  generateSessionSummary: generateSessionSummaryMock,
+  needsSummaryGeneration: vi.fn((summary: string | null) => summary === null || summary.trim() === ''),
 }))
 
 vi.mock('../tools/index.js', () => ({
@@ -351,6 +376,35 @@ describe('createWebSocketServer', () => {
     getContextMessagesMock.mockReturnValue([])
     getCurrentContextWindowIdMock.mockReset()
     getCurrentContextWindowIdMock.mockReturnValue(undefined)
+    getAllInstructionsMock.mockReset()
+    getAllInstructionsMock.mockResolvedValue({ content: '', files: [] })
+    getEnabledSkillMetadataMock.mockReset()
+    getEnabledSkillMetadataMock.mockResolvedValue([])
+    getRuntimeConfigMock.mockReset()
+    getRuntimeConfigMock.mockReturnValue({
+      mode: 'test',
+      llm: {
+        baseUrl: 'http://localhost:8000/v1',
+        model: 'test-model',
+        timeout: 60000,
+        idleTimeout: 300000,
+        backend: 'auto' as const,
+      },
+      context: {
+        maxTokens: 200000,
+        compactionThreshold: 0.8,
+        compactionTarget: 0.5,
+      },
+      agent: {
+        maxIterations: 10,
+        maxConsecutiveFailures: 3,
+        toolTimeout: 300000,
+      },
+    })
+    getGlobalConfigDirMock.mockReset()
+    getGlobalConfigDirMock.mockReturnValue('/tmp/config')
+    generateSessionSummaryMock.mockReset()
+    generateSessionSummaryMock.mockResolvedValue({ success: true, summary: 'Test summary' })
   })
 
   afterEach(async () => {
@@ -875,7 +929,7 @@ describe('createWebSocketServer', () => {
     await harness.nextMessage((message) => message.type === 'session.state')
 
     // Wait for async summary generation
-    await new Promise<void>((resolve) => setTimeout(resolve, 10))
+    await new Promise<void>((resolve) => setTimeout(resolve, 50))
 
     expect(sessionManager.setSummary).toHaveBeenCalled()
   })

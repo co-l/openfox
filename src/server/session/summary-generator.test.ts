@@ -32,6 +32,7 @@ describe('generateSessionSummary', () => {
     const result = await generateSessionSummary({
       messages,
       llmClient: mockLLMClient,
+      workdir: '/test',
     })
 
     expect(result.success).toBe(true)
@@ -49,6 +50,7 @@ describe('generateSessionSummary', () => {
     const result = await generateSessionSummary({
       messages,
       llmClient: mockLLMClient,
+      workdir: '/test',
     })
 
     expect(result.success).toBe(false)
@@ -68,6 +70,7 @@ describe('generateSessionSummary', () => {
     const result = await generateSessionSummary({
       messages,
       llmClient: mockLLMClient,
+      workdir: '/test',
     })
 
     expect(result.success).toBe(false)
@@ -88,6 +91,7 @@ describe('generateSessionSummary', () => {
     const result = await generateSessionSummary({
       messages,
       llmClient: mockLLMClient,
+      workdir: '/test',
     })
 
     expect(result.success).toBe(true)

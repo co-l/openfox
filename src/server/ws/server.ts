@@ -25,6 +25,10 @@ import { devServerManager } from '../dev-server/manager.js'
 import { updateSessionMetadata } from '../db/sessions.js'
 import { generateSessionName, needsNameGeneration } from '../session/name-generator.js'
 import { generateSessionSummary, needsSummaryGeneration } from '../session/summary-generator.js'
+import { getAllInstructions } from '../context/instructions.js'
+import { getEnabledSkillMetadata } from '../skills/registry.js'
+import { getGlobalConfigDir } from '../../cli/paths.js'
+import { getRuntimeConfig } from '../runtime-config.js'
 import {
   parseClientMessage,
   serializeServerMessage,
@@ -769,9 +773,17 @@ async function handleClientMessage(
         
         // Only generate summary if there are conversation messages
         if (summaryMessages.length > 0) {
+          const config = getRuntimeConfig()
+          const configDir = getGlobalConfigDir(config.mode ?? 'production')
+          const skills = await getEnabledSkillMetadata(configDir)
+          const { content: instructions } = await getAllInstructions(session.workdir, session.projectId)
+          
           generateSessionSummary({
             messages: summaryMessages,
             llmClient: llmForSession(sessionId),
+            workdir: session.workdir,
+            customInstructions: instructions || undefined,
+            skills,
           })
           .then(async (result) => {
             if (result.success && result.summary) {
@@ -875,9 +887,17 @@ async function handleClientMessage(
         
         // Only generate summary if there are conversation messages
         if (summaryMessages.length > 0) {
+          const config = getRuntimeConfig()
+          const configDir = getGlobalConfigDir(config.mode ?? 'production')
+          const skills = await getEnabledSkillMetadata(configDir)
+          const { content: instructions } = await getAllInstructions(currentSession.workdir, currentSession.projectId)
+          
           generateSessionSummary({
             messages: summaryMessages,
             llmClient: llmForSession(sessionId),
+            workdir: currentSession.workdir,
+            customInstructions: instructions || undefined,
+            skills,
           })
             .then(async (result) => {
               if (result.success && result.summary) {

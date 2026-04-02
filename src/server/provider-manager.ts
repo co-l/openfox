@@ -496,7 +496,7 @@ export function createProviderManager(config: Config): ProviderManager {
       // Preserve user-set models even if backend fetch fails or returns empty
       const userModels = provider.models.filter(m => m.source === 'user')
       const allModelsBefore = provider.models.map(m => ({ id: m.id, contextWindow: m.contextWindow, source: m.source }))
-      logger.debug('refreshProviderModels', { providerId, userModelsCount: userModels.length, backendModelsCount: modelsWithContext.length, userModels: userModels.map(m => ({ id: m.id, contextWindow: m.contextWindow, source: m.source })), allModelsBefore })
+      logger.info('refreshProviderModels', { providerId, userModelsCount: userModels.length, backendModelsCount: modelsWithContext.length, userModels: userModels.map(m => ({ id: m.id, contextWindow: m.contextWindow, source: m.source })), allModelsBefore, backendModels: modelsWithContext })
       
       if (modelsWithContext.length === 0) {
         // Keep existing user models when backend is unavailable
@@ -537,6 +537,7 @@ export function createProviderManager(config: Config): ProviderManager {
           const normalizedBackendId = normalize(m.id)
           return normalizedBackendId === normalizedUserId
         })
+        logger.debug('User model match check', { userModelId: userModel.id, normalizedUserId, matchedInUpdated, updatedModelsIds: updatedModels.map(m => m.id) })
         if (!matchedInUpdated) {
           updatedModels.push(userModel)
         }
