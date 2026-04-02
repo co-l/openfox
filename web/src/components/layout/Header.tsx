@@ -20,7 +20,6 @@ interface ProjectDropdownProps {
 }
 
 function ProjectDropdown({ projects, currentProject }: ProjectDropdownProps) {
-  const [, navigate] = useLocation()
   const loadProject = useProjectStore(state => state.loadProject)
 
   const sortedProjects = [...projects].sort((a, b) => a.name.localeCompare(b.name))
@@ -32,9 +31,9 @@ function ProjectDropdown({ projects, currentProject }: ProjectDropdownProps) {
         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
       </svg>
     ) : undefined,
+    href: `/p/${proj.id}`,
     onClick: () => {
       loadProject(proj.id)
-      navigate(`/p/${proj.id}`)
     },
   }))
 
@@ -127,9 +126,9 @@ function SessionDropdown({ sessions, currentProject, currentSession }: SessionDr
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
           </svg>
         ) : undefined,
+        href: `/p/${currentProject.id}/s/${session.id}`,
         onClick: () => {
           loadSession(session.id)
-          navigate(`/p/${currentProject.id}/s/${session.id}`)
         },
       })
     }

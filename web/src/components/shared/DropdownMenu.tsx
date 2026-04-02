@@ -4,7 +4,8 @@ import { createPortal } from 'react-dom'
 export interface DropdownMenuItem {
   label: string | React.ReactNode
   icon?: React.ReactNode
-  onClick: (event?: React.MouseEvent) => void
+  onClick?: (event?: React.MouseEvent) => void
+  href?: string
   danger?: boolean
 }
 
@@ -73,21 +74,47 @@ export function DropdownMenu({ items, trigger, minWidth = '120px' }: DropdownMen
         minWidth,
       }}
     >
-      {items.map((item, index) => (
-        <button
-          key={index}
-          onClick={(e) => {
-            item.onClick(e)
-            setIsOpen(false)
-          }}
-          className={`w-full px-3 py-2 text-left text-sm hover:bg-bg-tertiary transition-colors flex items-center gap-2 ${
-            item.danger ? 'text-accent-error hover:bg-accent-error/10' : 'text-text-primary'
-          } ${index !== items.length - 1 ? 'border-b border-border' : ''}`}
-        >
-          {item.icon && <span className="w-4 h-4 flex-shrink-0">{item.icon}</span>}
-          {item.label}
-        </button>
-      ))}
+      {items.map((item, index) => {
+        const content = (
+          <>
+            {item.icon && <span className="w-4 h-4 flex-shrink-0">{item.icon}</span>}
+            {item.label}
+          </>
+        )
+
+        if (item.href) {
+          return (
+            <a
+              key={index}
+              href={item.href}
+              onClick={(e) => {
+                item.onClick?.(e)
+                setIsOpen(false)
+              }}
+              className={`w-full px-3 py-2 text-left text-sm hover:bg-bg-tertiary transition-colors flex items-center gap-2 ${
+                item.danger ? 'text-accent-error hover:bg-accent-error/10' : 'text-text-primary'
+              } ${index !== items.length - 1 ? 'border-b border-border' : ''}`}
+            >
+              {content}
+            </a>
+          )
+        }
+
+        return (
+          <button
+            key={index}
+            onClick={(e) => {
+              item.onClick?.(e)
+              setIsOpen(false)
+            }}
+            className={`w-full px-3 py-2 text-left text-sm hover:bg-bg-tertiary transition-colors flex items-center gap-2 ${
+              item.danger ? 'text-accent-error hover:bg-accent-error/10' : 'text-text-primary'
+            } ${index !== items.length - 1 ? 'border-b border-border' : ''}`}
+          >
+            {content}
+          </button>
+        )
+      })}
     </div>
   )
 
