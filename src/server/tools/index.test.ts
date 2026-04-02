@@ -211,4 +211,13 @@ describe('tool registries', () => {
       output: 'read',
     })
   })
+
+  it('allows return_value to be executed in sub-agent registry', async () => {
+    const verifierRegistry = getToolRegistryForAgent(verifierDef)
+    const context = { workdir: '/tmp/project', sessionId: 'session-1', sessionManager: {} as never }
+
+    const result = await verifierRegistry.execute('return_value', { content: 'test' }, context)
+
+    expect(result.success).toBe(true)
+  })
 })

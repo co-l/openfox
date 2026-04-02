@@ -128,6 +128,16 @@ function createPermissionErrorMessage(
   return `Tool '${toolName}' is not in your allowed tools list. Available: ${allowedTools.join(', ')}`
 }
 
+/**
+ * Adds return_value to allowed tools list if not already present
+ */
+function addReturnValueToAllowedTools(allowedTools: string[]): string[] {
+  if (!allowedTools.includes('return_value')) {
+    return [...allowedTools, 'return_value']
+  }
+  return allowedTools
+}
+
 // ============================================================================
 // Agent-Based Registry Creation
 // ============================================================================
@@ -151,7 +161,8 @@ export function getToolRegistryForSubAgent(toolNames: string[]): ToolRegistry {
     const rv = allTools.get('return_value')
     if (rv) tools.push(rv)
   }
-  return createRegistryFromTools(tools, toolNames)
+  const allowedToolsWithReturnValue = addReturnValueToAllowedTools(toolNames)
+  return createRegistryFromTools(tools, allowedToolsWithReturnValue)
 }
 
 /**
