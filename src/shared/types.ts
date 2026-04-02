@@ -354,15 +354,9 @@ export type ToolName =
   | 'grep'
   | 'ask_user'
   // Criteria tools
-  | 'add_criterion'
-  | 'update_criterion'
-  | 'remove_criterion'
-  | 'get_criteria'
-  | 'complete_criterion'  // Builder marks criterion done
-  | 'pass_criterion'      // Verifier confirms criterion
-  | 'fail_criterion'      // Verifier rejects criterion
+  | 'criterion'
   // Task tracking
-  | 'todo_write'
+  | 'todo'
   // Web
   | 'web_fetch'
 
@@ -422,6 +416,7 @@ export interface ExecutionState {
   compactionCount: number
   startedAt: string
   lastActivityAt: string
+  lastModeWithReminder?: string     // Track which mode last had a system reminder injected
 }
 
 // ============================================================================

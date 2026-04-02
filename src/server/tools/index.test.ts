@@ -9,13 +9,7 @@ const {
   grepExecuteMock,
   gitExecuteMock,
   askExecuteMock,
-  completeExecuteMock,
-  passExecuteMock,
-  failExecuteMock,
-  getCriteriaExecuteMock,
-  addCriterionExecuteMock,
-  updateCriterionExecuteMock,
-  removeCriterionExecuteMock,
+  criterionExecuteMock,
   todoExecuteMock,
   loadSkillExecuteMock,
   webFetchExecuteMock,
@@ -28,13 +22,7 @@ const {
   grepExecuteMock: vi.fn(async () => ({ success: true, output: 'grep', durationMs: 1, truncated: false })),
   gitExecuteMock: vi.fn(async () => ({ success: true, output: 'git', durationMs: 1, truncated: false })),
   askExecuteMock: vi.fn(async () => ({ success: true, output: 'ask', durationMs: 1, truncated: false })),
-  completeExecuteMock: vi.fn(async () => ({ success: true, output: 'complete', durationMs: 1, truncated: false })),
-  passExecuteMock: vi.fn(async () => ({ success: true, output: 'pass', durationMs: 1, truncated: false })),
-  failExecuteMock: vi.fn(async () => ({ success: true, output: 'fail', durationMs: 1, truncated: false })),
-  getCriteriaExecuteMock: vi.fn(async () => ({ success: true, output: 'get criteria', durationMs: 1, truncated: false })),
-  addCriterionExecuteMock: vi.fn(async () => ({ success: true, output: 'add criterion', durationMs: 1, truncated: false })),
-  updateCriterionExecuteMock: vi.fn(async () => ({ success: true, output: 'update criterion', durationMs: 1, truncated: false })),
-  removeCriterionExecuteMock: vi.fn(async () => ({ success: true, output: 'remove criterion', durationMs: 1, truncated: false })),
+  criterionExecuteMock: vi.fn(async () => ({ success: true, output: 'criterion', durationMs: 1, truncated: false })),
   todoExecuteMock: vi.fn(async () => ({ success: true, output: 'todo', durationMs: 1, truncated: false })),
   loadSkillExecuteMock: vi.fn(async () => ({ success: true, output: 'skill', durationMs: 1, truncated: false })),
   webFetchExecuteMock: vi.fn(async () => ({ success: true, output: 'web_fetch', durationMs: 1, truncated: false })),
@@ -55,21 +43,10 @@ vi.mock('./ask.js', async (importOriginal) => {
   }
 })
 vi.mock('./criterion.js', () => ({
-  completeCriterionTool: { name: 'complete_criterion', definition: { type: 'function', function: { name: 'complete_criterion', description: 'Complete', parameters: {} } }, execute: completeExecuteMock },
-  passCriterionTool: { name: 'pass_criterion', definition: { type: 'function', function: { name: 'pass_criterion', description: 'Pass', parameters: {} } }, execute: passExecuteMock },
-  failCriterionTool: { name: 'fail_criterion', definition: { type: 'function', function: { name: 'fail_criterion', description: 'Fail', parameters: {} } }, execute: failExecuteMock },
-}))
-vi.mock('./planner-criteria.js', () => ({
-  getCriteriaTool: { name: 'get_criteria', definition: { type: 'function', function: { name: 'get_criteria', description: 'Get', parameters: {} } }, execute: getCriteriaExecuteMock },
-  addCriterionTool: { name: 'add_criterion', definition: { type: 'function', function: { name: 'add_criterion', description: 'Add', parameters: {} } }, execute: addCriterionExecuteMock },
-  updateCriterionTool: { name: 'update_criterion', definition: { type: 'function', function: { name: 'update_criterion', description: 'Update', parameters: {} } }, execute: updateCriterionExecuteMock },
-  removeCriterionTool: { name: 'remove_criterion', definition: { type: 'function', function: { name: 'remove_criterion', description: 'Remove', parameters: {} } }, execute: removeCriterionExecuteMock },
+  criterionTool: { name: 'criterion', definition: { type: 'function', function: { name: 'criterion', description: 'Criterion', parameters: {} } }, execute: criterionExecuteMock },
 }))
 vi.mock('./todo.js', () => ({
-  todoWriteTool: { name: 'todo_write', definition: { type: 'function', function: { name: 'todo_write', description: 'Todo', parameters: {} } }, execute: todoExecuteMock },
-  setTodoUpdateCallback: vi.fn(),
-  getTodos: vi.fn(() => []),
-  clearTodos: vi.fn(),
+  todoTool: { name: 'todo', definition: { type: 'function', function: { name: 'todo', description: 'Todo', parameters: {} } }, execute: todoExecuteMock },
 }))
 vi.mock('./load-skill.js', () => ({
   loadSkillTool: { name: 'load_skill', definition: { type: 'function', function: { name: 'load_skill', description: 'Load Skill', parameters: {} } }, execute: loadSkillExecuteMock },
@@ -80,16 +57,16 @@ vi.mock('./web-fetch.js', () => ({
 
 import { AskUserInterrupt } from './ask.js'
 import { PathAccessDeniedError } from './path-security.js'
-import { createToolRegistry, getToolRegistryForAgent } from './index.js'
+import { createToolRegistry, getToolRegistryForAgent, createRegistryFromTools } from './index.js'
 import type { AgentDefinition } from '../agents/types.js'
 
 const builderDef: AgentDefinition = {
-  metadata: { id: 'builder', name: 'Builder', description: 'Builds', subagent: false, tools: ['read_file', 'glob', 'grep', 'web_fetch', 'write_file', 'edit_file', 'run_command', 'ask_user', 'complete_criterion', 'get_criteria', 'todo_write', 'call_sub_agent', 'load_skill'] },
+  metadata: { id: 'builder', name: 'Builder', description: 'Builds', subagent: false, allowedTools: ['read_file', 'glob', 'grep', 'web_fetch', 'write_file', 'edit_file', 'run_command', 'ask_user', 'criterion', 'todo', 'call_sub_agent', 'load_skill'] },
   prompt: 'Build mode.',
 }
 
 const verifierDef: AgentDefinition = {
-  metadata: { id: 'verifier', name: 'Verifier', description: 'Verifies', subagent: true, tools: ['read_file', 'run_command', 'pass_criterion', 'fail_criterion', 'web_fetch'] },
+  metadata: { id: 'verifier', name: 'Verifier', description: 'Verifies', subagent: true, allowedTools: ['read_file', 'run_command', 'criterion', 'web_fetch'] },
   prompt: 'Verify.',
 }
 
@@ -108,8 +85,7 @@ describe('tool registries', () => {
     const registry = getToolRegistryForAgent(verifierDef)
     const toolNames = registry.tools.map(t => t.name)
     expect(toolNames).toContain('read_file')
-    expect(toolNames).toContain('pass_criterion')
-    expect(toolNames).toContain('fail_criterion')
+    expect(toolNames).toContain('criterion')
     expect(toolNames).toContain('return_value')
   })
 
@@ -119,7 +95,7 @@ describe('tool registries', () => {
     expect(toolNames).toContain('read_file')
     expect(toolNames).toContain('write_file')
     expect(toolNames).toContain('run_command')
-    expect(toolNames).toContain('pass_criterion')
+    expect(toolNames).toContain('criterion')
   })
 
   it('executes tools, reports unknown tools, and catches generic failures', async () => {
@@ -143,7 +119,105 @@ describe('tool registries', () => {
     askExecuteMock.mockRejectedValueOnce(new AskUserInterrupt('call-1', 'Need input?'))
     await expect(registry.execute('ask_user', {}, context)).rejects.toBeInstanceOf(AskUserInterrupt)
 
-    completeExecuteMock.mockRejectedValueOnce(new PathAccessDeniedError(['/etc/passwd'], 'complete_criterion'))
-    await expect(registry.execute('complete_criterion', {}, context)).rejects.toBeInstanceOf(PathAccessDeniedError)
+    criterionExecuteMock.mockRejectedValueOnce(new PathAccessDeniedError(['/etc/passwd'], 'criterion'))
+    await expect(registry.execute('criterion', {}, context)).rejects.toBeInstanceOf(PathAccessDeniedError)
+  })
+
+  it('blocks execution of unauthorized tools with permission error', async () => {
+    const registry = getToolRegistryForAgent(builderDef)
+    const context = { workdir: '/tmp/project', sessionId: 'session-1', sessionManager: {} as never }
+
+    const result = await registry.execute('git', {}, context)
+
+    expect(result).toMatchObject({
+      success: false,
+      error: expect.stringContaining("Unknown tool: git"),
+    })
+  })
+
+  it('allows execution of authorized tools', async () => {
+    const registry = getToolRegistryForAgent(builderDef)
+    const context = { workdir: '/tmp/project', sessionId: 'session-1', sessionManager: {} as never }
+
+    const result = await registry.execute('read_file', { path: 'test.ts' }, context)
+
+    expect(result).toMatchObject({
+      success: true,
+      output: 'read',
+    })
+  })
+
+  it('handles empty allowedTools list by blocking all tools', async () => {
+    const emptyAgentDef: AgentDefinition = {
+      metadata: {
+        id: 'empty',
+        name: 'Empty',
+        description: 'No tools',
+        subagent: false,
+        allowedTools: [],
+      },
+      prompt: 'Empty',
+    }
+
+    const registry = getToolRegistryForAgent(emptyAgentDef)
+    const context = { workdir: '/tmp/project', sessionId: 'session-1', sessionManager: {} as never }
+
+    const result = await registry.execute('read_file', { path: 'test.ts' }, context)
+
+    expect(result).toMatchObject({
+      success: false,
+      error: expect.stringContaining("Unknown tool: read_file"),
+    })
+  })
+
+  it('enforces permissions when tool is in registry but not in allowed list', async () => {
+    const allToolsRegistry = createToolRegistry()
+    const context = { workdir: '/tmp/project', sessionId: 'session-1', sessionManager: {} as never }
+
+    const tools = allToolsRegistry.tools.filter(t => t.name === 'read_file')
+    const allowedTools = ['write_file']
+
+    const restrictedRegistry = createRegistryFromTools(tools, allowedTools)
+
+    const result = await restrictedRegistry.execute('read_file', { path: 'test.ts' }, context)
+
+    expect(result).toMatchObject({
+      success: false,
+      error: expect.stringContaining("Tool 'read_file' is not in your allowed tools list"),
+    })
+    expect(result.error).toContain('Available: write_file')
+  })
+
+  it('blocks unauthorized tools in sub-agent registry', async () => {
+    const verifierRegistry = getToolRegistryForAgent(verifierDef)
+    const context = { workdir: '/tmp/project', sessionId: 'session-1', sessionManager: {} as never }
+
+    const result = await verifierRegistry.execute('write_file', { path: 'test.ts' }, context)
+
+    expect(result).toMatchObject({
+      success: false,
+      error: expect.stringContaining("Unknown tool: write_file"),
+    })
+  })
+
+  it('allows authorized tools in sub-agent registry', async () => {
+    const verifierRegistry = getToolRegistryForAgent(verifierDef)
+    const context = { workdir: '/tmp/project', sessionId: 'session-1', sessionManager: {} as never }
+
+    const result = await verifierRegistry.execute('read_file', { path: 'test.ts' }, context)
+
+    expect(result).toMatchObject({
+      success: true,
+      output: 'read',
+    })
+  })
+
+  it('allows return_value to be executed in sub-agent registry', async () => {
+    const verifierRegistry = getToolRegistryForAgent(verifierDef)
+    const context = { workdir: '/tmp/project', sessionId: 'session-1', sessionManager: {} as never }
+
+    const result = await verifierRegistry.execute('return_value', { content: 'test' }, context)
+
+    expect(result.success).toBe(true)
   })
 })

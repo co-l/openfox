@@ -173,6 +173,13 @@ describe('ProviderManager - Model Selection', () => {
       expect(providers.find(p => p.id === 'provider-2')?.isActive).toBe(true)
       expect(providers.find(p => p.id === 'provider-1')?.isActive).toBe(false)
     })
+
+    it('handles model names with slashes correctly', async () => {
+      const result = await providerManager.setDefaultModelSelection('provider-1', 'Intel/Qwen3.5-397B')
+      
+      expect(result).toEqual({ success: true })
+      expect(providerManager.getCurrentModel()).toBe('Intel/Qwen3.5-397B')
+    })
   })
 
   describe('activateProvider with model option', () => {

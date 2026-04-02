@@ -26,11 +26,11 @@ vi.mock('../tools/index.js', () => ({
 vi.mock('../agents/registry.js', () => {
   const agents = [
     {
-      metadata: { id: 'builder', name: 'Builder', description: 'Builds', subagent: false, tools: ['read_file', 'write_file', 'edit_file', 'run_command'] },
+      metadata: { id: 'builder', name: 'Builder', description: 'Builds', subagent: false, allowedTools: ['read_file', 'write_file', 'edit_file', 'run_command'] },
       prompt: '# Build Mode\nBuild mode ACTIVE.',
     },
     {
-      metadata: { id: 'verifier', name: 'Verifier', description: 'Verifies', subagent: true, tools: ['read_file'] },
+      metadata: { id: 'verifier', name: 'Verifier', description: 'Verifies', subagent: true, allowedTools: ['read_file'] },
       prompt: 'Verify.',
     },
   ]
@@ -140,17 +140,15 @@ describe('runBuilderStep', () => {
       promptContext: {
         systemPrompt: expect.any(String),
         injectedFiles: [{ path: 'AGENTS.md', content: 'Always add tests', source: 'global' }],
-        userMessage: expect.stringContaining('fulfil the 1 criteria'),
+        userMessage: 'Build it',
         messages: [
           { role: 'user', content: 'Build it', source: 'history' },
-          { role: 'user', content: expect.stringContaining('fulfil the 1 criteria'), source: 'history' },
+          { role: 'user', content: expect.stringContaining('fulfil the 1 criteria'), source: 'runtime' },
         ],
         tools: expect.any(Array),
         requestOptions: { toolChoice: 'auto', disableThinking: false },
       },
     })
-    const promptContext = sessionManager.updateMessage.mock.calls[0]?.[2]?.promptContext
-    expect(promptContext.messages[1].content).toContain('Build mode ACTIVE')
     expect(toolRegistry.execute).toHaveBeenCalledWith('write_file', { path: 'src/index.ts' }, expect.objectContaining({
       workdir: '/tmp/project',
       sessionId: 'session-1',

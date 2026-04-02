@@ -5,6 +5,7 @@ import {
   buildContextMessagesFromStoredEvents,
   buildMessagesFromStoredEvents,
   buildSnapshotFromSessionState,
+  foldSessionState,
   foldTurnEventsToSnapshotMessages,
 } from './folding.js'
 
@@ -622,5 +623,114 @@ describe('event folding', () => {
       'Second turn',
       'Second reply',
     ])
+  })
+
+  it('extracts lastModeWithReminder from snapshot event', () => {
+    const events: StoredEvent[] = [
+      {
+        seq: 1,
+        timestamp: Date.now(),
+        sessionId: 'session-1',
+        type: 'session.initialized',
+        data: { projectId: 'proj-1', workdir: '/tmp', contextWindowId: 'window-1' },
+      },
+      {
+        seq: 2,
+        timestamp: Date.now(),
+        sessionId: 'session-1',
+        type: 'turn.snapshot',
+        data: {
+          mode: 'planner',
+          phase: 'plan',
+          isRunning: false,
+          messages: [],
+          criteria: [],
+          contextState: { currentTokens: 50, maxTokens: 200000, compactionCount: 0, dangerZone: false, canCompact: false },
+          currentContextWindowId: 'window-1',
+          todos: [],
+          readFiles: [],
+          lastModeWithReminder: 'planner',
+          snapshotSeq: 2,
+          snapshotAt: Date.now(),
+        },
+      },
+    ]
+
+    const state = foldSessionState(events, 'window-1', 200000)
+    expect(state.lastModeWithReminder).toBe('planner')
+  })
+
+  it('falls back to scanning message events when snapshot has no lastModeWithReminder', () => {
+    const events: StoredEvent[] = [
+      {
+        seq: 1,
+        timestamp: Date.now(),
+        sessionId: 'session-1',
+        type: 'session.initialized',
+        data: { projectId: 'proj-1', workdir: '/tmp', contextWindowId: 'window-1' },
+      },
+      {
+        seq: 2,
+        timestamp: Date.now(),
+        sessionId: 'session-1',
+        type: 'message.start',
+        data: {
+          messageId: 'msg-1',
+          role: 'user',
+          content: '<system-reminder>\n# Plan Mode\nPlan carefully\n</system-reminder>',
+          messageKind: 'auto-prompt',
+        },
+      },
+    ]
+
+    const state = foldSessionState(events, 'window-1', 200000)
+    expect(state.lastModeWithReminder).toBe('planner')
+  })
+
+  it('prefers snapshot lastModeWithReminder over message events', () => {
+    const events: StoredEvent[] = [
+      {
+        seq: 1,
+        timestamp: Date.now(),
+        sessionId: 'session-1',
+        type: 'session.initialized',
+        data: { projectId: 'proj-1', workdir: '/tmp', contextWindowId: 'window-1' },
+      },
+      {
+        seq: 2,
+        timestamp: Date.now(),
+        sessionId: 'session-1',
+        type: 'message.start',
+        data: {
+          messageId: 'msg-1',
+          role: 'user',
+          content: '<system-reminder>\n# Plan Mode\nPlan carefully\n</system-reminder>',
+          messageKind: 'auto-prompt',
+        },
+      },
+      {
+        seq: 3,
+        timestamp: Date.now(),
+        sessionId: 'session-1',
+        type: 'turn.snapshot',
+        data: {
+          mode: 'builder',
+          phase: 'build',
+          isRunning: false,
+          messages: [],
+          criteria: [],
+          contextState: { currentTokens: 50, maxTokens: 200000, compactionCount: 0, dangerZone: false, canCompact: false },
+          currentContextWindowId: 'window-1',
+          todos: [],
+          readFiles: [],
+          lastModeWithReminder: 'builder',
+          snapshotSeq: 3,
+          snapshotAt: Date.now(),
+        },
+      },
+    ]
+
+    const state = foldSessionState(events, 'window-1', 200000)
+    expect(state.lastModeWithReminder).toBe('builder')
   })
 })

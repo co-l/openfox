@@ -281,7 +281,8 @@ export async function saveGlobalConfig(mode: Mode, config: GlobalConfig): Promis
 export function getActiveProvider(config: GlobalConfig): Provider | undefined {
   // Use defaultModelSelection if available
   if (config.defaultModelSelection) {
-    const [providerId] = config.defaultModelSelection.split('/')
+    const slashIndex = config.defaultModelSelection.indexOf('/')
+    const providerId = slashIndex === -1 ? config.defaultModelSelection : config.defaultModelSelection.substring(0, slashIndex)
     return config.providers?.find(p => p.id === providerId)
   }
   // Fallback to activeProviderId for backwards compatibility
@@ -291,8 +292,8 @@ export function getActiveProvider(config: GlobalConfig): Provider | undefined {
 
 export function getDefaultModel(config: GlobalConfig): string | undefined {
   if (!config.defaultModelSelection) return undefined
-  const parts = config.defaultModelSelection.split('/')
-  return parts[1] ?? 'auto'
+  const slashIndex = config.defaultModelSelection.indexOf('/')
+  return slashIndex === -1 ? 'auto' : config.defaultModelSelection.substring(slashIndex + 1)
 }
 
 export function setDefaultModelSelection(config: GlobalConfig, providerId: string, model: string): GlobalConfig {
@@ -334,7 +335,8 @@ export function removeProvider(config: GlobalConfig, providerId: string): Global
   // Check if we're removing the default model selection's provider
   let newDefaultModelSelection = config.defaultModelSelection
   if (config.defaultModelSelection) {
-    const [selectedProviderId] = config.defaultModelSelection.split('/')
+    const slashIndex = config.defaultModelSelection.indexOf('/')
+    const selectedProviderId = slashIndex === -1 ? config.defaultModelSelection : config.defaultModelSelection.substring(0, slashIndex)
     if (selectedProviderId === providerId) {
       // Reset to first available provider with auto
       newDefaultModelSelection = filtered.length > 0 ? `${filtered[0]!.id}/auto` : undefined

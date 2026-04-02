@@ -49,91 +49,156 @@ const RULES: MockRule[] = [
   {
     match: /ID\s*["']([a-z0-9-]+)["']:\s*["']([^"']+)["'][\s\S]*ID\s*["']([a-z0-9-]+)["']:\s*["']([^"']+)["']/i,
     tools: [
-      { name: 'add_criterion', arguments: { id: '$1', description: '$2' } },
-      { name: 'add_criterion', arguments: { id: '$3', description: '$4' } },
+      { name: 'criterion', arguments: { action: 'add', id: '$1', description: '$2' } },
+      { name: 'criterion', arguments: { action: 'add', id: '$3', description: '$4' } },
     ],
     response: 'Added both criteria.',
+  },
+  // Single criterion: "Add criterion ID "test-1" with description "The tests pass""
+  {
+    match: /Add criterion ID\s*["']([a-z0-9-]+)["']\s*with description\s*["']([^"']+)["'][\s\S]*/i,
+    tools: [{ name: 'criterion', arguments: { action: 'add', id: '$1', description: '$2' } }],
+    response: 'Added the criterion.',
   },
   // Single criterion: ID "test-1" with/: description "The tests pass"
   {
     match: /ID\s*["']([a-z0-9-]+)["'].*description\s*["']([^"']+)["']/i,
-    tools: [{ name: 'add_criterion', arguments: { id: '$1', description: '$2' } }],
+    tools: [{ name: 'criterion', arguments: { action: 'add', id: '$1', description: '$2' } }],
     response: 'Added the criterion.',
   },
   {
-    match: /Add these two acceptance criteria:\s*1\.\s*([^\n]+)\s*2\.\s*([^\n]+)\s*Use add_criterion for each\./i,
+    match: /Add these two acceptance criteria:\s*1\.\s*([^\n]+)\s*2\.\s*([^\n]+)\s*Use criterion for each\./i,
     tools: [
-      { name: 'add_criterion', arguments: { id: 'criterion-1', description: '$1' } },
-      { name: 'add_criterion', arguments: { id: 'criterion-2', description: '$2' } },
+      { name: 'criterion', arguments: { action: 'add', id: 'criterion-1', description: '$1' } },
+      { name: 'criterion', arguments: { action: 'add', id: 'criterion-2', description: '$2' } },
     ],
     response: 'Added both criteria.',
   },
   {
-    match: /Add these two acceptance criteria:[\s\S]*?1\.\s*([^\n]+)[\s\S]*?2\.\s*([^\n]+)[\s\S]*?Use add_criterion for each one\./i,
+    match: /Add these two acceptance criteria:[\s\S]*?1\.\s*([^\n]+)[\s\S]*?2\.\s*([^\n]+)[\s\S]*?Use (?:add_)?criterion for each one\./i,
     tools: [
-      { name: 'add_criterion', arguments: { id: 'criterion-1', description: '$1' } },
-      { name: 'add_criterion', arguments: { id: 'criterion-2', description: '$2' } },
+      { name: 'criterion', arguments: { action: 'add', id: 'criterion-1', description: '$1' } },
+      { name: 'criterion', arguments: { action: 'add', id: 'criterion-2', description: '$2' } },
     ],
     response: 'Added both criteria.',
   },
   {
-    match: /Add criterion:\s*([\s\S]+?)\s*Use add_criterion\.?/i,
-    tools: [{ name: 'add_criterion', arguments: { id: '$auto', description: '$1' } }],
+    match: /Add these two acceptance criteria:[\s\S]*?1\.\s*([^\n]+)[\s\S]*?2\.\s*([^\n]+)/i,
+    tools: [
+      { name: 'criterion', arguments: { action: 'add', id: 'criterion-1', description: '$1' } },
+      { name: 'criterion', arguments: { action: 'add', id: 'criterion-2', description: '$2' } },
+    ],
+    response: 'Added both criteria.',
+  },
+  {
+    match: /Add criterion:\s*([\s\S]+?)\s*Use criterion\.?/i,
+    tools: [{ name: 'criterion', arguments: { action: 'add', id: '$auto', description: '$1' } }],
     response: 'Added the criterion.',
   },
   // Single criterion: ID "test-1": "The tests pass" (colon format)
   {
     match: /ID\s*["']([a-z0-9-]+)["']\s*:\s*["']([^"']+)["']/i,
-    tools: [{ name: 'add_criterion', arguments: { id: '$1', description: '$2' } }],
+    tools: [{ name: 'criterion', arguments: { action: 'add', id: '$1', description: '$2' } }],
     response: 'Added the criterion.',
   },
   // complete_criterion to mark "id" as done
   {
     match: /complete_criterion.*mark\s*["']([a-z0-9-]+)["']/i,
-    tools: [{ name: 'complete_criterion', arguments: { id: '$1', reason: 'Completed successfully' } }],
+    tools: [{ name: 'criterion', arguments: { action: 'complete', id: '$1', reason: 'Completed successfully' } }],
     response: 'Marked criterion as complete.',
   },
   // complete_criterion with ID
   {
     match: /complete_criterion.*["']([a-z0-9-]+)["']/i,
-    tools: [{ name: 'complete_criterion', arguments: { id: '$1', reason: 'Completed successfully' } }],
+    tools: [{ name: 'criterion', arguments: { action: 'complete', id: '$1', reason: 'Completed successfully' } }],
+    response: 'Marked criterion as complete.',
+  },
+  // criterion with action "complete" for "id"
+  {
+    match: /criterion.*action\s*["']complete["'].*["']([a-z0-9-]+)["']/i,
+    tools: [{ name: 'criterion', arguments: { action: 'complete', id: '$1', reason: 'Completed successfully' } }],
     response: 'Marked criterion as complete.',
   },
   // remove_criterion to remove "id"
   {
     match: /remove_criterion.*remove\s*["']([a-z0-9-]+)["']/i,
-    tools: [{ name: 'remove_criterion', arguments: { id: '$1' } }],
+    tools: [{ name: 'criterion', arguments: { action: 'remove', id: '$1' } }],
     response: 'Removed the criterion.',
   },
   // remove_criterion with ID
   {
     match: /remove_criterion.*["']([a-z0-9-]+)["']/i,
-    tools: [{ name: 'remove_criterion', arguments: { id: '$1' } }],
+    tools: [{ name: 'criterion', arguments: { action: 'remove', id: '$1' } }],
     response: 'Removed the criterion.',
   },
   // update_criterion to change "id" description to "new"
   {
     match: /update_criterion.*change\s*["']([a-z0-9-]+)["'].*to\s*["']([^"']+)["']/i,
-    tools: [{ name: 'update_criterion', arguments: { id: '$1', description: '$2' } }],
+    tools: [{ name: 'criterion', arguments: { action: 'update', id: '$1', description: '$2' } }],
     response: 'Updated the criterion.',
   },
   // update_criterion with ID and description
   {
     match: /update_criterion.*["']([a-z0-9-]+)["'].*["']([^"']+)["']/i,
-    tools: [{ name: 'update_criterion', arguments: { id: '$1', description: '$2' } }],
+    tools: [{ name: 'criterion', arguments: { action: 'update', id: '$1', description: '$2' } }],
     response: 'Updated the criterion.',
   },
   // get_criteria
   {
-    match: /get_criteria/i,
-    tools: [{ name: 'get_criteria', arguments: {} }],
+    match: /get_criteria|show.*criteria|list.*criteria/i,
+    tools: [{ name: 'criterion', arguments: { action: 'get' } }],
     response: 'Here are the current criteria.',
+  },
+  // pass_criterion
+  {
+    match: /pass_criterion.*["']([a-z0-9-]+)["']/i,
+    tools: [{ name: 'criterion', arguments: { action: 'pass', id: '$1', reason: 'Verified successfully' } }],
+    response: 'Criterion passed.',
+  },
+  // fail_criterion
+  {
+    match: /fail_criterion.*["']([a-z0-9-]+)["']/i,
+    tools: [{ name: 'criterion', arguments: { action: 'fail', id: '$1', reason: 'Verification failed' } }],
+    response: 'Criterion failed.',
   },
   // Generic add criterion (fallback)
   {
     match: /add.*criterion/i,
-    tools: [{ name: 'add_criterion', arguments: { id: '$auto', description: 'Test criterion' } }],
+    tools: [{ name: 'criterion', arguments: { action: 'add', description: 'Test criterion' } }],
     response: 'Added the criterion.',
+  },
+  // Verifier nudge with fail criterion (check for "fail" in ID) - MUST come before general pass rule
+  {
+    match: /Use criterion with action ["']pass["'] or ["']fail["'].*criterion.*:\s*([a-z0-9-]*fail[a-z0-9-]*)/i,
+    tools: [{ name: 'criterion', arguments: { action: 'fail', id: '$1', reason: 'Verification failed' } }],
+    response: 'Criterion failed.',
+  },
+  // Verifier nudge: Use criterion with action "pass" or "fail" for criterion-id-1, criterion-id-2
+  {
+    match: /Use criterion with action ["']pass["'] or ["']fail["'].*criterion:\s*([a-z0-9-]+)/i,
+    tools: [{ name: 'criterion', arguments: { action: 'pass', id: '$1', reason: 'Verified successfully' } }],
+    response: 'Criterion passed.',
+  },
+  // Verifier nudge with multiple criteria
+  {
+    match: /Use criterion with action ["']pass["'] or ["']fail["'].*criterion:\s*([a-z0-9-]+),\s*([a-z0-9-]+)/i,
+    tools: [
+      { name: 'criterion', arguments: { action: 'pass', id: '$1', reason: 'Verified successfully' } },
+      { name: 'criterion', arguments: { action: 'pass', id: '$2', reason: 'Verified successfully' } },
+    ],
+    response: 'Criteria passed.',
+  },
+  // Verifier should fail a criterion
+  {
+    match: /Verifier should fail.*criterion.*ID\s*["']([a-z0-9-]+)["']/i,
+    tools: [{ name: 'criterion', arguments: { action: 'fail', id: '$1', reason: 'Verification failed' } }],
+    response: 'Criterion failed.',
+  },
+  // Verifier fail_criterion command
+  {
+    match: /fail_criterion.*ID\s*["']([a-z0-9-]+)["']/i,
+    tools: [{ name: 'criterion', arguments: { action: 'fail', id: '$1', reason: 'Verification failed' } }],
+    response: 'Criterion failed.',
   },
 
   // -------------------------------------------------------------------------
@@ -432,11 +497,12 @@ const RULES: MockRule[] = [
   {
     match: /todo_write.*Read files.*Make changes/i,
     tools: [{
-      name: 'todo_write',
+      name: 'todo',
       arguments: {
+        action: 'write',
         todos: [
-          { content: 'Read files', status: 'in_progress', priority: 'high' },
-          { content: 'Make changes', status: 'pending', priority: 'medium' },
+          { content: 'Read files', status: 'in_progress' },
+          { content: 'Make changes', status: 'pending' },
         ],
       },
     }],
@@ -445,9 +511,10 @@ const RULES: MockRule[] = [
   {
     match: /todo_write|todo.*list/i,
     tools: [{
-      name: 'todo_write',
+      name: 'todo',
       arguments: {
-        todos: [{ content: 'Test task', status: 'pending', priority: 'medium' }],
+        action: 'write',
+        todos: [{ content: 'Test task', status: 'pending' }],
       },
     }],
     response: 'Created todo list.',
@@ -718,11 +785,12 @@ function getPromptAwareToolResponse(prompt: string): MockMatchResult | null {
   if (/Use the todo_write tool to create a todo list with 2 items/i.test(prompt)) {
     return {
       tools: [{
-        name: 'todo_write',
+        name: 'todo',
         arguments: {
+          action: 'write',
           todos: [
-            { content: 'Read files', status: 'in_progress', priority: 'high' },
-            { content: 'Make changes', status: 'pending', priority: 'medium' },
+            { content: 'Read files', status: 'in_progress' },
+            { content: 'Make changes', status: 'pending' },
           ],
         },
       }],
@@ -733,9 +801,9 @@ function getPromptAwareToolResponse(prompt: string): MockMatchResult | null {
   if (/First call get_criteria to see what needs to be done, then create src\/test\.ts and call complete_criterion for ["']test-file["']\./i.test(prompt)) {
     return {
       tools: [
-        { name: 'get_criteria', arguments: {} },
+        { name: 'criterion', arguments: { action: 'get' } },
         { name: 'write_file', arguments: { path: 'src/test.ts', content: 'export const created = true' } },
-        { name: 'complete_criterion', arguments: { id: 'test-file', reason: 'Created the requested file' } },
+        { name: 'criterion', arguments: { action: 'complete', id: 'test-file', reason: 'Created the requested file' } },
         { name: 'step_done', arguments: {} },
       ],
       response: 'Reviewed the criteria, created the file, and completed the criterion.',
@@ -746,7 +814,7 @@ function getPromptAwareToolResponse(prompt: string): MockMatchResult | null {
     return {
       tools: [
         { name: 'write_file', arguments: { path: 'src/utils.ts', content: 'export const created = true' } },
-        { name: 'complete_criterion', arguments: { id: 'file-created', reason: 'Created the requested file' } },
+        { name: 'criterion', arguments: { action: 'complete', id: 'file-created', reason: 'Created the requested file' } },
         { name: 'step_done', arguments: {} },
       ],
       response: 'Created the file and completed the criterion.',
@@ -854,32 +922,32 @@ function getConversationAwareToolResponse(request: LLMCompletionRequest): MockMa
     if (conversationText.includes('inspect-src')) {
       tools.push(
         { name: 'read_file', arguments: { path: 'src' } },
-        { name: 'complete_criterion', arguments: { id: 'inspect-src', reason: 'Inspected the src directory and reported what exists' } },
+        { name: 'criterion', arguments: { action: 'complete', id: 'inspect-src', reason: 'Inspected the src directory and reported what exists' } },
       )
       completedCriteria.push('inspect-src')
     }
 
     if (conversationText.includes('trivial-pass')) {
-      tools.push({ name: 'complete_criterion', arguments: { id: 'trivial-pass', reason: 'Trivial criterion passes immediately' } })
+      tools.push({ name: 'criterion', arguments: { action: 'complete', id: 'trivial-pass', reason: 'Trivial criterion passes immediately' } })
       completedCriteria.push('trivial-pass')
     }
 
     if (conversationText.includes('verify-fail')) {
-      tools.push({ name: 'complete_criterion', arguments: { id: 'verify-fail', reason: 'Prepared criterion for verification' } })
+      tools.push({ name: 'criterion', arguments: { action: 'complete', id: 'verify-fail', reason: 'Prepared criterion for verification' } })
       completedCriteria.push('verify-fail')
     }
 
     if (conversationText.includes('file-created')) {
       tools.push(
         { name: 'write_file', arguments: { path: 'src/utils.ts', content: 'export const created = true' } },
-        { name: 'complete_criterion', arguments: { id: 'file-created', reason: 'Created the requested file' } },
+        { name: 'criterion', arguments: { action: 'complete', id: 'file-created', reason: 'Created the requested file' } },
       )
       completedCriteria.push('file-created')
     }
 
     // Fallback: if no specific criterion matched, just complete a mock one
     if (tools.length === 0) {
-      tools.push({ name: 'complete_criterion', arguments: { id: 'mock-crit', reason: 'Completed for testing' } })
+      tools.push({ name: 'criterion', arguments: { action: 'complete', id: 'mock-crit', reason: 'Completed for testing' } })
       completedCriteria.push('mock-crit')
     }
 
@@ -895,7 +963,7 @@ function getConversationAwareToolResponse(request: LLMCompletionRequest): MockMa
   if (/fulfil the \d+ criteria/i.test(prompt)) {
     return {
       tools: [
-        { name: 'complete_criterion', arguments: { id: 'mock-crit', reason: 'Completed for testing' } },
+        { name: 'criterion', arguments: { action: 'complete', id: 'mock-crit', reason: 'Completed for testing' } },
         { name: 'step_done', arguments: {} },
       ],
       response: 'Completed criterion and finished step.',
@@ -909,18 +977,19 @@ function getConversationAwareToolResponse(request: LLMCompletionRequest): MockMa
     if (conversationText.includes('file-created')) {
       tools.push(
         { name: 'write_file', arguments: { path: 'src/utils.ts', content: 'export const created = true' } },
-        { name: 'complete_criterion', arguments: { id: 'file-created', reason: 'Created the requested file' } },
+        { name: 'criterion', arguments: { action: 'complete', id: 'file-created', reason: 'Created the requested file' } },
       )
     } else if (conversationText.includes('trivial-pass')) {
-      tools.push({ name: 'complete_criterion', arguments: { id: 'trivial-pass', reason: 'Trivial criterion passes immediately' } })
+      tools.push({ name: 'criterion', arguments: { action: 'complete', id: 'trivial-pass', reason: 'Trivial criterion passes immediately' } })
     } else if (conversationText.includes('verify-fail')) {
-      tools.push({ name: 'complete_criterion', arguments: { id: 'verify-fail', reason: 'Prepared criterion for verification' } })
+      // Builder retry after verifier failed - just complete it again
+      tools.push({ name: 'criterion', arguments: { action: 'complete', id: 'verify-fail', reason: 'Prepared criterion for verification' } })
     } else {
       // Check prompt for criteria count hint
       if (/1 criteria remaining/i.test(prompt)) {
-        tools.push({ name: 'complete_criterion', arguments: { id: 'trivial-pass', reason: 'Trivial criterion passes immediately' } })
+        tools.push({ name: 'criterion', arguments: { action: 'complete', id: 'trivial-pass', reason: 'Trivial criterion passes immediately' } })
       } else {
-        tools.push({ name: 'complete_criterion', arguments: { id: 'mock-crit', reason: 'Completed for testing' } })
+        tools.push({ name: 'criterion', arguments: { action: 'complete', id: 'mock-crit', reason: 'Completed for testing' } })
       }
     }
     
@@ -935,7 +1004,7 @@ function getConversationAwareToolResponse(request: LLMCompletionRequest): MockMa
     // Only return verifier tools on the first call — if we already called pass/fail, stop
     const alreadyVerified = request.messages.some(m =>
       m.role === 'assistant' && m.toolCalls?.some(tc =>
-        tc.name === 'pass_criterion' || tc.name === 'fail_criterion'
+        tc.name === 'criterion' && (tc.arguments['action'] === 'pass' || tc.arguments['action'] === 'fail')
       )
     )
     if (alreadyVerified) {
@@ -946,27 +1015,27 @@ function getConversationAwareToolResponse(request: LLMCompletionRequest): MockMa
     const terminalizedCriteria: string[] = []
 
     if (conversationText.includes('trivial-pass')) {
-      tools.push({ name: 'pass_criterion', arguments: { id: 'trivial-pass', reason: 'Verified successfully' } })
+      tools.push({ name: 'criterion', arguments: { action: 'pass', id: 'trivial-pass', reason: 'Verified successfully' } })
       terminalizedCriteria.push('trivial-pass')
     }
 
     if (conversationText.includes('inspect-src')) {
-      tools.push({ name: 'pass_criterion', arguments: { id: 'inspect-src', reason: 'Verified the src directory was inspected successfully' } })
+      tools.push({ name: 'criterion', arguments: { action: 'pass', id: 'inspect-src', reason: 'Verified the src directory was inspected successfully' } })
       terminalizedCriteria.push('inspect-src')
     }
 
     if (conversationText.includes('verify-fail')) {
-      tools.push({ name: 'fail_criterion', arguments: { id: 'verify-fail', reason: 'Verification fails intentionally for this criterion' } })
+      tools.push({ name: 'criterion', arguments: { action: 'complete', id: 'verify-fail', reason: 'Verification fails intentionally for this criterion' } })
       terminalizedCriteria.push('verify-fail')
     }
 
     if (conversationText.includes('file-created')) {
-      tools.push({ name: 'pass_criterion', arguments: { id: 'file-created', reason: 'Verified the file was created successfully' } })
+      tools.push({ name: 'criterion', arguments: { action: 'pass', id: 'file-created', reason: 'Verified the file was created successfully' } })
       terminalizedCriteria.push('file-created')
     }
 
     if (conversationText.includes('impossible/path')) {
-      tools.push({ name: 'fail_criterion', arguments: { id: 'auto-impossible', reason: 'Impossible path does not exist' } })
+      tools.push({ name: 'criterion', arguments: { action: 'complete', id: 'auto-impossible', reason: 'Impossible path does not exist' } })
       terminalizedCriteria.push('auto-impossible')
     }
 

@@ -16,7 +16,7 @@ export function getCriteriaAwaitingVerification(criteria: Criterion[]): Criterio
 
 export function buildVerifierNudgeContent(criteria: Criterion[]): string {
   const ids = criteria.map((criterion) => criterion.id).join(', ')
-  return `You stopped before finalizing verification. ${criteria.length} criteria still need a terminal verification result. Use pass_criterion or fail_criterion for each remaining criterion: ${ids}.`
+  return `You stopped before finalizing verification. ${criteria.length} criteria still need a terminal verification result. Use criterion with action "pass" or "fail" for each remaining criterion: ${ids}.`
 }
 
 export function buildVerifierRestartContent(criteria: Criterion[]): string {

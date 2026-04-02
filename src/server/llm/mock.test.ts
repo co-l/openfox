@@ -21,8 +21,9 @@ describe('mock llm runtime reminders', () => {
 
     expect(response.toolCalls).toEqual([
       expect.objectContaining({
-        name: 'add_criterion',
+        name: 'criterion',
         arguments: {
+          action: 'add',
           id: 'inspect-src',
           description: 'Inspect the src directory and report what exists',
         },
@@ -44,8 +45,10 @@ describe('mock llm runtime reminders', () => {
 
     expect(response.toolCalls).toEqual([
       expect.objectContaining({
-        name: 'get_criteria',
-        arguments: {},
+        name: 'criterion',
+        arguments: {
+          action: 'get',
+        },
       }),
     ])
   })
@@ -72,8 +75,9 @@ describe('mock llm runtime reminders', () => {
 
     expect(response.toolCalls).toEqual([
       expect.objectContaining({
-        name: 'complete_criterion',
+        name: 'criterion',
         arguments: {
+          action: 'complete',
           id: 'trivial-pass',
           reason: 'Trivial criterion passes immediately',
         },
@@ -96,7 +100,7 @@ describe('mock llm runtime reminders', () => {
 
     expect(response.toolCalls).toEqual([
       expect.objectContaining({ name: 'write_file' }),
-      expect.objectContaining({ name: 'complete_criterion' }),
+      expect.objectContaining({ name: 'criterion' }),
       expect.objectContaining({ name: 'step_done' }),
     ])
   })
@@ -108,12 +112,12 @@ describe('mock llm runtime reminders', () => {
       messages: [
         {
           role: 'user',
-          content: 'Add criterion ID "get-test": "For testing get". Use add_criterion.\n\n<system-reminder>\n# Plan Mode - System Reminder\n</system-reminder>',
+          content: 'Add criterion ID "get-test": "For testing get". Use criterion.\n\n<system-reminder>\n# Plan Mode - System Reminder\n</system-reminder>',
         },
         {
           role: 'assistant',
           content: 'Added the criterion.',
-          toolCalls: [{ id: 'call-1', name: 'add_criterion', arguments: { id: 'get-test', description: 'For testing get' } }],
+          toolCalls: [{ id: 'call-1', name: 'criterion', arguments: { action: 'add', id: 'get-test', description: 'For testing get' } }],
         },
         {
           role: 'tool',
@@ -129,8 +133,10 @@ describe('mock llm runtime reminders', () => {
 
     expect(response.toolCalls).toEqual([
       expect.objectContaining({
-        name: 'get_criteria',
-        arguments: {},
+        name: 'criterion',
+        arguments: {
+          action: 'get',
+        },
       }),
     ])
   })
@@ -163,7 +169,7 @@ describe('mock llm runtime reminders', () => {
 
     expect(response.toolCalls).toEqual([
       expect.objectContaining({ name: 'read_file' }),
-      expect.objectContaining({ name: 'complete_criterion', arguments: { id: 'inspect-src', reason: 'Inspected the src directory and reported what exists' } }),
+      expect.objectContaining({ name: 'criterion', arguments: { action: 'complete', id: 'inspect-src', reason: 'Inspected the src directory and reported what exists' } }),
       expect.objectContaining({ name: 'step_done', arguments: {} }),
     ])
   })
@@ -195,7 +201,7 @@ describe('mock llm runtime reminders', () => {
     })
 
     expect(response.toolCalls).toEqual([
-      expect.objectContaining({ name: 'pass_criterion', arguments: { id: 'inspect-src', reason: 'Verified the src directory was inspected successfully' } }),
+      expect.objectContaining({ name: 'criterion', arguments: { action: 'pass', id: 'inspect-src', reason: 'Verified the src directory was inspected successfully' } }),
       expect.objectContaining({ name: 'return_value', arguments: { summary: 'Terminalized verifier work for: inspect-src.' } }),
     ])
   })
@@ -228,7 +234,7 @@ describe('mock llm runtime reminders', () => {
 
     expect(response.toolCalls).toEqual([
       expect.objectContaining({ name: 'write_file', arguments: { path: 'src/utils.ts', content: 'export const created = true' } }),
-      expect.objectContaining({ name: 'complete_criterion', arguments: { id: 'file-created', reason: 'Created the requested file' } }),
+      expect.objectContaining({ name: 'criterion', arguments: { action: 'complete', id: 'file-created', reason: 'Created the requested file' } }),
       expect.objectContaining({ name: 'step_done', arguments: {} }),
     ])
   })
@@ -274,8 +280,8 @@ describe('mock llm runtime reminders', () => {
     })
 
     expect(response.toolCalls).toEqual([
-      expect.objectContaining({ name: 'pass_criterion', arguments: { id: 'trivial-pass', reason: 'Verified successfully' } }),
-      expect.objectContaining({ name: 'pass_criterion', arguments: { id: 'file-created', reason: 'Verified the file was created successfully' } }),
+      expect.objectContaining({ name: 'criterion', arguments: { action: 'pass', id: 'trivial-pass', reason: 'Verified successfully' } }),
+      expect.objectContaining({ name: 'criterion', arguments: { action: 'pass', id: 'file-created', reason: 'Verified the file was created successfully' } }),
       expect.objectContaining({ name: 'return_value', arguments: { summary: 'Terminalized verifier work for: trivial-pass, file-created.' } }),
     ])
   })
@@ -307,7 +313,7 @@ describe('mock llm runtime reminders', () => {
     })
 
     expect(response.toolCalls).toEqual([
-      expect.objectContaining({ name: 'complete_criterion', arguments: { id: 'trivial-pass', reason: 'Trivial criterion passes immediately' } }),
+      expect.objectContaining({ name: 'criterion', arguments: { action: 'complete', id: 'trivial-pass', reason: 'Trivial criterion passes immediately' } }),
       expect.objectContaining({ name: 'step_done', arguments: {} }),
     ])
   })
@@ -325,9 +331,9 @@ describe('mock llm runtime reminders', () => {
     })
 
     expect(response.toolCalls).toEqual([
-      expect.objectContaining({ name: 'get_criteria', arguments: {} }),
+      expect.objectContaining({ name: 'criterion', arguments: { action: 'get' } }),
       expect.objectContaining({ name: 'write_file', arguments: { path: 'src/test.ts', content: 'export const created = true' } }),
-      expect.objectContaining({ name: 'complete_criterion', arguments: { id: 'test-file', reason: 'Created the requested file' } }),
+      expect.objectContaining({ name: 'criterion', arguments: { action: 'complete', id: 'test-file', reason: 'Created the requested file' } }),
       expect.objectContaining({ name: 'step_done', arguments: {} }),
     ])
   })

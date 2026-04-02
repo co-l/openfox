@@ -85,6 +85,14 @@ export function createMockLLMClient(config: MockLLMConfig = {}): MockLLMClient {
       response: 'I found the files.',
     },
     {
+      promptMatch: /Create the file.*then.*complete/i,
+      toolCalls: [
+        { name: 'write_file', arguments: { path: 'src/utils.ts', content: 'export const x = 1' } },
+        { name: 'criterion', arguments: { action: 'complete', id: '0' } },
+      ],
+      response: 'I created the file and completed the criterion.',
+    },
+    {
       promptMatch: /write.*file|create.*file/i,
       toolCalls: [{ 
         name: 'write_file', 
@@ -98,12 +106,108 @@ export function createMockLLMClient(config: MockLLMConfig = {}): MockLLMClient {
       response: 'I ran the command.',
     },
     {
-      promptMatch: /add_criterion|add.*criterion/i,
+      promptMatch: /add.*criterion/i,
       toolCalls: [{ 
-        name: 'add_criterion', 
+        name: 'criterion', 
         arguments: { 
-          id: 'mock-crit', 
-          description: 'Mock criterion for testing' 
+          action: 'add',
+          description: 'Test criterion' 
+        } 
+      }],
+      response: 'I added the criterion.',
+    },
+    {
+      promptMatch: /Add criterion ID "emit-test"/i,
+      toolCalls: [{ 
+        name: 'criterion', 
+        arguments: { 
+          action: 'add',
+          id: 'emit-test',
+          description: 'Testing events' 
+        } 
+      }],
+      response: 'I added the criterion.',
+    },
+    {
+      promptMatch: /Add criterion ID "get-test"/i,
+      toolCalls: [{ 
+        name: 'criterion', 
+        arguments: { 
+          action: 'add',
+          id: 'get-test',
+          description: 'For testing get' 
+        } 
+      }],
+      response: 'I added the criterion.',
+    },
+    {
+      promptMatch: /Add criterion ID "update-me"/i,
+      toolCalls: [{ 
+        name: 'criterion', 
+        arguments: { 
+          action: 'add',
+          id: 'update-me',
+          description: 'Original description' 
+        } 
+      }],
+      response: 'I added the criterion.',
+    },
+    {
+      promptMatch: /Add criterion ID "remove-me"/i,
+      toolCalls: [{ 
+        name: 'criterion', 
+        arguments: { 
+          action: 'add',
+          id: 'remove-me',
+          description: 'Will be removed' 
+        } 
+      }],
+      response: 'I added the criterion.',
+    },
+    {
+      promptMatch: /Add criterion ID "persist-test"/i,
+      toolCalls: [{ 
+        name: 'criterion', 
+        arguments: { 
+          action: 'add',
+          id: 'persist-test',
+          description: 'Persistence test' 
+        } 
+      }],
+      response: 'I added the criterion.',
+    },
+    {
+      promptMatch: /Add criterion ID "file-created"/i,
+      toolCalls: [{ 
+        name: 'criterion', 
+        arguments: { 
+          action: 'add',
+          id: 'file-created',
+          description: 'A new file utils.ts exists' 
+        } 
+      }],
+      response: 'I added the criterion.',
+    },
+    {
+      promptMatch: /Add criterion ID "edit-direct"/i,
+      toolCalls: [{ 
+        name: 'criterion', 
+        arguments: { 
+          action: 'add',
+          id: 'edit-direct',
+          description: 'Initial' 
+        } 
+      }],
+      response: 'I added the criterion.',
+    },
+    {
+      promptMatch: /Add criterion ID "trivial-pass"/i,
+      toolCalls: [{ 
+        name: 'criterion', 
+        arguments: { 
+          action: 'add',
+          id: 'trivial-pass',
+          description: 'Trivial pass criterion' 
         } 
       }],
       response: 'I added the criterion.',
@@ -228,17 +332,26 @@ export function createMockLLMClient(config: MockLLMConfig = {}): MockLLMClient {
     // Get criteria (for planner)
     {
       promptMatch: /get.*criteria|show.*criteria|list.*criteria/i,
-      toolCalls: [{ name: 'get_criteria', arguments: {} }],
+      toolCalls: [{ name: 'criterion', arguments: { action: 'get' } }],
       response: 'Here are the criteria.',
     },
     // Complete criterion + step done (for workflow builder steps)
     {
-      promptMatch: /complete.*criterion|mark.*complete|complete_criterion|fulfil.*criteria/i,
+      promptMatch: /complete.*criterion|mark.*complete|complete_criterion|fulfil.*criteria|Complete the first/i,
       toolCalls: [
-        { name: 'complete_criterion', arguments: { id: 'mock-crit' } },
+        { name: 'criterion', arguments: { action: 'complete', id: '0' } },
         { name: 'step_done', arguments: {} },
       ],
       response: 'I completed the criterion and finished the step.',
+    },
+    // Pass criterion (for verifier workflow)
+    {
+      promptMatch: /pass.*criterion|pass_criterion|Pass the first/i,
+      toolCalls: [
+        { name: 'criterion', arguments: { action: 'pass', id: '0', reason: 'Verified' } },
+        { name: 'step_done', arguments: {} },
+      ],
+      response: 'I passed the criterion.',
     },
     // Step done only (for generic workflow steps)
     {
@@ -249,15 +362,60 @@ export function createMockLLMClient(config: MockLLMConfig = {}): MockLLMClient {
     // Verifier sub-agent workflow (for builder mode)
     {
       promptMatch: /launch.*runner|runner.*launch|start.*verification|verify.*implementation|call.*verifier/i,
-      toolCalls: [{ 
-        name: 'call_sub_agent', 
-        arguments: { 
-          subAgentType: 'verifier',
-          prompt: 'Verify completed criteria against implementation' 
-        } 
-      }],
+      toolCalls: [
+        { 
+          name: 'call_sub_agent', 
+          arguments: { 
+            subAgentType: 'verifier',
+            prompt: 'Verify completed criteria against implementation' 
+          } 
+        },
+        { name: 'criterion', arguments: { action: 'pass', id: '0', reason: 'Verified' } },
+      ],
       thinking: 'Starting the verifier to check implementation against criteria.',
       response: 'I launched the verifier.',
+    },
+    // Verifier sub-agent internal prompt (when verifier actually runs)
+    {
+      promptMatch: /Verify.*criterion.*NEEDS VERIFICATION/i,
+      toolCalls: [
+        { name: 'criterion', arguments: { action: 'pass', id: '0', reason: 'Verified successfully' } },
+        { name: 'return_value', arguments: { summary: 'Verified criterion.' } },
+      ],
+      response: 'Verified the criterion.',
+    },
+    {
+      promptMatch: /Verify.*verify-fail/i,
+      toolCalls: [
+        { name: 'criterion', arguments: { action: 'fail', id: '0', reason: 'Verification failed for this criterion' } },
+        { name: 'return_value', arguments: { summary: 'Verification failed.' } },
+      ],
+      response: 'Verification completed with failures.',
+    },
+    // Update criterion
+    {
+      promptMatch: /update.*criterion|update_criterion/i,
+      toolCalls: [{ 
+        name: 'criterion', 
+        arguments: { 
+          action: 'update',
+          id: '0', 
+          description: 'Updated description' 
+        } 
+      }],
+      response: 'I updated the criterion.',
+    },
+    // Remove criterion
+    {
+      promptMatch: /remove.*criterion|remove_criterion/i,
+      toolCalls: [{ 
+        name: 'criterion', 
+        arguments: { 
+          action: 'remove',
+          id: '0', 
+        } 
+      }],
+      response: 'I removed the criterion.',
     },
   ]
   

@@ -105,12 +105,12 @@ describe('groupMessages identity preservation', () => {
     const msg1 = createMessage('msg-1', 'user', 'Check criteria')
     const msg2 = createMessage('msg-2', 'assistant', '', {
       toolCalls: [
-        { id: 'tool-1', name: 'criteria_check', arguments: {}, startedAt: Date.now() },
+        { id: 'tool-1', name: 'criterion', arguments: { action: 'get' }, startedAt: Date.now() },
       ],
     })
     const msg3 = createMessage('msg-3', 'assistant', '', {
       toolCalls: [
-        { id: 'tool-2', name: 'criteria_check', arguments: {}, startedAt: Date.now() },
+        { id: 'tool-2', name: 'criterion', arguments: { action: 'get' }, startedAt: Date.now() },
       ],
     })
     const msg4 = createMessage('msg-4', 'user', 'Next')
@@ -125,5 +125,22 @@ describe('groupMessages identity preservation', () => {
     for (let i = 0; i < initialItems.length; i++) {
       expect(initialItems[i]).toBe(secondItems[i])
     }
+  })
+
+  it('should include system-generated auto-prompt messages', () => {
+    const msg1 = createMessage('msg-1', 'user', 'Hello')
+    const autoPrompt = createMessage('auto-1', 'user', '<system-reminder>Plan Mode</system-reminder>', {
+      isSystemGenerated: true,
+      messageKind: 'auto-prompt',
+    })
+    const msg2 = createMessage('msg-2', 'assistant', 'Hi there')
+
+    const items = groupMessages([msg1, autoPrompt, msg2])
+    
+    // Should have 3 items (auto-prompt included)
+    expect(items.length).toBe(3)
+    expect(items[0]).toEqual({ type: 'message', message: msg1 })
+    expect(items[1]).toEqual({ type: 'message', message: autoPrompt })
+    expect(items[2]).toEqual({ type: 'message', message: msg2 })
   })
 })

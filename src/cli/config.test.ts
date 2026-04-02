@@ -15,6 +15,8 @@ describe('config', () => {
   let loadGlobalConfig: typeof import('./config.js').loadGlobalConfig
   let saveGlobalConfig: typeof import('./config.js').saveGlobalConfig
   let migrateConfig: typeof import('./config.js').migrateConfig
+  let getActiveProvider: typeof import('./config.js').getActiveProvider
+  let getDefaultModel: typeof import('./config.js').getDefaultModel
 
   beforeEach(async () => {
     // Clear module cache and re-import
@@ -23,6 +25,8 @@ describe('config', () => {
     loadGlobalConfig = configModule.loadGlobalConfig
     saveGlobalConfig = configModule.saveGlobalConfig
     migrateConfig = configModule.migrateConfig
+    getActiveProvider = configModule.getActiveProvider
+    getDefaultModel = configModule.getDefaultModel
 
     await mkdir(join(TEST_DIR, 'production'), { recursive: true })
     await mkdir(join(TEST_DIR, 'development'), { recursive: true })
@@ -380,6 +384,39 @@ describe('config', () => {
       expect(reloaded.server.port).toBe(10369)
       expect(reloaded.logging.level).toBe('error')
       expect(reloaded.providers).toHaveLength(1)
+    })
+
+    it('handles model names with slashes in defaultModelSelection', async () => {
+      const configWithSlashInModel = {
+        providers: [
+          {
+            id: 'test-provider',
+            name: 'Test Provider',
+            url: 'http://localhost:8000/v1',
+            backend: 'vllm' as const,
+            models: [
+              { id: 'Intel/Qwen3.5-397B', contextWindow: 200000, source: 'user' as const },
+            ],
+            isActive: true,
+            createdAt: new Date().toISOString(),
+          },
+        ],
+        defaultModelSelection: 'test-provider/Intel/Qwen3.5-397B',
+        server: { port: 10369, host: '127.0.0.1', openBrowser: true },
+        logging: { level: 'info' as const },
+        database: { path: '' },
+        workspace: { workdir: process.cwd() },
+      }
+
+      const result = migrateConfig(configWithSlashInModel)
+      expect(result.migrated).toBe(false)
+      expect(result.config.defaultModelSelection).toBe('test-provider/Intel/Qwen3.5-397B')
+      
+      const activeProvider = getActiveProvider(result.config)
+      expect(activeProvider?.id).toBe('test-provider')
+      
+      const defaultModel = getDefaultModel(result.config)
+      expect(defaultModel).toBe('Intel/Qwen3.5-397B')
     })
   })
 })

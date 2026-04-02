@@ -8,15 +8,13 @@ import { runCommandTool } from './shell.js'
 import { globTool } from './glob.js'
 import { grepTool } from './grep.js'
 import { gitTool } from './git.js'
-import { askUserTool, AskUserInterrupt, provideAnswer, cancelQuestion } from './ask.js'
+import { askUserTool, AskUserInterrupt } from './ask.js'
 import {
   PathAccessDeniedError,
-  providePathConfirmation,
-  cancelPathConfirmation,
+  requestPathAccess,
 } from './path-security.js'
-import { completeCriterionTool, passCriterionTool, failCriterionTool } from './criterion.js'
-import { getCriteriaTool, addCriterionTool, updateCriterionTool, removeCriterionTool } from './planner-criteria.js'
-import { todoWriteTool, setTodoUpdateCallback, getTodos, clearTodos } from './todo.js'
+import { criterionTool } from './criterion.js'
+import { todoTool } from './todo.js'
 import { callSubAgentTool } from './sub-agent.js'
 import { loadSkillTool } from './load-skill.js'
 import { returnValueTool } from './return-value.js'
@@ -29,8 +27,9 @@ import { logger } from '../utils/logger.js'
 // Registry Creation
 // ============================================================================
 
-function createRegistryFromTools(tools: Tool[]): ToolRegistry {
+export function createRegistryFromTools(tools: Tool[], allowedTools?: string[]): ToolRegistry {
   const toolMap = new Map<string, Tool>()
+  const allowedToolsSet = new Set(allowedTools || [])
 
   for (const tool of tools) {
     toolMap.set(tool.name, tool)
@@ -51,6 +50,19 @@ function createRegistryFromTools(tools: Tool[]): ToolRegistry {
         return {
           success: false,
           error: `Unknown tool: ${name}. Available tools: ${tools.map(t => t.name).join(', ')}`,
+          durationMs: 0,
+          truncated: false,
+        }
+      }
+
+      if (allowedTools && allowedTools.length > 0 && !allowedToolsSet.has(name)) {
+        logger.debug('Permission denied: tool not in allowed list', {
+          tool: name,
+          allowedTools,
+        })
+        return {
+          success: false,
+          error: createPermissionErrorMessage(name, allowedTools),
           durationMs: 0,
           truncated: false,
         }
@@ -96,12 +108,34 @@ function getAllToolsMap(): Map<string, Tool> {
     ...[
       readFileTool, writeFileTool, editFileTool, runCommandTool,
       globTool, grepTool, gitTool, askUserTool,
-      completeCriterionTool, passCriterionTool, failCriterionTool,
-      getCriteriaTool, addCriterionTool, updateCriterionTool, removeCriterionTool,
-      todoWriteTool, callSubAgentTool, loadSkillTool, returnValueTool, webFetchTool,
+      criterionTool,
+      todoTool, callSubAgentTool, loadSkillTool, returnValueTool, webFetchTool,
       devServerTool, stepDoneTool,
     ].map(t => [t.name, t] as const),
   ])
+}
+
+/**
+ * Creates a permission error message for unauthorized tool access
+ */
+function createPermissionErrorMessage(
+  toolName: string,
+  allowedTools: string[]
+): string {
+  if (allowedTools.length === 0) {
+    return `Tool '${toolName}' is not in your allowed tools list. No tools are allowed.`
+  }
+  return `Tool '${toolName}' is not in your allowed tools list. Available: ${allowedTools.join(', ')}`
+}
+
+/**
+ * Adds return_value to allowed tools list if not already present
+ */
+function addReturnValueToAllowedTools(allowedTools: string[]): string[] {
+  if (!allowedTools.includes('return_value')) {
+    return [...allowedTools, 'return_value']
+  }
+  return allowedTools
 }
 
 // ============================================================================
@@ -119,33 +153,39 @@ export function getToolRegistryForSubAgent(toolNames: string[]): ToolRegistry {
     const tool = allTools.get(name)
     if (tool) {
       tools.push(tool)
+    } else {
+      logger.warn(`Unknown tool '${name}' in sub-agent allowedTools list`)
     }
   }
   if (!tools.some(t => t.name === 'return_value')) {
     const rv = allTools.get('return_value')
     if (rv) tools.push(rv)
   }
-  return createRegistryFromTools(tools)
+  const allowedToolsWithReturnValue = addReturnValueToAllowedTools(toolNames)
+  return createRegistryFromTools(tools, allowedToolsWithReturnValue)
 }
 
 /**
  * Create a tool registry for an agent definition.
- * Uses the agent's tools list to filter from the global tool registry.
+ * Uses the agent's allowedTools list to filter from the global tool registry.
  * Sub-agents automatically get return_value added.
+ * Logs warnings for unknown tool names.
  */
 export function getToolRegistryForAgent(agentDef: AgentDefinition): ToolRegistry {
   if (agentDef.metadata.subagent) {
-    return getToolRegistryForSubAgent(agentDef.metadata.tools)
+    return getToolRegistryForSubAgent(agentDef.metadata.allowedTools)
   }
   const allTools = getAllToolsMap()
   const tools: Tool[] = []
-  for (const name of agentDef.metadata.tools) {
+  for (const name of agentDef.metadata.allowedTools) {
     const tool = allTools.get(name)
     if (tool) {
       tools.push(tool)
+    } else {
+      logger.warn(`Unknown tool '${name}' in allowedTools for agent '${agentDef.metadata.id}'`)
     }
   }
-  return createRegistryFromTools(tools)
+  return createRegistryFromTools(tools, agentDef.metadata.allowedTools)
 }
 
 /**
@@ -157,15 +197,11 @@ export function createToolRegistry(): ToolRegistry {
 
 // Re-export types and utilities
 export type { Tool, ToolRegistry, ToolContext } from './types.js'
-export { AskUserInterrupt, provideAnswer, cancelQuestion, cancelQuestionsForSession } from './ask.js'
-export { setTodoUpdateCallback, getTodos, clearTodos } from './todo.js'
+export { AskUserInterrupt, cancelQuestionsForSession, provideAnswer } from './ask.js'
 export {
   PathAccessDeniedError,
-  providePathConfirmation,
-  cancelPathConfirmation,
-  cancelPathConfirmationsForSession,
-  addAllowedPaths,
-  clearAllowedPaths,
   requestPathAccess,
+  cancelPathConfirmationsForSession,
+  providePathConfirmation,
 } from './path-security.js'
 export { stepDoneTool } from './step-done.js'

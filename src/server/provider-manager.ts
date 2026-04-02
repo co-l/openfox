@@ -177,10 +177,11 @@ export interface ProviderManager {
 
 export function parseDefaultModelSelection(selection?: string): { providerId: string | undefined; model: string | undefined } {
   if (!selection) return { providerId: undefined, model: undefined }
-  const parts = selection.split('/')
+  const slashIndex = selection.indexOf('/')
+  if (slashIndex === -1) return { providerId: selection, model: 'auto' }
   return {
-    providerId: parts[0],
-    model: parts[1] ?? 'auto',
+    providerId: selection.substring(0, slashIndex),
+    model: selection.substring(slashIndex + 1),
   }
 }
 

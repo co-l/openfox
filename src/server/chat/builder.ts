@@ -118,7 +118,7 @@ export async function runBuilderStep(options: BuilderStepOptions): Promise<StepR
     const requestMessages: RequestContextMessage[] = currentWindowMessages.map(message => ({
       role: message.role as 'user' | 'assistant' | 'tool',
       content: message.content,
-      source: 'history',
+      source: message.messageKind === 'auto-prompt' ? 'runtime' : 'history',
       ...(message.toolCalls ? { toolCalls: message.toolCalls } : {}),
       ...(message.toolCallId ? { toolCallId: message.toolCallId } : {}),
       ...(message.attachments ? { attachments: message.attachments } : {}),

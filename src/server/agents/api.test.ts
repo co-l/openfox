@@ -156,7 +156,7 @@ describe('POST /api/agents', () => {
         name: 'Security Auditor',
         description: 'Audits code for vulnerabilities',
         subagent: true,
-        tools: ['read_file', 'grep'],
+        allowedTools: ['read_file', 'grep'],
       },
       prompt: 'Audit the code for OWASP top 10.',
     }
@@ -178,7 +178,7 @@ describe('POST /api/agents', () => {
 
   it('returns 409 for duplicate ID', async () => {
     const agent: AgentDefinition = {
-      metadata: { id: 'test_dup', name: 'Dup', description: '', subagent: true, tools: [] },
+      metadata: { id: 'test_dup', name: 'Dup', description: '', subagent: true, allowedTools: [] },
       prompt: 'Test.',
     }
     await request('POST', '/api/agents', agent)
@@ -190,7 +190,7 @@ describe('POST /api/agents', () => {
 describe('PUT /api/agents/:id', () => {
   it('updates an existing agent', async () => {
     const agent: AgentDefinition = {
-      metadata: { id: 'updatable', name: 'Original', description: 'V1', subagent: true, tools: ['read_file'] },
+      metadata: { id: 'updatable', name: 'Original', description: 'V1', subagent: true, allowedTools: ['read_file'] },
       prompt: 'Original prompt.',
     }
     await request('POST', '/api/agents', agent)
@@ -215,7 +215,7 @@ describe('PUT /api/agents/:id', () => {
 describe('DELETE /api/agents/:id', () => {
   it('deletes an existing agent', async () => {
     const agent: AgentDefinition = {
-      metadata: { id: 'deleteme', name: 'Del', description: '', subagent: true, tools: [] },
+      metadata: { id: 'deleteme', name: 'Del', description: '', subagent: true, allowedTools: [] },
       prompt: 'Gone.',
     }
     await request('POST', '/api/agents', agent)

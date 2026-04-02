@@ -95,7 +95,7 @@ export const SubAgentContainer = memo(function SubAgentContainer({ messages, sub
   const color = getAgentColor(agents, subAgentType)
   const hStyle = headerStyle(color)
 
-  // Filter out tool messages (they're displayed within assistant messages)
+  // Filter out tool messages
   const displayMessages = messages.filter(m => m.role !== 'tool')
 
   return (

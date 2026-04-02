@@ -7,21 +7,15 @@ interface CriteriaGroupDisplayProps {
   criteria?: Criterion[]  // For looking up criterion descriptions by ID
 }
 
-type CriterionTool = 
-  | 'add_criterion'
-  | 'update_criterion'
-  | 'remove_criterion'
-  | 'complete_criterion'
-  | 'pass_criterion'
-  | 'fail_criterion'
+type CriterionAction = 'add' | 'update' | 'remove' | 'complete' | 'pass' | 'fail'
 
-const toolConfig: Record<CriterionTool, { icon: string; color: string }> = {
-  add_criterion: { icon: '○', color: 'text-text-muted' },
-  update_criterion: { icon: '○', color: 'text-text-muted' },
-  remove_criterion: { icon: '○', color: 'text-text-muted' },
-  complete_criterion: { icon: '◉', color: 'text-purple-400' },
-  pass_criterion: { icon: '✓', color: 'text-accent-success' },
-  fail_criterion: { icon: '✗', color: 'text-accent-error' },
+const actionConfig: Record<CriterionAction, { icon: string; color: string }> = {
+  add: { icon: '○', color: 'text-text-muted' },
+  update: { icon: '○', color: 'text-text-muted' },
+  remove: { icon: '○', color: 'text-text-muted' },
+  complete: { icon: '◉', color: 'text-purple-400' },
+  pass: { icon: '✓', color: 'text-accent-success' },
+  fail: { icon: '✗', color: 'text-accent-error' },
 }
 
 export const CriteriaGroupDisplay = memo(function CriteriaGroupDisplay({ toolCalls, criteria }: CriteriaGroupDisplayProps) {
@@ -40,19 +34,19 @@ export const CriteriaGroupDisplay = memo(function CriteriaGroupDisplay({ toolCal
       {/* Criteria list */}
       <div>
         {toolCalls.map((tc, index) => {
-          const tool = tc.name as CriterionTool
-          const config = toolConfig[tool] ?? { icon: '○', color: 'text-text-muted' }
+          const action = tc.arguments['action'] as CriterionAction | undefined
+          const config = action && actionConfig[action] ? actionConfig[action] : { icon: '○', color: 'text-text-muted' }
           const args = tc.arguments
           
-          // Get description from args (add_criterion) or look up by ID (complete/pass/fail)
+          // Get description from args (add/update) or look up by ID (complete/pass/fail/remove)
           const criterionId = args['id'] as string | undefined
           const argDescription = args['description'] as string | undefined
           const lookedUpCriterion = criterionId ? criteriaMap.get(criterionId) : undefined
           const displayText = argDescription ?? lookedUpCriterion?.description ?? 'Criterion updated'
           
           const reason = args['reason'] as string | undefined
-          const isRemoved = tool === 'remove_criterion'
-          const isFailed = tool === 'fail_criterion'
+          const isRemoved = action === 'remove'
+          const isFailed = action === 'fail'
           
           return (
             <div
@@ -86,13 +80,6 @@ export const CriteriaGroupDisplay = memo(function CriteriaGroupDisplay({ toolCal
 })
 
 // Type guard to check if a tool name is a criterion tool
-export function isCriterionTool(tool: string): tool is CriterionTool {
-  return [
-    'add_criterion',
-    'update_criterion', 
-    'remove_criterion',
-    'complete_criterion',
-    'pass_criterion',
-    'fail_criterion',
-  ].includes(tool)
+export function isCriterionTool(tool: string): boolean {
+  return tool === 'criterion'
 }

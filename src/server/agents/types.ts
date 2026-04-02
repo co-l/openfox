@@ -7,7 +7,7 @@ export interface AgentMetadata {
   name: string
   description: string
   subagent: boolean
-  tools: string[]
+  allowedTools: string[]
   color?: string
   results?: string[]
 }

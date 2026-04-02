@@ -9,12 +9,15 @@ export const useAutoScroll = (
   let is_user_scrolling: boolean = false
   let is_user_touching: boolean = false
   let is_forced_scroll_to_bottom: boolean = false
+  let is_programmatic_scroll: boolean = false
 
   const scroll_to_bottom = () => {
+    is_programmatic_scroll = true
     const scroller = container_ref.current
     if (scroller) {
       scroller.scrollTop = scroller.scrollHeight
     }
+    setTimeout(() => { is_programmatic_scroll = false }, 100)
   }
 
   const scroll_to_bottom_on_startup = () => {
@@ -62,7 +65,7 @@ export const useAutoScroll = (
     }, 1000)
 
     const start_user_scroll = (e:Event) => {
-      if (is_forced_scroll_to_bottom) {
+      if (is_forced_scroll_to_bottom || is_programmatic_scroll) {
         // discard event for forced scroll
         return
       }

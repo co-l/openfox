@@ -343,6 +343,7 @@ export interface FoldedSessionState {
   contextState: ContextState
   currentContextWindowId: string
   readFiles: ReadFileEntry[]
+  lastModeWithReminder?: SessionMode
 }
 
 // ============================================================================
@@ -702,6 +703,54 @@ export function foldSessionState(
     ? { ...baseContextState, compactionCount: contextResult.compactionCount, maxTokens }
     : { ...baseContextState, maxTokens }
 
+  // Find last mode with reminder
+  // Priority: 1) snapshot.lastModeWithReminder field, 2) snapshot messages array, 3) message.start events
+  let lastModeWithReminder: SessionMode | undefined
+  
+  // First, check the latest snapshot event
+  for (let i = events.length - 1; i >= 0; i--) {
+    const event = events[i]!
+    if (event.type === 'turn.snapshot') {
+      const snapshotData = event.data as SessionSnapshot
+      // First check the lastModeWithReminder field
+      if (snapshotData.lastModeWithReminder) {
+        lastModeWithReminder = snapshotData.lastModeWithReminder
+        break
+      }
+      // If not in field, check snapshot messages array (for cases where field wasn't set)
+      for (let j = snapshotData.messages.length - 1; j >= 0; j--) {
+        const msg = snapshotData.messages[j]!
+        if (msg.role === 'user' && msg.messageKind === 'auto-prompt' && msg.content?.includes('<system-reminder>')) {
+          if (msg.content.includes('Plan Mode')) {
+            lastModeWithReminder = 'planner'
+          } else if (msg.content.includes('Build Mode')) {
+            lastModeWithReminder = 'builder'
+          }
+          break
+        }
+      }
+      if (lastModeWithReminder) break
+    }
+  }
+  
+  // If not found in snapshot, fall back to scanning message.start events
+  if (lastModeWithReminder === undefined) {
+    for (let i = events.length - 1; i >= 0; i--) {
+      const event = events[i]!
+      if (event.type === 'message.start') {
+        const data = event.data as { role?: string; messageKind?: string; content?: string }
+        if (data.role === 'user' && data.messageKind === 'auto-prompt' && data.content?.includes('<system-reminder>')) {
+          if (data.content.includes('Plan Mode')) {
+            lastModeWithReminder = 'planner'
+          } else if (data.content.includes('Build Mode')) {
+            lastModeWithReminder = 'builder'
+          }
+          break
+        }
+      }
+    }
+  }
+
   return {
     mode,
     phase,
@@ -712,6 +761,7 @@ export function foldSessionState(
     contextState,
     currentContextWindowId: contextResult.currentContextWindowId,
     readFiles: contextResult.readFiles,
+    ...(lastModeWithReminder !== undefined && { lastModeWithReminder }),
   }
 }
 
@@ -737,6 +787,7 @@ export function buildSnapshot(
     currentContextWindowId: foldedState.currentContextWindowId,
     todos: foldedState.todos,
     readFiles: foldedState.readFiles,
+    ...(foldedState.lastModeWithReminder !== undefined && { lastModeWithReminder: foldedState.lastModeWithReminder }),
     snapshotSeq: latestSeq,
     snapshotAt,
   }

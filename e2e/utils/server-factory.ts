@@ -26,8 +26,8 @@ function createTestConfig(options: { maxContext?: number } = {}): Config {
     config.context.maxTokens = options.maxContext
   }
   
-  // Force production mode to skip Vite middleware (faster startup)
-  config.mode = 'production'
+  // Use test mode to isolate config from production
+  config.mode = 'test'
   
   return config
 }

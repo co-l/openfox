@@ -105,11 +105,11 @@ vi.mock('../agents/registry.js', () => {
   const agents = [
     {
       metadata: { id: 'planner', name: 'Planner', description: 'Plans work', subagent: false, tools: ['read_file', 'glob', 'grep', 'web_fetch', 'run_command', 'git', 'get_criteria', 'add_criterion', 'update_criterion', 'remove_criterion', 'call_sub_agent', 'load_skill'] },
-      prompt: '# Plan Mode\nPlan mode ACTIVE - read-only phase.',
+      prompt: '# Plan Mode\n\nCRITICAL: Plan mode ACTIVE - you are in read-only phase.\n\nYou may only inspect, analyze, ask clarifying questions, and propose, refine and/or add acceptance criteria.\nYou MUST NOT make any edits, implementations, commits, config changes, or other system modifications.',
     },
     {
       metadata: { id: 'builder', name: 'Builder', description: 'Builds work', subagent: false, tools: ['read_file', 'glob', 'grep', 'web_fetch', 'write_file', 'edit_file', 'run_command', 'ask_user', 'complete_criterion', 'get_criteria', 'todo_write', 'call_sub_agent', 'load_skill'] },
-      prompt: '# Build Mode\nBuild mode ACTIVE - implementation allowed.',
+      prompt: '# Build Mode\n\nCRITICAL: Build mode ACTIVE - implementation is now allowed.\n\nYou are no longer in read-only mode.\nYou may read files, edit files, run commands, and use tools as needed to satisfy the approved criteria.',
     },
     {
       metadata: { id: 'verifier', name: 'Verifier', description: 'Verify criteria', subagent: true, tools: ['read_file', 'run_command', 'pass_criterion', 'fail_criterion'] },
@@ -124,7 +124,6 @@ vi.mock('../agents/registry.js', () => {
   }
 })
 
-import { AskUserInterrupt } from '../tools/ask.js'
 import { PathAccessDeniedError } from '../tools/path-security.js'
 import { TurnMetrics, runBuilderTurn, runChatTurn, runVerifierTurn } from './orchestrator.js'
 
@@ -149,6 +148,8 @@ function createEventStore() {
       const events = eventsBySession.get(sessionId) ?? []
       return events.at(-1)?.seq ?? null
     }),
+    cleanupOldEvents: vi.fn((sessionId: string) => 0),
+    getLatestSnapshot: vi.fn((sessionId: string) => undefined),
   }
 }
 
@@ -187,6 +188,9 @@ function createSessionManager(state: Record<string, any>) {
     updateMessage: vi.fn(),
     updateMessageStats: vi.fn(),
     drainAsapMessages: vi.fn(() => []),
+    updateExecutionState: vi.fn((_: string, updates: Record<string, unknown>) => {
+      state['current'].executionState = { ...(state['current'].executionState ?? {}), ...updates }
+    }),
   }
 }
 
@@ -365,7 +369,14 @@ describe('chat orchestrator', () => {
       },
     })
 
-    expect(eventStore.append.mock.calls.find(([, event]) => event.type === 'message.done')?.[1]).toMatchObject({
+    // Find the message.done event for the actual assistant response (not the mode reminder)
+    const messageDoneEvent = eventStore.append.mock.calls.find(([, event]) => {
+      if (event.type !== 'message.done') return false
+      const data = event.data as { stats?: unknown }
+      return data.stats !== undefined
+    })
+    
+    expect(messageDoneEvent?.[1]).toMatchObject({
       data: {
         stats: expect.objectContaining({
           providerId: 'provider-1',
@@ -1259,7 +1270,7 @@ describe('chat orchestrator', () => {
         expect.objectContaining({ role: 'assistant', content: 'I need to keep verifying.' }),
         expect.objectContaining({
           role: 'user',
-          content: expect.stringContaining('Use pass_criterion or fail_criterion'),
+          content: expect.stringContaining('Use criterion with action'),
         }),
       ]),
     })
@@ -1382,7 +1393,7 @@ describe('chat orchestrator', () => {
     expect(streamLLMPureMock.mock.calls[1]?.[0]).toMatchObject({
       messages: expect.not.arrayContaining([
         expect.objectContaining({
-          content: expect.stringContaining('Use pass_criterion or fail_criterion'),
+          content: expect.stringContaining('Use criterion with action'),
         }),
       ]),
     })
@@ -1672,7 +1683,7 @@ describe('chat orchestrator', () => {
       ([, event]) => event.type === 'message.start' &&
         (event.data as any).messageKind === 'correction' &&
         (event.data as any).subAgentType === 'verifier' &&
-        (event.data as any).content?.includes('Use pass_criterion or fail_criterion')
+        (event.data as any).content?.includes('Use criterion with action')
     )
     expect(verifierNudgeMessages).toHaveLength(1)
   })
@@ -1930,6 +1941,77 @@ describe('chat orchestrator', () => {
     })
   })
 
+  it('🐛 REPRODUCTION: System reminder appears on EVERY user message (vLLM cache invalidation)', async () => {
+    /**
+     * USER REPORT: "I've seen the system reminder 3 times in our conversation"
+     * 
+     * THE BUG: The system reminder is being injected into EVERY user message
+     * sent to the LLM, not just once when switching modes. This causes:
+     * 
+     * 1. vLLM prefix cache invalidation on every turn (massive compute waste)
+     * 2. User sees the reminder repeated in conversation history
+     * 3. Response times increase dramatically after each turn
+     * 
+     * EXPECTED: Reminder appears ONCE when switching to a new mode
+     * ACTUAL: Reminder appears on EVERY single message/turn
+     */
+    
+    const { assembleAgentRequest } = await import('./request-context.js')
+    
+    const plannerAgent = {
+      metadata: { id: 'planner', name: 'Planner', description: 'Plans', subagent: false, tools: [] },
+      prompt: '# Plan Mode\n\nCRITICAL: Plan mode ACTIVE - you are in read-only phase.',
+    }
+    
+    // Simulate a conversation with 3 user messages
+    const conversationHistory = [
+      { role: 'user' as const, content: 'Build a feature', source: 'history' as const },
+      { role: 'assistant' as const, content: 'Sure, I can help with that!', source: 'history' as const },
+      { role: 'user' as const, content: 'What files should I look at?', source: 'history' as const },
+      { role: 'assistant' as const, content: 'Let me check the codebase.', source: 'history' as const },
+      { role: 'user' as const, content: 'Any updates?', source: 'history' as const },
+    ]
+    
+    // Simulate 3 consecutive LLM requests (as would happen in a real conversation)
+    const results = []
+    for (let i = 0; i < 3; i++) {
+      results.push(assembleAgentRequest({
+        workdir: '/test',
+        messages: conversationHistory as any,
+        injectedFiles: [],
+        promptTools: [],
+        agentDef: plannerAgent as any,
+      }))
+    }
+    
+    // Extract what would be sent to vLLM on each turn
+    const userMessagesSentToLLM = results.map(r => 
+      r.messages.filter(m => m.role === 'user').map(m => m.content)
+    )
+    
+    // THE BUG: Every message contains the reminder
+    console.log('Turn 1 user messages:', userMessagesSentToLLM[0])
+    console.log('Turn 2 user messages:', userMessagesSentToLLM[1])
+    console.log('Turn 3 user messages:', userMessagesSentToLLM[2])
+    
+    // Count how many times the reminder appears
+    const reminderCount = userMessagesSentToLLM.flat().filter(
+      msg => msg.includes('<system-reminder>')
+    ).length
+    
+    console.log(`\n❌ BUG DETECTED: Reminder appears ${reminderCount} times across ${userMessagesSentToLLM.length} turns`)
+    console.log('Expected: 0 times (reminder should be separate message, not in history)')
+    console.log('This causes vLLM to invalidate cache and recompute EVERY turn!\n')
+    
+    // FAILING: The reminder should NOT be in historical messages
+    // It should be injected as a separate message only on mode switch
+    expect(reminderCount).toBe(0)
+    
+    // For vLLM cache to work, all turns should send IDENTICAL messages
+    expect(userMessagesSentToLLM[0]).toEqual(userMessagesSentToLLM[1])
+    expect(userMessagesSentToLLM[1]).toEqual(userMessagesSentToLLM[2])
+  })
+
   it('throws on verifier abort and on unexpected verifier tool errors', async () => {
     const abortedStore = createEventStore()
     getEventStoreMock.mockReturnValue(abortedStore)
@@ -2058,15 +2140,17 @@ describe('chat orchestrator', () => {
       // Verify getContextMessages was called with session ID
       expect(getContextMessagesMock).toHaveBeenCalledWith('session-1')
       
-      // Verify streamLLMPure merged the planner runtime reminder into the user message
+      // After fix: streamLLMPure does NOT merge reminder into messages (preserves vLLM cache)
+      // The reminder is injected as a separate message by injectModeReminderIfNeeded()
       expect(streamLLMPureMock).toHaveBeenCalledWith(
         expect.objectContaining({
           messages: [
-            expect.objectContaining({ role: 'user', content: expect.stringContaining('Current window message') }),
+            expect.objectContaining({ role: 'user', content: 'Current window message' }),
           ],
         })
       )
-      expect(streamLLMPureMock.mock.calls[0]?.[0]?.messages[0]?.content).toContain('Plan mode ACTIVE')
+      // The message should NOT contain the reminder (it's a separate message now)
+      expect(streamLLMPureMock.mock.calls[0]?.[0]?.messages[0]?.content).not.toContain('Plan mode ACTIVE')
     })
 
     it('builder turn uses getContextMessages to filter by current window', async () => {
@@ -2113,15 +2197,17 @@ describe('chat orchestrator', () => {
       }, new TurnMetrics())
 
       expect(getContextMessagesMock).toHaveBeenCalledWith('session-1')
-      // Builder merges the runtime reminder into the triggering user turn
+      // After fix: Builder does NOT inject reminder into messages (preserves vLLM cache)
+      // The reminder is injected as a separate message by injectModeReminderIfNeeded()
       expect(streamLLMPureMock).toHaveBeenCalledWith(
         expect.objectContaining({
           messages: [
-            expect.objectContaining({ role: 'user', content: expect.stringContaining('Build this') }),
+            expect.objectContaining({ role: 'user', content: 'Build this' }),
           ],
         })
       )
-      expect(streamLLMPureMock.mock.calls[0]?.[0]?.messages[0]?.content).toContain('Build mode ACTIVE')
+      // The message should NOT contain the reminder (it's a separate message now)
+      expect(streamLLMPureMock.mock.calls[0]?.[0]?.messages[0]?.content).not.toContain('Build mode ACTIVE')
     })
 
     it('does not inject step_done tool by default in builder turns', async () => {
