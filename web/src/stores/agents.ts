@@ -5,13 +5,13 @@ export interface AgentInfo {
   name: string
   description: string
   subagent: boolean
-  tools: string[]
+  allowedTools: string[]
   color?: string
   results?: string[]
 }
 
 export interface AgentFull {
-  metadata: { id: string; name: string; description: string; subagent: boolean; tools: string[]; color?: string; results?: string[] }
+  metadata: { id: string; name: string; description: string; subagent: boolean; allowedTools: string[]; color?: string; results?: string[] }
   prompt: string
 }
 

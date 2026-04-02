@@ -61,7 +61,7 @@ export function AgentsModal({ isOpen, onClose, initialEditId }: AgentsModalProps
           setFormId(agent.metadata.id)
           setFormDescription(agent.metadata.description)
           setFormSubagent(agent.metadata.subagent)
-          setFormTools(agent.metadata.tools)
+          setFormTools(agent.metadata.allowedTools)
           setFormColor(agent.metadata.color ?? '#6b7280')
           setFormPrompt(agent.prompt)
         })
@@ -93,7 +93,7 @@ export function AgentsModal({ isOpen, onClose, initialEditId }: AgentsModalProps
     setFormId(agent.metadata.id)
     setFormDescription(agent.metadata.description)
     setFormSubagent(agent.metadata.subagent)
-    setFormTools(agent.metadata.tools)
+    setFormTools(agent.metadata.allowedTools)
     setFormColor(agent.metadata.color ?? '#6b7280')
     setFormPrompt(agent.prompt)
     setFormError('')
@@ -121,7 +121,7 @@ export function AgentsModal({ isOpen, onClose, initialEditId }: AgentsModalProps
         name: formName,
         description: formDescription,
         subagent: formSubagent,
-        tools: formTools,
+        allowedTools: formTools,
         color: formColor,
       },
       prompt: formPrompt,
@@ -392,7 +392,7 @@ function AgentListItem({
   onConfirmDelete,
   onCancelDelete,
 }: {
-  agent: { id: string; name: string; description: string; tools: string[]; color?: string }
+  agent: { id: string; name: string; description: string; allowedTools: string[]; color?: string }
   confirmDeleteId: string | null
   isModified: boolean
   confirmRestoreId: string | null
@@ -419,13 +419,13 @@ function AgentListItem({
           <p className="text-text-secondary text-xs mt-0.5 truncate">{agent.description}</p>
         )}
         <div className="flex flex-wrap gap-1 mt-1">
-          {agent.tools.slice(0, 5).map(tool => (
+          {agent.allowedTools.slice(0, 5).map(tool => (
             <span key={tool} className="text-[10px] font-mono text-text-muted bg-bg-primary px-1 py-0.5 rounded">
               {tool}
             </span>
           ))}
-          {agent.tools.length > 5 && (
-            <span className="text-[10px] text-text-muted">+{agent.tools.length - 5} more</span>
+          {agent.allowedTools.length > 5 && (
+            <span className="text-[10px] text-text-muted">+{agent.allowedTools.length - 5} more</span>
           )}
         </div>
       </div>

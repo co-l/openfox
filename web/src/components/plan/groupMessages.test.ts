@@ -105,12 +105,12 @@ describe('groupMessages identity preservation', () => {
     const msg1 = createMessage('msg-1', 'user', 'Check criteria')
     const msg2 = createMessage('msg-2', 'assistant', '', {
       toolCalls: [
-        { id: 'tool-1', name: 'criteria_check', arguments: {}, startedAt: Date.now() },
+        { id: 'tool-1', name: 'criterion', arguments: { action: 'get' }, startedAt: Date.now() },
       ],
     })
     const msg3 = createMessage('msg-3', 'assistant', '', {
       toolCalls: [
-        { id: 'tool-2', name: 'criteria_check', arguments: {}, startedAt: Date.now() },
+        { id: 'tool-2', name: 'criterion', arguments: { action: 'get' }, startedAt: Date.now() },
       ],
     })
     const msg4 = createMessage('msg-4', 'user', 'Next')

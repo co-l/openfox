@@ -14,7 +14,6 @@ import {
   requestPathAccess,
 } from './path-security.js'
 import { criterionTool } from './criterion.js'
-import { getCriteriaTool, addCriterionTool, updateCriterionTool, removeCriterionTool } from './planner-criteria.js'
 import { todoTool } from './todo.js'
 import { callSubAgentTool } from './sub-agent.js'
 import { loadSkillTool } from './load-skill.js'
@@ -109,7 +108,7 @@ function getAllToolsMap(): Map<string, Tool> {
     ...[
       readFileTool, writeFileTool, editFileTool, runCommandTool,
       globTool, grepTool, gitTool, askUserTool,
-      criterionTool, getCriteriaTool, addCriterionTool, updateCriterionTool, removeCriterionTool,
+      criterionTool,
       todoTool, callSubAgentTool, loadSkillTool, returnValueTool, webFetchTool,
       devServerTool, stepDoneTool,
     ].map(t => [t.name, t] as const),
