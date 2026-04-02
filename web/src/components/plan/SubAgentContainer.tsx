@@ -95,8 +95,8 @@ export const SubAgentContainer = memo(function SubAgentContainer({ messages, sub
   const color = getAgentColor(agents, subAgentType)
   const hStyle = headerStyle(color)
 
-  // Filter out tool messages and system-generated auto-prompt messages
-  const displayMessages = messages.filter(m => m.role !== 'tool' && !(m.isSystemGenerated === true && m.messageKind === 'auto-prompt'))
+  // Filter out tool messages
+  const displayMessages = messages.filter(m => m.role !== 'tool')
 
   return (
     <div ref={containerRef} className="feed-item border border-border rounded overflow-hidden bg-bg-secondary">

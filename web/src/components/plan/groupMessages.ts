@@ -105,9 +105,6 @@ export function groupMessages(messages: Message[], previousItems: DisplayItem[] 
     // Skip tool messages - they're displayed within assistant messages
     if (msg.role === 'tool') continue
     
-    // Skip system-generated auto-prompt messages (mode reminders for LLM)
-    if (msg.isSystemGenerated === true && msg.messageKind === 'auto-prompt') continue
-    
     // Detect context window boundary - insert divider when window changes
     // Only insert if we've seen a previous window (not for the first window)
     if (msg.contextWindowId && lastContextWindowId && msg.contextWindowId !== lastContextWindowId) {

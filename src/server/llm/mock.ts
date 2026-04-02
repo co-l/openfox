@@ -164,7 +164,7 @@ const RULES: MockRule[] = [
   // Generic add criterion (fallback)
   {
     match: /add.*criterion/i,
-    tools: [{ name: 'criterion', arguments: { action: 'add', id: '$auto', description: 'Test criterion' } }],
+    tools: [{ name: 'criterion', arguments: { action: 'add', description: 'Test criterion' } }],
     response: 'Added the criterion.',
   },
   // Verifier nudge with fail criterion (check for "fail" in ID) - MUST come before general pass rule

@@ -614,16 +614,8 @@ export class SessionManager {
       return { error: 'Session not found' }
     }
 
-    // If ID already exists, generate a unique one
-    let actualId = criterion.id
-    if (state.criteria.some((c) => c.id === criterion.id)) {
-      let suffix = 1
-      while (state.criteria.some((c) => c.id === `${criterion.id}-${suffix}`)) {
-        suffix++
-      }
-      actualId = `${criterion.id}-${suffix}`
-    }
-
+    // Use provided ID if non-empty, otherwise auto-generate sequential ID
+    const actualId = criterion.id || state.criteria.length.toString()
     const updatedCriteria = [...state.criteria, { ...criterion, id: actualId }]
     emitCriteriaSet(sessionId, updatedCriteria)
 

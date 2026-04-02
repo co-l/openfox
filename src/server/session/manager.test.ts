@@ -179,26 +179,26 @@ describe('SessionManager', () => {
     const session = manager.createSession(projectId)
 
     manager.setCriteria(session.id, [
-      { id: 'tests-pass', description: 'Tests pass', status: { type: 'pending' }, attempts: [] },
+      { id: '0', description: 'Tests pass', status: { type: 'pending' }, attempts: [] },
     ])
     expect(manager.requireSession(session.id).criteria).toHaveLength(1)
 
     const addResult = manager.addCriterion(session.id, {
-      id: 'tests-pass',
-      description: 'Duplicate id gets rewritten',
+      id: '1',
+      description: 'Second criterion',
       status: { type: 'pending' },
       attempts: [],
     })
-    expect('criteria' in addResult && addResult.actualId.startsWith('tests-pass')).toBe(true)
+    expect('criteria' in addResult && addResult.actualId).toBe('1')
 
     expect(() => manager.updateCriterionFull(session.id, 'missing', { description: 'x' })).toThrow('Criterion not found: missing')
     expect(() => manager.removeCriterion(session.id, 'missing')).toThrow('Criterion not found: missing')
 
-    const updatedCriteria = manager.updateCriterionFull(session.id, 'tests-pass', { description: 'Tests pass in CI' })
-    expect(updatedCriteria.find((criterion) => criterion.id === 'tests-pass')?.description).toBe('Tests pass in CI')
+    const updatedCriteria = manager.updateCriterionFull(session.id, '0', { description: 'Tests pass in CI' })
+    expect(updatedCriteria.find((criterion) => criterion.id === '0')?.description).toBe('Tests pass in CI')
 
-    manager.updateCriterionStatus(session.id, 'tests-pass', { type: 'completed', completedAt: '2024-01-01T00:00:00.000Z' })
-    manager.addCriterionAttempt(session.id, 'tests-pass', {
+    manager.updateCriterionStatus(session.id, '0', { type: 'completed', completedAt: '2024-01-01T00:00:00.000Z' })
+    manager.addCriterionAttempt(session.id, '0', {
       attemptNumber: 1,
       status: 'failed',
       timestamp: '2024-01-01T00:00:00.000Z',
@@ -212,10 +212,10 @@ describe('SessionManager', () => {
     })).toThrow('Criterion not found: missing')
 
     manager.resetAllCriteriaAttempts(session.id)
-    expect(manager.requireSession(session.id).criteria.find((criterion) => criterion.id === 'tests-pass')?.attempts).toEqual([])
+    expect(manager.requireSession(session.id).criteria.find((criterion) => criterion.id === '0')?.attempts).toEqual([])
 
-    const removed = manager.removeCriterion(session.id, 'tests-pass')
-    expect(removed.find((criterion) => criterion.id === 'tests-pass')).toBeUndefined()
+    const removed = manager.removeCriterion(session.id, '0')
+    expect(removed.find((criterion) => criterion.id === '0')).toBeUndefined()
   })
 
   it('tracks read files in-memory, tokens, tool calls, and context state', () => {

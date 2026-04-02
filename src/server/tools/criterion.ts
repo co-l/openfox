@@ -25,7 +25,7 @@ export const criterionTool: Tool = {
           },
           id: {
             type: 'string',
-            description: 'Criterion ID (required for: add, update, remove, complete, pass, fail)',
+            description: 'Criterion ID (required for: update, remove, complete, pass, fail; auto-generated for add)',
           },
           description: {
             type: 'string',
@@ -77,14 +77,6 @@ export const criterionTool: Tool = {
       }
       
       if (action === 'add') {
-        if (!id) {
-          return {
-            success: false,
-            error: 'Missing required field: id',
-            durationMs: Date.now() - startTime,
-            truncated: false,
-          }
-        }
         if (!description) {
           return {
             success: false,
@@ -95,7 +87,7 @@ export const criterionTool: Tool = {
         }
         
         const criterion: Criterion = {
-          id,
+          id: id || '',
           description,
           status: { type: 'pending' },
           attempts: [],
@@ -107,13 +99,9 @@ export const criterionTool: Tool = {
           return { success: false, error: result.error, durationMs: Date.now() - startTime, truncated: false }
         }
         
-        const idNote = result.actualId !== id 
-          ? ` (requested ID "${id}" was in use, using "${result.actualId}" instead)`
-          : ''
-        
         return {
           success: true,
-          output: `Added criterion "${result.actualId}"${idNote}. Current criteria:\n${formatCriteriaList(result.criteria)}`,
+          output: `Added criterion "${result.actualId}". Current criteria:\n${formatCriteriaList(result.criteria)}`,
           durationMs: Date.now() - startTime,
           truncated: false,
         }

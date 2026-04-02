@@ -127,7 +127,7 @@ describe('groupMessages identity preservation', () => {
     }
   })
 
-  it('should filter out system-generated auto-prompt messages', () => {
+  it('should include system-generated auto-prompt messages', () => {
     const msg1 = createMessage('msg-1', 'user', 'Hello')
     const autoPrompt = createMessage('auto-1', 'user', '<system-reminder>Plan Mode</system-reminder>', {
       isSystemGenerated: true,
@@ -137,9 +137,10 @@ describe('groupMessages identity preservation', () => {
 
     const items = groupMessages([msg1, autoPrompt, msg2])
     
-    // Should only have 2 items (auto-prompt filtered out)
-    expect(items.length).toBe(2)
+    // Should have 3 items (auto-prompt included)
+    expect(items.length).toBe(3)
     expect(items[0]).toEqual({ type: 'message', message: msg1 })
-    expect(items[1]).toEqual({ type: 'message', message: msg2 })
+    expect(items[1]).toEqual({ type: 'message', message: autoPrompt })
+    expect(items[2]).toEqual({ type: 'message', message: msg2 })
   })
 })

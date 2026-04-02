@@ -4,13 +4,13 @@ import { criterionTool } from './criterion.js'
 function createCriteria() {
   return [
     {
-      id: 'tests-pass',
+      id: '0',
       description: 'Tests pass',
       status: { type: 'pending' as const },
       attempts: [],
     },
     {
-      id: 'docs-updated',
+      id: '1',
       description: 'Docs updated',
       status: { type: 'pending' as const },
       attempts: [],
@@ -24,7 +24,11 @@ function createContext(overrides: Record<string, unknown> = {}) {
     sessionId: 'session-1',
     sessionManager: {
       requireSession: vi.fn(() => ({ criteria: createCriteria() })),
-      addCriterion: vi.fn((_sessionId, criterion) => ({ criteria: [...createCriteria(), criterion], actualId: criterion.id })),
+      addCriterion: vi.fn((_sessionId, criterion) => {
+        const criteria = createCriteria()
+        const actualId = criteria.length.toString()
+        return { criteria: [...criteria, { ...criterion, id: actualId }], actualId }
+      }),
       updateCriterionFull: vi.fn((_sessionId, id, updates) => createCriteria().map(c => (
         c.id === id ? { ...c, ...updates } : c
       ))),
@@ -44,10 +48,11 @@ describe('criterion tool', () => {
       expect(result).toMatchObject({ success: false, error: expect.stringContaining('Invalid action') })
     })
 
-    it('rejects add without id', async () => {
+    it('adds criterion without requiring id', async () => {
       const context = createContext()
       const result = await criterionTool.execute({ action: 'add', description: 'test' }, context as never)
-      expect(result).toMatchObject({ success: false, error: expect.stringContaining('Missing required field: id') })
+      expect(result.success).toBe(true)
+      expect(result.output).toContain('Added criterion "2"')
     })
 
     it('rejects add without description', async () => {
@@ -104,8 +109,8 @@ describe('criterion tool', () => {
       const context = createContext()
       const result = await criterionTool.execute({ action: 'get' }, context as never)
       expect(result.success).toBe(true)
-      expect(result.output).toContain('tests-pass')
-      expect(result.output).toContain('docs-updated')
+      expect(result.output).toContain('"0"')
+      expect(result.output).toContain('"1"')
       expect(result.output).not.toContain('attempts')
     })
 
@@ -117,30 +122,34 @@ describe('criterion tool', () => {
   })
 
   describe('add action', () => {
-    it('adds a criterion and formats output', async () => {
+    it('adds a criterion with auto-generated id', async () => {
       const context = createContext()
-      const result = await criterionTool.execute({ action: 'add', id: 'new-check', description: 'New check' }, context as never)
+      const result = await criterionTool.execute({ action: 'add', description: 'New check' }, context as never)
       expect(context.sessionManager.addCriterion).toHaveBeenCalledWith(
         'session-1',
-        expect.objectContaining({ id: 'new-check', description: 'New check', attempts: [] }),
+        expect.objectContaining({ description: 'New check', attempts: [] }),
       )
       expect(result.success).toBe(true)
-      expect(result.output).toContain('Added criterion "new-check"')
+      expect(result.output).toContain('Added criterion "2"')
     })
 
-    it('notes when id was adjusted', async () => {
+    it('increments id for multiple criteria', async () => {
       const context = createContext({
-        addCriterion: vi.fn(() => ({ criteria: createCriteria(), actualId: 'tests-pass-2' })),
+        addCriterion: vi.fn(() => ({ criteria: [...createCriteria(), { id: '0', description: 'First', status: { type: 'pending' as const }, attempts: [] }], actualId: '1' })),
       })
-      const result = await criterionTool.execute({ action: 'add', id: 'tests-pass', description: 'Duplicate' }, context as never)
-      expect(result.output).toContain('requested ID "tests-pass" was in use')
+      const result = await criterionTool.execute({ action: 'add', description: 'Second' }, context as never)
+      expect(context.sessionManager.addCriterion).toHaveBeenCalledWith(
+        'session-1',
+        expect.objectContaining({ description: 'Second', attempts: [] }),
+      )
+      expect(result.output).toContain('Added criterion "1"')
     })
 
     it('returns session manager error', async () => {
       const context = createContext({
         addCriterion: vi.fn(() => ({ error: 'duplicate' })),
       })
-      const result = await criterionTool.execute({ action: 'add', id: 'tests-pass', description: 'Dup' }, context as never)
+      const result = await criterionTool.execute({ action: 'add', description: 'Dup' }, context as never)
       expect(result).toMatchObject({ success: false, error: 'duplicate' })
     })
   })
@@ -148,10 +157,10 @@ describe('criterion tool', () => {
   describe('update action', () => {
     it('updates a criterion', async () => {
       const context = createContext()
-      const result = await criterionTool.execute({ action: 'update', id: 'tests-pass', description: 'Updated desc' }, context as never)
-      expect(context.sessionManager.updateCriterionFull).toHaveBeenCalledWith('session-1', 'tests-pass', { description: 'Updated desc' })
+      const result = await criterionTool.execute({ action: 'update', id: '0', description: 'Updated desc' }, context as never)
+      expect(context.sessionManager.updateCriterionFull).toHaveBeenCalledWith('session-1', '0', { description: 'Updated desc' })
       expect(result.success).toBe(true)
-      expect(result.output).toContain('Updated criterion "tests-pass"')
+      expect(result.output).toContain('Updated criterion "0"')
     })
 
     it('returns error when criterion not found', async () => {
@@ -166,10 +175,10 @@ describe('criterion tool', () => {
   describe('remove action', () => {
     it('removes a criterion', async () => {
       const context = createContext()
-      const result = await criterionTool.execute({ action: 'remove', id: 'tests-pass' }, context as never)
-      expect(context.sessionManager.removeCriterion).toHaveBeenCalledWith('session-1', 'tests-pass')
+      const result = await criterionTool.execute({ action: 'remove', id: '0' }, context as never)
+      expect(context.sessionManager.removeCriterion).toHaveBeenCalledWith('session-1', '0')
       expect(result.success).toBe(true)
-      expect(result.output).toContain('Removed criterion "tests-pass"')
+      expect(result.output).toContain('Removed criterion "0"')
     })
 
     it('returns error when criterion not found', async () => {
@@ -184,10 +193,10 @@ describe('criterion tool', () => {
   describe('complete action', () => {
     it('marks criterion as completed with optional reason', async () => {
       const context = createContext()
-      const result = await criterionTool.execute({ action: 'complete', id: 'tests-pass', reason: 'Tests passed' }, context as never)
+      const result = await criterionTool.execute({ action: 'complete', id: '0', reason: 'Tests passed' }, context as never)
       expect(context.sessionManager.updateCriterionStatus).toHaveBeenCalledWith(
         'session-1',
-        'tests-pass',
+        '0',
         expect.objectContaining({ type: 'completed', reason: 'Tests passed' }),
       )
       expect(result.success).toBe(true)
@@ -196,10 +205,10 @@ describe('criterion tool', () => {
 
     it('marks criterion as completed without reason', async () => {
       const context = createContext()
-      const result = await criterionTool.execute({ action: 'complete', id: 'tests-pass' }, context as never)
+      const result = await criterionTool.execute({ action: 'complete', id: '0' }, context as never)
       expect(context.sessionManager.updateCriterionStatus).toHaveBeenCalledWith(
         'session-1',
-        'tests-pass',
+        '0',
         expect.objectContaining({ type: 'completed' }),
       )
       expect(result.success).toBe(true)
@@ -217,15 +226,15 @@ describe('criterion tool', () => {
   describe('pass action', () => {
     it('marks criterion as passed', async () => {
       const context = createContext()
-      const result = await criterionTool.execute({ action: 'pass', id: 'tests-pass', reason: 'Verified' }, context as never)
+      const result = await criterionTool.execute({ action: 'pass', id: '0', reason: 'Verified' }, context as never)
       expect(context.sessionManager.updateCriterionStatus).toHaveBeenCalledWith(
         'session-1',
-        'tests-pass',
+        '0',
         expect.objectContaining({ type: 'passed' }),
       )
       expect(context.sessionManager.addCriterionAttempt).toHaveBeenCalledWith(
         'session-1',
-        'tests-pass',
+        '0',
         expect.objectContaining({ status: 'passed' }),
       )
       expect(result.success).toBe(true)
@@ -234,7 +243,7 @@ describe('criterion tool', () => {
 
     it('marks criterion as passed without reason', async () => {
       const context = createContext()
-      const result = await criterionTool.execute({ action: 'pass', id: 'tests-pass' }, context as never)
+      const result = await criterionTool.execute({ action: 'pass', id: '0' }, context as never)
       expect(result.success).toBe(true)
     })
 
@@ -250,15 +259,15 @@ describe('criterion tool', () => {
   describe('fail action', () => {
     it('marks criterion as failed with reason', async () => {
       const context = createContext()
-      const result = await criterionTool.execute({ action: 'fail', id: 'tests-pass', reason: 'Snapshot mismatch' }, context as never)
+      const result = await criterionTool.execute({ action: 'fail', id: '0', reason: 'Snapshot mismatch' }, context as never)
       expect(context.sessionManager.updateCriterionStatus).toHaveBeenCalledWith(
         'session-1',
-        'tests-pass',
+        '0',
         expect.objectContaining({ type: 'failed', reason: 'Snapshot mismatch' }),
       )
       expect(context.sessionManager.addCriterionAttempt).toHaveBeenCalledWith(
         'session-1',
-        'tests-pass',
+        '0',
         expect.objectContaining({ status: 'failed', details: 'Snapshot mismatch' }),
       )
       expect(result.success).toBe(true)

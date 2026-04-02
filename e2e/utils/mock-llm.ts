@@ -85,6 +85,14 @@ export function createMockLLMClient(config: MockLLMConfig = {}): MockLLMClient {
       response: 'I found the files.',
     },
     {
+      promptMatch: /Create the file.*then.*complete/i,
+      toolCalls: [
+        { name: 'write_file', arguments: { path: 'src/utils.ts', content: 'export const x = 1' } },
+        { name: 'criterion', arguments: { action: 'complete', id: '0' } },
+      ],
+      response: 'I created the file and completed the criterion.',
+    },
+    {
       promptMatch: /write.*file|create.*file/i,
       toolCalls: [{ 
         name: 'write_file', 
@@ -103,8 +111,7 @@ export function createMockLLMClient(config: MockLLMConfig = {}): MockLLMClient {
         name: 'criterion', 
         arguments: { 
           action: 'add',
-          id: 'test-1', 
-          description: 'The tests pass' 
+          description: 'Test criterion' 
         } 
       }],
       response: 'I added the criterion.',
@@ -115,7 +122,7 @@ export function createMockLLMClient(config: MockLLMConfig = {}): MockLLMClient {
         name: 'criterion', 
         arguments: { 
           action: 'add',
-          id: 'emit-test', 
+          id: 'emit-test',
           description: 'Testing events' 
         } 
       }],
@@ -127,7 +134,7 @@ export function createMockLLMClient(config: MockLLMConfig = {}): MockLLMClient {
         name: 'criterion', 
         arguments: { 
           action: 'add',
-          id: 'get-test', 
+          id: 'get-test',
           description: 'For testing get' 
         } 
       }],
@@ -139,7 +146,7 @@ export function createMockLLMClient(config: MockLLMConfig = {}): MockLLMClient {
         name: 'criterion', 
         arguments: { 
           action: 'add',
-          id: 'update-me', 
+          id: 'update-me',
           description: 'Original description' 
         } 
       }],
@@ -151,7 +158,7 @@ export function createMockLLMClient(config: MockLLMConfig = {}): MockLLMClient {
         name: 'criterion', 
         arguments: { 
           action: 'add',
-          id: 'remove-me', 
+          id: 'remove-me',
           description: 'Will be removed' 
         } 
       }],
@@ -163,7 +170,7 @@ export function createMockLLMClient(config: MockLLMConfig = {}): MockLLMClient {
         name: 'criterion', 
         arguments: { 
           action: 'add',
-          id: 'persist-test', 
+          id: 'persist-test',
           description: 'Persistence test' 
         } 
       }],
@@ -175,7 +182,7 @@ export function createMockLLMClient(config: MockLLMConfig = {}): MockLLMClient {
         name: 'criterion', 
         arguments: { 
           action: 'add',
-          id: 'file-created', 
+          id: 'file-created',
           description: 'A new file utils.ts exists' 
         } 
       }],
@@ -187,7 +194,7 @@ export function createMockLLMClient(config: MockLLMConfig = {}): MockLLMClient {
         name: 'criterion', 
         arguments: { 
           action: 'add',
-          id: 'edit-direct', 
+          id: 'edit-direct',
           description: 'Initial' 
         } 
       }],
@@ -199,7 +206,7 @@ export function createMockLLMClient(config: MockLLMConfig = {}): MockLLMClient {
         name: 'criterion', 
         arguments: { 
           action: 'add',
-          id: 'trivial-pass', 
+          id: 'trivial-pass',
           description: 'Trivial pass criterion' 
         } 
       }],
@@ -330,12 +337,21 @@ export function createMockLLMClient(config: MockLLMConfig = {}): MockLLMClient {
     },
     // Complete criterion + step done (for workflow builder steps)
     {
-      promptMatch: /complete.*criterion|mark.*complete|complete_criterion|fulfil.*criteria/i,
+      promptMatch: /complete.*criterion|mark.*complete|complete_criterion|fulfil.*criteria|Complete the first/i,
       toolCalls: [
-        { name: 'criterion', arguments: { action: 'complete', id: 'mock-crit' } },
+        { name: 'criterion', arguments: { action: 'complete', id: '0' } },
         { name: 'step_done', arguments: {} },
       ],
       response: 'I completed the criterion and finished the step.',
+    },
+    // Pass criterion (for verifier workflow)
+    {
+      promptMatch: /pass.*criterion|pass_criterion|Pass the first/i,
+      toolCalls: [
+        { name: 'criterion', arguments: { action: 'pass', id: '0', reason: 'Verified' } },
+        { name: 'step_done', arguments: {} },
+      ],
+      response: 'I passed the criterion.',
     },
     // Step done only (for generic workflow steps)
     {
@@ -346,13 +362,16 @@ export function createMockLLMClient(config: MockLLMConfig = {}): MockLLMClient {
     // Verifier sub-agent workflow (for builder mode)
     {
       promptMatch: /launch.*runner|runner.*launch|start.*verification|verify.*implementation|call.*verifier/i,
-      toolCalls: [{ 
-        name: 'call_sub_agent', 
-        arguments: { 
-          subAgentType: 'verifier',
-          prompt: 'Verify completed criteria against implementation' 
-        } 
-      }],
+      toolCalls: [
+        { 
+          name: 'call_sub_agent', 
+          arguments: { 
+            subAgentType: 'verifier',
+            prompt: 'Verify completed criteria against implementation' 
+          } 
+        },
+        { name: 'criterion', arguments: { action: 'pass', id: '0', reason: 'Verified' } },
+      ],
       thinking: 'Starting the verifier to check implementation against criteria.',
       response: 'I launched the verifier.',
     },
@@ -360,16 +379,16 @@ export function createMockLLMClient(config: MockLLMConfig = {}): MockLLMClient {
     {
       promptMatch: /Verify.*criterion.*NEEDS VERIFICATION/i,
       toolCalls: [
-        { name: 'criterion', arguments: { action: 'pass', id: 'trivial-pass', reason: 'Verified successfully' } },
-        { name: 'return_value', arguments: { summary: 'Verified trivial-pass criterion.' } },
+        { name: 'criterion', arguments: { action: 'pass', id: '0', reason: 'Verified successfully' } },
+        { name: 'return_value', arguments: { summary: 'Verified criterion.' } },
       ],
       response: 'Verified the criterion.',
     },
     {
       promptMatch: /Verify.*verify-fail/i,
       toolCalls: [
-        { name: 'criterion', arguments: { action: 'fail', id: 'verify-fail', reason: 'Verification failed for this criterion' } },
-        { name: 'return_value', arguments: { summary: 'Verification failed for verify-fail.' } },
+        { name: 'criterion', arguments: { action: 'fail', id: '0', reason: 'Verification failed for this criterion' } },
+        { name: 'return_value', arguments: { summary: 'Verification failed.' } },
       ],
       response: 'Verification completed with failures.',
     },
@@ -380,7 +399,7 @@ export function createMockLLMClient(config: MockLLMConfig = {}): MockLLMClient {
         name: 'criterion', 
         arguments: { 
           action: 'update',
-          id: 'update-me', 
+          id: '0', 
           description: 'Updated description' 
         } 
       }],
@@ -393,7 +412,7 @@ export function createMockLLMClient(config: MockLLMConfig = {}): MockLLMClient {
         name: 'criterion', 
         arguments: { 
           action: 'remove',
-          id: 'remove-me', 
+          id: '0', 
         } 
       }],
       response: 'I removed the criterion.',
