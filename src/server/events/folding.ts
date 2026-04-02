@@ -111,7 +111,9 @@ function appendSnapshotMessageContext(
       role: 'tool',
       content: toolCall.result.success
         ? (toolCall.result.output ?? 'Success')
-        : `Error: ${toolCall.result.error}`,
+        : toolCall.result.output
+          ? `${toolCall.result.output}\n\nError: ${toolCall.result.error}`
+          : `Error: ${toolCall.result.error}`,
       toolCallId: toolCall.id,
     })
   }
