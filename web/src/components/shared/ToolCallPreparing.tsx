@@ -14,14 +14,8 @@ const toolDescriptions: Record<string, string> = {
   glob: 'Searching files',
   grep: 'Searching content',
   ask_user: 'Asking user',
-  // Criteria tools
-  add_criterion: 'Adding criterion',
-  update_criterion: 'Updating criterion',
-  remove_criterion: 'Removing criterion',
-  get_criteria: 'Getting criteria',
-  complete_criterion: 'Completing criterion',
-  pass_criterion: 'Passing criterion',
-  fail_criterion: 'Failing criterion',
+  // Criterion tool (action-based)
+  criterion: 'Managing criterion',
   // Task tracking
   todo_write: 'Updating tasks',
 }
