@@ -930,7 +930,8 @@ describe('chat orchestrator', () => {
       onMessage: vi.fn(),
     }, new TurnMetrics())
 
-    expect(capturedTools).not.toContain('step_done')
+    // step_done is now ALWAYS included to maintain stable tools hash for LLM caching
+    expect(capturedTools).toContain('step_done')
   })
 
   it('injects step_done tool when injectStepDone is true', async () => {
