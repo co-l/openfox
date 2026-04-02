@@ -48,7 +48,7 @@ export const grepTool = createTool<GrepArgs>(
     // Create regex
     let regex: RegExp
     try {
-      regex = new RegExp(args.pattern, 'gi')
+      regex = new RegExp(args.pattern, 'i')
     } catch {
       return helpers.error(`Invalid regex pattern: ${args.pattern}`)
     }
@@ -97,9 +97,6 @@ export const grepTool = createTool<GrepArgs>(
               content: line.length > 200 ? line.slice(0, 200) + '...' : line,
             })
           }
-          
-          // Reset regex lastIndex since we're reusing it
-          regex.lastIndex = 0
         }
       } catch {
         // Skip files that can't be read (binary files, etc.)
