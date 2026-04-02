@@ -14,7 +14,6 @@ allowedTools:
   - criterion
   - call_sub_agent
   - load_skill
-  - return_value
 ---
 
 # Plan Mode

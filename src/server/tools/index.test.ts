@@ -65,6 +65,11 @@ const builderDef: AgentDefinition = {
   prompt: 'Build mode.',
 }
 
+const builderWithReturnValueDef: AgentDefinition = {
+  metadata: { id: 'builder', name: 'Builder', description: 'Builds', subagent: false, allowedTools: ['read_file', 'glob', 'grep', 'web_fetch', 'write_file', 'edit_file', 'run_command', 'ask_user', 'criterion', 'todo', 'call_sub_agent', 'load_skill', 'return_value'] },
+  prompt: 'Build mode.',
+}
+
 const verifierDef: AgentDefinition = {
   metadata: { id: 'verifier', name: 'Verifier', description: 'Verifies', subagent: true, allowedTools: ['read_file', 'run_command', 'criterion', 'web_fetch'] },
   prompt: 'Verify.',
@@ -78,6 +83,12 @@ describe('tool registries', () => {
     expect(toolNames).toContain('write_file')
     expect(toolNames).toContain('edit_file')
     expect(toolNames).toContain('run_command')
+    expect(toolNames).not.toContain('return_value')
+  })
+
+  it('getToolRegistryForAgent filters out return_value even if in allowedTools', () => {
+    const registry = getToolRegistryForAgent(builderWithReturnValueDef)
+    const toolNames = registry.tools.map(t => t.name)
     expect(toolNames).not.toContain('return_value')
   })
 

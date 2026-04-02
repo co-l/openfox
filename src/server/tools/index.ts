@@ -169,6 +169,7 @@ export function getToolRegistryForSubAgent(toolNames: string[]): ToolRegistry {
  * Create a tool registry for an agent definition.
  * Uses the agent's allowedTools list to filter from the global tool registry.
  * Sub-agents automatically get return_value added.
+ * Top-level agents cannot use return_value (it's filtered out).
  * Logs warnings for unknown tool names.
  */
 export function getToolRegistryForAgent(agentDef: AgentDefinition): ToolRegistry {
@@ -177,15 +178,20 @@ export function getToolRegistryForAgent(agentDef: AgentDefinition): ToolRegistry
   }
   const allTools = getAllToolsMap()
   const tools: Tool[] = []
+  const allowedTools: string[] = []
   for (const name of agentDef.metadata.allowedTools) {
+    if (name === 'return_value') {
+      continue
+    }
     const tool = allTools.get(name)
     if (tool) {
       tools.push(tool)
+      allowedTools.push(name)
     } else {
       logger.warn(`Unknown tool '${name}' in allowedTools for agent '${agentDef.metadata.id}'`)
     }
   }
-  return createRegistryFromTools(tools, agentDef.metadata.allowedTools)
+  return createRegistryFromTools(tools, allowedTools)
 }
 
 /**

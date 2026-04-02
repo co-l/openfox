@@ -19,7 +19,6 @@ allowedTools:
   - load_skill
   - dev_server
   - step_done
-  - return_value
 ---
 
 # Build Mode
