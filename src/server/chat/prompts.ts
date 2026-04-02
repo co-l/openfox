@@ -221,14 +221,25 @@ export function buildSubAgentSystemPrompt(
 
 /**
  * Build the tool permissions section for the system reminder.
+ * Filters allowedTools to show only tools actually available to the agent.
  */
-function buildToolPermissionsSection(allowedTools: string[] | undefined): string {
+function buildToolPermissionsSection(allowedTools: string[] | undefined, isSubAgent: boolean): string {
   if (!allowedTools || allowedTools.length === 0) {
     return '\n\n## AVAILABLE TOOLS\n\nYou have no tools available.'
   }
   
-  const toolsList = allowedTools.join(', ')
-  return `\n\n## AVAILABLE TOOLS\n\nYou have access to these tools: ${toolsList}`
+  const filteredTools = allowedTools.filter(tool => {
+    if (!isSubAgent && tool === 'return_value') {
+      return false
+    }
+    return true
+  })
+  
+  const toolsList = filteredTools.join(', ')
+  const finalToolsList = isSubAgent && !filteredTools.includes('return_value')
+    ? [...filteredTools, 'return_value'].join(', ')
+    : toolsList
+  return `\n\n## AVAILABLE TOOLS\n\nYou have access to these tools: ${finalToolsList}`
 }
 
 /**
@@ -236,7 +247,7 @@ function buildToolPermissionsSection(allowedTools: string[] | undefined): string
  * Used for top-level agents to inject mode-specific behavior via user messages.
  */
 export function buildAgentReminder(agentDef: AgentDefinition): string {
-  const toolPermissions = buildToolPermissionsSection(agentDef.metadata.allowedTools)
+  const toolPermissions = buildToolPermissionsSection(agentDef.metadata.allowedTools, agentDef.metadata.subagent)
   return `<system-reminder>\n${agentDef.prompt}${toolPermissions}\n</system-reminder>`
 }
 

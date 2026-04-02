@@ -136,6 +136,39 @@ describe('buildAgentReminder', () => {
     const reminder = buildAgentReminder(mockBuilder)
     expect(reminder).toContain('Build mode ACTIVE')
   })
+
+  it('shows only tools actually available to top-level agent (excludes return_value)', () => {
+    const agentWithReturnValue: AgentDefinition = {
+      metadata: {
+        id: 'test_agent',
+        name: 'Test Agent',
+        description: 'Test',
+        subagent: false,
+        allowedTools: ['read_file', 'return_value', 'write_file'],
+      },
+      prompt: 'Test prompt',
+    }
+    const reminder = buildAgentReminder(agentWithReturnValue)
+    expect(reminder).toContain('AVAILABLE TOOLS')
+    expect(reminder).toContain('read_file, write_file')
+    expect(reminder).not.toContain('return_value')
+  })
+
+  it('shows only tools actually available to sub-agent (includes return_value)', () => {
+    const subAgentWithReturnValue: AgentDefinition = {
+      metadata: {
+        id: 'test_subagent',
+        name: 'Test SubAgent',
+        description: 'Test',
+        subagent: true,
+        allowedTools: ['read_file', 'write_file', 'return_value'],
+      },
+      prompt: 'Test prompt',
+    }
+    const reminder = buildAgentReminder(subAgentWithReturnValue)
+    expect(reminder).toContain('AVAILABLE TOOLS')
+    expect(reminder).toContain('read_file, write_file, return_value')
+  })
 })
 
 describe('buildSubAgentsSection', () => {
