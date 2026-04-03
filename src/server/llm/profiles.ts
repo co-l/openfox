@@ -55,7 +55,7 @@ const MODEL_PROFILES: Array<{ pattern: string; profile: ModelProfile }> = [
       topP: 0.9,
       supportsReasoning: false,
       reasoningAsContent: false,
-      defaultMaxTokens: 4096,
+      defaultMaxTokens: 16384,
     },
   },
   {
@@ -69,7 +69,7 @@ const MODEL_PROFILES: Array<{ pattern: string; profile: ModelProfile }> = [
       // "This model supports only non-thinking mode and does not generate <think></think> blocks"
       supportsReasoning: false,
       reasoningAsContent: false,
-      defaultMaxTokens: 8192,
+      defaultMaxTokens: 16384,
     },
   },
   {
@@ -80,7 +80,7 @@ const MODEL_PROFILES: Array<{ pattern: string; profile: ModelProfile }> = [
       topP: 0.9,
       supportsReasoning: true,
       reasoningAsContent: false,
-      defaultMaxTokens: 4096,
+      defaultMaxTokens: 16384,
     },
   },
   {
@@ -91,7 +91,19 @@ const MODEL_PROFILES: Array<{ pattern: string; profile: ModelProfile }> = [
       topP: 0.95,
       supportsReasoning: true,
       reasoningAsContent: false,
-      defaultMaxTokens: 4096,
+      defaultMaxTokens: 16384,
+    },
+  },
+  {
+    pattern: 'minimax',
+    profile: {
+      name: 'MiniMax',
+      temperature: 1,
+      topP: 0.95,
+      topK: 40,
+      supportsReasoning: true,
+      reasoningAsContent: false,
+      defaultMaxTokens: 16384,
     },
   },
   {
@@ -102,7 +114,7 @@ const MODEL_PROFILES: Array<{ pattern: string; profile: ModelProfile }> = [
       topP: 0.9,
       supportsReasoning: false,
       reasoningAsContent: false,
-      defaultMaxTokens: 4096,
+      defaultMaxTokens: 16384,
     },
   },
   {
@@ -113,7 +125,7 @@ const MODEL_PROFILES: Array<{ pattern: string; profile: ModelProfile }> = [
       topP: 0.9,
       supportsReasoning: true,
       reasoningAsContent: false,
-      defaultMaxTokens: 4096,
+      defaultMaxTokens: 16384,
     },
   },
 ]
