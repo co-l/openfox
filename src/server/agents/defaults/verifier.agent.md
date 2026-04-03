@@ -7,7 +7,7 @@ color: '#22c55e'
 allowedTools:
   - read_file
   - run_command
-  - criterion
+  - criterion:pass,fail
   - web_fetch
 ---
 

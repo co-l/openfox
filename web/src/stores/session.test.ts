@@ -3,6 +3,9 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 vi.stubGlobal('requestAnimationFrame', (cb: () => void) => setTimeout(cb, 0))
 vi.stubGlobal('cancelAnimationFrame', (id: number) => clearTimeout(id))
 
+const fetchMock = vi.fn(() => Promise.resolve({ ok: true, json: () => Promise.resolve({ success: true }), status: 200 }))
+vi.stubGlobal('fetch', fetchMock)
+
 const {
   wsSendMock,
   wsSubscribeMock,
@@ -65,6 +68,7 @@ describe('useSessionStore session isolation', () => {
     playInterventionMock.mockClear()
     playWaitingForUserMock.mockClear()
     playNewMessageMock.mockClear()
+    fetchMock.mockClear()
   })
 
   it('clears the previous session while loading and ignores background streaming updates', async () => {
@@ -969,12 +973,15 @@ describe('useSessionStore session isolation', () => {
       },
     })
 
-    useSessionStore.getState().answerQuestion('call-123', 'My name is Conrad')
+    await useSessionStore.getState().answerQuestion('call-123', 'My name is Conrad')
 
-    expect(wsSendMock).toHaveBeenCalledWith('ask.answer', {
-      callId: 'call-123',
-      answer: 'My name is Conrad',
-    })
+    expect(fetchMock).toHaveBeenCalledWith(
+      '/api/sessions/session-1/answer',
+      expect.objectContaining({
+        method: 'POST',
+        body: JSON.stringify({ callId: 'call-123', answer: 'My name is Conrad' }),
+      })
+    )
     expect(useSessionStore.getState().pendingQuestion).toBeNull()
   })
 
@@ -998,12 +1005,15 @@ describe('useSessionStore session isolation', () => {
       },
     })
 
-    useSessionStore.getState().answerQuestion('call-456', '')
+    await useSessionStore.getState().answerQuestion('call-456', '')
 
-    expect(wsSendMock).toHaveBeenCalledWith('ask.answer', {
-      callId: 'call-456',
-      answer: '',
-    })
+    expect(fetchMock).toHaveBeenCalledWith(
+      '/api/sessions/session-1/answer',
+      expect.objectContaining({
+        method: 'POST',
+        body: JSON.stringify({ callId: 'call-456', answer: '' }),
+      })
+    )
     expect(useSessionStore.getState().pendingQuestion).toBeNull()
   })
 })

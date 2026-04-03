@@ -71,7 +71,7 @@ const builderWithReturnValueDef: AgentDefinition = {
 }
 
 const verifierDef: AgentDefinition = {
-  metadata: { id: 'verifier', name: 'Verifier', description: 'Verifies', subagent: true, allowedTools: ['read_file', 'run_command', 'criterion', 'web_fetch'] },
+  metadata: { id: 'verifier', name: 'Verifier', description: 'Verifies', subagent: true, allowedTools: ['read_file', 'run_command', 'criterion:pass,fail', 'web_fetch'] },
   prompt: 'Verify.',
 }
 

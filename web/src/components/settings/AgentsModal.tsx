@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { Modal } from '../shared/Modal'
 import { Button } from '../shared/Button'
 import { EditButton } from '../shared/IconButton'
+import { DropdownMenu } from '../shared/DropdownMenu'
 import { useAgentsStore, type AgentFull } from '../../stores/agents'
 
 interface AgentsModalProps {
@@ -42,12 +43,61 @@ export function AgentsModal({ isOpen, onClose, initialEditId }: AgentsModalProps
 
   const [confirmRestoreId, setConfirmRestoreId] = useState<string | null>(null)
   const [confirmRestoreAll, setConfirmRestoreAll] = useState(false)
-  const [availableTools, setAvailableTools] = useState<string[]>([])
+  const [availableTools, setAvailableTools] = useState<{ name: string; actions: string[] }[]>([])
+
+  // Parse stored allowedTools into granular format
+  function parseAllowedTools(tools: string[]): Map<string, Set<string>> {
+    const result = new Map<string, Set<string>>()
+    for (const entry of tools) {
+      const colonIdx = entry.indexOf(':')
+      if (colonIdx === -1) {
+        result.set(entry, new Set())
+      } else {
+        const toolName = entry.slice(0, colonIdx)
+        const actionsStr = entry.slice(colonIdx + 1)
+        const actions = actionsStr.split(',').filter(Boolean)
+        result.set(toolName, new Set(actions))
+      }
+    }
+    return result
+  }
+
+  // Convert granular map back to stored format
+  function serializeTools(granular: Map<string, Set<string>>): string[] {
+    const result: string[] = []
+    for (const [toolName, actions] of granular) {
+      if (actions.size === 0) {
+        result.push(toolName)
+      } else {
+        result.push(`${toolName}:${[...actions].join(',')}`)
+      }
+    }
+    return result
+  }
+
+  const granularTools = parseAllowedTools(formTools)
+
+  const toggleToolAction = (toolName: string, action: string) => {
+    const newGranular = new Map(granularTools)
+    const current = newGranular.get(toolName) || new Set()
+    const newActions = new Set(current)
+    if (newActions.has(action)) {
+      newActions.delete(action)
+    } else {
+      newActions.add(action)
+    }
+    if (newActions.size === 0) {
+      newGranular.set(toolName, new Set())
+    } else {
+      newGranular.set(toolName, newActions)
+    }
+    setFormTools(serializeTools(newGranular))
+  }
 
   useEffect(() => {
     if (isOpen) {
       fetchAgents()
-      fetch('/api/tools').then(r => r.json()).then(d => setAvailableTools(d.tools)).catch(() => {})
+      fetch('/api/tools').then(r => r.json()).then(d => setAvailableTools(d.tools || [])).catch(() => setAvailableTools([]))
       setConfirmDeleteId(null)
       setConfirmRestoreId(null)
       setConfirmRestoreAll(false)
@@ -156,10 +206,14 @@ export function AgentsModal({ isOpen, onClose, initialEditId }: AgentsModalProps
     }
   }
 
-  const toggleTool = (tool: string) => {
-    setFormTools(prev =>
-      prev.includes(tool) ? prev.filter(t => t !== tool) : [...prev, tool]
-    )
+  const toggleTool = (toolName: string) => {
+    const newGranular = new Map(granularTools)
+    if (newGranular.has(toolName)) {
+      newGranular.delete(toolName)
+    } else {
+      newGranular.set(toolName, new Set())
+    }
+    setFormTools(serializeTools(newGranular))
   }
 
   if (view === 'edit') {
@@ -240,20 +294,82 @@ export function AgentsModal({ isOpen, onClose, initialEditId }: AgentsModalProps
 
           <div>
             <label className="block text-xs text-text-secondary mb-1">Tools</label>
-            <div className="flex flex-wrap gap-1.5 p-2 bg-bg-tertiary border border-border rounded max-h-24 overflow-y-auto">
-              {availableTools.map(tool => (
-                <button
-                  key={tool}
-                  onClick={() => toggleTool(tool)}
-                  className={`px-1.5 py-0.5 rounded text-xs font-mono transition-colors ${
-                    formTools.includes(tool)
-                      ? 'bg-accent-primary/25 text-accent-primary'
-                      : 'bg-bg-primary text-text-muted hover:text-text-secondary'
-                  }`}
-                >
-                  {tool}
-                </button>
-              ))}
+            <div className="flex flex-wrap gap-1.5 p-2 bg-bg-tertiary border border-border rounded max-h-32 overflow-y-auto">
+              {availableTools.map(tool => {
+                const isSelected = granularTools.has(tool.name)
+                const hasActions = tool.actions.length > 0
+                const selectedActions = granularTools.get(tool.name) || new Set()
+
+                const button = (
+                  <button
+                    key={tool.name}
+                    className={`px-1.5 py-0.5 rounded text-xs font-mono transition-colors flex items-center gap-1 ${
+                      isSelected
+                        ? 'bg-accent-primary/25 text-accent-primary'
+                        : 'bg-bg-primary text-text-muted hover:text-text-secondary'
+                    }`}
+                  >
+                    <span>{tool.name}</span>
+                    {hasActions && (
+                      <span className={`text-[10px] ${isSelected && selectedActions.size > 0 ? 'text-accent-primary' : 'text-text-muted'}`}>*</span>
+                    )}
+                  </button>
+                )
+
+                if (!hasActions) {
+                  return (
+                    <button
+                      key={tool.name}
+                      onClick={() => toggleTool(tool.name)}
+                      className={`px-1.5 py-0.5 rounded text-xs font-mono transition-colors flex items-center gap-1 ${
+                        isSelected
+                          ? 'bg-accent-primary/25 text-accent-primary'
+                          : 'bg-bg-primary text-text-muted hover:text-text-secondary'
+                      }`}
+                    >
+                      <span>{tool.name}</span>
+                    </button>
+                  )
+                }
+
+                return (
+                  <DropdownMenu
+                    key={tool.name}
+                    trigger={button}
+                    minWidth="160px"
+                    items={[
+                      ...tool.actions.map(action => ({
+                        label: (
+                          <label className="flex items-center gap-2 cursor-pointer" htmlFor={`${tool.name}-${action}`}>
+                            <input
+                              type="checkbox"
+                              id={`${tool.name}-${action}`}
+                              checked={selectedActions.has(action)}
+                              onChange={() => toggleToolAction(tool.name, action)}
+                              className="w-3 h-3 rounded accent-accent-primary"
+                            />
+                            <span>{action}</span>
+                          </label>
+                        ),
+                        closeOnClick: false,
+                      })),
+                      {
+                        label: isSelected ? 'Deselect all' : 'Select all',
+                        closeOnClick: false,
+                        onClick: () => {
+                          if (isSelected) {
+                            toggleTool(tool.name)
+                          } else {
+                            const newGranular = new Map(granularTools)
+                            newGranular.set(tool.name, new Set(tool.actions))
+                            setFormTools(serializeTools(newGranular))
+                          }
+                        },
+                      },
+                    ]}
+                  />
+                )
+              })}
             </div>
           </div>
 

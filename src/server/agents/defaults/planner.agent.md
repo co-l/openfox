@@ -11,7 +11,7 @@ allowedTools:
   - web_fetch
   - run_command
   - git
-  - criterion
+  - criterion:add,get,update,remove
   - call_sub_agent
   - load_skill
 ---

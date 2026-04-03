@@ -644,14 +644,7 @@ async function handleClientMessage(
     }
 
     case 'chat.stop': {
-      if (!client.activeSessionId) {
-        send(createErrorMessage('NO_SESSION', 'No active session', message.id))
-        return
-      }
-
-      abortSessionExecution(client.activeSessionId, 'Session aborted by user')
-
-      send({ type: 'ack', payload: {}, id: message.id })
+      send(createErrorMessage('DEPRECATED', 'chat.stop removed. Use REST API: POST /api/sessions/:id/stop', message.id))
       break
     }
 
@@ -660,159 +653,31 @@ async function handleClientMessage(
     // =========================================================================
 
     case 'queue.asap': {
-      if (!client.activeSessionId) {
-        send(createErrorMessage('NO_SESSION', 'No active session', message.id))
-        return
-      }
-      if (!isQueueAsapPayload(message.payload)) {
-        send(createErrorMessage('INVALID_PAYLOAD', 'Invalid queue.asap payload', message.id))
-        return
-      }
-      const { content, attachments } = message.payload
-      sessionManager.queueMessage(client.activeSessionId, 'asap', content, attachments)
-      sendForSession(client.activeSessionId, createQueueStateMessage(sessionManager.getQueueState(client.activeSessionId)))
-      send({ type: 'ack', payload: {}, id: message.id })
+      send(createErrorMessage('DEPRECATED', 'queue.asap removed. Use REST API: POST /api/sessions/:id/queue/asap', message.id))
       break
     }
 
     case 'queue.completion': {
-      if (!client.activeSessionId) {
-        send(createErrorMessage('NO_SESSION', 'No active session', message.id))
-        return
-      }
-      if (!isQueueCompletionPayload(message.payload)) {
-        send(createErrorMessage('INVALID_PAYLOAD', 'Invalid queue.completion payload', message.id))
-        return
-      }
-      const { content, attachments } = message.payload
-      sessionManager.queueMessage(client.activeSessionId, 'completion', content, attachments)
-      sendForSession(client.activeSessionId, createQueueStateMessage(sessionManager.getQueueState(client.activeSessionId)))
-      send({ type: 'ack', payload: {}, id: message.id })
+      send(createErrorMessage('DEPRECATED', 'queue.completion removed. Use REST API: POST /api/sessions/:id/queue/completion', message.id))
       break
     }
 
     case 'queue.cancel': {
-      if (!client.activeSessionId) {
-        send(createErrorMessage('NO_SESSION', 'No active session', message.id))
-        return
-      }
-      if (!isQueueCancelPayload(message.payload)) {
-        send(createErrorMessage('INVALID_PAYLOAD', 'Invalid queue.cancel payload', message.id))
-        return
-      }
-      sessionManager.cancelQueuedMessage(client.activeSessionId, message.payload.queueId)
-      sendForSession(client.activeSessionId, createQueueStateMessage(sessionManager.getQueueState(client.activeSessionId)))
-      send({ type: 'ack', payload: {}, id: message.id })
+      send(createErrorMessage('DEPRECATED', 'queue.cancel removed. Use REST API: DELETE /api/sessions/:id/queue/:queueId', message.id))
       break
     }
 
     case 'chat.continue': {
-      if (!client.activeSessionId) {
-        send(createErrorMessage('NO_SESSION', 'No active session', message.id))
-        return
-      }
-
-      const session = sessionManager.requireSession(client.activeSessionId)
-      if (session.isRunning) {
-        send(createErrorMessage('ALREADY_RUNNING', 'Session is already running', message.id))
-        return
-      }
-
-      const continueEventStore = getEventStore()
-      const events = continueEventStore.getEvents(session.id)
-      const messages = buildMessagesFromStoredEvents(events)
-      const lastAssistantMessage = [...messages].reverse().find(msg => msg.role === 'assistant')
-      const fallbackMessageId = lastAssistantMessage?.id ?? [...messages].reverse().find(msg => msg.role === 'user')?.id ?? crypto.randomUUID()
-
-      send({ type: 'ack', payload: {}, id: message.id })
-      sendForSession(session.id, createChatDoneMessage(fallbackMessageId, 'complete', lastAssistantMessage?.stats))
+      send(createErrorMessage('DEPRECATED', 'chat.continue removed. Use REST API: POST /api/sessions/:id/continue', message.id))
       break
     }
-    
+
     // =========================================================================
     // Mode Switching
     // =========================================================================
-    
+
     case 'mode.switch': {
-      if (!client.activeSessionId) {
-        send(createErrorMessage('NO_SESSION', 'No active session', message.id))
-        return
-      }
-      
-      if (!isModeSwitchPayload(message.payload)) {
-        send(createErrorMessage('INVALID_PAYLOAD', 'Invalid mode.switch payload', message.id))
-        return
-      }
-
-      // Validate that the target agent exists and is a top-level agent
-      const allAgents = await loadAllAgentsDefault()
-      const targetAgent = findAgentById(message.payload.mode, allAgents)
-      if (!targetAgent || targetAgent.metadata.subagent) {
-        send(createErrorMessage('INVALID_AGENT', `Agent '${message.payload.mode}' not found or is a sub-agent`, message.id))
-        return
-      }
-
-      const sessionId = client.activeSessionId
-      const session = sessionManager.requireSession(sessionId)
-      const eventStore = getEventStore()
-      
-      // Trigger summary generation when switching to builder mode for the first time
-      // Only if there are actual conversation messages to summarize
-      if (message.payload.mode === 'builder' && needsSummaryGeneration(session.summary)) {
-        const events = eventStore.getEvents(sessionId)
-        
-        // Filter out system-generated messages (like "Waiting for user input...")
-        const nonSystemEvents = events.filter(event => {
-          if (event.type !== 'message.start') return true
-          return (event.data as any).isSystemGenerated !== true
-        })
-        
-        const contextMessages = buildContextMessagesFromEventHistory(nonSystemEvents)
-        const summaryMessages = contextMessages.filter(m => m.role === 'user' || m.role === 'assistant')
-          .map(m => ({ role: m.role as 'user' | 'assistant', content: m.content }))
-        
-        // Only generate summary if there are conversation messages
-        if (summaryMessages.length > 0) {
-          const config = getRuntimeConfig()
-          const configDir = getGlobalConfigDir(config.mode ?? 'production')
-          const skills = await getEnabledSkillMetadata(configDir)
-          const { content: instructions } = await getAllInstructions(session.workdir, session.projectId)
-          
-          generateSessionSummary({
-            messages: summaryMessages,
-            llmClient: llmForSession(sessionId),
-            workdir: session.workdir,
-            customInstructions: instructions || undefined,
-            skills,
-          })
-          .then(async (result) => {
-            if (result.success && result.summary) {
-              // Update DB with the generated summary
-              sessionManager.setSummary(sessionId, result.summary)
-
-              // Broadcast updated session state to all WebSocket clients
-              const updatedSession = sessionManager.getSession(sessionId)
-              if (updatedSession) {
-                const events = eventStore.getEvents(sessionId)
-                const messages = buildMessagesFromStoredEvents(events)
-                broadcastForSession(sessionId, createSessionStateMessage(updatedSession, messages))
-              }
-              
-              logger.info('Session summary generated', { sessionId, summaryLength: result.summary.length })
-            }
-          })
-          .catch((error) => {
-            logger.warn('Session summary generation failed', { sessionId, error: error instanceof Error ? error.message : error })
-            // Don't propagate error - summary generation is optional
-          })
-        }
-      }
-      
-      sessionManager.setMode(sessionId, message.payload.mode)
-      sendForSession(sessionId, createModeChangedMessage(message.payload.mode, false))
-      const modeEvents = eventStore.getEvents(sessionId)
-      const modeMessages = buildMessagesFromStoredEvents(modeEvents)
-      sendForSession(sessionId, createSessionStateMessage(sessionManager.getSession(sessionId)!, modeMessages, message.id))
+      send(createErrorMessage('DEPRECATED', 'mode.switch removed. Use REST API: PUT /api/sessions/:id/mode', message.id))
       break
     }
     
@@ -1012,26 +877,14 @@ async function handleClientMessage(
     // =========================================================================
     
     case 'criteria.edit': {
-      if (!client.activeSessionId) {
-        send(createErrorMessage('NO_SESSION', 'No active session', message.id))
-        return
-      }
-      
-      if (!isCriteriaEditPayload(message.payload)) {
-        send(createErrorMessage('INVALID_PAYLOAD', 'Invalid criteria.edit payload', message.id))
-        return
-      }
-      
-      sessionManager.setCriteria(client.activeSessionId, message.payload.criteria)
-      sendForSession(client.activeSessionId, createCriteriaUpdatedMessage(message.payload.criteria))
-      send({ type: 'ack', payload: {}, id: message.id })
+      send(createErrorMessage('DEPRECATED', 'criteria.edit removed. Use REST API: PUT /api/sessions/:id/criteria', message.id))
       break
     }
-    
+
     // =========================================================================
     // Context Management
     // =========================================================================
-    
+
     case 'context.compact': {
       if (!client.activeSessionId) {
         send(createErrorMessage('NO_SESSION', 'No active session', message.id))
@@ -1211,43 +1064,16 @@ async function handleClientMessage(
     // =========================================================================
     // Path Confirmation
     // =========================================================================
-    
+
     case 'path.confirm': {
-      if (!client.activeSessionId) {
-        send(createErrorMessage('NO_SESSION', 'No active session', message.id))
-        return
-      }
-      
-      if (!isPathConfirmPayload(message.payload)) {
-        send(createErrorMessage('INVALID_PAYLOAD', 'Invalid path.confirm payload', message.id))
-        return
-      }
-      
-      const { callId, approved } = message.payload
-      const result = providePathConfirmation(callId, approved)
-      
-      if (!result.found) {
-        send(createErrorMessage('NOT_FOUND', 'No pending path confirmation with that ID', message.id))
-        return
-      }
-      
-      logger.debug('Path confirmation response', { 
-        sessionId: client.activeSessionId, 
-        callId, 
-        approved 
-      })
-      
-      // Just acknowledge - the Promise resolution will resume tool execution automatically.
-      // If approved: paths were added to allowlist, tool continues.
-      // If denied: requestPathAccess throws PathAccessDeniedError, handled by existing error catch.
-      send({ type: 'ack', payload: {}, id: message.id })
+      send(createErrorMessage('DEPRECATED', 'path.confirm removed. Use REST API: POST /api/sessions/:id/confirm-path', message.id))
       break
     }
-    
+
     // =========================================================================
     // Ask User
     // =========================================================================
-    
+
     case 'ask.answer': {
       if (!client.activeSessionId) {
         send(createErrorMessage('NO_SESSION', 'No active session', message.id))

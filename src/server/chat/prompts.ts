@@ -222,24 +222,56 @@ export function buildSubAgentSystemPrompt(
 /**
  * Build the tool permissions section for the system reminder.
  * Filters allowedTools to show only tools actually available to the agent.
+ * Displays granular permissions (e.g., "criterion: pass, fail").
  */
 function buildToolPermissionsSection(allowedTools: string[] | undefined, isSubAgent: boolean): string {
   if (!allowedTools || allowedTools.length === 0) {
     return '\n\n## AVAILABLE TOOLS\n\nYou have no tools available.'
   }
-  
-  const filteredTools = allowedTools.filter(tool => {
-    if (!isSubAgent && tool === 'return_value') {
-      return false
+
+  // Parse and format granular permissions
+  const toolPermissions = new Map<string, string[]>()
+  const baseTools: string[] = []
+
+  for (const entry of allowedTools) {
+    const colonIdx = entry.indexOf(':')
+    if (colonIdx === -1) {
+      // No granular permissions - add as base tool
+      if (entry !== 'return_value' || isSubAgent) {
+        baseTools.push(entry)
+      }
+    } else {
+      const toolName = entry.slice(0, colonIdx)
+      const actionsStr = entry.slice(colonIdx + 1)
+      const actions = actionsStr.split(',').filter(Boolean)
+      const existing = toolPermissions.get(toolName) || []
+      toolPermissions.set(toolName, [...existing, ...actions])
     }
-    return true
-  })
-  
-  const toolsList = filteredTools.join(', ')
-  const finalToolsList = isSubAgent && !filteredTools.includes('return_value')
-    ? [...filteredTools, 'return_value'].join(', ')
-    : toolsList
-  return `\n\n## AVAILABLE TOOLS\n\nYou have access to these tools: ${finalToolsList}`
+  }
+
+  // Add return_value for sub-agents if not present
+  if (isSubAgent && !baseTools.includes('return_value') && !toolPermissions.has('return_value')) {
+    baseTools.push('return_value')
+  }
+
+  // Build the display string
+  const parts: string[] = []
+
+  // Add tools with granular permissions first
+  for (const [toolName, actions] of toolPermissions) {
+    parts.push(`${toolName}: ${actions.join(', ')}`)
+  }
+
+  // Add base tools (no granular permissions)
+  for (const tool of baseTools) {
+    // Skip if already in granular (shouldn't happen but be safe)
+    if (!toolPermissions.has(tool)) {
+      parts.push(tool)
+    }
+  }
+
+  const toolsList = parts.join(', ')
+  return `\n\n## AVAILABLE TOOLS\n\nYou have access to these tools: ${toolsList}`
 }
 
 /**

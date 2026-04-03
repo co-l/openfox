@@ -16,12 +16,14 @@ export interface ToolContext {
   lspManager?: LspManagerInterface | undefined  // Optional LSP manager for file diagnostics
   llmClient?: LLMClientWithModel | undefined  // For tools that need to spawn LLM calls (e.g., call_sub_agent)
   statsIdentity?: StatsIdentity | undefined  // For tools that track metrics
+  permittedActions?: Record<string, string[]> | undefined  // Map of tool name -> allowed actions (e.g., { criterion: ['pass', 'fail'] })
 }
 
 export interface Tool {
   name: string
   definition: LLMToolDefinition
   execute: (args: Record<string, unknown>, context: ToolContext) => Promise<ToolResult>
+  permittedActions?: string[]  // Actions this tool supports for granular permissions
 }
 
 export interface ToolRegistry {

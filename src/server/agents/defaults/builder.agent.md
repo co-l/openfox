@@ -13,8 +13,8 @@ allowedTools:
   - edit_file
   - run_command
   - ask_user
-  - criterion
-  - todo
+  - criterion:complete,get
+  - todo:list,add,write,update,remove
   - call_sub_agent
   - load_skill
   - dev_server

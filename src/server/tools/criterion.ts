@@ -10,6 +10,7 @@ type CriterionAction = 'get' | 'add' | 'update' | 'remove' | 'complete' | 'pass'
 
 export const criterionTool: Tool = {
   name: 'criterion',
+  permittedActions: ['get', 'add', 'update', 'remove', 'complete', 'pass', 'fail'],
   definition: {
     type: 'function',
     function: {
@@ -54,6 +55,17 @@ export const criterionTool: Tool = {
         return {
           success: false,
           error: `Invalid action: ${action}. Must be one of: get, add, update, remove, complete, pass, fail`,
+          durationMs: Date.now() - startTime,
+          truncated: false,
+        }
+      }
+
+      // Check granular permissions if enforced
+      const permittedActions = context.permittedActions?.['criterion']
+      if (permittedActions && !permittedActions.includes(action)) {
+        return {
+          success: false,
+          error: `Action '${action}' not allowed. Available: ${permittedActions.join(', ')}`,
           durationMs: Date.now() - startTime,
           truncated: false,
         }

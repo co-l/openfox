@@ -24,10 +24,80 @@ import { stepDoneTool } from './step-done.js'
 import { logger } from '../utils/logger.js'
 
 // ============================================================================
+// Granular Tool Permissions
+// ============================================================================
+
+/**
+ * Parse granular tool permissions from allowedTools.
+ * Format: "criterion:pass,fail" or "criterion" (all actions)
+ * Returns: { toolName: Set<actions> }
+ */
+export function parseToolPermissions(allowedTools: string[]): Record<string, Set<string>> {
+  const result: Record<string, Set<string>> = {}
+
+  for (const entry of allowedTools) {
+    const colonIdx = entry.indexOf(':')
+    if (colonIdx === -1) {
+      // No granular permissions - tool name only
+      // Empty Set means ALL actions allowed
+      result[entry] = new Set()
+    } else {
+      const toolName = entry.slice(0, colonIdx)
+      const actionsStr = entry.slice(colonIdx + 1)
+      const actions = actionsStr.split(',').filter(Boolean)
+      result[toolName] = new Set(actions)
+    }
+  }
+
+  return result
+}
+
+/**
+ * Check if an action is permitted for a tool.
+ * Returns undefined if no restrictions (all actions allowed).
+ * Returns the Set of allowed actions if there are restrictions.
+ */
+export function getToolPermissions(
+  toolName: string,
+  permissions: Record<string, Set<string>>
+): Set<string> | undefined {
+  const perms = permissions[toolName]
+  if (!perms || perms.size === 0) {
+    // No granular permissions - all actions allowed
+    return undefined
+  }
+  return perms
+}
+
+/**
+ * Validate an action against tool permissions.
+ * Returns error message if not permitted, undefined if allowed.
+ */
+export function validateToolAction(
+  toolName: string,
+  action: string,
+  permissions: Record<string, Set<string>>
+): string | undefined {
+  const perms = permissions[toolName]
+  if (!perms || perms.size === 0) {
+    // No granular permissions - all actions allowed
+    return undefined
+  }
+  if (!perms.has(action)) {
+    return `Action '${action}' not allowed. Available: ${[...perms].join(', ')}`
+  }
+  return undefined
+}
+
+// ============================================================================
 // Registry Creation
 // ============================================================================
 
-export function createRegistryFromTools(tools: Tool[], allowedTools?: string[]): ToolRegistry {
+export function createRegistryFromTools(
+  tools: Tool[],
+  allowedTools?: string[],
+  toolPermissions?: Record<string, Set<string>>
+): ToolRegistry {
   const toolMap = new Map<string, Tool>()
   const allowedToolsSet = new Set(allowedTools || [])
 
@@ -55,6 +125,7 @@ export function createRegistryFromTools(tools: Tool[], allowedTools?: string[]):
         }
       }
 
+      // Check base tool permission
       if (allowedTools && allowedTools.length > 0 && !allowedToolsSet.has(name)) {
         logger.debug('Permission denied: tool not in allowed list', {
           tool: name,
@@ -68,10 +139,42 @@ export function createRegistryFromTools(tools: Tool[], allowedTools?: string[]):
         }
       }
 
+      // Check granular action permission if applicable
+      if (toolPermissions) {
+        // Extract action from args (for tools like criterion that have an 'action' param)
+        const action = args['action'] as string | undefined
+        if (action) {
+          const actionError = validateToolAction(name, action, toolPermissions)
+          if (actionError) {
+            logger.debug('Permission denied: action not allowed', {
+              tool: name,
+              action,
+              toolPermissions,
+            })
+            return {
+              success: false,
+              error: actionError,
+              durationMs: 0,
+              truncated: false,
+            }
+          }
+        }
+      }
+
+      // Inject permittedActions into context for tools to use (convert Sets to arrays)
+      const permittedActionsArray: Record<string, string[]> = {}
+      for (const [key, value] of Object.entries(toolPermissions || {})) {
+        permittedActionsArray[key] = [...value]
+      }
+      const contextWithPerms: ToolContext = {
+        ...context,
+        permittedActions: Object.keys(permittedActionsArray).length > 0 ? permittedActionsArray : undefined,
+      }
+
       logger.debug('Executing tool', { tool: name, args })
 
       try {
-        const result = await tool.execute(args, context)
+        const result = await tool.execute(args, contextWithPerms)
 
         logger.debug('Tool completed', {
           tool: name,
@@ -145,16 +248,23 @@ function addReturnValueToAllowedTools(allowedTools: string[]): string[] {
 /**
  * Create a tool registry for a subagent from a list of tool names.
  * Sub-agents automatically get return_value added.
+ * Supports granular permissions: "criterion:pass,fail"
  */
 export function getToolRegistryForSubAgent(toolNames: string[]): ToolRegistry {
   const allTools = getAllToolsMap()
   const tools: Tool[] = []
+
+  // Parse granular tool permissions
+  const toolPermissions = parseToolPermissions(toolNames)
+
   for (const name of toolNames) {
-    const tool = allTools.get(name)
+    // Extract base tool name (before colon)
+    const baseName = name.includes(':') ? name.split(':')[0]! : name
+    const tool = allTools.get(baseName)
     if (tool) {
       tools.push(tool)
     } else {
-      logger.warn(`Unknown tool '${name}' in sub-agent allowedTools list`)
+      logger.warn(`Unknown tool '${baseName}' in sub-agent allowedTools list`)
     }
   }
   if (!tools.some(t => t.name === 'return_value')) {
@@ -162,7 +272,7 @@ export function getToolRegistryForSubAgent(toolNames: string[]): ToolRegistry {
     if (rv) tools.push(rv)
   }
   const allowedToolsWithReturnValue = addReturnValueToAllowedTools(toolNames)
-  return createRegistryFromTools(tools, allowedToolsWithReturnValue)
+  return createRegistryFromTools(tools, allowedToolsWithReturnValue, toolPermissions)
 }
 
 /**

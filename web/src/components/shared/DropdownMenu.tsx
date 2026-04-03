@@ -7,6 +7,7 @@ export interface DropdownMenuItem {
   onClick?: (event?: React.MouseEvent) => void
   href?: string
   danger?: boolean
+  closeOnClick?: boolean  // default: true
 }
 
 interface DropdownMenuProps {
@@ -105,7 +106,9 @@ export function DropdownMenu({ items, trigger, minWidth = '120px' }: DropdownMen
             key={index}
             onClick={(e) => {
               item.onClick?.(e)
-              setIsOpen(false)
+              if (item.closeOnClick !== false) {
+                setIsOpen(false)
+              }
             }}
             className={`w-full px-3 py-2 text-left text-sm hover:bg-bg-tertiary transition-colors flex items-center gap-2 ${
               item.danger ? 'text-accent-error hover:bg-accent-error/10' : 'text-text-primary'

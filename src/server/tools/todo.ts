@@ -22,6 +22,7 @@ export function clearTodos(sessionId: string): void {
 
 export const todoTool: Tool = {
   name: 'todo',
+  permittedActions: ['list', 'write', 'add', 'update', 'remove'],
   definition: {
     type: 'function',
     function: {
@@ -80,6 +81,17 @@ export const todoTool: Tool = {
         return {
           success: false,
           error: `Invalid action: ${action}. Must be one of: list, write, add, update, remove`,
+          durationMs: Date.now() - startTime,
+          truncated: false,
+        }
+      }
+
+      // Check granular permissions if enforced
+      const permittedActions = context.permittedActions?.['todo']
+      if (permittedActions && !permittedActions.includes(action)) {
+        return {
+          success: false,
+          error: `Action '${action}' not allowed. Available: ${permittedActions.join(', ')}`,
           durationMs: Date.now() - startTime,
           truncated: false,
         }

@@ -135,9 +135,13 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
     res.json({ status: 'ok', timestamp: new Date().toISOString() })
   })
 
-  // Available tool names
+  // Available tools with action metadata for granular permissions
   app.get('/api/tools', (_req, res) => {
-    res.json({ tools: toolRegistry.tools.map((t) => t.name) })
+    const tools = toolRegistry.tools.map((t) => ({
+      name: t.name,
+      actions: t.permittedActions || [],
+    }))
+    res.json({ tools })
   })
 
   // Project endpoints (REST)
@@ -302,6 +306,188 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
     const updatedSession = sessionManager.getSession(sessionId)
 
     res.json({ session: updatedSession, messages, contextState })
+  })
+
+  // Session criteria (REST)
+  app.put('/api/sessions/:id/criteria', async (req, res) => {
+    const sessionId = req.params.id
+    const session = sessionManager.getSession(sessionId)
+    if (!session) {
+      return res.status(404).json({ error: 'Session not found' })
+    }
+
+    const { criteria } = req.body
+    if (!Array.isArray(criteria)) {
+      return res.status(400).json({ error: 'criteria is required and must be an array' })
+    }
+
+    sessionManager.setCriteria(sessionId, criteria)
+    res.json({ success: true })
+  })
+
+  // Session mode (REST)
+  app.put('/api/sessions/:id/mode', async (req, res) => {
+    const { getEventStore } = await import('./events/index.js')
+    const { buildMessagesFromStoredEvents } = await import('./events/folding.js')
+
+    const sessionId = req.params.id
+    const session = sessionManager.getSession(sessionId)
+    if (!session) {
+      return res.status(404).json({ error: 'Session not found' })
+    }
+
+    const { mode } = req.body
+    if (!mode || !['planner', 'builder'].includes(mode)) {
+      return res.status(400).json({ error: 'mode is required and must be "planner" or "builder"' })
+    }
+
+    sessionManager.setMode(sessionId, mode)
+
+    const eventStore = getEventStore()
+    eventStore.append(sessionId, { type: 'mode.changed', data: { mode, auto: false } })
+
+    const events = eventStore.getEvents(sessionId)
+    const messages = buildMessagesFromStoredEvents(events)
+    const updatedSession = sessionManager.getSession(sessionId)
+
+    res.json({ session: updatedSession, messages })
+  })
+
+  // Path confirmation (REST)
+  app.post('/api/sessions/:id/confirm-path', async (req, res) => {
+    const sessionId = req.params.id
+    const { callId, approved } = req.body
+
+    if (!callId || approved === undefined) {
+      return res.status(400).json({ error: 'callId and approved are required' })
+    }
+
+    const { providePathConfirmation } = await import('./tools/index.js')
+    const result = providePathConfirmation(callId, approved)
+
+    if (!result.found) {
+      return res.status(404).json({ error: 'No pending path confirmation with that ID' })
+    }
+
+    res.json({ success: true })
+  })
+
+  // Ask user answer (REST)
+  app.post('/api/sessions/:id/answer', async (req, res) => {
+    const sessionId = req.params.id
+    const { callId, answer } = req.body
+
+    if (!callId || !answer) {
+      return res.status(400).json({ error: 'callId and answer are required' })
+    }
+
+    const { provideAnswer } = await import('./tools/index.js')
+    const found = provideAnswer(callId, answer)
+
+    if (!found) {
+      return res.status(404).json({ error: 'No pending question with that ID' })
+    }
+
+    res.json({ success: true })
+  })
+
+  // Queue operations (REST)
+  app.post('/api/sessions/:id/queue/asap', (req, res) => {
+    const sessionId = req.params.id
+    const session = sessionManager.getSession(sessionId)
+    if (!session) {
+      return res.status(404).json({ error: 'Session not found' })
+    }
+
+    const { content, attachments } = req.body
+    if (!content) {
+      return res.status(400).json({ error: 'content is required' })
+    }
+
+    sessionManager.queueMessage(sessionId, 'asap', content, attachments)
+    res.json({ success: true, queueState: sessionManager.getQueueState(sessionId) })
+  })
+
+  app.post('/api/sessions/:id/queue/completion', (req, res) => {
+    const sessionId = req.params.id
+    const session = sessionManager.getSession(sessionId)
+    if (!session) {
+      return res.status(404).json({ error: 'Session not found' })
+    }
+
+    const { content, attachments } = req.body
+    if (!content) {
+      return res.status(400).json({ error: 'content is required' })
+    }
+
+    sessionManager.queueMessage(sessionId, 'completion', content, attachments)
+    res.json({ success: true, queueState: sessionManager.getQueueState(sessionId) })
+  })
+
+  app.delete('/api/sessions/:id/queue/:queueId', (req, res) => {
+    const sessionId = req.params.id
+    const { queueId } = req.params
+    const session = sessionManager.getSession(sessionId)
+    if (!session) {
+      return res.status(404).json({ error: 'Session not found' })
+    }
+
+    sessionManager.cancelQueuedMessage(sessionId, queueId)
+    res.json({ success: true, queueState: sessionManager.getQueueState(sessionId) })
+  })
+
+  // Chat stop (REST)
+  app.post('/api/sessions/:id/stop', async (req, res) => {
+    const sessionId = req.params.id
+    const session = sessionManager.getSession(sessionId)
+    if (!session) {
+      return res.status(404).json({ error: 'Session not found' })
+    }
+
+    const { cancelQuestionsForSession, cancelPathConfirmationsForSession } = await import('./tools/index.js')
+    cancelQuestionsForSession(sessionId, 'Session stopped by user')
+    cancelPathConfirmationsForSession(sessionId, 'Session stopped by user')
+    sessionManager.clearMessageQueue(sessionId)
+    sessionManager.setRunning(sessionId, false)
+
+    const eventStore = (await import('./events/index.js')).getEventStore()
+    eventStore.append(sessionId, { type: 'running.changed', data: { isRunning: false } })
+
+    res.json({ success: true })
+  })
+
+  // Chat operations (REST)
+  app.post('/api/sessions/:id/chat', async (req, res) => {
+    const sessionId = req.params.id
+    const session = sessionManager.getSession(sessionId)
+    if (!session) {
+      return res.status(404).json({ error: 'Session not found' })
+    }
+
+    const { content, attachments, messageKind, isSystemGenerated } = req.body
+    if (!content) {
+      return res.status(400).json({ error: 'content is required' })
+    }
+
+    if (session.isRunning) {
+      return res.status(409).json({ error: 'Session is already running' })
+    }
+
+    res.json({ accepted: true, sessionId })
+  })
+
+  app.post('/api/sessions/:id/continue', async (req, res) => {
+    const sessionId = req.params.id
+    const session = sessionManager.getSession(sessionId)
+    if (!session) {
+      return res.status(404).json({ error: 'Session not found' })
+    }
+
+    if (session.isRunning) {
+      return res.status(409).json({ error: 'Session is already running' })
+    }
+
+    res.json({ accepted: true })
   })
 
   // Settings endpoints (REST)

@@ -596,23 +596,38 @@ export const useSessionStore = create<SessionState>((set, get) => {
     },
 
     sendMessage: (content, attachments, opts) => {
-      // No optimistic update needed - server will send chat.message with user message
+      // For now, still use WebSocket - the REST endpoint returns 501
+      // TODO: Convert to REST when chat handler is fully extracted
       set({ streamingMessageId: null })
       wsClient.send('chat.send', { content, attachments, ...opts })
     },
 
-    stopGeneration: () => {
+    stopGeneration: async () => {
+      const sessionId = get().currentSession?.id
+      if (!sessionId) return
       if (get().abortInProgress) return
       // Flush any buffered streaming content before stopping
       cancelStreamingFlush()
       flushStreamingBuffer?.()
-      wsClient.send('chat.stop', {})
       set({ abortInProgress: true })
+
+      try {
+        await fetch(`/api/sessions/${sessionId}/stop`, { method: 'POST' })
+      } catch (error) {
+        console.error('Error stopping generation:', error)
+      }
     },
 
-    continueGeneration: () => {
+    continueGeneration: async () => {
+      const sessionId = get().currentSession?.id
+      if (!sessionId) return
       set({ streamingMessageId: null })
-      wsClient.send('chat.continue', {})
+
+      try {
+        await fetch(`/api/sessions/${sessionId}/continue`, { method: 'POST' })
+      } catch (error) {
+        console.error('Error continuing generation:', error)
+      }
     },
 
     launchRunner: (content?: string, attachments?: Attachment[], workflowId?: string) => {
@@ -624,8 +639,28 @@ export const useSessionStore = create<SessionState>((set, get) => {
       wsClient.send('runner.launch', payload)
     },
 
-    switchMode: (mode) => {
-      wsClient.send('mode.switch', { mode })
+    switchMode: async (mode) => {
+      const sessionId = get().currentSession?.id
+      if (!sessionId) return
+
+      try {
+        const res = await fetch(`/api/sessions/${sessionId}/mode`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ mode }),
+        })
+        if (!res.ok) {
+          console.error('Failed to switch mode:', await res.json())
+          return
+        }
+        const data = await res.json()
+        // Update session with new mode
+        if (data.session) {
+          set({ currentSession: data.session })
+        }
+      } catch (error) {
+        console.error('Error switching mode:', error)
+      }
     },
 
     acceptAndBuild: (workflowId?: string, content?: string, attachments?: Attachment[]) => {
@@ -637,8 +672,22 @@ export const useSessionStore = create<SessionState>((set, get) => {
       wsClient.send('mode.accept', payload)
     },
 
-    editCriteria: (criteria) => {
-      wsClient.send('criteria.edit', { criteria })
+    editCriteria: async (criteria) => {
+      const sessionId = get().currentSession?.id
+      if (!sessionId) return
+
+      try {
+        const res = await fetch(`/api/sessions/${sessionId}/criteria`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ criteria }),
+        })
+        if (!res.ok) {
+          console.error('Failed to update criteria:', await res.json())
+        }
+      } catch (error) {
+        console.error('Error updating criteria:', error)
+      }
     },
 
     compactContext: () => {
@@ -673,26 +722,79 @@ export const useSessionStore = create<SessionState>((set, get) => {
       set({ contextState })
     },
 
-    confirmPath: (callId, approved) => {
-      wsClient.send('path.confirm', { callId, approved })
+    confirmPath: async (callId, approved) => {
+      const sessionId = get().currentSession?.id
+      if (!sessionId) return
+
+      try {
+        await fetch(`/api/sessions/${sessionId}/confirm-path`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ callId, approved }),
+        })
+      } catch (error) {
+        console.error('Error confirming path:', error)
+      }
       set({ pendingPathConfirmation: null })
     },
 
-    answerQuestion: (callId: string, answer: string) => {
-      wsClient.send('ask.answer', { callId, answer })
+    answerQuestion: async (callId: string, answer: string) => {
+      const sessionId = get().currentSession?.id
+      if (!sessionId) return
+
+      try {
+        await fetch(`/api/sessions/${sessionId}/answer`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ callId, answer }),
+        })
+      } catch (error) {
+        console.error('Error answering question:', error)
+      }
       set({ pendingQuestion: null })
     },
 
-    queueAsap: (content, attachments) => {
-      wsClient.send('queue.asap', { content, attachments })
+    queueAsap: async (content, attachments) => {
+      const sessionId = get().currentSession?.id
+      if (!sessionId) return
+
+      try {
+        await fetch(`/api/sessions/${sessionId}/queue/asap`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ content, attachments }),
+        })
+      } catch (error) {
+        console.error('Error queueing ASAP message:', error)
+      }
     },
 
-    queueCompletion: (content, attachments) => {
-      wsClient.send('queue.completion', { content, attachments })
+    queueCompletion: async (content, attachments) => {
+      const sessionId = get().currentSession?.id
+      if (!sessionId) return
+
+      try {
+        await fetch(`/api/sessions/${sessionId}/queue/completion`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ content, attachments }),
+        })
+      } catch (error) {
+        console.error('Error queueing completion message:', error)
+      }
     },
 
-    cancelQueued: (queueId) => {
-      wsClient.send('queue.cancel', { queueId })
+    cancelQueued: async (queueId) => {
+      const sessionId = get().currentSession?.id
+      if (!sessionId) return
+
+      try {
+        await fetch(`/api/sessions/${sessionId}/queue/${queueId}`, {
+          method: 'DELETE',
+        })
+      } catch (error) {
+        console.error('Error canceling queued message:', error)
+      }
     },
 
     clearError: () => {
