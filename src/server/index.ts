@@ -392,39 +392,29 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
     res.json({ success: true })
   })
 
-  // Queue operations (REST)
-  app.post('/api/sessions/:id/queue/asap', (req, res) => {
+  // Unified message endpoint - always queues, triggers processing
+  app.post('/api/sessions/:id/message', (req, res) => {
     const sessionId = req.params.id
     const session = sessionManager.getSession(sessionId)
     if (!session) {
       return res.status(404).json({ error: 'Session not found' })
     }
 
-    const { content, attachments } = req.body
-    if (!content) {
+    const { content, attachments, messageKind } = req.body
+    if (!content?.trim()) {
       return res.status(400).json({ error: 'content is required' })
     }
 
-    sessionManager.queueMessage(sessionId, 'asap', content, attachments)
+    // Always queue the message
+    sessionManager.queueMessage(sessionId, 'asap', content, attachments, messageKind)
+
+    // Always trigger processing - it will check if already running and skip if so
+    sessionManager.triggerProcessing(sessionId)
+
     res.json({ success: true, queueState: sessionManager.getQueueState(sessionId) })
   })
 
-  app.post('/api/sessions/:id/queue/completion', (req, res) => {
-    const sessionId = req.params.id
-    const session = sessionManager.getSession(sessionId)
-    if (!session) {
-      return res.status(404).json({ error: 'Session not found' })
-    }
-
-    const { content, attachments } = req.body
-    if (!content) {
-      return res.status(400).json({ error: 'content is required' })
-    }
-
-    sessionManager.queueMessage(sessionId, 'completion', content, attachments)
-    res.json({ success: true, queueState: sessionManager.getQueueState(sessionId) })
-  })
-
+  // Delete queued message (cancel)
   app.delete('/api/sessions/:id/queue/:queueId', (req, res) => {
     const sessionId = req.params.id
     const { queueId } = req.params
@@ -874,8 +864,13 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
     () => providerManager.getActiveProvider(),
     sessionManager,
     providerManager,
+    (callback) => sessionManager.setProcessingCallback(callback),
   )
   const wss = wssExports.wss
+
+  // Note: sessionManager.triggerProcessing() should be called after queueMessage
+  // The actual processing is handled by the WS server's startTurnWithCompletionChain
+  // which is triggered when the session starts running
 
   // Return the handle with start/close methods
   return {

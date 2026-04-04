@@ -114,6 +114,7 @@ export function createWebSocketServer(
   getActiveProvider: (() => Provider | undefined) | undefined,
   sessionManager: SessionManager,
   providerManager?: ProviderManager,
+  setProcessingCallback?: (callback: (sessionId: string) => void) => void,
 ): WebSocketServerExports {
   const wss = new WebSocketServer({ server: httpServer, path: '/ws' })
   const clients = new Map<WebSocket, ClientConnection>()
@@ -191,6 +192,122 @@ export function createWebSocketServer(
         clientWs.send(serializeServerMessage({ ...msg, sessionId }))
       }
     }
+  }
+
+  const llmForSession = (sessionId: string): LLMClientWithModel =>
+    getSessionLLMClient?.(sessionId) ?? getLLMClient()
+
+  const statsForSession = (sessionId: string): StatsIdentity =>
+    getSessionStatsIdentity?.(sessionId) ?? resolveStatsIdentity(getLLMClient(), getActiveProvider)
+
+  function startTurnWithCompletionChain(sessionId: string, controller: AbortController) {
+    runChatTurn({
+      sessionManager,
+      sessionId,
+      llmClient: llmForSession(sessionId),
+      statsIdentity: statsForSession(sessionId),
+      signal: controller.signal,
+      onMessage: (msg) => broadcastForSession(sessionId, msg),
+    }).catch((error) => {
+      if (error instanceof Error && error.message === 'Aborted') {
+        return
+      }
+      logger.error('Chat turn error', { error })
+    }).finally(() => {
+      if (activeAgents.get(sessionId) !== controller) {
+        return
+      }
+      activeAgents.delete(sessionId)
+
+      const asapMsgs = sessionManager.drainAsapMessages(sessionId)
+      const nextAsap = asapMsgs[0]
+      if (nextAsap) {
+        for (const remaining of asapMsgs.slice(1)) {
+          sessionManager.queueMessage(sessionId, 'asap', remaining.content, remaining.attachments, remaining.messageKind as 'command' | undefined)
+        }
+        broadcastForSession(sessionId, createQueueStateMessage(sessionManager.getQueueState(sessionId)))
+
+        const userMessagePayload: { role: 'user'; content: string; attachments?: Attachment[] } = {
+          role: 'user',
+          content: nextAsap.content,
+          ...(nextAsap.attachments ? { attachments: nextAsap.attachments } : {}),
+        }
+        const userMessage = sessionManager.addMessage(sessionId, userMessagePayload)
+        broadcastForSession(sessionId, createChatMessageMessage(userMessage))
+
+        const newController = new AbortController()
+        activeAgents.set(sessionId, newController)
+        startTurnWithCompletionChain(sessionId, newController)
+        return
+      }
+
+      const completionMsgs = sessionManager.drainCompletionMessages(sessionId)
+      const next = completionMsgs[0]
+      if (next) {
+        for (const remaining of completionMsgs.slice(1)) {
+          sessionManager.queueMessage(sessionId, 'completion', remaining.content, remaining.attachments)
+        }
+        broadcastForSession(sessionId, createQueueStateMessage(sessionManager.getQueueState(sessionId)))
+
+        const userMessage = sessionManager.addMessage(sessionId, {
+          role: 'user',
+          content: next.content,
+          ...(next.attachments ? { attachments: next.attachments } : {}),
+        })
+        broadcastForSession(sessionId, createChatMessageMessage(userMessage))
+
+        const newController = new AbortController()
+        activeAgents.set(sessionId, newController)
+        startTurnWithCompletionChain(sessionId, newController)
+        return
+      }
+
+      sessionManager.clearMessageQueue(sessionId)
+      sessionManager.setRunning(sessionId, false)
+      const contextState = sessionManager.getContextState(sessionId)
+      broadcastForSession(sessionId, createContextStateMessage(contextState))
+    })
+  }
+
+  function triggerQueueProcessing(sessionId: string): boolean {
+    const currentSession = sessionManager.getSession(sessionId)
+    if (!currentSession || currentSession.isRunning) {
+      return false
+    }
+
+    const queue = sessionManager.getQueueState(sessionId)
+    if (queue.length === 0) {
+      return false
+    }
+
+    const controller = new AbortController()
+    activeAgents.set(sessionId, controller)
+
+    sessionManager.setRunning(sessionId, true)
+    const eventStore = getEventStore()
+    eventStore.append(sessionId, { type: 'running.changed', data: { isRunning: true } })
+    broadcastForSession(sessionId, createSessionRunningMessage(true))
+
+    const nextAsap = queue.find(m => m.mode === 'asap') ?? queue[0]
+    if (nextAsap) {
+      sessionManager.cancelQueuedMessage(sessionId, nextAsap.queueId)
+      const userMessage = sessionManager.addMessage(sessionId, {
+        role: 'user',
+        content: nextAsap.content,
+        ...(nextAsap.attachments ? { attachments: nextAsap.attachments } : {}),
+        ...(nextAsap.messageKind ? { messageKind: nextAsap.messageKind as any } : {}),
+      })
+      broadcastForSession(sessionId, createChatMessageMessage(userMessage))
+    }
+
+    startTurnWithCompletionChain(sessionId, controller)
+    return true
+  }
+
+  if (setProcessingCallback) {
+    setProcessingCallback((sessionId: string) => {
+      triggerQueueProcessing(sessionId)
+    })
   }
   
   // Subscribe to session events and broadcast to relevant clients
@@ -284,7 +401,7 @@ export function createWebSocketServer(
       const client = clients.get(ws)!
       
       try {
-          await handleClientMessage(ws, client, message, getLLMClient, getActiveProvider, sessionManager, broadcastForSession, providerManager, getSessionLLMClient, getSessionStatsIdentity)
+          await handleClientMessage(ws, client, message, getLLMClient, getActiveProvider, sessionManager, broadcastForSession, providerManager, getSessionLLMClient, getSessionStatsIdentity, llmForSession, statsForSession, startTurnWithCompletionChain)
       } catch (error) {
         logger.error('Error handling client message', { error, type: message.type })
         ws.send(serializeServerMessage(
@@ -336,6 +453,7 @@ export interface WebSocketServerExports {
   wss: WebSocketServer
   abortSession: (sessionId: string) => boolean
   close: (cb?: () => void) => void
+  triggerQueueProcessing?: (sessionId: string) => boolean
 }
 
 async function handleClientMessage(
@@ -346,9 +464,12 @@ async function handleClientMessage(
   getActiveProvider: (() => Provider | undefined) | undefined,
   sessionManager: SessionManager,
   broadcastForSession: (sessionId: string, msg: ServerMessage) => void,
-  providerManager?: ProviderManager,
-  getSessionLLMClient?: (sessionId: string) => LLMClientWithModel,
-  getSessionStatsIdentity?: (sessionId: string) => StatsIdentity,
+  providerManager: ProviderManager | undefined,
+  getSessionLLMClient: ((sessionId: string) => LLMClientWithModel) | undefined,
+  getSessionStatsIdentity: ((sessionId: string) => StatsIdentity) | undefined,
+  llmForSession: (sessionId: string) => LLMClientWithModel,
+  statsForSession: (sessionId: string) => StatsIdentity,
+  startTurnWithCompletionChain: (sessionId: string, controller: AbortController) => void,
 ): Promise<void> {
   const send = (msg: ServerMessage) => {
     if (ws.readyState === WebSocket.OPEN) {
@@ -376,69 +497,6 @@ async function handleClientMessage(
     const contextState = sessionManager.getContextState(sessionId)
     sendForSession(sessionId, createContextStateMessage(contextState))
     return true
-  }
-
-  // Per-session LLM resolution helpers
-  const llmForSession = (sessionId: string): LLMClientWithModel =>
-    getSessionLLMClient?.(sessionId) ?? getLLMClient()
-
-  const statsForSession = (sessionId: string): StatsIdentity =>
-    getSessionStatsIdentity?.(sessionId) ?? resolveStatsIdentity(getLLMClient(), getActiveProvider)
-
-  /**
-   * Start a chat turn with completion queue continuation.
-   * When a turn finishes, checks for queued completion messages and auto-starts the next turn.
-   */
-  const startTurnWithCompletionChain = (sessionId: string, controller: AbortController) => {
-    runChatTurn({
-      sessionManager,
-      sessionId,
-      llmClient: llmForSession(sessionId),
-      statsIdentity: statsForSession(sessionId),
-      signal: controller.signal,
-      onMessage: (msg) => sendForSession(sessionId, msg),
-    }).catch((error) => {
-      if (error instanceof Error && error.message === 'Aborted') {
-        return
-      }
-      logger.error('Chat turn error', { error })
-    }).finally(() => {
-      if (activeAgents.get(sessionId) !== controller) {
-        return
-      }
-      activeAgents.delete(sessionId)
-
-      // Check completion queue before going idle
-      const completionMsgs = sessionManager.drainCompletionMessages(sessionId)
-      const next = completionMsgs[0]
-      if (next) {
-        // Re-queue remaining completion messages
-        for (const remaining of completionMsgs.slice(1)) {
-          sessionManager.queueMessage(sessionId, 'completion', remaining.content, remaining.attachments)
-        }
-        // Broadcast updated queue state
-        sendForSession(sessionId, createQueueStateMessage(sessionManager.getQueueState(sessionId)))
-
-        // Add user message and start new turn
-        const userMessage = sessionManager.addMessage(sessionId, {
-          role: 'user',
-          content: next.content,
-          ...(next.attachments ? { attachments: next.attachments } : {}),
-        })
-        sendForSession(sessionId, createChatMessageMessage(userMessage))
-
-        const newController = new AbortController()
-        activeAgents.set(sessionId, newController)
-        startTurnWithCompletionChain(sessionId, newController)
-        return // Keep isRunning=true
-      }
-
-      // No more queued messages — go idle
-      sessionManager.clearMessageQueue(sessionId)
-      sessionManager.setRunning(sessionId, false)
-      const contextState = sessionManager.getContextState(sessionId)
-      sendForSession(sessionId, createContextStateMessage(contextState))
-    })
   }
 
   const ensureEventStoreSubscription = (sessionId: string) => {
@@ -704,12 +762,33 @@ async function handleClientMessage(
         send(createErrorMessage('NO_SESSION', 'No active session', message.id))
         return
       }
-      
+
       const session = sessionManager.requireSession(client.activeSessionId)
-      
-      // Check if session is already running - reject concurrent execution
+      const acceptPayload = message.payload as { workflowId?: string; content?: string; attachments?: unknown[] } | undefined
+
+      // If running, queue for later processing instead of rejecting
       if (session.isRunning) {
-        send(createErrorMessage('ALREADY_RUNNING', 'Session is already running', message.id))
+        const content = acceptPayload?.content ?? ''
+        const attachments = acceptPayload?.attachments as Attachment[] | undefined
+        const workflowId = acceptPayload?.workflowId
+
+        // Build message content with workflow context
+        let fullContent = content
+        if (workflowId) {
+          const workflowInfo = `// Workflow: ${workflowId}`
+          fullContent = content ? `${workflowInfo}\n\n${content}` : workflowInfo
+        }
+
+        // Queue as ASAP message - will be processed at next turn boundary
+        sessionManager.queueMessage(client.activeSessionId, 'asap', fullContent, attachments, 'workflow-accept')
+
+        // Return success with queue state
+        const queueState = sessionManager.getQueueState(client.activeSessionId)
+        send({
+          type: 'queue.state',
+          payload: { success: true, queueState },
+          id: message.id,
+        })
         return
       }
       
@@ -879,6 +958,31 @@ async function handleClientMessage(
             return
           }
 
+          // Drain ASAP queue before going idle - process each as new turn
+          const asapMsgs = sessionManager.drainAsapMessages(sessionId)
+          const nextAsap = asapMsgs[0]
+          if (nextAsap) {
+            // Re-queue remaining ASAP messages
+            for (const remaining of asapMsgs.slice(1)) {
+              sessionManager.queueMessage(sessionId, 'asap', remaining.content, remaining.attachments, remaining.messageKind as 'command' | undefined)
+            }
+            // Broadcast updated queue state
+            sendForSession(sessionId, createQueueStateMessage(sessionManager.getQueueState(sessionId)))
+
+            // Add user message and start new turn
+            const userMessage = sessionManager.addMessage(sessionId, {
+              role: 'user',
+              content: nextAsap.content,
+              ...(nextAsap.attachments ? { attachments: nextAsap.attachments } : {}),
+            })
+            sendForSession(sessionId, createChatMessageMessage(userMessage))
+
+            const newerController = new AbortController()
+            activeAgents.set(sessionId, newerController)
+            startTurnWithCompletionChain(sessionId, newerController)
+            return
+          }
+
           sessionManager.clearMessageQueue(sessionId)
           sessionManager.setRunning(sessionId, false)
           eventStore.append(sessionId, { type: 'running.changed', data: { isRunning: false } })
@@ -966,21 +1070,42 @@ async function handleClientMessage(
         send(createErrorMessage('NO_SESSION', 'No active session', message.id))
         return
       }
-      
+
       const session = sessionManager.requireSession(client.activeSessionId)
-      
-      // Check if session is already running - reject concurrent execution
+
+      // If running, queue for later processing instead of rejecting
       if (session.isRunning) {
-        send(createErrorMessage('ALREADY_RUNNING', 'Session is already running', message.id))
+        const launchPayload = message.payload as { workflowId?: string; content?: string; attachments?: unknown[] } | undefined
+        const content = launchPayload?.content ?? ''
+        const attachments = launchPayload?.attachments as Attachment[] | undefined
+        const workflowId = launchPayload?.workflowId
+
+        // Build message content with workflow context
+        let fullContent = content
+        if (workflowId) {
+          const workflowInfo = `// Workflow: ${workflowId}`
+          fullContent = content ? `${workflowInfo}\n\n${content}` : workflowInfo
+        }
+
+        // Queue as ASAP message - will be processed at next turn boundary
+        sessionManager.queueMessage(client.activeSessionId, 'asap', fullContent, attachments, 'workflow-launch')
+
+        // Return success with queue state
+        const queueState = sessionManager.getQueueState(client.activeSessionId)
+        send({
+          type: 'queue.state',
+          payload: { success: true, queueState },
+          id: message.id,
+        })
         return
       }
-      
+
       // Only allow launching from builder mode
       if (session.mode !== 'builder') {
         send(createErrorMessage('INVALID_MODE', 'Runner can only be launched in builder mode', message.id))
         return
       }
-      
+
       // Check if there are pending criteria (skip when a specific workflow is
       // requested — the workflow's own startCondition handles validation)
       const launchPayloadEarly = message.payload as { workflowId?: string } | undefined
@@ -1000,7 +1125,7 @@ async function handleClientMessage(
         sessionManager.resetAllCriteriaAttempts(sessionId)
       }
 
-      // Parse launch payload early
+      // Parse launch payload
       const launchPayload = message.payload as { content?: string; attachments?: unknown[]; workflowId?: string } | undefined
       const launchAttachments = launchPayload?.attachments as Attachment[] | undefined
       const hasUserContent = launchPayload?.content && typeof launchPayload.content === 'string' && launchPayload.content.trim()
@@ -1051,6 +1176,31 @@ async function handleClientMessage(
           return
         }
         activeAgents.delete(sessionId)
+
+        // Drain ASAP queue FIRST - process each as new turn before checking completion queue
+        const asapMsgs = sessionManager.drainAsapMessages(sessionId)
+        const nextAsap = asapMsgs[0]
+        if (nextAsap) {
+          // Re-queue remaining ASAP messages
+          for (const remaining of asapMsgs.slice(1)) {
+            sessionManager.queueMessage(sessionId, 'asap', remaining.content, remaining.attachments, remaining.messageKind as 'command' | undefined)
+          }
+          // Broadcast updated queue state
+          sendForSession(sessionId, createQueueStateMessage(sessionManager.getQueueState(sessionId)))
+
+          // Add user message and start new turn
+          const userMessage = sessionManager.addMessage(sessionId, {
+            role: 'user',
+            content: nextAsap.content,
+            ...(nextAsap.attachments ? { attachments: nextAsap.attachments } : {}),
+          })
+          sendForSession(sessionId, createChatMessageMessage(userMessage))
+
+          const newerController = new AbortController()
+          activeAgents.set(sessionId, newerController)
+          startTurnWithCompletionChain(sessionId, newerController)
+          return
+        }
 
         // Check completion queue before going idle
         const completionMsgs = sessionManager.drainCompletionMessages(sessionId)

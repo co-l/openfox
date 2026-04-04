@@ -254,6 +254,14 @@ function createSessionManager(overrides: Record<string, unknown> = {}) {
     updateMessageStats: vi.fn(),
     updateMessage: vi.fn(),
     getCurrentWindowMessages: vi.fn(() => []),
+    queueMessage: vi.fn((_sessionId, _mode, content, _attachments, _messageKind) => ({
+      queueId: `queue-${Math.random()}`,
+      mode: _mode,
+      content,
+      queuedAt: new Date().toISOString(),
+    })),
+    getQueueState: vi.fn(() => []),
+    cancelQueuedMessage: vi.fn(() => true),
     drainAsapMessages: vi.fn(() => []),
     drainCompletionMessages: vi.fn(() => []),
     clearMessageQueue: vi.fn(),
@@ -724,11 +732,11 @@ describe('createWebSocketServer', () => {
     await new Promise<void>((resolve) => setTimeout(resolve, 0))
     expect(runOrchestratorMock).toHaveBeenCalled()
     
-    // Session is now running from mode.accept, so runner.launch should fail
+    // Session is now running from mode.accept, so runner.launch should queue
     sessionState.isRunning = true
 
     harness.send({ id: 'runner-launch', type: 'runner.launch', payload: {} })
-    expect(await harness.nextMessage((message) => message.id === 'runner-launch')).toMatchObject({ type: 'error', payload: { code: 'ALREADY_RUNNING' } })
+    expect(await harness.nextMessage((message) => message.id === 'runner-launch')).toMatchObject({ type: 'queue.state', payload: { success: true } })
 
     // Stop the session so compact can run
     sessionState.isRunning = false
@@ -792,12 +800,14 @@ describe('createWebSocketServer', () => {
 
     sessionState.isRunning = true
     sessionState.criteria = [{ id: 'tests-pass', description: 'Tests pass', status: { type: 'pending' }, attempts: [] }]
+    // When running, mode.accept now queues instead of rejecting
     harness.send({ id: 'mode-accept-running', type: 'mode.accept', payload: {} })
-    expect(await harness.nextMessage((message) => message.id === 'mode-accept-running')).toMatchObject({ payload: { code: 'ALREADY_RUNNING' } })
+    expect(await harness.nextMessage((message) => message.id === 'mode-accept-running')).toMatchObject({ type: 'queue.state', payload: { success: true } })
     harness.send({ id: 'compact-running', type: 'context.compact', payload: {} })
     expect(await harness.nextMessage((message) => message.id === 'compact-running')).toMatchObject({ payload: { code: 'SESSION_RUNNING' } })
+    // When running, runner.launch now queues instead of rejecting
     harness.send({ id: 'runner-running', type: 'runner.launch', payload: {} })
-    expect(await harness.nextMessage((message) => message.id === 'runner-running')).toMatchObject({ payload: { code: 'ALREADY_RUNNING' } })
+    expect(await harness.nextMessage((message) => message.id === 'runner-running')).toMatchObject({ type: 'queue.state', payload: { success: true } })
 
     sessionState.isRunning = false
 

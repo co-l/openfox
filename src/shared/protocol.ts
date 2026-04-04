@@ -102,6 +102,7 @@ export interface QueuedMessage {
   content: string
   attachments?: Attachment[]
   queuedAt: string
+  messageKind?: string
 }
 
 // ============================================================================

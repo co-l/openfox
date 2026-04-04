@@ -54,8 +54,6 @@ export function PlanPanel() {
   const acceptAndBuild = useSessionStore(state => state.acceptAndBuild)
   const stopGeneration = useSessionStore(state => state.stopGeneration)
   const launchRunner = useSessionStore(state => state.launchRunner)
-  const queueAsap = useSessionStore(state => state.queueAsap)
-  const queueCompletion = useSessionStore(state => state.queueCompletion)
   const cancelQueued = useSessionStore(state => state.cancelQueued)
   const queuedMessages = useQueuedMessages()
 
@@ -238,7 +236,7 @@ export function PlanPanel() {
     }
   }
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
 
     // If Launch is available, Enter triggers launch (with or without a message)
@@ -250,18 +248,11 @@ export function PlanPanel() {
 
     if (!input.trim() && attachments.length === 0) return
 
-    if (isRunning) {
-      // Default Enter key to ASAP queue when agent is running
-      queueAsap(input, attachments.length > 0 ? attachments : undefined)
-      setInput('')
-      setAttachments([])
-      return
-    }
-
-    // Scroll to bottom when sending a message
+    // Always use unified sendMessage - handles both idle and running cases
+    // When running, backend queues it; when idle, processes immediately
     force_scroll_to_bottom()
 
-    sendMessage(input, attachments)
+    sendMessage(input, attachments.length > 0 ? attachments : undefined)
     clearInput()
   }
 
@@ -772,36 +763,20 @@ export function PlanPanel() {
               </div>
             </div>
           ) : (
-            <div className="flex items-center gap-1.5">
-              <button
-                type="button"
-                onClick={() => {
-                  if (input.trim() || attachments.length > 0) {
-                    queueAsap(input, attachments.length > 0 ? attachments : undefined)
-                    setInput('')
-                    setAttachments([])
-                  }
-                }}
-                disabled={!input.trim() && attachments.length === 0}
-                className="px-3 py-1.5 rounded bg-amber-500/20 text-sm text-amber-400 font-medium hover:bg-amber-500/30 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
-              >
-                Send ASAP
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  if (input.trim() || attachments.length > 0) {
-                    queueCompletion(input, attachments.length > 0 ? attachments : undefined)
-                    setInput('')
-                    setAttachments([])
-                  }
-                }}
-                disabled={!input.trim() && attachments.length === 0}
-                className="px-3 py-1.5 rounded bg-blue-500/20 text-sm text-blue-400 font-medium hover:bg-blue-500/30 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
-              >
-                Queue
-              </button>
-            </div>
+            <button
+              type="button"
+              onClick={() => {
+                if (input.trim() || attachments.length > 0) {
+                  sendMessage(input, attachments.length > 0 ? attachments : undefined)
+                  setInput('')
+                  setAttachments([])
+                }
+              }}
+              disabled={!input.trim() && attachments.length === 0}
+              className="px-4 py-1.5 rounded bg-accent-primary/20 text-sm text-accent-primary font-medium hover:bg-accent-primary/30 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+            >
+              Send
+            </button>
           )}
         </div>
         <div className="mt-3 flex items-center justify-between">

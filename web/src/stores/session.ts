@@ -266,8 +266,8 @@ interface SessionState {
   answerQuestion: (callId: string, answer: string) => void
 
   // Message queue
-  queueAsap: (content: string, attachments?: Attachment[]) => void
-  queueCompletion: (content: string, attachments?: Attachment[]) => void
+  queueAsap: (content: string, attachments?: Attachment[], messageKind?: string) => void
+  queueCompletion: (content: string, attachments?: Attachment[], messageKind?: string) => void
   cancelQueued: (queueId: string) => void
 
   clearError: () => void
@@ -596,11 +596,27 @@ export const useSessionStore = create<SessionState>((set, get) => {
       }))
     },
 
-    sendMessage: (content, attachments, opts) => {
-      // For now, still use WebSocket - the REST endpoint returns 501
-      // TODO: Convert to REST when chat handler is fully extracted
+    sendMessage: async (content, attachments, opts) => {
+      const sessionId = get().currentSession?.id
+      if (!sessionId) return
+
       set({ streamingMessageId: null })
-      wsClient.send('chat.send', { content, attachments, ...opts })
+
+      // Use unified /message endpoint - always queues, processes at turn boundaries
+      // This works whether agent is running (queues) or idle (processes immediately)
+      try {
+        const res = await fetch(`/api/sessions/${sessionId}/message`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ content, attachments, messageKind: opts?.messageKind }),
+        })
+        const data = await res.json()
+        if (data.queueState) {
+          set({ queuedMessages: data.queueState })
+        }
+      } catch (error) {
+        console.error('Error sending message:', error)
+      }
     },
 
     stopGeneration: async () => {
@@ -755,15 +771,15 @@ export const useSessionStore = create<SessionState>((set, get) => {
       set({ pendingQuestion: null })
     },
 
-    queueAsap: async (content, attachments) => {
+    queueAsap: async (content, attachments, messageKind?: string) => {
       const sessionId = get().currentSession?.id
       if (!sessionId) return
 
       try {
-        const res = await fetch(`/api/sessions/${sessionId}/queue/asap`, {
+        const res = await fetch(`/api/sessions/${sessionId}/message`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ content, attachments }),
+          body: JSON.stringify({ content, attachments, messageKind }),
         })
         const data = await res.json()
         if (data.queueState) {
@@ -774,15 +790,17 @@ export const useSessionStore = create<SessionState>((set, get) => {
       }
     },
 
-    queueCompletion: async (content, attachments) => {
+    queueCompletion: async (content, attachments, messageKind?: string) => {
       const sessionId = get().currentSession?.id
       if (!sessionId) return
 
+      // Completion mode now uses same ASAP queue (processed at end of turn)
+      // In future could differentiate, but for now unify
       try {
-        const res = await fetch(`/api/sessions/${sessionId}/queue/completion`, {
+        const res = await fetch(`/api/sessions/${sessionId}/message`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ content, attachments }),
+          body: JSON.stringify({ content, attachments, messageKind }),
         })
         const data = await res.json()
         if (data.queueState) {

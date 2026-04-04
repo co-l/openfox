@@ -382,4 +382,53 @@ describe('SessionManager', () => {
     const contextState = manager.getContextState(session.id)
     expect(contextState.maxTokens).toBe(200000)
   })
+
+  describe('queue and triggerProcessing', () => {
+    it('queues messages and returns queueState', () => {
+      const session = manager.createSession(projectId)
+
+      manager.queueMessage(session.id, 'asap', 'hello', undefined, 'command')
+      const queueState = manager.getQueueState(session.id)
+
+      expect(queueState).toHaveLength(1)
+      expect(queueState[0]!.content).toBe('hello')
+      expect(queueState[0]!.messageKind).toBe('command')
+    })
+
+    it('triggerProcessing calls callback when queue has messages and not running', () => {
+      const session = manager.createSession(projectId)
+      const processFn = vi.fn()
+
+      manager.setProcessingCallback(processFn)
+
+      manager.queueMessage(session.id, 'asap', 'hello')
+      manager.triggerProcessing(session.id)
+
+      expect(processFn).toHaveBeenCalledWith(session.id)
+    })
+
+    it('triggerProcessing does NOT call callback when already running', () => {
+      const session = manager.createSession(projectId)
+      const processFn = vi.fn()
+
+      manager.setProcessingCallback(processFn)
+      manager.setRunning(session.id, true) // simulate running
+
+      manager.queueMessage(session.id, 'asap', 'hello')
+      manager.triggerProcessing(session.id)
+
+      expect(processFn).not.toHaveBeenCalled()
+    })
+
+    it('triggerProcessing does NOT call callback when queue is empty', () => {
+      const session = manager.createSession(projectId)
+      const processFn = vi.fn()
+
+      manager.setProcessingCallback(processFn)
+
+      manager.triggerProcessing(session.id)
+
+      expect(processFn).not.toHaveBeenCalled()
+    })
+  })
 })

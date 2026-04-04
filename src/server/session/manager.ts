@@ -672,13 +672,14 @@ export class SessionManager {
 
   private messageQueues = new Map<string, QueuedMessage[]>()
 
-  queueMessage(sessionId: string, mode: 'asap' | 'completion', content: string, attachments?: Attachment[]): QueuedMessage {
+  queueMessage(sessionId: string, mode: 'asap' | 'completion', content: string, attachments?: Attachment[], messageKind?: string): QueuedMessage {
     const queue = this.messageQueues.get(sessionId) ?? []
     const msg: QueuedMessage = {
       queueId: crypto.randomUUID(),
       mode,
       content,
       ...(attachments ? { attachments } : {}),
+      ...(messageKind ? { messageKind } : {}),
       queuedAt: new Date().toISOString(),
     }
     queue.push(msg)
@@ -713,6 +714,31 @@ export class SessionManager {
 
   getQueueState(sessionId: string): QueuedMessage[] {
     return this.messageQueues.get(sessionId) ?? []
+  }
+
+  hasQueuedMessages(sessionId: string): boolean {
+    const queue = this.messageQueues.get(sessionId)
+    return queue !== undefined && queue.length > 0
+  }
+
+  private processingCallback: ((sessionId: string) => void) | null = null
+
+  setProcessingCallback(callback: (sessionId: string) => void): void {
+    this.processingCallback = callback
+  }
+
+  triggerProcessing(sessionId: string): void {
+    // Only trigger if:
+    // 1. Has a callback registered
+    // 2. Has queued messages
+    // 3. Session is not already running
+    if (!this.processingCallback) return
+    if (!this.hasQueuedMessages(sessionId)) return
+    const session = this.getSession(sessionId)
+    if (!session) return
+    if (session.isRunning) return
+
+    this.processingCallback(sessionId)
   }
 
   clearMessageQueue(sessionId: string): void {
