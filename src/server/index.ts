@@ -243,8 +243,9 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
     const events = eventStore.getEvents(req.params.id)
     const messages = buildMessagesFromStoredEvents(events)
     const contextState = sessionManager.getContextState(req.params.id)
+    const queueState = sessionManager.getQueueState(req.params.id)
 
-    res.json({ session, messages, contextState })
+    res.json({ session, messages, contextState, queueState })
   })
 
   app.delete('/api/sessions/:id', (req, res) => {

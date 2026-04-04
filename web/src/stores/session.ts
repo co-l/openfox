@@ -533,6 +533,7 @@ export const useSessionStore = create<SessionState>((set, get) => {
           currentSession: data.session,
           messages: data.messages ?? [],
           contextState: data.contextState,
+          queuedMessages: data.queueState ?? [],
         })
 
         // Tell WS server which session is active (required for chat.send routing)
@@ -759,11 +760,15 @@ export const useSessionStore = create<SessionState>((set, get) => {
       if (!sessionId) return
 
       try {
-        await fetch(`/api/sessions/${sessionId}/queue/asap`, {
+        const res = await fetch(`/api/sessions/${sessionId}/queue/asap`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ content, attachments }),
         })
+        const data = await res.json()
+        if (data.queueState) {
+          set({ queuedMessages: data.queueState })
+        }
       } catch (error) {
         console.error('Error queueing ASAP message:', error)
       }
@@ -774,11 +779,15 @@ export const useSessionStore = create<SessionState>((set, get) => {
       if (!sessionId) return
 
       try {
-        await fetch(`/api/sessions/${sessionId}/queue/completion`, {
+        const res = await fetch(`/api/sessions/${sessionId}/queue/completion`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ content, attachments }),
         })
+        const data = await res.json()
+        if (data.queueState) {
+          set({ queuedMessages: data.queueState })
+        }
       } catch (error) {
         console.error('Error queueing completion message:', error)
       }
@@ -789,9 +798,13 @@ export const useSessionStore = create<SessionState>((set, get) => {
       if (!sessionId) return
 
       try {
-        await fetch(`/api/sessions/${sessionId}/queue/${queueId}`, {
+        const res = await fetch(`/api/sessions/${sessionId}/queue/${queueId}`, {
           method: 'DELETE',
         })
+        const data = await res.json()
+        if (data.queueState) {
+          set({ queuedMessages: data.queueState })
+        }
       } catch (error) {
         console.error('Error canceling queued message:', error)
       }
