@@ -444,11 +444,16 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
       return res.status(404).json({ error: 'Session not found' })
     }
 
+    const { stopSessionExecution } = await import('./session/chat-handler.js')
     const { cancelQuestionsForSession, cancelPathConfirmationsForSession } = await import('./tools/index.js')
+
+    // Abort both plan mode (WS) and build mode (chat-handler) controllers
+    stopSessionExecution(sessionId, sessionManager)
+    wssExports.abortSession(sessionId)
+
     cancelQuestionsForSession(sessionId, 'Session stopped by user')
     cancelPathConfirmationsForSession(sessionId, 'Session stopped by user')
     sessionManager.clearMessageQueue(sessionId)
-    sessionManager.setRunning(sessionId, false)
 
     const eventStore = (await import('./events/index.js')).getEventStore()
     eventStore.append(sessionId, { type: 'running.changed', data: { isRunning: false } })
@@ -861,7 +866,7 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
   const httpServer = createHttpServer(app)
 
   // Create WebSocket server attached to HTTP server
-  const wss = createWebSocketServer(
+  const wssExports = createWebSocketServer(
     httpServer,
     config,
     getLLMClient,
@@ -869,6 +874,7 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
     sessionManager,
     providerManager,
   )
+  const wss = wssExports.wss
 
   // Return the handle with start/close methods
   return {

@@ -89,6 +89,7 @@ export async function* streamLLMPure(
     ...(tools && { tools }),
     ...(tools && { toolChoice: toolChoice ?? 'auto' }),
     disableThinking: disableThinking ?? false,
+    ...(signal && { signal }),
   })
 
   // Track tool call indices we've emitted preparing events for

@@ -167,6 +167,7 @@ async function streamLLMResponseInternal(
     ...(tools && { tools }),
     ...(tools && { toolChoice: toolChoice ?? 'auto' }),
     disableThinking: disableThinking ?? false,
+    ...(signal && { signal }),
   })
 
   let result: Awaited<ReturnType<typeof stream.next>>['value'] = null

@@ -114,7 +114,7 @@ export function createWebSocketServer(
   getActiveProvider: (() => Provider | undefined) | undefined,
   sessionManager: SessionManager,
   providerManager?: ProviderManager,
-): WebSocketServer {
+): WebSocketServerExports {
   const wss = new WebSocketServer({ server: httpServer, path: '/ws' })
   const clients = new Map<WebSocket, ClientConnection>()
 
@@ -317,7 +317,25 @@ export function createWebSocketServer(
     })
   })
   
-  return wss
+  return {
+    wss,
+    abortSession: (sessionId: string) => {
+      const controller = activeAgents.get(sessionId)
+      if (controller) {
+        activeAgents.delete(sessionId)
+        controller.abort()
+        return true
+      }
+      return false
+    },
+    close: (cb?: () => void) => wss.close(cb as (err?: Error) => void),
+  }
+}
+
+export interface WebSocketServerExports {
+  wss: WebSocketServer
+  abortSession: (sessionId: string) => boolean
+  close: (cb?: () => void) => void
 }
 
 async function handleClientMessage(
