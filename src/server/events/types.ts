@@ -168,6 +168,33 @@ export type TurnEvent =
     }
 
   // ----------------------------------------------------------------------------
+  // Queue events (EventSourcing pattern)
+  // ----------------------------------------------------------------------------
+  | {
+      type: 'queue.added'
+      data: {
+        queueId: string
+        mode: 'asap' | 'completion'
+        content: string
+        attachments?: Attachment[]
+        messageKind?: string
+        queuedAt: string
+      }
+    }
+  | {
+      type: 'queue.drained'
+      data: {
+        queueId: string
+      }
+    }
+  | {
+      type: 'queue.cancelled'
+      data: {
+        queueId: string
+      }
+    }
+
+  // ----------------------------------------------------------------------------
   // Criteria
   // ----------------------------------------------------------------------------
   | {

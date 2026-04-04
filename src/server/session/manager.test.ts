@@ -383,7 +383,7 @@ describe('SessionManager', () => {
     expect(contextState.maxTokens).toBe(200000)
   })
 
-  describe('queue and triggerProcessing', () => {
+  describe('queue operations', () => {
     it('queues messages and returns queueState', () => {
       const session = manager.createSession(projectId)
 
@@ -395,40 +395,25 @@ describe('SessionManager', () => {
       expect(queueState[0]!.messageKind).toBe('command')
     })
 
-    it('triggerProcessing calls callback when queue has messages and not running', () => {
+    it('emits queue_added event when queuing', () => {
       const session = manager.createSession(projectId)
-      const processFn = vi.fn()
-
-      manager.setProcessingCallback(processFn)
+      const events: any[] = []
+      manager.subscribe((e) => events.push(e))
 
       manager.queueMessage(session.id, 'asap', 'hello')
-      manager.triggerProcessing(session.id)
 
-      expect(processFn).toHaveBeenCalledWith(session.id)
+      expect(events.some(e => e.type === 'queue_added')).toBe(true)
     })
 
-    it('triggerProcessing does NOT call callback when already running', () => {
+    it('emits queue_cancelled event when cancelling', () => {
       const session = manager.createSession(projectId)
-      const processFn = vi.fn()
+      const { queueId } = manager.queueMessage(session.id, 'asap', 'hello')
+      const events: any[] = []
+      manager.subscribe((e) => events.push(e))
 
-      manager.setProcessingCallback(processFn)
-      manager.setRunning(session.id, true) // simulate running
+      manager.cancelQueuedMessage(session.id, queueId)
 
-      manager.queueMessage(session.id, 'asap', 'hello')
-      manager.triggerProcessing(session.id)
-
-      expect(processFn).not.toHaveBeenCalled()
-    })
-
-    it('triggerProcessing does NOT call callback when queue is empty', () => {
-      const session = manager.createSession(projectId)
-      const processFn = vi.fn()
-
-      manager.setProcessingCallback(processFn)
-
-      manager.triggerProcessing(session.id)
-
-      expect(processFn).not.toHaveBeenCalled()
+      expect(events.some(e => e.type === 'queue_cancelled')).toBe(true)
     })
   })
 })

@@ -78,11 +78,10 @@ describe('Concurrency Guards', () => {
       // Wait for session to be marked as running
       await client.waitFor('session.running', (p: { isRunning: boolean }) => p.isRunning)
       
-      // Try to launch runner while running - should be rejected
+      // Try to launch runner while running - should be queued (new behavior)
       const response = await client.send('runner.launch', {})
       
-      expect(response.type).toBe('error')
-      expect((response.payload as { code: string }).code).toBe('ALREADY_RUNNING')
+      expect(response.type).toBe('queue.state')
       
       // Stop the running chat
       await stopSessionChat(server.url, sessionId)
@@ -90,7 +89,7 @@ describe('Concurrency Guards', () => {
   })
 
   describe('mode.accept guard', () => {
-    it('rejects mode.accept when session is already running', async () => {
+    it('queues mode.accept when session is already running', async () => {
       const sessionId = client.getSession()!.id
       
       // Set up criteria so mode.accept is valid
@@ -104,11 +103,10 @@ describe('Concurrency Guards', () => {
       // Wait for session to be marked as running
       await client.waitFor('session.running', (p: { isRunning: boolean }) => p.isRunning)
       
-      // Try to accept while running - should be rejected
+      // Try to accept while running - should be queued (new behavior)
       const response = await client.send('mode.accept', {})
       
-      expect(response.type).toBe('error')
-      expect((response.payload as { code: string }).code).toBe('ALREADY_RUNNING')
+      expect(response.type).toBe('queue.state')
       
       // Stop the running chat
       await stopSessionChat(server.url, sessionId)

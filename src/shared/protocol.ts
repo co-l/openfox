@@ -468,3 +468,37 @@ export function isServerMessage(msg: unknown): msg is ServerMessage {
     'payload' in msg
   )
 }
+
+// ============================================================================
+// Queue Event Types (EventSourcing pattern)
+// ============================================================================
+
+export type QueueEventType = 'queue.added' | 'queue.drained' | 'queue.cancelled'
+
+export interface QueueAddedEvent {
+  type: 'queue.added'
+  data: {
+    queueId: string
+    mode: 'asap' | 'completion'
+    content: string
+    attachments?: Attachment[]
+    messageKind?: string
+    queuedAt: string
+  }
+}
+
+export interface QueueDrainedEvent {
+  type: 'queue.drained'
+  data: {
+    queueId: string
+  }
+}
+
+export interface QueueCancelledEvent {
+  type: 'queue.cancelled'
+  data: {
+    queueId: string
+  }
+}
+
+export type QueueEvent = QueueAddedEvent | QueueDrainedEvent | QueueCancelledEvent

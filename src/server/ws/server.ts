@@ -114,7 +114,6 @@ export function createWebSocketServer(
   getActiveProvider: (() => Provider | undefined) | undefined,
   sessionManager: SessionManager,
   providerManager?: ProviderManager,
-  setProcessingCallback?: (callback: (sessionId: string) => void) => void,
 ): WebSocketServerExports {
   const wss = new WebSocketServer({ server: httpServer, path: '/ws' })
   const clients = new Map<WebSocket, ClientConnection>()
@@ -303,12 +302,6 @@ export function createWebSocketServer(
     startTurnWithCompletionChain(sessionId, controller)
     return true
   }
-
-  if (setProcessingCallback) {
-    setProcessingCallback((sessionId: string) => {
-      triggerQueueProcessing(sessionId)
-    })
-  }
   
   // Subscribe to session events and broadcast to relevant clients
   sessionManager.subscribe((event) => {
@@ -446,6 +439,7 @@ export function createWebSocketServer(
       return false
     },
     close: (cb?: () => void) => wss.close(cb as (err?: Error) => void),
+    broadcastForSession,
   }
 }
 
@@ -453,7 +447,7 @@ export interface WebSocketServerExports {
   wss: WebSocketServer
   abortSession: (sessionId: string) => boolean
   close: (cb?: () => void) => void
-  triggerQueueProcessing?: (sessionId: string) => boolean
+  broadcastForSession: (sessionId: string, msg: ServerMessage) => void
 }
 
 async function handleClientMessage(

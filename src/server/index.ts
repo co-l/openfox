@@ -392,7 +392,7 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
     res.json({ success: true })
   })
 
-  // Unified message endpoint - always queues, triggers processing
+  // Unified message endpoint - queues message, QueueProcessor handles processing
   app.post('/api/sessions/:id/message', (req, res) => {
     const sessionId = req.params.id
     const session = sessionManager.getSession(sessionId)
@@ -405,11 +405,7 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
       return res.status(400).json({ error: 'content is required' })
     }
 
-    // Always queue the message
     sessionManager.queueMessage(sessionId, 'asap', content, attachments, messageKind)
-
-    // Always trigger processing - it will check if already running and skip if so
-    sessionManager.triggerProcessing(sessionId)
 
     res.json({ success: true, queueState: sessionManager.getQueueState(sessionId) })
   })
@@ -438,9 +434,9 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
     const { stopSessionExecution } = await import('./session/chat-handler.js')
     const { cancelQuestionsForSession, cancelPathConfirmationsForSession } = await import('./tools/index.js')
 
-    // Abort both plan mode (WS) and build mode (chat-handler) controllers
+    // Abort both plan mode (WS) and build mode (chat-handler) controllers + QueueProcessor
     stopSessionExecution(sessionId, sessionManager)
-    wssExports.abortSession(sessionId)
+    abortSession(sessionId)
 
     cancelQuestionsForSession(sessionId, 'Session stopped by user')
     cancelPathConfirmationsForSession(sessionId, 'Session stopped by user')
@@ -864,13 +860,30 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
     () => providerManager.getActiveProvider(),
     sessionManager,
     providerManager,
-    (callback) => sessionManager.setProcessingCallback(callback),
   )
   const wss = wssExports.wss
 
-  // Note: sessionManager.triggerProcessing() should be called after queueMessage
-  // The actual processing is handled by the WS server's startTurnWithCompletionChain
-  // which is triggered when the session starts running
+  // Wire up QueueProcessor - listens for queue events and starts turns
+  const { QueueProcessor } = await import('./queue/processor.js')
+  const queueProcessor = new QueueProcessor({
+    sessionManager,
+    providerManager,
+    getLLMClient,
+    getActiveProvider: () => providerManager.getActiveProvider(),
+    broadcastForSession: wssExports.broadcastForSession,
+  })
+  queueProcessor.start()
+
+  const abortSession = (sessionId: string) => {
+    const aborted = wssExports.abortSession(sessionId) || queueProcessor.abortSession(sessionId)
+    if (aborted) {
+      sessionManager.setRunning(sessionId, false)
+      wssExports.broadcastForSession(sessionId, { type: 'session.running', payload: { isRunning: false } })
+    }
+    return aborted
+  }
+
+  // Note: /stop endpoint uses abortSession below
 
   // Return the handle with start/close methods
   return {

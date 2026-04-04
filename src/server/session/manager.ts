@@ -67,10 +67,15 @@ export type SessionEvent =
   | { type: 'running_changed'; sessionId: string; isRunning: boolean }
   | { type: 'criteria_updated'; sessionId: string; criteria: Criterion[] }
   | { type: 'message_added'; sessionId: string; message: Message }
+  | { type: 'queue_added'; sessionId: string; queueId: string; mode: 'asap' | 'completion'; content: string }
+  | { type: 'queue_drained'; sessionId: string; queueId: string }
+  | { type: 'queue_cancelled'; sessionId: string; queueId: string }
 
 type SessionEvents = {
   event: [SessionEvent]
   [key: `session:${string}`]: [SessionEvent]
+  queue: [{ sessionId: string; queueId: string; mode: 'asap' | 'completion'; content: string }]
+  turn_done: [{ sessionId: string }]
 }
 
 // ============================================================================
@@ -684,6 +689,7 @@ export class SessionManager {
     }
     queue.push(msg)
     this.messageQueues.set(sessionId, queue)
+    this.emit({ type: 'queue_added', sessionId, queueId: msg.queueId, mode, content })
     return msg
   }
 
@@ -693,6 +699,7 @@ export class SessionManager {
     const idx = queue.findIndex(m => m.queueId === queueId)
     if (idx === -1) return false
     queue.splice(idx, 1)
+    this.emit({ type: 'queue_cancelled', sessionId, queueId })
     return true
   }
 
@@ -701,6 +708,9 @@ export class SessionManager {
     if (!queue) return []
     const asap = queue.filter(m => m.mode === 'asap')
     this.messageQueues.set(sessionId, queue.filter(m => m.mode !== 'asap'))
+    for (const msg of asap) {
+      this.emit({ type: 'queue_drained', sessionId, queueId: msg.queueId })
+    }
     return asap
   }
 
@@ -709,6 +719,9 @@ export class SessionManager {
     if (!queue) return []
     const completion = queue.filter(m => m.mode === 'completion')
     this.messageQueues.set(sessionId, queue.filter(m => m.mode !== 'completion'))
+    for (const msg of completion) {
+      this.emit({ type: 'queue_drained', sessionId, queueId: msg.queueId })
+    }
     return completion
   }
 
@@ -719,26 +732,6 @@ export class SessionManager {
   hasQueuedMessages(sessionId: string): boolean {
     const queue = this.messageQueues.get(sessionId)
     return queue !== undefined && queue.length > 0
-  }
-
-  private processingCallback: ((sessionId: string) => void) | null = null
-
-  setProcessingCallback(callback: (sessionId: string) => void): void {
-    this.processingCallback = callback
-  }
-
-  triggerProcessing(sessionId: string): void {
-    // Only trigger if:
-    // 1. Has a callback registered
-    // 2. Has queued messages
-    // 3. Session is not already running
-    if (!this.processingCallback) return
-    if (!this.hasQueuedMessages(sessionId)) return
-    const session = this.getSession(sessionId)
-    if (!session) return
-    if (session.isRunning) return
-
-    this.processingCallback(sessionId)
   }
 
   clearMessageQueue(sessionId: string): void {
