@@ -8,7 +8,8 @@
 import { describe, it, expect, beforeAll, afterAll, beforeEach, afterEach } from 'vitest'
 import { createTestServer, type TestServerHandle } from './utils/index.js'
 import { createTestProject, type TestProject } from './utils/index.js'
-import { createTestClient, type TestClient } from './utils/index.js'
+import { createTestClient } from './utils/index.js'
+import { setSessionMode } from './utils/index.js'
 
 describe('REST + WebSocket Integration', () => {
   let server: TestServerHandle
@@ -68,7 +69,6 @@ describe('REST + WebSocket Integration', () => {
       expect(client.getSession()?.id).toBe(sessionId)
 
       // Verify WS real-time features still work (mode switching, etc.)
-      const sessionId = client.getSession()!.id
       await setSessionMode(server.url, sessionId, 'builder', server.wsUrl)
       const modeEvent = await client.waitFor('mode.changed')
       expect(modeEvent.type).toBe('mode.changed')
@@ -119,7 +119,6 @@ describe('REST + WebSocket Integration', () => {
       expect(updateData.project.name).toBe('Updated Name')
 
       // Verify WS session still works
-      const sessionId = client.getSession()!.id
       await setSessionMode(server.url, sessionId, 'builder', server.wsUrl)
       const modeEvent = await client.waitFor('mode.changed')
       expect(modeEvent.type).toBe('mode.changed')
@@ -182,7 +181,6 @@ describe('REST + WebSocket Integration', () => {
         expect(providerData.session.providerId).toBe(providerId)
 
         // Verify WS still works for real-time features
-        const sessionId = client.getSession()!.id
       await setSessionMode(server.url, sessionId, 'planner', server.wsUrl)
         const modeEvent = await client.waitFor('mode.changed')
         expect(modeEvent.type).toBe('mode.changed')

@@ -7,8 +7,8 @@ const rootDir = resolve(__dirname, '..')
 
 export default defineConfig({
   test: {
-    testTimeout: 60_000, // Increased for agent operations and verifier workflow
-    hookTimeout: 15_000, // Increased for server startup
+    testTimeout: 15_000,
+    hookTimeout: 10_000,
     
     // Run tests in parallel with thread pool
     // Each test file gets its own in-process server on a dynamic port

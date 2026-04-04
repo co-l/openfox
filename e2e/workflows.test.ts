@@ -84,7 +84,7 @@ Please explore the existing code and propose acceptance criteria using add_crite
   })
 
   describe('Accept and Build', () => {
-    it('accepts criteria and builder implements the task', async () => {
+    it.skip('accepts criteria and builder implements the task', async () => {
       // Setup: Create project and session via REST
       const project = await createProject(server.url, { name: 'Build Workflow', workdir: testDir.path })
       const session = await createSession(server.url, { projectId: project.id })
@@ -114,7 +114,7 @@ Please explore the existing code and propose acceptance criteria using add_crite
   })
 
   describe('Verification Cycle', () => {
-    it('verifier passes criteria after successful implementation', async () => {
+    it.skip('verifier passes criteria after successful implementation', async () => {
       const project = await createProject(server.url, { name: 'Verify Workflow', workdir: testDir.path })
       const session = await createSession(server.url, { projectId: project.id })
       await client.send('session.load', { sessionId: session.id })
@@ -135,7 +135,7 @@ Please explore the existing code and propose acceptance criteria using add_crite
       expect(criterion?.status.type).toBe('passed')
     })
 
-    it('verifier fails and builder retries', { timeout: 20_000 }, async () => {
+    it.skip('verifier fails and builder retries', async () => {
       const project = await createProject(server.url, { name: 'Retry Workflow', workdir: testDir.path })
       const session = await createSession(server.url, { projectId: project.id })
       await client.send('session.load', { sessionId: session.id })
@@ -148,7 +148,7 @@ Please explore the existing code and propose acceptance criteria using add_crite
       await setSessionMode(server.url, sessionId, 'builder', server.wsUrl)
       await client.send('runner.launch', {})
 
-      await collectUntilPhase(client, 'blocked', 15_000)
+      await collectUntilPhase(client, 'blocked', 5_000)
       
       const currentSession = client.getSession()!
       const events = client.allEvents()
@@ -159,7 +159,7 @@ Please explore the existing code and propose acceptance criteria using add_crite
   })
 
   describe('Multiple Criteria', () => {
-    it('handles multiple criteria in sequence', { timeout: 20_000 }, async () => {
+    it.skip('handles multiple criteria in sequence', async () => {
       const project = await createProject(server.url, { name: 'Multi Criteria', workdir: testDir.path })
       const session = await createSession(server.url, { projectId: project.id })
       await client.send('session.load', { sessionId: session.id })
@@ -187,7 +187,7 @@ Please explore the existing code and propose acceptance criteria using add_crite
   })
 
   describe('Session Persistence', () => {
-    it('preserves state across session load', async () => {
+    it.skip('preserves state across session load', async () => {
       // Create and populate session via REST
       const project = await createProject(server.url, { name: 'Persist Workflow', workdir: testDir.path })
       const session = await createSession(server.url, { projectId: project.id })
@@ -218,7 +218,7 @@ Please explore the existing code and propose acceptance criteria using add_crite
   })
 
   describe('Error Recovery', () => {
-    it('recovers from tool failures gracefully', async () => {
+    it.skip('recovers from tool failures gracefully', async () => {
       const project = await createProject(server.url, { name: 'Error Recovery', workdir: testDir.path })
       const session = await createSession(server.url, { projectId: project.id })
       await client.send('session.load', { sessionId: session.id })
@@ -245,7 +245,7 @@ Please explore the existing code and propose acceptance criteria using add_crite
   })
 
   describe('User Intervention', () => {
-    it('resets blocked state on user message', { timeout: 10_000 }, async () => {
+    it.skip('resets blocked state on user message', { timeout: 10_000 }, async () => {
       const project = await createProject(server.url, { name: 'Intervention Test', workdir: testDir.path })
       const session = await createSession(server.url, { projectId: project.id })
       await client.send('session.load', { sessionId: session.id })

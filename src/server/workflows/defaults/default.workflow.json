@@ -8,7 +8,7 @@
   },
   "entryStep": "build",
   "settings": {
-    "maxIterations": 50
+    "maxIterations": 10
   },
   "steps": [
     {

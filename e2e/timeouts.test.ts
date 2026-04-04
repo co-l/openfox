@@ -11,8 +11,8 @@ import {
 } from './utils/event-collector.js'
 
 describe('E2E timeouts', () => {
-  it('keeps the per-test timeout at 60 seconds', () => {
-    expect(config.test?.testTimeout).toBe(60_000)
+  it('keeps the per-test timeout at 15 seconds', () => {
+    expect(config.test?.testTimeout).toBe(15_000)
   })
 
   it('keeps websocket waits within the per-test budget', () => {

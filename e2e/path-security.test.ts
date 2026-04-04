@@ -16,8 +16,8 @@ import { describe, it, expect, beforeAll, afterAll, beforeEach, afterEach } from
 import { writeFile, mkdir, rm } from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
-import { 
-  createTestClient, 
+import {
+  createTestClient,
   createTestProject,
   createTestServer,
   collectChatEvents,
@@ -25,9 +25,10 @@ import {
   createProject,
   createSession,
   setSessionMode,
-  type TestClient, 
+  answerPathConfirmation,
+  type TestClient,
   type TestProject,
-  type TestServerHandle 
+  type TestServerHandle
 } from './utils/index.js'
 // Type for path confirmation payload
 interface PathConfirmationPayload {
@@ -190,7 +191,8 @@ describe('Path Security', () => {
       const payload = confirmationEvent!.payload as PathConfirmationPayload
       
       // Approve the path
-      await client.answerPathConfirmation(payload.callId, true)
+      const session = client.getSession()!
+      await answerPathConfirmation(server.url, session.id, payload.callId, true)
       
       // The operation should proceed after approval
       await client.waitFor('chat.done').catch(() => null)
@@ -218,7 +220,8 @@ describe('Path Security', () => {
       const payload = confirmationEvent!.payload as PathConfirmationPayload
       
       // Deny the path
-      await client.answerPathConfirmation(payload.callId, false)
+      const session = client.getSession()!
+      await answerPathConfirmation(server.url, session.id, payload.callId, false)
       
       // Wait for chat.done (may be error or complete)
       await client.waitFor('chat.done', undefined, 500).catch(() => null)

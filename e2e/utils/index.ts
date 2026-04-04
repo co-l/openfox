@@ -27,6 +27,7 @@ export {
   setSessionCriteria,
   stopSessionChat,
   continueSessionChat,
+  answerPathConfirmation,
   type Project,
   type Session,
   type CreateProjectOptions,

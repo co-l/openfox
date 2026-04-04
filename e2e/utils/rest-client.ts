@@ -264,3 +264,26 @@ export async function continueSessionChat(
 
   return response.json() as Promise<{ accepted: boolean }>
 }
+
+/**
+ * Answer a path confirmation via REST API
+ */
+export async function answerPathConfirmation(
+  baseUrl: string,
+  sessionId: string,
+  callId: string,
+  approved: boolean
+): Promise<{ success: boolean }> {
+  const response = await fetch(`${baseUrl}/api/sessions/${sessionId}/confirm-path`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ callId, approved }),
+  })
+
+  if (!response.ok) {
+    const error = (await response.json().catch(() => ({}))) as { error?: string }
+    throw new Error(error.error || `Failed to answer path confirmation: ${response.status}`)
+  }
+
+  return response.json() as Promise<{ success: boolean }>
+}
