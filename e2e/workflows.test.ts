@@ -17,6 +17,7 @@ import {
   assertNoErrors,
   createProject,
   createSession,
+  setSessionMode,
   type TestClient, 
   type TestProject,
   type TestServerHandle 
@@ -122,7 +123,8 @@ Please explore the existing code and propose acceptance criteria using add_crite
         content: 'Add criterion ID "trivial-pass": "Trivial pass criterion". Use add_criterion.',
       })
       await client.waitForChatDone()
-      await client.send('mode.switch', { mode: 'builder' })
+      const sessionId = client.getSession()!.id
+      await setSessionMode(server.url, sessionId, 'builder', server.wsUrl)
       await client.send('runner.launch', {})
 
       await collectUntilPhase(client, 'done', 1_500)
@@ -142,7 +144,8 @@ Please explore the existing code and propose acceptance criteria using add_crite
         content: 'Add criterion ID "verify-fail": "Verifier should fail this criterion". Use add_criterion.',
       })
       await client.waitForChatDone()
-      await client.send('mode.switch', { mode: 'builder' })
+      const sessionId = client.getSession()!.id
+      await setSessionMode(server.url, sessionId, 'builder', server.wsUrl)
       await client.send('runner.launch', {})
 
       await collectUntilPhase(client, 'blocked', 15_000)
@@ -169,7 +172,8 @@ Please explore the existing code and propose acceptance criteria using add_crite
         content: 'Add criterion ID "trivial-pass": "Trivial pass criterion". Use add_criterion.',
       })
       await client.waitForChatDone()
-      await client.send('mode.switch', { mode: 'builder' })
+      const sessionId = client.getSession()!.id
+      await setSessionMode(server.url, sessionId, 'builder', server.wsUrl)
       await client.send('runner.launch', {})
 
       await collectUntilPhase(client, 'done', 15_000)
@@ -218,7 +222,8 @@ Please explore the existing code and propose acceptance criteria using add_crite
       const project = await createProject(server.url, { name: 'Error Recovery', workdir: testDir.path })
       const session = await createSession(server.url, { projectId: project.id })
       await client.send('session.load', { sessionId: session.id })
-      await client.send('mode.switch', { mode: 'builder' })
+      const sessionId = client.getSession()!.id
+      await setSessionMode(server.url, sessionId, 'builder', server.wsUrl)
       
       // Ask to do something that will fail initially (use path inside workdir to avoid confirmation modal)
       await client.send('chat.send', { 
@@ -252,7 +257,8 @@ Please explore the existing code and propose acceptance criteria using add_crite
       await client.waitForChatDone()
       
       // Switch to builder and set blocked phase manually
-      await client.send('mode.switch', { mode: 'builder' })
+      const sessionId = client.getSession()!.id
+      await setSessionMode(server.url, sessionId, 'builder', server.wsUrl)
       
       // Start with a message (simulating user intervention)
       await client.send('chat.send', { 

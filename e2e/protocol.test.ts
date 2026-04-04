@@ -90,14 +90,13 @@ describe('WebSocket Protocol', () => {
   })
 
   describe('Acknowledgments', () => {
-    it('returns ack for chat.stop', async () => {
+    it('returns DEPRECATED for chat.stop', async () => {
       const restProject = await createProject(server.url, { name: 'test', workdir: project.path })
       const restSession = await createSession(server.url, { projectId: restProject.id })
       await client.send('session.load', { sessionId: restSession.id })
       
-      // Stop should return ack even if nothing is running
       const response = await client.send('chat.stop', {})
-      expect(response.type).toBe('ack')
+      expect(response.payload.code).toBe('DEPRECATED')
     })
   })
 

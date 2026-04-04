@@ -1,41 +1,6 @@
 {
   "providers": [
     {
-      "id": "test-context-update-provider",
-      "name": "Test Context Update Provider",
-      "url": "http://localhost:11434",
-      "backend": "ollama",
-      "models": [
-        {
-          "id": "qwen3.5:cloud",
-          "contextWindow": 200000,
-          "source": "default"
-        },
-        {
-          "id": "glm-4.7:cloud",
-          "contextWindow": 200000,
-          "source": "default"
-        },
-        {
-          "id": "minimax-m2.7:cloud",
-          "contextWindow": 200000,
-          "source": "default"
-        },
-        {
-          "id": "qwen3.5:397b-cloud",
-          "contextWindow": 200000,
-          "source": "default"
-        },
-        {
-          "id": "test-context-update-model",
-          "contextWindow": 500000,
-          "source": "user"
-        }
-      ],
-      "isActive": true,
-      "createdAt": "2026-04-02T10:02:34.591Z"
-    },
-    {
       "id": "test-fuzzy-provider",
       "name": "Test Fuzzy Provider",
       "url": "http://localhost:11434",
@@ -48,7 +13,7 @@
         }
       ],
       "isActive": true,
-      "createdAt": "2026-04-02T10:02:29.257Z"
+      "createdAt": "2026-04-04T08:22:49.321Z"
     },
     {
       "id": "test-restart-provider",
@@ -63,11 +28,26 @@
         }
       ],
       "isActive": true,
-      "createdAt": "2026-04-02T10:02:28.234Z"
+      "createdAt": "2026-04-04T08:22:48.293Z"
+    },
+    {
+      "id": "test-context-update-provider",
+      "name": "Test Context Update Provider",
+      "url": "http://localhost:11434",
+      "backend": "ollama",
+      "models": [
+        {
+          "id": "test-context-update-model",
+          "contextWindow": 500000,
+          "source": "user"
+        }
+      ],
+      "isActive": true,
+      "createdAt": "2026-04-04T08:22:44.362Z"
     }
   ],
-  "defaultModelSelection": "test-context-update-provider/test-context-update-model",
-  "activeProviderId": "test-context-update-provider",
+  "defaultModelSelection": "test-fuzzy-provider/qwen3.5 cloud",
+  "activeProviderId": "test-fuzzy-provider",
   "server": {
     "port": 10369,
     "host": "127.0.0.1",

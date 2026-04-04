@@ -68,7 +68,8 @@ describe('REST + WebSocket Integration', () => {
       expect(client.getSession()?.id).toBe(sessionId)
 
       // Verify WS real-time features still work (mode switching, etc.)
-      await client.send('mode.switch', { mode: 'builder' })
+      const sessionId = client.getSession()!.id
+      await setSessionMode(server.url, sessionId, 'builder', server.wsUrl)
       const modeEvent = await client.waitFor('mode.changed')
       expect(modeEvent.type).toBe('mode.changed')
       expect((modeEvent.payload as any).mode).toBe('builder')
@@ -118,7 +119,8 @@ describe('REST + WebSocket Integration', () => {
       expect(updateData.project.name).toBe('Updated Name')
 
       // Verify WS session still works
-      await client.send('mode.switch', { mode: 'builder' })
+      const sessionId = client.getSession()!.id
+      await setSessionMode(server.url, sessionId, 'builder', server.wsUrl)
       const modeEvent = await client.waitFor('mode.changed')
       expect(modeEvent.type).toBe('mode.changed')
 
@@ -180,7 +182,8 @@ describe('REST + WebSocket Integration', () => {
         expect(providerData.session.providerId).toBe(providerId)
 
         // Verify WS still works for real-time features
-        await client.send('mode.switch', { mode: 'planner' })
+        const sessionId = client.getSession()!.id
+      await setSessionMode(server.url, sessionId, 'planner', server.wsUrl)
         const modeEvent = await client.waitFor('mode.changed')
         expect(modeEvent.type).toBe('mode.changed')
       }

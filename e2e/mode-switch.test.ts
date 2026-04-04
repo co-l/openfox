@@ -13,6 +13,7 @@ import {
   assertNoErrors,
   createProject,
   createSession,
+  setSessionMode,
   type TestClient, 
   type TestProject,
   type TestServerHandle 
@@ -47,29 +48,29 @@ describe('Mode Switching', () => {
 
   describe('Manual Mode Switch', () => {
     it('switches from planner to builder', async () => {
-      const response = await client.send('mode.switch', { mode: 'builder' })
-
-      expect(response.type).toBe('session.state')
+      const sessionId = client.getSession()!.id
+      await setSessionMode(server.url, sessionId, 'builder', server.wsUrl)
 
       const session = client.getSession()!
       expect(session.mode).toBe('builder')
     })
 
     it('switches from builder back to planner', async () => {
+      const sessionId = client.getSession()!.id
+      
       // First switch to builder
-      await client.send('mode.switch', { mode: 'builder' })
+      await setSessionMode(server.url, sessionId, 'builder', server.wsUrl)
       
       // Then back to planner
-      const response = await client.send('mode.switch', { mode: 'planner' })
-
-      expect(response.type).toBe('session.state')
+      await setSessionMode(server.url, sessionId, 'planner', server.wsUrl)
 
       const session = client.getSession()!
       expect(session.mode).toBe('planner')
     })
 
     it('does not inject the builder kickoff prompt into manual builder chats', async () => {
-      await client.send('mode.switch', { mode: 'builder' })
+      const sessionId = client.getSession()!.id
+      await setSessionMode(server.url, sessionId, 'builder', server.wsUrl)
       client.clearEvents()
 
       await client.send('chat.send', {
@@ -124,6 +125,8 @@ describe('Mode Switching', () => {
     })
 
     it('generates summary when switching to builder mode', async () => {
+      const sessionId = client.getSession()!.id
+      
       // Add criterion
       await client.send('chat.send', { 
         content: 'Add criterion: File exists. Use add_criterion.' 
@@ -131,7 +134,7 @@ describe('Mode Switching', () => {
       await client.waitForChatDone()
       
       // Switch to builder mode (this triggers summary generation)
-      await client.send('mode.switch', { mode: 'builder' })
+      await setSessionMode(server.url, sessionId, 'builder', server.wsUrl)
       
       // Wait for session state update (summary should be populated)
       await client.waitFor('session.state')
@@ -245,7 +248,8 @@ describe('Mode Switching', () => {
 
   describe('Phase from Session State', () => {
     it('includes phase in session state', async () => {
-      await client.send('mode.switch', { mode: 'builder' })
+      const sessionId = client.getSession()!.id
+      await setSessionMode(server.url, sessionId, 'builder', server.wsUrl)
       
       const session = client.getSession()!
       expect(session.phase).toBe('plan') // Phase doesn't auto-change on manual mode switch
@@ -254,8 +258,10 @@ describe('Mode Switching', () => {
 
   describe('Summary Generation', () => {
     it('does NOT generate summary for empty sessions when switching to builder', async () => {
+      const sessionId = client.getSession()!.id
+      
       // Fresh session with no messages - switch to builder mode
-      await client.send('mode.switch', { mode: 'builder' })
+      await setSessionMode(server.url, sessionId, 'builder', server.wsUrl)
       
       // Wait for session state update
       await client.waitFor('session.state')

@@ -577,12 +577,7 @@ describe('createWebSocketServer', () => {
     expect(sessionManager.resetAllCriteriaAttempts).toHaveBeenCalledWith('session-1')
 
     harness.send({ id: 'chat-stop', type: 'chat.stop', payload: {} })
-    expect(await harness.nextMessage((message) => message.id === 'chat-stop')).toMatchObject({ type: 'ack' })
-    expect(await harness.nextMessage((message) => message.type === 'session.running' && message.payload['isRunning'] === false)).toMatchObject({
-      type: 'session.running',
-      payload: { isRunning: false },
-    })
-    expect(sessionManager.setRunning).toHaveBeenLastCalledWith('session-1', false)
+    expect(await harness.nextMessage((message) => message.id === 'chat-stop')).toMatchObject({ payload: { code: 'DEPRECATED' } })
 
     const releaseRun = resolveRun as (() => void) | null
     if (releaseRun) {
@@ -599,16 +594,13 @@ describe('createWebSocketServer', () => {
     ])
 
     harness.send({ id: 'chat-continue', type: 'chat.continue', payload: {} })
-    expect(await harness.nextMessage((message) => message.id === 'chat-continue')).toMatchObject({ type: 'ack' })
-    expect(await harness.nextMessage((message) => message.type === 'chat.done')).toMatchObject({ payload: { messageId: 'assistant-1', reason: 'complete' } })
+    expect(await harness.nextMessage((message) => message.id === 'chat-continue')).toMatchObject({ payload: { code: 'DEPRECATED' } })
 
     harness.send({ id: 'mode-ok', type: 'mode.switch', payload: { mode: 'builder' } })
-    expect(await harness.nextMessage((message) => message.type === 'mode.changed')).toMatchObject({ payload: { mode: 'builder', auto: false } })
-    expect(await harness.nextMessage((message) => message.id === 'mode-ok')).toMatchObject({ type: 'session.state' })
+    expect(await harness.nextMessage((message) => message.id === 'mode-ok')).toMatchObject({ payload: { code: 'DEPRECATED' } })
 
     harness.send({ id: 'criteria-ok', type: 'criteria.edit', payload: { criteria: [{ id: 'c1', description: 'd', status: { type: 'pending' }, attempts: [] }] } })
-    expect(await harness.nextMessage((message) => message.type === 'criteria.updated')).toMatchObject({ type: 'criteria.updated' })
-    expect(await harness.nextMessage((message) => message.id === 'criteria-ok')).toMatchObject({ type: 'ack' })
+    expect(await harness.nextMessage((message) => message.id === 'criteria-ok')).toMatchObject({ payload: { code: 'DEPRECATED' } })
 
     await harness.close()
   })
@@ -754,10 +746,10 @@ describe('createWebSocketServer', () => {
     ]))
 
     harness.send({ id: 'path-missing', type: 'path.confirm', payload: { callId: 'call-1', approved: true } })
-    expect(await harness.nextMessage((message) => message.id === 'path-missing')).toMatchObject({ payload: { code: 'NOT_FOUND' } })
+    expect(await harness.nextMessage((message) => message.id === 'path-missing')).toMatchObject({ payload: { code: 'DEPRECATED' } })
 
     harness.send({ id: 'path-ok', type: 'path.confirm', payload: { callId: 'call-2', approved: false } })
-    expect(await harness.nextMessage((message) => message.id === 'path-ok')).toMatchObject({ type: 'ack' })
+    expect(await harness.nextMessage((message) => message.id === 'path-ok')).toMatchObject({ payload: { code: 'DEPRECATED' } })
 
     await harness.close()
   })
@@ -790,7 +782,7 @@ describe('createWebSocketServer', () => {
     expect(await harness.nextMessage((message) => message.id === 'runner-none')).toMatchObject({ payload: { code: 'NO_SESSION' } })
 
     harness.send({ id: 'path-none', type: 'path.confirm', payload: { callId: 'x', approved: true } })
-    expect(await harness.nextMessage((message) => message.id === 'path-none')).toMatchObject({ payload: { code: 'NO_SESSION' } })
+    expect(await harness.nextMessage((message) => message.id === 'path-none')).toMatchObject({ payload: { code: 'DEPRECATED' } })
 
     harness.send({ id: 'sl-ok', type: 'session.load', payload: { sessionId: 'session-1' } })
     await harness.nextMessage((message) => message.id === 'sl-ok')
@@ -819,7 +811,7 @@ describe('createWebSocketServer', () => {
     expect(await harness.nextMessage((message) => message.id === 'runner-no-work')).toMatchObject({ payload: { code: 'NO_WORK' } })
 
     harness.send({ id: 'path-invalid', type: 'path.confirm', payload: {} })
-    expect(await harness.nextMessage((message) => message.id === 'path-invalid')).toMatchObject({ payload: { code: 'INVALID_PAYLOAD' } })
+    expect(await harness.nextMessage((message) => message.id === 'path-invalid')).toMatchObject({ payload: { code: 'DEPRECATED' } })
 
     await harness.close()
   })
@@ -918,20 +910,8 @@ describe('createWebSocketServer', () => {
     harness.send({ id: 'sl-ok', type: 'session.load', payload: { sessionId: 'session-1' } })
     await harness.nextMessage((message) => message.id === 'sl-ok')
 
-    // Seed conversation events so summary generation has messages to summarize
-    harness.eventStore.append('session-1', { type: 'message.start', data: { messageId: 'u1', role: 'user', content: 'Fix the deleted session bug' } })
-    harness.eventStore.append('session-1', { type: 'message.done', data: { messageId: 'u1' } })
-    harness.eventStore.append('session-1', { type: 'message.start', data: { messageId: 'a1', role: 'assistant', content: 'I will fix the navigation issue.' } })
-    harness.eventStore.append('session-1', { type: 'message.done', data: { messageId: 'a1' } })
-
     harness.send({ id: 'mode-switch-builder', type: 'mode.switch', payload: { mode: 'builder' } })
-    expect(await harness.nextMessage((message) => message.type === 'mode.changed')).toMatchObject({ payload: { mode: 'builder', auto: false } })
-    await harness.nextMessage((message) => message.type === 'session.state')
-
-    // Wait for async summary generation
-    await new Promise<void>((resolve) => setTimeout(resolve, 50))
-
-    expect(sessionManager.setSummary).toHaveBeenCalled()
+    expect(await harness.nextMessage((message) => message.id === 'mode-switch-builder')).toMatchObject({ payload: { code: 'DEPRECATED' } })
   })
 
   it('handles runner relaunch, subscription failures, and orchestrator errors', async () => {

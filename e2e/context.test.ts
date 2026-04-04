@@ -13,6 +13,7 @@ import {
   assertNoErrors,
   createProject,
   createSession,
+  stopSessionChat,
   type TestClient, 
   type TestProject,
   type TestServerHandle 
@@ -132,6 +133,8 @@ describe('Context Management', () => {
     })
 
     it('fails compaction while session is running', async () => {
+      const sessionId = client.getSession()!.id
+      
       // Start a chat
       await client.send('chat.send', { content: 'Write a long explanation.' })
       
@@ -146,7 +149,7 @@ describe('Context Management', () => {
       expect((response.payload as { code: string }).code).toBe('SESSION_RUNNING')
       
       // Clean up
-      await client.send('chat.stop', {})
+      await stopSessionChat(server.url, sessionId)
       await client.waitForChatDone()
     })
   })

@@ -15,6 +15,9 @@ import {
   assertNoErrors,
   createProject,
   createSession,
+  setSessionMode,
+  stopSessionChat,
+  continueSessionChat,
   type TestClient, 
   type TestProject,
   type TestServerHandle 
@@ -40,7 +43,7 @@ describe('Builder Mode', () => {
     const restProject = await createProject(server.url, { name: 'Builder Test', workdir: testDir.path })
     const restSession = await createSession(server.url, { projectId: restProject.id })
     await client.send('session.load', { sessionId: restSession.id })
-    await client.send('mode.switch', { mode: 'builder' })
+    await setSessionMode(server.url, restSession.id, 'builder', server.wsUrl)
   })
 
   afterEach(async () => {
@@ -148,15 +151,17 @@ describe('Builder Mode', () => {
 
   describe('Criterion Completion', () => {
     it('uses complete_criterion to mark criteria done', async () => {
+      const sessionId = client.getSession()!.id
+      
       // First add criteria in planner mode
-      await client.send('mode.switch', { mode: 'planner' })
+      await setSessionMode(server.url, sessionId, 'planner', server.wsUrl)
       await client.send('chat.send', { 
         content: 'Add criterion ID "file-created": "A new file utils.ts exists". Use add_criterion.' 
       })
       await client.waitForChatDone()
       
       // Switch to builder
-      await client.send('mode.switch', { mode: 'builder' })
+      await setSessionMode(server.url, sessionId, 'builder', server.wsUrl)
       
       // Ask to implement and complete
       await client.send('chat.send', { 
@@ -185,15 +190,17 @@ describe('Builder Mode', () => {
     })
 
     it('can read criteria with get_criteria before completing them', async () => {
+      const sessionId = client.getSession()!.id
+      
       // First add a criterion in planner mode
-      await client.send('mode.switch', { mode: 'planner' })
+      await setSessionMode(server.url, sessionId, 'planner', server.wsUrl)
       await client.send('chat.send', { 
         content: 'Add criterion ID "test-file": "A test file exists". Use add_criterion.' 
       })
       await client.waitForChatDone()
       
       // Switch to builder
-      await client.send('mode.switch', { mode: 'builder' })
+      await setSessionMode(server.url, sessionId, 'builder', server.wsUrl)
       
       // Ask builder to read criteria first, then implement
       await client.send('chat.send', { 
@@ -249,7 +256,9 @@ describe('Builder Mode', () => {
   })
 
   describe('Continue Command', () => {
-    it('continues generation with chat.continue', async () => {
+    it('accepts continue request via REST API', async () => {
+      const sessionId = client.getSession()!.id
+      
       // Start a generation
       await client.send('chat.send', { 
         content: 'List the files in this project.' 
@@ -260,14 +269,14 @@ describe('Builder Mode', () => {
       const session = client.getSession()!
       expect(session.isRunning).toBe(false)
       
-      // Continue should work (even if there's nothing to continue)
-      const response = await client.send('chat.continue', {})
-      expect(response.type).toBe('ack')
-      
-      await client.waitForChatDone()
+      // Continue should work via REST API
+      const result = await continueSessionChat(server.url, sessionId)
+      expect(result.accepted).toBe(true)
     })
 
     it('rejects continue while already running', async () => {
+      const sessionId = client.getSession()!.id
+      
       // Start a generation
       await client.send('chat.send', { 
         content: 'Write a long explanation of TypeScript features.' 
@@ -276,13 +285,15 @@ describe('Builder Mode', () => {
       // Wait a moment for it to start
       await new Promise(resolve => setTimeout(resolve, 200))
       
-      // Try to continue while running
-      const response = await client.send('chat.continue', {})
-      expect(response.type).toBe('error')
-      expect((response.payload as { code: string }).code).toBe('ALREADY_RUNNING')
+      // Try to continue while running - should get 409 Conflict
+      const response = await fetch(`${server.url}/api/sessions/${sessionId}/continue`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+      })
+      expect(response.status).toBe(409)
       
       // Clean up
-      await client.send('chat.stop', {})
+      await stopSessionChat(server.url, sessionId)
       await client.waitForChatDone()
     })
   })

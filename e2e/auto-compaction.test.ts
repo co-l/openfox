@@ -20,6 +20,8 @@ import {
   assertNoErrors,
   createProject,
   createSession,
+  setSessionMode,
+  stopSessionChat,
   type TestClient, 
   type TestProject,
   type TestServerHandle 
@@ -267,6 +269,8 @@ describe('Auto-Compaction', () => {
 
   describe('Compaction While Running', () => {
     it('rejects compaction while session is running', async () => {
+      const sessionId = client.getSession()!.id
+      
       // Start a chat (makes session running)
       const chatPromise = client.send('chat.send', { content: 'Starting a long running operation.' })
       
@@ -288,7 +292,7 @@ describe('Auto-Compaction', () => {
       }
       
       // Clean up
-      await client.send('chat.stop', {}).catch(() => null)
+      await stopSessionChat(server.url, sessionId).catch(() => null)
       await client.waitForChatDone().catch(() => null)
     })
   })

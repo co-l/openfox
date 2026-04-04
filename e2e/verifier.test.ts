@@ -15,6 +15,7 @@ import {
   assertNoErrors,
   createProject,
   createSession,
+  setSessionMode,
   type TestClient, 
   type TestProject,
   type TestServerHandle 
@@ -50,11 +51,12 @@ describe('Verifier Mode', () => {
 
   describe('Verification Triggering', () => {
     it('triggers verification after builder completes criterion', async () => {
+      const session = client.getSession()!
       await client.send('chat.send', {
         content: 'Add criterion ID "trivial-pass": "Trivial pass criterion". Use add_criterion.',
       })
       await client.waitForChatDone()
-      await client.send('mode.switch', { mode: 'builder' })
+      await setSessionMode(server.url, session.id, 'builder', server.wsUrl)
       await client.send('runner.launch', {})
 
       const events = await collectUntilPhase(client, 'verification', 1_500)
@@ -71,7 +73,8 @@ describe('Verifier Mode', () => {
         content: 'Add criterion ID "trivial-pass": "Trivial pass criterion". Use add_criterion.',
       })
       await client.waitForChatDone()
-      await client.send('mode.switch', { mode: 'builder' })
+      const session = client.getSession()!
+      await setSessionMode(server.url, session.id, 'builder', server.wsUrl)
       await client.send('runner.launch', {})
 
       await collectUntilPhase(client, 'done', 1_500)
@@ -97,7 +100,8 @@ describe('Verifier Mode', () => {
         content: 'Add criterion ID "trivial-pass": "Trivial pass criterion". Use add_criterion.',
       })
       await client.waitForChatDone()
-      await client.send('mode.switch', { mode: 'builder' })
+      const session = client.getSession()!
+      await setSessionMode(server.url, session.id, 'builder', server.wsUrl)
       await client.send('runner.launch', {})
 
       await collectUntilPhase(client, 'done', 1_500)
@@ -124,15 +128,16 @@ describe('Verifier Mode', () => {
           content: 'Add criterion ID "trivial-pass": "Trivial pass criterion". Use add_criterion.',
         })
         await client.waitForChatDone()
-        await client.send('mode.switch', { mode: 'builder' })
+        const session1 = client.getSession()!
+        await setSessionMode(server.url, session1.id, 'builder')
         await client.send('runner.launch', {})
 
         await collectUntilPhase(client, 'done', 1_500)
         
-        const session = client.getSession()!
-        const criterion = session.criteria[0]
+        const session2 = client.getSession()!
+        const criterion = session2.criteria[0]
         
-        expect(session.phase).toBe('done')
+        expect(session2.phase).toBe('done')
         expect(criterion?.status.type).toBe('passed')
       })
     })
@@ -143,14 +148,15 @@ describe('Verifier Mode', () => {
           content: 'Add criterion ID "verify-fail": "Verifier should fail this criterion". Use add_criterion.',
         })
         await client.waitForChatDone()
-        await client.send('mode.switch', { mode: 'builder' })
+        const session1 = client.getSession()!
+        await setSessionMode(server.url, session1.id, 'builder')
         await client.send('runner.launch', {})
 
         await collectUntilPhase(client, 'blocked', 15_000)
         
         // Check criteria status
-        const session = client.getSession()!
-        const criterion = session.criteria[0]
+        const session2 = client.getSession()!
+        const criterion = session2.criteria[0]
         
         // Either passed (builder created it) or failed (couldn't create)
         expect(criterion?.status.type).toBe('failed')
@@ -164,7 +170,8 @@ describe('Verifier Mode', () => {
         content: 'Add criterion ID "trivial-pass": "Trivial pass criterion". Use add_criterion.',
       })
       await client.waitForChatDone()
-      await client.send('mode.switch', { mode: 'builder' })
+      const session = client.getSession()!
+      await setSessionMode(server.url, session.id, 'builder', server.wsUrl)
       
       client.clearEvents()
       

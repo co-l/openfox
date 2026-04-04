@@ -13,6 +13,8 @@ import {
   assertNoErrors,
   createProject,
   createSession,
+  setSessionCriteria,
+  setSessionMode,
   type TestClient, 
   type TestProject,
   type TestServerHandle 
@@ -186,6 +188,8 @@ describe('Criteria System', () => {
 
   describe('Builder Criteria Tools', () => {
     beforeEach(async () => {
+      const sessionId = client.getSession()!.id
+      
       // Add criteria in planner mode
       await client.send('chat.send', { 
         content: 'Add a criterion with description "A new file utils.ts exists".' 
@@ -196,7 +200,7 @@ describe('Criteria System', () => {
       await new Promise(r => setTimeout(r, 100))
       
       // Switch to builder
-      await client.send('mode.switch', { mode: 'builder' })
+      await setSessionMode(server.url, sessionId, 'builder', server.wsUrl)
       await new Promise(r => setTimeout(r, 50))
     })
 
@@ -239,7 +243,7 @@ describe('Criteria System', () => {
       })
       await client.waitForChatDone()
       
-      // Edit directly via protocol
+      // Edit directly via REST API
       const newCriteria: Criterion[] = [
         {
           id: '0',
@@ -255,13 +259,17 @@ describe('Criteria System', () => {
         },
       ]
       
-      const response = await client.send('criteria.edit', { criteria: newCriteria })
-      expect(response.type).toBe('ack')
+      const session = client.getSession()!
+      await setSessionCriteria(server.url, session.id, newCriteria)
+      
+      // Reload to get updated criteria
+      await client.send('session.load', { sessionId: session.id })
+      await client.waitFor('session.state')
       
       // Verify criteria were replaced
-      const session = client.getSession()!
-      expect(session.criteria.length).toBe(2)
-      expect(session.criteria[0]!.id).toBe('0')
+      const updatedSession = client.getSession()!
+      expect(updatedSession.criteria.length).toBe(2)
+      expect(updatedSession.criteria[0]!.id).toBe('0')
     })
   })
 

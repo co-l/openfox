@@ -13,6 +13,8 @@ import {
   assertNoErrors,
   createProject,
   createSession,
+  setSessionMode,
+  stopSessionChat,
   type TestClient, 
   type TestProject,
   type TestServerHandle 
@@ -54,7 +56,8 @@ describe('Runner/Orchestrator', () => {
     })
 
     it('requires pending criteria', async () => {
-      await client.send('mode.switch', { mode: 'builder' })
+      const sessionId = client.getSession()!.id
+      await setSessionMode(server.url, sessionId, 'builder', server.wsUrl)
       
       const response = await client.send('runner.launch', {})
       expect(response.type).toBe('error')
@@ -73,7 +76,8 @@ describe('Runner/Orchestrator', () => {
       expect(session.criteria.length).toBeGreaterThan(0)
       
       // Switch to builder
-      await client.send('mode.switch', { mode: 'builder' })
+      const sessionId = client.getSession()!.id
+      await setSessionMode(server.url, sessionId, 'builder', server.wsUrl)
       
       // Launch runner - should acknowledge since we have pending criteria
       const response = await client.send('runner.launch', {})
@@ -83,7 +87,7 @@ describe('Runner/Orchestrator', () => {
       await client.waitFor('session.running', (payload: { isRunning: boolean }) => payload.isRunning === true, 1_500)
 
       // Stop quickly - this test only verifies launch
-      await client.send('chat.stop', {})
+      await stopSessionChat(server.url, sessionId)
       await client.waitFor('session.running', (payload: { isRunning: boolean }) => payload.isRunning === false, 1_500)
     })
   })
@@ -94,7 +98,8 @@ describe('Runner/Orchestrator', () => {
         content: 'Add criterion ID "trivial-pass": "Trivial pass criterion". Use add_criterion.',
       })
       await client.waitForChatDone()
-      await client.send('mode.switch', { mode: 'builder' })
+      const sessionId = client.getSession()!.id
+      await setSessionMode(server.url, sessionId, 'builder', server.wsUrl)
       await client.send('runner.launch', {})
 
       const events = await collectUntilPhase(client, 'done', 1_500)
@@ -116,7 +121,8 @@ describe('Runner/Orchestrator', () => {
         content: 'Add criterion ID "trivial-pass": "Trivial pass criterion". Use add_criterion.',
       })
       await client.waitForChatDone()
-      await client.send('mode.switch', { mode: 'builder' })
+      const sessionId = client.getSession()!.id
+      await setSessionMode(server.url, sessionId, 'builder', server.wsUrl)
       await client.send('runner.launch', {})
 
       await collectUntilPhase(client, 'done', 1_500)
@@ -146,6 +152,8 @@ describe('Runner/Orchestrator', () => {
 
   describe('Abort Runner', () => {
     it('aborts runner on chat.stop', async () => {
+      const sessionId = client.getSession()!.id
+      
       // Add criterion
       await client.send('chat.send', { 
         content: 'Add criterion: "Something happens". Use add_criterion.' 
@@ -153,12 +161,12 @@ describe('Runner/Orchestrator', () => {
       await client.waitForChatDone()
       
       // Switch to builder and launch
-      await client.send('mode.switch', { mode: 'builder' })
+      await setSessionMode(server.url, sessionId, 'builder', server.wsUrl)
       await client.send('runner.launch', {})
       
       // Wait a bit then stop
       await new Promise(resolve => setTimeout(resolve, 200))
-      await client.send('chat.stop', {})
+      await stopSessionChat(server.url, sessionId)
       
       // Should have stopped
       await client.waitFor('chat.done')
@@ -176,7 +184,8 @@ describe('Runner/Orchestrator', () => {
       await client.send('criteria.edit', {
         criteria: [{ id: 'nudge-docs', description: 'src/math.ts has documentation comments', status: { type: 'pending' }, attempts: [] }],
       })
-      await client.send('mode.switch', { mode: 'builder' })
+      const sessionId = client.getSession()!.id
+      await setSessionMode(server.url, sessionId, 'builder', server.wsUrl)
       await client.send('runner.launch', {})
 
       await client.waitFor('chat.message', (payload: unknown) => {
@@ -230,7 +239,8 @@ describe('Runner/Orchestrator', () => {
         content: 'Add criterion ID "trivial-pass": "Trivial pass criterion". Use add_criterion.',
       })
       await client.waitForChatDone()
-      await client.send('mode.switch', { mode: 'builder' })
+      const sessionId = client.getSession()!.id
+      await setSessionMode(server.url, sessionId, 'builder', server.wsUrl)
       
       // Clear events before runner starts
       client.clearEvents()
@@ -260,7 +270,8 @@ describe('Runner/Orchestrator', () => {
         content: 'Add criterion ID "file-created": "A new file utils.ts exists". Use add_criterion.',
       })
       await client.waitForChatDone()
-      await client.send('mode.switch', { mode: 'builder' })
+      const sessionId = client.getSession()!.id
+      await setSessionMode(server.url, sessionId, 'builder', server.wsUrl)
       
       // Clear events
       client.clearEvents()

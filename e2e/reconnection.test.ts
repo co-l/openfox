@@ -21,6 +21,7 @@ import {
   assertNoErrors,
   createProject,
   createSession,
+  setSessionMode,
   type TestClient, 
   type TestProject,
   type TestServerHandle 
@@ -130,7 +131,8 @@ describe('Session Reconnection', () => {
 
     it('preserves mode across reconnection', async () => {
       // Switch to builder mode
-      await client.send('mode.switch', { mode: 'builder' })
+      const sessionId = client.getSession()!.id
+      await setSessionMode(server.url, sessionId, 'builder', server.wsUrl)
       
       // Reconnect
       const client2 = await createTestClient({ url: server.wsUrl })
@@ -226,7 +228,8 @@ describe('Session Reconnection', () => {
   describe('Tool Results on Reconnection', () => {
     it('includes tool results in loaded messages', async () => {
       // Switch to builder and run a command
-      await client.send('mode.switch', { mode: 'builder' })
+      const sessionId = client.getSession()!.id
+      await setSessionMode(server.url, sessionId, 'builder', server.wsUrl)
       
       await client.send('chat.send', { 
         content: 'Run the command "ls" to list files' 
@@ -272,7 +275,8 @@ describe('Session Reconnection', () => {
       await client.waitForChatDone()
       
       // Switch to builder and start (changes phase to build)
-      await client.send('mode.switch', { mode: 'builder' })
+      const sessionId = client.getSession()!.id
+      await setSessionMode(server.url, sessionId, 'builder', server.wsUrl)
       
       // Reconnect
       const client2 = await createTestClient({ url: server.wsUrl })

@@ -25,7 +25,7 @@ import type { TestClient } from './ws-client.js'
 import type { TestProject, TestProjectOptions } from './project-factory.js'
 import { createTestClient } from './ws-client.js'
 import { createTestProject } from './project-factory.js'
-import { createProject, createSession, type Project } from './rest-client.js'
+import { createProject, createSession, setSessionMode, type Project } from './rest-client.js'
 
 // Re-derive the template type from TestProjectOptions
 type ProjectTemplate = NonNullable<TestProjectOptions['template']>
@@ -107,7 +107,7 @@ export function createSessionPool(options: SessionPoolOptions = {}): SessionPool
       session = client.getSession()!
       
       if (mode === 'builder') {
-        await client.send('mode.switch', { mode: 'builder' })
+        await setSessionMode(baseUrl, restSession.id, 'builder', wsUrl)
         session = client.getSession()!
       }
     },
@@ -146,7 +146,7 @@ export function createSessionPool(options: SessionPoolOptions = {}): SessionPool
       
       // Restore mode if needed
       if (mode === 'builder') {
-        await client.send('mode.switch', { mode: 'builder' })
+        await setSessionMode(baseUrl, restSession.id, 'builder', wsUrl)
         session = client.getSession()!
       }
     },

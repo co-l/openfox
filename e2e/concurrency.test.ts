@@ -6,7 +6,7 @@
  */
 
 import { describe, it, expect, beforeAll, afterAll, beforeEach, afterEach } from 'vitest'
-import { createTestClient, createTestProject, createTestServer, createProject, createSession, type TestClient, type TestProject, type TestServerHandle } from './utils/index.js'
+import { createTestClient, createTestProject, createTestServer, createProject, createSession, setSessionMode, stopSessionChat, type TestClient, type TestProject, type TestServerHandle } from './utils/index.js'
 
 describe('Concurrency Guards', () => {
   let server: TestServerHandle
@@ -51,23 +51,26 @@ describe('Concurrency Guards', () => {
       // Try to send another chat while running - should be rejected
       const response = await client.send('chat.send', { content: 'Another message' })
       
+      const sessionId = client.getSession()!.id
       expect(response.type).toBe('error')
       expect((response.payload as { code: string }).code).toBe('ALREADY_RUNNING')
       
       // Stop the running chat
-      await client.send('chat.stop', {})
+      await stopSessionChat(server.url, sessionId)
     })
   })
 
   describe('runner.launch guard', () => {
     it('rejects runner.launch when session is already running', async () => {
+      const sessionId = client.getSession()!.id
+      
       // Set up criteria so runner.launch is valid
       await client.send('criteria.edit', {
         criteria: [{ id: 'AC1', description: 'Test criterion', status: { type: 'pending' }, attempts: [] }]
       })
       
       // Switch to builder mode
-      await client.send('mode.switch', { mode: 'builder' })
+      await setSessionMode(server.url, sessionId, 'builder', server.wsUrl)
       
       // Start a chat to make session running
       client.send('chat.send', { content: 'Write a very long and detailed explanation of TypeScript.' })
@@ -82,12 +85,14 @@ describe('Concurrency Guards', () => {
       expect((response.payload as { code: string }).code).toBe('ALREADY_RUNNING')
       
       // Stop the running chat
-      await client.send('chat.stop', {})
+      await stopSessionChat(server.url, sessionId)
     })
   })
 
   describe('mode.accept guard', () => {
     it('rejects mode.accept when session is already running', async () => {
+      const sessionId = client.getSession()!.id
+      
       // Set up criteria so mode.accept is valid
       await client.send('criteria.edit', {
         criteria: [{ id: 'AC1', description: 'Test criterion', status: { type: 'pending' }, attempts: [] }]
@@ -106,12 +111,14 @@ describe('Concurrency Guards', () => {
       expect((response.payload as { code: string }).code).toBe('ALREADY_RUNNING')
       
       // Stop the running chat
-      await client.send('chat.stop', {})
+      await stopSessionChat(server.url, sessionId)
     })
   })
 
   describe('abort existing agent', () => {
     it('aborts existing agent when starting a new one (defense in depth)', async () => {
+      const sessionId = client.getSession()!.id
+      
       // This tests that even if the guard is bypassed somehow,
       // the existing agent gets aborted before starting a new one.
       // This is harder to test directly - we mainly verify the guard works.
@@ -121,14 +128,14 @@ describe('Concurrency Guards', () => {
       client.send('chat.send', { content: 'Write a very long and detailed explanation of TypeScript.' })
       await client.waitFor('session.running', (p: { isRunning: boolean }) => p.isRunning)
       
-      await client.send('chat.stop', {})
+      await stopSessionChat(server.url, sessionId)
       await client.waitFor('session.running', (p: { isRunning: boolean }) => !p.isRunning)
       
       // Session should be able to start again
       client.send('chat.send', { content: 'Write a very long and detailed explanation of TypeScript.' })
       await client.waitFor('session.running', (p: { isRunning: boolean }) => p.isRunning)
       
-      await client.send('chat.stop', {})
+      await stopSessionChat(server.url, sessionId)
     })
   })
 })

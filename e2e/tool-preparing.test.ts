@@ -14,6 +14,7 @@ import {
   assertNoErrors,
   createProject,
   createSession,
+  setSessionMode,
   type TestClient, 
   type TestProject,
   type TestServerHandle 
@@ -40,7 +41,7 @@ describe('Tool Preparing Events', () => {
     const restProject = await createProject(server.url, { name: 'Tool Preparing Test', workdir: testDir.path })
     const restSession = await createSession(server.url, { projectId: restProject.id })
     await client.send('session.load', { sessionId: restSession.id })
-    await client.send('mode.switch', { mode: 'builder' })
+    await setSessionMode(server.url, restSession.id, 'builder')
   })
 
   afterEach(async () => {
