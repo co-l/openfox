@@ -19,15 +19,6 @@ export function formatToolArgs(tool: string, args: Record<string, unknown>): str
     return String(args.path ?? '')
   }
   
-  // Search operations - show pattern
-  if (tool === 'glob') {
-    return String(args.pattern ?? '')
-  }
-  
-  if (tool === 'grep') {
-    return String(args.pattern ?? '')
-  }
-  
   // Command execution - show command
   if (tool === 'run_command' || tool === 'bash') {
     return String(args.command ?? '')
@@ -51,59 +42,8 @@ export function formatToolArgs(tool: string, args: Record<string, unknown>): str
 export function formatToolArgsWithMetadata(
   tool: string, 
   args: Record<string, unknown>,
-  metadata?: Record<string, unknown>
+  _metadata?: Record<string, unknown>
 ): string {
-  // Glob with metadata
-  if (tool === 'glob' && metadata) {
-    const pattern = String(args.pattern ?? '')
-    const cwd = args.cwd as string | undefined
-    const totalFound = metadata.totalFound as number
-    const shownCount = metadata.shownCount as number
-    const truncated = metadata.truncated as boolean
-    
-    const parts = [pattern]
-    if (cwd) parts.push(`cwd=${cwd}`)
-    
-    const countPart = truncated 
-      ? `Showing first ${shownCount} of ${totalFound}`
-      : `${totalFound} file(s) found`
-    
-    if (parts.length === 1) {
-      return `${parts[0]} [${countPart}]`
-    }
-    
-    return `${parts[0]} [${parts.slice(1).join(', ')}, ${countPart}]`
-  }
-  
-  // Grep with metadata
-  if (tool === 'grep' && metadata) {
-    const pattern = String(args.pattern ?? '')
-    const include = args.include as string | undefined
-    const cwd = args.cwd as string | undefined
-    const totalMatches = metadata.totalMatches as number
-    const shownCount = metadata.shownCount as number
-    const truncated = metadata.truncated as boolean
-    
-    const countPart = truncated 
-      ? `Showing first ${shownCount} of ${totalMatches} matches`
-      : `${totalMatches} match(es) found`
-    
-    if (include && cwd) {
-      return `${pattern} [include=${include}] [cwd=${cwd}, ${countPart}]`
-    }
-    
-    if (include) {
-      return `${pattern} [include=${include}, ${countPart}]`
-    }
-    
-    if (cwd) {
-      return `${pattern} [cwd=${cwd}, ${countPart}]`
-    }
-    
-    return `${pattern} [${countPart}]`
-  }
-  
-  // Fallback to regular formatToolArgs
   return formatToolArgs(tool, args)
 }
 
