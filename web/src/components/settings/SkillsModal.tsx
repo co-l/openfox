@@ -129,78 +129,80 @@ export function SkillsContent({ isOpen }: SkillsContentProps) {
 
   if (view === 'edit') {
     return (
-      <div className="space-y-3">
-        <div className="flex items-center gap-2 mb-2">
-          <button
-            onClick={handleCancel}
-            className="p-1 rounded hover:bg-bg-tertiary text-text-muted hover:text-text-primary transition-colors"
-            title="Back to list"
-          >
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-            </svg>
-          </button>
-          <span className="text-sm font-medium text-text-primary">{editingId ? 'Edit Skill' : 'New Skill'}</span>
+      <div className="flex flex-col h-full">
+        <div className="space-y-3">
+          <div className="flex items-center gap-2 mb-2">
+            <button
+              onClick={handleCancel}
+              className="p-1 rounded hover:bg-bg-tertiary text-text-muted hover:text-text-primary transition-colors"
+              title="Back to list"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+              </svg>
+            </button>
+            <span className="text-sm font-medium text-text-primary">{editingId ? 'Edit Skill' : 'New Skill'}</span>
+          </div>
+
+          {formError && (
+            <div className="text-accent-error text-sm px-3 py-2 bg-accent-error/10 rounded">{formError}</div>
+          )}
+
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs text-text-secondary mb-1">Name</label>
+              <input
+                value={formName}
+                onChange={e => handleNameChange(e.target.value)}
+                placeholder="My Skill"
+                className="w-full px-2 py-1.5 bg-bg-tertiary border border-border rounded text-sm focus:outline-none focus:ring-1 focus:ring-accent-primary"
+              />
+            </div>
+            <div>
+              <label className="block text-xs text-text-secondary mb-1">ID {editingId && <span className="text-text-muted">(read-only)</span>}</label>
+              <input
+                value={formId}
+                onChange={e => !editingId && setFormId(e.target.value)}
+                readOnly={!!editingId}
+                placeholder="my-skill"
+                className={`w-full px-2 py-1.5 bg-bg-tertiary border border-border rounded text-sm font-mono focus:outline-none focus:ring-1 focus:ring-accent-primary ${editingId ? 'opacity-60' : ''}`}
+              />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs text-text-secondary mb-1">Description</label>
+              <input
+                value={formDescription}
+                onChange={e => setFormDescription(e.target.value)}
+                placeholder="Short description of what this skill provides"
+                className="w-full px-2 py-1.5 bg-bg-tertiary border border-border rounded text-sm focus:outline-none focus:ring-1 focus:ring-accent-primary"
+              />
+            </div>
+            <div>
+              <label className="block text-xs text-text-secondary mb-1">Version</label>
+              <input
+                value={formVersion}
+                onChange={e => setFormVersion(e.target.value)}
+                placeholder="1.0.0"
+                className="w-full px-2 py-1.5 bg-bg-tertiary border border-border rounded text-sm font-mono focus:outline-none focus:ring-1 focus:ring-accent-primary"
+              />
+            </div>
+          </div>
         </div>
 
-        {formError && (
-          <div className="text-accent-error text-sm px-3 py-2 bg-accent-error/10 rounded">{formError}</div>
-        )}
-
-        <div className="grid grid-cols-2 gap-3">
-          <div>
-            <label className="block text-xs text-text-secondary mb-1">Name</label>
-            <input
-              value={formName}
-              onChange={e => handleNameChange(e.target.value)}
-              placeholder="My Skill"
-              className="w-full px-2 py-1.5 bg-bg-tertiary border border-border rounded text-sm focus:outline-none focus:ring-1 focus:ring-accent-primary"
-            />
-          </div>
-          <div>
-            <label className="block text-xs text-text-secondary mb-1">ID {editingId && <span className="text-text-muted">(read-only)</span>}</label>
-            <input
-              value={formId}
-              onChange={e => !editingId && setFormId(e.target.value)}
-              readOnly={!!editingId}
-              placeholder="my-skill"
-              className={`w-full px-2 py-1.5 bg-bg-tertiary border border-border rounded text-sm font-mono focus:outline-none focus:ring-1 focus:ring-accent-primary ${editingId ? 'opacity-60' : ''}`}
-            />
-          </div>
-        </div>
-
-        <div className="grid grid-cols-2 gap-3">
-          <div>
-            <label className="block text-xs text-text-secondary mb-1">Description</label>
-            <input
-              value={formDescription}
-              onChange={e => setFormDescription(e.target.value)}
-              placeholder="Short description of what this skill provides"
-              className="w-full px-2 py-1.5 bg-bg-tertiary border border-border rounded text-sm focus:outline-none focus:ring-1 focus:ring-accent-primary"
-            />
-          </div>
-          <div>
-            <label className="block text-xs text-text-secondary mb-1">Version</label>
-            <input
-              value={formVersion}
-              onChange={e => setFormVersion(e.target.value)}
-              placeholder="1.0.0"
-              className="w-full px-2 py-1.5 bg-bg-tertiary border border-border rounded text-sm font-mono focus:outline-none focus:ring-1 focus:ring-accent-primary"
-            />
-          </div>
-        </div>
-
-        <div>
+        <div className="flex-1 min-h-[150px] mt-3 overflow-hidden">
           <label className="block text-xs text-text-secondary mb-1">Prompt</label>
           <textarea
             value={formPrompt}
             onChange={e => setFormPrompt(e.target.value)}
             placeholder="Instructions the agent receives when this skill is loaded..."
-            className="w-full h-64 px-3 py-2 bg-bg-tertiary border border-border rounded text-sm font-mono resize-none focus:outline-none focus:ring-1 focus:ring-accent-primary"
+            className="w-full h-full px-3 py-2 bg-bg-tertiary border border-border rounded text-sm font-mono resize-none focus:outline-none focus:ring-1 focus:ring-accent-primary"
           />
         </div>
 
-        <div className="flex justify-end gap-2 pt-2 border-t border-border">
+        <div className="flex justify-end gap-2 pt-2 mt-5 border-t border-border flex-shrink-0">
           <Button variant="secondary" onClick={handleCancel}>Cancel</Button>
           <Button variant="primary" onClick={handleSave} disabled={saving || !formName || !formPrompt}>
             {saving ? 'Saving...' : 'Save'}

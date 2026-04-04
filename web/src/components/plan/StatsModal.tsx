@@ -135,9 +135,6 @@ export function StatsModal({ isOpen, onClose, stats }: StatsModalProps) {
 
   const responseRows = useMemo(() => currentStats ? buildResponseLogRows(currentStats) : [], [currentStats])
   const chartData = useMemo(() => currentStats ? buildPerformanceChartData(currentStats) : { mode: 'responses', xLabel: 'response', prefillLabel: '', generationLabel: '', points: [] }, [currentStats])
-  const visibleResponseRowCount = useMemo(() => (
-    responseRows.reduce((count, row) => count + 1 + ((expandedResponses[row.messageId] ?? false) ? row.calls.length : 0), 0)
-  ), [expandedResponses, responseRows])
 
   const toggleResponse = useCallback((messageId: string) => {
     setExpandedResponses((current) => ({
@@ -279,7 +276,7 @@ export function StatsModal({ isOpen, onClose, stats }: StatsModalProps) {
           <h3 className="text-sm font-semibold text-text-secondary mb-3 uppercase tracking-wide">
             Response Log ({currentStats.responseCount} responses)
           </h3>
-          <div className={`${visibleResponseRowCount > 6 ? 'max-h-72 overflow-y-auto' : 'overflow-hidden'} bg-bg-tertiary/30 rounded`}>
+          <div className="overflow-y-auto bg-bg-tertiary/30 rounded">
             <table className="w-full table-fixed border-separate border-spacing-0 text-xs">
               <colgroup>
                 <col className="w-[7%]" />

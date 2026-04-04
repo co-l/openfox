@@ -219,108 +219,91 @@ export function AgentsModal({ isOpen, onClose, initialEditId }: AgentsModalProps
   if (view === 'edit') {
     return (
       <Modal isOpen={isOpen} onClose={handleCancel} title={editingId ? 'Edit Agent' : 'New Agent'} size="xl">
-        <div className="space-y-3">
-          {formError && (
-            <div className="text-accent-error text-sm px-3 py-2 bg-accent-error/10 rounded">{formError}</div>
-          )}
+        <div className="flex flex-col h-full">
+          <div className="space-y-3">
+            {formError && (
+              <div className="text-accent-error text-sm px-3 py-2 bg-accent-error/10 rounded">{formError}</div>
+            )}
 
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="block text-xs text-text-secondary mb-1">Name</label>
-              <input
-                value={formName}
-                onChange={e => handleNameChange(e.target.value)}
-                placeholder="My Agent"
-                className="w-full px-2 py-1.5 bg-bg-tertiary border border-border rounded text-sm focus:outline-none focus:ring-1 focus:ring-accent-primary"
-              />
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs text-text-secondary mb-1">Name</label>
+                <input
+                  value={formName}
+                  onChange={e => handleNameChange(e.target.value)}
+                  placeholder="My Agent"
+                  className="w-full px-2 py-1.5 bg-bg-tertiary border border-border rounded text-sm focus:outline-none focus:ring-1 focus:ring-accent-primary"
+                />
+              </div>
+              <div>
+                <label className="block text-xs text-text-secondary mb-1">ID {editingId && <span className="text-text-muted">(read-only)</span>}</label>
+                <input
+                  value={formId}
+                  onChange={e => !editingId && setFormId(e.target.value)}
+                  readOnly={!!editingId}
+                  placeholder="my_agent"
+                  className={`w-full px-2 py-1.5 bg-bg-tertiary border border-border rounded text-sm font-mono focus:outline-none focus:ring-1 focus:ring-accent-primary ${editingId ? 'opacity-60' : ''}`}
+                />
+              </div>
             </div>
-            <div>
-              <label className="block text-xs text-text-secondary mb-1">ID {editingId && <span className="text-text-muted">(read-only)</span>}</label>
-              <input
-                value={formId}
-                onChange={e => !editingId && setFormId(e.target.value)}
-                readOnly={!!editingId}
-                placeholder="my_agent"
-                className={`w-full px-2 py-1.5 bg-bg-tertiary border border-border rounded text-sm font-mono focus:outline-none focus:ring-1 focus:ring-accent-primary ${editingId ? 'opacity-60' : ''}`}
-              />
-            </div>
-          </div>
 
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="block text-xs text-text-secondary mb-1">Description</label>
-              <input
-                value={formDescription}
-                onChange={e => setFormDescription(e.target.value)}
-                placeholder="What this agent does"
-                className="w-full px-2 py-1.5 bg-bg-tertiary border border-border rounded text-sm focus:outline-none focus:ring-1 focus:ring-accent-primary"
-              />
-            </div>
-            <div>
-              <label className="block text-xs text-text-secondary mb-1">Type</label>
-              <div className="flex items-center gap-3 h-[34px]">
-                <button
-                  onClick={() => setFormSubagent(true)}
-                  className={`px-2.5 py-1 rounded text-xs font-medium transition-colors ${
-                    formSubagent
-                      ? 'bg-accent-primary/25 text-accent-primary'
-                      : 'bg-bg-tertiary text-text-muted hover:text-text-secondary'
-                  }`}
-                >
-                  Sub-agent
-                </button>
-                <button
-                  onClick={() => setFormSubagent(false)}
-                  className={`px-2.5 py-1 rounded text-xs font-medium transition-colors ${
-                    !formSubagent
-                      ? 'bg-accent-primary/25 text-accent-primary'
-                      : 'bg-bg-tertiary text-text-muted hover:text-text-secondary'
-                  }`}
-                >
-                  Top-level
-                </button>
-                <div className="flex items-center gap-1.5 ml-auto">
-                  <label className="text-xs text-text-secondary">Color</label>
-                  <input
-                    type="color"
-                    value={formColor}
-                    onChange={e => setFormColor(e.target.value)}
-                    className="w-6 h-6 rounded cursor-pointer border border-border bg-transparent"
-                  />
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs text-text-secondary mb-1">Description</label>
+                <input
+                  value={formDescription}
+                  onChange={e => setFormDescription(e.target.value)}
+                  placeholder="What this agent does"
+                  className="w-full px-2 py-1.5 bg-bg-tertiary border border-border rounded text-sm focus:outline-none focus:ring-1 focus:ring-accent-primary"
+                />
+              </div>
+              <div>
+                <label className="block text-xs text-text-secondary mb-1">Type</label>
+                <div className="flex items-center gap-3 h-[34px]">
+                  <button
+                    onClick={() => setFormSubagent(true)}
+                    className={`px-2.5 py-1 rounded text-xs font-medium transition-colors ${
+                      formSubagent
+                        ? 'bg-accent-primary/25 text-accent-primary'
+                        : 'bg-bg-tertiary text-text-muted hover:text-text-secondary'
+                    }`}
+                  >
+                    Sub-agent
+                  </button>
+                  <button
+                    onClick={() => setFormSubagent(false)}
+                    className={`px-2.5 py-1 rounded text-xs font-medium transition-colors ${
+                      !formSubagent
+                        ? 'bg-accent-primary/25 text-accent-primary'
+                        : 'bg-bg-tertiary text-text-muted hover:text-text-secondary'
+                    }`}
+                  >
+                    Top-level
+                  </button>
+                  <div className="flex items-center gap-1.5 ml-auto">
+                    <label className="text-xs text-text-secondary">Color</label>
+                    <input
+                      type="color"
+                      value={formColor}
+                      onChange={e => setFormColor(e.target.value)}
+                      className="w-6 h-6 rounded cursor-pointer border border-border bg-transparent"
+                    />
+                  </div>
                 </div>
               </div>
             </div>
-          </div>
 
-          <div>
-            <label className="block text-xs text-text-secondary mb-1">Tools</label>
-            <div className="flex flex-wrap gap-1.5 p-2 bg-bg-tertiary border border-border rounded max-h-32 overflow-y-auto">
-              {availableTools.map(tool => {
-                const isSelected = granularTools.has(tool.name)
-                const hasActions = tool.actions.length > 0
-                const selectedActions = granularTools.get(tool.name) || new Set()
+            <div>
+              <label className="block text-xs text-text-secondary mb-1">Tools</label>
+              <div className="flex flex-wrap gap-1.5 p-2 bg-bg-tertiary border border-border rounded max-h-32 overflow-y-auto">
+                {availableTools.map(tool => {
+                  const isSelected = granularTools.has(tool.name)
+                  const hasActions = tool.actions.length > 0
+                  const selectedActions = granularTools.get(tool.name) || new Set()
 
-                const button = (
-                  <button
-                    key={tool.name}
-                    className={`px-1.5 py-0.5 rounded text-xs font-mono transition-colors flex items-center gap-1 ${
-                      isSelected
-                        ? 'bg-accent-primary/25 text-accent-primary'
-                        : 'bg-bg-primary text-text-muted hover:text-text-secondary'
-                    }`}
-                  >
-                    <span>{tool.name}</span>
-                    {hasActions && (
-                      <span className={`text-[10px] ${isSelected && selectedActions.size > 0 ? 'text-accent-primary' : 'text-text-muted'}`}>*</span>
-                    )}
-                  </button>
-                )
-
-                if (!hasActions) {
-                  return (
+                  const button = (
                     <button
                       key={tool.name}
-                      onClick={() => toggleTool(tool.name)}
                       className={`px-1.5 py-0.5 rounded text-xs font-mono transition-colors flex items-center gap-1 ${
                         isSelected
                           ? 'bg-accent-primary/25 text-accent-primary'
@@ -328,62 +311,81 @@ export function AgentsModal({ isOpen, onClose, initialEditId }: AgentsModalProps
                       }`}
                     >
                       <span>{tool.name}</span>
+                      {hasActions && (
+                        <span className={`text-[10px] ${isSelected && selectedActions.size > 0 ? 'text-accent-primary' : 'text-text-muted'}`}>*</span>
+                      )}
                     </button>
                   )
-                }
 
-                return (
-                  <DropdownMenu
-                    key={tool.name}
-                    trigger={button}
-                    minWidth="160px"
-                    items={[
-                      ...tool.actions.map(action => ({
-                        label: (
-                          <label className="flex items-center gap-2 cursor-pointer" htmlFor={`${tool.name}-${action}`}>
-                            <input
-                              type="checkbox"
-                              id={`${tool.name}-${action}`}
-                              checked={selectedActions.has(action)}
-                              onChange={() => toggleToolAction(tool.name, action)}
-                              className="w-3 h-3 rounded accent-accent-primary"
-                            />
-                            <span>{action}</span>
-                          </label>
-                        ),
-                        closeOnClick: false,
-                      })),
-                      {
-                        label: isSelected ? 'Deselect all' : 'Select all',
-                        closeOnClick: false,
-                        onClick: () => {
-                          if (isSelected) {
-                            toggleTool(tool.name)
-                          } else {
-                            const newGranular = new Map(granularTools)
-                            newGranular.set(tool.name, new Set(tool.actions))
-                            setFormTools(serializeTools(newGranular))
-                          }
+                  if (!hasActions) {
+                    return (
+                      <button
+                        key={tool.name}
+                        onClick={() => toggleTool(tool.name)}
+                        className={`px-1.5 py-0.5 rounded text-xs font-mono transition-colors flex items-center gap-1 ${
+                          isSelected
+                            ? 'bg-accent-primary/25 text-accent-primary'
+                            : 'bg-bg-primary text-text-muted hover:text-text-secondary'
+                        }`}
+                      >
+                        <span>{tool.name}</span>
+                      </button>
+                    )
+                  }
+
+                  return (
+                    <DropdownMenu
+                      key={tool.name}
+                      trigger={button}
+                      minWidth="160px"
+                      items={[
+                        ...tool.actions.map(action => ({
+                          label: (
+                            <label className="flex items-center gap-2 cursor-pointer" htmlFor={`${tool.name}-${action}`}>
+                              <input
+                                type="checkbox"
+                                id={`${tool.name}-${action}`}
+                                checked={selectedActions.has(action)}
+                                onChange={() => toggleToolAction(tool.name, action)}
+                                className="w-3 h-3 rounded accent-accent-primary"
+                              />
+                              <span>{action}</span>
+                            </label>
+                          ),
+                          closeOnClick: false,
+                        })),
+                        {
+                          label: isSelected ? 'Deselect all' : 'Select all',
+                          closeOnClick: false,
+                          onClick: () => {
+                            if (isSelected) {
+                              toggleTool(tool.name)
+                            } else {
+                              const newGranular = new Map(granularTools)
+                              newGranular.set(tool.name, new Set(tool.actions))
+                              setFormTools(serializeTools(newGranular))
+                            }
+                          },
                         },
-                      },
-                    ]}
-                  />
-                )
-              })}
+                      ]}
+                    />
+                  )
+                })}
+              </div>
             </div>
           </div>
 
-          <div>
+          <div className="flex-1 min-h-[150px] mt-5 overflow-hidden">
             <label className="block text-xs text-text-secondary mb-1">Prompt</label>
             <textarea
               value={formPrompt}
               onChange={e => setFormPrompt(e.target.value)}
               placeholder="Instructions for this agent..."
-              className="w-full h-64 px-3 py-2 bg-bg-tertiary border border-border rounded text-sm font-mono resize-none focus:outline-none focus:ring-1 focus:ring-accent-primary"
+              className="w-full h-full px-3 py-2 bg-bg-tertiary border border-border rounded text-sm font-mono resize-none focus:outline-none focus:ring-1 focus:ring-accent-primary"
             />
           </div>
 
-          <div className="flex justify-end gap-2 pt-2 border-t border-border">
+          <div className="flex justify-end gap-2 pt-2 mt-5 border-t border-border flex-shrink-0">
             <Button variant="secondary" onClick={handleCancel}>Cancel</Button>
             <Button variant="primary" onClick={handleSave} disabled={saving || !formName || !formPrompt}>
               {saving ? 'Saving...' : 'Save'}

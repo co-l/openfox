@@ -58,24 +58,25 @@ export function InstructionsModal({
 
   return (
     <Modal isOpen={isOpen} onClose={handleCancel} title={title} size="lg">
-      <div className="space-y-4">
-        <div>
-          <label className="block text-sm font-medium text-text-primary mb-2">
-            {label}
-          </label>
-          <p className="text-sm text-text-muted mb-2">
-            {description}
-          </p>
+      <div className="flex flex-col h-full -mt-1">
+        <label className="block text-sm font-medium text-text-primary mb-1 flex-shrink-0">
+          {label}
+        </label>
+        <p className="text-sm text-text-muted mb-3 flex-shrink-0">
+          {description}
+        </p>
+
+        <div className="flex-1 min-h-[150px]">
           <textarea
             value={localValue}
             onChange={handleChange}
             placeholder={placeholder}
-            className="w-full h-64 px-3 py-2 bg-bg-tertiary border border-border rounded text-sm font-mono resize-none focus:outline-none focus:ring-1 focus:ring-accent-primary"
+            className="w-full h-full px-3 py-2 bg-bg-tertiary border border-border rounded text-sm font-mono resize-none focus:outline-none focus:ring-1 focus:ring-accent-primary"
             disabled={isBusy}
           />
         </div>
 
-        <div className="flex justify-end gap-2 pt-2 border-t border-border">
+        <div className="flex justify-end gap-2 pt-2 mt-3 border-t border-border flex-shrink-0">
           <Button variant="secondary" onClick={handleCancel}>
             Cancel
           </Button>
