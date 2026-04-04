@@ -1,6 +1,21 @@
 {
   "providers": [
     {
+      "id": "test-context-update-provider",
+      "name": "Test Context Update Provider",
+      "url": "http://localhost:11434",
+      "backend": "ollama",
+      "models": [
+        {
+          "id": "test-context-update-model",
+          "contextWindow": 500000,
+          "source": "user"
+        }
+      ],
+      "isActive": true,
+      "createdAt": "2026-04-04T09:37:10.040Z"
+    },
+    {
       "id": "test-fuzzy-provider",
       "name": "Test Fuzzy Provider",
       "url": "http://localhost:11434",
@@ -13,7 +28,7 @@
         }
       ],
       "isActive": true,
-      "createdAt": "2026-04-04T08:22:49.321Z"
+      "createdAt": "2026-04-04T09:37:04.499Z"
     },
     {
       "id": "test-restart-provider",
@@ -28,26 +43,11 @@
         }
       ],
       "isActive": true,
-      "createdAt": "2026-04-04T08:22:48.293Z"
-    },
-    {
-      "id": "test-context-update-provider",
-      "name": "Test Context Update Provider",
-      "url": "http://localhost:11434",
-      "backend": "ollama",
-      "models": [
-        {
-          "id": "test-context-update-model",
-          "contextWindow": 500000,
-          "source": "user"
-        }
-      ],
-      "isActive": true,
-      "createdAt": "2026-04-04T08:22:44.362Z"
+      "createdAt": "2026-04-04T09:37:03.483Z"
     }
   ],
-  "defaultModelSelection": "test-fuzzy-provider/qwen3.5 cloud",
-  "activeProviderId": "test-fuzzy-provider",
+  "defaultModelSelection": "test-context-update-provider/test-context-update-model",
+  "activeProviderId": "test-context-update-provider",
   "server": {
     "port": 10369,
     "host": "127.0.0.1",

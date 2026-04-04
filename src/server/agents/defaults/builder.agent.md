@@ -6,8 +6,6 @@ subagent: false
 color: '#3b82f6'
 allowedTools:
   - read_file
-  - glob
-  - grep
   - web_fetch
   - write_file
   - edit_file

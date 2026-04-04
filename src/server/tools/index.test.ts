@@ -5,9 +5,6 @@ const {
   writeExecuteMock,
   editExecuteMock,
   shellExecuteMock,
-  globExecuteMock,
-  grepExecuteMock,
-  gitExecuteMock,
   askExecuteMock,
   criterionExecuteMock,
   todoExecuteMock,
@@ -18,9 +15,6 @@ const {
   writeExecuteMock: vi.fn(async () => ({ success: true, output: 'write', durationMs: 1, truncated: false })),
   editExecuteMock: vi.fn(async () => ({ success: true, output: 'edit', durationMs: 1, truncated: false })),
   shellExecuteMock: vi.fn(async () => ({ success: true, output: 'shell', durationMs: 1, truncated: false })),
-  globExecuteMock: vi.fn(async () => ({ success: true, output: 'glob', durationMs: 1, truncated: false })),
-  grepExecuteMock: vi.fn(async () => ({ success: true, output: 'grep', durationMs: 1, truncated: false })),
-  gitExecuteMock: vi.fn(async () => ({ success: true, output: 'git', durationMs: 1, truncated: false })),
   askExecuteMock: vi.fn(async () => ({ success: true, output: 'ask', durationMs: 1, truncated: false })),
   criterionExecuteMock: vi.fn(async () => ({ success: true, output: 'criterion', durationMs: 1, truncated: false })),
   todoExecuteMock: vi.fn(async () => ({ success: true, output: 'todo', durationMs: 1, truncated: false })),
@@ -32,9 +26,6 @@ vi.mock('./read.js', () => ({ readFileTool: { name: 'read_file', definition: { t
 vi.mock('./write.js', () => ({ writeFileTool: { name: 'write_file', definition: { type: 'function', function: { name: 'write_file', description: 'Write', parameters: {} } }, execute: writeExecuteMock } }))
 vi.mock('./edit.js', () => ({ editFileTool: { name: 'edit_file', definition: { type: 'function', function: { name: 'edit_file', description: 'Edit', parameters: {} } }, execute: editExecuteMock } }))
 vi.mock('./shell.js', () => ({ runCommandTool: { name: 'run_command', definition: { type: 'function', function: { name: 'run_command', description: 'Shell', parameters: {} } }, execute: shellExecuteMock } }))
-vi.mock('./glob.js', () => ({ globTool: { name: 'glob', definition: { type: 'function', function: { name: 'glob', description: 'Glob', parameters: {} } }, execute: globExecuteMock } }))
-vi.mock('./grep.js', () => ({ grepTool: { name: 'grep', definition: { type: 'function', function: { name: 'grep', description: 'Grep', parameters: {} } }, execute: grepExecuteMock } }))
-vi.mock('./git.js', () => ({ gitTool: { name: 'git', definition: { type: 'function', function: { name: 'git', description: 'Git', parameters: {} } }, execute: gitExecuteMock } }))
 vi.mock('./ask.js', async (importOriginal) => {
   const actual = await importOriginal<typeof import('./ask.js')>()
   return {
@@ -61,12 +52,12 @@ import { createToolRegistry, getToolRegistryForAgent, createRegistryFromTools } 
 import type { AgentDefinition } from '../agents/types.js'
 
 const builderDef: AgentDefinition = {
-  metadata: { id: 'builder', name: 'Builder', description: 'Builds', subagent: false, allowedTools: ['read_file', 'glob', 'grep', 'web_fetch', 'write_file', 'edit_file', 'run_command', 'ask_user', 'criterion', 'todo', 'call_sub_agent', 'load_skill'] },
+  metadata: { id: 'builder', name: 'Builder', description: 'Builds', subagent: false, allowedTools: ['read_file', 'web_fetch', 'write_file', 'edit_file', 'run_command', 'ask_user', 'criterion', 'todo', 'call_sub_agent', 'load_skill'] },
   prompt: 'Build mode.',
 }
 
 const builderWithReturnValueDef: AgentDefinition = {
-  metadata: { id: 'builder', name: 'Builder', description: 'Builds', subagent: false, allowedTools: ['read_file', 'glob', 'grep', 'web_fetch', 'write_file', 'edit_file', 'run_command', 'ask_user', 'criterion', 'todo', 'call_sub_agent', 'load_skill', 'return_value'] },
+  metadata: { id: 'builder', name: 'Builder', description: 'Builds', subagent: false, allowedTools: ['read_file', 'web_fetch', 'write_file', 'edit_file', 'run_command', 'ask_user', 'criterion', 'todo', 'call_sub_agent', 'load_skill', 'return_value'] },
   prompt: 'Build mode.',
 }
 
@@ -132,18 +123,6 @@ describe('tool registries', () => {
 
     criterionExecuteMock.mockRejectedValueOnce(new PathAccessDeniedError(['/etc/passwd'], 'criterion'))
     await expect(registry.execute('criterion', {}, context)).rejects.toBeInstanceOf(PathAccessDeniedError)
-  })
-
-  it('allows execution of all tools for top-level agents', async () => {
-    const registry = getToolRegistryForAgent(builderDef)
-    const context = { workdir: '/tmp/project', sessionId: 'session-1', sessionManager: {} as never }
-
-    const result = await registry.execute('git', {}, context)
-
-    expect(result).toMatchObject({
-      success: true,
-      output: 'git',
-    })
   })
 
   it('allows execution of authorized tools', async () => {
@@ -228,6 +207,20 @@ describe('tool registries', () => {
     const context = { workdir: '/tmp/project', sessionId: 'session-1', sessionManager: {} as never }
 
     const result = await verifierRegistry.execute('return_value', { content: 'test' }, context)
+
+    expect(result.success).toBe(true)
+  })
+
+  it('allows granular tool permissions like criterion:pass,fail', async () => {
+    const allToolsRegistry = createToolRegistry()
+    const context = { workdir: '/tmp/project', sessionId: 'session-1', sessionManager: {} as never }
+
+    const tools = allToolsRegistry.tools.filter(t => t.name === 'criterion')
+    const allowedTools = ['criterion:pass,fail']
+
+    const restrictedRegistry = createRegistryFromTools(tools, allowedTools)
+
+    const result = await restrictedRegistry.execute('criterion', { action: 'pass', id: 'test-id' }, context)
 
     expect(result.success).toBe(true)
   })

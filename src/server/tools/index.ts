@@ -5,9 +5,6 @@ import { readFileTool } from './read.js'
 import { writeFileTool } from './write.js'
 import { editFileTool } from './edit.js'
 import { runCommandTool } from './shell.js'
-import { globTool } from './glob.js'
-import { grepTool } from './grep.js'
-import { gitTool } from './git.js'
 import { askUserTool, AskUserInterrupt } from './ask.js'
 import {
   PathAccessDeniedError,
@@ -125,8 +122,9 @@ export function createRegistryFromTools(
         }
       }
 
-      // Check base tool permission
-      if (allowedTools && allowedTools.length > 0 && !allowedToolsSet.has(name)) {
+      // Check base tool permission (considering granular permissions like "criterion:pass,fail")
+      const hasBaseToolPermission = allowedToolsSet.has(name) || [...allowedToolsSet].some(entry => entry.startsWith(`${name}:`))
+      if (allowedTools && allowedTools.length > 0 && !hasBaseToolPermission) {
         logger.debug('Permission denied: tool not in allowed list', {
           tool: name,
           allowedTools,
@@ -210,7 +208,7 @@ function getAllToolsMap(): Map<string, Tool> {
   return new Map<string, Tool>([
     ...[
       readFileTool, writeFileTool, editFileTool, runCommandTool,
-      globTool, grepTool, gitTool, askUserTool,
+      askUserTool,
       criterionTool,
       todoTool, callSubAgentTool, loadSkillTool, returnValueTool, webFetchTool,
       devServerTool, stepDoneTool,

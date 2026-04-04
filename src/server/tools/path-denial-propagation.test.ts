@@ -27,8 +27,6 @@ vi.mock('./path-security.js', async (importOriginal) => {
 import { readFileTool } from './read.js'
 import { writeFileTool } from './write.js'
 import { editFileTool } from './edit.js'
-import { globTool } from './glob.js'
-import { grepTool } from './grep.js'
 import { runCommandTool } from './shell.js'
 
 describe('PathAccessDeniedError propagation', () => {
@@ -75,22 +73,6 @@ describe('PathAccessDeniedError propagation', () => {
     it('re-throws PathAccessDeniedError instead of catching it', async () => {
       await expect(
         editFileTool.execute({ path: '.env', old_string: 'a', new_string: 'b' }, context)
-      ).rejects.toThrow(PathAccessDeniedError)
-    })
-  })
-
-  describe('glob', () => {
-    it('re-throws PathAccessDeniedError instead of catching it', async () => {
-      await expect(
-        globTool.execute({ pattern: '**/.env', path: '/outside' }, context)
-      ).rejects.toThrow(PathAccessDeniedError)
-    })
-  })
-
-  describe('grep', () => {
-    it('re-throws PathAccessDeniedError instead of catching it', async () => {
-      await expect(
-        grepTool.execute({ pattern: 'secret', path: '/outside' }, context)
       ).rejects.toThrow(PathAccessDeniedError)
     })
   })

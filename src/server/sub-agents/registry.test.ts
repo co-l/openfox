@@ -32,7 +32,7 @@ describe('SubAgentRegistry (via agent registry)', () => {
     expect(codeReviewer?.metadata.name).toBe('Code Reviewer')
     expect(typeof codeReviewer?.metadata.description).toBe('string')
     expect(typeof codeReviewer?.prompt).toBe('string')
-    expect(codeReviewer?.metadata.allowedTools).toEqual(['read_file', 'grep', 'web_fetch'])
+    expect(codeReviewer?.metadata.allowedTools).toEqual(['read_file', 'web_fetch'])
     expect(codeReviewer?.metadata.subagent).toBe(true)
   })
 
@@ -58,7 +58,7 @@ describe('SubAgentRegistry (via agent registry)', () => {
     expect(debuggerAgent?.metadata.name).toBe('Debugger')
     expect(typeof debuggerAgent?.metadata.description).toBe('string')
     expect(typeof debuggerAgent?.prompt).toBe('string')
-    expect(debuggerAgent?.metadata.allowedTools).toEqual(['read_file', 'run_command', 'grep', 'web_fetch'])
+    expect(debuggerAgent?.metadata.allowedTools).toEqual(['read_file', 'run_command', 'web_fetch'])
     expect(debuggerAgent?.metadata.subagent).toBe(true)
   })
 

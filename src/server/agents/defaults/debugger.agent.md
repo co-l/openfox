@@ -7,7 +7,6 @@ color: '#f97316'
 allowedTools:
   - read_file
   - run_command
-  - grep
   - web_fetch
 ---
 

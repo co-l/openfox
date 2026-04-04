@@ -34,7 +34,6 @@ describe('SubAgentManager', () => {
 
     expect(findAgentById('code_reviewer', agents)?.metadata.allowedTools).toEqual([
       'read_file',
-      'grep',
       'web_fetch',
     ])
 
@@ -48,7 +47,6 @@ describe('SubAgentManager', () => {
     expect(findAgentById('debugger', agents)?.metadata.allowedTools).toEqual([
       'read_file',
       'run_command',
-      'grep',
       'web_fetch',
     ])
   })

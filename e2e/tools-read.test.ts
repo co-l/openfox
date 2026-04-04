@@ -126,112 +126,34 @@ describe('Read Tools', () => {
   })
 
   describe('glob', () => {
-    it('finds files matching pattern', async () => {
-      await client.send('chat.send', { 
-        content: 'Use glob to find all .ts files in the project.' 
-      })
-      
-      const response = await client.waitForChatDone()
-      
-      const toolCalls = response.toolCalls.filter(tc => tc.tool === 'glob')
-      expect(toolCalls.length).toBeGreaterThan(0)
-      
-      const result = toolCalls[0]!.result!
-      expect(result.success).toBe(true)
-      expect(result.output).toContain('index.ts')
-      expect(result.output).toContain('math.ts')
+    it.skip('finds files matching pattern', async () => {
+      // glob tool removed - use run_command with find instead
     })
 
-    it('supports recursive patterns', async () => {
-      await client.send('chat.send', { 
-        content: 'Use glob with pattern "**/*.ts" to find all TypeScript files recursively.' 
-      })
-      
-      const response = await client.waitForChatDone()
-      
-      const toolCalls = response.toolCalls.filter(tc => tc.tool === 'glob')
-      if (toolCalls.length > 0) {
-        const result = toolCalls[0]!.result!
-        expect(result.success).toBe(true)
-      }
+    it.skip('supports recursive patterns', async () => {
+      // glob tool removed - use run_command with find instead
     })
 
-    it('returns empty for no matches', async () => {
-      await client.send('chat.send', { 
-        content: 'Use glob to find files matching "*.xyz" (there are none).' 
-      })
-      
-      const response = await client.waitForChatDone()
-      
-      const toolCalls = response.toolCalls.filter(tc => tc.tool === 'glob')
-      if (toolCalls.length > 0) {
-        const result = toolCalls[0]!.result!
-        expect(result.success).toBe(true)
-        // Output might be empty or indicate no matches
-      }
+    it.skip('returns empty for no matches', async () => {
+      // glob tool removed - use run_command with find instead
     })
   })
 
   describe('grep', () => {
-    it('searches file contents', async () => {
-      await client.send('chat.send', { 
-        content: 'Use grep to search for the word "function" in all TypeScript files.' 
-      })
-      
-      const response = await client.waitForChatDone()
-      
-      const toolCalls = response.toolCalls.filter(tc => tc.tool === 'grep')
-      expect(toolCalls.length).toBeGreaterThan(0)
-      
-      const result = toolCalls[0]!.result!
-      expect(result.success).toBe(true)
-      // Should find matches
-      if (result.output) {
-        expect(result.output.length).toBeGreaterThan(0)
-      }
+    it.skip('searches file contents', async () => {
+      // grep tool removed - use run_command with grep instead
     })
 
-    it('supports regex patterns', async () => {
-      await client.send('chat.send', { 
-        content: 'Use grep with a regex pattern to find all function declarations: "function\\s+\\w+"' 
-      })
-      
-      const response = await client.waitForChatDone()
-      
-      const toolCalls = response.toolCalls.filter(tc => tc.tool === 'grep')
-      if (toolCalls.length > 0) {
-        const result = toolCalls[0]!.result!
-        expect(result.success).toBe(true)
-      }
+    it.skip('supports regex patterns', async () => {
+      // grep tool removed - use run_command with grep instead
     })
 
-    it('filters by file pattern', async () => {
-      await client.send('chat.send', { 
-        content: 'Use grep to search for "export" only in files matching "*.ts".' 
-      })
-      
-      const response = await client.waitForChatDone()
-      
-      const toolCalls = response.toolCalls.filter(tc => tc.tool === 'grep')
-      if (toolCalls.length > 0) {
-        const result = toolCalls[0]!.result!
-        expect(result.success).toBe(true)
-      }
+    it.skip('filters by file pattern', async () => {
+      // grep tool removed - use run_command with grep instead
     })
 
-    it('returns no matches gracefully', async () => {
-      await client.send('chat.send', { 
-        content: 'Use grep to search for "XYZNONEXISTENT123" which does not exist in any file.' 
-      })
-      
-      const response = await client.waitForChatDone()
-      
-      const toolCalls = response.toolCalls.filter(tc => tc.tool === 'grep')
-      if (toolCalls.length > 0) {
-        const result = toolCalls[0]!.result!
-        expect(result.success).toBe(true)
-        // No matches is still success, just empty output
-      }
+    it.skip('returns no matches gracefully', async () => {
+      // grep tool removed - use run_command with grep instead
     })
   })
 })
