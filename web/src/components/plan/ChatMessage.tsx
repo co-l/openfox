@@ -54,7 +54,7 @@ function UserMessage({ message, promptContext }: UserMessageProps) {
           {message.content}
         </div>
         {message.attachments && message.attachments.length > 0 && (
-          <MessageAttachments attachments={message.attachments} />
+          <MessageAttachments attachments={message.attachments} messageId={message.id} />
         )}
       </div>
     </div>
