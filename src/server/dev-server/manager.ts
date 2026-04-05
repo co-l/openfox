@@ -30,11 +30,16 @@ export interface LogChunk {
 export type OutputListener = (workdir: string, chunk: LogChunk) => void
 export type StateListener = (workdir: string, state: DevServerState, errorMessage: string | undefined) => void
 
+interface LogEntry {
+  stream: 'stdout' | 'stderr'
+  content: string
+}
+
 interface DevServerInstance {
   process: ChildProcess | null
   state: DevServerState
   config: DevServerConfig | null
-  logs: string[]
+  logs: LogEntry[]
   totalLogBytes: number
   errorMessage: string | undefined
   exited: boolean
@@ -139,24 +144,25 @@ class DevServerManager {
 
     instance.process = proc
 
-    const appendLog = (line: string) => {
-      instance.logs.push(line)
-      instance.totalLogBytes += line.length
+    const appendLog = (stream: 'stdout' | 'stderr', content: string) => {
+      const entry: LogEntry = { stream, content }
+      instance.logs.push(entry)
+      instance.totalLogBytes += content.length
       while (instance.logs.length > MAX_LOG_LINES || instance.totalLogBytes > MAX_LOG_BYTES) {
         const removed = instance.logs.shift()
-        if (removed) instance.totalLogBytes -= removed.length
+        if (removed) instance.totalLogBytes -= removed.content.length
       }
     }
 
     proc.stdout?.on('data', (data: Buffer) => {
       const content = data.toString()
-      appendLog(content)
+      appendLog('stdout', content)
       this.emitOutput(workdir, { stream: 'stdout', content })
     })
 
     proc.stderr?.on('data', (data: Buffer) => {
       const content = data.toString()
-      appendLog(content)
+      appendLog('stderr', content)
       this.emitOutput(workdir, { stream: 'stderr', content })
 
       // Detect error patterns in stderr — set warning if process is still running
@@ -231,9 +237,16 @@ class DevServerManager {
     }
   }
 
-  getLogs(workdir: string): string[] {
+  getLogs(workdir: string): LogEntry[] {
     const instance = this.getInstance(workdir)
     return [...instance.logs]
+  }
+
+  getLogsSlice(workdir: string, offset: number, limit: number): { logs: LogEntry[]; total: number } {
+    const allLogs = this.getLogs(workdir)
+    const total = allLogs.length
+    const logs = allLogs.slice(offset, offset + limit)
+    return { logs, total }
   }
 
   /** Register a global listener for output from any dev server */

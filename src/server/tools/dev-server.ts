@@ -2,7 +2,9 @@ import { createTool } from './tool-helpers.js'
 import { devServerManager } from '../dev-server/manager.js'
 
 interface DevServerArgs {
-  action: 'start' | 'stop' | 'restart' | 'status'
+  action: 'start' | 'stop' | 'restart' | 'status' | 'logs'
+  offset?: number
+  limit?: number
 }
 
 export const devServerTool = createTool<DevServerArgs>(
@@ -11,14 +13,22 @@ export const devServerTool = createTool<DevServerArgs>(
     type: 'function',
     function: {
       name: 'dev_server',
-      description: 'Control the project dev server. Start, stop, restart, or check status. The dev server command and URL are configured in .openfox/dev.json.',
+      description: 'Control the project dev server. Start, stop, restart, check status, or fetch logs with optional pagination. The dev server command and URL are configured in .openfox/dev.json.',
       parameters: {
         type: 'object',
         properties: {
           action: {
             type: 'string',
-            enum: ['start', 'stop', 'restart', 'status'],
+            enum: ['start', 'stop', 'restart', 'status', 'logs'],
             description: 'The action to perform on the dev server',
+          },
+          offset: {
+            type: 'number',
+            description: 'Offset for log lines (0-based). Default: 0. Used with action=logs.',
+          },
+          limit: {
+            type: 'number',
+            description: 'Max number of log lines to return. Used with action=logs.',
           },
         },
         required: ['action'],
@@ -27,6 +37,24 @@ export const devServerTool = createTool<DevServerArgs>(
   },
   async (args, context, helpers) => {
     const workdir = context.workdir
+
+    if (args.action === 'logs') {
+      const offset = args.offset ?? 0
+      const limit = args.limit ?? 100
+      const result = devServerManager.getLogsSlice(workdir, offset, limit)
+
+      const formattedLogs = result.logs.map(entry =>
+        `${entry.stream === 'stderr' ? '[stderr] ' : ''}${entry.content}`
+      ).join('')
+
+      return helpers.success(JSON.stringify({
+        logs: formattedLogs,
+        total: result.total,
+        offset,
+        limit,
+        hasMore: offset + limit < result.total,
+      }, null, 2))
+    }
 
     let status
     switch (args.action) {
@@ -41,7 +69,6 @@ export const devServerTool = createTool<DevServerArgs>(
         break
       case 'status':
         status = devServerManager.getStatus(workdir)
-        // Try loading config if not yet loaded
         if (!status.config) {
           const config = await devServerManager.loadConfig(workdir)
           if (config) {

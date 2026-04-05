@@ -96,10 +96,9 @@ export const useDevServerStore = create<DevServerStore>()((set, get) => {
       try {
         const res = await fetch(`/api/dev-server/logs?workdir=${encodeURIComponent(workdir)}`)
         const data = await res.json()
-        // Convert raw log strings to chunks (they're stored as plain text)
-        const logs: LogChunk[] = (data.logs as string[]).map(content => ({
-          stream: 'stdout' as const,
-          content,
+        const logs: LogChunk[] = (data.logs as { stream: 'stdout' | 'stderr'; content: string }[]).map(entry => ({
+          stream: entry.stream,
+          content: entry.content,
         }))
         set({ logs })
       } catch {

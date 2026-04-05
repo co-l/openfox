@@ -57,12 +57,15 @@ export function createDevServerRoutes(): Router {
     }
   })
 
-  // GET /logs — full log buffer
+  // GET /logs — full log buffer with pagination
   router.get('/logs', (req, res) => {
     const workdir = req.query['workdir'] as string
     if (!workdir) return res.status(400).json({ error: 'workdir required' })
-    const logs = devServerManager.getLogs(workdir)
-    res.json({ logs })
+    const offset = Math.max(0, parseInt(req.query['offset'] as string) || 0)
+    const limit = Math.max(1, parseInt(req.query['limit'] as string) || Infinity)
+
+    const result = devServerManager.getLogsSlice(workdir, offset, limit)
+    res.json({ logs: result.logs, total: result.total, offset, limit })
   })
 
   // GET /config — read .openfox/dev.json
