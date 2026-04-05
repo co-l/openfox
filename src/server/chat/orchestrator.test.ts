@@ -76,7 +76,9 @@ vi.mock('../tools/index.js', async (importOriginal) => {
   return {
     ...actual,
     getToolRegistryForMode: getToolRegistryForModeMock,
-    getToolRegistryForAgent: (...args: unknown[]) => getToolRegistryForModeMock(...args),
+    getToolRegistryForAgent: vi.fn().mockImplementation((agentDef: any) => {
+      return getToolRegistryForModeMock(agentDef?.metadata?.mode ?? 'planner')
+    }),
   }
 })
 
@@ -321,7 +323,7 @@ describe('chat orchestrator', () => {
     })
 
     expect(consumeStreamGeneratorMock).toHaveBeenCalledTimes(2)
-    expect(streamLLMPureMock.mock.calls[0]?.[0]).toMatchObject({ toolChoice: 'none', disableThinking: true, tools: [] })
+    expect(streamLLMPureMock.mock.calls[0]?.[0]).toMatchObject({ toolChoice: 'none', disableThinking: true, tools: expect.any(Array) })
     expect(streamLLMPureMock.mock.calls[1]?.[0]).toMatchObject({ toolChoice: 'auto' })
     expect(sessionManager.compactContext).toHaveBeenCalledWith('session-1', 'Compacted summary of the session including all file modifications and current progress on tasks', 190000)
   })
@@ -2387,7 +2389,7 @@ describe('chat orchestrator', () => {
       }, new TurnMetrics())
 
       expect(consumeStreamGeneratorMock).toHaveBeenCalledTimes(2)
-      expect(streamLLMPureMock.mock.calls[0]?.[0]).toMatchObject({ toolChoice: 'none', disableThinking: true, tools: [] })
+      expect(streamLLMPureMock.mock.calls[0]?.[0]).toMatchObject({ toolChoice: 'none', disableThinking: true, tools: expect.any(Array) })
       expect(streamLLMPureMock.mock.calls[1]?.[0]).toMatchObject({ toolChoice: 'auto' })
       expect(sessionManager.compactContext).toHaveBeenCalledWith('session-1', 'Compacted summary of the session including all file modifications and current progress on tasks', 190000)
     })

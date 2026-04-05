@@ -206,7 +206,7 @@ export const useConfigStore = create<ConfigState>((set, get) => ({
   updateModelContext: async (providerId: string, modelId: string, contextWindow: number) => {
     set({ activating: true, error: null })
     try {
-      const response = await fetch(`/api/providers/${providerId}/models/${modelId}`, {
+      const response = await fetch(`/api/providers/${providerId}/models/${encodeURIComponent(modelId)}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ contextWindow }),

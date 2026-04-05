@@ -14,6 +14,9 @@ import {
 } from '../chat/stream-pure.js'
 import { streamLLMPure, consumeStreamGenerator } from '../chat/stream-pure.js'
 import { loadAllAgentsDefault, findAgentById, getSubAgents } from '../agents/registry.js'
+import { getToolRegistryForAgent } from '../tools/index.js'
+import { getEnabledSkillMetadata } from '../skills/registry.js'
+import { getGlobalConfigDir } from '../../cli/paths.js'
 import { getRuntimeConfig } from '../runtime-config.js'
 import { logger } from '../utils/logger.js'
 
@@ -136,6 +139,9 @@ async function performContextCompaction(options: ContextCompactionOptions & {
   const allAgents = await loadAllAgentsDefault()
   const plannerDef = findAgentById('planner', allAgents)!
   const subAgentDefs = getSubAgents(allAgents)
+  const toolRegistry = getToolRegistryForAgent(plannerDef)
+  const configDir = getGlobalConfigDir(config.mode ?? 'production')
+  const skills = await getEnabledSkillMetadata(configDir)
 
   const assembledRequest = assembleAgentRequest({
     agentDef: plannerDef,
@@ -143,11 +149,12 @@ async function performContextCompaction(options: ContextCompactionOptions & {
     workdir: session.workdir,
     messages: requestMessages,
     injectedFiles,
-    promptTools: [],
-    requestTools: [],
+    promptTools: toolRegistry.definitions,
+    requestTools: toolRegistry.definitions,
     toolChoice: 'none',
     disableThinking: true,
     ...(instructions ? { customInstructions: instructions } : {}),
+    ...(skills.length > 0 ? { skills } : {}),
   })
 
   // Append compaction instruction as a system-reminder user message
@@ -179,7 +186,7 @@ async function performContextCompaction(options: ContextCompactionOptions & {
       systemPrompt: assembledRequest.systemPrompt,
       llmClient,
       messages: [...llmMessages, ...correctionMessages],
-      tools: [],
+      tools: toolRegistry.definitions,
       toolChoice: 'none',
       disableThinking: true,
       ...(signal ? { signal } : {}),

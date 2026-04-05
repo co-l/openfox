@@ -90,11 +90,37 @@ vi.mock('../session/summary-generator.js', () => ({
 
 vi.mock('../tools/index.js', () => ({
   getToolRegistryForMode: getToolRegistryForModeMock,
+  getToolRegistryForAgent: vi.fn(() => ({
+    definitions: [{ type: 'function', function: { name: 'read_file', description: 'Read', parameters: {} } }],
+  })),
   providePathConfirmation: providePathConfirmationMock,
   addAllowedPaths: vi.fn(),
   cancelQuestionsForSession: vi.fn(),
   cancelPathConfirmationsForSession: vi.fn(),
 }))
+
+vi.mock('../agents/registry.js', () => {
+  const agents = [
+    {
+      metadata: { id: 'planner', name: 'Planner', description: 'Plans work', subagent: false, tools: ['read_file', 'glob', 'grep', 'web_fetch', 'run_command', 'git', 'get_criteria', 'add_criterion', 'update_criterion', 'remove_criterion', 'call_sub_agent', 'load_skill'] },
+      prompt: '# Plan Mode',
+    },
+    {
+      metadata: { id: 'builder', name: 'Builder', description: 'Builds work', subagent: false, tools: ['read_file', 'glob', 'grep', 'web_fetch', 'write_file', 'edit_file', 'run_command', 'ask_user', 'complete_criterion', 'get_criteria', 'todo_write', 'call_sub_agent', 'load_skill'] },
+      prompt: '# Build Mode',
+    },
+    {
+      metadata: { id: 'verifier', name: 'Verifier', description: 'Verify criteria', subagent: true, tools: ['read_file', 'run_command', 'pass_criterion', 'fail_criterion'] },
+      prompt: 'You are a verifier',
+    },
+  ]
+  return {
+    loadBuiltinAgents: vi.fn(async () => agents),
+    loadAllAgentsDefault: vi.fn(async () => agents),
+    findAgentById: vi.fn((id: string, list: any[]) => list.find((a: any) => a.metadata.id === id)),
+    getSubAgents: vi.fn((list: any[]) => list.filter((a: any) => a.metadata.subagent)),
+  }
+})
 
 vi.mock('../runner/index.js', () => ({
   runOrchestrator: runOrchestratorMock,
