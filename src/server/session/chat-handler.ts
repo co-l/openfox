@@ -6,6 +6,7 @@ import { getEventStore } from '../events/index.js'
 import { buildMessagesFromStoredEvents } from '../events/folding.js'
 import { runChatTurn } from '../chat/orchestrator.js'
 import { generateSessionName, needsNameGeneration } from './name-generator.js'
+import { logger } from '../utils/logger.js'
 import { updateSessionMetadata } from '../db/sessions.js'
 import { createChatMessageMessage, createSessionStateMessage, createSessionRunningMessage, createPhaseChangedMessage, createContextStateMessage } from '../ws/protocol.js'
 
@@ -90,6 +91,12 @@ export async function startChatSession(
     // Generate session name if needed
     const messageCount = getSessionMessageCount(sessionId)
     const currentSession = sessionManager.getSession(sessionId)
+    logger.debug('Session name generation check', {
+      sessionId,
+      title: currentSession?.metadata.title,
+      messageCount,
+      needsGeneration: currentSession ? needsNameGeneration(currentSession.metadata.title, messageCount) : false,
+    })
     if (currentSession && needsNameGeneration(currentSession.metadata.title, messageCount)) {
       generateSessionName({
         userMessage: content,
@@ -97,6 +104,12 @@ export async function startChatSession(
         signal: controller.signal,
       })
         .then((result) => {
+          logger.debug('Session name generation result', {
+            sessionId,
+            success: result.success,
+            name: result.name,
+            error: result.error,
+          })
           if (result.success && result.name) {
             updateSessionMetadata(sessionId, { title: result.name })
             eventStore.append(sessionId, {
@@ -111,7 +124,12 @@ export async function startChatSession(
             }
           }
         })
-        .catch(() => {})
+        .catch((error) => {
+          logger.error('Session name generation failed', {
+            sessionId,
+            error: error instanceof Error ? error.message : String(error),
+          })
+        })
     }
 
     // Start the chat turn

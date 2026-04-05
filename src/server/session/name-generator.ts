@@ -8,6 +8,7 @@
 
 import type { LLMClientWithModel } from '../llm/client.js'
 import type { LLMMessage } from '../llm/types.js'
+import { logger } from '../utils/logger.js'
 
 // ============================================================================
 // Ultra-Lightweight Prompt
@@ -59,6 +60,8 @@ export async function generateSessionName(
   const { userMessage, llmClient, signal } = options
 
   try {
+    logger.debug('Generating session name', { messagePreview: userMessage.slice(0, 50) })
+
     // Use non-thinking variant by disabling thinking
     // This ensures only the name is returned, no reasoning
     const prompt = SESSION_NAME_PROMPT.replace('{message}', userMessage)
@@ -98,14 +101,17 @@ export async function generateSessionName(
       }
     }
 
+    logger.debug('Session name generated successfully', { name })
     return {
       success: true,
       name,
     }
   } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error generating session name'
+    logger.debug('Session name generation error', { error: errorMessage })
     return {
       success: false,
-      error: error instanceof Error ? error.message : 'Unknown error generating session name',
+      error: errorMessage,
     }
   }
 }

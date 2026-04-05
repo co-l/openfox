@@ -3,7 +3,11 @@ import type { ProviderManager } from '../provider-manager.js'
 import type { SessionManager } from '../session/manager.js'
 import { logger } from '../utils/logger.js'
 import type { ServerMessage } from '../../shared/protocol.js'
-import { createSessionRunningMessage, createChatMessageMessage, createContextStateMessage } from '../ws/protocol.js'
+import { createSessionRunningMessage, createChatMessageMessage, createContextStateMessage, createSessionStateMessage } from '../ws/protocol.js'
+import { needsNameGeneration, generateSessionName } from '../session/name-generator.js'
+import { updateSessionMetadata } from '../db/sessions.js'
+import { getEventStore } from '../events/index.js'
+import { buildMessagesFromStoredEvents } from '../events/folding.js'
 
 interface QueueProcessorDeps {
   sessionManager: SessionManager
@@ -126,6 +130,50 @@ export class QueueProcessor {
       })
       broadcastForSession(sessionId, createChatMessageMessage(userMessage))
       logger.debug('Added queued message to session', { sessionId, queueId: nextAsap.queueId, messageId: userMessage.id })
+
+      const messageCount = this.getSessionMessageCount(sessionId)
+      const currentSession = sessionManager.getSession(sessionId)
+      logger.debug('Session name generation check (queue)', {
+        sessionId,
+        title: currentSession?.metadata.title,
+        messageCount,
+        needsGeneration: currentSession ? needsNameGeneration(currentSession.metadata.title, messageCount) : false,
+      })
+      if (currentSession && needsNameGeneration(currentSession.metadata.title, messageCount)) {
+        const eventStore = getEventStore()
+        generateSessionName({
+          userMessage: nextAsap.content,
+          llmClient: this.deps.getLLMClient(),
+          signal: controller.signal,
+        })
+          .then((result) => {
+            logger.debug('Session name generation result (queue)', {
+              sessionId,
+              success: result.success,
+              name: result.name,
+              error: result.error,
+            })
+            if (result.success && result.name) {
+              updateSessionMetadata(sessionId, { title: result.name })
+              eventStore.append(sessionId, {
+                type: 'session.name_generated',
+                data: { name: result.name },
+              })
+              const updatedSession = sessionManager.getSession(sessionId)
+              if (updatedSession) {
+                const events = eventStore.getEvents(sessionId)
+                const messages = buildMessagesFromStoredEvents(events)
+                broadcastForSession(sessionId, createSessionStateMessage(updatedSession, messages))
+              }
+            }
+          })
+          .catch((error) => {
+            logger.error('Session name generation failed (queue)', {
+              sessionId,
+              error: error instanceof Error ? error.message : String(error),
+            })
+          })
+      }
     }
 
     this.runTurn(sessionId, controller)
@@ -173,5 +221,22 @@ export class QueueProcessor {
 
       this.startTurn(sessionId)
     })
+  }
+
+  private getSessionMessageCount(sessionId: string): number {
+    const eventStore = getEventStore()
+    const events = eventStore.getEvents(sessionId)
+
+    let count = 0
+    for (const event of events) {
+      if (event.type === 'message.start') {
+        const data = event.data as { role: string }
+        if (data.role === 'user') {
+          count++
+        }
+      }
+    }
+
+    return count
   }
 }
