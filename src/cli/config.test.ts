@@ -115,9 +115,19 @@ describe('config', () => {
         logging: { level: 'info' as const },
         database: { path: '' },
         workspace: { workdir: process.cwd() },
+        visionFallback: { enabled: false, url: 'http://localhost:11434', model: 'qwen3-vl:2b', timeout: 120 },
+        activeProviderId: undefined,
+        activeWorkflowId: undefined,
       }
 
-      const result = migrateConfig(newConfig)
+      const result = migrateConfig({
+        providers: newConfig.providers,
+        defaultModelSelection: newConfig.defaultModelSelection,
+        server: newConfig.server,
+        logging: newConfig.logging,
+        database: newConfig.database,
+        workspace: newConfig.workspace,
+      })
 
       expect(result.config).toEqual(newConfig)
       expect(result.migrated).toBe(false)

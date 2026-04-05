@@ -1,11 +1,13 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
-import { describeImage, describeImageFromDataUrl, setVisionFallbackConfig, getVisionFallbackConfig, isVisionFallbackEnabled } from './vision-fallback.js'
+import { describeImage, describeImageFromDataUrl, setVisionFallbackConfig, getVisionFallbackConfig, isVisionFallbackEnabled, clearDescriptionCache } from './vision-fallback.js'
 
 global.fetch = vi.fn()
 
 describe('vision-fallback', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    vi.mocked(fetch).mockReset()
+    clearDescriptionCache()
     setVisionFallbackConfig({ enabled: false, url: 'http://localhost:11434', model: 'qwen3-vl:2b' })
   })
 

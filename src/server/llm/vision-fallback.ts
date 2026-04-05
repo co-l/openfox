@@ -19,6 +19,12 @@ let configLoaded = false
 
 const descriptionCache = new Map<string, string>()
 
+export { descriptionCache }
+
+export function clearDescriptionCache(): void {
+  descriptionCache.clear()
+}
+
 export function setVisionFallbackConfig(newConfig: Partial<VisionFallbackConfig>): void {
   config = { ...config, ...newConfig }
   configLoaded = true
