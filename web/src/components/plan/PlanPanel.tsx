@@ -791,11 +791,11 @@ export function PlanPanel() {
   )
 }
 
-interface VisionFallbackItemProps {
+export interface VisionFallbackItemProps {
   item: { type: 'start' | 'done'; messageId: string; attachmentId: string; filename?: string; description?: string }
 }
 
-const VisionFallbackItem = memo(function VisionFallbackItem({ item }: VisionFallbackItemProps) {
+export const VisionFallbackItem = memo(function VisionFallbackItem({ item }: VisionFallbackItemProps) {
   const [expanded, setExpanded] = useState(false)
 
   if (item.type === 'start') {

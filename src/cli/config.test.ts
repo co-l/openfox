@@ -210,6 +210,7 @@ describe('config', () => {
         logging: { level: 'info' as const },
         database: { path: '' },
         workspace: { workdir: process.cwd() },
+        visionFallback: { enabled: false, url: 'http://localhost:11434', model: 'qwen3-vl:2b', timeout: 120 },
       }
 
       await saveGlobalConfig('production', config)
@@ -243,6 +244,7 @@ describe('config', () => {
         logging: { level: 'info' as const },
         database: { path: '' },
         workspace: { workdir: process.cwd() },
+        visionFallback: { enabled: false, url: 'http://localhost:11434', model: 'qwen3-vl:2b', timeout: 120 },
       }
 
       await saveGlobalConfig('production', configWithUserModels)
@@ -326,6 +328,7 @@ describe('config', () => {
         logging: { level: 'info' as const },
         database: { path: '' },
         workspace: { workdir: process.cwd() },
+        visionFallback: { enabled: false, url: 'http://localhost:11434', model: 'qwen3-vl:2b', timeout: 120 },
       }
 
       await saveGlobalConfig('production', config)
@@ -342,6 +345,7 @@ describe('config', () => {
         logging: { level: 'info' as const },
         database: { path: '' },
         workspace: { workdir: process.cwd() },
+        visionFallback: { enabled: false, url: 'http://localhost:11434', model: 'qwen3-vl:2b', timeout: 120 },
       }
 
       await saveGlobalConfig('production', config)
@@ -369,6 +373,7 @@ describe('config', () => {
         logging: { level: 'warn' as const },
         database: { path: '' },
         workspace: { workdir: process.cwd() },
+        visionFallback: { enabled: false, url: 'http://localhost:11434', model: 'qwen3-vl:2b', timeout: 120 },
       }
 
       await saveGlobalConfig('production', originalConfig)

@@ -25,7 +25,7 @@ describe('LLM Message Conversion with Attachments', () => {
         },
       ]
 
-      const result = convertMessages(messages)
+      const result = convertMessages(messages, { modelSupportsVision: true, visionFallbackEnabled: false })
       
       expect(result).toHaveLength(1)
       const msg = result[0]
@@ -65,7 +65,7 @@ describe('LLM Message Conversion with Attachments', () => {
         },
       ]
 
-      const result = convertMessages(messages)
+      const result = convertMessages(messages, { modelSupportsVision: true, visionFallbackEnabled: false })
       
       expect(result).toHaveLength(1)
       const msg2 = result[0]
@@ -99,7 +99,7 @@ describe('LLM Message Conversion with Attachments', () => {
         },
       ]
 
-      const result = convertMessages(messages)
+      const result = convertMessages(messages, { modelSupportsVision: true, visionFallbackEnabled: false })
       
       expect(result).toHaveLength(1)
       const msg3 = result[0]
@@ -119,7 +119,7 @@ describe('LLM Message Conversion with Attachments', () => {
         },
       ]
 
-      const result = convertMessages(messages)
+      const result = convertMessages(messages, { modelSupportsVision: true, visionFallbackEnabled: false })
       
       expect(result).toHaveLength(1)
       const msg4 = result[0]
@@ -142,7 +142,7 @@ describe('LLM Message Conversion with Attachments', () => {
         },
       ]
 
-      const result = convertMessages(messages)
+      const result = convertMessages(messages, { modelSupportsVision: true, visionFallbackEnabled: false })
       
       expect(result).toHaveLength(1)
       const msg5 = result[0]
@@ -159,7 +159,7 @@ describe('LLM Message Conversion with Attachments', () => {
         },
       ]
 
-      const result = convertMessages(messages)
+      const result = convertMessages(messages, { modelSupportsVision: true, visionFallbackEnabled: false })
       
       expect(result).toHaveLength(1)
       const msg6 = result[0]
@@ -180,7 +180,7 @@ describe('LLM Message Conversion with Attachments', () => {
         },
       ]
 
-      const result = convertMessages(messages)
+      const result = convertMessages(messages, { modelSupportsVision: true, visionFallbackEnabled: false })
       
       expect(result).toHaveLength(1)
       const msg7 = result[0]

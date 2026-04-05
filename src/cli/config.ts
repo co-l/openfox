@@ -98,6 +98,8 @@ const visionFallbackSchema = z.object({
   timeout: z.number().default(120),
 })
 
+const defaultVisionFallback = { enabled: false, url: 'http://localhost:11434', model: 'qwen3-vl:2b', timeout: 120 }
+
 // New config schema with providers array
 const configSchema = z.object({
   providers: z.array(providerSchema).default([]),
@@ -110,8 +112,15 @@ const configSchema = z.object({
   workspace: workspaceSchema.default(() => ({ workdir: process.cwd() })),
   visionFallback: visionFallbackSchema.optional(),
 }).transform((data) => ({
-  ...data,
-  visionFallback: data.visionFallback ?? { enabled: false, url: 'http://localhost:11434', model: 'qwen3-vl:2b', timeout: 120 },
+  providers: data.providers ?? [],
+  defaultModelSelection: data.defaultModelSelection,
+  activeProviderId: data.activeProviderId,
+  activeWorkflowId: data.activeWorkflowId,
+  server: data.server ?? { port: 10369, host: '127.0.0.1', openBrowser: true },
+  logging: data.logging ?? { level: 'error' },
+  database: data.database ?? { path: '' },
+  workspace: data.workspace ?? { workdir: process.cwd() },
+  visionFallback: data.visionFallback ?? defaultVisionFallback,
 }))
 
 // Old config schema (for migration detection)
@@ -287,17 +296,28 @@ export function getDefaultVisionFallback() {
   return { enabled: false, url: 'http://localhost:11434', model: 'qwen3-vl:2b', timeout: 120 }
 }
 
-export async function saveGlobalConfig(mode: Mode, config: GlobalConfig): Promise<void> {
+export async function saveGlobalConfig(mode: Mode, config: Partial<GlobalConfig>): Promise<void> {
   const configPath = getGlobalConfigPath(mode)
+  const fullConfig: GlobalConfig = {
+    providers: config.providers ?? [],
+    defaultModelSelection: config.defaultModelSelection,
+    activeProviderId: config.activeProviderId,
+    activeWorkflowId: config.activeWorkflowId,
+    server: config.server ?? { port: 10369, host: '127.0.0.1', openBrowser: true },
+    logging: config.logging ?? { level: 'error' },
+    database: config.database ?? { path: '' },
+    workspace: config.workspace ?? { workdir: process.cwd() },
+    visionFallback: config.visionFallback ?? { enabled: false, url: 'http://localhost:11434', model: 'qwen3-vl:2b', timeout: 120 },
+  }
   await mkdir(dirname(configPath), { recursive: true })
-  await writeFile(configPath, JSON.stringify(config, null, 2))
+  await writeFile(configPath, JSON.stringify(fullConfig, null, 2))
 }
 
 // ============================================================================
 // Provider Helpers
 // ============================================================================
 
-export function getActiveProvider(config: GlobalConfig): Provider | undefined {
+export function getActiveProvider(config: Partial<GlobalConfig>): Provider | undefined {
   // Use defaultModelSelection if available
   if (config.defaultModelSelection) {
     const slashIndex = config.defaultModelSelection.indexOf('/')
@@ -309,23 +329,28 @@ export function getActiveProvider(config: GlobalConfig): Provider | undefined {
   return config.providers?.find(p => p.id === config.activeProviderId)
 }
 
-export function getDefaultModel(config: GlobalConfig): string | undefined {
+export function getDefaultModel(config: Partial<GlobalConfig>): string | undefined {
   if (!config.defaultModelSelection) return undefined
   const slashIndex = config.defaultModelSelection.indexOf('/')
   return slashIndex === -1 ? 'auto' : config.defaultModelSelection.substring(slashIndex + 1)
 }
 
-export function setDefaultModelSelection(config: GlobalConfig, providerId: string, model: string): GlobalConfig {
+export function setDefaultModelSelection(config: Partial<GlobalConfig>, providerId: string, model: string): GlobalConfig {
   const defaultModelSelection = `${providerId}/${model}`
   return {
-    ...config,
-    defaultModelSelection,
-    activeProviderId: providerId, // Keep for backwards compatibility
     providers: config.providers?.map(p => ({ ...p, isActive: p.id === providerId })) ?? [],
+    defaultModelSelection,
+    activeProviderId: providerId,
+    activeWorkflowId: config.activeWorkflowId,
+    server: config.server ?? { port: 10369, host: '127.0.0.1', openBrowser: true },
+    logging: config.logging ?? { level: 'error' },
+    database: config.database ?? { path: '' },
+    workspace: config.workspace ?? { workdir: process.cwd() },
+    visionFallback: config.visionFallback ?? { enabled: false, url: 'http://localhost:11434', model: 'qwen3-vl:2b', timeout: 120 },
   }
 }
 
-export function addProvider(config: GlobalConfig, provider: Omit<Provider, 'id' | 'createdAt'>): GlobalConfig {
+export function addProvider(config: Partial<GlobalConfig>, provider: Omit<Provider, 'id' | 'createdAt'>): GlobalConfig {
   const newProvider: Provider = {
     ...provider,
     id: randomUUID(),
@@ -333,21 +358,25 @@ export function addProvider(config: GlobalConfig, provider: Omit<Provider, 'id' 
   }
   
   // If this is the first provider or marked active, update defaultModelSelection
-  const shouldActivate = provider.isActive || config.providers?.length === 0
+  const shouldActivate = provider.isActive || (config.providers?.length ?? 0) === 0
   
   return {
-    ...config,
     providers: [
       ...(config.providers ?? []).map(p => shouldActivate ? { ...p, isActive: false } : p),
       { ...newProvider, isActive: shouldActivate },
     ],
     defaultModelSelection: shouldActivate ? `${newProvider.id}/auto` : config.defaultModelSelection,
     activeProviderId: shouldActivate ? newProvider.id : config.activeProviderId,
+    activeWorkflowId: config.activeWorkflowId,
+    server: config.server ?? { port: 10369, host: '127.0.0.1', openBrowser: true },
+    logging: config.logging ?? { level: 'error' },
+    database: config.database ?? { path: '' },
     workspace: config.workspace ?? { workdir: process.cwd() },
+    visionFallback: config.visionFallback ?? { enabled: false, url: 'http://localhost:11434', model: 'qwen3-vl:2b', timeout: 120 },
   }
 }
 
-export function removeProvider(config: GlobalConfig, providerId: string): GlobalConfig {
+export function removeProvider(config: Partial<GlobalConfig>, providerId: string): GlobalConfig {
   const currentProviders = config.providers ?? []
   const filtered = currentProviders.filter(p => p.id !== providerId)
   
@@ -370,21 +399,44 @@ export function removeProvider(config: GlobalConfig, providerId: string): Global
     : (wasActive ? undefined : config.activeProviderId)
   
   return {
-    ...config,
     providers: filtered.map(p => ({ ...p, isActive: p.id === newActiveId })),
     activeProviderId: newActiveId,
     defaultModelSelection: newDefaultModelSelection,
+    activeWorkflowId: config.activeWorkflowId,
+    server: config.server ?? { port: 10369, host: '127.0.0.1', openBrowser: true },
+    logging: config.logging ?? { level: 'error' },
+    database: config.database ?? { path: '' },
+    workspace: config.workspace ?? { workdir: process.cwd() },
+    visionFallback: config.visionFallback ?? { enabled: false, url: 'http://localhost:11434', model: 'qwen3-vl:2b', timeout: 120 },
   }
 }
 
-export function activateProvider(config: GlobalConfig, providerId: string): GlobalConfig {
+export function activateProvider(config: Partial<GlobalConfig>, providerId: string): GlobalConfig {
   const provider = config.providers?.find(p => p.id === providerId)
-  if (!provider) return config
+  if (!provider) {
+    return {
+      providers: config.providers ?? [],
+      defaultModelSelection: config.defaultModelSelection,
+      activeProviderId: config.activeProviderId,
+      activeWorkflowId: config.activeWorkflowId,
+      server: config.server ?? { port: 10369, host: '127.0.0.1', openBrowser: true },
+      logging: config.logging ?? { level: 'error' },
+      database: config.database ?? { path: '' },
+      workspace: config.workspace ?? { workdir: process.cwd() },
+      visionFallback: config.visionFallback ?? { enabled: false, url: 'http://localhost:11434', model: 'qwen3-vl:2b', timeout: 120 },
+    }
+  }
   
   return {
-    ...config,
     providers: (config.providers ?? []).map(p => ({ ...p, isActive: p.id === providerId })),
+    defaultModelSelection: config.defaultModelSelection,
     activeProviderId: providerId,
+    activeWorkflowId: config.activeWorkflowId,
+    server: config.server ?? { port: 10369, host: '127.0.0.1', openBrowser: true },
+    logging: config.logging ?? { level: 'error' },
+    database: config.database ?? { path: '' },
+    workspace: config.workspace ?? { workdir: process.cwd() },
+    visionFallback: config.visionFallback ?? { enabled: false, url: 'http://localhost:11434', model: 'qwen3-vl:2b', timeout: 120 },
   }
 }
 

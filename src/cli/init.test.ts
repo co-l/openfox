@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
-import { mkdir, writeFile, rm } from 'node:fs/promises'
+import { mkdir, rm } from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import type { GlobalConfig } from './config.js'
@@ -67,10 +67,13 @@ describe('init', () => {
           },
         ],
         activeProviderId: 'provider-1',
+        defaultModelSelection: undefined,
+        activeWorkflowId: undefined,
         server: { port: 10369, host: '127.0.0.1', openBrowser: true },
         logging: { level: 'info' as const },
         database: { path: '' },
         workspace: { workdir: process.cwd() },
+        visionFallback: { enabled: false, url: 'http://localhost:11434', model: 'qwen3-vl:2b', timeout: 120 },
       }
 
       await saveGlobalConfig('production', existingConfig)
@@ -108,10 +111,13 @@ describe('init', () => {
           },
         ],
         activeProviderId: 'provider-1',
+        defaultModelSelection: undefined,
+        activeWorkflowId: undefined,
         server: { port: 10369, host: '127.0.0.1', openBrowser: true },
         logging: { level: 'info' as const },
         database: { path: '' },
         workspace: { workdir: process.cwd() },
+        visionFallback: { enabled: false, url: 'http://localhost:11434', model: 'qwen3-vl:2b', timeout: 120 },
       }
 
       await saveGlobalConfig('production', existingConfig)
@@ -147,10 +153,13 @@ describe('init', () => {
           },
         ],
         activeProviderId: 'provider-1',
+        defaultModelSelection: undefined,
+        activeWorkflowId: undefined,
         server: { port: 10369, host: '0.0.0.0', openBrowser: true },
         logging: { level: 'info' as const },
         database: { path: '' },
         workspace: { workdir: process.cwd() },
+        visionFallback: { enabled: false, url: 'http://localhost:11434', model: 'qwen3-vl:2b', timeout: 120 },
       }
 
       await saveGlobalConfig('production', existingConfig)
@@ -194,10 +203,13 @@ describe('init', () => {
           },
         ],
         activeProviderId: 'provider-1',
+        defaultModelSelection: undefined,
+        activeWorkflowId: undefined,
         server: { port: 10369, host: '127.0.0.1', openBrowser: true },
         logging: { level: 'warn' as const },
         database: { path: '' },
         workspace: { workdir: process.cwd() },
+        visionFallback: { enabled: false, url: 'http://localhost:11434', model: 'qwen3-vl:2b', timeout: 120 },
       }
 
       await saveGlobalConfig('production', existingConfig)
@@ -268,10 +280,13 @@ describe('init', () => {
           },
         ],
         activeProviderId: 'old-provider',
+        defaultModelSelection: undefined,
+        activeWorkflowId: undefined,
         server: { port: 10369, host: '127.0.0.1', openBrowser: true },
         logging: { level: 'info' as const },
         database: { path: '' },
         workspace: { workdir: process.cwd() },
+        visionFallback: { enabled: false, url: 'http://localhost:11434', model: 'qwen3-vl:2b', timeout: 120 },
       }
 
       await saveGlobalConfig('production', existingConfig)

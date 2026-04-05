@@ -11,15 +11,17 @@ const LLM_OPTIONS = [
   { value: 'other', label: 'Other...' },
 ]
 
-function createBaseConfig(): GlobalConfig {
+function createBaseConfig() {
   return {
     providers: [],
+    defaultModelSelection: undefined,
     activeProviderId: undefined,
+    activeWorkflowId: undefined,
     server: { port: 10369, host: '127.0.0.1', openBrowser: true },
     logging: { level: 'info' as const },
     database: { path: '' },
     workspace: { workdir: process.cwd() },
-    visionFallback: { enabled: false, url: 'http://localhost:11434', model: 'qwen3-vl:2b' },
+    visionFallback: { enabled: false, url: 'http://localhost:11434', model: 'qwen3-vl:2b', timeout: 120 },
   }
 }
 
@@ -239,6 +241,7 @@ export async function runInitWithSelect(mode: Mode, existingConfig?: GlobalConfi
       enabled: true,
       url: String(visionUrl),
       model: String(visionModel),
+      timeout: 120,
     }
   }
 

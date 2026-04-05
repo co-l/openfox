@@ -54,7 +54,7 @@ describe('Full Attachment Flow Integration', () => {
     expect(contextMessages[0]?.attachments?.[0]).toEqual(testAttachment)
 
     // Step 3: Convert to LLM format (as done in client-pure)
-    const llmMessages = convertMessages(contextMessages)
+    const llmMessages = convertMessages(contextMessages, { modelSupportsVision: true, visionFallbackEnabled: false })
     
     expect(llmMessages).toHaveLength(1)
     const llmMsg = llmMessages[0]
@@ -114,7 +114,7 @@ describe('Full Attachment Flow Integration', () => {
     ]
 
     const contextMessages = buildContextMessagesFromStoredEvents(events, 'window-1')
-    const llmMessages = convertMessages(contextMessages)
+    const llmMessages = convertMessages(contextMessages, { modelSupportsVision: true, visionFallbackEnabled: false })
     
     expect(llmMessages).toHaveLength(1)
     const content = llmMessages[0]?.content as Array<{ type: string; text?: string; image_url?: { url: string } }>
@@ -154,7 +154,7 @@ describe('Full Attachment Flow Integration', () => {
     ]
 
     const contextMessages = buildContextMessagesFromStoredEvents(events, 'window-1')
-    const llmMessages = convertMessages(contextMessages)
+    const llmMessages = convertMessages(contextMessages, { modelSupportsVision: true, visionFallbackEnabled: false })
     
     expect(llmMessages).toHaveLength(1)
     expect(llmMessages[0]?.content).toBe('Hello')
@@ -185,7 +185,7 @@ describe('Full Attachment Flow Integration', () => {
     ]
 
     const contextMessages = buildContextMessagesFromStoredEvents(events, 'window-1')
-    const llmMessages = convertMessages(contextMessages)
+    const llmMessages = convertMessages(contextMessages, { modelSupportsVision: true, visionFallbackEnabled: false })
     
     expect(llmMessages).toHaveLength(1)
     const content = llmMessages[0]?.content as Array<{ type: string; text?: string; image_url?: { url: string } }>
