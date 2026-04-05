@@ -28,6 +28,7 @@ import type {
   ChatErrorPayload,
   ChatPathConfirmationPayload,
   ChatAskUserPayload,
+  ChatVisionFallbackPayload,
   PathConfirmPayload,
   ModeChangedPayload,
   PhaseChangedPayload,
@@ -219,6 +220,13 @@ export function createChatAskUserMessage(
   question: string
 ): ServerMessage<ChatAskUserPayload> {
   return createServerMessage('chat.ask_user', { callId, question })
+}
+
+// Vision fallback messages
+export function createChatVisionFallbackMessage(
+  payload: ChatVisionFallbackPayload
+): ServerMessage<ChatVisionFallbackPayload> {
+  return createServerMessage('chat.vision_fallback', payload)
 }
 
 // Mode messages

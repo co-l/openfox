@@ -591,6 +591,45 @@ export function emitFormatRetry(sessionId: string, attempt: number, maxAttempts:
 }
 
 /**
+ * Emit vision fallback started (image being delegated to vision model)
+ */
+export function emitVisionFallbackStart(
+  sessionId: string,
+  messageId: string,
+  attachmentId: string,
+  filename?: string
+): void {
+  const eventStore = getEventStore()
+  const data: { messageId: string; attachmentId: string; filename?: string } = {
+    messageId,
+    attachmentId,
+  }
+  if (filename !== undefined) {
+    data.filename = filename
+  }
+  eventStore.append(sessionId, {
+    type: 'vision_fallback.start',
+    data,
+  })
+}
+
+/**
+ * Emit vision fallback done (image description complete)
+ */
+export function emitVisionFallbackDone(
+  sessionId: string,
+  messageId: string,
+  attachmentId: string,
+  description: string
+): void {
+  const eventStore = getEventStore()
+  eventStore.append(sessionId, {
+    type: 'vision_fallback.done',
+    data: { messageId, attachmentId, description },
+  })
+}
+
+/**
  * Emit turn snapshot
  */
 export function emitTurnSnapshot(sessionId: string, snapshot: SessionSnapshot): void {

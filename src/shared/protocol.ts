@@ -135,6 +135,8 @@ export type ServerMessageType =
   | 'chat.message'        // Full message added (system-generated, etc.)
   | 'chat.message_updated' // Message updated (e.g., isStreaming changed)
   | 'chat.done'           // Current generation complete
+  // Vision fallback events
+  | 'chat.vision_fallback' // Vision model is describing an image
   | 'chat.error'          // Error during generation
   | 'chat.path_confirmation' // Request user confirmation for outside-workdir path access
   | 'chat.ask_user'       // Request user answer to a question
@@ -258,6 +260,14 @@ export interface ChatProgressPayload {
 export interface ChatFormatRetryPayload {
   attempt: number
   maxAttempts: number
+}
+
+export interface ChatVisionFallbackPayload {
+  type: 'start' | 'done'
+  messageId: string
+  attachmentId: string
+  filename?: string
+  description?: string  // Only present for 'done' type
 }
 
 export interface ChatMessagePayload {

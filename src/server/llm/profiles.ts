@@ -33,7 +33,7 @@ const DEFAULT_PROFILE: ModelProfile = {
   supportsReasoning: false,
   reasoningAsContent: false,
   defaultMaxTokens: 4096,
-  supportsVision: false,
+  supportsVision: true,
 }
 
 /** Profile for mock LLM testing */
@@ -201,6 +201,18 @@ const MODEL_PROFILES: Array<{ pattern: string; profile: ModelProfile }> = [
       reasoningAsContent: false,
       defaultMaxTokens: 16384,
       supportsVision: false,
+    },
+  },
+  {
+    pattern: 'gemma-4',
+    profile: {
+      name: 'Gemma 4',
+      temperature: 0.7,
+      topP: 0.9,
+      supportsReasoning: true,
+      reasoningAsContent: false,
+      defaultMaxTokens: 16384,
+      supportsVision: true,
     },
   },
 ]

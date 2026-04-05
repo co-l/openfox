@@ -306,6 +306,26 @@ export type TurnEvent =
     }
 
   // ----------------------------------------------------------------------------
+  // Vision fallback (image description by fallback model)
+  // ----------------------------------------------------------------------------
+  | {
+      type: 'vision_fallback.start'
+      data: {
+        messageId: string
+        attachmentId: string
+        filename?: string
+      }
+    }
+  | {
+      type: 'vision_fallback.done'
+      data: {
+        messageId: string
+        attachmentId: string
+        description: string
+      }
+    }
+
+  // ----------------------------------------------------------------------------
   // Snapshots (agent end-of-turn)
   // ----------------------------------------------------------------------------
   | {

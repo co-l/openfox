@@ -29,6 +29,7 @@ import type {
   ChatDonePayload,
   ChatErrorPayload,
   ChatPathConfirmationPayload,
+  ChatVisionFallbackPayload,
   ModeChangedPayload,
   PhaseChangedPayload,
   CriteriaUpdatedPayload,
@@ -208,6 +209,9 @@ interface SessionState {
 
   // Pending ask_user question
   pendingQuestion: PendingQuestion | null
+
+  // Vision fallback state per message (for inline display in feed)
+  visionFallbackByMessage: Record<string, { type: 'start' | 'done'; attachmentId: string; filename?: string; description?: string }>
 
   // Message queue (while agent is running)
   queuedMessages: QueuedMessage[]
@@ -438,6 +442,7 @@ export const useSessionStore = create<SessionState>((set, get) => {
     contextState: null,
     pendingPathConfirmation: null,
     pendingQuestion: null,
+    visionFallbackByMessage: {},
     queuedMessages: [],
     abortInProgress: false,
     error: null,
@@ -1163,6 +1168,26 @@ export const useSessionStore = create<SessionState>((set, get) => {
           break
         }
 
+        case 'chat.vision_fallback': {
+          if (!isMessageForCurrentSession(message, get().currentSession?.id ?? null)) {
+            markBackgroundSessionUnread()
+            break
+          }
+          const payload = message.payload as ChatVisionFallbackPayload
+          set((state) => {
+            const key = `${payload.messageId}-${payload.attachmentId}`
+            const newByMessage = { ...state.visionFallbackByMessage }
+            newByMessage[key] = {
+              type: payload.type,
+              attachmentId: payload.attachmentId,
+              filename: payload.filename,
+              description: payload.description,
+            }
+            return { visionFallbackByMessage: newByMessage }
+          })
+          break
+        }
+
         case 'chat.todo': {
           if (!isMessageForCurrentSession(message, get().currentSession?.id ?? null)) {
             markBackgroundSessionUnread()
@@ -1241,6 +1266,7 @@ export const useSessionStore = create<SessionState>((set, get) => {
               ),
               streamingMessageId: null,
               streamingMessage: null,
+              visionFallbackByMessage: {},
             }
           })
           break
@@ -1429,4 +1455,16 @@ export function useQueuedMessages() {
 
 export function useAbortInProgress() {
   return useSessionStore((state) => state.abortInProgress)
+}
+
+export function useVisionFallbackItems() {
+  return useSessionStore((state) => state.visionFallbackByMessage)
+}
+
+export function useVisionFallbackForMessage(messageId: string, attachmentId?: string) {
+  return useSessionStore((state) => {
+    if (!attachmentId) return undefined
+    const key = `${messageId}-${attachmentId}`
+    return state.visionFallbackByMessage[key]
+  })
 }

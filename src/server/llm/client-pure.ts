@@ -15,6 +15,8 @@ type MinimalProfile = Pick<ModelProfile, 'temperature' | 'defaultMaxTokens' | 't
 export interface ConvertMessagesOptions {
   modelSupportsVision: boolean
   visionFallbackEnabled: boolean
+  onVisionFallbackStart?: ((attachmentId: string, filename?: string) => void) | undefined
+  onVisionFallbackDone?: ((attachmentId: string, description: string) => void) | undefined
 }
 
 function convertAttachmentSync(
@@ -35,7 +37,7 @@ function convertAttachmentSync(
 }
 
 async function convertAttachmentWithFallback(
-  attachment: { data: string; filename?: string },
+  attachment: { data: string; filename?: string; id?: string },
   options: ConvertMessagesOptions
 ): Promise<{ type: 'text'; text: string } | { type: 'image_url'; image_url: { url: string } }> {
   if (options.modelSupportsVision) {
@@ -52,8 +54,15 @@ async function convertAttachmentWithFallback(
     }
   }
 
-  const context = attachment.filename ? `File: ${attachment.filename}` : undefined
+  const attachmentId = attachment.id ?? crypto.randomUUID()
+  const filename = attachment.filename
+
+  options.onVisionFallbackStart?.(attachmentId, filename)
+
+  const context = filename ? `File: ${filename}` : undefined
   const description = await describeImageFromDataUrl(attachment.data, context ? { context } : {})
+
+  options.onVisionFallbackDone?.(attachmentId, description)
 
   return {
     type: 'text',
@@ -150,7 +159,7 @@ export async function convertMessagesWithFallback(
         }
         for (const attachment of msg.attachments) {
           const convertedContent = await convertAttachmentWithFallback(
-            { data: attachment.data, filename: attachment.filename },
+            { data: attachment.data, filename: attachment.filename, id: attachment.id },
             options
           )
           content.push(convertedContent)
@@ -195,7 +204,7 @@ export async function convertMessagesWithFallback(
 
       for (const attachment of msg.attachments) {
         const convertedContent = await convertAttachmentWithFallback(
-          { data: attachment.data, filename: attachment.filename },
+          { data: attachment.data, filename: attachment.filename, id: attachment.id },
           options
         )
         content.push(convertedContent)
@@ -243,11 +252,19 @@ export async function buildNonStreamingCreateParams(input: {
   capabilities: MinimalCapabilities
   disableThinking?: boolean
   visionFallbackEnabled?: boolean
+  onVisionFallbackStart?: ((attachmentId: string, filename?: string) => void) | undefined
+  onVisionFallbackDone?: ((attachmentId: string, description: string) => void) | undefined
 }): Promise<OpenAI.ChatCompletionCreateParamsNonStreaming> {
-  const { model, request, profile, capabilities, disableThinking, visionFallbackEnabled = false } = input
+  const { model, request, profile, capabilities, disableThinking, visionFallbackEnabled = false, onVisionFallbackStart, onVisionFallbackDone } = input
+
   const messages = request.messages
   const modelSupportsVision = profile.supportsVision ?? false
-  const options: ConvertMessagesOptions = { modelSupportsVision, visionFallbackEnabled }
+  const options: ConvertMessagesOptions = {
+    modelSupportsVision,
+    visionFallbackEnabled,
+    onVisionFallbackStart,
+    onVisionFallbackDone,
+  }
 
   const convertedMessages = needsVisionFallback(messages, modelSupportsVision, visionFallbackEnabled)
     ? await convertMessagesWithFallback(messages, options)
@@ -282,11 +299,13 @@ export async function buildStreamingCreateParams(input: {
   capabilities: MinimalCapabilities
   disableThinking: boolean
   visionFallbackEnabled?: boolean
+  onVisionFallbackStart?: ((attachmentId: string, filename?: string) => void) | undefined
+  onVisionFallbackDone?: ((attachmentId: string, description: string) => void) | undefined
 }): Promise<OpenAI.ChatCompletionCreateParamsStreaming> {
-  const { model, request, profile, capabilities, disableThinking, visionFallbackEnabled = false } = input
+  const { model, request, profile, capabilities, disableThinking, visionFallbackEnabled = false, onVisionFallbackStart, onVisionFallbackDone } = input
   const messages = request.messages
   const modelSupportsVision = profile.supportsVision ?? false
-  const options: ConvertMessagesOptions = { modelSupportsVision, visionFallbackEnabled }
+  const options: ConvertMessagesOptions = { modelSupportsVision, visionFallbackEnabled, onVisionFallbackStart, onVisionFallbackDone }
 
   const convertedMessages = needsVisionFallback(messages, modelSupportsVision, visionFallbackEnabled)
     ? await convertMessagesWithFallback(messages, options)

@@ -35,7 +35,8 @@ import { getAllInstructions } from '../context/instructions.js'
 import { getEnabledSkillMetadata } from '../skills/registry.js'
 import { getRuntimeConfig } from '../runtime-config.js'
 import { getGlobalConfigDir } from '../../cli/paths.js'
-import { createQueueStateMessage } from '../ws/protocol.js'
+import { createQueueStateMessage, createChatVisionFallbackMessage } from '../ws/protocol.js'
+import { emitVisionFallbackStart, emitVisionFallbackDone } from '../events/session.js'
 import { logger } from '../utils/logger.js'
 
 // ============================================================================
@@ -315,6 +316,38 @@ export async function runTopLevelAgentLoop(
     const assistantMsgId = crypto.randomUUID()
     eventStore.append(sessionId, createMessageStartEvent(assistantMsgId, 'assistant', undefined, currentWindowMessageOptions))
 
+    const doOnMessage = (msg: ServerMessage) => { onMessage?.(msg) }
+
+    const onVisionFallbackStart = (attachmentId: string, filename?: string) => {
+      const eventData: { messageId: string; attachmentId: string; filename?: string } = {
+        messageId: assistantMsgId,
+        attachmentId,
+      }
+      if (filename !== undefined) {
+        eventData.filename = filename
+      }
+      eventStore.append(sessionId, {
+        type: 'vision_fallback.start',
+        data: eventData,
+      })
+      const payload: { type: 'start'; messageId: string; attachmentId: string; filename?: string } = {
+        type: 'start',
+        messageId: assistantMsgId,
+        attachmentId,
+      }
+      if (filename !== undefined) {
+        payload.filename = filename
+      }
+      doOnMessage(createChatVisionFallbackMessage(payload))
+    }
+    const onVisionFallbackDone = (attachmentId: string, description: string) => {
+      eventStore.append(sessionId, {
+        type: 'vision_fallback.done',
+        data: { messageId: assistantMsgId, attachmentId, description },
+      })
+      doOnMessage(createChatVisionFallbackMessage({ type: 'done', messageId: assistantMsgId, attachmentId, description }))
+    }
+
     const streamGen = streamLLMPure({
       messageId: assistantMsgId,
       systemPrompt: assembledRequest.systemPrompt,
@@ -323,6 +356,8 @@ export async function runTopLevelAgentLoop(
       tools: toolRegistry.definitions,
       toolChoice: 'auto',
       signal,
+      onVisionFallbackStart,
+      onVisionFallbackDone,
     })
 
     const result = await consumeStreamGenerator(streamGen, event => {

@@ -27,6 +27,9 @@ export interface LLMCompletionRequest {
   stream?: boolean
   signal?: AbortSignal
   disableThinking?: boolean
+  // Vision fallback event callbacks
+  onVisionFallbackStart?: (attachmentId: string, filename?: string) => void
+  onVisionFallbackDone?: (attachmentId: string, description: string) => void
 }
 
 export interface LLMCompletionResponse {

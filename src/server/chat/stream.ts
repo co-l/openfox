@@ -49,6 +49,10 @@ export interface StreamOptions {
   disableThinking?: boolean
   /** Optional: reuse an existing message ID instead of creating a new one */
   existingMessageId?: string
+  /** Optional: callback when vision fallback starts describing an image */
+  onVisionFallbackStart?: (attachmentId: string, filename?: string) => void
+  /** Optional: callback when vision fallback completes describing an image */
+  onVisionFallbackDone?: (attachmentId: string, description: string) => void
 }
 
 export interface StreamResult {
@@ -76,7 +80,7 @@ async function streamLLMResponseInternal(
   formatRetryCount: number,
   existingMessageId?: string
 ): Promise<StreamResult> {
-  const { sessionManager, sessionId, systemPrompt, llmClient, tools, toolChoice, signal, onEvent, customMessages, subAgentId, subAgentType, disableThinking } = options
+  const { sessionManager, sessionId, systemPrompt, llmClient, tools, toolChoice, signal, onEvent, customMessages, subAgentId, subAgentType, disableThinking, onVisionFallbackStart, onVisionFallbackDone } = options
 
   // If retrying due to XML format error, inject correction prompt
   if (formatRetryCount > 0) {
@@ -162,13 +166,25 @@ async function streamLLMResponseInternal(
   }
 
   // Stream response
-  const stream = streamWithSegments(llmClient, {
+  const streamRequest: {
+    messages: typeof llmMessages
+    tools?: typeof tools
+    toolChoice?: 'auto' | 'none' | 'required'
+    disableThinking: boolean
+    signal?: AbortSignal
+    onVisionFallbackStart?: (attachmentId: string, filename?: string) => void
+    onVisionFallbackDone?: (attachmentId: string, description: string) => void
+  } = {
     messages: llmMessages,
     ...(tools && { tools }),
     ...(tools && { toolChoice: toolChoice ?? 'auto' }),
     disableThinking: disableThinking ?? false,
     ...(signal && { signal }),
-  })
+  }
+  if (onVisionFallbackStart) streamRequest.onVisionFallbackStart = onVisionFallbackStart
+  if (onVisionFallbackDone) streamRequest.onVisionFallbackDone = onVisionFallbackDone
+
+  const stream = streamWithSegments(llmClient, streamRequest)
 
   let result: Awaited<ReturnType<typeof stream.next>>['value'] = null
   

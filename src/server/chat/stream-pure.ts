@@ -37,6 +37,8 @@ export interface PureStreamOptions {
   toolChoice?: 'auto' | 'none' | 'required'
   signal?: AbortSignal | undefined
   disableThinking?: boolean
+  onVisionFallbackStart?: (attachmentId: string, filename?: string) => void
+  onVisionFallbackDone?: (attachmentId: string, description: string) => void
 }
 
 export interface PureStreamResult {
@@ -78,19 +80,31 @@ export interface PureStreamResult {
 export async function* streamLLMPure(
   options: PureStreamOptions
 ): AsyncGenerator<TurnEvent, PureStreamResult> {
-  const { messageId, systemPrompt, llmClient, messages, tools, toolChoice, signal, disableThinking } = options
+  const { messageId, systemPrompt, llmClient, messages, tools, toolChoice, signal, disableThinking, onVisionFallbackStart, onVisionFallbackDone } = options
 
   // Build LLM messages
   const llmMessages = [{ role: 'system' as const, content: systemPrompt }, ...messages]
 
   // Start streaming
-  const stream = streamWithSegments(llmClient, {
+  const streamRequest: {
+    messages: typeof llmMessages
+    tools?: typeof tools
+    toolChoice?: 'auto' | 'none' | 'required'
+    disableThinking: boolean
+    signal?: AbortSignal
+    onVisionFallbackStart?: typeof onVisionFallbackStart
+    onVisionFallbackDone?: typeof onVisionFallbackDone
+  } = {
     messages: llmMessages,
     ...(tools && { tools }),
     ...(tools && { toolChoice: toolChoice ?? 'auto' }),
     disableThinking: disableThinking ?? false,
     ...(signal && { signal }),
-  })
+  }
+  if (onVisionFallbackStart) streamRequest.onVisionFallbackStart = onVisionFallbackStart
+  if (onVisionFallbackDone) streamRequest.onVisionFallbackDone = onVisionFallbackDone
+
+  const stream = streamWithSegments(llmClient, streamRequest)
 
   // Track tool call indices we've emitted preparing events for
   const seenToolIndices = new Set<number>()
