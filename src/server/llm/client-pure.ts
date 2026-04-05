@@ -8,6 +8,7 @@ import type { LLMCompletionRequest, LLMCompletionResponse, LLMMessage, LLMToolDe
 import type { ModelProfile } from './profiles.js'
 import type { BackendCapabilities } from './backend.js'
 import { describeImageFromDataUrl } from './vision-fallback.js'
+import { logger } from '../utils/logger.js'
 
 type MinimalCapabilities = Pick<BackendCapabilities, 'supportsTopK' | 'supportsChatTemplateKwargs'>
 type MinimalProfile = Pick<ModelProfile, 'temperature' | 'defaultMaxTokens' | 'topP' | 'topK' | 'supportsReasoning' | 'supportsVision'>
@@ -40,7 +41,10 @@ async function convertAttachmentWithFallback(
   attachment: { data: string; filename?: string; id?: string },
   options: ConvertMessagesOptions
 ): Promise<{ type: 'text'; text: string } | { type: 'image_url'; image_url: { url: string } }> {
+  logger.debug('[VisionFallback] convertAttachmentWithFallback called', { filename: attachment.filename, id: attachment.id, hasCallbacks: !!options.onVisionFallbackStart })
+
   if (options.modelSupportsVision) {
+    logger.debug('[VisionFallback] Model supports vision - passing image directly')
     return {
       type: 'image_url',
       image_url: { url: attachment.data },
@@ -48,6 +52,7 @@ async function convertAttachmentWithFallback(
   }
 
   if (!options.visionFallbackEnabled) {
+    logger.debug('[VisionFallback] Fallback disabled - returning placeholder')
     return {
       type: 'text',
       text: `[Image: ${attachment.filename || 'image'}] (vision not supported)`,
@@ -57,11 +62,13 @@ async function convertAttachmentWithFallback(
   const attachmentId = attachment.id ?? crypto.randomUUID()
   const filename = attachment.filename
 
+  logger.debug('[VisionFallback] Starting delegation for:', { attachmentId, filename })
   options.onVisionFallbackStart?.(attachmentId, filename)
 
   const context = filename ? `File: ${filename}` : undefined
   const description = await describeImageFromDataUrl(attachment.data, context ? { context } : {})
 
+  logger.debug('[VisionFallback] Delegation complete:', { attachmentId, descriptionLength: description.length })
   options.onVisionFallbackDone?.(attachmentId, description)
 
   return {
@@ -144,6 +151,7 @@ export async function convertMessagesWithFallback(
   messages: LLMMessage[],
   options: ConvertMessagesOptions
 ): Promise<ChatCompletionMessageParam[]> {
+  logger.debug('[VisionFallback] convertMessagesWithFallback called', { messageCount: messages.length })
   const filtered = messages.filter((msg) => {
     return !(msg.role === 'assistant' && !msg.content?.trim() && !msg.toolCalls?.length)
   })
@@ -242,7 +250,14 @@ function needsVisionFallback(messages: LLMMessage[], modelSupportsVision: boolea
     msg => (msg.attachments && msg.attachments.length > 0) ||
            (msg.role === 'tool' && msg.attachments && msg.attachments.length > 0)
   )
-  return hasAttachments && !modelSupportsVision && visionFallbackEnabled
+  const result = hasAttachments && !modelSupportsVision && visionFallbackEnabled
+  logger.debug('[VisionFallback] needsVisionFallback check', {
+    hasAttachments,
+    modelSupportsVision,
+    visionFallbackEnabled,
+    result
+  })
+  return result
 }
 
 export async function buildNonStreamingCreateParams(input: {
