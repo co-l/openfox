@@ -19,6 +19,7 @@ function createBaseConfig(): GlobalConfig {
     logging: { level: 'info' as const },
     database: { path: '' },
     workspace: { workdir: process.cwd() },
+    visionFallback: { enabled: false, url: 'http://localhost:11434', model: 'qwen3-vl:2b' },
   }
 }
 
@@ -205,7 +206,42 @@ export async function runInitWithSelect(mode: Mode, existingConfig?: GlobalConfi
   })
   // Normalize: remove trailing slash to prevent double slashes in paths
   config.workspace = { workdir: String(workdirChoice).replace(/\/$/, '') }
-  
+
+  // Ask about vision fallback for non-vision models
+  const visionChoice = await confirm({
+    message: 'Configure vision fallback for non-vision models?',
+    initialValue: false,
+  })
+
+  if (visionChoice === true) {
+    // Ask for fallback URL
+    const visionUrl = await text({
+      message: 'Vision fallback server URL',
+      placeholder: 'http://localhost:11434',
+      initialValue: config.visionFallback?.url || 'http://localhost:11434',
+      validate: (value) => {
+        if (!value || value.length === 0) return 'URL is required'
+        if (!value.startsWith('http')) return 'Must start with http://'
+      },
+    })
+
+    // Ask for fallback model
+    const visionModel = await text({
+      message: 'Vision fallback model name',
+      placeholder: 'qwen3-vl:2b',
+      initialValue: config.visionFallback?.model || 'qwen3-vl:2b',
+      validate: (value) => {
+        if (!value || value.length === 0) return 'Model name is required'
+      },
+    })
+
+    config.visionFallback = {
+      enabled: true,
+      url: String(visionUrl),
+      model: String(visionModel),
+    }
+  }
+
   // If a provider was added and no default model selection exists, set it
   if (config.providers.length > 0 && !config.defaultModelSelection) {
     const { setDefaultModelSelection } = await import('./config.js')

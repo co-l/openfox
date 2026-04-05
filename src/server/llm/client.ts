@@ -14,6 +14,7 @@ import { logger } from '../utils/logger.js'
 import { LLMError } from '../utils/errors.js'
 import { getModelProfile, type ModelProfile } from './profiles.js'
 import { type Backend, type BackendCapabilities, getBackendCapabilities } from './backend.js'
+import { ensureVisionFallbackConfigLoaded } from './vision-fallback.js'
 import {
   buildNonStreamingCreateParams,
   buildStreamingCreateParams,
@@ -89,12 +90,17 @@ export function createLLMClient(config: Config, initialBackend: Backend = 'unkno
       
       try {
         const shouldDisableThinking = disableThinking || request.disableThinking === true
-        const createParams = buildNonStreamingCreateParams({
-          model, 
-          request, 
-          profile, 
-          capabilities, 
+
+        await ensureVisionFallbackConfigLoaded()
+        const { isVisionFallbackEnabled } = await import('./vision-fallback.js')
+
+        const createParams = await buildNonStreamingCreateParams({
+          model,
+          request,
+          profile,
+          capabilities,
           disableThinking: shouldDisableThinking,
+          visionFallbackEnabled: isVisionFallbackEnabled(),
         })
         const response = await openai.chat.completions.create(createParams, {
           signal: request.signal,
@@ -178,11 +184,19 @@ export function createLLMClient(config: Config, initialBackend: Backend = 'unkno
       })
       
       try {
-        // Disable thinking if configured globally or requested per-call
+        await ensureVisionFallbackConfigLoaded()
+        const { isVisionFallbackEnabled } = await import('./vision-fallback.js')
+
         const shouldDisableThinking = disableThinking || request.disableThinking === true
-        
-        const createParams = buildStreamingCreateParams({ model, request, profile, capabilities, disableThinking: shouldDisableThinking })
-        
+        const createParams = await buildStreamingCreateParams({
+          model,
+          request,
+          profile,
+          capabilities,
+          disableThinking: shouldDisableThinking,
+          visionFallbackEnabled: isVisionFallbackEnabled(),
+        })
+
         const stream = await openai.chat.completions.create(createParams, {
           signal: request.signal,
         })

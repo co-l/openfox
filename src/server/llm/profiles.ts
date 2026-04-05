@@ -6,20 +6,23 @@
 export interface ModelProfile {
   /** Display name for the model */
   name: string
-  
+
   /** Sampling parameters */
   temperature: number
   topP: number
   topK?: number
-  
+
   /** Whether the model outputs reasoning/thinking content */
   supportsReasoning: boolean
-  
+
   /** Whether reasoning should be treated as regular content (for broken configs) */
   reasoningAsContent: boolean
-  
+
   /** Max tokens to generate if not specified */
   defaultMaxTokens: number
+
+  /** Whether the model supports vision/images */
+  supportsVision: boolean
 }
 
 /** Default profile for unknown models */
@@ -30,6 +33,7 @@ const DEFAULT_PROFILE: ModelProfile = {
   supportsReasoning: false,
   reasoningAsContent: false,
   defaultMaxTokens: 4096,
+  supportsVision: false,
 }
 
 /** Profile for mock LLM testing */
@@ -40,6 +44,7 @@ const MOCK_PROFILE: ModelProfile = {
   supportsReasoning: false,
   reasoningAsContent: false,
   defaultMaxTokens: 1024,
+  supportsVision: false,
 }
 
 /** 
@@ -56,6 +61,7 @@ const MODEL_PROFILES: Array<{ pattern: string; profile: ModelProfile }> = [
       supportsReasoning: false,
       reasoningAsContent: false,
       defaultMaxTokens: 16384,
+      supportsVision: false,
     },
   },
   {
@@ -70,6 +76,7 @@ const MODEL_PROFILES: Array<{ pattern: string; profile: ModelProfile }> = [
       supportsReasoning: false,
       reasoningAsContent: false,
       defaultMaxTokens: 16384,
+      supportsVision: false,
     },
   },
   {
@@ -81,6 +88,19 @@ const MODEL_PROFILES: Array<{ pattern: string; profile: ModelProfile }> = [
       supportsReasoning: true,
       reasoningAsContent: false,
       defaultMaxTokens: 16384,
+      supportsVision: false,
+    },
+  },
+  {
+    pattern: 'qwen3-vl',
+    profile: {
+      name: 'Qwen3-VL',
+      temperature: 0.7,
+      topP: 0.9,
+      supportsReasoning: true,
+      reasoningAsContent: false,
+      defaultMaxTokens: 16384,
+      supportsVision: true,
     },
   },
   {
@@ -92,6 +112,33 @@ const MODEL_PROFILES: Array<{ pattern: string; profile: ModelProfile }> = [
       supportsReasoning: true,
       reasoningAsContent: false,
       defaultMaxTokens: 16384,
+      supportsVision: false,
+    },
+  },
+  {
+    pattern: 'minimax-m2.5',
+    profile: {
+      name: 'MiniMax-M2.5',
+      temperature: 1,
+      topP: 0.95,
+      topK: 40,
+      supportsReasoning: true,
+      reasoningAsContent: false,
+      defaultMaxTokens: 16384,
+      supportsVision: false,
+    },
+  },
+  {
+    pattern: 'minimax-m2.7',
+    profile: {
+      name: 'MiniMax-M2.7',
+      temperature: 1,
+      topP: 0.95,
+      topK: 40,
+      supportsReasoning: true,
+      reasoningAsContent: false,
+      defaultMaxTokens: 16384,
+      supportsVision: false,
     },
   },
   {
@@ -104,6 +151,32 @@ const MODEL_PROFILES: Array<{ pattern: string; profile: ModelProfile }> = [
       supportsReasoning: true,
       reasoningAsContent: false,
       defaultMaxTokens: 16384,
+      supportsVision: false,
+    },
+  },
+  {
+    pattern: 'minimax-m3',
+    profile: {
+      name: 'MiniMax-M3',
+      temperature: 1,
+      topP: 0.95,
+      topK: 40,
+      supportsReasoning: true,
+      reasoningAsContent: false,
+      defaultMaxTokens: 16384,
+      supportsVision: true,
+    },
+  },
+  {
+    pattern: 'llava',
+    profile: {
+      name: 'LLaVA',
+      temperature: 0.7,
+      topP: 0.9,
+      supportsReasoning: false,
+      reasoningAsContent: false,
+      defaultMaxTokens: 16384,
+      supportsVision: true,
     },
   },
   {
@@ -115,6 +188,7 @@ const MODEL_PROFILES: Array<{ pattern: string; profile: ModelProfile }> = [
       supportsReasoning: false,
       reasoningAsContent: false,
       defaultMaxTokens: 16384,
+      supportsVision: false,
     },
   },
   {
@@ -126,6 +200,7 @@ const MODEL_PROFILES: Array<{ pattern: string; profile: ModelProfile }> = [
       supportsReasoning: true,
       reasoningAsContent: false,
       defaultMaxTokens: 16384,
+      supportsVision: false,
     },
   },
 ]
@@ -156,4 +231,11 @@ export function getModelProfile(modelName: string): ModelProfile {
  */
 export function modelSupportsReasoning(modelName: string): boolean {
   return getModelProfile(modelName).supportsReasoning
+}
+
+/**
+ * Check if a model supports vision/images.
+ */
+export function modelSupportsVision(modelName: string): boolean {
+  return getModelProfile(modelName).supportsVision
 }

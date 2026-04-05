@@ -7,29 +7,77 @@ import type {
 import type { LLMCompletionRequest, LLMCompletionResponse, LLMMessage, LLMToolDefinition } from './types.js'
 import type { ModelProfile } from './profiles.js'
 import type { BackendCapabilities } from './backend.js'
-import { logger } from '../utils/logger.js'
+import { describeImageFromDataUrl } from './vision-fallback.js'
 
 type MinimalCapabilities = Pick<BackendCapabilities, 'supportsTopK' | 'supportsChatTemplateKwargs'>
-type MinimalProfile = Pick<ModelProfile, 'temperature' | 'defaultMaxTokens' | 'topP' | 'topK' | 'supportsReasoning'>
+type MinimalProfile = Pick<ModelProfile, 'temperature' | 'defaultMaxTokens' | 'topP' | 'topK' | 'supportsReasoning' | 'supportsVision'>
 
-export function convertMessages(messages: LLMMessage[]): ChatCompletionMessageParam[] {
+export interface ConvertMessagesOptions {
+  modelSupportsVision: boolean
+  visionFallbackEnabled: boolean
+}
+
+function convertAttachmentSync(
+  attachment: { data: string; filename?: string },
+  modelSupportsVision: boolean
+): { type: 'text'; text: string } | { type: 'image_url'; image_url: { url: string } } {
+  if (modelSupportsVision) {
+    return {
+      type: 'image_url',
+      image_url: { url: attachment.data },
+    }
+  }
+
+  return {
+    type: 'text',
+    text: `[Image: ${attachment.filename || 'image'}] (vision not supported, cannot describe)`,
+  }
+}
+
+async function convertAttachmentWithFallback(
+  attachment: { data: string; filename?: string },
+  options: ConvertMessagesOptions
+): Promise<{ type: 'text'; text: string } | { type: 'image_url'; image_url: { url: string } }> {
+  if (options.modelSupportsVision) {
+    return {
+      type: 'image_url',
+      image_url: { url: attachment.data },
+    }
+  }
+
+  if (!options.visionFallbackEnabled) {
+    return {
+      type: 'text',
+      text: `[Image: ${attachment.filename || 'image'}] (vision not supported)`,
+    }
+  }
+
+  const context = attachment.filename ? `File: ${attachment.filename}` : undefined
+  const description = await describeImageFromDataUrl(attachment.data, context ? { context } : {})
+
+  return {
+    type: 'text',
+    text: `[Image: ${attachment.filename || 'image'}] ${description}`,
+  }
+}
+
+export function convertMessages(
+  messages: LLMMessage[],
+  options: ConvertMessagesOptions
+): ChatCompletionMessageParam[] {
   const filtered = messages.filter((msg) => {
     return !(msg.role === 'assistant' && !msg.content?.trim() && !msg.toolCalls?.length)
   })
 
   return filtered.map((msg): ChatCompletionMessageParam => {
     if (msg.role === 'tool') {
-      // If tool result includes image attachments, send multimodal content
       if (msg.attachments && msg.attachments.length > 0) {
         const content: Array<{ type: 'text'; text: string } | { type: 'image_url'; image_url: { url: string } }> = []
         if (msg.content?.trim()) {
           content.push({ type: 'text', text: msg.content })
         }
         for (const attachment of msg.attachments) {
-          content.push({
-            type: 'image_url',
-            image_url: { url: attachment.data },
-          })
+          content.push(convertAttachmentSync(attachment, options.modelSupportsVision))
         }
         return {
           role: 'tool',
@@ -59,23 +107,15 @@ export function convertMessages(messages: LLMMessage[]): ChatCompletionMessagePa
       }
     }
 
-    // Handle user messages with attachments
     if (msg.role === 'user' && msg.attachments && msg.attachments.length > 0) {
       const content: Array<{ type: 'text'; text: string } | { type: 'image_url'; image_url: { url: string } }> = []
 
-      // Add text content if present
       if (msg.content?.trim()) {
         content.push({ type: 'text', text: msg.content })
       }
 
-      // Add attachments as image URLs
       for (const attachment of msg.attachments) {
-        content.push({
-          type: 'image_url',
-          image_url: {
-            url: attachment.data, // base64 data URL
-          },
-        })
+        content.push(convertAttachmentSync(attachment, options.modelSupportsVision))
       }
 
       return {
@@ -91,6 +131,92 @@ export function convertMessages(messages: LLMMessage[]): ChatCompletionMessagePa
   })
 }
 
+export async function convertMessagesWithFallback(
+  messages: LLMMessage[],
+  options: ConvertMessagesOptions
+): Promise<ChatCompletionMessageParam[]> {
+  const filtered = messages.filter((msg) => {
+    return !(msg.role === 'assistant' && !msg.content?.trim() && !msg.toolCalls?.length)
+  })
+
+  const converted: ChatCompletionMessageParam[] = []
+
+  for (const msg of filtered) {
+    if (msg.role === 'tool') {
+      if (msg.attachments && msg.attachments.length > 0) {
+        const content: Array<{ type: 'text'; text: string } | { type: 'image_url'; image_url: { url: string } }> = []
+        if (msg.content?.trim()) {
+          content.push({ type: 'text', text: msg.content })
+        }
+        for (const attachment of msg.attachments) {
+          const convertedContent = await convertAttachmentWithFallback(
+            { data: attachment.data, filename: attachment.filename },
+            options
+          )
+          content.push(convertedContent)
+        }
+        converted.push({
+          role: 'tool',
+          content,
+          tool_call_id: msg.toolCallId!,
+        } as ChatCompletionMessageParam)
+      } else {
+        converted.push({
+          role: 'tool',
+          content: msg.content,
+          tool_call_id: msg.toolCallId!,
+        })
+      }
+      continue
+    }
+
+    if (msg.role === 'assistant' && msg.toolCalls?.length) {
+      converted.push({
+        role: 'assistant',
+        content: msg.content || null,
+        tool_calls: msg.toolCalls.map((toolCall) => ({
+          id: toolCall.id,
+          type: 'function',
+          function: {
+            name: toolCall.name,
+            arguments: JSON.stringify(toolCall.arguments),
+          },
+        })),
+      })
+      continue
+    }
+
+    if (msg.role === 'user' && msg.attachments && msg.attachments.length > 0) {
+      const content: Array<{ type: 'text'; text: string } | { type: 'image_url'; image_url: { url: string } }> = []
+
+      if (msg.content?.trim()) {
+        content.push({ type: 'text', text: msg.content })
+      }
+
+      for (const attachment of msg.attachments) {
+        const convertedContent = await convertAttachmentWithFallback(
+          { data: attachment.data, filename: attachment.filename },
+          options
+        )
+        content.push(convertedContent)
+      }
+
+      converted.push({
+        role: 'user',
+        content,
+      })
+      continue
+    }
+
+    converted.push({
+      role: msg.role as 'system' | 'user' | 'assistant',
+      content: msg.content,
+    })
+  }
+
+  return converted
+}
+
 export function convertTools(tools: LLMToolDefinition[]): ChatCompletionTool[] {
   return tools.map((tool) => ({
     type: 'function',
@@ -102,17 +228,34 @@ export function convertTools(tools: LLMToolDefinition[]): ChatCompletionTool[] {
   }))
 }
 
-export function buildNonStreamingCreateParams(input: {
+function needsVisionFallback(messages: LLMMessage[], modelSupportsVision: boolean, visionFallbackEnabled: boolean): boolean {
+  const hasAttachments = messages.some(
+    msg => (msg.attachments && msg.attachments.length > 0) ||
+           (msg.role === 'tool' && msg.attachments && msg.attachments.length > 0)
+  )
+  return hasAttachments && !modelSupportsVision && visionFallbackEnabled
+}
+
+export async function buildNonStreamingCreateParams(input: {
   model: string
   request: LLMCompletionRequest
   profile: MinimalProfile
   capabilities: MinimalCapabilities
   disableThinking?: boolean
-}): OpenAI.ChatCompletionCreateParamsNonStreaming {
-  const { model, request, profile, capabilities, disableThinking } = input
+  visionFallbackEnabled?: boolean
+}): Promise<OpenAI.ChatCompletionCreateParamsNonStreaming> {
+  const { model, request, profile, capabilities, disableThinking, visionFallbackEnabled = false } = input
+  const messages = request.messages
+  const modelSupportsVision = profile.supportsVision ?? false
+  const options: ConvertMessagesOptions = { modelSupportsVision, visionFallbackEnabled }
+
+  const convertedMessages = needsVisionFallback(messages, modelSupportsVision, visionFallbackEnabled)
+    ? await convertMessagesWithFallback(messages, options)
+    : convertMessages(messages, { modelSupportsVision, visionFallbackEnabled: false })
+
   const params: OpenAI.ChatCompletionCreateParamsNonStreaming = {
     model,
-    messages: convertMessages(request.messages),
+    messages: convertedMessages,
     ...(request.tools ? { tools: convertTools(request.tools) } : {}),
     ...(request.toolChoice ? { tool_choice: request.toolChoice as ChatCompletionToolChoiceOption } : {}),
     temperature: request.temperature ?? profile.temperature,
@@ -132,17 +275,26 @@ export function buildNonStreamingCreateParams(input: {
   return params
 }
 
-export function buildStreamingCreateParams(input: {
+export async function buildStreamingCreateParams(input: {
   model: string
   request: LLMCompletionRequest
   profile: MinimalProfile
   capabilities: MinimalCapabilities
   disableThinking: boolean
-}): OpenAI.ChatCompletionCreateParamsStreaming {
-  const { model, request, profile, capabilities, disableThinking } = input
+  visionFallbackEnabled?: boolean
+}): Promise<OpenAI.ChatCompletionCreateParamsStreaming> {
+  const { model, request, profile, capabilities, disableThinking, visionFallbackEnabled = false } = input
+  const messages = request.messages
+  const modelSupportsVision = profile.supportsVision ?? false
+  const options: ConvertMessagesOptions = { modelSupportsVision, visionFallbackEnabled }
+
+  const convertedMessages = needsVisionFallback(messages, modelSupportsVision, visionFallbackEnabled)
+    ? await convertMessagesWithFallback(messages, options)
+    : convertMessages(messages, { modelSupportsVision, visionFallbackEnabled: false })
+
   const params: OpenAI.ChatCompletionCreateParamsStreaming = {
     model,
-    messages: convertMessages(request.messages),
+    messages: convertedMessages,
     ...(request.tools ? { tools: convertTools(request.tools) } : {}),
     ...(request.toolChoice ? { tool_choice: request.toolChoice as ChatCompletionToolChoiceOption } : {}),
     temperature: request.temperature ?? profile.temperature,

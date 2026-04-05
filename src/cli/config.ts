@@ -91,6 +91,13 @@ const workspaceSchema = z.object({
   workdir: z.string().default(process.cwd()),
 })
 
+const visionFallbackSchema = z.object({
+  enabled: z.boolean().default(false),
+  url: z.string().default('http://localhost:11434'),
+  model: z.string().default('qwen3-vl:2b'),
+  timeout: z.number().default(120),
+})
+
 // New config schema with providers array
 const configSchema = z.object({
   providers: z.array(providerSchema).default([]),
@@ -101,7 +108,11 @@ const configSchema = z.object({
   logging: loggingSchema.default({ level: 'error' as const }),
   database: databaseSchema.default({ path: '' }),
   workspace: workspaceSchema.default(() => ({ workdir: process.cwd() })),
-})
+  visionFallback: visionFallbackSchema.optional(),
+}).transform((data) => ({
+  ...data,
+  visionFallback: data.visionFallback ?? { enabled: false, url: 'http://localhost:11434', model: 'qwen3-vl:2b', timeout: 120 },
+}))
 
 // Old config schema (for migration detection)
 const oldLlmSchema = z.object({
@@ -123,6 +134,10 @@ const oldConfigSchema = z.object({
 // ============================================================================
 // Types
 // ============================================================================
+
+export function getVisionFallback(config: GlobalConfig) {
+  return config.visionFallback ?? getDefaultVisionFallback()
+}
 
 export type GlobalConfig = z.infer<typeof configSchema>
 export type OldGlobalConfig = z.infer<typeof oldConfigSchema>
@@ -254,7 +269,7 @@ export function migrateConfig(raw: unknown): { config: GlobalConfig; migrated: b
 
 export async function loadGlobalConfig(mode: Mode): Promise<GlobalConfig> {
   const configPath = getGlobalConfigPath(mode)
-  
+
   try {
     const content = await readFile(configPath, 'utf-8')
     const parsed = JSON.parse(content)
@@ -266,6 +281,10 @@ export async function loadGlobalConfig(mode: Mode): Promise<GlobalConfig> {
   } catch {
     return configSchema.parse({})
   }
+}
+
+export function getDefaultVisionFallback() {
+  return { enabled: false, url: 'http://localhost:11434', model: 'qwen3-vl:2b', timeout: 120 }
 }
 
 export async function saveGlobalConfig(mode: Mode, config: GlobalConfig): Promise<void> {

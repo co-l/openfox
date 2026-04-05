@@ -15,7 +15,7 @@ describe('llm client pure helpers', () => {
       { role: 'assistant', content: '', toolCalls: [] },
       { role: 'assistant', content: '', toolCalls: [{ id: 'call-1', name: 'glob', arguments: { pattern: '*.ts' } }] },
       { role: 'tool', content: 'ok', toolCallId: 'call-1' },
-    ])).toEqual([
+    ], { modelSupportsVision: false, visionFallbackEnabled: false })).toEqual([
       { role: 'system', content: 'system' },
       {
         role: 'assistant',
@@ -51,7 +51,7 @@ describe('llm client pure helpers', () => {
     })
   })
 
-  it('builds request params with backend capabilities and profile defaults', () => {
+  it('builds request params with backend capabilities and profile defaults', async () => {
     const baseRequest = {
       messages: [{ role: 'user' as const, content: 'hello' }],
       tools: [{ type: 'function' as const, function: { name: 'glob', description: 'Search', parameters: { type: 'object' } } }],
@@ -64,9 +64,10 @@ describe('llm client pure helpers', () => {
       topP: 0.9,
       topK: 40,
       supportsReasoning: true,
+      supportsVision: false,
     }
 
-    expect(buildNonStreamingCreateParams({
+    expect(await buildNonStreamingCreateParams({
       model: 'test-model',
       request: baseRequest,
       profile,
@@ -83,7 +84,7 @@ describe('llm client pure helpers', () => {
       stream: false,
     })
 
-    expect(buildStreamingCreateParams({
+    expect(await buildStreamingCreateParams({
       model: 'test-model',
       request: baseRequest,
       profile,
