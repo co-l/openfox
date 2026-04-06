@@ -64,8 +64,8 @@ describe('SessionManager', () => {
     expect(manager.getSession(first.id)?.id).toBe(first.id)
     expect(manager.requireSession(second.id).id).toBe(second.id)
     expect(manager.listSessions()).toHaveLength(2)
-    expect(manager.listSessionsByProject(projectId)).toHaveLength(2)
-    expect(manager.listSessionsByProject('missing-project')).toEqual([])
+    expect(manager.listSessionsByProject(projectId).sessions).toHaveLength(2)
+    expect(manager.listSessionsByProject('missing-project').sessions).toEqual([])
 
     manager.setActiveSession(first.id)
     expect(manager.getActiveSessionId()).toBe(first.id)
