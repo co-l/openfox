@@ -249,6 +249,7 @@ interface SessionState {
 
   // Mode switching
   switchMode: (mode: SessionMode) => void
+  switchDangerLevel: (dangerLevel: 'normal' | 'dangerous') => void
   acceptAndBuild: (workflowId?: string, content?: string, attachments?: Attachment[]) => void
 
   // Criteria (from UI)
@@ -682,6 +683,29 @@ export const useSessionStore = create<SessionState>((set, get) => {
         }
       } catch (error) {
         console.error('Error switching mode:', error)
+      }
+    },
+
+    switchDangerLevel: async (dangerLevel: 'normal' | 'dangerous') => {
+      const sessionId = get().currentSession?.id
+      if (!sessionId) return
+
+      try {
+        const res = await fetch(`/api/sessions/${sessionId}/danger-level`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ dangerLevel }),
+        })
+        if (!res.ok) {
+          console.error('Failed to switch danger level:', await res.json())
+          return
+        }
+        const data = await res.json()
+        if (data.session) {
+          set({ currentSession: data.session })
+        }
+      } catch (error) {
+        console.error('Error switching danger level:', error)
       }
     },
 

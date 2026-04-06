@@ -37,6 +37,7 @@ import { getRuntimeConfig } from '../runtime-config.js'
 import { getGlobalConfigDir } from '../../cli/paths.js'
 import { createQueueStateMessage, createChatVisionFallbackMessage } from '../ws/protocol.js'
 import { emitVisionFallbackStart, emitVisionFallbackDone } from '../events/session.js'
+import type { DangerLevel } from '../../shared/types.js'
 import { logger } from '../utils/logger.js'
 
 // ============================================================================
@@ -48,6 +49,7 @@ export interface ToolBatchContext {
   sessionManager: SessionManager
   sessionId: string
   workdir: string
+  dangerLevel?: DangerLevel
   turnMetrics: TurnMetrics
   signal?: AbortSignal | undefined
   onMessage?: ((msg: ServerMessage) => void) | undefined
@@ -143,19 +145,24 @@ export async function executeToolBatch(
 
     const onProgress = ctx.onMessage ? createToolProgressHandler(assistantMsgId, toolCall.id, ctx.onMessage) : undefined
 
+    const toolContext: any = {
+      sessionManager: ctx.sessionManager,
+      workdir: ctx.workdir,
+      sessionId: ctx.sessionId,
+      signal: ctx.signal,
+      llmClient: ctx.llmClient,
+      statsIdentity: ctx.statsIdentity,
+      lspManager: ctx.sessionManager.getLspManager(ctx.sessionId),
+      onEvent: ctx.onMessage,
+      onProgress,
+    }
+    if (ctx.dangerLevel) {
+      toolContext.dangerLevel = ctx.dangerLevel
+    }
+
     let toolResult: ToolResult
     try {
-      toolResult = await ctx.toolRegistry.execute(toolCall.name, toolCall.arguments, {
-        sessionManager: ctx.sessionManager,
-        workdir: ctx.workdir,
-        sessionId: ctx.sessionId,
-        signal: ctx.signal,
-        llmClient: ctx.llmClient,
-        statsIdentity: ctx.statsIdentity,
-        lspManager: ctx.sessionManager.getLspManager(ctx.sessionId),
-        onEvent: ctx.onMessage,
-        onProgress,
-      })
+      toolResult = await ctx.toolRegistry.execute(toolCall.name, toolCall.arguments, toolContext)
     } catch (error) {
       if (error instanceof PathAccessDeniedError) {
         toolResult = {
@@ -399,7 +406,7 @@ export async function runTopLevelAgentLoop(
       }))
 
       try {
-        const batchResult = await executeToolBatch(assistantMsgId, result.toolCalls, {
+        const batchContext: any = {
           toolRegistry,
           sessionManager,
           sessionId,
@@ -410,7 +417,11 @@ export async function runTopLevelAgentLoop(
           llmClient,
           statsIdentity,
           onToolExecuted: config.onToolExecuted,
-        })
+        }
+        if (session.dangerLevel) {
+          batchContext.dangerLevel = session.dangerLevel
+        }
+        const batchResult = await executeToolBatch(assistantMsgId, result.toolCalls, batchContext)
         if (batchResult.returnValueContent) {
           returnValueContent = batchResult.returnValueContent
         }

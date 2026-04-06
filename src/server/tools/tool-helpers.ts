@@ -84,7 +84,8 @@ export function createTool<TArgs>(
               context.sessionId,
               crypto.randomUUID(),
               name,
-              context.onEvent
+              context.onEvent,
+              context.dangerLevel
             )
           }
         },

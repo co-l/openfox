@@ -8,6 +8,7 @@ import { ChatMessage } from './ChatMessage'
 import { AssistantMessage } from './AssistantMessage'
 import { SubAgentContainer } from './SubAgentContainer'
 import { AgentSelector } from './AgentSelector'
+import { DangerLevelSelector } from './DangerLevelSelector'
 import { PathConfirmationDialog } from '../shared/PathConfirmationDialog'
 import { AskUserDialog } from '../shared/AskUserDialog'
 import { RunningIndicator } from '../shared/RunningIndicator'
@@ -781,7 +782,10 @@ export function PlanPanel() {
           )}
         </div>
         <div className="mt-3 flex items-center justify-between">
-          <AgentSelector />
+          <div className="flex items-center gap-2">
+            <AgentSelector />
+            <DangerLevelSelector />
+          </div>
           <ProviderSelector />
         </div>
       </form>

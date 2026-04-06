@@ -1,4 +1,4 @@
-import type { ToolResult, StatsIdentity } from '../../shared/types.js'
+import type { ToolResult, StatsIdentity, DangerLevel } from '../../shared/types.js'
 export type { ToolResult } from '../../shared/types.js'
 import type { ServerMessage } from '../../shared/protocol.js'
 import type { LLMToolDefinition } from '../llm/types.js'
@@ -10,6 +10,7 @@ export interface ToolContext {
   workdir: string
   sessionId: string
   sessionManager: SessionManager  // Injected dependency (replaces singleton import)
+  dangerLevel?: DangerLevel  // When 'dangerous', bypass path confirmations
   signal?: AbortSignal | undefined  // For cancelling long-running operations (e.g., shell commands)
   onProgress?: ((message: string) => void) | undefined
   onEvent?: ((event: ServerMessage) => void) | undefined  // For sending events to client (e.g., path confirmation)

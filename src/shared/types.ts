@@ -23,6 +23,8 @@ export type ToolMode = string
 // Workflow phase shown to user (more granular than mode)
 export type SessionPhase = 'plan' | 'build' | 'verification' | 'blocked' | 'done'
 
+export type DangerLevel = 'normal' | 'dangerous'
+
 export interface Session {
   id: string
   projectId: string
@@ -40,6 +42,7 @@ export interface Session {
   contextWindows: ContextWindow[]  // Context windows for this session
   executionState: ExecutionState | null
   metadata: SessionMetadata
+  dangerLevel?: DangerLevel  // Controls path confirmation bypass
 }
 
 // ============================================================================

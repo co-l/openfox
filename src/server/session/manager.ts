@@ -27,6 +27,8 @@ import {
   updateSessionSummary,
   updateSessionMetadata,
   updateSessionProvider,
+  updateSessionDangerLevel,
+  type DangerLevel,
 } from '../db/sessions.js'
 import { getProject } from '../db/projects.js'
 import { SessionNotFoundError } from '../utils/errors.js'
@@ -262,6 +264,17 @@ export class SessionManager {
     this.emit({ type: 'phase_changed', sessionId, phase })
 
     return updatedSession
+  }
+
+  /**
+   * Set danger level. Does NOT emit event - danger level is not part of session state.
+   * Just updates DB and returns updated session.
+   */
+  setDangerLevel(sessionId: string, dangerLevel: DangerLevel): Session {
+    this.requireSession(sessionId)
+    logger.debug('Setting danger level', { sessionId, dangerLevel })
+    updateSessionDangerLevel(sessionId, dangerLevel)
+    return this.requireSession(sessionId)
   }
 
   /**

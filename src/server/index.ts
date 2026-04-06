@@ -354,6 +354,25 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
     res.json({ session: updatedSession, messages })
   })
 
+  // Danger level (REST)
+  app.put('/api/sessions/:id/danger-level', async (req, res) => {
+    const sessionId = req.params.id
+    const session = sessionManager.getSession(sessionId)
+    if (!session) {
+      return res.status(404).json({ error: 'Session not found' })
+    }
+
+    const { dangerLevel } = req.body
+    if (!dangerLevel || !['normal', 'dangerous'].includes(dangerLevel)) {
+      return res.status(400).json({ error: 'dangerLevel is required and must be "normal" or "dangerous"' })
+    }
+
+    sessionManager.setDangerLevel(sessionId, dangerLevel)
+    const updatedSession = sessionManager.getSession(sessionId)
+
+    res.json({ session: updatedSession })
+  })
+
   // Path confirmation (REST)
   app.post('/api/sessions/:id/confirm-path', async (req, res) => {
     const sessionId = req.params.id

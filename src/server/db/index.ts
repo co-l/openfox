@@ -115,6 +115,12 @@ function runMigrations(db: Database.Database): void {
     logger.info('Migrating sessions table: adding workflow_phase column')
     db.exec(`ALTER TABLE sessions ADD COLUMN workflow_phase TEXT NOT NULL DEFAULT 'plan'`)
   }
+
+  // Migration: Add danger_level column for dangerous/yolo mode
+  if (!columnNames.includes('danger_level')) {
+    logger.info('Migrating sessions table: adding danger_level column')
+    db.exec(`ALTER TABLE sessions ADD COLUMN danger_level TEXT NOT NULL DEFAULT 'normal'`)
+  }
   
   // Create settings table for global configuration (e.g., global instructions)
   db.exec(`

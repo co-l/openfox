@@ -13,6 +13,8 @@ import type {
 } from '../../shared/types.js'
 import { getDatabase } from './index.js'
 
+export type DangerLevel = 'normal' | 'dangerous'
+
 // ============================================================================
 // Session Operations
 // ============================================================================
@@ -23,8 +25,8 @@ export function createSession(projectId: string, workdir: string, title?: string
   const id = crypto.randomUUID()
 
   db.prepare(`
-    INSERT INTO sessions (id, project_id, workdir, phase, mode, workflow_phase, is_running, created_at, updated_at, title, provider_id, provider_model)
-    VALUES (?, ?, ?, 'idle', 'planner', 'plan', 0, ?, ?, ?, ?, ?)
+    INSERT INTO sessions (id, project_id, workdir, phase, mode, workflow_phase, is_running, created_at, updated_at, title, provider_id, provider_model, danger_level)
+    VALUES (?, ?, ?, 'idle', 'planner', 'plan', 0, ?, ?, ?, ?, ?, 'normal')
   `).run(id, projectId, workdir, now, now, title ?? null, providerId ?? null, providerModel ?? null)
 
   return {
@@ -49,6 +51,7 @@ export function createSession(projectId: string, workdir: string, title?: string
       totalToolCalls: 0,
       iterationCount: 0,
     },
+    dangerLevel: 'normal',
   }
 }
 
@@ -87,6 +90,7 @@ export function getSession(id: string): Session | null {
       totalToolCalls: row.total_tool_calls,
       iterationCount: row.iteration_count,
     },
+    dangerLevel: (row.danger_level ?? 'normal') as DangerLevel,
   }
 }
 
@@ -106,6 +110,15 @@ export function updateSessionMode(id: string, mode: SessionMode): void {
   db.prepare(`
     UPDATE sessions SET mode = ?, updated_at = ? WHERE id = ?
   `).run(mode, now, id)
+}
+
+export function updateSessionDangerLevel(id: string, dangerLevel: DangerLevel): void {
+  const db = getDatabase()
+  const now = new Date().toISOString()
+  
+  db.prepare(`
+    UPDATE sessions SET danger_level = ?, updated_at = ? WHERE id = ?
+  `).run(dangerLevel, now, id)
 }
 
 export function updateSessionPhase(id: string, phase: SessionPhase): void {
@@ -172,8 +185,6 @@ export function updateSessionMetadata(
 export function listSessions(): SessionSummary[] {
   const db = getDatabase()
   
-  // Count messages per session from events table (only user and assistant messages)
-  // Messages can be in message.start events OR embedded in turn.snapshot events
   const rows = db.prepare(`
     SELECT
       s.id,
@@ -227,8 +238,6 @@ export function listSessions(): SessionSummary[] {
 export function listSessionsByProject(projectId: string): SessionSummary[] {
   const db = getDatabase()
   
-  // Get sessions where project_id matches (workdir check removed to prevent session leakage)
-  // Messages can be in message.start events OR embedded in turn.snapshot events
   const rows = db.prepare(`
     SELECT
       s.id,
@@ -293,9 +302,9 @@ interface SessionRow {
   id: string
   project_id: string
   workdir: string
-  phase: string  // Legacy, kept for compatibility
+  phase: string
   mode: string
-  workflow_phase: string  // UI phase: plan/build/verification/done
+  workflow_phase: string
   is_running: number
   summary: string | null
   provider_id: string | null
@@ -306,6 +315,7 @@ interface SessionRow {
   total_tokens_used: number
   total_tool_calls: number
   iteration_count: number
+  danger_level: string
 }
 
 interface SessionSummaryRow {

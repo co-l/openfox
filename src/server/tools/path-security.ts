@@ -434,6 +434,7 @@ export async function checkPathsAccess(
  * @param callId - Unique ID for this confirmation request
  * @param tool - Name of the tool requesting access
  * @param onEvent - Callback to send events to the client
+ * @param dangerLevel - When 'dangerous', bypass confirmation and auto-approve all paths
  * @throws PathAccessDeniedError if user denies access
  */
 export async function requestPathAccess(
@@ -442,13 +443,21 @@ export async function requestPathAccess(
   sessionId: string,
   callId: string,
   tool: string,
-  onEvent: (event: ServerMessage) => void
+  onEvent: (event: ServerMessage) => void,
+  dangerLevel?: string
 ): Promise<void> {
   // Check which paths need confirmation
   const result = await checkPathsAccess(paths, workdir, sessionId)
   
   if (!result.needsConfirmation) {
     // All paths allowed
+    return
+  }
+  
+  // Bypass confirmation in dangerous mode - auto-approve all paths
+  if (dangerLevel === 'dangerous') {
+    const allPaths = [...new Set([...result.deniedPaths, ...result.sensitivePaths])]
+    addAllowedPaths(sessionId, allPaths)
     return
   }
   
