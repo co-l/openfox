@@ -2,7 +2,7 @@ import WebSocket from 'ws'
 import { terminalManager } from '../terminal/manager.js'
 
 interface TerminalMessage {
-  type: 'terminal.create' | 'terminal.write' | 'terminal.resize' | 'terminal.kill'
+  type: 'terminal.subscribe' | 'terminal.write' | 'terminal.resize' | 'terminal.kill'
   payload: {
     sessionId?: string
     data?: string
@@ -40,17 +40,22 @@ function registerOutputHandler(): void {
 
 export function handleTerminalMessage(ws: WebSocket, message: TerminalMessage): void {
   switch (message.type) {
-    case 'terminal.create': {
-      const session = terminalManager.create(message.payload.workdir)
-      
-      subscriptions.add({ ws, sessionId: session.id })
-      
-      ws.send(JSON.stringify({
-        type: 'terminal.created',
-        payload: { sessionId: session.id, workdir: session.workdir },
-      }))
-      
-      registerOutputHandler()
+    case 'terminal.subscribe': {
+      if (message.payload.sessionId) {
+        subscriptions.add({ ws, sessionId: message.payload.sessionId })
+        registerOutputHandler()
+        
+        const sessionId = message.payload.sessionId
+        const history = terminalManager.getOutputHistory(sessionId)
+        if (history) {
+          setTimeout(() => {
+            ws.send(JSON.stringify({
+              type: 'terminal.output',
+              payload: { sessionId, data: history },
+            }))
+          }, 100)
+        }
+      }
       break
     }
     case 'terminal.write': {

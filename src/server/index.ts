@@ -26,6 +26,7 @@ import { createCommandRoutes } from './routes/commands.js'
 import { createAgentRoutes } from './routes/agents.js'
 import { createWorkflowRoutes } from './routes/workflows.js'
 import { createDevServerRoutes } from './routes/dev-server.js'
+import { createTerminalRoutes } from './routes/terminals.js'
 import { devServerManager } from './dev-server/manager.js'
 import { getGlobalConfigDir } from '../cli/paths.js'
 import { logger, setLogLevel } from './utils/logger.js'
@@ -693,6 +694,7 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
   app.use('/api/agents', createAgentRoutes(configDir))
   app.use('/api/workflows', createWorkflowRoutes(configDir, config))
   app.use('/api/dev-server', createDevServerRoutes())
+  app.use('/api/terminals', createTerminalRoutes())
 
   // Branch API endpoint
   const { getCurrentBranch } = await import('./branch.api.js')

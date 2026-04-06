@@ -18,6 +18,7 @@ export type OutputCallback = (output: TerminalOutput) => void
 class TerminalManager {
   private sessions = new Map<string, TerminalSession>()
   private outputCallbacks = new Set<OutputCallback>()
+  private outputHistory = new Map<string, string[]>()
 
   private generateId(): string {
     return `term_${Date.now()}_${Math.random().toString(36).slice(2, 11)}`
@@ -59,6 +60,10 @@ class TerminalManager {
       for (const cb of this.outputCallbacks) {
         cb(output)
       }
+      const history = this.outputHistory.get(id) || []
+      history.push(data)
+      if (history.length > 10000) history.shift()
+      this.outputHistory.set(id, history)
     })
 
     this.sessions.set(id, session)
@@ -102,6 +107,10 @@ class TerminalManager {
 
   getAll(): TerminalSession[] {
     return Array.from(this.sessions.values())
+  }
+
+  getOutputHistory(sessionId: string): string {
+    return (this.outputHistory.get(sessionId) || []).join('')
   }
 
   onOutput(callback: OutputCallback): () => void {

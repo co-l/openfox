@@ -27,10 +27,11 @@ export interface TerminalState {
   setOpen: (open: boolean) => void
   toggleOpen: () => void
   setWorkdir: (workdir: string | null) => void
-  createSession: (workdir?: string) => void
+  fetchSessions: () => Promise<void>
+  createSession: (workdir?: string) => Promise<void>
   writeSession: (sessionId: string, data: string) => void
   resizeSession: (sessionId: string, cols: number, rows: number) => void
-  killSession: (sessionId: string) => void
+  killSession: (sessionId: string) => Promise<void>
   handleMessage: (message: { type: string; payload?: any }) => void
 }
 
@@ -46,10 +47,54 @@ export const useTerminalStore = create<TerminalState>((set, get) => {
 
     setWorkdir: (workdir) => set({ workdir }),
 
-    createSession: (workdir) => {
-      sendTerminalMessage('terminal.create', {
-        workdir: workdir ?? get().workdir ?? undefined,
-      })
+    fetchSessions: async () => {
+      try {
+        const res = await fetch('/api/terminals')
+        if (res.ok) {
+          const sessions = await res.json() as TerminalSession[]
+          set({ sessions })
+          
+          const ws = (wsClient as any).ws
+          if (ws && ws.readyState === WebSocket.OPEN) {
+            for (const session of sessions) {
+              ws.send(JSON.stringify({
+                id: generateUUID(),
+                type: 'terminal.subscribe',
+                payload: { sessionId: session.id },
+              }))
+            }
+          }
+        }
+      } catch (e) {
+        console.error('Failed to fetch terminals:', e)
+      }
+    },
+
+    createSession: async (workdir) => {
+      try {
+        const res = await fetch('/api/terminals', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ workdir: workdir ?? get().workdir ?? undefined }),
+        })
+        if (res.ok) {
+          const session = await res.json() as TerminalSession
+          set(state => ({
+            sessions: [...state.sessions, session],
+          }))
+          
+          const ws = (wsClient as any).ws
+          if (ws && ws.readyState === WebSocket.OPEN) {
+            ws.send(JSON.stringify({
+              id: generateUUID(),
+              type: 'terminal.subscribe',
+              payload: { sessionId: session.id },
+            }))
+          }
+        }
+      } catch (e) {
+        console.error('Failed to create terminal:', e)
+      }
     },
 
     writeSession: (sessionId, data) => {
@@ -60,24 +105,24 @@ export const useTerminalStore = create<TerminalState>((set, get) => {
       sendTerminalMessage('terminal.resize', { sessionId, cols, rows })
     },
 
-    killSession: (sessionId) => {
-      sendTerminalMessage('terminal.kill', { sessionId })
+    killSession: async (sessionId) => {
+      try {
+        const res = await fetch(`/api/terminals/${sessionId}`, {
+          method: 'DELETE',
+        })
+        if (res.ok) {
+          set(state => ({
+            sessions: state.sessions.filter(s => s.id !== sessionId),
+          }))
+        }
+      } catch (e) {
+        console.error('Failed to kill terminal:', e)
+      }
     },
 
     handleMessage: (message) => {
       switch (message.type) {
-        case 'terminal.created': {
-          const { sessionId, workdir } = message.payload
-          set(state => ({
-            sessions: [...state.sessions, { id: sessionId, workdir }],
-          }))
-          break
-        }
-        case 'terminal.killed': {
-          const { sessionId } = message.payload
-          set(state => ({
-            sessions: state.sessions.filter(s => s.id !== sessionId),
-          }))
+        case 'terminal.output': {
           break
         }
       }
