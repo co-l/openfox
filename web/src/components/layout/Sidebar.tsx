@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, useCallback } from 'react'
 import { useLocation } from 'wouter'
 import { useSessionStore } from '../../stores/session'
 import { useProjectStore } from '../../stores/project'
@@ -26,8 +26,36 @@ export function Sidebar({ projectId, isOpen = true, onClose }: SidebarProps) {
   const deleteSession = useSessionStore(state => state.deleteSession)
   const deleteAllSessions = useSessionStore(state => state.deleteAllSessions)
   const listSessions = useSessionStore(state => state.listSessions)
+  const loadMoreSessions = useSessionStore(state => state.loadMoreSessions)
+  const sessionsHasMore = useSessionStore(state => state.sessionsHasMore)
+  const sessionsPaginationLoading = useSessionStore(state => state.sessionsPaginationLoading)
 
   const currentProject = useProjectStore(state => state.currentProject)
+
+  const loadMoreRef = useRef<HTMLDivElement>(null)
+
+  const handleLoadMore = useCallback(() => {
+    if (sessionsHasMore && !sessionsPaginationLoading && currentProject) {
+      loadMoreSessions(currentProject.id)
+    }
+  }, [sessionsHasMore, sessionsPaginationLoading, currentProject, loadMoreSessions])
+
+  useEffect(() => {
+    if (!loadMoreRef.current || !sessionsHasMore) return
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        const entry = entries[0]
+        if (entry && entry.isIntersecting) {
+          handleLoadMore()
+        }
+      },
+      { threshold: 0.1 }
+    )
+
+    observer.observe(loadMoreRef.current)
+    return () => observer.disconnect()
+  }, [sessionsHasMore, handleLoadMore])
 
   // Filter sessions to those belonging to the current project by ID
   const projectSessions = sessions.filter(session => session.projectId === currentProject?.id)
@@ -155,9 +183,17 @@ export function Sidebar({ projectId, isOpen = true, onClose }: SidebarProps) {
               No sessions
             </div>
           ) : (
-            <div className="divide-y divide-border">
-              {renderSessionGroups(projectSessions, currentSession, unreadSessionIds, handleSelectSession, handleDeleteSession)}
-            </div>
+            <>
+              <div className="divide-y divide-border">
+                {renderSessionGroups(projectSessions, currentSession, unreadSessionIds, handleSelectSession, handleDeleteSession)}
+              </div>
+              {sessionsPaginationLoading && (
+                <div className="p-4 text-center text-text-muted text-xs">
+                  Loading more...
+                </div>
+              )}
+              <div ref={loadMoreRef} className="h-px" />
+            </>
           )}
         </div>
       </aside>

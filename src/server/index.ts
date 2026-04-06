@@ -199,16 +199,26 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
     const { getRecentUserPromptsForSession } = await import('./events/index.js')
 
     const projectId = req.query['projectId'] as string | undefined
-    const allSessions = sessionManager.listSessions()
-    const sessions = projectId ? allSessions.filter((s) => s.projectId === projectId) : allSessions
+    const limit = Math.min(parseInt(req.query['limit'] as string) || 20, 100)
+    const offset = parseInt(req.query['offset'] as string) || 0
 
-    // Add recent user prompts to each session (but not full messages - fetch those via /api/sessions/:id)
+    let sessions: ReturnType<typeof sessionManager.listSessions>
+    let hasMore = false
+
+    if (projectId) {
+      const result = sessionManager.listSessionsByProject(projectId, limit, offset)
+      sessions = result.sessions
+      hasMore = result.hasMore
+    } else {
+      sessions = sessionManager.listSessions()
+    }
+
     const sessionsWithPrompts = sessions.map((session) => ({
       ...session,
       recentUserPrompts: getRecentUserPromptsForSession(session.id, 10),
     }))
 
-    res.json({ sessions: sessionsWithPrompts })
+    res.json({ sessions: sessionsWithPrompts, hasMore })
   })
 
   app.post('/api/sessions', async (req, res) => {

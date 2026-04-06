@@ -110,8 +110,8 @@ export class SessionManager {
     // Auto-generate title if not provided
     let sessionTitle = title
     if (!sessionTitle) {
-      const existingSessions = dbListSessionsByProject(projectId)
-      sessionTitle = `Session ${existingSessions.length + 1}`
+      const existingSessions = dbListSessionsByProject(projectId, 1000, 0)
+      sessionTitle = `Session ${existingSessions.sessions.length + 1}`
     }
 
     logger.debug('Creating session', { projectId, workdir: project.workdir, title: sessionTitle })
@@ -163,14 +163,14 @@ export class SessionManager {
   }
 
   /**
-   * List sessions for a project.
+   * List sessions for a project with pagination.
    */
-  listSessionsByProject(projectId: string): SessionSummary[] {
+  listSessionsByProject(projectId: string, limit = 20, offset = 0): { sessions: SessionSummary[]; hasMore: boolean } {
     const project = getProject(projectId)
     if (!project) {
-      return []
+      return { sessions: [], hasMore: false }
     }
-    return dbListSessionsByProject(projectId)
+    return dbListSessionsByProject(projectId, limit, offset)
   }
 
   /**
@@ -211,9 +211,9 @@ export class SessionManager {
   deleteAllSessions(projectId: string, workdir: string): void {
     logger.debug('Deleting all sessions for project', { projectId, workdir })
 
-    const sessions = dbListSessionsByProject(projectId)
+    const result = dbListSessionsByProject(projectId, 10000, 0)
 
-    sessions.forEach((session) => {
+    result.sessions.forEach((session) => {
       this.deleteSession(session.id)
     })
   }

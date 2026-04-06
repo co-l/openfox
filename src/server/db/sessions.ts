@@ -235,9 +235,9 @@ export function listSessions(): SessionSummary[] {
   }))
 }
 
-export function listSessionsByProject(projectId: string): SessionSummary[] {
+export function listSessionsByProject(projectId: string, limit = 20, offset = 0): { sessions: SessionSummary[]; hasMore: boolean } {
   const db = getDatabase()
-  
+
   const rows = db.prepare(`
     SELECT
       s.id,
@@ -269,9 +269,11 @@ export function listSessionsByProject(projectId: string): SessionSummary[] {
     FROM sessions s
     WHERE s.project_id = ?
     ORDER BY s.updated_at DESC
-  `).all(projectId) as SessionSummaryRow[]
+    LIMIT ? OFFSET ?
+  `).all(projectId, limit + 1, offset) as SessionSummaryRow[]
 
-  return rows.map(row => ({
+  const hasMore = rows.length > limit
+  const sessions = rows.slice(0, limit).map(row => ({
     id: row.id,
     projectId: row.project_id,
     ...(row.title ? { title: row.title } : {}),
@@ -283,10 +285,12 @@ export function listSessionsByProject(projectId: string): SessionSummary[] {
     providerModel: row.provider_model ?? null,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
-    criteriaCount: 0, // Derived from events
-    criteriaCompleted: 0, // Derived from events
+    criteriaCount: 0,
+    criteriaCompleted: 0,
     messageCount: row.message_count,
   }))
+
+  return { sessions, hasMore }
 }
 
 export function deleteSession(id: string): void {

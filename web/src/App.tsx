@@ -39,7 +39,7 @@ function ProjectView({ sidebarOpen, onSidebarToggle }: { sidebarOpen: boolean, o
       if (currentProject?.id !== projectId) {
         loadProject(projectId)
       }
-      listSessions()
+      listSessions(projectId)
       clearSession()
     }
   }, [connectionStatus, projectId, currentProject?.id, loadProject, listSessions, clearSession])
@@ -94,10 +94,10 @@ function ProjectSessionView({
     if (connectionStatus === 'connected' && sessionId && session?.id !== sessionId && !pendingSessionCreate) {
       loadSession(sessionId)
     }
-    if (connectionStatus === 'connected') {
-      listSessions()
+    if (connectionStatus === 'connected' && projectId) {
+      listSessions(projectId)
     }
-  }, [connectionStatus, sessionId, session?.id, loadSession, listSessions, pendingSessionCreate])
+  }, [connectionStatus, sessionId, session?.id, loadSession, listSessions, pendingSessionCreate, projectId])
 
   // Redirect to project view if session not found
   useEffect(() => {

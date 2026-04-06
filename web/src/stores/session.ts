@@ -220,6 +220,10 @@ interface SessionState {
   // Error state
   error: { code: string; message: string } | null
 
+  // Sessions pagination
+  sessionsHasMore: boolean
+  sessionsPaginationLoading: boolean
+
   // Track new session creation: true while waiting for server, session ID once created (for navigation)
   pendingSessionCreate: boolean | string
 
@@ -230,9 +234,10 @@ interface SessionState {
   // Session management
   createSession: (projectId: string, title?: string) => Promise<Session | null>
   loadSession: (sessionId: string) => Promise<void>
-  listSessions: () => Promise<void>
+  listSessions: (projectId?: string, limit?: number) => Promise<void>
   deleteSession: (sessionId: string) => Promise<boolean>
   deleteAllSessions: (projectId: string) => Promise<boolean>
+  loadMoreSessions: (projectId: string) => Promise<void>
   clearSession: () => void
 
   // Unified chat (works in any mode)
@@ -447,6 +452,8 @@ export const useSessionStore = create<SessionState>((set, get) => {
     queuedMessages: [],
     abortInProgress: false,
     error: null,
+    sessionsHasMore: true,
+    sessionsPaginationLoading: false,
     pendingSessionCreate: false as boolean | string,
 
     connect: async () => {
@@ -458,7 +465,7 @@ export const useSessionStore = create<SessionState>((set, get) => {
       wsClient.onStatusChange((newStatus) => {
         set({ connectionStatus: newStatus })
         if (newStatus === 'connected') {
-          get().listSessions()
+          get().listSessions(undefined)
         }
       })
 
@@ -549,13 +556,40 @@ export const useSessionStore = create<SessionState>((set, get) => {
       }
     },
 
-    listSessions: async () => {
+    listSessions: async (projectId?: string, limit = 20) => {
       try {
-        const res = await fetch('/api/sessions')
+        const params = new URLSearchParams()
+        params.set('limit', String(limit))
+        if (projectId) {
+          params.set('projectId', projectId)
+        }
+        const res = await fetch(`/api/sessions?${params.toString()}`)
         const data = await res.json()
-        set({ sessions: data.sessions ?? [] })
+        set({ sessions: data.sessions ?? [], sessionsHasMore: projectId ? (data.hasMore ?? false) : true })
       } catch {
         // ignore
+      }
+    },
+
+    loadMoreSessions: async (projectId) => {
+      const state = get()
+      if (state.sessionsPaginationLoading || !state.sessionsHasMore) return
+
+      set({ sessionsPaginationLoading: true })
+      try {
+        const params = new URLSearchParams()
+        params.set('limit', '20')
+        params.set('offset', String(state.sessions.length))
+        params.set('projectId', projectId)
+        const res = await fetch(`/api/sessions?${params.toString()}`)
+        const data = await res.json()
+        set((state) => ({
+          sessions: [...state.sessions, ...(data.sessions ?? [])],
+          sessionsHasMore: data.hasMore ?? false,
+          sessionsPaginationLoading: false,
+        }))
+      } catch {
+        set({ sessionsPaginationLoading: false })
       }
     },
 
