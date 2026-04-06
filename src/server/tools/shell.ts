@@ -8,15 +8,7 @@ import {
 } from './path-security.js'
 import { terminateProcessTree } from '../utils/process-tree.js'
 
-const DANGEROUS_PATTERNS = [
-  /rm\s+(-rf?|--recursive)\s+[\/~]/,
-  /sudo\s/,
-  /chmod\s+777/,
-  />\s*\/dev\/sd/,
-  /mkfs\s/,
-  /dd\s+if=/,
-  /:\(\)\s*\{\s*:\s*\|\s*:\s*&\s*\}\s*;/,  // Fork bomb
-]
+
 
 interface RunCommandArgs {
   command: string
@@ -53,15 +45,6 @@ export const runCommandTool = createTool<RunCommandArgs>(
   },
   async (args, context, helpers) => {
     const timeout = Math.min(args.timeout ?? 120_000, 300_000)
-    
-    // Check for dangerous commands
-    for (const pattern of DANGEROUS_PATTERNS) {
-      if (pattern.test(args.command)) {
-        return helpers.error(
-          `Command appears dangerous and was blocked: ${args.command}\n\nIf you really need to run this, ask the user for confirmation.`
-        )
-      }
-    }
     
     // Resolve working directory
     const workingDir = args.cwd 
