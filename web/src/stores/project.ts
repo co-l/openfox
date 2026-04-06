@@ -55,6 +55,9 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
       if (!res.ok) return null
       const data = await res.json()
       set({ currentProject: data.project })
+      if (get().projects.length === 0) {
+        await get().listProjects()
+      }
       return data.project
     } catch {
       return null
