@@ -1,0 +1,123 @@
+import * as pty from 'node-pty'
+import os from 'node:os'
+import { logger } from '../utils/logger.js'
+
+export interface TerminalSession {
+  id: string
+  pty: pty.IPty
+  workdir: string
+}
+
+export interface TerminalOutput {
+  sessionId: string
+  data: string
+}
+
+export type OutputCallback = (output: TerminalOutput) => void
+
+class TerminalManager {
+  private sessions = new Map<string, TerminalSession>()
+  private outputCallbacks = new Set<OutputCallback>()
+
+  private generateId(): string {
+    return `term_${Date.now()}_${Math.random().toString(36).slice(2, 11)}`
+  }
+
+  private getShell(): string {
+    const shell = process.env['SHELL'] || '/bin/bash'
+    return shell
+  }
+
+  private resolveWorkdir(workdir: string | undefined): string {
+    if (workdir && workdir.length > 0) {
+      return workdir
+    }
+    return os.homedir()
+  }
+
+  create(workdir?: string): TerminalSession {
+    const id = this.generateId()
+    const shell = this.getShell()
+    const cwd = this.resolveWorkdir(workdir)
+
+    const ptyProcess = pty.spawn(shell, [], {
+      name: 'xterm-256color',
+      cols: 80,
+      rows: 24,
+      cwd,
+      env: process.env as { [key: string]: string },
+    })
+
+    const session: TerminalSession = {
+      id,
+      pty: ptyProcess,
+      workdir: cwd,
+    }
+
+    ptyProcess.onData((data: string) => {
+      const output: TerminalOutput = { sessionId: id, data }
+      for (const cb of this.outputCallbacks) {
+        cb(output)
+      }
+    })
+
+    this.sessions.set(id, session)
+    logger.info('Terminal session created', { id, shell, cwd })
+
+    return session
+  }
+
+  write(sessionId: string, data: string): boolean {
+    const session = this.sessions.get(sessionId)
+    if (!session) {
+      return false
+    }
+    session.pty.write(data)
+    return true
+  }
+
+  resize(sessionId: string, cols: number, rows: number): boolean {
+    const session = this.sessions.get(sessionId)
+    if (!session) {
+      return false
+    }
+    session.pty.resize(cols, rows)
+    return true
+  }
+
+  kill(sessionId: string): boolean {
+    const session = this.sessions.get(sessionId)
+    if (!session) {
+      return false
+    }
+    session.pty.kill()
+    this.sessions.delete(sessionId)
+    logger.info('Terminal session killed', { id: sessionId })
+    return true
+  }
+
+  get(sessionId: string): TerminalSession | undefined {
+    return this.sessions.get(sessionId)
+  }
+
+  getAll(): TerminalSession[] {
+    return Array.from(this.sessions.values())
+  }
+
+  onOutput(callback: OutputCallback): () => void {
+    this.outputCallbacks.add(callback)
+    return () => {
+      this.outputCallbacks.delete(callback)
+    }
+  }
+
+  killAll(): void {
+    for (const session of this.sessions.values()) {
+      session.pty.kill()
+    }
+    this.sessions.clear()
+    logger.info('All terminal sessions killed')
+  }
+}
+
+export const terminalManager = new TerminalManager()

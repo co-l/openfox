@@ -2,6 +2,7 @@ import { WebSocketServer, WebSocket } from 'ws'
 import type { Server } from 'node:http'
 import type { ServerMessage } from '../../shared/protocol.js'
 import { createServerMessage } from '../../shared/protocol.js'
+import { handleTerminalMessage, unsubscribeAllFromTerminal } from './terminal.js'
 import type { Config } from '../config.js'
 import type { LLMClientWithModel } from '../llm/client.js'
 import type { SessionManager } from '../session/index.js'
@@ -390,6 +391,12 @@ export function createWebSocketServer(
         ws.send(serializeServerMessage(createErrorMessage('INVALID_MESSAGE', 'Invalid message format')))
         return
       }
+
+      // Handle terminal messages separately
+      if (message.type.startsWith('terminal.')) {
+        handleTerminalMessage(ws, message as any)
+        return
+      }
       
       const client = clients.get(ws)!
       
@@ -419,6 +426,8 @@ export function createWebSocketServer(
           unsubscribe()
         }
       }
+      // Unsubscribe from all terminal sessions
+      unsubscribeAllFromTerminal(ws)
       clients.delete(ws)
     })
     

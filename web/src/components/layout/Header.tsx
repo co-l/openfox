@@ -3,7 +3,9 @@ import { Link, useLocation } from 'wouter'
 import { useSessionStore } from '../../stores/session'
 import { useProjectStore } from '../../stores/project'
 import { useConfigStore } from '../../stores/config'
+import { useTerminalStore } from '../../stores/terminal'
 import { GlobalSettingsModal } from '../settings/GlobalSettingsModal'
+import { TerminalModal } from '../terminal/TerminalModal'
 import { DropdownMenu, DropdownMenuItem } from '../shared/DropdownMenu'
 import { groupSessionsByDate, formatDateHeader, formatTime } from '../../lib/format-date'
 import type { SessionSummary } from '@shared/types.js'
@@ -167,6 +169,8 @@ export function Header({ onMenuClick, onCriteriaToggle, hasCriteria }: HeaderPro
   const projects = useProjectStore(state => state.projects)
   const startAutoRefresh = useConfigStore(state => state.startAutoRefresh)
   const stopAutoRefresh = useConfigStore(state => state.stopAutoRefresh)
+  const toggleTerminal = useTerminalStore(state => state.toggleOpen)
+  const terminalIsOpen = useTerminalStore(state => state.isOpen)
 
   // Start auto-refresh on mount
   useEffect(() => {
@@ -228,6 +232,19 @@ export function Header({ onMenuClick, onCriteriaToggle, hasCriteria }: HeaderPro
           </button>
         )}
 
+        {/* Terminal toggle button */}
+        <button
+          onClick={toggleTerminal}
+          className={`p-2.5 rounded hover:bg-bg-tertiary transition-colors ${
+            terminalIsOpen ? 'text-accent-primary' : 'text-text-muted hover:text-text-primary'
+          }`}
+          title="Toggle terminal"
+        >
+          <svg className="w-4 h-4" viewBox="0 0 20 20" fill="currentColor">
+            <path fillRule="evenodd" d="M2 5a2 2 0 012-2h12a2 2 0 012 2v10a2 2 0 01-2 2H4a2 2 0 01-2-2V5zm3 1h10v1H5V6zm10 7H5v1h10v-1zm-10 2H5v1h10v-1z" clipRule="evenodd" />
+          </svg>
+        </button>
+
         {/* Settings button */}
         <button
           onClick={() => setShowSettings(true)}
@@ -260,6 +277,9 @@ export function Header({ onMenuClick, onCriteriaToggle, hasCriteria }: HeaderPro
         isOpen={showSettings}
         onClose={() => setShowSettings(false)}
       />
+
+      {/* Terminal Modal */}
+      <TerminalModal isOpen={terminalIsOpen} onClose={() => toggleTerminal()} />
 
     </header>
   )
