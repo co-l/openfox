@@ -420,8 +420,35 @@ export async function checkPathsAccess(
 }
 
 // ===========================================================================
+// Dangerous Command Detection
+// ============================================================================
+
+const DANGEROUS_PATTERNS = [
+  /sudo\s/,
+  /rm\s+(-rf?|--recursive)\s+[\/~]/,
+  /chmod\s+777/,
+  />\s*\/dev\/sd/,
+  /mkfs\s/,
+  /dd\s+if=/,
+  /:\(\)\s*\{\s*:\s*\|\s*:\s*&\s*\}\s*;/,
+]
+
+export function extractDangerousPatterns(command: string): string[] {
+  const dangerous: string[] = []
+  for (const pattern of DANGEROUS_PATTERNS) {
+    if (pattern.test(command)) {
+      dangerous.push(pattern.source)
+    }
+  }
+  return dangerous
+}
+
+// ===========================================================================
 // Request Path Access (Promise-based flow)
 // ===========================================================================
+
+const PathDenialReasonDangerous = 'dangerous_command' as const
+type PathDenialReasonFull = typeof PathDenialReasonDangerous
 
 /**
  * Request access to paths outside the sandbox or sensitive files.
@@ -435,6 +462,7 @@ export async function checkPathsAccess(
  * @param tool - Name of the tool requesting access
  * @param onEvent - Callback to send events to the client
  * @param dangerLevel - When 'dangerous', bypass confirmation and auto-approve all paths
+ * @param command - Optional command string to check for dangerous patterns
  * @throws PathAccessDeniedError if user denies access
  */
 export async function requestPathAccess(
@@ -444,8 +472,22 @@ export async function requestPathAccess(
   callId: string,
   tool: string,
   onEvent: (event: ServerMessage) => void,
-  dangerLevel?: string
+  dangerLevel?: string,
+  command?: string
 ): Promise<void> {
+  // Check for dangerous commands that need confirmation even without path access
+  if (dangerLevel !== 'dangerous' && command) {
+    const dangerousPatterns = extractDangerousPatterns(command)
+    if (dangerousPatterns.length > 0) {
+      const confirmationPromise = registerPathConfirmation(callId, [workdir], sessionId)
+      onEvent(createChatPathConfirmationMessage(callId, tool, [dangerousPatterns.join(', ')], workdir, 'dangerous_command'))
+      const approved = await confirmationPromise
+      if (!approved) {
+        throw new PathAccessDeniedError(dangerousPatterns, tool, 'dangerous_command')
+      }
+    }
+  }
+
   // Check which paths need confirmation
   const result = await checkPathsAccess(paths, workdir, sessionId)
   
@@ -491,7 +533,7 @@ export async function requestPathAccess(
 // Error Classes
 // ===========================================================================
 
-export type PathDenialReason = 'outside_workdir' | 'sensitive_file' | 'both'
+export type PathDenialReason = 'outside_workdir' | 'sensitive_file' | 'both' | 'dangerous_command'
 
 /**
  * Error thrown when user denies path access.

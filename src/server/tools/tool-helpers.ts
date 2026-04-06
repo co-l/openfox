@@ -13,7 +13,7 @@ export interface ToolHelpers {
   resolvePath: (path: string) => string
   
   /** Check path access and request user confirmation if needed. Throws PathAccessDeniedError if denied. */
-  checkPathAccess: (paths: string[]) => Promise<void>
+  checkPathAccess: (paths: string[], command?: string) => Promise<void>
   
   /** Create an error result with timing */
   error: (message: string, truncated?: boolean) => ToolResult
@@ -76,7 +76,7 @@ export function createTool<TArgs>(
         resolvePath: (path: string) => 
           isAbsolute(path) ? path : resolve(context.workdir, path),
         
-        checkPathAccess: async (paths: string[]) => {
+        checkPathAccess: async (paths: string[], command?: string) => {
           if (context.onEvent) {
             await requestPathAccess(
               paths,
@@ -85,7 +85,8 @@ export function createTool<TArgs>(
               crypto.randomUUID(),
               name,
               context.onEvent,
-              context.dangerLevel
+              context.dangerLevel,
+              command
             )
           }
         },

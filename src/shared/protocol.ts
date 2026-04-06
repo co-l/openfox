@@ -300,7 +300,7 @@ export interface ChatErrorPayload {
 }
 
 // Path confirmation payloads
-export type PathConfirmationReason = 'outside_workdir' | 'sensitive_file' | 'both'
+export type PathConfirmationReason = 'outside_workdir' | 'sensitive_file' | 'both' | 'dangerous_command'
 
 export interface ChatPathConfirmationPayload {
   callId: string

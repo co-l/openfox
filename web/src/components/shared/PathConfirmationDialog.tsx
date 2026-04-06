@@ -23,6 +23,12 @@ function getReasonMessage(reason: PendingPathConfirmation['reason']): {
         description: 'is trying to access sensitive files outside the project directory:',
         warning: 'These files may contain secrets and are outside your project. Only allow access if you trust this operation.',
       }
+    case 'dangerous_command':
+      return {
+        title: 'Dangerous Command',
+        description: 'is trying to run a potentially dangerous command:',
+        warning: 'This command could be harmful. Only allow if you trust this operation.',
+      }
     case 'outside_workdir':
     default:
       return {

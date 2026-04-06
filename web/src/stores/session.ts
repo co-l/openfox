@@ -169,7 +169,7 @@ export interface PendingPathConfirmation {
   tool: string
   paths: string[]
   workdir: string
-  reason: 'outside_workdir' | 'sensitive_file' | 'both'
+  reason: 'outside_workdir' | 'sensitive_file' | 'both' | 'dangerous_command'
 }
 
 // Pending ask_user question from server

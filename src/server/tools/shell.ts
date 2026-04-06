@@ -69,7 +69,8 @@ export const runCommandTool = createTool<RunCommandArgs>(
     }
     
     // Check all paths - request confirmation for paths outside workdir or sensitive files
-    await helpers.checkPathAccess(pathsToCheck)
+    // Also checks for dangerous commands
+    await helpers.checkPathAccess(pathsToCheck, args.command)
     
     // Execute command
     const result = await executeCommand(args.command, workingDir, timeout, context.signal, context.onProgress)
