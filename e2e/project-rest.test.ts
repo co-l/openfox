@@ -12,6 +12,11 @@ describe('Project REST API', () => {
   let server: TestServerHandle
 
   beforeAll(async () => {
+    // Clean up any leftover test directories
+    const { rm } = await import('node:fs/promises')
+    const dirs = ['/tmp/test-project', '/tmp/my-project', '/tmp/p1', '/tmp/p2', '/tmp/load-me', '/tmp/original', '/tmp/instructions', '/tmp/clear', '/tmp/delete-me']
+    await Promise.all(dirs.map(d => rm(d, { recursive: true, force: true }).catch(() => {})))
+    
     server = await createTestServer()
   })
 

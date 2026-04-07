@@ -13,7 +13,7 @@
         }
       ],
       "isActive": true,
-      "createdAt": "2026-04-07T15:17:08.462Z"
+      "createdAt": "2026-04-07T15:49:26.483Z"
     },
     {
       "id": "test-fuzzy-provider",
@@ -28,7 +28,7 @@
         }
       ],
       "isActive": true,
-      "createdAt": "2026-04-07T15:17:02.791Z"
+      "createdAt": "2026-04-07T15:49:20.693Z"
     },
     {
       "id": "test-restart-provider",
@@ -43,7 +43,7 @@
         }
       ],
       "isActive": true,
-      "createdAt": "2026-04-07T15:17:01.772Z"
+      "createdAt": "2026-04-07T15:49:19.674Z"
     }
   ],
   "defaultModelSelection": "test-context-update-provider/test-context-update-model",

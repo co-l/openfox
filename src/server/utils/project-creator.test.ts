@@ -45,12 +45,17 @@ describe('project-creator', () => {
     })
 
     it('should reject project names with invalid characters', () => {
-      const invalidNames = ['my project', 'my/project', 'my\\project', 'my@project', 'my#project']
+      const invalidNames = ['my@project', 'my#project', 'my$project']
       
       for (const name of invalidNames) {
         const result = validateProjectName(name)
         expect(result.valid).toBe(false)
       }
+    })
+
+    it('should accept project names with spaces', () => {
+      const result = validateProjectName('my project')
+      expect(result.valid).toBe(true)
     })
 
     it('should reject path traversal attempts', () => {
@@ -93,23 +98,24 @@ describe('project-creator', () => {
       
       const project = await createDirectoryWithGit(projectName, testDir)
       
-      // Check project was created in database
+      // Check project was created in database with base workdir
       expect(project.name).toBe(projectName)
-      expect(project.workdir).toBe(join(testDir, projectName))
+      expect(project.workdir).toBe(testDir)
       
-      // Check directory exists
-      const dirExists = await directoryExists(project.workdir)
+      // Check directory with sanitized name exists (spaces replaced with hyphens)
+      const fullPath = join(testDir, projectName)
+      const dirExists = await directoryExists(fullPath)
       expect(dirExists).toBe(true)
       
       // Check git repository was initialized
-      const gitDir = join(project.workdir, '.git')
+      const gitDir = join(fullPath, '.git')
       const gitExists = await directoryExists(gitDir)
       expect(gitExists).toBe(true)
     })
 
     it('should reject invalid project names', async () => {
-      await expect(createDirectoryWithGit('invalid name', testDir)).rejects.toThrow('only contain')
       await expect(createDirectoryWithGit('invalid/name', testDir)).rejects.toThrow('only contain')
+      await expect(createDirectoryWithGit('invalid\\name', testDir)).rejects.toThrow('only contain')
     })
 
     it('should reject if directory already exists', async () => {
@@ -127,8 +133,9 @@ describe('project-creator', () => {
       const projectName = 'test-git-cleanup'
       const project = await createDirectoryWithGit(projectName, testDir)
       
-      // Verify git is initialized
-      const gitDir = join(project.workdir, '.git')
+      // Verify git is initialized in full path
+      const fullPath = join(testDir, projectName)
+      const gitDir = join(fullPath, '.git')
       const gitExists = await directoryExists(gitDir)
       expect(gitExists).toBe(true)
     })
@@ -139,9 +146,10 @@ describe('project-creator', () => {
       const project = await createDirectoryWithGit(projectName, testDir)
       
       expect(project.name).toBe(projectName)
-      expect(project.workdir).toBe(join(testDir, projectName))
+      expect(project.workdir).toBe(testDir)
       
-      const dirExists = await directoryExists(project.workdir)
+      const fullPath = join(testDir, projectName)
+      const dirExists = await directoryExists(fullPath)
       expect(dirExists).toBe(true)
     })
   })
