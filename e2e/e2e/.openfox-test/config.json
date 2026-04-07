@@ -13,7 +13,7 @@
         }
       ],
       "isActive": true,
-      "createdAt": "2026-04-04T09:37:10.040Z"
+      "createdAt": "2026-04-07T15:17:08.462Z"
     },
     {
       "id": "test-fuzzy-provider",
@@ -28,7 +28,7 @@
         }
       ],
       "isActive": true,
-      "createdAt": "2026-04-04T09:37:04.499Z"
+      "createdAt": "2026-04-07T15:17:02.791Z"
     },
     {
       "id": "test-restart-provider",
@@ -43,7 +43,7 @@
         }
       ],
       "isActive": true,
-      "createdAt": "2026-04-04T09:37:03.483Z"
+      "createdAt": "2026-04-07T15:17:01.772Z"
     }
   ],
   "defaultModelSelection": "test-context-update-provider/test-context-update-model",
@@ -61,5 +61,11 @@
   },
   "workspace": {
     "workdir": "/home/conrad/dev/openfox/e2e"
+  },
+  "visionFallback": {
+    "enabled": false,
+    "url": "http://localhost:11434",
+    "model": "qwen3-vl:2b",
+    "timeout": 120
   }
 }

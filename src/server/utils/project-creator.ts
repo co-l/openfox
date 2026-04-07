@@ -6,19 +6,19 @@ import type { Project } from '../../shared/types.js'
 
 /**
  * Validate a project name for safe directory creation.
- * Only allows alphanumeric characters, hyphens, underscores, and dots.
+ * Allows alphanumeric characters, hyphens, underscores, dots, and spaces.
  */
 export function validateProjectName(name: string): { valid: true } | { valid: false; error: string } {
   if (!name || name.trim() === '') {
     return { valid: false, error: 'Project name cannot be empty' }
   }
   
-  // Check for valid characters (alphanumeric, hyphens, underscores, dots)
-  const validPattern = /^[a-zA-Z0-9._-]+$/
+  // Check for valid characters (alphanumeric, hyphens, underscores, dots, spaces)
+  const validPattern = /^[a-zA-Z0-9._ -]+$/
   if (!validPattern.test(name)) {
     return { 
       valid: false, 
-      error: 'Project name can only contain letters, numbers, hyphens, underscores, and dots' 
+      error: 'Project name can only contain letters, numbers, hyphens, underscores, dots, and spaces' 
     }
   }
   
@@ -59,8 +59,9 @@ export async function createDirectoryWithGit(projectName: string, workdir: strin
     throw new Error(validation.error)
   }
   
-  // Build full path
-  const fullPath = join(workdir, projectName)
+  // Build full path - sanitize name for filesystem (replace spaces with hyphens)
+  const sanitizedName = projectName.trim().replace(/\s+/g, '-')
+  const fullPath = join(workdir, sanitizedName)
   
   // Check if directory already exists
   const exists = await directoryExists(fullPath)
@@ -88,8 +89,8 @@ export async function createDirectoryWithGit(projectName: string, workdir: strin
     throw new Error(`Failed to initialize git repository: ${errorMessage}`)
   }
   
-  // Register project in database
-  const project = createProjectDb(projectName, fullPath)
+  // Register project in database with base workdir (not full path)
+  const project = createProjectDb(projectName, workdir)
   
   return project
 }
