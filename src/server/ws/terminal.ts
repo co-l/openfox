@@ -42,7 +42,12 @@ export function handleTerminalMessage(ws: WebSocket, message: TerminalMessage): 
   switch (message.type) {
     case 'terminal.subscribe': {
       if (message.payload.sessionId) {
-        subscriptions.add({ ws, sessionId: message.payload.sessionId })
+        const exists = Array.from(subscriptions).some(
+          sub => sub.ws === ws && sub.sessionId === message.payload.sessionId
+        )
+        if (!exists) {
+          subscriptions.add({ ws, sessionId: message.payload.sessionId })
+        }
         registerOutputHandler()
         
         const sessionId = message.payload.sessionId
