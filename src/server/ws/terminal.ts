@@ -65,7 +65,7 @@ export function handleTerminalMessage(ws: WebSocket, message: TerminalMessage): 
       break
     }
     case 'terminal.resize': {
-      if (message.payload.sessionId && message.payload.cols && message.payload.rows) {
+      if (message.payload.sessionId && typeof message.payload.cols === 'number' && typeof message.payload.rows === 'number') {
         terminalManager.resize(message.payload.sessionId, message.payload.cols, message.payload.rows)
       }
       break

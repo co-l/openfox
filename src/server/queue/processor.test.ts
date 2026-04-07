@@ -33,7 +33,11 @@ describe('QueueProcessor', () => {
       getContextState: vi.fn(() => ({ currentTokens: 100, maxTokens: 1000, compactionCount: 0, dangerZone: false, canCompact: true })),
     }
 
-    mockProviderManager = {}
+    mockProviderManager = {
+      getActiveProviderId: vi.fn(),
+      getCurrentModel: vi.fn(),
+      activateProvider: vi.fn(),
+    }
     mockGetLLMClient = vi.fn(() => ({
       getModel: () => 'test-model',
       getBackend: () => 'test',
@@ -114,6 +118,71 @@ describe('QueueProcessor', () => {
       callback({ type: 'queue_added', sessionId: 'sess-1', queueId: 'q-1', mode: 'asap', content: 'hello' })
 
       expect(mockSessionManager.setRunning).not.toHaveBeenCalled()
+    })
+  })
+
+  describe('session provider', () => {
+    it('should use session provider when session has custom providerId and providerModel', async () => {
+      const mockProvider = {
+        id: 'provider-2',
+        name: 'Provider 2',
+        backend: 'openai' as const,
+        url: 'https://api.example.com',
+        models: [],
+      }
+      const mockActivateProvider = vi.fn().mockResolvedValue({ success: true })
+      mockProviderManager.getProviders = vi.fn(() => [mockProvider])
+      mockProviderManager.activateProvider = mockActivateProvider
+
+      mockSessionManager.getSession.mockReturnValue({
+        id: 'sess-1',
+        isRunning: false,
+        metadata: { title: undefined },
+        providerId: 'provider-2',
+        providerModel: 'custom-model',
+      })
+      mockSessionManager.hasQueuedMessages.mockReturnValue(true)
+      mockSessionManager.getQueueState.mockReturnValue([
+        { queueId: 'q-1', mode: 'asap', content: 'hello', queuedAt: '2024-01-01' },
+      ])
+
+      queueProcessor.start()
+
+      const callback = mockSessionManager.subscribe.mock.calls[0][0]
+      callback({ type: 'queue_added', sessionId: 'sess-1', queueId: 'q-1', mode: 'asap', content: 'hello' })
+
+      // Wait for the async runTurn to complete
+      await new Promise(resolve => setTimeout(resolve, 50))
+
+      // Verify activateProvider was called with the session's provider and model
+      expect(mockActivateProvider).toHaveBeenCalledWith('provider-2', { model: 'custom-model' })
+    })
+
+    it('should use global provider when session has no custom provider', async () => {
+      const mockActivateProvider = vi.fn().mockResolvedValue({ success: true })
+      mockProviderManager.activateProvider = mockActivateProvider
+
+      mockSessionManager.getSession.mockReturnValue({
+        id: 'sess-1',
+        isRunning: false,
+        metadata: { title: undefined },
+        // No providerId or providerModel - should use global
+      })
+      mockSessionManager.hasQueuedMessages.mockReturnValue(true)
+      mockSessionManager.getQueueState.mockReturnValue([
+        { queueId: 'q-1', mode: 'asap', content: 'hello', queuedAt: '2024-01-01' },
+      ])
+
+      queueProcessor.start()
+
+      const callback = mockSessionManager.subscribe.mock.calls[0][0]
+      callback({ type: 'queue_added', sessionId: 'sess-1', queueId: 'q-1', mode: 'asap', content: 'hello' })
+
+      // Wait for the async runTurn to complete
+      await new Promise(resolve => setTimeout(resolve, 50))
+
+      // Verify activateProvider was NOT called when session has no custom provider
+      expect(mockActivateProvider).not.toHaveBeenCalled()
     })
   })
 

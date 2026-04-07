@@ -180,7 +180,28 @@ export class QueueProcessor {
   }
 
   private async runTurn(sessionId: string, controller: AbortController): Promise<void> {
-    const { sessionManager, getLLMClient, getActiveProvider, broadcastForSession } = this.deps
+    const { sessionManager, getLLMClient, getActiveProvider, broadcastForSession, providerManager } = this.deps
+    const session = sessionManager.getSession(sessionId)
+
+    if (session?.providerId && session.providerModel) {
+      const currentActiveProviderId = providerManager.getActiveProviderId()
+      const currentModel = providerManager.getCurrentModel()
+
+      if (currentActiveProviderId !== session.providerId || currentModel !== session.providerModel) {
+        logger.info('Switching to session provider', {
+          sessionId,
+          fromProvider: currentActiveProviderId,
+          fromModel: currentModel,
+          toProvider: session.providerId,
+          toModel: session.providerModel,
+        })
+        const result = await providerManager.activateProvider(session.providerId, { model: session.providerModel })
+        if (!result.success) {
+          logger.error('Failed to activate session provider', { sessionId, error: result.error })
+        }
+      }
+    }
+
     const llmClient = getLLMClient()
     const provider = getActiveProvider?.()
 

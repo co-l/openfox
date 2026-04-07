@@ -15,6 +15,7 @@ export function TerminalPane({ sessionId, onClose }: TerminalPaneProps) {
   const termRef = useRef<any>(null)
 
   const writeSession = useTerminalStore(state => state.writeSession)
+  const resizeSession = useTerminalStore(state => state.resizeSession)
 
   useEffect(() => {
     sessionIdRef.current = sessionId
@@ -42,19 +43,14 @@ export function TerminalPane({ sessionId, onClose }: TerminalPaneProps) {
     term.open(terminalRef.current)
     fitAddon.fit()
 
-    let lastWidth = 0
-    let lastHeight = 0
-
     const resizeObserver = new ResizeObserver(() => {
-      const rect = terminalRef.current!.getBoundingClientRect()
-      const newWidth = Math.floor(rect.width)
-      const newHeight = Math.floor(rect.height)
-
-      if (newWidth !== lastWidth || newHeight !== lastHeight) {
-        lastWidth = newWidth
-        lastHeight = newHeight
+      requestAnimationFrame(() => {
         fitAddon.fit()
-      }
+        const dims = fitAddon.proposeDimensions()
+        if (dims && dims.cols > 0 && dims.rows > 0) {
+          resizeSession(sessionIdRef.current, dims.cols, dims.rows)
+        }
+      })
     })
     resizeObserver.observe(terminalRef.current)
 
@@ -77,7 +73,7 @@ export function TerminalPane({ sessionId, onClose }: TerminalPaneProps) {
       term.dispose()
       termRef.current = null
     }
-  }, [sessionId, writeSession])
+  }, [sessionId, writeSession, resizeSession])
 
   return (
     <div className="flex flex-col h-full bg-[#1a1a1a]">
