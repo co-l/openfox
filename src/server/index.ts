@@ -157,8 +157,8 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
     if (!name || !workdir) {
       return res.status(400).json({ error: 'name and workdir are required' })
     }
-    const { createProject } = await import('./db/projects.js')
-    const project = createProject(name, workdir)
+    const { createDirectoryWithGit } = await import('./utils/project-creator.js')
+    const project = await createDirectoryWithGit(name, workdir)
     res.status(201).json({ project })
   })
 

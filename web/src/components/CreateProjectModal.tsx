@@ -69,12 +69,14 @@ export function CreateProjectModal({ isOpen, onClose }: CreateProjectModalProps)
     setLoading(true)
     setError(null)
     
+    const fullPath = `${workdir}/${projectName}`
+    
     try {
       // Create project via REST API
       const response = await fetch('/api/projects', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: projectName, workdir }),
+        body: JSON.stringify({ name: projectName, workdir: fullPath }),
       })
       
       if (!response.ok) {
