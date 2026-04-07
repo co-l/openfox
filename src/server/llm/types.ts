@@ -37,6 +37,7 @@ export interface LLMCompletionResponse {
   content: string
   toolCalls?: ToolCall[]
   thinkingContent?: string
+  reasoning_content?: string
   finishReason: 'stop' | 'tool_calls' | 'length' | 'content_filter'
   usage: {
     promptTokens: number

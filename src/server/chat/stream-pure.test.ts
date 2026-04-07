@@ -268,4 +268,63 @@ describe('stream-pure', () => {
       data: { attempt: 2, maxAttempts: 10 },
     })
   })
+
+  describe('MiniMax empty response regression', () => {
+    it('should handle empty first response then continue (MiniMax disableThinking bug)', async () => {
+      const emptyThenContent: LLMStreamEvent[] = [
+        { type: 'done', response: { 
+          id: 'resp-1', 
+          content: '', 
+          finishReason: 'stop', 
+          usage: { promptTokens: 10, completionTokens: 0, totalTokens: 10 } 
+        }},
+      ]
+
+      const client = createMockClient(emptyThenContent)
+      
+      const gen = streamLLMPure({
+        messageId: 'msg-empty',
+        systemPrompt: 'system',
+        llmClient: client,
+        messages: [{ role: 'user', content: 'summarize' }],
+        disableThinking: true,
+      })
+
+      const events: Array<{ type: string; data: unknown }> = []
+      const result = await consumeStreamGenerator(gen, event => {
+        events.push(event)
+      })
+
+      expect(result.content).toBe('')
+      expect(result.thinkingContent).toBeUndefined()
+    })
+
+    it('should use reasoning_content as fallback when content is empty and no thinking_delta', async () => {
+      // MiniMax with disableThinking=true: no thinking_delta, but reasoning_content in done response
+      const withReasoningOnly: LLMStreamEvent[] = [
+        { type: 'done', response: { 
+          id: 'resp-2', 
+          content: '', 
+          reasoning_content: 'This is the thinking summary that should be used',
+          finishReason: 'stop', 
+          usage: { promptTokens: 100, completionTokens: 50, totalTokens: 150 } 
+        }},
+      ]
+
+      const client = createMockClient(withReasoningOnly)
+      
+      const gen = streamLLMPure({
+        messageId: 'msg-thinking',
+        systemPrompt: 'system',
+        llmClient: client,
+        messages: [{ role: 'user', content: 'summarize' }],
+        disableThinking: true,
+      })
+
+      const result = await consumeStreamGenerator(gen, () => {})
+
+      expect(result.content).toBe('')
+      expect(result.thinkingContent).toBe('This is the thinking summary that should be used')
+    })
+  })
 })

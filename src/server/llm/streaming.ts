@@ -181,9 +181,13 @@ export async function* streamWithSegments(
   const completionTime = (endTime - (firstTokenTime ?? startTime)) / 1000
   const { promptTokens, completionTokens } = response.usage
   
+  // MiniMax disableThinking bug: content may be empty but reasoning_content is in response
+  // Use reasoning_content as fallback for thinkingContent when content is empty
+  const effectiveThinkingContent = thinkingContent || (content === '' && response.reasoning_content) || ''
+
   return {
     content,
-    thinkingContent,
+    thinkingContent: effectiveThinkingContent,
     toolCalls,
     response,
     segments,
