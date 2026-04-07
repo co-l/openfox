@@ -13,6 +13,7 @@ export function TerminalPane({ sessionId, onClose }: TerminalPaneProps) {
   const terminalRef = useRef<HTMLDivElement>(null)
   const sessionIdRef = useRef(sessionId)
   const termRef = useRef<any>(null)
+  const resizeTimeoutRef = useRef<NodeJS.Timeout | null>(null)
 
   const writeSession = useTerminalStore(state => state.writeSession)
   const resizeSession = useTerminalStore(state => state.resizeSession)
@@ -35,22 +36,32 @@ export function TerminalPane({ sessionId, onClose }: TerminalPaneProps) {
       },
       cursorBlink: true,
       cursorStyle: 'bar',
+      convertEol: true,
     })
 
     const fitAddon = new FitAddon()
     term.loadAddon(fitAddon)
     termRef.current = { term, fitAddon }
     term.open(terminalRef.current)
+    const terminalElement = terminalRef.current.querySelector('.xterm') as HTMLElement | null
+    if (terminalElement) {
+      terminalElement.style.padding = '8px'
+    }
     fitAddon.fit()
 
     const resizeObserver = new ResizeObserver(() => {
-      requestAnimationFrame(() => {
-        fitAddon.fit()
-        const dims = fitAddon.proposeDimensions()
-        if (dims && dims.cols > 0 && dims.rows > 0) {
-          resizeSession(sessionIdRef.current, dims.cols, dims.rows)
-        }
-      })
+      if (resizeTimeoutRef.current) {
+        clearTimeout(resizeTimeoutRef.current)
+      }
+      resizeTimeoutRef.current = setTimeout(() => {
+        requestAnimationFrame(() => {
+          fitAddon.fit()
+          const termInstance = termRef.current?.term
+          if (termInstance && termInstance.cols > 0 && termInstance.rows > 0) {
+            resizeSession(sessionIdRef.current, termInstance.cols, termInstance.rows)
+          }
+        })
+      }, 100)
     })
     resizeObserver.observe(terminalRef.current)
 
@@ -70,6 +81,9 @@ export function TerminalPane({ sessionId, onClose }: TerminalPaneProps) {
     return () => {
       unsubscribe()
       resizeObserver.disconnect()
+      if (resizeTimeoutRef.current) {
+        clearTimeout(resizeTimeoutRef.current)
+      }
       term.dispose()
       termRef.current = null
     }
@@ -89,7 +103,7 @@ export function TerminalPane({ sessionId, onClose }: TerminalPaneProps) {
           </svg>
         </button>
       </div>
-      <div ref={terminalRef} className="flex-1 p-2" style={{ boxSizing: 'border-box' }} />
+      <div ref={terminalRef} className="flex-1 relative overflow-hidden" />
     </div>
   )
 }
