@@ -5,7 +5,9 @@ import { DiffView, FilePreview, EditContextView, ReadFileView } from './DiffView
 import { DiagnosticsView } from './DiagnosticsView'
 import { RunCommandView } from './RunCommandView'
 import { Markdown } from './Markdown'
+import { PathConfirmationButtons } from './PathConfirmationButtons'
 import { formatToolArgsFull, formatToolArgsWithMetadata } from '../../lib/formatToolArgs'
+import { useSessionStore, type PendingPathConfirmation } from '../../stores/session'
 
 type ToolStatus = 'pending' | 'success' | 'error' | 'interrupted'
 
@@ -30,6 +32,8 @@ interface ToolCallDisplayProps {
   streamingOutput?: StreamingChunk[]  // Real-time output chunks
   // For enhanced display with metadata
   metadata?: Record<string, unknown>  // Tool-specific metadata
+  // For path confirmation matching
+  callId?: string
 }
 
 const statusConfig = {
@@ -68,6 +72,7 @@ export const ToolCallDisplay = memo(function ToolCallDisplay({
   startedAt,
   streamingOutput,
   metadata,
+  callId,
 }: ToolCallDisplayProps) {
   // Auto-expand file operations and running commands so content is immediately visible
   const isFileOperation = tool === 'edit_file' || tool === 'write_file'
@@ -76,6 +81,13 @@ export const ToolCallDisplay = memo(function ToolCallDisplay({
   const isReturnValue = tool === 'return_value'
   const [expanded, setExpanded] = useState(isFileOperation || isRunningCommand || isReturnValue)
   const config = statusConfig[status]
+
+  // Check if there's a pending path confirmation matching this tool call
+  const pendingPathConfirmation = useSessionStore(state => state.pendingPathConfirmation)
+  const pendingConfirmation: PendingPathConfirmation | null = 
+    status === 'pending' && pendingPathConfirmation && callId && pendingPathConfirmation.callId === callId
+      ? pendingPathConfirmation
+      : null
   
   // Compact variant - single line, no expansion
   if (variant === 'compact') {
@@ -108,6 +120,11 @@ export const ToolCallDisplay = memo(function ToolCallDisplay({
         </span>
         <span className="text-text-muted text-xs">{expanded ? '▼' : '▶'}</span>
       </button>
+
+      {/* Inline path confirmation for pending tools */}
+      {pendingConfirmation && (
+        <PathConfirmationButtons confirmation={pendingConfirmation} />
+      )}
       
       {(expanded || isReadFile) && (
         <div className="p-2 bg-bg-secondary border-t border-border space-y-2 min-w-0">

@@ -7,7 +7,7 @@ import { createSessionRunningMessage, createChatMessageMessage, createContextSta
 import { needsNameGeneration, generateSessionName } from '../session/name-generator.js'
 import { updateSessionMetadata } from '../db/sessions.js'
 import { getEventStore } from '../events/index.js'
-import { buildMessagesFromStoredEvents } from '../events/folding.js'
+import { buildMessagesFromStoredEvents, foldPendingConfirmations } from '../events/folding.js'
 
 interface QueueProcessorDeps {
   sessionManager: SessionManager
@@ -163,7 +163,8 @@ export class QueueProcessor {
               if (updatedSession) {
                 const events = eventStore.getEvents(sessionId)
                 const messages = buildMessagesFromStoredEvents(events)
-                broadcastForSession(sessionId, createSessionStateMessage(updatedSession, messages))
+                const pendingConfirmations = foldPendingConfirmations(events)
+                broadcastForSession(sessionId, createSessionStateMessage(updatedSession, messages, pendingConfirmations))
               }
             }
           })

@@ -3,6 +3,7 @@ import { resolve, normalize, join } from 'node:path'
 import { homedir } from 'node:os'
 import type { ServerMessage } from '../../shared/protocol.js'
 import { createChatPathConfirmationMessage } from '../ws/protocol.js'
+import { getEventStore } from '../events/index.js'
 
 // ===========================================================================
 // Constants
@@ -475,10 +476,24 @@ export async function requestPathAccess(
   dangerLevel?: string,
   command?: string
 ): Promise<void> {
+  // Helper to emit path.confirmation_pending event
+  const emitPendingEvent = (confirmationPaths: string[], confirmationReason: 'outside_workdir' | 'sensitive_file' | 'both' | 'dangerous_command') => {
+    try {
+      const eventStore = getEventStore()
+      eventStore.append(sessionId, {
+        type: 'path.confirmation_pending',
+        data: { callId, tool, paths: confirmationPaths, workdir, reason: confirmationReason },
+      })
+    } catch {
+      // Event store might not be initialized in tests
+    }
+  }
+
   // Check for dangerous commands that need confirmation even without path access
   if (dangerLevel !== 'dangerous' && command) {
     const dangerousPatterns = extractDangerousPatterns(command)
     if (dangerousPatterns.length > 0) {
+      emitPendingEvent([workdir], 'dangerous_command')
       const confirmationPromise = registerPathConfirmation(callId, [workdir], sessionId)
       onEvent(createChatPathConfirmationMessage(callId, tool, [dangerousPatterns.join(', ')], workdir, 'dangerous_command'))
       const approved = await confirmationPromise
@@ -512,6 +527,9 @@ export async function requestPathAccess(
   const reason = hasDenied && hasSensitive ? 'both' as const
     : hasDenied ? 'outside_workdir' as const
     : 'sensitive_file' as const
+  
+  // Emit pending event for persistence
+  emitPendingEvent(allPathsNeedingConfirmation, reason)
   
   // Create the confirmation Promise and send event to client
   const confirmationPromise = registerPathConfirmation(callId, allPathsNeedingConfirmation, sessionId)
@@ -601,12 +619,18 @@ export function registerPathConfirmation(
  * Provide a response to a pending path confirmation.
  * Called by the WebSocket handler when user responds.
  * If approved, adds the paths to the session's allowlist.
+ * If alwaysAllow is true, paths are added permanently to allowlist.
  * 
  * @param callId - The confirmation's unique ID
  * @param approved - Whether the user approved the access
+ * @param alwaysAllow - If true, add paths to session allowlist permanently
  * @returns Object with found status, and if approved, the sessionId for re-triggering chat
  */
-export function providePathConfirmation(callId: string, approved: boolean): {
+export function providePathConfirmation(
+  callId: string,
+  approved: boolean,
+  alwaysAllow?: boolean
+): {
   found: boolean
   sessionId?: string
   approved?: boolean
@@ -616,9 +640,25 @@ export function providePathConfirmation(callId: string, approved: boolean): {
     return { found: false }
   }
 
+  // Emit path.confirmation_responded event for persistence
+  try {
+    const eventStore = getEventStore()
+    eventStore.append(pending.sessionId, {
+      type: 'path.confirmation_responded',
+      data: { callId, approved, alwaysAllow: alwaysAllow ?? false },
+    })
+  } catch (error) {
+    // Event store might not be initialized in tests, continue without event
+  }
+
   if (approved) {
-    // Add paths to session's allowlist
-    addAllowedPaths(pending.sessionId, pending.paths)
+    // Add paths to session's allowlist (always if approved, or only if alwaysAllow)
+    if (alwaysAllow) {
+      addAllowedPaths(pending.sessionId, pending.paths)
+    } else {
+      // For single approval, still add to allowlist for this session
+      addAllowedPaths(pending.sessionId, pending.paths)
+    }
   }
 
   pending.resolve(approved)

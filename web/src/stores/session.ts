@@ -170,6 +170,7 @@ export interface PendingPathConfirmation {
   paths: string[]
   workdir: string
   reason: 'outside_workdir' | 'sensitive_file' | 'both' | 'dangerous_command'
+  alwaysAllow?: boolean  // Set when user clicks "Always Allow"
 }
 
 // Pending ask_user question from server
@@ -270,7 +271,7 @@ interface SessionState {
   updateContextState: (contextState: ContextState) => void
 
   // Path confirmation
-  confirmPath: (callId: string, approved: boolean) => void
+  confirmPath: (callId: string, approved: boolean, alwaysAllow?: boolean) => void
 
   // Ask user question
   answerQuestion: (callId: string, answer: string) => void
@@ -802,7 +803,7 @@ export const useSessionStore = create<SessionState>((set, get) => {
       set({ contextState })
     },
 
-    confirmPath: async (callId, approved) => {
+    confirmPath: async (callId, approved, alwaysAllow = false) => {
       const sessionId = get().currentSession?.id
       if (!sessionId) return
 
@@ -810,12 +811,12 @@ export const useSessionStore = create<SessionState>((set, get) => {
         await fetch(`/api/sessions/${sessionId}/confirm-path`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ callId, approved }),
+          body: JSON.stringify({ callId, approved, alwaysAllow }),
         })
+        // Don't clear here - server will send updated session state with pendingConfirmations
       } catch (error) {
         console.error('Error confirming path:', error)
       }
-      set({ pendingPathConfirmation: null })
     },
 
     answerQuestion: async (callId: string, answer: string) => {
@@ -918,11 +919,20 @@ export const useSessionStore = create<SessionState>((set, get) => {
           if (!isSessionStateForCurrentView(message, activeSessionId, stateSnapshot.pendingSessionCreate)) {
             break
           }
-          // Server sends complete state: session + messages
+          // Server sends complete state: session + messages + pendingConfirmations
           // This is the source of truth on load/reconnect
           cancelStreamingFlush()
           const streamingMsg = payload.messages.find((m) => m.isStreaming) ?? null
           const wasPendingCreate = get().pendingSessionCreate === true
+
+          // Restore pending confirmations from server state (persists across reload)
+          // Merge with any existing real-time confirmations (if user already responded on this client)
+          const serverConfirmations = payload.pendingConfirmations ?? []
+          const currentConfirmation = stateSnapshot.pendingPathConfirmation
+
+          // Only keep server confirmation if we don't have one locally (user already responded)
+          const pendingPathConfirmation = currentConfirmation ?? (serverConfirmations.length > 0 ? serverConfirmations[0] ?? null : null)
+
           set({
             currentSession: payload.session,
             sessions: mergeSessionIntoSummary(get().sessions, payload.session),
@@ -931,7 +941,7 @@ export const useSessionStore = create<SessionState>((set, get) => {
             streamingMessageId: streamingMsg?.id ?? null,
             streamingMessage: streamingMsg,
             currentTodos: [],
-            pendingPathConfirmation: null,
+            pendingPathConfirmation,
             error: null,
             // When this is the response to a session.create, store the new session ID for navigation
             ...(wasPendingCreate ? { pendingSessionCreate: payload.session.id } : {}),
@@ -983,7 +993,7 @@ export const useSessionStore = create<SessionState>((set, get) => {
           if (!isBackgroundSession) {
             set((state) => ({
               currentSession: state.currentSession ? { ...state.currentSession, isRunning: payload.isRunning } : null,
-              pendingPathConfirmation: payload.isRunning ? state.pendingPathConfirmation : null,
+              // Don't clear pendingPathConfirmation on stop - wait for user response
               // Reset abort and queue state when agent stops running
               ...(!payload.isRunning ? { abortInProgress: false, queuedMessages: [] } : {}),
             }))

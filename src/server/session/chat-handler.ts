@@ -3,7 +3,7 @@ import type { StatsIdentity, Attachment } from '../../shared/types.js'
 import type { ServerMessage } from '../../shared/protocol.js'
 import type { SessionManager } from './index.js'
 import { getEventStore } from '../events/index.js'
-import { buildMessagesFromStoredEvents } from '../events/folding.js'
+import { buildMessagesFromStoredEvents, foldPendingConfirmations } from '../events/folding.js'
 import { runChatTurn } from '../chat/orchestrator.js'
 import { generateSessionName, needsNameGeneration } from './name-generator.js'
 import { logger } from '../utils/logger.js'
@@ -120,7 +120,8 @@ export async function startChatSession(
             if (updatedSession) {
               const events = eventStore.getEvents(sessionId)
               const messages = buildMessagesFromStoredEvents(events)
-              broadcastForSession(sessionId, createSessionStateMessage(updatedSession, messages))
+              const pendingConfirmations = foldPendingConfirmations(events)
+              broadcastForSession(sessionId, createSessionStateMessage(updatedSession, messages, pendingConfirmations))
             }
           }
         })

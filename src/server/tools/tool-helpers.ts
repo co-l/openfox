@@ -82,7 +82,7 @@ export function createTool<TArgs>(
               paths,
               context.workdir,
               context.sessionId,
-              crypto.randomUUID(),
+              context.toolCallId ?? crypto.randomUUID(),
               name,
               context.onEvent,
               context.dangerLevel,

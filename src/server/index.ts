@@ -387,17 +387,31 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
   // Path confirmation (REST)
   app.post('/api/sessions/:id/confirm-path', async (req, res) => {
     const sessionId = req.params.id
-    const { callId, approved } = req.body
+    const { callId, approved, alwaysAllow } = req.body
 
     if (!callId || approved === undefined) {
       return res.status(400).json({ error: 'callId and approved are required' })
     }
 
     const { providePathConfirmation } = await import('./tools/index.js')
-    const result = providePathConfirmation(callId, approved)
+    const result = providePathConfirmation(callId, approved, alwaysAllow)
 
     if (!result.found) {
       return res.status(404).json({ error: 'No pending path confirmation with that ID' })
+    }
+
+    // Broadcast updated session state so all clients see the confirmation removed
+    const { getEventStore } = await import('./events/index.js')
+    const { buildMessagesFromStoredEvents, foldPendingConfirmations } = await import('./events/folding.js')
+    const { createSessionStateMessage } = await import('./ws/protocol.js')
+    const eventStore = getEventStore()
+    const events = eventStore.getEvents(sessionId)
+    const messages = buildMessagesFromStoredEvents(events)
+    const pendingConfirmations = foldPendingConfirmations(events)
+    const session = sessionManager.getSession(sessionId)
+    if (session) {
+      const stateMsg = createSessionStateMessage(session, messages, pendingConfirmations)
+      wssExports.broadcastForSession(sessionId, { ...stateMsg, sessionId })
     }
 
     res.json({ success: true })

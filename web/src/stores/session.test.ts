@@ -398,7 +398,8 @@ describe('useSessionStore session isolation', () => {
     })
 
     expect(useSessionStore.getState().currentSession?.isRunning).toBe(false)
-    expect(useSessionStore.getState().pendingPathConfirmation).toBeNull()
+    // Pending path confirmation persists until user responds (new behavior)
+    expect(useSessionStore.getState().pendingPathConfirmation).not.toBeNull()
   })
 
   it('applies partial updates from chat.message_updated immediately', async () => {

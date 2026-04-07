@@ -88,7 +88,7 @@ describe('ws/protocol', () => {
     }
 
     it('enriches session messages with tool results', () => {
-      const message = createSessionStateMessage(session, [assistantMessage, toolMessage], 'corr-1')
+      const message = createSessionStateMessage(session, [assistantMessage, toolMessage], [], 'corr-1')
 
       expect(message).toEqual({
         id: 'corr-1',
@@ -107,6 +107,7 @@ describe('ws/protocol', () => {
             },
             toolMessage,
           ],
+          pendingConfirmations: [],
         },
       })
     })

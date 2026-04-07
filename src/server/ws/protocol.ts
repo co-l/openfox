@@ -12,6 +12,7 @@ import type {
   SessionListPayload,
   SessionRunningPayload,
   SessionNameGeneratedPayload,
+  PendingPathConfirmationPayload,
   ChatDeltaPayload,
   ChatThinkingPayload,
   ChatToolPreparingPayload,
@@ -105,10 +106,15 @@ export function createErrorMessage(code: string, message: string, correlationId?
 }
 
 // Session messages
-export function createSessionStateMessage(session: Session, messages: Message[], correlationId?: string): ServerMessage<SessionStatePayload> {
+export function createSessionStateMessage(
+  session: Session,
+  messages: Message[],
+  pendingConfirmations: PendingPathConfirmationPayload[] = [],
+  correlationId?: string
+): ServerMessage<SessionStatePayload> {
   // Enrich messages so toolCalls have their results attached
   const enrichedMessages = enrichMessagesWithToolResults(messages)
-  return createServerMessage('session.state', { session, messages: enrichedMessages }, correlationId)
+  return createServerMessage('session.state', { session, messages: enrichedMessages, pendingConfirmations }, correlationId)
 }
 
 export function createSessionListMessage(sessions: SessionSummary[], correlationId?: string): ServerMessage<SessionListPayload> {

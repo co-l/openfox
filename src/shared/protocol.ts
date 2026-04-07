@@ -191,6 +191,15 @@ export interface ProjectDeletedPayload {
 export interface SessionStatePayload {
   session: Session
   messages: Message[]  // All messages for this session
+  pendingConfirmations: PendingPathConfirmationPayload[]
+}
+
+export interface PendingPathConfirmationPayload {
+  callId: string
+  tool: string
+  paths: string[]
+  workdir: string
+  reason: 'outside_workdir' | 'sensitive_file' | 'both' | 'dangerous_command'
 }
 
 export interface SessionListPayload {
@@ -314,6 +323,7 @@ export interface ChatPathConfirmationPayload {
 export interface PathConfirmPayload {
   callId: string
   approved: boolean
+  alwaysAllow?: boolean  // If true, add paths to session allowlist permanently
 }
 
 // Ask user payloads

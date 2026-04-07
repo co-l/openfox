@@ -9,7 +9,6 @@ import { AssistantMessage } from './AssistantMessage'
 import { SubAgentContainer } from './SubAgentContainer'
 import { AgentSelector } from './AgentSelector'
 import { DangerLevelSelector } from './DangerLevelSelector'
-import { PathConfirmationDialog } from '../shared/PathConfirmationDialog'
 import { AskUserDialog } from '../shared/AskUserDialog'
 import { RunningIndicator } from '../shared/RunningIndicator'
 import { CriteriaGroupDisplay } from '../shared/CriteriaGroupDisplay'
@@ -47,7 +46,6 @@ export function PlanPanel() {
   const streamingMessage = useSessionStore(state => state.streamingMessage)
   const sessions = useSessionStore(state => state.sessions)
   const error = useSessionStore(state => state.error)
-  const pendingPathConfirmation = useSessionStore(state => state.pendingPathConfirmation)
   const pendingQuestion = useSessionStore(state => state.pendingQuestion)
   const isRunning = useIsRunning()
 
@@ -441,9 +439,6 @@ export function PlanPanel() {
 
   return (
     <SessionLayout criteriaSidebarOpen={criteriaSidebarOpen} messages={messages}>
-      {pendingPathConfirmation && (
-        <PathConfirmationDialog confirmation={pendingPathConfirmation} />
-      )}
       {pendingQuestion && (
         <AskUserDialog question={pendingQuestion} />
       )}

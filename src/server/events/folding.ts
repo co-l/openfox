@@ -346,6 +346,7 @@ export interface FoldedSessionState {
   currentContextWindowId: string
   readFiles: ReadFileEntry[]
   lastModeWithReminder?: SessionMode
+  pendingConfirmations: PendingPathConfirmation[]
 }
 
 // ============================================================================
@@ -673,6 +674,55 @@ export function foldIsRunning(events: EventLike[]): boolean {
 }
 
 /**
+ * Pending path confirmation for folding
+ */
+export interface PendingPathConfirmation {
+  callId: string
+  tool: string
+  paths: string[]
+  workdir: string
+  reason: 'outside_workdir' | 'sensitive_file' | 'both' | 'dangerous_command'
+}
+
+/**
+ * Fold pending path confirmations from events
+ */
+export function foldPendingConfirmations(events: EventLike[]): PendingPathConfirmation[] {
+  const pending: PendingPathConfirmation[] = []
+  const responded = new Set<string>()
+
+  for (const event of events) {
+    if (event.type === 'path.confirmation_responded') {
+      const data = event.data as { callId: string }
+      responded.add(data.callId)
+    }
+  }
+
+  for (const event of events) {
+    if (event.type === 'path.confirmation_pending') {
+      const data = event.data as {
+        callId: string
+        tool: string
+        paths: string[]
+        workdir: string
+        reason: 'outside_workdir' | 'sensitive_file' | 'both' | 'dangerous_command'
+      }
+      if (!responded.has(data.callId)) {
+        pending.push({
+          callId: data.callId,
+          tool: data.tool,
+          paths: data.paths,
+          workdir: data.workdir,
+          reason: data.reason,
+        })
+      }
+    }
+  }
+
+  return pending
+}
+
+/**
  * Fold full session state from events
  * maxTokens is passed in from caller (should come from providerManager.getCurrentModelContext())
  */
@@ -688,6 +738,7 @@ export function foldSessionState(
   const criteria = foldCriteria(events)
   const todos = foldTodos(events)
   const contextResult = foldContextState(events, initialWindowId)
+  const pendingConfirmations = foldPendingConfirmations(events)
 
   // Use real promptTokens from latest context.state event if available
   // This is the accurate value from the LLM, not an estimate
@@ -764,6 +815,7 @@ export function foldSessionState(
     currentContextWindowId: contextResult.currentContextWindowId,
     readFiles: contextResult.readFiles,
     ...(lastModeWithReminder !== undefined && { lastModeWithReminder }),
+    pendingConfirmations,
   }
 }
 

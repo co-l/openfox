@@ -155,6 +155,7 @@ export async function executeToolBatch(
       lspManager: ctx.sessionManager.getLspManager(ctx.sessionId),
       onEvent: ctx.onMessage,
       onProgress,
+      toolCallId: toolCall.id,
     }
     if (ctx.dangerLevel) {
       toolContext.dangerLevel = ctx.dangerLevel

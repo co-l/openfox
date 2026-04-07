@@ -733,4 +733,47 @@ describe('event folding', () => {
     const state = foldSessionState(events, 'window-1', 200000)
     expect(state.lastModeWithReminder).toBe('builder')
   })
+
+  describe('foldPendingConfirmations', () => {
+    it('returns pending confirmations when no response received', () => {
+      const events: StoredEvent[] = [
+        { ...baseEvent, seq: 1, type: 'session.initialized', data: { projectId: 'proj-1', workdir: '/tmp', contextWindowId: 'window-1' } },
+        { ...baseEvent, seq: 2, type: 'path.confirmation_pending', data: { callId: 'call-1', tool: 'read_file', paths: ['/etc/passwd'], workdir: '/tmp', reason: 'outside_workdir' } },
+      ]
+
+      const state = foldSessionState(events, 'window-1', 200000)
+      expect(state.pendingConfirmations).toHaveLength(1)
+      expect(state.pendingConfirmations[0]).toEqual({
+        callId: 'call-1',
+        tool: 'read_file',
+        paths: ['/etc/passwd'],
+        workdir: '/tmp',
+        reason: 'outside_workdir',
+      })
+    })
+
+    it('excludes confirmed paths when response received', () => {
+      const events: StoredEvent[] = [
+        { ...baseEvent, seq: 1, type: 'session.initialized', data: { projectId: 'proj-1', workdir: '/tmp', contextWindowId: 'window-1' } },
+        { ...baseEvent, seq: 2, type: 'path.confirmation_pending', data: { callId: 'call-1', tool: 'read_file', paths: ['/etc/passwd'], workdir: '/tmp', reason: 'outside_workdir' } },
+        { ...baseEvent, seq: 3, type: 'path.confirmation_responded', data: { callId: 'call-1', approved: true, alwaysAllow: false } },
+      ]
+
+      const state = foldSessionState(events, 'window-1', 200000)
+      expect(state.pendingConfirmations).toHaveLength(0)
+    })
+
+    it('handles multiple pending confirmations', () => {
+      const events: StoredEvent[] = [
+        { ...baseEvent, seq: 1, type: 'session.initialized', data: { projectId: 'proj-1', workdir: '/tmp', contextWindowId: 'window-1' } },
+        { ...baseEvent, seq: 2, type: 'path.confirmation_pending', data: { callId: 'call-1', tool: 'read_file', paths: ['/etc/passwd'], workdir: '/tmp', reason: 'outside_workdir' } },
+        { ...baseEvent, seq: 3, type: 'path.confirmation_pending', data: { callId: 'call-2', tool: 'run_command', paths: ['/bin/rm'], workdir: '/tmp', reason: 'dangerous_command' } },
+        { ...baseEvent, seq: 4, type: 'path.confirmation_responded', data: { callId: 'call-1', approved: true, alwaysAllow: true } },
+      ]
+
+      const state = foldSessionState(events, 'window-1', 200000)
+      expect(state.pendingConfirmations).toHaveLength(1)
+      expect(state.pendingConfirmations[0]?.callId).toBe('call-2')
+    })
+  })
 })

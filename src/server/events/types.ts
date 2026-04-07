@@ -326,6 +326,28 @@ export type TurnEvent =
     }
 
   // ----------------------------------------------------------------------------
+  // Path confirmation (permission requests that persist across reloads)
+  // ----------------------------------------------------------------------------
+  | {
+      type: 'path.confirmation_pending'
+      data: {
+        callId: string
+        tool: string
+        paths: string[]
+        workdir: string
+        reason: 'outside_workdir' | 'sensitive_file' | 'both' | 'dangerous_command'
+      }
+    }
+  | {
+      type: 'path.confirmation_responded'
+      data: {
+        callId: string
+        approved: boolean
+        alwaysAllow: boolean
+      }
+    }
+
+  // ----------------------------------------------------------------------------
   // Snapshots (agent end-of-turn)
   // ----------------------------------------------------------------------------
   | {

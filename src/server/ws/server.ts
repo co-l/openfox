@@ -7,7 +7,7 @@ import type { Config } from '../config.js'
 import type { LLMClientWithModel } from '../llm/client.js'
 import type { SessionManager } from '../session/index.js'
 import { getEventStore, getCurrentContextWindowId } from '../events/index.js'
-import { buildContextMessagesFromEventHistory, buildMessagesFromStoredEvents } from '../events/folding.js'
+import { buildContextMessagesFromEventHistory, buildMessagesFromStoredEvents, foldPendingConfirmations } from '../events/folding.js'
 import type { Provider, ProviderBackend, StatsIdentity, Attachment } from '../../shared/types.js'
 import type { ProviderManager } from '../provider-manager.js'
 import { createLLMClient } from '../llm/index.js'
@@ -325,7 +325,8 @@ export function createWebSocketServer(
           const messages = events.length > 0
             ? buildMessagesFromStoredEvents(events)
             : []
-          ws.send(serializeServerMessage({ ...createSessionStateMessage(session, messages), sessionId }))
+          const pendingConfirmations = foldPendingConfirmations(events)
+          ws.send(serializeServerMessage({ ...createSessionStateMessage(session, messages, pendingConfirmations), sessionId }))
         }
         continue
       }
@@ -341,7 +342,8 @@ export function createWebSocketServer(
             const messages = events.length > 0
               ? buildMessagesFromStoredEvents(events)
               : []
-            ws.send(serializeServerMessage({ ...createSessionStateMessage(session, messages), sessionId }))
+            const pendingConfirmations = foldPendingConfirmations(events)
+            ws.send(serializeServerMessage({ ...createSessionStateMessage(session, messages, pendingConfirmations), sessionId }))
           }
         }
         
@@ -576,9 +578,10 @@ async function handleClientMessage(
       const eventStore = getEventStore()
       const events = eventStore.getEvents(session.id)
       const messages = buildMessagesFromStoredEvents(events)
-      logger.debug('Loaded messages from EventStore', { sessionId: session.id, eventCount: events.length, messageCount: messages.length })
+      const pendingConfirmations = foldPendingConfirmations(events)
+      logger.debug('Loaded messages from EventStore', { sessionId: session.id, eventCount: events.length, messageCount: messages.length, pendingConfirmationsCount: pendingConfirmations.length })
 
-      sendForSession(session.id, createSessionStateMessage(session, messages, message.id))
+      sendForSession(session.id, createSessionStateMessage(session, messages, pendingConfirmations, message.id))
       
       // Send context state
       const contextState = sessionManager.getContextState(session.id)
@@ -689,7 +692,8 @@ async function handleClientMessage(
                 if (updatedSession) {
                   const events = eventStore.getEvents(sessionId)
                   const messages = buildMessagesFromStoredEvents(events)
-                  broadcastForSession(sessionId, createSessionStateMessage(updatedSession, messages))
+                  const pendingConfirmations = foldPendingConfirmations(events)
+                  broadcastForSession(sessionId, createSessionStateMessage(updatedSession, messages, pendingConfirmations))
                 }
 
                 logger.info('Session name generated', { sessionId, name: result.name })
@@ -1051,7 +1055,8 @@ async function handleClientMessage(
           const compactEventStore = getEventStore()
           const compactEvents = compactEventStore.getEvents(sessionId)
           const compactMessages = buildMessagesFromStoredEvents(compactEvents)
-          sendForSession(sessionId, createSessionStateMessage(updatedSession, compactMessages))
+          const pendingConfirmations = foldPendingConfirmations(compactEvents)
+          sendForSession(sessionId, createSessionStateMessage(updatedSession, compactMessages, pendingConfirmations))
         } catch (error) {
           logger.error('Compaction failed', { error, sessionId })
           sendForSession(sessionId, createChatErrorMessage(
