@@ -226,11 +226,11 @@ async function performContextCompaction(options: ContextCompactionOptions & {
   eventStore.append(sessionId, createChatDoneEvent(assistantMsgId, 'complete', compactionStats))
 
   // Use thinking content as fallback if text content is empty
-  // (Ollama models may produce thinking via <think> tags even with disableThinking)
+  // (Ollama/MiniMax models may produce thinking even with disableThinking)
   let summary = (result.content ?? '').trim()
-  if (!summary && result.thinkingContent) {
+  if (!summary && result.thinkingContent != null) {
     logger.info('Using thinking content as compaction summary (text content was empty)', { sessionId })
-    summary = result.thinkingContent.trim()
+    summary = (result.thinkingContent ?? '').trim()
   }
 
   if (!summary) {
