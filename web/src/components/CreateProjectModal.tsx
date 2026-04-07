@@ -74,7 +74,7 @@ export function CreateProjectModal({ isOpen, onClose }: CreateProjectModalProps)
       const response = await fetch('/api/projects', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: projectName }),
+        body: JSON.stringify({ name: projectName, workdir }),
       })
       
       if (!response.ok) {
@@ -93,7 +93,7 @@ export function CreateProjectModal({ isOpen, onClose }: CreateProjectModalProps)
       setError(err instanceof Error ? err.message : 'Failed to create project')
       setLoading(false)
     }
-  }, [projectName, navigate, onClose])
+  }, [projectName, navigate, onClose, workdir])
   
   const handleCancel = useCallback(() => {
     setProjectName('')
