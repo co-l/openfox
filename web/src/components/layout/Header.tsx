@@ -162,6 +162,8 @@ function SessionDropdown({ sessions, currentProject, currentSession }: SessionDr
 
 export function Header({ onMenuClick, onCriteriaToggle, hasCriteria }: HeaderProps) {
   const [showSettings, setShowSettings] = useState(false)
+  const [location] = useLocation()
+  const isProjectPage = location.startsWith('/p/')
   const connectionStatus = useSessionStore(state => state.connectionStatus)
   const session = useSessionStore(state => state.currentSession)
   const sessions = useSessionStore(state => state.sessions)
@@ -232,18 +234,20 @@ export function Header({ onMenuClick, onCriteriaToggle, hasCriteria }: HeaderPro
           </button>
         )}
 
-        {/* Terminal toggle button */}
-        <button
-          onClick={toggleTerminal}
-          className={`p-2.5 rounded hover:bg-bg-tertiary transition-colors ${
-            terminalIsOpen ? 'text-accent-primary' : 'text-text-muted hover:text-text-primary'
-          }`}
-          title="Toggle terminal"
-        >
-          <svg className="w-4 h-4" viewBox="0 0 20 20" fill="currentColor">
-            <path fillRule="evenodd" d="M2 5a2 2 0 012-2h12a2 2 0 012 2v10a2 2 0 01-2 2H4a2 2 0 01-2-2V5zm3 1h10v1H5V6zm10 7H5v1h10v-1zm-10 2H5v1h10v-1z" clipRule="evenodd" />
-          </svg>
-        </button>
+        {/* Terminal toggle button - only visible on project pages */}
+        {isProjectPage && (
+          <button
+            onClick={toggleTerminal}
+            className={`p-2.5 rounded hover:bg-bg-tertiary transition-colors ${
+              terminalIsOpen ? 'text-accent-primary' : 'text-text-muted hover:text-text-primary'
+            }`}
+            title="Toggle terminal"
+          >
+            <svg className="w-4 h-4" viewBox="0 0 20 20" fill="currentColor">
+              <path fillRule="evenodd" d="M2 5a2 2 0 012-2h12a2 2 0 012 2v10a2 2 0 01-2 2H4a2 2 0 01-2-2V5zm3 1h10v1H5V6zm10 7H5v1h10v-1zm-10 2H5v1h10v-1z" clipRule="evenodd" />
+            </svg>
+          </button>
+        )}
 
         {/* Settings button */}
         <button
