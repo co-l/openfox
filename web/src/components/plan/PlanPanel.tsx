@@ -241,13 +241,6 @@ export function PlanPanel() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
 
-    // If Launch is available, Enter triggers launch (with or without a message)
-    if (showLaunchButton) {
-      launchRunner(input, attachments.length > 0 ? attachments : undefined)
-      clearInput()
-      return
-    }
-
     if (!input.trim() && attachments.length === 0) return
 
     // Always use unified sendMessage - handles both idle and running cases
@@ -428,19 +421,12 @@ export function PlanPanel() {
   const hasCriteria = (session?.criteria.length ?? 0) > 0
   const isDone = session?.phase === 'done'
 
-  // Count pending criteria (not passed)
-  const pendingCriteria = session?.criteria.filter(c => c.status.type !== 'passed') ?? []
-  const hasPendingCriteria = pendingCriteria.length > 0
-
   // Show "Start Building" when in planner with criteria and assistant has responded
   // Don't show if already done (all criteria verified)
   const hasAssistantResponse = displayItems.some(item =>
     item.type === 'message' && item.message.role === 'assistant',
   )
   const showStartBuilding = isPlanning && hasCriteria && !isRunning && hasAssistantResponse && !isDone
-
-  // Show Launch button in builder mode when there are pending criteria
-  const showLaunchButton = isBuilding && hasPendingCriteria && !isRunning && !isDone
 
   const handleSelectWorkflow = (workflowId: string) => {
     const content = input.trim() ? input : undefined
@@ -662,9 +648,7 @@ export function PlanPanel() {
           className={`flex items-end gap-3 p-3 rounded border transition-colors ${
             dragOver
               ? 'border-accent-primary/50 bg-accent-primary/10'
-              : isRunning
-                ? 'border-accent-warning/30 bg-accent-warning/5'
-                : 'border-border bg-bg-tertiary/50'
+              : 'border-border bg-bg-tertiary/50'
           }`}
           onDragOver={handleDragOver}
           onDragLeave={handleDragLeave}
@@ -702,8 +686,7 @@ export function PlanPanel() {
             className="flex-1 bg-transparent text-sm placeholder:text-text-muted resize-none overflow-y-auto focus:outline-none"
             style={{ minHeight: '24px', maxHeight: '200px' }}
           />
-          {!isRunning ? (
-            <div className="flex flex-col items-end gap-1">
+          <div className="flex flex-col items-end gap-1">
               <div className="flex items-center gap-3">
                 <CommandMenu
                   onSendCommand={(content, agentMode, textareaContent, attachments) => {
@@ -734,18 +717,6 @@ export function PlanPanel() {
                 />
               </div>
               <div className="flex items-center gap-2">
-                {showLaunchButton && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      launchRunner(input, attachments.length > 0 ? attachments : undefined)
-                      clearInput()
-                    }}
-                    className="px-4 py-1.5 rounded bg-accent-success/20 text-sm text-accent-success font-medium hover:bg-accent-success/30 transition-colors"
-                  >
-                    Launch
-                  </button>
-                )}
                 <button
                   type="button"
                   onClick={() => {
@@ -764,22 +735,6 @@ export function PlanPanel() {
                 </button>
               </div>
             </div>
-          ) : (
-            <button
-              type="button"
-              onClick={() => {
-                if (input.trim() || attachments.length > 0) {
-                  sendMessage(input, attachments.length > 0 ? attachments : undefined)
-                  setInput('')
-                  setAttachments([])
-                }
-              }}
-              disabled={!input.trim() && attachments.length === 0}
-              className="px-4 py-1.5 rounded bg-accent-primary/20 text-sm text-accent-primary font-medium hover:bg-accent-primary/30 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
-            >
-              Send
-            </button>
-          )}
         </div>
         <div className="mt-3 flex items-center justify-between">
           <div className="flex items-center gap-2">

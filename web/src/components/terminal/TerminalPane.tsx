@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react'
 import { Terminal } from '@xterm/xterm'
+import { FitAddon } from '@xterm/addon-fit'
 import { useTerminalStore } from '../../stores/terminal'
 import { wsClient } from '../../lib/ws'
 
@@ -35,8 +36,27 @@ export function TerminalPane({ sessionId, onClose }: TerminalPaneProps) {
       cursorStyle: 'bar',
     })
 
-    termRef.current = term
+    const fitAddon = new FitAddon()
+    term.loadAddon(fitAddon)
+    termRef.current = { term, fitAddon }
     term.open(terminalRef.current)
+    fitAddon.fit()
+
+    let lastWidth = 0
+    let lastHeight = 0
+
+    const resizeObserver = new ResizeObserver(() => {
+      const rect = terminalRef.current!.getBoundingClientRect()
+      const newWidth = Math.floor(rect.width)
+      const newHeight = Math.floor(rect.height)
+
+      if (newWidth !== lastWidth || newHeight !== lastHeight) {
+        lastWidth = newWidth
+        lastHeight = newHeight
+        fitAddon.fit()
+      }
+    })
+    resizeObserver.observe(terminalRef.current)
 
     term.onData((data) => {
       writeSession(sessionIdRef.current, data)
@@ -53,6 +73,7 @@ export function TerminalPane({ sessionId, onClose }: TerminalPaneProps) {
 
     return () => {
       unsubscribe()
+      resizeObserver.disconnect()
       term.dispose()
       termRef.current = null
     }
