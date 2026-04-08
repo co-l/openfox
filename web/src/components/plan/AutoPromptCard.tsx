@@ -33,14 +33,22 @@ export function AutoPromptCard({ message }: AutoPromptCardProps) {
       <div className="flex items-center justify-center gap-1.5 text-[10px] text-text-muted font-mono mt-3 mb-4">
         <span className="flex-1 h-px bg-border" />
         <span
-          className="w-1.5 h-1.5 rounded-full flex-shrink-0"
+          className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${!showContentDirectly ? 'cursor-pointer' : ''}`}
           style={{ backgroundColor: metaColor }}
+          onClick={() => !showContentDirectly && setIsModalOpen(true)}
         />
-        <span style={{ color: metaColor }}>
+        <span
+          className={!showContentDirectly ? 'cursor-pointer hover:text-text-secondary transition-colors' : ''}
+          style={{ color: metaColor }}
+          onClick={() => !showContentDirectly && setIsModalOpen(true)}
+        >
           {metaName}
         </span>
         <span>·</span>
-        <span>
+        <span
+          className={!showContentDirectly ? 'cursor-pointer hover:text-text-secondary transition-colors' : ''}
+          onClick={() => !showContentDirectly && setIsModalOpen(true)}
+        >
           {label}
         </span>
         <span className="flex-1 h-px bg-border" />
