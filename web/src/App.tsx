@@ -8,6 +8,7 @@ import { Header } from './components/layout/Header'
 import { Sidebar } from './components/layout/Sidebar'
 import { PageTitle } from './components/layout/PageTitle'
 import { HomePage } from './components/HomePage'
+import { NewSessionHandler } from './components/NewSessionHandler'
 import { EmptyProjectView } from './components/EmptyProjectView'
 import { PlanPanel } from './components/plan/PlanPanel'
 import { Spinner, SpinnerWithText } from './components/shared/Spinner'
@@ -154,6 +155,9 @@ function App() {
               sidebarOpen={sidebarOpen} 
               onSidebarToggle={() => setSidebarOpen(false)}
             />
+          </Route>
+          <Route path="/p/:projectId/new">
+            <NewSessionHandler />
           </Route>
           <Route path="/p/:projectId">
             <ProjectView 

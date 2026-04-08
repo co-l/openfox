@@ -65,20 +65,7 @@ interface SessionDropdownProps {
 }
 
 function SessionDropdown({ sessions, currentProject, currentSession }: SessionDropdownProps) {
-  const [, navigate] = useLocation()
   const loadSession = useSessionStore(state => state.loadSession)
-  const createSession = useSessionStore(state => state.createSession)
-  const pendingSessionCreate = useSessionStore(state => state.pendingSessionCreate)
-  const resetPendingSessionCreate = useSessionStore(state => state.resetPendingSessionCreate)
-
-  // Navigate to new session when server confirms creation.
-  // pendingSessionCreate transitions: false → true (waiting) → sessionId (ready to navigate) → false (done)
-  useEffect(() => {
-    if (typeof pendingSessionCreate === 'string' && currentProject) {
-      navigate(`/p/${currentProject.id}/s/${pendingSessionCreate}`)
-      resetPendingSessionCreate()
-    }
-  }, [pendingSessionCreate, currentProject, navigate, resetPendingSessionCreate])
 
   // Filter sessions to those belonging to the current project by ID
   const projectSessions = sessions.filter(session => session.projectId === currentProject.id).slice(0, 15)
@@ -90,16 +77,14 @@ function SessionDropdown({ sessions, currentProject, currentSession }: SessionDr
   // Add "New session" as the first item
   items.push({
     label: (
-      <div className="flex items-center gap-2 px-3 py-2 min-w-[160px]" data-testid="session-dropdown-new-session">
+      <a href={`/p/${currentProject.id}/new`} className="flex items-center gap-2 px-3 py-2 min-w-[160px]" data-testid="session-dropdown-new-session">
         <svg className="w-4 h-4 text-accent-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
         </svg>
         <span className="text-sm">New session</span>
-      </div>
+      </a>
     ),
-    onClick: () => {
-      createSession(currentProject.id)
-    },
+    onClick: () => {},
   })
 
   for (const [_dateKey, daySessions] of groupedSessions) {

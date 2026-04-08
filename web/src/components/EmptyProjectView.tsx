@@ -1,30 +1,7 @@
-import { useEffect } from 'react'
-import { useLocation } from 'wouter'
 import { useProjectStore } from '../stores/project'
-import { useSessionStore } from '../stores/session'
-import { Button } from './shared/Button'
 
 export function EmptyProjectView() {
-  const [, navigate] = useLocation()
   const currentProject = useProjectStore(state => state.currentProject)
-  const createSession = useSessionStore(state => state.createSession)
-  const pendingSessionCreate = useSessionStore(state => state.pendingSessionCreate)
-  const resetPendingSessionCreate = useSessionStore(state => state.resetPendingSessionCreate)
-  
-  const handleCreateSession = () => {
-    if (currentProject) {
-      createSession(currentProject.id)
-    }
-  }
-
-  // Navigate to the new session when server confirms creation.
-  // pendingSessionCreate transitions: false → true (waiting) → sessionId (ready) → false (done)
-  useEffect(() => {
-    if (typeof pendingSessionCreate === 'string' && currentProject) {
-      navigate(`/p/${currentProject.id}/s/${pendingSessionCreate}`)
-      resetPendingSessionCreate()
-    }
-  }, [pendingSessionCreate, currentProject, navigate, resetPendingSessionCreate])
   
   return (
     <div className="h-full flex flex-col items-center justify-center p-8 text-center">
@@ -36,13 +13,12 @@ export function EmptyProjectView() {
           No session selected
         </p>
         <div className="flex flex-col gap-3">
-          <Button
-            variant="primary"
-            className="w-full"
-            onClick={handleCreateSession}
+          <a
+            href={currentProject ? `/p/${currentProject.id}/new` : '#'}
+            className="block w-full rounded font-medium transition-colors bg-accent-primary/25 text-white hover:bg-accent-primary/40 px-3 py-2 text-center"
           >
             Create New Session
-          </Button>
+          </a>
           <p className="text-sm text-text-muted">
             Or select an existing session from the sidebar
           </p>

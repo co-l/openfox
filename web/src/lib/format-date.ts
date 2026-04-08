@@ -29,6 +29,38 @@ export function formatTime(isoString: string): string {
 }
 
 /**
+ * Format a date string to relative format:
+ * - "today HH:MM" if today
+ * - "yesterday HH:MM" if yesterday
+ * - "X days ago HH:MM" if within 7 days
+ * - "YYYY/MM/DD HH:MM" otherwise
+ * Uses local time to match user's timezone
+ */
+export function formatRelativeDate(isoString: string): string {
+  const date = new Date(isoString)
+  const now = new Date()
+
+  const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+  const startOfDate = new Date(date.getFullYear(), date.getMonth(), date.getDate())
+
+  const daysDiff = Math.floor((startOfToday.getTime() - startOfDate.getTime()) / (1000 * 60 * 60 * 24))
+  const time = formatTime(isoString)
+
+  if (daysDiff === 0) {
+    return `today ${time}`
+  } else if (daysDiff === 1) {
+    return `yesterday ${time}`
+  } else if (daysDiff < 7) {
+    return `${daysDiff} days ago ${time}`
+  } else {
+    const year = date.getFullYear()
+    const month = String(date.getMonth() + 1).padStart(2, '0')
+    const day = String(date.getDate()).padStart(2, '0')
+    return `${year}/${month}/${day} ${time}`
+  }
+}
+
+/**
  * Extract the date part (YYYY-MM-DD) from an ISO timestamp
  * Used for grouping sessions by day
  * Uses local time to match user's timezone

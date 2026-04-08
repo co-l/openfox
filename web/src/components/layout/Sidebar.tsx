@@ -3,7 +3,6 @@ import { useLocation } from 'wouter'
 import { useSessionStore } from '../../stores/session'
 import { useProjectStore } from '../../stores/project'
 import type { SessionSummary } from '@shared/types.js'
-import { Button } from '../shared/Button'
 import { ProjectSettingsModal } from '../settings/ProjectSettingsModal'
 import { DropdownMenu } from '../shared/DropdownMenu'
 import { groupSessionsByDate, formatDateHeader, formatTime } from '../../lib/format-date.js'
@@ -16,16 +15,13 @@ interface SidebarProps {
 
 export function Sidebar({ projectId, isOpen = true, onClose }: SidebarProps) {
   const [, navigate] = useLocation()
-  const pendingNewSession = useRef(false)
   const [showSettings, setShowSettings] = useState(false)
 
   const sessions = useSessionStore(state => state.sessions)
   const currentSession = useSessionStore(state => state.currentSession)
   const unreadSessionIds = useSessionStore(state => state.unreadSessionIds)
-  const createSession = useSessionStore(state => state.createSession)
   const deleteSession = useSessionStore(state => state.deleteSession)
   const deleteAllSessions = useSessionStore(state => state.deleteAllSessions)
-  const listSessions = useSessionStore(state => state.listSessions)
   const loadMoreSessions = useSessionStore(state => state.loadMoreSessions)
   const sessionsHasMore = useSessionStore(state => state.sessionsHasMore)
   const sessionsPaginationLoading = useSessionStore(state => state.sessionsPaginationLoading)
@@ -59,20 +55,6 @@ export function Sidebar({ projectId, isOpen = true, onClose }: SidebarProps) {
 
   // Filter sessions to those belonging to the current project by ID
   const projectSessions = sessions.filter(session => session.projectId === currentProject?.id)
-
-  // Navigate to new session when created
-  useEffect(() => {
-    if (pendingNewSession.current && currentSession) {
-      pendingNewSession.current = false
-      listSessions() // Refresh the list
-      navigate(`/p/${projectId}/s/${currentSession.id}`)
-    }
-  }, [currentSession, projectId, navigate, listSessions])
-
-  const handleNewSession = () => {
-    pendingNewSession.current = true
-    createSession(projectId)
-  }
 
   const handleSelectSession = (sessionId: string) => {
     navigate(`/p/${projectId}/s/${sessionId}`)
@@ -121,14 +103,13 @@ export function Sidebar({ projectId, isOpen = true, onClose }: SidebarProps) {
         `}
       >
         <div className="p-4 border-b border-border flex gap-2">
-          <Button
-            variant="primary"
-            className="flex-1 text-sm"
-            onClick={handleNewSession}
+          <a
+            href={`/p/${projectId}/new`}
+            className="flex-1 block text-center rounded font-medium transition-colors bg-accent-primary/25 text-white hover:bg-accent-primary/40 px-3 py-1.5 text-sm"
             data-testid="sidebar-new-session-button"
           >
             + New Session
-          </Button>
+          </a>
           <DropdownMenu
             items={[
               {
