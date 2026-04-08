@@ -17,6 +17,7 @@
  * ```
  */
 
+import { updateSessionMessageCount } from '../db/sessions.js'
 import type {
   SessionMode,
   SessionPhase,
@@ -265,6 +266,8 @@ export function emitUserMessage(
     data: { messageId },
   })
 
+  updateSessionMessageCount(sessionId, 1)
+
   return messageId
 }
 
@@ -292,6 +295,8 @@ export function emitAssistantMessageStart(
       ...(options?.subAgentType !== undefined && { subAgentType: options.subAgentType }),
     },
   })
+
+  updateSessionMessageCount(sessionId, 1)
 
   return messageId
 }

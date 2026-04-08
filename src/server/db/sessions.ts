@@ -182,6 +182,30 @@ export function updateSessionMetadata(
   `).run(...values)
 }
 
+export function updateSessionMessageCount(id: string, delta: number): void {
+  try {
+    const db = getDatabase()
+    const now = new Date().toISOString()
+    
+    db.prepare(`
+      UPDATE sessions SET message_count = message_count + ?, updated_at = ? WHERE id = ?
+    `).run(delta, now, id)
+  } catch {
+    // Database not initialized (test scenarios) - silently skip
+  }
+}
+
+export function getSessionMessageCount(id: string): number {
+  try {
+    const db = getDatabase()
+    const row = db.prepare(`SELECT message_count FROM sessions WHERE id = ?`).get(id) as { message_count: number } | undefined
+    return row?.message_count ?? 0
+  } catch {
+    // Database not initialized (test scenarios) - return 0
+    return 0
+  }
+}
+
 export function listSessions(): SessionSummary[] {
   const db = getDatabase()
   
@@ -198,21 +222,7 @@ export function listSessions(): SessionSummary[] {
       s.title,
       s.provider_id,
       s.provider_model,
-      COALESCE(
-        (SELECT COUNT(*) FROM events e 
-         WHERE e.session_id = s.id 
-         AND e.event_type = 'message.start'
-         AND json_extract(e.payload, '$.role') IN ('user', 'assistant'))
-        +
-        COALESCE(
-          (SELECT SUM(json_array_length(json_extract(e.payload, '$.messages'))) FROM events e
-           WHERE e.session_id = s.id
-           AND e.event_type = 'turn.snapshot'
-           AND json_extract(e.payload, '$.messages') IS NOT NULL),
-          0
-        ),
-        0
-      ) as message_count
+      s.message_count
     FROM sessions s
     ORDER BY s.updated_at DESC
   `).all() as SessionSummaryRow[]
@@ -251,21 +261,7 @@ export function listSessionsByProject(projectId: string, limit = 20, offset = 0)
       s.title,
       s.provider_id,
       s.provider_model,
-      COALESCE(
-        (SELECT COUNT(*) FROM events e 
-         WHERE e.session_id = s.id 
-         AND e.event_type = 'message.start'
-         AND json_extract(e.payload, '$.role') IN ('user', 'assistant'))
-        +
-        COALESCE(
-          (SELECT SUM(json_array_length(json_extract(e.payload, '$.messages'))) FROM events e
-           WHERE e.session_id = s.id
-           AND e.event_type = 'turn.snapshot'
-           AND json_extract(e.payload, '$.messages') IS NOT NULL),
-          0
-        ),
-        0
-      ) as message_count
+      s.message_count
     FROM sessions s
     WHERE s.project_id = ?
     ORDER BY s.updated_at DESC

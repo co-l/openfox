@@ -23,6 +23,7 @@ import {
   updateSessionPhase,
   updateSessionRunning,
   updateSessionSummary,
+  updateSessionMessageCount,
 } from './sessions.js'
 import { getDatabase } from './index.js'
 
@@ -248,32 +249,10 @@ describe('db sessions', () => {
   it('counts messages correctly in session summaries', () => {
     const session = createSession(projectAId, rootA, 'Test Session')
     
-    const db = getDatabase()
-    db.prepare(`
-      INSERT INTO events (session_id, event_type, payload, timestamp, seq)
-      VALUES (?, 'message.start', ?, ?, 1)
-    `).run(
-      session.id,
-      JSON.stringify({ messageId: 'msg1', role: 'user', content: 'Hello' }),
-      Date.now()
-    )
-    db.prepare(`
-      INSERT INTO events (session_id, event_type, payload, timestamp, seq)
-      VALUES (?, 'message.start', ?, ?, 2)
-    `).run(
-      session.id,
-      JSON.stringify({ messageId: 'msg2', role: 'assistant', content: 'Hi there' }),
-      Date.now() + 1000
-    )
-    // Tool messages should NOT be counted
-    db.prepare(`
-      INSERT INTO events (session_id, event_type, payload, timestamp, seq)
-      VALUES (?, 'message.start', ?, ?, 3)
-    `).run(
-      session.id,
-      JSON.stringify({ messageId: 'msg3', role: 'tool', content: 'Tool result' }),
-      Date.now() + 2000
-    )
+    // Simulate emitting user and assistant messages by incrementing the counter
+    // (tool messages are not counted - they use a different code path)
+    updateSessionMessageCount(session.id, 1) // user message
+    updateSessionMessageCount(session.id, 1) // assistant message
 
     const sessions = listSessionsByProject(projectAId)
     const sessionSummary = sessions.sessions.find(s => s.id === session.id)

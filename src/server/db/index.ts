@@ -175,5 +175,32 @@ function runMigrations(db: Database.Database): void {
     db.exec(`ALTER TABLE sessions ADD COLUMN provider_model TEXT`)
   }
 
+  // Migration: Add message_count column for efficient sidebar message counts
+  if (!columnNames.includes('message_count')) {
+    logger.info('Migrating sessions table: adding message_count column')
+    db.exec(`ALTER TABLE sessions ADD COLUMN message_count INTEGER NOT NULL DEFAULT 0`)
+    
+    // Backfill message_count from snapshots OR message.start events
+    logger.info('Backfilling message counts')
+    const backfillResult = db.prepare(`
+      UPDATE sessions 
+      SET message_count = (
+        SELECT COALESCE(
+          -- First try: get count from latest snapshot
+          (SELECT json_array_length(json_extract(
+            (SELECT payload FROM events WHERE session_id = sessions.id AND event_type = 'turn.snapshot' ORDER BY seq DESC LIMIT 1),
+            '$.messages'
+          ))),
+          -- Fallback: count message.start events for user/assistant roles
+          (SELECT COUNT(*) FROM events e 
+           WHERE e.session_id = sessions.id 
+           AND e.event_type = 'message.start'
+           AND json_extract(e.payload, '$.role') IN ('user', 'assistant'))
+        )
+      )
+    `).run()
+    logger.info('Backfilled message counts', { count: backfillResult.changes })
+  }
+
   logger.info('Database migrations completed')
 }
