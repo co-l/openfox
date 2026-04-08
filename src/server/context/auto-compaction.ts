@@ -170,6 +170,7 @@ async function performContextCompaction(options: ContextCompactionOptions & {
     ...(getCurrentWindowMessageOptions(sessionId) ?? {}),
     isSystemGenerated: true,
     messageKind: 'auto-prompt',
+    metadata: { type: 'compaction', name: 'Compaction', color: '#64748b' },
   }))
   eventStore.append(sessionId, { type: 'message.done', data: { messageId: compactPromptMsgId } })
 

@@ -74,7 +74,7 @@ export type TurnEvent =
         isCompactionSummary?: boolean // True if this is the summary message after compaction
         tokenCount?: number // Known upfront for user messages
         attachments?: Attachment[] // Optional image attachments
-        agentInfo?: { id: string; name: string; color: string } // For auto-prompt messages
+        metadata?: { type: string; name: string; color: string } // For auto-prompt messages
       }
     }
   | {
@@ -422,7 +422,7 @@ export interface SnapshotMessage {
   isCompactionSummary?: boolean
   promptContext?: PromptContext
   attachments?: Attachment[] // Optional image attachments
-  agentInfo?: { id: string; name: string; color: string } // For auto-prompt messages
+  metadata?: { type: string; name: string; color: string } // For auto-prompt messages
 }
 
 export interface ToolCallWithResult extends ToolCall {

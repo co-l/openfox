@@ -13,10 +13,17 @@ export function AutoPromptCard({ message }: AutoPromptCardProps) {
     return null
   }
 
-  const agentInfo = message.agentInfo
-  const agentColor = agentInfo?.color ?? '#6b7280'
-  const agentName = agentInfo?.name ?? 'Agent'
-  const agentId = agentInfo?.id ?? 'unknown'
+  const metadata = message.metadata
+  const metaColor = metadata?.color ?? '#6b7280'
+  const metaName = metadata?.name ?? 'Agent'
+  const metaType = metadata?.type ?? 'agent'
+
+  const typeLabels: Record<string, string> = {
+    agent: 'definition injected',
+    workflow: 'instructions injected',
+    compaction: 'prompt injected',
+  }
+  const label = typeLabels[metaType] ?? 'injected'
 
   return (
     <>
@@ -24,22 +31,22 @@ export function AutoPromptCard({ message }: AutoPromptCardProps) {
         <span className="flex-1 h-px bg-border" />
         <span
           className="w-1.5 h-1.5 rounded-full flex-shrink-0 cursor-pointer"
-          style={{ backgroundColor: agentColor }}
+          style={{ backgroundColor: metaColor }}
           onClick={() => setIsModalOpen(true)}
         />
         <span
           className="cursor-pointer hover:text-text-secondary transition-colors"
-          style={{ color: agentColor }}
+          style={{ color: metaColor }}
           onClick={() => setIsModalOpen(true)}
         >
-          {agentName}
+          {metaName}
         </span>
         <span>·</span>
         <span
           className="cursor-pointer hover:text-text-secondary transition-colors"
           onClick={() => setIsModalOpen(true)}
         >
-          definition injected
+          {label}
         </span>
         <span className="flex-1 h-px bg-border" />
       </div>
@@ -47,19 +54,19 @@ export function AutoPromptCard({ message }: AutoPromptCardProps) {
       <Modal
         isOpen={isModalOpen}
         onClose={() => setIsModalOpen(false)}
-        title={`${agentName} Prompt Definition`}
+        title={`${metaName} Prompt`}
         size="lg"
       >
         <div className="space-y-4">
           <div className="flex items-center gap-2">
             <span
               className="w-3 h-3 rounded-full"
-              style={{ backgroundColor: agentColor }}
+              style={{ backgroundColor: metaColor }}
             />
             <span className="text-sm text-text-primary font-medium">
-              {agentName}
+              {metaName}
             </span>
-            <span className="text-xs text-text-muted">({agentId})</span>
+            <span className="text-xs text-text-muted">({metaType})</span>
           </div>
 
           <div className="h-full min-h-96">

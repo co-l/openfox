@@ -141,8 +141,8 @@ export async function executeSubAgent(options: SubAgentExecutionOptions): Promis
       messageKind: 'auto-prompt',
       subAgentId,
       subAgentType,
-      agentInfo: {
-        id: agentDef.metadata.id,
+      metadata: {
+        type: 'agent',
         name: agentDef.metadata.name,
         color: agentDef.metadata.color ?? '#6b7280',
       },

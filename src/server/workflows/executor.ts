@@ -292,6 +292,7 @@ export async function executeWorkflow(
             ...(currentWindowMessageOptions ?? {}),
             isSystemGenerated: true,
             messageKind: 'auto-prompt',
+            metadata: { type: 'workflow', name: 'Workflow', color: '#f59e0b' },
           }))
           eventStore.append(sessionId, { type: 'message.done', data: { messageId: promptMsgId } })
         } else if (!isFirstBuilderEntry) {
@@ -309,6 +310,7 @@ export async function executeWorkflow(
             ...(currentWindowMessageOptions ?? {}),
             isSystemGenerated: true,
             messageKind: 'correction',
+            metadata: { type: 'workflow', name: 'Workflow', color: '#f59e0b' },
           }))
           eventStore.append(sessionId, { type: 'message.done', data: { messageId: nudgeMsgId } })
         }

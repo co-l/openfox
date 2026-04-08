@@ -60,7 +60,7 @@ function snapshotMessageToMessage(message: SnapshotMessage): Message {
     ...(message.stats !== undefined && { stats: message.stats }),
     ...(message.partial !== undefined && { partial: message.partial }),
     ...(message.promptContext !== undefined && { promptContext: message.promptContext }),
-    ...(message.agentInfo !== undefined && { agentInfo: message.agentInfo }),
+    ...(message.metadata !== undefined && { metadata: message.metadata }),
   })
 }
 
@@ -142,7 +142,7 @@ function applyStoredMessageEvents(initialMessages: Message[], events: StoredEven
           ...(data.messageKind !== undefined && { messageKind: data.messageKind }),
           ...(data.isCompactionSummary !== undefined && { isCompactionSummary: data.isCompactionSummary }),
           ...(data.attachments !== undefined && { attachments: data.attachments }),
-          ...(data.agentInfo !== undefined && { agentInfo: data.agentInfo }),
+          ...(data.metadata !== undefined && { metadata: data.metadata }),
         })
         break
       }
@@ -276,7 +276,7 @@ function applyTurnEventsToSnapshotMessages(
         if (data.messageKind !== undefined) msg.messageKind = data.messageKind
         if (data.isCompactionSummary !== undefined) msg.isCompactionSummary = data.isCompactionSummary
         if (data.attachments !== undefined) msg.attachments = data.attachments
-        if (data.agentInfo !== undefined) msg.agentInfo = data.agentInfo
+        if (data.metadata !== undefined) msg.metadata = data.metadata
         messages.set(data.messageId, msg)
         break
       }

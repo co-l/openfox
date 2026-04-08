@@ -351,7 +351,7 @@ export function createMessageStartEvent(
     subAgentType?: string
     isSystemGenerated?: boolean
     messageKind?: 'correction' | 'auto-prompt' | 'context-reset' | 'task-completed' | 'workflow-started' | 'command'
-    agentInfo?: { id: string; name: string; color: string }
+    metadata?: { type: string; name: string; color: string }
   }
 ): TurnEvent {
   return {
@@ -365,7 +365,7 @@ export function createMessageStartEvent(
       ...(options?.subAgentType && { subAgentType: options.subAgentType }),
       ...(options?.isSystemGenerated && { isSystemGenerated: options.isSystemGenerated }),
       ...(options?.messageKind && { messageKind: options.messageKind }),
-      ...(options?.agentInfo && { agentInfo: options.agentInfo }),
+      ...(options?.metadata && { metadata: options.metadata }),
     },
   }
 }

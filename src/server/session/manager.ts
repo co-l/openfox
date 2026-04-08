@@ -524,6 +524,7 @@ export class SessionManager {
       isSystemGenerated: true,
       messageKind: 'auto-prompt',
       isCompactionSummary: true,
+      metadata: { type: 'compaction', name: 'Compaction', color: '#64748b' },
     })
   }
 

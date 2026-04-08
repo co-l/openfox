@@ -202,8 +202,8 @@ function injectModeReminderIfNeeded(
       ...(currentWindowMessageOptions ?? {}),
       isSystemGenerated: true,
       messageKind: 'auto-prompt',
-      agentInfo: {
-        id: agentDef.metadata.id,
+      metadata: {
+        type: 'agent',
         name: agentDef.metadata.name ?? agentDef.metadata.id,
         color: agentDef.metadata.color ?? '#6b7280',
       },
@@ -223,8 +223,8 @@ function injectModeReminderIfNeeded(
       timestamp: new Date().toISOString(),
       isSystemGenerated: true,
       messageKind: 'auto-prompt',
-      agentInfo: {
-        id: agentDef.metadata.id,
+      metadata: {
+        type: 'agent',
         name: agentDef.metadata.name ?? agentDef.metadata.id,
         color: agentDef.metadata.color ?? '#6b7280',
       },
@@ -344,6 +344,7 @@ export async function runBuilderTurn(
             ...(getCurrentWindowMessageOptions(sessionId) ?? {}),
             isSystemGenerated: true,
             messageKind: 'auto-prompt',
+            metadata: { type: 'agent', name: 'Builder', color: '#22c55e' },
           }))
           eventStore.append(sessionId, { type: 'message.done', data: { messageId: kickoffMsgId } })
         }
