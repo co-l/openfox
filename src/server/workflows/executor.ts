@@ -20,6 +20,7 @@ import type {
 } from './types.js'
 import { TERMINAL_DONE, TERMINAL_BLOCKED } from './types.js'
 import { getEventStore, getCurrentContextWindowId } from '../events/index.js'
+import { createChatMessageMessage } from '../ws/protocol.js'
 import { runBuilderTurn, TurnMetrics, createMessageStartEvent, type BuilderTurnOptions } from '../chat/orchestrator.js'
 import { executeSubAgent } from '../sub-agents/manager.js'
 import { createVerifierNudgeConfig } from '../sub-agents/verifier-helpers.js'
@@ -295,6 +296,17 @@ export async function executeWorkflow(
             metadata: { type: 'workflow', name: 'Workflow', color: '#f59e0b' },
           }))
           eventStore.append(sessionId, { type: 'message.done', data: { messageId: promptMsgId } })
+          if (onMessage) {
+            onMessage(createChatMessageMessage({
+              id: promptMsgId,
+              role: 'user',
+              content: promptContent,
+              timestamp: new Date().toISOString(),
+              isSystemGenerated: true,
+              messageKind: 'auto-prompt',
+              metadata: { type: 'workflow', name: 'Workflow', color: '#f59e0b' },
+            }))
+          }
         } else if (!isFirstBuilderEntry) {
           // Build nudge: nudgePrompt first (if exists), then step_done nudge
           const parts: string[] = []
@@ -313,6 +325,17 @@ export async function executeWorkflow(
             metadata: { type: 'workflow', name: 'Workflow', color: '#f59e0b' },
           }))
           eventStore.append(sessionId, { type: 'message.done', data: { messageId: nudgeMsgId } })
+          if (onMessage) {
+            onMessage(createChatMessageMessage({
+              id: nudgeMsgId,
+              role: 'user',
+              content: nudgeContent,
+              timestamp: new Date().toISOString(),
+              isSystemGenerated: true,
+              messageKind: 'correction',
+              metadata: { type: 'workflow', name: 'Workflow', color: '#f59e0b' },
+            }))
+          }
         }
 
         const turnMetrics = new TurnMetrics()
@@ -402,6 +425,17 @@ export async function executeWorkflow(
           messageKind: 'auto-prompt',
           metadata: { type: 'workflow', name: 'Workflow', color: '#f59e0b' },
         }))
+        if (onMessage) {
+          onMessage(createChatMessageMessage({
+            id: shellMsgId,
+            role: 'user',
+            content: `Running: \`${command}\``,
+            timestamp: new Date().toISOString(),
+            isSystemGenerated: true,
+            messageKind: 'auto-prompt',
+            metadata: { type: 'workflow', name: 'Workflow', color: '#f59e0b' },
+          }))
+        }
 
         const result = await executeShellCommand(command, session.workdir, timeout, signal)
 
@@ -421,6 +455,16 @@ export async function executeWorkflow(
           messageKind: 'correction',
         }))
         eventStore.append(sessionId, { type: 'message.done', data: { messageId: outputMsgId } })
+        if (onMessage) {
+          onMessage(createChatMessageMessage({
+            id: outputMsgId,
+            role: 'user',
+            content: outputContent,
+            timestamp: new Date().toISOString(),
+            isSystemGenerated: true,
+            messageKind: 'correction',
+          }))
+        }
 
         stepOutcome = { result: successCodes.includes(result.exitCode) ? 'success' : 'failure', output: lastStepOutput }
         break
@@ -499,6 +543,17 @@ export async function executeWorkflow(
         metadata: { type: 'workflow', name: 'Workflow', color: '#f59e0b' },
       }))
       eventStore.append(sessionId, { type: 'message.done', data: { messageId: blockedMsgId } })
+      if (onMessage) {
+        onMessage(createChatMessageMessage({
+          id: blockedMsgId,
+          role: 'user',
+          content: `Runner blocked: ${reason}`,
+          timestamp: new Date().toISOString(),
+          isSystemGenerated: true,
+          messageKind: 'correction',
+          metadata: { type: 'workflow', name: 'Workflow', color: '#f59e0b' },
+        }))
+      }
 
       logger.warn('Workflow executor blocked', { sessionId, iterations, reason })
       const blockedAction: NextAction = { type: 'BLOCKED', reason, blockedCriteria }
