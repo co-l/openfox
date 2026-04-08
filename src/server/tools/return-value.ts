@@ -34,10 +34,16 @@ export const returnValueTool: Tool = {
       },
     },
   },
-  async execute(_args: Record<string, unknown>, _context: ToolContext): Promise<ToolResult> {
+  async execute(args: Record<string, unknown>, _context: ToolContext): Promise<ToolResult> {
+    const content = args['content'] as string | undefined
+    const result = args['result'] as string | undefined
+    const output = content 
+      ? `Returned: ${content}${result ? ` (${result})` : ''}`
+      : 'No content provided'
+
     return {
       success: true,
-      output: 'Return value recorded.',
+      output,
       durationMs: 0,
       truncated: false,
     }

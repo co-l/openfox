@@ -82,10 +82,18 @@ export function convertMessages(
   options: ConvertMessagesOptions
 ): ChatCompletionMessageParam[] {
   const filtered = messages.filter((msg) => {
-    return !(msg.role === 'assistant' && !msg.content?.trim() && !msg.toolCalls?.length)
+    return !(msg.role === 'assistant' && !msg.content?.trim() && (!msg.toolCalls || msg.toolCalls.length === 0))
   })
 
-  return filtered.map((msg): ChatCompletionMessageParam => {
+  const removedAssistantToolCallIds = messages
+    .filter((msg) => msg.role === 'assistant' && !msg.content?.trim() && msg.toolCalls && msg.toolCalls.length > 0)
+    .flatMap((msg) => msg.toolCalls!.map((tc) => tc.id))
+
+  const finalMessages = removedAssistantToolCallIds.length > 0
+    ? filtered.filter((msg) => msg.role !== 'tool' || !removedAssistantToolCallIds.includes(msg.toolCallId!))
+    : filtered
+
+  return finalMessages.map((msg): ChatCompletionMessageParam => {
     if (msg.role === 'tool') {
       if (msg.attachments && msg.attachments.length > 0) {
         const content: Array<{ type: 'text'; text: string } | { type: 'image_url'; image_url: { url: string } }> = []
@@ -153,12 +161,20 @@ export async function convertMessagesWithFallback(
 ): Promise<ChatCompletionMessageParam[]> {
   logger.debug('[VisionFallback] convertMessagesWithFallback called', { messageCount: messages.length })
   const filtered = messages.filter((msg) => {
-    return !(msg.role === 'assistant' && !msg.content?.trim() && !msg.toolCalls?.length)
+    return !(msg.role === 'assistant' && !msg.content?.trim() && (!msg.toolCalls || msg.toolCalls.length === 0))
   })
+
+  const removedAssistantToolCallIds = messages
+    .filter((msg) => msg.role === 'assistant' && !msg.content?.trim() && msg.toolCalls && msg.toolCalls.length > 0)
+    .flatMap((msg) => msg.toolCalls!.map((tc) => tc.id))
+
+  const finalMessages = removedAssistantToolCallIds.length > 0
+    ? filtered.filter((msg) => msg.role !== 'tool' || !removedAssistantToolCallIds.includes(msg.toolCallId!))
+    : filtered
 
   const converted: ChatCompletionMessageParam[] = []
 
-  for (const msg of filtered) {
+  for (const msg of finalMessages) {
     if (msg.role === 'tool') {
       if (msg.attachments && msg.attachments.length > 0) {
         const content: Array<{ type: 'text'; text: string } | { type: 'image_url'; image_url: { url: string } }> = []
