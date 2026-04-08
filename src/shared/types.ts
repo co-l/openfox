@@ -290,6 +290,7 @@ export interface Message {
   subAgentType?: string  // Sub-agent ID from agent registry
   promptContext?: PromptContext  // What was sent to LLM for this response (assistant messages only)
   attachments?: Attachment[]     // Optional image attachments
+  agentInfo?: { id: string; name: string; color: string } // For auto-prompt messages
 }
 
 // ============================================================================

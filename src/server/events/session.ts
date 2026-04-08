@@ -71,6 +71,7 @@ function toSnapshotMessage(message: import('../../shared/types.js').Message): Sn
     ...(message.isCompactionSummary !== undefined && { isCompactionSummary: message.isCompactionSummary }),
     ...(message.promptContext !== undefined && { promptContext: message.promptContext }),
     ...(message.attachments !== undefined && { attachments: message.attachments }),
+    ...(message.agentInfo !== undefined && { agentInfo: message.agentInfo }),
   }
 }
 
@@ -239,6 +240,7 @@ export function emitUserMessage(
     attachments?: Attachment[] // Optional image attachments
     subAgentId?: string
     subAgentType?: string
+    agentInfo?: { id: string; name: string; color: string }
   }
 ): string {
   const eventStore = getEventStore()
@@ -258,6 +260,7 @@ export function emitUserMessage(
       ...(options?.attachments !== undefined && { attachments: options.attachments }),
       ...(options?.subAgentId !== undefined && { subAgentId: options.subAgentId }),
       ...(options?.subAgentType !== undefined && { subAgentType: options.subAgentType }),
+      ...(options?.agentInfo !== undefined && { agentInfo: options.agentInfo }),
     },
   })
 

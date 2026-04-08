@@ -141,6 +141,11 @@ export async function executeSubAgent(options: SubAgentExecutionOptions): Promis
       messageKind: 'auto-prompt',
       subAgentId,
       subAgentType,
+      agentInfo: {
+        id: agentDef.metadata.id,
+        name: agentDef.metadata.name,
+        color: agentDef.metadata.color ?? '#6b7280',
+      },
     }))
     eventStore.append(sessionId, { type: 'message.done', data: { messageId: msgId } })
   }

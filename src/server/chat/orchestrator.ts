@@ -27,6 +27,7 @@ import { executeSubAgent } from '../sub-agents/manager.js'
 import { createVerifierNudgeConfig } from '../sub-agents/verifier-helpers.js'
 import { loadAllAgentsDefault, findAgentById, getSubAgents } from '../agents/registry.js'
 import { logger } from '../utils/logger.js'
+import { createChatMessageMessage } from '../ws/protocol.js'
 
 // Re-export for runner orchestrator
 export { TurnMetrics, createMessageStartEvent, createMessageDoneEvent, createToolCallEvent, createToolResultEvent, createChatDoneEvent }
@@ -168,7 +169,8 @@ function injectModeReminderIfNeeded(
   sessionManager: SessionManager,
   sessionId: string,
   agentId: string,
-  allAgents: AgentDefinition[]
+  allAgents: AgentDefinition[],
+  onMessage?: (msg: ServerMessage) => void
 ): void {
   const eventStore = getEventStore()
   const session = sessionManager.requireSession(sessionId)
@@ -200,12 +202,34 @@ function injectModeReminderIfNeeded(
       ...(currentWindowMessageOptions ?? {}),
       isSystemGenerated: true,
       messageKind: 'auto-prompt',
+      agentInfo: {
+        id: agentDef.metadata.id,
+        name: agentDef.metadata.name ?? agentDef.metadata.id,
+        color: agentDef.metadata.color ?? '#6b7280',
+      },
     },
   })
   eventStore.append(sessionId, {
     type: 'message.done',
     data: { messageId: reminderMsgId },
   })
+
+  // Send message to client immediately so it can display the compact card
+  if (onMessage) {
+    onMessage(createChatMessageMessage({
+      id: reminderMsgId,
+      role: 'user',
+      content: reminderContent,
+      timestamp: new Date().toISOString(),
+      isSystemGenerated: true,
+      messageKind: 'auto-prompt',
+      agentInfo: {
+        id: agentDef.metadata.id,
+        name: agentDef.metadata.name ?? agentDef.metadata.id,
+        color: agentDef.metadata.color ?? '#6b7280',
+      },
+    }))
+  }
   
   // Update execution state to track which mode we injected the reminder for
   sessionManager.updateExecutionState(sessionId, {
@@ -222,7 +246,7 @@ async function runGenericAgentTurn(
   const allAgents = await loadAllAgentsDefault()
   
   // Inject mode reminder only on mode switch
-  injectModeReminderIfNeeded(options.sessionManager, options.sessionId, agentId, allAgents)
+  injectModeReminderIfNeeded(options.sessionManager, options.sessionId, agentId, allAgents, options.onMessage)
   
   const agentDef = findAgentById(agentId, allAgents) ?? findAgentById('planner', allAgents)!
   const subAgentDefs = getSubAgents(allAgents)
@@ -273,7 +297,7 @@ export async function runBuilderTurn(
   const allAgents = await loadAllAgentsDefault()
   
   // Inject mode reminder only on mode switch
-  injectModeReminderIfNeeded(options.sessionManager, options.sessionId, 'builder', allAgents)
+  injectModeReminderIfNeeded(options.sessionManager, options.sessionId, 'builder', allAgents, options.onMessage)
   
   const builderDef = findAgentById('builder', allAgents)!
   const subAgentDefs = getSubAgents(allAgents)

@@ -7,6 +7,7 @@ import { TaskCompletedCard } from './TaskCompletedCard'
 import { WorkflowStartedCard } from './WorkflowStartedCard'
 import { MessageAttachments } from '../shared/MessageAttachments.js'
 import { MessageOptionsMenu } from './MessageOptionsMenu'
+import { AutoPromptCard } from './AutoPromptCard'
 
 interface ChatMessageProps {
   message: Message
@@ -142,6 +143,11 @@ export const ChatMessage = memo(function ChatMessage({ message, isLastAssistantM
     )
   }
   
+  // Auto-prompt message - show compact card instead of full content
+  if (message.messageKind === 'auto-prompt' && message.isSystemGenerated) {
+    return <AutoPromptCard message={message} />
+  }
+
   // User message
   if (isUser) {
     return <UserMessage message={message} promptContext={promptContext} />
