@@ -123,6 +123,11 @@ Session state is derived from EventStore, not persisted directly:
 When fixing or refactoring: write/update the failing test FIRST, then make it pass.
 
 
+## Debugging
+
+Need to trace through a session, understand why the agent did something, or find that pesky bug? Check out [docs/SESSION-DEBUGGING.md](SESSION-DEBUGGING.md) — it has everything you need to query the database directly, including DB locations, table schemas, event types, and ready-to-use queries.
+
+
 ## Production Config
 
 NEVER modify production configuration files (e.g., `~/.config/openfox/`). These are user-specific and should only be changed by the user.
