@@ -83,12 +83,12 @@ export const useAutoScroll = (
     const touch_start = () => is_user_touching = true
     const touch_end = () => is_user_touching = false
 
-    scroller.addEventListener('scroll', start_user_scroll, { passive: true })
+    scroller.addEventListener('wheel', start_user_scroll, { passive: true })
     scroller.addEventListener('touchstart', touch_start, { passive: true })
     scroller.addEventListener('touchend', touch_end, { passive: true })
 
     return () => {
-      scroller.removeEventListener('scroll', start_user_scroll)
+      scroller.removeEventListener('wheel', start_user_scroll)
       scroller.removeEventListener('touchstart', touch_start)
       scroller.removeEventListener('touchend', touch_end)
       observer.disconnect()
