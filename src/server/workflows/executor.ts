@@ -400,6 +400,7 @@ export async function executeWorkflow(
           ...(currentWindowMessageOptions ?? {}),
           isSystemGenerated: true,
           messageKind: 'auto-prompt',
+          metadata: { type: 'workflow', name: 'Workflow', color: '#f59e0b' },
         }))
 
         const result = await executeShellCommand(command, session.workdir, timeout, signal)
@@ -495,6 +496,7 @@ export async function executeWorkflow(
         ...(currentWindowMessageOptions ?? {}),
         isSystemGenerated: true,
         messageKind: 'correction',
+        metadata: { type: 'workflow', name: 'Workflow', color: '#f59e0b' },
       }))
       eventStore.append(sessionId, { type: 'message.done', data: { messageId: blockedMsgId } })
 
