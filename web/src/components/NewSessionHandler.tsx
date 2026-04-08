@@ -15,7 +15,7 @@ export function NewSessionHandler() {
       const createAndRedirect = async () => {
         const session = await createSession(projectId)
         if (session) {
-          window.location.href = `/p/${projectId}/s/${session.id}`
+          navigate(`/p/${projectId}/s/${session.id}`)
         } else {
           navigate(`/p/${projectId}`)
         }

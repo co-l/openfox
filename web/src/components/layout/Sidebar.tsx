@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, useCallback } from 'react'
-import { useLocation } from 'wouter'
+import { useLocation, Link } from 'wouter'
 import { useSessionStore } from '../../stores/session'
 import { useProjectStore } from '../../stores/project'
 import type { SessionSummary } from '@shared/types.js'
@@ -103,13 +103,13 @@ export function Sidebar({ projectId, isOpen = true, onClose }: SidebarProps) {
         `}
       >
         <div className="p-4 border-b border-border flex gap-2">
-          <a
+          <Link
             href={`/p/${projectId}/new`}
             className="flex-1 block text-center rounded font-medium transition-colors bg-accent-primary/25 text-white hover:bg-accent-primary/40 px-3 py-1.5 text-sm"
             data-testid="sidebar-new-session-button"
           >
             + New Session
-          </a>
+          </Link>
           <DropdownMenu
             items={[
               {

@@ -1,3 +1,4 @@
+import { Link } from 'wouter'
 import { useProjectStore } from '../stores/project'
 
 export function EmptyProjectView() {
@@ -13,12 +14,14 @@ export function EmptyProjectView() {
           No session selected
         </p>
         <div className="flex flex-col gap-3">
-          <a
-            href={currentProject ? `/p/${currentProject.id}/new` : '#'}
-            className="block w-full rounded font-medium transition-colors bg-accent-primary/25 text-white hover:bg-accent-primary/40 px-3 py-2 text-center"
-          >
-            Create New Session
-          </a>
+          {currentProject && (
+            <Link
+              href={`/p/${currentProject.id}/new`}
+              className="block w-full rounded font-medium transition-colors bg-accent-primary/25 text-white hover:bg-accent-primary/40 px-3 py-2 text-center"
+            >
+              Create New Session
+            </Link>
+          )}
           <p className="text-sm text-text-muted">
             Or select an existing session from the sidebar
           </p>

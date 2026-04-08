@@ -77,12 +77,12 @@ function SessionDropdown({ sessions, currentProject, currentSession }: SessionDr
   // Add "New session" as the first item
   items.push({
     label: (
-      <a href={`/p/${currentProject.id}/new`} className="flex items-center gap-2 px-3 py-2 min-w-[160px]" data-testid="session-dropdown-new-session">
+      <Link href={`/p/${currentProject.id}/new`} className="flex items-center gap-2 px-3 py-2 min-w-[160px]" data-testid="session-dropdown-new-session">
         <svg className="w-4 h-4 text-accent-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
         </svg>
         <span className="text-sm">New session</span>
-      </a>
+      </Link>
     ),
     onClick: () => {},
   })

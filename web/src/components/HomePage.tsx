@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { Link } from 'wouter'
 import { useSessionStore } from '../stores/session'
 import { useProjectStore } from '../stores/project'
 import { Button } from './shared/Button'
@@ -70,7 +71,7 @@ export function HomePage() {
             <div key={project.id} className="mb-6 md:mb-8">
               <div className="bg-bg-secondary border border-border rounded-lg overflow-hidden">
                 <div className="p-3 md:p-4 border-b border-border flex items-center justify-between gap-2">
-                  <a
+                  <Link
                     href={`/p/${project.id}`}
                     className="flex items-center gap-2 cursor-pointer hover:opacity-80 transition-opacity flex-1"
                   >
@@ -78,13 +79,13 @@ export function HomePage() {
                       <path d="M10 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z" />
                     </svg>
                     <span className="text-text-primary font-semibold">{project.name}</span>
-                  </a>
-                  <a
+                  </Link>
+                  <Link
                     href={`/p/${project.id}/new`}
                     className="rounded font-medium transition-colors bg-accent-primary/25 text-white hover:bg-accent-primary/40 px-1.5 py-1 text-xs"
                   >
                     + New Session
-                  </a>
+                  </Link>
                 </div>
                 <div className="divide-y divide-border">
                   {projectSessions.length > 0 ? (
@@ -92,7 +93,7 @@ export function HomePage() {
                       const project = projects.find((p) => session.workdir.startsWith(p.workdir))
                       const href = project ? `/p/${project.id}/s/${session.id}` : '#'
                       return (
-                        <a
+                        <Link
                           key={session.id}
                           href={href}
                           className="block p-3 md:p-4 hover:bg-bg-tertiary/50 cursor-pointer transition-colors"
@@ -110,7 +111,7 @@ export function HomePage() {
                               <span className="text-text-muted text-xs">{session.messageCount} msgs</span>
                             </div>
                           </div>
-                        </a>
+                        </Link>
                       )
                     })
                   ) : (
