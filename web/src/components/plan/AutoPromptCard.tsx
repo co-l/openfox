@@ -20,36 +20,42 @@ export function AutoPromptCard({ message }: AutoPromptCardProps) {
 
   const typeLabels: Record<string, string> = {
     agent: 'definition injected',
-    workflow: 'instructions injected',
+    workflow: 'instructions',
     compaction: 'prompt injected',
+    subagent: 'instructions',
   }
   const label = typeLabels[metaType] ?? 'injected'
+
+  const showContentDirectly = metaType === 'workflow' || metaType === 'subagent'
 
   return (
     <>
       <div className="flex items-center justify-center gap-1.5 text-[10px] text-text-muted font-mono mt-3 mb-4">
         <span className="flex-1 h-px bg-border" />
         <span
-          className="w-1.5 h-1.5 rounded-full flex-shrink-0 cursor-pointer"
+          className="w-1.5 h-1.5 rounded-full flex-shrink-0"
           style={{ backgroundColor: metaColor }}
-          onClick={() => setIsModalOpen(true)}
         />
-        <span
-          className="cursor-pointer hover:text-text-secondary transition-colors"
-          style={{ color: metaColor }}
-          onClick={() => setIsModalOpen(true)}
-        >
+        <span style={{ color: metaColor }}>
           {metaName}
         </span>
         <span>·</span>
-        <span
-          className="cursor-pointer hover:text-text-secondary transition-colors"
-          onClick={() => setIsModalOpen(true)}
-        >
+        <span>
           {label}
         </span>
         <span className="flex-1 h-px bg-border" />
       </div>
+
+      {showContentDirectly && (
+        <div className="flex justify-center feed-item mb-4">
+          <div
+            className="max-w-[75%] rounded p-3 bg-bg-tertiary/50 text-text-secondary text-sm"
+            style={{ borderLeft: `3px solid ${metaColor}` }}
+          >
+            <pre className="whitespace-pre-wrap font-mono text-xs">{message.content}</pre>
+          </div>
+        </div>
+      )}
 
       <Modal
         isOpen={isModalOpen}

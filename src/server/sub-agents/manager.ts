@@ -143,7 +143,7 @@ export async function executeSubAgent(options: SubAgentExecutionOptions): Promis
       subAgentId,
       subAgentType,
       metadata: {
-        type: 'agent',
+        type: 'subagent',
         name: agentDef.metadata.name,
         color: agentDef.metadata.color ?? '#6b7280',
       },
@@ -160,7 +160,7 @@ export async function executeSubAgent(options: SubAgentExecutionOptions): Promis
         subAgentId,
         subAgentType,
         metadata: {
-          type: 'agent',
+          type: 'subagent',
           name: agentDef.metadata.name,
           color: agentDef.metadata.color ?? '#6b7280',
         },
