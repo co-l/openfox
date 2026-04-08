@@ -1,4 +1,4 @@
-import { memo, useMemo } from 'react'
+import { memo, useMemo, useState } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { SyntaxHighlighter, oneDark } from '../../lib/syntax-highlighter'
@@ -28,24 +28,73 @@ const MARKDOWN_COMPONENTS = {
 
     const language = match?.[1] || 'text'
     const codeString = String(children).replace(/\n$/, '')
+    const [copied, setCopied] = useState(false)
+
+    const handleCopy = async () => {
+      try {
+        if (navigator.clipboard && window.isSecureContext) {
+          await navigator.clipboard.writeText(codeString)
+        } else {
+          const textArea = document.createElement('textarea')
+          textArea.value = codeString
+          textArea.style.position = 'fixed'
+          textArea.style.left = '-9999px'
+          document.body.appendChild(textArea)
+          textArea.select()
+          document.execCommand('copy')
+          document.body.removeChild(textArea)
+        }
+        setCopied(true)
+        setTimeout(() => setCopied(false), 2000)
+      } catch (err) {
+        console.error('Failed to copy:', err)
+      }
+    }
 
     return (
-      <div className="relative group my-1.5">
-        <div className="absolute top-0 right-0 px-1.5 py-0.5 text-[10px] text-text-muted bg-bg-tertiary rounded-bl">
-          {language}
+      <div className="relative group my-1.5 rounded overflow-hidden">
+        <div className="absolute bottom-0 right-0 flex items-center gap-2 px-2 py-1 text-xs text-text-muted/70 bg-bg-tertiary/60 rounded-tl rounded-tr z-10">
+          <span>{language}</span>
+          <button
+            type="button"
+            onClick={(e) => {
+              e.preventDefault()
+              e.stopPropagation()
+              handleCopy()
+            }}
+            className="opacity-0 group-hover:opacity-100 transition-opacity hover:text-text-primary p-0.5"
+            title="Copy code"
+          >
+            {copied ? (
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+              </svg>
+            ) : (
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+              </svg>
+            )}
+          </button>
         </div>
-        <SyntaxHighlighter
-          style={oneDark}
-          language={language}
-          PreTag="div"
-          customStyle={{
-            margin: 0,
-            borderRadius: '0.375rem',
-            fontSize: '0.75rem',
-          } as React.CSSProperties}
-        >
-          {codeString}
-        </SyntaxHighlighter>
+        <div className="overflow-x-auto">
+          <SyntaxHighlighter
+            style={oneDark}
+            language={language}
+            PreTag="div"
+            customStyle={{
+              margin: 0,
+              fontSize: '0.75rem',
+            } as React.CSSProperties}
+            codeTagProps={{
+              style: {
+                whiteSpace: 'pre-wrap',
+                wordBreak: 'break-word',
+              },
+            }}
+          >
+            {codeString}
+          </SyntaxHighlighter>
+        </div>
       </div>
     )
   },
