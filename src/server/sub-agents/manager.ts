@@ -22,6 +22,7 @@ import { getEnabledSkillMetadata } from '../skills/registry.js'
 import { getRuntimeConfig } from '../runtime-config.js'
 import { getGlobalConfigDir } from '../../cli/paths.js'
 import { getEventStore, getCurrentContextWindowId } from '../events/index.js'
+import { createChatMessageMessage } from '../ws/protocol.js'
 import { logger } from '../utils/logger.js'
 
 // ============================================================================
@@ -148,6 +149,23 @@ export async function executeSubAgent(options: SubAgentExecutionOptions): Promis
       },
     }))
     eventStore.append(sessionId, { type: 'message.done', data: { messageId: msgId } })
+    if (onMessage) {
+      onMessage(createChatMessageMessage({
+        id: msgId,
+        role: 'user',
+        content: msg.content,
+        timestamp: new Date().toISOString(),
+        isSystemGenerated: true,
+        messageKind: 'auto-prompt',
+        subAgentId,
+        subAgentType,
+        metadata: {
+          type: 'agent',
+          name: agentDef.metadata.name,
+          color: agentDef.metadata.color ?? '#6b7280',
+        },
+      }))
+    }
   }
 
   // Load instructions and skills for the sub-agent system prompt
