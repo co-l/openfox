@@ -85,9 +85,12 @@ export function convertMessages(
     return !(msg.role === 'assistant' && !msg.content?.trim() && (!msg.toolCalls || msg.toolCalls.length === 0))
   })
 
+  const isFilteredOut = (msg: LLMMessage) =>
+    msg.role === 'assistant' && !msg.content?.trim() && (!msg.toolCalls || msg.toolCalls.length === 0)
+
   const removedAssistantToolCallIds = messages
-    .filter((msg) => msg.role === 'assistant' && !msg.content?.trim() && msg.toolCalls && msg.toolCalls.length > 0)
-    .flatMap((msg) => msg.toolCalls!.map((tc) => tc.id))
+    .filter(isFilteredOut)
+    .flatMap((msg) => msg.toolCalls?.map((tc) => tc.id) ?? [])
 
   const finalMessages = removedAssistantToolCallIds.length > 0
     ? filtered.filter((msg) => msg.role !== 'tool' || !removedAssistantToolCallIds.includes(msg.toolCallId!))
@@ -164,9 +167,12 @@ export async function convertMessagesWithFallback(
     return !(msg.role === 'assistant' && !msg.content?.trim() && (!msg.toolCalls || msg.toolCalls.length === 0))
   })
 
+  const isFilteredOut = (msg: LLMMessage) =>
+    msg.role === 'assistant' && !msg.content?.trim() && (!msg.toolCalls || msg.toolCalls.length === 0)
+
   const removedAssistantToolCallIds = messages
-    .filter((msg) => msg.role === 'assistant' && !msg.content?.trim() && msg.toolCalls && msg.toolCalls.length > 0)
-    .flatMap((msg) => msg.toolCalls!.map((tc) => tc.id))
+    .filter(isFilteredOut)
+    .flatMap((msg) => msg.toolCalls?.map((tc) => tc.id) ?? [])
 
   const finalMessages = removedAssistantToolCallIds.length > 0
     ? filtered.filter((msg) => msg.role !== 'tool' || !removedAssistantToolCallIds.includes(msg.toolCallId!))
