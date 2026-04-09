@@ -1,24 +1,9 @@
 import os from 'node:os'
-import { statSync, readFileSync, existsSync } from 'node:fs'
-import { join } from 'node:path'
+import { statSync } from 'node:fs'
+import { VERSION } from '../../constants.js'
 
 export function getVersion(): string {
-  if (process.env['OPENFOX_VERSION']) {
-    return process.env['OPENFOX_VERSION']
-  }
-
-  // Dev mode fallback - read from package.json in repo root
-  const pkgPath = join(process.cwd(), 'package.json')
-  if (existsSync(pkgPath)) {
-    try {
-      const pkg = JSON.parse(readFileSync(pkgPath, 'utf-8'))
-      if (pkg.version) return `${pkg.version}-dev`
-    } catch {
-      // ignore
-    }
-  }
-
-  return 'unknown'
+  return VERSION
 }
 
 export interface NetworkInterface {

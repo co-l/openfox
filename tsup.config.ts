@@ -1,13 +1,11 @@
 import { defineConfig } from 'tsup'
-import { readFileSync, existsSync } from 'node:fs'
+import { readFileSync } from 'node:fs'
 
 const pkg = JSON.parse(readFileSync('./package.json', 'utf-8'))
-const isDev = existsSync('./.git')
-const version = isDev ? `${pkg.version}-dev` : pkg.version
 
 export default defineConfig({
   define: {
-    'process.env.OPENFOX_VERSION': JSON.stringify(version),
+    'process.env.OPENFOX_VERSION': JSON.stringify(pkg.version),
   },
   entry: {
     'cli/index': 'src/cli/index.ts',
