@@ -2,10 +2,6 @@ import os from 'node:os'
 import { statSync } from 'node:fs'
 import { VERSION } from '../../constants.js'
 
-export function getVersion(): string {
-  return VERSION
-}
-
 export interface NetworkInterface {
   ip: string
   family: 'IPv4' | 'IPv6'
@@ -101,7 +97,7 @@ export function displayStartupBanner(config: {
   const { host, port, databasePath, configPath } = config
   const isLocalhost = host === '127.0.0.1'
   
-  console.log(`\n🦊 OpenFox v${getVersion()}\n`)
+  console.log(`\n🦊 OpenFox v${VERSION}\n`)
   
   if (isLocalhost) {
     console.log(`  🌐 Server: http://localhost:${port}`)
