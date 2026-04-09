@@ -129,7 +129,7 @@ export async function runCli(options: { mode: Mode }): Promise<void> {
           const baseConfig = {
             providers: [],
             server: { port: 10369, host: '127.0.0.1', openBrowser: true },
-            logging: { level: 'info' as const },
+            logging: { level: 'error' as const },
             database: { path: '' },
             workspace: { workdir: process.cwd() },
           }

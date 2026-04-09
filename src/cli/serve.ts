@@ -59,7 +59,7 @@ export async function runServe(options: ServeOptions): Promise<void> {
       path: env.database.path !== './openfox.db' ? env.database.path : getDatabasePath(mode),
     },
     logging: {
-      level: globalConfig.logging?.level ?? 'info' as const,
+      level: globalConfig.logging?.level ?? 'error' as const,
     },
     mode,
     // Pass providers for the server to use

@@ -18,7 +18,7 @@ function createBaseConfig() {
     activeProviderId: undefined,
     activeWorkflowId: undefined,
     server: { port: 10369, host: '127.0.0.1', openBrowser: true },
-    logging: { level: 'info' as const },
+    logging: { level: 'error' as const },
     database: { path: '' },
     workspace: { workdir: process.cwd() },
     visionFallback: { enabled: false, url: 'http://localhost:11434', model: 'qwen3-vl:2b', timeout: 120 },

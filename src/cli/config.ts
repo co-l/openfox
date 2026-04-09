@@ -462,7 +462,7 @@ export function mergeConfigs(...configs: Array<Partial<OldGlobalConfig>>): OldGl
   }, {
     llm: { url: 'http://localhost:8000/v1', model: 'auto', backend: 'auto' as const, maxContext: 200000, disableThinking: false },
     server: { port: 10369, host: '127.0.0.1', openBrowser: true },
-    logging: { level: 'info' as const },
+    logging: { level: 'error' as const },
   })
   return oldConfigSchema.parse(result)
 }
