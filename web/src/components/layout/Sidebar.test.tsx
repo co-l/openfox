@@ -60,6 +60,8 @@ const projectStoreState = {
 
 vi.mock('wouter', () => ({
   useLocation: () => [undefined, mockNavigate],
+  Link: ({ href, children, className }: { href: string; children: unknown; className?: string }) =>
+    `<a href="${href}" class="${className}">${children}</a>`,
 }))
 
 vi.mock('../../stores/session', () => ({

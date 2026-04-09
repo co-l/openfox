@@ -7,6 +7,8 @@ import { useLocation } from 'wouter'
 
 vi.mock('wouter', () => ({
   useLocation: vi.fn(),
+  Link: ({ href, children, className }: { href: string; children: unknown; className?: string }) =>
+    `<a href="${href}" class="${className}">${children}</a>`,
 }))
 
 vi.mock('../stores/project', () => ({
