@@ -65,7 +65,7 @@ function snapshotMessageToMessage(message: SnapshotMessage): Message {
 }
 
 function shouldIncludeContextMessage(
-  message: Pick<SnapshotMessage, 'role' | 'contextWindowId' | 'subAgentType'>,
+  message: Pick<SnapshotMessage, 'role' | 'contextWindowId' | 'subAgentType' | 'subAgentId'>,
   windowId?: string,
   options?: ContextMessageBuildOptions,
 ): boolean {

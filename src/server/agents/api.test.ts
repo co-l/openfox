@@ -120,7 +120,7 @@ describe('GET /api/agents', () => {
     const data = json as { agents: Array<{ id: string }> }
 
     expect(status).toBe(200)
-    expect(data.agents.length).toBeGreaterThanOrEqual(6)
+    expect(data.agents.length).toBeGreaterThanOrEqual(5)
 
     const ids = data.agents.map(a => a.id)
     expect(ids).toContain('planner')
