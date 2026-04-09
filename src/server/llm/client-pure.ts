@@ -85,18 +85,7 @@ export function convertMessages(
     return !(msg.role === 'assistant' && !msg.content?.trim() && (!msg.toolCalls || msg.toolCalls.length === 0))
   })
 
-  const isFilteredOut = (msg: LLMMessage) =>
-    msg.role === 'assistant' && !msg.content?.trim() && (!msg.toolCalls || msg.toolCalls.length === 0)
-
-  const removedAssistantToolCallIds = messages
-    .filter(isFilteredOut)
-    .flatMap((msg) => msg.toolCalls?.map((tc) => tc.id) ?? [])
-
-  const finalMessages = removedAssistantToolCallIds.length > 0
-    ? filtered.filter((msg) => msg.role !== 'tool' || !removedAssistantToolCallIds.includes(msg.toolCallId!))
-    : filtered
-
-  return finalMessages.map((msg): ChatCompletionMessageParam => {
+  return filtered.map((msg): ChatCompletionMessageParam => {
     if (msg.role === 'tool') {
       if (msg.attachments && msg.attachments.length > 0) {
         const content: Array<{ type: 'text'; text: string } | { type: 'image_url'; image_url: { url: string } }> = []
@@ -167,20 +156,9 @@ export async function convertMessagesWithFallback(
     return !(msg.role === 'assistant' && !msg.content?.trim() && (!msg.toolCalls || msg.toolCalls.length === 0))
   })
 
-  const isFilteredOut = (msg: LLMMessage) =>
-    msg.role === 'assistant' && !msg.content?.trim() && (!msg.toolCalls || msg.toolCalls.length === 0)
-
-  const removedAssistantToolCallIds = messages
-    .filter(isFilteredOut)
-    .flatMap((msg) => msg.toolCalls?.map((tc) => tc.id) ?? [])
-
-  const finalMessages = removedAssistantToolCallIds.length > 0
-    ? filtered.filter((msg) => msg.role !== 'tool' || !removedAssistantToolCallIds.includes(msg.toolCallId!))
-    : filtered
-
   const converted: ChatCompletionMessageParam[] = []
 
-  for (const msg of finalMessages) {
+  for (const msg of filtered) {
     if (msg.role === 'tool') {
       if (msg.attachments && msg.attachments.length > 0) {
         const content: Array<{ type: 'text'; text: string } | { type: 'image_url'; image_url: { url: string } }> = []

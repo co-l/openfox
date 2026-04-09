@@ -67,6 +67,32 @@ describe('convertMessages - sub-agent tool result filtering', () => {
     })
   })
 
+  it('preserves tool results when assistant has whitespace-only content but non-empty toolCalls', () => {
+    const messages = [
+      { role: 'user' as const, content: 'read package.json and tell me version' },
+      { role: 'user' as const, content: '<system-reminder>Plan Mode</system-reminder>' },
+      { 
+        role: 'assistant' as const, 
+        content: '\n\n\n',
+        toolCalls: [{ id: 'call_2a36c70017bd44d19f6ad54e', name: 'read_file', arguments: { path: 'package.json' } }] 
+      },
+      { 
+        role: 'tool' as const, 
+        content: '1: { "version": "0.2.4" }', 
+        toolCallId: 'call_2a36c70017bd44d19f6ad54e' 
+      },
+    ]
+
+    const result = convertMessages(messages, { modelSupportsVision: false, visionFallbackEnabled: false })
+    
+    const toolMessages = result.filter(m => m.role === 'tool')
+    expect(toolMessages).toHaveLength(1)
+    expect(toolMessages[0]).toMatchObject({
+      role: 'tool',
+      tool_call_id: 'call_2a36c70017bd44d19f6ad54e',
+    })
+  })
+
   it('preserves tool results when assistant has actual content and toolCalls', () => {
     // Edge case: assistant message has actual content AND tool calls
     

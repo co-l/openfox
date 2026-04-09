@@ -74,6 +74,7 @@ function shouldIncludeContextMessage(
   return message.role !== 'system'
     && (windowId === undefined || message.contextWindowId === windowId)
     && (includeVerifier || message.subAgentType !== 'verifier')
+    && !message.subAgentId
 }
 
 function appendSnapshotMessageContext(
@@ -400,6 +401,7 @@ export function buildContextMessagesFromStoredEvents(
           data.role !== 'system'
           && (windowId === undefined || data.contextWindowId === windowId)
           && (includeVerifier || data.subAgentType !== 'verifier')
+          && !data.subAgentId
         ) {
           const message: ContextMessage & { id: string } = {
             id: data.messageId,

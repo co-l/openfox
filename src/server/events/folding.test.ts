@@ -776,4 +776,64 @@ describe('event folding', () => {
       expect(state.pendingConfirmations[0]?.callId).toBe('call-2')
     })
   })
+
+  describe('sub-agent message exclusion from context', () => {
+    it('excludes sub-agent messages from buildContextMessagesFromStoredEvents', () => {
+      // When call_sub_agent runs in the current turn, sub-agent events are emitted
+      // to the same session with subAgentId set. These must be excluded from the
+      // main agent's context to avoid invalid message sequences (400 errors).
+      const events: StoredEvent[] = [
+        { ...baseEvent, seq: 1, type: 'session.initialized', data: { projectId: 'p1', workdir: '/tmp', contextWindowId: 'window-1' } },
+        // Main agent user message
+        { ...baseEvent, seq: 2, type: 'message.start', data: { messageId: 'user-main', role: 'user', content: 'Do something', contextWindowId: 'window-1' } },
+        // Main agent assistant calls call_sub_agent
+        { ...baseEvent, seq: 3, type: 'message.start', data: { messageId: 'asst-main', role: 'assistant', contextWindowId: 'window-1' } },
+        { ...baseEvent, seq: 4, type: 'tool.call', data: { messageId: 'asst-main', toolCall: { id: 'tc-main', name: 'call_sub_agent', arguments: { subAgentType: 'planner', prompt: 'task' } } } },
+        // Sub-agent messages (have subAgentId set - must be excluded)
+        { ...baseEvent, seq: 5, type: 'message.start', data: { messageId: 'user-sub-1', role: 'user', content: 'Fresh Context', contextWindowId: 'window-1', subAgentId: 'sub-1', subAgentType: 'planner' } },
+        { ...baseEvent, seq: 6, type: 'message.start', data: { messageId: 'user-sub-2', role: 'user', content: 'task prompt', contextWindowId: 'window-1', subAgentId: 'sub-1', subAgentType: 'planner' } },
+        { ...baseEvent, seq: 7, type: 'message.start', data: { messageId: 'asst-sub', role: 'assistant', contextWindowId: 'window-1', subAgentId: 'sub-1', subAgentType: 'planner' } },
+        { ...baseEvent, seq: 8, type: 'tool.call', data: { messageId: 'asst-sub', toolCall: { id: 'tc-sub', name: 'read_file', arguments: { path: 'package.json' } } } },
+        { ...baseEvent, seq: 9, type: 'tool.result', data: { messageId: 'asst-sub', toolCallId: 'tc-sub', result: { success: true, output: 'file content', durationMs: 1, truncated: false } } },
+        // Main agent tool result for call_sub_agent (no subAgentId - must be included)
+        { ...baseEvent, seq: 10, type: 'tool.result', data: { messageId: 'asst-main', toolCallId: 'tc-main', result: { success: true, output: 'sub-agent result', durationMs: 10, truncated: false } } },
+      ]
+
+      const messages = buildContextMessagesFromStoredEvents(events, 'window-1')
+
+      // Only main agent messages should appear
+      expect(messages).toHaveLength(3) // user-main, asst-main, tool-result for tc-main
+      expect(messages[0]).toMatchObject({ role: 'user', content: 'Do something' })
+      expect(messages[1]).toMatchObject({ role: 'assistant', toolCalls: [{ id: 'tc-main', name: 'call_sub_agent' }] })
+      expect(messages[2]).toMatchObject({ role: 'tool', toolCallId: 'tc-main', content: 'sub-agent result' })
+
+      // Sub-agent messages must NOT appear
+      const subAgentMessages = messages.filter(m =>
+        m.content === 'Fresh Context' || m.content === 'task prompt' || m.content === 'file content'
+      )
+      expect(subAgentMessages).toHaveLength(0)
+    })
+
+    it('produces a valid (non-interleaved) sequence for main agent after sub-agent call', () => {
+      // The key invariant: after filtering sub-agent messages, the main agent's
+      // assistant message with tool_calls is immediately followed by its tool result,
+      // with no user messages in between (which would cause 400 errors).
+      const events: StoredEvent[] = [
+        { ...baseEvent, seq: 1, type: 'message.start', data: { messageId: 'user-main', role: 'user', content: 'task', contextWindowId: 'win-1' } },
+        { ...baseEvent, seq: 2, type: 'message.start', data: { messageId: 'asst-main', role: 'assistant', contextWindowId: 'win-1' } },
+        { ...baseEvent, seq: 3, type: 'tool.call', data: { messageId: 'asst-main', toolCall: { id: 'tc-main', name: 'call_sub_agent', arguments: {} } } },
+        // Sub-agent user messages appear between assistant and its tool result
+        { ...baseEvent, seq: 4, type: 'message.start', data: { messageId: 'u1', role: 'user', content: 'Fresh Context', contextWindowId: 'win-1', subAgentId: 'sa', subAgentType: 'planner' } },
+        { ...baseEvent, seq: 5, type: 'message.start', data: { messageId: 'u2', role: 'user', content: 'prompt', contextWindowId: 'win-1', subAgentId: 'sa', subAgentType: 'planner' } },
+        { ...baseEvent, seq: 6, type: 'tool.result', data: { messageId: 'asst-main', toolCallId: 'tc-main', result: { success: true, output: 'result', durationMs: 1, truncated: false } } },
+      ]
+
+      const messages = buildContextMessagesFromStoredEvents(events, 'win-1')
+
+      expect(messages).toHaveLength(3)
+      // assistant must be immediately followed by its tool result (valid sequence)
+      expect(messages[1]).toMatchObject({ role: 'assistant' })
+      expect(messages[2]).toMatchObject({ role: 'tool', toolCallId: 'tc-main' })
+    })
+  })
 })
