@@ -1,30 +1,20 @@
 import os from 'node:os'
-import { statSync, readFileSync } from 'node:fs'
-import { dirname, join } from 'node:path'
+import { statSync, readFileSync, existsSync } from 'node:fs'
+import { join } from 'node:path'
 
 export function getVersion(): string {
-  const possiblePaths: string[] = []
-
-  // Always check from process.cwd() first (user runs from repo root in dev)
-  possiblePaths.push(join(process.cwd(), 'package.json'))
-
-  // Also check relative to the CLI entry point (works in production from any directory)
-  // process.argv[0] is node, process.argv[1] is the script
-  const entryPoint = process.argv[1]
-  if (entryPoint) {
-    const cliDir = dirname(entryPoint)
-    possiblePaths.push(join(cliDir, '../../package.json'))
-    possiblePaths.push(join(cliDir, '../../../package.json'))
+  if (process.env['OPENFOX_VERSION']) {
+    return process.env['OPENFOX_VERSION']
   }
 
-  for (const packageJsonPath of possiblePaths) {
+  // Dev mode fallback - read from package.json in repo root
+  const pkgPath = join(process.cwd(), 'package.json')
+  if (existsSync(pkgPath)) {
     try {
-      const packageJson = JSON.parse(readFileSync(packageJsonPath, 'utf-8'))
-      if (packageJson.version && typeof packageJson.version === 'string') {
-        return packageJson.version
-      }
+      const pkg = JSON.parse(readFileSync(pkgPath, 'utf-8'))
+      if (pkg.version) return `${pkg.version}-dev`
     } catch {
-      // Try next path
+      // ignore
     }
   }
 
