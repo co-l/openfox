@@ -284,8 +284,18 @@ export function getTopLevelAgents(agents: AgentDefinition[]): AgentDefinition[] 
 // ============================================================================
 
 export async function agentExists(configDir: string, agentId: string): Promise<boolean> {
-  const filePath = join(getAgentsDir(configDir), `${agentId}${AGENT_EXTENSION}`)
-  return pathExists(filePath)
+  const agentsDir = getAgentsDir(configDir)
+  const hyphenated = agentId.replace(/_/g, '-')
+  const paths = [
+    join(agentsDir, `${agentId}${AGENT_EXTENSION}`),
+    join(agentsDir, `${hyphenated}${AGENT_EXTENSION}`),
+  ]
+  for (const filePath of paths) {
+    if (await pathExists(filePath)) {
+      return true
+    }
+  }
+  return false
 }
 
 export async function saveAgent(configDir: string, agent: AgentDefinition): Promise<void> {
@@ -299,11 +309,19 @@ export async function saveAgent(configDir: string, agent: AgentDefinition): Prom
 }
 
 export async function deleteAgent(configDir: string, agentId: string): Promise<boolean> {
-  const filePath = join(getAgentsDir(configDir), `${agentId}${AGENT_EXTENSION}`)
-  try {
-    await unlink(filePath)
-    return true
-  } catch {
-    return false
+  const agentsDir = getAgentsDir(configDir)
+  const hyphenated = agentId.replace(/_/g, '-')
+  const paths = [
+    join(agentsDir, `${agentId}${AGENT_EXTENSION}`),
+    join(agentsDir, `${hyphenated}${AGENT_EXTENSION}`),
+  ]
+  for (const filePath of paths) {
+    try {
+      await unlink(filePath)
+      return true
+    } catch {
+      continue
+    }
   }
+  return false
 }
