@@ -1,14 +1,34 @@
 import os from 'node:os'
 import { statSync, readFileSync } from 'node:fs'
-import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
 
 export function getVersion(): string {
-  const __filename = fileURLToPath(import.meta.url)
-  const __dirname = dirname(__filename)
-  const packageJsonPath = join(__dirname, '../package.json')
-  const packageJson = JSON.parse(readFileSync(packageJsonPath, 'utf-8'))
-  return packageJson.version
+  const possiblePaths: string[] = []
+
+  // Always check from process.cwd() first (user runs from repo root in dev)
+  possiblePaths.push(join(process.cwd(), 'package.json'))
+
+  // Also check relative to the CLI entry point (works in production from any directory)
+  // process.argv[0] is node, process.argv[1] is the script
+  const entryPoint = process.argv[1]
+  if (entryPoint) {
+    const cliDir = dirname(entryPoint)
+    possiblePaths.push(join(cliDir, '../../package.json'))
+    possiblePaths.push(join(cliDir, '../../../package.json'))
+  }
+
+  for (const packageJsonPath of possiblePaths) {
+    try {
+      const packageJson = JSON.parse(readFileSync(packageJsonPath, 'utf-8'))
+      if (packageJson.version && typeof packageJson.version === 'string') {
+        return packageJson.version
+      }
+    } catch {
+      // Try next path
+    }
+  }
+
+  return 'unknown'
 }
 
 export interface NetworkInterface {

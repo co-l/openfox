@@ -36,30 +36,17 @@ describe('SubAgentRegistry (via agent registry)', () => {
     expect(codeReviewer?.metadata.subagent).toBe(true)
   })
 
-  it('should define test_generator with correct structure', async () => {
+  it('should define explorer with correct structure', async () => {
     const agents = await loadBuiltinAgents()
-    const testGenerator = findAgentById('test_generator', agents)
+    const explorer = findAgentById('explorer', agents)
 
-    expect(testGenerator).toBeDefined()
-    expect(testGenerator?.metadata.id).toBe('test_generator')
-    expect(testGenerator?.metadata.name).toBe('Test Generator')
-    expect(typeof testGenerator?.metadata.description).toBe('string')
-    expect(typeof testGenerator?.prompt).toBe('string')
-    expect(testGenerator?.metadata.allowedTools).toEqual(['read_file', 'write_file', 'run_command', 'web_fetch'])
-    expect(testGenerator?.metadata.subagent).toBe(true)
-  })
-
-  it('should define debugger with correct structure', async () => {
-    const agents = await loadBuiltinAgents()
-    const debuggerAgent = findAgentById('debugger', agents)
-
-    expect(debuggerAgent).toBeDefined()
-    expect(debuggerAgent?.metadata.id).toBe('debugger')
-    expect(debuggerAgent?.metadata.name).toBe('Debugger')
-    expect(typeof debuggerAgent?.metadata.description).toBe('string')
-    expect(typeof debuggerAgent?.prompt).toBe('string')
-    expect(debuggerAgent?.metadata.allowedTools).toEqual(['read_file', 'run_command', 'web_fetch'])
-    expect(debuggerAgent?.metadata.subagent).toBe(true)
+    expect(explorer).toBeDefined()
+    expect(explorer?.metadata.id).toBe('explorer')
+    expect(explorer?.metadata.name).toBe('Explorer')
+    expect(typeof explorer?.metadata.description).toBe('string')
+    expect(typeof explorer?.prompt).toBe('string')
+    expect(explorer?.metadata.allowedTools).toEqual(['read_file', 'run_command', 'web_fetch'])
+    expect(explorer?.metadata.subagent).toBe(true)
   })
 
   it('should return undefined for unknown sub-agent types', async () => {
@@ -73,11 +60,10 @@ describe('SubAgentRegistry (via agent registry)', () => {
     const agents = await loadBuiltinAgents()
     const all = getSubAgents(agents)
 
-    expect(all.length).toBeGreaterThanOrEqual(4)
+    expect(all.length).toBeGreaterThanOrEqual(3)
     const ids = all.map(a => a.metadata.id)
     expect(ids).toContain('verifier')
     expect(ids).toContain('code_reviewer')
-    expect(ids).toContain('test_generator')
-    expect(ids).toContain('debugger')
+    expect(ids).toContain('explorer')
   })
 })

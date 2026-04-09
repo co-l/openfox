@@ -32,15 +32,14 @@ describe('loadBuiltinAgents', () => {
   it('should load all built-in agent definitions', async () => {
     const agents = await loadBuiltinAgents()
 
-    expect(agents.length).toBeGreaterThanOrEqual(6)
+    expect(agents.length).toBeGreaterThanOrEqual(5)
 
     const ids = agents.map(a => a.metadata.id)
     expect(ids).toContain('planner')
     expect(ids).toContain('builder')
     expect(ids).toContain('verifier')
     expect(ids).toContain('code_reviewer')
-    expect(ids).toContain('test_generator')
-    expect(ids).toContain('debugger')
+    expect(ids).toContain('explorer')
   })
 
   it('should parse agent metadata correctly', async () => {
@@ -128,9 +127,9 @@ describe('filter helpers', () => {
 
   it('findAgentById returns correct agent', async () => {
     const agents = await loadBuiltinAgents()
-    const debugger_ = findAgentById('debugger', agents)
-    expect(debugger_).toBeDefined()
-    expect(debugger_!.metadata.name).toBe('Debugger')
+    const explorer = findAgentById('explorer', agents)
+    expect(explorer).toBeDefined()
+    expect(explorer!.metadata.name).toBe('Explorer')
 
     expect(findAgentById('nonexistent', agents)).toBeUndefined()
   })

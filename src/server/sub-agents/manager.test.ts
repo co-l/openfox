@@ -37,14 +37,7 @@ describe('SubAgentManager', () => {
       'web_fetch',
     ])
 
-    expect(findAgentById('test_generator', agents)?.metadata.allowedTools).toEqual([
-      'read_file',
-      'write_file',
-      'run_command',
-      'web_fetch',
-    ])
-
-    expect(findAgentById('debugger', agents)?.metadata.allowedTools).toEqual([
+    expect(findAgentById('explorer', agents)?.metadata.allowedTools).toEqual([
       'read_file',
       'run_command',
       'web_fetch',
