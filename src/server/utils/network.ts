@@ -1,5 +1,15 @@
 import os from 'node:os'
-import { statSync } from 'node:fs'
+import { statSync, readFileSync } from 'node:fs'
+import { fileURLToPath } from 'node:url'
+import { dirname, join } from 'node:path'
+
+export function getVersion(): string {
+  const __filename = fileURLToPath(import.meta.url)
+  const __dirname = dirname(__filename)
+  const packageJsonPath = join(__dirname, '../package.json')
+  const packageJson = JSON.parse(readFileSync(packageJsonPath, 'utf-8'))
+  return packageJson.version
+}
 
 export interface NetworkInterface {
   ip: string
@@ -96,7 +106,7 @@ export function displayStartupBanner(config: {
   const { host, port, databasePath, configPath } = config
   const isLocalhost = host === '127.0.0.1'
   
-  console.log('\n🦊 OpenFox v0.1.0\n')
+  console.log(`\n🦊 OpenFox v${getVersion()}\n`)
   
   if (isLocalhost) {
     console.log(`  🌐 Server: http://localhost:${port}`)
