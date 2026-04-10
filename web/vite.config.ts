@@ -1,10 +1,34 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
+import { VitePWA } from 'vite-plugin-pwa'
 import path from 'path'
 import { createViteWatchOptions } from './vite-watch.js'
 
 export default defineConfig({
-  plugins: [react()],
+  plugins: [
+    react(),
+    VitePWA({
+      registerType: 'autoUpdate',
+      includeAssets: ['assets/openfox.png'],
+      manifest: {
+        name: 'OpenFox',
+        short_name: 'OpenFox',
+        description: 'Local-LLM-first agentic coding assistant',
+        theme_color: '#0d1117',
+        background_color: '#0d1117',
+        display: 'standalone',
+        orientation: 'portrait',
+        icons: [
+          {
+            src: 'assets/openfox.png',
+            sizes: '512x512',
+            type: 'image/png',
+            purpose: 'any maskable',
+          },
+        ],
+      },
+    }),
+  ],
   resolve: {
     alias: {
       '@': path.resolve(__dirname, './src'),
