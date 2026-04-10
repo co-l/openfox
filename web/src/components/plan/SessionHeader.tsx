@@ -22,13 +22,7 @@ function getTextColor(percent: number, dangerZone: boolean): string {
   return 'text-text-muted'
 }
 
-interface SessionHeaderProps {
-  criteriaSidebarOpen?: boolean
-  onCriteriaSidebarToggle?: () => void
-  alwaysShowToggle?: boolean
-}
-
-export function SessionHeader({ criteriaSidebarOpen = true, onCriteriaSidebarToggle }: SessionHeaderProps) {
+export function SessionHeader() {
   const contextState = useSessionStore(state => state.contextState)
   const currentSession = useSessionStore(state => state.currentSession)
   const compactContext = useSessionStore(state => state.compactContext)
@@ -86,18 +80,7 @@ export function SessionHeader({ criteriaSidebarOpen = true, onCriteriaSidebarTog
           </Button>
         </div>
         
-        {/* Criteria sidebar toggle button - always visible on desktop, toggles sidebar */}
-        {onCriteriaSidebarToggle && (
-          <button
-            onClick={onCriteriaSidebarToggle}
-            className="flex md:hidden items-center justify-center p-1.5 rounded hover:bg-bg-tertiary text-text-muted hover:text-text-primary transition-colors"
-            title={criteriaSidebarOpen ? 'Hide criteria sidebar' : 'Show criteria sidebar'}
-          >
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
-            </svg>
-          </button>
-        )}
+        
       </div>
     </div>
   )

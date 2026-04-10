@@ -13,7 +13,6 @@ import type { SessionSummary } from '@shared/types.js'
 interface HeaderProps {
   onMenuClick?: () => void
   onCriteriaToggle?: () => void
-  hasCriteria?: boolean
 }
 
 interface ProjectDropdownProps {
@@ -145,11 +144,11 @@ function SessionDropdown({ sessions, currentProject, currentSession }: SessionDr
   )
 }
 
-export function Header({ onMenuClick, onCriteriaToggle, hasCriteria }: HeaderProps) {
+export function Header({ onMenuClick, onCriteriaToggle }: HeaderProps) {
   const [showSettings, setShowSettings] = useState(false)
   const [location] = useLocation()
   const isProjectPage = location.startsWith('/p/')
-  const connectionStatus = useSessionStore(state => state.connectionStatus)
+  const isSessionPage = /^\/p\/[^/]+\/s\/[^/]+$/.test(location)
   const session = useSessionStore(state => state.currentSession)
   const sessions = useSessionStore(state => state.sessions)
   const project = useProjectStore(state => state.currentProject)
@@ -188,12 +187,12 @@ export function Header({ onMenuClick, onCriteriaToggle, hasCriteria }: HeaderPro
   return (
     <header className="h-8 bg-bg-secondary border-b border-border flex items-center justify-between px-2">
       <div className="flex items-center gap-2 flex-1 min-w-0">
-        {/* Hamburger menu button - visible on mobile and tablet */}
-        {onMenuClick && (
+        {/* Left sidebar toggle - only on project pages */}
+        {onMenuClick && isProjectPage && (
           <button
             onClick={onMenuClick}
-            className="xl:hidden flex-shrink-0 p-2.5 rounded hover:bg-bg-tertiary text-text-muted hover:text-text-primary transition-colors"
-            title="Toggle sidebar"
+            className="flex-shrink-0 p-2.5 rounded hover:bg-bg-tertiary text-text-muted hover:text-text-primary transition-colors"
+            title="Toggle session list"
           >
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
@@ -226,19 +225,6 @@ export function Header({ onMenuClick, onCriteriaToggle, hasCriteria }: HeaderPro
       </div>
 
       <div className="flex items-center gap-2 flex-shrink-0">
-        {/* Criteria toggle button - only visible when there are criteria */}
-        {onCriteriaToggle && hasCriteria && (
-          <button
-            onClick={onCriteriaToggle}
-            className="p-2.5 rounded hover:bg-bg-tertiary text-text-muted hover:text-text-primary transition-colors"
-            title="Toggle criteria sidebar"
-          >
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
-            </svg>
-          </button>
-        )}
-
         {/* Terminal toggle button - only visible on project pages */}
         {isProjectPage && (
           <button
@@ -266,19 +252,20 @@ export function Header({ onMenuClick, onCriteriaToggle, hasCriteria }: HeaderPro
           </svg>
         </button>
 
-        {/* Connection status - icon-only on mobile, full on desktop */}
-        <div className="flex items-center gap-1.5">
-          <div className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${
-            connectionStatus === 'connected' ? 'bg-accent-success' :
-            connectionStatus === 'reconnecting' ? 'bg-accent-warning animate-pulse' :
-            'bg-accent-error'
-          }`} />
-          <span className="text-sm text-text-secondary hidden sm:inline">
-            {connectionStatus === 'connected' ? 'Connected' :
-             connectionStatus === 'reconnecting' ? 'Reconnecting...' :
-             'Disconnected'}
-          </span>
-        </div>
+        
+
+        {/* Right sidebar toggle - only on session pages, far right */}
+        {onCriteriaToggle && isSessionPage && (
+          <button
+            onClick={onCriteriaToggle}
+            className="p-2.5 rounded hover:bg-bg-tertiary text-text-muted hover:text-text-primary transition-colors"
+            title="Toggle summary sidebar"
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
+            </svg>
+          </button>
+        )}
       </div>
 
       {/* Settings Modal */}

@@ -79,21 +79,20 @@ export function Sidebar({ projectId, isOpen = true, onClose }: SidebarProps) {
       {/* Mobile/tablet backdrop */}
       {isOpen && onClose && (
         <div
-          className="fixed inset-0 bg-black/50 z-40"
+          className="md:hidden fixed inset-0 bg-black/50 z-40"
           onClick={onClose}
         />
       )}
 
       <aside
         className={`
+          ${isOpen ? 'md:w-[300px] md:shrink-0' : 'md:w-0 md:shrink-0 md:overflow-hidden'}
+          md:relative md:h-auto md:translate-x-0
 
-          xl:relative xl:z-auto xl:translate-x-0 xl:h-auto
-
-          fixed z-50 -translate-x-full h-[calc(100vh-32px)]
-
+          fixed z-50 h-[calc(100vh-32px)]
           w-[300px] bg-bg-secondary border-r border-border flex flex-col
-          transition-transform duration-300 ease-in-out
-          ${isOpen ? 'translate-x-0' : ''}
+          transition-all duration-300 ease-in-out
+          ${isOpen ? 'translate-x-0' : '-translate-x-full'}
         `}
       >
         <div className="p-4 border-b border-border flex gap-2">

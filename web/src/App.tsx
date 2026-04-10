@@ -60,12 +60,16 @@ function ProjectView({ sidebarOpen, onSidebarToggle }: { sidebarOpen: boolean, o
 }
 
 // Project + Session view with sidebar
-function ProjectSessionView({ 
-  sidebarOpen, 
+function ProjectSessionView({
+  sidebarOpen,
   onSidebarToggle,
+  rightSidebarOpen,
+  onRightSidebarToggle,
 }: {
-  sidebarOpen: boolean, 
-  onSidebarToggle: () => void,
+  sidebarOpen: boolean
+  onSidebarToggle: () => void
+  rightSidebarOpen: boolean
+  onRightSidebarToggle: () => void
 }) {
   const [, params] = useRoute('/p/:projectId/s/:sessionId')
   const projectId = params?.projectId
@@ -118,7 +122,7 @@ function ProjectSessionView({
 
       {/* Main content area - single unified chat panel */}
       <div className="flex-1 min-w-0 bg-bg-primary">
-        <PlanPanel />
+        <PlanPanel criteriaSidebarOpen={rightSidebarOpen} onCriteriaSidebarToggle={onRightSidebarToggle} />
       </div>
     </>
   )
@@ -127,7 +131,28 @@ function ProjectSessionView({
 function App() {
   const { connectionStatus } = useWebSocket()
   const fetchConfig = useConfigStore(state => state.fetchConfig)
-  const [sidebarOpen, setSidebarOpen] = useState(false)
+
+  const getInitialLeftSidebar = () => {
+    const saved = localStorage.getItem('openfox:leftSidebar')
+    return saved !== null ? saved === 'true' : false
+  }
+
+  const getInitialRightSidebar = () => {
+    const saved = localStorage.getItem('openfox:rightSidebar')
+    return saved !== null ? saved === 'true' : true
+  }
+
+  const [leftSidebarOpen, setLeftSidebarOpen] = useState(getInitialLeftSidebar)
+  const [rightSidebarOpen, setRightSidebarOpen] = useState(getInitialRightSidebar)
+
+  // Persist sidebar states
+  useEffect(() => {
+    localStorage.setItem('openfox:leftSidebar', String(leftSidebarOpen))
+  }, [leftSidebarOpen])
+
+  useEffect(() => {
+    localStorage.setItem('openfox:rightSidebar', String(rightSidebarOpen))
+  }, [rightSidebarOpen])
 
   // Fetch config on mount
   useEffect(() => {
@@ -146,23 +171,28 @@ function App() {
   return (
     <div className="h-screen flex flex-col">
       <PageTitle />
-      <Header onMenuClick={() => setSidebarOpen(!sidebarOpen)} />
+      <Header
+          onMenuClick={() => setLeftSidebarOpen(!leftSidebarOpen)}
+          onCriteriaToggle={() => setRightSidebarOpen(!rightSidebarOpen)}
+        />
 
       <div className="flex-1 flex overflow-hidden">
         <Switch>
           <Route path="/p/:projectId/s/:sessionId">
-            <ProjectSessionView 
-              sidebarOpen={sidebarOpen} 
-              onSidebarToggle={() => setSidebarOpen(false)}
+            <ProjectSessionView
+              sidebarOpen={leftSidebarOpen}
+              onSidebarToggle={() => setLeftSidebarOpen(false)}
+              rightSidebarOpen={rightSidebarOpen}
+              onRightSidebarToggle={() => setRightSidebarOpen(!rightSidebarOpen)}
             />
           </Route>
           <Route path="/p/:projectId/new">
             <NewSessionHandler />
           </Route>
           <Route path="/p/:projectId">
-            <ProjectView 
-              sidebarOpen={sidebarOpen} 
-              onSidebarToggle={() => setSidebarOpen(false)}
+            <ProjectView
+              sidebarOpen={leftSidebarOpen}
+              onSidebarToggle={() => setLeftSidebarOpen(false)}
             />
           </Route>
           <Route path="/">

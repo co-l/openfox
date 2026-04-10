@@ -28,8 +28,13 @@ import { groupMessages, type DisplayItem } from './groupMessages.js'
 import { usePromptHistory } from '../../hooks/usePromptHistory.js'
 import { useAutoScroll } from "@/hooks/useAutoScroll.ts"
 
-export function PlanPanel() {
-  const [criteriaSidebarOpen, setCriteriaSidebarOpen] = useState(true)
+interface PlanPanelProps {
+  criteriaSidebarOpen?: boolean
+  onCriteriaSidebarToggle?: () => void
+}
+
+export function PlanPanel({ criteriaSidebarOpen: externalCriteriaSidebarOpen, onCriteriaSidebarToggle }: PlanPanelProps = {}) {
+  const criteriaSidebarOpen = externalCriteriaSidebarOpen ?? true
   const [input, setInput] = useState('')
 
   const [attachments, setAttachments] = useState<Attachment[]>([])
@@ -438,14 +443,11 @@ export function PlanPanel() {
   }
 
   return (
-    <SessionLayout criteriaSidebarOpen={criteriaSidebarOpen} messages={messages}>
+    <SessionLayout criteriaSidebarOpen={criteriaSidebarOpen} onCriteriaSidebarToggle={onCriteriaSidebarToggle} messages={messages}>
       {pendingQuestion && (
         <AskUserDialog question={pendingQuestion} />
       )}
-      <SessionHeader
-        criteriaSidebarOpen={criteriaSidebarOpen}
-        onCriteriaSidebarToggle={() => setCriteriaSidebarOpen(!criteriaSidebarOpen)}
-      />
+      <SessionHeader />
 
       <div ref={scrollContainerRef} data-testid="chat-scroll-container" className="flex-1 min-w-0 overflow-y-auto">
         <div className="pt-4">
