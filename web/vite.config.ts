@@ -9,7 +9,7 @@ export default defineConfig({
     react(),
     VitePWA({
       registerType: 'autoUpdate',
-      includeAssets: ['assets/openfox.png'],
+      includeAssets: ['assets/openfox-192.png', 'assets/openfox-512.png'],
       manifest: {
         name: 'OpenFox',
         short_name: 'OpenFox',
@@ -20,10 +20,16 @@ export default defineConfig({
         orientation: 'portrait',
         icons: [
           {
-            src: 'assets/openfox.png',
+            src: 'assets/openfox-192.png',
+            sizes: '192x192',
+            type: 'image/png',
+            purpose: 'any',
+          },
+          {
+            src: 'assets/openfox-512.png',
             sizes: '512x512',
             type: 'image/png',
-            purpose: 'any maskable',
+            purpose: 'any',
           },
         ],
       },
