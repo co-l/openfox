@@ -122,7 +122,17 @@ export const useTerminalStore = create<TerminalState>((set, get) => {
 
     handleMessage: (message) => {
       switch (message.type) {
-        case 'terminal.output': {
+        case 'terminal.exit': {
+          const { sessionId } = message.payload || {}
+          if (sessionId) {
+            set(state => {
+              const newSessions = state.sessions.filter(s => s.id !== sessionId)
+              if (newSessions.length === 0 && state.isOpen) {
+                return { sessions: [], isOpen: false }
+              }
+              return { sessions: newSessions }
+            })
+          }
           break
         }
       }

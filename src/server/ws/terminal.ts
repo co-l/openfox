@@ -20,6 +20,7 @@ interface TerminalSubscription {
 const subscriptions = new Set<TerminalSubscription>()
 
 let outputHandlerRegistered = false
+let exitHandlerRegistered = false
 
 function registerOutputHandler(): void {
   if (outputHandlerRegistered) return
@@ -38,6 +39,23 @@ function registerOutputHandler(): void {
   })
 }
 
+function registerExitHandler(): void {
+  if (exitHandlerRegistered) return
+  exitHandlerRegistered = true
+
+  terminalManager.onExit((sessionId, exitCode) => {
+    const subs = Array.from(subscriptions).filter(
+      s => s.sessionId === sessionId && s.ws.readyState === WebSocket.OPEN
+    )
+    for (const sub of subs) {
+      sub.ws.send(JSON.stringify({
+        type: 'terminal.exit',
+        payload: { sessionId, exitCode },
+      }))
+    }
+  })
+}
+
 export function handleTerminalMessage(ws: WebSocket, message: TerminalMessage): void {
   switch (message.type) {
     case 'terminal.subscribe': {
@@ -49,6 +67,7 @@ export function handleTerminalMessage(ws: WebSocket, message: TerminalMessage): 
           subscriptions.add({ ws, sessionId: message.payload.sessionId })
         }
         registerOutputHandler()
+        registerExitHandler()
         
         const sessionId = message.payload.sessionId
         const history = terminalManager.getOutputHistory(sessionId)

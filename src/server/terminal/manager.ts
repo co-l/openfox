@@ -14,10 +14,12 @@ export interface TerminalOutput {
 }
 
 export type OutputCallback = (output: TerminalOutput) => void
+export type ExitCallback = (sessionId: string, exitCode: number) => void
 
 class TerminalManager {
   private sessions = new Map<string, TerminalSession>()
   private outputCallbacks = new Set<OutputCallback>()
+  private exitCallbacks = new Set<ExitCallback>()
   private outputHistory = new Map<string, string[]>()
 
   private generateId(): string {
@@ -70,6 +72,9 @@ class TerminalManager {
       logger.info('Terminal session exited', { id, exitCode })
       this.sessions.delete(id)
       this.outputHistory.delete(id)
+      for (const cb of this.exitCallbacks) {
+        cb(id, exitCode)
+      }
     })
 
     this.sessions.set(id, session)
@@ -131,6 +136,13 @@ class TerminalManager {
     this.outputCallbacks.add(callback)
     return () => {
       this.outputCallbacks.delete(callback)
+    }
+  }
+
+  onExit(callback: ExitCallback): () => void {
+    this.exitCallbacks.add(callback)
+    return () => {
+      this.exitCallbacks.delete(callback)
     }
   }
 
