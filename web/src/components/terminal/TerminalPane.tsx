@@ -30,6 +30,7 @@ export function TerminalPane({ sessionId, onClose, onEscape, autoFocus }: Termin
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === '²' || e.key === '`') {
         e.preventDefault()
+        e.stopPropagation()
         onEscape()
       }
     }
@@ -61,6 +62,7 @@ export function TerminalPane({ sessionId, onClose, onEscape, autoFocus }: Termin
     terminalRef.current.addEventListener('keydown', (e: KeyboardEvent) => {
       if ((e.key === '²' || e.key === '`') && onEscape) {
         e.preventDefault()
+        e.stopPropagation()
         onEscape()
       }
     })
@@ -97,11 +99,16 @@ export function TerminalPane({ sessionId, onClose, onEscape, autoFocus }: Termin
     resizeObserver.observe(terminalRef.current)
 
     term.onData((data) => {
+      if ((data === '\x1b' || data === '²' || data === '`') && onEscape) {
+        onEscape()
+        return
+      }
       writeSession(sessionIdRef.current, data)
     })
 
     term.onKey((e) => {
       if ((e.key === '\x1b' || e.key === '²' || e.key === '`') && onEscape) {
+        e.domEvent.stopPropagation()
         onEscape()
       }
     })
@@ -147,6 +154,7 @@ export function TerminalPane({ sessionId, onClose, onEscape, autoFocus }: Termin
         onKeyDown={(e) => {
           if ((e.key === '²' || e.key === '`') && onEscape) {
             e.preventDefault()
+            e.stopPropagation()
             onEscape()
           }
         }}

@@ -49,10 +49,16 @@ export function TerminalModal({ isOpen, onClose, onFocusChat }: TerminalModalPro
     }
   }, [isOpen, sessions.length, isLoading, createSession])
 
+  const justOpenedRef = useRef(false)
+
   useEffect(() => {
     if (isOpen) {
+      justOpenedRef.current = true
       setTimeout(() => {
         terminalRef.current?.focus()
+        setTimeout(() => {
+          justOpenedRef.current = false
+        }, 200)
       }, 100)
     }
   }, [isOpen])
@@ -61,6 +67,7 @@ export function TerminalModal({ isOpen, onClose, onFocusChat }: TerminalModalPro
     if (!isOpen) return
 
     const handleKeyDown = (e: KeyboardEvent) => {
+      if (justOpenedRef.current) return
       if (e.key === 'Escape' || e.key === '²' || e.key === '`') {
         e.preventDefault()
         onClose()
