@@ -51,12 +51,12 @@ export const useTerminalStore = create<TerminalState>((set, get) => {
       try {
         const res = await fetch('/api/terminals')
         if (res.ok) {
-          const sessions = await res.json() as TerminalSession[]
-          set({ sessions })
+          const serverSessions = await res.json() as TerminalSession[]
+          set({ sessions: serverSessions })
           
           const ws = (wsClient as any).ws
           if (ws && ws.readyState === WebSocket.OPEN) {
-            for (const session of sessions) {
+            for (const session of serverSessions) {
               ws.send(JSON.stringify({
                 id: generateUUID(),
                 type: 'terminal.subscribe',

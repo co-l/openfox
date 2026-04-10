@@ -53,6 +53,11 @@ function registerExitHandler(): void {
         payload: { sessionId, exitCode },
       }))
     }
+    for (const sub of subscriptions) {
+      if (sub.sessionId === sessionId) {
+        subscriptions.delete(sub)
+      }
+    }
   })
 }
 
