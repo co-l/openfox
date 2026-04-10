@@ -6,20 +6,17 @@ subagent: false
 color: '#3b82f6'
 allowedTools:
   - read_file
-  - glob
-  - grep
   - web_fetch
   - write_file
   - edit_file
   - run_command
   - ask_user
-  - criterion
-  - todo
+  - criterion:complete,get
+  - todo:list,add,write,update,remove
   - call_sub_agent
   - load_skill
   - dev_server
   - step_done
-  - return_value
 ---
 
 # Build Mode

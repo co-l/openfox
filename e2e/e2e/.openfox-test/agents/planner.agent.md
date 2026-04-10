@@ -6,15 +6,11 @@ subagent: false
 color: '#a855f7'
 allowedTools:
   - read_file
-  - glob
-  - grep
   - web_fetch
   - run_command
-  - git
-  - criterion
+  - criterion:add,get,update,remove
   - call_sub_agent
   - load_skill
-  - return_value
 ---
 
 # Plan Mode
