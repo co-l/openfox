@@ -516,6 +516,7 @@ export const useSessionStore = create<SessionState>((set, get) => {
 
     disconnect: () => {
       wsClient.disconnect()
+      isSubscribed = false
       set({ connectionStatus: 'disconnected', showPasswordModal: false })
     },
 
@@ -532,7 +533,7 @@ export const useSessionStore = create<SessionState>((set, get) => {
         }
         const { token } = await res.json()
         wsClient.setToken(token)
-        set({ showPasswordModal: false, connectionStatus: 'reconnecting' })
+        set({ showPasswordModal: false, connectionStatus: 'disconnected' })
 
         const { listProjects } = useProjectStore.getState()
         const { fetchConfig } = useConfigStore.getState()
