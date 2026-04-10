@@ -66,6 +66,12 @@ class TerminalManager {
       this.outputHistory.set(id, history)
     })
 
+    ptyProcess.onExit(({ exitCode }) => {
+      logger.info('Terminal session exited', { id, exitCode })
+      this.sessions.delete(id)
+      this.outputHistory.delete(id)
+    })
+
     this.sessions.set(id, session)
     logger.info('Terminal session created', { id, shell, cwd })
 
@@ -77,8 +83,12 @@ class TerminalManager {
     if (!session) {
       return false
     }
-    session.pty.write(data)
-    return true
+    try {
+      session.pty.write(data)
+      return true
+    } catch {
+      return false
+    }
   }
 
   resize(sessionId: string, cols: number, rows: number): boolean {
@@ -86,8 +96,12 @@ class TerminalManager {
     if (!session) {
       return false
     }
-    session.pty.resize(cols, rows)
-    return true
+    try {
+      session.pty.resize(cols, rows)
+      return true
+    } catch {
+      return false
+    }
   }
 
   kill(sessionId: string): boolean {
