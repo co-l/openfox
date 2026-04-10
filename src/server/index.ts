@@ -846,6 +846,11 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
       }),
     )
 
+    // PWA assets
+    app.use('/manifest.webmanifest', express.static(join(distWebDir, 'manifest.webmanifest')))
+    app.use('/registerSW.js', express.static(join(distWebDir, 'registerSW.js')))
+    app.use('/sw.js', express.static(join(distWebDir, 'sw.js')))
+
     // Static files
     app.get('/fox.svg', (_req, res) => {
       readFile(join(distWebDir, 'fox.svg'))
@@ -882,6 +887,9 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
         req.path.startsWith('/api/') ||
         req.path.startsWith('/assets/') ||
         req.path.startsWith('/sounds/') ||
+        req.path.startsWith('/manifest.webmanifest') ||
+        req.path.startsWith('/registerSW.js') ||
+        req.path.startsWith('/sw.js') ||
         req.path === '/fox.svg'
       ) {
         return
