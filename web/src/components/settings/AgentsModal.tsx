@@ -4,6 +4,7 @@ import { Button } from '../shared/Button'
 import { EditButton } from '../shared/IconButton'
 import { DropdownMenu } from '../shared/DropdownMenu'
 import { useAgentsStore, type AgentFull } from '../../stores/agents'
+import { authFetch } from '../../lib/api'
 
 interface AgentsModalProps {
   isOpen: boolean
@@ -97,7 +98,7 @@ export function AgentsModal({ isOpen, onClose, initialEditId }: AgentsModalProps
   useEffect(() => {
     if (isOpen) {
       fetchAgents()
-      fetch('/api/tools').then(r => r.json()).then(d => setAvailableTools(d.tools || [])).catch(() => setAvailableTools([]))
+      authFetch('/api/tools').then(r => r.json()).then(d => setAvailableTools(d.tools || [])).catch(() => setAvailableTools([]))
       setConfirmDeleteId(null)
       setConfirmRestoreId(null)
       setConfirmRestoreAll(false)

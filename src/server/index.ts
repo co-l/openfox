@@ -30,6 +30,7 @@ import { createTerminalRoutes } from './routes/terminals.js'
 import { devServerManager } from './dev-server/manager.js'
 import { getGlobalConfigDir } from '../cli/paths.js'
 import { logger, setLogLevel } from './utils/logger.js'
+import { loadServerAuthConfig, requiresAuth, hasPassword, getAuthConfig, verifyPassword, hashPassword, isValidToken } from './auth.js'
 const __dirname = dirname(fileURLToPath(import.meta.url))
 
 /**
@@ -45,6 +46,9 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
 
   // Set log level
   setLogLevel(config.logging?.level ?? undefined, config.mode)
+
+  // Load auth config
+  await loadServerAuthConfig()
 
   // Initialize database
   const db = initDatabase(config)
@@ -131,9 +135,60 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
   app.use(cors())
   app.use(express.json())
 
-  // Health check
+  // Auth middleware for all /api routes (except /api/health and /api/auth/login)
+  const authMiddleware = (req: express.Request, res: express.Response, next: express.NextFunction) => {
+    const path = req.path
+    const publicPaths = ['/health', '/auth', '/auth/login']
+    if (publicPaths.includes(path)) {
+      return next()
+    }
+    const authConfig = getAuthConfig()
+    if (authConfig?.strategy === 'network' && authConfig.passwordHash) {
+      const token = req.headers['x-session-token'] as string
+      if (!token || !isValidToken(token)) {
+        res.status(401).json({ error: 'Unauthorized' })
+        return
+      }
+    }
+    next()
+  }
+
+  // Apply auth middleware to all /api routes
+  app.use('/api', authMiddleware)
+
+  // Health check (public)
   app.get('/api/health', (_req, res) => {
     res.json({ status: 'ok', timestamp: new Date().toISOString() })
+  })
+
+  // Auth status (public - tells frontend if auth is required)
+  app.get('/api/auth', (_req, res) => {
+    const authRequired = requiresAuth()
+    const hasPwd = hasPassword()
+    res.json({
+      requiresAuth: authRequired && hasPwd,
+      hasPassword: hasPwd,
+    })
+  })
+
+  // Login endpoint - exchange password for session token
+  app.post('/api/auth/login', (req, res) => {
+    const authConfig = getAuthConfig()
+    if (authConfig?.strategy !== 'network' || !authConfig.passwordHash) {
+      res.status(400).json({ error: 'Auth not configured' })
+      return
+    }
+    const password = req.body.password
+    if (!password || typeof password !== 'string') {
+      res.status(401).json({ error: 'Password required' })
+      return
+    }
+    if (!verifyPassword(password, authConfig.passwordHash)) {
+      res.status(401).json({ error: 'Invalid password' })
+      return
+    }
+    const token = hashPassword(password)
+    res.json({ token })
   })
 
   // Available tools with action metadata for granular permissions

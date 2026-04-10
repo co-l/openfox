@@ -1,4 +1,5 @@
 import { create } from 'zustand'
+import { authFetch } from '../lib/api'
 
 export interface CommandInfo {
   id: string
@@ -34,7 +35,7 @@ export const useCommandsStore = create<CommandsState>((set, get) => ({
 
   fetchDefaultIds: async () => {
     try {
-      const res = await fetch('/api/commands/default-ids')
+      const res = await authFetch('/api/commands/default-ids')
       const data = await res.json()
       set({ defaultIds: data.ids ?? [] })
     } catch { /* ignore */ }
@@ -43,7 +44,7 @@ export const useCommandsStore = create<CommandsState>((set, get) => ({
   fetchCommands: async () => {
     set({ loading: true })
     try {
-      const res = await fetch('/api/commands')
+      const res = await authFetch('/api/commands')
       const data = await res.json()
       set({
         commands: data.commands ?? [],
@@ -58,7 +59,7 @@ export const useCommandsStore = create<CommandsState>((set, get) => ({
 
   fetchCommand: async (commandId: string) => {
     try {
-      const res = await fetch(`/api/commands/${commandId}`)
+      const res = await authFetch(`/api/commands/${commandId}`)
       if (!res.ok) return null
       return await res.json() as CommandFull
     } catch {
@@ -68,7 +69,7 @@ export const useCommandsStore = create<CommandsState>((set, get) => ({
 
   createCommand: async (command: CommandFull) => {
     try {
-      const res = await fetch('/api/commands', {
+      const res = await authFetch('/api/commands', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(command),
@@ -86,7 +87,7 @@ export const useCommandsStore = create<CommandsState>((set, get) => ({
 
   updateCommand: async (id: string, command: Partial<CommandFull>) => {
     try {
-      const res = await fetch(`/api/commands/${id}`, {
+      const res = await authFetch(`/api/commands/${id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(command),
@@ -104,7 +105,7 @@ export const useCommandsStore = create<CommandsState>((set, get) => ({
 
   deleteCommand: async (commandId: string) => {
     try {
-      const res = await fetch(`/api/commands/${commandId}`, { method: 'DELETE' })
+      const res = await authFetch(`/api/commands/${commandId}`, { method: 'DELETE' })
       if (res.ok) {
         set({ commands: get().commands.filter(c => c.id !== commandId) })
         return true
@@ -117,7 +118,7 @@ export const useCommandsStore = create<CommandsState>((set, get) => ({
 
   restoreDefault: async (commandId: string) => {
     try {
-      const res = await fetch(`/api/commands/${commandId}/restore-default`, { method: 'POST' })
+      const res = await authFetch(`/api/commands/${commandId}/restore-default`, { method: 'POST' })
       if (res.ok) {
         await get().fetchCommands()
         return true
@@ -130,7 +131,7 @@ export const useCommandsStore = create<CommandsState>((set, get) => ({
 
   restoreAllDefaults: async () => {
     try {
-      const res = await fetch('/api/commands/restore-all-defaults', { method: 'POST' })
+      const res = await authFetch('/api/commands/restore-all-defaults', { method: 'POST' })
       if (res.ok) {
         await get().fetchCommands()
         return true

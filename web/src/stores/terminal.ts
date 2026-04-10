@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import { wsClient } from '../lib/ws'
+import { authFetch } from '../lib/api'
 
 function generateUUID(): string {
   return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
@@ -49,7 +50,7 @@ export const useTerminalStore = create<TerminalState>((set, get) => {
 
     fetchSessions: async () => {
       try {
-        const res = await fetch('/api/terminals')
+        const res = await authFetch('/api/terminals')
         if (res.ok) {
           const serverSessions = await res.json() as TerminalSession[]
           set({ sessions: serverSessions })
@@ -72,7 +73,7 @@ export const useTerminalStore = create<TerminalState>((set, get) => {
 
     createSession: async (workdir) => {
       try {
-        const res = await fetch('/api/terminals', {
+        const res = await authFetch('/api/terminals', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ workdir: workdir ?? get().workdir ?? undefined }),
@@ -107,7 +108,7 @@ export const useTerminalStore = create<TerminalState>((set, get) => {
 
     killSession: async (sessionId) => {
       try {
-        const res = await fetch(`/api/terminals/${sessionId}`, {
+        const res = await authFetch(`/api/terminals/${sessionId}`, {
           method: 'DELETE',
         })
         if (res.ok) {

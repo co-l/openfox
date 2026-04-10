@@ -1,4 +1,5 @@
 import { create } from 'zustand'
+import { authFetch } from '../lib/api'
 import type {
   Session,
   SessionSummary,
@@ -40,6 +41,7 @@ import type {
 import { wsClient, type ConnectionStatus } from '../lib/ws'
 import { useDevServerStore } from './dev-server'
 import { useConfigStore } from './config'
+import { useProjectStore } from './project'
 import { playNotification, playAchievement, playIntervention, playWaitingForUser, playNewMessage } from '../lib/sound'
 import type { AgentType } from './notifications'
 
@@ -182,6 +184,8 @@ export interface PendingQuestion {
 interface SessionState {
   // Connection
   connectionStatus: ConnectionStatus
+  showPasswordModal: boolean
+  passwordModalRetry: boolean
 
   // Sessions
   sessions: SessionSummary[]
@@ -231,6 +235,8 @@ interface SessionState {
   // Actions
   connect: () => Promise<void>
   disconnect: () => void
+  submitPassword: (password: string) => Promise<void>
+  cancelPassword: () => void
 
   // Session management
   createSession: (projectId: string, title?: string) => Promise<Session | null>
@@ -439,6 +445,8 @@ export const useSessionStore = create<SessionState>((set, get) => {
 
   return {
     connectionStatus: 'disconnected',
+    showPasswordModal: false,
+    passwordModalRetry: false,
     sessions: [],
     currentSession: null,
     unreadSessionIds: [],
@@ -463,6 +471,20 @@ export const useSessionStore = create<SessionState>((set, get) => {
 
       set({ connectionStatus: 'reconnecting' })
 
+      let needsAuth = false
+      try {
+        const authRes = await authFetch('/api/auth')
+        const auth = await authRes.json()
+        needsAuth = auth.requiresAuth
+      } catch {
+        // If /api/auth fails, continue without auth
+      }
+
+      if (needsAuth && !wsClient.hasToken()) {
+        set({ showPasswordModal: true, passwordModalRetry: false, connectionStatus: 'reconnecting' })
+        return
+      }
+
       wsClient.onStatusChange((newStatus) => {
         set({ connectionStatus: newStatus })
         if (newStatus === 'connected') {
@@ -480,13 +502,52 @@ export const useSessionStore = create<SessionState>((set, get) => {
         }
       } catch (error) {
         console.error('Failed to connect:', error)
+        const closeCode = wsClient.getLastCloseCode()
+        
+        // Only show password modal if we don't have a token AND auth failed
+        // If we have a token, just show disconnected - the token is still valid
+        if (!wsClient.hasToken() && (closeCode === 1006 || closeCode === 4000)) {
+          set({ showPasswordModal: true, passwordModalRetry: true, connectionStatus: 'reconnecting' })
+          return
+        }
         set({ connectionStatus: 'disconnected' })
       }
     },
 
     disconnect: () => {
       wsClient.disconnect()
-      set({ connectionStatus: 'disconnected' })
+      set({ connectionStatus: 'disconnected', showPasswordModal: false })
+    },
+
+    submitPassword: async (password: string) => {
+      try {
+        const res = await fetch('/api/auth/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ password }),
+        })
+        if (!res.ok) {
+          set({ showPasswordModal: true, passwordModalRetry: true, connectionStatus: 'reconnecting' })
+          return
+        }
+        const { token } = await res.json()
+        wsClient.setToken(token)
+        set({ showPasswordModal: false, connectionStatus: 'reconnecting' })
+
+        const { listProjects } = useProjectStore.getState()
+        const { fetchConfig } = useConfigStore.getState()
+        listProjects()
+        fetchConfig()
+
+        get().connect()
+      } catch {
+        set({ showPasswordModal: true, passwordModalRetry: true, connectionStatus: 'reconnecting' })
+      }
+    },
+
+    cancelPassword: () => {
+      wsClient.clearToken()
+      set({ showPasswordModal: false, connectionStatus: 'disconnected' })
     },
 
     createSession: async (projectId, title) => {
@@ -494,7 +555,7 @@ export const useSessionStore = create<SessionState>((set, get) => {
         // Set pending flag BEFORE the API call to trigger navigation
         set({ pendingSessionCreate: true })
 
-        const res = await fetch('/api/sessions', {
+        const res = await authFetch('/api/sessions', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ projectId, title }),
@@ -539,7 +600,7 @@ export const useSessionStore = create<SessionState>((set, get) => {
           set({ unreadSessionIds: removeUnreadSessionId(get().unreadSessionIds, sessionId) })
         }
 
-        const res = await fetch(`/api/sessions/${sessionId}`)
+        const res = await authFetch(`/api/sessions/${sessionId}`)
         if (!res.ok) return
 
         const data = await res.json()
@@ -564,7 +625,7 @@ export const useSessionStore = create<SessionState>((set, get) => {
         if (projectId) {
           params.set('projectId', projectId)
         }
-        const res = await fetch(`/api/sessions?${params.toString()}`)
+        const res = await authFetch(`/api/sessions?${params.toString()}`)
         const data = await res.json()
         set({ sessions: data.sessions ?? [], sessionsHasMore: projectId ? (data.hasMore ?? false) : true })
       } catch {
@@ -582,7 +643,7 @@ export const useSessionStore = create<SessionState>((set, get) => {
         params.set('limit', '20')
         params.set('offset', String(state.sessions.length))
         params.set('projectId', projectId)
-        const res = await fetch(`/api/sessions?${params.toString()}`)
+        const res = await authFetch(`/api/sessions?${params.toString()}`)
         const data = await res.json()
         set((state) => ({
           sessions: [...state.sessions, ...(data.sessions ?? [])],
@@ -596,7 +657,7 @@ export const useSessionStore = create<SessionState>((set, get) => {
 
     deleteSession: async (sessionId) => {
       try {
-        const res = await fetch(`/api/sessions/${sessionId}`, { method: 'DELETE' })
+        const res = await authFetch(`/api/sessions/${sessionId}`, { method: 'DELETE' })
         if (!res.ok) return false
         // Refresh session list
         await get().listSessions()
@@ -612,7 +673,7 @@ export const useSessionStore = create<SessionState>((set, get) => {
 
     deleteAllSessions: async (projectId) => {
       try {
-        const res = await fetch(`/api/projects/${projectId}/sessions`, { method: 'DELETE' })
+        const res = await authFetch(`//projects/${projectId}/sessions`, { method: 'DELETE' })
         if (!res.ok) return false
         // Refresh session list
         await get().listSessions()
@@ -646,7 +707,7 @@ export const useSessionStore = create<SessionState>((set, get) => {
       // Use unified /message endpoint - always queues, processes at turn boundaries
       // This works whether agent is running (queues) or idle (processes immediately)
       try {
-        const res = await fetch(`/api/sessions/${sessionId}/message`, {
+        const res = await authFetch(`/api/sessions/${sessionId}/message`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ content, attachments, messageKind: opts?.messageKind }),
@@ -670,7 +731,7 @@ export const useSessionStore = create<SessionState>((set, get) => {
       set({ abortInProgress: true })
 
       try {
-        await fetch(`/api/sessions/${sessionId}/stop`, { method: 'POST' })
+        await authFetch(`/api/sessions/${sessionId}/stop`, { method: 'POST' })
       } catch (error) {
         console.error('Error stopping generation:', error)
       }
@@ -682,7 +743,7 @@ export const useSessionStore = create<SessionState>((set, get) => {
       set({ streamingMessageId: null })
 
       try {
-        await fetch(`/api/sessions/${sessionId}/continue`, { method: 'POST' })
+        await authFetch(`/api/sessions/${sessionId}/continue`, { method: 'POST' })
       } catch (error) {
         console.error('Error continuing generation:', error)
       }
@@ -702,7 +763,7 @@ export const useSessionStore = create<SessionState>((set, get) => {
       if (!sessionId) return
 
       try {
-        const res = await fetch(`/api/sessions/${sessionId}/mode`, {
+        const res = await authFetch(`/api/sessions/${sessionId}/mode`, {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ mode }),
@@ -726,7 +787,7 @@ export const useSessionStore = create<SessionState>((set, get) => {
       if (!sessionId) return
 
       try {
-        const res = await fetch(`/api/sessions/${sessionId}/danger-level`, {
+        const res = await authFetch(`/api/sessions/${sessionId}/danger-level`, {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ dangerLevel }),
@@ -758,7 +819,7 @@ export const useSessionStore = create<SessionState>((set, get) => {
       if (!sessionId) return
 
       try {
-        const res = await fetch(`/api/sessions/${sessionId}/criteria`, {
+        const res = await authFetch(`/api/sessions/${sessionId}/criteria`, {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ criteria }),
@@ -780,7 +841,7 @@ export const useSessionStore = create<SessionState>((set, get) => {
         const sessionId = get().currentSession?.id
         if (!sessionId) return null
 
-        const res = await fetch(`/api/sessions/${sessionId}/provider`, {
+        const res = await authFetch(`/api/sessions/${sessionId}/provider`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ providerId, ...(model ? { model } : {}) }),
@@ -808,7 +869,7 @@ export const useSessionStore = create<SessionState>((set, get) => {
       if (!sessionId) return
 
       try {
-        await fetch(`/api/sessions/${sessionId}/confirm-path`, {
+        await authFetch(`/api/sessions/${sessionId}/confirm-path`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ callId, approved, alwaysAllow }),
@@ -824,7 +885,7 @@ export const useSessionStore = create<SessionState>((set, get) => {
       if (!sessionId) return
 
       try {
-        await fetch(`/api/sessions/${sessionId}/answer`, {
+        await authFetch(`/api/sessions/${sessionId}/answer`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ callId, answer }),
@@ -840,7 +901,7 @@ export const useSessionStore = create<SessionState>((set, get) => {
       if (!sessionId) return
 
       try {
-        const res = await fetch(`/api/sessions/${sessionId}/message`, {
+        const res = await authFetch(`/api/sessions/${sessionId}/message`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ content, attachments, messageKind }),
@@ -861,7 +922,7 @@ export const useSessionStore = create<SessionState>((set, get) => {
       // Completion mode now uses same ASAP queue (processed at end of turn)
       // In future could differentiate, but for now unify
       try {
-        const res = await fetch(`/api/sessions/${sessionId}/message`, {
+        const res = await authFetch(`/api/sessions/${sessionId}/message`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ content, attachments, messageKind }),
@@ -880,7 +941,7 @@ export const useSessionStore = create<SessionState>((set, get) => {
       if (!sessionId) return
 
       try {
-        const res = await fetch(`/api/sessions/${sessionId}/queue/${queueId}`, {
+        const res = await authFetch(`/api/sessions/${sessionId}/queue/${queueId}`, {
           method: 'DELETE',
         })
         const data = await res.json()

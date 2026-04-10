@@ -4,6 +4,7 @@ import { Button } from '../shared/Button'
 import { EditButton } from '../shared/IconButton'
 import { useWorkflowsStore, type WorkflowFull, type WorkflowStep, type TemplateVariable } from '../../stores/workflows'
 import type { AgentInfo } from '../../stores/agents'
+import { authFetch } from '../../lib/api'
 
 interface WorkflowsModalProps {
   isOpen: boolean
@@ -968,7 +969,7 @@ export function WorkflowsModal({ isOpen, onClose, initialEditId }: WorkflowsModa
     if (isOpen) {
       fetchWorkflows()
       fetchTemplateVariables()
-      fetch('/api/agents').then(r => r.json()).then(d => setAgentTypes(d.agents ?? [])).catch(() => {})
+      authFetch('/api/agents').then(r => r.json()).then(d => setAgentTypes(d.agents ?? [])).catch(() => {})
       setConfirmDeleteId(null)
       setConfirmRestoreId(null)
       setConfirmRestoreAll(false)

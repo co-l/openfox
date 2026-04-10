@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { authFetch } from '../lib/api'
 
 interface BranchResponse {
   branch: string | null
@@ -26,7 +27,7 @@ export function useCurrentBranch(workdir?: string) {
 
     const fetchBranch = async () => {
       try {
-        const response = await fetch(`/api/branch?workdir=${encodeURIComponent(resolvedWorkdir)}`)
+        const response = await authFetch(`/api/branch?workdir=${encodeURIComponent(resolvedWorkdir)}`)
         const data: BranchResponse = await response.json()
 
         if (mounted) {

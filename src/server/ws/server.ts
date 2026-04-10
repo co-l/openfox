@@ -30,6 +30,7 @@ import { getAllInstructions } from '../context/instructions.js'
 import { getEnabledSkillMetadata } from '../skills/registry.js'
 import { getGlobalConfigDir } from '../../cli/paths.js'
 import { getRuntimeConfig } from '../runtime-config.js'
+import { requiresAuth, verifyPassword, getAuthConfig, isValidToken } from '../auth.js'
 import {
   parseClientMessage,
   serializeServerMessage,
@@ -116,7 +117,7 @@ export function createWebSocketServer(
   sessionManager: SessionManager,
   providerManager?: ProviderManager,
 ): WebSocketServerExports {
-  const wss = new WebSocketServer({ server: httpServer, path: '/ws' })
+  const wss = new WebSocketServer({ server: httpServer })
   const clients = new Map<WebSocket, ClientConnection>()
 
   // Per-session LLM client cache: sessionId -> { cacheKey, client }
@@ -382,7 +383,20 @@ export function createWebSocketServer(
     }))
   })
 
-  wss.on('connection', (ws) => {
+  wss.on('connection', (ws, req) => {
+    const url = new URL(req.url || '/', `http://${req.headers.host}`)
+    const token = url.searchParams.get('token')
+
+    const authConfig = getAuthConfig()
+    if (authConfig?.strategy === 'network' && authConfig.passwordHash) {
+      if (!token || !isValidToken(token)) {
+        setTimeout(() => {
+          ws.close(4000, 'Unauthorized')
+        }, 100)
+        return
+      }
+    }
+
     logger.debug('WebSocket client connected')
     clients.set(ws, { ws, activeSessionId: null, subscribedSessions: new Map(), eventStoreSubscriptions: new Map() })
     

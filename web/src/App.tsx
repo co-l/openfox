@@ -12,8 +12,13 @@ import { NewSessionHandler } from './components/NewSessionHandler'
 import { EmptyProjectView } from './components/EmptyProjectView'
 import { PlanPanel } from './components/plan/PlanPanel'
 import { Spinner, SpinnerWithText } from './components/shared/Spinner'
+import { PasswordModal } from './components/PasswordModal'
 
-// Centered spinner for loading states
+function hasStoredToken(): boolean {
+  if (typeof window === 'undefined') return false
+  return sessionStorage.getItem('openfox_token') !== null
+}
+
 function LoadingSpinner() {
   return (
     <div className="flex-1 flex items-center justify-center">
@@ -22,7 +27,6 @@ function LoadingSpinner() {
   )
 }
 
-// Project view with sidebar (no session selected)
 function ProjectView({ sidebarOpen, onSidebarToggle }: { sidebarOpen: boolean, onSidebarToggle: () => void }) {
   const [, params] = useRoute('/p/:projectId')
   const projectId = params?.projectId
@@ -34,16 +38,18 @@ function ProjectView({ sidebarOpen, onSidebarToggle }: { sidebarOpen: boolean, o
   const currentProject = useProjectStore(state => state.currentProject)
   const loadProject = useProjectStore(state => state.loadProject)
 
-  // Load project and sessions when entering project view
+  const hasToken = hasStoredToken()
+  const canLoad = connectionStatus === 'connected' || hasToken
+
   useEffect(() => {
-    if (connectionStatus === 'connected' && projectId) {
+    if (canLoad && projectId) {
       if (currentProject?.id !== projectId) {
         loadProject(projectId)
       }
       listSessions(projectId)
       clearSession()
     }
-  }, [connectionStatus, projectId, currentProject?.id, loadProject, listSessions, clearSession])
+  }, [canLoad, projectId, currentProject?.id, loadProject, listSessions, clearSession])
 
   if (!currentProject || currentProject.id !== projectId) {
     return <LoadingSpinner />
@@ -59,7 +65,6 @@ function ProjectView({ sidebarOpen, onSidebarToggle }: { sidebarOpen: boolean, o
   )
 }
 
-// Project + Session view with sidebar
 function ProjectSessionView({
   sidebarOpen,
   onSidebarToggle,
@@ -87,24 +92,24 @@ function ProjectSessionView({
   const currentProject = useProjectStore(state => state.currentProject)
   const loadProject = useProjectStore(state => state.loadProject)
 
-  // Load project if needed
+  const hasToken = hasStoredToken()
+  const canLoad = connectionStatus === 'connected' || hasToken
+
   useEffect(() => {
-    if (connectionStatus === 'connected' && projectId && currentProject?.id !== projectId) {
+    if (canLoad && projectId && currentProject?.id !== projectId) {
       loadProject(projectId)
     }
-  }, [connectionStatus, projectId, currentProject?.id, loadProject])
+  }, [canLoad, projectId, currentProject?.id, loadProject])
 
-  // Load session and session list
   useEffect(() => {
-    if (connectionStatus === 'connected' && sessionId && session?.id !== sessionId && !pendingSessionCreate) {
+    if (canLoad && sessionId && session?.id !== sessionId && !pendingSessionCreate) {
       loadSession(sessionId)
     }
-    if (connectionStatus === 'connected' && projectId) {
+    if (canLoad && projectId) {
       listSessions(projectId)
     }
-  }, [connectionStatus, sessionId, session?.id, loadSession, listSessions, pendingSessionCreate, projectId])
+  }, [canLoad, sessionId, session?.id, loadSession, listSessions, pendingSessionCreate, projectId])
 
-  // Redirect to project view if session not found
   useEffect(() => {
     if (error?.code === 'NOT_FOUND' && projectId) {
       clearError()
@@ -119,8 +124,6 @@ function ProjectSessionView({
   return (
     <>
       <Sidebar projectId={projectId!} isOpen={sidebarOpen} onClose={onSidebarToggle} />
-
-      {/* Main content area - single unified chat panel */}
       <div className="flex-1 min-w-0 bg-bg-primary">
         <PlanPanel criteriaSidebarOpen={rightSidebarOpen} onCriteriaSidebarToggle={onRightSidebarToggle} />
       </div>
@@ -131,6 +134,8 @@ function ProjectSessionView({
 function App() {
   const { connectionStatus } = useWebSocket()
   const fetchConfig = useConfigStore(state => state.fetchConfig)
+
+  const hasToken = hasStoredToken()
 
   const getInitialLeftSidebar = () => {
     const saved = localStorage.getItem('openfox:leftSidebar')
@@ -145,11 +150,9 @@ function App() {
   const [leftSidebarOpen, setLeftSidebarOpen] = useState(getInitialLeftSidebar)
   const [rightSidebarOpen, setRightSidebarOpen] = useState(getInitialRightSidebar)
 
-  // Mobile sidebar state - always starts closed on mobile, doesn't persist
   const [leftMobileOpen, setLeftMobileOpen] = useState(false)
   const [rightMobileOpen, setRightMobileOpen] = useState(false)
 
-  // Check if we're on mobile
   const [isMobile, setIsMobile] = useState(false)
 
   useEffect(() => {
@@ -161,7 +164,6 @@ function App() {
     return () => window.removeEventListener('resize', checkMobile)
   }, [])
 
-  // Use mobile state on small screens, persisted state on large screens
   const effectiveLeftOpen = isMobile ? leftMobileOpen : leftSidebarOpen
   const effectiveRightOpen = isMobile ? rightMobileOpen : rightSidebarOpen
 
@@ -181,7 +183,6 @@ function App() {
     }
   }
 
-  // Persist sidebar states (desktop only)
   useEffect(() => {
     if (!isMobile) {
       localStorage.setItem('openfox:leftSidebar', String(leftSidebarOpen))
@@ -194,24 +195,44 @@ function App() {
     }
   }, [rightSidebarOpen, isMobile])
 
-  // Fetch config on mount
   useEffect(() => {
-    fetchConfig()
-  }, [fetchConfig])
+    if (connectionStatus === 'connected' || hasToken) {
+      fetchConfig()
+    }
+  }, [connectionStatus, fetchConfig, hasToken])
 
-  // Block UI until connected
-  if (connectionStatus !== 'connected') {
+  const showPasswordModal = useSessionStore(state => state.showPasswordModal)
+  const passwordModalRetry = useSessionStore(state => state.passwordModalRetry)
+  const submitPassword = useSessionStore(state => state.submitPassword)
+  const cancelPassword = useSessionStore(state => state.cancelPassword)
+
+  if (connectionStatus !== 'connected' && !showPasswordModal && !hasToken) {
     return (
-      <div className="h-screen flex items-center justify-center">
-        <SpinnerWithText text={connectionStatus === 'reconnecting' ? 'Reconnecting...' : 'Connecting to server...'} />
-      </div>
+      <>
+        <PasswordModal
+          isOpen={true}
+          isRetry={passwordModalRetry}
+          onSubmit={submitPassword}
+          onCancel={cancelPassword}
+        />
+        <div className="h-screen flex items-center justify-center">
+          <SpinnerWithText text="Connecting to server..." />
+        </div>
+      </>
     )
   }
 
   return (
-    <div className="h-screen flex flex-col">
-      <PageTitle />
-      <Header
+    <>
+      <PasswordModal
+        isOpen={showPasswordModal}
+        isRetry={passwordModalRetry}
+        onSubmit={submitPassword}
+        onCancel={cancelPassword}
+      />
+      <div className="h-screen flex flex-col">
+        <PageTitle />
+        <Header
           onMenuClick={handleLeftToggle}
           onCriteriaToggle={handleRightToggle}
         />
@@ -241,6 +262,7 @@ function App() {
         </Switch>
       </div>
     </div>
+    </>
   )
 }
 

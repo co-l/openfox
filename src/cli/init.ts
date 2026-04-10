@@ -1,6 +1,7 @@
-import { select, text, spinner, outro, confirm } from '@clack/prompts'
+import { select, text, password, spinner, outro, confirm } from '@clack/prompts'
 import { detectBackend, detectModel } from '../server/llm/index.js'
 import { saveGlobalConfig, addProvider, type GlobalConfig } from './config.js'
+import { saveAuthConfig, hashPassword, loadAuthConfig } from './auth.js'
 import type { Mode } from './main.js'
 import type { ProviderBackend } from '../shared/types.js'
 
@@ -29,7 +30,7 @@ function createBaseConfig() {
  * Prompt user for network accessibility preference
  * Returns '127.0.0.1' for localhost only, '0.0.0.0' for network access
  */
-async function promptNetworkAccessibility(): Promise<string> {
+async function promptNetworkAccessibility(mode: Mode): Promise<{ host: string; strategy: 'local' | 'network' }> {
   const networkChoice = await select({
     message: 'How should OpenFox be accessible?',
     options: [
@@ -37,13 +38,49 @@ async function promptNetworkAccessibility(): Promise<string> {
       { value: 'network', label: 'Accessible from local network (phone, tablet, etc.)' },
     ],
   })
-  
+
   // Default to secure if user skips
   if (networkChoice === Symbol.for('clack:cancel')) {
-    return '127.0.0.1'
+    return { host: '127.0.0.1', strategy: 'local' }
   }
-  
-  return networkChoice === 'network' ? '0.0.0.0' : '127.0.0.1'
+
+  const isNetwork = networkChoice === 'network'
+  const host = isNetwork ? '0.0.0.0' : '127.0.0.1'
+
+  if (isNetwork) {
+    const existingAuth = await loadAuthConfig(mode)
+    const existingPassword = !!existingAuth?.passwordHash
+
+    if (existingPassword) {
+      const keepChoice = await confirm({
+        message: 'Keep existing password?',
+        initialValue: true,
+      })
+
+      if (keepChoice === true) {
+        return { host, strategy: 'network' }
+      }
+    }
+
+    const passwordResult = await password({
+      message: 'Set a password (optional, press Enter to skip)',
+    })
+
+    const pwd = typeof passwordResult === 'string' ? passwordResult : ''
+    const passwordHash = pwd.length > 0 ? hashPassword(pwd) : null
+
+    await saveAuthConfig(mode, {
+      strategy: 'network',
+      passwordHash,
+    })
+  } else {
+    await saveAuthConfig(mode, {
+      strategy: 'local',
+      passwordHash: null,
+    })
+  }
+
+  return { host, strategy: isNetwork ? 'network' : 'local' }
 }
 
 /**
@@ -194,7 +231,7 @@ export async function runInitWithSelect(mode: Mode, existingConfig?: GlobalConfi
   }
   
   // Ask about network accessibility
-  const host = await promptNetworkAccessibility()
+  const { host } = await promptNetworkAccessibility(mode)
   config.server.host = host
   
   // Ask about workspace directory

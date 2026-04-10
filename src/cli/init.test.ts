@@ -9,18 +9,27 @@ const TEST_DIR = join(tmpdir(), `openfox-init-test-${Date.now()}`)
 // Mock the paths module
 vi.mock('./paths.js', () => ({
   getGlobalConfigPath: (mode: string) => join(TEST_DIR, mode, 'config.json'),
+  getAuthConfigPath: (mode: string) => join(TEST_DIR, mode, 'auth.json'),
 }))
 
 // Mock @clack/prompts for interactive prompts
 vi.mock('@clack/prompts', () => ({
   select: vi.fn(),
   text: vi.fn(),
+  password: vi.fn().mockResolvedValue(''),
   spinner: vi.fn(() => ({
     start: vi.fn(),
     stop: vi.fn(),
   })),
   outro: vi.fn(),
   confirm: vi.fn(),
+}))
+
+// Mock auth module
+vi.mock('./auth.js', () => ({
+  saveAuthConfig: vi.fn().mockResolvedValue(undefined),
+  hashPassword: vi.fn((pwd: string) => `hashed-${pwd}`),
+  loadAuthConfig: vi.fn().mockResolvedValue(null),
 }))
 
 describe('init', () => {

@@ -1,4 +1,5 @@
 import { create } from 'zustand'
+import { authFetch } from '../lib/api'
 
 export interface SkillInfo {
   id: string
@@ -37,7 +38,7 @@ export const useSkillsStore = create<SkillsState>((set, get) => ({
 
   fetchDefaultIds: async () => {
     try {
-      const res = await fetch('/api/skills/default-ids')
+      const res = await authFetch('/api/skills/default-ids')
       const data = await res.json()
       set({ defaultIds: data.ids ?? [] })
     } catch { /* ignore */ }
@@ -46,7 +47,7 @@ export const useSkillsStore = create<SkillsState>((set, get) => ({
   fetchSkills: async () => {
     set({ loading: true })
     try {
-      const res = await fetch('/api/skills')
+      const res = await authFetch('/api/skills')
       const data = await res.json()
       set({
         skills: data.skills ?? [],
@@ -61,7 +62,7 @@ export const useSkillsStore = create<SkillsState>((set, get) => ({
 
   toggleSkill: async (skillId: string) => {
     try {
-      const res = await fetch(`/api/skills/${skillId}/toggle`, { method: 'POST' })
+      const res = await authFetch(`//skills/${skillId}/toggle`, { method: 'POST' })
       const data = await res.json()
       set({
         skills: get().skills.map(s =>
@@ -75,7 +76,7 @@ export const useSkillsStore = create<SkillsState>((set, get) => ({
 
   fetchSkill: async (skillId: string) => {
     try {
-      const res = await fetch(`/api/skills/${skillId}`)
+      const res = await authFetch(`//skills/${skillId}`)
       if (!res.ok) return null
       return await res.json() as SkillFull
     } catch {
@@ -85,7 +86,7 @@ export const useSkillsStore = create<SkillsState>((set, get) => ({
 
   createSkill: async (skill: SkillFull) => {
     try {
-      const res = await fetch('/api/skills', {
+      const res = await authFetch('/api/skills', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(skill),
@@ -103,7 +104,7 @@ export const useSkillsStore = create<SkillsState>((set, get) => ({
 
   updateSkill: async (id: string, skill: Partial<SkillFull>) => {
     try {
-      const res = await fetch(`/api/skills/${id}`, {
+      const res = await authFetch(`//skills/${id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(skill),
@@ -121,7 +122,7 @@ export const useSkillsStore = create<SkillsState>((set, get) => ({
 
   deleteSkill: async (skillId: string) => {
     try {
-      const res = await fetch(`/api/skills/${skillId}`, { method: 'DELETE' })
+      const res = await authFetch(`//skills/${skillId}`, { method: 'DELETE' })
       if (res.ok) {
         set({ skills: get().skills.filter(s => s.id !== skillId) })
         return true
@@ -134,7 +135,7 @@ export const useSkillsStore = create<SkillsState>((set, get) => ({
 
   restoreDefault: async (skillId: string) => {
     try {
-      const res = await fetch(`/api/skills/${skillId}/restore-default`, { method: 'POST' })
+      const res = await authFetch(`//skills/${skillId}/restore-default`, { method: 'POST' })
       if (res.ok) {
         await get().fetchSkills()
         return true
@@ -147,7 +148,7 @@ export const useSkillsStore = create<SkillsState>((set, get) => ({
 
   restoreAllDefaults: async () => {
     try {
-      const res = await fetch('/api/skills/restore-all-defaults', { method: 'POST' })
+      const res = await authFetch('/api/skills/restore-all-defaults', { method: 'POST' })
       if (res.ok) {
         await get().fetchSkills()
         return true

@@ -1,4 +1,5 @@
 import { create } from 'zustand'
+import { authFetch } from '../lib/api'
 import type { Project } from '@shared/types.js'
 
 interface ProjectState {
@@ -24,7 +25,7 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
   listProjects: async () => {
     set({ loading: true })
     try {
-      const res = await fetch('/api/projects')
+      const res = await authFetch('/api/projects')
       const data = await res.json()
       set({ projects: data.projects ?? [], loading: false })
     } catch {
@@ -34,7 +35,7 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
   
   createProject: async (name, workdir) => {
     try {
-      const res = await fetch('/api/projects', {
+      const res = await authFetch('/api/projects', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ name, workdir }),
@@ -51,7 +52,7 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
   
   loadProject: async (projectId) => {
     try {
-      const res = await fetch(`/api/projects/${projectId}`)
+      const res = await authFetch(`/api/projects/${projectId}`)
       if (!res.ok) return null
       const data = await res.json()
       set({ currentProject: data.project })
@@ -66,7 +67,7 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
   
   updateProject: async (projectId, updates) => {
     try {
-      const res = await fetch(`/api/projects/${projectId}`, {
+      const res = await authFetch(`/api/projects/${projectId}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(updates),
@@ -87,7 +88,7 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
   
   deleteProject: async (projectId) => {
     try {
-      const res = await fetch(`/api/projects/${projectId}`, { method: 'DELETE' })
+      const res = await authFetch(`/api/projects/${projectId}`, { method: 'DELETE' })
       if (!res.ok) return false
       // Refresh project list
       await get().listProjects()

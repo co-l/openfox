@@ -1,4 +1,5 @@
 import { create } from 'zustand'
+import { authFetch } from '../lib/api'
 
 export interface WorkflowInfo {
   id: string
@@ -69,7 +70,7 @@ export const useWorkflowsStore = create<WorkflowsState>((set, get) => ({
 
   fetchTemplateVariables: async () => {
     try {
-      const res = await fetch('/api/workflows/template-variables')
+      const res = await authFetch('/api/workflows/template-variables')
       const data = await res.json()
       set({ templateVariables: data.variables ?? [] })
     } catch { /* ignore */ }
@@ -77,7 +78,7 @@ export const useWorkflowsStore = create<WorkflowsState>((set, get) => ({
 
   fetchDefaultIds: async () => {
     try {
-      const res = await fetch('/api/workflows/default-ids')
+      const res = await authFetch('/api/workflows/default-ids')
       const data = await res.json()
       set({ defaultIds: data.ids ?? [] })
     } catch { /* ignore */ }
@@ -86,7 +87,7 @@ export const useWorkflowsStore = create<WorkflowsState>((set, get) => ({
   fetchWorkflows: async () => {
     set({ loading: true })
     try {
-      const res = await fetch('/api/workflows')
+      const res = await authFetch('/api/workflows')
       const data = await res.json()
       set({
         workflows: data.workflows ?? [],
@@ -102,7 +103,7 @@ export const useWorkflowsStore = create<WorkflowsState>((set, get) => ({
 
   fetchWorkflow: async (id: string) => {
     try {
-      const res = await fetch(`/api/workflows/${id}`)
+      const res = await authFetch(`/api/workflows/${id}`)
       if (!res.ok) return null
       return await res.json() as WorkflowFull
     } catch {
@@ -112,7 +113,7 @@ export const useWorkflowsStore = create<WorkflowsState>((set, get) => ({
 
   createWorkflow: async (workflow: WorkflowFull) => {
     try {
-      const res = await fetch('/api/workflows', {
+      const res = await authFetch('/api/workflows', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(workflow),
@@ -130,7 +131,7 @@ export const useWorkflowsStore = create<WorkflowsState>((set, get) => ({
 
   updateWorkflow: async (id: string, workflow: Partial<WorkflowFull>) => {
     try {
-      const res = await fetch(`/api/workflows/${id}`, {
+      const res = await authFetch(`/api/workflows/${id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(workflow),
@@ -148,7 +149,7 @@ export const useWorkflowsStore = create<WorkflowsState>((set, get) => ({
 
   deleteWorkflow: async (id: string) => {
     try {
-      const res = await fetch(`/api/workflows/${id}`, { method: 'DELETE' })
+      const res = await authFetch(`/api/workflows/${id}`, { method: 'DELETE' })
       if (res.ok) {
         set({ workflows: get().workflows.filter(p => p.id !== id) })
         return true
@@ -161,7 +162,7 @@ export const useWorkflowsStore = create<WorkflowsState>((set, get) => ({
 
   restoreDefault: async (workflowId: string) => {
     try {
-      const res = await fetch(`/api/workflows/${workflowId}/restore-default`, { method: 'POST' })
+      const res = await authFetch(`/api/workflows/${workflowId}/restore-default`, { method: 'POST' })
       if (res.ok) {
         await get().fetchWorkflows()
         return true
@@ -174,7 +175,7 @@ export const useWorkflowsStore = create<WorkflowsState>((set, get) => ({
 
   restoreAllDefaults: async () => {
     try {
-      const res = await fetch('/api/workflows/restore-all-defaults', { method: 'POST' })
+      const res = await authFetch('/api/workflows/restore-all-defaults', { method: 'POST' })
       if (res.ok) {
         await get().fetchWorkflows()
         return true

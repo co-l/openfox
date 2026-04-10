@@ -1,4 +1,5 @@
 import { create } from 'zustand'
+import { authFetch } from '../lib/api'
 
 // Well-known settings keys (should match server's SETTINGS_KEYS)
 export const SETTINGS_KEYS = {
@@ -23,7 +24,7 @@ export const useSettingsStore = create<SettingsState>((set) => ({
   getSetting: async (key) => {
     set(state => ({ loading: { ...state.loading, [key]: true } }))
     try {
-      const res = await fetch(`/api/settings/${key}`)
+      const res = await authFetch(`//settings/${key}`)
       const data = await res.json()
       set(state => ({
         settings: { ...state.settings, [key]: data.value ?? '' },
@@ -39,7 +40,7 @@ export const useSettingsStore = create<SettingsState>((set) => ({
   setSetting: async (key, value) => {
     set(state => ({ loading: { ...state.loading, [key]: true } }))
     try {
-      const res = await fetch(`/api/settings/${key}`, {
+      const res = await authFetch(`//settings/${key}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ value }),

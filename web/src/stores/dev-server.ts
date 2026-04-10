@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import type { DevServerConfig, DevServerState, DevServerStatus } from '@shared/dev-server.js'
 import type { ServerMessage, DevServerOutputPayload, DevServerStatePayload } from '@shared/protocol.js'
+import { authFetch } from '../lib/api'
 
 interface LogChunk {
   stream: 'stdout' | 'stderr'
@@ -70,7 +71,7 @@ export const useDevServerStore = create<DevServerStore>()((set, get) => {
       const workdir = get().workdir
       if (!workdir) return
       try {
-        const res = await fetch(`/api/dev-server?workdir=${encodeURIComponent(workdir)}`)
+        const res = await authFetch(`/api/dev-server?workdir=${encodeURIComponent(workdir)}`)
         const data: DevServerStatus = await res.json()
         set({ status: data, loading: false })
       } catch {
@@ -82,7 +83,7 @@ export const useDevServerStore = create<DevServerStore>()((set, get) => {
       const workdir = get().workdir
       if (!workdir) return
       try {
-        const res = await fetch(`/api/dev-server/config?workdir=${encodeURIComponent(workdir)}`)
+        const res = await authFetch(`/api/dev-server/config?workdir=${encodeURIComponent(workdir)}`)
         const data = await res.json()
         set({ config: data.config ?? null })
       } catch {
@@ -94,7 +95,7 @@ export const useDevServerStore = create<DevServerStore>()((set, get) => {
       const workdir = get().workdir
       if (!workdir) return
       try {
-        const res = await fetch(`/api/dev-server/logs?workdir=${encodeURIComponent(workdir)}`)
+        const res = await authFetch(`/api/dev-server/logs?workdir=${encodeURIComponent(workdir)}`)
         const data = await res.json()
         const logs: LogChunk[] = (data.logs as { stream: 'stdout' | 'stderr'; content: string }[]).map(entry => ({
           stream: entry.stream,
@@ -110,7 +111,7 @@ export const useDevServerStore = create<DevServerStore>()((set, get) => {
       const workdir = get().workdir
       if (!workdir) return
       try {
-        const res = await fetch(`/api/dev-server/start?workdir=${encodeURIComponent(workdir)}`, { method: 'POST' })
+        const res = await authFetch(`/api/dev-server/start?workdir=${encodeURIComponent(workdir)}`, { method: 'POST' })
         const data: DevServerStatus = await res.json()
         set({ status: data, logs: [] })
       } catch {
@@ -122,7 +123,7 @@ export const useDevServerStore = create<DevServerStore>()((set, get) => {
       const workdir = get().workdir
       if (!workdir) return
       try {
-        const res = await fetch(`/api/dev-server/stop?workdir=${encodeURIComponent(workdir)}`, { method: 'POST' })
+        const res = await authFetch(`/api/dev-server/stop?workdir=${encodeURIComponent(workdir)}`, { method: 'POST' })
         const data: DevServerStatus = await res.json()
         set({ status: data })
       } catch {
@@ -134,7 +135,7 @@ export const useDevServerStore = create<DevServerStore>()((set, get) => {
       const workdir = get().workdir
       if (!workdir) return
       try {
-        const res = await fetch(`/api/dev-server/restart?workdir=${encodeURIComponent(workdir)}`, { method: 'POST' })
+        const res = await authFetch(`/api/dev-server/restart?workdir=${encodeURIComponent(workdir)}`, { method: 'POST' })
         const data: DevServerStatus = await res.json()
         set({ status: data, logs: [] })
       } catch {
@@ -146,7 +147,7 @@ export const useDevServerStore = create<DevServerStore>()((set, get) => {
       const workdir = get().workdir
       if (!workdir) return
       try {
-        const res = await fetch(`/api/dev-server/config?workdir=${encodeURIComponent(workdir)}`, {
+        const res = await authFetch(`/api/dev-server/config?workdir=${encodeURIComponent(workdir)}`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(config),

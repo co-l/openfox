@@ -1,4 +1,5 @@
 import { create } from 'zustand'
+import { authFetch } from '../lib/api'
 
 export interface AgentInfo {
   id: string
@@ -45,7 +46,7 @@ export const useAgentsStore = create<AgentsState>((set, get) => ({
 
   fetchDefaultIds: async () => {
     try {
-      const res = await fetch('/api/agents/default-ids')
+      const res = await authFetch('/api/agents/default-ids')
       const data = await res.json()
       set({ defaultIds: data.ids ?? [] })
     } catch { /* ignore */ }
@@ -54,7 +55,7 @@ export const useAgentsStore = create<AgentsState>((set, get) => ({
   fetchAgents: async () => {
     set({ loading: true })
     try {
-      const res = await fetch('/api/agents')
+      const res = await authFetch('/api/agents')
       const data = await res.json()
       set({
         agents: data.agents ?? [],
@@ -69,7 +70,7 @@ export const useAgentsStore = create<AgentsState>((set, get) => ({
 
   fetchAgent: async (agentId: string) => {
     try {
-      const res = await fetch(`/api/agents/${agentId}`)
+      const res = await authFetch(`//agents/${agentId}`)
       if (!res.ok) return null
       return await res.json() as AgentFull
     } catch {
@@ -79,7 +80,7 @@ export const useAgentsStore = create<AgentsState>((set, get) => ({
 
   createAgent: async (agent: AgentFull) => {
     try {
-      const res = await fetch('/api/agents', {
+      const res = await authFetch('/api/agents', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(agent),
@@ -97,7 +98,7 @@ export const useAgentsStore = create<AgentsState>((set, get) => ({
 
   updateAgent: async (id: string, agent: Partial<AgentFull>) => {
     try {
-      const res = await fetch(`/api/agents/${id}`, {
+      const res = await authFetch(`//agents/${id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(agent),
@@ -115,7 +116,7 @@ export const useAgentsStore = create<AgentsState>((set, get) => ({
 
   deleteAgent: async (agentId: string) => {
     try {
-      const res = await fetch(`/api/agents/${agentId}`, { method: 'DELETE' })
+      const res = await authFetch(`//agents/${agentId}`, { method: 'DELETE' })
       if (res.ok) {
         set({ agents: get().agents.filter(a => a.id !== agentId) })
         return true
@@ -128,7 +129,7 @@ export const useAgentsStore = create<AgentsState>((set, get) => ({
 
   restoreDefault: async (agentId: string) => {
     try {
-      const res = await fetch(`/api/agents/${agentId}/restore-default`, { method: 'POST' })
+      const res = await authFetch(`//agents/${agentId}/restore-default`, { method: 'POST' })
       if (res.ok) {
         await get().fetchAgents()
         return true
@@ -141,7 +142,7 @@ export const useAgentsStore = create<AgentsState>((set, get) => ({
 
   restoreAllDefaults: async () => {
     try {
-      const res = await fetch('/api/agents/restore-all-defaults', { method: 'POST' })
+      const res = await authFetch('/api/agents/restore-all-defaults', { method: 'POST' })
       if (res.ok) {
         await get().fetchAgents()
         return true

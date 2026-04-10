@@ -14,10 +14,14 @@ export function HomePage() {
   const listProjects = useProjectStore((state) => state.listProjects)
   const listSessions = useSessionStore((state) => state.listSessions)
 
+  const connectionStatus = useSessionStore(state => state.connectionStatus)
+
   useEffect(() => {
-    listProjects()
-    listSessions()
-  }, [listProjects, listSessions])
+    if (connectionStatus === 'connected') {
+      listProjects()
+      listSessions()
+    }
+  }, [connectionStatus, listProjects, listSessions])
 
   const sortedProjects = [...projects].sort((a, b) => {
     const sessionsInA = sessions.filter((s) => s.workdir.startsWith(a.workdir))

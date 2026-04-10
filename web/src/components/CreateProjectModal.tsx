@@ -3,6 +3,7 @@ import { useLocation } from 'wouter'
 import { Modal } from './shared/Modal'
 import { Button } from './shared/Button'
 import { Input } from './shared/Input'
+import { authFetch } from '../lib/api'
 
 interface CreateProjectModalProps {
   isOpen: boolean
@@ -39,7 +40,7 @@ export function CreateProjectModal({ isOpen, onClose }: CreateProjectModalProps)
   // Fetch workdir from config when modal opens
   useEffect(() => {
     if (isOpen) {
-      fetch('/api/config')
+      authFetch('/api/config')
         .then(res => res.json())
         .then(data => {
           if (data.workdir) {
@@ -73,7 +74,7 @@ export function CreateProjectModal({ isOpen, onClose }: CreateProjectModalProps)
     
     try {
       // Create project via REST API
-      const response = await fetch('/api/projects', {
+      const response = await authFetch('/api/projects', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ name: projectName, workdir: fullPath }),

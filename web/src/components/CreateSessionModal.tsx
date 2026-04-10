@@ -5,6 +5,7 @@ import { Button } from './shared/Button'
 import { Input } from './shared/Input'
 import { DeleteProjectConfirmationModal } from './DeleteProjectConfirmationModal.js'
 import { CreateProjectModal } from './CreateProjectModal.js'
+import { authFetch } from '../lib/api'
 
 interface DirectoryEntry {
   name: string
@@ -42,7 +43,7 @@ export function OpenProjectModal({ isOpen, onClose }: OpenProjectModalProps) {
   
   // Fetch workdir from config on mount
   useEffect(() => {
-    fetch('/api/config')
+    authFetch('/api/config')
       .then(res => res.json())
       .then(data => {
         if (data.workdir) {
@@ -58,7 +59,7 @@ export function OpenProjectModal({ isOpen, onClose }: OpenProjectModalProps) {
       const url = path 
         ? `/api/directories?path=${encodeURIComponent(path)}`
         : baseWorkdir ? `/api/directories?path=${encodeURIComponent(baseWorkdir)}` : '/api/directories'
-      const response = await fetch(url)
+      const response = await authFetch(url)
       const data = await response.json()
       setListing(data)
     } catch (err) {

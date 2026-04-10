@@ -2,6 +2,7 @@ import { useState, useRef, useEffect } from 'react'
 import { useConfigStore, getBackendDisplayName, type Provider } from '../../stores/config'
 import { useSessionStore } from '../../stores/session'
 import { ModelPropertiesModal } from './ModelPropertiesModal'
+import { authFetch } from '../../lib/api'
 
 function formatContextWindow(context: number): string {
   if (context >= 1000000) return `${(context / 1000000).toFixed(1)}M`
@@ -161,7 +162,7 @@ export function ProviderSelector() {
 
     setLoadingModels('activating')
     try {
-      const response = await fetch(`/api/providers/${providerId}/activate`, {
+      const response = await authFetch(`/api/providers/${providerId}/activate`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ model: newModel }),
