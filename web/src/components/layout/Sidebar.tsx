@@ -56,12 +56,6 @@ export function Sidebar({ projectId, isOpen = true, onClose }: SidebarProps) {
   // Filter sessions to those belonging to the current project by ID
   const projectSessions = sessions.filter(session => session.projectId === currentProject?.id)
 
-  const handleSelectSession = (sessionId: string) => {
-    navigate(`/p/${projectId}/s/${sessionId}`)
-    // Close sidebar on mobile after selection
-    if (onClose) onClose()
-  }
-
   const handleDeleteSession = (sessionId: string, e?: React.MouseEvent) => {
     e?.stopPropagation()
     if (confirm('Delete this session?')) {
@@ -166,7 +160,7 @@ export function Sidebar({ projectId, isOpen = true, onClose }: SidebarProps) {
           ) : (
             <>
               <div className="divide-y divide-border">
-                {renderSessionGroups(projectSessions, currentSession, unreadSessionIds, handleSelectSession, handleDeleteSession)}
+                {renderSessionGroups(projectSessions, currentSession, unreadSessionIds, handleDeleteSession, projectId)}
               </div>
               {sessionsPaginationLoading && (
                 <div className="p-4 text-center text-text-muted text-xs">
@@ -186,8 +180,8 @@ function renderSessionGroups(
   projectSessions: SessionSummary[],
   currentSession: { id: string | null } | null,
   unreadSessionIds: string[],
-  handleSelectSession: (sessionId: string) => void,
   handleDeleteSession: (sessionId: string, e?: React.MouseEvent) => void,
+  projectId: string,
 ) {
   const groups = groupSessionsByDate(projectSessions)
   
@@ -210,66 +204,71 @@ function renderSessionGroups(
           return (
             <div
               key={session.id}
-              onClick={() => handleSelectSession(session.id)}
-              className={`w-full px-4 py-3 text-left hover:bg-bg-tertiary/50 transition-colors group cursor-pointer ${
+              className={`w-full px-4 py-3 text-left hover:bg-bg-tertiary/50 transition-colors group ${
                 isActive ? 'bg-bg-tertiary' : ''
               }`}
             >
-              <div className="flex justify-between items-center mb-1">
-                <span className={`font-medium truncate text-sm ${isActive ? 'text-accent-primary' : 'text-text-primary'}`}>
-                  {session.title ?? session.id.slice(0, 6)}
-                </span>
-                <DropdownMenu
-                  items={[
-                    {
-                      label: 'Delete session',
-                      onClick: (e?: React.MouseEvent) => handleDeleteSession(session.id, e),
-                      danger: true,
-                    },
-                  ]}
-                  trigger={
-                    <button
-                      className="p-1.5 rounded hover:bg-bg-tertiary text-text-muted hover:text-text-primary transition-all"
-                      title="Options"
-                    >
-                      <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
-                        <circle cx="12" cy="5" r="2" />
-                        <circle cx="12" cy="12" r="2" />
-                        <circle cx="12" cy="19" r="2" />
-                      </svg>
-                    </button>
-                  }
-                />
-              </div>
-              {/* Time displayed below the title as muted secondary text */}
-              <div className="flex items-center gap-2 mt-1">
-                {isRunning ? (
-                  <svg
-                    aria-label="Session running"
-                    className="w-3 h-3 text-blue-400 animate-spin flex-shrink-0"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                  >
-                    <title>Running</title>
-                    <circle className="opacity-30" cx="12" cy="12" r="9" stroke="currentColor" strokeWidth="3" />
-                    <path d="M21 12a9 9 0 00-9-9" stroke="currentColor" strokeWidth="3" strokeLinecap="round" />
-                  </svg>
-                ) : hasUnread && !isActive ? (
-                  <span
-                    aria-label="Unread activity"
-                    title="Unread activity"
-                    className="w-2 h-2 rounded-full bg-amber-400 flex-shrink-0"
+              <Link
+                href={`/p/${projectId}/s/${session.id}`}
+                className={`block ${isActive ? 'text-accent-primary' : 'text-text-primary'} hover:text-accent-primary`}
+              >
+                <div className="flex justify-between items-center mb-1">
+                  <span className={`font-medium truncate text-sm ${isActive ? 'text-accent-primary' : 'text-text-primary'}`}>
+                    {session.title ?? session.id.slice(0, 6)}
+                  </span>
+                  <DropdownMenu
+                    items={[
+                      {
+                        label: 'Delete session',
+                        onClick: (e?: React.MouseEvent) => handleDeleteSession(session.id, e),
+                        danger: true,
+                      },
+                    ]}
+                    trigger={
+                      <button
+                        onClick={(e) => e.preventDefault()}
+                        className="p-1.5 rounded hover:bg-bg-tertiary text-text-muted hover:text-text-primary transition-all"
+                        title="Options"
+                      >
+                        <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
+                          <circle cx="12" cy="5" r="2" />
+                          <circle cx="12" cy="12" r="2" />
+                          <circle cx="12" cy="19" r="2" />
+                        </svg>
+                      </button>
+                    }
                   />
-                ) : null}
-                {/* Time in muted style */}
-                <span className="text-text-muted text-xs flex-shrink-0">
-                  {formatTime(session.updatedAt)}
-                </span>
-                {/* Message count in muted style */}
-                <span className="text-text-muted text-xs flex-shrink-0">
-                  {session.messageCount} messages
-                </span>
-              </div>
+                </div>
+                {/* Time displayed below the title as muted secondary text */}
+                <div className="flex items-center gap-2 mt-1">
+                  {isRunning ? (
+                    <svg
+                      aria-label="Session running"
+                      className="w-3 h-3 text-blue-400 animate-spin flex-shrink-0"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                    >
+                      <title>Running</title>
+                      <circle className="opacity-30" cx="12" cy="12" r="9" stroke="currentColor" strokeWidth="3" />
+                      <path d="M21 12a9 9 0 00-9-9" stroke="currentColor" strokeWidth="3" strokeLinecap="round" />
+                    </svg>
+                  ) : hasUnread && !isActive ? (
+                    <span
+                      aria-label="Unread activity"
+                      title="Unread activity"
+                      className="w-2 h-2 rounded-full bg-amber-400 flex-shrink-0"
+                    />
+                  ) : null}
+                  {/* Time in muted style */}
+                  <span className="text-text-muted text-xs flex-shrink-0">
+                    {formatTime(session.updatedAt)}
+                  </span>
+                  {/* Message count in muted style */}
+                  <span className="text-text-muted text-xs flex-shrink-0">
+                    {session.messageCount} messages
+                  </span>
+                </div>
+              </Link>
             </div>
           )
         })}
