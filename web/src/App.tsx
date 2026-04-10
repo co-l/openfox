@@ -145,14 +145,54 @@ function App() {
   const [leftSidebarOpen, setLeftSidebarOpen] = useState(getInitialLeftSidebar)
   const [rightSidebarOpen, setRightSidebarOpen] = useState(getInitialRightSidebar)
 
-  // Persist sidebar states
-  useEffect(() => {
-    localStorage.setItem('openfox:leftSidebar', String(leftSidebarOpen))
-  }, [leftSidebarOpen])
+  // Mobile sidebar state - always starts closed on mobile, doesn't persist
+  const [leftMobileOpen, setLeftMobileOpen] = useState(false)
+  const [rightMobileOpen, setRightMobileOpen] = useState(false)
+
+  // Check if we're on mobile
+  const [isMobile, setIsMobile] = useState(false)
 
   useEffect(() => {
-    localStorage.setItem('openfox:rightSidebar', String(rightSidebarOpen))
-  }, [rightSidebarOpen])
+    const checkMobile = () => {
+      setIsMobile(window.innerWidth < 768)
+    }
+    checkMobile()
+    window.addEventListener('resize', checkMobile)
+    return () => window.removeEventListener('resize', checkMobile)
+  }, [])
+
+  // Use mobile state on small screens, persisted state on large screens
+  const effectiveLeftOpen = isMobile ? leftMobileOpen : leftSidebarOpen
+  const effectiveRightOpen = isMobile ? rightMobileOpen : rightSidebarOpen
+
+  const handleLeftToggle = () => {
+    if (isMobile) {
+      setLeftMobileOpen(!leftMobileOpen)
+    } else {
+      setLeftSidebarOpen(!leftSidebarOpen)
+    }
+  }
+
+  const handleRightToggle = () => {
+    if (isMobile) {
+      setRightMobileOpen(!rightMobileOpen)
+    } else {
+      setRightSidebarOpen(!rightSidebarOpen)
+    }
+  }
+
+  // Persist sidebar states (desktop only)
+  useEffect(() => {
+    if (!isMobile) {
+      localStorage.setItem('openfox:leftSidebar', String(leftSidebarOpen))
+    }
+  }, [leftSidebarOpen, isMobile])
+
+  useEffect(() => {
+    if (!isMobile) {
+      localStorage.setItem('openfox:rightSidebar', String(rightSidebarOpen))
+    }
+  }, [rightSidebarOpen, isMobile])
 
   // Fetch config on mount
   useEffect(() => {
@@ -172,18 +212,18 @@ function App() {
     <div className="h-screen flex flex-col">
       <PageTitle />
       <Header
-          onMenuClick={() => setLeftSidebarOpen(!leftSidebarOpen)}
-          onCriteriaToggle={() => setRightSidebarOpen(!rightSidebarOpen)}
+          onMenuClick={handleLeftToggle}
+          onCriteriaToggle={handleRightToggle}
         />
 
       <div className="flex-1 flex overflow-hidden">
         <Switch>
           <Route path="/p/:projectId/s/:sessionId">
             <ProjectSessionView
-              sidebarOpen={leftSidebarOpen}
-              onSidebarToggle={() => setLeftSidebarOpen(false)}
-              rightSidebarOpen={rightSidebarOpen}
-              onRightSidebarToggle={() => setRightSidebarOpen(!rightSidebarOpen)}
+              sidebarOpen={effectiveLeftOpen}
+              onSidebarToggle={handleLeftToggle}
+              rightSidebarOpen={effectiveRightOpen}
+              onRightSidebarToggle={handleRightToggle}
             />
           </Route>
           <Route path="/p/:projectId/new">
@@ -191,8 +231,8 @@ function App() {
           </Route>
           <Route path="/p/:projectId">
             <ProjectView
-              sidebarOpen={leftSidebarOpen}
-              onSidebarToggle={() => setLeftSidebarOpen(false)}
+              sidebarOpen={effectiveLeftOpen}
+              onSidebarToggle={handleLeftToggle}
             />
           </Route>
           <Route path="/">
