@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { Link, useLocation } from 'wouter'
 import { useSessionStore } from '../../stores/session'
 import { useProjectStore } from '../../stores/project'
@@ -156,8 +156,28 @@ export function Header({ onMenuClick, onCriteriaToggle, hasCriteria }: HeaderPro
   const projects = useProjectStore(state => state.projects)
   const startAutoRefresh = useConfigStore(state => state.startAutoRefresh)
   const stopAutoRefresh = useConfigStore(state => state.stopAutoRefresh)
-  const toggleTerminal = useTerminalStore(state => state.toggleOpen)
+  const setTerminalOpen = useTerminalStore(state => state.setOpen)
   const terminalIsOpen = useTerminalStore(state => state.isOpen)
+
+  const focusChatTextarea = useCallback(() => {
+    const textarea = document.querySelector('textarea[placeholder*="What would you like to build"], textarea[placeholder*="Send a message"]') as HTMLTextAreaElement | null
+    if (textarea) {
+      textarea.focus()
+    }
+  }, [])
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === '²' || e.key === '`') {
+        e.preventDefault()
+        if (!terminalIsOpen) {
+          setTerminalOpen(true)
+        }
+      }
+    }
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [terminalIsOpen, setTerminalOpen])
 
   // Start auto-refresh on mount
   useEffect(() => {
@@ -222,11 +242,11 @@ export function Header({ onMenuClick, onCriteriaToggle, hasCriteria }: HeaderPro
         {/* Terminal toggle button - only visible on project pages */}
         {isProjectPage && (
           <button
-            onClick={toggleTerminal}
+            onClick={() => setTerminalOpen(!terminalIsOpen)}
             className={`p-2.5 rounded hover:bg-bg-tertiary transition-colors ${
               terminalIsOpen ? 'text-accent-primary' : 'text-text-muted hover:text-text-primary'
             }`}
-            title="Toggle terminal"
+            title="Toggle terminal (²)"
           >
             <svg className="w-4 h-4" viewBox="0 0 20 20" fill="currentColor">
               <path fillRule="evenodd" d="M2 5a2 2 0 012-2h12a2 2 0 012 2v10a2 2 0 01-2 2H4a2 2 0 01-2-2V5zm3 1h10v1H5V6zm10 7H5v1h10v-1zm-10 2H5v1h10v-1z" clipRule="evenodd" />
@@ -268,7 +288,11 @@ export function Header({ onMenuClick, onCriteriaToggle, hasCriteria }: HeaderPro
       />
 
       {/* Terminal Modal */}
-      <TerminalModal isOpen={terminalIsOpen} onClose={() => toggleTerminal()} />
+      <TerminalModal 
+        isOpen={terminalIsOpen} 
+        onClose={() => setTerminalOpen(false)} 
+        onFocusChat={focusChatTextarea}
+      />
 
     </header>
   )

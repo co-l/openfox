@@ -7,9 +7,11 @@ import { wsClient } from '../../lib/ws'
 interface TerminalPaneProps {
   sessionId: string
   onClose: () => void
+  onEscape?: () => void
+  autoFocus?: boolean
 }
 
-export function TerminalPane({ sessionId, onClose }: TerminalPaneProps) {
+export function TerminalPane({ sessionId, onClose, onEscape, autoFocus }: TerminalPaneProps) {
   const terminalRef = useRef<HTMLDivElement>(null)
   const sessionIdRef = useRef(sessionId)
   const termRef = useRef<any>(null)
@@ -21,6 +23,19 @@ export function TerminalPane({ sessionId, onClose }: TerminalPaneProps) {
   useEffect(() => {
     sessionIdRef.current = sessionId
   }, [sessionId])
+
+  useEffect(() => {
+    if (!onEscape) return
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === '²' || e.key === '`') {
+        e.preventDefault()
+        onEscape()
+      }
+    }
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [onEscape])
 
   useEffect(() => {
     if (!terminalRef.current) return
@@ -42,6 +57,14 @@ export function TerminalPane({ sessionId, onClose }: TerminalPaneProps) {
     const fitAddon = new FitAddon()
     term.loadAddon(fitAddon)
     termRef.current = { term, fitAddon }
+
+    terminalRef.current.addEventListener('keydown', (e: KeyboardEvent) => {
+      if ((e.key === '²' || e.key === '`') && onEscape) {
+        e.preventDefault()
+        onEscape()
+      }
+    })
+
     term.open(terminalRef.current)
     const terminalElement = terminalRef.current.querySelector('.xterm') as HTMLElement | null
     if (terminalElement) {
@@ -49,13 +72,21 @@ export function TerminalPane({ sessionId, onClose }: TerminalPaneProps) {
     }
     fitAddon.fit()
 
+    if (autoFocus) {
+      setTimeout(() => {
+        term.focus()
+      }, 150)
+    }
+
     const resizeObserver = new ResizeObserver(() => {
       if (resizeTimeoutRef.current) {
         clearTimeout(resizeTimeoutRef.current)
       }
       resizeTimeoutRef.current = setTimeout(() => {
         requestAnimationFrame(() => {
-          fitAddon.fit()
+          if (fitAddon.fit) {
+            fitAddon.fit()
+          }
           const termInstance = termRef.current?.term
           if (termInstance && termInstance.cols > 0 && termInstance.rows > 0) {
             resizeSession(sessionIdRef.current, termInstance.cols, termInstance.rows)
@@ -67,6 +98,12 @@ export function TerminalPane({ sessionId, onClose }: TerminalPaneProps) {
 
     term.onData((data) => {
       writeSession(sessionIdRef.current, data)
+    })
+
+    term.onKey((e) => {
+      if ((e.key === '\x1b' || e.key === '²' || e.key === '`') && onEscape) {
+        onEscape()
+      }
     })
 
     const unsubscribe = wsClient.subscribe((msg: any) => {
@@ -103,7 +140,17 @@ export function TerminalPane({ sessionId, onClose }: TerminalPaneProps) {
           </svg>
         </button>
       </div>
-      <div ref={terminalRef} className="flex-1 relative overflow-hidden" />
+      <div 
+        ref={terminalRef} 
+        className="flex-1 relative overflow-hidden"
+        tabIndex={0}
+        onKeyDown={(e) => {
+          if ((e.key === '²' || e.key === '`') && onEscape) {
+            e.preventDefault()
+            onEscape()
+          }
+        }}
+      />
     </div>
   )
 }
