@@ -5,6 +5,11 @@ vi.stubGlobal('cancelAnimationFrame', (id: number) => clearTimeout(id))
 
 const fetchMock = vi.fn(() => Promise.resolve({ ok: true, json: () => Promise.resolve({ success: true }), status: 200 }))
 vi.stubGlobal('fetch', fetchMock)
+vi.stubGlobal('localStorage', {
+  getItem: vi.fn(() => null),
+  setItem: vi.fn(),
+  removeItem: vi.fn(),
+})
 
 const {
   wsSendMock,
