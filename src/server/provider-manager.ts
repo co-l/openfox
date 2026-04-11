@@ -39,13 +39,17 @@ export async function fetchAvailableModelsFromBackend(baseUrl: string, apiKey?: 
 
 /** Fetch models with context window metadata */
 export async function fetchModelsWithContext(baseUrl: string, apiKey?: string, backend?: 'ollama' | 'vllm' | 'sglang' | 'llamacpp' | 'unknown'): Promise<ModelConfig[]> {
+  logger.info('fetchModelsWithContext called', { baseUrl, apiKey: !!apiKey, backend })
+
   // Ollama uses /api/show for context detection
   if (backend === 'ollama') {
+    logger.info('Fetching Ollama models via /api/tags and /api/show')
     return fetchOllamaModelsWithContext(baseUrl, apiKey)
   }
   
   // vLLM/SGLang/llama.cpp use /v1/models with max_model_len
   const url = baseUrl.includes('/v1') ? `${baseUrl}/models` : `${baseUrl}/v1/models`
+  logger.info('Fetching models via /v1/models', { url })
 
   try {
     const headers: Record<string, string> = {
@@ -68,6 +72,7 @@ export async function fetchModelsWithContext(baseUrl: string, apiKey?: string, b
 
     const data = await response.json() as { data?: Array<{ id: string; max_model_len?: number }> }
     if (data.data && Array.isArray(data.data)) {
+      logger.info('Fetched models from /v1/models', { count: data.data.length, models: data.data.map(m => m.id) })
       return data.data.map(m => ({
         id: m.id,
         contextWindow: m.max_model_len ?? 200000,
@@ -152,7 +157,7 @@ async function fetchOllamaModelsWithContext(baseUrl: string, apiKey?: string): P
     
     return modelsWithContext
   } catch (error) {
-    logger.debug('Error fetching Ollama models', { url: baseUrl, error: error instanceof Error ? error.message : String(error) })
+    logger.info('Error fetching Ollama models', { url: baseUrl, error: error instanceof Error ? error.message : String(error) })
     return []
   }
 }
@@ -266,6 +271,7 @@ export function createProviderManager(config: Config): ProviderManager {
 
         // Refetch models from backend when switching providers
         const backend = provider.backend as 'ollama' | 'vllm' | 'sglang' | 'llamacpp' | 'unknown'
+        logger.info('activateProvider fetching models', { providerId, providerName: provider.name, url, backend })
         const modelsWithContext = await fetchModelsWithContext(url, provider.apiKey, backend)
         
         // Normalize function for fuzzy matching (handles spaces/dashes/underscores/colons/periods)
@@ -488,6 +494,7 @@ export function createProviderManager(config: Config): ProviderManager {
 
       const url = provider.url.includes('/v1') ? provider.url.replace('/v1', '') : provider.url
       const backend = provider.backend as 'ollama' | 'vllm' | 'sglang' | 'llamacpp' | 'unknown'
+      logger.info('refreshProviderModels fetching models', { providerId, providerName: provider.name, url, backend })
       const modelsWithContext = await fetchModelsWithContext(url, provider.apiKey, backend)
       
       // Normalize function for fuzzy matching (handles spaces/dashes/underscores/colons/periods)

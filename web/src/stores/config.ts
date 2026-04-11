@@ -251,7 +251,7 @@ export const useConfigStore = create<ConfigState>((set, get) => ({
   refreshProviderModels: async (providerId: string) => {
     set({ activating: true, error: null })
     try {
-      const response = await authFetch(`//providers/${providerId}/refresh`, { method: 'POST' })
+      const response = await authFetch(`/api/providers/${providerId}/refresh`, { method: 'POST' })
       if (!response.ok) {
         const errorData = await response.json() as { error?: string }
         throw new Error(errorData.error ?? 'Failed to refresh models')
