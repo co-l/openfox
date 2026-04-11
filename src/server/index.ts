@@ -30,7 +30,7 @@ import { createTerminalRoutes } from './routes/terminals.js'
 import { devServerManager } from './dev-server/manager.js'
 import { getGlobalConfigDir } from '../cli/paths.js'
 import { logger, setLogLevel } from './utils/logger.js'
-import { loadServerAuthConfig, requiresAuth, hasPassword, getAuthConfig, verifyPassword, hashPassword, isValidToken, tokenFromPassword, resetAuthCache } from './auth.js'
+import { loadServerAuthConfig, requiresAuth, hasPassword, getAuthConfig, verifyPassword, isValidToken, tokenFromPassword } from './auth.js'
 const __dirname = dirname(fileURLToPath(import.meta.url))
 
 /**
@@ -46,9 +46,6 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
 
   // Set log level
   setLogLevel(config.logging?.level ?? undefined, config.mode)
-
-  // Reset auth cache to ensure fresh load with correct config mode
-  resetAuthCache()
 
   // Load auth config
   await loadServerAuthConfig()

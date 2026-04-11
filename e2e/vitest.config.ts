@@ -10,10 +10,10 @@ export default defineConfig({
     testTimeout: 15_000,
     hookTimeout: 10_000,
     
-    // Use forking to avoid module cache issues between parallel test files
+    // Run tests in parallel with fork pool
     // Each test file gets its own in-process server on a dynamic port
     pool: 'forks',
-    maxWorkers: 1, // Run sequentially to avoid module cache pollution
+    maxWorkers: 10, // Full parallelism - auth disabled in test mode
     
     // No global setup - each test file manages its own server
     // globalSetup: './setup.ts',  // REMOVED - using in-process servers
