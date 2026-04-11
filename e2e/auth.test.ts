@@ -3,15 +3,18 @@
  *
  * Tests token authentication for network mode.
  * 
- * NOTE: These tests require sequential execution due to file system race conditions
- * when setting up auth.json before server import. Run with: npx vitest run auth.test.ts
+ * NOTE: These tests are SKIPPED by default because they require auth to be
+ * enabled, which conflicts with parallel test execution (tests don't wait for
+ * auth.json to be created). To run these tests:
+ * 1. Run them in isolation: npx vitest run auth.test.ts --config e2e/vitest.config.ts
+ * 2. Or run sequentially before other tests with auth enabled
  */
 
 import { describe, it, expect, beforeAll, afterAll } from 'vitest'
 import { WebSocket } from 'ws'
 import { writeFile, mkdir, rm } from 'node:fs/promises'
 import { join } from 'node:path'
-import { createHash, generateKeyPairSync, publicEncrypt } from 'node:crypto'
+import { generateKeyPairSync, publicEncrypt } from 'node:crypto'
 import { createTestServer, type TestServerHandle } from './utils/index.js'
 
 describe.skip('Auth', () => {
