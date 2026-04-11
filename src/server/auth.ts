@@ -70,11 +70,9 @@ async function loadPrivateKey(): Promise<string> {
 }
 
 export async function loadServerAuthConfig(): Promise<AuthConfig | null> {
-  // In test mode, always check for auth.json - don't cache to allow parallel tests
-  // to configure their own auth when needed
   const configDir = getRuntimeConfig()
   const isTestMode = configDir.mode === 'test'
-  
+
   if (!isTestMode) {
     if (cachedAuth) {
       return cachedAuth
@@ -85,9 +83,7 @@ export async function loadServerAuthConfig(): Promise<AuthConfig | null> {
     const authPath = getAuthConfigPath()
     const data = await readFile(authPath, 'utf-8')
     const authConfig = JSON.parse(data)
-    if (!isTestMode) {
-      cachedAuth = authConfig
-    }
+    cachedAuth = authConfig
     return authConfig
   } catch {
     return null
