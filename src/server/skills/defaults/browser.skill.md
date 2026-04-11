@@ -1,6 +1,6 @@
 ---
-id: playwright-cli
-name: Playwright CLI
+id: browser
+name: Browser
 description: Interactive browser control via playwright-cli commands (open, snapshot, click, fill, screenshot, etc.)
 version: 1.0.0
 ---
@@ -19,10 +19,10 @@ The typical workflow is: open a page -> snapshot to get element refs -> interact
 npx playwright-cli open https://example.com
 # Take a snapshot to see the page and get element refs
 npx playwright-cli snapshot
-# Click an element by ref number from snapshot
-npx playwright-cli click 42
+# Click an element by ref string from snapshot
+npx playwright-cli click e42
 # Fill a form field by ref
-npx playwright-cli fill 15 "hello world"
+npx playwright-cli fill e15 "hello world"
 # Take a screenshot
 npx playwright-cli screenshot
 ```
