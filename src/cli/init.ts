@@ -1,7 +1,10 @@
 import { select, text, password, spinner, outro, confirm } from '@clack/prompts'
+import { writeFile } from 'node:fs/promises'
 import { detectBackend, detectModel } from '../server/llm/index.js'
 import { saveGlobalConfig, addProvider, type GlobalConfig } from './config.js'
-import { saveAuthConfig, hashPassword, loadAuthConfig } from './auth.js'
+import { saveAuthConfig, hashPassword, loadAuthConfig, encryptPassword, type AuthConfig } from './auth.js'
+import { generateKeyPairSync } from 'node:crypto'
+import { getAuthKeyPath } from './paths.js'
 import type { Mode } from './main.js'
 import type { ProviderBackend } from '../shared/types.js'
 
@@ -49,7 +52,7 @@ async function promptNetworkAccessibility(mode: Mode): Promise<{ host: string; s
 
   if (isNetwork) {
     const existingAuth = await loadAuthConfig(mode)
-    const existingPassword = !!existingAuth?.passwordHash
+    const existingPassword = !!existingAuth?.encryptedPassword
 
     if (existingPassword) {
       const keepChoice = await confirm({
@@ -67,16 +70,33 @@ async function promptNetworkAccessibility(mode: Mode): Promise<{ host: string; s
     })
 
     const pwd = typeof passwordResult === 'string' ? passwordResult : ''
-    const passwordHash = pwd.length > 0 ? hashPassword(pwd) : null
 
-    await saveAuthConfig(mode, {
-      strategy: 'network',
-      passwordHash,
-    })
+    if (pwd.length > 0) {
+      const { publicKey, privateKey } = generateKeyPairSync('rsa', {
+        modulusLength: 2048,
+        privateKeyEncoding: { type: 'pkcs8', format: 'pem' },
+        publicKeyEncoding: { type: 'spki', format: 'pem' },
+      })
+
+      const keyPath = getAuthKeyPath(mode)
+      await writeFile(keyPath, privateKey, { mode: 0o600 })
+
+      const encryptedPassword = encryptPassword(pwd, publicKey)
+
+      await saveAuthConfig(mode, {
+        strategy: 'network',
+        encryptedPassword,
+      })
+    } else {
+      await saveAuthConfig(mode, {
+        strategy: 'network',
+        encryptedPassword: null,
+      })
+    }
   } else {
     await saveAuthConfig(mode, {
       strategy: 'local',
-      passwordHash: null,
+      encryptedPassword: null,
     })
   }
 

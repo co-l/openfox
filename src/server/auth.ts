@@ -1,6 +1,6 @@
-import { readFile } from 'node:fs/promises'
-import { join } from 'node:path'
-import { createHash, timingSafeEqual } from 'node:crypto'
+import { readFile, writeFile, mkdir } from 'node:fs/promises'
+import { join, dirname } from 'node:path'
+import { createHash, privateDecrypt, createPublicKey } from 'node:crypto'
 import { getRuntimeConfig } from './runtime-config.js'
 import type { Mode } from '../cli/main.js'
 
@@ -22,12 +22,46 @@ function getAuthConfigPath(): string {
   return `${basePath}/openfox${suffix}/auth.json`
 }
 
+function getKeyPath(): string {
+  const authPath = getAuthConfigPath()
+  const dir = dirname(authPath)
+  return join(dir, 'auth.key')
+}
+
 export interface AuthConfig {
   strategy: 'local' | 'network'
-  passwordHash: string | null
+  encryptedPassword: string | null
+  sessionKey?: string
 }
 
 let cachedAuth: AuthConfig | null = null
+let cachedPrivateKey: string | null = null
+
+async function loadPrivateKey(): Promise<string> {
+  if (cachedPrivateKey) {
+    return cachedPrivateKey
+  }
+
+  const keyPath = getKeyPath()
+  const keyDir = dirname(keyPath)
+
+  try {
+    cachedPrivateKey = await readFile(keyPath, 'utf-8')
+    return cachedPrivateKey
+  } catch {
+    const { privateKey } = await import('node:crypto').then(c => c.generateKeyPairSync('rsa', {
+      modulusLength: 2048,
+      privateKeyEncoding: { type: 'pkcs8', format: 'pem' },
+      publicKeyEncoding: { type: 'spki', format: 'pem' },
+    }))
+
+    await mkdir(keyDir, { recursive: true })
+    await writeFile(keyPath, privateKey, { mode: 0o600 })
+
+    cachedPrivateKey = privateKey
+    return privateKey
+  }
+}
 
 export async function loadServerAuthConfig(): Promise<AuthConfig | null> {
   if (cachedAuth) {
@@ -52,27 +86,68 @@ export function hashPassword(password: string): string {
   return createHash('sha256').update(password).digest('hex')
 }
 
-export function verifyPassword(password: string, hash: string): boolean {
-  const passwordHash = hashPassword(password)
-  const a = Buffer.from(passwordHash)
-  const b = Buffer.from(hash)
-  if (a.length !== b.length) return false
-  return timingSafeEqual(a, b)
-}
-
 export function requiresAuth(): boolean {
   return cachedAuth?.strategy === 'network'
 }
 
 export function hasPassword(): boolean {
-  return cachedAuth?.passwordHash != null && cachedAuth.passwordHash.length > 0
+  return cachedAuth?.encryptedPassword != null && cachedAuth.encryptedPassword.length > 0
 }
 
-export function tokenFromPassword(password: string): string {
-  return hashPassword(password)
+export async function verifyPassword(password: string): Promise<boolean> {
+  const encryptedPassword = cachedAuth?.encryptedPassword
+  if (!encryptedPassword) return false
+
+  const privateKey = await loadPrivateKey()
+
+  try {
+    const decrypted = privateDecrypt(
+      { key: privateKey, padding: 1 },
+      Buffer.from(encryptedPassword, 'base64')
+    )
+    return decrypted.toString() === password
+  } catch {
+    return false
+  }
 }
 
-export function isValidToken(token: string): boolean {
-  if (!cachedAuth?.passwordHash) return false
-  return timingSafeEqual(Buffer.from(token), Buffer.from(cachedAuth.passwordHash))
+export async function tokenFromPassword(password: string): Promise<string> {
+  const privateKey = await loadPrivateKey()
+  const passwordHash = hashPassword(password)
+  
+  const sign = await import('node:crypto').then(c => {
+    const s = c.createSign('SHA256')
+    s.update(passwordHash)
+    s.end()
+    return s.sign(privateKey, 'base64')
+  })
+  
+  return sign
+}
+
+export async function isValidToken(token: string): Promise<boolean> {
+  if (!cachedAuth?.encryptedPassword) return false
+
+  const privateKey = await loadPrivateKey()
+
+  try {
+    const decrypted = privateDecrypt(
+      { key: privateKey, padding: 1 },
+      Buffer.from(cachedAuth.encryptedPassword, 'base64')
+    )
+    const storedPassword = decrypted.toString()
+    const storedHash = hashPassword(storedPassword)
+
+    const verify = await import('node:crypto').then(c => {
+      const v = c.createVerify('SHA256')
+      v.update(storedHash)
+      v.end()
+      return v
+    })
+
+    const publicKey = createPublicKey(privateKey).export({ type: 'spki', format: 'pem' })
+    return verify.verify(publicKey, token, 'base64')
+  } catch {
+    return false
+  }
 }

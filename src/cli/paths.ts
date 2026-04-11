@@ -28,6 +28,10 @@ export function getAuthConfigPath(mode: Mode): string {
   return join(getGlobalConfigDir(mode), 'auth.json')
 }
 
+export function getAuthKeyPath(mode: Mode): string {
+  return join(getGlobalConfigDir(mode), 'auth.key')
+}
+
 export function getGlobalDataDir(mode: Mode): string {
   const suffix = mode === 'development' ? '-dev' : ''
   const home = homedir()

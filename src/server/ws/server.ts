@@ -383,13 +383,13 @@ export function createWebSocketServer(
     }))
   })
 
-  wss.on('connection', (ws, req) => {
+  wss.on('connection', async (ws, req) => {
     const url = new URL(req.url || '/', `http://${req.headers.host}`)
     const token = url.searchParams.get('token')
 
     const authConfig = getAuthConfig()
-    if (authConfig?.strategy === 'network' && authConfig.passwordHash) {
-      if (!token || !isValidToken(token)) {
+    if (authConfig?.strategy === 'network' && authConfig.encryptedPassword) {
+      if (!token || !(await isValidToken(token))) {
         setTimeout(() => {
           ws.close(4000, 'Unauthorized')
         }, 100)

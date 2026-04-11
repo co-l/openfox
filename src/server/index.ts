@@ -30,7 +30,7 @@ import { createTerminalRoutes } from './routes/terminals.js'
 import { devServerManager } from './dev-server/manager.js'
 import { getGlobalConfigDir } from '../cli/paths.js'
 import { logger, setLogLevel } from './utils/logger.js'
-import { loadServerAuthConfig, requiresAuth, hasPassword, getAuthConfig, verifyPassword, hashPassword, isValidToken } from './auth.js'
+import { loadServerAuthConfig, requiresAuth, hasPassword, getAuthConfig, verifyPassword, hashPassword, isValidToken, tokenFromPassword } from './auth.js'
 const __dirname = dirname(fileURLToPath(import.meta.url))
 
 /**
@@ -136,16 +136,16 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
   app.use(express.json())
 
   // Auth middleware for all /api routes (except /api/health and /api/auth/login)
-  const authMiddleware = (req: express.Request, res: express.Response, next: express.NextFunction) => {
+  const authMiddleware = async (req: express.Request, res: express.Response, next: express.NextFunction) => {
     const path = req.path
     const publicPaths = ['/health', '/auth', '/auth/login']
     if (publicPaths.includes(path)) {
       return next()
     }
     const authConfig = getAuthConfig()
-    if (authConfig?.strategy === 'network' && authConfig.passwordHash) {
+    if (authConfig?.strategy === 'network' && authConfig.encryptedPassword) {
       const token = req.headers['x-session-token'] as string
-      if (!token || !isValidToken(token)) {
+      if (!token || !(await isValidToken(token))) {
         res.status(401).json({ error: 'Unauthorized' })
         return
       }
@@ -172,9 +172,9 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
   })
 
   // Login endpoint - exchange password for session token
-  app.post('/api/auth/login', (req, res) => {
+  app.post('/api/auth/login', async (req, res) => {
     const authConfig = getAuthConfig()
-    if (authConfig?.strategy !== 'network' || !authConfig.passwordHash) {
+    if (authConfig?.strategy !== 'network' || !authConfig.encryptedPassword) {
       res.status(400).json({ error: 'Auth not configured' })
       return
     }
@@ -183,11 +183,11 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
       res.status(401).json({ error: 'Password required' })
       return
     }
-    if (!verifyPassword(password, authConfig.passwordHash)) {
+    if (!(await verifyPassword(password))) {
       res.status(401).json({ error: 'Invalid password' })
       return
     }
-    const token = hashPassword(password)
+    const token = await tokenFromPassword(password)
     res.json({ token })
   })
 

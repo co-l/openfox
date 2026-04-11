@@ -1,12 +1,12 @@
 import { readFile, writeFile, mkdir, access } from 'node:fs/promises'
 import { dirname } from 'node:path'
-import { createHash } from 'node:crypto'
+import { createHash, publicEncrypt, constants } from 'node:crypto'
 import type { Mode } from './main.js'
-import { getAuthConfigPath } from './paths.js'
+import { getAuthConfigPath, getAuthKeyPath } from './paths.js'
 
 export interface AuthConfig {
   strategy: 'local' | 'network'
-  passwordHash: string | null
+  encryptedPassword: string | null
 }
 
 export async function saveAuthConfig(mode: Mode, auth: AuthConfig): Promise<void> {
@@ -33,6 +33,14 @@ export async function authConfigExists(mode: Mode): Promise<boolean> {
   } catch {
     return false
   }
+}
+
+export function encryptPassword(password: string, publicKey: string): string {
+  const encrypted = publicEncrypt(
+    { key: publicKey, padding: 1 },
+    Buffer.from(password)
+  )
+  return encrypted.toString('base64')
 }
 
 export function hashPassword(password: string): string {

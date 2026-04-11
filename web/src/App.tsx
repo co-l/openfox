@@ -16,7 +16,7 @@ import { PasswordModal } from './components/PasswordModal'
 
 function hasStoredToken(): boolean {
   if (typeof window === 'undefined') return false
-  return sessionStorage.getItem('openfox_token') !== null
+  return localStorage.getItem('openfox_token') !== null
 }
 
 function LoadingSpinner() {

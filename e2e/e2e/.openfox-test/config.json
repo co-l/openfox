@@ -1,0 +1,71 @@
+{
+  "providers": [
+    {
+      "id": "test-context-update-provider",
+      "name": "Test Context Update Provider",
+      "url": "http://localhost:11434",
+      "backend": "ollama",
+      "models": [
+        {
+          "id": "test-context-update-model",
+          "contextWindow": 500000,
+          "source": "user"
+        }
+      ],
+      "isActive": true,
+      "createdAt": "2026-04-11T06:48:47.434Z"
+    },
+    {
+      "id": "test-fuzzy-provider",
+      "name": "Test Fuzzy Provider",
+      "url": "http://localhost:11434",
+      "backend": "ollama",
+      "models": [
+        {
+          "id": "qwen3.5 cloud",
+          "contextWindow": 300000,
+          "source": "user"
+        }
+      ],
+      "isActive": true,
+      "createdAt": "2026-04-11T06:48:43.332Z"
+    },
+    {
+      "id": "test-restart-provider",
+      "name": "Test Restart Provider",
+      "url": "http://localhost:11434",
+      "backend": "ollama",
+      "models": [
+        {
+          "id": "test-model-restart",
+          "contextWindow": 262144,
+          "source": "user"
+        }
+      ],
+      "isActive": true,
+      "createdAt": "2026-04-11T06:48:42.299Z"
+    }
+  ],
+  "defaultModelSelection": "test-context-update-provider/test-context-update-model",
+  "activeProviderId": "test-context-update-provider",
+  "server": {
+    "port": 10369,
+    "host": "127.0.0.1",
+    "openBrowser": true
+  },
+  "logging": {
+    "level": "error"
+  },
+  "database": {
+    "path": ""
+  },
+  "workspace": {
+    "workdir": "/home/conrad/dev/openfox/e2e"
+  },
+  "visionFallback": {
+    "enabled": false,
+    "url": "http://localhost:11434",
+    "model": "qwen3-vl:2b",
+    "timeout": 120
+  }
+}

@@ -8,7 +8,7 @@ import { describe, it, expect, beforeAll, afterAll } from 'vitest'
 import { WebSocket } from 'ws'
 import { writeFile, mkdir, rm } from 'node:fs/promises'
 import { join } from 'node:path'
-import { createHash } from 'node:crypto'
+import { createHash, generateKeyPairSync, publicEncrypt } from 'node:crypto'
 import { createTestServer, type TestServerHandle } from './utils/index.js'
 
 describe('Auth', () => {
@@ -19,11 +19,23 @@ describe('Auth', () => {
     const authDir = join(e2eDir, '.openfox-test')
     await mkdir(authDir, { recursive: true })
 
-    const passwordHash = createHash('sha256').update('test123').digest('hex')
+    const { privateKey, publicKey } = generateKeyPairSync('rsa', {
+      modulusLength: 2048,
+      privateKeyEncoding: { type: 'pkcs8', format: 'pem' },
+      publicKeyEncoding: { type: 'spki', format: 'pem' },
+    })
+
+    const encryptedPassword = publicEncrypt(
+      { key: publicKey, padding: 1 },
+      Buffer.from('test123')
+    ).toString('base64')
+
     await writeFile(join(authDir, 'auth.json'), JSON.stringify({
       strategy: 'network',
-      passwordHash,
+      encryptedPassword,
     }))
+
+    await writeFile(join(authDir, 'auth.key'), privateKey, { mode: 0o600 })
 
     server = await createTestServer()
   })
@@ -56,8 +68,13 @@ describe('Auth', () => {
   })
 
   it('accepts connection with valid token', async () => {
-    const token = createHash('sha256').update('test123').digest('hex')
-    const ws = new WebSocket(`${server.wsUrl}?token=${token}`)
+    const loginRes = await fetch(`${server.url}/api/auth/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ password: 'test123' }),
+    })
+    const { token } = await loginRes.json() as { token: string }
+    const ws = new WebSocket(`${server.wsUrl}?token=${encodeURIComponent(token)}`)
 
     await new Promise<void>((resolve, reject) => {
       const timeout = setTimeout(() => {
@@ -85,7 +102,12 @@ describe('Auth', () => {
   })
 
   it('allows REST API with token', async () => {
-    const token = createHash('sha256').update('test123').digest('hex')
+    const loginRes = await fetch(`${server.url}/api/auth/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ password: 'test123' }),
+    })
+    const { token } = await loginRes.json() as { token: string }
     const res = await fetch(`${server.url}/api/projects`, {
       headers: { 'x-session-token': token },
     })
@@ -101,7 +123,7 @@ describe('Auth', () => {
     expect(res.status).toBe(401)
   })
 
-  it('login returns token for valid password (token = password hash)', async () => {
+  it('login returns signature token for valid password', async () => {
     const res = await fetch(`${server.url}/api/auth/login`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -109,6 +131,7 @@ describe('Auth', () => {
     })
     expect(res.ok).toBe(true)
     const data = await res.json() as { token: string }
-    expect(data.token).toBe(createHash('sha256').update('test123').digest('hex'))
+    expect(typeof data.token).toBe('string')
+    expect(data.token.length).toBeGreaterThan(100)
   })
 })
