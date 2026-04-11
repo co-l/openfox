@@ -11,7 +11,8 @@ function getAuthConfigPath(): string {
   if (mode === 'test') {
     const cwd = process.cwd()
     const base = cwd.endsWith('/e2e') ? cwd : join(cwd, 'e2e')
-    return join(base, '.openfox-test', 'auth.json')
+    const testAuthPath = join(base, '.openfox-test', 'auth.json')
+    return testAuthPath
   }
 
   const home = process.env['HOME'] || process.env['USERPROFILE'] || ''
@@ -36,6 +37,11 @@ export interface AuthConfig {
 
 let cachedAuth: AuthConfig | null = null
 let cachedPrivateKey: string | null = null
+
+export function resetAuthCache(): void {
+  cachedAuth = null
+  cachedPrivateKey = null
+}
 
 async function loadPrivateKey(): Promise<string> {
   if (cachedPrivateKey) {
@@ -64,6 +70,15 @@ async function loadPrivateKey(): Promise<string> {
 }
 
 export async function loadServerAuthConfig(): Promise<AuthConfig | null> {
+  // Always recalculate path to respect runtime config mode (may have changed since last call)
+  // Skip cache in test mode to handle parallel test files correctly
+  const configDir = getRuntimeConfig()
+  const isTestMode = configDir.mode === 'test'
+  
+  if (isTestMode) {
+    cachedAuth = null
+  }
+
   if (cachedAuth) {
     return cachedAuth
   }
