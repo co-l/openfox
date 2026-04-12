@@ -70,7 +70,7 @@ export const useAgentsStore = create<AgentsState>((set, get) => ({
 
   fetchAgent: async (agentId: string) => {
     try {
-      const res = await authFetch(`//agents/${agentId}`)
+      const res = await authFetch(`/api/agents/${agentId}`)
       if (!res.ok) return null
       return await res.json() as AgentFull
     } catch {
@@ -98,7 +98,7 @@ export const useAgentsStore = create<AgentsState>((set, get) => ({
 
   updateAgent: async (id: string, agent: Partial<AgentFull>) => {
     try {
-      const res = await authFetch(`//agents/${id}`, {
+      const res = await authFetch(`/api/agents/${id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(agent),
@@ -116,7 +116,7 @@ export const useAgentsStore = create<AgentsState>((set, get) => ({
 
   deleteAgent: async (agentId: string) => {
     try {
-      const res = await authFetch(`//agents/${agentId}`, { method: 'DELETE' })
+      const res = await authFetch(`/api/agents/${agentId}`, { method: 'DELETE' })
       if (res.ok) {
         set({ agents: get().agents.filter(a => a.id !== agentId) })
         return true
@@ -129,7 +129,7 @@ export const useAgentsStore = create<AgentsState>((set, get) => ({
 
   restoreDefault: async (agentId: string) => {
     try {
-      const res = await authFetch(`//agents/${agentId}/restore-default`, { method: 'POST' })
+      const res = await authFetch(`/api/agents/${agentId}/restore-default`, { method: 'POST' })
       if (res.ok) {
         await get().fetchAgents()
         return true

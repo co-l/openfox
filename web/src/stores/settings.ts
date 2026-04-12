@@ -24,7 +24,7 @@ export const useSettingsStore = create<SettingsState>((set) => ({
   getSetting: async (key) => {
     set(state => ({ loading: { ...state.loading, [key]: true } }))
     try {
-      const res = await authFetch(`//settings/${key}`)
+      const res = await authFetch(`/api/settings/${key}`)
       const data = await res.json()
       set(state => ({
         settings: { ...state.settings, [key]: data.value ?? '' },
@@ -40,7 +40,7 @@ export const useSettingsStore = create<SettingsState>((set) => ({
   setSetting: async (key, value) => {
     set(state => ({ loading: { ...state.loading, [key]: true } }))
     try {
-      const res = await authFetch(`//settings/${key}`, {
+      const res = await authFetch(`/api/settings/${key}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ value }),
