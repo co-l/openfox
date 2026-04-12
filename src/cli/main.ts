@@ -156,7 +156,7 @@ export async function runCli(options: { mode: Mode }): Promise<void> {
       await runServe({
         mode,
         port: values.port ? parseInt(values.port) : undefined,
-        openBrowser: !values['no-browser'],
+        openBrowser: values['no-browser'] === true ? false : undefined,
       } as any)
     }
   }
