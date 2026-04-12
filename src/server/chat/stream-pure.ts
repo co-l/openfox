@@ -17,6 +17,7 @@ import type { StreamTiming } from '../llm/streaming.js'
 import type { TurnEvent } from '../events/types.js'
 import { streamWithSegments } from '../llm/streaming.js'
 import { computeAggregatedStats } from './stats.js'
+import { FORMAT_CORRECTION_PROMPT } from './prompts.js'
 
 // ============================================================================
 // Types
@@ -463,4 +464,231 @@ export async function consumeStreamGenerator(
     }
     onEvent(result.value)
   }
+}
+
+// ============================================================================
+// Multi-Turn Stream Consumer with Tool Execution
+// ============================================================================
+
+const MAX_TOOL_LOOP_ITERATIONS = 10
+
+export interface ConsumeStreamWithToolLoopOptions {
+  messageId: string
+  systemPrompt: string
+  llmClient: LLMClientWithModel
+  messages: Array<{
+    role: 'system' | 'user' | 'assistant' | 'tool'
+    content: string
+    toolCalls?: ToolCall[]
+    toolCallId?: string
+  }>
+  tools: LLMToolDefinition[]
+  toolChoice: 'auto' | 'none' | 'required'
+  disableThinking?: boolean
+  signal?: AbortSignal
+  turnMetrics: TurnMetrics
+  toolRegistry: {
+    execute: (name: string, args: Record<string, unknown>, ctx: {
+      sessionId: string
+      workdir: string
+      signal?: AbortSignal
+      llmClient: LLMClientWithModel
+      statsIdentity: StatsIdentity
+      dangerLevel?: 'normal' | 'dangerous'
+      toolCallId: string
+    }) => Promise<ToolResult>
+  }
+  sessionId: string
+  workdir: string
+  onEvent: (event: TurnEvent) => void
+  statsIdentity: StatsIdentity
+  dangerLevel?: 'normal' | 'dangerous'
+}
+
+export async function consumeStreamWithToolLoop(
+  options: ConsumeStreamWithToolLoopOptions
+): Promise<PureStreamResult> {
+  const {
+    messageId,
+    systemPrompt,
+    llmClient,
+    messages,
+    tools,
+    toolChoice,
+    disableThinking,
+    signal,
+    turnMetrics,
+    toolRegistry,
+    sessionId,
+    workdir,
+    onEvent,
+    statsIdentity,
+    dangerLevel,
+  } = options
+
+  const systemMsg = { role: 'system' as const, content: systemPrompt }
+  let currentMessages: Array<{
+    role: 'system' | 'user' | 'assistant' | 'tool'
+    content: string
+    toolCalls?: ToolCall[]
+    toolCallId?: string
+  }> = [systemMsg, ...messages]
+
+  let iterations = 0
+
+  for (;;) {
+    if (signal?.aborted) {
+      return {
+        content: '',
+        toolCalls: [],
+        segments: [],
+        usage: { promptTokens: 0, completionTokens: 0 },
+        timing: { ttft: 0, completionTime: 0, tps: 0, prefillTps: 0 },
+        aborted: true,
+        xmlFormatError: false,
+      }
+    }
+
+    if (++iterations > MAX_TOOL_LOOP_ITERATIONS) {
+      throw new Error('Max tool loop iterations exceeded during compaction')
+    }
+
+    const streamGen = streamLLMPure({
+      messageId,
+      systemPrompt: '',
+      llmClient,
+      messages: currentMessages,
+      tools,
+      toolChoice,
+      disableThinking: disableThinking ?? false,
+      signal,
+    })
+
+    const result = await consumeStreamGenerator(streamGen, onEvent)
+
+    if (result.aborted) {
+      return result
+    }
+
+    if (result.xmlFormatError) {
+      const correctionMsg = { role: 'user' as const, content: FORMAT_CORRECTION_PROMPT }
+      currentMessages = [...currentMessages, correctionMsg]
+      continue
+    }
+
+    turnMetrics.addLLMCall(result.timing, result.usage.promptTokens, result.usage.completionTokens)
+
+    if (result.toolCalls.length > 0) {
+      const stats = turnMetrics.buildStats(statsIdentity, 'compaction')
+      onEvent(createMessageDoneEvent(messageId, {
+        segments: result.segments,
+        stats,
+      }))
+
+      const toolContext = {
+        sessionId,
+        workdir,
+        turnMetrics,
+        signal: signal ?? undefined,
+        llmClient,
+        statsIdentity,
+        dangerLevel,
+        toolRegistry,
+      }
+
+      const toolResult = await executeToolBatchWithContext(messageId, result.toolCalls, toolContext, onEvent)
+
+      for (const toolMsg of toolResult.toolMessages) {
+        const msg: { role: 'tool'; content: string; toolCallId: string } = {
+          role: 'tool' as const,
+          content: toolMsg.content,
+          toolCallId: toolMsg.toolCallId ?? '',
+        }
+        currentMessages.push(msg)
+      }
+
+      currentMessages.push({
+        role: 'assistant' as const,
+        content: result.content,
+        toolCalls: result.toolCalls,
+      })
+
+      continue
+    }
+
+    if (!result.content && result.thinkingContent) {
+      return {
+        ...result,
+        content: result.thinkingContent,
+      }
+    }
+
+    return result
+  }
+}
+
+interface ToolBatchExecutionContext {
+  sessionId: string
+  workdir: string
+  turnMetrics: TurnMetrics
+  signal: AbortSignal | undefined
+  llmClient: LLMClientWithModel
+  statsIdentity: StatsIdentity
+  dangerLevel: 'normal' | 'dangerous' | undefined
+  toolRegistry: ConsumeStreamWithToolLoopOptions['toolRegistry']
+}
+
+async function executeToolBatchWithContext(
+  assistantMsgId: string,
+  toolCalls: ToolCall[],
+  ctx: ToolBatchExecutionContext,
+  onEvent: (event: TurnEvent) => void
+): Promise<{ toolMessages: Array<{ role: 'tool'; content: string; toolCallId?: string }>; criteriaChanged: boolean }> {
+  const toolMessages: Array<{ role: 'tool'; content: string; toolCallId?: string }> = []
+  let criteriaChanged = false
+
+  for (const toolCall of toolCalls) {
+    if (ctx.signal?.aborted) {
+      throw new Error('Aborted')
+    }
+
+    onEvent(createToolCallEvent(assistantMsgId, toolCall))
+
+    let toolResult: ToolResult
+    try {
+      toolResult = await ctx.toolRegistry.execute(toolCall.name, toolCall.arguments, {
+        sessionId: ctx.sessionId,
+        workdir: ctx.workdir,
+        ...(ctx.signal ? { signal: ctx.signal } : {}),
+        llmClient: ctx.llmClient,
+        statsIdentity: ctx.statsIdentity,
+        ...(ctx.dangerLevel ? { dangerLevel: ctx.dangerLevel } : {}),
+        toolCallId: toolCall.id,
+      })
+    } catch (error) {
+      toolResult = {
+        success: false,
+        error: error instanceof Error ? error.message : 'Unknown error',
+        durationMs: 0,
+        truncated: false,
+      }
+    }
+
+    ctx.turnMetrics.addToolTime(toolResult.durationMs)
+    onEvent(createToolResultEvent(assistantMsgId, toolCall.id, toolResult))
+
+    const content = toolResult.success
+      ? (toolResult.output ?? 'Success')
+      : toolResult.output
+        ? `${toolResult.output}\n\nError: ${toolResult.error}`
+        : `Error: ${toolResult.error}`
+
+    toolMessages.push({
+      role: 'tool',
+      content,
+      toolCallId: toolCall.id,
+    })
+  }
+
+  return { toolMessages, criteriaChanged }
 }

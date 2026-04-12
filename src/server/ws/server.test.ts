@@ -136,6 +136,7 @@ vi.mock('../chat/stream-pure.js', async (importOriginal) => {
     ...actual,
     streamLLMPure: streamLLMPureMock,
     consumeStreamGenerator: consumeStreamGeneratorMock,
+    consumeStreamWithToolLoop: consumeStreamGeneratorMock,
   }
 })
 

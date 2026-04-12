@@ -674,7 +674,7 @@ export const useSessionStore = create<SessionState>((set, get) => {
 
     deleteAllSessions: async (projectId) => {
       try {
-        const res = await authFetch(`//projects/${projectId}/sessions`, { method: 'DELETE' })
+        const res = await authFetch(`/api/projects/${projectId}/sessions`, { method: 'DELETE' })
         if (!res.ok) return false
         // Refresh session list
         await get().listSessions()

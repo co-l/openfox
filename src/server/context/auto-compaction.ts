@@ -12,7 +12,7 @@ import {
   createMessageDoneEvent,
   createChatDoneEvent,
 } from '../chat/stream-pure.js'
-import { streamLLMPure, consumeStreamGenerator } from '../chat/stream-pure.js'
+import { consumeStreamWithToolLoop } from '../chat/stream-pure.js'
 import { loadAllAgentsDefault, findAgentById, getSubAgents } from '../agents/registry.js'
 import { getToolRegistryForAgent } from '../tools/index.js'
 import { getEnabledSkillMetadata } from '../skills/registry.js'
@@ -178,56 +178,49 @@ async function performContextCompaction(options: ContextCompactionOptions & {
   eventStore.append(sessionId, createMessageStartEvent(assistantMsgId, 'assistant', undefined, getCurrentWindowMessageOptions(sessionId)))
 
   const turnMetrics = new TurnMetrics()
-  const correctionMessages: Array<{ role: 'user'; content: string }> = []
-  let result: Awaited<ReturnType<typeof consumeStreamGenerator>> | null = null
 
-  for (let attempt = 0; attempt < MAX_FORMAT_RETRIES; attempt++) {
-    const streamGen = streamLLMPure({
-      messageId: assistantMsgId,
-      systemPrompt: assembledRequest.systemPrompt,
-      llmClient,
-      messages: [...llmMessages, ...correctionMessages],
-      tools: toolRegistry.definitions,
-      toolChoice: 'none',
-      disableThinking: true,
-      ...(signal ? { signal } : {}),
-    })
-    result = await consumeStreamGenerator(streamGen, event => {
-      eventStore.append(sessionId, event)
-    })
-
-    if (result.aborted) {
-      throw new Error('Aborted')
-    }
-
-    if (!result.xmlFormatError) {
-      break
-    }
-
-    logger.warn('Compaction XML tool format error, retrying', {
-      sessionId,
-      attempt: attempt + 1,
-      maxAttempts: MAX_FORMAT_RETRIES,
-    })
-
-    correctionMessages.push({ role: 'user', content: FORMAT_CORRECTION_PROMPT })
+  const compactionToolRegistry = {
+    execute: async (name: string, args: Record<string, unknown>, ctx: {
+      sessionId: string
+      workdir: string
+      signal?: AbortSignal
+      llmClient: LLMClientWithModel
+      statsIdentity: StatsIdentity
+      dangerLevel?: 'normal' | 'dangerous'
+      toolCallId: string
+    }) => {
+      return toolRegistry.execute(name, args, {
+        ...ctx,
+        sessionManager,
+      })
+    },
   }
 
-  if (!result || result.xmlFormatError) {
-    throw new Error('Compaction summary generation failed due to XML tool format output')
+  const result = await consumeStreamWithToolLoop({
+    messageId: assistantMsgId,
+    systemPrompt: assembledRequest.systemPrompt,
+    llmClient,
+    messages: llmMessages,
+    tools: toolRegistry.definitions,
+    toolChoice: 'auto',
+    disableThinking: true,
+    turnMetrics,
+    toolRegistry: compactionToolRegistry,
+    sessionId,
+    workdir: session.workdir,
+    onEvent: (event) => eventStore.append(sessionId, event),
+    statsIdentity,
+    ...(session.dangerLevel ? { dangerLevel: session.dangerLevel } : {}),
+    ...(signal ? { signal } : {}),
+  })
+
+  if (result.aborted) {
+    throw new Error('Aborted')
   }
 
-  turnMetrics.addLLMCall(result.timing, result.usage.promptTokens, result.usage.completionTokens)
-  const compactionStats = turnMetrics.buildStats(statsIdentity, 'planner')
-  eventStore.append(sessionId, createMessageDoneEvent(assistantMsgId, {
-    segments: result.segments,
-    stats: compactionStats,
-    promptContext: assembledRequest.promptContext,
-  }))
+  const compactionStats = turnMetrics.buildStats(statsIdentity, 'compaction')
   eventStore.append(sessionId, createChatDoneEvent(assistantMsgId, 'complete', compactionStats))
 
-  // Use thinking content as fallback if text content is empty
-  // (Ollama/MiniMax models may produce thinking even with disableThinking)
   let summary = (result.content ?? '').trim()
   if (!summary && result.thinkingContent != null) {
     logger.info('Using thinking content as compaction summary (text content was empty)', { sessionId })

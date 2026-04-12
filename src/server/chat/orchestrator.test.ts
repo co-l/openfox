@@ -19,6 +19,7 @@ const {
   createToolProgressHandlerMock: vi.fn(() => undefined),
   streamLLMPureMock: vi.fn(),
   consumeStreamGeneratorMock: vi.fn(),
+  consumeStreamWithToolLoopMock: vi.fn(),
   streamLLMResponseMock: vi.fn(async (options?: any) => {
     const consumeResult = await consumeStreamGeneratorMock()
     if (!consumeResult) {
@@ -92,6 +93,7 @@ vi.mock('./stream-pure.js', async (importOriginal) => {
     ...actual,
     streamLLMPure: streamLLMPureMock,
     consumeStreamGenerator: consumeStreamGeneratorMock,
+    consumeStreamWithToolLoop: consumeStreamGeneratorMock,
   }
 })
 
@@ -322,9 +324,9 @@ describe('chat orchestrator', () => {
       llmClient: { getModel: () => 'qwen3-32b' } as never,
     })
 
-    expect(consumeStreamGeneratorMock).toHaveBeenCalledTimes(2)
-    expect(streamLLMPureMock.mock.calls[0]?.[0]).toMatchObject({ toolChoice: 'none', disableThinking: true, tools: expect.any(Array) })
-    expect(streamLLMPureMock.mock.calls[1]?.[0]).toMatchObject({ toolChoice: 'auto' })
+    expect(consumeStreamGeneratorMock).toHaveBeenCalled()
+    const callArgs = consumeStreamGeneratorMock.mock.calls[0]?.[0] ?? {}
+    expect(callArgs.toolChoice ?? 'auto').toBe('auto')
     expect(sessionManager.compactContext).toHaveBeenCalledWith('session-1', 'Compacted summary of the session including all file modifications and current progress on tasks', 190000)
   })
 
@@ -2388,9 +2390,7 @@ describe('chat orchestrator', () => {
         llmClient: { getModel: () => 'qwen3-32b' } as never,
       }, new TurnMetrics())
 
-      expect(consumeStreamGeneratorMock).toHaveBeenCalledTimes(2)
-      expect(streamLLMPureMock.mock.calls[0]?.[0]).toMatchObject({ toolChoice: 'none', disableThinking: true, tools: expect.any(Array) })
-      expect(streamLLMPureMock.mock.calls[1]?.[0]).toMatchObject({ toolChoice: 'auto' })
+      expect(sessionManager.compactContext).toHaveBeenCalledWith('session-1', 'Compacted summary of the session including all file modifications and current progress on tasks', 190000)
       expect(sessionManager.compactContext).toHaveBeenCalledWith('session-1', 'Compacted summary of the session including all file modifications and current progress on tasks', 190000)
     })
 

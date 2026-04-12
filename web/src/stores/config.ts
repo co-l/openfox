@@ -159,7 +159,7 @@ export const useConfigStore = create<ConfigState>((set, get) => ({
     
     set({ activating: true, error: null })
     try {
-      const response = await authFetch(`//providers/${providerId}/activate`, { method: 'POST' })
+      const response = await authFetch(`/api/providers/${providerId}/activate`, { method: 'POST' })
       if (!response.ok) {
         const errorData = await response.json() as { error?: string }
         throw new Error(errorData.error ?? 'Failed to activate provider')
@@ -207,7 +207,7 @@ export const useConfigStore = create<ConfigState>((set, get) => ({
   updateModelContext: async (providerId: string, modelId: string, contextWindow: number) => {
     set({ activating: true, error: null })
     try {
-      const response = await authFetch(`//providers/${providerId}/models/${encodeURIComponent(modelId)}`, {
+      const response = await authFetch(`/api/providers/${providerId}/models/${encodeURIComponent(modelId)}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ contextWindow }),

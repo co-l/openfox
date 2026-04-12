@@ -303,8 +303,7 @@ export const COMPACTION_PROMPT = `Summarize the conversation history concisely, 
 6. The user's current question, prompt, or active request
 
 Be thorough but concise. Output as a structured summary.
-
-IMPORTANT: Do NOT use any tools. Do NOT output XML tags like <tool_call>, <function=>. Only respond with plain text summary.`
+You may use available tools to read files and verify changes if needed.`
 
 export const FORMAT_CORRECTION_PROMPT = `IMPORTANT: You MUST use the JSON function calling API. Do NOT output XML tags like <tool_call>, <function=>, or <parameter=>. Your previous attempt was stopped because you used the wrong format. Use the proper tool_calls format.`
 
