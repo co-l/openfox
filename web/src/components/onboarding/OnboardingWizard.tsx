@@ -192,10 +192,8 @@ function ConnectLLMStep({ onNext }: ConnectLLMStepProps) {
   }
 
   async function handleSubmit() {
-    const validProviders = providers.filter(p => !p.id.startsWith('temp-'))
-
     for (const provider of providers) {
-      if (!existingProviders.some(e => e.id === provider.id)) {
+      if (provider.id.startsWith('temp-') || !existingProviders.some(e => e.id === provider.id)) {
         const response = await authFetch('/api/providers', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -212,6 +210,7 @@ function ConnectLLMStep({ onNext }: ConnectLLMStepProps) {
       }
     }
 
+    const validProviders = providers.filter(p => !p.id.startsWith('temp-'))
     onNext({ providers: validProviders })
   }
 
@@ -665,6 +664,20 @@ interface OnboardingWizardProps {
   onComplete: () => void
 }
 
+function CloseButton({ onClick }: { onClick: () => void }) {
+  return (
+    <button
+      onClick={onClick}
+      className="absolute top-4 right-4 p-2 text-text-muted hover:text-text-primary transition-colors"
+      title="Close"
+    >
+      <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+      </svg>
+    </button>
+  )
+}
+
 export function OnboardingWizard({ onComplete }: OnboardingWizardProps) {
   const [step, setStep] = useState(1)
   const [saving, setSaving] = useState(false)
@@ -705,7 +718,8 @@ export function OnboardingWizard({ onComplete }: OnboardingWizardProps) {
   }
 
   return (
-    <div className="min-h-screen bg-bg-primary flex items-center justify-center p-8">
+    <div className="min-h-screen bg-bg-primary flex items-center justify-center p-8 relative">
+      <CloseButton onClick={onComplete} />
       <div className="w-full max-w-2xl">
         {saving ? (
           <div className="text-center">
