@@ -8,11 +8,12 @@ import { SkillsContent } from './SkillsModal'
 interface GlobalSettingsModalProps {
   isOpen: boolean
   onClose: () => void
+  onLaunchOnboarding?: () => void
 }
 
-type Tab = 'instructions' | 'skills' | 'notifications'
+type Tab = 'instructions' | 'skills' | 'notifications' | 'advanced'
 
-export function GlobalSettingsModal({ isOpen, onClose }: GlobalSettingsModalProps) {
+export function GlobalSettingsModal({ isOpen, onClose, onLaunchOnboarding }: GlobalSettingsModalProps) {
   const [activeTab, setActiveTab] = useState<Tab>('instructions')
 
   return (
@@ -35,14 +36,36 @@ export function GlobalSettingsModal({ isOpen, onClose }: GlobalSettingsModalProp
             active={activeTab === 'notifications'}
             onClick={() => setActiveTab('notifications')}
           />
+          <TabButton
+            label="Advanced"
+            active={activeTab === 'advanced'}
+            onClick={() => setActiveTab('advanced')}
+          />
         </div>
 
         {/* Tab content */}
         {activeTab === 'instructions' && <InstructionsTab isOpen={isOpen} />}
         {activeTab === 'skills' && <SkillsContent isOpen={isOpen} />}
         {activeTab === 'notifications' && <NotificationSettings />}
+        {activeTab === 'advanced' && <AdvancedTab onLaunchOnboarding={onLaunchOnboarding} />}
       </div>
     </Modal>
+  )
+}
+
+function AdvancedTab({ onLaunchOnboarding }: { onLaunchOnboarding?: () => void }) {
+  return (
+    <div className="space-y-6">
+      <div>
+        <h3 className="text-sm font-medium text-text-primary mb-1">Onboarding</h3>
+        <p className="text-sm text-text-muted mb-4">
+          Reset your OpenFox setup and go through the initial configuration again.
+        </p>
+        <Button variant="secondary" onClick={onLaunchOnboarding}>
+          Launch Onboarding
+        </Button>
+      </div>
+    </div>
   )
 }
 

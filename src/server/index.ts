@@ -601,9 +601,27 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
   })
 
   // Config endpoint
-  app.get('/api/config', (_req, res) => {
+  app.get('/api/config', async (_req, res) => {
     const llmClient = getLLMClient()
     const activeProvider = providerManager.getActiveProvider()
+    
+    let visionFallback: { enabled: boolean; url: string; model: string; timeout: number } | undefined
+    try {
+      const { loadGlobalConfig, getVisionFallback } = await import('../cli/config.js')
+      const globalConfig = await loadGlobalConfig(config.mode ?? 'production')
+      const fallback = getVisionFallback(globalConfig)
+      if (fallback) {
+        visionFallback = {
+          enabled: fallback.enabled ?? false,
+          url: fallback.url ?? 'http://localhost:11434',
+          model: fallback.model ?? 'qwen3-vl:2b',
+          timeout: fallback.timeout ?? 120,
+        }
+      }
+    } catch {
+      // Global config not available, skip visionFallback
+    }
+
     res.json({
       model: llmClient.getModel(),
       maxContext: providerManager.getCurrentModelContext(),
@@ -611,10 +629,10 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
       llmStatus: getLlmStatus(),
       backend: llmClient.getBackend(),
       workdir: config.workdir,
-      // Include provider info
       providers: providerManager.getProviders(),
       activeProviderId: providerManager.getActiveProviderId(),
       defaultModelSelection: config.defaultModelSelection,
+      visionFallback,
     })
   })
 
@@ -647,6 +665,109 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
       llmStatus: getLlmStatus(),
       backend: llmClient.getBackend(),
     })
+  })
+
+  // Onboarding: test LLM connection without adding provider
+  app.post('/api/providers/test', async (req, res) => {
+    const { url } = req.body as { url: string }
+    if (!url) {
+      return res.status(400).json({ error: 'url is required' })
+    }
+
+    try {
+      const backend = await detectBackend(url)
+      const model = await detectModel(url)
+      res.json({
+        success: true,
+        url,
+        backend,
+        model,
+      })
+    } catch (error) {
+      res.status(400).json({
+        success: false,
+        error: error instanceof Error ? error.message : 'Connection failed',
+      })
+    }
+  })
+
+  // Onboarding: create provider
+  app.post('/api/providers', async (req, res) => {
+    const { name, url, backend, apiKey, model } = req.body as {
+      name: string
+      url: string
+      backend: string
+      apiKey?: string
+      model?: string
+    }
+
+    if (!name || !url || !backend) {
+      return res.status(400).json({ error: 'name, url, and backend are required' })
+    }
+
+    try {
+      const { loadGlobalConfig, saveGlobalConfig, addProvider, setDefaultModelSelection } = await import('../cli/config.js')
+      const globalConfig = await loadGlobalConfig(config.mode ?? 'production')
+
+      const providerBackend = backend as 'auto' | 'vllm' | 'sglang' | 'ollama' | 'llamacpp' | 'openai' | 'anthropic'
+
+      const configWithProvider = addProvider(globalConfig, {
+        name,
+        url,
+        backend: providerBackend,
+        apiKey,
+        models: model ? [{ id: model, contextWindow: 200000, source: 'user' as const }] : [],
+        isActive: true,
+      })
+
+      const finalConfig = setDefaultModelSelection(
+        configWithProvider,
+        configWithProvider.providers[configWithProvider.providers.length - 1]!.id,
+        model ?? 'auto'
+      )
+
+      await saveGlobalConfig(config.mode ?? 'production', finalConfig)
+
+      const newProvider = finalConfig.providers[finalConfig.providers.length - 1]
+
+      res.status(201).json({
+        success: true,
+        provider: newProvider,
+      })
+    } catch (error) {
+      res.status(500).json({
+        success: false,
+        error: error instanceof Error ? error.message : 'Failed to create provider',
+      })
+    }
+  })
+
+  // Onboarding: save full config (workspace, vision fallback)
+  app.post('/api/init/config', async (req, res) => {
+    const { workdir, visionFallback } = req.body as {
+      workdir?: string
+      visionFallback?: { enabled: boolean; url: string; model: string; timeout: number }
+    }
+
+    try {
+      const { loadGlobalConfig, saveGlobalConfig } = await import('../cli/config.js')
+      const globalConfig = await loadGlobalConfig(config.mode ?? 'production')
+
+      const updatedConfig = {
+        ...globalConfig,
+        workspace: workdir ? { workdir } : globalConfig.workspace,
+        visionFallback: visionFallback ?? globalConfig.visionFallback,
+      }
+
+      await saveGlobalConfig(config.mode ?? 'production', updatedConfig)
+
+      res.json({ success: true })
+    } catch (error) {
+      res.status(500).json({
+        success: false,
+        error: error instanceof Error ? error.message : 'Failed to save config',
+      })
+    }
   })
 
   // Provider endpoints

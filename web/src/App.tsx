@@ -13,6 +13,7 @@ import { EmptyProjectView } from './components/EmptyProjectView'
 import { PlanPanel } from './components/plan/PlanPanel'
 import { Spinner, SpinnerWithText } from './components/shared/Spinner'
 import { PasswordModal } from './components/PasswordModal'
+import { OnboardingWizard } from './components/onboarding/OnboardingWizard'
 
 function hasStoredToken(): boolean {
   if (typeof window === 'undefined') return false
@@ -134,8 +135,26 @@ function ProjectSessionView({
 function App() {
   const { connectionStatus } = useWebSocket()
   const fetchConfig = useConfigStore(state => state.fetchConfig)
+  const providers = useConfigStore(state => state.providers)
 
   const hasToken = hasStoredToken()
+
+  const [showOnboarding, setShowOnboarding] = useState(false)
+  const [configFetched, setConfigFetched] = useState(false)
+
+  useEffect(() => {
+    if (connectionStatus === 'connected' || hasToken) {
+      fetchConfig().then(() => {
+        setConfigFetched(true)
+      })
+    }
+  }, [connectionStatus, hasToken, fetchConfig])
+
+  useEffect(() => {
+    if (configFetched && providers.length === 0) {
+      setShowOnboarding(true)
+    }
+  }, [configFetched, providers.length])
 
   const getInitialLeftSidebar = () => {
     const saved = localStorage.getItem('openfox:leftSidebar')
@@ -222,6 +241,17 @@ function App() {
     )
   }
 
+  if (showOnboarding) {
+    return (
+      <OnboardingWizard
+        onComplete={() => {
+          setShowOnboarding(false)
+          fetchConfig()
+        }}
+      />
+    )
+  }
+
   return (
     <>
       <PasswordModal
@@ -235,6 +265,7 @@ function App() {
         <Header
           onMenuClick={handleLeftToggle}
           onCriteriaToggle={handleRightToggle}
+          onLaunchOnboarding={() => setShowOnboarding(true)}
         />
 
       <div className="flex-1 flex overflow-hidden">

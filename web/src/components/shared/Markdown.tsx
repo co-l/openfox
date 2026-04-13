@@ -1,7 +1,8 @@
-import { memo, useMemo, useState } from 'react'
+import { memo, useMemo } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { SyntaxHighlighter, oneDark } from '../../lib/syntax-highlighter'
+import { useCopyToClipboard } from '../../hooks/useCopyToClipboard'
 
 interface MarkdownProps {
   content: string
@@ -28,28 +29,7 @@ const MARKDOWN_COMPONENTS = {
 
     const language = match?.[1] || 'text'
     const codeString = String(children).replace(/\n$/, '')
-    const [copied, setCopied] = useState(false)
-
-    const handleCopy = async () => {
-      try {
-        if (navigator.clipboard && window.isSecureContext) {
-          await navigator.clipboard.writeText(codeString)
-        } else {
-          const textArea = document.createElement('textarea')
-          textArea.value = codeString
-          textArea.style.position = 'fixed'
-          textArea.style.left = '-9999px'
-          document.body.appendChild(textArea)
-          textArea.select()
-          document.execCommand('copy')
-          document.body.removeChild(textArea)
-        }
-        setCopied(true)
-        setTimeout(() => setCopied(false), 2000)
-      } catch (err) {
-        console.error('Failed to copy:', err)
-      }
-    }
+    const { copied, copy } = useCopyToClipboard()
 
     return (
       <div className="relative group my-1.5 rounded overflow-hidden">
@@ -60,7 +40,7 @@ const MARKDOWN_COMPONENTS = {
             onClick={(e) => {
               e.preventDefault()
               e.stopPropagation()
-              handleCopy()
+              copy(codeString)
             }}
             className="opacity-0 group-hover:opacity-100 transition-opacity hover:text-text-primary p-0.5"
             title="Copy code"

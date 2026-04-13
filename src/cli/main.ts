@@ -1,4 +1,7 @@
 import { parseArgs } from 'node:util'
+import { select, password, isCancel, cancel } from '@clack/prompts'
+import { generateKeyPairSync } from 'node:crypto'
+import { writeFile } from 'node:fs/promises'
 
 export type Mode = 'production' | 'development' | 'test'
 
@@ -11,7 +14,6 @@ Usage:
 
 Commands:
   (none)           Start server for current project
-  init             Interactive configuration setup
   config           Show current configuration
   provider add     Add a new LLM provider
   provider list    List configured providers
@@ -24,6 +26,84 @@ Options:
   -h, --help              Show this help message
   -v, --version           Show version number
 `)
+}
+
+async function runNetworkSetup(mode: Mode): Promise<void> {
+  const { loadAuthConfig, saveAuthConfig, encryptPassword } = await import('./auth.js')
+  const { saveGlobalConfig } = await import('./config.js')
+  const { getAuthKeyPath } = await import('./paths.js')
+
+  const existingAuth = await loadAuthConfig(mode)
+  if (existingAuth) {
+    return
+  }
+
+  console.log('\nOpenFox Setup\n')
+
+  const networkChoice = await select({
+    message: 'How should OpenFox be accessible?',
+    options: [
+      { value: 'localhost', label: 'Secure (localhost only)' },
+      { value: 'network', label: 'Accessible from local network' },
+    ],
+  })
+
+  if (isCancel(networkChoice)) {
+    cancel()
+    process.exit(1)
+  }
+
+  const isNetwork = networkChoice === 'network'
+  const host = isNetwork ? '0.0.0.0' : '127.0.0.1'
+
+  let passwordValue: string | undefined
+
+  if (isNetwork) {
+    const pwd = await password({
+      message: 'Set a password? (optional, press Enter to skip)',
+    })
+
+    if (isCancel(pwd)) {
+      cancel()
+      process.exit(1)
+    }
+
+    passwordValue = typeof pwd === 'string' ? pwd : undefined
+  }
+
+  if (passwordValue && passwordValue.length > 0) {
+    const { publicKey, privateKey } = generateKeyPairSync('rsa', {
+      modulusLength: 2048,
+      privateKeyEncoding: { type: 'pkcs8', format: 'pem' },
+      publicKeyEncoding: { type: 'spki', format: 'pem' },
+    })
+
+    const keyPath = getAuthKeyPath(mode)
+    await writeFile(keyPath, privateKey, { mode: 0o600 })
+
+    const encryptedPassword = encryptPassword(passwordValue, publicKey)
+
+    await saveAuthConfig(mode, {
+      strategy: 'network',
+      encryptedPassword,
+    })
+  } else {
+    await saveAuthConfig(mode, {
+      strategy: isNetwork ? 'network' : 'local',
+      encryptedPassword: null,
+    })
+  }
+
+  await saveGlobalConfig(mode, {
+    providers: [],
+    server: { port: mode === 'development' ? 10469 : 10369, host, openBrowser: true },
+    logging: { level: 'error' },
+    database: { path: '' },
+    workspace: { workdir: process.cwd() },
+    visionFallback: { enabled: false, url: 'http://localhost:11434', model: 'qwen3-vl:2b', timeout: 120 },
+  })
+
+  console.log('✓ Configuration saved!\n')
 }
 
 export async function runConfig(mode: Mode): Promise<void> {
@@ -89,18 +169,6 @@ export async function runCli(options: { mode: Mode }): Promise<void> {
   const [command] = positionals
 
   switch (command) {
-    case 'init': {
-      const { runInitWithSelect } = await import('./init.js')
-      const { loadGlobalConfig, getActiveProvider } = await import('./config.js')
-      const config = await loadGlobalConfig(mode)
-      const activeProvider = getActiveProvider(config)
-      if (activeProvider) {
-        console.log(`Current provider: ${activeProvider.name} (${activeProvider.url})\n`)
-      }
-      // Pass existing config to init for potential preservation
-      await runInitWithSelect(mode, config)
-      break
-    }
     case 'config': {
       await runConfig(mode)
       break
@@ -112,46 +180,14 @@ export async function runCli(options: { mode: Mode }): Promise<void> {
       break
     }
     default: {
-      // Check if config exists - only run wizard on first install
+      // Check if config exists - only prompt network setup on first install
       const { configFileExists } = await import('./config.js')
       const configExists = await configFileExists(mode)
-      
+
       if (!configExists) {
-        // First run - show welcome message
-        console.log('Welcome to OpenFox!\n')
-        
-        // Try smart defaults in parallel (silent - no logs)
-        const { trySmartDefaults, saveGlobalConfig, addProvider } = await import('./config.js')
-        const detected = await trySmartDefaults(mode)
-        
-        if (detected) {
-          console.log(`✓ Found ${detected.backend} (${detected.model}) at ${detected.url}`)
-          const baseConfig = {
-            providers: [],
-            server: { port: 10369, host: '127.0.0.1', openBrowser: true },
-            logging: { level: 'error' as const },
-            database: { path: '' },
-            workspace: { workdir: process.cwd() },
-          }
-          const configWithProvider = addProvider(baseConfig, {
-            name: 'Default',
-            url: detected.url,
-            backend: detected.backend as 'auto' | 'vllm' | 'sglang' | 'ollama' | 'llamacpp',
-            models: [],
-            isActive: true,
-          })
-          // Set the default model selection after adding provider
-          const { setDefaultModelSelection } = await import('./config.js')
-          const finalConfig = setDefaultModelSelection(configWithProvider, configWithProvider.providers[0]!.id, detected.model)
-          await saveGlobalConfig(mode, finalConfig)
-          console.log('Configuration saved!\n')
-        } else {
-          console.log('✗ No LLM server detected\n')
-          const { runInitWithSelect } = await import('./init.js')
-          await runInitWithSelect(mode)
-        }
+        await runNetworkSetup(mode)
       }
-      
+
       const { runServe } = await import('./serve.js')
       await runServe({
         mode,
