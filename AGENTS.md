@@ -36,9 +36,9 @@ npm run typecheck    # TypeScript type checking
 
 The dev server can already be running. Do not kill it.
 
-It runs on port 10469.
+It runs on port 10469. The password is `password`.
 
-If it is not running, you can launch it with `npm run dev`
+If it is not running, use the dev_server tool to start it
 
 ### Single Test File
 
