@@ -137,7 +137,7 @@ const MODEL_PROFILES: Array<{ pattern: string; profile: ModelProfile }> = [
       topK: 40,
       supportsReasoning: true,
       reasoningAsContent: false,
-      defaultMaxTokens: 16384,
+      defaultMaxTokens: 4092,
       supportsVision: false,
     },
   },

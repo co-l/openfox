@@ -24,6 +24,8 @@ export function TerminalModal({ isOpen, onClose, onFocusChat }: TerminalModalPro
   const currentProject = useProjectStore(state => state.currentProject)
   const [isLoading, setIsLoading] = useState(true)
   const terminalRef = useRef<HTMLDivElement>(null)
+  const justOpenedRef = useRef(false)
+  const hasAutoCreatedForOpenCycleRef = useRef(false)
 
   const handleClose = useCallback(() => {
     onClose()
@@ -44,12 +46,11 @@ export function TerminalModal({ isOpen, onClose, onFocusChat }: TerminalModalPro
   }, [isOpen, fetchSessions])
 
   useEffect(() => {
-    if (isOpen && sessions.length === 0 && !isLoading) {
+    if (isOpen && sessions.length === 0 && !isLoading && !hasAutoCreatedForOpenCycleRef.current) {
+      hasAutoCreatedForOpenCycleRef.current = true
       createSession()
     }
   }, [isOpen, sessions.length, isLoading, createSession])
-
-  const justOpenedRef = useRef(false)
 
   useEffect(() => {
     if (isOpen) {
@@ -60,6 +61,8 @@ export function TerminalModal({ isOpen, onClose, onFocusChat }: TerminalModalPro
           justOpenedRef.current = false
         }, 200)
       }, 100)
+    } else {
+      hasAutoCreatedForOpenCycleRef.current = false
     }
   }, [isOpen])
 
