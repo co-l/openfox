@@ -786,6 +786,18 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
     })
   })
 
+  app.delete('/api/providers/:id', async (req, res) => {
+    const { id } = req.params
+    const { loadGlobalConfig, saveGlobalConfig, removeProvider } = await import('../cli/config.js')
+    const globalConfig = await loadGlobalConfig(config.mode ?? 'production')
+    const updatedConfig = removeProvider(globalConfig, id)
+    await saveGlobalConfig(config.mode ?? 'production', updatedConfig)
+    
+    providerManager.setProviders(updatedConfig.providers, updatedConfig.defaultModelSelection ?? undefined)
+    
+    res.json({ success: true })
+  })
+
   app.get('/api/providers/:id/models', async (req, res) => {
     const { id } = req.params
     const models = await providerManager.getProviderModels(id as string)
