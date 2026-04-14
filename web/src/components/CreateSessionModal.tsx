@@ -5,6 +5,7 @@ import { Button } from './shared/Button'
 import { Input } from './shared/Input'
 import { DeleteProjectConfirmationModal } from './DeleteProjectConfirmationModal.js'
 import { CreateProjectModal } from './CreateProjectModal.js'
+import { DirectoryBrowser } from './shared/DirectoryBrowser.js'
 import { authFetch } from '../lib/api'
 
 interface DirectoryEntry {
@@ -39,6 +40,7 @@ export function OpenProjectModal({ isOpen, onClose }: OpenProjectModalProps) {
   const [creatingPath, setCreatingPath] = useState<string | null>(null)
   const [focusedIndex, setFocusedIndex] = useState(-1)
   const [projectToDelete, setProjectToDelete] = useState<{ id: string; name: string } | null>(null)
+  const [showBrowser, setShowBrowser] = useState(false)
   const itemsRef = useRef<HTMLButtonElement[]>([])
   
   // Fetch workdir from config on mount
@@ -193,21 +195,6 @@ export function OpenProjectModal({ isOpen, onClose }: OpenProjectModalProps) {
     }
   }, [focusedIndex])
   
-  // Build breadcrumbs from current path
-  const getBreadcrumbs = () => {
-    if (!listing) return []
-    const parts = listing.current.split('/').filter(Boolean)
-    const crumbs: { name: string; path: string }[] = []
-    let currentPath = ''
-    for (const part of parts) {
-      currentPath += '/' + part
-      crumbs.push({ name: part, path: currentPath })
-    }
-    return crumbs
-  }
-  
-  const breadcrumbs = getBreadcrumbs()
-  
   if (!isOpen) return null
   
   return (
@@ -276,51 +263,24 @@ export function OpenProjectModal({ isOpen, onClose }: OpenProjectModalProps) {
           
           {/* Right Panel: Browse Filesystem */}
           <div className="w-1/2 flex flex-col">
-            <div className="p-3 border-b border-border bg-bg-tertiary/30">
+            <div className="p-3 border-b border-border bg-bg-tertiary/30 flex items-center justify-between">
               <h3 className="font-medium text-sm text-text-secondary">Browse Projects</h3>
+              <button
+                onClick={() => setShowBrowser(true)}
+                className="text-xs text-accent-primary hover:underline"
+              >
+                Open in dialog
+              </button>
             </div>
             
-            {/* Search/filter input */}
+            {/* Inline browser - simplified */}
             <div className="p-3 border-b border-border">
-              <div className="relative">
-                <Input
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  placeholder="Type to filter directories..."
-                  className="w-full pl-9"
-                />
-                <svg 
-                  className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-text-muted" 
-                  fill="none" 
-                  stroke="currentColor" 
-                  viewBox="0 0 24 24"
-                >
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-                </svg>
-              </div>
-            </div>
-            
-            {/* Breadcrumbs */}
-            <div className="px-3 py-2 bg-bg-tertiary/30 border-b border-border">
-              <div className="flex items-center text-xs overflow-x-auto">
-                {breadcrumbs.map((crumb, index) => (
-                  <span key={crumb.path} className="flex items-center flex-shrink-0">
-                    <span className="text-text-muted">/</span>
-                    {index === breadcrumbs.length - 1 ? (
-                      <span className="text-accent-primary font-medium px-1">
-                        {crumb.name}
-                      </span>
-                    ) : (
-                      <button
-                        onClick={() => handleNavigate(crumb.path)}
-                        className="text-text-secondary hover:text-accent-primary px-1"
-                      >
-                        {crumb.name}
-                      </button>
-                    )}
-                  </span>
-                ))}
-              </div>
+              <Input
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="Filter directories..."
+                className="w-full"
+              />
             </div>
             
             {/* Directory list */}
@@ -387,6 +347,18 @@ export function OpenProjectModal({ isOpen, onClose }: OpenProjectModalProps) {
           onClose={() => setProjectToDelete(null)}
           projectName={projectToDelete.name}
           onConfirm={handleConfirmDelete}
+        />
+      )}
+
+      {/* Directory Browser Modal */}
+      {showBrowser && (
+        <DirectoryBrowser
+          initialPath={baseWorkdir ?? undefined}
+          onSelect={(path) => {
+            handleDirectoryClick(path)
+            setShowBrowser(false)
+          }}
+          onClose={() => setShowBrowser(false)}
         />
       )}
     </div>

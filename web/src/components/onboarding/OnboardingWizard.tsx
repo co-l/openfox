@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { authFetch } from '../../lib/api'
 import type { Backend } from '../../stores/config'
 import { useCopyToClipboard } from '../../hooks/useCopyToClipboard'
+import { DirectoryBrowser } from '../shared/DirectoryBrowser'
 
 const COMMON_PORTS = [8000, 11434, 8080]
 
@@ -497,7 +498,7 @@ interface ProjectsFolderStepProps {
 
 function ProjectsFolderStep({ onNext }: ProjectsFolderStepProps) {
   const [workdir, setWorkdir] = useState('')
-  const [browsing, setBrowsing] = useState(false)
+  const [showBrowser, setShowBrowser] = useState(false)
 
   useEffect(() => {
     authFetch('/api/config')
@@ -528,24 +529,6 @@ function ProjectsFolderStep({ onNext }: ProjectsFolderStepProps) {
       })
   }, [])
 
-  async function browseFolder() {
-    setBrowsing(true)
-    const input = document.createElement('input')
-    input.type = 'file'
-    input.webkitdirectory = true
-    input.onchange = (e) => {
-      const files = (e.target as HTMLInputElement).files
-      if (files && files.length > 0) {
-        const path = (files[0] as File & { path?: string }).path
-        if (path) {
-          setWorkdir(path.replace(/\/[^/]*$/, ''))
-        }
-      }
-      setBrowsing(false)
-    }
-    input.click()
-  }
-
   return (
     <div className="max-w-xl mx-auto">
       <h2 className="text-2xl font-bold text-text-primary mb-2">Your Projects Folder</h2>
@@ -563,14 +546,24 @@ function ProjectsFolderStep({ onNext }: ProjectsFolderStepProps) {
               className="flex-1 px-4 py-2 bg-bg-secondary border border-border rounded-lg text-text-primary placeholder-text-muted focus:outline-none focus:border-accent-primary"
             />
             <button
-              onClick={browseFolder}
-              disabled={browsing}
-              className="px-4 py-2 bg-bg-secondary border border-border rounded-lg hover:border-text-muted disabled:opacity-50"
+              onClick={() => setShowBrowser(true)}
+              className="px-4 py-2 bg-bg-secondary border border-border rounded-lg hover:border-text-muted"
             >
-              {browsing ? <Spinner size="sm" /> : 'Browse'}
+              Browse
             </button>
           </div>
         </div>
+
+        {showBrowser && (
+          <DirectoryBrowser
+            initialPath={workdir || undefined}
+            onSelect={(path) => {
+              setWorkdir(path)
+              setShowBrowser(false)
+            }}
+            onClose={() => setShowBrowser(false)}
+          />
+        )}
 
         <button
           onClick={() => onNext({ workdir })}
