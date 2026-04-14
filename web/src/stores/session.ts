@@ -42,6 +42,7 @@ import { wsClient, type ConnectionStatus } from '../lib/ws'
 import { useDevServerStore } from './dev-server'
 import { useConfigStore } from './config'
 import { useProjectStore } from './project'
+import { useBackgroundProcessesStore } from './background-processes'
 import { playNotification, playAchievement, playIntervention, playWaitingForUser, playNewMessage } from '../lib/sound'
 import type { AgentType } from './notifications'
 
@@ -614,6 +615,17 @@ export const useSessionStore = create<SessionState>((set, get) => {
 
         // Tell WS server which session is active (required for chat.send routing)
         wsClient.send('session.load', { sessionId })
+
+        // Fetch background processes for this session
+        try {
+          const bpRes = await authFetch(`/api/sessions/${sessionId}/background-processes`)
+          if (bpRes.ok) {
+            const bpData = await bpRes.json()
+            useBackgroundProcessesStore.getState().setProcesses(bpData.processes ?? [])
+          }
+        } catch {
+          // ignore
+        }
       } catch {
         // ignore
       }
@@ -1557,6 +1569,14 @@ export const useSessionStore = create<SessionState>((set, get) => {
         case 'devServer.output':
         case 'devServer.state': {
           useDevServerStore.getState().handleMessage(message)
+          break
+        }
+
+        case 'backgroundProcess.started':
+        case 'backgroundProcess.output':
+        case 'backgroundProcess.exited':
+        case 'backgroundProcess.removed': {
+          useBackgroundProcessesStore.getState().handleMessage(message.type, message.payload as Record<string, unknown>)
           break
         }
 

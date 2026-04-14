@@ -902,6 +902,30 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
   app.use('/api/dev-server', createDevServerRoutes())
   app.use('/api/terminals', createTerminalRoutes())
 
+  // Background process routes
+  app.get('/api/sessions/:id/background-processes', async (req, res) => {
+    const { getSessionProcesses } = await import('./tools/background-process/manager.js')
+    const sessionId = req.params.id
+    const processes = getSessionProcesses(sessionId)
+    res.json({ processes })
+  })
+
+  app.post('/api/sessions/:id/background-process/:processId/stop', async (req, res) => {
+    const { stopProcess } = await import('./tools/background-process/manager.js')
+    const sessionId = req.params.id
+    const processId = req.params.processId
+    const session = sessionManager.getSession(sessionId)
+    if (!session) {
+      return res.status(404).json({ error: 'Session not found' })
+    }
+    try {
+      await stopProcess(processId, sessionId)
+      res.json({ success: true })
+    } catch (err) {
+      res.status(500).json({ error: err instanceof Error ? err.message : 'Failed to stop process' })
+    }
+  })
+
   // Branch API endpoint
   const { getCurrentBranch } = await import('./branch.api.js')
 
@@ -1158,6 +1182,8 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
         logger.info('Shutting down...')
         void (async () => {
           await devServerManager.stopAll()
+          const { cleanupAllProcesses } = await import('./tools/background-process/store.js')
+          cleanupAllProcesses()
           viteServer?.close()
 
           // Note: Not closing database here - it's a singleton shared across servers.

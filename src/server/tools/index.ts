@@ -18,6 +18,7 @@ import { returnValueTool } from './return-value.js'
 import { webFetchTool } from './web-fetch.js'
 import { devServerTool } from './dev-server.js'
 import { stepDoneTool } from './step-done.js'
+import { backgroundProcessTool } from './background-process/index.js'
 import { logger } from '../utils/logger.js'
 
 // ============================================================================
@@ -211,7 +212,7 @@ function getAllToolsMap(): Map<string, Tool> {
       askUserTool,
       criterionTool,
       todoTool, callSubAgentTool, loadSkillTool, returnValueTool, webFetchTool,
-      devServerTool, stepDoneTool,
+      devServerTool, stepDoneTool, backgroundProcessTool,
     ].map(t => [t.name, t] as const),
   ])
 }

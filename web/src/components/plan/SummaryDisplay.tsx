@@ -6,6 +6,7 @@ import { formatTime, formatSpeed } from '../../lib/format-stats'
 import { StatsModal } from './StatsModal'
 import { CriteriaProgressSummary } from '../shared/CriteriaProgressSummary'
 import { DevServerFooter } from './DevServerFooter'
+import { BackgroundProcesses } from './BackgroundProcesses'
 import type { Message } from '@shared/types.js'
 
 interface SummaryDisplayProps {
@@ -83,6 +84,9 @@ export function SummaryDisplay({ summary, messages, workdir }: SummaryDisplayPro
 
       {/* Dev Server — below separator */}
       <DevServerFooter workdir={workdir} />
+
+      {/* Background Processes */}
+      <BackgroundProcesses sessionId={session?.id} />
     </div>
   )
 }

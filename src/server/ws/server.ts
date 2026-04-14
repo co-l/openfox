@@ -23,6 +23,7 @@ import {
 } from '../tools/index.js'
 import { logger } from '../utils/logger.js'
 import { devServerManager } from '../dev-server/manager.js'
+import { onProcessEvent } from '../tools/background-process/manager.js'
 import { updateSessionMetadata } from '../db/sessions.js'
 import { generateSessionName, needsNameGeneration } from '../session/name-generator.js'
 import { generateSessionSummary, needsSummaryGeneration } from '../session/summary-generator.js'
@@ -381,6 +382,20 @@ export function createWebSocketServer(
       state,
       errorMessage,
     }))
+  })
+
+  // Background process event listeners — broadcast to session-specific clients
+  onProcessEvent((_processId, msg) => {
+    const sessionId = msg.sessionId
+    if (!sessionId) return
+    // Route to clients subscribed to this session
+    for (const [clientWs, client] of clients) {
+      if (client.activeSessionId === sessionId || client.subscribedSessions.has(sessionId) || client.eventStoreSubscriptions.has(sessionId)) {
+        if (clientWs.readyState === WebSocket.OPEN) {
+          clientWs.send(serializeServerMessage(msg))
+        }
+      }
+    }
   })
 
   wss.on('connection', async (ws, req) => {

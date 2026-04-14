@@ -11,6 +11,7 @@ allowedTools:
   - criterion:add,get,update,remove
   - call_sub_agent
   - load_skill
+  - background_process
 ---
 
 # Plan Mode

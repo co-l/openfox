@@ -159,6 +159,11 @@ export type ServerMessageType =
   // Dev server events
   | 'devServer.output'    // Streaming log chunk from dev server
   | 'devServer.state'     // Dev server state change
+  // Background process events
+  | 'backgroundProcess.started' // New process created and started
+  | 'backgroundProcess.output'   // Streaming log chunk from background process
+  | 'backgroundProcess.exited'   // Process exited
+  | 'backgroundProcess.removed'  // Process removed from list
   // Other
   | 'lsp.diagnostics'
   | 'error'
@@ -395,6 +400,53 @@ export interface DevServerStatePayload {
   workdir: string
   state: 'off' | 'running' | 'warning' | 'error'
   errorMessage?: string
+}
+
+// Background process payloads
+export interface BackgroundProcessStartedPayload {
+  processId: string
+  name: string
+  pid: number
+  status: BackgroundProcessStatus
+}
+
+export interface BackgroundProcessOutputPayload {
+  processId: string
+  stream: 'stdout' | 'stderr'
+  content: string
+}
+
+export interface BackgroundProcessExitedPayload {
+  processId: string
+  exitCode: number | null
+}
+
+export interface BackgroundProcessRemovedPayload {
+  processId: string
+}
+
+// Shared background process types
+export type BackgroundProcessStatus = 'pending' | 'starting' | 'running' | 'stopping' | 'exited'
+
+export interface BackgroundProcess {
+  id: string
+  sessionId: string
+  name: string
+  command: string
+  cwd: string
+  pid: number | null
+  status: BackgroundProcessStatus
+  exitCode: number | null
+  createdAt: number
+  startedAt: number | null
+  endedAt: number | null
+}
+
+export interface LogLine {
+  offset: number
+  content: string
+  timestamp: number
+  stream: 'stdout' | 'stderr'
 }
 
 // Other payloads
