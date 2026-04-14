@@ -606,6 +606,7 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
     const activeProvider = providerManager.getActiveProvider()
     
     let visionFallback: { enabled: boolean; url: string; model: string; timeout: number } | undefined
+    let globalWorkdir: string | undefined
     try {
       const { loadGlobalConfig, getVisionFallback } = await import('../cli/config.js')
       const globalConfig = await loadGlobalConfig(config.mode ?? 'production')
@@ -618,6 +619,7 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
           timeout: fallback.timeout ?? 120,
         }
       }
+      globalWorkdir = globalConfig.workspace?.workdir
     } catch {
       // Global config not available, skip visionFallback
     }
@@ -628,7 +630,7 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
       llmUrl: activeProvider?.url ?? config.llm.baseUrl,
       llmStatus: getLlmStatus(),
       backend: llmClient.getBackend(),
-      workdir: config.workdir,
+      workdir: globalWorkdir ?? config.workdir,
       providers: providerManager.getProviders(),
       activeProviderId: providerManager.getActiveProviderId(),
       defaultModelSelection: config.defaultModelSelection,
@@ -727,6 +729,8 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
       )
 
       await saveGlobalConfig(config.mode ?? 'production', finalConfig)
+
+      providerManager.setProviders(finalConfig.providers, finalConfig.defaultModelSelection ?? undefined)
 
       const newProvider = finalConfig.providers[finalConfig.providers.length - 1]
 

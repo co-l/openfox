@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { useLocation } from 'wouter'
 import { Modal } from '../shared/Modal'
 import { Button } from '../shared/Button'
 import { useSettingsStore, SETTINGS_KEYS } from '../../stores/settings'
@@ -8,12 +9,11 @@ import { SkillsContent } from './SkillsModal'
 interface GlobalSettingsModalProps {
   isOpen: boolean
   onClose: () => void
-  onLaunchOnboarding?: () => void
 }
 
 type Tab = 'instructions' | 'skills' | 'notifications' | 'advanced'
 
-export function GlobalSettingsModal({ isOpen, onClose, onLaunchOnboarding }: GlobalSettingsModalProps) {
+export function GlobalSettingsModal({ isOpen, onClose }: GlobalSettingsModalProps) {
   const [activeTab, setActiveTab] = useState<Tab>('instructions')
 
   return (
@@ -47,13 +47,20 @@ export function GlobalSettingsModal({ isOpen, onClose, onLaunchOnboarding }: Glo
         {activeTab === 'instructions' && <InstructionsTab isOpen={isOpen} />}
         {activeTab === 'skills' && <SkillsContent isOpen={isOpen} />}
         {activeTab === 'notifications' && <NotificationSettings />}
-        {activeTab === 'advanced' && <AdvancedTab onLaunchOnboarding={onLaunchOnboarding} />}
+        {activeTab === 'advanced' && <AdvancedTab onClose={onClose} />}
       </div>
     </Modal>
   )
 }
 
-function AdvancedTab({ onLaunchOnboarding }: { onLaunchOnboarding?: () => void }) {
+function AdvancedTab({ onClose }: { onClose: () => void }) {
+  const [, navigate] = useLocation()
+
+  function handleLaunchOnboarding() {
+    onClose()
+    navigate('/onboarding')
+  }
+
   return (
     <div className="space-y-6">
       <div>
@@ -61,7 +68,7 @@ function AdvancedTab({ onLaunchOnboarding }: { onLaunchOnboarding?: () => void }
         <p className="text-sm text-text-muted mb-4">
           Reset your OpenFox setup and go through the initial configuration again.
         </p>
-        <Button variant="secondary" onClick={onLaunchOnboarding}>
+        <Button variant="secondary" onClick={handleLaunchOnboarding}>
           Launch Onboarding
         </Button>
       </div>

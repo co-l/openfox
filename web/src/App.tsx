@@ -132,14 +132,30 @@ function ProjectSessionView({
   )
 }
 
+function OnboardingPage() {
+  const fetchConfig = useConfigStore(state => state.fetchConfig)
+  const [, navigate] = useLocation()
+
+  function handleComplete() {
+    fetchConfig()
+    navigate('/')
+  }
+
+  return (
+    <div className="flex-1 flex flex-col">
+      <OnboardingWizard onComplete={handleComplete} />
+    </div>
+  )
+}
+
 function App() {
   const { connectionStatus } = useWebSocket()
   const fetchConfig = useConfigStore(state => state.fetchConfig)
   const providers = useConfigStore(state => state.providers)
+  const [, navigate] = useLocation()
 
   const hasToken = hasStoredToken()
 
-  const [showOnboarding, setShowOnboarding] = useState(false)
   const [configFetched, setConfigFetched] = useState(false)
 
   useEffect(() => {
@@ -152,7 +168,7 @@ function App() {
 
   useEffect(() => {
     if (configFetched && providers.length === 0) {
-      setShowOnboarding(true)
+      navigate('/onboarding')
     }
   }, [configFetched, providers.length])
 
@@ -241,17 +257,6 @@ function App() {
     )
   }
 
-  if (showOnboarding) {
-    return (
-      <OnboardingWizard
-        onComplete={() => {
-          setShowOnboarding(false)
-          fetchConfig()
-        }}
-      />
-    )
-  }
-
   return (
     <>
       <PasswordModal
@@ -265,34 +270,36 @@ function App() {
         <Header
           onMenuClick={handleLeftToggle}
           onCriteriaToggle={handleRightToggle}
-          onLaunchOnboarding={() => setShowOnboarding(true)}
         />
 
-      <div className="flex-1 flex overflow-hidden">
-        <Switch>
-          <Route path="/p/:projectId/s/:sessionId">
-            <ProjectSessionView
-              sidebarOpen={effectiveLeftOpen}
-              onSidebarToggle={handleLeftToggle}
-              rightSidebarOpen={effectiveRightOpen}
-              onRightSidebarToggle={handleRightToggle}
-            />
-          </Route>
-          <Route path="/p/:projectId/new">
-            <NewSessionHandler />
-          </Route>
-          <Route path="/p/:projectId">
-            <ProjectView
-              sidebarOpen={effectiveLeftOpen}
-              onSidebarToggle={handleLeftToggle}
-            />
-          </Route>
-          <Route path="/">
-            <HomePage />
-          </Route>
-        </Switch>
+        <div className="flex-1 flex overflow-hidden">
+          <Switch>
+            <Route path="/onboarding">
+              <OnboardingPage />
+            </Route>
+            <Route path="/p/:projectId/s/:sessionId">
+              <ProjectSessionView
+                sidebarOpen={effectiveLeftOpen}
+                onSidebarToggle={handleLeftToggle}
+                rightSidebarOpen={effectiveRightOpen}
+                onRightSidebarToggle={handleRightToggle}
+              />
+            </Route>
+            <Route path="/p/:projectId/new">
+              <NewSessionHandler />
+            </Route>
+            <Route path="/p/:projectId">
+              <ProjectView
+                sidebarOpen={effectiveLeftOpen}
+                onSidebarToggle={handleLeftToggle}
+              />
+            </Route>
+            <Route path="/">
+              <HomePage />
+            </Route>
+          </Switch>
+        </div>
       </div>
-    </div>
     </>
   )
 }

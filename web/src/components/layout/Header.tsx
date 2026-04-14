@@ -13,7 +13,6 @@ import type { SessionSummary } from '@shared/types.js'
 interface HeaderProps {
   onMenuClick?: () => void
   onCriteriaToggle?: () => void
-  onLaunchOnboarding?: () => void
 }
 
 interface ProjectDropdownProps {
@@ -290,7 +289,7 @@ function SessionDropdown({ sessions, currentProject, currentSession }: SessionDr
   )
 }
 
-export function Header({ onMenuClick, onCriteriaToggle, onLaunchOnboarding }: HeaderProps) {
+export function Header({ onMenuClick, onCriteriaToggle }: HeaderProps) {
   const [showSettings, setShowSettings] = useState(false)
   const [location] = useLocation()
   const isProjectPage = location.startsWith('/p/')
@@ -303,14 +302,6 @@ export function Header({ onMenuClick, onCriteriaToggle, onLaunchOnboarding }: He
   const stopAutoRefresh = useConfigStore(state => state.stopAutoRefresh)
   const setTerminalOpen = useTerminalStore(state => state.setOpen)
   const terminalIsOpen = useTerminalStore(state => state.isOpen)
-
-  const handleLaunchOnboarding = useCallback(() => {
-    setShowSettings(false)
-    onLaunchOnboarding?.()
-    if (onMenuClick) {
-      onMenuClick()
-    }
-  }, [onLaunchOnboarding, onMenuClick])
 
   const focusChatTextarea = useCallback(() => {
     const textarea = document.querySelector('textarea[placeholder*="What would you like to build"], textarea[placeholder*="Send a message"]') as HTMLTextAreaElement | null
@@ -453,7 +444,6 @@ export function Header({ onMenuClick, onCriteriaToggle, onLaunchOnboarding }: He
       <GlobalSettingsModal
         isOpen={showSettings}
         onClose={() => setShowSettings(false)}
-        onLaunchOnboarding={handleLaunchOnboarding}
       />
 
       {/* Terminal Modal */}
