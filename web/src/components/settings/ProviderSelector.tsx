@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect } from 'react'
+import { useLocation } from 'wouter'
 import { useConfigStore, getBackendDisplayName, type Provider } from '../../stores/config'
 import { useSessionStore } from '../../stores/session'
 import { ModelPropertiesModal } from './ModelPropertiesModal'
@@ -11,6 +12,7 @@ function formatContextWindow(context: number): string {
 }
 
 export function ProviderSelector() {
+  const [, navigate] = useLocation()
   const currentSession = useSessionStore(state => state.currentSession)
   const setSessionProvider = useSessionStore(state => state.setSessionProvider)
   const [isOpen, setIsOpen] = useState(false)
@@ -368,9 +370,12 @@ export function ProviderSelector() {
             ))}
           </div>
           <div className="border-t border-border px-3 py-2">
-            <p className="text-xs text-text-muted">
-              Use <code className="bg-bg-tertiary px-1 rounded">openfox provider add</code> to add more providers
-            </p>
+            <button
+              onClick={() => navigate('/onboarding')}
+              className="text-xs text-accent-primary hover:underline"
+            >
+              Open onboarding to add providers
+            </button>
           </div>
         </div>
       )}
