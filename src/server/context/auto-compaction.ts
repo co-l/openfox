@@ -113,29 +113,9 @@ async function performContextCompaction(options: ContextCompactionOptions & {
     content: file.content ?? '',
     source: file.source,
   }))
-  let requestMessages = toRequestContextMessages(getContextMessages(sessionId))
+  const requestMessages = toRequestContextMessages(getContextMessages(sessionId))
 
-  // Truncate context for the compaction call to avoid overwhelming the model.
-  // Models with limited effective context (e.g. Ollama models with rope scaling)
-  // may produce empty/1-token responses when fed too many tokens.
   const config = getRuntimeConfig()
-  const safeInputLimit = Math.floor(config.context.maxTokens * 0.75)
-  if (tokenCountAtClose > safeInputLimit && requestMessages.length > 4) {
-    const avgTokensPerMessage = tokenCountAtClose / requestMessages.length
-    const messagesToDrop = Math.ceil((tokenCountAtClose - safeInputLimit) / avgTokensPerMessage)
-    if (messagesToDrop > 0 && messagesToDrop < requestMessages.length - 2) {
-      const kept = requestMessages.length - messagesToDrop
-      logger.info('Truncating compaction input to fit model context', {
-        sessionId,
-        originalMessages: requestMessages.length,
-        keptMessages: kept,
-        estimatedTokensSaved: Math.round(messagesToDrop * avgTokensPerMessage),
-      })
-      // Keep first message (task setup context) + most recent messages (current state)
-      requestMessages = [requestMessages[0]!, ...requestMessages.slice(-kept + 1)]
-    }
-  }
-
   const allAgents = await loadAllAgentsDefault()
   const plannerDef = findAgentById('planner', allAgents)!
   const subAgentDefs = getSubAgents(allAgents)
