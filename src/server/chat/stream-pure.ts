@@ -526,13 +526,12 @@ export async function consumeStreamWithToolLoop(
     dangerLevel,
   } = options
 
-  const systemMsg = { role: 'system' as const, content: systemPrompt }
   let currentMessages: Array<{
     role: 'system' | 'user' | 'assistant' | 'tool'
     content: string
     toolCalls?: ToolCall[]
     toolCallId?: string
-  }> = [systemMsg, ...messages]
+  }> = [...messages]
 
   let iterations = 0
 
@@ -555,7 +554,7 @@ export async function consumeStreamWithToolLoop(
 
     const streamGen = streamLLMPure({
       messageId,
-      systemPrompt: '',
+      systemPrompt,
       llmClient,
       messages: currentMessages,
       tools,
