@@ -5,12 +5,17 @@ import { useCopyToClipboard } from '../../hooks/useCopyToClipboard'
 
 const COMMON_PORTS = [8000, 11434, 8080]
 
+const PRESETS = [
+  { name: 'OpenCode Go', url: 'https://opencode.ai/zen/go/v1', backend: 'opencode-go' as const },
+]
+
 interface ProviderInfo {
   id: string
   name: string
   url: string
   backend: Backend
   model: string | null
+  apiKey?: string
 }
 
 function getBackendDisplayName(backend: Backend): string {
@@ -21,6 +26,7 @@ function getBackendDisplayName(backend: Backend): string {
     case 'llamacpp': return 'llama.cpp'
     case 'openai': return 'OpenAI'
     case 'anthropic': return 'Anthropic'
+    case 'opencode-go': return 'OpenCode Go'
     case 'auto': return 'Auto'
     case 'unknown': return 'Unknown'
     default: return backend
@@ -97,6 +103,7 @@ function ConnectLLMStep({ onNext }: ConnectLLMStepProps) {
   const [showAddForm, setShowAddForm] = useState(false)
   const [customName, setCustomName] = useState('')
   const [customUrl, setCustomUrl] = useState('')
+  const [customApiKey, setCustomApiKey] = useState('')
   const [customBackend, setCustomBackend] = useState<Backend>('auto')
   const [testing, setTesting] = useState(false)
   const [testResult, setTestResult] = useState<{ success: boolean; model?: string; error?: string } | null>(null)
@@ -112,13 +119,14 @@ function ConnectLLMStep({ onNext }: ConnectLLMStepProps) {
     try {
       const response = await authFetch('/api/providers')
       if (response.ok) {
-        const data = await response.json() as { providers: Array<{ id: string; name: string; url: string; backend: Backend }> }
+        const data = await response.json() as { providers: Array<{ id: string; name: string; url: string; backend: Backend; apiKey?: string }> }
         const mapped = data.providers.map(p => ({
           id: p.id,
           name: p.name,
           url: p.url,
           backend: p.backend,
           model: null,
+          apiKey: p.apiKey,
         }))
         setExistingProviders(mapped)
         setProviders(mapped)
@@ -132,16 +140,20 @@ function ConnectLLMStep({ onNext }: ConnectLLMStepProps) {
     setTesting(true)
     setTestResult(null)
 
+    const skipBackendDetection = customBackend !== 'auto'
+
     try {
       const response = await authFetch('/api/providers/test', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ url }),
+        body: JSON.stringify({ url, skipBackendDetection }),
       })
       const data = await response.json() as { success: boolean; backend?: Backend; model?: string | null; error?: string }
 
       if (data.success) {
-        setCustomBackend(data.backend ?? 'auto')
+        if (!skipBackendDetection) {
+          setCustomBackend(data.backend ?? 'auto')
+        }
         setTestResult({ success: true, model: data.model ?? undefined })
       } else {
         setTestResult({ success: false, error: data.error ?? 'Connection failed' })
@@ -163,11 +175,13 @@ function ConnectLLMStep({ onNext }: ConnectLLMStepProps) {
       url: customUrl,
       backend: testResult?.success ? customBackend : 'auto',
       model: testResult?.success ? testResult.model ?? null : null,
+      apiKey: customApiKey || undefined,
     }
 
     setProviders([...providers, newProvider])
     setCustomName('')
     setCustomUrl('')
+    setCustomApiKey('')
     setTestResult(null)
   }
 
@@ -202,6 +216,7 @@ function ConnectLLMStep({ onNext }: ConnectLLMStepProps) {
             url: provider.url,
             backend: provider.backend,
             model: provider.model,
+            apiKey: provider.apiKey,
           }),
         })
         if (!response.ok) {
@@ -299,14 +314,41 @@ function ConnectLLMStep({ onNext }: ConnectLLMStepProps) {
             className="space-y-4 p-4 bg-bg-tertiary rounded-lg"
           >
             <div>
-              <label className="block text-sm text-text-secondary mb-2">Presets</label>
+              <label className="block text-sm text-text-secondary mb-2">Service Presets</label>
+              <div className="grid grid-cols-2 gap-2">
+                {PRESETS.map((preset) => (
+                  <button
+                    type="button"
+                    key={preset.name}
+                    onClick={() => {
+                      setCustomName(preset.name)
+                      setCustomUrl(preset.url)
+                      setCustomBackend(preset.backend)
+                      setTestResult(null)
+                    }}
+                    className={`p-2 rounded border text-center text-sm transition-colors ${
+                      customUrl === preset.url
+                        ? 'border-accent-primary bg-accent-primary/10 text-accent-primary'
+                        : 'border-border hover:border-text-muted text-text-secondary'
+                    }`}
+                  >
+                    {preset.name}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-sm text-text-secondary mb-2">Local Presets</label>
               <div className="grid grid-cols-3 gap-2">
                 {COMMON_PORTS.map((port) => (
                   <button
                     type="button"
                     key={port}
                     onClick={() => {
+                      setCustomName('')
                       setCustomUrl(`http://localhost:${port}`)
+                      setCustomBackend('auto')
                       setTestResult(null)
                     }}
                     className={`p-2 rounded border text-center text-sm transition-colors ${
@@ -356,6 +398,18 @@ function ConnectLLMStep({ onNext }: ConnectLLMStepProps) {
                   }
                 }}
                 placeholder="My LLM Server"
+                className="w-full px-4 py-2 bg-bg-secondary border border-border rounded-lg text-text-primary placeholder-text-muted focus:outline-none focus:border-accent-primary"
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm text-text-secondary mb-1">API key (optional)</label>
+              <input
+                type="password"
+                name="apiKey"
+                value={customApiKey}
+                onChange={(e) => setCustomApiKey(e.target.value)}
+                placeholder="sk-..."
                 className="w-full px-4 py-2 bg-bg-secondary border border-border rounded-lg text-text-primary placeholder-text-muted focus:outline-none focus:border-accent-primary"
               />
             </div>
@@ -718,22 +772,20 @@ export function OnboardingWizard({ onComplete }: OnboardingWizardProps) {
   }
 
   return (
-    <div className="min-h-screen bg-bg-primary flex items-center justify-center p-8 relative">
+    <div className="w-full max-w-2xl mx-auto px-6 py-16 relative">
       <CloseButton onClick={onComplete} />
-      <div className="w-full max-w-2xl">
-        {saving ? (
-          <div className="text-center">
-            <Spinner size="md" />
-            <p className="mt-4 text-text-secondary">Saving your settings...</p>
-          </div>
-        ) : (
-          <>
-            {step === 1 && <ConnectLLMStep onNext={handleLLMComplete} />}
-            {step === 2 && <ProjectsFolderStep onNext={handleFolderComplete} />}
-            {step === 3 && <VisionStep onNext={handleVisionComplete} />}
-          </>
-        )}
-      </div>
+      {saving ? (
+        <div className="text-center">
+          <Spinner size="md" />
+          <p className="mt-4 text-text-secondary">Saving your settings...</p>
+        </div>
+      ) : (
+        <>
+          {step === 1 && <ConnectLLMStep onNext={handleLLMComplete} />}
+          {step === 2 && <ProjectsFolderStep onNext={handleFolderComplete} />}
+          {step === 3 && <VisionStep onNext={handleVisionComplete} />}
+        </>
+      )}
     </div>
   )
 }

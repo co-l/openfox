@@ -141,7 +141,7 @@ function OnboardingPage() {
   }
 
   return (
-    <div className="flex-1 flex flex-col">
+    <div className="flex-1 overflow-y-auto">
       <OnboardingWizard onComplete={handleComplete} />
     </div>
   )

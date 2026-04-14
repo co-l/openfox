@@ -50,7 +50,7 @@ export async function configFileExists(mode: Mode): Promise<boolean> {
 // Schema Definitions
 // ============================================================================
 
-const backendSchema = z.enum(['auto', 'vllm', 'sglang', 'ollama', 'llamacpp', 'openai', 'anthropic', 'unknown'])
+const backendSchema = z.enum(['auto', 'vllm', 'sglang', 'ollama', 'llamacpp', 'openai', 'anthropic', 'opencode-go', 'unknown'])
 
 const modelConfigSchema = z.object({
   id: z.string(),

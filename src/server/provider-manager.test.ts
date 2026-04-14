@@ -307,6 +307,40 @@ describe('ProviderManager - Model Selection', () => {
       
       expect(result).toEqual({ success: false, error: 'No models returned from backend' })
     })
+
+    it('uses alternate endpoint for OpenCode Go', async () => {
+      const opencodeProvider: Provider = {
+        id: 'provider-opencode',
+        name: 'OpenCode Go',
+        url: 'https://opencode.ai/zen/go/v1',
+        backend: 'opencode-go',
+        apiKey: 'test-key',
+        models: [],
+        isActive: true,
+        createdAt: new Date().toISOString(),
+      }
+      const addedProvider = providerManager.addProvider(opencodeProvider)
+
+      mockFetch.mockResolvedValue({
+        ok: true,
+        json: async () => ({
+          data: [
+            { id: 'glm-5', max_model_len: 32000 },
+            { id: 'kimi-k2.5', max_model_len: 64000 },
+          ],
+        }),
+      })
+
+      const result = await providerManager.refreshProviderModels(addedProvider.id)
+      
+      expect(result.success).toBe(true)
+      expect(mockFetch).toHaveBeenCalledWith(
+        'https://opencode.ai/zen/v1/models',
+        expect.objectContaining({
+          headers: expect.objectContaining({ Authorization: 'Bearer test-key' }),
+        })
+      )
+    })
   })
 
   describe('getCurrentModelContext', () => {

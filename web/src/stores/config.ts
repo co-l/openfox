@@ -3,7 +3,7 @@ import { authFetch } from '../lib/api'
 import { useSessionStore } from './session'
 
 type LlmStatus = 'connected' | 'disconnected' | 'unknown'
-type Backend = 'vllm' | 'sglang' | 'ollama' | 'llamacpp' | 'openai' | 'anthropic' | 'auto' | 'unknown'
+type Backend = 'vllm' | 'sglang' | 'ollama' | 'llamacpp' | 'openai' | 'anthropic' | 'opencode-go' | 'auto' | 'unknown'
 type ProviderStatus = 'connected' | 'disconnected' | 'unknown'
 
 interface ModelConfig {
@@ -66,6 +66,7 @@ function getBackendDisplayName(backend: Backend): string {
     case 'llamacpp': return 'llama.cpp'
     case 'openai': return 'OpenAI'
     case 'anthropic': return 'Anthropic'
+    case 'opencode-go': return 'OpenCode Go'
     case 'auto': return 'Auto'
     case 'unknown': return ''
   }

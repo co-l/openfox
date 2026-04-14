@@ -671,13 +671,13 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
 
   // Onboarding: test LLM connection without adding provider
   app.post('/api/providers/test', async (req, res) => {
-    const { url } = req.body as { url: string }
+    const { url, skipBackendDetection } = req.body as { url: string; skipBackendDetection?: boolean }
     if (!url) {
       return res.status(400).json({ error: 'url is required' })
     }
 
     try {
-      const backend = await detectBackend(url)
+      const backend = skipBackendDetection ? 'auto' : await detectBackend(url)
       const model = await detectModel(url)
       res.json({
         success: true,

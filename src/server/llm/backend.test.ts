@@ -160,6 +160,7 @@ describe('backend', () => {
         sglang: 'SGLang',
         ollama: 'Ollama',
         llamacpp: 'llama.cpp',
+        'opencode-go': 'OpenCode Go',
         unknown: 'Unknown',
       }
 

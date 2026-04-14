@@ -5,7 +5,7 @@
 
 import { logger } from '../utils/logger.js'
 
-export type Backend = 'vllm' | 'sglang' | 'ollama' | 'llamacpp' | 'unknown'
+export type Backend = 'vllm' | 'sglang' | 'ollama' | 'llamacpp' | 'opencode-go' | 'unknown'
 
 export interface BackendCapabilities {
   /** Whether the backend returns reasoning_content as a separate field (vLLM/SGLang) */
@@ -33,6 +33,11 @@ const BACKEND_CAPABILITIES: Record<Backend, BackendCapabilities> = {
     supportsTopK: false,
   },
   llamacpp: {
+    supportsReasoningField: false,
+    supportsChatTemplateKwargs: false,
+    supportsTopK: true,
+  },
+  'opencode-go': {
     supportsReasoningField: false,
     supportsChatTemplateKwargs: false,
     supportsTopK: true,
@@ -199,6 +204,7 @@ export function getBackendDisplayName(backend: Backend): string {
     case 'sglang': return 'SGLang'
     case 'ollama': return 'Ollama'
     case 'llamacpp': return 'llama.cpp'
+    case 'opencode-go': return 'OpenCode Go'
     case 'unknown': return 'Unknown'
   }
 }

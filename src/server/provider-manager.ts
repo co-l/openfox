@@ -46,9 +46,16 @@ export async function fetchModelsWithContext(baseUrl: string, apiKey?: string, b
     logger.info('Fetching Ollama models via /api/tags and /api/show')
     return fetchOllamaModelsWithContext(baseUrl, apiKey)
   }
-  
-  // vLLM/SGLang/llama.cpp use /v1/models with max_model_len
-  const url = baseUrl.includes('/v1') ? `${baseUrl}/models` : `${baseUrl}/v1/models`
+
+  // OpenCode Go has models at /zen/v1/models not /zen/go/v1/models
+  const isOpenCodeGo = baseUrl.includes('opencode.ai/zen/go')
+  let url: string
+  if (isOpenCodeGo) {
+    url = baseUrl.replace('/zen/go', '/zen').replace(/\/v1$/, '') + '/v1/models'
+    logger.info('OpenCode Go detected, using alternate models endpoint', { original: baseUrl, modelsUrl: url })
+  } else {
+    url = baseUrl.includes('/v1') ? `${baseUrl}/models` : `${baseUrl}/v1/models`
+  }
   logger.info('Fetching models via /v1/models', { url })
 
   try {
@@ -192,7 +199,6 @@ export function parseDefaultModelSelection(selection?: string): { providerId: st
 
 export function createProviderManager(config: Config): ProviderManager {
   let providers: Provider[] = [...(config.providers ?? [])]
-  const { providerId: initialProviderId, model: initialModel } = parseDefaultModelSelection(config.defaultModelSelection)
   let defaultModelSelection: string | undefined = config.defaultModelSelection
   let llmClient = createLLMClient(config)
   const providerStatus = new Map<string, 'connected' | 'disconnected' | 'unknown'>()

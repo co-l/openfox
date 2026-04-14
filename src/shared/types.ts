@@ -472,7 +472,7 @@ export interface Diagnostic {
 // ============================================================================
 
 /** Supported LLM inference backends */
-export type LlmBackend = 'vllm' | 'sglang' | 'ollama' | 'llamacpp' | 'unknown'
+export type LlmBackend = 'vllm' | 'sglang' | 'ollama' | 'llamacpp' | 'opencode-go' | 'unknown'
 
 /** Extended backend type including cloud providers */
 export type ProviderBackend = LlmBackend | 'openai' | 'anthropic' | 'auto'
