@@ -134,11 +134,10 @@ function ProjectSessionView({
 
 function OnboardingPage() {
   const fetchConfig = useConfigStore(state => state.fetchConfig)
-  const [, navigate] = useLocation()
 
   function handleComplete() {
     fetchConfig()
-    navigate('/')
+    window.history.back()
   }
 
   return (

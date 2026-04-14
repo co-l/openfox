@@ -374,7 +374,7 @@ export function ProviderSelector() {
               onClick={() => navigate('/onboarding')}
               className="text-xs text-accent-primary hover:underline"
             >
-              Open onboarding to add providers
+              Manage providers
             </button>
           </div>
         </div>
