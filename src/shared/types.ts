@@ -504,6 +504,8 @@ export interface Config {
     idleTimeout: number
     /** Backend type - 'auto' for auto-detection, or explicit backend name */
     backend: LlmBackend | 'auto'
+    /** API key for cloud providers */
+    apiKey?: string
     /** Disable thinking/reasoning globally (for e2e tests) */
     disableThinking?: boolean
   }

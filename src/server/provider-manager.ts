@@ -217,6 +217,7 @@ export function createProviderManager(config: Config): ProviderManager {
         baseUrl: provider.url.includes('/v1') ? provider.url : `${provider.url}/v1`,
         model,
         backend: provider.backend as LlmBackend | 'auto',
+        ...(provider.apiKey && { apiKey: provider.apiKey }),
       },
     }
   }
@@ -407,12 +408,29 @@ export function createProviderManager(config: Config): ProviderManager {
     },
     
     setProviders(newProviders, newDefaultModelSelection) {
+      const wasActiveProviderId = this.getActiveProviderId()
+      
       providers = [...newProviders]
       defaultModelSelection = newDefaultModelSelection
       
       providerStatus.clear()
       for (const p of providers) {
         providerStatus.set(p.id, 'unknown')
+      }
+      
+      // If the active provider changed, recreate the LLM client with the new provider's config
+      const newActiveProviderId = this.getActiveProviderId()
+      if (newActiveProviderId && newActiveProviderId !== wasActiveProviderId) {
+        const activeProvider = providers.find(p => p.id === newActiveProviderId)
+        if (activeProvider) {
+          const providerConfig = createConfigForProvider(activeProvider, this.getCurrentModel() ?? 'auto')
+          llmClient = createLLMClient(providerConfig)
+          logger.info('setProviders: recreated LLM client for new active provider', {
+            providerId: newActiveProviderId,
+            url: activeProvider.url,
+            hasApiKey: !!activeProvider.apiKey,
+          })
+        }
       }
     },
     

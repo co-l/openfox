@@ -711,7 +711,7 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
       const { loadGlobalConfig, saveGlobalConfig, addProvider, setDefaultModelSelection } = await import('../cli/config.js')
       const globalConfig = await loadGlobalConfig(config.mode ?? 'production')
 
-      const providerBackend = backend as 'auto' | 'vllm' | 'sglang' | 'ollama' | 'llamacpp' | 'openai' | 'anthropic'
+      const providerBackend = backend as 'auto' | 'vllm' | 'sglang' | 'ollama' | 'llamacpp' | 'openai' | 'anthropic' | 'opencode-go'
 
       const configWithProvider = addProvider(globalConfig, {
         name,

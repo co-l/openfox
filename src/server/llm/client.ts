@@ -38,7 +38,7 @@ export function createLLMClient(config: Config, initialBackend: Backend = 'unkno
   
   const openai = new OpenAI({
     baseURL,
-    apiKey: 'not-needed', // Most local backends don't require API key
+    apiKey: config.llm.apiKey ?? 'not-needed',
   })
   
   let model = config.llm.model
