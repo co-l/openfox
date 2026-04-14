@@ -63,32 +63,45 @@ interface StepIndicatorProps {
   currentStep: number
   totalSteps: number
   labels: string[]
+  onStepClick?: (step: number) => void
 }
 
-function StepIndicator({ currentStep, totalSteps, labels }: StepIndicatorProps) {
+function StepIndicator({ currentStep, totalSteps, labels, onStepClick }: StepIndicatorProps) {
   return (
-    <div className="flex items-center gap-2 mb-8">
-      {Array.from({ length: totalSteps }, (_, i) => (
-        <div key={i} className="flex items-center">
-          <div
-            className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-medium transition-colors ${
-              i + 1 < currentStep
-                ? 'bg-accent-primary text-white'
-                : i + 1 === currentStep
-                  ? 'bg-accent-primary/25 text-white border-2 border-accent-primary'
-                  : 'bg-bg-tertiary text-text-muted'
-            }`}
-          >
-            {i + 1 < currentStep ? '✓' : i + 1}
-          </div>
-          <span className={`ml-2 text-sm ${i + 1 === currentStep ? 'text-text-primary' : 'text-text-muted'}`}>
-            {labels[i]}
-          </span>
-          {i < totalSteps - 1 && (
-            <div className={`w-8 h-px mx-4 ${i + 1 < currentStep ? 'bg-accent-primary' : 'bg-border'}`} />
-          )}
-        </div>
-      ))}
+    <div className="flex justify-center py-6">
+      <div className="flex items-center">
+        {Array.from({ length: totalSteps }, (_, i) => {
+          const stepNum = i + 1
+          const isCompleted = stepNum < currentStep
+          const isCurrent = stepNum === currentStep
+          
+          return (
+            <div key={i} className="flex items-center">
+              <button
+                onClick={() => onStepClick?.(stepNum)}
+                className={`size-8 rounded-full flex items-center justify-center text-sm font-medium transition-colors shrink-0 ${
+                  isCompleted
+                    ? 'bg-accent-primary text-white hover:opacity-80'
+                    : isCurrent
+                      ? 'bg-accent-primary text-white'
+                      : 'bg-bg-tertiary text-text-muted'
+                }`}
+              >
+                {isCompleted ? '✓' : stepNum}
+              </button>
+              <button
+                onClick={() => onStepClick?.(stepNum)}
+                className={`ml-2 mr-4 text-sm whitespace-nowrap hidden sm:block ${isCurrent ? 'text-text-primary font-medium' : 'text-text-muted hover:text-text-secondary'}`}
+              >
+                {labels[i]}
+              </button>
+              {i < totalSteps - 1 && (
+                <div className={`w-12 sm:w-20 h-0.5 mr-4 ${isCompleted ? 'bg-accent-primary' : 'bg-border'}`} />
+              )}
+            </div>
+          )
+        })}
+      </div>
     </div>
   )
 }
@@ -235,8 +248,6 @@ function ConnectLLMStep({ onNext }: ConnectLLMStepProps) {
     <div className="max-w-xl mx-auto">
       <h2 className="text-2xl font-bold text-text-primary mb-2">LLM Providers</h2>
       <p className="text-text-secondary mb-8">Manage your LLM server connections</p>
-
-      <StepIndicator currentStep={1} totalSteps={3} labels={['LLM Server', 'Projects Folder', 'Vision']} />
 
       <div className="space-y-4">
         {providers.length > 0 ? (
@@ -540,8 +551,6 @@ function ProjectsFolderStep({ onNext }: ProjectsFolderStepProps) {
       <h2 className="text-2xl font-bold text-text-primary mb-2">Your Projects Folder</h2>
       <p className="text-text-secondary mb-8">Where should OpenFox create project folders?</p>
 
-      <StepIndicator currentStep={2} totalSteps={3} labels={['LLM Server', 'Projects Folder', 'Vision']} />
-
       <div className="space-y-4">
         <div>
           <label className="block text-sm text-text-secondary mb-1">Workspace directory</label>
@@ -618,8 +627,6 @@ function VisionStep({ onNext }: VisionStepProps) {
     <div className="max-w-xl mx-auto">
       <h2 className="text-2xl font-bold text-text-primary mb-2">Vision (Optional)</h2>
       <p className="text-text-secondary mb-8">Configure a vision model for non-vision models</p>
-
-      <StepIndicator currentStep={3} totalSteps={3} labels={['LLM Server', 'Projects Folder', 'Vision']} />
 
       <div className="space-y-6">
         <div className="bg-bg-secondary rounded-lg p-4 border border-border">
@@ -771,21 +778,33 @@ export function OnboardingWizard({ onComplete }: OnboardingWizardProps) {
     }
   }
 
+  const handleStepClick = (targetStep: number) => {
+    setStep(targetStep)
+  }
+
   return (
-    <div className="w-full max-w-2xl mx-auto px-6 py-16 relative">
+    <div className="w-full max-w-xl mx-auto px-6 py-16 relative">
       <CloseButton onClick={onComplete} />
-      {saving ? (
-        <div className="text-center">
-          <Spinner size="md" />
-          <p className="mt-4 text-text-secondary">Saving your settings...</p>
-        </div>
-      ) : (
-        <>
-          {step === 1 && <ConnectLLMStep onNext={handleLLMComplete} />}
-          {step === 2 && <ProjectsFolderStep onNext={handleFolderComplete} />}
-          {step === 3 && <VisionStep onNext={handleVisionComplete} />}
-        </>
-      )}
+      <StepIndicator
+        currentStep={step}
+        totalSteps={3}
+        labels={['LLM Server', 'Projects Folder', 'Vision']}
+        onStepClick={handleStepClick}
+      />
+      <div className="max-w-xl mx-auto">
+        {saving ? (
+          <div className="text-center">
+            <Spinner size="md" />
+            <p className="mt-4 text-text-secondary">Saving your settings...</p>
+          </div>
+        ) : (
+          <>
+            {step === 1 && <ConnectLLMStep onNext={handleLLMComplete} />}
+            {step === 2 && <ProjectsFolderStep onNext={handleFolderComplete} />}
+            {step === 3 && <VisionStep onNext={handleVisionComplete} />}
+          </>
+        )}
+      </div>
     </div>
   )
 }
