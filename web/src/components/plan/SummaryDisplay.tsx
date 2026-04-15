@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useSessionStats } from '../../hooks/useSessionStats'
 import { useCurrentBranch } from '../../hooks/useCurrentBranch'
+import { useConfigStore } from '../../stores/config'
 import { useSessionStore } from '../../stores/session'
 import { formatTime, formatSpeed } from '../../lib/format-stats'
 import { StatsModal } from './StatsModal'
@@ -19,6 +20,7 @@ export function SummaryDisplay({ summary, messages, workdir }: SummaryDisplayPro
   const [showStatsModal, setShowStatsModal] = useState(false)
   const stats = useSessionStats(messages)
   const { branch } = useCurrentBranch(workdir)
+  const version = useConfigStore(state => state.version)
   const session = useSessionStore(state => state.currentSession)
 
   return (
@@ -87,6 +89,22 @@ export function SummaryDisplay({ summary, messages, workdir }: SummaryDisplayPro
 
       {/* Background Processes */}
       <BackgroundProcesses sessionId={session?.id} />
+
+      {/* Version footer */}
+      {version && (
+        <div className="mt-4 pt-4 border-t border-border text-center text-xs text-text-muted">
+          <a
+            href="https://github.com/co-l/openfox"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="hover:text-accent-primary transition-colors"
+          >
+            OpenFox
+          </a>
+          {' - '}
+          <span>v{version}</span>
+        </div>
+      )}
     </div>
   )
 }

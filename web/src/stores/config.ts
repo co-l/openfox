@@ -25,6 +25,8 @@ interface Provider {
 }
 
 interface ConfigState {
+  // Version
+  version: string | null
   // Current active model/backend
   model: string | null
   maxContext: number
@@ -76,6 +78,7 @@ export { getBackendDisplayName }
 export type { Backend, LlmStatus, Provider, ProviderStatus }
 
 export const useConfigStore = create<ConfigState>((set, get) => ({
+  version: null,
   model: null,
   maxContext: 200000,
   llmUrl: null,
@@ -97,6 +100,7 @@ export const useConfigStore = create<ConfigState>((set, get) => ({
         throw new Error('Failed to fetch config')
       }
       const data = await response.json() as { 
+        version: string
         model: string
         maxContext: number
         llmUrl: string
@@ -107,6 +111,7 @@ export const useConfigStore = create<ConfigState>((set, get) => ({
         defaultModelSelection: string | null
       }
       set({
+        version: data.version,
         model: data.model,
         maxContext: data.maxContext,
         llmUrl: data.llmUrl,

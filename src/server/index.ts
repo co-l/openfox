@@ -30,6 +30,7 @@ import { createTerminalRoutes } from './routes/terminals.js'
 import { devServerManager } from './dev-server/manager.js'
 import { getGlobalConfigDir } from '../cli/paths.js'
 import { logger, setLogLevel } from './utils/logger.js'
+import { VERSION } from '../constants.js'
 import { loadServerAuthConfig, requiresAuth, hasPassword, getAuthConfig, verifyPassword, isValidToken, tokenFromPassword } from './auth.js'
 const __dirname = dirname(fileURLToPath(import.meta.url))
 
@@ -625,6 +626,7 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
     }
 
     res.json({
+      version: VERSION,
       model: llmClient.getModel(),
       maxContext: providerManager.getCurrentModelContext(),
       llmUrl: activeProvider?.url ?? config.llm.baseUrl,
