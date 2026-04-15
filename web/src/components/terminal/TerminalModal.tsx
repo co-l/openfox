@@ -86,14 +86,14 @@ export function TerminalModal({ isOpen, onClose, onFocusChat }: TerminalModalPro
   return (
     <>
       <div
-        className="fixed inset-x-0 top-[50vh] bottom-0 z-40 bg-black/40"
+        className="fixed inset-x-0 top-[50vh] bottom-0 z-[100] bg-black/40"
         style={{ pointerEvents: 'auto' }}
         onClick={handleClose}
       />
       <div
         ref={terminalRef}
         tabIndex={-1}
-        className="fixed inset-x-0 top-0 z-50 h-[50vh] bg-bg-primary border-b border-border flex flex-col animate-slide-down outline-none"
+        className="fixed inset-x-0 top-0 z-[100] h-[50vh] bg-bg-primary border-b border-border flex flex-col animate-slide-down outline-none"
         onClick={(e) => e.stopPropagation()}
         onKeyDown={(e) => {
           if (e.key === 'Escape' || e.key === '²' || e.key === '`') {
