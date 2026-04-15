@@ -1,6 +1,7 @@
 import { access, constants } from 'node:fs/promises'
 import { join, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { getPathSeparator, isAbsolutePath } from './platform.js'
 
 // Get the directory where this module is located
 // In dev: src/server/utils/
@@ -45,8 +46,7 @@ async function existsExecutable(path: string): Promise<boolean> {
  * Returns null if the command is not found.
  */
 export async function which(command: string, workdir?: string): Promise<string | null> {
-  // If it's an absolute path, check if it exists and is executable
-  if (command.startsWith('/')) {
+  if (isAbsolutePath(command)) {
     if (await existsExecutable(command)) {
       return command
     }
@@ -71,7 +71,7 @@ export async function which(command: string, workdir?: string): Promise<string |
   
   // 3. Search system PATH
   const pathEnv = process.env['PATH'] ?? ''
-  const paths = pathEnv.split(':')
+  const paths = pathEnv.split(getPathSeparator())
   
   for (const dir of paths) {
     if (!dir) continue

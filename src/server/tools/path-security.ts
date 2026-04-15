@@ -1,6 +1,6 @@
 import { realpath } from 'node:fs/promises'
-import { resolve, normalize, join } from 'node:path'
-import { homedir } from 'node:os'
+import { resolve, normalize, join, basename, sep } from 'node:path'
+import { homedir, tmpdir } from 'node:os'
 import type { ServerMessage } from '../../shared/protocol.js'
 import { createChatPathConfirmationMessage } from '../ws/protocol.js'
 import { getEventStore } from '../events/index.js'
@@ -24,7 +24,11 @@ const SAFE_PATHS = new Set([
 ])
 
 /** Directories that are always allowed (in addition to workdir) */
-const ALLOWED_ROOTS = ['/tmp', '/var/tmp']
+const ALLOWED_ROOTS = [
+  '/tmp',
+  '/var/tmp',
+  tmpdir(),
+]
 
 /**
  * Patterns for files that may contain secrets and require confirmation
@@ -61,11 +65,10 @@ const SENSITIVE_FILE_PATTERNS: RegExp[] = [
  * @returns true if the file matches a sensitive pattern
  */
 export function isSensitivePath(path: string): boolean {
-  // Extract basename from path
-  const basename = path.split('/').pop() ?? ''
-  if (!basename) return false
+  const fileName = basename(path)
+  if (!fileName) return false
   
-  return SENSITIVE_FILE_PATTERNS.some(pattern => pattern.test(basename))
+  return SENSITIVE_FILE_PATTERNS.some(pattern => pattern.test(fileName))
 }
 
 // ===========================================================================
@@ -172,7 +175,7 @@ export async function isPathWithinSandbox(
 
   // Check if in workdir
   if (resolvedPath === normalizedWorkdir ||
-      resolvedPath.startsWith(normalizedWorkdir + '/')) {
+      resolvedPath.startsWith(normalizedWorkdir + sep)) {
     return { allowed: true, resolvedPath }
   }
 
@@ -180,7 +183,7 @@ export async function isPathWithinSandbox(
   for (const root of ALLOWED_ROOTS) {
     const normalizedRoot = normalize(root)
     if (resolvedPath === normalizedRoot ||
-        resolvedPath.startsWith(normalizedRoot + '/')) {
+        resolvedPath.startsWith(normalizedRoot + sep)) {
       return { allowed: true, resolvedPath }
     }
   }
@@ -449,7 +452,6 @@ export function extractDangerousPatterns(command: string): string[] {
 // ===========================================================================
 
 const PathDenialReasonDangerous = 'dangerous_command' as const
-type PathDenialReasonFull = typeof PathDenialReasonDangerous
 
 /**
  * Request access to paths outside the sandbox or sensitive files.

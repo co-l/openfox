@@ -1,6 +1,7 @@
 import * as pty from 'node-pty'
 import os from 'node:os'
 import { logger } from '../utils/logger.js'
+import { getPlatformShell } from '../utils/platform.js'
 
 export interface TerminalSession {
   id: string
@@ -27,8 +28,7 @@ class TerminalManager {
   }
 
   private getShell(): string {
-    const shell = process.env['SHELL'] || '/bin/bash'
-    return shell
+    return getPlatformShell().command
   }
 
   private resolveWorkdir(workdir: string | undefined): string {

@@ -2,6 +2,7 @@ import { spawn } from 'node:child_process'
 import { resolve, isAbsolute } from 'node:path'
 import { OUTPUT_LIMITS } from './types.js'
 import { createTool } from './tool-helpers.js'
+import { getPlatformShell } from '../utils/platform.js'
 import {
   extractAbsolutePathsFromCommand,
   extractSensitivePathsFromCommand,
@@ -137,7 +138,8 @@ function executeCommand(
       return
     }
     
-    const proc = spawn('sh', ['-c', command], {
+    const shell = getPlatformShell()
+    const proc = spawn(shell.command, [...shell.args, command], {
       cwd,
       env: { ...process.env, FORCE_COLOR: '0' },
       stdio: ['ignore', 'pipe', 'pipe'],

@@ -3,6 +3,7 @@ import { readFile, writeFile, mkdir } from 'node:fs/promises'
 import { resolve, join } from 'node:path'
 import { terminateProcessTree } from '../utils/process-tree.js'
 import { logger } from '../utils/logger.js'
+import { getPlatformShell } from '../utils/platform.js'
 import type { DevServerConfig, DevServerState, DevServerStatus } from '../../shared/dev-server.js'
 
 const MAX_LOG_LINES = 2000
@@ -135,7 +136,8 @@ class DevServerManager {
 
     const resolved = this.resolveWorkdir(workdir)
 
-    const proc = spawn('sh', ['-c', config.command], {
+    const shell = getPlatformShell()
+    const proc = spawn(shell.command, [...shell.args, config.command], {
       cwd: resolved,
       env: { ...process.env, FORCE_COLOR: '1' },
       stdio: ['ignore', 'pipe', 'pipe'],

@@ -1,6 +1,7 @@
 import { spawn } from 'node:child_process'
 import type { ServerMessage, BackgroundProcess } from '../../../shared/protocol.js'
 import * as store from './store.js'
+import { getPlatformShell } from '../../utils/platform.js'
 
 const STOP_SIGNAL_TIMEOUT = 5000
 
@@ -49,7 +50,8 @@ export function startProcessCommand(
   const proc = store.startProcess(processId, sessionId, 0)
   if (!proc) return null
 
-  const child = spawn('sh', ['-c', command], {
+  const shell = getPlatformShell()
+  const child = spawn(shell.command, [...shell.args, command], {
     cwd,
     env: { ...process.env, FORCE_COLOR: '1' },
     stdio: ['ignore', 'pipe', 'pipe'],

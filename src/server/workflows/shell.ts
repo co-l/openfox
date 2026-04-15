@@ -3,6 +3,7 @@
  */
 
 import { spawn } from 'node:child_process'
+import { getPlatformShell } from '../utils/platform.js'
 
 export interface ShellResult {
   exitCode: number
@@ -27,7 +28,8 @@ export function executeShellCommand(
       return
     }
 
-    const proc = spawn('sh', ['-c', command], {
+    const shell = getPlatformShell()
+    const proc = spawn(shell.command, [...shell.args, command], {
       cwd,
       env: { ...process.env, FORCE_COLOR: '0' },
       stdio: ['ignore', 'pipe', 'pipe'],
