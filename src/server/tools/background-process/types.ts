@@ -17,6 +17,8 @@ export interface ProcessLogsResult {
   processId: string
   lines: LogLine[]
   totalLines: number
+  nextOffset: number
+  hasMore: boolean
   truncated: boolean
 }
 

@@ -168,6 +168,6 @@ export function getSessionProcesses(sessionId: string): BackgroundProcess[] {
   return store.getSessionProcesses(sessionId)
 }
 
-export function getProcessLogs(processId: string, offset = 0, limit?: number) {
-  return store.getLogs(processId, offset, limit)
+export function getProcessLogs(processId: string, since = 0, maxLines?: number) {
+  return store.getLogsPaginated(processId, since, maxLines)
 }

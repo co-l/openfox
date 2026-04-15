@@ -9,8 +9,8 @@ export interface BackgroundProcessToolArgs {
   cwd?: string
   timeout?: number
   processId?: string
-  offset?: number
-  limit?: number
+  since?: number
+  maxLines?: number
 }
 
 export const backgroundProcessTool = createTool<BackgroundProcessToolArgs>(
@@ -57,13 +57,13 @@ These processes run independently of agent turns and persist across session comp
             type: 'string',
             description: 'Process ID. Required for stop, status, and logs actions.',
           },
-          offset: {
+          since: {
             type: 'number',
-            description: 'Log line offset for pagination. Default: 0',
+            description: 'Return logs after this offset. Default: 0',
           },
-          limit: {
+          maxLines: {
             type: 'number',
-            description: 'Maximum log lines to retrieve. Default: 500',
+            description: 'Maximum lines to return. Default: 500, max: 2000',
           },
         },
         required: ['action'],
@@ -160,15 +160,17 @@ These processes run independently of agent turns and persist across session comp
           return helpers.error(`Process not found: ${args.processId}`)
         }
 
-        const offset = args.offset ?? 0
-        const limit = args.limit ?? 500
-        const lines = manager.getProcessLogs(args.processId!, offset, limit)
+        const since = args.since ?? 0
+        const maxLines = Math.min(args.maxLines ?? 500, 2000)
+        const { lines, totalLines, nextOffset, hasMore } = manager.getProcessLogs(args.processId!, since, maxLines)
         
         return helpers.success(JSON.stringify({
           processId: args.processId,
           lines,
-          totalLines: lines.length,
-          truncated: lines.length >= limit,
+          totalLines,
+          nextOffset,
+          hasMore,
+          truncated: hasMore,
         }, null, 2))
       }
 

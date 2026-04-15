@@ -105,6 +105,32 @@ export function getLogs(processId: string, offset = 0, limit?: number): LogLine[
   return logs.slice(start, end)
 }
 
+export interface PaginatedLogs {
+  lines: LogLine[]
+  totalLines: number
+  nextOffset: number
+  hasMore: boolean
+}
+
+export function getLogsPaginated(processId: string, since = 0, maxLines = 500): PaginatedLogs {
+  const logs = logsByProcess.get(processId) ?? []
+  const totalLines = logs.length
+  
+  const filteredLogs = logs.filter((_, index) => index >= since)
+  const slicedLogs = filteredLogs.slice(0, maxLines)
+  
+  const lastLine = slicedLogs[slicedLogs.length - 1]
+  const nextOffset = lastLine ? lastLine.offset + 1 : totalLines
+  const hasMore = slicedLogs.length < filteredLogs.length
+  
+  return {
+    lines: slicedLogs,
+    totalLines,
+    nextOffset,
+    hasMore,
+  }
+}
+
 export function clearLogs(processId: string): void {
   logsByProcess.delete(processId)
   logsByProcess.set(processId, [])

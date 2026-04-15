@@ -117,7 +117,7 @@ describe('background-process store', () => {
       expect(logs[2]?.stream).toBe('stderr')
     })
 
-    it('should support pagination', () => {
+    it('should support pagination with since and maxLines', () => {
       const sessionId = 'test-session-pagination'
       const process = store.createProcess(sessionId, 'test', 'echo hello', '/tmp')!
       
@@ -128,6 +128,74 @@ describe('background-process store', () => {
       const logs = store.getLogs(process.id, 5, 3)
       expect(logs.length).toBe(3)
       expect(logs[0]?.content).toBe('line 5\n')
+    })
+
+    it('since=N returns only lines after offset N', () => {
+      const sessionId = 'test-session-since'
+      const process = store.createProcess(sessionId, 'test', 'echo hello', '/tmp')!
+      
+      for (let i = 0; i < 10; i++) {
+        store.appendLog(process.id, `line ${i}\n`, 'stdout')
+      }
+      
+      const logs = store.getLogs(process.id, 3, 100)
+      expect(logs.length).toBe(7)
+      expect(logs[0]?.offset).toBe(3)
+      expect(logs[logs.length - 1]?.offset).toBe(9)
+    })
+
+    it('totalLines reflects all emitted lines, not just returned', () => {
+      const sessionId = 'test-session-total'
+      const process = store.createProcess(sessionId, 'test', 'echo hello', '/tmp')!
+      
+      for (let i = 0; i < 20; i++) {
+        store.appendLog(process.id, `line ${i}\n`, 'stdout')
+      }
+      
+      const allLogs = store.getLogs(process.id, 0, 100)
+      expect(allLogs.length).toBe(20)
+      
+      const partialLogs = store.getLogs(process.id, 0, 5)
+      expect(partialLogs.length).toBe(5)
+    })
+
+    it('getLogsPaginated returns nextOffset and hasMore', () => {
+      const sessionId = 'test-session-paginated'
+      const process = store.createProcess(sessionId, 'test', 'echo hello', '/tmp')!
+      
+      for (let i = 0; i < 20; i++) {
+        store.appendLog(process.id, `line ${i}\n`, 'stdout')
+      }
+      
+      const result = store.getLogsPaginated(process.id, 0, 5)
+      
+      expect(result.lines.length).toBe(5)
+      expect(result.totalLines).toBe(20)
+      expect(result.nextOffset).toBe(5)
+      expect(result.hasMore).toBe(true)
+    })
+
+    it('nextOffset can be used as since without duplicates', () => {
+      const sessionId = 'test-session-chained'
+      const process = store.createProcess(sessionId, 'test', 'echo hello', '/tmp')!
+      
+      for (let i = 0; i < 10; i++) {
+        store.appendLog(process.id, `line ${i}\n`, 'stdout')
+      }
+      
+      const page1 = store.getLogsPaginated(process.id, 0, 3)
+      expect(page1.lines.length).toBe(3)
+      expect(page1.lines[0]?.offset).toBe(0)
+      expect(page1.lines[2]?.offset).toBe(2)
+      
+      const page2 = store.getLogsPaginated(process.id, page1.nextOffset, 3)
+      expect(page2.lines.length).toBe(3)
+      expect(page2.lines[0]?.offset).toBe(3)
+      expect(page2.lines[2]?.offset).toBe(5)
+      
+      const allOffsets = [...page1.lines, ...page2.lines].map(l => l.offset)
+      const uniqueOffsets = new Set(allOffsets)
+      expect(uniqueOffsets.size).toBe(allOffsets.length)
     })
   })
 
