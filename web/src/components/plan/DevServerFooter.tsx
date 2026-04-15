@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, memo } from 'react'
+import { createPortal } from 'react-dom'
 import { useDevServerStore } from '../../stores/dev-server'
 import { DevServerConfigModal } from './DevServerConfigModal'
 import { ansiToReact } from '../../lib/ansiParser'
@@ -69,6 +70,77 @@ const ExpandLogsModal = memo(function ExpandLogsModal({
   )
 })
 
+const LogHoverExpand = memo(function LogHoverExpand({
+  logs,
+  anchorRef,
+  isHiding,
+  onExpand,
+  onClose,
+}: {
+  logs: { stream: 'stdout' | 'stderr'; content: string }[]
+  anchorRef: React.RefObject<HTMLDivElement | null>
+  isHiding: boolean
+  onExpand: () => void
+  onClose: () => void
+}) {
+  const [pos, setPos] = useState<{ bottom: number; right: number; width: number; height: number } | null>(null)
+  const preRef = useRef<HTMLPreElement>(null)
+
+  useEffect(() => {
+    const rect = anchorRef.current?.getBoundingClientRect()
+    if (rect) {
+      setPos({
+        bottom: window.innerHeight - rect.bottom,
+        right: window.innerWidth - rect.right,
+        width: rect.width,
+        height: rect.height,
+      })
+    }
+  }, [anchorRef])
+
+  useEffect(() => {
+    if (preRef.current) {
+      preRef.current.scrollTop = preRef.current.scrollHeight
+    }
+  }, [logs])
+
+  if (!pos) return null
+
+  return (
+    <div className="relative">
+      <pre
+        ref={preRef}
+        className="fixed z-50 text-sm font-mono text-text-primary bg-bg-primary p-2 rounded border border-border overflow-auto transition-all duration-150 ease-out select-text"
+        style={{
+          bottom: pos.bottom,
+          right: pos.right,
+          width: pos.width * 2,
+          maxHeight: pos.height * 3,
+          transformOrigin: 'bottom right',
+          transform: isHiding ? 'scale(0.01)' : 'scale(1)',
+          opacity: isHiding ? 0 : 1,
+        }}
+      >
+        {logs.map((chunk, i) => (
+          <span key={i} className={chunk.stream === 'stderr' ? 'text-accent-warning' : ''}>
+            {ansiToReact(chunk.content)}
+          </span>
+        ))}
+      </pre>
+      <button
+        onClick={() => { onClose(); onExpand() }}
+        className="fixed z-50 px-2 py-1 rounded text-xs font-medium bg-accent-primary/30 text-white hover:bg-accent-primary/50 transition-colors duration-150"
+        style={{
+          bottom: pos.bottom + 8,
+          right: pos.right + 8,
+        }}
+      >
+        Expand
+      </button>
+    </div>
+  )
+})
+
 export const DevServerFooter = memo(function DevServerFooter({ workdir }: DevServerFooterProps) {
   const setWorkdir = useDevServerStore(s => s.setWorkdir)
   const status = useDevServerStore(s => s.status)
@@ -80,7 +152,11 @@ export const DevServerFooter = memo(function DevServerFooter({ workdir }: DevSer
 
   const [showConfigModal, setShowConfigModal] = useState(false)
   const [showExpandModal, setShowExpandModal] = useState(false)
+  const [isHoveringLogs, setIsHoveringLogs] = useState(false)
+  const [isHidingLogs, setIsHidingLogs] = useState(false)
+  const hideTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const logRef = useRef<HTMLPreElement>(null)
+  const logContainerRef = useRef<HTMLDivElement>(null)
 
   const state = status?.state ?? 'off'
   const hasConfig = config !== null
@@ -184,7 +260,19 @@ export const DevServerFooter = memo(function DevServerFooter({ workdir }: DevSer
 
           {/* Log panel — always visible when running */}
           {isAlive && (
-            <div className="relative">
+            <div
+              ref={logContainerRef}
+              className="relative"
+              onMouseEnter={() => {
+                if (hideTimeoutRef.current) clearTimeout(hideTimeoutRef.current)
+                setIsHoveringLogs(true)
+                setIsHidingLogs(false)
+              }}
+              onMouseLeave={() => {
+                setIsHidingLogs(true)
+                hideTimeoutRef.current = setTimeout(() => setIsHoveringLogs(false), 150)
+              }}
+            >
               <pre
                 ref={logRef}
                 className="text-sm bg-bg-primary p-2 rounded overflow-auto max-h-[200px] border border-border"
@@ -202,15 +290,18 @@ export const DevServerFooter = memo(function DevServerFooter({ workdir }: DevSer
                   ))
                 )}
               </pre>
-              <button
-                onClick={() => setShowExpandModal(true)}
-                className="absolute bottom-2 right-2 p-1 rounded bg-bg-tertiary/80 hover:bg-bg-tertiary text-text-muted transition-colors"
-                title="Expand logs"
-              >
-                <svg className="w-4 h-4" viewBox="0 0 20 20" fill="currentColor">
-                  <path fillRule="evenodd" d="M3 4a1 1 0 011-1h4a1 1 0 010 2H5v3a1 1 0 01-2 0V4zm12-1a1 1 0 00-1 1v3a1 1 0 102 0V5h3a1 1 0 100-2h-4zm-9 12a1 1 0 011 1v3h3a1 1 0 110 2H4a1 1 0 01-1-1v-4a1 1 0 011-1zm12 0a1 1 0 011 1v4a1 1 0 01-1 1h-4a1 1 0 110-2h3v-3a1 1 0 011-1z" clipRule="evenodd" />
-                </svg>
-              </button>
+
+              {/* Hover expansion portal */}
+              {(isHoveringLogs || isHidingLogs) && logContainerRef.current && createPortal(
+                <LogHoverExpand
+                  logs={logs}
+                  anchorRef={logContainerRef}
+                  isHiding={isHidingLogs}
+                  onExpand={() => setShowExpandModal(true)}
+                  onClose={() => setIsHoveringLogs(false)}
+                />,
+                document.body
+              )}
             </div>
           )}
         </>
