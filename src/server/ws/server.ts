@@ -108,6 +108,7 @@ interface ClientConnection {
   activeSessionId: string | null                    // Currently viewing session
   subscribedSessions: Map<string, () => void>       // sessionId -> unsubscribe fn (old event system)
   eventStoreSubscriptions: Map<string, () => void>  // sessionId -> unsubscribe fn (new EventStore)
+  globalSubscription: (() => void) | null           // Global all-session subscription unsubscribe
 }
 
 export function createWebSocketServer(
@@ -413,7 +414,27 @@ export function createWebSocketServer(
     }
 
     logger.debug('WebSocket client connected')
-    clients.set(ws, { ws, activeSessionId: null, subscribedSessions: new Map(), eventStoreSubscriptions: new Map() })
+    clients.set(ws, { ws, activeSessionId: null, subscribedSessions: new Map(), eventStoreSubscriptions: new Map(), globalSubscription: null })
+
+    // Subscribe to ALL session events (global subscription)
+    const eventStore = getEventStore()
+    const { iterator: globalIterator, unsubscribe: globalUnsubscribe } = eventStore.subscribeAll()
+    clients.get(ws)!.globalSubscription = globalUnsubscribe
+
+    // Start streaming all events to this client
+    ;(async () => {
+      try {
+        for await (const storedEvent of globalIterator) {
+          if (ws.readyState !== WebSocket.OPEN) break
+          const serverMsg = storedEventToServerMessage(storedEvent)
+          if (serverMsg) {
+            ws.send(serializeServerMessage({ ...serverMsg, seq: storedEvent.seq, sessionId: storedEvent.sessionId }))
+          }
+        }
+      } catch (error) {
+        logger.debug('Global event subscription ended', { error })
+      }
+    })()
     
     ws.on('message', async (data) => {
       const message = parseClientMessage(data.toString())
@@ -455,6 +476,10 @@ export function createWebSocketServer(
         }
         for (const unsubscribe of client.eventStoreSubscriptions.values()) {
           unsubscribe()
+        }
+        // Unsubscribe from global all-session subscription
+        if (client.globalSubscription) {
+          client.globalSubscription()
         }
       }
       // Unsubscribe from all terminal sessions
@@ -533,30 +558,9 @@ async function handleClientMessage(
     return true
   }
 
-  const ensureEventStoreSubscription = (sessionId: string) => {
-    if (client.eventStoreSubscriptions.has(sessionId)) {
-      return
-    }
-
-    const sid = sessionId
-    const eventStore = getEventStore()
-    const { iterator, unsubscribe } = eventStore.subscribe(sid)
-    client.eventStoreSubscriptions.set(sessionId, unsubscribe)
-
-    ;(async () => {
-      try {
-        for await (const storedEvent of iterator) {
-          const serverMsg = storedEventToServerMessage(storedEvent)
-          if (serverMsg && ws.readyState === WebSocket.OPEN) {
-            ws.send(serializeServerMessage({ ...serverMsg, seq: storedEvent.seq, sessionId: sid }))
-          }
-        }
-      } catch (error) {
-        logger.debug('EventStore subscription ended', { sessionId: sid, error })
-      }
-    })()
-
-    logger.debug('Subscribed to EventStore', { sessionId })
+  const ensureEventStoreSubscription = (_sessionId: string) => {
+    // No-op: clients now receive ALL events via global subscription
+    // Per-session subscriptions were removed to prevent duplicate events
   }
   
   switch (message.type) {

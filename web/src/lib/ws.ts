@@ -15,6 +15,7 @@ class WebSocketClient {
   private connectingPromise: Promise<void> | null = null
   private lastCloseCode: number = 0
   private reconnectAttempts: number = 0
+  private manualReconnectScheduled = false  // User triggered reconnect pending
 
   constructor(url: string) {
     this.baseUrl = url
@@ -123,14 +124,15 @@ class WebSocketClient {
 
   private attemptReconnect(): void {
     const authFailureCodes = [1000, 1005, 1006, 4000]
-    if (authFailureCodes.includes(this.lastCloseCode) || this.lastCloseCode === 0) {
-      if (this.hasToken()) {
-        console.log('[WS] Auth failure detected, not auto-reconnecting')
-        return
-      }
+    const isAuthFailure = authFailureCodes.includes(this.lastCloseCode) || this.lastCloseCode === 0
+
+    // Only auto-reconnect if NO token - with token, expect user to manually reconnect
+    if (isAuthFailure && this.hasToken()) {
+      console.log('[WS] Auth failure or initial failure with token - not auto-reconnecting, awaiting user action')
+      return
     }
 
-    if (this.isReconnecting) return
+    if (this.isReconnecting || this.manualReconnectScheduled) return
     this.isReconnecting = true
     this.statusHandler?.('reconnecting')
 
@@ -139,9 +141,21 @@ class WebSocketClient {
 
     setTimeout(() => {
       this.isReconnecting = false
+      this.manualReconnectScheduled = false
       this.connect().catch(() => {
+        // Failed - connectionStatus will be 'disconnected', user can click reconnect
       })
     }, delay)
+  }
+
+  reconnect(): void {
+    this.manualReconnectScheduled = true
+    this.isReconnecting = false
+    this.lastCloseCode = 0
+    this.connectingPromise = null
+    this.connect().catch(() => {
+      // Failed - connectionStatus will be 'disconnected'
+    })
   }
 
   disconnect(): void {

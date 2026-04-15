@@ -235,6 +235,7 @@ interface SessionState {
 
   // Actions
   connect: () => Promise<void>
+  reconnect: () => void
   disconnect: () => void
   submitPassword: (password: string) => Promise<void>
   cancelPassword: () => void
@@ -513,6 +514,14 @@ export const useSessionStore = create<SessionState>((set, get) => {
         }
         set({ connectionStatus: 'disconnected' })
       }
+    },
+
+    reconnect: () => {
+      // Force reconnection by resetting state and calling connect
+      wsClient.disconnect()
+      isSubscribed = false
+      set({ connectionStatus: 'reconnecting' })
+      get().connect()
     },
 
     disconnect: () => {

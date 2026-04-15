@@ -10,6 +10,7 @@ import { SubAgentContainer } from './SubAgentContainer'
 import { AgentSelector } from './AgentSelector'
 import { DangerLevelSelector } from './DangerLevelSelector'
 import { AskUserDialog } from '../shared/AskUserDialog'
+import { ConnectionStatusBar } from '../shared/ConnectionStatusBar'
 import { RunningIndicator } from '../shared/RunningIndicator'
 import { CriteriaGroupDisplay } from '../shared/CriteriaGroupDisplay'
 import { AttachmentPreview } from '../shared/AttachmentPreview.js'
@@ -448,6 +449,7 @@ export function PlanPanel({ criteriaSidebarOpen: externalCriteriaSidebarOpen, on
         <AskUserDialog question={pendingQuestion} />
       )}
       <SessionHeader />
+      <ConnectionStatusBar />
 
       <div ref={scrollContainerRef} data-testid="chat-scroll-container" className="flex-1 min-w-0 overflow-y-auto">
         <div className="pt-4">

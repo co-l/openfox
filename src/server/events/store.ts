@@ -29,6 +29,13 @@ interface Subscriber {
   closed: boolean
 }
 
+interface GlobalSubscriber {
+  wsId: number // Unique ID for this subscription
+  callback: (event: StoredEvent) => void
+  close: () => void
+  closed: boolean
+}
+
 interface EventRow {
   id: number
   session_id: string
@@ -45,6 +52,8 @@ interface EventRow {
 export class EventStore {
   private db: Database.Database
   private subscribers: Map<string, Set<Subscriber>> = new Map()
+  private globalSubscribers: Map<number, GlobalSubscriber> = new Map()
+  private globalSubscriberIdCounter = 0
 
   constructor(db: Database.Database) {
     this.db = db
@@ -336,14 +345,96 @@ export class EventStore {
   }
 
   private notifySubscribers(sessionId: string, event: StoredEvent): void {
+    // Notify session-specific subscribers
     const sessionSubs = this.subscribers.get(sessionId)
-    if (!sessionSubs) return
+    if (sessionSubs) {
+      for (const subscriber of sessionSubs) {
+        if (!subscriber.closed) {
+          subscriber.callback(event)
+        }
+      }
+    }
 
-    for (const subscriber of sessionSubs) {
+    // Notify global subscribers (receives ALL events)
+    for (const subscriber of this.globalSubscribers.values()) {
       if (!subscriber.closed) {
         subscriber.callback(event)
       }
     }
+  }
+
+  /**
+   * Subscribe to ALL events across ALL sessions.
+   * Unlike subscribe() which is session-specific, this receives every event.
+   * Used by WebSocket clients to receive real-time updates for all sessions.
+   *
+   * Returns an async iterator that yields events and an unsubscribe function
+   */
+  subscribeAll(): { iterator: AsyncIterableIterator<StoredEvent>; unsubscribe: () => void } {
+    const queue: StoredEvent[] = []
+    let resolveNext: ((value: IteratorResult<StoredEvent>) => void) | null = null
+    let closed = false
+
+    const closeIterator = () => {
+      closed = true
+      if (resolveNext) {
+        resolveNext({ value: undefined, done: true })
+        resolveNext = null
+      }
+    }
+
+    const wsId = ++this.globalSubscriberIdCounter
+    const subscriber: GlobalSubscriber = {
+      wsId,
+      callback: (event: StoredEvent) => {
+        if (closed) return
+
+        if (resolveNext) {
+          resolveNext({ value: event, done: false })
+          resolveNext = null
+        } else {
+          queue.push(event)
+        }
+      },
+      close: closeIterator,
+      closed: false,
+    }
+
+    this.globalSubscribers.set(wsId, subscriber)
+
+    const iterator: AsyncIterableIterator<StoredEvent> = {
+      [Symbol.asyncIterator]() {
+        return this
+      },
+      async next(): Promise<IteratorResult<StoredEvent>> {
+        if (closed) {
+          return { value: undefined, done: true }
+        }
+
+        const queued = queue.shift()
+        if (queued) {
+          return { value: queued, done: false }
+        }
+
+        // Wait for next event
+        return new Promise((resolve) => {
+          resolveNext = resolve
+        })
+      },
+      async return(): Promise<IteratorResult<StoredEvent>> {
+        closed = true
+        subscriber.closed = true
+        return { value: undefined, done: true }
+      },
+    }
+
+    const unsubscribe = () => {
+      subscriber.closed = true
+      closeIterator()
+      this.globalSubscribers.delete(wsId)
+    }
+
+    return { iterator, unsubscribe }
   }
 
   // --------------------------------------------------------------------------

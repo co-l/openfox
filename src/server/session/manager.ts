@@ -28,6 +28,7 @@ import {
   updateSessionMetadata,
   updateSessionProvider,
   updateSessionDangerLevel,
+  updateSessionRunning,
   type DangerLevel,
 } from '../db/sessions.js'
 import { getProject } from '../db/projects.js'
@@ -289,6 +290,7 @@ export class SessionManager {
 
     logger.debug('Setting session running state', { sessionId, isRunning })
 
+    updateSessionRunning(sessionId, isRunning)
     emitRunningChanged(sessionId, isRunning)
 
     const updatedSession = this.requireSession(sessionId)
