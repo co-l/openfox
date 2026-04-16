@@ -22,7 +22,7 @@ import { getEnabledSkillMetadata } from '../skills/registry.js'
 import { getRuntimeConfig } from '../runtime-config.js'
 import { getGlobalConfigDir } from '../../cli/paths.js'
 import { getEventStore, getCurrentContextWindowId } from '../events/index.js'
-import { createChatMessageMessage } from '../ws/protocol.js'
+import { createChatMessageMessage, createChatMessageUpdatedMessage, createChatDoneMessage } from '../ws/protocol.js'
 import { logger } from '../utils/logger.js'
 import { resolveCompactionStatsIdentity, maybeAutoCompactContext } from '../context/auto-compaction.js'
 
@@ -365,9 +365,23 @@ export async function executeSubAgent(options: SubAgentExecutionOptions): Promis
     // Capture return_value content and result
     if (batchResult.returnValueContent) {
       returnValueContent = batchResult.returnValueContent
-    }
-    if (batchResult.returnValueResult) {
       returnValueResult = batchResult.returnValueResult
+      customMessages = [...customMessages, ...batchResult.toolMessages]
+      
+      const stats = turnMetrics.buildStats(statsIdentity, subAgentType)
+      eventStore.append(sessionId, createMessageDoneEvent(assistantMsgId, {
+        segments: result.segments,
+        stats,
+        promptContext,
+      }))
+      if (onMessage) {
+        onMessage(createChatMessageUpdatedMessage(assistantMsgId, { isStreaming: false, stats, promptContext }))
+      }
+      eventStore.append(sessionId, createChatDoneEvent(assistantMsgId, 'complete', stats))
+      if (onMessage) {
+        onMessage(createChatDoneMessage(assistantMsgId, 'complete', stats))
+      }
+      break
     }
 
     // Add tool results to custom context
