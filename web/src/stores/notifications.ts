@@ -67,6 +67,12 @@ const DEFAULT_EVENT_CONFIG: EventNotificationConfig = {
   customSoundUrl: null,
 }
 
+const DEFAULT_NEW_MESSAGE_CONFIG: EventNotificationConfig = {
+  soundEnabled: false,
+  browserNotification: false,
+  customSoundUrl: null,
+}
+
 export const DEFAULT_SETTINGS: NotificationSettings = {
   soundEnabled: true,
   browserNotificationEnabled: false,
@@ -75,7 +81,7 @@ export const DEFAULT_SETTINGS: NotificationSettings = {
     waiting_for_user: { ...DEFAULT_EVENT_CONFIG },
     phase_done: { ...DEFAULT_EVENT_CONFIG },
     phase_blocked: { ...DEFAULT_EVENT_CONFIG },
-    new_message: { ...DEFAULT_EVENT_CONFIG },
+    new_message: { ...DEFAULT_NEW_MESSAGE_CONFIG },
   },
   agentOverrides: {},
 }
@@ -211,7 +217,7 @@ function mergeWithDefaults(partial: Partial<NotificationSettings>): Notification
       waiting_for_user: { ...DEFAULT_EVENT_CONFIG, ...partial.events?.waiting_for_user },
       phase_done: { ...DEFAULT_EVENT_CONFIG, ...partial.events?.phase_done },
       phase_blocked: { ...DEFAULT_EVENT_CONFIG, ...partial.events?.phase_blocked },
-      new_message: { ...DEFAULT_EVENT_CONFIG, ...partial.events?.new_message },
+      new_message: { ...DEFAULT_NEW_MESSAGE_CONFIG, ...partial.events?.new_message },
     },
     agentOverrides: partial.agentOverrides ?? {},
   }

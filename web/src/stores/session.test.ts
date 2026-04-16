@@ -862,7 +862,7 @@ describe('useSessionStore session isolation', () => {
     expect(playNewMessageMock).toHaveBeenCalledTimes(1)
   })
 
-  it('plays new_message sound on first chat.thinking for a new assistant message', async () => {
+  it('does NOT play new_message sound on chat.thinking (only agent messages, not thinking blocks)', async () => {
     const useSessionStore = await loadSessionStore()
 
     useSessionStore.setState({
@@ -884,7 +884,7 @@ describe('useSessionStore session isolation', () => {
       payload: { messageId: 'msg-1', content: 'Let me think' },
     })
 
-    expect(playNewMessageMock).toHaveBeenCalledTimes(1)
+    expect(playNewMessageMock).not.toHaveBeenCalled()
   })
 
   it('does not replay new_message sound on subsequent deltas for the same messageId', async () => {

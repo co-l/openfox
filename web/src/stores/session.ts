@@ -1188,12 +1188,7 @@ export const useSessionStore = create<SessionState>((set, get) => {
             break
           }
           const payload = message.payload as ChatThinkingPayload
-          // Play new_message sound on first thinking for this messageId
-          if (!triggeredNewMessageSound.has(payload.messageId)) {
-            triggeredNewMessageSound.add(payload.messageId)
-            const agent = resolveAgentType(get(), message.sessionId)
-            playNewMessage(agent)
-          }
+          // Note: new_message sound only triggers on chat.delta (agent messages), not thinking blocks
           streamingBuffer.messageId = payload.messageId
           streamingBuffer.thinkingContent += payload.content
           scheduleStreamingFlush()
