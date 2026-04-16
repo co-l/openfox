@@ -150,7 +150,9 @@ function OnboardingPage() {
 function App() {
   const { connectionStatus } = useWebSocket()
   const fetchConfig = useConfigStore(state => state.fetchConfig)
+  const refreshProviderModels = useConfigStore(state => state.refreshProviderModels)
   const providers = useConfigStore(state => state.providers)
+  const activeProviderId = useConfigStore(state => state.activeProviderId)
   const [, navigate] = useLocation()
 
   const hasToken = hasStoredToken()
@@ -164,6 +166,14 @@ function App() {
       })
     }
   }, [connectionStatus, hasToken, fetchConfig])
+
+  useEffect(() => {
+    if (configFetched && activeProviderId) {
+      refreshProviderModels(activeProviderId).then(() => {
+        fetchConfig()
+      })
+    }
+  }, [configFetched, activeProviderId, refreshProviderModels, fetchConfig])
 
   useEffect(() => {
     if (configFetched && providers.length === 0) {

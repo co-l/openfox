@@ -1,5 +1,5 @@
 import type { Provider, Config, LlmBackend, ModelConfig } from '../shared/types.js'
-import { createLLMClient, detectBackend, detectModel, clearModelCache, type LLMClientWithModel } from './llm/index.js'
+import { createLLMClient, detectBackend, detectModel, clearModelCache, setLlmStatus, type LLMClientWithModel } from './llm/index.js'
 import { logger } from './utils/logger.js'
 
 /** Fetch available models from a provider's backend with context windows */
@@ -528,8 +528,9 @@ export function createProviderManager(config: Config): ProviderManager {
       const userModels = provider.models.filter(m => m.source === 'user')
       const allModelsBefore = provider.models.map(m => ({ id: m.id, contextWindow: m.contextWindow, source: m.source }))
       logger.info('refreshProviderModels', { providerId, userModelsCount: userModels.length, backendModelsCount: modelsWithContext.length, userModels: userModels.map(m => ({ id: m.id, contextWindow: m.contextWindow, source: m.source })), allModelsBefore, backendModels: modelsWithContext })
-      
+
       if (modelsWithContext.length === 0) {
+        setLlmStatus('disconnected')
         // Keep existing user models when backend is unavailable
         if (userModels.length > 0) {
           logger.debug('Backend unavailable, preserving user models', { providerId, userModels: userModels.map(m => ({ id: m.id, contextWindow: m.contextWindow })) })
@@ -541,6 +542,8 @@ export function createProviderManager(config: Config): ProviderManager {
         }
         return { success: false, error: 'No models returned from backend' }
       }
+
+      setLlmStatus('connected')
 
       // Update provider's models, preserving user overrides with fuzzy matching
       const updatedModels = modelsWithContext.map(m => {

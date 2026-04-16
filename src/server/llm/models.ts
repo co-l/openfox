@@ -148,6 +148,10 @@ export function getLlmStatus(): LlmStatus {
   return llmStatus
 }
 
+export function setLlmStatus(status: LlmStatus): void {
+  llmStatus = status
+}
+
 /**
  * Clear model cache for a specific URL, or all if no URL provided.
  */
