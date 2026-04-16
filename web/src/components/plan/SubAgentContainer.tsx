@@ -1,12 +1,15 @@
 import { memo, useRef, useEffect, useState, useCallback } from 'react'
-import type { Message } from '@shared/types.js'
+import type { Message, ContextState } from '@shared/types.js'
 import { AssistantMessage } from './AssistantMessage'
 import { ChatMessage } from './ChatMessage'
 import { useAgentsStore, getAgentColor } from '../../stores/agents'
+import { useSessionStore } from '../../stores/session'
+import { formatTokens } from '../../lib/format-stats'
 
 interface SubAgentContainerProps {
   messages: Message[]
   subAgentType: string
+  subAgentId: string
   isStreaming: boolean
 }
 
@@ -17,7 +20,6 @@ const LABELS: Record<string, string> = {
   debugger: 'Debug',
 }
 
-/** Build header style from hex color */
 function headerStyle(hex: string) {
   return {
     backgroundColor: `${hex}20`,
@@ -26,25 +28,60 @@ function headerStyle(hex: string) {
   }
 }
 
-/**
- * Container for sub-agent messages with scrollable area and auto-scroll.
- * Groups consecutive messages from the same subAgentId into a single card.
- * Uses the same AssistantMessage and ChatMessage components as the main chat.
- */
-export const SubAgentContainer = memo(function SubAgentContainer({ messages, subAgentType, isStreaming }: SubAgentContainerProps) {
+function getProgressColor(percent: number, dangerZone: boolean): string {
+  if (dangerZone) return 'bg-accent-error'
+  if (percent > 85) return 'bg-accent-error'
+  if (percent > 60) return 'bg-accent-warning'
+  return 'bg-accent-success'
+}
+
+function getTextColor(percent: number, dangerZone: boolean): string {
+  if (dangerZone) return 'text-accent-error'
+  if (percent > 85) return 'text-accent-error'
+  if (percent > 60) return 'text-accent-warning'
+  return 'text-text-muted'
+}
+
+function SubAgentContextBar({ contextState }: { contextState: ContextState }) {
+  const { currentTokens, maxTokens, compactionCount, dangerZone } = contextState
+  const percent = Math.round((currentTokens / maxTokens) * 100)
+
+  return (
+    <div className="flex items-center gap-1.5 text-[10px]">
+      <span className={getTextColor(percent, dangerZone)}>
+        {formatTokens(currentTokens)}/{formatTokens(maxTokens)}
+      </span>
+      <div className="h-1 bg-bg-tertiary rounded-full overflow-hidden w-12">
+        <div
+          className={`h-full transition-all duration-300 ${getProgressColor(percent, dangerZone)}`}
+          style={{ width: `${Math.min(percent, 100)}%` }}
+        />
+      </div>
+      {dangerZone && (
+        <span className="text-accent-error animate-pulse">Low!</span>
+      )}
+      {compactionCount > 0 && (
+        <span className="text-text-muted bg-bg-tertiary px-1 rounded">
+          {compactionCount}x
+        </span>
+      )}
+    </div>
+  )
+}
+
+export const SubAgentContainer = memo(function SubAgentContainer({ messages, subAgentType, subAgentId, isStreaming }: SubAgentContainerProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const scrollContainerRef = useRef<HTMLDivElement>(null)
   const [userScrolledUp, setUserScrolledUp] = useState(false)
   const [expanded, setExpanded] = useState(false)
   const agents = useAgentsStore(state => state.agents)
+  const contextState = useSessionStore(state => state.subAgentContextStates[subAgentId])
 
-  // Scroll container into view when expanding
   const handleToggleExpand = useCallback(() => {
     const willExpand = !expanded
     setExpanded(willExpand)
 
     if (willExpand) {
-      // Wait for height transition (200ms) to complete, then scroll into view
       setTimeout(() => {
         containerRef.current?.scrollIntoView({ block: 'start', behavior: 'smooth' })
       }, 220)
@@ -58,7 +95,6 @@ export const SubAgentContainer = memo(function SubAgentContainer({ messages, sub
     }
   }, [])
 
-  // Detect user scrolling
   const handleWheel = useCallback((e: React.WheelEvent) => {
     const container = scrollContainerRef.current
     if (!container) return
@@ -76,14 +112,12 @@ export const SubAgentContainer = memo(function SubAgentContainer({ messages, sub
     }
   }, [userScrolledUp])
 
-  // Auto-scroll when streaming or messages change
   useEffect(() => {
     if (!userScrolledUp) {
       scrollToBottom()
     }
   }, [messages, userScrolledUp, scrollToBottom])
 
-  // Reset scroll state when streaming stops
   useEffect(() => {
     if (!isStreaming) {
       setUserScrolledUp(false)
@@ -95,7 +129,6 @@ export const SubAgentContainer = memo(function SubAgentContainer({ messages, sub
   const color = getAgentColor(agents, subAgentType)
   const hStyle = headerStyle(color)
 
-  // Filter out tool messages
   const displayMessages = messages.filter(m => m.role !== 'tool')
 
   return (
@@ -106,7 +139,10 @@ export const SubAgentContainer = memo(function SubAgentContainer({ messages, sub
         onClick={handleToggleExpand}
       >
         <span>{label}</span>
-        <span className="text-[10px]">{expanded ? '▼' : '▶'}</span>
+        <div className="flex items-center gap-2">
+          {contextState && <SubAgentContextBar contextState={contextState} />}
+          <span className="text-[10px]">{expanded ? '▼' : '▶'}</span>
+        </div>
       </button>
 
       <div
@@ -125,7 +161,6 @@ export const SubAgentContainer = memo(function SubAgentContainer({ messages, sub
             )
           }
 
-          // User or system messages (context-reset, auto-prompt, etc.)
           return (
             <ChatMessage
               key={message.id}

@@ -211,6 +211,9 @@ interface SessionState {
   // Context state (for header display)
   contextState: ContextState | null
 
+  // Per-subagent context states (keyed by subAgentInstanceId)
+  subAgentContextStates: Record<string, ContextState>
+
   // Pending path confirmation (outside-workdir access request)
   pendingPathConfirmation: PendingPathConfirmation | null
 
@@ -278,6 +281,12 @@ interface SessionState {
 
   // Update context state (from REST API responses)
   updateContextState: (contextState: ContextState) => void
+
+  // Update subagent context state (from WS events with subAgentId)
+  updateSubAgentContextState: (subAgentId: string, context: ContextState) => void
+
+  // Clear subagent context state when subagent completes
+  clearSubAgentContextState: (subAgentId: string) => void
 
   // Path confirmation
   confirmPath: (callId: string, approved: boolean, alwaysAllow?: boolean) => void
@@ -458,6 +467,7 @@ export const useSessionStore = create<SessionState>((set, get) => {
     streamingMessage: null,
     currentTodos: [],
     contextState: null,
+    subAgentContextStates: {},
     pendingPathConfirmation: null,
     pendingQuestion: null,
     visionFallbackByMessage: {},
@@ -613,6 +623,7 @@ export const useSessionStore = create<SessionState>((set, get) => {
           set({
             currentSession: null,
             unreadSessionIds: removeUnreadSessionId(get().unreadSessionIds, sessionId),
+            subAgentContextStates: {},
             messages: [],
             streamingMessageId: null,
             streamingMessage: null,
@@ -900,6 +911,23 @@ export const useSessionStore = create<SessionState>((set, get) => {
 
     updateContextState: (contextState) => {
       set({ contextState })
+    },
+
+    updateSubAgentContextState: (subAgentId, context) => {
+      set((state) => ({
+        subAgentContextStates: {
+          ...state.subAgentContextStates,
+          [subAgentId]: context,
+        },
+      }))
+    },
+
+    clearSubAgentContextState: (subAgentId) => {
+      set((state) => {
+        const newStates = { ...state.subAgentContextStates }
+        delete newStates[subAgentId]
+        return { subAgentContextStates: newStates }
+      })
     },
 
     confirmPath: async (callId, approved, alwaysAllow = false) => {
@@ -1544,12 +1572,20 @@ export const useSessionStore = create<SessionState>((set, get) => {
         }
 
         case 'context.state': {
-          if (!isMessageForCurrentSession(message, get().currentSession?.id ?? null)) {
-            markBackgroundSessionUnread()
-            break
-          }
           const payload = message.payload as ContextStatePayload
-          set({ contextState: payload.context })
+          const isCurrentSession = isMessageForCurrentSession(message, get().currentSession?.id ?? null)
+
+          if (payload.subAgentId) {
+            if (isCurrentSession) {
+              get().updateSubAgentContextState(payload.subAgentId, payload.context)
+            }
+          } else {
+            if (isCurrentSession) {
+              set({ contextState: payload.context })
+            } else {
+              markBackgroundSessionUnread()
+            }
+          }
           break
         }
 

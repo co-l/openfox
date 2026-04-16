@@ -4,12 +4,11 @@ import type { SessionManager } from '../session/index.js'
 import { getEventStore, getContextMessages, getCurrentContextWindowId } from '../events/index.js'
 import { getAllInstructions } from './instructions.js'
 import { shouldCompact } from './compactor.js'
-import { COMPACTION_PROMPT, FORMAT_CORRECTION_PROMPT, MAX_FORMAT_RETRIES } from '../chat/prompts.js'
+import { COMPACTION_PROMPT } from '../chat/prompts.js'
 import { assembleAgentRequest, type RequestContextMessage } from '../chat/request-context.js'
 import {
   TurnMetrics,
   createMessageStartEvent,
-  createMessageDoneEvent,
   createChatDoneEvent,
 } from '../chat/stream-pure.js'
 import { consumeStreamWithToolLoop } from '../chat/stream-pure.js'
@@ -228,7 +227,7 @@ export function resolveCompactionStatsIdentity(
 ): StatsIdentity {
   const provider = getActiveProvider?.()
   const model = llmClient.getModel()
-  const backend = provider?.backend ?? (llmClient.getBackend() === 'unknown' ? 'unknown' : llmClient.getBackend())
+  const backend = llmClient.getBackend?.() ?? 'unknown'
 
   return {
     providerId: provider?.id ?? `provider:${model}`,

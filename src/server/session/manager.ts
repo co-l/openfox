@@ -535,7 +535,7 @@ export class SessionManager {
    * Emits a context.state event with the real promptTokens from the LLM.
    * maxTokens comes from providerManager.getCurrentModelContext() - the currently selected model's limit.
    */
-  setCurrentContextSize(sessionId: string, promptTokens: number): void {
+  setCurrentContextSize(sessionId: string, promptTokens: number, subAgentId?: string): void {
     const state = getSessionState(sessionId, this.providerManager.getCurrentModelContext())
     const maxTokens = this.providerManager.getCurrentModelContext()
     const compactionCount = state?.contextState.compactionCount ?? 0
@@ -546,10 +546,11 @@ export class SessionManager {
       maxTokens,
       compactionCount,
       isInDangerZone(promptTokens, maxTokens),
-      canCompact(promptTokens, maxTokens)
+      canCompact(promptTokens, maxTokens),
+      subAgentId
     )
 
-    logger.debug('Context state updated', { sessionId, promptTokens, maxTokens })
+    logger.debug('Context state updated', { sessionId, promptTokens, maxTokens, subAgentId })
   }
 
   // ============================================================================

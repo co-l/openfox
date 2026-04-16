@@ -217,7 +217,7 @@ export type TurnEvent =
   // ----------------------------------------------------------------------------
   | {
       type: 'context.state'
-      data: ContextState
+      data: ContextState & { subAgentId?: string }
     }
   | {
       type: 'context.compacted'

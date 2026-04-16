@@ -374,6 +374,7 @@ export interface CriteriaUpdatedPayload {
 // Context payloads
 export interface ContextStatePayload {
   context: ContextState
+  subAgentId?: string
 }
 
 // Provider payloads (server → client)

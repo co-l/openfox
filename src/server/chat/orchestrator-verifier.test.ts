@@ -71,7 +71,7 @@ vi.mock('../skills/registry.js', () => ({
 }))
 
 vi.mock('../runtime-config.js', () => ({
-  getRuntimeConfig: vi.fn(() => ({ mode: 'development' })),
+  getRuntimeConfig: vi.fn(() => ({ mode: 'development', context: { compactionThreshold: 0.9 } })),
 }))
 
 vi.mock('../../cli/paths.js', () => ({
@@ -107,6 +107,15 @@ function createSessionManager(state: any) {
     setCurrentContextSize: vi.fn(),
     addTokensUsed: vi.fn(),
     getLspManager: vi.fn(),
+    getContextState: vi.fn(() => ({
+      currentTokens: 50000,
+      maxTokens: 128000,
+      compactionCount: 0,
+      dangerZone: false,
+      canCompact: true,
+    })),
+    getQueueState: vi.fn(() => []),
+    drainAsapMessages: vi.fn(() => []),
   }
 }
 

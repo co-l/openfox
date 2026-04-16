@@ -541,7 +541,8 @@ export function emitContextState(
   maxTokens: number,
   compactionCount: number,
   dangerZone: boolean,
-  canCompact: boolean
+  canCompact: boolean,
+  subAgentId?: string
 ): void {
   const eventStore = getEventStore()
   eventStore.append(sessionId, {
@@ -552,6 +553,7 @@ export function emitContextState(
       compactionCount,
       dangerZone,
       canCompact,
+      ...(subAgentId !== undefined && { subAgentId }),
     },
   })
 }

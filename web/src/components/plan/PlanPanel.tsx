@@ -473,6 +473,7 @@ export function PlanPanel({ criteriaSidebarOpen: externalCriteriaSidebarOpen, on
                   <SubAgentContainer
                     messages={item.messages}
                     subAgentType={item.subAgentType}
+                    subAgentId={item.subAgentId}
                     isStreaming={groupIsStreaming}
                   />
                 </div>

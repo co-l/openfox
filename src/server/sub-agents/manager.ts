@@ -24,6 +24,7 @@ import { getGlobalConfigDir } from '../../cli/paths.js'
 import { getEventStore, getCurrentContextWindowId } from '../events/index.js'
 import { createChatMessageMessage } from '../ws/protocol.js'
 import { logger } from '../utils/logger.js'
+import { resolveCompactionStatsIdentity, maybeAutoCompactContext } from '../context/auto-compaction.js'
 
 // ============================================================================
 // Constants
@@ -200,6 +201,15 @@ export async function executeSubAgent(options: SubAgentExecutionOptions): Promis
       throw new Error('Aborted')
     }
 
+    // Check if auto-compaction is needed for this subagent's context
+    await maybeAutoCompactContext({
+      sessionManager,
+      sessionId,
+      llmClient,
+      statsIdentity: resolveCompactionStatsIdentity(llmClient),
+      ...(signal ? { signal } : {}),
+    })
+
     // Create assistant message
     const assistantMsgId = crypto.randomUUID()
     eventStore.append(sessionId, createMessageStartEvent(assistantMsgId, 'assistant', undefined, {
@@ -252,6 +262,7 @@ export async function executeSubAgent(options: SubAgentExecutionOptions): Promis
 
     // Track metrics
     turnMetrics.addLLMCall(result.timing, result.usage.promptTokens, result.usage.completionTokens)
+    sessionManager.setCurrentContextSize(sessionId, result.usage.promptTokens, subAgentId)
 
     finalContent = result.content
 
