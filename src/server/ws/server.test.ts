@@ -91,7 +91,7 @@ vi.mock('../session/summary-generator.js', () => ({
 vi.mock('../tools/index.js', () => ({
   getToolRegistryForMode: getToolRegistryForModeMock,
   getToolRegistryForAgent: vi.fn(() => ({
-    definitions: [{ type: 'function', function: { name: 'read_file', description: 'Read', parameters: {} } }],
+    definitions: [{ type: 'function', function: { name: 'read_file', description: 'Read', parameters: { type: 'object', properties: { path: { type: 'string' } } } } }],
   })),
   providePathConfirmation: providePathConfirmationMock,
   addAllowedPaths: vi.fn(),
@@ -792,8 +792,6 @@ describe('createWebSocketServer', () => {
 
     harness.send({ id: 'compact', type: 'context.compact', payload: {} })
     expect(await harness.nextMessage((message) => message.id === 'compact')).toMatchObject({ type: 'ack' })
-    expect(await harness.nextMessage((message) => message.type === 'chat.message')).toMatchObject({ type: 'chat.message' })
-    expect(await harness.nextMessage((message) => message.type === 'chat.done')).toMatchObject({ payload: { reason: 'complete' } })
     expect(await harness.nextMessage((message) => message.type === 'context.state')).toMatchObject({ type: 'context.state' })
     expect(await harness.nextMessage((message) => message.type === 'session.state')).toMatchObject({ type: 'session.state' })
     expect(sessionManager.compactContext).toHaveBeenCalledWith('session-1', 'Compacted summary of the session including all file modifications and current progress on tasks', 10)

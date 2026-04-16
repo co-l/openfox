@@ -48,6 +48,7 @@ import type { AgentType } from './notifications'
 
 // Track subscription to prevent duplicates
 let isSubscribed = false
+let wsUnsubscribe: (() => void) | null = null
 
 // Track which messageIds have already triggered the new_message sound
 const triggeredNewMessageSound = new Set<string>()
@@ -500,7 +501,7 @@ export const useSessionStore = create<SessionState>((set, get) => {
         if (!isSubscribed) {
           isSubscribed = true
           const handler = get().handleServerMessage
-          wsClient.subscribe(handler)
+          wsUnsubscribe = wsClient.subscribe(handler)
         }
       } catch (error) {
         console.error('Failed to connect:', error)
@@ -512,6 +513,12 @@ export const useSessionStore = create<SessionState>((set, get) => {
           set({ showPasswordModal: true, passwordModalRetry: true, connectionStatus: 'reconnecting' })
           return
         }
+        // Clean up on connection failure to allow clean reconnection
+        if (wsUnsubscribe) {
+          wsUnsubscribe()
+          wsUnsubscribe = null
+        }
+        isSubscribed = false
         set({ connectionStatus: 'disconnected' })
       }
     },
@@ -519,6 +526,10 @@ export const useSessionStore = create<SessionState>((set, get) => {
     reconnect: () => {
       // Force reconnection by resetting state and calling connect
       wsClient.disconnect()
+      if (wsUnsubscribe) {
+        wsUnsubscribe()
+        wsUnsubscribe = null
+      }
       isSubscribed = false
       set({ connectionStatus: 'reconnecting' })
       get().connect()
@@ -526,6 +537,10 @@ export const useSessionStore = create<SessionState>((set, get) => {
 
     disconnect: () => {
       wsClient.disconnect()
+      if (wsUnsubscribe) {
+        wsUnsubscribe()
+        wsUnsubscribe = null
+      }
       isSubscribed = false
       set({ connectionStatus: 'disconnected', showPasswordModal: false })
     },
@@ -543,7 +558,8 @@ export const useSessionStore = create<SessionState>((set, get) => {
         }
         const { token } = await res.json()
         wsClient.setToken(token)
-        set({ showPasswordModal: false, connectionStatus: 'disconnected' })
+        set({ showPasswordModal: false })
+        get().connect()
 
         const { listProjects } = useProjectStore.getState()
         const { fetchConfig } = useConfigStore.getState()
@@ -1538,7 +1554,6 @@ export const useSessionStore = create<SessionState>((set, get) => {
             break
           }
           const payload = message.payload as ContextStatePayload
-          console.log('[session.handleServerMessage.context.state] Received context state:', payload.context)
           set({ contextState: payload.context })
           break
         }
