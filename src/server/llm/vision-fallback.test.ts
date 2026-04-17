@@ -41,6 +41,30 @@ describe('vision-fallback', () => {
       const result = await describeImage('dGVzdA==')
       expect(result).toContain('HTTP 500')
     })
+
+    it('is interrupted by external AbortSignal', async () => {
+      setVisionFallbackConfig({ enabled: true })
+      const abortController = new AbortController()
+      
+      vi.mocked(fetch).mockImplementation(async (_url, init) => {
+        return new Promise((_resolve, reject) => {
+          if (init?.signal?.aborted) {
+            reject(new DOMException('aborted', 'AbortError'))
+            return
+          }
+          init?.signal?.addEventListener('abort', () => {
+            reject(new DOMException('aborted', 'AbortError'))
+          })
+        })
+      })
+
+      const resultPromise = describeImage('dGVzdA==', { signal: abortController.signal })
+
+      abortController.abort()
+
+      const result = await resultPromise
+      expect(result).toContain('timed out')
+    })
   })
 
   describe('describeImageFromDataUrl', () => {

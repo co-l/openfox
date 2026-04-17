@@ -16,6 +16,7 @@ type MinimalProfile = Pick<ModelProfile, 'temperature' | 'defaultMaxTokens' | 't
 export interface ConvertMessagesOptions {
   modelSupportsVision: boolean
   visionFallbackEnabled: boolean
+  signal?: AbortSignal | undefined
   onVisionFallbackStart?: ((attachmentId: string, filename?: string) => void) | undefined
   onVisionFallbackDone?: ((attachmentId: string, description: string) => void) | undefined
 }
@@ -66,7 +67,7 @@ async function convertAttachmentWithFallback(
   options.onVisionFallbackStart?.(attachmentId, filename)
 
   const context = filename ? `File: ${filename}` : undefined
-  const description = await describeImageFromDataUrl(attachment.data, context ? { context } : {})
+  const description = await describeImageFromDataUrl(attachment.data, { context, signal: options.signal })
 
   logger.debug('[VisionFallback] Delegation complete:', { attachmentId, descriptionLength: description.length })
   options.onVisionFallbackDone?.(attachmentId, description)
@@ -277,6 +278,7 @@ export async function buildNonStreamingCreateParams(input: {
   const options: ConvertMessagesOptions = {
     modelSupportsVision,
     visionFallbackEnabled,
+    signal: request.signal,
     onVisionFallbackStart,
     onVisionFallbackDone,
   }
@@ -320,7 +322,7 @@ export async function buildStreamingCreateParams(input: {
   const { model, request, profile, capabilities, disableThinking, visionFallbackEnabled = false, onVisionFallbackStart, onVisionFallbackDone } = input
   const messages = request.messages
   const modelSupportsVision = profile.supportsVision ?? false
-  const options: ConvertMessagesOptions = { modelSupportsVision, visionFallbackEnabled, onVisionFallbackStart, onVisionFallbackDone }
+  const options: ConvertMessagesOptions = { modelSupportsVision, visionFallbackEnabled, signal: request.signal, onVisionFallbackStart, onVisionFallbackDone }
 
   const convertedMessages = needsVisionFallback(messages, modelSupportsVision, visionFallbackEnabled)
     ? await convertMessagesWithFallback(messages, options)

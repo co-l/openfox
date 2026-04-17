@@ -94,7 +94,7 @@ Provide a concise but comprehensive description.`
 
 export async function describeImage(
   base64Data: string,
-  options?: { timeout?: number; context?: string }
+  options?: { timeout?: number; context?: string | undefined; signal?: AbortSignal | undefined }
 ): Promise<string> {
   await ensureVisionFallbackConfigLoaded()
 
@@ -129,8 +129,12 @@ export async function describeImage(
       think: false,
     }
 
-    const controller = new AbortController()
-    const timeoutId = setTimeout(() => controller.abort(), timeout)
+    const timeoutController = new AbortController()
+    const timeoutId = setTimeout(() => timeoutController.abort(), timeout)
+
+    const signal = options?.signal
+      ? AbortSignal.any([timeoutController.signal, options.signal])
+      : timeoutController.signal
 
     const response = await fetch(url, {
       method: 'POST',
@@ -138,7 +142,7 @@ export async function describeImage(
         'Content-Type': 'application/json',
       },
       body: JSON.stringify(requestBody),
-      signal: controller.signal,
+      signal,
     })
 
     clearTimeout(timeoutId)
@@ -175,7 +179,7 @@ export async function describeImage(
 
 export async function describeImageFromDataUrl(
   dataUrl: string,
-  options?: { timeout?: number; context?: string }
+  options?: { timeout?: number; context?: string | undefined; signal?: AbortSignal | undefined }
 ): Promise<string> {
   const base64Match = dataUrl.match(/^data:image\/[^;]+;base64,(.+)$/)
   if (!base64Match || !base64Match[1]) {
