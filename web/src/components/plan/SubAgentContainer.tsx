@@ -1,10 +1,11 @@
-import { memo, useRef, useEffect, useState, useCallback } from 'react'
+import { memo, useRef, useState, useCallback, useEffect } from 'react'
 import type { Message, ContextState } from '@shared/types.js'
 import { AssistantMessage } from './AssistantMessage'
 import { ChatMessage } from './ChatMessage'
 import { useAgentsStore, getAgentColor } from '../../stores/agents'
 import { useSessionStore } from '../../stores/session'
 import { formatTokens } from '../../lib/format-stats'
+import { useAutoScroll } from '../../hooks/useAutoScroll'
 
 interface SubAgentContainerProps {
   messages: Message[]
@@ -71,11 +72,18 @@ function SubAgentContextBar({ contextState }: { contextState: ContextState }) {
 
 export const SubAgentContainer = memo(function SubAgentContainer({ messages, subAgentType, subAgentId, isStreaming }: SubAgentContainerProps) {
   const containerRef = useRef<HTMLDivElement>(null)
-  const scrollContainerRef = useRef<HTMLDivElement>(null)
-  const [userScrolledUp, setUserScrolledUp] = useState(false)
+  const scrollRef = useRef<HTMLDivElement>(null)
   const [expanded, setExpanded] = useState(false)
   const agents = useAgentsStore(state => state.agents)
   const contextState = useSessionStore(state => state.subAgentContextStates[subAgentId])
+
+  const { isAutoScrollActive, setAutoScroll } = useAutoScroll(scrollRef, null)
+
+  useEffect(() => {
+    if (!isStreaming) {
+      setAutoScroll(true)
+    }
+  }, [isStreaming])
 
   const handleToggleExpand = useCallback(() => {
     const willExpand = !expanded
@@ -88,42 +96,6 @@ export const SubAgentContainer = memo(function SubAgentContainer({ messages, sub
     }
   }, [expanded])
 
-  const scrollToBottom = useCallback(() => {
-    const container = scrollContainerRef.current
-    if (container) {
-      container.scrollTop = container.scrollHeight
-    }
-  }, [])
-
-  const handleWheel = useCallback((e: React.WheelEvent) => {
-    const container = scrollContainerRef.current
-    if (!container) return
-
-    if (e.deltaY < 0) {
-      setUserScrolledUp(true)
-    } else if (e.deltaY > 0 && userScrolledUp) {
-      requestAnimationFrame(() => {
-        const threshold = 50
-        const distanceFromBottom = container.scrollHeight - container.scrollTop - container.clientHeight
-        if (distanceFromBottom < threshold) {
-          setUserScrolledUp(false)
-        }
-      })
-    }
-  }, [userScrolledUp])
-
-  useEffect(() => {
-    if (!userScrolledUp) {
-      scrollToBottom()
-    }
-  }, [messages, userScrolledUp, scrollToBottom])
-
-  useEffect(() => {
-    if (!isStreaming) {
-      setUserScrolledUp(false)
-    }
-  }, [isStreaming])
-
   const agentInfo = agents.find(a => a.id === subAgentType)
   const label = agentInfo?.name ?? LABELS[subAgentType] ?? subAgentType
   const color = getAgentColor(agents, subAgentType)
@@ -133,21 +105,36 @@ export const SubAgentContainer = memo(function SubAgentContainer({ messages, sub
 
   return (
     <div ref={containerRef} className="feed-item border border-border rounded overflow-hidden bg-bg-secondary">
-      <button
-        className="w-full flex items-center justify-between px-2 py-1 text-xs font-medium border-b hover:opacity-80 transition-opacity"
+      <div
+        className="w-full flex items-center justify-between px-2 py-1 border-b"
         style={hStyle}
-        onClick={handleToggleExpand}
       >
-        <span>{label}</span>
+        <span className="text-xs font-medium">{label}</span>
         <div className="flex items-center gap-2">
           {contextState && <SubAgentContextBar contextState={contextState} />}
-          <span className="text-[10px]">{expanded ? '▼' : '▶'}</span>
+          <button
+            type="button"
+            className={`text-[10px] px-1.5 py-0.5 rounded border ${
+              isAutoScrollActive
+                ? 'bg-accent-primary/20 text-accent-primary border-accent-primary/30'
+                : 'text-text-muted bg-bg-tertiary border-transparent'
+            }`}
+            onClick={() => setAutoScroll(!isAutoScrollActive)}
+          >
+            {isAutoScrollActive ? 'Auto-scroll ON' : 'Auto-scroll OFF'}
+          </button>
+          <button
+            type="button"
+            className="text-[10px] px-1.5 py-0.5 rounded bg-bg-tertiary"
+            onClick={handleToggleExpand}
+          >
+            {expanded ? '▼' : '▶'} Expand
+          </button>
         </div>
-      </button>
+      </div>
 
       <div
-        ref={scrollContainerRef}
-        onWheel={handleWheel}
+        ref={scrollRef}
         className={`${expanded ? 'max-h-[calc(100vh-10rem)]' : 'max-h-80'} overflow-y-auto p-2 transition-[max-height] duration-200`}
       >
         {displayMessages.map((message) => {
