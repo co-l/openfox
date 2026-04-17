@@ -1,4 +1,4 @@
-import { RefObject, useEffect } from "react"
+import { RefObject, useEffect, useRef, useState } from "react"
 import { Session } from "@shared/types.ts"
 
 export const useAutoScroll = (
@@ -10,6 +10,8 @@ export const useAutoScroll = (
   let is_user_touching: boolean = false
   let is_forced_scroll_to_bottom: boolean = false
   let is_programmatic_scroll: boolean = false
+  const is_auto_scroll_paused_manually = useRef(false)
+  const [isAutoScrollActive, setIsAutoScrollActive] = useState(true)
 
   const scroll_to_bottom = () => {
     is_programmatic_scroll = true
@@ -40,7 +42,7 @@ export const useAutoScroll = (
     }
 
     const observer = new MutationObserver(() => {
-      if (is_user_scrolling || is_user_touching) {
+      if (is_auto_scroll_paused_manually.current || is_user_scrolling || is_user_touching) {
         cancelAnimationFrame(last_raf)
         return
       }
@@ -57,7 +59,7 @@ export const useAutoScroll = (
 
     // add another regular reconnection to the scroll bottom
     const scroll_to_bottom_interval = setInterval(() => {
-      if (is_user_scrolling || is_user_touching) {
+      if (is_auto_scroll_paused_manually.current || is_user_scrolling || is_user_touching) {
         cancelAnimationFrame(last_raf)
         return
       }
@@ -70,13 +72,21 @@ export const useAutoScroll = (
         return
       }
 
+      if (is_auto_scroll_paused_manually.current) return
+
       const distance = scroller.scrollHeight - scroller.scrollTop - scroller.offsetHeight
       if (distance > 50) {
         cancelAnimationFrame(last_raf)
         is_user_scrolling = true
+        is_auto_scroll_paused_manually.current = true
+        setIsAutoScrollActive(false)
         console.log("Scroll detected!", e)
       } else {
         is_user_scrolling = false
+        setIsAutoScrollActive(true)
+        queueMicrotask(() => {
+          is_auto_scroll_paused_manually.current = false
+        })
       }
     }
 
@@ -100,6 +110,8 @@ export const useAutoScroll = (
     force_scroll_to_bottom: () => {
       is_user_scrolling = false
       is_user_touching = false
+      is_auto_scroll_paused_manually.current = false
+      setIsAutoScrollActive(true)
       is_forced_scroll_to_bottom = true
       scroll_to_bottom()
       setTimeout(() => scroll_to_bottom(), 250)
@@ -110,6 +122,15 @@ export const useAutoScroll = (
         is_forced_scroll_to_bottom = false
       }, 1250)
 
+    },
+    isAutoScrollActive,
+    setAutoScroll: (enabled: boolean) => {
+      is_auto_scroll_paused_manually.current = !enabled
+      setIsAutoScrollActive(enabled)
+      if (enabled) {
+        is_user_scrolling = false
+        scroll_to_bottom()
+      }
     },
   }
 }

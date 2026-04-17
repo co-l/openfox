@@ -112,7 +112,7 @@ export function PlanPanel({ criteriaSidebarOpen: externalCriteriaSidebarOpen, on
     }
   }, [])*/
 
-  const {force_scroll_to_bottom} = useAutoScroll(scrollContainerRef, session)
+  const {force_scroll_to_bottom, isAutoScrollActive, setAutoScroll} = useAutoScroll(scrollContainerRef, session)
 
   // Auto-resize textarea based on content, up to 200px max
   const resizeTextarea = useCallback(() => {
@@ -451,7 +451,7 @@ export function PlanPanel({ criteriaSidebarOpen: externalCriteriaSidebarOpen, on
       <SessionHeader />
       <ConnectionStatusBar />
 
-      <div ref={scrollContainerRef} data-testid="chat-scroll-container" className="flex-1 min-w-0 overflow-y-auto">
+      <div ref={scrollContainerRef} data-testid="chat-scroll-container" className="flex-1 min-w-0 overflow-y-auto relative">
         <div className="pt-4">
           {displayItems.map((item, index) => {
             if (item.type === 'context-divider') {
@@ -565,7 +565,18 @@ export function PlanPanel({ criteriaSidebarOpen: externalCriteriaSidebarOpen, on
       </div>
 
       <form onSubmit={handleSubmit}
-            className="p-2 md:p-4 border-t border-border bg-gradient-to-t from-bg-secondary/50 to-transparent">
+            className="relative p-2 md:p-4 border-t border-border bg-gradient-to-t from-bg-secondary/50 to-transparent">
+        <button
+          type="button"
+          className={`absolute -top-8 right-2 md:right-4 text-xs px-2 py-1 rounded border z-10 ${
+            isAutoScrollActive
+              ? 'bg-accent-success/20 text-accent-success border-accent-success/30 hover:bg-accent-success/30'
+              : 'text-text-muted bg-bg-secondary/90 border-border hover:bg-bg-secondary'
+          }`}
+          onClick={() => setAutoScroll(!isAutoScrollActive)}
+        >
+          {isAutoScrollActive ? 'Auto-scroll ON' : 'Auto-scroll OFF'}
+        </button>
         {/* Hidden file input */}
         <input
           ref={fileInputRef}
