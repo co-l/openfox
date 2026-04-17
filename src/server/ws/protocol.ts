@@ -337,20 +337,14 @@ export function storedEventToServerMessage(event: StoredEvent): ServerMessage | 
       // User messages have content upfront and are not streaming
       // Assistant messages start streaming (content builds up via deltas)
       const isUserOrSystem = data.role === 'user' || data.role === 'system'
+      const { messageId, ...rest } = data
       const message: Message = {
-        id: data.messageId,
-        role: data.role,
+        ...rest,
+        id: messageId,
         content: data.content ?? '',
         timestamp: new Date(event.timestamp).toISOString(),
-        tokenCount: 0,
-        isStreaming: !isUserOrSystem, // Only assistant messages stream
-        ...(data.contextWindowId ? { contextWindowId: data.contextWindowId } : {}),
-        ...(data.subAgentId ? { subAgentId: data.subAgentId } : {}),
-        ...(data.subAgentType ? { subAgentType: data.subAgentType } : {}),
-        ...(data.isSystemGenerated ? { isSystemGenerated: data.isSystemGenerated } : {}),
-        ...(data.messageKind ? { messageKind: data.messageKind } : {}),
-        ...(data.isCompactionSummary ? { isCompactionSummary: data.isCompactionSummary } : {}),
-        ...(data.attachments ? { attachments: data.attachments } : {}),
+        tokenCount: data.tokenCount ?? 0,
+        isStreaming: !isUserOrSystem,
       }
       return createChatMessageMessage(message)
     }

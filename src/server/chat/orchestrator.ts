@@ -347,17 +347,6 @@ export async function runBuilderTurn(
             metadata: { type: 'workflow', name: 'Workflow', color: '#f59e0b' },
           }))
           eventStore.append(sessionId, { type: 'message.done', data: { messageId: kickoffMsgId } })
-          if (options.onMessage) {
-            options.onMessage(createChatMessageMessage({
-              id: kickoffMsgId,
-              role: 'user',
-              content: kickoffContent,
-              timestamp: new Date().toISOString(),
-              isSystemGenerated: true,
-              messageKind: 'auto-prompt',
-              metadata: { type: 'workflow', name: 'Workflow', color: '#f59e0b' },
-            }))
-          }
         }
       },
     }, turnMetrics)),
