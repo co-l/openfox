@@ -5,6 +5,27 @@ import { formatDiagnosticsForLLM } from './diagnostics.js'
 import { validateFileForWrite, computeFileHash } from './file-tracker.js'
 import { extractEditContext } from './edit-context.js'
 
+function detectLineEnding(content: string): 'crlf' | 'lf' | 'cr' {
+  if (content.includes('\r\n')) return 'crlf'
+  if (content.includes('\n')) return 'lf'
+  if (content.includes('\r')) return 'cr'
+  return 'lf'
+}
+
+function normalizeToLF(content: string): string {
+  return content.replace(/\r\n/g, '\n').replace(/\r/g, '\n')
+}
+
+function restoreOriginalLineEndings(content: string, fileLineEnding: 'crlf' | 'lf' | 'cr'): string {
+  if (fileLineEnding === 'crlf') {
+    return content.replace(/\n/g, '\r\n')
+  }
+  if (fileLineEnding === 'cr') {
+    return content.replace(/\n/g, '\r')
+  }
+  return content
+}
+
 interface EditFileArgs {
   path: string
   old_string: string
@@ -63,9 +84,13 @@ export const editFileTool = createTool<EditFileArgs>(
     } catch {
       return helpers.error(`File not found: ${args.path}`)
     }
-    
-    // Count occurrences
-    const occurrences = content.split(args.old_string).length - 1
+
+    // Detect and normalize line endings for matching
+    const fileLineEnding = detectLineEnding(content)
+    const normalizedContent = normalizeToLF(content)
+
+    // Count occurrences on normalized content
+    const occurrences = normalizedContent.split(args.old_string).length - 1
     
     if (occurrences === 0) {
       const preview = args.old_string.length > 100 
@@ -83,8 +108,8 @@ export const editFileTool = createTool<EditFileArgs>(
       )
     }
     
-    // Extract edit context BEFORE making the replacement
-    const contextResult = extractEditContext(content, args.old_string, args.new_string, replaceAll)
+    // Extract edit context on normalized content (for consistent matching)
+    const contextResult = extractEditContext(normalizedContent, args.old_string, args.new_string, replaceAll)
     
     // Convert to shared types
     const editContextRegions: EditContextRegion[] = contextResult.regions.map(region => ({
@@ -108,11 +133,14 @@ export const editFileTool = createTool<EditFileArgs>(
       })),
     }))
     
-    // Perform replacement
-    const newContent = replaceAll 
-      ? content.replaceAll(args.old_string, args.new_string)
-      : content.replace(args.old_string, args.new_string)
-    
+    // Perform replacement on normalized content
+    const replacedContent = replaceAll
+      ? normalizedContent.replaceAll(args.old_string, args.new_string)
+      : normalizedContent.replace(args.old_string, args.new_string)
+
+    // Restore original line endings
+    const newContent = restoreOriginalLineEndings(replacedContent, fileLineEnding)
+
     // Write file
     await writeFile(fullPath, newContent, 'utf-8')
     
