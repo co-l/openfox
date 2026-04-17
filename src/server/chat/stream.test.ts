@@ -149,8 +149,6 @@ describe('streamLLMResponse', () => {
     }))
     expect(emitted.map((event) => event.type)).toEqual([
       'chat.message',
-      'chat.message',
-      'chat.format_retry',
     ])
     expect(result.messageId).toBe('msg-1')
     expect(streamWithSegmentsMock).toHaveBeenCalledTimes(2)

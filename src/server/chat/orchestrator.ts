@@ -27,7 +27,7 @@ import { executeSubAgent } from '../sub-agents/manager.js'
 import { createVerifierNudgeConfig } from '../sub-agents/verifier-helpers.js'
 import { loadAllAgentsDefault, findAgentById, getSubAgents } from '../agents/registry.js'
 import { logger } from '../utils/logger.js'
-import { createChatMessageMessage } from '../ws/protocol.js'
+
 
 // Re-export for runner orchestrator
 export { TurnMetrics, createMessageStartEvent, createMessageDoneEvent, createToolCallEvent, createToolResultEvent, createChatDoneEvent }
@@ -213,23 +213,6 @@ function injectModeReminderIfNeeded(
     type: 'message.done',
     data: { messageId: reminderMsgId },
   })
-
-  // Send message to client immediately so it can display the compact card
-  if (onMessage) {
-    onMessage(createChatMessageMessage({
-      id: reminderMsgId,
-      role: 'user',
-      content: reminderContent,
-      timestamp: new Date().toISOString(),
-      isSystemGenerated: true,
-      messageKind: 'auto-prompt',
-      metadata: {
-        type: 'agent',
-        name: agentDef.metadata.name ?? agentDef.metadata.id,
-        color: agentDef.metadata.color ?? '#6b7280',
-      },
-    }))
-  }
   
   // Update execution state to track which mode we injected the reminder for
   sessionManager.updateExecutionState(sessionId, {

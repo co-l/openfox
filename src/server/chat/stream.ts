@@ -24,7 +24,6 @@ import {
   createChatToolPreparingMessage,
   createChatDoneMessage,
   createChatErrorMessage,
-  createChatFormatRetryMessage,
   createChatMessageMessage,
   createChatProgressMessage,
 } from '../ws/protocol.js'
@@ -84,7 +83,7 @@ async function streamLLMResponseInternal(
 
   // If retrying due to XML format error, inject correction prompt
   if (formatRetryCount > 0) {
-    const correctionMsg = sessionManager.addMessage(sessionId, {
+    sessionManager.addMessage(sessionId, {
       role: 'user',
       content: FORMAT_CORRECTION_PROMPT,
       isSystemGenerated: true,
@@ -92,8 +91,6 @@ async function streamLLMResponseInternal(
       ...(subAgentId && { subAgentId }),
       ...(subAgentType && { subAgentType }),
     })
-    onEvent(createChatMessageMessage(correctionMsg))
-    onEvent(createChatFormatRetryMessage(formatRetryCount, MAX_FORMAT_RETRIES))
   }
 
   // Build messages - use custom messages if provided, otherwise session's current window
