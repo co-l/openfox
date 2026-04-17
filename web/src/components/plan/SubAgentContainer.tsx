@@ -114,14 +114,11 @@ export const SubAgentContainer = memo(function SubAgentContainer({ messages, sub
           {contextState && <SubAgentContextBar contextState={contextState} />}
           <button
             type="button"
-            className={`text-[10px] px-1.5 py-0.5 rounded border ${
-              isAutoScrollActive
-                ? 'bg-accent-primary/20 text-accent-primary border-accent-primary/30'
-                : 'text-text-muted bg-bg-tertiary border-transparent'
-            }`}
+            className="text-sm text-text-muted hover:text-text-primary flex items-center gap-1.5"
             onClick={() => setAutoScroll(!isAutoScrollActive)}
           >
-            {isAutoScrollActive ? 'Auto-scroll ON' : 'Auto-scroll OFF'}
+            <span className={`w-1 h-1 rounded-full ${isAutoScrollActive ? 'bg-accent-success' : 'border border-text-muted'}`} />
+            live
           </button>
           <button
             type="button"

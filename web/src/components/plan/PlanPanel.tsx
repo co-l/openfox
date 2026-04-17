@@ -571,14 +571,11 @@ export function PlanPanel({ criteriaSidebarOpen: externalCriteriaSidebarOpen, on
             className="relative p-2 md:p-4 border-t border-border bg-gradient-to-t from-bg-secondary/50 to-transparent">
         <button
           type="button"
-          className={`absolute -top-8 right-2 md:right-4 text-xs px-2 py-1 rounded border z-10 ${
-            isAutoScrollActive
-              ? 'bg-accent-primary/20 text-accent-primary border-accent-primary/30 hover:bg-accent-primary/30'
-              : 'text-text-muted bg-bg-secondary/90 border-border hover:bg-bg-secondary'
-          }`}
+          className="absolute -top-8 right-2 md:right-4 text-sm text-text-muted hover:text-text-primary z-10 flex items-center gap-1.5"
           onClick={() => setAutoScroll(!isAutoScrollActive)}
         >
-          {isAutoScrollActive ? 'Auto-scroll ON' : 'Auto-scroll OFF'}
+          <span className={`w-1.5 h-1.5 rounded-full ${isAutoScrollActive ? 'bg-accent-success' : 'border border-text-muted'}`} />
+          live
         </button>
         {/* Hidden file input */}
         <input
