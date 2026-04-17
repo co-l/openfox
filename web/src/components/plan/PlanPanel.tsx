@@ -167,10 +167,13 @@ export function PlanPanel({ criteriaSidebarOpen: externalCriteriaSidebarOpen, on
       if (e.key === 'Escape' && isRunning) {
         stopGeneration()
       }
+      if (e.key === 'ScrollLock') {
+        setAutoScroll(!isAutoScrollActive)
+      }
     }
     window.addEventListener('keydown', handleEscape)
     return () => window.removeEventListener('keydown', handleEscape)
-  }, [isRunning, stopGeneration])
+  }, [isRunning, stopGeneration, isAutoScrollActive])
 
   // Paste event listener for textarea
   useEffect(() => {
@@ -570,7 +573,7 @@ export function PlanPanel({ criteriaSidebarOpen: externalCriteriaSidebarOpen, on
           type="button"
           className={`absolute -top-8 right-2 md:right-4 text-xs px-2 py-1 rounded border z-10 ${
             isAutoScrollActive
-              ? 'bg-accent-success/20 text-accent-success border-accent-success/30 hover:bg-accent-success/30'
+              ? 'bg-accent-primary/20 text-accent-primary border-accent-primary/30 hover:bg-accent-primary/30'
               : 'text-text-muted bg-bg-secondary/90 border-border hover:bg-bg-secondary'
           }`}
           onClick={() => setAutoScroll(!isAutoScrollActive)}
