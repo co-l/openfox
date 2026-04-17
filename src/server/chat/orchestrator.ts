@@ -344,7 +344,7 @@ export async function runBuilderTurn(
             ...(getCurrentWindowMessageOptions(sessionId) ?? {}),
             isSystemGenerated: true,
             messageKind: 'auto-prompt',
-            metadata: { type: 'agent', name: 'Builder', color: '#22c55e' },
+            metadata: { type: 'workflow', name: 'Workflow', color: '#f59e0b' },
           }))
           eventStore.append(sessionId, { type: 'message.done', data: { messageId: kickoffMsgId } })
         }
