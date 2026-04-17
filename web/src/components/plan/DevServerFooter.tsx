@@ -154,6 +154,7 @@ export const DevServerFooter = memo(function DevServerFooter({ workdir }: DevSer
   const [showExpandModal, setShowExpandModal] = useState(false)
   const [isHoveringLogs, setIsHoveringLogs] = useState(false)
   const [isHidingLogs, setIsHidingLogs] = useState(false)
+  const showTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const hideTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const logRef = useRef<HTMLPreElement>(null)
   const logContainerRef = useRef<HTMLDivElement>(null)
@@ -232,10 +233,8 @@ export const DevServerFooter = memo(function DevServerFooter({ workdir }: DevSer
                 Stop
               </button>
               {status?.url && (
-                <a
-                  href={status.url}
-                  target="_blank"
-                  rel="noopener noreferrer"
+                <button
+                  onClick={() => window.open(status?.url ?? '', '_blank')}
                   className="flex-1 flex items-center justify-center gap-1.5 rounded font-medium text-sm px-3 py-1.5 bg-accent-primary/25 text-white hover:bg-accent-primary/40 transition-colors"
                   title={status.url}
                 >
@@ -245,7 +244,7 @@ export const DevServerFooter = memo(function DevServerFooter({ workdir }: DevSer
                     <path d="M14 2L7.5 8.5" />
                   </svg>
                   Open
-                </a>
+                </button>
               )}
             </div>
           ) : (
@@ -265,10 +264,13 @@ export const DevServerFooter = memo(function DevServerFooter({ workdir }: DevSer
               className="relative"
               onMouseEnter={() => {
                 if (hideTimeoutRef.current) clearTimeout(hideTimeoutRef.current)
-                setIsHoveringLogs(true)
-                setIsHidingLogs(false)
+                showTimeoutRef.current = setTimeout(() => {
+                  setIsHoveringLogs(true)
+                  setIsHidingLogs(false)
+                }, 500)
               }}
               onMouseLeave={() => {
+                if (showTimeoutRef.current) clearTimeout(showTimeoutRef.current)
                 setIsHidingLogs(true)
                 hideTimeoutRef.current = setTimeout(() => setIsHoveringLogs(false), 150)
               }}

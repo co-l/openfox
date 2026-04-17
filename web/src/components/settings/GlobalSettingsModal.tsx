@@ -17,7 +17,7 @@ export function GlobalSettingsModal({ isOpen, onClose }: GlobalSettingsModalProp
   const [activeTab, setActiveTab] = useState<Tab>('instructions')
 
   return (
-    <Modal isOpen={isOpen} onClose={onClose} title="Settings" size="lg">
+    <Modal isOpen={isOpen} onClose={onClose} title="Settings" size="xl">
       <div className="flex flex-col h-full">
         {/* Tab bar */}
         <div className="flex border-b border-border mb-4 -mt-1">
@@ -46,7 +46,11 @@ export function GlobalSettingsModal({ isOpen, onClose }: GlobalSettingsModalProp
         {/* Tab content */}
         {activeTab === 'instructions' && <InstructionsTab isOpen={isOpen} />}
         {activeTab === 'skills' && <SkillsContent isOpen={isOpen} />}
-        {activeTab === 'notifications' && <NotificationSettings />}
+        {activeTab === 'notifications' && (
+          <div className="max-h-[60vh] overflow-y-auto">
+            <NotificationSettings />
+          </div>
+        )}
         {activeTab === 'advanced' && <AdvancedTab onClose={onClose} />}
       </div>
     </Modal>

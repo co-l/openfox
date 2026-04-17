@@ -325,7 +325,8 @@ function resolveAgentType(state: SessionState, sessionId?: string): AgentType | 
 function handleGlobalSoundEffects(message: ServerMessage, state: SessionState): void {
   if (message.type === 'chat.done') {
     const payload = message.payload as ChatDonePayload
-    const agent = resolveAgentType(state, message.sessionId)
+    const resolvedAgent = resolveAgentType(state, message.sessionId)
+    const agent = payload.agentType ?? resolvedAgent
     if (payload.reason === 'complete') {
       playNotification(agent)
     }

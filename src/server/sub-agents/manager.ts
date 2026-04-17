@@ -379,7 +379,7 @@ export async function executeSubAgent(options: SubAgentExecutionOptions): Promis
       }
       eventStore.append(sessionId, createChatDoneEvent(assistantMsgId, 'complete', stats))
       if (onMessage) {
-        onMessage(createChatDoneMessage(assistantMsgId, 'complete', stats))
+        onMessage(createChatDoneMessage(assistantMsgId, 'complete', stats, 'sub-agent'))
       }
       break
     }

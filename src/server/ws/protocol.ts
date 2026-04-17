@@ -200,9 +200,10 @@ export function createChatMessageUpdatedMessage(
 export function createChatDoneMessage(
   messageId: string,
   reason: 'complete' | 'stopped' | 'error' | 'waiting_for_user',
-  stats?: ChatDonePayload['stats']
+  stats?: ChatDonePayload['stats'],
+  agentType?: 'sub-agent'
 ): ServerMessage<ChatDonePayload> {
-  return createServerMessage('chat.done', { messageId, reason, ...(stats ? { stats } : {}) })
+  return createServerMessage('chat.done', { messageId, reason, ...(stats ? { stats } : {}), ...(agentType ? { agentType } : {}) })
 }
 
 export function createChatErrorMessage(error: string, recoverable: boolean): ServerMessage<ChatErrorPayload> {

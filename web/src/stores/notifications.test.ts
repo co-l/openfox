@@ -110,4 +110,58 @@ describe('resolveEventConfig', () => {
     const config = resolveEventConfig(settings, 'complete')
     expect(config.soundEnabled).toBe(true) // default, not overridden
   })
+
+  it('applies sub-agent override correctly', () => {
+    const settings: NotificationSettings = {
+      ...DEFAULT_SETTINGS,
+      events: {
+        ...DEFAULT_SETTINGS.events,
+        complete: { soundEnabled: true, browserNotification: false, customSoundUrl: null },
+      },
+      agentOverrides: {
+        'sub-agent': {
+          complete: { soundEnabled: false },
+        },
+      },
+    }
+    const config = resolveEventConfig(settings, 'complete', 'sub-agent')
+    expect(config.soundEnabled).toBe(false)
+    expect(config.browserNotification).toBe(false) // falls through from base
+  })
+
+  it('applies build agent override correctly', () => {
+    const settings: NotificationSettings = {
+      ...DEFAULT_SETTINGS,
+      events: {
+        ...DEFAULT_SETTINGS.events,
+        complete: { soundEnabled: true, browserNotification: false, customSoundUrl: null },
+      },
+      agentOverrides: {
+        'build': {
+          complete: { soundEnabled: false },
+        },
+      },
+    }
+    const config = resolveEventConfig(settings, 'complete', 'build')
+    expect(config.soundEnabled).toBe(false)
+    expect(config.browserNotification).toBe(false) // falls through from base
+  })
+
+  it('applies custom sound URL override correctly', () => {
+    const settings: NotificationSettings = {
+      ...DEFAULT_SETTINGS,
+      events: {
+        ...DEFAULT_SETTINGS.events,
+        complete: { soundEnabled: true, browserNotification: false, customSoundUrl: null },
+      },
+      agentOverrides: {
+        'build': {
+          complete: { customSoundUrl: '/sounds/intervention.mp3' },
+        },
+      },
+    }
+    const config = resolveEventConfig(settings, 'complete', 'build')
+    expect(config.customSoundUrl).toBe('/sounds/intervention.mp3')
+    expect(config.soundEnabled).toBe(true) // falls through from base
+  })
 })

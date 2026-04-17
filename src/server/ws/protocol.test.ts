@@ -266,6 +266,7 @@ describe('ws/protocol', () => {
       })
       expect(createChatMessageUpdatedMessage('m1', { isStreaming: false })).toEqual({ type: 'chat.message_updated', payload: { messageId: 'm1', updates: { isStreaming: false } } })
       expect(createChatDoneMessage('m1', 'complete')).toEqual({ type: 'chat.done', payload: { messageId: 'm1', reason: 'complete' } })
+      expect(createChatDoneMessage('m2', 'complete', undefined, 'sub-agent')).toEqual({ type: 'chat.done', payload: { messageId: 'm2', reason: 'complete', agentType: 'sub-agent' } })
       expect(createChatErrorMessage('boom', true)).toEqual({ type: 'chat.error', payload: { error: 'boom', recoverable: true } })
       expect(createChatPathConfirmationMessage('call-1', 'read_file', ['/etc/passwd'], '/tmp/project', 'outside_workdir')).toEqual({
         type: 'chat.path_confirmation',

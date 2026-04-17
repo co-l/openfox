@@ -633,6 +633,66 @@ describe('useSessionStore session isolation', () => {
     expect(playNotificationMock).not.toHaveBeenCalled()
   })
 
+  it('uses agentType from chat.done payload when present', async () => {
+    const useSessionStore = await loadSessionStore()
+
+    useSessionStore.setState((state) => ({
+      ...state,
+      currentSession: {
+        id: 'session-1',
+        projectId: 'project-1',
+        workdir: '/tmp/project-1',
+        mode: 'builder',
+        phase: 'build',
+        isRunning: true,
+        criteria: [],
+        summary: null,
+      } as any,
+    }))
+
+    useSessionStore.getState().handleServerMessage({
+      type: 'chat.done',
+      sessionId: 'session-1',
+      payload: {
+        messageId: 'assistant-1',
+        reason: 'complete',
+        agentType: 'sub-agent',
+      },
+    })
+
+    expect(playNotificationMock).toHaveBeenCalledWith('sub-agent')
+  })
+
+  it('plays sound for build agent type when agentType is build', async () => {
+    const useSessionStore = await loadSessionStore()
+
+    useSessionStore.setState((state) => ({
+      ...state,
+      currentSession: {
+        id: 'session-1',
+        projectId: 'project-1',
+        workdir: '/tmp/project-1',
+        mode: 'builder',
+        phase: 'build',
+        isRunning: true,
+        criteria: [],
+        summary: null,
+      } as any,
+    }))
+
+    useSessionStore.getState().handleServerMessage({
+      type: 'chat.done',
+      sessionId: 'session-1',
+      payload: {
+        messageId: 'assistant-1',
+        reason: 'complete',
+        agentType: 'build',
+      },
+    })
+
+    expect(playNotificationMock).toHaveBeenCalledWith('build')
+  })
+
   it('plays the waiting for user sound when a path confirmation is requested', async () => {
     const useSessionStore = await loadSessionStore()
 
