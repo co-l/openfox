@@ -1,118 +1,76 @@
 # Event Source Integration
 
-## Current Architecture Issue
+## Current State (as of April 2026)
 
-The `eventStore` is designed to be the single source of truth for all session state, intended to provide parity between:
-- Fresh page loads (reads from DB)
-- Real-time streaming (WebSocket)
+The `eventStore` IS wired to WebSocket broadcasting via `eventStore.subscribeAll()`:
+- Added: `e541997` (Apr 15, 2026) - "feat: connection status bar and global event subscription"
+- `storedEventToServerMessage()` implemented in `protocol.ts:332`
 
-However, this parity is **incomplete**. The eventStore is persisted to DB but **not wired to WebSocket broadcasting**.
+**The infrastructure exists. The bug was a specific code path not using it.**
 
-## The Gap
+## The Actual Bug
 
-### EventStore Flow
-```
-eventStore.append(sessionId, event)
-         ↓
-    [persisted to DB] ✅
-```
-
-### WebSocket Flow
-```
-onMessage callback → ws.send()
-         ↓
-    [manual calls throughout codebase] ⚠️
-```
-
-### Missing Piece
-```
-eventStore → WebSocket broadcast ❌
-```
-
-## Why This Matters
-
-When a message is appended to the eventStore:
-- It persists to DB ✅
-- It will appear on fresh load ✅  
-- It does NOT broadcast to frontend during streaming ❌
-
-This causes real-time UI updates to lag until:
-- `session.state` sent at end of streaming
-- Manual `onMessage` calls (current workaround)
-
-## Affected Code
-
-### Manual onMessage Workarounds
-Throughout the codebase, `onMessage` is called alongside `eventStore.append()`:
-
-- `src/server/chat/orchestrator.ts` - mode reminders, builder kickoff
-- `src/server/chat/agent-loop.ts` - correction prompts, mode reminders  
-- `src/server/workflows/executor.ts` - workflow prompts, nudge prompts
-
-### Example (orchestrator.ts)
+When `injectKickoff()` was called in `runBuilderTurn()`, it was:
 ```typescript
-eventStore.append(sessionId, createMessageStartEvent(...))
-// ❌ Missing: broadcast to WebSocket
-
-// Workaround:
-if (options.onMessage) {
-  options.onMessage(createChatMessageMessage(...))
-}
+eventStore.append(sessionId, createMessageStartEvent(...))  // ✅ Persisted to DB
+// ❌ Missing: options.onMessage() call - NOT sent to frontend during streaming
 ```
 
-## Current WebSocket Subscription
+The frontend only saw the message after:
+1. `session.state` sent at end of streaming (full sync)
+2. Page reload (reads from DB)
 
-The WebSocket server subscribes to `sessionManager.subscribe()`:
-```typescript
-// server.ts:309
-sessionManager.subscribe((event) => {
-  // Only handles: session_created, session_updated
-  // NOT: message.start, message.done, etc.
-})
+**Why this specific path was broken:** The `injectKickoff` callback is called from `agent-loop.ts:282` before LLM streaming starts. It wrote to eventStore but never called `onMessage`.
+
+## Corrected Understanding
+
+### Infrastructure (Exists ✅)
+```
+eventStore.subscribeAll() ──→ storedEventToServerMessage() ──→ WebSocket broadcast
 ```
 
-The `eventStore.subscribe()` exists but isn't used for broadcasting:
-```typescript
-// events/store.test.ts:312 - Exists but unused
-store.subscribe('session-1')
-```
+### The Gap
+Code paths that call `eventStore.append()` but NOT `onMessage()`:
+- `orchestrator.ts:injectKickoff()` - **FIXED (66139f5)**
+- Other code paths may have similar issues
+
+## Affected Code Still Needing Review
+
+Manual `onMessage` calls exist alongside `eventStore.append()`. Some are:
+- **Intentional workarounds** for code paths that don't trigger WebSocket broadcast
+- **Intentional** for immediate real-time updates (faster than waiting for eventStore subscription)
+
+### Current call sites to verify:
+- `orchestrator.ts` - mode reminders, builder kickoff
+- `agent-loop.ts` - correction prompts, mode reminders  
+- `executor.ts` - workflow prompts, nudge prompts
+
+## When to Use onMessage vs Rely on eventStore
+
+### Use `eventStore.append()` only (preferred):
+When you want eventual consistency and don't need immediate frontend display.
+- Tool results
+- Message deltas
+- Async state changes
+
+### Use both `eventStore.append()` AND `onMessage()`:
+When you need immediate frontend display before the next streaming update:
+- Mode reminders (Plan Mode / Build Mode)
+- Builder kickoff prompts
+- Any user-facing message that must appear instantly
 
 ## Required Fix
 
-### 1. Subscribe to EventStore in WebSocket Server
+### Verify all code paths use onMessage when needed
 
-```typescript
-// src/server/ws/server.ts
-const { iterator, unsubscribe } = eventStore.subscribeAll()
+Check each `eventStore.append()` of `message.start`/`message.done` events:
+1. Does the frontend need to display this immediately?
+2. If yes, is `onMessage()` also called?
+3. If no, the message will only appear after streaming ends or page reload
 
-for await (const event of iterator) {
-  // Convert event to WebSocket message
-  const wsMessage = translateEventToWebSocketMessage(event)
-  
-  // Broadcast to subscribed clients
-  broadcastForSession(event.sessionId, wsMessage)
-}
-```
+### Future: Unified approach
 
-### 2. Implement Event Translation
-
-Map event types to WebSocket messages:
-- `message.start` → `chat.message`
-- `message.delta` → `chat.delta`
-- `message.done` → `chat.message_updated`
-- `tool.call` → `chat.tool_call`
-- etc.
-
-### 3. Remove Manual onMessage Calls
-
-Once the bridge is in place, remove `onMessage` callbacks from:
-- `runBuilderTurn()`
-- `runGenericAgentTurn()`
-- `runVerifierTurn()`
-- `runBuilderStep()`
-- etc.
-
-This simplifies the codebase and ensures consistent behavior.
+Eventually, `eventStore.subscribeAll()` → `storedEventToServerMessage()` should handle ALL real-time broadcasting automatically. At that point, manual `onMessage` calls can be removed.
 
 ## Benefits
 
@@ -123,8 +81,14 @@ This simplifies the codebase and ensures consistent behavior.
 
 ## Status
 
-- [ ] Wire eventStore.subscribeAll() to WebSocket broadcasting
-- [ ] Implement event-to-WS-message translation
-- [ ] Remove manual onMessage callbacks from orchestrator/agent-loop
-- [ ] Remove manual onMessage callbacks from workflow executor
+- [x] Wire eventStore.subscribeAll() to WebSocket broadcasting (e541997)
+- [x] Implement event-to-WS-message translation (storedEventToServerMessage)
+- [ ] Audit all message.start/message.done events for missing onMessage calls
+- [ ] Remove redundant onMessage calls where eventStore subscription is sufficient
 - [ ] Test parity between fresh load and streaming
+
+## References
+
+- `src/server/ws/server.ts:419` - eventStore.subscribeAll() in action
+- `src/server/ws/protocol.ts:332` - storedEventToServerMessage()
+- `src/server/events/store.ts` - subscribeAll() implementation
