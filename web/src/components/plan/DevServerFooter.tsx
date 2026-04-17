@@ -233,8 +233,10 @@ export const DevServerFooter = memo(function DevServerFooter({ workdir }: DevSer
                 Stop
               </button>
               {status?.url && (
-                <button
-                  onClick={() => window.open(status?.url ?? '', '_blank')}
+                <a
+                  href={status.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
                   className="flex-1 flex items-center justify-center gap-1.5 rounded font-medium text-sm px-3 py-1.5 bg-accent-primary/25 text-white hover:bg-accent-primary/40 transition-colors"
                   title={status.url}
                 >
@@ -244,7 +246,7 @@ export const DevServerFooter = memo(function DevServerFooter({ workdir }: DevSer
                     <path d="M14 2L7.5 8.5" />
                   </svg>
                   Open
-                </button>
+                </a>
               )}
             </div>
           ) : (
