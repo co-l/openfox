@@ -98,20 +98,6 @@ export const ChatMessage = memo(function ChatMessage({ message, isLastAssistantM
     )
   }
   
-  if (isTool) {
-    return (
-      <div className="feed-item bg-bg-tertiary/30 border-l-2 border-accent-primary rounded-r p-2">
-        <div className="text-accent-primary text-xs mb-0.5">
-          Tool: {message.toolName}
-        </div>
-        <pre className="text-text-secondary text-xs whitespace-pre-wrap overflow-x-auto max-h-32">
-          {message.content.slice(0, 500)}
-          {message.content.length > 500 && '...'}
-        </pre>
-      </div>
-    )
-  }
-  
   // Workflow started card
   if (message.messageKind === 'workflow-started') {
     try {
