@@ -27,7 +27,7 @@
     "dev": "OPENFOX_DEV=true tsx watch src/cli/dev.ts --no-browser",
     "dev:web": "vite --config web/vite.config.ts",
     "build": "FORCE_COLOR=1 npm run build:server && FORCE_COLOR=1 npm run build:web",
-    "build:server": "FORCE_COLOR=1 tsup && mkdir -p dist/skill-defaults dist/command-defaults dist/agent-defaults dist/workflow-defaults && cp src/server/skills/defaults/*.md dist/skill-defaults/ && cp src/server/commands/defaults/*.md dist/command-defaults/ && cp src/server/agents/defaults/*.md dist/agent-defaults/ && cp src/server/workflows/defaults/*.json dist/workflow-defaults/ && cp package.json dist/",
+    "build:server": "FORCE_COLOR=1 tsup && mkdir -p dist/server/commands/defaults dist/server/skills/defaults && cp src/server/skills/defaults/*.md dist/server/skills/defaults/ && cp src/server/commands/defaults/*.md dist/server/commands/defaults/ && cp src/server/agents/defaults/*.md dist/agent-defaults/ && cp src/server/workflows/defaults/*.json dist/workflow-defaults/ && cp package.json dist/",
     "build:web": "cd web && FORCE_COLOR=1 vite build --outDir ../dist/web",
     "start": "node dist/cli/index.js",
     "start:dev": "node dist/cli/dev.js",
