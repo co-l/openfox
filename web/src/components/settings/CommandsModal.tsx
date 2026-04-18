@@ -4,6 +4,17 @@ import { Button } from '../shared/Button'
 import { EditButton } from '../shared/IconButton'
 import { useCommandsStore, type CommandFull } from '../../stores/commands'
 import { useAgentsStore } from '../../stores/agents'
+import {
+  useConfirmDialog,
+  ConfirmButton,
+  DeleteIcon,
+  RestoreIcon,
+  FormField,
+  FormTextArea,
+  ModalActions,
+  ErrorBanner,
+  RestoreDefaultsHeader,
+} from './CRUDModal'
 
 interface CommandsModalProps {
   isOpen: boolean
@@ -25,17 +36,9 @@ export function CommandsModal({ isOpen, onClose, initialEditId }: CommandsModalP
   const updateCommand = useCommandsStore(state => state.updateCommand)
   const deleteCommandAction = useCommandsStore(state => state.deleteCommand)
   const restoreDefault = useCommandsStore(state => state.restoreDefault)
-  const restoreAllDefaults = useCommandsStore(state => state.restoreAllDefaults)
 
   const [view, setView] = useState<'list' | 'edit'>('list')
   const [editingId, setEditingId] = useState<string | null>(null)
-  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null)
-
-  const agents = useAgentsStore(state => state.agents)
-  const fetchAgents = useAgentsStore(state => state.fetchAgents)
-  const topLevelAgents = agents.filter(a => !a.subagent)
-
-  // Form state
   const [formName, setFormName] = useState('')
   const [formId, setFormId] = useState('')
   const [formPrompt, setFormPrompt] = useState('')
@@ -43,16 +46,17 @@ export function CommandsModal({ isOpen, onClose, initialEditId }: CommandsModalP
   const [formError, setFormError] = useState('')
   const [saving, setSaving] = useState(false)
 
-  const [confirmRestoreId, setConfirmRestoreId] = useState<string | null>(null)
-  const [confirmRestoreAll, setConfirmRestoreAll] = useState(false)
+  const { requestDelete, requestRestore, requestRestoreAll, clearConfirm, isConfirming, isConfirmingRestoreAll } = useConfirmDialog()
+
+  const agents = useAgentsStore(state => state.agents)
+  const fetchAgents = useAgentsStore(state => state.fetchAgents)
+  const topLevelAgents = agents.filter(a => !a.subagent)
 
   useEffect(() => {
     if (isOpen) {
       fetchCommands()
       fetchAgents()
-      setConfirmDeleteId(null)
-      setConfirmRestoreId(null)
-      setConfirmRestoreAll(false)
+      clearConfirm()
       if (initialEditId) {
         setView('edit')
         setEditingId(initialEditId)
@@ -69,7 +73,7 @@ export function CommandsModal({ isOpen, onClose, initialEditId }: CommandsModalP
         setEditingId(null)
       }
     }
-  }, [isOpen, fetchCommands, fetchAgents, fetchCommand, initialEditId])
+  }, [isOpen, fetchCommands, fetchAgents, fetchCommand, initialEditId, clearConfirm])
 
   const handleNew = () => {
     setEditingId(null)
@@ -95,7 +99,7 @@ export function CommandsModal({ isOpen, onClose, initialEditId }: CommandsModalP
 
   const handleDelete = async (commandId: string) => {
     await deleteCommandAction(commandId)
-    setConfirmDeleteId(null)
+    clearConfirm()
   }
 
   const handleSave = async () => {
@@ -146,30 +150,24 @@ export function CommandsModal({ isOpen, onClose, initialEditId }: CommandsModalP
     return (
       <Modal isOpen={isOpen} onClose={handleCancel} title={editingId ? 'Edit Command' : 'New Command'} size="xl">
         <div className="space-y-3">
-          {formError && (
-            <div className="text-accent-error text-sm px-3 py-2 bg-accent-error/10 rounded">{formError}</div>
-          )}
+          {formError && <ErrorBanner message={formError} />}
 
           <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="block text-xs text-text-secondary mb-1">Name</label>
-              <input
-                value={formName}
-                onChange={e => handleNameChange(e.target.value)}
-                placeholder="My Command"
-                className="w-full px-2 py-1.5 bg-bg-tertiary border border-border rounded text-sm focus:outline-none focus:ring-1 focus:ring-accent-primary"
-              />
-            </div>
-            <div>
-              <label className="block text-xs text-text-secondary mb-1">ID {editingId && <span className="text-text-muted">(read-only)</span>}</label>
-              <input
-                value={formId}
-                onChange={e => !editingId && setFormId(e.target.value)}
-                readOnly={!!editingId}
-                placeholder="my-command"
-                className={`w-full px-2 py-1.5 bg-bg-tertiary border border-border rounded text-sm font-mono focus:outline-none focus:ring-1 focus:ring-accent-primary ${editingId ? 'opacity-60' : ''}`}
-              />
-            </div>
+            <FormField
+              label="Name"
+              value={formName}
+              onChange={handleNameChange}
+              placeholder="My Command"
+            />
+            <FormField
+              label="ID"
+              value={formId}
+              onChange={setFormId}
+              readOnly={!!editingId}
+              placeholder="my-command"
+              hint={editingId ? '(read-only)' : undefined}
+              mono
+            />
           </div>
 
           <div>
@@ -186,22 +184,15 @@ export function CommandsModal({ isOpen, onClose, initialEditId }: CommandsModalP
             </select>
           </div>
 
-          <div>
-            <label className="block text-xs text-text-secondary mb-1">Message</label>
-            <textarea
-              value={formPrompt}
-              onChange={e => setFormPrompt(e.target.value)}
-              placeholder="The message that will be sent when this command is triggered..."
-              className="w-full h-64 px-3 py-2 bg-bg-tertiary border border-border rounded text-sm font-mono resize-none focus:outline-none focus:ring-1 focus:ring-accent-primary"
-            />
-          </div>
+          <FormTextArea
+            label="Message"
+            value={formPrompt}
+            onChange={setFormPrompt}
+            placeholder="The message that will be sent when this command is triggered..."
+            className="h-64"
+          />
 
-          <div className="flex justify-end gap-2 pt-2 border-t border-border">
-            <Button variant="secondary" onClick={handleCancel}>Cancel</Button>
-            <Button variant="primary" onClick={handleSave} disabled={saving || !formName || !formPrompt}>
-              {saving ? 'Saving...' : 'Save'}
-            </Button>
-          </div>
+          <ModalActions onCancel={handleCancel} onSave={handleSave} saving={saving} saveDisabled={!formName || !formPrompt} />
         </div>
       </Modal>
     )
@@ -215,30 +206,11 @@ export function CommandsModal({ isOpen, onClose, initialEditId }: CommandsModalP
         </p>
         <div className="flex items-center gap-2 flex-shrink-0 ml-3">
           {modifiedIds.length > 0 && (
-            confirmRestoreAll ? (
-              <div className="flex items-center gap-1">
-                <button
-                  onClick={async () => { await restoreAllDefaults(); setConfirmRestoreAll(false) }}
-                  className="px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-400 text-xs hover:bg-amber-500/30 transition-colors"
-                >
-                  Confirm
-                </button>
-                <button
-                  onClick={() => setConfirmRestoreAll(false)}
-                  className="px-1.5 py-0.5 rounded text-text-muted text-xs hover:bg-bg-primary transition-colors"
-                >
-                  Cancel
-                </button>
-              </div>
-            ) : (
-              <button
-                onClick={() => setConfirmRestoreAll(true)}
-                className="px-2 py-1 rounded text-xs text-text-muted hover:text-amber-400 hover:bg-amber-500/10 transition-colors"
-                title="Restore all commands to defaults"
-              >
-                Restore Defaults
-              </button>
-            )
+            <RestoreDefaultsHeader
+              onRestoreAll={requestRestoreAll}
+              isConfirmingRestoreAll={isConfirmingRestoreAll()}
+              onCancelRestoreAll={clearConfirm}
+            />
           )}
           <Button variant="primary" size="sm" onClick={handleNew}>
             + New
@@ -267,63 +239,20 @@ export function CommandsModal({ isOpen, onClose, initialEditId }: CommandsModalP
               </div>
 
               <div className="flex items-center gap-1.5 flex-shrink-0">
-                {/* Restore default button — only shown when modified */}
                 {modifiedIds.includes(command.id) && (
-                  confirmRestoreId === command.id ? (
-                    <div className="flex items-center gap-1">
-                      <button
-                        onClick={async () => { await restoreDefault(command.id); setConfirmRestoreId(null) }}
-                        className="px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-400 text-xs hover:bg-amber-500/30 transition-colors"
-                      >
-                        Restore
-                      </button>
-                      <button
-                        onClick={() => setConfirmRestoreId(null)}
-                        className="px-1.5 py-0.5 rounded text-text-muted text-xs hover:bg-bg-primary transition-colors"
-                      >
-                        Cancel
-                      </button>
-                    </div>
+                  isConfirming(command.id, 'restore') ? (
+                    <ConfirmButton type="restore" onConfirm={() => restoreDefault(command.id).then(clearConfirm)} onCancel={clearConfirm} />
                   ) : (
-                    <button
-                      onClick={() => setConfirmRestoreId(command.id)}
-                      className="p-1.5 rounded hover:bg-bg-primary text-text-muted hover:text-amber-400 transition-colors"
-                      title="Restore default"
-                    >
-                      <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                      </svg>
-                    </button>
+                    <RestoreIcon onClick={() => requestRestore(command.id)} />
                   )
                 )}
 
                 <EditButton onClick={() => handleEdit(command.id)} />
 
-                {confirmDeleteId === command.id ? (
-                  <div className="flex items-center gap-1">
-                    <button
-                      onClick={() => handleDelete(command.id)}
-                      className="px-1.5 py-0.5 rounded bg-accent-error/20 text-accent-error text-xs hover:bg-accent-error/30 transition-colors"
-                    >
-                      Delete
-                    </button>
-                    <button
-                      onClick={() => setConfirmDeleteId(null)}
-                      className="px-1.5 py-0.5 rounded text-text-muted text-xs hover:bg-bg-primary transition-colors"
-                    >
-                      Cancel
-                    </button>
-                  </div>
+                {isConfirming(command.id, 'delete') ? (
+                  <ConfirmButton type="delete" onConfirm={() => handleDelete(command.id)} onCancel={clearConfirm} />
                 ) : (
-                  <button
-                    onClick={() => setConfirmDeleteId(command.id)}
-                    className="p-1.5 rounded hover:bg-bg-primary text-text-muted hover:text-accent-error transition-colors"
-                    title="Delete command"
-                  >
-                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                    </svg>
-                  </button>
+                  <DeleteIcon onClick={() => requestDelete(command.id)} />
                 )}
               </div>
             </div>

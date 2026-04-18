@@ -3,22 +3,28 @@ import { Modal } from '../shared/Modal'
 import { Button } from '../shared/Button'
 import { EditButton } from '../shared/IconButton'
 import { useSkillsStore, type SkillFull } from '../../stores/skills'
+import {
+  useConfirmDialog,
+  ConfirmButton,
+  DeleteIcon,
+  RestoreIcon,
+  FormField,
+  FormTextArea,
+  ModalActions,
+  ErrorBanner,
+  RestoreDefaultsHeader,
+} from './CRUDModal'
 
 interface SkillsModalProps {
   isOpen: boolean
   onClose: () => void
 }
 
-interface SkillsContentProps {
-  isOpen: boolean
-}
-
 function toSlug(name: string): string {
   return name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')
 }
 
-/** Standalone skills content for embedding as a tab in another modal. */
-export function SkillsContent({ isOpen }: SkillsContentProps) {
+export function SkillsContent({ isOpen }: { isOpen: boolean }) {
   const skills = useSkillsStore(state => state.skills)
   const modifiedIds = useSkillsStore(state => state.modifiedIds)
   const loading = useSkillsStore(state => state.loading)
@@ -29,13 +35,9 @@ export function SkillsContent({ isOpen }: SkillsContentProps) {
   const updateSkill = useSkillsStore(state => state.updateSkill)
   const deleteSkillAction = useSkillsStore(state => state.deleteSkill)
   const restoreDefault = useSkillsStore(state => state.restoreDefault)
-  const restoreAllDefaults = useSkillsStore(state => state.restoreAllDefaults)
 
   const [view, setView] = useState<'list' | 'edit'>('list')
   const [editingId, setEditingId] = useState<string | null>(null)
-  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null)
-
-  // Form state
   const [formName, setFormName] = useState('')
   const [formId, setFormId] = useState('')
   const [formDescription, setFormDescription] = useState('')
@@ -44,19 +46,16 @@ export function SkillsContent({ isOpen }: SkillsContentProps) {
   const [formError, setFormError] = useState('')
   const [saving, setSaving] = useState(false)
 
-  const [confirmRestoreId, setConfirmRestoreId] = useState<string | null>(null)
-  const [confirmRestoreAll, setConfirmRestoreAll] = useState(false)
+  const { requestDelete, requestRestore, requestRestoreAll, clearConfirm, isConfirming, isConfirmingRestoreAll } = useConfirmDialog()
 
   useEffect(() => {
     if (isOpen) {
       fetchSkills()
       setView('list')
       setEditingId(null)
-      setConfirmDeleteId(null)
-      setConfirmRestoreId(null)
-      setConfirmRestoreAll(false)
+      clearConfirm()
     }
-  }, [isOpen, fetchSkills])
+  }, [isOpen, fetchSkills, clearConfirm])
 
   const handleNew = () => {
     setEditingId(null)
@@ -84,7 +83,7 @@ export function SkillsContent({ isOpen }: SkillsContentProps) {
 
   const handleDelete = async (skillId: string) => {
     await deleteSkillAction(skillId)
-    setConfirmDeleteId(null)
+    clearConfirm()
   }
 
   const handleSave = async () => {
@@ -144,70 +143,28 @@ export function SkillsContent({ isOpen }: SkillsContentProps) {
             <span className="text-sm font-medium text-text-primary">{editingId ? 'Edit Skill' : 'New Skill'}</span>
           </div>
 
-          {formError && (
-            <div className="text-accent-error text-sm px-3 py-2 bg-accent-error/10 rounded">{formError}</div>
-          )}
+          {formError && <ErrorBanner message={formError} />}
 
           <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="block text-xs text-text-secondary mb-1">Name</label>
-              <input
-                value={formName}
-                onChange={e => handleNameChange(e.target.value)}
-                placeholder="My Skill"
-                className="w-full px-2 py-1.5 bg-bg-tertiary border border-border rounded text-sm focus:outline-none focus:ring-1 focus:ring-accent-primary"
-              />
-            </div>
-            <div>
-              <label className="block text-xs text-text-secondary mb-1">ID {editingId && <span className="text-text-muted">(read-only)</span>}</label>
-              <input
-                value={formId}
-                onChange={e => !editingId && setFormId(e.target.value)}
-                readOnly={!!editingId}
-                placeholder="my-skill"
-                className={`w-full px-2 py-1.5 bg-bg-tertiary border border-border rounded text-sm font-mono focus:outline-none focus:ring-1 focus:ring-accent-primary ${editingId ? 'opacity-60' : ''}`}
-              />
-            </div>
+            <FormField label="Name" value={formName} onChange={handleNameChange} placeholder="My Skill" />
+            <FormField label="ID" value={formId} onChange={setFormId} readOnly={!!editingId} placeholder="my-skill" hint={editingId ? '(read-only)' : undefined} mono />
           </div>
 
           <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="block text-xs text-text-secondary mb-1">Description</label>
-              <input
-                value={formDescription}
-                onChange={e => setFormDescription(e.target.value)}
-                placeholder="Short description of what this skill provides"
-                className="w-full px-2 py-1.5 bg-bg-tertiary border border-border rounded text-sm focus:outline-none focus:ring-1 focus:ring-accent-primary"
-              />
-            </div>
-            <div>
-              <label className="block text-xs text-text-secondary mb-1">Version</label>
-              <input
-                value={formVersion}
-                onChange={e => setFormVersion(e.target.value)}
-                placeholder="1.0.0"
-                className="w-full px-2 py-1.5 bg-bg-tertiary border border-border rounded text-sm font-mono focus:outline-none focus:ring-1 focus:ring-accent-primary"
-              />
-            </div>
+            <FormField label="Description" value={formDescription} onChange={setFormDescription} placeholder="Short description of what this skill provides" />
+            <FormField label="Version" value={formVersion} onChange={setFormVersion} placeholder="1.0.0" mono />
           </div>
         </div>
 
-        <div className="flex-1 min-h-[150px] mt-3 overflow-hidden">
-          <label className="block text-xs text-text-secondary mb-1">Prompt</label>
-          <textarea
-            value={formPrompt}
-            onChange={e => setFormPrompt(e.target.value)}
-            placeholder="Instructions the agent receives when this skill is loaded..."
-            className="w-full h-full px-3 py-2 bg-bg-tertiary border border-border rounded text-sm font-mono resize-none focus:outline-none focus:ring-1 focus:ring-accent-primary"
-          />
-        </div>
+        <FormTextArea
+          label="Prompt"
+          value={formPrompt}
+          onChange={setFormPrompt}
+          placeholder="Instructions the agent receives when this skill is loaded..."
+          className="flex-1 min-h-[150px] mt-3 overflow-hidden"
+        />
 
-        <div className="flex justify-end gap-2 pt-2 mt-5 border-t border-border flex-shrink-0">
-          <Button variant="secondary" onClick={handleCancel}>Cancel</Button>
-          <Button variant="primary" onClick={handleSave} disabled={saving || !formName || !formPrompt}>
-            {saving ? 'Saving...' : 'Save'}
-          </Button>
-        </div>
+        <ModalActions onCancel={handleCancel} onSave={handleSave} saving={saving} saveDisabled={!formName || !formPrompt} />
       </div>
     )
   }
@@ -220,30 +177,11 @@ export function SkillsContent({ isOpen }: SkillsContentProps) {
         </p>
         <div className="flex items-center gap-2 flex-shrink-0 ml-3">
           {modifiedIds.length > 0 && (
-            confirmRestoreAll ? (
-              <div className="flex items-center gap-1">
-                <button
-                  onClick={async () => { await restoreAllDefaults(); setConfirmRestoreAll(false) }}
-                  className="px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-400 text-xs hover:bg-amber-500/30 transition-colors"
-                >
-                  Confirm
-                </button>
-                <button
-                  onClick={() => setConfirmRestoreAll(false)}
-                  className="px-1.5 py-0.5 rounded text-text-muted text-xs hover:bg-bg-primary transition-colors"
-                >
-                  Cancel
-                </button>
-              </div>
-            ) : (
-              <button
-                onClick={() => setConfirmRestoreAll(true)}
-                className="px-2 py-1 rounded text-xs text-text-muted hover:text-amber-400 hover:bg-amber-500/10 transition-colors"
-                title="Restore all skills to defaults"
-              >
-                Restore Defaults
-              </button>
-            )
+            <RestoreDefaultsHeader
+              onRestoreAll={requestRestoreAll}
+              isConfirmingRestoreAll={isConfirmingRestoreAll()}
+              onCancelRestoreAll={clearConfirm}
+            />
           )}
           <Button variant="primary" size="sm" onClick={handleNew}>
             + New
@@ -274,67 +212,22 @@ export function SkillsContent({ isOpen }: SkillsContentProps) {
               </div>
 
               <div className="flex items-center gap-1.5 flex-shrink-0">
-                {/* Restore default button — only shown when modified */}
                 {modifiedIds.includes(skill.id) && (
-                  confirmRestoreId === skill.id ? (
-                    <div className="flex items-center gap-1">
-                      <button
-                        onClick={async () => { await restoreDefault(skill.id); setConfirmRestoreId(null) }}
-                        className="px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-400 text-xs hover:bg-amber-500/30 transition-colors"
-                      >
-                        Restore
-                      </button>
-                      <button
-                        onClick={() => setConfirmRestoreId(null)}
-                        className="px-1.5 py-0.5 rounded text-text-muted text-xs hover:bg-bg-primary transition-colors"
-                      >
-                        Cancel
-                      </button>
-                    </div>
+                  isConfirming(skill.id, 'restore') ? (
+                    <ConfirmButton type="restore" onConfirm={() => restoreDefault(skill.id).then(clearConfirm)} onCancel={clearConfirm} />
                   ) : (
-                    <button
-                      onClick={() => setConfirmRestoreId(skill.id)}
-                      className="p-1.5 rounded hover:bg-bg-primary text-text-muted hover:text-amber-400 transition-colors"
-                      title="Restore default"
-                    >
-                      <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                      </svg>
-                    </button>
+                    <RestoreIcon onClick={() => requestRestore(skill.id)} />
                   )
                 )}
 
                 <EditButton onClick={() => handleEdit(skill.id)} />
 
-                {/* Delete button */}
-                {confirmDeleteId === skill.id ? (
-                  <div className="flex items-center gap-1">
-                    <button
-                      onClick={() => handleDelete(skill.id)}
-                      className="px-1.5 py-0.5 rounded bg-accent-error/20 text-accent-error text-xs hover:bg-accent-error/30 transition-colors"
-                    >
-                      Delete
-                    </button>
-                    <button
-                      onClick={() => setConfirmDeleteId(null)}
-                      className="px-1.5 py-0.5 rounded text-text-muted text-xs hover:bg-bg-primary transition-colors"
-                    >
-                      Cancel
-                    </button>
-                  </div>
+                {isConfirming(skill.id, 'delete') ? (
+                  <ConfirmButton type="delete" onConfirm={() => handleDelete(skill.id)} onCancel={clearConfirm} />
                 ) : (
-                  <button
-                    onClick={() => setConfirmDeleteId(skill.id)}
-                    className="p-1.5 rounded hover:bg-bg-primary text-text-muted hover:text-accent-error transition-colors"
-                    title="Delete skill"
-                  >
-                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                    </svg>
-                  </button>
+                  <DeleteIcon onClick={() => requestDelete(skill.id)} />
                 )}
 
-                {/* Toggle */}
                 <button
                   onClick={() => toggleSkill(skill.id)}
                   className={`relative w-9 h-5 rounded-full transition-colors flex-shrink-0 ml-1 ${

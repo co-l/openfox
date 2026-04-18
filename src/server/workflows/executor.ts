@@ -151,6 +151,35 @@ export function evaluateTransitions(
 // Helper
 // ============================================================================
 
+function emitWorkflowMessage(
+  eventStore: ReturnType<typeof getEventStore>,
+  sessionId: string,
+  content: string,
+  windowOptions: { contextWindowId: string } | undefined,
+  onMessage: ((msg: ReturnType<typeof createChatMessageMessage>) => void) | undefined,
+): string {
+  const msgId = crypto.randomUUID()
+  eventStore.append(sessionId, createMessageStartEvent(msgId, 'user', content, {
+    ...(windowOptions ?? {}),
+    isSystemGenerated: true,
+    messageKind: 'correction',
+    metadata: { type: 'workflow', name: 'Workflow', color: '#f59e0b' },
+  }))
+  eventStore.append(sessionId, { type: 'message.done', data: { messageId: msgId } })
+  if (onMessage) {
+    onMessage(createChatMessageMessage({
+      id: msgId,
+      role: 'user',
+      content,
+      timestamp: new Date().toISOString(),
+      isSystemGenerated: true,
+      messageKind: 'correction',
+      metadata: { type: 'workflow', name: 'Workflow', color: '#f59e0b' },
+    }))
+  }
+  return msgId
+}
+
 function getCurrentWindowMessageOptions(sessionId: string): { contextWindowId: string } | undefined {
   const contextWindowId = getCurrentContextWindowId(sessionId)
   return contextWindowId ? { contextWindowId } : undefined
@@ -317,25 +346,7 @@ export async function executeWorkflow(
           parts.push(STEP_DONE_NUDGE)
           nudgeContent = parts.join('\n\n')
           
-          const nudgeMsgId = crypto.randomUUID()
-          eventStore.append(sessionId, createMessageStartEvent(nudgeMsgId, 'user', nudgeContent, {
-            ...(currentWindowMessageOptions ?? {}),
-            isSystemGenerated: true,
-            messageKind: 'correction',
-            metadata: { type: 'workflow', name: 'Workflow', color: '#f59e0b' },
-          }))
-          eventStore.append(sessionId, { type: 'message.done', data: { messageId: nudgeMsgId } })
-          if (onMessage) {
-            onMessage(createChatMessageMessage({
-              id: nudgeMsgId,
-              role: 'user',
-              content: nudgeContent,
-              timestamp: new Date().toISOString(),
-              isSystemGenerated: true,
-              messageKind: 'correction',
-              metadata: { type: 'workflow', name: 'Workflow', color: '#f59e0b' },
-            }))
-          }
+          emitWorkflowMessage(eventStore, sessionId, nudgeContent, currentWindowMessageOptions, onMessage)
         }
 
         const turnMetrics = new TurnMetrics()
@@ -535,25 +546,7 @@ export async function executeWorkflow(
         ? `Retry limit reached for: ${blockedCriteria.join(', ')}`
         : 'No matching transition'
 
-      const blockedMsgId = crypto.randomUUID()
-      eventStore.append(sessionId, createMessageStartEvent(blockedMsgId, 'user', `Runner blocked: ${reason}`, {
-        ...(currentWindowMessageOptions ?? {}),
-        isSystemGenerated: true,
-        messageKind: 'correction',
-        metadata: { type: 'workflow', name: 'Workflow', color: '#f59e0b' },
-      }))
-      eventStore.append(sessionId, { type: 'message.done', data: { messageId: blockedMsgId } })
-      if (onMessage) {
-        onMessage(createChatMessageMessage({
-          id: blockedMsgId,
-          role: 'user',
-          content: `Runner blocked: ${reason}`,
-          timestamp: new Date().toISOString(),
-          isSystemGenerated: true,
-          messageKind: 'correction',
-          metadata: { type: 'workflow', name: 'Workflow', color: '#f59e0b' },
-        }))
-      }
+      emitWorkflowMessage(eventStore, sessionId, `Runner blocked: ${reason}`, currentWindowMessageOptions, onMessage)
 
       logger.warn('Workflow executor blocked', { sessionId, iterations, reason })
       const blockedAction: NextAction = { type: 'BLOCKED', reason, blockedCriteria }

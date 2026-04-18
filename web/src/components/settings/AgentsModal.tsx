@@ -5,6 +5,14 @@ import { EditButton } from '../shared/IconButton'
 import { DropdownMenu } from '../shared/DropdownMenu'
 import { useAgentsStore, type AgentFull } from '../../stores/agents'
 import { authFetch } from '../../lib/api'
+import {
+  ConfirmButton,
+  DeleteIcon,
+  RestoreIcon,
+  FormField,
+  ModalActions,
+  ErrorBanner,
+} from './CRUDModal'
 
 interface AgentsModalProps {
   isOpen: boolean
@@ -14,6 +22,70 @@ interface AgentsModalProps {
 
 function toSlug(name: string): string {
   return name.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '')
+}
+
+function AgentListItem({
+  agent,
+  isConfirmingDelete,
+  isConfirmingRestore,
+  isModified,
+  onRestore,
+  onEdit,
+  onDelete,
+}: {
+  agent: { id: string; name: string; description: string; allowedTools: string[]; color?: string }
+  isConfirmingDelete: boolean
+  isConfirmingRestore: boolean
+  isModified: boolean
+  onRestore: () => void
+  onEdit: () => void
+  onDelete: () => void
+}) {
+  return (
+    <div className="flex items-center justify-between p-3 rounded border border-border bg-bg-tertiary">
+      <div className="min-w-0 flex-1 mr-3">
+        <div className="flex items-center gap-2">
+          <span className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: agent.color ?? '#6b7280' }} />
+          <span className="text-text-primary text-sm font-medium">{agent.name}</span>
+          <span className="text-text-muted text-xs font-mono">{agent.id}</span>
+          {isModified && (
+            <span className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-amber-500/15 text-amber-400">modified</span>
+          )}
+        </div>
+        {agent.description && (
+          <p className="text-text-secondary text-xs mt-0.5 truncate">{agent.description}</p>
+        )}
+        <div className="flex flex-wrap gap-1 mt-1">
+          {agent.allowedTools.slice(0, 5).map(tool => (
+            <span key={tool} className="text-[10px] font-mono text-text-muted bg-bg-primary px-1 py-0.5 rounded">
+              {tool}
+            </span>
+          ))}
+          {agent.allowedTools.length > 5 && (
+            <span className="text-[10px] text-text-muted">+{agent.allowedTools.length - 5} more</span>
+          )}
+        </div>
+      </div>
+
+      <div className="flex items-center gap-1.5 flex-shrink-0">
+        {isModified && (
+          isConfirmingRestore ? (
+            <ConfirmButton type="restore" onConfirm={onRestore} onCancel={() => {}} />
+          ) : (
+            <RestoreIcon onClick={onRestore} />
+          )
+        )}
+
+        <EditButton onClick={onEdit} />
+
+        {isConfirmingDelete ? (
+          <ConfirmButton type="delete" onConfirm={onDelete} onCancel={() => {}} />
+        ) : (
+          <DeleteIcon onClick={onDelete} />
+        )}
+      </div>
+    </div>
+  )
 }
 
 export function AgentsModal({ isOpen, onClose, initialEditId }: AgentsModalProps) {
@@ -30,7 +102,6 @@ export function AgentsModal({ isOpen, onClose, initialEditId }: AgentsModalProps
 
   const [view, setView] = useState<'list' | 'edit'>('list')
   const [editingId, setEditingId] = useState<string | null>(null)
-  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null)
 
   const [formName, setFormName] = useState('')
   const [formId, setFormId] = useState('')
@@ -42,11 +113,11 @@ export function AgentsModal({ isOpen, onClose, initialEditId }: AgentsModalProps
   const [formError, setFormError] = useState('')
   const [saving, setSaving] = useState(false)
 
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null)
   const [confirmRestoreId, setConfirmRestoreId] = useState<string | null>(null)
   const [confirmRestoreAll, setConfirmRestoreAll] = useState(false)
   const [availableTools, setAvailableTools] = useState<{ name: string; actions: string[] }[]>([])
 
-  // Parse stored allowedTools into granular format
   function parseAllowedTools(tools: string[]): Map<string, Set<string>> {
     const result = new Map<string, Set<string>>()
     for (const entry of tools) {
@@ -63,7 +134,6 @@ export function AgentsModal({ isOpen, onClose, initialEditId }: AgentsModalProps
     return result
   }
 
-  // Convert granular map back to stored format
   function serializeTools(granular: Map<string, Set<string>>): string[] {
     const result: string[] = []
     for (const [toolName, actions] of granular) {
@@ -91,6 +161,16 @@ export function AgentsModal({ isOpen, onClose, initialEditId }: AgentsModalProps
       newGranular.set(toolName, new Set())
     } else {
       newGranular.set(toolName, newActions)
+    }
+    setFormTools(serializeTools(newGranular))
+  }
+
+  const toggleTool = (toolName: string) => {
+    const newGranular = new Map(granularTools)
+    if (newGranular.has(toolName)) {
+      newGranular.delete(toolName)
+    } else {
+      newGranular.set(toolName, new Set())
     }
     setFormTools(serializeTools(newGranular))
   }
@@ -207,57 +287,20 @@ export function AgentsModal({ isOpen, onClose, initialEditId }: AgentsModalProps
     }
   }
 
-  const toggleTool = (toolName: string) => {
-    const newGranular = new Map(granularTools)
-    if (newGranular.has(toolName)) {
-      newGranular.delete(toolName)
-    } else {
-      newGranular.set(toolName, new Set())
-    }
-    setFormTools(serializeTools(newGranular))
-  }
-
   if (view === 'edit') {
     return (
       <Modal isOpen={isOpen} onClose={handleCancel} title={editingId ? 'Edit Agent' : 'New Agent'} size="xl">
         <div className="flex flex-col h-full">
           <div className="space-y-3">
-            {formError && (
-              <div className="text-accent-error text-sm px-3 py-2 bg-accent-error/10 rounded">{formError}</div>
-            )}
+            {formError && <ErrorBanner message={formError} />}
 
             <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="block text-xs text-text-secondary mb-1">Name</label>
-                <input
-                  value={formName}
-                  onChange={e => handleNameChange(e.target.value)}
-                  placeholder="My Agent"
-                  className="w-full px-2 py-1.5 bg-bg-tertiary border border-border rounded text-sm focus:outline-none focus:ring-1 focus:ring-accent-primary"
-                />
-              </div>
-              <div>
-                <label className="block text-xs text-text-secondary mb-1">ID {editingId && <span className="text-text-muted">(read-only)</span>}</label>
-                <input
-                  value={formId}
-                  onChange={e => !editingId && setFormId(e.target.value)}
-                  readOnly={!!editingId}
-                  placeholder="my_agent"
-                  className={`w-full px-2 py-1.5 bg-bg-tertiary border border-border rounded text-sm font-mono focus:outline-none focus:ring-1 focus:ring-accent-primary ${editingId ? 'opacity-60' : ''}`}
-                />
-              </div>
+              <FormField label="Name" value={formName} onChange={handleNameChange} placeholder="My Agent" />
+              <FormField label="ID" value={formId} onChange={setFormId} readOnly={!!editingId} placeholder="my_agent" hint={editingId ? '(read-only)' : undefined} mono />
             </div>
 
             <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="block text-xs text-text-secondary mb-1">Description</label>
-                <input
-                  value={formDescription}
-                  onChange={e => setFormDescription(e.target.value)}
-                  placeholder="What this agent does"
-                  className="w-full px-2 py-1.5 bg-bg-tertiary border border-border rounded text-sm focus:outline-none focus:ring-1 focus:ring-accent-primary"
-                />
-              </div>
+              <FormField label="Description" value={formDescription} onChange={setFormDescription} placeholder="What this agent does" />
               <div>
                 <label className="block text-xs text-text-secondary mb-1">Type</label>
                 <div className="flex items-center gap-3 h-[34px]">
@@ -386,12 +429,7 @@ export function AgentsModal({ isOpen, onClose, initialEditId }: AgentsModalProps
             />
           </div>
 
-          <div className="flex justify-end gap-2 pt-2 mt-5 border-t border-border flex-shrink-0">
-            <Button variant="secondary" onClick={handleCancel}>Cancel</Button>
-            <Button variant="primary" onClick={handleSave} disabled={saving || !formName || !formPrompt}>
-              {saving ? 'Saving...' : 'Save'}
-            </Button>
-          </div>
+          <ModalActions onCancel={handleCancel} onSave={handleSave} saving={saving} saveDisabled={!formName || !formPrompt} />
         </div>
       </Modal>
     )
@@ -453,16 +491,12 @@ export function AgentsModal({ isOpen, onClose, initialEditId }: AgentsModalProps
                   <AgentListItem
                     key={agent.id}
                     agent={agent}
-                    confirmDeleteId={confirmDeleteId}
+                    isConfirmingDelete={confirmDeleteId === agent.id}
                     isModified={modifiedIds.includes(agent.id)}
-                    confirmRestoreId={confirmRestoreId}
+                    isConfirmingRestore={confirmRestoreId === agent.id}
                     onRestore={async () => { await restoreDefault(agent.id); setConfirmRestoreId(null) }}
-                    onConfirmRestore={() => setConfirmRestoreId(agent.id)}
-                    onCancelRestore={() => setConfirmRestoreId(null)}
                     onEdit={() => handleEdit(agent.id)}
                     onDelete={() => handleDelete(agent.id)}
-                    onConfirmDelete={() => setConfirmDeleteId(agent.id)}
-                    onCancelDelete={() => setConfirmDeleteId(null)}
                   />
                 ))}
               </div>
@@ -477,16 +511,12 @@ export function AgentsModal({ isOpen, onClose, initialEditId }: AgentsModalProps
                   <AgentListItem
                     key={agent.id}
                     agent={agent}
-                    confirmDeleteId={confirmDeleteId}
+                    isConfirmingDelete={confirmDeleteId === agent.id}
                     isModified={modifiedIds.includes(agent.id)}
-                    confirmRestoreId={confirmRestoreId}
+                    isConfirmingRestore={confirmRestoreId === agent.id}
                     onRestore={async () => { await restoreDefault(agent.id); setConfirmRestoreId(null) }}
-                    onConfirmRestore={() => setConfirmRestoreId(agent.id)}
-                    onCancelRestore={() => setConfirmRestoreId(null)}
                     onEdit={() => handleEdit(agent.id)}
                     onDelete={() => handleDelete(agent.id)}
-                    onConfirmDelete={() => setConfirmDeleteId(agent.id)}
-                    onCancelDelete={() => setConfirmDeleteId(null)}
                   />
                 ))}
               </div>
@@ -495,120 +525,5 @@ export function AgentsModal({ isOpen, onClose, initialEditId }: AgentsModalProps
         </div>
       )}
     </Modal>
-  )
-}
-
-function AgentListItem({
-  agent,
-  confirmDeleteId,
-  isModified,
-  confirmRestoreId,
-  onRestore,
-  onConfirmRestore,
-  onCancelRestore,
-  onEdit,
-  onDelete,
-  onConfirmDelete,
-  onCancelDelete,
-}: {
-  agent: { id: string; name: string; description: string; allowedTools: string[]; color?: string }
-  confirmDeleteId: string | null
-  isModified: boolean
-  confirmRestoreId: string | null
-  onRestore: () => void
-  onConfirmRestore: () => void
-  onCancelRestore: () => void
-  onEdit: () => void
-  onDelete: () => void
-  onConfirmDelete: () => void
-  onCancelDelete: () => void
-}) {
-  return (
-    <div className="flex items-center justify-between p-3 rounded border border-border bg-bg-tertiary">
-      <div className="min-w-0 flex-1 mr-3">
-        <div className="flex items-center gap-2">
-          <span className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: agent.color ?? '#6b7280' }} />
-          <span className="text-text-primary text-sm font-medium">{agent.name}</span>
-          <span className="text-text-muted text-xs font-mono">{agent.id}</span>
-          {isModified && (
-            <span className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-amber-500/15 text-amber-400">modified</span>
-          )}
-        </div>
-        {agent.description && (
-          <p className="text-text-secondary text-xs mt-0.5 truncate">{agent.description}</p>
-        )}
-        <div className="flex flex-wrap gap-1 mt-1">
-          {agent.allowedTools.slice(0, 5).map(tool => (
-            <span key={tool} className="text-[10px] font-mono text-text-muted bg-bg-primary px-1 py-0.5 rounded">
-              {tool}
-            </span>
-          ))}
-          {agent.allowedTools.length > 5 && (
-            <span className="text-[10px] text-text-muted">+{agent.allowedTools.length - 5} more</span>
-          )}
-        </div>
-      </div>
-
-      <div className="flex items-center gap-1.5 flex-shrink-0">
-        {/* Restore default button — only shown when modified */}
-        {isModified && (
-          confirmRestoreId === agent.id ? (
-            <div className="flex items-center gap-1">
-              <button
-                onClick={onRestore}
-                className="px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-400 text-xs hover:bg-amber-500/30 transition-colors"
-              >
-                Restore
-              </button>
-              <button
-                onClick={onCancelRestore}
-                className="px-1.5 py-0.5 rounded text-text-muted text-xs hover:bg-bg-primary transition-colors"
-              >
-                Cancel
-              </button>
-            </div>
-          ) : (
-            <button
-              onClick={onConfirmRestore}
-              className="p-1.5 rounded hover:bg-bg-primary text-text-muted hover:text-amber-400 transition-colors"
-              title="Restore default"
-            >
-              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-              </svg>
-            </button>
-          )
-        )}
-
-        <EditButton onClick={onEdit} />
-
-        {confirmDeleteId === agent.id ? (
-          <div className="flex items-center gap-1">
-            <button
-              onClick={onDelete}
-              className="px-1.5 py-0.5 rounded bg-accent-error/20 text-accent-error text-xs hover:bg-accent-error/30 transition-colors"
-            >
-              Delete
-            </button>
-            <button
-              onClick={onCancelDelete}
-              className="px-1.5 py-0.5 rounded text-text-muted text-xs hover:bg-bg-primary transition-colors"
-            >
-              Cancel
-            </button>
-          </div>
-        ) : (
-          <button
-            onClick={onConfirmDelete}
-            className="p-1.5 rounded hover:bg-bg-primary text-text-muted hover:text-accent-error transition-colors"
-            title="Delete agent"
-          >
-            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-            </svg>
-          </button>
-        )}
-      </div>
-    </div>
   )
 }

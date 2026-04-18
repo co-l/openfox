@@ -20,6 +20,42 @@ export function clearTodos(sessionId: string): void {
   sessionTodos.delete(sessionId)
 }
 
+function saveTodosAndBuildSuccess(
+  sessionId: string,
+  todosList: Todo[],
+  startTime: number,
+  output: string,
+): ToolResult {
+  sessionTodos.set(sessionId, todosList)
+
+  if (onTodoUpdate) {
+    onTodoUpdate(sessionId, todosList)
+  }
+
+  return {
+    success: true,
+    output,
+    durationMs: Date.now() - startTime,
+    truncated: false,
+  }
+}
+
+function buildErrorResponse(error: string, startTime: number): ToolResult {
+  return {
+    success: false,
+    error,
+    durationMs: Date.now() - startTime,
+    truncated: false,
+  }
+}
+
+function buildTaskListSummary(todosList: Todo[]): string {
+  const pending = todosList.filter(t => t.status === 'pending').length
+  const inProgress = todosList.filter(t => t.status === 'in_progress').length
+  const completed = todosList.filter(t => t.status === 'completed').length
+  return `${completed} completed, ${inProgress} in progress, ${pending} pending`
+}
+
 export const todoTool: Tool = {
   name: 'todo',
   permittedActions: ['list', 'write', 'add', 'update', 'remove'],
@@ -147,22 +183,12 @@ export const todoTool: Tool = {
           }
         }
         
-        sessionTodos.set(context.sessionId, todos)
-        
-        if (onTodoUpdate) {
-          onTodoUpdate(context.sessionId, todos)
-        }
-        
-        const pending = todos.filter(t => t.status === 'pending').length
-        const inProgress = todos.filter(t => t.status === 'in_progress').length
-        const completed = todos.filter(t => t.status === 'completed').length
-        
-        return {
-          success: true,
-          output: `Task list updated: ${completed} completed, ${inProgress} in progress, ${pending} pending`,
-          durationMs: Date.now() - startTime,
-          truncated: false,
-        }
+        return saveTodosAndBuildSuccess(
+          context.sessionId,
+          todos,
+          startTime,
+          `Task list updated: ${todos.filter(t => t.status === 'completed').length} completed, ${todos.filter(t => t.status === 'in_progress').length} in progress, ${todos.filter(t => t.status === 'pending').length} pending`,
+        )
       }
       
       if (action === 'add') {
@@ -178,22 +204,13 @@ export const todoTool: Tool = {
         const todosList = sessionTodos.get(context.sessionId) ?? []
         const newTodo: Todo = { content, status: 'pending' }
         todosList.push(newTodo)
-        sessionTodos.set(context.sessionId, todosList)
-        
-        if (onTodoUpdate) {
-          onTodoUpdate(context.sessionId, todosList)
-        }
-        
-        const pending = todosList.filter(t => t.status === 'pending').length
-        const inProgress = todosList.filter(t => t.status === 'in_progress').length
-        const completed = todosList.filter(t => t.status === 'completed').length
-        
-        return {
-          success: true,
-          output: `Added task "${content}". Task list: ${completed} completed, ${inProgress} in progress, ${pending} pending`,
-          durationMs: Date.now() - startTime,
-          truncated: false,
-        }
+
+        return saveTodosAndBuildSuccess(
+          context.sessionId,
+          todosList,
+          startTime,
+          `Added task "${content}". Task list: ${todosList.filter(t => t.status === 'completed').length} completed, ${todosList.filter(t => t.status === 'in_progress').length} in progress, ${todosList.filter(t => t.status === 'pending').length} pending`,
+        )
       }
       
       if (action === 'update') {
@@ -227,12 +244,7 @@ export const todoTool: Tool = {
         const todosList = sessionTodos.get(context.sessionId) ?? []
         
         if (index < 0 || index >= todosList.length) {
-          return {
-            success: false,
-            error: `Index out of range: ${index}. Valid range: 0-${todosList.length - 1}`,
-            durationMs: Date.now() - startTime,
-            truncated: false,
-          }
+          return buildErrorResponse(`Index out of range: ${index}. Valid range: 0-${todosList.length - 1}`, startTime)
         }
         
         const todo = todosList[index]
@@ -257,13 +269,9 @@ export const todoTool: Tool = {
           onTodoUpdate(context.sessionId, todosList)
         }
         
-        const pending = todosList.filter(t => t.status === 'pending').length
-        const inProgress = todosList.filter(t => t.status === 'in_progress').length
-        const completed = todosList.filter(t => t.status === 'completed').length
-        
         return {
           success: true,
-          output: `Updated task ${index}. Task list: ${completed} completed, ${inProgress} in progress, ${pending} pending`,
+          output: `Updated task ${index}. Task list: ${buildTaskListSummary(todosList)}`,
           durationMs: Date.now() - startTime,
           truncated: false,
         }
@@ -282,12 +290,7 @@ export const todoTool: Tool = {
         const todosList = sessionTodos.get(context.sessionId) ?? []
         
         if (index < 0 || index >= todosList.length) {
-          return {
-            success: false,
-            error: `Index out of range: ${index}. Valid range: 0-${todosList.length - 1}`,
-            durationMs: Date.now() - startTime,
-            truncated: false,
-          }
+          return buildErrorResponse(`Index out of range: ${index}. Valid range: 0-${todosList.length - 1}`, startTime)
         }
         
         const removed = todosList.splice(index, 1)[0]!
@@ -306,13 +309,9 @@ export const todoTool: Tool = {
           }
         }
         
-        const pending = todosList.filter(t => t.status === 'pending').length
-        const inProgress = todosList.filter(t => t.status === 'in_progress').length
-        const completed = todosList.filter(t => t.status === 'completed').length
-        
         return {
           success: true,
-          output: `Removed task "${removed.content}". Task list: ${completed} completed, ${inProgress} in progress, ${pending} pending`,
+          output: `Removed task "${removed.content}". Task list: ${buildTaskListSummary(todosList)}`,
           durationMs: Date.now() - startTime,
           truncated: false,
         }
