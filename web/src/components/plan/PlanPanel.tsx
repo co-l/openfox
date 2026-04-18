@@ -432,15 +432,11 @@ export function PlanPanel({ criteriaSidebarOpen: externalCriteriaSidebarOpen, on
                   <div className="text-red-400 text-sm font-medium">{error.code}</div>
                   <div className="text-red-300 text-xs mt-0.5">{error.message}</div>
                 </div>
-                <button
+                <CloseButton
                   onClick={clearError}
                   className="text-red-400 hover:text-red-300 p-0.5"
-                  aria-label="Dismiss error"
-                >
-                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                  </svg>
-                </button>
+                  size="sm"
+                />
               </div>
             </div>
           )}
