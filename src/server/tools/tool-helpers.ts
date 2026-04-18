@@ -123,13 +123,13 @@ export function validateActionWithPermission(
   allowedActions: string[],
   toolName: string,
   permittedActions: Record<string, string[]> | undefined,
-  startTime: number,
+  startTime?: number,
 ): ToolResult | undefined {
-  const actionError = validateAction(action, allowedActions, startTime)
+  const actionError = validateAction(action, allowedActions, startTime ?? Date.now())
   if (actionError) return actionError
 
   const permittedToolActions = permittedActions?.[toolName]
-  const permissionError = checkActionPermission(action, permittedToolActions, startTime)
+  const permissionError = checkActionPermission(action, permittedToolActions, startTime ?? Date.now())
   if (permissionError) return permissionError
 
   return undefined

@@ -1,9 +1,5 @@
-import type { ToolResult, Todo } from '../../shared/types.js'
-import type { Tool, ToolContext } from './types.js'
-import { validateActionWithPermission, unexpectedError, catchError } from './tool-helpers.js'
-
-type TodoAction = 'list' | 'write' | 'add' | 'update' | 'remove'
-type TodoStatus = 'pending' | 'in_progress' | 'completed'
+import type { Todo } from '../../shared/types.js'
+import { createTool, validateActionWithPermission } from './tool-helpers.js'
 
 const sessionTodos = new Map<string, Todo[]>()
 
@@ -21,59 +17,6 @@ export function clearTodos(sessionId: string): void {
   sessionTodos.delete(sessionId)
 }
 
-function saveTodosAndBuildSuccess(
-  sessionId: string,
-  todosList: Todo[],
-  startTime: number,
-  output: string,
-): ToolResult {
-  sessionTodos.set(sessionId, todosList)
-
-  if (onTodoUpdate) {
-    onTodoUpdate(sessionId, todosList)
-  }
-
-  return {
-    success: true,
-    output,
-    durationMs: Date.now() - startTime,
-    truncated: false,
-  }
-}
-
-function buildErrorResponse(error: string, startTime: number): ToolResult {
-  return {
-    success: false,
-    error,
-    durationMs: Date.now() - startTime,
-    truncated: false,
-  }
-}
-
-function validateIndex(index: number | undefined, sessionId: string, startTime: number): { todosList: Todo[]; index: number } | ToolResult {
-  if (index === undefined) {
-    return buildErrorResponse('Missing required field: index', startTime)
-  }
-  const todosList = sessionTodos.get(sessionId) ?? []
-  if (index < 0 || index >= todosList.length) {
-    return buildErrorResponse(`Index out of range: ${index}. Valid range: 0-${todosList.length - 1}`, startTime)
-  }
-  return { todosList, index }
-}
-
-function saveTodosResult(todosList: Todo[], sessionId: string, output: string, startTime: number): ToolResult {
-  sessionTodos.set(sessionId, todosList)
-  if (onTodoUpdate) {
-    onTodoUpdate(sessionId, todosList)
-  }
-  return {
-    success: true,
-    output,
-    durationMs: Date.now() - startTime,
-    truncated: false,
-  }
-}
-
 function buildTaskListSummary(todosList: Todo[]): string {
   const pending = todosList.filter(t => t.status === 'pending').length
   const inProgress = todosList.filter(t => t.status === 'in_progress').length
@@ -81,10 +24,17 @@ function buildTaskListSummary(todosList: Todo[]): string {
   return `${completed} completed, ${inProgress} in progress, ${pending} pending`
 }
 
-export const todoTool: Tool = {
-  name: 'todo',
-  permittedActions: ['list', 'write', 'add', 'update', 'remove'],
-  definition: {
+interface TodoArgs {
+  action: 'list' | 'write' | 'add' | 'update' | 'remove'
+  todos?: Todo[]
+  content?: string
+  index?: number
+  status?: 'pending' | 'in_progress' | 'completed'
+}
+
+export const todoTool = createTool<TodoArgs>(
+  'todo',
+  {
     type: 'function',
     function: {
       name: 'todo',
@@ -127,182 +77,76 @@ export const todoTool: Tool = {
       },
     },
   },
-  
-  async execute(args: Record<string, unknown>, context: ToolContext): Promise<ToolResult> {
-    const startTime = Date.now()
-    
-    try {
-      const action = args['action'] as TodoAction | undefined
-      const todos = args['todos'] as Todo[] | undefined
-      const content = args['content'] as string | undefined
-      const index = args['index'] as number | undefined
-      const status = args['status'] as TodoStatus | undefined
-      
-      const allowedActions = ['list', 'write', 'add', 'update', 'remove']
-      const actionError = validateActionWithPermission(action, allowedActions, 'todo', context.permittedActions, startTime)
-      if (actionError) return actionError
-      
-      if (action === 'list') {
-        const todosList = sessionTodos.get(context.sessionId) ?? []
-        return {
-          success: true,
-          output: todosList.length === 0
-            ? 'No tasks defined yet.'
-            : JSON.stringify(todosList, null, 2),
-          durationMs: Date.now() - startTime,
-          truncated: false,
-        }
-      }
-      
-      if (action === 'write') {
-        if (!todos) {
-          return {
-            success: false,
-            error: 'Missing required field: todos',
-            durationMs: Date.now() - startTime,
-            truncated: false,
-          }
-        }
-        
-        if (!Array.isArray(todos)) {
-          return {
-            success: false,
-            error: 'todos must be an array',
-            durationMs: Date.now() - startTime,
-            truncated: false,
-          }
-        }
-        
-        for (const todo of todos) {
-          if (!todo.content || !todo.status) {
-            return {
-              success: false,
-              error: 'Each todo must have content and status',
-              durationMs: Date.now() - startTime,
-              truncated: false,
-            }
-          }
-          if (!['pending', 'in_progress', 'completed'].includes(todo.status)) {
-            return {
-              success: false,
-              error: `Invalid status: ${todo.status}. Must be pending, in_progress, or completed`,
-              durationMs: Date.now() - startTime,
-              truncated: false,
-            }
-          }
-        }
-        
-        return saveTodosAndBuildSuccess(
-          context.sessionId,
-          todos,
-          startTime,
-          `Task list updated: ${todos.filter(t => t.status === 'completed').length} completed, ${todos.filter(t => t.status === 'in_progress').length} in progress, ${todos.filter(t => t.status === 'pending').length} pending`,
-        )
-      }
-      
-      if (action === 'add') {
-        if (!content) {
-          return {
-            success: false,
-            error: 'Missing required field: content',
-            durationMs: Date.now() - startTime,
-            truncated: false,
-          }
-        }
-        
-        const todosList = sessionTodos.get(context.sessionId) ?? []
-        const newTodo: Todo = { content, status: 'pending' }
-        todosList.push(newTodo)
+  async (args, context, helpers) => {
+    const actionError = validateActionWithPermission(args.action, ['list', 'write', 'add', 'update', 'remove'], 'todo', context.permittedActions)
+    if (actionError) return actionError
 
-        return saveTodosAndBuildSuccess(
-          context.sessionId,
-          todosList,
-          startTime,
-          `Added task "${content}". Task list: ${todosList.filter(t => t.status === 'completed').length} completed, ${todosList.filter(t => t.status === 'in_progress').length} in progress, ${todosList.filter(t => t.status === 'pending').length} pending`,
-        )
-      }
-      
-      if (action === 'update') {
-        if (!content && !status) {
-          return {
-            success: false,
-            error: 'update requires content or status',
-            durationMs: Date.now() - startTime,
-            truncated: false,
-          }
-        }
-        
-        if (status && !['pending', 'in_progress', 'completed'].includes(status)) {
-          return {
-            success: false,
-            error: `Invalid status: ${status}. Must be pending, in_progress, or completed`,
-            durationMs: Date.now() - startTime,
-            truncated: false,
-          }
-        }
-        
-        const validateResult = validateIndex(index, context.sessionId, startTime)
-        if ('success' in validateResult) return validateResult
-        const { todosList } = validateResult
-        
-        const todo = todosList[validateResult.index]
-        if (!todo) {
-          return {
-            success: false,
-            error: `Index out of range: ${index}. Valid range: 0-${todosList.length - 1}`,
-            durationMs: Date.now() - startTime,
-            truncated: false,
-          }
-        }
-        if (content) {
-          todo.content = content
-        }
-        if (status) {
-          todo.status = status
-        }
-        
-        if (content) {
-          todo.content = content
-        }
-        if (status) {
-          todo.status = status
-        }
-
-        return saveTodosResult(
-          todosList,
-          context.sessionId,
-          `Updated task ${index}. Task list: ${buildTaskListSummary(todosList)}`,
-          startTime,
-        )
-      }
-      
-      if (action === 'remove') {
-        const validateResult = validateIndex(index, context.sessionId, startTime)
-        if ('success' in validateResult) return validateResult
-        const { todosList } = validateResult
-        
-        const removed = todosList.splice(validateResult.index, 1)[0]!
-
-        if (todosList.length === 0) {
-          return saveTodosResult(
-            todosList,
-            context.sessionId,
-            `Removed task "${removed.content}". No tasks remaining.`,
-            startTime,
-          )
-        }
-
-        return saveTodosResult(
-          todosList,
-          context.sessionId,
-          `Removed task "${removed.content}". Task list: ${buildTaskListSummary(todosList)}`,
-          startTime,
-        )
-      }
-      
-      return unexpectedError(startTime)
-    } catch (error) {
-      return catchError(error, startTime)
+    if (args.action === 'list') {
+      const todosList = sessionTodos.get(context.sessionId) ?? []
+      return helpers.success(
+        todosList.length === 0
+          ? 'No tasks defined yet.'
+          : JSON.stringify(todosList, null, 2)
+      )
     }
-  },
-}
+
+    if (args.action === 'write') {
+      if (!args.todos) return helpers.error('Missing required field: todos')
+      if (!Array.isArray(args.todos)) return helpers.error('todos must be an array')
+      for (const todo of args.todos) {
+        if (!todo.content || !todo.status) return helpers.error('Each todo must have content and status')
+        if (!['pending', 'in_progress', 'completed'].includes(todo.status)) {
+          return helpers.error(`Invalid status: ${todo.status}. Must be pending, in_progress, or completed`)
+        }
+      }
+      sessionTodos.set(context.sessionId, args.todos)
+      if (onTodoUpdate) onTodoUpdate(context.sessionId, args.todos)
+      return helpers.success(`${args.todos.filter(t => t.status === 'completed').length} completed, ${args.todos.filter(t => t.status === 'in_progress').length} in progress, ${args.todos.filter(t => t.status === 'pending').length} pending`)
+    }
+
+    if (args.action === 'add') {
+      if (!args.content) return helpers.error('Missing required field: content')
+      const todosList = sessionTodos.get(context.sessionId) ?? []
+      todosList.push({ content: args.content, status: 'pending' })
+      sessionTodos.set(context.sessionId, todosList)
+      if (onTodoUpdate) onTodoUpdate(context.sessionId, todosList)
+      return helpers.success(`Added task "${args.content}". Task list: ${buildTaskListSummary(todosList)}`)
+    }
+
+    if (args.action === 'update') {
+      if (!args.content && !args.status) return helpers.error('update requires content or status')
+      if (args.status && !['pending', 'in_progress', 'completed'].includes(args.status)) {
+        return helpers.error(`Invalid status: ${args.status}. Must be pending, in_progress, or completed`)
+      }
+      const todosList = sessionTodos.get(context.sessionId) ?? []
+      if (args.index === undefined) return helpers.error('Missing required field: index')
+      if (args.index < 0 || args.index >= todosList.length) {
+        return helpers.error(`Index out of range: ${args.index}. Valid range: 0-${todosList.length - 1}`)
+      }
+      const todo = todosList[args.index]!
+      if (args.content) todo.content = args.content
+      if (args.status) todo.status = args.status
+      sessionTodos.set(context.sessionId, todosList)
+      if (onTodoUpdate) onTodoUpdate(context.sessionId, todosList)
+      return helpers.success(`Updated task ${args.index}. Task list: ${buildTaskListSummary(todosList)}`)
+    }
+
+    if (args.action === 'remove') {
+      const todosList = sessionTodos.get(context.sessionId) ?? []
+      if (args.index === undefined) return helpers.error('Missing required field: index')
+      if (args.index < 0 || args.index >= todosList.length) {
+        return helpers.error(`Index out of range: ${args.index}. Valid range: 0-${todosList.length - 1}`)
+      }
+      const removed = todosList.splice(args.index, 1)[0]!
+      sessionTodos.set(context.sessionId, todosList)
+      if (onTodoUpdate) onTodoUpdate(context.sessionId, todosList)
+      return helpers.success(
+        todosList.length === 0
+          ? `Removed task "${removed.content}". No tasks remaining.`
+          : `Removed task "${removed.content}". Task list: ${buildTaskListSummary(todosList)}`
+      )
+    }
+
+    return helpers.error('Unexpected error')
+  }
+)
