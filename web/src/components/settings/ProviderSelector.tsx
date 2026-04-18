@@ -90,17 +90,18 @@ export function ProviderSelector() {
     }
   }
 
+  const toggleProviderExpansion = (provider: Provider) => {
+    if (expandedProviderIds.includes(provider.id)) {
+      setExpandedProviderIds(expandedProviderIds.filter(id => id !== provider.id))
+    } else {
+      setExpandedProviderIds([...expandedProviderIds, provider.id])
+      loadProviderModels(provider.id)
+    }
+  }
+
   const handleProviderClick = async (provider: Provider) => {
     if (provider.id === activeProviderId) {
-      // Toggle model expansion for active provider
-      if (expandedProviderIds.includes(provider.id)) {
-        setExpandedProviderIds(expandedProviderIds.filter(id => id !== provider.id))
-      } else {
-        // Show submenu immediately for instant feedback
-        setExpandedProviderIds([...expandedProviderIds, provider.id])
-        // Load models in background without blocking UI
-        loadProviderModels(provider.id)
-      }
+      toggleProviderExpansion(provider)
       return
     }
     
@@ -122,15 +123,7 @@ export function ProviderSelector() {
   }
 
   const handleChevronClick = (provider: Provider) => {
-    // Toggle model expansion for any provider
-    if (expandedProviderIds.includes(provider.id)) {
-      setExpandedProviderIds(expandedProviderIds.filter(id => id !== provider.id))
-    } else {
-      // Show submenu immediately for instant feedback
-      setExpandedProviderIds([...expandedProviderIds, provider.id])
-      // Load models in background without blocking UI
-      loadProviderModels(provider.id)
-    }
+    toggleProviderExpansion(provider)
   }
 
   const handleRefreshClick = async (e: React.MouseEvent, providerId: string) => {
