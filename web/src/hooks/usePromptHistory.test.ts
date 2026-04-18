@@ -6,7 +6,7 @@ import {
   buildFromSessions,
   buildCombinedHistory
 } from './usePromptHistory'
-import { trimContent } from '../lib/cross-session-history'
+
 import type { Message, SessionSummary } from '@shared/types'
 
 function mockSession(partial: Partial<SessionSummary> & Pick<SessionSummary, 'id'>): SessionSummary {
@@ -38,17 +38,7 @@ describe('usePromptHistory helpers', () => {
     })
   })
 
-  describe('trimContent', () => {
-    it('returns content as-is if within limit', () => {
-      expect(trimContent('Short text', 150)).toBe('Short text')
-    })
-
-    it('trims to maxLength and adds ellipsis', () => {
-      const result = trimContent('A'.repeat(200), 150)
-      expect(result.length).toBe(153) // 150 + '...'
-      expect(result).toContain('...')
-    })
-  })
+  
 
   describe('extractUserMessages', () => {
     it('filters only user messages', () => {

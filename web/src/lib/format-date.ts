@@ -60,16 +60,17 @@ export function formatRelativeDate(isoString: string): string {
   }
 }
 
-/**
- * Extract the date part (YYYY-MM-DD) from an ISO timestamp
- * Used for grouping sessions by day
- * Uses local time to match user's timezone
- */
-export function extractDateKey(isoString: string): string {
+export function extractDateComponents(isoString: string) {
   const date = new Date(isoString)
-  const year = date.getFullYear()
-  const month = String(date.getMonth() + 1).padStart(2, '0')
-  const day = String(date.getDate()).padStart(2, '0')
+  return {
+    year: date.getFullYear(),
+    month: String(date.getMonth() + 1).padStart(2, '0'),
+    day: String(date.getDate()).padStart(2, '0'),
+  }
+}
+
+export function extractDateKey(isoString: string): string {
+  const { year, month, day } = extractDateComponents(isoString)
   return `${year}-${month}-${day}`
 }
 

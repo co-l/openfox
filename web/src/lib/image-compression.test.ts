@@ -62,25 +62,18 @@ class MockFileReader {
   }
 }
 
-describe('Image Compression', () => {
-  beforeAll(() => {
-    // Mock global objects
-    ;(globalThis as any).Image = MockImage
-    ;(globalThis as any).HTMLImageElement = MockImage
-    ;(globalThis as any).FileReader = MockFileReader
-    ;(globalThis as any).document = {
-      createElement: () => new MockCanvas(),
-    }
-  })
+function setupMocks() {
+  ;(globalThis as any).Image = MockImage
+  ;(globalThis as any).HTMLImageElement = MockImage
+  ;(globalThis as any).FileReader = MockFileReader
+  ;(globalThis as any).document = {
+    createElement: () => new MockCanvas(),
+  }
+}
 
-  afterEach(() => {
-    ;(globalThis as any).Image = MockImage
-    ;(globalThis as any).HTMLImageElement = MockImage
-    ;(globalThis as any).FileReader = MockFileReader
-    ;(globalThis as any).document = {
-      createElement: () => new MockCanvas(),
-    }
-  })
+describe('Image Compression', () => {
+  beforeAll(setupMocks)
+  afterEach(setupMocks)
 
   describe('compressImage', () => {
     it('should compress large images to max 1920px dimension', async () => {

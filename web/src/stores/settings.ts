@@ -17,28 +17,36 @@ interface SettingsState {
   setSetting: (key: string, value: string) => Promise<void>
 }
 
+function setLoading(key: string, loading: boolean) {
+  return (state: SettingsState) => ({ loading: { ...state.loading, [key]: loading } })
+}
+
+function setValue(key: string, value: string) {
+  return (state: SettingsState) => ({
+    settings: { ...state.settings, [key]: value },
+    loading: { ...state.loading, [key]: false },
+  })
+}
+
 export const useSettingsStore = create<SettingsState>((set) => ({
   settings: {},
   loading: {},
   
   getSetting: async (key) => {
-    set(state => ({ loading: { ...state.loading, [key]: true } }))
+    set(setLoading(key, true))
     try {
       const res = await authFetch(`/api/settings/${key}`)
       const data = await res.json()
-      set(state => ({
-        settings: { ...state.settings, [key]: data.value ?? '' },
-        loading: { ...state.loading, [key]: false },
-      }))
+      set(setValue(key, data.value ?? ''))
       return data.value
     } catch {
-      set(state => ({ loading: { ...state.loading, [key]: false } }))
+      set(setLoading(key, false))
       return null
     }
   },
   
   setSetting: async (key, value) => {
-    set(state => ({ loading: { ...state.loading, [key]: true } }))
+    set(setLoading(key, true))
     try {
       const res = await authFetch(`/api/settings/${key}`, {
         method: 'PUT',
@@ -46,12 +54,9 @@ export const useSettingsStore = create<SettingsState>((set) => ({
         body: JSON.stringify({ value }),
       })
       const data = await res.json()
-      set(state => ({
-        settings: { ...state.settings, [key]: data.value ?? '' },
-        loading: { ...state.loading, [key]: false },
-      }))
+      set(setValue(key, data.value ?? ''))
     } catch {
-      set(state => ({ loading: { ...state.loading, [key]: false } }))
+      set(setLoading(key, false))
     }
   },
 }))

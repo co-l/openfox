@@ -58,65 +58,50 @@ export function buildHistoryFromMessages(messages: Message[], maxCount: number):
   return history
 }
 
-/**
- * Build cross-session prompt history from all sessions in the store
- * Aggregates recentUserPrompts from all sessions, sorts by timestamp descending, returns top 10
- */
-export function buildFromSessions(sessions: SessionSummary[]): PromptHistoryItem[] {
-  // Aggregate all recentUserPrompts from all sessions
-  const allPrompts: Array<{ id: string, content: string, timestamp: string, sessionId: string, sessionName?: string }> = []
-  
-  for (const session of sessions) {
-    if (session.recentUserPrompts) {
-      for (const prompt of session.recentUserPrompts) {
-        allPrompts.push({
-          id: prompt.id,
-          content: prompt.content,
-          timestamp: prompt.timestamp,
-          sessionId: session.id,
-          sessionName: session.title || session.id,
-        })
-      }
+type PromptData = { id: string, content: string, timestamp: string, sessionId: string, sessionName?: string }
+
+function extractSessionPrompts(session: SessionSummary): PromptData[] {
+  const prompts: PromptData[] = []
+  if (session.recentUserPrompts) {
+    for (const prompt of session.recentUserPrompts) {
+      prompts.push({
+        id: prompt.id,
+        content: prompt.content,
+        timestamp: prompt.timestamp,
+        sessionId: session.id,
+        sessionName: session.title || session.id,
+      })
     }
   }
-  
-  // Sort by timestamp descending (newest first)
-  allPrompts.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
-  
-  // Take top 10 most recent prompts
-  const recentPrompts = allPrompts.slice(0, MAX_HISTORY_SIZE)
-  
-  // Reverse to get oldest-first order for display (newest at bottom)
-  recentPrompts.reverse()
-  
-  const history: PromptHistoryItem[] = []
-  for (const prompt of recentPrompts) {
-    history.push({
-      id: prompt.id,
-      content: prompt.content,
-      timestamp: prompt.timestamp,
-      formattedTimestamp: formatTimestamp(prompt.timestamp),
-      trimmedContent: trimContent(prompt.content, MAX_CONTENT_LENGTH),
-      sessionId: prompt.sessionId,
-      sessionName: prompt.sessionName,
-    })
-  }
-  
-  return history
+  return prompts
 }
 
-/**
- * Build combined history from current session messages and all other sessions
- * Always returns the 10 most recent prompts across all sources
- */
+function buildHistoryFromPrompts(prompts: PromptData[]): PromptHistoryItem[] {
+  const sorted = [...prompts].sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
+  const recent = sorted.slice(0, MAX_HISTORY_SIZE).reverse()
+  return recent.map(prompt => ({
+    id: prompt.id,
+    content: prompt.content,
+    timestamp: prompt.timestamp,
+    formattedTimestamp: formatTimestamp(prompt.timestamp),
+    trimmedContent: trimContent(prompt.content, MAX_CONTENT_LENGTH),
+    sessionId: prompt.sessionId,
+    sessionName: prompt.sessionName,
+  }))
+}
+
+export function buildFromSessions(sessions: SessionSummary[]): PromptHistoryItem[] {
+  const allPrompts = sessions.flatMap(extractSessionPrompts)
+  return buildHistoryFromPrompts(allPrompts)
+}
+
 export function buildCombinedHistory(
   messages: Message[],
   sessions: SessionSummary[],
   currentSessionId: string | null
 ): PromptHistoryItem[] {
-  const allPrompts: Array<{ id: string, content: string, timestamp: string, sessionId: string | null, sessionName?: string }> = []
-  
-  // Add current session messages (exclude auto-prompts and system-generated)
+  const allPrompts: PromptData[] = []
+
   const currentUserMessages = messages.filter(msg =>
     msg.role === 'user' && !msg.isSystemGenerated && msg.messageKind !== 'auto-prompt'
   )
@@ -125,54 +110,17 @@ export function buildCombinedHistory(
       id: msg.id,
       content: msg.content,
       timestamp: msg.timestamp,
-      sessionId: currentSessionId,
+      sessionId: currentSessionId ?? '',
       sessionName: 'This session',
     })
   }
-  
-  // Add prompts from other sessions
+
   for (const session of sessions) {
-    // Skip the current session (we already added its messages)
-    if (currentSessionId && session.id === currentSessionId) {
-      continue
-    }
-    
-    if (session.recentUserPrompts) {
-      for (const prompt of session.recentUserPrompts) {
-        allPrompts.push({
-          id: prompt.id,
-          content: prompt.content,
-          timestamp: prompt.timestamp,
-          sessionId: session.id,
-          sessionName: session.title || session.id,
-        })
-      }
-    }
+    if (currentSessionId && session.id === currentSessionId) continue
+    allPrompts.push(...extractSessionPrompts(session))
   }
-  
-  // Sort by timestamp descending (newest first)
-  allPrompts.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
-  
-  // Take top 10 most recent prompts
-  const recentPrompts = allPrompts.slice(0, MAX_HISTORY_SIZE)
-  
-  // Reverse to get oldest-first order for display (newest at bottom)
-  recentPrompts.reverse()
-  
-  const history: PromptHistoryItem[] = []
-  for (const prompt of recentPrompts) {
-    history.push({
-      id: prompt.id,
-      content: prompt.content,
-      timestamp: prompt.timestamp,
-      formattedTimestamp: formatTimestamp(prompt.timestamp),
-      trimmedContent: trimContent(prompt.content, MAX_CONTENT_LENGTH),
-      sessionId: prompt.sessionId || undefined,
-      sessionName: prompt.sessionName,
-    })
-  }
-  
-  return history
+
+  return buildHistoryFromPrompts(allPrompts)
 }
 
 interface UsePromptHistoryReturn {
