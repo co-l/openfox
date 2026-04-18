@@ -9,7 +9,6 @@ function normalizeModelId(s: string): string {
 async function fetchModelsFromBackend(
   url: string,
   apiKey?: string,
-  extractModelId?: (m: { id: string }) => string,
 ): Promise<{ id: string; contextWindow: number | undefined }[]> {
   const headers: Record<string, string> = { 'Content-Type': 'application/json' }
   if (apiKey) {
@@ -25,7 +24,7 @@ async function fetchModelsFromBackend(
     const data = await response.json() as { data?: { id: string; max_model_len?: number }[] }
     if (data.data && Array.isArray(data.data)) {
       return data.data.map(m => ({
-        id: extractModelId ? extractModelId(m) : m.id,
+        id: m.id,
         contextWindow: m.max_model_len ?? undefined,
       }))
     }
@@ -57,39 +56,10 @@ function mergeModelsWithUserOverrides(backendModels: ModelConfig[], userModels: 
   return updatedModels
 }
 
-/** Fetch available models from a provider's backend with context windows */
 export async function fetchAvailableModelsFromBackend(baseUrl: string, apiKey?: string): Promise<string[]> {
   const url = baseUrl.includes('/v1') ? `${baseUrl}/models` : `${baseUrl}/v1/models`
-
-  try {
-    const headers: Record<string, string> = {
-      'Content-Type': 'application/json',
-    }
-    if (apiKey) {
-      headers['Authorization'] = `Bearer ${apiKey}`
-    }
-
-    const response = await fetch(url, {
-      method: 'GET',
-      headers,
-      signal: AbortSignal.timeout(10000),
-    })
-
-    if (!response.ok) {
-      logger.debug('Failed to fetch models', { url, status: response.status })
-      return []
-    }
-
-    const data = await response.json() as { data?: Array<{ id: string }> }
-    if (data.data && Array.isArray(data.data)) {
-      return data.data.map(m => m.id).filter(Boolean)
-    }
-
-    return []
-  } catch (error) {
-    logger.debug('Error fetching models from backend', { url, error: error instanceof Error ? error.message : String(error) })
-    return []
-  }
+  const models = await fetchModelsFromBackend(url, apiKey)
+  return models.map(m => m.id)
 }
 
 /** Fetch models with context window metadata */
@@ -104,49 +74,21 @@ export async function fetchModelsWithContext(baseUrl: string, apiKey?: string, b
 
   // OpenCode Go has models at /zen/v1/models not /zen/go/v1/models
   const isOpenCodeGo = baseUrl.includes('opencode.ai/zen/go')
-  let url: string
-  if (isOpenCodeGo) {
-    url = baseUrl.replace('/zen/go', '/zen').replace(/\/v1$/, '') + '/v1/models'
-    logger.info('OpenCode Go detected, using alternate models endpoint', { original: baseUrl, modelsUrl: url })
-  } else {
-    url = baseUrl.includes('/v1') ? `${baseUrl}/models` : `${baseUrl}/v1/models`
-  }
+  const url = isOpenCodeGo
+    ? baseUrl.replace('/zen/go', '/zen').replace(/\/v1$/, '') + '/v1/models'
+    : baseUrl.includes('/v1') ? `${baseUrl}/models` : `${baseUrl}/v1/models`
+
   logger.info('Fetching models via /v1/models', { url })
+  const models = await fetchModelsFromBackend(url, apiKey)
 
-  try {
-    const headers: Record<string, string> = {
-      'Content-Type': 'application/json',
-    }
-    if (apiKey) {
-      headers['Authorization'] = `Bearer ${apiKey}`
-    }
+  if (models.length === 0) return []
 
-    const response = await fetch(url, {
-      method: 'GET',
-      headers,
-      signal: AbortSignal.timeout(10000),
-    })
-
-    if (!response.ok) {
-      logger.debug('Failed to fetch models with context', { url, status: response.status })
-      return []
-    }
-
-    const data = await response.json() as { data?: Array<{ id: string; max_model_len?: number }> }
-    if (data.data && Array.isArray(data.data)) {
-      logger.info('Fetched models from /v1/models', { count: data.data.length, models: data.data.map(m => m.id) })
-      return data.data.map(m => ({
-        id: m.id,
-        contextWindow: m.max_model_len ?? 200000,
-        source: m.max_model_len ? 'backend' : 'default' as const,
-      }))
-    }
-
-    return []
-  } catch (error) {
-    logger.debug('Error fetching models with context', { url, error: error instanceof Error ? error.message : String(error) })
-    return []
-  }
+  logger.info('Fetched models from /v1/models', { count: models.length })
+  return models.map(m => ({
+    id: m.id,
+    contextWindow: m.contextWindow ?? 200000,
+    source: m.contextWindow ? 'backend' : 'default' as const,
+  }))
 }
 
 /** Fetch Ollama models with context windows via /api/show */
