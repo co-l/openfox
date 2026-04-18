@@ -1,8 +1,8 @@
 import { describe, it, expect } from 'vitest'
 import { groupMessages } from './groupMessages'
 import type { Message } from '@shared/types.js'
+import type { DisplayItem } from './groupMessages'
 
-// Helper to create test messages
 function createMessage(
   id: string,
   role: 'user' | 'assistant' | 'system' | 'tool' = 'assistant',
@@ -20,6 +20,14 @@ function createMessage(
   } as Message
 }
 
+function assertItemsIdentical(messages: Message[], items: DisplayItem[]): void {
+  const newItems = groupMessages(messages, items)
+  expect(items.length).toBe(newItems.length)
+  for (let i = 0; i < items.length; i++) {
+    expect(items[i]).toBe(newItems[i])
+  }
+}
+
 describe('groupMessages identity preservation', () => {
   it('should preserve object identity for unchanged messages', () => {
     const msg1 = createMessage('msg-1', 'user', 'Hello')
@@ -27,15 +35,7 @@ describe('groupMessages identity preservation', () => {
     const msg3 = createMessage('msg-3', 'user', 'How are you?')
 
     const initialItems = groupMessages([msg1, msg2, msg3])
-    
-    // Call again with the same messages and previous items
-    const secondItems = groupMessages([msg1, msg2, msg3], initialItems)
-    
-    // All items should be referentially equal since messages haven't changed
-    expect(initialItems.length).toBe(secondItems.length)
-    for (let i = 0; i < initialItems.length; i++) {
-      expect(initialItems[i]).toBe(secondItems[i])
-    }
+    assertItemsIdentical([msg1, msg2, msg3], initialItems)
   })
 
   it('should create new objects only for changed messages', () => {
@@ -90,15 +90,7 @@ describe('groupMessages identity preservation', () => {
     const msg4 = createMessage('msg-4', 'user', 'Next question')
 
     const initialItems = groupMessages([msg1, msg2, msg3, msg4])
-    
-    // Call again with same messages and previous items
-    const secondItems = groupMessages([msg1, msg2, msg3, msg4], initialItems)
-    
-    // All items should be identical
-    expect(initialItems.length).toBe(secondItems.length)
-    for (let i = 0; i < initialItems.length; i++) {
-      expect(initialItems[i]).toBe(secondItems[i])
-    }
+    assertItemsIdentical([msg1, msg2, msg3, msg4], initialItems)
   })
 
   it('should handle criteria-only message batching with identity preservation', () => {
@@ -116,15 +108,7 @@ describe('groupMessages identity preservation', () => {
     const msg4 = createMessage('msg-4', 'user', 'Next')
 
     const initialItems = groupMessages([msg1, msg2, msg3, msg4])
-    
-    // Call again with same messages and previous items
-    const secondItems = groupMessages([msg1, msg2, msg3, msg4], initialItems)
-    
-    // All items should be identical
-    expect(initialItems.length).toBe(secondItems.length)
-    for (let i = 0; i < initialItems.length; i++) {
-      expect(initialItems[i]).toBe(secondItems[i])
-    }
+    assertItemsIdentical([msg1, msg2, msg3, msg4], initialItems)
   })
 
   it('should include system-generated auto-prompt messages', () => {

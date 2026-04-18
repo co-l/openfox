@@ -4,29 +4,11 @@ import { Modal } from './shared/Modal'
 import { Button } from './shared/Button'
 import { Input } from './shared/Input'
 import { authFetch } from '../lib/api'
+import { validateProjectName } from './shared/validation'
 
 interface CreateProjectModalProps {
   isOpen: boolean
   onClose: () => void
-}
-
-/**
- * Validate project name - only alphanumeric, hyphens, underscores, and dots
- */
-function validateProjectName(name: string): { valid: true } | { valid: false; error: string } {
-  if (!name || name.trim() === '') {
-    return { valid: false, error: 'Project name cannot be empty' }
-  }
-  
-  const validPattern = /^[a-zA-Z0-9._-]+$/
-  if (!validPattern.test(name)) {
-    return { 
-      valid: false, 
-      error: 'Project name can only contain letters, numbers, hyphens, underscores, and dots' 
-    }
-  }
-  
-  return { valid: true }
 }
 
 export function CreateProjectModal({ isOpen, onClose }: CreateProjectModalProps) {
