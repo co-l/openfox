@@ -5,6 +5,7 @@ import { useProjectStore } from '../../stores/project'
 import type { SessionSummary } from '@shared/types.js'
 import { ProjectSettingsModal } from '../settings/ProjectSettingsModal'
 import { DropdownMenu } from '../shared/DropdownMenu'
+import { CloseButton } from '../shared/CloseButton'
 import { groupSessionsByDate, formatDateHeader, formatTime } from '../../lib/format-date.js'
 
 interface SidebarProps {
@@ -130,15 +131,12 @@ export function Sidebar({ projectId, isOpen = true, onClose }: SidebarProps) {
           />
           {/* Mobile close button */}
           {onClose && (
-            <button
+            <CloseButton
               onClick={onClose}
-              className="md:hidden flex-shrink-0 p-2.5 rounded hover:bg-bg-tertiary text-text-muted hover:text-text-primary transition-colors"
-              title="Close sidebar"
-            >
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-              </svg>
-            </button>
+              className="md:hidden"
+              variant="sidebar"
+              size="md"
+            />
           )}
         </div>
 

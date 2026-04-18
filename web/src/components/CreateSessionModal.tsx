@@ -6,6 +6,7 @@ import { Input } from './shared/Input'
 import { DeleteProjectConfirmationModal } from './DeleteProjectConfirmationModal.js'
 import { CreateProjectModal } from './CreateProjectModal.js'
 import { DirectoryBrowser } from './shared/DirectoryBrowser.js'
+import { CloseButton } from './shared/CloseButton'
 import { authFetch } from '../lib/api'
 
 interface DirectoryEntry {
@@ -203,14 +204,7 @@ export function OpenProjectModal({ isOpen, onClose }: OpenProjectModalProps) {
         {/* Header */}
         <div className="p-4 border-b border-border flex items-center justify-between">
           <h2 className="text-lg font-semibold text-text-primary">Open Project</h2>
-          <button
-            onClick={onClose}
-            className="p-1 rounded hover:bg-bg-tertiary text-text-muted hover:text-text-primary transition-colors"
-          >
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-            </svg>
-          </button>
+          <CloseButton onClick={onClose} variant="modal" size="lg" />
         </div>
         
         {/* Split View Content */}

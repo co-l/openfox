@@ -4,6 +4,7 @@ import type { Backend } from '../../stores/config'
 import { useCopyToClipboard } from '../../hooks/useCopyToClipboard'
 import { DirectoryBrowser } from '../shared/DirectoryBrowser'
 import { CheckIcon } from '../shared/CheckIcon'
+import { CloseButton } from '../shared/CloseButton'
 
 const COMMON_PORTS = [8000, 11434, 8080]
 
@@ -717,20 +718,6 @@ interface OnboardingWizardProps {
   onComplete: () => void
 }
 
-function CloseButton({ onClick }: { onClick: () => void }) {
-  return (
-    <button
-      onClick={onClick}
-      className="absolute top-4 right-4 p-2 text-text-muted hover:text-text-primary transition-colors"
-      title="Close"
-    >
-      <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-      </svg>
-    </button>
-  )
-}
-
 export function OnboardingWizard({ onComplete }: OnboardingWizardProps) {
   const [step, setStep] = useState(1)
   const [saving, setSaving] = useState(false)
@@ -776,7 +763,7 @@ export function OnboardingWizard({ onComplete }: OnboardingWizardProps) {
 
   return (
     <div className="w-full max-w-xl mx-auto px-6 py-16 relative">
-      <CloseButton onClick={onComplete} />
+      <CloseButton onClick={onComplete} className="absolute top-4 right-4 p-2" variant="modal" size="xl" />
       <StepIndicator
         currentStep={step}
         totalSteps={3}
