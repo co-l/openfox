@@ -199,6 +199,17 @@ export function AgentsModal({ isOpen, onClose, initialEditId }: AgentsModalProps
     setFormTools(serializeTools(newGranular))
   }
 
+  const populateFormFromAgent = (agent: AgentFull, clearError = false) => {
+    setFormName(agent.metadata.name)
+    setFormId(agent.metadata.id)
+    setFormDescription(agent.metadata.description)
+    setFormSubagent(agent.metadata.subagent)
+    setFormTools(agent.metadata.allowedTools)
+    setFormColor(agent.metadata.color ?? '#6b7280')
+    setFormPrompt(agent.prompt)
+    if (clearError) setFormError('')
+  }
+
   useEffect(() => {
     if (isOpen) {
       fetchAgents()
@@ -212,13 +223,7 @@ export function AgentsModal({ isOpen, onClose, initialEditId }: AgentsModalProps
         setFormError('')
         fetchAgent(initialEditId).then(agent => {
           if (!agent) return
-          setFormName(agent.metadata.name)
-          setFormId(agent.metadata.id)
-          setFormDescription(agent.metadata.description)
-          setFormSubagent(agent.metadata.subagent)
-          setFormTools(agent.metadata.allowedTools)
-          setFormColor(agent.metadata.color ?? '#6b7280')
-          setFormPrompt(agent.prompt)
+          populateFormFromAgent(agent)
         })
       } else {
         setView('list')
@@ -244,14 +249,7 @@ export function AgentsModal({ isOpen, onClose, initialEditId }: AgentsModalProps
     const agent = await fetchAgent(agentId)
     if (!agent) return
     setEditingId(agentId)
-    setFormName(agent.metadata.name)
-    setFormId(agent.metadata.id)
-    setFormDescription(agent.metadata.description)
-    setFormSubagent(agent.metadata.subagent)
-    setFormTools(agent.metadata.allowedTools)
-    setFormColor(agent.metadata.color ?? '#6b7280')
-    setFormPrompt(agent.prompt)
-    setFormError('')
+    populateFormFromAgent(agent, true)
     setView('edit')
   }
 
