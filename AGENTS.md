@@ -30,6 +30,7 @@ npm run test         # Run all tests (unit + e2e)
 npm run test:unit    # Run unit tests only
 npm run test:e2e     # Run e2e tests only
 npm run typecheck    # TypeScript type checking
+npm run duplicate    # Check for duplicate code (server + web)
 ```
 
 ### Dev server

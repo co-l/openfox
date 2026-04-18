@@ -50,6 +50,7 @@
     "duplicate:server": "jscpd src/server/ --ignore '**/*.test.ts'",
     "duplicate:web": "jscpd web/src/ --config .jscpd-web.json",
     "duplicate": "npm run duplicate:server && npm run duplicate:web",
+    "check": "npm run typecheck && npm run duplicate",
     "clean": "rm -rf dist",
     "prepublishOnly": "npm run build",
     "prepare": "husky"
@@ -122,7 +123,12 @@
   },
   "lint-staged": {
     "src/**/*.ts": [
-      "eslint --no-warn-ignored"
+      "eslint --no-warn-ignored",
+      "tsc --noEmit",
+      "jscpd src/server/ --ignore '**/*.test.ts' --threshold 0"
+    ],
+    "web/src/**/*.{ts,tsx}": [
+      "jscpd web/src/ --config .jscpd-web.json --threshold 0"
     ]
   },
   "engines": {

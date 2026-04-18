@@ -1,5 +1,5 @@
-import type { Todo } from '../../shared/types.js'
-import { createTool, validateActionWithPermission } from './tool-helpers.js'
+import type { Todo, ToolResult } from '../../shared/types.js'
+import { createTool, validateActionWithPermission, type ToolHelpers } from './tool-helpers.js'
 
 const sessionTodos = new Map<string, Todo[]>()
 
@@ -22,6 +22,14 @@ function buildTaskListSummary(todosList: Todo[]): string {
   const inProgress = todosList.filter(t => t.status === 'in_progress').length
   const completed = todosList.filter(t => t.status === 'completed').length
   return `${completed} completed, ${inProgress} in progress, ${pending} pending`
+}
+
+function validateIndex(index: number | undefined, todosList: Todo[], helpers: ToolHelpers): ToolResult | Todo {
+  if (index === undefined) return helpers.error('Missing required field: index')
+  if (index < 0 || index >= todosList.length) {
+    return helpers.error(`Index out of range: ${index}. Valid range: 0-${todosList.length - 1}`)
+  }
+  return todosList[index]!
 }
 
 interface TodoArgs {
@@ -119,11 +127,9 @@ export const todoTool = createTool<TodoArgs>(
         return helpers.error(`Invalid status: ${args.status}. Must be pending, in_progress, or completed`)
       }
       const todosList = sessionTodos.get(context.sessionId) ?? []
-      if (args.index === undefined) return helpers.error('Missing required field: index')
-      if (args.index < 0 || args.index >= todosList.length) {
-        return helpers.error(`Index out of range: ${args.index}. Valid range: 0-${todosList.length - 1}`)
-      }
-      const todo = todosList[args.index]!
+      const indexResult = validateIndex(args.index, todosList, helpers)
+      if ('success' in indexResult && !indexResult.success) return indexResult
+      const todo = indexResult as Todo
       if (args.content) todo.content = args.content
       if (args.status) todo.status = args.status
       sessionTodos.set(context.sessionId, todosList)
@@ -133,11 +139,9 @@ export const todoTool = createTool<TodoArgs>(
 
     if (args.action === 'remove') {
       const todosList = sessionTodos.get(context.sessionId) ?? []
-      if (args.index === undefined) return helpers.error('Missing required field: index')
-      if (args.index < 0 || args.index >= todosList.length) {
-        return helpers.error(`Index out of range: ${args.index}. Valid range: 0-${todosList.length - 1}`)
-      }
-      const removed = todosList.splice(args.index, 1)[0]!
+      const indexResult = validateIndex(args.index, todosList, helpers)
+      if ('success' in indexResult && !indexResult.success) return indexResult
+      const removed = todosList.splice(args.index!, 1)[0]!
       sessionTodos.set(context.sessionId, todosList)
       if (onTodoUpdate) onTodoUpdate(context.sessionId, todosList)
       return helpers.success(
