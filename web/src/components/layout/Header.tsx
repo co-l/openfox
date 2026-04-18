@@ -7,6 +7,8 @@ import { useTerminalStore } from '../../stores/terminal'
 import { GlobalSettingsModal } from '../settings/GlobalSettingsModal'
 import { TerminalModal } from '../terminal/TerminalModal'
 import { DropdownMenu, DropdownMenuItem } from '../shared/DropdownMenu'
+import { ChevronDown } from '../shared/ChevronDown'
+import { CheckIcon } from '../shared/CheckIcon'
 import { groupSessionsByDate, formatDateHeader, formatTime } from '../../lib/format-date'
 import type { SessionSummary } from '@shared/types.js'
 
@@ -131,11 +133,7 @@ function ProjectDropdown({ projects, currentProject }: ProjectDropdownProps) {
 
   const items: DropdownMenuItem[] = sortedProjects.map(proj => ({
     label: proj.name,
-    icon: proj.id === currentProject.id ? (
-      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-      </svg>
-    ) : undefined,
+    icon: proj.id === currentProject.id ? <CheckIcon /> : undefined,
     href: `/p/${proj.id}`,
     onClick: () => {
       loadProject(proj.id)
@@ -151,9 +149,7 @@ function ProjectDropdown({ projects, currentProject }: ProjectDropdownProps) {
           title={currentProject.name}
         >
           {currentProject.name}
-          <svg className="w-3 h-3 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-          </svg>
+          <ChevronDown />
         </button>
       }
       minWidth="250px"
@@ -273,11 +269,7 @@ function SessionDropdown({ sessions, currentProject, currentSession }: SessionDr
             <div className="text-text-muted text-xs">{formatTime(session.updatedAt)}</div>
           </div>
         ),
-        icon: session.id === currentSession?.id ? (
-          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-          </svg>
-        ) : undefined,
+        icon: session.id === currentSession?.id ? <CheckIcon /> : undefined,
         href: `/p/${currentProject.id}/s/${session.id}`,
         onClick: () => {
           loadSession(session.id)
@@ -300,9 +292,7 @@ function SessionDropdown({ sessions, currentProject, currentSession }: SessionDr
           data-testid="header-session-dropdown"
         >
           {triggerLabel}
-          <svg className="w-3 h-3 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-          </svg>
+          <ChevronDown />
         </button>
       }
       minWidth="280px"
