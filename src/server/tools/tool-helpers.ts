@@ -2,6 +2,7 @@ import { resolve, isAbsolute } from 'node:path'
 import type { ToolResult } from '../../shared/types.js'
 import type { Tool, ToolContext } from './types.js'
 import type { LLMToolDefinition } from '../llm/types.js'
+import type { SessionManager } from '../session/manager.js'
 import { requestPathAccess, PathAccessDeniedError } from './path-security.js'
 
 /**
@@ -60,6 +61,45 @@ export type ToolHandler<TArgs> = (
  * )
  * ```
  */
+export function validateAction(
+  action: string | undefined,
+  allowed: string[],
+  startTime: number
+): ToolResult | undefined {
+  if (!action || !allowed.includes(action)) {
+    return {
+      success: false,
+      error: `Invalid action: ${action}. Must be one of: ${allowed.join(', ')}`,
+      durationMs: Date.now() - startTime,
+      truncated: false,
+    }
+  }
+  return undefined
+}
+
+export function checkActionPermission(
+  action: string | undefined,
+  permittedActions: string[] | undefined,
+  startTime: number
+): ToolResult | undefined {
+  if (action && permittedActions && !permittedActions.includes(action)) {
+    return {
+      success: false,
+      error: `Action '${action}' not allowed. Available: ${permittedActions.join(', ')}`,
+      durationMs: Date.now() - startTime,
+      truncated: false,
+    }
+  }
+  return undefined
+}
+
+export function requireSession(
+  sessionManager: SessionManager,
+  sessionId: string
+): ReturnType<SessionManager['requireSession']> {
+  return sessionManager.requireSession(sessionId)
+}
+
 export function createTool<TArgs>(
   name: string,
   definition: LLMToolDefinition,

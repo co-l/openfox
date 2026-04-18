@@ -1,5 +1,6 @@
 import type { ToolResult, Todo } from '../../shared/types.js'
 import type { Tool, ToolContext } from './types.js'
+import { validateAction, checkActionPermission } from './tool-helpers.js'
 
 type TodoAction = 'list' | 'write' | 'add' | 'update' | 'remove'
 type TodoStatus = 'pending' | 'in_progress' | 'completed'
@@ -44,6 +45,19 @@ function buildErrorResponse(error: string, startTime: number): ToolResult {
   return {
     success: false,
     error,
+    durationMs: Date.now() - startTime,
+    truncated: false,
+  }
+}
+
+function saveTodosResult(todosList: Todo[], sessionId: string, output: string, startTime: number): ToolResult {
+  sessionTodos.set(sessionId, todosList)
+  if (onTodoUpdate) {
+    onTodoUpdate(sessionId, todosList)
+  }
+  return {
+    success: true,
+    output,
     durationMs: Date.now() - startTime,
     truncated: false,
   }
@@ -113,25 +127,13 @@ export const todoTool: Tool = {
       const index = args['index'] as number | undefined
       const status = args['status'] as TodoStatus | undefined
       
-      if (!action || !['list', 'write', 'add', 'update', 'remove'].includes(action)) {
-        return {
-          success: false,
-          error: `Invalid action: ${action}. Must be one of: list, write, add, update, remove`,
-          durationMs: Date.now() - startTime,
-          truncated: false,
-        }
-      }
+      const allowedActions = ['list', 'write', 'add', 'update', 'remove']
+      const actionError = validateAction(action, allowedActions, startTime)
+      if (actionError) return actionError
 
-      // Check granular permissions if enforced
       const permittedActions = context.permittedActions?.['todo']
-      if (permittedActions && !permittedActions.includes(action)) {
-        return {
-          success: false,
-          error: `Action '${action}' not allowed. Available: ${permittedActions.join(', ')}`,
-          durationMs: Date.now() - startTime,
-          truncated: false,
-        }
-      }
+      const permissionError = checkActionPermission(action, permittedActions, startTime)
+      if (permissionError) return permissionError
       
       if (action === 'list') {
         const todosList = sessionTodos.get(context.sessionId) ?? []
@@ -263,18 +265,19 @@ export const todoTool: Tool = {
           todo.status = status
         }
         
-        sessionTodos.set(context.sessionId, todosList)
-        
-        if (onTodoUpdate) {
-          onTodoUpdate(context.sessionId, todosList)
+        if (content) {
+          todo.content = content
         }
-        
-        return {
-          success: true,
-          output: `Updated task ${index}. Task list: ${buildTaskListSummary(todosList)}`,
-          durationMs: Date.now() - startTime,
-          truncated: false,
+        if (status) {
+          todo.status = status
         }
+
+        return saveTodosResult(
+          todosList,
+          context.sessionId,
+          `Updated task ${index}. Task list: ${buildTaskListSummary(todosList)}`,
+          startTime,
+        )
       }
       
       if (action === 'remove') {
@@ -294,27 +297,22 @@ export const todoTool: Tool = {
         }
         
         const removed = todosList.splice(index, 1)[0]!
-        sessionTodos.set(context.sessionId, todosList)
-        
-        if (onTodoUpdate) {
-          onTodoUpdate(context.sessionId, todosList)
-        }
-        
+
         if (todosList.length === 0) {
-          return {
-            success: true,
-            output: `Removed task "${removed.content}". No tasks remaining.`,
-            durationMs: Date.now() - startTime,
-            truncated: false,
-          }
+          return saveTodosResult(
+            todosList,
+            context.sessionId,
+            `Removed task "${removed.content}". No tasks remaining.`,
+            startTime,
+          )
         }
-        
-        return {
-          success: true,
-          output: `Removed task "${removed.content}". Task list: ${buildTaskListSummary(todosList)}`,
-          durationMs: Date.now() - startTime,
-          truncated: false,
-        }
+
+        return saveTodosResult(
+          todosList,
+          context.sessionId,
+          `Removed task "${removed.content}". Task list: ${buildTaskListSummary(todosList)}`,
+          startTime,
+        )
       }
       
       return {

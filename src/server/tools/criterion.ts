@@ -1,9 +1,22 @@
 import type { ToolResult, Criterion } from '../../shared/types.js'
 import type { Tool, ToolContext } from './types.js'
+import { validateAction, checkActionPermission, requireSession } from './tool-helpers.js'
 
 function formatCriteriaList(criteria: Criterion[]): string {
   if (criteria.length === 0) return 'No criteria defined.'
   return criteria.map((c, i) => `${i + 1}. [${c.id}] ${c.description}`).join('\n')
+}
+
+function requireCriterionExists(session: { criteria: Array<{ id: string }> }, id: string, startTime: number): ToolResult | null {
+  if (!session.criteria.find(c => c.id === id)) {
+    return {
+      success: false,
+      error: `Criterion "${id}" not found`,
+      durationMs: Date.now() - startTime,
+      truncated: false,
+    }
+  }
+  return null
 }
 
 type CriterionAction = 'get' | 'add' | 'update' | 'remove' | 'complete' | 'pass' | 'fail'
@@ -51,27 +64,15 @@ export const criterionTool: Tool = {
       const description = args['description'] as string | undefined
       const reason = args['reason'] as string | undefined
       
-      if (!action || !['get', 'add', 'update', 'remove', 'complete', 'pass', 'fail'].includes(action)) {
-        return {
-          success: false,
-          error: `Invalid action: ${action}. Must be one of: get, add, update, remove, complete, pass, fail`,
-          durationMs: Date.now() - startTime,
-          truncated: false,
-        }
-      }
+      const allowedActions = ['get', 'add', 'update', 'remove', 'complete', 'pass', 'fail']
+      const actionError = validateAction(action, allowedActions, startTime)
+      if (actionError) return actionError
 
-      // Check granular permissions if enforced
       const permittedActions = context.permittedActions?.['criterion']
-      if (permittedActions && !permittedActions.includes(action)) {
-        return {
-          success: false,
-          error: `Action '${action}' not allowed. Available: ${permittedActions.join(', ')}`,
-          durationMs: Date.now() - startTime,
-          truncated: false,
-        }
-      }
+      const permissionError = checkActionPermission(action, permittedActions, startTime)
+      if (permissionError) return permissionError
       
-      const session = context.sessionManager.requireSession(context.sessionId)
+      const session = requireSession(context.sessionManager, context.sessionId)
       
       if (action === 'get') {
         const criteria = session.criteria
@@ -137,15 +138,9 @@ export const criterionTool: Tool = {
           }
         }
         
-        if (!session.criteria.find(c => c.id === id)) {
-          return {
-            success: false,
-            error: `Criterion "${id}" not found`,
-            durationMs: Date.now() - startTime,
-            truncated: false,
-          }
-        }
-        
+        const notFoundError = requireCriterionExists(session, id, startTime)
+        if (notFoundError) return notFoundError
+
         const criteria = context.sessionManager.updateCriterionFull(context.sessionId, id, { description })
         return {
           success: true,
@@ -165,15 +160,9 @@ export const criterionTool: Tool = {
           }
         }
         
-        if (!session.criteria.find(c => c.id === id)) {
-          return {
-            success: false,
-            error: `Criterion "${id}" not found`,
-            durationMs: Date.now() - startTime,
-            truncated: false,
-          }
-        }
-        
+        const notFoundError = requireCriterionExists(session, id, startTime)
+        if (notFoundError) return notFoundError
+
         const criteria = context.sessionManager.removeCriterion(context.sessionId, id)
         return {
           success: true,

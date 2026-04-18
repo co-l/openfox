@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from 'react'
+import { useState, useCallback, type ReactNode } from 'react'
 import { Button } from '../shared/Button'
 
 export interface ConfirmDialogState {
@@ -9,13 +9,13 @@ export interface ConfirmDialogState {
 export function useConfirmDialog() {
   const [confirmState, setConfirmState] = useState<ConfirmDialogState>({ id: null, type: null })
 
-  const requestDelete = (id: string) => setConfirmState({ id, type: 'delete' })
-  const requestRestore = (id: string) => setConfirmState({ id, type: 'restore' })
-  const requestRestoreAll = () => setConfirmState({ id: null, type: 'restoreAll' })
-  const clearConfirm = () => setConfirmState({ id: null, type: null })
+  const requestDelete = useCallback((id: string) => setConfirmState({ id, type: 'delete' }), [])
+  const requestRestore = useCallback((id: string) => setConfirmState({ id, type: 'restore' }), [])
+  const requestRestoreAll = useCallback(() => setConfirmState({ id: null, type: 'restoreAll' }), [])
+  const clearConfirm = useCallback(() => setConfirmState({ id: null, type: null }), [])
 
-  const isConfirming = (id: string, type: 'delete' | 'restore') => confirmState.id === id && confirmState.type === type
-  const isConfirmingRestoreAll = () => confirmState.type === 'restoreAll'
+  const isConfirming = useCallback((id: string, type: 'delete' | 'restore') => confirmState.id === id && confirmState.type === type, [confirmState.id, confirmState.type])
+  const isConfirmingRestoreAll = useCallback(() => confirmState.type === 'restoreAll', [confirmState.type])
 
   return { requestDelete, requestRestore, requestRestoreAll, clearConfirm, isConfirming, isConfirmingRestoreAll }
 }
