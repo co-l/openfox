@@ -3,7 +3,7 @@ import { Modal } from '../shared/Modal'
 import { Button } from '../shared/Button'
 import { EditButton } from '../shared/IconButton'
 import { DropdownMenu } from '../shared/DropdownMenu'
-import { useAgentsStore, type AgentFull } from '../../stores/agents'
+import { useAgentsStore, type AgentInfo, type AgentFull } from '../../stores/agents'
 import { authFetch } from '../../lib/api'
 import {
   ConfirmButton,
@@ -22,6 +22,30 @@ interface AgentsModalProps {
 
 function toSlug(name: string): string {
   return name.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '')
+}
+
+function renderAgentListItem(
+  agent: AgentInfo,
+  confirmDeleteId: string | null,
+  modifiedIds: string[],
+  confirmRestoreId: string | null,
+  restoreDefault: (id: string) => Promise<boolean>,
+  setConfirmRestoreId: (id: string | null) => void,
+  handleEdit: (id: string) => void,
+  handleDelete: (id: string) => void
+) {
+  return (
+    <AgentListItem
+      key={agent.id}
+      agent={agent}
+      isConfirmingDelete={confirmDeleteId === agent.id}
+      isModified={modifiedIds.includes(agent.id)}
+      isConfirmingRestore={confirmRestoreId === agent.id}
+      onRestore={async () => { await restoreDefault(agent.id); setConfirmRestoreId(null) }}
+      onEdit={() => handleEdit(agent.id)}
+      onDelete={() => handleDelete(agent.id)}
+    />
+  )
 }
 
 function AgentListItem({
@@ -487,17 +511,15 @@ export function AgentsModal({ isOpen, onClose, initialEditId }: AgentsModalProps
             <div>
               <div className="text-xs text-text-muted uppercase tracking-wider mb-1.5">Top-level</div>
               <div className="space-y-2">
-                {topLevelAgents.map(agent => (
-                  <AgentListItem
-                    key={agent.id}
-                    agent={agent}
-                    isConfirmingDelete={confirmDeleteId === agent.id}
-                    isModified={modifiedIds.includes(agent.id)}
-                    isConfirmingRestore={confirmRestoreId === agent.id}
-                    onRestore={async () => { await restoreDefault(agent.id); setConfirmRestoreId(null) }}
-                    onEdit={() => handleEdit(agent.id)}
-                    onDelete={() => handleDelete(agent.id)}
-                  />
+                {topLevelAgents.map(agent => renderAgentListItem(
+                  agent,
+                  confirmDeleteId,
+                  modifiedIds,
+                  confirmRestoreId,
+                  restoreDefault,
+                  setConfirmRestoreId,
+                  handleEdit,
+                  handleDelete
                 ))}
               </div>
             </div>
@@ -507,17 +529,15 @@ export function AgentsModal({ isOpen, onClose, initialEditId }: AgentsModalProps
             <div>
               <div className="text-xs text-text-muted uppercase tracking-wider mb-1.5">Sub-agents</div>
               <div className="space-y-2">
-                {subAgents.map(agent => (
-                  <AgentListItem
-                    key={agent.id}
-                    agent={agent}
-                    isConfirmingDelete={confirmDeleteId === agent.id}
-                    isModified={modifiedIds.includes(agent.id)}
-                    isConfirmingRestore={confirmRestoreId === agent.id}
-                    onRestore={async () => { await restoreDefault(agent.id); setConfirmRestoreId(null) }}
-                    onEdit={() => handleEdit(agent.id)}
-                    onDelete={() => handleDelete(agent.id)}
-                  />
+                {subAgents.map(agent => renderAgentListItem(
+                  agent,
+                  confirmDeleteId,
+                  modifiedIds,
+                  confirmRestoreId,
+                  restoreDefault,
+                  setConfirmRestoreId,
+                  handleEdit,
+                  handleDelete
                 ))}
               </div>
             </div>
