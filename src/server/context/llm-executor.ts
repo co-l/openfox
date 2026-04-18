@@ -29,6 +29,7 @@ import { getEnabledSkillMetadata } from '../skills/registry.js'
 import { getRuntimeConfig } from '../runtime-config.js'
 import { getGlobalConfigDir } from '../../cli/paths.js'
 import { logger } from '../utils/logger.js'
+import { appendNudgeMessage } from './nudge-helpers.js'
 
 export interface LLMExecutorConfig {
   sessionId: string
@@ -485,20 +486,15 @@ export async function runSubAgentWithExecutor(options: RunSubAgentOptions): Prom
           if (consecutiveEmptyStops < nudgeConfig.maxConsecutiveNudges) {
             consecutiveEmptyStops += 1
             const nudgeContent = nudgeConfig.buildNudgeContent(criteriaAwaiting)
-            const nudgeMsgId = crypto.randomUUID()
 
             eventStore.append(sessionId, createMessageDoneEvent(assistantMsgId, {
               segments: [],
               promptContext: buildPromptContext(systemPrompt, injectedFiles, prompt, executor.getMessages(), toolRegistry.definitions),
             }))
-            eventStore.append(sessionId, createMessageStartEvent(nudgeMsgId, 'user', nudgeContent, {
-              contextWindowId: currentWindowMessageOptions.contextWindowId,
-              isSystemGenerated: true,
-              messageKind: 'correction',
+            appendNudgeMessage(eventStore, sessionId, nudgeContent, currentWindowMessageOptions, {
               subAgentId: subAgentInstanceId,
               subAgentType,
-            }))
-            eventStore.append(sessionId, { type: 'message.done', data: { messageId: nudgeMsgId } })
+            })
             executor.addMessage({ role: 'user', content: nudgeContent, source: 'runtime' })
             continue
           }

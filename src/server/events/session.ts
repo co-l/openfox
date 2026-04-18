@@ -46,6 +46,7 @@ import {
   buildContextMessagesFromEventHistory,
   buildContextMessagesFromStoredEvents,
   buildMessagesFromStoredEvents,
+  spreadOptionalMessageFields,
   type ContextMessage,
   type FoldedSessionState,
 } from './folding.js'
@@ -56,22 +57,7 @@ function toSnapshotMessage(message: import('../../shared/types.js').Message): Sn
     role: message.role,
     content: message.content,
     timestamp: new Date(message.timestamp).getTime(),
-    ...(message.thinkingContent !== undefined && { thinkingContent: message.thinkingContent }),
-    ...(message.toolCalls !== undefined && { toolCalls: message.toolCalls }),
-    ...(message.segments !== undefined && { segments: message.segments }),
-    ...(message.stats !== undefined && { stats: message.stats }),
-    ...(message.tokenCount !== undefined && { tokenCount: message.tokenCount }),
-    ...(message.isStreaming !== undefined && { isStreaming: message.isStreaming }),
-    ...(message.partial !== undefined && { partial: message.partial }),
-    ...(message.subAgentId !== undefined && { subAgentId: message.subAgentId }),
-    ...(message.subAgentType !== undefined && { subAgentType: message.subAgentType }),
-    ...(message.isSystemGenerated !== undefined && { isSystemGenerated: message.isSystemGenerated }),
-    ...(message.messageKind !== undefined && { messageKind: message.messageKind }),
-    ...(message.contextWindowId !== undefined && { contextWindowId: message.contextWindowId }),
-    ...(message.isCompactionSummary !== undefined && { isCompactionSummary: message.isCompactionSummary }),
-    ...(message.promptContext !== undefined && { promptContext: message.promptContext }),
-    ...(message.attachments !== undefined && { attachments: message.attachments }),
-    ...(message.metadata !== undefined && { metadata: message.metadata }),
+    ...spreadOptionalMessageFields(message as unknown as SnapshotMessage),
   }
 }
 

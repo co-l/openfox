@@ -18,6 +18,20 @@ export interface MessageFragment {
   metadata?: unknown
 }
 
+function extractMessageOptionalFields(data: { tokenCount?: number; contextWindowId?: string; subAgentId?: string; subAgentType?: string; isSystemGenerated?: boolean; messageKind?: string; isCompactionSummary?: boolean; attachments?: unknown[]; metadata?: unknown }): Record<string, unknown> {
+  return {
+    ...(data.tokenCount !== undefined && { tokenCount: data.tokenCount }),
+    ...(data.contextWindowId !== undefined && { contextWindowId: data.contextWindowId }),
+    ...(data.subAgentId !== undefined && { subAgentId: data.subAgentId }),
+    ...(data.subAgentType !== undefined && { subAgentType: data.subAgentType }),
+    ...(data.isSystemGenerated !== undefined && { isSystemGenerated: data.isSystemGenerated }),
+    ...(data.messageKind !== undefined && { messageKind: data.messageKind }),
+    ...(data.isCompactionSummary !== undefined && { isCompactionSummary: data.isCompactionSummary }),
+    ...(data.attachments !== undefined && { attachments: data.attachments }),
+    ...(data.metadata !== undefined && { metadata: data.metadata }),
+  }
+}
+
 export function createMessageStartData(
   data: Extract<TurnEvent, { type: 'message.start' }>['data'],
   timestamp: string | number
@@ -29,15 +43,7 @@ export function createMessageStartData(
     content: data.content ?? '',
     timestamp,
     isStreaming: !isUserOrSystem,
-    ...(data.tokenCount !== undefined && { tokenCount: data.tokenCount }),
-    ...(data.contextWindowId !== undefined && { contextWindowId: data.contextWindowId }),
-    ...(data.subAgentId !== undefined && { subAgentId: data.subAgentId }),
-    ...(data.subAgentType !== undefined && { subAgentType: data.subAgentType }),
-    ...(data.isSystemGenerated !== undefined && { isSystemGenerated: data.isSystemGenerated }),
-    ...(data.messageKind !== undefined && { messageKind: data.messageKind }),
-    ...(data.isCompactionSummary !== undefined && { isCompactionSummary: data.isCompactionSummary }),
-    ...(data.attachments !== undefined && { attachments: data.attachments }),
-    ...(data.metadata !== undefined && { metadata: data.metadata }),
+    ...extractMessageOptionalFields(data),
   }
 }
 
@@ -111,14 +117,7 @@ export function applyEvents<T extends { id: string; role: string; content: strin
           timestamp,
           isStreaming: !isUserOrSystem,
           tokenCount: data.tokenCount ?? 0,
-          ...(data.contextWindowId !== undefined && { contextWindowId: data.contextWindowId }),
-          ...(data.subAgentId !== undefined && { subAgentId: data.subAgentId }),
-          ...(data.subAgentType !== undefined && { subAgentType: data.subAgentType }),
-          ...(data.isSystemGenerated !== undefined && { isSystemGenerated: data.isSystemGenerated }),
-          ...(data.messageKind !== undefined && { messageKind: data.messageKind }),
-          ...(data.isCompactionSummary !== undefined && { isCompactionSummary: data.isCompactionSummary }),
-          ...(data.attachments !== undefined && { attachments: data.attachments }),
-          ...(data.metadata !== undefined && { metadata: data.metadata }),
+          ...extractMessageOptionalFields(data),
         } as T)
         break
       }

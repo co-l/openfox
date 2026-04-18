@@ -24,6 +24,7 @@ import type {
 import {
   applyEvents,
 } from './apply-events.js'
+import { stripPromptContextMessages } from './optimize-storage.js'
 import stripAnsi from "strip-ansi"
 
 function cloneMessage(message: Message): Message {
@@ -42,28 +43,34 @@ function cloneMessage(message: Message): Message {
   }
 }
 
+export function spreadOptionalMessageFields(message: SnapshotMessage) {
+  return {
+    ...(message.thinkingContent !== undefined && { thinkingContent: message.thinkingContent }),
+    ...(message.toolCalls !== undefined && { toolCalls: message.toolCalls }),
+    ...(message.segments !== undefined && { segments: message.segments }),
+    ...(message.stats !== undefined && { stats: message.stats }),
+    ...(message.tokenCount !== undefined && { tokenCount: message.tokenCount }),
+    ...(message.isStreaming !== undefined && { isStreaming: message.isStreaming }),
+    ...(message.partial !== undefined && { partial: message.partial }),
+    ...(message.subAgentId !== undefined && { subAgentId: message.subAgentId }),
+    ...(message.subAgentType !== undefined && { subAgentType: message.subAgentType }),
+    ...(message.isSystemGenerated !== undefined && { isSystemGenerated: message.isSystemGenerated }),
+    ...(message.messageKind !== undefined && { messageKind: message.messageKind }),
+    ...(message.contextWindowId !== undefined && { contextWindowId: message.contextWindowId }),
+    ...(message.isCompactionSummary !== undefined && { isCompactionSummary: message.isCompactionSummary }),
+    ...(message.promptContext !== undefined && { promptContext: message.promptContext }),
+    ...(message.attachments !== undefined && { attachments: message.attachments }),
+    ...(message.metadata !== undefined && { metadata: message.metadata }),
+  }
+}
+
 function snapshotMessageToMessage(message: SnapshotMessage): Message {
   return cloneMessage({
     id: message.id,
     role: message.role,
     content: message.content,
     timestamp: new Date(message.timestamp).toISOString(),
-    ...(message.tokenCount !== undefined && { tokenCount: message.tokenCount }),
-    ...(message.isStreaming !== undefined && { isStreaming: message.isStreaming }),
-    ...(message.contextWindowId !== undefined && { contextWindowId: message.contextWindowId }),
-    ...(message.subAgentId !== undefined && { subAgentId: message.subAgentId }),
-    ...(message.subAgentType !== undefined && { subAgentType: message.subAgentType }),
-    ...(message.isSystemGenerated !== undefined && { isSystemGenerated: message.isSystemGenerated }),
-    ...(message.messageKind !== undefined && { messageKind: message.messageKind }),
-    ...(message.isCompactionSummary !== undefined && { isCompactionSummary: message.isCompactionSummary }),
-    ...(message.attachments !== undefined && { attachments: message.attachments }),
-    ...(message.thinkingContent !== undefined && { thinkingContent: message.thinkingContent }),
-    ...(message.toolCalls !== undefined && { toolCalls: message.toolCalls }),
-    ...(message.segments !== undefined && { segments: message.segments }),
-    ...(message.stats !== undefined && { stats: message.stats }),
-    ...(message.partial !== undefined && { partial: message.partial }),
-    ...(message.promptContext !== undefined && { promptContext: message.promptContext }),
-    ...(message.metadata !== undefined && { metadata: message.metadata }),
+    ...spreadOptionalMessageFields(message),
   })
 }
 
@@ -680,36 +687,6 @@ interface LegacySessionState {
   isRunning: boolean
   criteria: Criterion[]
   executionState?: { currentTokenCount?: number; compactionCount?: number } | null
-}
-
-/**
- * Strip the `messages` array from `promptContext` on all but the last assistant message.
- * Each promptContext.messages contains the full conversation history at that turn,
- * so storing it on every message causes O(n²) snapshot growth.
- * Mutates the array in place.
- */
-function stripPromptContextMessages(messages: SnapshotMessage[]): void {
-  // Find the last assistant message with promptContext
-  let lastAssistantIdx = -1
-  for (let i = messages.length - 1; i >= 0; i--) {
-    const msg = messages[i]
-    if (!msg) continue
-    if (msg.role === 'assistant' && msg.promptContext) {
-      lastAssistantIdx = i
-      break
-    }
-  }
-
-  for (let i = 0; i < messages.length; i++) {
-    const msg = messages[i]
-    if (!msg) continue
-    const pc = msg.promptContext
-    if (pc && i !== lastAssistantIdx) {
-      // Keep everything except the heavy messages array
-      const { messages: _msgs, ...rest } = pc
-      msg.promptContext = { ...rest, messages: [] }
-    }
-  }
 }
 
 export function buildSnapshotFromSessionState(input: {

@@ -227,22 +227,7 @@ export function listSessions(): SessionSummary[] {
     ORDER BY s.updated_at DESC
   `).all() as SessionSummaryRow[]
 
-  return rows.map(row => ({
-    id: row.id,
-    projectId: row.project_id,
-    ...(row.title ? { title: row.title } : {}),
-    workdir: row.workdir,
-    mode: (row.mode ?? 'planner') as SessionMode,
-    phase: (row.workflow_phase ?? 'plan') as SessionPhase,
-    isRunning: Boolean(row.is_running),
-    providerId: row.provider_id ?? null,
-    providerModel: row.provider_model ?? null,
-    createdAt: row.created_at,
-    updatedAt: row.updated_at,
-    criteriaCount: 0, // Derived from events
-    criteriaCompleted: 0, // Derived from events
-    messageCount: row.message_count,
-  }))
+  return rows.map(mapSessionSummaryRow)
 }
 
 export function listSessionsByProject(projectId: string, limit = 20, offset = 0): { sessions: SessionSummary[]; hasMore: boolean } {
@@ -269,7 +254,18 @@ export function listSessionsByProject(projectId: string, limit = 20, offset = 0)
   `).all(projectId, limit + 1, offset) as SessionSummaryRow[]
 
   const hasMore = rows.length > limit
-  const sessions = rows.slice(0, limit).map(row => ({
+  const sessions = rows.slice(0, limit).map(mapSessionSummaryRow)
+
+  return { sessions, hasMore }
+}
+
+export function deleteSession(id: string): void {
+  const db = getDatabase()
+  db.prepare('DELETE FROM sessions WHERE id = ?').run(id)
+}
+
+function mapSessionSummaryRow(row: SessionSummaryRow): SessionSummary {
+  return {
     id: row.id,
     projectId: row.project_id,
     ...(row.title ? { title: row.title } : {}),
@@ -284,14 +280,7 @@ export function listSessionsByProject(projectId: string, limit = 20, offset = 0)
     criteriaCount: 0,
     criteriaCompleted: 0,
     messageCount: row.message_count,
-  }))
-
-  return { sessions, hasMore }
-}
-
-export function deleteSession(id: string): void {
-  const db = getDatabase()
-  db.prepare('DELETE FROM sessions WHERE id = ?').run(id)
+  }
 }
 
 // ============================================================================

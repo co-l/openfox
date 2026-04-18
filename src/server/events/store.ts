@@ -16,6 +16,7 @@
 
 import type Database from 'better-sqlite3'
 import type { TurnEvent, StoredEvent, SessionSnapshot } from './types.js'
+import { stripPromptContextMessages } from './optimize-storage.js'
 import { logger } from '../utils/logger.js'
 
 // ============================================================================
@@ -43,6 +44,85 @@ interface EventRow {
   timestamp: number
   event_type: string
   payload: string
+}
+
+// ============================================================================
+// Async Iterator Helpers
+// ============================================================================
+
+function createEventIterator(
+  state: SubscriberState,
+  subscriber: Subscriber | GlobalSubscriber
+): AsyncIterableIterator<StoredEvent> {
+  return {
+    [Symbol.asyncIterator]() {
+      return this
+    },
+    async next(): Promise<IteratorResult<StoredEvent>> {
+      if (state.closed) {
+        return { value: undefined, done: true }
+      }
+
+      const queued = state.queue.shift()
+      if (queued) {
+        return { value: queued, done: false }
+      }
+
+      return new Promise((resolve) => {
+        state.resolveNext = resolve as (value: IteratorResult<StoredEvent>) => void
+      })
+    },
+    async return(): Promise<IteratorResult<StoredEvent>> {
+      state.closed = true
+      subscriber.closed = true
+      return { value: undefined, done: true }
+    },
+  }
+}
+
+function createIteratorState(): {
+  closed: boolean
+  queue: StoredEvent[]
+  resolveNext: ((value: IteratorResult<StoredEvent>) => void) | null
+  closeIterator: () => void
+} {
+  const state = {
+    closed: false as boolean,
+    queue: [] as StoredEvent[],
+    resolveNext: null as ((value: IteratorResult<StoredEvent>) => void) | null,
+    closeIterator: () => {
+      state.closed = true
+      if (state.resolveNext) {
+        state.resolveNext({ value: undefined, done: true })
+        state.resolveNext = null
+      }
+    },
+  }
+
+  return state
+}
+
+type SubscriberState = ReturnType<typeof createIteratorState>
+
+function createSubscriber(
+  state: SubscriberState,
+  id: { sessionId: string } | { wsId: number }
+): Subscriber | GlobalSubscriber {
+  return {
+    ...id,
+    callback: (event: StoredEvent) => {
+      if (state.closed) return
+
+      if (state.resolveNext) {
+        state.resolveNext({ value: event, done: false })
+        state.resolveNext = null
+      } else {
+        state.queue.push(event)
+      }
+    },
+    close: state.closeIterator,
+    closed: false,
+  }
 }
 
 // ============================================================================
@@ -267,35 +347,10 @@ export class EventStore {
     sessionId: string,
     fromSeq?: number
   ): { iterator: AsyncIterableIterator<StoredEvent>; unsubscribe: () => void } {
-    const queue: StoredEvent[] = []
-    let resolveNext: ((value: IteratorResult<StoredEvent>) => void) | null = null
-    let closed = false
+    const state = createIteratorState()
 
-    const closeIterator = () => {
-      closed = true
-      if (resolveNext) {
-        resolveNext({ value: undefined, done: true })
-        resolveNext = null
-      }
-    }
+    const subscriber = createSubscriber(state, { sessionId }) as Subscriber
 
-    const subscriber: Subscriber = {
-      sessionId,
-      callback: (event: StoredEvent) => {
-        if (closed) return
-
-        if (resolveNext) {
-          resolveNext({ value: event, done: false })
-          resolveNext = null
-        } else {
-          queue.push(event)
-        }
-      },
-      close: closeIterator,
-      closed: false,
-    }
-
-    // Add to subscribers
     let sessionSubs = this.subscribers.get(sessionId)
     if (!sessionSubs) {
       sessionSubs = new Set()
@@ -303,45 +358,18 @@ export class EventStore {
     }
     sessionSubs.add(subscriber)
 
-    // Replay events if fromSeq is provided
     if (fromSeq !== undefined) {
       const replayEvents = this.getEvents(sessionId, fromSeq)
-      queue.push(...replayEvents)
-    }
-
-    const iterator: AsyncIterableIterator<StoredEvent> = {
-      [Symbol.asyncIterator]() {
-        return this
-      },
-      async next(): Promise<IteratorResult<StoredEvent>> {
-        if (closed) {
-          return { value: undefined, done: true }
-        }
-
-        const queued = queue.shift()
-        if (queued) {
-          return { value: queued, done: false }
-        }
-
-        // Wait for next event
-        return new Promise((resolve) => {
-          resolveNext = resolve
-        })
-      },
-      async return(): Promise<IteratorResult<StoredEvent>> {
-        closed = true
-        subscriber.closed = true
-        return { value: undefined, done: true }
-      },
+      state.queue.push(...replayEvents)
     }
 
     const unsubscribe = () => {
       subscriber.closed = true
-      closeIterator()
+      state.closeIterator()
       sessionSubs?.delete(subscriber)
     }
 
-    return { iterator, unsubscribe }
+    return { iterator: createEventIterator(state, subscriber), unsubscribe }
   }
 
   private notifySubscribers(sessionId: string, event: StoredEvent): void {
@@ -371,70 +399,20 @@ export class EventStore {
    * Returns an async iterator that yields events and an unsubscribe function
    */
   subscribeAll(): { iterator: AsyncIterableIterator<StoredEvent>; unsubscribe: () => void } {
-    const queue: StoredEvent[] = []
-    let resolveNext: ((value: IteratorResult<StoredEvent>) => void) | null = null
-    let closed = false
-
-    const closeIterator = () => {
-      closed = true
-      if (resolveNext) {
-        resolveNext({ value: undefined, done: true })
-        resolveNext = null
-      }
-    }
-
+    const state = createIteratorState()
     const wsId = ++this.globalSubscriberIdCounter
-    const subscriber: GlobalSubscriber = {
-      wsId,
-      callback: (event: StoredEvent) => {
-        if (closed) return
 
-        if (resolveNext) {
-          resolveNext({ value: event, done: false })
-          resolveNext = null
-        } else {
-          queue.push(event)
-        }
-      },
-      close: closeIterator,
-      closed: false,
-    }
+    const subscriber = createSubscriber(state, { wsId }) as GlobalSubscriber
 
     this.globalSubscribers.set(wsId, subscriber)
 
-    const iterator: AsyncIterableIterator<StoredEvent> = {
-      [Symbol.asyncIterator]() {
-        return this
-      },
-      async next(): Promise<IteratorResult<StoredEvent>> {
-        if (closed) {
-          return { value: undefined, done: true }
-        }
-
-        const queued = queue.shift()
-        if (queued) {
-          return { value: queued, done: false }
-        }
-
-        // Wait for next event
-        return new Promise((resolve) => {
-          resolveNext = resolve
-        })
-      },
-      async return(): Promise<IteratorResult<StoredEvent>> {
-        closed = true
-        subscriber.closed = true
-        return { value: undefined, done: true }
-      },
-    }
-
     const unsubscribe = () => {
       subscriber.closed = true
-      closeIterator()
+      state.closeIterator()
       this.globalSubscribers.delete(wsId)
     }
 
-    return { iterator, unsubscribe }
+    return { iterator: createEventIterator(state, subscriber), unsubscribe }
   }
 
   // --------------------------------------------------------------------------
@@ -571,30 +549,11 @@ export class EventStore {
 
     for (const row of snapshots) {
       const data = JSON.parse(row.payload)
-      const messages = data.messages as Array<{ role: string; promptContext?: { messages?: unknown[] } }>
+      const messages = data.messages as import('./types.js').SnapshotMessage[]
       if (!messages) continue
 
       // Find last assistant message with promptContext
-      let lastAssistantIdx = -1
-      for (let i = messages.length - 1; i >= 0; i--) {
-        const msg = messages[i]
-        if (!msg) continue
-        if (msg.role === 'assistant' && msg.promptContext) {
-          lastAssistantIdx = i
-          break
-        }
-      }
-
-      let changed = false
-      for (let i = 0; i < messages.length; i++) {
-        const msg = messages[i]
-        if (!msg) continue
-        const pc = msg.promptContext
-        if (pc?.messages && pc.messages.length > 0 && i !== lastAssistantIdx) {
-          pc.messages = []
-          changed = true
-        }
-      }
+      const changed = stripPromptContextMessages(messages)
 
       if (changed) {
         updateStmt.run(JSON.stringify(data), row.id)

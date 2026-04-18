@@ -25,6 +25,7 @@ import { getEventStore, getCurrentContextWindowId } from '../events/index.js'
 import { createChatMessageMessage, createChatMessageUpdatedMessage, createChatDoneMessage } from '../ws/protocol.js'
 import { logger } from '../utils/logger.js'
 import { resolveCompactionStatsIdentity, maybeAutoCompactContext } from '../context/auto-compaction.js'
+import { appendNudgeMessage } from '../context/nudge-helpers.js'
 
 // ============================================================================
 // Constants
@@ -36,25 +37,6 @@ const RETURN_VALUE_INSTRUCTION = `
 As the very last thing you do, call \`return_value\` ONCE with a structured summary of your work. This is how your findings get passed back to the calling agent. Do not finish without calling return_value.`
 
 const RETURN_VALUE_NUDGE = 'You must call return_value with a summary of your findings before finishing. Call return_value now.'
-
-function appendNudgeMessage(
-  eventStore: ReturnType<typeof import('../events/index.js').getEventStore>,
-  sessionId: string,
-  content: string,
-  currentWindowMessageOptions: Record<string, unknown> | undefined,
-  subAgentId: string,
-  subAgentType: string,
-): void {
-  const msgId = crypto.randomUUID()
-  eventStore.append(sessionId, createMessageStartEvent(msgId, 'user', content, {
-    ...(currentWindowMessageOptions ?? {}),
-    isSystemGenerated: true,
-    messageKind: 'correction',
-    subAgentId,
-    subAgentType,
-  }))
-  eventStore.append(sessionId, { type: 'message.done', data: { messageId: msgId } })
-}
 
 // ============================================================================
 // Types
@@ -308,7 +290,7 @@ export async function executeSubAgent(options: SubAgentExecutionOptions): Promis
               segments: result.segments,
               promptContext,
             }))
-            appendNudgeMessage(eventStore, sessionId, nudgeContent, currentWindowMessageOptions, subAgentId, subAgentType)
+            appendNudgeMessage(eventStore, sessionId, nudgeContent, currentWindowMessageOptions, { subAgentId, subAgentType })
             customMessages = [...customMessages, { role: 'user', content: nudgeContent, source: 'runtime' }]
             continue
           }
@@ -333,7 +315,7 @@ export async function executeSubAgent(options: SubAgentExecutionOptions): Promis
           segments: result.segments,
           promptContext,
         }))
-        appendNudgeMessage(eventStore, sessionId, RETURN_VALUE_NUDGE, currentWindowMessageOptions, subAgentId, subAgentType)
+        appendNudgeMessage(eventStore, sessionId, RETURN_VALUE_NUDGE, currentWindowMessageOptions, { subAgentId, subAgentType })
         customMessages = [...customMessages, { role: 'user', content: RETURN_VALUE_NUDGE, source: 'runtime' }]
         continue
       }
