@@ -1,0 +1,191 @@
+/**
+ * Generic event application helpers
+ * Extracted to avoid duplication between Message[] and SnapshotMessage[] contexts
+ */
+
+import type { ToolCall, ToolResult } from '../../shared/types.js'
+import type { TurnEvent } from './types.js'
+
+export interface MessageFragment {
+  tokenCount?: number
+  contextWindowId?: string
+  subAgentId?: string
+  subAgentType?: string
+  isSystemGenerated?: boolean
+  messageKind?: 'correction' | 'auto-prompt' | 'context-reset' | 'task-completed' | 'workflow-started' | 'command'
+  isCompactionSummary?: boolean
+  attachments?: unknown[]
+  metadata?: unknown
+}
+
+export function createMessageStartData(
+  data: Extract<TurnEvent, { type: 'message.start' }>['data'],
+  timestamp: string | number
+): Omit<Extract<TurnEvent, { type: 'message.start' }>['data'], 'role' | 'content' | 'messageId'> & { id: string; role: 'user' | 'assistant' | 'system' | 'tool'; content: string; timestamp: string | number; isStreaming: boolean } {
+  const isUserOrSystem = data.role === 'user' || data.role === 'system'
+  return {
+    id: data.messageId,
+    role: data.role,
+    content: data.content ?? '',
+    timestamp,
+    isStreaming: !isUserOrSystem,
+    ...(data.tokenCount !== undefined && { tokenCount: data.tokenCount }),
+    ...(data.contextWindowId !== undefined && { contextWindowId: data.contextWindowId }),
+    ...(data.subAgentId !== undefined && { subAgentId: data.subAgentId }),
+    ...(data.subAgentType !== undefined && { subAgentType: data.subAgentType }),
+    ...(data.isSystemGenerated !== undefined && { isSystemGenerated: data.isSystemGenerated }),
+    ...(data.messageKind !== undefined && { messageKind: data.messageKind }),
+    ...(data.isCompactionSummary !== undefined && { isCompactionSummary: data.isCompactionSummary }),
+    ...(data.attachments !== undefined && { attachments: data.attachments }),
+    ...(data.metadata !== undefined && { metadata: data.metadata }),
+  }
+}
+
+export interface ToolCallWithResult extends ToolCall {
+  result?: ToolResult
+}
+
+export function attachToolCallToMessage(msg: { toolCalls?: ToolCallWithResult[] }, toolCall: ToolCall): void {
+  const existing = msg.toolCalls ?? []
+  const newTc = { ...toolCall } as unknown as ToolCallWithResult
+  msg.toolCalls = [...existing, newTc]
+}
+
+export function attachToolResultToMessage(msg: { toolCalls?: ToolCallWithResult[] }, toolCallId: string, result: ToolResult): void {
+  if (msg.toolCalls) {
+    const toolCall = msg.toolCalls.find((tc) => tc.id === toolCallId)
+    if (toolCall) {
+      toolCall.result = result
+    }
+  }
+}
+
+export function updateMessageDelta(msg: { content: string }, content: string): void {
+  msg.content += content
+}
+
+export function updateMessageThinking(msg: { thinkingContent?: string }, content: string): void {
+  msg.thinkingContent = (msg.thinkingContent ?? '') + content
+}
+
+export function updateMessageDone(
+  msg: { 
+    isStreaming?: boolean
+    stats?: unknown
+    segments?: unknown[]
+    partial?: boolean
+    promptContext?: unknown
+    tokenCount?: number
+  },
+  data: Extract<TurnEvent, { type: 'message.done' }>['data']
+): void {
+  msg.isStreaming = false
+  if (data.stats) msg.stats = data.stats
+  if (data.segments) msg.segments = data.segments
+  if (data.partial) msg.partial = true
+  if (data.promptContext) msg.promptContext = data.promptContext
+  if (data.tokenCount !== undefined) msg.tokenCount = data.tokenCount
+}
+
+export function applyEvents<T extends { id: string; role: string; content: string; timestamp: string | number; isStreaming?: boolean; toolCalls?: ToolCall[]; thinkingContent?: string; stats?: unknown; segments?: unknown[]; partial?: boolean; promptContext?: unknown; tokenCount?: number; contextWindowId?: string; subAgentId?: string; subAgentType?: string; isSystemGenerated?: boolean; messageKind?: string; isCompactionSummary?: boolean; attachments?: unknown[]; metadata?: unknown }>(
+  initialMessages: T[],
+  events: import('./types.js').StoredEvent[],
+  options: {
+    timestampAsNumber?: boolean
+  }
+): T[] {
+  const messages = new Map(initialMessages.map((message) => [message.id, deepCloneMessage(message) as T]))
+
+  for (const event of events) {
+    switch (event.type) {
+      case 'message.start': {
+        const data = event.data as Extract<TurnEvent, { type: 'message.start' }>['data']
+        const isUserOrSystem = data.role === 'user' || data.role === 'system'
+        const timestamp = options.timestampAsNumber 
+          ? (typeof event.timestamp === 'number' ? event.timestamp : Date.now())
+          : new Date(event.timestamp).toISOString()
+        messages.set(data.messageId, {
+          id: data.messageId,
+          role: data.role,
+          content: data.content ?? '',
+          timestamp,
+          isStreaming: !isUserOrSystem,
+          tokenCount: data.tokenCount ?? 0,
+          ...(data.contextWindowId !== undefined && { contextWindowId: data.contextWindowId }),
+          ...(data.subAgentId !== undefined && { subAgentId: data.subAgentId }),
+          ...(data.subAgentType !== undefined && { subAgentType: data.subAgentType }),
+          ...(data.isSystemGenerated !== undefined && { isSystemGenerated: data.isSystemGenerated }),
+          ...(data.messageKind !== undefined && { messageKind: data.messageKind }),
+          ...(data.isCompactionSummary !== undefined && { isCompactionSummary: data.isCompactionSummary }),
+          ...(data.attachments !== undefined && { attachments: data.attachments }),
+          ...(data.metadata !== undefined && { metadata: data.metadata }),
+        } as T)
+        break
+      }
+      case 'message.delta': {
+        const data = event.data as Extract<TurnEvent, { type: 'message.delta' }>['data']
+        const msg = messages.get(data.messageId)
+        if (msg) updateMessageDelta(msg, data.content)
+        break
+      }
+      case 'message.thinking': {
+        const data = event.data as Extract<TurnEvent, { type: 'message.thinking' }>['data']
+        const msg = messages.get(data.messageId)
+        if (msg) updateMessageThinking(msg, data.content)
+        break
+      }
+      case 'message.done': {
+        const data = event.data as Extract<TurnEvent, { type: 'message.done' }>['data']
+        const msg = messages.get(data.messageId)
+        if (msg) updateMessageDone(msg, data)
+        break
+      }
+      case 'tool.call': {
+        const data = event.data as Extract<TurnEvent, { type: 'tool.call' }>['data']
+        const msg = messages.get(data.messageId)
+        if (msg) attachToolCallToMessage(msg, data.toolCall)
+        break
+      }
+      case 'tool.result': {
+        const data = event.data as Extract<TurnEvent, { type: 'tool.result' }>['data']
+        const msg = messages.get(data.messageId)
+        if (msg) attachToolResultToMessage(msg, data.toolCallId, data.result)
+        break
+      }
+      case 'session.initialized':
+      case 'turn.snapshot':
+      case 'phase.changed':
+      case 'mode.changed':
+      case 'running.changed':
+      case 'criteria.set':
+      case 'criterion.updated':
+      case 'context.state':
+      case 'context.compacted':
+      case 'file.read':
+      case 'todo.updated':
+      case 'chat.done':
+      case 'chat.error':
+      case 'format.retry':
+      case 'tool.preparing':
+      case 'tool.output':
+        break
+    }
+  }
+
+  return Array.from(messages.values())
+}
+
+function deepCloneMessage<T extends object>(msg: T): T {
+  const cloned = { ...msg } as T & Record<string, unknown>
+  const obj = cloned as Record<string, unknown>
+  if (obj['toolCalls']) {
+    obj['toolCalls'] = (obj['toolCalls'] as ToolCall[]).map((tc) => ({ ...tc, ...(tc.result ? { result: { ...tc.result } } : {}) }))
+  }
+  if (obj['segments']) {
+    obj['segments'] = [...(obj['segments'] as unknown[])]
+  }
+  if (obj['attachments']) {
+    obj['attachments'] = [...(obj['attachments'] as unknown[])]
+  }
+  return cloned as T
+}

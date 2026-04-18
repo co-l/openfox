@@ -47,6 +47,9 @@
     "lint:fix": "eslint src/ --fix",
     "format": "prettier --check 'src/**/*.ts'",
     "format:fix": "prettier --write 'src/**/*.ts'",
+    "duplicate:server": "jscpd src/server/ --ignore '**/*.test.ts'",
+    "duplicate:web": "jscpd web/src/",
+    "duplicate": "npm run duplicate:server && npm run duplicate:web",
     "clean": "rm -rf dist",
     "prepublishOnly": "npm run build",
     "prepare": "husky"
@@ -104,6 +107,7 @@
     "dotenv": "^17.3.1",
     "eslint": "^10.1.0",
     "husky": "^9.1.7",
+    "jscpd": "^4.0.9",
     "lint-staged": "^16.4.0",
     "postcss": "^8.5.1",
     "prettier": "^3.8.1",
