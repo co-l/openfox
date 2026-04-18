@@ -11,6 +11,7 @@
  */
 
 import type { InjectedFile, StatsIdentity, ToolCall, ToolResult, Criterion } from '../../shared/types.js'
+import { buildSubAgentResult } from '../sub-agents/manager.js'
 import type { LLMClientWithModel } from '../llm/client.js'
 import type { SessionManager } from '../session/index.js'
 import type { ToolRegistry } from '../tools/types.js'
@@ -29,7 +30,7 @@ import { getEnabledSkillMetadata } from '../skills/registry.js'
 import { getRuntimeConfig } from '../runtime-config.js'
 import { getGlobalConfigDir } from '../../cli/paths.js'
 import { logger } from '../utils/logger.js'
-import { appendNudgeMessage } from './nudge-helpers.js'
+import { applyNudge } from './nudge-helpers.js'
 
 export interface LLMExecutorConfig {
   sessionId: string
@@ -487,15 +488,21 @@ export async function runSubAgentWithExecutor(options: RunSubAgentOptions): Prom
             consecutiveEmptyStops += 1
             const nudgeContent = nudgeConfig.buildNudgeContent(criteriaAwaiting)
 
-            eventStore.append(sessionId, createMessageDoneEvent(assistantMsgId, {
-              segments: [],
-              promptContext: buildPromptContext(systemPrompt, injectedFiles, prompt, executor.getMessages(), toolRegistry.definitions),
-            }))
-            appendNudgeMessage(eventStore, sessionId, nudgeContent, currentWindowMessageOptions, {
+            applyNudge({
+              assistantMsgId,
+              systemPrompt,
+              injectedFiles,
+              prompt,
+              messages: executor.getMessages(),
+              tools: toolRegistry.definitions,
+              nudgeContent,
+              eventStore,
+              sessionId,
+              currentWindowMessageOptions,
               subAgentId: subAgentInstanceId,
               subAgentType,
+              executor,
             })
-            executor.addMessage({ role: 'user', content: nudgeContent, source: 'runtime' })
             continue
           }
 
@@ -513,20 +520,21 @@ export async function runSubAgentWithExecutor(options: RunSubAgentOptions): Prom
 
       if (!returnValueContent && !returnValueNudged) {
         returnValueNudged = true
-        const nudgeMsgId = crypto.randomUUID()
-        eventStore.append(sessionId, createMessageDoneEvent(assistantMsgId, {
-          segments: [],
-          promptContext: buildPromptContext(systemPrompt, injectedFiles, prompt, executor.getMessages(), toolRegistry.definitions),
-        }))
-        eventStore.append(sessionId, createMessageStartEvent(nudgeMsgId, 'user', RETURN_VALUE_NUDGE, {
-          contextWindowId: currentWindowMessageOptions.contextWindowId,
-          isSystemGenerated: true,
-          messageKind: 'correction',
+        applyNudge({
+          assistantMsgId,
+          systemPrompt,
+          injectedFiles,
+          prompt,
+          messages: executor.getMessages(),
+          tools: toolRegistry.definitions,
+          nudgeContent: RETURN_VALUE_NUDGE,
+          eventStore,
+          sessionId,
+          currentWindowMessageOptions,
           subAgentId: subAgentInstanceId,
           subAgentType,
-        }))
-        eventStore.append(sessionId, { type: 'message.done', data: { messageId: nudgeMsgId } })
-        executor.addMessage({ role: 'user', content: RETURN_VALUE_NUDGE, source: 'runtime' })
+          executor,
+        })
         continue
       }
 
@@ -574,27 +582,10 @@ export async function runSubAgentWithExecutor(options: RunSubAgentOptions): Prom
     }
   }
 
-  const finalContent = returnValueContent ?? ''
+  const failed = session.criteria
+    .filter(c => c.status.type === 'failed')
+    .map(c => ({ id: c.id, reason: ((c.status as { reason?: string | null }).reason ?? 'unknown') as string }))
+  const remaining = nudgeConfig?.getCriteriaAwaiting(session.criteria) ?? []
 
-  if (subAgentType === 'verifier') {
-    session = sessionManager.requireSession(sessionId)
-    const remaining = nudgeConfig?.getCriteriaAwaiting(session.criteria) ?? []
-    const failed = session.criteria
-      .filter(c => c.status.type === 'failed')
-      .map(c => ({
-        id: c.id,
-        reason: c.status.type === 'failed' ? c.status.reason : 'unknown',
-      }))
-    return {
-      content: returnValueContent ?? finalContent,
-      ...(returnValueResult ? { result: returnValueResult } : {}),
-      allPassed: failed.length === 0 && remaining.length === 0,
-      failed,
-    }
-  }
-
-  return {
-    content: returnValueContent ?? finalContent,
-    ...(returnValueResult ? { result: returnValueResult } : { result: 'success' }),
-  }
+  return buildSubAgentResult(returnValueContent, returnValueResult ?? (subAgentType !== 'verifier' ? 'success' : undefined), subAgentType ?? '', failed, remaining)
 }

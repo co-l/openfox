@@ -70,6 +70,20 @@ export interface SubAgentResult {
   failed?: Array<{ id: string; reason: string }>
 }
 
+export function buildSubAgentResult(
+  returnValueContent: string | undefined | null,
+  returnValueResult: string | undefined | null,
+  subAgentType: string,
+  failed: Array<{ id: string; reason: string }>,
+  remaining: Criterion[]
+): SubAgentResult {
+  return {
+    content: returnValueContent ?? '',
+    ...(returnValueResult !== null && returnValueResult !== undefined ? { result: returnValueResult } : {}),
+    ...(subAgentType === 'verifier' ? { allPassed: failed.length === 0 && remaining.length === 0, failed } : {}),
+  }
+}
+
 // ============================================================================
 // Agent Definition Resolution
 // ============================================================================
@@ -387,25 +401,12 @@ export async function executeSubAgent(options: SubAgentExecutionOptions): Promis
     resultLength: finalContent.length,
   })
 
-  // Build result — for verifier, include pass/fail info
-  if (subAgentType === 'verifier') {
-    session = sessionManager.requireSession(sessionId)
-    const remaining = nudgeConfig?.getCriteriaAwaiting(session.criteria) ?? []
-    const failed = session.criteria
-      .filter(c => c.status.type === 'failed')
-      .map(c => ({
-        id: c.id,
-        reason: c.status.type === 'failed' ? c.status.reason : 'unknown',
-      }))
-    return {
-      content: returnValueContent ?? finalContent,
-      ...(returnValueResult ? { result: returnValueResult } : {}),
-      allPassed: failed.length === 0 && remaining.length === 0,
-      failed,
-    }
-  }
+  const failed = session.criteria
+    .filter(c => c.status.type === 'failed')
+    .map(c => ({ id: c.id, reason: (c.status as { reason?: string | null }).reason ?? 'unknown' }))
+  const remaining = nudgeConfig?.getCriteriaAwaiting(session.criteria) ?? []
 
-  return { content: returnValueContent ?? finalContent, ...(returnValueResult ? { result: returnValueResult } : { result: 'success' }) }
+  return buildSubAgentResult(returnValueContent ?? undefined, returnValueResult ?? (subAgentType !== 'verifier' ? 'success' : undefined), subAgentType, failed, remaining)
 }
 
 // Backward-compatible factory (used by sub-agent.ts)

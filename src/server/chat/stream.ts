@@ -14,7 +14,7 @@ import type { LLMClientWithModel } from '../llm/client.js'
 import type { LLMToolDefinition } from '../llm/types.js'
 import type { StreamTiming } from '../llm/streaming.js'
 import type { SessionManager } from '../session/index.js'
-import { streamWithSegments } from '../llm/streaming.js'
+import { createStreamRequest } from './stream-utils.js'
 import { estimateContextSize } from '../context/tokenizer.js'
 import { getRuntimeConfig } from '../runtime-config.js'
 import { logger } from '../utils/logger.js'
@@ -163,25 +163,15 @@ async function streamLLMResponseInternal(
   }
 
   // Stream response
-  const streamRequest: {
-    messages: typeof llmMessages
-    tools?: typeof tools
-    toolChoice?: 'auto' | 'none' | 'required'
-    disableThinking: boolean
-    signal?: AbortSignal
-    onVisionFallbackStart?: (attachmentId: string, filename?: string) => void
-    onVisionFallbackDone?: (attachmentId: string, description: string) => void
-  } = {
+  const stream = createStreamRequest(llmClient, {
     messages: llmMessages,
     ...(tools && { tools }),
-    ...(tools && { toolChoice: toolChoice ?? 'auto' }),
+    ...(toolChoice && { toolChoice }),
     disableThinking: disableThinking ?? false,
     ...(signal && { signal }),
-  }
-  if (onVisionFallbackStart) streamRequest.onVisionFallbackStart = onVisionFallbackStart
-  if (onVisionFallbackDone) streamRequest.onVisionFallbackDone = onVisionFallbackDone
-
-  const stream = streamWithSegments(llmClient, streamRequest)
+    ...(onVisionFallbackStart && { onVisionFallbackStart }),
+    ...(onVisionFallbackDone && { onVisionFallbackDone }),
+  })
 
   let result: Awaited<ReturnType<typeof stream.next>>['value'] = null
   

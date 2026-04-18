@@ -15,7 +15,7 @@ import type { LLMClientWithModel } from '../llm/client.js'
 import type { LLMToolDefinition } from '../llm/types.js'
 import type { StreamTiming } from '../llm/streaming.js'
 import type { TurnEvent } from '../events/types.js'
-import { streamWithSegments } from '../llm/streaming.js'
+import { createStreamRequest } from './stream-utils.js'
 import { computeAggregatedStats } from './stats.js'
 import { FORMAT_CORRECTION_PROMPT } from './prompts.js'
 
@@ -54,6 +54,25 @@ export interface PureStreamResult {
 }
 
 // ============================================================================
+// Helpers
+// ============================================================================
+
+function createEmptyStreamResult(
+  aborted: boolean,
+  xmlFormatError: boolean
+): PureStreamResult {
+  return {
+    content: '',
+    toolCalls: [],
+    segments: [],
+    usage: { promptTokens: 0, completionTokens: 0 },
+    timing: { ttft: 0, completionTime: 0, tps: 0, prefillTps: 0 },
+    aborted,
+    xmlFormatError,
+  }
+}
+
+// ============================================================================
 // Pure Streaming Generator
 // ============================================================================
 
@@ -87,25 +106,15 @@ export async function* streamLLMPure(
   const llmMessages = [{ role: 'system' as const, content: systemPrompt }, ...messages]
 
   // Start streaming
-  const streamRequest: {
-    messages: typeof llmMessages
-    tools?: typeof tools
-    toolChoice?: 'auto' | 'none' | 'required'
-    disableThinking: boolean
-    signal?: AbortSignal
-    onVisionFallbackStart?: typeof onVisionFallbackStart
-    onVisionFallbackDone?: typeof onVisionFallbackDone
-  } = {
+  const stream = createStreamRequest(llmClient, {
     messages: llmMessages,
     ...(tools && { tools }),
-    ...(tools && { toolChoice: toolChoice ?? 'auto' }),
+    ...(toolChoice && { toolChoice }),
     disableThinking: disableThinking ?? false,
     ...(signal && { signal }),
-  }
-  if (onVisionFallbackStart) streamRequest.onVisionFallbackStart = onVisionFallbackStart
-  if (onVisionFallbackDone) streamRequest.onVisionFallbackDone = onVisionFallbackDone
-
-  const stream = streamWithSegments(llmClient, streamRequest)
+    ...(onVisionFallbackStart && { onVisionFallbackStart }),
+    ...(onVisionFallbackDone && { onVisionFallbackDone }),
+  })
 
   // Track tool call indices we've emitted preparing events for
   const seenToolIndices = new Set<number>()
@@ -235,15 +244,7 @@ export async function* streamLLMPure(
 
   // Return result (available via generator.value after iteration)
   if (!result) {
-    return {
-      content: '',
-      toolCalls: [],
-      segments: [],
-      usage: { promptTokens: 0, completionTokens: 0 },
-      timing: { ttft: 0, completionTime: 0, tps: 0, prefillTps: 0 },
-      aborted,
-      xmlFormatError,
-    }
+    return createEmptyStreamResult(aborted, xmlFormatError)
   }
 
   const baseResult: PureStreamResult = {
@@ -537,15 +538,7 @@ export async function consumeStreamWithToolLoop(
 
   for (;;) {
     if (signal?.aborted) {
-      return {
-        content: '',
-        toolCalls: [],
-        segments: [],
-        usage: { promptTokens: 0, completionTokens: 0 },
-        timing: { ttft: 0, completionTime: 0, tps: 0, prefillTps: 0 },
-        aborted: true,
-        xmlFormatError: false,
-      }
+      return createEmptyStreamResult(true, false)
     }
 
     if (++iterations > MAX_TOOL_LOOP_ITERATIONS) {

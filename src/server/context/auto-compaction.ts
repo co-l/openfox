@@ -1,11 +1,11 @@
-import type { Attachment, InjectedFile, Provider, StatsIdentity } from '../../shared/types.js'
+import type { InjectedFile, Provider, StatsIdentity } from '../../shared/types.js'
 import type { LLMClientWithModel } from '../llm/client.js'
 import type { SessionManager } from '../session/index.js'
 import { getEventStore, getContextMessages, getCurrentContextWindowId } from '../events/index.js'
 import { getAllInstructions } from './instructions.js'
 import { shouldCompact } from './compactor.js'
 import { COMPACTION_PROMPT } from '../chat/prompts.js'
-import { assembleAgentRequest, type RequestContextMessage } from '../chat/request-context.js'
+import { assembleAgentRequest, minimalMessagesToRequestContextMessages, type MinimalMessage, type RequestContextMessage } from '../chat/request-context.js'
 import {
   TurnMetrics,
   createMessageStartEvent,
@@ -24,21 +24,8 @@ function getCurrentWindowMessageOptions(sessionId: string): { contextWindowId: s
   return contextWindowId ? { contextWindowId } : undefined
 }
 
-function toRequestContextMessages(messages: Array<{
-  role: 'user' | 'assistant' | 'tool'
-  content: string
-  toolCalls?: Array<{ id: string; name: string; arguments: Record<string, unknown> }>
-  toolCallId?: string
-  attachments?: Attachment[]
-}>): RequestContextMessage[] {
-  return messages.map((message) => ({
-    role: message.role,
-    content: message.content,
-    source: 'history',
-    ...(message.toolCalls ? { toolCalls: message.toolCalls } : {}),
-    ...(message.toolCallId ? { toolCallId: message.toolCallId } : {}),
-    ...(message.attachments ? { attachments: message.attachments } : {}),
-  }))
+function toRequestContextMessages(messages: MinimalMessage[]): RequestContextMessage[] {
+  return minimalMessagesToRequestContextMessages(messages, 'history')
 }
 
 interface ContextCompactionOptions {

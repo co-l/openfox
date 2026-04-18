@@ -16,6 +16,29 @@ import {
 
 export type RequestContextMessage = PromptContextMessage
 
+export type MinimalMessage = {
+  role: 'user' | 'assistant' | 'tool'
+  content: string
+  toolCalls?: Array<{ id: string; name: string; arguments: Record<string, unknown> }>
+  toolCallId?: string
+  attachments?: Attachment[]
+}
+
+export function minimalMessagesToRequestContextMessages(messages: MinimalMessage[], source: 'history' | 'runtime' = 'history'): RequestContextMessage[] {
+  return messages.map((message) => minimalMessageToRequestContextMessage(message, source))
+}
+
+export function minimalMessageToRequestContextMessage(message: MinimalMessage, source: 'history' | 'runtime' = 'history'): RequestContextMessage {
+  return {
+    role: message.role,
+    content: message.content,
+    source,
+    ...(message.toolCalls ? { toolCalls: message.toolCalls } : {}),
+    ...(message.toolCallId ? { toolCallId: message.toolCallId } : {}),
+    ...(message.attachments ? { attachments: message.attachments } : {}),
+  }
+}
+
 export interface BaseAssemblyInput {
   workdir: string
   messages: RequestContextMessage[]
@@ -98,6 +121,8 @@ function createAssemblyResult(input: {
   requestTools: LLMToolDefinition[]
   toolChoice: PromptRequestOptions['toolChoice']
   disableThinking: boolean
+  customInstructions?: string
+  skills?: SkillMetadata[]
 }): AssemblyResult {
   const triggerUserMessage = getTriggerUserMessage(input.messages)
   
@@ -154,14 +179,17 @@ export function assembleAgentRequest(input: AgentAssemblyInput): AssemblyResult 
       agentDef,
       baseInput.skills,
     )
-    return createAssemblyResult({
+    const assemblyInput = {
       systemPrompt,
       messages: baseInput.messages,
       injectedFiles: baseInput.injectedFiles,
       requestTools: baseInput.requestTools ?? baseInput.promptTools,
       toolChoice: baseInput.toolChoice ?? 'auto',
       disableThinking: baseInput.disableThinking ?? false,
-    })
+      ...(baseInput.customInstructions ? { customInstructions: baseInput.customInstructions } : {}),
+      ...(baseInput.skills && baseInput.skills.length > 0 ? { skills: baseInput.skills } : {}),
+    }
+    return createAssemblyResult(assemblyInput)
   }
 
   const systemPrompt = buildTopLevelSystemPrompt(
@@ -173,12 +201,15 @@ export function assembleAgentRequest(input: AgentAssemblyInput): AssemblyResult 
 
   // DO NOT inject runtime reminder here - it's handled by orchestrator.injectModeReminderIfNeeded()
   // which only injects on mode switch to preserve vLLM cache
-  return createAssemblyResult({
+  const assemblyInput = {
     systemPrompt,
     messages: baseInput.messages,
     injectedFiles: baseInput.injectedFiles,
     requestTools: baseInput.requestTools ?? baseInput.promptTools,
     toolChoice: baseInput.toolChoice ?? 'auto',
     disableThinking: baseInput.disableThinking ?? false,
-  })
+    ...(baseInput.customInstructions ? { customInstructions: baseInput.customInstructions } : {}),
+    ...(baseInput.skills && baseInput.skills.length > 0 ? { skills: baseInput.skills } : {}),
+  }
+  return createAssemblyResult(assemblyInput)
 }
