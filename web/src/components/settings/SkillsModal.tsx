@@ -1,6 +1,5 @@
 import { useEffect, useState } from 'react'
 import { Modal } from '../shared/Modal'
-import { Button } from '../shared/Button'
 import { EditButton } from '../shared/IconButton'
 import { useSkillsStore, type SkillFull } from '../../stores/skills'
 import {
@@ -12,8 +11,8 @@ import {
   FormTextArea,
   ModalActions,
   ErrorBanner,
-  RestoreDefaultsHeader,
 } from './CRUDModal'
+import { CRUDListHeader } from './CRUDListHeader'
 
 interface SkillsModalProps {
   isOpen: boolean
@@ -171,23 +170,14 @@ export function SkillsContent({ isOpen }: { isOpen: boolean }) {
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-4">
-        <p className="text-text-secondary text-sm">
-          Skills provide domain-specific knowledge that agents can load on demand.
-        </p>
-        <div className="flex items-center gap-2 flex-shrink-0 ml-3">
-          {modifiedIds.length > 0 && (
-            <RestoreDefaultsHeader
-              onRestoreAll={requestRestoreAll}
-              isConfirmingRestoreAll={isConfirmingRestoreAll()}
-              onCancelRestoreAll={clearConfirm}
-            />
-          )}
-          <Button variant="primary" size="sm" onClick={handleNew}>
-            + New
-          </Button>
-        </div>
-      </div>
+      <CRUDListHeader
+        description="Skills provide domain-specific knowledge that agents can load on demand."
+        modifiedCount={modifiedIds.length}
+        onRestoreAll={requestRestoreAll}
+        isConfirmingRestoreAll={isConfirmingRestoreAll()}
+        onCancelRestoreAll={clearConfirm}
+        onNew={handleNew}
+      />
 
       {loading && skills.length === 0 ? (
         <div className="text-text-muted text-sm">Loading skills...</div>

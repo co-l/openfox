@@ -1,6 +1,5 @@
 import { useEffect, useState } from 'react'
 import { Modal } from '../shared/Modal'
-import { Button } from '../shared/Button'
 import { EditButton } from '../shared/IconButton'
 import { useCommandsStore, type CommandFull } from '../../stores/commands'
 import { useAgentsStore } from '../../stores/agents'
@@ -13,8 +12,8 @@ import {
   FormTextArea,
   ModalActions,
   ErrorBanner,
-  RestoreDefaultsHeader,
 } from './CRUDModal'
+import { CRUDListHeader } from './CRUDListHeader'
 
 interface CommandsModalProps {
   isOpen: boolean
@@ -200,23 +199,14 @@ export function CommandsModal({ isOpen, onClose, initialEditId }: CommandsModalP
 
   return (
     <Modal isOpen={isOpen} onClose={onClose} title="Commands" size="lg">
-      <div className="flex items-center justify-between mb-4">
-        <p className="text-text-secondary text-sm">
-          Commands are pre-defined messages you can send with a single click.
-        </p>
-        <div className="flex items-center gap-2 flex-shrink-0 ml-3">
-          {modifiedIds.length > 0 && (
-            <RestoreDefaultsHeader
-              onRestoreAll={requestRestoreAll}
-              isConfirmingRestoreAll={isConfirmingRestoreAll()}
-              onCancelRestoreAll={clearConfirm}
-            />
-          )}
-          <Button variant="primary" size="sm" onClick={handleNew}>
-            + New
-          </Button>
-        </div>
-      </div>
+      <CRUDListHeader
+        description="Commands are pre-defined messages you can send with a single click."
+        modifiedCount={modifiedIds.length}
+        onRestoreAll={requestRestoreAll}
+        isConfirmingRestoreAll={isConfirmingRestoreAll()}
+        onCancelRestoreAll={clearConfirm}
+        onNew={handleNew}
+      />
 
       {loading && commands.length === 0 ? (
         <div className="text-text-muted text-sm">Loading commands...</div>
