@@ -2,8 +2,7 @@
  * Shell command execution for workflow shell steps.
  */
 
-import { spawn } from 'node:child_process'
-import { getPlatformShell } from '../utils/platform.js'
+import { checkAborted, spawnShellProcess } from '../utils/shell.js'
 
 export interface ShellResult {
   exitCode: number
@@ -23,18 +22,12 @@ export function executeShellCommand(
   signal?: AbortSignal,
 ): Promise<ShellResult> {
   return new Promise((resolve, reject) => {
-    if (signal?.aborted) {
+    if (checkAborted(signal)) {
       reject(new Error('Aborted'))
       return
     }
 
-    const shell = getPlatformShell()
-    const proc = spawn(shell.command, [...shell.args, command], {
-      cwd,
-      env: { ...process.env, FORCE_COLOR: '0' },
-      stdio: ['ignore', 'pipe', 'pipe'],
-    })
-
+    const proc = spawnShellProcess(command, cwd, signal)
     let stdout = ''
     let stderr = ''
     let killed = false
@@ -55,8 +48,8 @@ export function executeShellCommand(
     }
     signal?.addEventListener('abort', onAbort)
 
-    proc.stdout.on('data', (data: Buffer) => { stdout += data.toString() })
-    proc.stderr.on('data', (data: Buffer) => { stderr += data.toString() })
+    proc.stdout?.on('data', (data: Buffer) => { stdout += data.toString() })
+    proc.stderr?.on('data', (data: Buffer) => { stderr += data.toString() })
 
     proc.on('close', (code) => {
       clearTimeout(timer)

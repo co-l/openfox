@@ -2,7 +2,7 @@ import { spawn } from 'node:child_process'
 import { resolve, isAbsolute } from 'node:path'
 import { OUTPUT_LIMITS } from './types.js'
 import { createTool } from './tool-helpers.js'
-import { getPlatformShell } from '../utils/platform.js'
+import { checkAborted, spawnShellProcess } from '../utils/shell.js'
 import {
   extractAbsolutePathsFromCommand,
   extractSensitivePathsFromCommand,
@@ -133,19 +133,12 @@ function executeCommand(
 ): Promise<CommandResult> {
   return new Promise((resolve, reject) => {
     // Check if already aborted before starting
-    if (signal?.aborted) {
+    if (checkAborted(signal)) {
       reject(new Error('Command aborted before execution'))
       return
     }
     
-    const shell = getPlatformShell()
-    const proc = spawn(shell.command, [...shell.args, command], {
-      cwd,
-      env: { ...process.env, FORCE_COLOR: '0' },
-      stdio: ['ignore', 'pipe', 'pipe'],
-      detached: true,  // Create new process group so we can kill all children
-    })
-    
+    const proc = spawnShellProcess(command, cwd, signal, true)
     let stdout = ''
     let stderr = ''
     let killed = false
@@ -167,13 +160,13 @@ function executeCommand(
     }
     signal?.addEventListener('abort', onAbort)
     
-    proc.stdout.on('data', (data: Buffer) => {
+    proc.stdout?.on('data', (data: Buffer) => {
       const chunk = data.toString()
       stdout += chunk
       onProgress?.(`[stdout] ${chunk}`)
     })
     
-    proc.stderr.on('data', (data: Buffer) => {
+    proc.stderr?.on('data', (data: Buffer) => {
       const chunk = data.toString()
       stderr += chunk
       onProgress?.(`[stderr] ${chunk}`)
