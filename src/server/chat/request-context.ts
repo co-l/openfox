@@ -28,14 +28,28 @@ export function minimalMessagesToRequestContextMessages(messages: MinimalMessage
   return messages.map((message) => minimalMessageToRequestContextMessage(message, source))
 }
 
+function spreadMessageProps<T extends { toolCalls?: { id: string; name: string; arguments: Record<string, unknown> }[]; toolCallId?: string; attachments?: Attachment[] }>(message: T) {
+  return {
+    ...(message.toolCalls ? { toolCalls: message.toolCalls } : {}),
+    ...(message.toolCallId ? { toolCallId: message.toolCallId } : {}),
+    ...(message.attachments ? { attachments: message.attachments } : {}),
+  }
+}
+
 export function minimalMessageToRequestContextMessage(message: MinimalMessage, source: 'history' | 'runtime' = 'history'): RequestContextMessage {
   return {
     role: message.role,
     content: message.content,
     source,
-    ...(message.toolCalls ? { toolCalls: message.toolCalls } : {}),
-    ...(message.toolCallId ? { toolCallId: message.toolCallId } : {}),
-    ...(message.attachments ? { attachments: message.attachments } : {}),
+    ...spreadMessageProps(message),
+  }
+}
+
+function messageToMinimal(message: RequestContextMessage): MinimalMessage {
+  return {
+    role: message.role,
+    content: message.content,
+    ...spreadMessageProps(message),
   }
 }
 
@@ -89,12 +103,8 @@ export function createPromptContext(input: {
     injectedFiles: input.injectedFiles,
     userMessage: input.userMessage ?? getTriggerUserMessage(input.messages),
     messages: input.messages.map((message) => ({
-      role: message.role,
-      content: message.content,
+      ...messageToMinimal(message),
       source: message.source,
-      ...(message.toolCalls ? { toolCalls: message.toolCalls } : {}),
-      ...(message.toolCallId ? { toolCallId: message.toolCallId } : {}),
-      ...(message.attachments ? { attachments: message.attachments } : {}),
     })),
     tools: input.requestTools.map<PromptContextTool>((tool) => ({
       name: tool.function.name,
@@ -126,13 +136,7 @@ function createAssemblyResult(input: {
 
   return {
     systemPrompt: input.systemPrompt,
-    messages: messagesForLLM.map((message) => ({
-      role: message.role,
-      content: message.content,
-      ...(message.toolCalls ? { toolCalls: message.toolCalls } : {}),
-      ...(message.toolCallId ? { toolCallId: message.toolCallId } : {}),
-      ...(message.attachments ? { attachments: message.attachments } : {}),
-    })),
+    messages: messagesForLLM.map(message => messageToMinimal(message)),
     promptContext: createPromptContext({
       ...input,
       userMessage: triggerUserMessage,
