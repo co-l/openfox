@@ -53,13 +53,7 @@ export interface BaseAssemblyInput {
 
 interface AssemblyResult {
   systemPrompt: string
-  messages: Array<{
-    role: 'user' | 'assistant' | 'tool'
-    content: string
-    toolCalls?: Array<{ id: string; name: string; arguments: Record<string, unknown> }>
-    toolCallId?: string
-    attachments?: Attachment[]
-  }>
+  messages: MinimalMessage[]
   promptContext: PromptContext
 }
 

@@ -14,7 +14,7 @@ import type { LLMClientWithModel } from '../llm/client.js'
 import type { LLMToolDefinition } from '../llm/types.js'
 import type { SessionManager } from '../session/index.js'
 import type { ToolRegistry } from '../tools/types.js'
-import type { RequestContextMessage } from './request-context.js'
+import type { RequestContextMessage, MinimalMessage } from './request-context.js'
 import { PathAccessDeniedError, AskUserInterrupt } from '../tools/index.js'
 import { createToolProgressHandler } from './tool-streaming.js'
 import {
@@ -102,13 +102,7 @@ export interface TopLevelLoopConfig {
     skills?: import('../skills/types.js').SkillMetadata[]
   }) => {
     systemPrompt: string
-    messages: Array<{
-      role: 'user' | 'assistant' | 'tool'
-      content: string
-      toolCalls?: Array<{ id: string; name: string; arguments: Record<string, unknown> }>
-      toolCallId?: string
-      attachments?: Attachment[]
-    }>
+    messages: MinimalMessage[]
     promptContext: PromptContext
   }
   getToolRegistry: () => ToolRegistry
