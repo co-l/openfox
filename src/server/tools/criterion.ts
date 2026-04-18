@@ -1,6 +1,6 @@
 import type { ToolResult, Criterion } from '../../shared/types.js'
 import type { Tool, ToolContext } from './types.js'
-import { validateAction, checkActionPermission, requireSession, unexpectedError, catchError } from './tool-helpers.js'
+import { validateActionWithPermission, requireSession, unexpectedError, catchError } from './tool-helpers.js'
 
 function formatCriteriaList(criteria: Criterion[]): string {
   if (criteria.length === 0) return 'No criteria defined.'
@@ -115,13 +115,9 @@ export const criterionTool: Tool = {
       const reason = args['reason'] as string | undefined
       
       const allowedActions = ['get', 'add', 'update', 'remove', 'complete', 'pass', 'fail']
-      const actionError = validateAction(action, allowedActions, startTime)
+      const actionError = validateActionWithPermission(action, allowedActions, 'criterion', context.permittedActions, startTime)
       if (actionError) return actionError
 
-      const permittedActions = context.permittedActions?.['criterion']
-      const permissionError = checkActionPermission(action, permittedActions, startTime)
-      if (permissionError) return permissionError
-      
       const session = requireSession(context.sessionManager, context.sessionId)
       
       if (action === 'get') {

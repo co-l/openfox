@@ -1,6 +1,6 @@
 import type { ToolResult, Todo } from '../../shared/types.js'
 import type { Tool, ToolContext } from './types.js'
-import { validateAction, checkActionPermission, unexpectedError, catchError } from './tool-helpers.js'
+import { validateActionWithPermission, unexpectedError, catchError } from './tool-helpers.js'
 
 type TodoAction = 'list' | 'write' | 'add' | 'update' | 'remove'
 type TodoStatus = 'pending' | 'in_progress' | 'completed'
@@ -48,6 +48,17 @@ function buildErrorResponse(error: string, startTime: number): ToolResult {
     durationMs: Date.now() - startTime,
     truncated: false,
   }
+}
+
+function validateIndex(index: number | undefined, sessionId: string, startTime: number): { todosList: Todo[]; index: number } | ToolResult {
+  if (index === undefined) {
+    return buildErrorResponse('Missing required field: index', startTime)
+  }
+  const todosList = sessionTodos.get(sessionId) ?? []
+  if (index < 0 || index >= todosList.length) {
+    return buildErrorResponse(`Index out of range: ${index}. Valid range: 0-${todosList.length - 1}`, startTime)
+  }
+  return { todosList, index }
 }
 
 function saveTodosResult(todosList: Todo[], sessionId: string, output: string, startTime: number): ToolResult {
@@ -128,12 +139,8 @@ export const todoTool: Tool = {
       const status = args['status'] as TodoStatus | undefined
       
       const allowedActions = ['list', 'write', 'add', 'update', 'remove']
-      const actionError = validateAction(action, allowedActions, startTime)
+      const actionError = validateActionWithPermission(action, allowedActions, 'todo', context.permittedActions, startTime)
       if (actionError) return actionError
-
-      const permittedActions = context.permittedActions?.['todo']
-      const permissionError = checkActionPermission(action, permittedActions, startTime)
-      if (permissionError) return permissionError
       
       if (action === 'list') {
         const todosList = sessionTodos.get(context.sessionId) ?? []
@@ -216,15 +223,6 @@ export const todoTool: Tool = {
       }
       
       if (action === 'update') {
-        if (index === undefined) {
-          return {
-            success: false,
-            error: 'Missing required field: index',
-            durationMs: Date.now() - startTime,
-            truncated: false,
-          }
-        }
-        
         if (!content && !status) {
           return {
             success: false,
@@ -243,13 +241,11 @@ export const todoTool: Tool = {
           }
         }
         
-        const todosList = sessionTodos.get(context.sessionId) ?? []
+        const validateResult = validateIndex(index, context.sessionId, startTime)
+        if ('success' in validateResult) return validateResult
+        const { todosList } = validateResult
         
-        if (index < 0 || index >= todosList.length) {
-          return buildErrorResponse(`Index out of range: ${index}. Valid range: 0-${todosList.length - 1}`, startTime)
-        }
-        
-        const todo = todosList[index]
+        const todo = todosList[validateResult.index]
         if (!todo) {
           return {
             success: false,
@@ -281,22 +277,11 @@ export const todoTool: Tool = {
       }
       
       if (action === 'remove') {
-        if (index === undefined) {
-          return {
-            success: false,
-            error: 'Missing required field: index',
-            durationMs: Date.now() - startTime,
-            truncated: false,
-          }
-        }
+        const validateResult = validateIndex(index, context.sessionId, startTime)
+        if ('success' in validateResult) return validateResult
+        const { todosList } = validateResult
         
-        const todosList = sessionTodos.get(context.sessionId) ?? []
-        
-        if (index < 0 || index >= todosList.length) {
-          return buildErrorResponse(`Index out of range: ${index}. Valid range: 0-${todosList.length - 1}`, startTime)
-        }
-        
-        const removed = todosList.splice(index, 1)[0]!
+        const removed = todosList.splice(validateResult.index, 1)[0]!
 
         if (todosList.length === 0) {
           return saveTodosResult(

@@ -4,6 +4,7 @@ import type { ServerMessage } from '../../shared/protocol.js'
 import type { SessionManager } from './index.js'
 import { getEventStore } from '../events/index.js'
 import { runChatTurn } from '../chat/orchestrator.js'
+import { buildRunChatTurnParams } from '../utils/session-utils.js'
 import { generateSessionName, needsNameGenerationCheck, applyGeneratedSessionName } from './name-generator.js'
 import { logger } from '../utils/logger.js'
 
@@ -142,14 +143,14 @@ function startTurnWithCompletionChain(
 ): void {
   const { sessionManager, llmClient, statsIdentity, broadcastForSession } = deps
 
-  runChatTurn({
+  runChatTurn(buildRunChatTurnParams({
     sessionManager,
     sessionId,
     llmClient,
     statsIdentity,
     signal: controller.signal,
     onMessage: (msg) => broadcastForSession(sessionId, msg),
-  }).catch((error) => {
+  })).catch((error) => {
     if (error instanceof Error && error.message === 'Aborted') {
       return
     }

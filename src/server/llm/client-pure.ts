@@ -293,18 +293,17 @@ function needsVisionFallback(messages: LLMMessage[], modelSupportsVision: boolea
   return result
 }
 
-export async function buildNonStreamingCreateParams(input: {
-  model: string
-  request: LLMCompletionRequest
-  profile: MinimalProfile
-  capabilities: MinimalCapabilities
-  disableThinking?: boolean
-  visionFallbackEnabled?: boolean
-  onVisionFallbackStart?: ((attachmentId: string, filename?: string) => void) | undefined
+async function buildChatCompletionCreateParams(
+  model: string,
+  request: LLMCompletionRequest,
+  profile: MinimalProfile,
+  capabilities: MinimalCapabilities,
+  disableThinking: boolean,
+  visionFallbackEnabled: boolean,
+  isStreaming: boolean,
+  onVisionFallbackStart?: ((attachmentId: string, filename?: string) => void) | undefined,
   onVisionFallbackDone?: ((attachmentId: string, description: string) => void) | undefined
-}): Promise<OpenAI.ChatCompletionCreateParamsNonStreaming> {
-  const { model, request, profile, capabilities, disableThinking, visionFallbackEnabled = false, onVisionFallbackStart, onVisionFallbackDone } = input
-
+): Promise<OpenAI.ChatCompletionCreateParamsNonStreaming | OpenAI.ChatCompletionCreateParamsStreaming> {
   const convertedMessages = await convertMessagesWithOptions(
     request.messages,
     profile,
@@ -314,7 +313,7 @@ export async function buildNonStreamingCreateParams(input: {
     onVisionFallbackDone
   )
 
-  const params: OpenAI.ChatCompletionCreateParamsNonStreaming = {
+  const params: OpenAI.ChatCompletionCreateParamsNonStreaming | OpenAI.ChatCompletionCreateParamsStreaming = {
     model,
     messages: convertedMessages,
     ...(request.tools ? { tools: convertTools(request.tools) } : {}),
@@ -322,63 +321,47 @@ export async function buildNonStreamingCreateParams(input: {
     temperature: request.temperature ?? profile.temperature,
     max_tokens: request.maxTokens ?? profile.defaultMaxTokens,
     top_p: profile.topP,
-    stream: false,
+    stream: isStreaming,
+    ...(isStreaming ? { stream_options: { include_usage: true } } : {}),
   }
 
   if (capabilities.supportsTopK && profile.topK !== undefined) {
     ;(params as unknown as Record<string, unknown>)['top_k'] = profile.topK
   }
 
-  if (capabilities.supportsChatTemplateKwargs && profile.supportsReasoning && disableThinking) {
+  const shouldDisableThinking = isStreaming
+    ? (disableThinking || request.disableThinking)
+    : disableThinking
+
+  if (capabilities.supportsChatTemplateKwargs && profile.supportsReasoning && shouldDisableThinking) {
     ;(params as unknown as Record<string, unknown>)['chat_template_kwargs'] = { enable_thinking: false }
   }
 
   return params
 }
 
-export async function buildStreamingCreateParams(input: {
-  model: string
-  request: LLMCompletionRequest
-  profile: MinimalProfile
-  capabilities: MinimalCapabilities
-  disableThinking: boolean
-  visionFallbackEnabled?: boolean
-  onVisionFallbackStart?: ((attachmentId: string, filename?: string) => void) | undefined
-  onVisionFallbackDone?: ((attachmentId: string, description: string) => void) | undefined
-}): Promise<OpenAI.ChatCompletionCreateParamsStreaming> {
+async function buildCreateParamsFromInput<T extends OpenAI.ChatCompletionCreateParamsNonStreaming | OpenAI.ChatCompletionCreateParamsStreaming>(
+  input: {
+    model: string
+    request: LLMCompletionRequest
+    profile: MinimalProfile
+    capabilities: MinimalCapabilities
+    disableThinking?: boolean
+    visionFallbackEnabled?: boolean
+    onVisionFallbackStart?: ((attachmentId: string, filename?: string) => void) | undefined
+    onVisionFallbackDone?: ((attachmentId: string, description: string) => void) | undefined
+  },
+  isStreaming: boolean
+): Promise<T> {
   const { model, request, profile, capabilities, disableThinking, visionFallbackEnabled = false, onVisionFallbackStart, onVisionFallbackDone } = input
-
-  const convertedMessages = await convertMessagesWithOptions(
-    request.messages,
-    profile,
-    visionFallbackEnabled,
-    request.signal,
-    onVisionFallbackStart,
-    onVisionFallbackDone
-  )
-
-  const params: OpenAI.ChatCompletionCreateParamsStreaming = {
-    model,
-    messages: convertedMessages,
-    ...(request.tools ? { tools: convertTools(request.tools) } : {}),
-    ...(request.toolChoice ? { tool_choice: request.toolChoice as ChatCompletionToolChoiceOption } : {}),
-    temperature: request.temperature ?? profile.temperature,
-    max_tokens: request.maxTokens ?? profile.defaultMaxTokens,
-    top_p: profile.topP,
-    stream: true,
-    stream_options: { include_usage: true },
-  }
-
-  if (capabilities.supportsTopK && profile.topK !== undefined) {
-    ;(params as unknown as Record<string, unknown>)['top_k'] = profile.topK
-  }
-
-  if (capabilities.supportsChatTemplateKwargs && profile.supportsReasoning && (disableThinking || request.disableThinking)) {
-    ;(params as unknown as Record<string, unknown>)['chat_template_kwargs'] = { enable_thinking: false }
-  }
-
-  return params
+  return buildChatCompletionCreateParams(model, request, profile, capabilities, !!disableThinking, visionFallbackEnabled, isStreaming, onVisionFallbackStart, onVisionFallbackDone) as unknown as T
 }
+
+export const buildNonStreamingCreateParams = (input: Parameters<typeof buildCreateParamsFromInput>[0]) =>
+  buildCreateParamsFromInput<OpenAI.ChatCompletionCreateParamsNonStreaming>(input, false)
+
+export const buildStreamingCreateParams = (input: Parameters<typeof buildCreateParamsFromInput>[0] & { disableThinking: boolean }) =>
+  buildCreateParamsFromInput<OpenAI.ChatCompletionCreateParamsStreaming>(input, true)
 
 export function mapFinishReason(reason: string | null): LLMCompletionResponse['finishReason'] {
   switch (reason) {

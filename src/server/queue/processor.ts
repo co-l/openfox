@@ -4,7 +4,7 @@ import type { SessionManager } from '../session/manager.js'
 import { logger } from '../utils/logger.js'
 import type { ServerMessage } from '../../shared/protocol.js'
 import { createSessionRunningMessage, createChatMessageMessage } from '../ws/protocol.js'
-import { finalizeTurnCompletion, getSessionMessageCount } from '../utils/session-utils.js'
+import { finalizeTurnCompletion, getSessionMessageCount, buildRunChatTurnParams } from '../utils/session-utils.js'
 import { needsNameGenerationCheck, generateSessionName, applyGeneratedSessionName, type ApplyGeneratedSessionNameDeps } from '../session/name-generator.js'
 import { getEventStore } from '../events/index.js'
 
@@ -201,14 +201,16 @@ export class QueueProcessor {
 
     const { runChatTurn } = await import('../chat/orchestrator.js')
 
-    runChatTurn({
+    const runChatTurnParams = buildRunChatTurnParams({
       sessionManager,
       sessionId,
       llmClient,
       statsIdentity,
       signal: controller.signal,
       onMessage: (msg) => broadcastForSession(sessionId, msg),
-    }).catch((error) => {
+    })
+
+    runChatTurn(runChatTurnParams).catch((error) => {
       if (error instanceof Error && error.message === 'Aborted') {
         return
       }

@@ -118,6 +118,23 @@ export function catchError(error: unknown, startTime: number): ToolResult {
   }
 }
 
+export function validateActionWithPermission(
+  action: string | undefined,
+  allowedActions: string[],
+  toolName: string,
+  permittedActions: Record<string, string[]> | undefined,
+  startTime: number,
+): ToolResult | undefined {
+  const actionError = validateAction(action, allowedActions, startTime)
+  if (actionError) return actionError
+
+  const permittedToolActions = permittedActions?.[toolName]
+  const permissionError = checkActionPermission(action, permittedToolActions, startTime)
+  if (permissionError) return permissionError
+
+  return undefined
+}
+
 export function createTool<TArgs>(
   name: string,
   definition: LLMToolDefinition,
