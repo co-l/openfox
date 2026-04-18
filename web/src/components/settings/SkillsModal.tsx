@@ -57,7 +57,7 @@ export function SkillsContent({ isOpen }: { isOpen: boolean }) {
       setEditingId(null)
       clearConfirm()
     }
-  }, [isOpen, fetchSkills, clearConfirm, setView, setEditingId])
+  }, [isOpen, fetchSkills, clearConfirm])
 
   const handleNew = () => {
     setFormData({ name: '', id: '', description: '', version: '1.0.0', prompt: '' })

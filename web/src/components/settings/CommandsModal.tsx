@@ -87,7 +87,7 @@ export function CommandsModal({ isOpen, onClose, initialEditId }: CommandsModalP
         setEditingId(null)
       }
     }
-  }, [isOpen, fetchCommands, fetchAgents, fetchCommand, initialEditId, clearConfirm, setView, setEditingId, setFormError, setFormData])
+  }, [isOpen, fetchCommands, fetchAgents, fetchCommand, initialEditId, clearConfirm])
 
   const handleNew = () => {
     setFormData({ name: '', id: '', prompt: '', agentMode: '' })
