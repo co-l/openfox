@@ -1,6 +1,27 @@
 import { create } from 'zustand'
 import { authFetch } from '../lib/api'
 
+const saveWorkflow = async (
+  method: 'POST' | 'PUT',
+  url: string,
+  workflow: WorkflowFull | Partial<WorkflowFull>
+): Promise<{ success: boolean; error?: string }> => {
+  try {
+    const res = await authFetch(url, {
+      method,
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(workflow),
+    })
+    if (!res.ok) {
+      const data = await res.json()
+      return { success: false, error: data.error }
+    }
+    return { success: true }
+  } catch {
+    return { success: false, error: 'Network error' }
+  }
+}
+
 export interface WorkflowInfo {
   id: string
   name: string
@@ -112,39 +133,15 @@ export const useWorkflowsStore = create<WorkflowsState>((set, get) => ({
   },
 
   createWorkflow: async (workflow: WorkflowFull) => {
-    try {
-      const res = await authFetch('/api/workflows', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(workflow),
-      })
-      if (!res.ok) {
-        const data = await res.json()
-        return { success: false, error: data.error }
-      }
-      await get().fetchWorkflows()
-      return { success: true }
-    } catch {
-      return { success: false, error: 'Network error' }
-    }
+    const result = await saveWorkflow('POST', '/api/workflows', workflow)
+    if (result.success) await get().fetchWorkflows()
+    return result
   },
 
   updateWorkflow: async (id: string, workflow: Partial<WorkflowFull>) => {
-    try {
-      const res = await authFetch(`/api/workflows/${id}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(workflow),
-      })
-      if (!res.ok) {
-        const data = await res.json()
-        return { success: false, error: data.error }
-      }
-      await get().fetchWorkflows()
-      return { success: true }
-    } catch {
-      return { success: false, error: 'Network error' }
-    }
+    const result = await saveWorkflow('PUT', `/api/workflows/${id}`, workflow)
+    if (result.success) await get().fetchWorkflows()
+    return result
   },
 
   deleteWorkflow: async (id: string) => {
