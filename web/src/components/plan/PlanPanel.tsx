@@ -16,6 +16,7 @@ import { CriteriaGroupDisplay } from '../shared/CriteriaGroupDisplay'
 import { AttachmentPreview } from '../shared/AttachmentPreview.js'
 import { PromptHistoryList } from '../shared/PromptHistory.js'
 import { Markdown } from '../shared/Markdown.js'
+import { CloseButton } from '../shared/CloseButton'
 import { useWorkflowsStore } from '../../stores/workflows'
 import { processImageFile } from '../../lib/image-processing.js'
 import { buildPromptContextByUserMessageId } from './prompt-context-linking.js'
@@ -550,15 +551,10 @@ export function PlanPanel({ criteriaSidebarOpen: externalCriteriaSidebarOpen, on
               >
                 <span className="font-medium">{qm.mode === 'asap' ? 'ASAP' : 'Queue'}:</span>
                 <span className="truncate max-w-[200px]">{qm.content}</span>
-                <button
-                  type="button"
+                <CloseButton
                   onClick={() => cancelQueued(qm.queueId)}
-                  className="hover:text-white transition-colors"
-                >
-                  <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                  </svg>
-                </button>
+                  size="sm"
+                />
               </div>
             ))}
           </div>

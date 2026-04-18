@@ -3,6 +3,7 @@ import { authFetch } from '../../lib/api'
 import type { Backend } from '../../stores/config'
 import { useCopyToClipboard } from '../../hooks/useCopyToClipboard'
 import { DirectoryBrowser } from '../shared/DirectoryBrowser'
+import { CheckIcon } from '../shared/CheckIcon'
 
 const COMMON_PORTS = [8000, 11434, 8080]
 
@@ -640,9 +641,7 @@ function VisionStep({ onNext }: VisionStepProps) {
               title="Copy"
             >
               {copied ? (
-                <svg className="w-4 h-4 text-accent-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                </svg>
+                <CheckIcon className="w-4 h-4 text-accent-primary" />
               ) : (
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <rect x="9" y="9" width="13" height="13" rx="2" strokeWidth="2" />
