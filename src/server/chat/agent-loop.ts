@@ -39,6 +39,7 @@ import { createQueueStateMessage, createChatVisionFallbackMessage } from '../ws/
 import { emitVisionFallbackStart, emitVisionFallbackDone } from '../events/session.js'
 import type { DangerLevel } from '../../shared/types.js'
 import { logger } from '../utils/logger.js'
+import stripAnsi from "strip-ansi"
 
 // ============================================================================
 // Types
@@ -209,11 +210,11 @@ export async function executeToolBatch(
 
     toolMessages.push({
       role: 'tool',
-      content: toolResult.success 
+      content: stripAnsi(toolResult.success
         ? (toolResult.output ?? 'Success')
         : toolResult.output 
           ? `${toolResult.output}\n\nError: ${toolResult.error}`
-          : `Error: ${toolResult.error}`,
+          : `Error: ${toolResult.error}`),
       source: 'history',
       toolCallId: toolCall.id,
     })

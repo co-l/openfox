@@ -22,6 +22,7 @@ import type {
   ToolCallWithResult,
   ReadFileEntry,
 } from './types.js'
+import stripAnsi from "strip-ansi"
 
 function cloneMessage(message: Message): Message {
   return {
@@ -111,11 +112,11 @@ function appendSnapshotMessageContext(
 
     result.push({
       role: 'tool',
-      content: toolCall.result.success
+      content: stripAnsi(toolCall.result.success
         ? (toolCall.result.output ?? 'Success')
         : toolCall.result.output
           ? `${toolCall.result.output}\n\nError: ${toolCall.result.error}`
-          : `Error: ${toolCall.result.error}`,
+          : `Error: ${toolCall.result.error}`),
       toolCallId: toolCall.id,
     })
   }
@@ -438,11 +439,11 @@ export function buildContextMessagesFromStoredEvents(
           const msg: ContextMessage & { id: string } = {
             id: `tool-${data.toolCallId}`,
             role: 'tool',
-            content: data.result.success
+            content: stripAnsi(data.result.success
               ? (data.result.output ?? 'Success')
               : data.result.output
                 ? `${data.result.output}\n\nError: ${data.result.error}`
-                : `Error: ${data.result.error}`,
+                : `Error: ${data.result.error}`),
             toolCallId: data.toolCallId,
           }
           if (imageMeta?.dataUrl && imageMeta?.mimeType?.startsWith('image/')) {
