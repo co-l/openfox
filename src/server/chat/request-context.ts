@@ -170,6 +170,22 @@ export interface AgentAssemblyInput extends BaseAssemblyInput {
  * not on every turn. This preserves vLLM prefix cache by keeping historical messages
  * identical across turns within the same mode.
  */
+function buildAssemblyInput(
+  systemPrompt: string,
+  baseInput: Omit<AgentAssemblyInput, 'agentDef' | 'subAgentDefs'>,
+): ReturnType<typeof createAssemblyResult> {
+  return createAssemblyResult({
+    systemPrompt,
+    messages: baseInput.messages,
+    injectedFiles: baseInput.injectedFiles,
+    requestTools: baseInput.requestTools ?? baseInput.promptTools,
+    toolChoice: baseInput.toolChoice ?? 'auto',
+    disableThinking: baseInput.disableThinking ?? false,
+    ...(baseInput.customInstructions ? { customInstructions: baseInput.customInstructions } : {}),
+    ...(baseInput.skills && baseInput.skills.length > 0 ? { skills: baseInput.skills } : {}),
+  })
+}
+
 export function assembleAgentRequest(input: AgentAssemblyInput): AssemblyResult {
   const { agentDef, subAgentDefs, ...baseInput } = input
 
@@ -179,17 +195,7 @@ export function assembleAgentRequest(input: AgentAssemblyInput): AssemblyResult 
       agentDef,
       baseInput.skills,
     )
-    const assemblyInput = {
-      systemPrompt,
-      messages: baseInput.messages,
-      injectedFiles: baseInput.injectedFiles,
-      requestTools: baseInput.requestTools ?? baseInput.promptTools,
-      toolChoice: baseInput.toolChoice ?? 'auto',
-      disableThinking: baseInput.disableThinking ?? false,
-      ...(baseInput.customInstructions ? { customInstructions: baseInput.customInstructions } : {}),
-      ...(baseInput.skills && baseInput.skills.length > 0 ? { skills: baseInput.skills } : {}),
-    }
-    return createAssemblyResult(assemblyInput)
+    return buildAssemblyInput(systemPrompt, baseInput)
   }
 
   const systemPrompt = buildTopLevelSystemPrompt(
@@ -201,15 +207,5 @@ export function assembleAgentRequest(input: AgentAssemblyInput): AssemblyResult 
 
   // DO NOT inject runtime reminder here - it's handled by orchestrator.injectModeReminderIfNeeded()
   // which only injects on mode switch to preserve vLLM cache
-  const assemblyInput = {
-    systemPrompt,
-    messages: baseInput.messages,
-    injectedFiles: baseInput.injectedFiles,
-    requestTools: baseInput.requestTools ?? baseInput.promptTools,
-    toolChoice: baseInput.toolChoice ?? 'auto',
-    disableThinking: baseInput.disableThinking ?? false,
-    ...(baseInput.customInstructions ? { customInstructions: baseInput.customInstructions } : {}),
-    ...(baseInput.skills && baseInput.skills.length > 0 ? { skills: baseInput.skills } : {}),
-  }
-  return createAssemblyResult(assemblyInput)
+  return buildAssemblyInput(systemPrompt, baseInput)
 }
