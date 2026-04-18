@@ -52,6 +52,9 @@ export type LLMStreamEvent =
   | { type: 'tool_call_delta'; index: number; id?: string; name?: string; arguments?: string }
   | { type: 'done'; response: LLMCompletionResponse }
   | { type: 'error'; error: string }
+  | { type: 'xml_tool_abort' }
+
+export type StreamEvent = LLMStreamEvent
 
 export interface LLMClient {
   complete(request: LLMCompletionRequest): Promise<LLMCompletionResponse>

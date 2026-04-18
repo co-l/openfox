@@ -1,5 +1,7 @@
 import type { MessageSegment, ToolCall } from '../../shared/types.js'
-import type { LLMClient, LLMCompletionRequest, LLMStreamEvent, LLMCompletionResponse } from './types.js'
+import type { LLMClient, LLMCompletionRequest, LLMCompletionResponse, StreamEvent } from './types.js'
+
+export type { StreamEvent } from './types.js'
 
 // XML patterns that indicate wrong tool format (model outputting XML instead of JSON function calls)
 const XML_TOOL_PATTERNS = ['<tool_call>', '<function=', '</tool_call>', '<parameter=']
@@ -8,17 +10,7 @@ function hasXmlToolPattern(text: string): boolean {
   return XML_TOOL_PATTERNS.some(p => text.includes(p))
 }
 
-/**
- * Streaming event with segment tracking.
- * Same as LLMStreamEvent but adds segment context.
- */
-export type StreamEvent =
-  | { type: 'text_delta'; content: string }
-  | { type: 'thinking_delta'; content: string }
-  | { type: 'tool_call_delta'; index: number; id?: string; name?: string; arguments?: string }
-  | { type: 'done'; response: LLMCompletionResponse }
-  | { type: 'error'; error: string }
-  | { type: 'xml_tool_abort' }
+
 
 /**
  * Timing metrics for a streaming LLM call.

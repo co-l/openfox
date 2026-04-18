@@ -10,8 +10,46 @@ import type { BackendCapabilities } from './backend.js'
 import { describeImageFromDataUrl } from './vision-fallback.js'
 import { logger } from '../utils/logger.js'
 
+type AttachmentContent = Array<{ type: 'text'; text: string } | { type: 'image_url'; image_url: { url: string } }>
+
+function buildAttachmentContent(
+  msgContent: string | null | undefined,
+  attachments: { data: string; filename?: string }[],
+  modelSupportsVision: boolean
+): AttachmentContent {
+  const content: AttachmentContent = []
+  if (msgContent?.trim()) {
+    content.push({ type: 'text', text: msgContent })
+  }
+  for (const attachment of attachments) {
+    content.push(convertAttachmentSync(attachment, modelSupportsVision))
+  }
+  return content
+}
+
 type MinimalCapabilities = Pick<BackendCapabilities, 'supportsTopK' | 'supportsChatTemplateKwargs'>
 type MinimalProfile = Pick<ModelProfile, 'temperature' | 'defaultMaxTokens' | 'topP' | 'topK' | 'supportsReasoning' | 'supportsVision'>
+
+async function convertMessagesWithOptions(
+  messages: LLMMessage[],
+  profile: MinimalProfile,
+  visionFallbackEnabled: boolean,
+  signal?: AbortSignal | undefined,
+  onVisionFallbackStart?: ((attachmentId: string, filename?: string) => void) | undefined,
+  onVisionFallbackDone?: ((attachmentId: string, description: string) => void) | undefined
+): Promise<ChatCompletionMessageParam[]> {
+  const modelSupportsVision = profile.supportsVision ?? false
+  const options: ConvertMessagesOptions = {
+    modelSupportsVision,
+    visionFallbackEnabled,
+    signal,
+    onVisionFallbackStart,
+    onVisionFallbackDone,
+  }
+  return needsVisionFallback(messages, modelSupportsVision, visionFallbackEnabled)
+    ? await convertMessagesWithFallback(messages, options)
+    : convertMessages(messages, { modelSupportsVision, visionFallbackEnabled: false })
+}
 
 export interface ConvertMessagesOptions {
   modelSupportsVision: boolean
@@ -19,6 +57,19 @@ export interface ConvertMessagesOptions {
   signal?: AbortSignal | undefined
   onVisionFallbackStart?: ((attachmentId: string, filename?: string) => void) | undefined
   onVisionFallbackDone?: ((attachmentId: string, description: string) => void) | undefined
+}
+
+function convertToolCalls(
+  toolCalls: { id: string; name: string; arguments: Record<string, unknown> }[]
+): OpenAI.ChatCompletionMessageToolCall[] {
+  return toolCalls.map((toolCall) => ({
+    id: toolCall.id,
+    type: 'function' as const,
+    function: {
+      name: toolCall.name,
+      arguments: JSON.stringify(toolCall.arguments),
+    },
+  }))
 }
 
 function convertAttachmentSync(
@@ -35,6 +86,18 @@ function convertAttachmentSync(
   return {
     type: 'text',
     text: `[Image: ${attachment.filename || 'image'}] (vision not supported, cannot describe)`,
+  }
+}
+
+function createAttachmentForConversion(
+  data: string,
+  filename?: string,
+  id?: string
+): { data: string; filename?: string; id?: string } {
+  return {
+    data,
+    ...(filename !== undefined && { filename }),
+    ...(id !== undefined && { id }),
   }
 }
 
@@ -78,6 +141,27 @@ async function convertAttachmentWithFallback(
   }
 }
 
+type AttachmentContentWithFallback = Array<{ type: 'text'; text: string } | { type: 'image_url'; image_url: { url: string } }>
+
+async function buildAttachmentContentWithFallback(
+  msgContent: string | null | undefined,
+  attachments: { data: string; filename?: string; id?: string }[],
+  options: ConvertMessagesOptions
+): Promise<AttachmentContentWithFallback> {
+  const content: AttachmentContentWithFallback = []
+  if (msgContent?.trim()) {
+    content.push({ type: 'text', text: msgContent })
+  }
+  for (const attachment of attachments) {
+    const convertedContent = await convertAttachmentWithFallback(
+      createAttachmentForConversion(attachment.data, attachment.filename, attachment.id),
+      options
+    )
+    content.push(convertedContent)
+  }
+  return content
+}
+
 export function convertMessages(
   messages: LLMMessage[],
   options: ConvertMessagesOptions
@@ -89,13 +173,7 @@ export function convertMessages(
   return filtered.map((msg): ChatCompletionMessageParam => {
     if (msg.role === 'tool') {
       if (msg.attachments && msg.attachments.length > 0) {
-        const content: Array<{ type: 'text'; text: string } | { type: 'image_url'; image_url: { url: string } }> = []
-        if (msg.content?.trim()) {
-          content.push({ type: 'text', text: msg.content })
-        }
-        for (const attachment of msg.attachments) {
-          content.push(convertAttachmentSync(attachment, options.modelSupportsVision))
-        }
+        const content = buildAttachmentContent(msg.content, msg.attachments, options.modelSupportsVision)
         return {
           role: 'tool',
           content,
@@ -113,28 +191,12 @@ export function convertMessages(
       return {
         role: 'assistant',
         content: msg.content || null,
-        tool_calls: msg.toolCalls.map((toolCall) => ({
-          id: toolCall.id,
-          type: 'function',
-          function: {
-            name: toolCall.name,
-            arguments: JSON.stringify(toolCall.arguments),
-          },
-        })),
+        tool_calls: convertToolCalls(msg.toolCalls),
       }
     }
 
     if (msg.role === 'user' && msg.attachments && msg.attachments.length > 0) {
-      const content: Array<{ type: 'text'; text: string } | { type: 'image_url'; image_url: { url: string } }> = []
-
-      if (msg.content?.trim()) {
-        content.push({ type: 'text', text: msg.content })
-      }
-
-      for (const attachment of msg.attachments) {
-        content.push(convertAttachmentSync(attachment, options.modelSupportsVision))
-      }
-
+      const content = buildAttachmentContent(msg.content, msg.attachments, options.modelSupportsVision)
       return {
         role: 'user',
         content,
@@ -162,17 +224,7 @@ export async function convertMessagesWithFallback(
   for (const msg of filtered) {
     if (msg.role === 'tool') {
       if (msg.attachments && msg.attachments.length > 0) {
-        const content: Array<{ type: 'text'; text: string } | { type: 'image_url'; image_url: { url: string } }> = []
-        if (msg.content?.trim()) {
-          content.push({ type: 'text', text: msg.content })
-        }
-        for (const attachment of msg.attachments) {
-          const convertedContent = await convertAttachmentWithFallback(
-            { data: attachment.data, filename: attachment.filename, id: attachment.id },
-            options
-          )
-          content.push(convertedContent)
-        }
+        const content = await buildAttachmentContentWithFallback(msg.content, msg.attachments, options)
         converted.push({
           role: 'tool',
           content,
@@ -192,33 +244,13 @@ export async function convertMessagesWithFallback(
       converted.push({
         role: 'assistant',
         content: msg.content || null,
-        tool_calls: msg.toolCalls.map((toolCall) => ({
-          id: toolCall.id,
-          type: 'function',
-          function: {
-            name: toolCall.name,
-            arguments: JSON.stringify(toolCall.arguments),
-          },
-        })),
+        tool_calls: convertToolCalls(msg.toolCalls),
       })
       continue
     }
 
     if (msg.role === 'user' && msg.attachments && msg.attachments.length > 0) {
-      const content: Array<{ type: 'text'; text: string } | { type: 'image_url'; image_url: { url: string } }> = []
-
-      if (msg.content?.trim()) {
-        content.push({ type: 'text', text: msg.content })
-      }
-
-      for (const attachment of msg.attachments) {
-        const convertedContent = await convertAttachmentWithFallback(
-          { data: attachment.data, filename: attachment.filename, id: attachment.id },
-          options
-        )
-        content.push(convertedContent)
-      }
-
+      const content = await buildAttachmentContentWithFallback(msg.content, msg.attachments, options)
       converted.push({
         role: 'user',
         content,
@@ -273,19 +305,14 @@ export async function buildNonStreamingCreateParams(input: {
 }): Promise<OpenAI.ChatCompletionCreateParamsNonStreaming> {
   const { model, request, profile, capabilities, disableThinking, visionFallbackEnabled = false, onVisionFallbackStart, onVisionFallbackDone } = input
 
-  const messages = request.messages
-  const modelSupportsVision = profile.supportsVision ?? false
-  const options: ConvertMessagesOptions = {
-    modelSupportsVision,
+  const convertedMessages = await convertMessagesWithOptions(
+    request.messages,
+    profile,
     visionFallbackEnabled,
-    signal: request.signal,
+    request.signal,
     onVisionFallbackStart,
-    onVisionFallbackDone,
-  }
-
-  const convertedMessages = needsVisionFallback(messages, modelSupportsVision, visionFallbackEnabled)
-    ? await convertMessagesWithFallback(messages, options)
-    : convertMessages(messages, { modelSupportsVision, visionFallbackEnabled: false })
+    onVisionFallbackDone
+  )
 
   const params: OpenAI.ChatCompletionCreateParamsNonStreaming = {
     model,
@@ -320,13 +347,15 @@ export async function buildStreamingCreateParams(input: {
   onVisionFallbackDone?: ((attachmentId: string, description: string) => void) | undefined
 }): Promise<OpenAI.ChatCompletionCreateParamsStreaming> {
   const { model, request, profile, capabilities, disableThinking, visionFallbackEnabled = false, onVisionFallbackStart, onVisionFallbackDone } = input
-  const messages = request.messages
-  const modelSupportsVision = profile.supportsVision ?? false
-  const options: ConvertMessagesOptions = { modelSupportsVision, visionFallbackEnabled, signal: request.signal, onVisionFallbackStart, onVisionFallbackDone }
 
-  const convertedMessages = needsVisionFallback(messages, modelSupportsVision, visionFallbackEnabled)
-    ? await convertMessagesWithFallback(messages, options)
-    : convertMessages(messages, { modelSupportsVision, visionFallbackEnabled: false })
+  const convertedMessages = await convertMessagesWithOptions(
+    request.messages,
+    profile,
+    visionFallbackEnabled,
+    request.signal,
+    onVisionFallbackStart,
+    onVisionFallbackDone
+  )
 
   const params: OpenAI.ChatCompletionCreateParamsStreaming = {
     model,
