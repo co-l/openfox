@@ -3,11 +3,10 @@ import type { ProviderManager } from '../provider-manager.js'
 import type { SessionManager } from '../session/manager.js'
 import { logger } from '../utils/logger.js'
 import type { ServerMessage } from '../../shared/protocol.js'
-import { createSessionRunningMessage, createChatMessageMessage, createContextStateMessage, createSessionStateMessage } from '../ws/protocol.js'
-import { needsNameGeneration, generateSessionName } from '../session/name-generator.js'
-import { updateSessionMetadata } from '../db/sessions.js'
+import { createSessionRunningMessage, createChatMessageMessage } from '../ws/protocol.js'
+import { finalizeTurnCompletion, getSessionMessageCount } from '../utils/session-utils.js'
+import { needsNameGenerationCheck, generateSessionName, applyGeneratedSessionName, type ApplyGeneratedSessionNameDeps } from '../session/name-generator.js'
 import { getEventStore } from '../events/index.js'
-import { buildMessagesFromStoredEvents, foldPendingConfirmations } from '../events/folding.js'
 
 interface QueueProcessorDeps {
   sessionManager: SessionManager
@@ -133,13 +132,7 @@ export class QueueProcessor {
 
       const messageCount = this.getSessionMessageCount(sessionId)
       const currentSession = sessionManager.getSession(sessionId)
-      logger.debug('Session name generation check (queue)', {
-        sessionId,
-        title: currentSession?.metadata.title,
-        messageCount,
-        needsGeneration: currentSession ? needsNameGeneration(currentSession.metadata.title, messageCount) : false,
-      })
-      if (currentSession && needsNameGeneration(currentSession.metadata.title, messageCount)) {
+      if (currentSession && needsNameGenerationCheck(sessionId, currentSession.metadata.title, messageCount)) {
         const eventStore = getEventStore()
         generateSessionName({
           userMessage: nextAsap.content,
@@ -154,18 +147,11 @@ export class QueueProcessor {
               error: result.error,
             })
             if (result.success && result.name) {
-              updateSessionMetadata(sessionId, { title: result.name })
-              eventStore.append(sessionId, {
-                type: 'session.name_generated',
-                data: { name: result.name },
+              applyGeneratedSessionName(sessionId, result.name, {
+                sessionManager,
+                eventStore: eventStore as ApplyGeneratedSessionNameDeps['eventStore'],
+                broadcastForSession,
               })
-              const updatedSession = sessionManager.getSession(sessionId)
-              if (updatedSession) {
-                const events = eventStore.getEvents(sessionId)
-                const messages = buildMessagesFromStoredEvents(events)
-                const pendingConfirmations = foldPendingConfirmations(events)
-                broadcastForSession(sessionId, createSessionStateMessage(updatedSession, messages, pendingConfirmations))
-              }
             }
           })
           .catch((error) => {
@@ -235,9 +221,7 @@ export class QueueProcessor {
 
       const hasMore = sessionManager.hasQueuedMessages(sessionId)
       if (!hasMore) {
-        sessionManager.setRunning(sessionId, false)
-        const contextState = sessionManager.getContextState(sessionId)
-        broadcastForSession(sessionId, createContextStateMessage(contextState))
+        finalizeTurnCompletion(sessionId, sessionManager, broadcastForSession)
         return
       }
 
@@ -246,19 +230,6 @@ export class QueueProcessor {
   }
 
   private getSessionMessageCount(sessionId: string): number {
-    const eventStore = getEventStore()
-    const events = eventStore.getEvents(sessionId)
-
-    let count = 0
-    for (const event of events) {
-      if (event.type === 'message.start') {
-        const data = event.data as { role: string }
-        if (data.role === 'user') {
-          count++
-        }
-      }
-    }
-
-    return count
+    return getSessionMessageCount(sessionId)
   }
 }

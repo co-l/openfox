@@ -3,12 +3,12 @@ import type { StatsIdentity, Attachment } from '../../shared/types.js'
 import type { ServerMessage } from '../../shared/protocol.js'
 import type { SessionManager } from './index.js'
 import { getEventStore } from '../events/index.js'
-import { buildMessagesFromStoredEvents, foldPendingConfirmations } from '../events/folding.js'
 import { runChatTurn } from '../chat/orchestrator.js'
-import { generateSessionName, needsNameGeneration } from './name-generator.js'
+import { generateSessionName, needsNameGenerationCheck, applyGeneratedSessionName } from './name-generator.js'
 import { logger } from '../utils/logger.js'
-import { updateSessionMetadata } from '../db/sessions.js'
-import { createChatMessageMessage, createSessionStateMessage, createSessionRunningMessage, createPhaseChangedMessage, createContextStateMessage } from '../ws/protocol.js'
+
+import { createChatMessageMessage, createSessionRunningMessage, createPhaseChangedMessage } from '../ws/protocol.js'
+import { finalizeTurnCompletion, getSessionMessageCount } from '../utils/session-utils.js'
 
 const activeAgents = new Map<string, AbortController>()
 
@@ -91,13 +91,7 @@ export async function startChatSession(
     // Generate session name if needed
     const messageCount = getSessionMessageCount(sessionId)
     const currentSession = sessionManager.getSession(sessionId)
-    logger.debug('Session name generation check', {
-      sessionId,
-      title: currentSession?.metadata.title,
-      messageCount,
-      needsGeneration: currentSession ? needsNameGeneration(currentSession.metadata.title, messageCount) : false,
-    })
-    if (currentSession && needsNameGeneration(currentSession.metadata.title, messageCount)) {
+    if (currentSession && needsNameGenerationCheck(sessionId, currentSession.metadata.title, messageCount)) {
       generateSessionName({
         userMessage: content,
         llmClient,
@@ -111,18 +105,11 @@ export async function startChatSession(
             error: result.error,
           })
           if (result.success && result.name) {
-            updateSessionMetadata(sessionId, { title: result.name })
-            eventStore.append(sessionId, {
-              type: 'session.name_generated',
-              data: { name: result.name },
+            applyGeneratedSessionName(sessionId, result.name, {
+              sessionManager,
+              eventStore,
+              broadcastForSession,
             })
-            const updatedSession = sessionManager.getSession(sessionId)
-            if (updatedSession) {
-              const events = eventStore.getEvents(sessionId)
-              const messages = buildMessagesFromStoredEvents(events)
-              const pendingConfirmations = foldPendingConfirmations(events)
-              broadcastForSession(sessionId, createSessionStateMessage(updatedSession, messages, pendingConfirmations))
-            }
           }
         })
         .catch((error) => {
@@ -141,28 +128,12 @@ export async function startChatSession(
     }
     sessionManager.setRunning(sessionId, false)
     broadcastForSession(sessionId, createSessionRunningMessage(false))
-    const contextState = sessionManager.getContextState(sessionId)
-    broadcastForSession(sessionId, createContextStateMessage(contextState))
+    finalizeTurnCompletion(sessionId, sessionManager, broadcastForSession)
     throw error
   }
 }
 
-function getSessionMessageCount(sessionId: string): number {
-  const eventStore = getEventStore()
-  const events = eventStore.getEvents(sessionId)
 
-  let count = 0
-  for (const event of events) {
-    if (event.type === 'message.start') {
-      const data = event.data as { role: string }
-      if (data.role === 'user') {
-        count++
-      }
-    }
-  }
-
-  return count
-}
 
 function startTurnWithCompletionChain(
   sessionId: string,
@@ -209,9 +180,7 @@ function startTurnWithCompletionChain(
     }
 
     sessionManager.clearMessageQueue(sessionId)
-    sessionManager.setRunning(sessionId, false)
-    const contextState = sessionManager.getContextState(sessionId)
-    broadcastForSession(sessionId, createContextStateMessage(contextState))
+    finalizeTurnCompletion(sessionId, sessionManager, broadcastForSession)
   })
 }
 

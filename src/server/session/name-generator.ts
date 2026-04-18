@@ -8,7 +8,12 @@
 
 import type { LLMClientWithModel } from '../llm/client.js'
 import type { LLMMessage } from '../llm/types.js'
+import type { Session } from '../../shared/types.js'
+import type { StoredEvent, TurnEvent } from '../events/types.js'
 import { logger } from '../utils/logger.js'
+import { updateSessionMetadata } from '../db/sessions.js'
+import { buildMessagesFromStoredEvents, foldPendingConfirmations } from '../events/folding.js'
+import { createSessionStateMessage } from '../ws/protocol.js'
 
 // ============================================================================
 // Ultra-Lightweight Prompt
@@ -140,4 +145,44 @@ export function needsNameGeneration(sessionTitle: string | null | undefined, mes
   }
 
   return false
+}
+
+export function needsNameGenerationCheck(
+  sessionId: string,
+  sessionTitle: string | null | undefined,
+  messageCount: number,
+): boolean {
+  const needsGeneration = needsNameGeneration(sessionTitle, messageCount)
+  logger.debug('Session name generation check', {
+    sessionId,
+    title: sessionTitle,
+    messageCount,
+    needsGeneration,
+  })
+  return needsGeneration
+}
+
+export interface ApplyGeneratedSessionNameDeps {
+  sessionManager: { getSession: (id: string) => Session | null }
+  eventStore: { getEvents: (sessionId: string) => StoredEvent[]; append: (sessionId: string, event: TurnEvent) => void }
+  broadcastForSession: (sessionId: string, msg: ReturnType<typeof createSessionStateMessage>) => void
+}
+
+export function applyGeneratedSessionName(
+  sessionId: string,
+  name: string,
+  deps: ApplyGeneratedSessionNameDeps
+): void {
+  updateSessionMetadata(sessionId, { title: name })
+  deps.eventStore.append(sessionId, {
+    type: 'session.name_generated',
+    data: { name },
+  })
+  const updatedSession = deps.sessionManager.getSession(sessionId)
+  if (updatedSession) {
+    const events = deps.eventStore.getEvents(sessionId)
+    const messages = buildMessagesFromStoredEvents(events)
+    const pendingConfirmations = foldPendingConfirmations(events)
+    deps.broadcastForSession(sessionId, createSessionStateMessage(updatedSession, messages, pendingConfirmations))
+  }
 }
