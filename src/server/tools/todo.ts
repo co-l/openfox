@@ -1,6 +1,6 @@
 import type { ToolResult, Todo } from '../../shared/types.js'
 import type { Tool, ToolContext } from './types.js'
-import { validateAction, checkActionPermission } from './tool-helpers.js'
+import { validateAction, checkActionPermission, unexpectedError, catchError } from './tool-helpers.js'
 
 type TodoAction = 'list' | 'write' | 'add' | 'update' | 'remove'
 type TodoStatus = 'pending' | 'in_progress' | 'completed'
@@ -315,19 +315,9 @@ export const todoTool: Tool = {
         )
       }
       
-      return {
-        success: false,
-        error: 'Unexpected error',
-        durationMs: Date.now() - startTime,
-        truncated: false,
-      }
+      return unexpectedError(startTime)
     } catch (error) {
-      return {
-        success: false,
-        error: error instanceof Error ? error.message : 'Unknown error',
-        durationMs: Date.now() - startTime,
-        truncated: false,
-      }
+      return catchError(error, startTime)
     }
   },
 }

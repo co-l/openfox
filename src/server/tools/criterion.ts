@@ -1,6 +1,6 @@
 import type { ToolResult, Criterion } from '../../shared/types.js'
 import type { Tool, ToolContext } from './types.js'
-import { validateAction, checkActionPermission, requireSession } from './tool-helpers.js'
+import { validateAction, checkActionPermission, requireSession, unexpectedError, catchError } from './tool-helpers.js'
 
 function formatCriteriaList(criteria: Criterion[]): string {
   if (criteria.length === 0) return 'No criteria defined.'
@@ -17,6 +17,56 @@ function requireCriterionExists(session: { criteria: Array<{ id: string }> }, id
     }
   }
   return null
+}
+
+function completeCriterion(
+  session: { criteria: Criterion[] },
+  context: ToolContext,
+  id: string,
+  statusType: 'passed' | 'failed',
+  reason: string | undefined,
+  startTime: number
+): ToolResult {
+  const { criterion, error: notFoundError } = findCriterion(session, id, startTime)
+  if (notFoundError) return notFoundError
+
+  const status = statusType === 'passed'
+    ? { type: 'passed' as const, verifiedAt: new Date().toISOString(), ...(reason && { reason }) }
+    : { type: 'failed' as const, failedAt: new Date().toISOString(), reason: reason! }
+
+  context.sessionManager.updateCriterionStatus(context.sessionId, id, status)
+
+  context.sessionManager.addCriterionAttempt(context.sessionId, id, {
+    attemptNumber: criterion!.attempts.length + 1,
+    status: statusType,
+    timestamp: new Date().toISOString(),
+    ...(reason ? { details: reason } : {}),
+  })
+
+  return {
+    success: true,
+    output: statusType === 'passed'
+      ? `Criterion "${id}" verified as PASSED.${reason ? ` Verification: ${reason}` : ''}`
+      : `Criterion "${id}" marked as FAILED. Reason: ${reason}`,
+    durationMs: Date.now() - startTime,
+    truncated: false,
+  }
+}
+
+function findCriterion(session: { criteria: Criterion[] }, id: string, startTime: number, errorMessage?: string): { criterion: Criterion | undefined; error: ToolResult | null } {
+  const criterion = session.criteria.find(c => c.id === id)
+  if (!criterion) {
+    return {
+      criterion: undefined,
+      error: {
+        success: false,
+        error: errorMessage ?? `Criterion "${id}" not found`,
+        durationMs: Date.now() - startTime,
+        truncated: false,
+      },
+    }
+  }
+  return { criterion, error: null }
 }
 
 type CriterionAction = 'get' | 'add' | 'update' | 'remove' | 'complete' | 'pass' | 'fail'
@@ -184,24 +234,17 @@ export const criterionTool: Tool = {
           }
         }
         
-        const criterion = session.criteria.find(c => c.id === id)
-        if (!criterion) {
-          return {
-            success: false,
-            error: `Criterion "${id}" not found. Available: ${session.criteria.map(c => c.id).join(', ')}`,
-            durationMs: Date.now() - startTime,
-            truncated: false,
-          }
-        }
-        
+        const { error: notFoundError } = findCriterion(session, id, startTime, `Criterion "${id}" not found. Available: ${session.criteria.map(c => c.id).join(', ')}`)
+        if (notFoundError) return notFoundError
+
         const status = {
           type: 'completed' as const,
           completedAt: new Date().toISOString(),
           ...(reason ? { reason } : {}),
         }
-        
+
         context.sessionManager.updateCriterionStatus(context.sessionId, id, status)
-        
+
         return {
           success: true,
           output: `Criterion "${id}" marked as completed.${reason ? ` Reason: ${reason}` : ''}`,
@@ -209,7 +252,7 @@ export const criterionTool: Tool = {
           truncated: false,
         }
       }
-      
+
       if (action === 'pass') {
         if (!id) {
           return {
@@ -219,38 +262,7 @@ export const criterionTool: Tool = {
             truncated: false,
           }
         }
-        
-        const criterion = session.criteria.find(c => c.id === id)
-        if (!criterion) {
-          return {
-            success: false,
-            error: `Criterion "${id}" not found`,
-            durationMs: Date.now() - startTime,
-            truncated: false,
-          }
-        }
-        
-        const status = {
-          type: 'passed' as const,
-          verifiedAt: new Date().toISOString(),
-          ...(reason ? { reason } : {}),
-        }
-        
-        context.sessionManager.updateCriterionStatus(context.sessionId, id, status)
-        
-        context.sessionManager.addCriterionAttempt(context.sessionId, id, {
-          attemptNumber: criterion.attempts.length + 1,
-          status: 'passed',
-          timestamp: new Date().toISOString(),
-          ...(reason && { details: reason }),
-        })
-        
-        return {
-          success: true,
-          output: `Criterion "${id}" verified as PASSED.${reason ? ` Verification: ${reason}` : ''}`,
-          durationMs: Date.now() - startTime,
-          truncated: false,
-        }
+        return completeCriterion(session, context, id, 'passed', reason, startTime)
       }
       
       if (action === 'fail') {
@@ -270,53 +282,12 @@ export const criterionTool: Tool = {
             truncated: false,
           }
         }
-        
-        const criterion = session.criteria.find(c => c.id === id)
-        if (!criterion) {
-          return {
-            success: false,
-            error: `Criterion "${id}" not found`,
-            durationMs: Date.now() - startTime,
-            truncated: false,
-          }
-        }
-        
-        const status = {
-          type: 'failed' as const,
-          failedAt: new Date().toISOString(),
-          reason,
-        }
-        
-        context.sessionManager.updateCriterionStatus(context.sessionId, id, status)
-        
-        context.sessionManager.addCriterionAttempt(context.sessionId, id, {
-          attemptNumber: criterion.attempts.length + 1,
-          status: 'failed',
-          timestamp: new Date().toISOString(),
-          details: reason,
-        })
-        
-        return {
-          success: true,
-          output: `Criterion "${id}" marked as FAILED. Reason: ${reason}`,
-          durationMs: Date.now() - startTime,
-          truncated: false,
-        }
+        return completeCriterion(session, context, id, 'failed', reason, startTime)
       }
       
-      return {
-        success: false,
-        error: 'Unexpected error',
-        durationMs: Date.now() - startTime,
-        truncated: false,
-      }
+      return unexpectedError(startTime)
     } catch (error) {
-      return {
-        success: false,
-        error: error instanceof Error ? error.message : 'Unknown error',
-        durationMs: Date.now() - startTime,
-        truncated: false,
-      }
+      return catchError(error, startTime)
     }
   },
 }

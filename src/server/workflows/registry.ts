@@ -6,6 +6,7 @@
  */
 
 import { readdir, readFile, writeFile, copyFile, mkdir, access, unlink } from 'node:fs/promises'
+import { findModifiedDefaultFiles } from '../utils/defaults.js'
 import { join, dirname } from 'node:path'
 import { constants } from 'node:fs'
 import { fileURLToPath } from 'node:url'
@@ -150,33 +151,12 @@ export async function restoreDefaultWorkflow(configDir: string, workflowId: stri
  * Return the IDs of default workflows whose user copy differs from the bundled version.
  */
 export async function getModifiedDefaultWorkflowIds(configDir: string): Promise<string[]> {
-  const defaultIds = await getDefaultWorkflowIds()
-  const modified: string[] = []
-
-  for (const id of defaultIds) {
-    const filename = `${id}${WORKFLOW_EXTENSION}`
-    const userPath = join(getWorkflowsDir(configDir), filename)
-
-    let bundledContent: string | null = null
-    for (const dir of [DEFAULTS_DIR, DEFAULTS_DIR_ALT]) {
-      try {
-        bundledContent = await readFile(join(dir, filename), 'utf-8')
-        break
-      } catch { /* try next */ }
-    }
-    if (!bundledContent) continue
-
-    try {
-      const userContent = await readFile(userPath, 'utf-8')
-      if (userContent !== bundledContent) {
-        modified.push(id)
-      }
-    } catch {
-      // User file doesn't exist
-    }
-  }
-
-  return modified
+  return findModifiedDefaultFiles(
+    await getDefaultWorkflowIds(),
+    WORKFLOW_EXTENSION,
+    [DEFAULTS_DIR, DEFAULTS_DIR_ALT],
+    getWorkflowsDir(configDir)
+  )
 }
 
 /**

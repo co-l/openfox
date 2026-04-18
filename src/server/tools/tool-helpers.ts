@@ -100,6 +100,24 @@ export function requireSession(
   return sessionManager.requireSession(sessionId)
 }
 
+export function unexpectedError(startTime: number): ToolResult {
+  return {
+    success: false,
+    error: 'Unexpected error',
+    durationMs: Date.now() - startTime,
+    truncated: false,
+  }
+}
+
+export function catchError(error: unknown, startTime: number): ToolResult {
+  return {
+    success: false,
+    error: error instanceof Error ? error.message : 'Unknown error',
+    durationMs: Date.now() - startTime,
+    truncated: false,
+  }
+}
+
 export function createTool<TArgs>(
   name: string,
   definition: LLMToolDefinition,

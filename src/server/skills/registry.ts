@@ -6,6 +6,7 @@
  */
 
 import { readdir, readFile, writeFile, copyFile, mkdir, access, unlink } from 'node:fs/promises'
+import { findModifiedDefaultFiles } from '../utils/defaults.js'
 import { join, dirname } from 'node:path'
 import { constants } from 'node:fs'
 import { fileURLToPath } from 'node:url'
@@ -196,34 +197,12 @@ export async function restoreDefaultSkill(configDir: string, skillId: string): P
  * Return the IDs of default skills whose user copy differs from the bundled version.
  */
 export async function getModifiedDefaultSkillIds(configDir: string): Promise<string[]> {
-  const defaultIds = await getDefaultSkillIds()
-  const modified: string[] = []
-
-  for (const id of defaultIds) {
-    const filename = `${id}${SKILL_EXTENSION}`
-    const userPath = join(getSkillsDir(configDir), filename)
-
-    // Find bundled source
-    let bundledContent: string | null = null
-    for (const dir of [DEFAULTS_DIR, DEFAULTS_DIR_ALT]) {
-      try {
-        bundledContent = await readFile(join(dir, filename), 'utf-8')
-        break
-      } catch { /* try next */ }
-    }
-    if (!bundledContent) continue
-
-    try {
-      const userContent = await readFile(userPath, 'utf-8')
-      if (userContent !== bundledContent) {
-        modified.push(id)
-      }
-    } catch {
-      // User file doesn't exist — treat as not modified (will be re-created)
-    }
-  }
-
-  return modified
+  return findModifiedDefaultFiles(
+    await getDefaultSkillIds(),
+    SKILL_EXTENSION,
+    [DEFAULTS_DIR, DEFAULTS_DIR_ALT],
+    getSkillsDir(configDir)
+  )
 }
 
 /**

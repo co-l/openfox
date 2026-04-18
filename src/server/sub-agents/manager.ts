@@ -37,6 +37,25 @@ As the very last thing you do, call \`return_value\` ONCE with a structured summ
 
 const RETURN_VALUE_NUDGE = 'You must call return_value with a summary of your findings before finishing. Call return_value now.'
 
+function appendNudgeMessage(
+  eventStore: ReturnType<typeof import('../events/index.js').getEventStore>,
+  sessionId: string,
+  content: string,
+  currentWindowMessageOptions: Record<string, unknown> | undefined,
+  subAgentId: string,
+  subAgentType: string,
+): void {
+  const msgId = crypto.randomUUID()
+  eventStore.append(sessionId, createMessageStartEvent(msgId, 'user', content, {
+    ...(currentWindowMessageOptions ?? {}),
+    isSystemGenerated: true,
+    messageKind: 'correction',
+    subAgentId,
+    subAgentType,
+  }))
+  eventStore.append(sessionId, { type: 'message.done', data: { messageId: msgId } })
+}
+
 // ============================================================================
 // Types
 // ============================================================================
@@ -284,20 +303,12 @@ export async function executeSubAgent(options: SubAgentExecutionOptions): Promis
           if (consecutiveEmptyStops < nudgeConfig.maxConsecutiveNudges) {
             consecutiveEmptyStops += 1
             const nudgeContent = nudgeConfig.buildNudgeContent(criteriaAwaiting)
-            const nudgeMsgId = crypto.randomUUID()
 
             eventStore.append(sessionId, createMessageDoneEvent(assistantMsgId, {
               segments: result.segments,
               promptContext,
             }))
-            eventStore.append(sessionId, createMessageStartEvent(nudgeMsgId, 'user', nudgeContent, {
-              ...(currentWindowMessageOptions ?? {}),
-              isSystemGenerated: true,
-              messageKind: 'correction',
-              subAgentId,
-              subAgentType,
-            }))
-            eventStore.append(sessionId, { type: 'message.done', data: { messageId: nudgeMsgId } })
+            appendNudgeMessage(eventStore, sessionId, nudgeContent, currentWindowMessageOptions, subAgentId, subAgentType)
             customMessages = [...customMessages, { role: 'user', content: nudgeContent, source: 'runtime' }]
             continue
           }
@@ -318,19 +329,11 @@ export async function executeSubAgent(options: SubAgentExecutionOptions): Promis
       // Nudge once if return_value was never called
       if (!returnValueContent && !returnValueNudged) {
         returnValueNudged = true
-        const nudgeMsgId = crypto.randomUUID()
         eventStore.append(sessionId, createMessageDoneEvent(assistantMsgId, {
           segments: result.segments,
           promptContext,
         }))
-        eventStore.append(sessionId, createMessageStartEvent(nudgeMsgId, 'user', RETURN_VALUE_NUDGE, {
-          ...(currentWindowMessageOptions ?? {}),
-          isSystemGenerated: true,
-          messageKind: 'correction',
-          subAgentId,
-          subAgentType,
-        }))
-        eventStore.append(sessionId, { type: 'message.done', data: { messageId: nudgeMsgId } })
+        appendNudgeMessage(eventStore, sessionId, RETURN_VALUE_NUDGE, currentWindowMessageOptions, subAgentId, subAgentType)
         customMessages = [...customMessages, { role: 'user', content: RETURN_VALUE_NUDGE, source: 'runtime' }]
         continue
       }
