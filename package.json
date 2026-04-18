@@ -48,7 +48,7 @@
     "format": "prettier --check 'src/**/*.ts'",
     "format:fix": "prettier --write 'src/**/*.ts'",
     "duplicate:server": "jscpd src/server/ --ignore '**/*.test.ts'",
-    "duplicate:web": "jscpd web/src/",
+    "duplicate:web": "jscpd web/src/ --config .jscpd-web.json",
     "duplicate": "npm run duplicate:server && npm run duplicate:web",
     "clean": "rm -rf dist",
     "prepublishOnly": "npm run build",
