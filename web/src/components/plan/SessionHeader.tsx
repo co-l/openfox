@@ -1,16 +1,7 @@
 import { useSessionStore } from '../../stores/session'
 import { Button } from '../shared/Button'
+import { ProgressBar, LowTokenWarning } from '../shared/ProgressBar'
 import { formatTokens } from '../../lib/format-stats'
-
-/**
- * Get color class based on context usage percentage
- */
-function getProgressColor(percent: number, dangerZone: boolean): string {
-  if (dangerZone) return 'bg-accent-error'
-  if (percent > 85) return 'bg-accent-error'
-  if (percent > 60) return 'bg-accent-warning'
-  return 'bg-accent-success'
-}
 
 /**
  * Get text color class based on context usage
@@ -49,18 +40,8 @@ export function SessionHeader() {
             <span className={getTextColor(percent, dangerZone)}>({percent}%)</span>
           </div>
           
-          <div className="h-1.5 bg-bg-tertiary rounded-full overflow-hidden w-20">
-            <div
-              className={`h-full transition-all duration-300 ${getProgressColor(percent, dangerZone)}`}
-              style={{ width: `${Math.min(percent, 100)}%` }}
-            />
-          </div>
-          
-          {dangerZone && (
-            <span className="text-[10px] text-accent-error font-medium animate-pulse">
-              Low!
-            </span>
-          )}
+          <ProgressBar percent={percent} dangerZone={dangerZone} />
+          <LowTokenWarning dangerZone={dangerZone} />
           
           {compactionCount > 0 && (
             <span className="text-[10px] text-text-muted bg-bg-tertiary px-1 py-0.5 rounded">

@@ -6,6 +6,7 @@ import { useAgentsStore, getAgentColor } from '../../stores/agents'
 import { useSessionStore } from '../../stores/session'
 import { formatTokens } from '../../lib/format-stats'
 import { useAutoScroll } from '../../hooks/useAutoScroll'
+import { ProgressBar } from '../shared/ProgressBar'
 
 interface SubAgentContainerProps {
   messages: Message[]
@@ -29,13 +30,6 @@ function headerStyle(hex: string) {
   }
 }
 
-function getProgressColor(percent: number, dangerZone: boolean): string {
-  if (dangerZone) return 'bg-accent-error'
-  if (percent > 85) return 'bg-accent-error'
-  if (percent > 60) return 'bg-accent-warning'
-  return 'bg-accent-success'
-}
-
 function getTextColor(percent: number, dangerZone: boolean): string {
   if (dangerZone) return 'text-accent-error'
   if (percent > 85) return 'text-accent-error'
@@ -52,12 +46,7 @@ function SubAgentContextBar({ contextState }: { contextState: ContextState }) {
       <span className={getTextColor(percent, dangerZone)}>
         {formatTokens(currentTokens)}/{formatTokens(maxTokens)}
       </span>
-      <div className="h-1 bg-bg-tertiary rounded-full overflow-hidden w-12">
-        <div
-          className={`h-full transition-all duration-300 ${getProgressColor(percent, dangerZone)}`}
-          style={{ width: `${Math.min(percent, 100)}%` }}
-        />
-      </div>
+      <ProgressBar percent={percent} dangerZone={dangerZone} size="sm" />
       {dangerZone && (
         <span className="text-accent-error animate-pulse">Low!</span>
       )}
