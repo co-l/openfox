@@ -1,6 +1,27 @@
 import { create } from 'zustand'
 import { authFetch } from '../lib/api'
 
+const saveSkill = async (
+  method: 'POST' | 'PUT',
+  url: string,
+  skill: SkillFull | Partial<SkillFull>
+): Promise<{ success: boolean; error?: string }> => {
+  try {
+    const res = await authFetch(url, {
+      method,
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(skill),
+    })
+    if (!res.ok) {
+      const data = await res.json()
+      return { success: false, error: data.error }
+    }
+    return { success: true }
+  } catch {
+    return { success: false, error: 'Network error' }
+  }
+}
+
 export interface SkillInfo {
   id: string
   name: string
@@ -85,39 +106,15 @@ export const useSkillsStore = create<SkillsState>((set, get) => ({
   },
 
   createSkill: async (skill: SkillFull) => {
-    try {
-      const res = await authFetch('/api/skills', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(skill),
-      })
-      if (!res.ok) {
-        const data = await res.json()
-        return { success: false, error: data.error }
-      }
-      await get().fetchSkills()
-      return { success: true }
-    } catch {
-      return { success: false, error: 'Network error' }
-    }
+    const result = await saveSkill('POST', '/api/skills', skill)
+    if (result.success) await get().fetchSkills()
+    return result
   },
 
   updateSkill: async (id: string, skill: Partial<SkillFull>) => {
-    try {
-      const res = await authFetch(`/api/skills/${id}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(skill),
-      })
-      if (!res.ok) {
-        const data = await res.json()
-        return { success: false, error: data.error }
-      }
-      await get().fetchSkills()
-      return { success: true }
-    } catch {
-      return { success: false, error: 'Network error' }
-    }
+    const result = await saveSkill('PUT', `/api/skills/${id}`, skill)
+    if (result.success) await get().fetchSkills()
+    return result
   },
 
   deleteSkill: async (skillId: string) => {
