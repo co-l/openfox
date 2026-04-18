@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, useCallback } from 'react'
 import { createPortal } from 'react-dom'
+import { Link } from 'wouter'
 
 export interface DropdownMenuItem {
   label: string | React.ReactNode
@@ -85,7 +86,7 @@ export function DropdownMenu({ items, trigger, minWidth = '120px' }: DropdownMen
 
         if (item.href) {
           return (
-            <a
+            <Link
               key={index}
               href={item.href}
               onClick={(e) => {
@@ -97,7 +98,7 @@ export function DropdownMenu({ items, trigger, minWidth = '120px' }: DropdownMen
               } ${index !== items.length - 1 ? 'border-b border-border' : ''}`}
             >
               {content}
-            </a>
+            </Link>
           )
         }
 
