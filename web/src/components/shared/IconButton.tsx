@@ -33,3 +33,11 @@ export const EditButton = forwardRef<HTMLButtonElement, Omit<IconButtonProps, 'i
 )
 
 EditButton.displayName = 'EditButton'
+
+const CLOSE_ICON = 'M6 18L18 6M6 6l12 12'
+
+export const CloseButton = forwardRef<HTMLButtonElement, Omit<IconButtonProps, 'icon'>>(
+  (props, ref) => <IconButton ref={ref} icon={CLOSE_ICON} {...props} />
+)
+
+CloseButton.displayName = 'CloseButton'

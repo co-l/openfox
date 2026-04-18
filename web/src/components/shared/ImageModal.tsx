@@ -1,4 +1,5 @@
 import { useEffect, useRef } from 'react'
+import { CloseButton } from './IconButton'
 
 interface ImageModalProps {
   src: string
@@ -43,15 +44,11 @@ export function ImageModal({ src, alt, isOpen, onClose }: ImageModalProps) {
       aria-label="Image viewer"
     >
       <div className="relative max-w-[95vw] max-h-[95vh] flex items-center justify-center">
-        <button
+        <CloseButton
           onClick={onClose}
-          className="absolute -top-12 right-0 text-white hover:text-gray-300 transition-colors p-2"
+          className="absolute -top-12 right-0 text-white hover:text-gray-300 transition-colors"
           aria-label="Close image viewer"
-        >
-          <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-          </svg>
-        </button>
+        />
         
         <img
           src={src}

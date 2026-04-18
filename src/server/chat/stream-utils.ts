@@ -2,33 +2,16 @@ import type { LLMClient } from '../llm/types.js'
 import type { LLMCompletionRequest, LLMToolDefinition } from '../llm/types.js'
 import { streamWithSegments } from '../llm/streaming.js'
 
-export function createStreamRequest(client: LLMClient, request: LLMCompletionRequest) {
-  const { messages, tools, toolChoice, disableThinking, signal, onVisionFallbackStart, onVisionFallbackDone } = request
-  const streamRequest: LLMCompletionRequest = {
-    messages,
-    ...(tools && { tools }),
-    ...(toolChoice && { toolChoice }),
-    disableThinking: disableThinking ?? false,
-    ...(signal && { signal }),
-  }
-  if (onVisionFallbackStart) streamRequest.onVisionFallbackStart = onVisionFallbackStart
-  if (onVisionFallbackDone) streamRequest.onVisionFallbackDone = onVisionFallbackDone
-
-  return streamWithSegments(client, streamRequest)
-}
-
-export interface BuildStreamRequestOptions {
+function buildStreamRequestObject(params: {
   messages: LLMCompletionRequest['messages']
   tools?: LLMToolDefinition[] | undefined
-  toolChoice?: 'auto' | 'none' | 'required' | undefined
+  toolChoice?: LLMCompletionRequest['toolChoice']
   disableThinking?: boolean | undefined
   signal?: AbortSignal | undefined
   onVisionFallbackStart?: ((attachmentId: string, filename?: string) => void) | undefined
   onVisionFallbackDone?: ((attachmentId: string, description: string) => void) | undefined
-}
-
-export function buildStreamRequest(client: LLMClient, options: BuildStreamRequestOptions) {
-  const { messages, tools, toolChoice, disableThinking, signal, onVisionFallbackStart, onVisionFallbackDone } = options
+}): LLMCompletionRequest {
+  const { messages, tools, toolChoice, disableThinking, signal, onVisionFallbackStart, onVisionFallbackDone } = params
   const streamRequest: LLMCompletionRequest = {
     messages,
     ...(tools && { tools }),
@@ -38,6 +21,16 @@ export function buildStreamRequest(client: LLMClient, options: BuildStreamReques
   }
   if (onVisionFallbackStart) streamRequest.onVisionFallbackStart = onVisionFallbackStart
   if (onVisionFallbackDone) streamRequest.onVisionFallbackDone = onVisionFallbackDone
+  return streamRequest
+}
 
-  return streamWithSegments(client, streamRequest)
+export function createStreamRequest(client: LLMClient, request: LLMCompletionRequest) {
+  const { messages, tools, toolChoice, disableThinking, signal, onVisionFallbackStart, onVisionFallbackDone } = request
+  return streamWithSegments(client, buildStreamRequestObject({ messages, tools, toolChoice, disableThinking, signal, onVisionFallbackStart, onVisionFallbackDone }))
+}
+
+export type BuildStreamRequestOptions = Parameters<typeof buildStreamRequestObject>[0]
+
+export function buildStreamRequest(client: LLMClient, options: BuildStreamRequestOptions) {
+  return streamWithSegments(client, buildStreamRequestObject(options))
 }
