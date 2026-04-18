@@ -2,6 +2,7 @@ import { create } from 'zustand'
 import type { DevServerConfig, DevServerState, DevServerStatus } from '@shared/dev-server.js'
 import type { ServerMessage, DevServerOutputPayload, DevServerStatePayload } from '@shared/protocol.js'
 import { authFetch } from '../lib/api'
+import { createLogBuffer } from './utils'
 
 interface LogChunk {
   stream: 'stdout' | 'stderr'
@@ -15,7 +16,6 @@ interface DevServerStore {
   config: DevServerConfig | null
   loading: boolean
 
-  // Actions
   setWorkdir: (workdir: string | null) => void
   fetchStatus: () => Promise<void>
   fetchConfig: () => Promise<void>
@@ -27,21 +27,10 @@ interface DevServerStore {
   handleMessage: (message: ServerMessage) => void
 }
 
-// --- Log streaming buffer (same RAF batching pattern as session store) ---
 let logBuffer: LogChunk[] = []
-let logRafId: number | null = null
-let flushLogBuffer: (() => void) | null = null
-
-function scheduleLogFlush() {
-  if (logRafId !== null) return
-  logRafId = requestAnimationFrame(() => {
-    logRafId = null
-    flushLogBuffer?.()
-  })
-}
 
 export const useDevServerStore = create<DevServerStore>()((set, get) => {
-  flushLogBuffer = () => {
+  function flushLogBuffer() {
     if (logBuffer.length === 0) return
     const chunks = logBuffer
     logBuffer = []
@@ -49,6 +38,8 @@ export const useDevServerStore = create<DevServerStore>()((set, get) => {
       logs: [...state.logs, ...chunks],
     }))
   }
+
+  const scheduleLogFlush = createLogBuffer(flushLogBuffer)
 
   return {
     workdir: null,
@@ -154,7 +145,6 @@ export const useDevServerStore = create<DevServerStore>()((set, get) => {
         })
         const data = await res.json()
         set({ config: data.config ?? config })
-        // Re-fetch status since config changed
         get().fetchStatus()
       } catch {
         // ignore

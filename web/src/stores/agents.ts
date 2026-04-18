@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import { authFetch } from '../lib/api'
+import { saveEntity } from './utils'
 
 export interface AgentInfo {
   id: string
@@ -70,6 +71,18 @@ export const useAgentsStore = create<AgentsState>((set, get) => {
 
     fetchAgents,
 
+    createAgent: async (agent: AgentFull) => {
+      const result = await saveEntity('POST', '/api/agents', agent as unknown as Record<string, unknown>)
+      if (result.success) await fetchAgents()
+      return result
+    },
+
+    updateAgent: async (id: string, agent: Partial<AgentFull>) => {
+      const result = await saveEntity('PUT', `/api/agents/${id}`, agent as unknown as Record<string, unknown>)
+      if (result.success) await fetchAgents()
+      return result
+    },
+
     fetchAgent: async (agentId: string) => {
       try {
         const res = await authFetch(`/api/agents/${agentId}`)
@@ -77,42 +90,6 @@ export const useAgentsStore = create<AgentsState>((set, get) => {
         return await res.json() as AgentFull
       } catch {
         return null
-      }
-    },
-
-    createAgent: async (agent: AgentFull) => {
-      try {
-        const res = await authFetch('/api/agents', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(agent),
-        })
-        if (!res.ok) {
-          const data = await res.json()
-          return { success: false, error: data.error }
-        }
-        await fetchAgents()
-        return { success: true }
-      } catch {
-        return { success: false, error: 'Network error' }
-      }
-    },
-
-    updateAgent: async (id: string, agent: Partial<AgentFull>) => {
-      try {
-        const res = await authFetch(`/api/agents/${id}`, {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(agent),
-        })
-        if (!res.ok) {
-          const data = await res.json()
-          return { success: false, error: data.error }
-        }
-        await fetchAgents()
-        return { success: true }
-      } catch {
-        return { success: false, error: 'Network error' }
       }
     },
 

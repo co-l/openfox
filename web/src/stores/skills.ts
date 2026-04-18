@@ -1,26 +1,6 @@
 import { create } from 'zustand'
 import { authFetch } from '../lib/api'
-
-const saveSkill = async (
-  method: 'POST' | 'PUT',
-  url: string,
-  skill: SkillFull | Partial<SkillFull>
-): Promise<{ success: boolean; error?: string }> => {
-  try {
-    const res = await authFetch(url, {
-      method,
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(skill),
-    })
-    if (!res.ok) {
-      const data = await res.json()
-      return { success: false, error: data.error }
-    }
-    return { success: true }
-  } catch {
-    return { success: false, error: 'Network error' }
-  }
-}
+import { saveEntity } from './utils'
 
 export interface SkillInfo {
   id: string
@@ -106,13 +86,13 @@ export const useSkillsStore = create<SkillsState>((set, get) => ({
   },
 
   createSkill: async (skill: SkillFull) => {
-    const result = await saveSkill('POST', '/api/skills', skill)
+    const result = await saveEntity('POST', '/api/skills', skill as unknown as Record<string, unknown>)
     if (result.success) await get().fetchSkills()
     return result
   },
 
   updateSkill: async (id: string, skill: Partial<SkillFull>) => {
-    const result = await saveSkill('PUT', `/api/skills/${id}`, skill)
+    const result = await saveEntity('PUT', `/api/skills/${id}`, skill as unknown as Record<string, unknown>)
     if (result.success) await get().fetchSkills()
     return result
   },

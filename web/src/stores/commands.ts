@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import { authFetch } from '../lib/api'
+import { saveEntity } from './utils'
 
 export interface CommandInfo {
   id: string
@@ -68,39 +69,15 @@ export const useCommandsStore = create<CommandsState>((set, get) => ({
   },
 
   createCommand: async (command: CommandFull) => {
-    try {
-      const res = await authFetch('/api/commands', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(command),
-      })
-      if (!res.ok) {
-        const data = await res.json()
-        return { success: false, error: data.error }
-      }
-      await get().fetchCommands()
-      return { success: true }
-    } catch {
-      return { success: false, error: 'Network error' }
-    }
+    const result = await saveEntity('POST', '/api/commands', command as unknown as Record<string, unknown>)
+    if (result.success) await get().fetchCommands()
+    return result
   },
 
   updateCommand: async (id: string, command: Partial<CommandFull>) => {
-    try {
-      const res = await authFetch(`/api/commands/${id}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(command),
-      })
-      if (!res.ok) {
-        const data = await res.json()
-        return { success: false, error: data.error }
-      }
-      await get().fetchCommands()
-      return { success: true }
-    } catch {
-      return { success: false, error: 'Network error' }
-    }
+    const result = await saveEntity('PUT', `/api/commands/${id}`, command as unknown as Record<string, unknown>)
+    if (result.success) await get().fetchCommands()
+    return result
   },
 
   deleteCommand: async (commandId: string) => {

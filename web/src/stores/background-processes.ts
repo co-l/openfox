@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import type { BackgroundProcess, LogLine } from '@shared/protocol.js'
 import { authFetch } from '../lib/api'
+import { createLogBuffer } from './utils'
 
 interface BackgroundProcessStore {
   processes: BackgroundProcess[]
@@ -19,19 +20,9 @@ interface BackgroundProcessStore {
 }
 
 let logBuffer: { processId: string; stream: 'stdout' | 'stderr'; content: string }[] = []
-let logRafId: number | null = null
-let flushLogBuffer: (() => void) | null = null
-
-function scheduleLogFlush() {
-  if (logRafId !== null) return
-  logRafId = requestAnimationFrame(() => {
-    logRafId = null
-    flushLogBuffer?.()
-  })
-}
 
 export const useBackgroundProcessesStore = create<BackgroundProcessStore>()((set, get) => {
-  flushLogBuffer = () => {
+  function flushLogBuffer() {
     if (logBuffer.length === 0) return
     const chunks = logBuffer
     logBuffer = []
@@ -47,6 +38,8 @@ export const useBackgroundProcessesStore = create<BackgroundProcessStore>()((set
       return { logs: newLogs }
     })
   }
+
+  const scheduleLogFlush = createLogBuffer(flushLogBuffer)
 
   return {
     processes: [],
