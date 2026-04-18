@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect } from 'react'
 import { Modal } from '../shared/Modal'
 import { EditButton } from '../shared/IconButton'
 import { useCommandsStore, type CommandFull } from '../../stores/commands'
@@ -14,11 +14,20 @@ import {
   ErrorBanner,
 } from './CRUDModal'
 import { CRUDListHeader } from './CRUDListHeader'
+import { useCRUDForm } from './useCRUDForm'
 
 interface CommandsModalProps {
   isOpen: boolean
   onClose: () => void
   initialEditId?: string | null
+}
+
+type CommandFormData = {
+  name: string
+  id: string
+  prompt: string
+  agentMode: string
+  [key: string]: unknown
 }
 
 function toSlug(name: string): string {
@@ -36,14 +45,18 @@ export function CommandsModal({ isOpen, onClose, initialEditId }: CommandsModalP
   const deleteCommandAction = useCommandsStore(state => state.deleteCommand)
   const restoreDefault = useCommandsStore(state => state.restoreDefault)
 
-  const [view, setView] = useState<'list' | 'edit'>('list')
-  const [editingId, setEditingId] = useState<string | null>(null)
-  const [formName, setFormName] = useState('')
-  const [formId, setFormId] = useState('')
-  const [formPrompt, setFormPrompt] = useState('')
-  const [formAgentMode, setFormAgentMode] = useState('')
-  const [formError, setFormError] = useState('')
-  const [saving, setSaving] = useState(false)
+  const {
+    view,
+    editingId,
+    formError,
+    saving,
+    formData,
+    setView,
+    setEditingId,
+    setFormError,
+    setFormData,
+    setSaving,
+  } = useCRUDForm<CommandFormData>()
 
   const { requestDelete, requestRestore, requestRestoreAll, clearConfirm, isConfirming, isConfirmingRestoreAll } = useConfirmDialog()
 
@@ -62,25 +75,22 @@ export function CommandsModal({ isOpen, onClose, initialEditId }: CommandsModalP
         setFormError('')
         fetchCommand(initialEditId).then(command => {
           if (!command) return
-          setFormName(command.metadata.name)
-          setFormId(command.metadata.id)
-          setFormPrompt(command.prompt)
-          setFormAgentMode(command.metadata.agentMode ?? '')
+          setFormData({
+            name: command.metadata.name,
+            id: command.metadata.id,
+            prompt: command.prompt,
+            agentMode: command.metadata.agentMode ?? '',
+          })
         })
       } else {
         setView('list')
         setEditingId(null)
       }
     }
-  }, [isOpen, fetchCommands, fetchAgents, fetchCommand, initialEditId, clearConfirm])
+  }, [isOpen, fetchCommands, fetchAgents, fetchCommand, initialEditId, clearConfirm, setView, setEditingId, setFormError, setFormData])
 
   const handleNew = () => {
-    setEditingId(null)
-    setFormName('')
-    setFormId('')
-    setFormPrompt('')
-    setFormAgentMode('')
-    setFormError('')
+    setFormData({ name: '', id: '', prompt: '', agentMode: '' })
     setView('edit')
   }
 
@@ -88,10 +98,12 @@ export function CommandsModal({ isOpen, onClose, initialEditId }: CommandsModalP
     const command = await fetchCommand(commandId)
     if (!command) return
     setEditingId(commandId)
-    setFormName(command.metadata.name)
-    setFormId(command.metadata.id)
-    setFormPrompt(command.prompt)
-    setFormAgentMode(command.metadata.agentMode ?? '')
+    setFormData({
+      name: command.metadata.name,
+      id: command.metadata.id,
+      prompt: command.prompt,
+      agentMode: command.metadata.agentMode ?? '',
+    })
     setFormError('')
     setView('edit')
   }
@@ -102,8 +114,8 @@ export function CommandsModal({ isOpen, onClose, initialEditId }: CommandsModalP
   }
 
   const handleSave = async () => {
-    const id = editingId ?? formId
-    if (!id || !formName || !formPrompt) {
+    const id = editingId ?? formData.id
+    if (!id || !formData.name || !formData.prompt) {
       setFormError('Name and message are required.')
       return
     }
@@ -112,8 +124,8 @@ export function CommandsModal({ isOpen, onClose, initialEditId }: CommandsModalP
     setFormError('')
 
     const command: CommandFull = {
-      metadata: { id, name: formName, ...(formAgentMode ? { agentMode: formAgentMode } : {}) },
-      prompt: formPrompt,
+      metadata: { id, name: formData.name, ...(formData.agentMode ? { agentMode: formData.agentMode } : {}) },
+      prompt: formData.prompt,
     }
 
     const result = editingId
@@ -139,9 +151,9 @@ export function CommandsModal({ isOpen, onClose, initialEditId }: CommandsModalP
   }
 
   const handleNameChange = (name: string) => {
-    setFormName(name)
+    setFormData(prev => ({ ...prev, name }))
     if (!editingId) {
-      setFormId(toSlug(name))
+      setFormData(prev => ({ ...prev, id: toSlug(name) }))
     }
   }
 
@@ -154,14 +166,14 @@ export function CommandsModal({ isOpen, onClose, initialEditId }: CommandsModalP
           <div className="grid grid-cols-2 gap-3">
             <FormField
               label="Name"
-              value={formName}
+              value={formData.name}
               onChange={handleNameChange}
               placeholder="My Command"
             />
             <FormField
               label="ID"
-              value={formId}
-              onChange={setFormId}
+              value={formData.id}
+              onChange={id => setFormData(prev => ({ ...prev, id }))}
               readOnly={!!editingId}
               placeholder="my-command"
               hint={editingId ? '(read-only)' : undefined}
@@ -172,8 +184,8 @@ export function CommandsModal({ isOpen, onClose, initialEditId }: CommandsModalP
           <div>
             <label className="block text-xs text-text-secondary mb-1">Agent Mode <span className="text-text-muted">(optional)</span></label>
             <select
-              value={formAgentMode}
-              onChange={e => setFormAgentMode(e.target.value)}
+              value={formData.agentMode}
+              onChange={e => setFormData(prev => ({ ...prev, agentMode: e.target.value }))}
               className="w-full px-2 py-1.5 bg-bg-tertiary border border-border rounded text-sm focus:outline-none focus:ring-1 focus:ring-accent-primary"
             >
               <option value="">None (keep current mode)</option>
@@ -185,13 +197,13 @@ export function CommandsModal({ isOpen, onClose, initialEditId }: CommandsModalP
 
           <FormTextArea
             label="Message"
-            value={formPrompt}
-            onChange={setFormPrompt}
+            value={formData.prompt}
+            onChange={prompt => setFormData(prev => ({ ...prev, prompt }))}
             placeholder="The message that will be sent when this command is triggered..."
             className="h-64"
           />
 
-          <ModalActions onCancel={handleCancel} onSave={handleSave} saving={saving} saveDisabled={!formName || !formPrompt} />
+          <ModalActions onCancel={handleCancel} onSave={handleSave} saving={saving} saveDisabled={!formData.name || !formData.prompt} />
         </div>
       </Modal>
     )

@@ -1,5 +1,4 @@
-import { useEffect, useState } from 'react'
-import { Modal } from '../shared/Modal'
+import { useEffect } from 'react'
 import { EditButton } from '../shared/IconButton'
 import { useSkillsStore, type SkillFull } from '../../stores/skills'
 import {
@@ -13,14 +12,15 @@ import {
   ErrorBanner,
 } from './CRUDModal'
 import { CRUDListHeader } from './CRUDListHeader'
+import { useCRUDForm } from './useCRUDForm'
 
-interface SkillsModalProps {
-  isOpen: boolean
-  onClose: () => void
-}
-
-function toSlug(name: string): string {
-  return name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')
+type SkillFormData = {
+  name: string
+  id: string
+  description: string
+  version: string
+  prompt: string
+  [key: string]: unknown
 }
 
 export function SkillsContent({ isOpen }: { isOpen: boolean }) {
@@ -28,22 +28,24 @@ export function SkillsContent({ isOpen }: { isOpen: boolean }) {
   const modifiedIds = useSkillsStore(state => state.modifiedIds)
   const loading = useSkillsStore(state => state.loading)
   const fetchSkills = useSkillsStore(state => state.fetchSkills)
-  const toggleSkill = useSkillsStore(state => state.toggleSkill)
   const fetchSkill = useSkillsStore(state => state.fetchSkill)
   const createSkill = useSkillsStore(state => state.createSkill)
   const updateSkill = useSkillsStore(state => state.updateSkill)
   const deleteSkillAction = useSkillsStore(state => state.deleteSkill)
   const restoreDefault = useSkillsStore(state => state.restoreDefault)
 
-  const [view, setView] = useState<'list' | 'edit'>('list')
-  const [editingId, setEditingId] = useState<string | null>(null)
-  const [formName, setFormName] = useState('')
-  const [formId, setFormId] = useState('')
-  const [formDescription, setFormDescription] = useState('')
-  const [formVersion, setFormVersion] = useState('1.0.0')
-  const [formPrompt, setFormPrompt] = useState('')
-  const [formError, setFormError] = useState('')
-  const [saving, setSaving] = useState(false)
+  const {
+    view,
+    editingId,
+    formError,
+    saving,
+    formData,
+    setView,
+    setEditingId,
+    setFormError,
+    setFormData,
+    setSaving,
+  } = useCRUDForm<SkillFormData>()
 
   const { requestDelete, requestRestore, requestRestoreAll, clearConfirm, isConfirming, isConfirmingRestoreAll } = useConfirmDialog()
 
@@ -54,16 +56,10 @@ export function SkillsContent({ isOpen }: { isOpen: boolean }) {
       setEditingId(null)
       clearConfirm()
     }
-  }, [isOpen, fetchSkills, clearConfirm])
+  }, [isOpen, fetchSkills, clearConfirm, setView, setEditingId])
 
   const handleNew = () => {
-    setEditingId(null)
-    setFormName('')
-    setFormId('')
-    setFormDescription('')
-    setFormVersion('1.0.0')
-    setFormPrompt('')
-    setFormError('')
+    setFormData({ name: '', id: '', description: '', version: '1.0.0', prompt: '' })
     setView('edit')
   }
 
@@ -71,11 +67,13 @@ export function SkillsContent({ isOpen }: { isOpen: boolean }) {
     const skill = await fetchSkill(skillId)
     if (!skill) return
     setEditingId(skillId)
-    setFormName(skill.metadata.name)
-    setFormId(skill.metadata.id)
-    setFormDescription(skill.metadata.description)
-    setFormVersion(skill.metadata.version)
-    setFormPrompt(skill.prompt)
+    setFormData({
+      name: skill.metadata.name,
+      id: skill.metadata.id,
+      description: skill.metadata.description ?? '',
+      version: skill.metadata.version ?? '1.0.0',
+      prompt: skill.prompt,
+    })
     setFormError('')
     setView('edit')
   }
@@ -86,9 +84,9 @@ export function SkillsContent({ isOpen }: { isOpen: boolean }) {
   }
 
   const handleSave = async () => {
-    const id = editingId ?? formId
-    if (!id || !formName || !formPrompt) {
-      setFormError('Name and prompt are required.')
+    const id = editingId ?? formData.id
+    if (!id || !formData.name || !formData.prompt) {
+      setFormError('Name, ID, and prompt are required.')
       return
     }
 
@@ -96,8 +94,13 @@ export function SkillsContent({ isOpen }: { isOpen: boolean }) {
     setFormError('')
 
     const skill: SkillFull = {
-      metadata: { id, name: formName, description: formDescription, version: formVersion || '1.0.0' },
-      prompt: formPrompt,
+      metadata: {
+        id,
+        name: formData.name,
+        description: formData.description,
+        version: formData.version,
+      },
+      prompt: formData.prompt,
     }
 
     const result = editingId
@@ -114,56 +117,67 @@ export function SkillsContent({ isOpen }: { isOpen: boolean }) {
     setView('list')
   }
 
-  const handleCancel = () => {
-    setView('list')
-  }
-
   const handleNameChange = (name: string) => {
-    setFormName(name)
+    setFormData(prev => ({ ...prev, name }))
     if (!editingId) {
-      setFormId(toSlug(name))
+      setFormData(prev => ({ ...prev, id: name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') }))
     }
   }
 
   if (view === 'edit') {
     return (
-      <div className="flex flex-col h-full">
-        <div className="space-y-3">
-          <div className="flex items-center gap-2 mb-2">
-            <button
-              onClick={handleCancel}
-              className="p-1 rounded hover:bg-bg-tertiary text-text-muted hover:text-text-primary transition-colors"
-              title="Back to list"
-            >
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-              </svg>
-            </button>
-            <span className="text-sm font-medium text-text-primary">{editingId ? 'Edit Skill' : 'New Skill'}</span>
-          </div>
-
-          {formError && <ErrorBanner message={formError} />}
-
-          <div className="grid grid-cols-2 gap-3">
-            <FormField label="Name" value={formName} onChange={handleNameChange} placeholder="My Skill" />
-            <FormField label="ID" value={formId} onChange={setFormId} readOnly={!!editingId} placeholder="my-skill" hint={editingId ? '(read-only)' : undefined} mono />
-          </div>
-
-          <div className="grid grid-cols-2 gap-3">
-            <FormField label="Description" value={formDescription} onChange={setFormDescription} placeholder="Short description of what this skill provides" />
-            <FormField label="Version" value={formVersion} onChange={setFormVersion} placeholder="1.0.0" mono />
-          </div>
+      <div>
+        <div className="mb-4 flex justify-between items-center">
+          <h2 className="text-lg font-semibold text-text-primary">{editingId ? 'Edit Skill' : 'New Skill'}</h2>
+          <button onClick={() => setView('list')} className="text-text-muted hover:text-text-primary">Cancel</button>
         </div>
 
-        <FormTextArea
-          label="Prompt"
-          value={formPrompt}
-          onChange={setFormPrompt}
-          placeholder="Instructions the agent receives when this skill is loaded..."
-          className="flex-1 min-h-[150px] mt-3 overflow-hidden"
-        />
+        {formError && <ErrorBanner message={formError} />}
 
-        <ModalActions onCancel={handleCancel} onSave={handleSave} saving={saving} saveDisabled={!formName || !formPrompt} />
+        <div className="space-y-3">
+          <div className="grid grid-cols-2 gap-3">
+            <FormField
+              label="Name"
+              value={formData.name}
+              onChange={handleNameChange}
+              placeholder="My Skill"
+            />
+            <FormField
+              label="ID"
+              value={formData.id}
+              onChange={id => setFormData(prev => ({ ...prev, id }))}
+              readOnly={!!editingId}
+              placeholder="my-skill"
+              hint={editingId ? '(read-only)' : undefined}
+              mono
+            />
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <FormField
+              label="Description"
+              value={formData.description}
+              onChange={description => setFormData(prev => ({ ...prev, description }))}
+              placeholder="What this skill does..."
+            />
+            <FormField
+              label="Version"
+              value={formData.version}
+              onChange={version => setFormData(prev => ({ ...prev, version }))}
+              placeholder="1.0.0"
+            />
+          </div>
+
+          <FormTextArea
+            label="Prompt"
+            value={formData.prompt}
+            onChange={prompt => setFormData(prev => ({ ...prev, prompt }))}
+            placeholder="The system prompt for this skill..."
+            className="h-48"
+          />
+
+          <ModalActions onCancel={() => setView('list')} onSave={handleSave} saving={saving} saveDisabled={!formData.name || !formData.id || !formData.prompt} />
+        </div>
       </div>
     )
   }
@@ -182,7 +196,7 @@ export function SkillsContent({ isOpen }: { isOpen: boolean }) {
       {loading && skills.length === 0 ? (
         <div className="text-text-muted text-sm">Loading skills...</div>
       ) : skills.length === 0 ? (
-        <div className="text-text-muted text-sm">No skills installed.</div>
+        <div className="text-text-muted text-sm">No skills created yet.</div>
       ) : (
         <div className="space-y-2">
           {skills.map(skill => (
@@ -193,12 +207,13 @@ export function SkillsContent({ isOpen }: { isOpen: boolean }) {
               <div className="min-w-0 flex-1 mr-3">
                 <div className="flex items-center gap-2">
                   <span className="text-text-primary text-sm font-medium">{skill.name}</span>
-                  <span className="text-text-muted text-xs">v{skill.version}</span>
                   {modifiedIds.includes(skill.id) && (
                     <span className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-amber-500/15 text-amber-400">modified</span>
                   )}
                 </div>
-                <p className="text-text-secondary text-xs mt-0.5 truncate">{skill.description}</p>
+                {skill.description && (
+                  <p className="text-text-muted text-xs truncate">{skill.description}</p>
+                )}
               </div>
 
               <div className="flex items-center gap-1.5 flex-shrink-0">
@@ -217,33 +232,11 @@ export function SkillsContent({ isOpen }: { isOpen: boolean }) {
                 ) : (
                   <DeleteIcon onClick={() => requestDelete(skill.id)} />
                 )}
-
-                <button
-                  onClick={() => toggleSkill(skill.id)}
-                  className={`relative w-9 h-5 rounded-full transition-colors flex-shrink-0 ml-1 ${
-                    skill.enabled ? 'bg-accent-primary' : 'bg-bg-primary'
-                  }`}
-                  title={skill.enabled ? 'Disable skill' : 'Enable skill'}
-                >
-                  <span
-                    className={`absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white transition-transform ${
-                      skill.enabled ? 'translate-x-4' : 'translate-x-0'
-                    }`}
-                  />
-                </button>
               </div>
             </div>
           ))}
         </div>
       )}
     </div>
-  )
-}
-
-export function SkillsModal({ isOpen, onClose }: SkillsModalProps) {
-  return (
-    <Modal isOpen={isOpen} onClose={onClose} title="Skills" size="lg">
-      <SkillsContent isOpen={isOpen} />
-    </Modal>
   )
 }
