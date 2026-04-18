@@ -336,6 +336,23 @@ export interface NudgeConfig {
   buildRestartContent: (criteria: Criterion[]) => string
 }
 
+function buildPromptContext(
+  systemPrompt: string,
+  injectedFiles: InjectedFile[],
+  userMessage: string,
+  messages: RequestContextMessage[],
+  tools: ToolRegistry['definitions'],
+): import('../../shared/types.js').PromptContext {
+  return {
+    systemPrompt,
+    injectedFiles,
+    userMessage,
+    messages: messages.map(m => ({ role: m.role as 'user' | 'assistant' | 'tool', content: m.content, source: m.source })) as import('../../shared/types.js').PromptContextMessage[],
+    tools: tools.map(t => ({ name: t.function.name, description: t.function.description, parameters: t.function.parameters })),
+    requestOptions: { toolChoice: 'auto', disableThinking: true },
+  }
+}
+
 export interface RunSubAgentOptions {
   subAgentType: string
   prompt: string
@@ -441,14 +458,13 @@ export async function runSubAgentWithExecutor(options: RunSubAgentOptions): Prom
       eventStore.append(sessionId, createMessageDoneEvent(assistantMsgId, {
         stats,
         partial: true,
-        promptContext: {
+        promptContext: buildPromptContext(
           systemPrompt,
           injectedFiles,
-          userMessage: prompt,
-          messages: executor.getMessages().map(m => ({ role: m.role, content: m.content, source: m.source })),
-          tools: toolRegistry.definitions.map(t => ({ name: t.function.name, description: t.function.description, parameters: t.function.parameters })),
-          requestOptions: { toolChoice: 'auto' as const, disableThinking: true },
-        },
+          prompt,
+          executor.getMessages().map(m => ({ role: m.role, content: m.content, source: m.source })),
+          toolRegistry.definitions,
+        ),
       }))
       eventStore.append(sessionId, createChatDoneEvent(assistantMsgId, 'stopped', stats))
       throw new Error('Aborted')
@@ -473,14 +489,7 @@ export async function runSubAgentWithExecutor(options: RunSubAgentOptions): Prom
 
             eventStore.append(sessionId, createMessageDoneEvent(assistantMsgId, {
               segments: [],
-              promptContext: {
-                systemPrompt,
-                injectedFiles,
-                userMessage: prompt,
-                messages: executor.getMessages().map(m => ({ role: m.role, content: m.content, source: m.source })),
-                tools: toolRegistry.definitions.map(t => ({ name: t.function.name, description: t.function.description, parameters: t.function.parameters })),
-                requestOptions: { toolChoice: 'auto' as const, disableThinking: true },
-              },
+              promptContext: buildPromptContext(systemPrompt, injectedFiles, prompt, executor.getMessages(), toolRegistry.definitions),
             }))
             eventStore.append(sessionId, createMessageStartEvent(nudgeMsgId, 'user', nudgeContent, {
               contextWindowId: currentWindowMessageOptions.contextWindowId,
@@ -511,14 +520,7 @@ export async function runSubAgentWithExecutor(options: RunSubAgentOptions): Prom
         const nudgeMsgId = crypto.randomUUID()
         eventStore.append(sessionId, createMessageDoneEvent(assistantMsgId, {
           segments: [],
-          promptContext: {
-            systemPrompt,
-            injectedFiles,
-            userMessage: prompt,
-            messages: executor.getMessages().map(m => ({ role: m.role, content: m.content, source: m.source })),
-            tools: toolRegistry.definitions.map(t => ({ name: t.function.name, description: t.function.description, parameters: t.function.parameters })),
-            requestOptions: { toolChoice: 'auto' as const, disableThinking: true },
-          },
+          promptContext: buildPromptContext(systemPrompt, injectedFiles, prompt, executor.getMessages(), toolRegistry.definitions),
         }))
         eventStore.append(sessionId, createMessageStartEvent(nudgeMsgId, 'user', RETURN_VALUE_NUDGE, {
           contextWindowId: currentWindowMessageOptions.contextWindowId,
@@ -536,14 +538,7 @@ export async function runSubAgentWithExecutor(options: RunSubAgentOptions): Prom
       eventStore.append(sessionId, createMessageDoneEvent(assistantMsgId, {
         segments: [],
         stats,
-        promptContext: {
-          systemPrompt,
-          injectedFiles,
-          userMessage: prompt,
-          messages: executor.getMessages().map(m => ({ role: m.role, content: m.content, source: m.source })),
-          tools: toolRegistry.definitions.map(t => ({ name: t.function.name, description: t.function.description, parameters: t.function.parameters })),
-          requestOptions: { toolChoice: 'auto' as const, disableThinking: true },
-        },
+        promptContext: buildPromptContext(systemPrompt, injectedFiles, prompt, executor.getMessages(), toolRegistry.definitions),
       }))
       eventStore.append(sessionId, createChatDoneEvent(assistantMsgId, 'complete', stats))
       break
@@ -551,14 +546,7 @@ export async function runSubAgentWithExecutor(options: RunSubAgentOptions): Prom
 
     eventStore.append(sessionId, createMessageDoneEvent(assistantMsgId, {
       segments: [],
-      promptContext: {
-        systemPrompt,
-        injectedFiles,
-        userMessage: prompt,
-        messages: executor.getMessages().map(m => ({ role: m.role, content: m.content, source: m.source })),
-        tools: toolRegistry.definitions.map(t => ({ name: t.function.name, description: t.function.description, parameters: t.function.parameters })),
-        requestOptions: { toolChoice: 'auto' as const, disableThinking: true },
-      },
+      promptContext: buildPromptContext(systemPrompt, injectedFiles, prompt, executor.getMessages(), toolRegistry.definitions),
     }))
 
     const batchResult = await (async () => {
