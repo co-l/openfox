@@ -17,14 +17,14 @@ import { AttachmentPreview } from '../shared/AttachmentPreview.js'
 import { PromptHistoryList } from '../shared/PromptHistory.js'
 import { Markdown } from '../shared/Markdown.js'
 import { useWorkflowsStore } from '../../stores/workflows'
-import { compressImage, isValidImageType, validateImageSize } from '../../lib/image-compression.js'
+import { processImageFile } from '../../lib/image-processing.js'
 import { buildPromptContextByUserMessageId } from './prompt-context-linking.js'
 import { ProviderSelector } from '../settings/ProviderSelector'
 import { CommandMenu } from './CommandMenu'
 import { WorkflowMenu } from './WorkflowMenu'
 import { CommandsModal } from '../settings/CommandsModal'
 import { WorkflowsModal } from '../settings/WorkflowsModal'
-import { generateUUID } from '../../lib/uuid.js'
+
 import { groupMessages, type DisplayItem } from './groupMessages.js'
 import { usePromptHistory } from '../../hooks/usePromptHistory.js'
 import { useAutoScroll } from "@/hooks/useAutoScroll.ts"
@@ -180,7 +180,7 @@ export function PlanPanel({ criteriaSidebarOpen: externalCriteriaSidebarOpen, on
     const textarea = textareaRef.current
     if (!textarea) return
 
-    const handlePaste = (e: ClipboardEvent) => {
+    const handlePaste = async (e: ClipboardEvent) => {
       // Only handle if the textarea is focused
       if (document.activeElement !== textarea) return
 
@@ -193,42 +193,12 @@ export function PlanPanel({ criteriaSidebarOpen: externalCriteriaSidebarOpen, on
           const file = item.getAsFile()
           if (!file) continue
 
-            // Process the pasted image (inline function to access state)
-            ;
-          (async () => {
-            try {
-              if (!isValidImageType(file)) {
-                setErrorMessage('Only PNG, JPG, and GIF images are supported.')
-                return
-              }
-
-              const sizeValidation = validateImageSize(file, 50 * 1024 * 1024)
-              if (!sizeValidation.valid) {
-                setErrorMessage(sizeValidation.error ?? 'Image file is too large')
-                return
-              }
-
-              const compressed = await compressImage(file, {
-                maxWidth: 1920,
-                maxHeight: 1920,
-                quality: 0.85,
-                maxSizeBytes: 1048576,
-              })
-
-              const attachment: Attachment = {
-                id: generateUUID(),
-                filename: 'pasted-image',
-                mimeType: compressed.mimeType as 'image/png' | 'image/jpeg' | 'image/gif',
-                size: compressed.size,
-                data: compressed.dataUrl,
-              }
-
-              setAttachments(prev => [...prev, attachment])
-            } catch (err) {
-              const errorMsg = err instanceof Error ? (err.message ?? 'Failed to process image') : 'Failed to process image'
-              setErrorMessage(errorMsg)
-            }
-          })()
+          await processImageFile(
+            file,
+            att => setAttachments(prev => [...prev, att]),
+            setErrorMessage,
+            { filename: 'pasted-image' }
+          )
         }
       }
     }
@@ -308,42 +278,11 @@ export function PlanPanel({ criteriaSidebarOpen: externalCriteriaSidebarOpen, on
     setErrorMessage(null)
 
     for (const file of Array.from(files)) {
-      try {
-        // Validate file type
-        if (!isValidImageType(file)) {
-          setErrorMessage(`Unsupported file type: ${file.type}. Only PNG, JPG, and GIF are supported.`)
-          continue
-        }
-
-        // Validate file size (before compression)
-        const sizeValidation = validateImageSize(file, 50 * 1024 * 1024) // 50MB max
-        if (!sizeValidation.valid) {
-          setErrorMessage(sizeValidation.error ?? 'Image file is too large')
-          continue
-        }
-
-        // Compress the image
-        const compressed = await compressImage(file, {
-          maxWidth: 1920,
-          maxHeight: 1920,
-          quality: 0.85,
-          maxSizeBytes: 1048576, // 1MB target
-        })
-
-        // Create attachment
-        const attachment: Attachment = {
-          id: generateUUID(),
-          filename: file.name,
-          mimeType: compressed.mimeType as 'image/png' | 'image/jpeg' | 'image/gif',
-          size: compressed.size,
-          data: compressed.dataUrl,
-        }
-
-        setAttachments(prev => [...prev, attachment])
-      } catch (err) {
-        const errorMsg = err instanceof Error ? (err.message ?? 'Failed to process image') : 'Failed to process image'
-        setErrorMessage(errorMsg)
-      }
+      await processImageFile(
+        file,
+        att => setAttachments(prev => [...prev, att]),
+        setErrorMessage,
+      )
     }
 
     // Reset file input
@@ -375,41 +314,11 @@ export function PlanPanel({ criteriaSidebarOpen: externalCriteriaSidebarOpen, on
     if (!files || files.length === 0) return
 
     for (const file of Array.from(files)) {
-      try {
-        // Validate file type
-        if (!isValidImageType(file)) {
-          setErrorMessage(`Unsupported file type: ${file.type}. Only PNG, JPG, and GIF are supported.`)
-          continue
-        }
-
-        // Validate file size
-        const sizeValidation = validateImageSize(file, 50 * 1024 * 1024)
-        if (!sizeValidation.valid) {
-          setErrorMessage(sizeValidation.error ?? 'Image file is too large')
-          continue
-        }
-
-        // Compress the image
-        const compressed = await compressImage(file, {
-          maxWidth: 1920,
-          maxHeight: 1920,
-          quality: 0.85,
-          maxSizeBytes: 1048576,
-        })
-
-        const attachment: Attachment = {
-          id: generateUUID(),
-          filename: file.name,
-          mimeType: compressed.mimeType as 'image/png' | 'image/jpeg' | 'image/gif',
-          size: compressed.size,
-          data: compressed.dataUrl,
-        }
-
-        setAttachments(prev => [...prev, attachment])
-      } catch (err) {
-        const errorMsg = err instanceof Error ? (err.message ?? 'Failed to process image') : 'Failed to process image'
-        setErrorMessage(errorMsg)
-      }
+      await processImageFile(
+        file,
+        att => setAttachments(prev => [...prev, att]),
+        setErrorMessage,
+      )
     }
   }, [])
 
