@@ -15,7 +15,7 @@ import type { LLMClientWithModel } from '../llm/client.js'
 import type { LLMToolDefinition } from '../llm/types.js'
 import type { StreamTiming } from '../llm/streaming.js'
 import type { TurnEvent } from '../events/types.js'
-import { createStreamRequest } from './stream-utils.js'
+import { buildStreamRequest } from './stream-utils.js'
 import { computeAggregatedStats } from './stats.js'
 import { FORMAT_CORRECTION_PROMPT } from './prompts.js'
 
@@ -106,14 +106,14 @@ export async function* streamLLMPure(
   const llmMessages = [{ role: 'system' as const, content: systemPrompt }, ...messages]
 
   // Start streaming
-  const stream = createStreamRequest(llmClient, {
+  const stream = buildStreamRequest(llmClient, {
     messages: llmMessages,
-    ...(tools && { tools }),
-    ...(toolChoice && { toolChoice }),
+    tools,
+    toolChoice,
     disableThinking: disableThinking ?? false,
-    ...(signal && { signal }),
-    ...(onVisionFallbackStart && { onVisionFallbackStart }),
-    ...(onVisionFallbackDone && { onVisionFallbackDone }),
+    signal,
+    onVisionFallbackStart,
+    onVisionFallbackDone,
   })
 
   // Track tool call indices we've emitted preparing events for
@@ -637,7 +637,7 @@ async function executeToolBatchWithContext(
   onEvent: (event: TurnEvent) => void
 ): Promise<{ toolMessages: Array<{ role: 'tool'; content: string; toolCallId?: string }>; criteriaChanged: boolean }> {
   const toolMessages: Array<{ role: 'tool'; content: string; toolCallId?: string }> = []
-  let criteriaChanged = false
+  const criteriaChanged = false
 
   for (const toolCall of toolCalls) {
     if (ctx.signal?.aborted) {

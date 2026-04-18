@@ -113,7 +113,7 @@ describe('streamWithSegments', () => {
     ])
 
     const stream = streamWithSegments(client, { messages: [] })
-    let result: Awaited<ReturnType<typeof stream.next>>['value'] = null
+    const result: Awaited<ReturnType<typeof stream.next>>['value'] = null
 
     for await (const event of stream) {
       if (event.type === 'done') {

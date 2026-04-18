@@ -57,7 +57,7 @@ function convertHTMLToMarkdown(html: string): string {
 
 function stripHTMLTags(html: string): string {
   // Remove script/style/noscript blocks entirely
-  let text = html
+  const text = html
     .replace(/<(script|style|noscript|iframe|object|embed)[^>]*>[\s\S]*?<\/\1>/gi, '')
     // Remove all remaining HTML tags
     .replace(/<[^>]+>/g, ' ')

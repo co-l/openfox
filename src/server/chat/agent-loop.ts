@@ -41,6 +41,24 @@ import type { DangerLevel } from '../../shared/types.js'
 import { logger } from '../utils/logger.js'
 import stripAnsi from "strip-ansi"
 
+function emitPartialDoneEvents(
+  sessionId: string,
+  assistantMsgId: string,
+  statsIdentity: import('../../shared/types.js').StatsIdentity,
+  mode: import('../../shared/types.js').ToolMode,
+  turnMetrics: TurnMetrics,
+  promptContext: PromptContext,
+  eventStore: ReturnType<typeof getEventStore>,
+): void {
+  const stats = turnMetrics.buildStats(statsIdentity, mode)
+  eventStore.append(sessionId, createMessageDoneEvent(assistantMsgId, {
+    stats,
+    partial: true,
+    promptContext,
+  }))
+  eventStore.append(sessionId, createChatDoneEvent(assistantMsgId, 'stopped', stats))
+}
+
 // ============================================================================
 // Types
 // ============================================================================
@@ -388,13 +406,7 @@ export async function runTopLevelAgentLoop(
     }
 
     if (result.aborted) {
-      const stats = turnMetrics.buildStats(statsIdentity, mode)
-      eventStore.append(sessionId, createMessageDoneEvent(assistantMsgId, {
-        stats,
-        partial: true,
-        promptContext: assembledRequest.promptContext,
-      }))
-      eventStore.append(sessionId, createChatDoneEvent(assistantMsgId, 'stopped', stats))
+      emitPartialDoneEvents(sessionId, assistantMsgId, statsIdentity, mode, turnMetrics, assembledRequest.promptContext, eventStore)
       throw new Error('Aborted')
     }
 
@@ -432,26 +444,14 @@ export async function runTopLevelAgentLoop(
         }
       } catch (error) {
         if (error instanceof Error && error.message === 'Aborted') {
-          const stats = turnMetrics.buildStats(statsIdentity, mode)
-          eventStore.append(sessionId, createMessageDoneEvent(assistantMsgId, {
-            stats,
-            partial: true,
-            promptContext: assembledRequest.promptContext,
-          }))
-          eventStore.append(sessionId, createChatDoneEvent(assistantMsgId, 'stopped', stats))
+          emitPartialDoneEvents(sessionId, assistantMsgId, statsIdentity, mode, turnMetrics, assembledRequest.promptContext, eventStore)
           throw error
         }
         throw error
       }
 
       if (signal?.aborted) {
-        const stats = turnMetrics.buildStats(statsIdentity, mode)
-        eventStore.append(sessionId, createMessageDoneEvent(assistantMsgId, {
-          stats,
-          partial: true,
-          promptContext: assembledRequest.promptContext,
-        }))
-        eventStore.append(sessionId, createChatDoneEvent(assistantMsgId, 'stopped', stats))
+        emitPartialDoneEvents(sessionId, assistantMsgId, statsIdentity, mode, turnMetrics, assembledRequest.promptContext, eventStore)
         throw new Error('Aborted')
       }
 

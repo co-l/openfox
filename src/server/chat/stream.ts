@@ -14,7 +14,7 @@ import type { LLMClientWithModel } from '../llm/client.js'
 import type { LLMToolDefinition } from '../llm/types.js'
 import type { StreamTiming } from '../llm/streaming.js'
 import type { SessionManager } from '../session/index.js'
-import { createStreamRequest } from './stream-utils.js'
+import { buildStreamRequest } from './stream-utils.js'
 import { estimateContextSize } from '../context/tokenizer.js'
 import { getRuntimeConfig } from '../runtime-config.js'
 import { logger } from '../utils/logger.js'
@@ -163,14 +163,14 @@ async function streamLLMResponseInternal(
   }
 
   // Stream response
-  const stream = createStreamRequest(llmClient, {
+  const stream = buildStreamRequest(llmClient, {
     messages: llmMessages,
-    ...(tools && { tools }),
-    ...(toolChoice && { toolChoice }),
+    tools,
+    toolChoice,
     disableThinking: disableThinking ?? false,
-    ...(signal && { signal }),
-    ...(onVisionFallbackStart && { onVisionFallbackStart }),
-    ...(onVisionFallbackDone && { onVisionFallbackDone }),
+    signal,
+    onVisionFallbackStart,
+    onVisionFallbackDone,
   })
 
   let result: Awaited<ReturnType<typeof stream.next>>['value'] = null

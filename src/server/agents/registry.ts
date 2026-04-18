@@ -18,6 +18,7 @@ import type { AgentDefinition, AgentMetadata } from './types.js'
 import { logger } from '../utils/logger.js'
 import { getRuntimeConfig } from '../runtime-config.js'
 import { getGlobalConfigDir } from '../../cli/paths.js'
+import { findModifiedDefaultFiles } from '../utils/defaults.js'
 
 const __bundleDir = dirname(fileURLToPath(import.meta.url))
 const DEFAULTS_DIR = join(__bundleDir, 'defaults')
@@ -222,33 +223,7 @@ export async function restoreDefaultAgent(configDir: string, agentId: string): P
  */
 export async function getModifiedDefaultAgentIds(configDir: string): Promise<string[]> {
   const defaultIds = await getDefaultAgentIds()
-  const modified: string[] = []
-
-  for (const id of defaultIds) {
-    const filename = `${id}${AGENT_EXTENSION}`
-    const userPath = join(getAgentsDir(configDir), filename)
-
-    // Find bundled source
-    let bundledContent: string | null = null
-    for (const dir of [DEFAULTS_DIR, DEFAULTS_DIR_ALT]) {
-      try {
-        bundledContent = await readFile(join(dir, filename), 'utf-8')
-        break
-      } catch { /* try next */ }
-    }
-    if (!bundledContent) continue
-
-    try {
-      const userContent = await readFile(userPath, 'utf-8')
-      if (userContent !== bundledContent) {
-        modified.push(id)
-      }
-    } catch {
-      // No user override — not modified
-    }
-  }
-
-  return modified
+  return findModifiedDefaultFiles(defaultIds, AGENT_EXTENSION, [DEFAULTS_DIR, DEFAULTS_DIR_ALT], getAgentsDir(configDir))
 }
 
 /**
@@ -266,6 +241,14 @@ export async function restoreAllDefaultAgents(configDir: string): Promise<number
 // ============================================================================
 // Lookup Helpers
 // ============================================================================
+
+function getAgentFilePaths(agentsDir: string, agentId: string): string[] {
+  const hyphenated = agentId.replace(/_/g, '-')
+  return [
+    join(agentsDir, `${agentId}${AGENT_EXTENSION}`),
+    join(agentsDir, `${hyphenated}${AGENT_EXTENSION}`),
+  ]
+}
 
 export function findAgentById(agentId: string, agents: AgentDefinition[]): AgentDefinition | undefined {
   return agents.find(a => a.metadata.id === agentId)
@@ -285,11 +268,7 @@ export function getTopLevelAgents(agents: AgentDefinition[]): AgentDefinition[] 
 
 export async function agentExists(configDir: string, agentId: string): Promise<boolean> {
   const agentsDir = getAgentsDir(configDir)
-  const hyphenated = agentId.replace(/_/g, '-')
-  const paths = [
-    join(agentsDir, `${agentId}${AGENT_EXTENSION}`),
-    join(agentsDir, `${hyphenated}${AGENT_EXTENSION}`),
-  ]
+  const paths = getAgentFilePaths(agentsDir, agentId)
   for (const filePath of paths) {
     if (await pathExists(filePath)) {
       return true
@@ -310,11 +289,7 @@ export async function saveAgent(configDir: string, agent: AgentDefinition): Prom
 
 export async function deleteAgent(configDir: string, agentId: string): Promise<boolean> {
   const agentsDir = getAgentsDir(configDir)
-  const hyphenated = agentId.replace(/_/g, '-')
-  const paths = [
-    join(agentsDir, `${agentId}${AGENT_EXTENSION}`),
-    join(agentsDir, `${hyphenated}${AGENT_EXTENSION}`),
-  ]
+  const paths = getAgentFilePaths(agentsDir, agentId)
   for (const filePath of paths) {
     try {
       await unlink(filePath)

@@ -5,19 +5,7 @@ import type { ToolRegistry } from '../tools/types.js'
 import type { EventStore } from '../events/store.js'
 import type { LLMExecutor } from './llm-executor.js'
 
-export interface ApplyNudgeOptions {
-  assistantMsgId: string
-  systemPrompt: string
-  injectedFiles: InjectedFile[]
-  prompt: string
-  messages: RequestContextMessage[]
-  tools: ToolRegistry['definitions']
-  nudgeContent: string
-  eventStore: EventStore
-  sessionId: string
-  currentWindowMessageOptions: Record<string, unknown> | undefined
-  subAgentId: string
-  subAgentType: string
+export interface ApplyNudgeOptions extends AppendNudgedDoneEventOptions {
   executor: LLMExecutor
 }
 
