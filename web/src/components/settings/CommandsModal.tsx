@@ -8,12 +8,12 @@ import {
   ConfirmButton,
   DeleteIcon,
   RestoreIcon,
-  FormField,
   FormTextArea,
   ModalActions,
   ErrorBanner,
 } from './CRUDModal'
 import { CRUDListHeader } from './CRUDListHeader'
+import { NameIdFields } from './FormFields'
 import { useCRUDForm } from './useCRUDForm'
 
 interface CommandsModalProps {
@@ -163,23 +163,17 @@ export function CommandsModal({ isOpen, onClose, initialEditId }: CommandsModalP
         <div className="space-y-3">
           {formError && <ErrorBanner message={formError} />}
 
-          <div className="grid grid-cols-2 gap-3">
-            <FormField
-              label="Name"
-              value={formData.name}
-              onChange={handleNameChange}
-              placeholder="My Command"
-            />
-            <FormField
-              label="ID"
-              value={formData.id}
-              onChange={id => setFormData(prev => ({ ...prev, id }))}
-              readOnly={!!editingId}
-              placeholder="my-command"
-              hint={editingId ? '(read-only)' : undefined}
-              mono
-            />
-          </div>
+          <NameIdFields
+            name={formData.name}
+            id={formData.id}
+            nameLabel="Name"
+            idLabel="ID"
+            namePlaceholder="My Command"
+            idPlaceholder="my-command"
+            readOnlyId={!!editingId}
+            onNameChange={handleNameChange}
+            onIdChange={id => setFormData(prev => ({ ...prev, id }))}
+          />
 
           <div>
             <label className="block text-xs text-text-secondary mb-1">Agent Mode <span className="text-text-muted">(optional)</span></label>

@@ -12,6 +12,7 @@ import {
   ErrorBanner,
 } from './CRUDModal'
 import { CRUDListHeader } from './CRUDListHeader'
+import { NameIdFields } from './FormFields'
 import { useCRUDForm } from './useCRUDForm'
 
 type SkillFormData = {
@@ -135,34 +136,28 @@ export function SkillsContent({ isOpen }: { isOpen: boolean }) {
         {formError && <ErrorBanner message={formError} />}
 
         <div className="space-y-3">
-          <div className="grid grid-cols-2 gap-3">
-            <FormField
-              label="Name"
-              value={formData.name}
-              onChange={handleNameChange}
-              placeholder="My Skill"
-            />
-            <FormField
-              label="ID"
-              value={formData.id}
-              onChange={id => setFormData(prev => ({ ...prev, id }))}
-              readOnly={!!editingId}
-              placeholder="my-skill"
-              hint={editingId ? '(read-only)' : undefined}
-              mono
-            />
-          </div>
+          <NameIdFields
+            name={formData.name as string}
+            id={formData.id as string}
+            nameLabel="Name"
+            idLabel="ID"
+            namePlaceholder="My Skill"
+            idPlaceholder="my-skill"
+            readOnlyId={!!editingId}
+            onNameChange={handleNameChange}
+            onIdChange={(id: string) => setFormData(prev => ({ ...prev, id }))}
+          />
 
           <div className="grid grid-cols-2 gap-3">
             <FormField
               label="Description"
-              value={formData.description}
+              value={formData.description as string}
               onChange={description => setFormData(prev => ({ ...prev, description }))}
               placeholder="What this skill does..."
             />
             <FormField
               label="Version"
-              value={formData.version}
+              value={formData.version as string}
               onChange={version => setFormData(prev => ({ ...prev, version }))}
               placeholder="1.0.0"
             />

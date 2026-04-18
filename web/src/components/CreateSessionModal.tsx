@@ -7,6 +7,7 @@ import { DeleteProjectConfirmationModal } from './DeleteProjectConfirmationModal
 import { CreateProjectModal } from './CreateProjectModal.js'
 import { DirectoryBrowser } from './shared/DirectoryBrowser.js'
 import { CloseButton } from './shared/CloseButton'
+import { fetchDirectory } from '../lib/useDirectoryFetch'
 import { authFetch } from '../lib/api'
 
 interface DirectoryEntry {
@@ -56,14 +57,10 @@ export function OpenProjectModal({ isOpen, onClose }: OpenProjectModalProps) {
   }, [])
   
   // Fetch directory listing
-  const fetchDirectory = useCallback(async (path?: string) => {
+  const loadDirectory = useCallback(async (path?: string) => {
     setLoading(true)
     try {
-      const url = path 
-        ? `/api/directories?path=${encodeURIComponent(path)}`
-        : baseWorkdir ? `/api/directories?path=${encodeURIComponent(baseWorkdir)}` : '/api/directories'
-      const response = await authFetch(url)
-      const data = await response.json()
+      const data = await fetchDirectory(path, baseWorkdir ?? undefined)
       setListing(data)
     } catch (err) {
       console.error('Failed to load directories:', err)
@@ -78,7 +75,7 @@ export function OpenProjectModal({ isOpen, onClose }: OpenProjectModalProps) {
       fetchDirectory(baseWorkdir)
       listProjects()
     }
-  }, [isOpen, baseWorkdir, fetchDirectory, listProjects])
+  }, [isOpen, baseWorkdir, loadDirectory, listProjects])
   
   // Filter directories based on search query
   const filteredDirectories = listing?.directories.filter(dir => 
