@@ -1,6 +1,7 @@
 import { memo } from 'react'
 import type { TaskCompletedPayload } from '@shared/protocol.js'
 import { useWorkflowsStore } from '../../stores/workflows'
+import { hexToRgba } from '../../lib/colors'
 
 interface TaskCompletedCardProps {
   data: TaskCompletedPayload
@@ -17,13 +18,6 @@ function formatTokens(n: number): string {
   if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`
   if (n >= 1_000) return `${(n / 1_000).toFixed(1)}k`
   return String(n)
-}
-
-function hexToRgba(hex: string, alpha: number): string {
-  const r = parseInt(hex.slice(1, 3), 16)
-  const g = parseInt(hex.slice(3, 5), 16)
-  const b = parseInt(hex.slice(5, 7), 16)
-  return `rgba(${r},${g},${b},${alpha})`
 }
 
 export const TaskCompletedCard = memo(function TaskCompletedCard({ data }: TaskCompletedCardProps) {
