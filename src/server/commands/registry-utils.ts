@@ -1,4 +1,4 @@
-import { readdir, readFile, writeFile, copyFile, mkdir, access, unlink } from 'node:fs/promises'
+import { readdir, readFile, writeFile, mkdir, access, unlink } from 'node:fs/promises'
 import { join, dirname } from 'node:path'
 import { constants } from 'node:fs'
 import { fileURLToPath } from 'node:url'
@@ -94,18 +94,31 @@ export async function getDefaultIds(
   }
 }
 
-export async function restoreDefault(
-  itemDir: string,
+export async function loadDefaults<T extends ItemDefinition>(
+  bundleDir: string,
+  defaultsDir: string,
+  extension: string
+): Promise<T[]> {
+  const dir = join(bundleDir, defaultsDir)
+  return loadItems<T>(dir, extension)
+}
+
+export async function getDefaultContent(
   bundleDir: string,
   defaultsDir: string,
   id: string,
   extension: string
-): Promise<boolean> {
+): Promise<string | null> {
   const filename = `${id}${extension}`
-  const src = join(bundleDir, defaultsDir, filename)
-  if (await dirExists(src)) {
-    await copyFile(src, join(itemDir, filename))
-    return true
+  for (const dir of [defaultsDir, defaultsDir.replace('defaults', '').replace('/', '') + '-defaults']) {
+    try {
+      const content = await readFile(join(bundleDir, dir, filename), 'utf-8')
+      return content
+    } catch { /* try next */ }
   }
-  return false
+  return null
+}
+
+export function isDefaultId(id: string, defaultIds: string[]): boolean {
+  return defaultIds.includes(id)
 }

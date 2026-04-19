@@ -8,13 +8,15 @@ import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import {
   loadAllAgents,
-  loadBuiltinAgents,
+  loadDefaultAgents,
+  loadUserAgents,
   findAgentById,
   getSubAgents,
   getTopLevelAgents,
   saveAgent,
   deleteAgent,
-  ensureDefaultAgents,
+  isDefaultAgent,
+  getDefaultAgentIds,
 } from './registry.js'
 import type { AgentDefinition } from './types.js'
 
@@ -28,9 +30,9 @@ afterEach(async () => {
   await rm(tempDir, { recursive: true, force: true })
 })
 
-describe('loadBuiltinAgents', () => {
+describe('loadDefaultAgents', () => {
   it('should load all built-in agent definitions', async () => {
-    const agents = await loadBuiltinAgents()
+    const agents = await loadDefaultAgents()
 
     expect(agents.length).toBeGreaterThanOrEqual(5)
 
@@ -43,7 +45,7 @@ describe('loadBuiltinAgents', () => {
   })
 
   it('should parse agent metadata correctly', async () => {
-    const agents = await loadBuiltinAgents()
+    const agents = await loadDefaultAgents()
     const verifier = agents.find(a => a.metadata.id === 'verifier')!
 
     expect(verifier.metadata.name).toBe('Verifier')
@@ -54,7 +56,7 @@ describe('loadBuiltinAgents', () => {
   })
 
   it('should distinguish subagent vs top-level agents', async () => {
-    const agents = await loadBuiltinAgents()
+    const agents = await loadDefaultAgents()
     const planner = agents.find(a => a.metadata.id === 'planner')!
     const builder = agents.find(a => a.metadata.id === 'builder')!
     const verifier = agents.find(a => a.metadata.id === 'verifier')!
@@ -116,7 +118,7 @@ Audit the code for OWASP top 10 vulnerabilities.
 
 describe('filter helpers', () => {
   it('should separate subagents from top-level agents', async () => {
-    const agents = await loadBuiltinAgents()
+    const agents = await loadDefaultAgents()
     const subs = getSubAgents(agents)
     const topLevel = getTopLevelAgents(agents)
 
@@ -126,7 +128,7 @@ describe('filter helpers', () => {
   })
 
   it('findAgentById returns correct agent', async () => {
-    const agents = await loadBuiltinAgents()
+    const agents = await loadDefaultAgents()
     const explorer = findAgentById('explorer', agents)
     expect(explorer).toBeDefined()
     expect(explorer!.metadata.name).toBe('Explorer')
@@ -170,26 +172,47 @@ describe('CRUD', () => {
     }
 
     await saveAgent(tempDir, agent)
-    const deleted = await deleteAgent(tempDir, 'deleteme')
-    expect(deleted).toBe(true)
+    const result = await deleteAgent(tempDir, 'deleteme')
+    expect(result.success).toBe(true)
 
     const agents = await loadAllAgents(tempDir)
     expect(agents.find(a => a.metadata.id === 'deleteme')).toBeUndefined()
   })
 
+  it('should not delete built-in default agents', async () => {
+    const result = await deleteAgent(tempDir, 'verifier')
+    expect(result.success).toBe(false)
+    expect(result.reason).toBe('Cannot delete built-in defaults')
+  })
+
   it('should return false when deleting non-existent agent', async () => {
-    const deleted = await deleteAgent(tempDir, 'nonexistent')
-    expect(deleted).toBe(false)
+    const result = await deleteAgent(tempDir, 'nonexistent')
+    expect(result.success).toBe(false)
   })
 })
 
-describe('ensureDefaultAgents', () => {
-  it('should copy bundled defaults to config dir', async () => {
-    await ensureDefaultAgents(tempDir)
-    const agents = await loadAllAgents(tempDir)
-    const ids = agents.map(a => a.metadata.id)
+describe('isDefaultAgent', () => {
+  it('should correctly identify built-in default agents', async () => {
+    const isPlannerDefault = await isDefaultAgent('planner')
+    const isBuilderDefault = await isDefaultAgent('builder')
+    const isVerifierDefault = await isDefaultAgent('verifier')
+    const isNonExistentDefault = await isDefaultAgent('nonexistent')
 
-    expect(ids).toContain('verifier')
+    expect(isPlannerDefault).toBe(true)
+    expect(isBuilderDefault).toBe(true)
+    expect(isVerifierDefault).toBe(true)
+    expect(isNonExistentDefault).toBe(false)
+  })
+})
+
+describe('getDefaultAgentIds', () => {
+  it('should return all default agent IDs', async () => {
+    const ids = await getDefaultAgentIds()
+
     expect(ids).toContain('planner')
+    expect(ids).toContain('builder')
+    expect(ids).toContain('verifier')
+    expect(ids).toContain('explorer')
+    expect(ids).toContain('code-reviewer')
   })
 })

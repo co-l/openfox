@@ -134,7 +134,9 @@ function segmentsToElements(
 
 export const AssistantMessage = memo(function AssistantMessage({ message, showStats = true }: AssistantMessageProps) {
   const criteria = useSessionStore(state => state.currentSession?.criteria)
-  const agents = useAgentsStore(state => state.agents)
+  const agentDefaults = useAgentsStore(state => state.defaults)
+  const agentUserItems = useAgentsStore(state => state.userItems)
+  const agents = [...agentDefaults, ...agentUserItems]
   const rawElements = messageToElements(message, showStats)
   const elements = groupConsecutiveCriteria(rawElements)
   

@@ -5,6 +5,12 @@ import { EditButton } from '../shared/IconButton'
 import { useWorkflowsStore, type WorkflowFull, type WorkflowStep, type TemplateVariable } from '../../stores/workflows'
 import type { AgentInfo } from '../../stores/agents'
 import { authFetch } from '../../lib/api'
+import {
+  ConfirmButton,
+  DeleteIcon,
+  DuplicateIcon,
+  useConfirmDialog,
+} from './CRUDModal'
 
 interface WorkflowsModalProps {
   isOpen: boolean
@@ -243,7 +249,7 @@ interface DragState {
 // ============================================================================
 
 function FlowDiagram({
-  steps, entryStep, selectedNodeId, selectedEdgeKey, startConditionLabel, agentTypes,
+  steps, entryStep, selectedNodeId, selectedEdgeKey, startConditionLabel, agentTypes, isReadOnly,
   onSelectNode, onSelectEdge, onRemoveStep,
   onCreateTransition, onReconnectTo, onReconnectFrom, onDeleteTransition,
 }: {
@@ -253,6 +259,7 @@ function FlowDiagram({
   selectedEdgeKey: string | null
   startConditionLabel: string
   agentTypes: AgentInfo[]
+  isReadOnly: boolean
   onSelectNode: (id: string | null) => void
   onSelectEdge: (key: string | null) => void
   onRemoveStep: (id: string) => void
@@ -298,25 +305,28 @@ function FlowDiagram({
 
   // Drag handlers
   const startNewDrag = useCallback((ev: React.MouseEvent, fromNodeId: string) => {
+    if (isReadOnly) return
     ev.stopPropagation()
     ev.preventDefault()
     const pt = getSVGPoint(ev)
     setDragState({ type: 'new', fromNodeId, mouseX: pt.x, mouseY: pt.y })
-  }, [getSVGPoint])
+  }, [getSVGPoint, isReadOnly])
 
   const startReconnectTo = useCallback((ev: React.MouseEvent, edge: LayoutEdge) => {
+    if (isReadOnly) return
     ev.stopPropagation()
     ev.preventDefault()
     const pt = getSVGPoint(ev)
     setDragState({ type: 'reconnect-to', fromNodeId: edge.from, edgeKey: edge.edgeKey, mouseX: pt.x, mouseY: pt.y })
-  }, [getSVGPoint])
+  }, [getSVGPoint, isReadOnly])
 
   const startReconnectFrom = useCallback((ev: React.MouseEvent, edge: LayoutEdge) => {
+    if (isReadOnly) return
     ev.stopPropagation()
     ev.preventDefault()
     const pt = getSVGPoint(ev)
     setDragState({ type: 'reconnect-from', fromNodeId: edge.from, fixedTargetId: edge.to, edgeKey: edge.edgeKey, mouseX: pt.x, mouseY: pt.y })
-  }, [getSVGPoint])
+  }, [getSVGPoint, isReadOnly])
 
   const handleMouseMove = useCallback((ev: React.MouseEvent) => {
     if (!dragState) return
@@ -348,6 +358,7 @@ function FlowDiagram({
 
   // Delete key handler
   useEffect(() => {
+    if (isReadOnly) return
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement || e.target instanceof HTMLSelectElement) return
       if ((e.key === 'Delete' || e.key === 'Backspace') && selectedEdgeKey && selectedEdgeKey !== 'start') {
@@ -358,7 +369,7 @@ function FlowDiagram({
     }
     document.addEventListener('keydown', handleKeyDown)
     return () => document.removeEventListener('keydown', handleKeyDown)
-  }, [selectedEdgeKey, onDeleteTransition, onSelectEdge])
+  }, [isReadOnly, selectedEdgeKey, onDeleteTransition, onSelectEdge])
 
   // Compute edge path and endpoints
   const computeEdgePath = (e: LayoutEdge): { path: string; labelX: number; labelY: number; labelAnchor: 'middle' | 'start' | 'end'; fromPt: { x: number; y: number }; toPt: { x: number; y: number } } | null => {
@@ -610,9 +621,9 @@ function FlowDiagram({
             <g key={node.id}
               onClick={(ev) => {
                 ev.stopPropagation()
-                if (isStart) { onSelectEdge('start') }
+                if (isStart && !isReadOnly) { onSelectEdge('start') }
               }}
-              className={isStart ? 'cursor-pointer' : undefined}
+              className={isStart && !isReadOnly ? 'cursor-pointer' : undefined}
             >
               {isDragTarget && (
                 <rect x={x - 3} y={y - 3} width={node.w + 6} height={node.h + 6} rx={node.h / 2 + 3}
@@ -637,10 +648,10 @@ function FlowDiagram({
         const color = node.color ?? '#6b7280'
         return (
           <g key={node.id}
-            onClick={(ev) => { ev.stopPropagation(); onSelectNode(isNodeSelected ? null : node.id) }}
+            onClick={(ev) => { ev.stopPropagation(); if (!isReadOnly) onSelectNode(isNodeSelected ? null : node.id) }}
             onMouseEnter={() => setHoveredNodeId(node.id)}
             onMouseLeave={() => setHoveredNodeId(null)}
-            className="cursor-pointer"
+            className={isReadOnly ? undefined : 'cursor-pointer'}
           >
             {isDragTarget && (
               <rect x={x - 3} y={y - 3} width={node.w + 6} height={node.h + 6} rx={12}
@@ -657,10 +668,10 @@ function FlowDiagram({
               {node.label}
             </text>
             {/* Ports */}
-            {renderOutputPort(node)}
-            {renderInputPort(node)}
+            {!isReadOnly && renderOutputPort(node)}
+            {!isReadOnly && renderInputPort(node)}
             {/* Hover delete button */}
-            {isHovered && !dragState && (
+            {isHovered && !dragState && !isReadOnly && (
               <g onClick={(ev) => { ev.stopPropagation(); onRemoveStep(node.id) }} className="cursor-pointer">
                 <circle cx={x + node.w - 2} cy={y + 2} r={8} fill="#0d1117" fillOpacity={0.9} stroke="#f85149" strokeOpacity={0.5} strokeWidth={1} />
                 <line x1={x + node.w - 5} y1={y - 1} x2={x + node.w + 1} y2={y + 5} stroke="#f85149" strokeWidth={1.5} strokeLinecap="round" />
@@ -928,22 +939,23 @@ const DEFAULT_STEPS: WorkflowStep[] = []
 // ============================================================================
 
 export function WorkflowsModal({ isOpen, onClose, initialEditId }: WorkflowsModalProps) {
-  const workflows = useWorkflowsStore(state => state.workflows)
-  const modifiedIds = useWorkflowsStore(state => state.modifiedIds)
+  const defaults = useWorkflowsStore(state => state.defaults)
+  const userItems = useWorkflowsStore(state => state.userItems)
   const loading = useWorkflowsStore(state => state.loading)
   const templateVariables = useWorkflowsStore(state => state.templateVariables)
   const fetchWorkflows = useWorkflowsStore(state => state.fetchWorkflows)
   const fetchWorkflow = useWorkflowsStore(state => state.fetchWorkflow)
+  const fetchDefaultContent = useWorkflowsStore(state => state.fetchDefaultContent)
   const fetchTemplateVariables = useWorkflowsStore(state => state.fetchTemplateVariables)
   const createWorkflow = useWorkflowsStore(state => state.createWorkflow)
   const updateWorkflow = useWorkflowsStore(state => state.updateWorkflow)
   const deleteWorkflowAction = useWorkflowsStore(state => state.deleteWorkflow)
-  const restoreDefault = useWorkflowsStore(state => state.restoreDefault)
-  const restoreAllDefaults = useWorkflowsStore(state => state.restoreAllDefaults)
+
+  const { requestDelete, clearConfirm, isConfirming } = useConfirmDialog()
 
   const [view, setView] = useState<'list' | 'edit'>('list')
   const [editingId, setEditingId] = useState<string | null>(null)
-  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null)
+  const [isReadOnly, setIsReadOnly] = useState(false)
   const [selectedNodeKey, setSelectedNodeKey] = useState<string | null>(null)
   const [selectedEdgeKey, setSelectedEdgeKey] = useState<string | null>(null)
 
@@ -962,50 +974,59 @@ export function WorkflowsModal({ isOpen, onClose, initialEditId }: WorkflowsModa
   const [saving, setSaving] = useState(false)
   const [agentTypes, setAgentTypes] = useState<AgentInfo[]>([])
 
-  const [confirmRestoreId, setConfirmRestoreId] = useState<string | null>(null)
-  const [confirmRestoreAll, setConfirmRestoreAll] = useState(false)
+  const [_confirmDeleteId] = useState<string | null>(null)
 
   useEffect(() => {
     if (isOpen) {
       fetchWorkflows()
       fetchTemplateVariables()
       authFetch('/api/agents').then(r => r.json()).then(d => setAgentTypes(d.agents ?? [])).catch(() => {})
-      setConfirmDeleteId(null)
-      setConfirmRestoreId(null)
-      setConfirmRestoreAll(false)
       setSelectedNodeKey(null)
       setSelectedEdgeKey(null)
       if (initialEditId) {
-        setView('edit')
-        setEditingId(initialEditId)
-        setFormError('')
-        fetchWorkflow(initialEditId).then(workflow => {
-          if (!workflow) return
-          setFormName(workflow.metadata.name)
-          setFormId(workflow.metadata.id)
-          setFormDescription(workflow.metadata.description)
-          setFormVersion(workflow.metadata.version)
-          setFormColor(workflow.metadata.color ?? '#3b82f6')
-          setFormEntryStep(workflow.entryStep)
-          setFormMaxIterations(workflow.settings.maxIterations)
-          setFormSteps(workflow.steps)
-          setFormStartCondition(workflow.startCondition ?? { type: 'always' })
-        })
+        const isDefault = defaults.some(d => d.id === initialEditId)
+        if (isDefault) {
+          fetchDefaultContent(initialEditId).then(workflow => {
+            if (!workflow) return
+            setFormName(workflow.metadata.name + ' (copy)')
+            setFormId(`${initialEditId}-copy-${Date.now()}`)
+            setFormDescription(workflow.metadata.description)
+            setFormVersion(workflow.metadata.version)
+            setFormColor(workflow.metadata.color ?? '#3b82f6')
+            setFormEntryStep(workflow.entryStep)
+            setFormMaxIterations(workflow.settings.maxIterations)
+            setFormSteps(workflow.steps)
+            setFormStartCondition(workflow.startCondition ?? { type: 'always' })
+            setFormError('')
+            setEditingId(null)
+            setIsReadOnly(false)
+            setView('edit')
+          })
+        } else {
+          fetchWorkflow(initialEditId).then(workflow => {
+            if (!workflow) return
+            setFormName(workflow.metadata.name)
+            setFormId(workflow.metadata.id)
+            setFormDescription(workflow.metadata.description)
+            setFormVersion(workflow.metadata.version)
+            setFormColor(workflow.metadata.color ?? '#3b82f6')
+            setFormEntryStep(workflow.entryStep)
+            setFormMaxIterations(workflow.settings.maxIterations)
+            setFormSteps(workflow.steps)
+            setFormStartCondition(workflow.startCondition ?? { type: 'always' })
+            setFormError('')
+            setEditingId(initialEditId)
+            setIsReadOnly(false)
+            setView('edit')
+          })
+        }
       } else {
         setView('list')
         setEditingId(null)
+        setIsReadOnly(false)
       }
     }
-  }, [isOpen, fetchWorkflows, fetchWorkflow, fetchTemplateVariables, initialEditId])
-
-  const handleNew = () => {
-    setEditingId(null)
-    setFormName(''); setFormId(''); setFormDescription(''); setFormVersion('1.0.0'); setFormColor('#3b82f6')
-    setFormEntryStep(''); setFormMaxIterations(50)
-    setFormSteps(structuredClone(DEFAULT_STEPS))
-    setFormStartCondition({ type: 'always' })
-    setFormError(''); setSelectedNodeKey(null); setSelectedEdgeKey(null); setView('edit')
-  }
+  }, [isOpen, fetchWorkflows, fetchWorkflow, fetchDefaultContent, fetchTemplateVariables, initialEditId])
 
   const handleEdit = async (workflowId: string) => {
     const workflow = await fetchWorkflow(workflowId)
@@ -1059,6 +1080,75 @@ export function WorkflowsModal({ isOpen, onClose, initialEditId }: WorkflowsModa
   const handleNameChange = (name: string) => {
     setFormName(name)
     if (!editingId) setFormId(toSlug(name))
+  }
+
+  const handleView = async (workflowId: string) => {
+    const isDefault = defaults.some(d => d.id === workflowId)
+    if (isDefault) {
+      const content = await fetchDefaultContent(workflowId)
+      if (!content) return
+      setFormName(content.metadata.name)
+      setFormId(content.metadata.id)
+      setFormDescription(content.metadata.description)
+      setFormVersion(content.metadata.version)
+      setFormColor(content.metadata.color ?? '#3b82f6')
+      setFormEntryStep(content.entryStep)
+      setFormMaxIterations(content.settings.maxIterations)
+      setFormSteps(content.steps)
+      setFormStartCondition(content.startCondition ?? { type: 'always' })
+      setFormError('')
+      setEditingId(workflowId)
+      setIsReadOnly(true)
+    } else {
+      const workflow = await fetchWorkflow(workflowId)
+      if (!workflow) return
+      setFormName(workflow.metadata.name)
+      setFormId(workflow.metadata.id)
+      setFormDescription(workflow.metadata.description)
+      setFormVersion(workflow.metadata.version)
+      setFormColor(workflow.metadata.color ?? '#3b82f6')
+      setFormEntryStep(workflow.entryStep)
+      setFormMaxIterations(workflow.settings.maxIterations)
+      setFormSteps(workflow.steps)
+      setFormStartCondition(workflow.startCondition ?? { type: 'always' })
+      setFormError('')
+      setEditingId(workflowId)
+      setIsReadOnly(true)
+    }
+    setView('edit')
+  }
+
+  const handleDuplicate = async (workflowId: string) => {
+    const isDefault = defaults.some(d => d.id === workflowId)
+    const content = isDefault ? await fetchDefaultContent(workflowId) : await fetchWorkflow(workflowId)
+    if (!content) return
+    setFormName(content.metadata.name + ' (copy)')
+    setFormId(`${workflowId}-copy-${Date.now()}`)
+    setFormDescription(content.metadata.description)
+    setFormVersion(content.metadata.version)
+    setFormColor(content.metadata.color ?? '#3b82f6')
+    setFormEntryStep(content.entryStep)
+    setFormMaxIterations(content.settings.maxIterations)
+    setFormSteps(content.steps)
+    setFormStartCondition(content.startCondition ?? { type: 'always' })
+    setFormError('')
+    setEditingId(null)
+    setIsReadOnly(false)
+    setView('edit')
+  }
+
+  const handleNew = () => {
+    setEditingId(null)
+    setFormName(''); setFormId(''); setFormDescription(''); setFormVersion('1.0.0'); setFormColor('#3b82f6')
+    setFormEntryStep(''); setFormMaxIterations(50)
+    setFormSteps(structuredClone(DEFAULT_STEPS))
+    setFormStartCondition({ type: 'always' })
+    setFormError(''); setSelectedNodeKey(null); setSelectedEdgeKey(null); setIsReadOnly(false); setView('edit')
+  }
+
+  const handleDelete = async (workflowId: string) => {
+    await deleteWorkflowAction(workflowId)
+    clearConfirm()
   }
 
   // Selection helpers
@@ -1207,7 +1297,7 @@ export function WorkflowsModal({ isOpen, onClose, initialEditId }: WorkflowsModa
     const edgeInfo = getSelectedEdgeInfo()
 
     return (
-      <Modal isOpen={isOpen} onClose={handleCancelEdit} title={editingId ? 'Edit Workflow' : 'New Workflow'} size="full">
+      <Modal isOpen={isOpen} onClose={handleCancelEdit} title={isReadOnly ? formName : (editingId ? 'Edit Workflow' : 'New Workflow')} size="full">
         {formError && (
           <div className="text-accent-error text-sm px-3 py-2 bg-accent-error/10 rounded mb-3">{formError}</div>
         )}
@@ -1216,23 +1306,23 @@ export function WorkflowsModal({ isOpen, onClose, initialEditId }: WorkflowsModa
         <div className="flex items-end gap-3 mb-3 pb-3 border-b border-border flex-wrap">
           <div className="min-w-[140px]">
             <label className={labelClass}>Name</label>
-            <input value={formName} onChange={e => handleNameChange(e.target.value)} placeholder="Workflow name" className={inputClass} />
+            <input value={formName} onChange={e => handleNameChange(e.target.value)} placeholder="Workflow name" className={`${inputClass} ${isReadOnly ? 'opacity-50' : ''}`} readOnly={isReadOnly} />
           </div>
           <div className="min-w-[100px]">
             <label className={labelClass}>ID</label>
-            <input value={formId} onChange={e => !editingId && setFormId(e.target.value)} readOnly={!!editingId} className={`${inputClass} font-mono ${editingId ? 'opacity-50' : ''}`} />
+            <input value={formId} readOnly className={`${inputClass} font-mono opacity-50`} />
           </div>
           <div className="flex-1 min-w-[140px]">
             <label className={labelClass}>Description</label>
-            <input value={formDescription} onChange={e => setFormDescription(e.target.value)} placeholder="What does this workflow do?" className={inputClass} />
+            <input value={formDescription} onChange={e => !isReadOnly && setFormDescription(e.target.value)} readOnly={isReadOnly} placeholder="What does this workflow do?" className={`${inputClass} ${isReadOnly ? 'opacity-50' : ''}`} />
           </div>
           <div className="w-20">
             <label className={labelClass}>Max Iter.</label>
-            <input type="number" value={formMaxIterations} onChange={e => setFormMaxIterations(Number(e.target.value))} className={`${inputClass} font-mono`} />
+            <input type="number" value={formMaxIterations} onChange={e => !isReadOnly && setFormMaxIterations(Number(e.target.value))} readOnly={isReadOnly} className={`${inputClass} font-mono ${isReadOnly ? 'opacity-50' : ''}`} />
           </div>
           <div>
             <label className={labelClass}>Color</label>
-            <input type="color" value={formColor} onChange={e => setFormColor(e.target.value)} className="w-8 h-8 rounded border border-border cursor-pointer bg-transparent" />
+            <input type="color" value={formColor} onChange={e => !isReadOnly && setFormColor(e.target.value)} disabled={isReadOnly} className={`w-8 h-8 rounded border border-border bg-transparent ${isReadOnly ? 'opacity-50' : 'cursor-pointer'}`} />
           </div>
         </div>
 
@@ -1242,7 +1332,7 @@ export function WorkflowsModal({ isOpen, onClose, initialEditId }: WorkflowsModa
           <div className="flex-1 min-w-0 bg-bg-primary/50 border border-border rounded-lg flex flex-col overflow-hidden">
             <div className="flex items-center justify-between px-3 py-1.5 border-b border-border/50 shrink-0">
               <span className="text-[10px] text-text-muted uppercase tracking-wider font-medium">Flow</span>
-              <button onClick={addStep} className="text-[11px] text-accent-primary hover:text-accent-primary/80">+ Add Step</button>
+              {!isReadOnly && <button onClick={addStep} className="text-[11px] text-accent-primary hover:text-accent-primary/80">+ Add Step</button>}
             </div>
             <div className="flex-1 min-h-0 p-2 overflow-auto">
               <FlowDiagram
@@ -1252,6 +1342,7 @@ export function WorkflowsModal({ isOpen, onClose, initialEditId }: WorkflowsModa
                 selectedEdgeKey={selectedEdgeKey}
                 startConditionLabel={startConditionLabel}
                 agentTypes={agentTypes}
+                isReadOnly={isReadOnly}
                 onSelectNode={(id) => {
                   if (id === null) { selectNode(null); return }
                   const idx = formSteps.findIndex(s => s.id === id)
@@ -1289,7 +1380,9 @@ export function WorkflowsModal({ isOpen, onClose, initialEditId }: WorkflowsModa
               <span className="text-[10px] text-text-muted uppercase tracking-wider font-medium">Properties</span>
             </div>
             <div className="p-3 overflow-y-auto flex-1 min-h-0">
-              {edgeInfo ? (
+              {isReadOnly && (edgeInfo || selectedStep) ? (
+                <p className="text-text-muted text-xs text-center py-8">View only — click "Duplicate & Customize" to edit.</p>
+              ) : edgeInfo ? (
                 edgeInfo.type === 'start' ? (
                   /* Start edge / activation condition */
                   <div className="space-y-3 text-sm">
@@ -1384,13 +1477,26 @@ export function WorkflowsModal({ isOpen, onClose, initialEditId }: WorkflowsModa
 
         {/* Footer */}
         <div className="flex justify-end gap-2 pt-3 mt-3 border-t border-border">
-          <Button variant="secondary" onClick={handleCancelEdit}>Cancel</Button>
-          <Button variant="secondary" onClick={handleSave} disabled={saving || !formName}>
-            {saving ? 'Saving...' : 'Save'}
-          </Button>
-          <Button variant="primary" onClick={handleSaveAndClose} disabled={saving || !formName}>
-            Save & Close
-          </Button>
+          <Button variant="secondary" onClick={handleCancelEdit}>Close</Button>
+          {isReadOnly ? (
+            <Button variant="primary" onClick={() => {
+              setFormName(formName + ' (copy)')
+              setFormId(`${editingId}-copy-${Date.now()}`)
+              setEditingId(null)
+              setIsReadOnly(false)
+            }}>
+              Duplicate & Customize
+            </Button>
+          ) : (
+            <>
+              <Button variant="secondary" onClick={handleSave} disabled={saving || !formName}>
+                {saving ? 'Saving...' : 'Save'}
+              </Button>
+              <Button variant="primary" onClick={handleSaveAndClose} disabled={saving || !formName}>
+                Save & Close
+              </Button>
+            </>
+          )}
         </div>
       </Modal>
     )
@@ -1407,100 +1513,74 @@ export function WorkflowsModal({ isOpen, onClose, initialEditId }: WorkflowsModa
           Workflows define the orchestrator's step sequence when running tasks.
         </p>
         <div className="flex items-center gap-2 flex-shrink-0 ml-3">
-          {modifiedIds.length > 0 && (
-            confirmRestoreAll ? (
-              <div className="flex items-center gap-1">
-                <button
-                  onClick={async () => { await restoreAllDefaults(); setConfirmRestoreAll(false) }}
-                  className="px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-400 text-xs hover:bg-amber-500/30 transition-colors"
-                >
-                  Confirm
-                </button>
-                <button
-                  onClick={() => setConfirmRestoreAll(false)}
-                  className="px-1.5 py-0.5 rounded text-text-muted text-xs hover:bg-bg-primary transition-colors"
-                >
-                  Cancel
-                </button>
-              </div>
-            ) : (
-              <button
-                onClick={() => setConfirmRestoreAll(true)}
-                className="px-2 py-1 rounded text-xs text-text-muted hover:text-amber-400 hover:bg-amber-500/10 transition-colors"
-                title="Restore all workflows to defaults"
-              >
-                Restore Defaults
-              </button>
-            )
-          )}
           <Button variant="primary" size="sm" onClick={handleNew}>+ New</Button>
         </div>
       </div>
 
-      {loading && workflows.length === 0 ? (
+      {loading && defaults.length === 0 && userItems.length === 0 ? (
         <div className="text-text-muted text-sm">Loading workflows...</div>
-      ) : workflows.length === 0 ? (
+      ) : defaults.length === 0 && userItems.length === 0 ? (
         <div className="text-text-muted text-sm">No workflows installed.</div>
       ) : (
-        <div className="space-y-2">
-          {workflows.map(workflow => (
-            <div key={workflow.id} className="flex items-center justify-between p-3 rounded border border-border bg-bg-tertiary">
-              <div className="min-w-0 flex-1 mr-3">
-                <div className="flex items-center gap-2">
-                  <span className="text-text-primary text-sm font-medium">{workflow.name}</span>
-                  <span className="text-text-muted text-xs">v{workflow.version}</span>
-                  {modifiedIds.includes(workflow.id) && (
-                    <span className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-amber-500/15 text-amber-400">modified</span>
-                  )}
-                </div>
-                <p className="text-text-secondary text-xs mt-0.5 truncate">{workflow.description}</p>
-              </div>
-              <div className="flex items-center gap-1.5 flex-shrink-0">
-                {/* Restore default button — only shown when modified */}
-                {modifiedIds.includes(workflow.id) && (
-                  confirmRestoreId === workflow.id ? (
-                    <div className="flex items-center gap-1">
-                      <button
-                        onClick={async () => { await restoreDefault(workflow.id); setConfirmRestoreId(null) }}
-                        className="px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-400 text-xs hover:bg-amber-500/30 transition-colors"
-                      >
-                        Restore
-                      </button>
-                      <button
-                        onClick={() => setConfirmRestoreId(null)}
-                        className="px-1.5 py-0.5 rounded text-text-muted text-xs hover:bg-bg-primary transition-colors"
-                      >
-                        Cancel
-                      </button>
+        <div className="space-y-4">
+          {defaults.length > 0 && (
+            <div>
+              <h3 className="text-xs font-medium text-text-secondary mb-2 uppercase tracking-wide">Built-in</h3>
+              <div className="space-y-2">
+                {defaults.map(workflow => (
+                  <div key={workflow.id} className="flex items-center justify-between p-3 rounded border border-border bg-bg-tertiary">
+                    <div className="min-w-0 flex-1 mr-3">
+                      <div className="flex items-center gap-2">
+                        <span className="text-text-primary text-sm font-medium">{workflow.name}</span>
+                        <span className="text-text-muted text-xs">v{workflow.version}</span>
+                      </div>
+                      <p className="text-text-secondary text-xs mt-0.5 truncate">{workflow.description}</p>
                     </div>
-                  ) : (
-                    <button
-                      onClick={() => setConfirmRestoreId(workflow.id)}
-                      className="p-1.5 rounded hover:bg-bg-primary text-text-muted hover:text-amber-400 transition-colors"
-                      title="Restore default"
-                    >
-                      <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                      </svg>
-                    </button>
-                  )
-                )}
-                <EditButton onClick={() => handleEdit(workflow.id)} />
-                {workflow.id !== 'default' && (
-                  confirmDeleteId === workflow.id ? (
-                    <div className="flex items-center gap-1">
-                      <button onClick={() => { deleteWorkflowAction(workflow.id); setConfirmDeleteId(null) }} className="px-1.5 py-0.5 rounded bg-accent-error/20 text-accent-error text-xs">Delete</button>
-                      <button onClick={() => setConfirmDeleteId(null)} className="px-1.5 py-0.5 rounded text-text-muted text-xs">Cancel</button>
+                    <div className="flex items-center gap-1.5 flex-shrink-0">
+                      <button
+                        onClick={() => handleView(workflow.id)}
+                        className="p-1.5 rounded text-text-muted hover:text-text-primary hover:bg-bg-primary transition-colors"
+                        title="View"
+                      >
+                        <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                        </svg>
+                      </button>
+                      <DuplicateIcon onClick={() => handleDuplicate(workflow.id)} />
                     </div>
-                  ) : (
-                    <button onClick={() => setConfirmDeleteId(workflow.id)} className="p-1.5 rounded hover:bg-bg-primary text-text-muted hover:text-accent-error transition-colors">
-                      <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
-                    </button>
-                  )
-                )}
+                  </div>
+                ))}
               </div>
             </div>
-          ))}
+          )}
+
+          {userItems.length > 0 && (
+            <div>
+              <h3 className="text-xs font-medium text-text-secondary mb-2 uppercase tracking-wide">Custom</h3>
+              <div className="space-y-2">
+                {userItems.map(workflow => (
+                  <div key={workflow.id} className="flex items-center justify-between p-3 rounded border border-border bg-bg-tertiary">
+                    <div className="min-w-0 flex-1 mr-3">
+                      <div className="flex items-center gap-2">
+                        <span className="text-text-primary text-sm font-medium">{workflow.name}</span>
+                        <span className="text-text-muted text-xs">v{workflow.version}</span>
+                      </div>
+                      <p className="text-text-secondary text-xs mt-0.5 truncate">{workflow.description}</p>
+                    </div>
+                    <div className="flex items-center gap-1.5 flex-shrink-0">
+                      <DuplicateIcon onClick={() => handleDuplicate(workflow.id)} />
+                      <EditButton onClick={() => handleEdit(workflow.id)} />
+                      {isConfirming(workflow.id, 'delete') ? (
+                        <ConfirmButton onConfirm={() => handleDelete(workflow.id)} onCancel={() => {}} />
+                      ) : (
+                        <DeleteIcon onClick={() => requestDelete(workflow.id)} />
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
       )}
     </Modal>

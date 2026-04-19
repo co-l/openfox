@@ -9,7 +9,9 @@ interface WorkflowStartedData {
 }
 
 export const WorkflowStartedCard = memo(function WorkflowStartedCard({ data }: { data: WorkflowStartedData }) {
-  const workflows = useWorkflowsStore(state => state.workflows)
+  const workflowDefaults = useWorkflowsStore(state => state.defaults)
+  const workflowUserItems = useWorkflowsStore(state => state.userItems)
+  const workflows = [...workflowDefaults, ...workflowUserItems]
   const color = workflows.find(w => w.id === data.workflowId)?.color ?? data.workflowColor ?? '#6b7280'
 
   return (

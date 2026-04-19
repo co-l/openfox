@@ -5,11 +5,11 @@
  */
 
 import { describe, it, expect } from 'vitest'
-import { loadBuiltinAgents, findAgentById } from '../agents/registry.js'
+import { loadDefaultAgents, findAgentById } from '../agents/registry.js'
 
 describe('Verifier Sub-Agent Integration', () => {
   it('should have verifier defined in agent registry', async () => {
-    const agents = await loadBuiltinAgents()
+    const agents = await loadDefaultAgents()
     const verifier = findAgentById('verifier', agents)
 
     expect(verifier).toBeDefined()

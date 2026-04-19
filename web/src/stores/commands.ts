@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import { authFetch } from '../lib/api'
 import { saveEntity } from './utils'
+import { fetchItems } from './fetch-items'
 
 export interface CommandInfo {
   id: string
@@ -14,53 +15,40 @@ export interface CommandFull {
 }
 
 interface CommandsState {
-  commands: CommandInfo[]
-  defaultIds: string[]
-  modifiedIds: string[]
+  defaults: CommandInfo[]
+  userItems: CommandInfo[]
   loading: boolean
   fetchCommands: () => Promise<void>
-  fetchDefaultIds: () => Promise<void>
   fetchCommand: (commandId: string) => Promise<CommandFull | null>
+  fetchDefaultContent: (commandId: string) => Promise<CommandFull | null>
   createCommand: (command: CommandFull) => Promise<{ success: boolean; error?: string }>
   updateCommand: (id: string, command: Partial<CommandFull>) => Promise<{ success: boolean; error?: string }>
-  deleteCommand: (commandId: string) => Promise<boolean>
-  restoreDefault: (commandId: string) => Promise<boolean>
-  restoreAllDefaults: () => Promise<boolean>
+  deleteCommand: (commandId: string) => Promise<{ success: boolean; error?: string; reason?: string }>
+  duplicateCommand: (commandId: string) => Promise<{ success: boolean; error?: string }>
 }
 
 export const useCommandsStore = create<CommandsState>((set, get) => ({
-  commands: [],
-  defaultIds: [],
-  modifiedIds: [],
+  defaults: [],
+  userItems: [],
   loading: false,
 
-  fetchDefaultIds: async () => {
-    try {
-      const res = await authFetch('/api/commands/default-ids')
-      const data = await res.json()
-      set({ defaultIds: data.ids ?? [] })
-    } catch { /* ignore */ }
-  },
-
   fetchCommands: async () => {
-    set({ loading: true })
-    try {
-      const res = await authFetch('/api/commands')
-      const data = await res.json()
-      set({
-        commands: data.commands ?? [],
-        defaultIds: data.defaultIds ?? get().defaultIds,
-        modifiedIds: data.modifiedIds ?? [],
-        loading: false,
-      })
-    } catch {
-      set({ loading: false })
-    }
+    await fetchItems('/api/commands', set as unknown as (partial: unknown) => void)
   },
 
   fetchCommand: async (commandId: string) => {
     try {
       const res = await authFetch(`/api/commands/${commandId}`)
+      if (!res.ok) return null
+      return await res.json() as CommandFull
+    } catch {
+      return null
+    }
+  },
+
+  fetchDefaultContent: async (commandId: string) => {
+    try {
+      const res = await authFetch(`/api/commands/defaults/${commandId}`)
       if (!res.ok) return null
       return await res.json() as CommandFull
     } catch {
@@ -83,39 +71,30 @@ export const useCommandsStore = create<CommandsState>((set, get) => ({
   deleteCommand: async (commandId: string) => {
     try {
       const res = await authFetch(`/api/commands/${commandId}`, { method: 'DELETE' })
+      const data = await res.json()
       if (res.ok) {
-        set({ commands: get().commands.filter(c => c.id !== commandId) })
-        return true
+        set(state => ({
+          userItems: state.userItems.filter(c => c.id !== commandId),
+        }))
+        return { success: true }
       }
-      return false
+      return { success: false, error: data.error ?? 'Failed to delete' }
     } catch {
-      return false
+      return { success: false, error: 'Network error' }
     }
   },
 
-  restoreDefault: async (commandId: string) => {
+  duplicateCommand: async (commandId: string) => {
     try {
-      const res = await authFetch(`/api/commands/${commandId}/restore-default`, { method: 'POST' })
+      const res = await authFetch(`/api/commands/${commandId}/duplicate`, { method: 'POST' })
+      const data = await res.json()
       if (res.ok) {
         await get().fetchCommands()
-        return true
+        return { success: true }
       }
-      return false
+      return { success: false, error: data.error ?? 'Failed to duplicate' }
     } catch {
-      return false
-    }
-  },
-
-  restoreAllDefaults: async () => {
-    try {
-      const res = await authFetch('/api/commands/restore-all-defaults', { method: 'POST' })
-      if (res.ok) {
-        await get().fetchCommands()
-        return true
-      }
-      return false
-    } catch {
-      return false
+      return { success: false, error: 'Network error' }
     }
   },
 }))

@@ -64,7 +64,9 @@ export function PlanPanel({ criteriaSidebarOpen: externalCriteriaSidebarOpen, on
   const cancelQueued = useSessionStore(state => state.cancelQueued)
   const queuedMessages = useQueuedMessages()
 
-  const workflows = useWorkflowsStore(state => state.workflows)
+  const workflowDefaults = useWorkflowsStore(state => state.defaults)
+  const workflowUserItems = useWorkflowsStore(state => state.userItems)
+  const workflows = [...workflowDefaults, ...workflowUserItems]
   const fetchWorkflows = useWorkflowsStore(state => state.fetchWorkflows)
   useEffect(() => {
     fetchWorkflows()

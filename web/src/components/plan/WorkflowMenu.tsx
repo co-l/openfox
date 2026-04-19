@@ -44,8 +44,10 @@ export function WorkflowMenu({ onSelectWorkflow, onOpenManager, criteria }: Work
   const [isOpen, setIsOpen] = useState(false)
   const [editId, setEditId] = useState<string | null>(null)
 
-  const workflows = useWorkflowsStore(state => state.workflows)
+  const defaults = useWorkflowsStore(state => state.defaults)
+  const userItems = useWorkflowsStore(state => state.userItems)
   const fetchWorkflows = useWorkflowsStore(state => state.fetchWorkflows)
+  const workflows = [...defaults, ...userItems]
 
   const {
     isOpen: menuOpen,

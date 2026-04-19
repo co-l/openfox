@@ -63,7 +63,9 @@ export const SubAgentContainer = memo(function SubAgentContainer({ messages, sub
   const containerRef = useRef<HTMLDivElement>(null)
   const scrollRef = useRef<HTMLDivElement>(null)
   const [expanded, setExpanded] = useState(false)
-  const agents = useAgentsStore(state => state.agents)
+  const agentDefaults = useAgentsStore(state => state.defaults)
+  const agentUserItems = useAgentsStore(state => state.userItems)
+  const agents = [...agentDefaults, ...agentUserItems]
   const contextState = useSessionStore(state => state.subAgentContextStates[subAgentId])
 
   const { isAutoScrollActive, setAutoScroll } = useAutoScroll(scrollRef, null)

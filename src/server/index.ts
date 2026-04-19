@@ -17,10 +17,6 @@ import { createToolRegistry } from './tools/index.js'
 import { createWebSocketServer } from './ws/index.js'
 import { SessionManager } from './session/manager.js'
 import { setRuntimeConfig } from './runtime-config.js'
-import { ensureDefaultSkills } from './skills/registry.js'
-import { ensureDefaultCommands } from './commands/registry.js'
-import { ensureDefaultAgents } from './agents/registry.js'
-import { ensureDefaultWorkflows } from './workflows/registry.js'
 import { createSkillRoutes } from './routes/skills.js'
 import { createCommandRoutes } from './routes/commands.js'
 import { createAgentRoutes } from './routes/agents.js'
@@ -57,12 +53,8 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
   // Initialize event store
   initEventStore(db)
 
-  // Initialize skills and commands (copy defaults to config dir)
+  // Get config directory for loading user items
   const configDir = getGlobalConfigDir(config.mode ?? 'production')
-  await ensureDefaultSkills(configDir)
-  await ensureDefaultCommands(configDir)
-  await ensureDefaultAgents(configDir)
-  await ensureDefaultWorkflows(configDir)
 
   // Create Provider Manager (handles LLM client lifecycle)
   const providerManager = createProviderManager(config)

@@ -7,8 +7,10 @@ import { EditButton } from '../shared/IconButton'
 export function AgentSelector() {
   const currentMode = useSessionStore(state => state.currentSession?.mode)
   const switchMode = useSessionStore(state => state.switchMode)
-  const agents = useAgentsStore(state => state.agents)
+  const defaults = useAgentsStore(state => state.defaults)
+  const userItems = useAgentsStore(state => state.userItems)
   const fetchAgents = useAgentsStore(state => state.fetchAgents)
+  const agents = [...defaults, ...userItems]
   const [isOpen, setIsOpen] = useState(false)
   const [showManager, setShowManager] = useState(false)
   const [editId, setEditId] = useState<string | null>(null)

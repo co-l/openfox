@@ -5,7 +5,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import Database from 'better-sqlite3'
 import { EventStore, initEventStore } from '../events/store.js'
-import { loadBuiltinAgents, findAgentById } from '../agents/registry.js'
+import { loadDefaultAgents, findAgentById } from '../agents/registry.js'
 import { executeSubAgent } from './manager.js'
 import type { SessionManager } from '../session/index.js'
 import type { LLMClientWithModel } from '../llm/client.js'
@@ -171,7 +171,7 @@ describe('SubAgentManager', () => {
   })
 
   it('should have verifier available in agent registry', async () => {
-    const agents = await loadBuiltinAgents()
+    const agents = await loadDefaultAgents()
     const verifier = findAgentById('verifier', agents)
 
     expect(verifier).toBeDefined()
@@ -180,14 +180,14 @@ describe('SubAgentManager', () => {
   })
 
   it('should return undefined for unknown sub-agent type', async () => {
-    const agents = await loadBuiltinAgents()
+    const agents = await loadDefaultAgents()
     const unknown = findAgentById('unknown_type', agents)
 
     expect(unknown).toBeUndefined()
   })
 
   it('should return correct tools for each sub-agent type', async () => {
-    const agents = await loadBuiltinAgents()
+    const agents = await loadDefaultAgents()
 
     expect(findAgentById('verifier', agents)?.metadata.allowedTools).toEqual([
       'read_file',

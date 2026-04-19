@@ -17,14 +17,10 @@ export interface WorkflowStep {
   type: 'agent' | 'sub_agent' | 'shell'
   phase: string
   transitions: Array<{ when: { type: string; result?: string }; goto: string }>
-  // agent fields
   toolMode?: 'builder' | 'planner'
-  // sub_agent fields
   subAgentType?: string
-  // shared prompt fields (agent + sub_agent)
   prompt?: string
   nudgePrompt?: string
-  // shell fields
   command?: string
   timeout?: number
   successExitCodes?: number[]
@@ -44,27 +40,24 @@ export interface TemplateVariable {
 }
 
 interface WorkflowsState {
-  workflows: WorkflowInfo[]
-  defaultIds: string[]
-  modifiedIds: string[]
+  defaults: WorkflowInfo[]
+  userItems: WorkflowInfo[]
   activeWorkflowId: string
   loading: boolean
   templateVariables: TemplateVariable[]
   fetchWorkflows: () => Promise<void>
-  fetchDefaultIds: () => Promise<void>
   fetchTemplateVariables: () => Promise<void>
   fetchWorkflow: (id: string) => Promise<WorkflowFull | null>
+  fetchDefaultContent: (id: string) => Promise<WorkflowFull | null>
   createWorkflow: (workflow: WorkflowFull) => Promise<{ success: boolean; error?: string }>
   updateWorkflow: (id: string, workflow: Partial<WorkflowFull>) => Promise<{ success: boolean; error?: string }>
-  deleteWorkflow: (id: string) => Promise<boolean>
-  restoreDefault: (workflowId: string) => Promise<boolean>
-  restoreAllDefaults: () => Promise<boolean>
+  deleteWorkflow: (id: string) => Promise<{ success: boolean; error?: string; reason?: string }>
+  duplicateWorkflow: (id: string) => Promise<{ success: boolean; error?: string }>
 }
 
 export const useWorkflowsStore = create<WorkflowsState>((set, get) => ({
-  workflows: [],
-  defaultIds: [],
-  modifiedIds: [],
+  defaults: [],
+  userItems: [],
   activeWorkflowId: 'default',
   loading: false,
   templateVariables: [],
@@ -77,24 +70,15 @@ export const useWorkflowsStore = create<WorkflowsState>((set, get) => ({
     } catch { /* ignore */ }
   },
 
-  fetchDefaultIds: async () => {
-    try {
-      const res = await authFetch('/api/workflows/default-ids')
-      const data = await res.json()
-      set({ defaultIds: data.ids ?? [] })
-    } catch { /* ignore */ }
-  },
-
   fetchWorkflows: async () => {
     set({ loading: true })
     try {
       const res = await authFetch('/api/workflows')
       const data = await res.json()
       set({
-        workflows: data.workflows ?? [],
+        defaults: data.defaults ?? [],
+        userItems: data.userItems ?? [],
         activeWorkflowId: data.activeWorkflowId ?? 'default',
-        defaultIds: data.defaultIds ?? get().defaultIds,
-        modifiedIds: data.modifiedIds ?? [],
         loading: false,
       })
     } catch {
@@ -105,6 +89,16 @@ export const useWorkflowsStore = create<WorkflowsState>((set, get) => ({
   fetchWorkflow: async (id: string) => {
     try {
       const res = await authFetch(`/api/workflows/${id}`)
+      if (!res.ok) return null
+      return await res.json() as WorkflowFull
+    } catch {
+      return null
+    }
+  },
+
+  fetchDefaultContent: async (id: string) => {
+    try {
+      const res = await authFetch(`/api/workflows/defaults/${id}`)
       if (!res.ok) return null
       return await res.json() as WorkflowFull
     } catch {
@@ -127,39 +121,30 @@ export const useWorkflowsStore = create<WorkflowsState>((set, get) => ({
   deleteWorkflow: async (id: string) => {
     try {
       const res = await authFetch(`/api/workflows/${id}`, { method: 'DELETE' })
+      const data = await res.json()
       if (res.ok) {
-        set({ workflows: get().workflows.filter(p => p.id !== id) })
-        return true
+        set(state => ({
+          userItems: state.userItems.filter(p => p.id !== id),
+        }))
+        return { success: true }
       }
-      return false
+      return { success: false, error: data.error ?? 'Failed to delete' }
     } catch {
-      return false
+      return { success: false, error: 'Network error' }
     }
   },
 
-  restoreDefault: async (workflowId: string) => {
+  duplicateWorkflow: async (id: string) => {
     try {
-      const res = await authFetch(`/api/workflows/${workflowId}/restore-default`, { method: 'POST' })
+      const res = await authFetch(`/api/workflows/${id}/duplicate`, { method: 'POST' })
+      const data = await res.json()
       if (res.ok) {
         await get().fetchWorkflows()
-        return true
+        return { success: true }
       }
-      return false
+      return { success: false, error: data.error ?? 'Failed to duplicate' }
     } catch {
-      return false
-    }
-  },
-
-  restoreAllDefaults: async () => {
-    try {
-      const res = await authFetch('/api/workflows/restore-all-defaults', { method: 'POST' })
-      if (res.ok) {
-        await get().fetchWorkflows()
-        return true
-      }
-      return false
-    } catch {
-      return false
+      return { success: false, error: 'Network error' }
     }
   },
 }))

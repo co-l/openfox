@@ -7,18 +7,18 @@
 
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import express from 'express'
-import { mkdtemp, rm, writeFile, mkdir } from 'node:fs/promises'
+import { mkdtemp, rm } from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { createServer, type Server } from 'node:http'
 import type { AgentDefinition } from './types.js'
 import {
   loadAllAgents,
+  loadDefaultAgents,
   findAgentById,
   saveAgent,
   deleteAgent,
   agentExists,
-  ensureDefaultAgents,
 } from './registry.js'
 
 let tempDir: string
@@ -76,9 +76,9 @@ function mountAgentRoutes(app: express.Express, configDir: string) {
 
   app.delete('/api/agents/:id', async (req, res) => {
     const { id } = req.params
-    const deleted = await deleteAgent(configDir, id as string)
-    if (!deleted) {
-      return res.status(404).json({ error: 'Agent not found' })
+    const result = await deleteAgent(configDir, id as string)
+    if (!result.success) {
+      return res.status(result.reason?.includes('Cannot delete built-in defaults') ? 403 : 404).json({ error: result.reason ?? 'Agent not found' })
     }
     res.json({ success: true })
   })
@@ -94,7 +94,6 @@ async function request(method: string, path: string, body?: unknown): Promise<{ 
 
 beforeEach(async () => {
   tempDir = await mkdtemp(join(tmpdir(), 'agent-api-test-'))
-  await ensureDefaultAgents(tempDir)
 
   const app = express()
   mountAgentRoutes(app, tempDir)
@@ -230,5 +229,10 @@ describe('DELETE /api/agents/:id', () => {
   it('returns 404 for unknown agent', async () => {
     const { status } = await request('DELETE', '/api/agents/nonexistent')
     expect(status).toBe(404)
+  })
+
+  it('returns 403 for built-in default agents', async () => {
+    const { status } = await request('DELETE', '/api/agents/verifier')
+    expect(status).toBe(403)
   })
 })

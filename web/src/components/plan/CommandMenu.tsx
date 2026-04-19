@@ -24,8 +24,10 @@ export function CommandMenu({ onSendCommand, onOpenManager, textareaContent, att
   const [isOpen, setIsOpen] = useState(false)
   const [editId, setEditId] = useState<string | null>(null)
 
-  const commands = useCommandsStore(state => state.commands)
+  const defaults = useCommandsStore(state => state.defaults)
+  const userItems = useCommandsStore(state => state.userItems)
   const fetchCommands = useCommandsStore(state => state.fetchCommands)
+  const commands = [...defaults, ...userItems]
 
   const {
     isOpen: menuOpen,

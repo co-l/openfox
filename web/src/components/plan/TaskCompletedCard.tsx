@@ -21,7 +21,9 @@ function formatTokens(n: number): string {
 }
 
 export const TaskCompletedCard = memo(function TaskCompletedCard({ data }: TaskCompletedCardProps) {
-  const workflows = useWorkflowsStore(state => state.workflows)
+  const workflowDefaults = useWorkflowsStore(state => state.defaults)
+  const workflowUserItems = useWorkflowsStore(state => state.userItems)
+  const workflows = [...workflowDefaults, ...workflowUserItems]
   const color = workflows.find(w => w.id === data.workflowId)?.color ?? data.workflowColor ?? '#8b949e'
 
   return (

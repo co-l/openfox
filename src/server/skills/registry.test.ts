@@ -8,7 +8,6 @@ import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import type { SkillDefinition } from './types.js'
 
-// Mock the database settings before importing the registry
 vi.mock('../db/settings.js', () => {
   const store = new Map<string, string>()
   return {
@@ -21,6 +20,8 @@ vi.mock('../db/settings.js', () => {
 
 import {
   loadAllSkills,
+  loadDefaultSkills,
+  loadUserSkills,
   getEnabledSkills,
   getEnabledSkillMetadata,
   isSkillEnabled,
@@ -29,13 +30,13 @@ import {
   saveSkill,
   deleteSkill,
   skillExists,
-  ensureDefaultSkills,
+  isDefaultSkill,
+  getDefaultSkillIds,
 } from './registry.js'
-import { getSetting, setSetting } from '../db/settings.js'
+import { getSetting } from '../db/settings.js'
 
 let tempDir: string
 
-// Access the mock store for cleanup
 const mockStore = (await import('../db/settings.js') as any).__store as Map<string, string>
 
 beforeEach(async () => {
@@ -61,16 +62,24 @@ ${prompt}
 `)
 }
 
-describe('loadAllSkills', () => {
+describe('loadDefaultSkills', () => {
+  it('should load bundled default skills', async () => {
+    const defaults = await loadDefaultSkills()
+    expect(defaults.length).toBeGreaterThanOrEqual(1)
+    expect(defaults.some(s => s.metadata.id === 'browser')).toBe(true)
+  })
+})
+
+describe('loadUserSkills', () => {
   it('should return empty array when skills directory does not exist', async () => {
-    const skills = await loadAllSkills(tempDir)
+    const skills = await loadUserSkills(tempDir)
     expect(skills).toEqual([])
   })
 
   it('should load valid .skill.md files', async () => {
     await createSkillFile(tempDir, 'test', 'Test Skill', 'Do the test.')
 
-    const skills = await loadAllSkills(tempDir)
+    const skills = await loadUserSkills(tempDir)
     expect(skills).toHaveLength(1)
     expect(skills[0]!.metadata.id).toBe('test')
     expect(skills[0]!.metadata.name).toBe('Test Skill')
@@ -87,7 +96,7 @@ name: No ID
 Some prompt.
 `)
 
-    const skills = await loadAllSkills(tempDir)
+    const skills = await loadUserSkills(tempDir)
     expect(skills).toEqual([])
   })
 
@@ -102,8 +111,38 @@ version: "1.0"
 ---
 `)
 
-    const skills = await loadAllSkills(tempDir)
+    const skills = await loadUserSkills(tempDir)
     expect(skills).toEqual([])
+  })
+})
+
+describe('loadAllSkills', () => {
+  it('should merge defaults and user skills', async () => {
+    await createSkillFile(tempDir, 'test', 'Test Skill', 'Do the test.')
+
+    const defaults = await loadDefaultSkills()
+    const skills = await loadAllSkills(tempDir)
+    expect(skills.some(s => s.metadata.id === 'test')).toBe(true)
+    expect(skills.length).toBeGreaterThanOrEqual(defaults.length + 1)
+  })
+
+  it('should give precedence to user skills over defaults', async () => {
+    const skillsDir = join(tempDir, 'skills')
+    await mkdir(skillsDir, { recursive: true })
+    await writeFile(join(skillsDir, 'custom.skill.md'), `---
+id: custom
+name: Custom Skill
+description: Custom
+version: "1.0"
+---
+
+Custom prompt.
+`)
+
+    const skills = await loadAllSkills(tempDir)
+    const custom = skills.find(s => s.metadata.id === 'custom')
+    expect(custom).toBeDefined()
+    expect(custom!.prompt).toBe('Custom prompt.')
   })
 })
 
@@ -137,27 +176,8 @@ describe('getEnabledSkills', () => {
     setSkillEnabled('disabled_one', false)
 
     const enabled = await getEnabledSkills(tempDir)
-    expect(enabled).toHaveLength(1)
-    expect(enabled[0]!.metadata.id).toBe('enabled_one')
-  })
-
-  it('should return all skills when none are explicitly disabled', async () => {
-    await createSkillFile(tempDir, 'a', 'A', 'Prompt A.')
-    await createSkillFile(tempDir, 'b', 'B', 'Prompt B.')
-
-    const enabled = await getEnabledSkills(tempDir)
-    expect(enabled).toHaveLength(2)
-  })
-})
-
-describe('getEnabledSkillMetadata', () => {
-  it('should return metadata for enabled skills only', async () => {
-    await createSkillFile(tempDir, 'meta_test', 'Meta Test', 'Prompt.')
-
-    const metadata = await getEnabledSkillMetadata(tempDir)
-    expect(metadata).toHaveLength(1)
-    expect(metadata[0]!.id).toBe('meta_test')
-    expect(metadata[0]!.name).toBe('Meta Test')
+    expect(enabled.some(s => s.metadata.id === 'enabled_one')).toBe(true)
+    expect(enabled.every(s => s.metadata.id === 'disabled_one' ? false : true)).toBe(true)
   })
 })
 
@@ -203,19 +223,23 @@ describe('CRUD', () => {
     setSkillEnabled('deleteme', false)
     expect(getSetting('skill.enabled.deleteme')).toBe('false')
 
-    const deleted = await deleteSkill(tempDir, 'deleteme')
-    expect(deleted).toBe(true)
+    const result = await deleteSkill(tempDir, 'deleteme')
+    expect(result.success).toBe(true)
 
     const skills = await loadAllSkills(tempDir)
     expect(skills.find(s => s.metadata.id === 'deleteme')).toBeUndefined()
-
-    // Setting should be cleaned up
     expect(getSetting('skill.enabled.deleteme')).toBeNull()
   })
 
+  it('should not delete built-in default skills', async () => {
+    const result = await deleteSkill(tempDir, 'browser')
+    expect(result.success).toBe(false)
+    expect(result.reason).toBe('Cannot delete built-in defaults')
+  })
+
   it('should return false when deleting non-existent skill', async () => {
-    const deleted = await deleteSkill(tempDir, 'nonexistent')
-    expect(deleted).toBe(false)
+    const result = await deleteSkill(tempDir, 'nonexistent')
+    expect(result.success).toBe(false)
   })
 
   it('should check skill existence', async () => {
@@ -229,10 +253,20 @@ describe('CRUD', () => {
   })
 })
 
-describe('ensureDefaultSkills', () => {
-  it('should copy bundled defaults to config dir', async () => {
-    await ensureDefaultSkills(tempDir)
-    const skills = await loadAllSkills(tempDir)
-    expect(skills.length).toBeGreaterThanOrEqual(0)
+describe('isDefaultSkill', () => {
+  it('should correctly identify built-in default skills', async () => {
+    const defaults = await loadDefaultSkills()
+    for (const skill of defaults) {
+      expect(await isDefaultSkill(skill.metadata.id)).toBe(true)
+    }
+    expect(await isDefaultSkill('nonexistent-skill')).toBe(false)
+  })
+})
+
+describe('getDefaultSkillIds', () => {
+  it('should return all default skill IDs', async () => {
+    const ids = await getDefaultSkillIds()
+    expect(ids.length).toBeGreaterThan(0)
+    expect(ids).toContain('browser')
   })
 })

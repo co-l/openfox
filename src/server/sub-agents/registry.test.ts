@@ -7,11 +7,11 @@
  */
 
 import { describe, it, expect } from 'vitest'
-import { loadBuiltinAgents, findAgentById, getSubAgents } from '../agents/registry.js'
+import { loadDefaultAgents, findAgentById, getSubAgents } from '../agents/registry.js'
 
 describe('SubAgentRegistry (via agent registry)', () => {
   it('should define verifier with correct structure', async () => {
-    const agents = await loadBuiltinAgents()
+    const agents = await loadDefaultAgents()
     const verifier = findAgentById('verifier', agents)
 
     expect(verifier).toBeDefined()
@@ -24,7 +24,7 @@ describe('SubAgentRegistry (via agent registry)', () => {
   })
 
   it('should define code_reviewer with correct structure', async () => {
-    const agents = await loadBuiltinAgents()
+    const agents = await loadDefaultAgents()
     const codeReviewer = findAgentById('code_reviewer', agents)
 
     expect(codeReviewer).toBeDefined()
@@ -37,7 +37,7 @@ describe('SubAgentRegistry (via agent registry)', () => {
   })
 
   it('should define explorer with correct structure', async () => {
-    const agents = await loadBuiltinAgents()
+    const agents = await loadDefaultAgents()
     const explorer = findAgentById('explorer', agents)
 
     expect(explorer).toBeDefined()
@@ -50,14 +50,14 @@ describe('SubAgentRegistry (via agent registry)', () => {
   })
 
   it('should return undefined for unknown sub-agent types', async () => {
-    const agents = await loadBuiltinAgents()
+    const agents = await loadDefaultAgents()
     const unknown = findAgentById('unknown', agents)
 
     expect(unknown).toBeUndefined()
   })
 
   it('should return all registered sub-agents', async () => {
-    const agents = await loadBuiltinAgents()
+    const agents = await loadDefaultAgents()
     const all = getSubAgents(agents)
 
     expect(all.length).toBeGreaterThanOrEqual(3)

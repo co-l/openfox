@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import { authFetch } from '../lib/api'
 import { saveEntity } from './utils'
+import { fetchItems } from './fetch-items'
 
 export interface AgentInfo {
   id: string
@@ -24,52 +25,49 @@ export function getAgentColor(agents: AgentInfo[], agentId: string): string {
 }
 
 interface AgentsState {
-  agents: AgentInfo[]
-  defaultIds: string[]
-  modifiedIds: string[]
+  defaults: AgentInfo[]
+  userItems: AgentInfo[]
   loading: boolean
   fetchAgents: () => Promise<void>
-  fetchDefaultIds: () => Promise<void>
   fetchAgent: (agentId: string) => Promise<AgentFull | null>
+  fetchDefaultContent: (agentId: string) => Promise<AgentFull | null>
   createAgent: (agent: AgentFull) => Promise<{ success: boolean; error?: string }>
   updateAgent: (id: string, agent: Partial<AgentFull>) => Promise<{ success: boolean; error?: string }>
-  deleteAgent: (agentId: string) => Promise<boolean>
-  restoreDefault: (agentId: string) => Promise<boolean>
-  restoreAllDefaults: () => Promise<boolean>
+  deleteAgent: (agentId: string) => Promise<{ success: boolean; error?: string; reason?: string }>
+  duplicateAgent: (agentId: string) => Promise<{ success: boolean; error?: string }>
 }
 
-export const useAgentsStore = create<AgentsState>((set, get) => {
+export const useAgentsStore = create<AgentsState>((set) => {
   const fetchAgents = async () => {
-    set({ loading: true })
-    try {
-      const res = await authFetch('/api/agents')
-      const data = await res.json()
-      set({
-        agents: data.agents ?? [],
-        defaultIds: data.defaultIds ?? get().defaultIds,
-        modifiedIds: data.modifiedIds ?? [],
-        loading: false,
-      })
-    } catch {
-      set({ loading: false })
-    }
+    await fetchItems('/api/agents', set as Parameters<typeof fetchItems>[1])
   }
 
   return {
-    agents: [],
-    defaultIds: [],
-    modifiedIds: [],
+    defaults: [],
+    userItems: [],
     loading: false,
 
-    fetchDefaultIds: async () => {
+    fetchAgents,
+
+    fetchAgent: async (agentId: string) => {
       try {
-        const res = await authFetch('/api/agents/default-ids')
-        const data = await res.json()
-        set({ defaultIds: data.ids ?? [] })
-      } catch { /* ignore */ }
+        const res = await authFetch(`/api/agents/${agentId}`)
+        if (!res.ok) return null
+        return await res.json() as AgentFull
+      } catch {
+        return null
+      }
     },
 
-    fetchAgents,
+    fetchDefaultContent: async (agentId: string) => {
+      try {
+        const res = await authFetch(`/api/agents/defaults/${agentId}`)
+        if (!res.ok) return null
+        return await res.json() as AgentFull
+      } catch {
+        return null
+      }
+    },
 
     createAgent: async (agent: AgentFull) => {
       const result = await saveEntity('POST', '/api/agents', agent as unknown as Record<string, unknown>)
@@ -83,52 +81,33 @@ export const useAgentsStore = create<AgentsState>((set, get) => {
       return result
     },
 
-    fetchAgent: async (agentId: string) => {
-      try {
-        const res = await authFetch(`/api/agents/${agentId}`)
-        if (!res.ok) return null
-        return await res.json() as AgentFull
-      } catch {
-        return null
-      }
-    },
-
     deleteAgent: async (agentId: string) => {
       try {
         const res = await authFetch(`/api/agents/${agentId}`, { method: 'DELETE' })
+        const data = await res.json()
         if (res.ok) {
-          set({ agents: get().agents.filter(a => a.id !== agentId) })
-          return true
+          set(state => ({
+            userItems: state.userItems.filter(a => a.id !== agentId),
+          }))
+          return { success: true }
         }
-        return false
+        return { success: false, error: data.error ?? 'Failed to delete' }
       } catch {
-        return false
+        return { success: false, error: 'Network error' }
       }
     },
 
-    restoreDefault: async (agentId: string) => {
+    duplicateAgent: async (agentId: string) => {
       try {
-        const res = await authFetch(`/api/agents/${agentId}/restore-default`, { method: 'POST' })
+        const res = await authFetch(`/api/agents/${agentId}/duplicate`, { method: 'POST' })
+        const data = await res.json()
         if (res.ok) {
           await fetchAgents()
-          return true
+          return { success: true }
         }
-        return false
+        return { success: false, error: data.error ?? 'Failed to duplicate' }
       } catch {
-        return false
-      }
-    },
-
-    restoreAllDefaults: async () => {
-      try {
-        const res = await authFetch('/api/agents/restore-all-defaults', { method: 'POST' })
-        if (res.ok) {
-          await fetchAgents()
-          return true
-        }
-        return false
-      } catch {
-        return false
+        return { success: false, error: 'Network error' }
       }
     },
   }

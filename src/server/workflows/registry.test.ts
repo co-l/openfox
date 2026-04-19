@@ -8,11 +8,14 @@ import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import {
   loadAllWorkflows,
+  loadDefaultWorkflows,
+  loadUserWorkflows,
   findWorkflowById,
   saveWorkflow,
   deleteWorkflow,
   workflowExists,
-  ensureDefaultWorkflows,
+  isDefaultWorkflow,
+  getDefaultWorkflowIds,
 } from './registry.js'
 import type { WorkflowDefinition } from './types.js'
 
@@ -42,9 +45,9 @@ afterEach(async () => {
   await rm(tempDir, { recursive: true, force: true })
 })
 
-describe('loadAllWorkflows', () => {
+describe('loadUserWorkflows', () => {
   it('should return empty array when workflows directory does not exist', async () => {
-    const workflows = await loadAllWorkflows(tempDir)
+    const workflows = await loadUserWorkflows(tempDir)
     expect(workflows).toEqual([])
   })
 
@@ -57,7 +60,7 @@ describe('loadAllWorkflows', () => {
     })
     await writeFile(join(workflowsDir, 'test.workflow.json'), JSON.stringify(workflow))
 
-    const loaded = await loadAllWorkflows(tempDir)
+    const loaded = await loadUserWorkflows(tempDir)
     expect(loaded).toHaveLength(1)
     expect(loaded[0]!.metadata.id).toBe('test')
     expect(loaded[0]!.metadata.name).toBe('Test')
@@ -72,7 +75,7 @@ describe('loadAllWorkflows', () => {
       steps: [{ id: 's', name: 's', type: 'agent', toolMode: 'builder', phase: 'build', transitions: [] }],
     }))
 
-    const workflows = await loadAllWorkflows(tempDir)
+    const workflows = await loadUserWorkflows(tempDir)
     expect(workflows).toEqual([])
   })
 
@@ -84,7 +87,7 @@ describe('loadAllWorkflows', () => {
       steps: [],
     }))
 
-    const workflows = await loadAllWorkflows(tempDir)
+    const workflows = await loadUserWorkflows(tempDir)
     expect(workflows).toEqual([])
   })
 
@@ -93,7 +96,7 @@ describe('loadAllWorkflows', () => {
     await mkdir(workflowsDir, { recursive: true })
     await writeFile(join(workflowsDir, 'broken.workflow.json'), 'not valid json{{{')
 
-    const workflows = await loadAllWorkflows(tempDir)
+    const workflows = await loadUserWorkflows(tempDir)
     expect(workflows).toEqual([])
   })
 
@@ -107,9 +110,54 @@ describe('loadAllWorkflows', () => {
     })
     await writeFile(join(workflowsDir, 'valid.workflow.json'), JSON.stringify(workflow))
 
-    const workflows = await loadAllWorkflows(tempDir)
+    const workflows = await loadUserWorkflows(tempDir)
     expect(workflows).toHaveLength(1)
     expect(workflows[0]!.metadata.id).toBe('valid')
+  })
+})
+
+describe('loadAllWorkflows', () => {
+  it('should return default workflows when workflows directory does not exist', async () => {
+    const defaults = await loadDefaultWorkflows()
+    const workflows = await loadAllWorkflows(tempDir)
+    expect(workflows.length).toBeGreaterThanOrEqual(defaults.length)
+  })
+
+  it('should merge defaults and user workflows', async () => {
+    const workflowsDir = join(tempDir, 'workflows')
+    await mkdir(workflowsDir, { recursive: true })
+
+    const workflow = makeWorkflow({
+      metadata: { id: 'test', name: 'Test', description: 'A test workflow', version: '1.0' },
+    })
+    await writeFile(join(workflowsDir, 'test.workflow.json'), JSON.stringify(workflow))
+
+    const defaults = await loadDefaultWorkflows()
+    const workflows = await loadAllWorkflows(tempDir)
+    expect(workflows.some(w => w.metadata.id === 'test')).toBe(true)
+    expect(workflows.length).toBeGreaterThanOrEqual(defaults.length + 1)
+  })
+
+  it('should give precedence to user workflows over defaults', async () => {
+    const workflowsDir = join(tempDir, 'workflows')
+    await mkdir(workflowsDir, { recursive: true })
+
+    const workflow = makeWorkflow({
+      metadata: { id: 'custom', name: 'Custom', description: 'Custom', version: '1.0' },
+    })
+    await writeFile(join(workflowsDir, 'custom.workflow.json'), JSON.stringify(workflow))
+
+    const workflows = await loadAllWorkflows(tempDir)
+    const custom = workflows.find(w => w.metadata.id === 'custom')
+    expect(custom).toBeDefined()
+  })
+})
+
+describe('loadDefaultWorkflows', () => {
+  it('should load bundled default workflows', async () => {
+    const defaults = await loadDefaultWorkflows()
+    expect(defaults.length).toBeGreaterThanOrEqual(1)
+    expect(defaults.some(w => w.metadata.id === 'default')).toBe(true)
   })
 })
 
@@ -155,7 +203,6 @@ describe('CRUD', () => {
     await saveWorkflow(tempDir, workflow)
     const raw = await readFile(join(tempDir, 'workflows', 'fmt.workflow.json'), 'utf-8')
 
-    // Should be pretty-printed with trailing newline
     expect(raw).toContain('\n')
     expect(raw.endsWith('\n')).toBe(true)
     expect(JSON.parse(raw)).toEqual(workflow)
@@ -167,16 +214,22 @@ describe('CRUD', () => {
     })
 
     await saveWorkflow(tempDir, workflow)
-    const deleted = await deleteWorkflow(tempDir, 'deleteme')
-    expect(deleted).toBe(true)
+    const result = await deleteWorkflow(tempDir, 'deleteme')
+    expect(result.success).toBe(true)
 
     const workflows = await loadAllWorkflows(tempDir)
     expect(workflows.find(w => w.metadata.id === 'deleteme')).toBeUndefined()
   })
 
+  it('should not delete built-in default workflows', async () => {
+    const result = await deleteWorkflow(tempDir, 'default')
+    expect(result.success).toBe(false)
+    expect(result.reason).toBe('Cannot delete built-in defaults')
+  })
+
   it('should return false when deleting non-existent workflow', async () => {
-    const deleted = await deleteWorkflow(tempDir, 'nonexistent')
-    expect(deleted).toBe(false)
+    const result = await deleteWorkflow(tempDir, 'nonexistent')
+    expect(result.success).toBe(false)
   })
 
   it('should check workflow existence', async () => {
@@ -189,12 +242,20 @@ describe('CRUD', () => {
   })
 })
 
-describe('ensureDefaultWorkflows', () => {
-  it('should copy bundled defaults to config dir', async () => {
-    await ensureDefaultWorkflows(tempDir)
-    const workflows = await loadAllWorkflows(tempDir)
+describe('isDefaultWorkflow', () => {
+  it('should correctly identify built-in default workflows', async () => {
+    const defaults = await loadDefaultWorkflows()
+    for (const wf of defaults) {
+      expect(await isDefaultWorkflow(wf.metadata.id)).toBe(true)
+    }
+    expect(await isDefaultWorkflow('nonexistent-workflow')).toBe(false)
+  })
+})
 
-    // Should have at least some defaults
-    expect(workflows.length).toBeGreaterThanOrEqual(0)
+describe('getDefaultWorkflowIds', () => {
+  it('should return all default workflow IDs', async () => {
+    const ids = await getDefaultWorkflowIds()
+    expect(ids.length).toBeGreaterThan(0)
+    expect(ids).toContain('default')
   })
 })

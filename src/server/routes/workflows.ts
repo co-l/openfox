@@ -1,23 +1,24 @@
 import { Router } from 'express'
-import { loadAllWorkflows, findWorkflowById, saveWorkflow, deleteWorkflow, workflowExists, getDefaultWorkflowIds, getModifiedDefaultWorkflowIds, restoreDefaultWorkflow, restoreAllDefaultWorkflows } from '../workflows/registry.js'
+import { loadDefaultWorkflows, loadUserWorkflows, loadAllWorkflows, findWorkflowById, saveWorkflow, deleteWorkflow, workflowExists, getDefaultWorkflowIds, getDefaultWorkflowContent } from '../workflows/registry.js'
 import { TEMPLATE_VARIABLES } from '../workflows/executor.js'
 import type { WorkflowDefinition } from '../workflows/types.js'
 import type { Config } from '../../shared/types.js'
+import { computeOverrideIds } from './crud-helpers.js'
 
 export function createWorkflowRoutes(configDir: string, config: Config): Router {
   const router = Router()
 
   router.get('/', async (_req, res) => {
-    const [workflows, defaultIds, modifiedIds] = await Promise.all([
-      loadAllWorkflows(configDir),
-      getDefaultWorkflowIds(),
-      getModifiedDefaultWorkflowIds(configDir),
+    const [defaults, userItems] = await Promise.all([
+      loadDefaultWorkflows(),
+      loadUserWorkflows(configDir),
     ])
+    const overrideIds = computeOverrideIds(defaults, userItems)
     res.json({
-      workflows: workflows.map(p => ({ ...p.metadata, startCondition: p.startCondition })),
+      defaults: defaults.map(p => ({ ...p.metadata, startCondition: p.startCondition })),
+      userItems: userItems.map(p => ({ ...p.metadata, startCondition: p.startCondition })),
       activeWorkflowId: config.activeWorkflowId ?? 'default',
-      defaultIds,
-      modifiedIds,
+      overrideIds,
     })
   })
 
@@ -25,23 +26,18 @@ export function createWorkflowRoutes(configDir: string, config: Config): Router 
     res.json({ variables: TEMPLATE_VARIABLES })
   })
 
+  router.get('/defaults/:id', async (req, res) => {
+    const { id } = req.params
+    const content = await getDefaultWorkflowContent(id)
+    if (!content) {
+      return res.status(404).json({ error: 'Default workflow not found' })
+    }
+    res.json(content)
+  })
+
   router.get('/default-ids', async (_req, res) => {
     const ids = await getDefaultWorkflowIds()
     res.json({ ids })
-  })
-
-  router.post('/restore-all-defaults', async (_req, res) => {
-    const count = await restoreAllDefaultWorkflows(configDir)
-    res.json({ success: true, count })
-  })
-
-  router.post('/:id/restore-default', async (req, res) => {
-    const { id } = req.params
-    const restored = await restoreDefaultWorkflow(configDir, id as string)
-    if (!restored) {
-      return res.status(404).json({ error: 'No bundled default found for this workflow' })
-    }
-    res.json({ success: true })
   })
 
   router.get('/:id', async (req, res) => {
@@ -59,7 +55,8 @@ export function createWorkflowRoutes(configDir: string, config: Config): Router 
     if (!body?.metadata?.id || !body?.steps?.length) {
       return res.status(400).json({ error: 'Missing required fields: metadata.id, steps' })
     }
-    if (await workflowExists(configDir, body.metadata.id)) {
+    const exists = await workflowExists(configDir, body.metadata.id)
+    if (exists) {
       return res.status(409).json({ error: 'A workflow with this ID already exists' })
     }
     await saveWorkflow(configDir, body)
@@ -68,7 +65,9 @@ export function createWorkflowRoutes(configDir: string, config: Config): Router 
 
   router.put('/:id', async (req, res) => {
     const { id } = req.params
-    if (!await workflowExists(configDir, id as string)) {
+    const workflows = await loadAllWorkflows(configDir)
+    const existing = findWorkflowById(id as string, workflows)
+    if (!existing) {
       return res.status(404).json({ error: 'Workflow not found' })
     }
     const body = req.body as WorkflowDefinition
@@ -82,14 +81,28 @@ export function createWorkflowRoutes(configDir: string, config: Config): Router 
 
   router.delete('/:id', async (req, res) => {
     const { id } = req.params
-    if (id === 'default') {
-      return res.status(400).json({ error: 'Cannot delete the default workflow' })
-    }
-    const deleted = await deleteWorkflow(configDir, id as string)
-    if (!deleted) {
-      return res.status(404).json({ error: 'Workflow not found' })
+    const result = await deleteWorkflow(configDir, id as string)
+    if (!result.success) {
+      return res.status(403).json({ error: result.reason ?? 'Cannot delete this workflow' })
     }
     res.json({ success: true })
+  })
+
+  router.post('/:id/duplicate', async (req, res) => {
+    const { id } = req.params
+    const defaults = await loadDefaultWorkflows()
+    const userItems = await loadUserWorkflows(configDir)
+    const source = defaults.find(w => w.metadata.id === id) ?? userItems.find(w => w.metadata.id === id)
+    if (!source) {
+      return res.status(404).json({ error: 'Workflow not found' })
+    }
+    const newId = `${id}-copy-${Date.now()}`
+    const duplicated: WorkflowDefinition = {
+      ...source,
+      metadata: { ...source.metadata, id: newId, name: `${source.metadata.name} (copy)` },
+    }
+    await saveWorkflow(configDir, duplicated)
+    res.status(201).json(duplicated)
   })
 
   return router

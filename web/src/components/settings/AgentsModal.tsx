@@ -1,18 +1,16 @@
 import { useEffect, useState } from 'react'
 import { Modal } from '../shared/Modal'
 import { Button } from '../shared/Button'
-import { EditButton } from '../shared/IconButton'
 import { DropdownMenu } from '../shared/DropdownMenu'
-import { useAgentsStore, type AgentInfo, type AgentFull } from '../../stores/agents'
+import { useAgentsStore, type AgentFull } from '../../stores/agents'
 import { authFetch } from '../../lib/api'
 import {
-  ConfirmButton,
-  DeleteIcon,
-  RestoreIcon,
   FormField,
   ModalActions,
   ErrorBanner,
 } from './CRUDModal'
+import { CRUDListItem } from './CRUDListItem'
+import type { AgentInfo } from '../../stores/agents'
 
 interface AgentsModalProps {
   isOpen: boolean
@@ -24,88 +22,101 @@ function toSlug(name: string): string {
   return name.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '')
 }
 
-function renderAgentListItem(
-  agent: AgentInfo,
-  confirmDeleteId: string | null,
-  modifiedIds: string[],
-  confirmRestoreId: string | null,
-  restoreDefault: (id: string) => Promise<boolean>,
-  setConfirmRestoreId: (id: string | null) => void,
-  handleEdit: (id: string) => void,
-  handleDelete: (id: string) => void
-) {
+function AgentListItem({
+  agent,
+  isBuiltIn,
+  isConfirmingDelete,
+  onView,
+  onEdit,
+  onDuplicate,
+  onDelete,
+}: {
+  agent: AgentInfo
+  isBuiltIn: boolean
+  isConfirmingDelete: boolean
+  onView: () => void
+  onEdit?: () => void
+  onDuplicate: () => void
+  onDelete?: () => void
+}) {
   return (
-    <AgentListItem
-      key={agent.id}
-      agent={agent}
-      isConfirmingDelete={confirmDeleteId === agent.id}
-      isModified={modifiedIds.includes(agent.id)}
-      isConfirmingRestore={confirmRestoreId === agent.id}
-      onRestore={async () => { await restoreDefault(agent.id); setConfirmRestoreId(null) }}
-      onEdit={() => handleEdit(agent.id)}
-      onDelete={() => handleDelete(agent.id)}
-    />
+    <CRUDListItem
+      isBuiltIn={isBuiltIn}
+      isConfirmingDelete={isConfirmingDelete}
+      onView={onView}
+      onEdit={onEdit}
+      onDuplicate={onDuplicate}
+      onDelete={onDelete}
+    >
+      <div className="flex items-center gap-2">
+        <span className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: agent.color ?? '#6b7280' }} />
+        <span className="text-text-primary text-sm font-medium">{agent.name}</span>
+        <span className="text-text-muted text-xs font-mono">{agent.id}</span>
+        {isBuiltIn && (
+          <span className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-bg-primary text-text-muted">Built-in</span>
+        )}
+      </div>
+      {agent.description && (
+        <p className="text-text-secondary text-xs mt-0.5 truncate">{agent.description}</p>
+      )}
+      <div className="flex flex-wrap gap-1 mt-1">
+        {agent.allowedTools.slice(0, 5).map(tool => (
+          <span key={tool} className="text-[10px] font-mono text-text-muted bg-bg-primary px-1 py-0.5 rounded">
+            {tool}
+          </span>
+        ))}
+        {agent.allowedTools.length > 5 && (
+          <span className="text-[10px] text-text-muted">+{agent.allowedTools.length - 5} more</span>
+        )}
+      </div>
+    </CRUDListItem>
   )
 }
 
-function AgentListItem({
-  agent,
-  isConfirmingDelete,
-  isConfirmingRestore,
-  isModified,
-  onRestore,
+function AgentGroup({
+  title,
+  agents,
+  subagents,
+  isBuiltIn,
+  onView,
+  onDuplicate,
   onEdit,
   onDelete,
 }: {
-  agent: { id: string; name: string; description: string; allowedTools: string[]; color?: string }
-  isConfirmingDelete: boolean
-  isConfirmingRestore: boolean
-  isModified: boolean
-  onRestore: () => void
-  onEdit: () => void
-  onDelete: () => void
+  title: string
+  agents: AgentInfo[]
+  subagents: AgentInfo[]
+  isBuiltIn: boolean
+  onView: (id: string) => void
+  onDuplicate: (id: string) => void
+  onEdit?: (id: string) => void
+  onDelete?: (id: string) => void
 }) {
+  if (agents.length === 0 && subagents.length === 0) return null
+  const renderAgentItem = (agent: AgentInfo) => (
+    <AgentListItem
+      key={agent.id}
+      agent={agent}
+      isBuiltIn={isBuiltIn}
+      isConfirmingDelete={false}
+      onView={() => onView(agent.id)}
+      onEdit={isBuiltIn ? undefined : () => onEdit?.(agent.id)}
+      onDuplicate={() => onDuplicate(agent.id)}
+      onDelete={isBuiltIn ? undefined : () => onDelete?.(agent.id)}
+    />
+  )
   return (
-    <div className="flex items-center justify-between p-3 rounded border border-border bg-bg-tertiary">
-      <div className="min-w-0 flex-1 mr-3">
-        <div className="flex items-center gap-2">
-          <span className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: agent.color ?? '#6b7280' }} />
-          <span className="text-text-primary text-sm font-medium">{agent.name}</span>
-          <span className="text-text-muted text-xs font-mono">{agent.id}</span>
-          {isModified && (
-            <span className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-amber-500/15 text-amber-400">modified</span>
-          )}
-        </div>
-        {agent.description && (
-          <p className="text-text-secondary text-xs mt-0.5 truncate">{agent.description}</p>
-        )}
-        <div className="flex flex-wrap gap-1 mt-1">
-          {agent.allowedTools.slice(0, 5).map(tool => (
-            <span key={tool} className="text-[10px] font-mono text-text-muted bg-bg-primary px-1 py-0.5 rounded">
-              {tool}
-            </span>
-          ))}
-          {agent.allowedTools.length > 5 && (
-            <span className="text-[10px] text-text-muted">+{agent.allowedTools.length - 5} more</span>
-          )}
-        </div>
-      </div>
-
-      <div className="flex items-center gap-1.5 flex-shrink-0">
-        {isModified && (
-          isConfirmingRestore ? (
-            <ConfirmButton type="restore" onConfirm={onRestore} onCancel={() => {}} />
-          ) : (
-            <RestoreIcon onClick={onRestore} />
-          )
-        )}
-
-        <EditButton onClick={onEdit} />
-
-        {isConfirmingDelete ? (
-          <ConfirmButton type="delete" onConfirm={onDelete} onCancel={() => {}} />
-        ) : (
-          <DeleteIcon onClick={onDelete} />
+    <div>
+      <h3 className="text-xs font-medium text-text-secondary mb-2 uppercase tracking-wide">{title}</h3>
+      <div className="space-y-2">
+        {agents.map(renderAgentItem)}
+        {subagents.length > 0 && (
+          <div className="mt-3">
+            <div className="text-xs text-text-muted uppercase tracking-wider mb-1.5">Sub-agents</div>
+            <div className="space-y-2">
+              {subagents.map(renderAgentItem)}
+            </div>
+          </div>
         )}
       </div>
     </div>
@@ -113,19 +124,19 @@ function AgentListItem({
 }
 
 export function AgentsModal({ isOpen, onClose, initialEditId }: AgentsModalProps) {
-  const agents = useAgentsStore(state => state.agents)
-  const modifiedIds = useAgentsStore(state => state.modifiedIds)
+  const defaults = useAgentsStore(state => state.defaults)
+  const userItems = useAgentsStore(state => state.userItems)
   const loading = useAgentsStore(state => state.loading)
   const fetchAgents = useAgentsStore(state => state.fetchAgents)
   const fetchAgent = useAgentsStore(state => state.fetchAgent)
+  const fetchDefaultContent = useAgentsStore(state => state.fetchDefaultContent)
   const createAgent = useAgentsStore(state => state.createAgent)
   const updateAgent = useAgentsStore(state => state.updateAgent)
   const deleteAgentAction = useAgentsStore(state => state.deleteAgent)
-  const restoreDefault = useAgentsStore(state => state.restoreDefault)
-  const restoreAllDefaults = useAgentsStore(state => state.restoreAllDefaults)
 
   const [view, setView] = useState<'list' | 'edit'>('list')
   const [editingId, setEditingId] = useState<string | null>(null)
+  const [isReadOnly, setIsReadOnly] = useState(false)
 
   const [formName, setFormName] = useState('')
   const [formId, setFormId] = useState('')
@@ -137,9 +148,6 @@ export function AgentsModal({ isOpen, onClose, initialEditId }: AgentsModalProps
   const [formError, setFormError] = useState('')
   const [saving, setSaving] = useState(false)
 
-  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null)
-  const [confirmRestoreId, setConfirmRestoreId] = useState<string | null>(null)
-  const [confirmRestoreAll, setConfirmRestoreAll] = useState(false)
   const [availableTools, setAvailableTools] = useState<{ name: string; actions: string[] }[]>([])
 
   function parseAllowedTools(tools: string[]): Map<string, Set<string>> {
@@ -199,7 +207,7 @@ export function AgentsModal({ isOpen, onClose, initialEditId }: AgentsModalProps
     setFormTools(serializeTools(newGranular))
   }
 
-  const populateFormFromAgent = (agent: AgentFull, clearError = false) => {
+  const populateFormFromAgent = (agent: AgentFull) => {
     setFormName(agent.metadata.name)
     setFormId(agent.metadata.id)
     setFormDescription(agent.metadata.description)
@@ -207,30 +215,79 @@ export function AgentsModal({ isOpen, onClose, initialEditId }: AgentsModalProps
     setFormTools(agent.metadata.allowedTools)
     setFormColor(agent.metadata.color ?? '#6b7280')
     setFormPrompt(agent.prompt)
-    if (clearError) setFormError('')
+    setFormError('')
+  }
+
+  const applyDuplicateFromContent = (content: AgentFull, id: string, setAsNew: boolean) => {
+    setFormName(content.metadata.name + ' (copy)')
+    setFormId(`${id}-copy-${Date.now()}`)
+    setFormDescription(content.metadata.description)
+    setFormSubagent(content.metadata.subagent)
+    setFormTools(content.metadata.allowedTools)
+    setFormColor(content.metadata.color ?? '#6b7280')
+    setFormPrompt(content.prompt)
+    setFormError('')
+    if (setAsNew) {
+      setEditingId(null)
+    }
+    setIsReadOnly(false)
+    setView('edit')
+  }
+
+  const applyViewFromContent = (content: AgentFull, id: string) => {
+    populateFormFromAgent(content)
+    setEditingId(id)
+    setIsReadOnly(true)
+    setView('edit')
   }
 
   useEffect(() => {
     if (isOpen) {
       fetchAgents()
       authFetch('/api/tools').then(r => r.json()).then(d => setAvailableTools(d.tools || [])).catch(() => setAvailableTools([]))
-      setConfirmDeleteId(null)
-      setConfirmRestoreId(null)
-      setConfirmRestoreAll(false)
+      
       if (initialEditId) {
-        setView('edit')
-        setEditingId(initialEditId)
-        setFormError('')
-        fetchAgent(initialEditId).then(agent => {
-          if (!agent) return
-          populateFormFromAgent(agent)
-        })
+        const isDefault = defaults.some(d => d.id === initialEditId)
+        if (isDefault) {
+          fetchDefaultContent(initialEditId).then(content => {
+            if (!content) return
+            applyDuplicateFromContent(content, initialEditId, true)
+          })
+        } else {
+          fetchAgent(initialEditId).then(agent => {
+            if (!agent) return
+            populateFormFromAgent(agent)
+            setEditingId(initialEditId)
+            setIsReadOnly(false)
+            setView('edit')
+          })
+        }
       } else {
         setView('list')
         setEditingId(null)
+        setIsReadOnly(false)
       }
     }
-  }, [isOpen, fetchAgents, fetchAgent, initialEditId])
+  }, [isOpen, fetchAgents, fetchAgent, fetchDefaultContent, initialEditId])
+
+  const handleView = async (agentId: string) => {
+    const isDefault = defaults.some(d => d.id === agentId)
+    if (isDefault) {
+      const content = await fetchDefaultContent(agentId)
+      if (!content) return
+      applyViewFromContent(content, agentId)
+    } else {
+      const agent = await fetchAgent(agentId)
+      if (!agent) return
+      applyViewFromContent(agent, agentId)
+    }
+  }
+
+  const handleDuplicate = async (agentId: string) => {
+    const content = await fetchDefaultContent(agentId)
+    if (!content) return
+    applyDuplicateFromContent(content, agentId, true)
+  }
 
   const handleNew = () => {
     setEditingId(null)
@@ -242,20 +299,21 @@ export function AgentsModal({ isOpen, onClose, initialEditId }: AgentsModalProps
     setFormColor('#6b7280')
     setFormPrompt('')
     setFormError('')
+    setIsReadOnly(false)
     setView('edit')
   }
 
   const handleEdit = async (agentId: string) => {
     const agent = await fetchAgent(agentId)
     if (!agent) return
+    populateFormFromAgent(agent)
     setEditingId(agentId)
-    populateFormFromAgent(agent, true)
+    setIsReadOnly(false)
     setView('edit')
   }
 
   const handleDelete = async (agentId: string) => {
     await deleteAgentAction(agentId)
-    setConfirmDeleteId(null)
   }
 
   const handleSave = async () => {
@@ -299,6 +357,7 @@ export function AgentsModal({ isOpen, onClose, initialEditId }: AgentsModalProps
       onClose()
     } else {
       setView('list')
+      setIsReadOnly(false)
     }
   }
 
@@ -309,40 +368,45 @@ export function AgentsModal({ isOpen, onClose, initialEditId }: AgentsModalProps
     }
   }
 
+  const defaultSubAgents = defaults.filter(a => a.subagent)
+  const defaultTopLevelAgents = defaults.filter(a => !a.subagent)
+  const userSubAgents = userItems.filter(a => a.subagent)
+  const userTopLevelAgents = userItems.filter(a => !a.subagent)
+
   if (view === 'edit') {
     return (
-      <Modal isOpen={isOpen} onClose={handleCancel} title={editingId ? 'Edit Agent' : 'New Agent'} size="xl">
+      <Modal isOpen={isOpen} onClose={handleCancel} title={isReadOnly ? `${formName}` : (editingId ? 'Edit Agent' : 'New Agent')} size="xl">
         <div className="flex flex-col h-full">
           <div className="space-y-3">
             {formError && <ErrorBanner message={formError} />}
 
             <div className="grid grid-cols-2 gap-3">
-              <FormField label="Name" value={formName} onChange={handleNameChange} placeholder="My Agent" />
-              <FormField label="ID" value={formId} onChange={setFormId} readOnly={!!editingId} placeholder="my_agent" hint={editingId ? '(read-only)' : undefined} mono />
+              <FormField label="Name" value={formName} onChange={handleNameChange} placeholder="My Agent" readOnly={isReadOnly} />
+              <FormField label="ID" value={formId} onChange={setFormId} readOnly={true} placeholder="my_agent" hint="(read-only)" mono />
             </div>
 
             <div className="grid grid-cols-2 gap-3">
-              <FormField label="Description" value={formDescription} onChange={setFormDescription} placeholder="What this agent does" />
+              <FormField label="Description" value={formDescription} onChange={setFormDescription} placeholder="What this agent does" readOnly={isReadOnly} />
               <div>
                 <label className="block text-xs text-text-secondary mb-1">Type</label>
                 <div className="flex items-center gap-3 h-[34px]">
                   <button
-                    onClick={() => setFormSubagent(true)}
+                    onClick={() => !isReadOnly && setFormSubagent(true)}
                     className={`px-2.5 py-1 rounded text-xs font-medium transition-colors ${
                       formSubagent
                         ? 'bg-accent-primary/25 text-accent-primary'
                         : 'bg-bg-tertiary text-text-muted hover:text-text-secondary'
-                    }`}
+                    } ${isReadOnly ? 'pointer-events-none opacity-60' : ''}`}
                   >
                     Sub-agent
                   </button>
                   <button
-                    onClick={() => setFormSubagent(false)}
+                    onClick={() => !isReadOnly && setFormSubagent(false)}
                     className={`px-2.5 py-1 rounded text-xs font-medium transition-colors ${
                       !formSubagent
                         ? 'bg-accent-primary/25 text-accent-primary'
                         : 'bg-bg-tertiary text-text-muted hover:text-text-secondary'
-                    }`}
+                    } ${isReadOnly ? 'pointer-events-none opacity-60' : ''}`}
                   >
                     Top-level
                   </button>
@@ -351,7 +415,8 @@ export function AgentsModal({ isOpen, onClose, initialEditId }: AgentsModalProps
                     <input
                       type="color"
                       value={formColor}
-                      onChange={e => setFormColor(e.target.value)}
+                      onChange={e => !isReadOnly && setFormColor(e.target.value)}
+                      disabled={isReadOnly}
                       className="w-6 h-6 rounded cursor-pointer border border-border bg-transparent"
                     />
                   </div>
@@ -373,7 +438,7 @@ export function AgentsModal({ isOpen, onClose, initialEditId }: AgentsModalProps
                       className={`px-1.5 py-0.5 rounded text-xs font-mono transition-colors flex items-center gap-1 ${
                         isSelected
                           ? 'bg-accent-primary/25 text-accent-primary'
-                          : 'bg-bg-primary text-text-muted hover:text-text-secondary'
+                          : 'bg-bg-primary text-text-muted'
                       }`}
                     >
                       <span>{tool.name}</span>
@@ -387,14 +452,26 @@ export function AgentsModal({ isOpen, onClose, initialEditId }: AgentsModalProps
                     return (
                       <button
                         key={tool.name}
-                        onClick={() => toggleTool(tool.name)}
+                        onClick={() => !isReadOnly && toggleTool(tool.name)}
                         className={`px-1.5 py-0.5 rounded text-xs font-mono transition-colors flex items-center gap-1 ${
                           isSelected
                             ? 'bg-accent-primary/25 text-accent-primary'
                             : 'bg-bg-primary text-text-muted hover:text-text-secondary'
-                        }`}
+                        } ${isReadOnly ? 'pointer-events-none' : 'cursor-pointer'}`}
                       >
                         <span>{tool.name}</span>
+                      </button>
+                    )
+                  }
+
+                  if (isReadOnly) {
+                    return (
+                      <button
+                        key={tool.name}
+                        className="px-1.5 py-0.5 rounded text-xs font-mono flex items-center gap-1 bg-bg-primary text-text-muted pointer-events-none opacity-60"
+                      >
+                        <span>{tool.name}</span>
+                        <span className="text-[10px]">*</span>
                       </button>
                     )
                   }
@@ -413,6 +490,7 @@ export function AgentsModal({ isOpen, onClose, initialEditId }: AgentsModalProps
                                 id={`${tool.name}-${action}`}
                                 checked={selectedActions.has(action)}
                                 onChange={() => toggleToolAction(tool.name, action)}
+                                disabled={isReadOnly}
                                 className="w-3 h-3 rounded accent-accent-primary"
                               />
                               <span>{action}</span>
@@ -441,24 +519,42 @@ export function AgentsModal({ isOpen, onClose, initialEditId }: AgentsModalProps
             </div>
           </div>
 
-          <div className="flex-1 min-h-[150px] mt-5 overflow-hidden">
+          <div className="flex-1 min-h-[150px] border-t border-border pt-3 flex flex-col">
             <label className="block text-xs text-text-secondary mb-1">Prompt</label>
             <textarea
               value={formPrompt}
-              onChange={e => setFormPrompt(e.target.value)}
+              onChange={e => !isReadOnly && setFormPrompt(e.target.value)}
+              readOnly={isReadOnly}
               placeholder="Instructions for this agent..."
-              className="w-full h-full px-3 py-2 bg-bg-tertiary border border-border rounded text-sm font-mono resize-none focus:outline-none focus:ring-1 focus:ring-accent-primary"
+              className={`flex-1 w-full px-3 py-2 bg-bg-tertiary border border-border rounded text-sm font-mono resize-none focus:outline-none focus:ring-1 focus:ring-accent-primary ${isReadOnly ? 'opacity-60' : ''}`}
             />
           </div>
 
-          <ModalActions onCancel={handleCancel} onSave={handleSave} saving={saving} saveDisabled={!formName || !formPrompt} />
+          <ModalActions
+            onCancel={handleCancel}
+            onSave={handleSave}
+            saving={saving}
+            saveDisabled={!formName || !formPrompt || isReadOnly}
+          />
+          {isReadOnly && (
+            <div className="flex justify-end mt-2">
+              <Button
+                variant="primary"
+                onClick={() => {
+                  setFormName(formName + ' (copy)')
+                  setFormId(`${editingId}-copy-${Date.now()}`)
+                  setEditingId(null)
+                  setIsReadOnly(false)
+                }}
+              >
+                Duplicate & Customize
+              </Button>
+            </div>
+          )}
         </div>
       </Modal>
     )
   }
-
-  const subAgents = agents.filter(a => a.subagent)
-  const topLevelAgents = agents.filter(a => !a.subagent)
 
   return (
     <Modal isOpen={isOpen} onClose={onClose} title="Agents" size="lg">
@@ -467,78 +563,40 @@ export function AgentsModal({ isOpen, onClose, initialEditId }: AgentsModalProps
           Agents define behavior, tools, and prompts for top-level modes and sub-agents.
         </p>
         <div className="flex items-center gap-2 flex-shrink-0 ml-3">
-          {modifiedIds.length > 0 && (
-            confirmRestoreAll ? (
-              <div className="flex items-center gap-1">
-                <button
-                  onClick={async () => { await restoreAllDefaults(); setConfirmRestoreAll(false) }}
-                  className="px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-400 text-xs hover:bg-amber-500/30 transition-colors"
-                >
-                  Confirm
-                </button>
-                <button
-                  onClick={() => setConfirmRestoreAll(false)}
-                  className="px-1.5 py-0.5 rounded text-text-muted text-xs hover:bg-bg-primary transition-colors"
-                >
-                  Cancel
-                </button>
-              </div>
-            ) : (
-              <button
-                onClick={() => setConfirmRestoreAll(true)}
-                className="px-2 py-1 rounded text-xs text-text-muted hover:text-amber-400 hover:bg-amber-500/10 transition-colors"
-                title="Restore all agents to defaults"
-              >
-                Restore Defaults
-              </button>
-            )
-          )}
           <Button variant="primary" size="sm" onClick={handleNew}>
             + New
           </Button>
         </div>
       </div>
 
-      {loading && agents.length === 0 ? (
+      {loading && defaults.length === 0 && userItems.length === 0 ? (
         <div className="text-text-muted text-sm">Loading agents...</div>
-      ) : agents.length === 0 ? (
+      ) : defaults.length === 0 && userItems.length === 0 ? (
         <div className="text-text-muted text-sm">No agents defined.</div>
       ) : (
         <div className="space-y-4">
-          {topLevelAgents.length > 0 && (
-            <div>
-              <div className="text-xs text-text-muted uppercase tracking-wider mb-1.5">Top-level</div>
-              <div className="space-y-2">
-                {topLevelAgents.map(agent => renderAgentListItem(
-                  agent,
-                  confirmDeleteId,
-                  modifiedIds,
-                  confirmRestoreId,
-                  restoreDefault,
-                  setConfirmRestoreId,
-                  handleEdit,
-                  handleDelete
-                ))}
-              </div>
-            </div>
+          {defaults.length > 0 && (
+            <AgentGroup
+              title="Built-in"
+              agents={defaultTopLevelAgents}
+              subagents={defaultSubAgents}
+              isBuiltIn={true}
+              onView={handleView}
+              onDuplicate={handleDuplicate}
+            />
           )}
 
-          {subAgents.length > 0 && (
-            <div>
-              <div className="text-xs text-text-muted uppercase tracking-wider mb-1.5">Sub-agents</div>
-              <div className="space-y-2">
-                {subAgents.map(agent => renderAgentListItem(
-                  agent,
-                  confirmDeleteId,
-                  modifiedIds,
-                  confirmRestoreId,
-                  restoreDefault,
-                  setConfirmRestoreId,
-                  handleEdit,
-                  handleDelete
-                ))}
-              </div>
-            </div>
+          {userItems.length > 0 && (
+            <AgentGroup
+              title="Custom"
+              agents={userTopLevelAgents}
+              subagents={userSubAgents}
+              isBuiltIn={false}
+              onView={handleView}
+              onDuplicate={handleDuplicate}
+              onEdit={handleEdit}
+              onDelete={handleDelete}
+            />
           )}
         </div>
       )}
