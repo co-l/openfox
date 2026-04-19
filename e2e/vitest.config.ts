@@ -9,6 +9,10 @@ export default defineConfig({
   test: {
     testTimeout: 15_000,
     hookTimeout: 10_000,
+    onConsoleLog(log: string): boolean {
+      if (log.includes('--localstorage-file')) return false
+      return true
+    },
     
     // Run tests in parallel with fork pool
     // Each test file gets its own in-process server on a dynamic port

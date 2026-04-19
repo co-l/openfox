@@ -54,6 +54,8 @@ const sessionStoreState = {
   listSessions: vi.fn(),
 }
 
+const sessionStoreStateRef = { current: sessionStoreState }
+
 const projectStoreState = {
   currentProject: { id: 'project-1', name: 'Project', workdir: '/tmp/project' },
 }
@@ -67,7 +69,7 @@ vi.mock('wouter', () => ({
 }))
 
 vi.mock('../../stores/session', () => ({
-  useSessionStore: (selector: (state: typeof sessionStoreState) => unknown) => selector(sessionStoreState),
+  useSessionStore: (selector: (state: typeof sessionStoreState) => unknown) => selector(sessionStoreStateRef.current),
 }))
 
 vi.mock('../../stores/project', () => ({
@@ -106,15 +108,13 @@ describe('Sidebar', () => {
   })
 
   it('displays message count in session list', () => {
-    vi.mock('../../stores/session', () => ({
-      useSessionStore: (selector: (state: typeof sessionStoreState) => unknown) => selector({
-        ...sessionStoreState,
-        sessions: sessionStoreState.sessions.map(s => ({
-          ...s,
-          messageCount: 5,
-        })),
-      }),
-    }))
+    sessionStoreStateRef.current = {
+      ...sessionStoreState,
+      sessions: sessionStoreState.sessions.map(s => ({
+        ...s,
+        messageCount: 5,
+      })),
+    }
 
     const html = renderToStaticMarkup(<Sidebar projectId="project-1" />)
     expect(html).toContain('5 messages')
