@@ -6,12 +6,11 @@
  * User items override defaults by ID.
  */
 
-import { readdir, readFile, writeFile, mkdir, access, unlink } from 'node:fs/promises'
+import { writeFile, mkdir, unlink } from 'node:fs/promises'
 import { join, dirname } from 'node:path'
-import { constants } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import matter from 'gray-matter'
-import { logger } from '../utils/logger.js'
+import { pathExists, getDefaultIds, loadItemsFromDir } from '../shared/item-loader.js'
 import type { CommandDefinition } from './types.js'
 
 const __bundleDir = dirname(fileURLToPath(import.meta.url))
@@ -23,55 +22,25 @@ function getCommandsDir(configDir: string): string {
   return join(configDir, 'commands')
 }
 
-async function pathExists(path: string): Promise<boolean> {
-  try {
-    await access(path, constants.R_OK)
-    return true
-  } catch {
-    return false
-  }
-}
-
-async function loadCommandsFromDir(dir: string): Promise<CommandDefinition[]> {
-  if (!await pathExists(dir)) {
-    return []
-  }
-  let files: string[]
-  try {
-    files = (await readdir(dir)).filter(f => f.endsWith(COMMAND_EXTENSION))
-  } catch {
-    return []
-  }
-  const commands: CommandDefinition[] = []
-  for (const file of files) {
-    try {
-      const raw = await readFile(join(dir, file), 'utf-8')
-      const { data, content } = matter(raw)
-      if ((data as { id?: string }).id && content.trim()) {
-        commands.push({
-          metadata: data as CommandDefinition['metadata'],
-          prompt: content.trim(),
-        })
-      } else {
-        logger.warn('Skipping invalid command file', { file })
-      }
-    } catch (err) {
-      logger.warn('Failed to parse command file', { file, error: err instanceof Error ? err.message : String(err) })
-    }
-  }
-  return commands
-}
-
 export async function loadDefaultCommands(): Promise<CommandDefinition[]> {
-  let defaults = await loadCommandsFromDir(DEFAULTS_DIR)
+  let defaults = await loadItemsFromDir<CommandDefinition>(DEFAULTS_DIR, {
+    extension: COMMAND_EXTENSION,
+    logName: 'command',
+  })
   if (!defaults.length) {
-    defaults = await loadCommandsFromDir(DEFAULTS_DIR_ALT)
+    defaults = await loadItemsFromDir<CommandDefinition>(DEFAULTS_DIR_ALT, {
+      extension: COMMAND_EXTENSION,
+      logName: 'command',
+    })
   }
   return defaults
 }
 
 export async function loadUserCommands(configDir: string): Promise<CommandDefinition[]> {
-  return loadCommandsFromDir(getCommandsDir(configDir))
+  return loadItemsFromDir<CommandDefinition>(getCommandsDir(configDir), {
+    extension: COMMAND_EXTENSION,
+    logName: 'command',
+  })
 }
 
 export async function loadAllCommands(configDir: string): Promise<CommandDefinition[]> {
@@ -89,15 +58,6 @@ export async function loadAllCommands(configDir: string): Promise<CommandDefinit
   }
 
   return Array.from(commandMap.values())
-}
-
-async function getDefaultIds(dir: string, extension: string): Promise<string[]> {
-  try {
-    const files = (await readdir(dir)).filter(f => f.endsWith(extension))
-    return files.map(f => f.replace(extension, ''))
-  } catch {
-    return []
-  }
 }
 
 export async function getDefaultCommandIds(): Promise<string[]> {
