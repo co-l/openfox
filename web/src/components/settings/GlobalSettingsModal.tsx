@@ -11,7 +11,7 @@ interface GlobalSettingsModalProps {
   onClose: () => void
 }
 
-type Tab = 'instructions' | 'skills' | 'notifications' | 'advanced'
+type Tab = 'instructions' | 'skills' | 'notifications' | 'display' | 'advanced'
 
 export function GlobalSettingsModal({ isOpen, onClose }: GlobalSettingsModalProps) {
   const [activeTab, setActiveTab] = useState<Tab>('instructions')
@@ -37,6 +37,11 @@ export function GlobalSettingsModal({ isOpen, onClose }: GlobalSettingsModalProp
             onClick={() => setActiveTab('notifications')}
           />
           <TabButton
+            label="Display"
+            active={activeTab === 'display'}
+            onClick={() => setActiveTab('display')}
+          />
+          <TabButton
             label="Advanced"
             active={activeTab === 'advanced'}
             onClick={() => setActiveTab('advanced')}
@@ -51,6 +56,7 @@ export function GlobalSettingsModal({ isOpen, onClose }: GlobalSettingsModalProp
             <NotificationSettings />
           </div>
         )}
+        {activeTab === 'display' && <DisplayTab />}
         {activeTab === 'advanced' && <AdvancedTab onClose={onClose} />}
       </div>
     </Modal>
@@ -75,6 +81,79 @@ function AdvancedTab({ onClose }: { onClose: () => void }) {
         <Button variant="secondary" onClick={handleLaunchOnboarding}>
           Launch Onboarding
         </Button>
+      </div>
+    </div>
+  )
+}
+
+function DisplayTab() {
+  const settings = useSettingsStore(state => state.settings)
+  const loading = useSettingsStore(state => state.loading)
+  const getSetting = useSettingsStore(state => state.getSetting)
+  const setSetting = useSettingsStore(state => state.setSetting)
+
+  const isLoading = loading[SETTINGS_KEYS.DISPLAY_SHOW_THINKING] ?? false
+
+  const toggles = [
+    { key: SETTINGS_KEYS.DISPLAY_SHOW_THINKING, label: 'Show thinking blocks', description: 'Display AI reasoning content in the feed' },
+    { key: SETTINGS_KEYS.DISPLAY_SHOW_VERBOSE_TOOL_OUTPUT, label: 'Show expanded tool output', description: 'Always show full tool call details instead of compact view' },
+    { key: SETTINGS_KEYS.DISPLAY_SHOW_STATS, label: 'Show stats bar', description: 'Display model, tokens, and timing information' },
+    { key: SETTINGS_KEYS.DISPLAY_SHOW_AGENT_DEFINITIONS, label: 'Show agent definitions', description: 'Display agent definition injections in the feed' },
+    { key: SETTINGS_KEYS.DISPLAY_SHOW_WORKFLOW_BARS, label: 'Show workflow bars', description: 'Display workflow start and end markers' },
+  ] as const
+
+  const localValues = Object.fromEntries(
+    toggles.map(t => [t.key, settings[t.key] ?? 'true'])
+  ) as Record<typeof toggles[number]['key'], string>
+  const [local, setLocal] = useState<Record<string, boolean>>(() =>
+    Object.fromEntries(toggles.map(t => [t.key, localValues[t.key] === 'true']))
+  )
+
+  useEffect(() => {
+    toggles.forEach(t => getSetting(t.key))
+  }, [getSetting])
+
+  useEffect(() => {
+    setLocal(Object.fromEntries(toggles.map(t => [t.key, localValues[t.key] === 'true'])))
+  }, [JSON.stringify(localValues)])
+
+  const handleToggle = async (key: string) => {
+    const newValue = String(!local[key as keyof typeof local])
+    setLocal(prev => ({ ...prev, [key]: !prev[key as keyof typeof local] }))
+    await setSetting(key, newValue)
+  }
+
+  if (isLoading) {
+    return <div className="text-sm text-text-muted">Loading...</div>
+  }
+
+  return (
+    <div className="space-y-6">
+      <div>
+        <h3 className="text-sm font-medium text-text-primary mb-4">Feed Display</h3>
+        <div className="space-y-4">
+          {toggles.map(({ key, label, description }) => (
+            <label key={key} className="flex items-center justify-between cursor-pointer">
+              <div>
+                <div className="text-sm text-text-primary">{label}</div>
+                <div className="text-xs text-text-muted">{description}</div>
+              </div>
+              <button
+                type="button"
+                onClick={() => handleToggle(key)}
+                className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+                  local[key] ? 'bg-accent-primary' : 'bg-bg-tertiary'
+                }`}
+              >
+                <span
+                  className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                    local[key] ? 'translate-x-6' : 'translate-x-1'
+                  }`}
+                />
+              </button>
+            </label>
+          ))}
+        </div>
       </div>
     </div>
   )

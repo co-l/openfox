@@ -13,6 +13,8 @@ import { useAgentsStore, getAgentColor } from '../../stores/agents'
 interface AssistantMessageProps {
   message: Message
   showStats?: boolean
+  showThinking?: boolean
+  showVerboseToolOutput?: boolean
 }
 
 // Display element types for rendering
@@ -132,13 +134,14 @@ function segmentsToElements(
   return elements
 }
 
-export const AssistantMessage = memo(function AssistantMessage({ message, showStats = true }: AssistantMessageProps) {
+export const AssistantMessage = memo(function AssistantMessage({ message, showStats = true, showThinking = true, showVerboseToolOutput = true }: AssistantMessageProps) {
   const criteria = useSessionStore(state => state.currentSession?.criteria)
   const agentDefaults = useAgentsStore(state => state.defaults)
   const agentUserItems = useAgentsStore(state => state.userItems)
   const agents = [...agentDefaults, ...agentUserItems]
   const rawElements = messageToElements(message, showStats)
-  const elements = groupConsecutiveCriteria(rawElements)
+  const filteredElements = showThinking ? rawElements : rawElements.filter(e => e.type !== 'thinking')
+  const elements = groupConsecutiveCriteria(filteredElements)
   
   if (elements.length === 0) return null
   
@@ -186,6 +189,7 @@ export const AssistantMessage = memo(function AssistantMessage({ message, showSt
                 args={tc.arguments}
                 status={status}
                 variant="expandable"
+                forceCompact={!showVerboseToolOutput}
                 result={result?.output}
                 error={result?.error}
                 durationMs={result?.durationMs}

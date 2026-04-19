@@ -18,6 +18,7 @@ import { PromptHistoryList } from '../shared/PromptHistory.js'
 import { Markdown } from '../shared/Markdown.js'
 import { CloseButton } from '../shared/CloseButton'
 import { useWorkflowsStore } from '../../stores/workflows'
+import { useDisplaySettings } from '../../stores/settings'
 import { processImageFile } from '../../lib/image-processing.js'
 import { buildPromptContextByUserMessageId } from './prompt-context-linking.js'
 import { ProviderSelector } from '../settings/ProviderSelector'
@@ -63,6 +64,7 @@ export function PlanPanel({ criteriaSidebarOpen: externalCriteriaSidebarOpen, on
   const launchRunner = useSessionStore(state => state.launchRunner)
   const cancelQueued = useSessionStore(state => state.cancelQueued)
   const queuedMessages = useQueuedMessages()
+  const { showThinking, showVerboseToolOutput, showStats, showAgentDefinitions, showWorkflowBars } = useDisplaySettings()
 
   const workflowDefaults = useWorkflowsStore(state => state.defaults)
   const workflowUserItems = useWorkflowsStore(state => state.userItems)
@@ -409,10 +411,19 @@ export function PlanPanel({ criteriaSidebarOpen: externalCriteriaSidebarOpen, on
                 <div key={index} className="px-2 md:px-4">
                   <AssistantMessage
                     message={message}
-                    showStats={true}
+                    showStats={showStats}
+                    showThinking={showThinking}
+                    showVerboseToolOutput={showVerboseToolOutput}
                   />
                 </div>
               )
+            }
+
+            // Filter based on display settings
+            const skipAutoPrompt = !showAgentDefinitions && message.messageKind === 'auto-prompt'
+            const skipWorkflow = !showWorkflowBars && (message.messageKind === 'workflow-started' || message.messageKind === 'task-completed')
+            if (skipAutoPrompt || skipWorkflow) {
+              return null
             }
 
             return (

@@ -5,6 +5,11 @@ import { authFetch } from '../lib/api'
 export const SETTINGS_KEYS = {
   GLOBAL_INSTRUCTIONS: 'global_instructions',
   NOTIFICATION_SETTINGS: 'notification_settings',
+  DISPLAY_SHOW_THINKING: 'display.showThinking',
+  DISPLAY_SHOW_VERBOSE_TOOL_OUTPUT: 'display.showVerboseToolOutput',
+  DISPLAY_SHOW_STATS: 'display.showStats',
+  DISPLAY_SHOW_AGENT_DEFINITIONS: 'display.showAgentDefinitions',
+  DISPLAY_SHOW_WORKFLOW_BARS: 'display.showWorkflowBars',
 } as const
 
 interface SettingsState {
@@ -26,6 +31,24 @@ function setValue(key: string, value: string) {
     settings: { ...state.settings, [key]: value },
     loading: { ...state.loading, [key]: false },
   })
+}
+
+export const DISPLAY_SETTINGS_KEYS = [
+  SETTINGS_KEYS.DISPLAY_SHOW_THINKING,
+  SETTINGS_KEYS.DISPLAY_SHOW_VERBOSE_TOOL_OUTPUT,
+  SETTINGS_KEYS.DISPLAY_SHOW_STATS,
+  SETTINGS_KEYS.DISPLAY_SHOW_AGENT_DEFINITIONS,
+  SETTINGS_KEYS.DISPLAY_SHOW_WORKFLOW_BARS,
+] as const
+
+export function useDisplaySettings() {
+  return {
+    showThinking: useSettingsStore(state => state.settings[SETTINGS_KEYS.DISPLAY_SHOW_THINKING] ?? 'true') === 'true',
+    showVerboseToolOutput: useSettingsStore(state => state.settings[SETTINGS_KEYS.DISPLAY_SHOW_VERBOSE_TOOL_OUTPUT] ?? 'true') === 'true',
+    showStats: useSettingsStore(state => state.settings[SETTINGS_KEYS.DISPLAY_SHOW_STATS] ?? 'true') === 'true',
+    showAgentDefinitions: useSettingsStore(state => state.settings[SETTINGS_KEYS.DISPLAY_SHOW_AGENT_DEFINITIONS] ?? 'true') === 'true',
+    showWorkflowBars: useSettingsStore(state => state.settings[SETTINGS_KEYS.DISPLAY_SHOW_WORKFLOW_BARS] ?? 'true') === 'true',
+  }
 }
 
 export const useSettingsStore = create<SettingsState>((set) => ({

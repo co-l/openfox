@@ -21,6 +21,7 @@ interface ToolCallDisplayProps {
   args: Record<string, unknown>
   status: ToolStatus
   variant?: 'compact' | 'expandable'
+  forceCompact?: boolean  // When true, renders compact variant even if expandable
   // For expandable variant
   result?: string
   error?: string
@@ -64,6 +65,7 @@ export const ToolCallDisplay = memo(function ToolCallDisplay({
   args,
   status,
   variant = 'compact',
+  forceCompact,
   result,
   error,
   durationMs,
@@ -79,7 +81,8 @@ export const ToolCallDisplay = memo(function ToolCallDisplay({
   const isRunningCommand = tool === 'run_command' && status === 'pending'
   const isReadFile = tool === 'read_file'
   const isReturnValue = tool === 'return_value'
-  const [expanded, setExpanded] = useState(isFileOperation || isRunningCommand || isReturnValue)
+  const shouldAutoExpand = forceCompact ? false : (isFileOperation || isRunningCommand || isReturnValue)
+  const [expanded, setExpanded] = useState(shouldAutoExpand)
   const config = statusConfig[status]
 
   // Check if there's a pending path confirmation matching this tool call

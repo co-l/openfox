@@ -7,7 +7,20 @@ import { getDatabase } from './index.js'
 // Well-known settings keys
 export const SETTINGS_KEYS = {
   GLOBAL_INSTRUCTIONS: 'global_instructions',
+  DISPLAY_SHOW_THINKING: 'display.showThinking',
+  DISPLAY_SHOW_VERBOSE_TOOL_OUTPUT: 'display.showVerboseToolOutput',
+  DISPLAY_SHOW_STATS: 'display.showStats',
+  DISPLAY_SHOW_AGENT_DEFINITIONS: 'display.showAgentDefinitions',
+  DISPLAY_SHOW_WORKFLOW_BARS: 'display.showWorkflowBars',
 } as const
+
+export const SETTINGS_DEFAULTS: Record<string, string> = {
+  [SETTINGS_KEYS.DISPLAY_SHOW_THINKING]: 'true',
+  [SETTINGS_KEYS.DISPLAY_SHOW_VERBOSE_TOOL_OUTPUT]: 'true',
+  [SETTINGS_KEYS.DISPLAY_SHOW_STATS]: 'true',
+  [SETTINGS_KEYS.DISPLAY_SHOW_AGENT_DEFINITIONS]: 'true',
+  [SETTINGS_KEYS.DISPLAY_SHOW_WORKFLOW_BARS]: 'true',
+}
 
 export type SettingsKey = typeof SETTINGS_KEYS[keyof typeof SETTINGS_KEYS]
 

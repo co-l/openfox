@@ -4,6 +4,7 @@ import { AssistantMessage } from './AssistantMessage'
 import { ChatMessage } from './ChatMessage'
 import { useAgentsStore, getAgentColor } from '../../stores/agents'
 import { useSessionStore } from '../../stores/session'
+import { useDisplaySettings } from '../../stores/settings'
 import { formatTokens } from '../../lib/format-stats'
 import { useAutoScroll } from '../../hooks/useAutoScroll'
 import { ProgressBar } from '../shared/ProgressBar'
@@ -70,6 +71,7 @@ export const SubAgentContainer = memo(function SubAgentContainer({ messages, sub
   const agentUserItems = useAgentsStore(state => state.userItems)
   const agents = [...agentDefaults, ...agentUserItems]
   const contextState = useSessionStore(state => state.subAgentContextStates[subAgentId])
+  const { showThinking, showVerboseToolOutput } = useDisplaySettings()
 
   const { isAutoScrollActive, setAutoScroll } = useAutoScroll(scrollRef, null)
 
@@ -137,6 +139,8 @@ export const SubAgentContainer = memo(function SubAgentContainer({ messages, sub
                 key={message.id}
                 message={message}
                 showStats={true}
+                showThinking={showThinking}
+                showVerboseToolOutput={showVerboseToolOutput}
               />
             )
           }

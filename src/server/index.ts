@@ -576,9 +576,9 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
 
   // Settings endpoints (REST)
   app.get('/api/settings/:key', async (req, res) => {
-    const { getSetting } = await import('./db/settings.js')
+    const { getSetting, SETTINGS_DEFAULTS } = await import('./db/settings.js')
     const key = req.params.key
-    const value = getSetting(key)
+    const value = getSetting(key) ?? SETTINGS_DEFAULTS[key] ?? null
     res.json({ key, value })
   })
 

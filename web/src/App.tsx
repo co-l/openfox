@@ -4,6 +4,7 @@ import { useWebSocket } from './hooks/useWebSocket'
 import { useSessionStore } from './stores/session'
 import { useProjectStore } from './stores/project'
 import { useConfigStore } from './stores/config'
+import { DISPLAY_SETTINGS_KEYS, useSettingsStore } from './stores/settings'
 import { Header } from './components/layout/Header'
 import { Sidebar } from './components/layout/Sidebar'
 import { PageTitle } from './components/layout/PageTitle'
@@ -151,6 +152,7 @@ function App() {
   const { connectionStatus } = useWebSocket()
   const fetchConfig = useConfigStore(state => state.fetchConfig)
   const refreshProviderModels = useConfigStore(state => state.refreshProviderModels)
+  const loadDisplaySettings = useSettingsStore(state => state.getSetting)
   const providers = useConfigStore(state => state.providers)
   const activeProviderId = useConfigStore(state => state.activeProviderId)
   const [, navigate] = useLocation()
@@ -163,9 +165,12 @@ function App() {
     if (connectionStatus === 'connected' || hasToken) {
       fetchConfig().then(() => {
         setConfigFetched(true)
+        for (const key of DISPLAY_SETTINGS_KEYS) {
+          loadDisplaySettings(key)
+        }
       })
     }
-  }, [connectionStatus, hasToken, fetchConfig])
+  }, [connectionStatus, hasToken, fetchConfig, loadDisplaySettings])
 
   useEffect(() => {
     if (configFetched && activeProviderId) {
