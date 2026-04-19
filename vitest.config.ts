@@ -10,6 +10,9 @@ export default defineConfig({
   test: {
     include: ['src/**/*.test.ts', 'web/src/**/*.test.ts', 'web/src/**/*.test.tsx'],
     exclude: ['e2e/**', 'node_modules/**'],
+    env: {
+      NODE_OPTIONS: '--localstorage-file=/tmp/openfox-test-localstorage.json',
+    },
     coverage: {
       provider: 'v8',
       reporter: ['text', 'text-summary'],
