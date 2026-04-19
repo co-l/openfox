@@ -99,9 +99,10 @@ export const RunCommandView = memo(function RunCommandView({
       {(displayOutput || status === 'pending') && (
         <pre 
           ref={outputRef}
-          className={`text-xs bg-bg-primary p-2 rounded overflow-auto max-h-64 ${
+          className={`text-xs bg-bg-primary p-2 rounded max-h-64 overflow-y-auto ${
             status === 'pending' ? 'border border-accent-warning/30' : ''
           }`}
+          style={{ overflowX: 'hidden', whiteSpace: 'normal' }}
         >
           {status === 'pending' && streamingOutput ? (
             // Render streaming chunks with ANSI color parsing

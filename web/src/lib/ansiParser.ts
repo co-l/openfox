@@ -161,15 +161,21 @@ import React from 'react'
 export function ansiToReact(text: string): React.ReactNode {
   const segments = parseAnsi(text)
   
-  if (segments.length === 1 && segments[0]?.className === 'text-text-primary') {
-    // No styling needed, return plain text
-    return segments[0]?.text
-  }
+  const nodes: React.ReactNode[] = []
   
-  return segments.map((segment, index) => 
-    React.createElement('span', { 
-      key: index, 
-      className: segment.className 
-    }, segment.text)
-  )
+  segments.forEach((segment, index) => {
+    const lines = segment.text.split('\n')
+    lines.forEach((line, lineIndex) => {
+      nodes.push(React.createElement('span', {
+        key: `${index}-${lineIndex}`,
+        className: segment.className,
+        style: { display: 'inline-block', whiteSpace: 'pre-wrap' }
+      }, line))
+      if (lineIndex < lines.length - 1) {
+        nodes.push(React.createElement('br', { key: `${index}-${lineIndex}-br` }))
+      }
+    })
+  })
+  
+  return nodes.length === 1 ? nodes[0] : nodes
 }
