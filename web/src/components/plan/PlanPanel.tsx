@@ -599,6 +599,7 @@ export function PlanPanel({ criteriaSidebarOpen: externalCriteriaSidebarOpen, on
             }
             className="flex-1 bg-transparent text-sm placeholder:text-text-muted resize-none overflow-y-auto focus:outline-none"
             style={{ minHeight: '24px', maxHeight: '200px' }}
+            spellCheck={false}
           />
           <div className="flex flex-col items-end gap-1">
               <div className="flex items-center gap-3">
