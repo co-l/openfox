@@ -5,6 +5,7 @@ import {
   buildContextMessagesFromStoredEvents,
   buildMessagesFromStoredEvents,
   buildSnapshotFromSessionState,
+  foldContextState,
   foldSessionState,
   foldTurnEventsToSnapshotMessages,
 } from './folding.js'
@@ -834,6 +835,49 @@ describe('event folding', () => {
       // assistant must be immediately followed by its tool result (valid sequence)
       expect(messages[1]).toMatchObject({ role: 'assistant' })
       expect(messages[2]).toMatchObject({ role: 'tool', toolCallId: 'tc-main' })
+    })
+  })
+
+  describe('context.state sub-agent filtering', () => {
+    it('filters out context.state events with subAgentId', () => {
+      const events: StoredEvent[] = [
+        { ...baseEvent, seq: 1, type: 'session.initialized', data: { projectId: 'p1', workdir: '/tmp', contextWindowId: 'window-1' } },
+        { ...baseEvent, seq: 2, type: 'context.state', data: { currentTokens: 50000, maxTokens: 128000, compactionCount: 0, dangerZone: false, canCompact: false } },
+        { ...baseEvent, seq: 3, type: 'context.state', data: { currentTokens: 30000, maxTokens: 128000, compactionCount: 0, dangerZone: false, canCompact: false, subAgentId: 'sub-1' } },
+        { ...baseEvent, seq: 4, type: 'context.state', data: { currentTokens: 60000, maxTokens: 128000, compactionCount: 1, dangerZone: true, canCompact: false } },
+      ]
+
+      const result = foldContextState(events, 'window-1')
+
+      expect(result.latestContextState?.currentTokens).toBe(60000)
+      expect(result.latestContextState?.compactionCount).toBe(1)
+      expect(result.compactionCount).toBe(0) // compactionCount tracks context.compacted events, not context.state
+    })
+
+    it('uses last main agent context state after subagent emits one', () => {
+      const events: StoredEvent[] = [
+        { ...baseEvent, seq: 1, type: 'session.initialized', data: { projectId: 'p1', workdir: '/tmp', contextWindowId: 'window-1' } },
+        { ...baseEvent, seq: 2, type: 'context.state', data: { currentTokens: 20000, maxTokens: 128000, compactionCount: 0, dangerZone: false, canCompact: false } },
+        { ...baseEvent, seq: 3, type: 'context.state', data: { currentTokens: 10000, maxTokens: 128000, compactionCount: 0, dangerZone: false, canCompact: false, subAgentId: 'sub-1' } },
+        { ...baseEvent, seq: 4, type: 'context.state', data: { currentTokens: 45000, maxTokens: 128000, compactionCount: 0, dangerZone: false, canCompact: false, subAgentId: 'sub-2' } },
+        { ...baseEvent, seq: 5, type: 'context.state', data: { currentTokens: 25000, maxTokens: 128000, compactionCount: 0, dangerZone: false, canCompact: false } },
+      ]
+
+      const result = foldContextState(events, 'window-1')
+
+      expect(result.latestContextState?.currentTokens).toBe(25000)
+    })
+
+    it('uses last main agent context state when last event is from subagent', () => {
+      const events: StoredEvent[] = [
+        { ...baseEvent, seq: 1, type: 'session.initialized', data: { projectId: 'p1', workdir: '/tmp', contextWindowId: 'window-1' } },
+        { ...baseEvent, seq: 2, type: 'context.state', data: { currentTokens: 50000, maxTokens: 128000, compactionCount: 0, dangerZone: false, canCompact: false } },
+        { ...baseEvent, seq: 3, type: 'context.state', data: { currentTokens: 10000, maxTokens: 128000, compactionCount: 0, dangerZone: false, canCompact: false, subAgentId: 'sub-1' } },
+      ]
+
+      const result = foldContextState(events, 'window-1')
+
+      expect(result.latestContextState?.currentTokens).toBe(50000)
     })
   })
 })

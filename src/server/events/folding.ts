@@ -414,9 +414,10 @@ export function foldContextState(events: EventLike[], initialWindowId: string): 
         break
       }
       case 'context.state': {
-        // Use the real promptTokens from LLM
-        const data = event.data as ContextState
-        latestContextState = data
+        const data = event.data as ContextState & { subAgentId?: string }
+        if (!data.subAgentId) {
+          latestContextState = data
+        }
         break
       }
       case 'context.compacted': {

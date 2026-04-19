@@ -46,6 +46,9 @@ function SubAgentContextBar({ contextState }: { contextState: ContextState }) {
       <span className={getTextColor(percent, dangerZone)}>
         {formatTokens(currentTokens)}/{formatTokens(maxTokens)}
       </span>
+      <span className={getTextColor(percent, dangerZone)}>
+        ({percent}%)
+      </span>
       <ProgressBar percent={percent} dangerZone={dangerZone} size="sm" />
       {dangerZone && (
         <span className="text-accent-error animate-pulse">Low!</span>
@@ -97,12 +100,14 @@ export const SubAgentContainer = memo(function SubAgentContainer({ messages, sub
   return (
     <div ref={containerRef} className="feed-item border border-border rounded overflow-hidden bg-bg-secondary">
       <div
-        className="w-full flex items-center justify-between px-2 py-1 border-b"
+        className="w-full flex items-center justify-between px-2 py-1 border-b relative"
         style={hStyle}
       >
         <span className="text-xs font-medium">{label}</span>
-        <div className="flex items-center gap-2">
+        <div className="absolute left-1/2 -translate-x-1/2">
           {contextState && <SubAgentContextBar contextState={contextState} />}
+        </div>
+        <div className="flex items-center gap-2">
           <button
             type="button"
             className="text-sm text-text-muted hover:text-text-primary flex items-center gap-1.5"

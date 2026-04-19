@@ -282,6 +282,10 @@ describe('ws/protocol', () => {
         type: 'context.state',
         payload: { context: { currentTokens: 100, maxTokens: 200000, dangerZone: false, canCompact: true, compactionCount: 0 } },
       })
+      expect(createContextStateMessage({ currentTokens: 100, maxTokens: 200000, dangerZone: false, canCompact: true, compactionCount: 0 }, 'sub-1')).toEqual({
+        type: 'context.state',
+        payload: { context: { currentTokens: 100, maxTokens: 200000, dangerZone: false, canCompact: true, compactionCount: 0 }, subAgentId: 'sub-1' },
+      })
       expect(createErrorMessage('INVALID', 'bad payload', 'corr')).toEqual({ id: 'corr', type: 'error', payload: { code: 'INVALID', message: 'bad payload' } })
     })
   })

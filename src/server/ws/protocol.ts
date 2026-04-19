@@ -252,8 +252,8 @@ export function createCriteriaUpdatedMessage(criteria: Criterion[], changedId?: 
 }
 
 // Context messages
-export function createContextStateMessage(context: ContextState): ServerMessage<ContextStatePayload> {
-  return createServerMessage('context.state', { context })
+export function createContextStateMessage(context: ContextState, subAgentId?: string): ServerMessage<ContextStatePayload> {
+  return createServerMessage('context.state', { context, ...(subAgentId && { subAgentId }) })
 }
 
 // Session name messages
@@ -443,8 +443,8 @@ export function storedEventToServerMessage(event: StoredEvent): ServerMessage | 
     }
 
     case 'context.state': {
-      const data = event.data as ContextState
-      return createContextStateMessage(data)
+      const data = event.data as ContextState & { subAgentId?: string }
+      return createContextStateMessage(data, data.subAgentId)
     }
 
     case 'session.name_generated': {
