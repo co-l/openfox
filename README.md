@@ -16,7 +16,8 @@ Autonomous coding agent for local LLMs with contract-driven execution.
 ## Quick Start
 
 ```bash
-npx openfox
+npm i -g openfox
+openfox
 ```
 
 On first run, OpenFox automatically detects your local LLM backend (vLLM, sglang, ollama, llamacpp) and configures itself.
@@ -25,25 +26,22 @@ On first run, OpenFox automatically detects your local LLM backend (vLLM, sglang
 
 ```bash
 # Start server for current project
-npx openfox
+openfox
 
 # Start on custom port
-npx openfox --port 8080
+openfox --port 8080
 
 # Start without opening browser
-npx openfox --no-browser
-
-# Interactive configuration setup
-npx openfox init
+openfox --no-browser
 
 # Show current configuration
-npx openfox config
+openfox config
 
 # Manage LLM providers
-npx openfox provider add      # Add new provider
-npx openfox provider list     # List configured providers
-npx openfox provider use      # Switch active provider
-npx openfox provider remove   # Remove provider
+openfox provider add      # Add new provider
+openfox provider list     # List configured providers
+openfox provider use      # Switch active provider
+openfox provider remove   # Remove provider
 ```
 
 ## CLI Options
