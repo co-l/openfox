@@ -117,7 +117,7 @@ export function createLLMClient(config: Config, initialBackend: Backend = 'unkno
         if (request.onVisionFallbackDone) {
           paramsOptions.onVisionFallbackDone = request.onVisionFallbackDone
         }
-        const createParams = await buildNonStreamingCreateParams(paramsOptions)
+        const { params: createParams } = await buildNonStreamingCreateParams(paramsOptions)
         const response = await openai.chat.completions.create(createParams, {
           signal: request.signal,
         })
@@ -215,7 +215,8 @@ export function createLLMClient(config: Config, initialBackend: Backend = 'unkno
           onVisionFallbackDone: request.onVisionFallbackDone,
         })
 
-        const stream = await openai.chat.completions.create(createParams, {
+        const { params: streamingParams } = createParams
+        const stream = await openai.chat.completions.create(streamingParams, {
           signal: request.signal,
         })
         

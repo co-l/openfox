@@ -35,6 +35,13 @@ export interface StreamResult {
   timing: StreamTiming
 }
 
+export interface StreamModelParams {
+  temperature?: number
+  topP?: number
+  topK?: number
+  maxTokens?: number
+}
+
 /**
  * Streams an LLM completion and accumulates content with segment tracking.
  * Yields events for real-time streaming, returns accumulated result.

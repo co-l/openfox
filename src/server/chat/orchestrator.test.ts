@@ -171,6 +171,7 @@ function createSessionManager(state: Record<string, any>) {
     setCurrentContextSize: vi.fn(),
     addTokensUsed: vi.fn(),
     compactContext: vi.fn(),
+    getCurrentModelSettings: vi.fn(() => undefined),
     getLspManager: vi.fn(() => ({ name: 'lsp' })),
     updateCriterionStatus: vi.fn((_: string, criterionId: string, status: Record<string, unknown>) => {
       state['current'].criteria = state['current'].criteria.map((criterion: any) =>

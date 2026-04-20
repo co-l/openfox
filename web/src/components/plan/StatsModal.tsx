@@ -391,16 +391,32 @@ function CallDataPointRow({
   dataPoint: CallStatsDataPoint
   index: number
 }) {
+  const hasParams = dataPoint.temperature !== undefined || dataPoint.topP !== undefined || dataPoint.topK !== undefined || dataPoint.maxTokens !== undefined
+
   return (
-    <tr className={`${index % 2 === 0 ? 'bg-bg-tertiary/10' : 'bg-bg-tertiary/5'}`}>
-      <td className="px-3 py-2 pl-6 text-center text-text-muted align-middle border-l border-border/60">c{dataPoint.callIndex}</td>
-      <td className="px-2 py-2 text-center text-text-muted font-mono align-middle whitespace-nowrap">{formatTimestamp(dataPoint.timestamp)}</td>
-      <td className="px-2 py-2 text-center text-text-muted align-middle whitespace-nowrap">{dataPoint.totalTime.toFixed(1)}s</td>
-      <td className="px-2 py-2 text-center text-text-primary font-mono align-middle whitespace-nowrap">{formatTokens(dataPoint.promptTokens)}</td>
-      <td className="px-2 py-2 text-center text-text-primary font-mono align-middle whitespace-nowrap">{formatRate(dataPoint.prefillSpeed)}</td>
-      <td className="px-2 py-2 text-center text-text-primary font-mono align-middle whitespace-nowrap">{formatRate(dataPoint.generationSpeed)}</td>
-      <td className="px-2 py-2 text-center text-text-muted font-mono align-middle whitespace-nowrap">{dataPoint.callIndex}</td>
-      <td className="px-2 py-2" />
-    </tr>
+    <>
+      <tr className={`${index % 2 === 0 ? 'bg-bg-tertiary/10' : 'bg-bg-tertiary/5'}`}>
+        <td className="px-3 py-2 pl-6 text-center text-text-muted align-middle border-l border-border/60">c{dataPoint.callIndex}</td>
+        <td className="px-2 py-2 text-center text-text-muted font-mono align-middle whitespace-nowrap">{formatTimestamp(dataPoint.timestamp)}</td>
+        <td className="px-2 py-2 text-center text-text-muted align-middle whitespace-nowrap">{dataPoint.totalTime.toFixed(1)}s</td>
+        <td className="px-2 py-2 text-center text-text-primary font-mono align-middle whitespace-nowrap">{formatTokens(dataPoint.promptTokens)}</td>
+        <td className="px-2 py-2 text-center text-text-primary font-mono align-middle whitespace-nowrap">{formatRate(dataPoint.prefillSpeed)}</td>
+        <td className="px-2 py-2 text-center text-text-primary font-mono align-middle whitespace-nowrap">{formatRate(dataPoint.generationSpeed)}</td>
+        <td className="px-2 py-2 text-center text-text-muted font-mono align-middle whitespace-nowrap">{dataPoint.callIndex}</td>
+        <td className="px-2 py-2" />
+      </tr>
+      {hasParams && (
+        <tr className={`${index % 2 === 0 ? 'bg-bg-tertiary/5' : 'bg-bg-tertiary/[2.5%]'}`}>
+          <td colSpan={8} className="px-6 py-1.5 border-l border-border/60">
+            <div className="flex flex-wrap gap-x-4 gap-y-1 text-[10px] text-text-muted">
+              {dataPoint.temperature !== undefined && <span>temp: {dataPoint.temperature.toFixed(2)}</span>}
+              {dataPoint.topP !== undefined && <span>topP: {dataPoint.topP.toFixed(2)}</span>}
+              {dataPoint.topK !== undefined && <span>topK: {dataPoint.topK}</span>}
+              {dataPoint.maxTokens !== undefined && <span>maxTok: {dataPoint.maxTokens}</span>}
+            </div>
+          </td>
+        </tr>
+      )}
+    </>
   )
 }

@@ -73,15 +73,23 @@ describe('llm client pure helpers', () => {
       profile,
       capabilities: { supportsTopK: true, supportsChatTemplateKwargs: true },
     })).toEqual({
-      model: 'test-model',
-      messages: [{ role: 'user', content: 'hello' }],
-      tools: [{ type: 'function', function: { name: 'glob', description: 'Search', parameters: { type: 'object' } } }],
-      tool_choice: 'auto',
-      temperature: 0.2,
-      max_tokens: 2000,
-      top_p: 0.9,
-      top_k: 40,
-      stream: false,
+      params: {
+        model: 'test-model',
+        messages: [{ role: 'user', content: 'hello' }],
+        tools: [{ type: 'function', function: { name: 'glob', description: 'Search', parameters: { type: 'object' } } }],
+        tool_choice: 'auto',
+        temperature: 0.2,
+        max_tokens: 2000,
+        top_p: 0.9,
+        top_k: 40,
+        stream: false,
+      },
+      modelParams: {
+        temperature: 0.2,
+        topP: 0.9,
+        topK: 40,
+        maxTokens: 2000,
+      },
     })
 
     expect(await buildStreamingCreateParams({
@@ -91,17 +99,25 @@ describe('llm client pure helpers', () => {
       capabilities: { supportsTopK: true, supportsChatTemplateKwargs: true },
       disableThinking: true,
     })).toEqual({
-      model: 'test-model',
-      messages: [{ role: 'user', content: 'hello' }],
-      tools: [{ type: 'function', function: { name: 'glob', description: 'Search', parameters: { type: 'object' } } }],
-      tool_choice: 'auto',
-      temperature: 0.2,
-      max_tokens: 2000,
-      top_p: 0.9,
-      top_k: 40,
-      stream: true,
-      stream_options: { include_usage: true },
-      chat_template_kwargs: { enable_thinking: false },
+      params: {
+        model: 'test-model',
+        messages: [{ role: 'user', content: 'hello' }],
+        tools: [{ type: 'function', function: { name: 'glob', description: 'Search', parameters: { type: 'object' } } }],
+        tool_choice: 'auto',
+        temperature: 0.2,
+        max_tokens: 2000,
+        top_p: 0.9,
+        top_k: 40,
+        stream: true,
+        stream_options: { include_usage: true },
+        chat_template_kwargs: { enable_thinking: false },
+      },
+      modelParams: {
+        temperature: 0.2,
+        topP: 0.9,
+        topK: 40,
+        maxTokens: 2000,
+      },
     })
   })
 })

@@ -10,6 +10,10 @@ interface ModelConfig {
   id: string
   contextWindow: number
   source: 'backend' | 'user' | 'default'
+  temperature?: number
+  topP?: number
+  topK?: number
+  maxTokens?: number
 }
 
 interface Provider {
@@ -51,6 +55,7 @@ interface ConfigState {
   startAutoRefresh: () => void
   stopAutoRefresh: () => void
   updateModelContext: (providerId: string, modelId: string, contextWindow: number) => Promise<boolean>
+  updateModelSettings: (providerId: string, modelId: string, settings: { contextWindow?: number; temperature?: number | null; topP?: number | null; topK?: number | null; maxTokens?: number | null }) => Promise<boolean>
   refreshProviderModels: (providerId: string) => Promise<boolean>
 
   // Selectors
@@ -248,6 +253,61 @@ export const useConfigStore = create<ConfigState>((set, get) => ({
     } catch (error) {
       set({
         error: error instanceof Error ? error.message : 'Failed to update model context',
+        activating: false,
+      })
+      return false
+    }
+  },
+
+  updateModelSettings: async (providerId: string, modelId: string, settings: { contextWindow?: number; temperature?: number | null; topP?: number | null; topK?: number | null; maxTokens?: number | null }) => {
+    set({ activating: true, error: null })
+    try {
+      const response = await authFetch(`/api/providers/${providerId}/models/${encodeURIComponent(modelId)}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(settings),
+      })
+      if (!response.ok) {
+        const errorData = await response.json() as { error?: string }
+        throw new Error(errorData.error ?? 'Failed to update model settings')
+      }
+      
+      const data = await response.json() as { 
+        success: boolean
+        model?: ModelConfig
+        contextState?: { currentTokens: number; maxTokens: number; compactionCount: number; dangerZone: boolean; canCompact: boolean } | null
+      }
+      
+      const { providers } = get()
+      set({
+        providers: providers.map(p => p.id === providerId
+          ? { 
+              ...p, 
+              models: p.models.map(m => {
+                if (m.id !== modelId) return m
+                const updated: ModelConfig = { ...m, source: 'user' as const }
+                if (settings.contextWindow !== undefined) updated.contextWindow = settings.contextWindow
+                if (settings.temperature !== undefined) updated.temperature = settings.temperature ?? undefined
+                if (settings.topP !== undefined) updated.topP = settings.topP ?? undefined
+                if (settings.topK !== undefined) updated.topK = settings.topK ?? undefined
+                if (settings.maxTokens !== undefined) updated.maxTokens = settings.maxTokens ?? undefined
+                return updated
+              }) 
+            }
+          : p,
+        ),
+        activating: false,
+      })
+      
+      if (data.contextState) {
+        const sessionStore = useSessionStore.getState()
+        sessionStore.updateContextState(data.contextState)
+      }
+      
+      return true
+    } catch (error) {
+      set({
+        error: error instanceof Error ? error.message : 'Failed to update model settings',
         activating: false,
       })
       return false

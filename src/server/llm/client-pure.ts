@@ -10,6 +10,13 @@ import type { BackendCapabilities } from './backend.js'
 import { describeImageFromDataUrl } from './vision-fallback.js'
 import { logger } from '../utils/logger.js'
 
+export interface ModelParams {
+  temperature?: number
+  topP?: number
+  topK?: number
+  maxTokens?: number
+}
+
 type AttachmentContent = Array<{ type: 'text'; text: string } | { type: 'image_url'; image_url: { url: string } }>
 
 function buildAttachmentContent(
@@ -303,7 +310,7 @@ async function buildChatCompletionCreateParams(
   isStreaming: boolean,
   onVisionFallbackStart?: ((attachmentId: string, filename?: string) => void) | undefined,
   onVisionFallbackDone?: ((attachmentId: string, description: string) => void) | undefined
-): Promise<OpenAI.ChatCompletionCreateParamsNonStreaming | OpenAI.ChatCompletionCreateParamsStreaming> {
+): Promise<{ params: OpenAI.ChatCompletionCreateParamsNonStreaming | OpenAI.ChatCompletionCreateParamsStreaming; modelParams: ModelParams }> {
   const convertedMessages = await convertMessagesWithOptions(
     request.messages,
     profile,
@@ -313,20 +320,25 @@ async function buildChatCompletionCreateParams(
     onVisionFallbackDone
   )
 
+  const temperature = request.temperature ?? profile.temperature
+  const maxTokens = request.maxTokens ?? profile.defaultMaxTokens
+  const topP = profile.topP
+  const topK = capabilities.supportsTopK ? profile.topK : undefined
+
   const params: OpenAI.ChatCompletionCreateParamsNonStreaming | OpenAI.ChatCompletionCreateParamsStreaming = {
     model,
     messages: convertedMessages,
     ...(request.tools ? { tools: convertTools(request.tools) } : {}),
     ...(request.toolChoice ? { tool_choice: request.toolChoice as ChatCompletionToolChoiceOption } : {}),
-    temperature: request.temperature ?? profile.temperature,
-    max_tokens: request.maxTokens ?? profile.defaultMaxTokens,
-    top_p: profile.topP,
+    temperature,
+    max_tokens: maxTokens,
+    top_p: topP,
     stream: isStreaming,
     ...(isStreaming ? { stream_options: { include_usage: true } } : {}),
   }
 
-  if (capabilities.supportsTopK && profile.topK !== undefined) {
-    ;(params as unknown as Record<string, unknown>)['top_k'] = profile.topK
+  if (topK !== undefined) {
+    ;(params as unknown as Record<string, unknown>)['top_k'] = topK
   }
 
   const shouldDisableThinking = isStreaming
@@ -337,7 +349,14 @@ async function buildChatCompletionCreateParams(
     ;(params as unknown as Record<string, unknown>)['chat_template_kwargs'] = { enable_thinking: false }
   }
 
-  return params
+  const modelParams: ModelParams = {
+    ...(temperature !== undefined && { temperature }),
+    ...(topP !== undefined && { topP }),
+    ...(topK !== undefined && { topK }),
+    ...(maxTokens !== undefined && { maxTokens }),
+  }
+
+  return { params, modelParams }
 }
 
 async function buildCreateParamsFromInput<T extends OpenAI.ChatCompletionCreateParamsNonStreaming | OpenAI.ChatCompletionCreateParamsStreaming>(
@@ -352,9 +371,9 @@ async function buildCreateParamsFromInput<T extends OpenAI.ChatCompletionCreateP
     onVisionFallbackDone?: ((attachmentId: string, description: string) => void) | undefined
   },
   isStreaming: boolean
-): Promise<T> {
+): Promise<{ params: T; modelParams: ModelParams }> {
   const { model, request, profile, capabilities, disableThinking, visionFallbackEnabled = false, onVisionFallbackStart, onVisionFallbackDone } = input
-  return buildChatCompletionCreateParams(model, request, profile, capabilities, !!disableThinking, visionFallbackEnabled, isStreaming, onVisionFallbackStart, onVisionFallbackDone) as unknown as T
+  return buildChatCompletionCreateParams(model, request, profile, capabilities, !!disableThinking, visionFallbackEnabled, isStreaming, onVisionFallbackStart, onVisionFallbackDone) as Promise<{ params: T; modelParams: ModelParams }>
 }
 
 export const buildNonStreamingCreateParams = (input: Parameters<typeof buildCreateParamsFromInput>[0]) =>

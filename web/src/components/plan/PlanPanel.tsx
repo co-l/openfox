@@ -6,6 +6,7 @@ import { SessionLayout } from '../layout/SessionLayout'
 import { SessionHeader } from './SessionHeader'
 import { ChatMessage } from './ChatMessage'
 import { AssistantMessage } from './AssistantMessage'
+import { TurnStatsModal } from './TurnStatsModal'
 import { SubAgentContainer } from './SubAgentContainer'
 import { AgentSelector } from './AgentSelector'
 import { DangerLevelSelector } from './DangerLevelSelector'
@@ -45,6 +46,7 @@ export function PlanPanel({ criteriaSidebarOpen: externalCriteriaSidebarOpen, on
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
   const [showCommandsModal, setShowCommandsModal] = useState(false)
   const [showWorkflowsModal, setShowWorkflowsModal] = useState(false)
+  const [turnStatsModal, setTurnStatsModal] = useState<{ model: string; mode: string; totalTime: number; prefillTokens: number; generationTokens: number; llmCalls?: Array<{ temperature?: number; topP?: number; topK?: number; maxTokens?: number; promptTokens: number; completionTokens: number; ttft: number; completionTime: number }> } | null>(null)
   const scrollContainerRef = useRef<HTMLDivElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -85,6 +87,16 @@ export function PlanPanel({ criteriaSidebarOpen: externalCriteriaSidebarOpen, on
     navigateDown,
     selectCurrent,
   } = usePromptHistory(rawMessages, sessions, session?.id)
+
+  // Listen for open-turn-stats event from stats bar
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const customEvent = e as CustomEvent<{ stats: { model: string; mode: string; totalTime: number; prefillTokens: number; generationTokens: number; llmCalls?: Array<{ temperature?: number; topP?: number; topK?: number; maxTokens?: number; promptTokens: number; completionTokens: number; ttft: number; completionTime: number }> } }>
+      setTurnStatsModal(customEvent.detail.stats)
+    }
+    window.addEventListener('open-turn-stats', handler)
+    return () => window.removeEventListener('open-turn-stats', handler)
+  }, [])
 
   // Merge streamingMessage into the messages array for rendering.
   // When streaming, only the streamingMessage changes — rawMessages stays stable,
@@ -366,6 +378,14 @@ export function PlanPanel({ criteriaSidebarOpen: externalCriteriaSidebarOpen, on
         <AskUserDialog question={pendingQuestion} />
       )}
       <SessionHeader />
+
+      {/* Turn Stats Modal */}
+      {turnStatsModal && (
+        <TurnStatsModal
+          stats={turnStatsModal}
+          onClose={() => setTurnStatsModal(null)}
+        />
+      )}
       <ConnectionStatusBar />
 
       <div ref={scrollContainerRef} data-testid="chat-scroll-container" className="flex-1 min-w-0 overflow-y-auto relative">

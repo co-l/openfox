@@ -369,6 +369,8 @@ export async function runTopLevelAgentLoop(
       doOnMessage(createChatVisionFallbackMessage({ type: 'done', messageId: assistantMsgId, attachmentId, description }))
     }
 
+    const modelSettings = sessionManager.getCurrentModelSettings()
+    
     const streamGen = streamLLMPure({
       messageId: assistantMsgId,
       systemPrompt: assembledRequest.systemPrompt,
@@ -379,6 +381,7 @@ export async function runTopLevelAgentLoop(
       signal,
       onVisionFallbackStart,
       onVisionFallbackDone,
+      ...(modelSettings && { modelSettings }),
     })
 
     const result = await consumeStreamGenerator(streamGen, event => {
@@ -404,7 +407,7 @@ export async function runTopLevelAgentLoop(
       throw new Error('Aborted')
     }
 
-    turnMetrics.addLLMCall(result.timing, result.usage.promptTokens, result.usage.completionTokens)
+    turnMetrics.addLLMCall(result.timing, result.usage.promptTokens, result.usage.completionTokens, result.modelParams)
     sessionManager.setCurrentContextSize(sessionId, result.usage.promptTokens)
 
     if (result.toolCalls.length > 0) {

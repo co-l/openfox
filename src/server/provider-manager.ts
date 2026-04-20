@@ -181,7 +181,9 @@ export interface ProviderManager {
   getProviderModels(providerId: string): Promise<ModelConfig[]>
   setDefaultModelSelection(providerId: string, model: string): Promise<{ success: boolean; error?: string }>
   updateModelContext(providerId: string, modelId: string, contextWindow: number): Promise<{ success: boolean; error?: string }>
+  updateModelSettings(providerId: string, modelId: string, settings: { contextWindow?: number; temperature?: number | null; topP?: number | null; topK?: number | null; maxTokens?: number | null }): Promise<{ success: boolean; error?: string; model?: ModelConfig }>
   refreshProviderModels(providerId: string): Promise<{ success: boolean; error?: string }>
+  getModelSettings(modelId: string): { temperature?: number; topP?: number; topK?: number; maxTokens?: number } | undefined
 }
 
 export function parseDefaultModelSelection(selection?: string): { providerId: string | undefined; model: string | undefined } {
@@ -457,7 +459,6 @@ export function createProviderManager(config: Config): ProviderManager {
 
       const modelIndex = provider.models.findIndex(m => m.id === modelId)
       if (modelIndex === -1) {
-        // Model not found, add it
         providers = providers.map(p => p.id === providerId 
           ? { ...p, models: [...p.models, { id: modelId, contextWindow, source: 'user' as const }] }
           : p
@@ -471,6 +472,67 @@ export function createProviderManager(config: Config): ProviderManager {
 
       logger.info('Model context updated', { providerId, modelId, contextWindow })
       return { success: true }
+    },
+
+    async updateModelSettings(providerId: string, modelId: string, settings: { contextWindow?: number; temperature?: number | null; topP?: number | null; topK?: number | null; maxTokens?: number | null }) {
+      const provider = providers.find(p => p.id === providerId)
+      if (!provider) {
+        return { success: false, error: 'Provider not found' }
+      }
+
+      const existingModel = provider.models.find(m => m.id === modelId)
+      
+      // Merge new settings with existing settings
+      const finalTemp = settings.temperature !== undefined && settings.temperature !== null ? settings.temperature : existingModel?.temperature
+      const finalTopP = settings.topP !== undefined && settings.topP !== null ? settings.topP : existingModel?.topP
+      const finalTopK = settings.topK !== undefined && settings.topK !== null ? settings.topK : existingModel?.topK
+      const finalMaxTokens = settings.maxTokens !== undefined && settings.maxTokens !== null ? settings.maxTokens : existingModel?.maxTokens
+      
+      logger.info('Updating model settings', {
+        providerId,
+        modelId,
+        existing: existingModel,
+        incoming: settings,
+        final: { temperature: finalTemp, topP: finalTopP, topK: finalTopK, maxTokens: finalMaxTokens },
+      })
+
+      // Merge with existing model to preserve any other settings
+      const updatedModel: ModelConfig = {
+        id: modelId,
+        contextWindow: settings.contextWindow ?? existingModel?.contextWindow ?? 200000,
+        source: 'user',
+        ...(finalTemp !== undefined && { temperature: finalTemp }),
+        ...(finalTopP !== undefined && { topP: finalTopP }),
+        ...(finalTopK !== undefined && { topK: finalTopK }),
+        ...(finalMaxTokens !== undefined && { maxTokens: finalMaxTokens }),
+      }
+
+      if (existingModel) {
+        providers = providers.map(p => p.id === providerId 
+          ? { ...p, models: p.models.map(m => m.id === modelId ? updatedModel : m) }
+          : p
+        )
+      } else {
+        providers = providers.map(p => p.id === providerId 
+          ? { ...p, models: [...p.models, updatedModel] }
+          : p
+        )
+      }
+
+      logger.info('Model settings updated', { providerId, modelId, final: updatedModel })
+      return { success: true, model: updatedModel }
+    },
+
+    getModelSettings(modelId: string) {
+      const provider = providers.find(p => p.models.some(m => m.id === modelId))
+      const model = provider?.models.find(m => m.id === modelId)
+      if (!model) return undefined
+      return {
+        ...(model.temperature !== undefined && { temperature: model.temperature }),
+        ...(model.topP !== undefined && { topP: model.topP }),
+        ...(model.topK !== undefined && { topK: model.topK }),
+        ...(model.maxTokens !== undefined && { maxTokens: model.maxTokens }),
+      }
     },
 
     async refreshProviderModels(providerId: string) {

@@ -231,6 +231,20 @@ export const AssistantMessage = memo(function AssistantMessage({ message, showSt
                 <span>{formatTokens(stats.prefillTokens)} @ {formatSpeed(stats.prefillSpeed)} pp</span>
                 <span className="text-text-muted">·</span>
                 <span>{formatTokens(stats.generationTokens)} @ {formatSpeed(stats.generationSpeed)} tg</span>
+                <span className="text-text-muted">·</span>
+                <button
+                  type="button"
+                  className="text-text-muted hover:text-text-secondary transition-colors"
+                  title="View detailed stats"
+                  onClick={() => {
+                    const event = new CustomEvent('open-turn-stats', { detail: { stats } })
+                    window.dispatchEvent(event)
+                  }}
+                >
+                  <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                </button>
                 <span className="flex-1 h-px bg-border" />
               </div>
             )

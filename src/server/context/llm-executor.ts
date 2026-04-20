@@ -275,7 +275,7 @@ export class LLMExecutor {
     const result = await consumeStreamGenerator(streamGen, event => this.eventStore.append(this.sessionId, event))
 
     if (!result.aborted) {
-      this.config.turnMetrics.addLLMCall(result.timing, result.usage.promptTokens, result.usage.completionTokens)
+      this.config.turnMetrics.addLLMCall(result.timing, result.usage.promptTokens, result.usage.completionTokens, result.modelParams)
       this.emitContextState(result.usage.promptTokens)
     }
 

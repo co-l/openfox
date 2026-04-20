@@ -8,9 +8,10 @@ interface ModalProps {
   title: string
   children: ReactNode
   size?: 'sm' | 'md' | 'lg' | 'xl' | 'full'
+  id?: string
 }
 
-export function Modal({ isOpen, onClose, title, children, size = 'md' }: ModalProps) {
+export function Modal({ isOpen, onClose, title, children, size = 'md', id }: ModalProps) {
   const modalRef = useRef<HTMLDivElement>(null)
   const previousActiveElement = useRef<HTMLElement | null>(null)
   
@@ -54,10 +55,11 @@ export function Modal({ isOpen, onClose, title, children, size = 'md' }: ModalPr
   }
 
   return createPortal(
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+    <div id={id} className="fixed inset-0 z-50 flex items-center justify-center p-4">
       {/* Backdrop */}
       <div
-        className="absolute inset-0 bg-black/60 backdrop-blur-sm"
+        id={id ? `${id}-backdrop` : undefined}
+        className="absolute inset-0 bg-black/60 backdrop-blur-sm cursor-pointer"
         onClick={onClose}
       />
 

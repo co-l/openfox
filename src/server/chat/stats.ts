@@ -7,6 +7,13 @@ import type { StreamTiming } from '../llm/streaming.js'
 
 const roundTo1 = (n: number): number => Math.round(n * 10) / 10
 
+export interface ModelParams {
+  temperature?: number
+  topP?: number
+  topK?: number
+  maxTokens?: number
+}
+
 function buildCallStats(input: {
   identity: StatsIdentity
   callIndex: number
@@ -14,8 +21,9 @@ function buildCallStats(input: {
   promptTokens: number
   completionTokens: number
   timestamp?: string
+  modelParams?: ModelParams
 }): LLMCallStats {
-  const { identity, callIndex, timing, promptTokens, completionTokens, timestamp } = input
+  const { identity, callIndex, timing, promptTokens, completionTokens, timestamp, modelParams } = input
   return {
     ...identity,
     callIndex,
@@ -27,6 +35,10 @@ function buildCallStats(input: {
     generationSpeed: timing.completionTime > 0 ? roundTo1(completionTokens / timing.completionTime) : 0,
     totalTime: roundTo1(timing.ttft + timing.completionTime),
     ...(timestamp ? { timestamp } : {}),
+    ...(modelParams?.temperature !== undefined && { temperature: modelParams.temperature }),
+    ...(modelParams?.topP !== undefined && { topP: modelParams.topP }),
+    ...(modelParams?.topK !== undefined && { topK: modelParams.topK }),
+    ...(modelParams?.maxTokens !== undefined && { maxTokens: modelParams.maxTokens }),
   }
 }
 
@@ -40,6 +52,7 @@ export interface StatsInput {
   /** Override totalTime instead of computing from timing + toolTime */
   totalTimeOverride?: number
   timestamp?: string
+  modelParams?: ModelParams
 }
 
 /**
@@ -49,7 +62,7 @@ export interface StatsInput {
  * For multi-call flows: pass totalTimeOverride with wall clock time
  */
 export function computeMessageStats(input: StatsInput): MessageStats {
-  const { identity, mode, timing, usage, toolTime = 0, totalTimeOverride, timestamp } = input
+  const { identity, mode, timing, usage, toolTime = 0, totalTimeOverride, timestamp, modelParams } = input
   
   const totalTime = totalTimeOverride ?? (timing.ttft + timing.completionTime + toolTime)
   
@@ -69,6 +82,7 @@ export function computeMessageStats(input: StatsInput): MessageStats {
       promptTokens: usage.promptTokens,
       completionTokens: usage.completionTokens,
       ...(timestamp ? { timestamp } : {}),
+      ...(modelParams && { modelParams }),
     })],
   }
 }

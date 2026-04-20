@@ -5,6 +5,10 @@ interface ModelConfig {
   id: string
   contextWindow: number
   source: 'backend' | 'user' | 'default'
+  temperature?: number
+  topP?: number
+  topK?: number
+  maxTokens?: number
 }
 
 interface ModelPropertiesModalProps {
@@ -14,79 +18,248 @@ interface ModelPropertiesModalProps {
   model: ModelConfig
 }
 
-export function ModelPropertiesModal({ isOpen, onClose, providerId, model }: ModelPropertiesModalProps) {
-  const [contextWindow, setContextWindow] = useState(model.contextWindow)
-  const [saving, setSaving] = useState(false)
-  const updateModelContext = useConfigStore(state => state.updateModelContext)
-  
+interface ModelSettings {
+  contextWindow: number
+  temperature: number | null
+  topP: number | null
+  topK: number | null
+  maxTokens: number | null
+}
+
+function SettingsGroup({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div className="space-y-3">
+      <h4 className="text-sm font-medium text-text-secondary border-b border-border/50 pb-1">
+        {label}
+      </h4>
+      {children}
+    </div>
+  )
+}
+
+function NumberInput({
+  label,
+  value,
+  onChange,
+  min,
+  max,
+  step = 1,
+  helpText,
+  defaultValue,
+}: {
+  label: string
+  value: number | null
+  onChange: (v: number | null) => void
+  min: number
+  max: number
+  step?: number
+  helpText?: string
+  defaultValue?: number
+}) {
+  const [localValue, setLocalValue] = useState(value?.toString() ?? '')
+  const [useDefault, setUseDefault] = useState(value === null)
+
   useEffect(() => {
-    setContextWindow(model.contextWindow)
+    setLocalValue(value?.toString() ?? '')
+    setUseDefault(value === null)
+  }, [value])
+
+  const handleLocalChange = (text: string) => {
+    setLocalValue(text)
+    if (text === '') {
+      onChange(null)
+    } else {
+      const num = parseFloat(text)
+      if (!isNaN(num)) onChange(num)
+    }
+  }
+
+  const handleToggle = () => {
+    if (useDefault) {
+      setUseDefault(false)
+      if (defaultValue !== undefined) {
+        setLocalValue(defaultValue.toString())
+        onChange(defaultValue)
+      }
+    } else {
+      setUseDefault(true)
+      onChange(null)
+    }
+  }
+
+  return (
+    <div>
+      <label className="flex items-center gap-2 text-sm font-medium text-text-secondary mb-1">
+        {label}
+        <button
+          type="button"
+          onClick={handleToggle}
+          className={`text-xs px-1.5 py-0.5 rounded border ${
+            useDefault
+              ? 'border-accent-primary/50 bg-accent-primary/10 text-accent-primary'
+              : 'border-border text-text-muted hover:text-text-secondary'
+          }`}
+          title={useDefault ? 'Click to set a custom value' : 'Click to use default'}
+        >
+          {useDefault ? 'default' : 'custom'}
+        </button>
+      </label>
+      <input
+        type="number"
+        min={min}
+        max={max}
+        step={step}
+        value={localValue}
+        readOnly={useDefault}
+        onChange={(e) => handleLocalChange(e.target.value)}
+        onClick={() => useDefault && handleToggle()}
+        placeholder={useDefault ? 'Using profile default (click to edit)' : ''}
+        className={`w-full bg-bg-tertiary border border-border rounded px-3 py-2 text-text-primary focus:outline-none focus:border-accent-primary ${useDefault ? 'opacity-50 cursor-pointer' : ''}`}
+      />
+      {helpText && <p className="text-xs text-text-muted mt-1">{helpText}</p>}
+    </div>
+  )
+}
+
+export function ModelPropertiesModal({ isOpen, onClose, providerId, model }: ModelPropertiesModalProps) {
+  const [settings, setSettings] = useState<ModelSettings>({
+    contextWindow: model.contextWindow,
+    temperature: model.temperature ?? null,
+    topP: model.topP ?? null,
+    topK: model.topK ?? null,
+    maxTokens: model.maxTokens ?? null,
+  })
+  const [saving, setSaving] = useState(false)
+  const updateModelSettings = useConfigStore(state => state.updateModelSettings)
+
+  useEffect(() => {
+    setSettings({
+      contextWindow: model.contextWindow,
+      temperature: model.temperature ?? null,
+      topP: model.topP ?? null,
+      topK: model.topK ?? null,
+      maxTokens: model.maxTokens ?? null,
+    })
   }, [model])
-  
+
   if (!isOpen) return null
-  
+
   const handleSave = async () => {
-    if (contextWindow < 1024 || contextWindow > 10000000) {
+    if (settings.contextWindow < 1024 || settings.contextWindow > 10000000) {
       return
     }
-    
+
     setSaving(true)
-    await updateModelContext(providerId, model.id, contextWindow)
+    const hasNonContextChanges =
+      settings.temperature !== (model.temperature ?? null) ||
+      settings.topP !== (model.topP ?? null) ||
+      settings.topK !== (model.topK ?? null) ||
+      settings.maxTokens !== (model.maxTokens ?? null)
+
+    await updateModelSettings(providerId, model.id, {
+      contextWindow: settings.contextWindow,
+      ...(hasNonContextChanges && {
+        temperature: settings.temperature,
+        topP: settings.topP,
+        topK: settings.topK,
+        maxTokens: settings.maxTokens,
+      }),
+    })
     setSaving(false)
     onClose()
   }
-  
+
   const handleCancel = () => {
-    setContextWindow(model.contextWindow)
+    setSettings({
+      contextWindow: model.contextWindow,
+      temperature: model.temperature ?? null,
+      topP: model.topP ?? null,
+      topK: model.topK ?? null,
+      maxTokens: model.maxTokens ?? null,
+    })
     onClose()
   }
-  
+
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-      <div className="bg-bg-secondary rounded-lg shadow-xl max-w-md w-full mx-4 border border-border">
+      <div className="bg-bg-secondary rounded-lg shadow-xl max-w-lg w-full mx-4 border border-border">
         <div className="px-6 py-4 border-b border-border">
           <h3 className="text-lg font-medium text-text-primary">Model Properties</h3>
         </div>
-        
-        <div className="px-6 py-4 space-y-4">
+
+        <div className="px-6 py-4 space-y-5">
           <div>
             <label className="block text-sm font-medium text-text-secondary mb-1">
               Model Name
             </label>
-            <p className="text-text-primary bg-bg-tertiary px-3 py-2 rounded">
+            <p className="text-text-primary bg-bg-tertiary px-3 py-2 rounded font-mono text-sm break-all">
               {model.id}
             </p>
           </div>
-          
-          <div>
-            <label className="block text-sm font-medium text-text-secondary mb-1">
-              Context Window
-            </label>
-            <input
-              type="number"
-              min={1024}
-              max={10000000}
-              value={contextWindow}
-              onChange={(e) => setContextWindow(parseInt(e.target.value) || 0)}
-              className="w-full bg-bg-tertiary border border-border rounded px-3 py-2 text-text-primary focus:outline-none focus:border-accent-primary"
+
+          <NumberInput
+            label="Context Window"
+            value={settings.contextWindow}
+            onChange={(v) => v !== null && setSettings(s => ({ ...s, contextWindow: v }))}
+            min={1024}
+            max={10000000}
+            helpText="Range: 1,024 - 10,000,000 tokens"
+          />
+
+          <SettingsGroup label="Sampling Parameters">
+            <div className="grid grid-cols-2 gap-3">
+              <NumberInput
+                label="Temperature"
+                value={settings.temperature}
+                onChange={(v) => setSettings(s => ({ ...s, temperature: v }))}
+                min={0}
+                max={2}
+                step={0.1}
+                helpText="0.0 - 2.0"
+                defaultValue={1}
+              />
+              <NumberInput
+                label="Top P"
+                value={settings.topP}
+                onChange={(v) => setSettings(s => ({ ...s, topP: v }))}
+                min={0}
+                max={1}
+                step={0.05}
+                helpText="0.0 - 1.0"
+                defaultValue={1}
+              />
+            </div>
+            <NumberInput
+              label="Top K"
+              value={settings.topK}
+              onChange={(v) => setSettings(s => ({ ...s, topK: v }))}
+              min={1}
+              max={200}
+              helpText="1 - 200 (leave as default if not supported)"
             />
-            <p className="text-xs text-text-muted mt-1">
-              Range: 1,024 - 10,000,000 tokens
-            </p>
-          </div>
-          
+          </SettingsGroup>
+
+          <NumberInput
+            label="Max Tokens"
+            value={settings.maxTokens}
+            onChange={(v) => setSettings(s => ({ ...s, maxTokens: v }))}
+            min={256}
+            max={32000}
+            helpText="Maximum tokens to generate per response"
+          />
+
           <div>
             <label className="block text-sm font-medium text-text-secondary mb-1">
               Source
             </label>
-            <p className="text-text-primary bg-bg-tertiary px-3 py-2 rounded">
+            <p className="text-text-primary bg-bg-tertiary px-3 py-2 rounded text-sm">
               {model.source === 'backend' && 'Auto-detected from backend'}
               {model.source === 'user' && 'Manually set'}
               {model.source === 'default' && 'Default value'}
             </p>
           </div>
         </div>
-        
+
         <div className="px-6 py-4 border-t border-border flex justify-end gap-3">
           <button
             type="button"
@@ -99,7 +272,7 @@ export function ModelPropertiesModal({ isOpen, onClose, providerId, model }: Mod
           <button
             type="button"
             onClick={handleSave}
-            disabled={saving || contextWindow < 1024 || contextWindow > 10000000}
+            disabled={saving || settings.contextWindow < 1024 || settings.contextWindow > 10000000}
             className="px-4 py-2 bg-accent-primary text-white rounded hover:opacity-90 transition-opacity disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {saving ? 'Saving...' : 'Save'}

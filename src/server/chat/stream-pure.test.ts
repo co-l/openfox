@@ -92,6 +92,7 @@ describe('stream-pure', () => {
       timing: expect.objectContaining({ ttft: expect.any(Number), completionTime: expect.any(Number) }),
       aborted: false,
       xmlFormatError: false,
+      modelParams: expect.objectContaining({ temperature: expect.any(Number), topP: expect.any(Number), maxTokens: expect.any(Number) }),
     })
   })
 
@@ -121,6 +122,7 @@ describe('stream-pure', () => {
       timing: { ttft: 0, completionTime: 0, tps: 0, prefillTps: 0 },
       aborted: false,
       xmlFormatError: true,
+      modelParams: expect.objectContaining({ temperature: expect.any(Number), topP: expect.any(Number), maxTokens: expect.any(Number) }),
     })
   })
 

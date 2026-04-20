@@ -276,7 +276,7 @@ export async function executeSubAgent(options: SubAgentExecutionOptions): Promis
     }
 
     // Track metrics
-    turnMetrics.addLLMCall(result.timing, result.usage.promptTokens, result.usage.completionTokens)
+    turnMetrics.addLLMCall(result.timing, result.usage.promptTokens, result.usage.completionTokens, result.modelParams)
     sessionManager.setCurrentContextSize(sessionId, result.usage.promptTokens, subAgentId)
 
     finalContent = result.content

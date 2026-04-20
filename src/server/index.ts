@@ -823,13 +823,26 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
 
   app.post('/api/providers/:id/models/:modelId', async (req, res) => {
     const { id, modelId } = req.params
-    const body = req.body as { contextWindow?: number }
+    const body = req.body as { contextWindow?: number; temperature?: number | null; topP?: number | null; topK?: number | null; maxTokens?: number | null }
 
-    if (!body.contextWindow) {
-      return res.status(400).json({ error: 'contextWindow is required' })
+    logger.info('API: POST /api/providers/:id/models/:modelId', {
+      providerId: id,
+      modelId,
+      body,
+    })
+
+    // Support both old API (contextWindow only) and new API (full settings)
+    const hasFullSettings = body.temperature !== undefined || body.topP !== undefined || body.topK !== undefined || body.maxTokens !== undefined
+
+    let result: { success: boolean; error?: string; model?: import('../shared/types.js').ModelConfig }
+    if (hasFullSettings) {
+      result = await providerManager.updateModelSettings(id as string, modelId as string, body)
+    } else if (body.contextWindow) {
+      result = await providerManager.updateModelContext(id as string, modelId as string, body.contextWindow)
+    } else {
+      return res.status(400).json({ error: 'contextWindow or full settings required' })
     }
 
-    const result = await providerManager.updateModelContext(id as string, modelId as string, body.contextWindow)
     if (!result.success) {
       return res.status(400).json({ error: result.error })
     }
@@ -869,6 +882,7 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
       providerId: id, 
       modelId, 
       contextWindow: body.contextWindow,
+      model: result.model,
       contextState,
     })
   })

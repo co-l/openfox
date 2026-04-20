@@ -132,6 +132,11 @@ export interface LLMCallStats {
   generationSpeed: number   // tok/s for token generation
   totalTime: number         // ttft + completionTime
   timestamp?: string        // optional completion timestamp for ordering/display
+  // Request parameters used for this call
+  temperature?: number
+  topP?: number
+  topK?: number
+  maxTokens?: number
 }
 
 // Single data point for session stats progression charts
@@ -171,6 +176,11 @@ export interface CallStatsDataPoint {
   prefillSpeed: number
   generationSpeed: number
   totalTime: number
+  // Request parameters used for this call
+  temperature?: number
+  topP?: number
+  topK?: number
+  maxTokens?: number
 }
 
 // Aggregated session-level stats for benchmarking
@@ -482,6 +492,11 @@ export interface ModelConfig {
   id: string              // Model ID from backend (e.g., "qwen3.5-27b-int4-autoround")
   contextWindow: number   // Context window size in tokens
   source: 'backend' | 'user' | 'default'  // Where the value came from
+  // User-configurable LLM parameters (optional, falls back to profile defaults)
+  temperature?: number
+  topP?: number
+  topK?: number
+  maxTokens?: number
 }
 
 /** LLM provider configuration */

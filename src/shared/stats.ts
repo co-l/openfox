@@ -89,6 +89,10 @@ function buildSessionStats(messagesWithStats: MessageWithStats[]): Omit<SessionS
         prefillSpeed: call.prefillSpeed,
         generationSpeed: call.generationSpeed,
         totalTime: call.totalTime,
+        ...(call.temperature !== undefined && { temperature: call.temperature }),
+        ...(call.topP !== undefined && { topP: call.topP }),
+        ...(call.topK !== undefined && { topK: call.topK }),
+        ...(call.maxTokens !== undefined && { maxTokens: call.maxTokens }),
       })
     }
   }

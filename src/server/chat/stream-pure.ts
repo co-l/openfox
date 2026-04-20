@@ -18,6 +18,9 @@ import type { TurnEvent } from '../events/types.js'
 import { buildStreamRequest } from './stream-utils.js'
 import { computeAggregatedStats } from './stats.js'
 import { FORMAT_CORRECTION_PROMPT } from './prompts.js'
+import { getModelProfile } from '../llm/profiles.js'
+import { getBackendCapabilities } from '../llm/backend.js'
+import { logger } from '../utils/logger.js'
 
 // ============================================================================
 // Types
@@ -40,6 +43,8 @@ export interface PureStreamOptions {
   disableThinking?: boolean
   onVisionFallbackStart?: (attachmentId: string, filename?: string) => void
   onVisionFallbackDone?: (attachmentId: string, description: string) => void
+  /** User-configured model settings (temperature, topP, topK, maxTokens) */
+  modelSettings?: ModelParams
 }
 
 export interface PureStreamResult {
@@ -51,6 +56,7 @@ export interface PureStreamResult {
   timing: StreamTiming
   aborted: boolean
   xmlFormatError: boolean
+  modelParams?: ModelParams
 }
 
 // ============================================================================
@@ -59,7 +65,8 @@ export interface PureStreamResult {
 
 function createEmptyStreamResult(
   aborted: boolean,
-  xmlFormatError: boolean
+  xmlFormatError: boolean,
+  modelParams: ModelParams
 ): PureStreamResult {
   return {
     content: '',
@@ -69,6 +76,7 @@ function createEmptyStreamResult(
     timing: { ttft: 0, completionTime: 0, tps: 0, prefillTps: 0 },
     aborted,
     xmlFormatError,
+    modelParams,
   }
 }
 
@@ -104,6 +112,41 @@ export async function* streamLLMPure(
 
   // Build LLM messages
   const llmMessages = [{ role: 'system' as const, content: systemPrompt }, ...messages]
+
+  // Compute modelParams from request and profile
+  const profile = getModelProfile(llmClient.getModel())
+  const backend = getBackendCapabilities(llmClient.getBackend())
+  // Use user-configured settings if provided, fall back to profile defaults
+  const userTemp = options.modelSettings?.temperature
+  const userTopP = options.modelSettings?.topP
+  const userTopK = options.modelSettings?.topK
+  const userMaxTokens = options.modelSettings?.maxTokens
+  const temperature = userTemp ?? profile.temperature
+  const maxTokens = userMaxTokens ?? profile.defaultMaxTokens
+  const topP = userTopP ?? profile.topP
+  const topK = userTopK ?? (backend.supportsTopK ? profile.topK : undefined)
+  const modelParams: ModelParams = {
+    ...(temperature !== undefined && { temperature }),
+    ...(topP !== undefined && { topP }),
+    ...(topK !== undefined && { topK }),
+    ...(maxTokens !== undefined && { maxTokens }),
+  }
+  
+  // Log model settings for debugging
+  logger.debug('LLM request settings', {
+    model: llmClient.getModel(),
+    profile: profile.name,
+    temperature,
+    maxTokens,
+    topP,
+    topK,
+    userConfigured: {
+      temperature: userTemp !== undefined ? `user:${userTemp}` : 'default',
+      topP: userTopP !== undefined ? `user:${userTopP}` : 'default',
+      topK: userTopK !== undefined ? `user:${userTopK}` : 'default',
+      maxTokens: userMaxTokens !== undefined ? `user:${userMaxTokens}` : 'default',
+    },
+  })
 
   // Start streaming
   const stream = buildStreamRequest(llmClient, {
@@ -244,7 +287,7 @@ export async function* streamLLMPure(
 
   // Return result (available via generator.value after iteration)
   if (!result) {
-    return createEmptyStreamResult(aborted, xmlFormatError)
+    return createEmptyStreamResult(aborted, xmlFormatError, modelParams)
   }
 
   const baseResult: PureStreamResult = {
@@ -258,6 +301,7 @@ export async function* streamLLMPure(
     timing: result.timing,
     aborted,
     xmlFormatError,
+    modelParams,
   }
 
   // Only include thinkingContent if it has content
@@ -276,6 +320,13 @@ export async function* streamLLMPure(
  * Tracks aggregated metrics across a full turn (multiple LLM calls + tool executions).
  * Pure data structure - no side effects.
  */
+export interface ModelParams {
+  temperature?: number
+  topP?: number
+  topK?: number
+  maxTokens?: number
+}
+
 export class TurnMetrics {
   private startTime: number
   private totalPrefillTokens = 0
@@ -284,18 +335,22 @@ export class TurnMetrics {
   private totalGenTime = 0 // seconds
   private totalToolTime = 0 // seconds
   private llmCalls: Array<Omit<NonNullable<MessageStats['llmCalls']>[number], 'providerId' | 'providerName' | 'backend' | 'model'>> = []
+  private modelParams: ModelParams = {}
 
   constructor() {
     this.startTime = performance.now()
   }
 
   /** Add metrics from an LLM call */
-  addLLMCall(timing: StreamTiming, promptTokens: number, completionTokens: number): void {
+  addLLMCall(timing: StreamTiming, promptTokens: number, completionTokens: number, modelParams?: ModelParams): void {
     const callIndex = this.llmCalls.length + 1
     this.totalPrefillTokens += promptTokens
     this.totalPrefillTime += timing.ttft
     this.totalGenTokens += completionTokens
     this.totalGenTime += timing.completionTime
+    if (modelParams) {
+      this.modelParams = modelParams
+    }
     this.llmCalls = [
       ...this.llmCalls,
       {
@@ -308,8 +363,17 @@ export class TurnMetrics {
         generationSpeed: timing.completionTime > 0 ? Math.round((completionTokens / timing.completionTime) * 10) / 10 : 0,
         totalTime: Math.round((timing.ttft + timing.completionTime) * 10) / 10,
         timestamp: new Date().toISOString(),
+        ...(this.modelParams.temperature !== undefined && { temperature: this.modelParams.temperature }),
+        ...(this.modelParams.topP !== undefined && { topP: this.modelParams.topP }),
+        ...(this.modelParams.topK !== undefined && { topK: this.modelParams.topK }),
+        ...(this.modelParams.maxTokens !== undefined && { maxTokens: this.modelParams.maxTokens }),
       },
     ]
+  }
+
+  /** Set model parameters for tracking */
+  setModelParams(params: ModelParams): void {
+    this.modelParams = params
   }
 
   /** Add tool execution time (in milliseconds) */
@@ -538,7 +602,7 @@ export async function consumeStreamWithToolLoop(
 
   for (;;) {
     if (signal?.aborted) {
-      return createEmptyStreamResult(true, false)
+      return createEmptyStreamResult(true, false, {})
     }
 
     if (++iterations > MAX_TOOL_LOOP_ITERATIONS) {
@@ -568,7 +632,7 @@ export async function consumeStreamWithToolLoop(
       continue
     }
 
-    turnMetrics.addLLMCall(result.timing, result.usage.promptTokens, result.usage.completionTokens)
+    turnMetrics.addLLMCall(result.timing, result.usage.promptTokens, result.usage.completionTokens, result.modelParams)
 
     if (result.toolCalls.length > 0) {
       const stats = turnMetrics.buildStats(statsIdentity, 'compaction')

@@ -56,7 +56,11 @@ const modelConfigSchema = z.object({
   id: z.string(),
   contextWindow: z.number(),
   source: z.enum(['backend', 'user', 'default']),
-})
+  temperature: z.number().optional(),
+  topP: z.number().optional(),
+  topK: z.number().optional(),
+  maxTokens: z.number().optional(),
+}).passthrough() as z.ZodType<ModelConfig>
 
 const providerSchema = z.object({
   id: z.string(),

@@ -94,6 +94,12 @@ export class SessionManager {
     this.providerManager = providerManager
   }
 
+  getCurrentModelSettings(): { temperature?: number; topP?: number; topK?: number; maxTokens?: number } | undefined {
+    const model = this.providerManager.getCurrentModel()
+    if (!model) return undefined
+    return this.providerManager.getModelSettings(model)
+  }
+
   // ============================================================================
   // Session Lifecycle
   // ============================================================================
