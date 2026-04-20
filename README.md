@@ -4,6 +4,13 @@
 
 Autonomous coding agent for local LLMs with contract-driven execution.
 
+## Screenshots
+
+| | |
+|---|---|
+| ![Session](docs/screenshots/session.png) | ![Providers](docs/screenshots/providers.png) |
+| ![Workflows](docs/screenshots/workflows.png) |
+
 ## Quick Start
 
 ```bash
@@ -62,6 +69,14 @@ npx openfox provider remove   # Remove provider
 - **Iterative Verification**: Agent loops until all criteria pass
 - **LSP Integration**: Immediate feedback on code validity
 - **Real-Time Metrics**: Prefill time, generation speed, context usage
+
+## More Screenshots
+
+| | | |
+|---|---|---|
+| ![Homepage](docs/screenshots/homepage.png) | ![Project Selected](docs/screenshots/project-selected.png) | ![Stats](docs/screenshots/stats.png) |
+| ![Terminal](docs/screenshots/terminal.png) | ![Notifications](docs/screenshots/notifications.png) | ![Agents](docs/screenshots/agents.png) |
+| ![Providers](docs/screenshots/providers.png) | ![Providers](docs/screenshots/general-instructions.png) | ![Vision Fallback](docs/screenshots/vision-fallback.png) |
 
 ## License
 
