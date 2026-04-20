@@ -3,6 +3,16 @@ import { Modal } from '../shared/Modal'
 import { Button } from '../shared/Button'
 import { useConfigStore } from '../../stores/config'
 
+function defaultModelSettings(model: ModelConfig): ModelSettings {
+  return {
+    contextWindow: model.contextWindow,
+    temperature: model.temperature ?? null,
+    topP: model.topP ?? null,
+    topK: model.topK ?? null,
+    maxTokens: model.maxTokens ?? null,
+  }
+}
+
 interface ModelConfig {
   id: string
   contextWindow: number
@@ -120,25 +130,11 @@ function NumberInput({
 }
 
 export function ModelPropertiesModal({ isOpen, onClose, providerId, model }: ModelPropertiesModalProps) {
-  const [settings, setSettings] = useState<ModelSettings>({
-    contextWindow: model.contextWindow,
-    temperature: model.temperature ?? null,
-    topP: model.topP ?? null,
-    topK: model.topK ?? null,
-    maxTokens: model.maxTokens ?? null,
-  })
+  const [settings, setSettings] = useState<ModelSettings>(() => defaultModelSettings(model))
   const [saving, setSaving] = useState(false)
   const updateModelSettings = useConfigStore(state => state.updateModelSettings)
 
-  useEffect(() => {
-    setSettings({
-      contextWindow: model.contextWindow,
-      temperature: model.temperature ?? null,
-      topP: model.topP ?? null,
-      topK: model.topK ?? null,
-      maxTokens: model.maxTokens ?? null,
-    })
-  }, [model])
+  useEffect(() => { setSettings(defaultModelSettings(model)) }, [model])
 
   const handleSave = async () => {
     if (settings.contextWindow < 1024 || settings.contextWindow > 10000000) return
@@ -163,13 +159,7 @@ export function ModelPropertiesModal({ isOpen, onClose, providerId, model }: Mod
   }
 
   const handleCancel = () => {
-    setSettings({
-      contextWindow: model.contextWindow,
-      temperature: model.temperature ?? null,
-      topP: model.topP ?? null,
-      topK: model.topK ?? null,
-      maxTokens: model.maxTokens ?? null,
-    })
+    setSettings(defaultModelSettings(model))
     onClose()
   }
 

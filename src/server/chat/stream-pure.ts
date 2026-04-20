@@ -13,6 +13,7 @@
 import type { PromptContext, ToolCall, MessageSegment, MessageStats, StatsIdentity, ToolResult, Attachment } from '../../shared/types.js'
 import type { LLMClientWithModel } from '../llm/client.js'
 import type { LLMToolDefinition } from '../llm/types.js'
+import { buildModelParams } from '../llm/client-pure.js'
 import type { StreamTiming } from '../llm/streaming.js'
 import type { TurnEvent } from '../events/types.js'
 import { buildStreamRequest } from './stream-utils.js'
@@ -125,12 +126,7 @@ export async function* streamLLMPure(
   const maxTokens = userMaxTokens ?? profile.defaultMaxTokens
   const topP = userTopP ?? profile.topP
   const topK = userTopK ?? (backend.supportsTopK ? profile.topK : undefined)
-  const modelParams: ModelParams = {
-    ...(temperature !== undefined && { temperature }),
-    ...(topP !== undefined && { topP }),
-    ...(topK !== undefined && { topK }),
-    ...(maxTokens !== undefined && { maxTokens }),
-  }
+  const modelParams = buildModelParams({ temperature, topP, topK, maxTokens })
   
   // Log model settings for debugging
   logger.debug('LLM request settings', {

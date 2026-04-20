@@ -17,6 +17,20 @@ export interface ModelParams {
   maxTokens?: number
 }
 
+export function buildModelParams(params: {
+  temperature?: number
+  topP?: number
+  topK?: number | undefined
+  maxTokens?: number
+}): ModelParams {
+  return {
+    ...(params.temperature !== undefined && { temperature: params.temperature }),
+    ...(params.topP !== undefined && { topP: params.topP }),
+    ...(params.topK !== undefined && { topK: params.topK }),
+    ...(params.maxTokens !== undefined && { maxTokens: params.maxTokens }),
+  }
+}
+
 type AttachmentContent = Array<{ type: 'text'; text: string } | { type: 'image_url'; image_url: { url: string } }>
 
 function buildAttachmentContent(
@@ -349,12 +363,7 @@ async function buildChatCompletionCreateParams(
     ;(params as unknown as Record<string, unknown>)['chat_template_kwargs'] = { enable_thinking: false }
   }
 
-  const modelParams: ModelParams = {
-    ...(temperature !== undefined && { temperature }),
-    ...(topP !== undefined && { topP }),
-    ...(topK !== undefined && { topK }),
-    ...(maxTokens !== undefined && { maxTokens }),
-  }
+  const modelParams = buildModelParams({ temperature, topP, topK, maxTokens })
 
   return { params, modelParams }
 }

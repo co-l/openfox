@@ -19,6 +19,7 @@ import { PromptHistoryList } from '../shared/PromptHistory.js'
 import { Markdown } from '../shared/Markdown.js'
 import { CloseButton } from '../shared/CloseButton'
 import { useWorkflowsStore } from '../../stores/workflows'
+import { useAgentsStore } from '../../stores/agents'
 import { useDisplaySettings } from '../../stores/settings'
 import { processImageFile } from '../../lib/image-processing.js'
 import { buildPromptContextByUserMessageId } from './prompt-context-linking.js'
@@ -72,6 +73,10 @@ export function PlanPanel({ criteriaSidebarOpen: externalCriteriaSidebarOpen, on
   const workflowUserItems = useWorkflowsStore(state => state.userItems)
   const workflows = [...workflowDefaults, ...workflowUserItems]
   const fetchWorkflows = useWorkflowsStore(state => state.fetchWorkflows)
+
+  const agentDefaults = useAgentsStore(state => state.defaults)
+  const agentUserItems = useAgentsStore(state => state.userItems)
+  const topLevelAgents = [...agentDefaults, ...agentUserItems].filter(a => !a.subagent)
   useEffect(() => {
     fetchWorkflows()
   }, [fetchWorkflows])
@@ -246,6 +251,18 @@ export function PlanPanel({ criteriaSidebarOpen: externalCriteriaSidebarOpen, on
   }
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
+    // Ctrl+1/2/3/4 to switch agents (layout-independent via e.code)
+    if (e.ctrlKey && e.code.startsWith('Digit')) {
+      const digit = parseInt(e.code.slice(-1), 10)
+      const agentIndex = digit - 1
+      const agent = topLevelAgents[agentIndex]
+      if (agent) {
+        e.preventDefault()
+        useSessionStore.getState().switchMode(agent.id)
+      }
+      return
+    }
+
     // Handle prompt history navigation when history is visible
     if (showHistory) {
       switch (e.key) {
