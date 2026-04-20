@@ -327,18 +327,25 @@ export function Header({ onMenuClick, onCriteriaToggle }: HeaderProps) {
     }
   }, [])
 
+  // Double Ctrl opens terminal
+  const lastCtrlRef = useRef<number>(0)
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if ((e.ctrlKey || e.metaKey) && e.code === 'Backquote') {
-        e.preventDefault()
-        if (!terminalIsOpen) {
-          setTerminalOpen(true)
+      if (e.key === 'Control' && !e.shiftKey && !e.metaKey && !e.altKey) {
+        const now = Date.now()
+        if (now - lastCtrlRef.current < 300) {
+          e.preventDefault()
+          e.stopPropagation()
+          useTerminalStore.getState().toggleOpen()
+          lastCtrlRef.current = 0
+        } else {
+          lastCtrlRef.current = now
         }
       }
     }
-    window.addEventListener('keydown', handleKeyDown)
-    return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [terminalIsOpen, setTerminalOpen])
+    window.addEventListener('keydown', handleKeyDown, true)
+    return () => window.removeEventListener('keydown', handleKeyDown, true)
+  }, [])
 
   // Start auto-refresh on mount
   useEffect(() => {
@@ -407,7 +414,7 @@ export function Header({ onMenuClick, onCriteriaToggle }: HeaderProps) {
             className={`p-2.5 rounded hover:bg-bg-tertiary transition-colors ${
               terminalIsOpen ? 'text-accent-primary' : 'text-text-muted hover:text-text-primary'
             }`}
-            title="Toggle terminal (Ctrl+\`)"
+            title="Toggle terminal (double Ctrl)"
           >
             <svg className="w-4 h-4" viewBox="0 0 20 20" fill="currentColor">
               <path fillRule="evenodd" d="M2 5a2 2 0 012-2h12a2 2 0 012 2v10a2 2 0 01-2 2H4a2 2 0 01-2-2V5zm3 1h10v1H5V6zm10 7H5v1h10v-1zm-10 2H5v1h10v-1z" clipRule="evenodd" />

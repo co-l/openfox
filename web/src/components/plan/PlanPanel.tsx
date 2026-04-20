@@ -219,6 +219,8 @@ export function PlanPanel({ criteriaSidebarOpen: externalCriteriaSidebarOpen, on
     return () => window.removeEventListener('keydown', handleKeyDown)
   }, [])
 
+  
+
   // Paste event listener for textarea
   useEffect(() => {
     const textarea = textareaRef.current

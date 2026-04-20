@@ -28,7 +28,7 @@ export function TerminalPane({ sessionId, onClose, onEscape, autoFocus }: Termin
     if (!onEscape) return
 
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === '²' || e.key === '`') {
+      if (e.key === 'Escape') {
         e.preventDefault()
         e.stopPropagation()
         onEscape()
@@ -60,7 +60,7 @@ export function TerminalPane({ sessionId, onClose, onEscape, autoFocus }: Termin
     termRef.current = { term, fitAddon }
 
     terminalRef.current.addEventListener('keydown', (e: KeyboardEvent) => {
-      if ((e.key === '²' || e.key === '`') && onEscape) {
+      if (e.key === 'Escape' && onEscape) {
         e.preventDefault()
         e.stopPropagation()
         onEscape()
@@ -99,7 +99,7 @@ export function TerminalPane({ sessionId, onClose, onEscape, autoFocus }: Termin
     resizeObserver.observe(terminalRef.current)
 
     term.onData((data) => {
-      if ((data === '\x1b' || data === '²' || data === '`') && onEscape) {
+      if (data === '\x1b' && onEscape) {
         onEscape()
         return
       }
@@ -107,7 +107,7 @@ export function TerminalPane({ sessionId, onClose, onEscape, autoFocus }: Termin
     })
 
     term.onKey((e) => {
-      if ((e.key === '\x1b' || e.key === '²' || e.key === '`') && onEscape) {
+      if (e.key === '\x1b' && onEscape) {
         e.domEvent.stopPropagation()
         onEscape()
       }
@@ -152,7 +152,7 @@ export function TerminalPane({ sessionId, onClose, onEscape, autoFocus }: Termin
         className="flex-1 relative overflow-hidden"
         tabIndex={0}
         onKeyDown={(e) => {
-          if ((e.key === '²' || e.key === '`') && onEscape) {
+          if (e.key === 'Escape' && onEscape) {
             e.preventDefault()
             e.stopPropagation()
             onEscape()

@@ -71,7 +71,7 @@ export function TerminalDrawer({ isOpen, onClose, onFocusChat }: TerminalDrawerP
 
     const handleKeyDown = (e: KeyboardEvent) => {
       if (justOpenedRef.current) return
-      if (e.key === 'Escape' || e.key === '²' || e.key === '`') {
+      if (e.key === 'Escape') {
         e.preventDefault()
         onClose()
         onFocusChat()
@@ -96,7 +96,7 @@ export function TerminalDrawer({ isOpen, onClose, onFocusChat }: TerminalDrawerP
         className="fixed inset-x-0 top-0 z-[100] h-[50vh] bg-bg-primary border-b border-border flex flex-col animate-slide-down outline-none"
         onClick={(e) => e.stopPropagation()}
         onKeyDown={(e) => {
-          if (e.key === 'Escape' || e.key === '²' || e.key === '`') {
+          if (e.key === 'Escape') {
             e.preventDefault()
             handleClose()
           }
