@@ -4,6 +4,10 @@
 
 Autonomous coding agent for local LLMs with contract-driven execution.
 
+![Session](docs/screenshots/session.png)
+![Providers](docs/screenshots/providers.png)
+![Workflows](docs/screenshots/workflows.png)
+
 ## Quick Start
 
 ```bash
@@ -64,15 +68,6 @@ npx openfox provider remove   # Remove provider
 - **Real-Time Metrics**: Prefill time, generation speed, context usage
 
 ## Screenshots
-
-![Session](docs/screenshots/session.png)
-*Session — Criteria tracking, tool calls, and streaming responses*
-
-![Providers](docs/screenshots/providers.png)
-*Providers — Local LLM backend configuration*
-
-![Workflows](docs/screenshots/workflows.png)
-*Workflows — Contract-driven execution pipeline*
 
 ![Homepage](docs/screenshots/homepage.png)
 *Homepage — Project overview and session history*
