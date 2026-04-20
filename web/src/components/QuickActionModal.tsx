@@ -26,7 +26,9 @@ export function QuickActionModal({ isOpen, onClose, onCloseComplete, onSelectCom
   const agentUserItems = useAgentsStore(state => state.userItems)
   const fetchAgents = useAgentsStore(state => state.fetchAgents)
   const currentMode = useSessionStore(state => state.currentSession?.mode)
+  const currentDangerLevel = useSessionStore(state => state.currentSession?.dangerLevel ?? 'normal')
   const switchMode = useSessionStore(state => state.switchMode)
+  const switchDangerLevel = useSessionStore(state => state.switchDangerLevel)
 
   const [search, setSearch] = useState('')
   const [selectedIndex, setSelectedIndex] = useState(0)
@@ -65,11 +67,31 @@ export function QuickActionModal({ isOpen, onClose, onCloseComplete, onSelectCom
     })
   }
 
-  const agents = [...agentDefaults, ...agentUserItems].filter(a => !a.subagent && a.id !== currentMode && fuzzyMatch(a.name, search)).map(a => ({ kind: 'agent' as const, id: a.id, name: a.name }))
-  const commands = [...commandDefaults, ...commandUserItems].filter(c => fuzzyMatch(c.name, search)).map(c => ({ kind: 'command' as const, id: c.id, name: c.name }))
-  const workflows = [...workflowDefaults, ...workflowUserItems].filter(w => fuzzyMatch(w.name, search)).map(w => ({ kind: 'workflow' as const, id: w.id, name: w.name }))
+  const agents = [...agentDefaults, ...agentUserItems].filter(a => !a.subagent && a.id !== currentMode).map(a => ({ kind: 'agent' as const, id: a.id, name: a.name }))
+  const commands = [...commandDefaults, ...commandUserItems].map(c => ({ kind: 'command' as const, id: c.id, name: c.name }))
+  const workflows = [...workflowDefaults, ...workflowUserItems].map(w => ({ kind: 'workflow' as const, id: w.id, name: w.name }))
+  const modes = (['normal', 'dangerous'] as const).filter(m => m !== currentDangerLevel).map(m => ({ kind: 'mode' as const, id: m, name: m.charAt(0).toUpperCase() + m.slice(1) }))
 
-  const allItems = [...agents, ...commands, ...workflows]
+  type ActionEntry = typeof agents[number] | typeof commands[number] | typeof workflows[number] | typeof modes[number]
+
+  const getPrefix = (kind: ActionEntry['kind']) => {
+    if (kind === 'agent') return 'Agent > Switch to'
+    if (kind === 'mode') return 'Mode > Switch to'
+    if (kind === 'command') return 'Command > Launch'
+    return 'Workflow > Run'
+  }
+
+  const matchesSearch = (item: ActionEntry) => {
+    const label = `${getPrefix(item.kind)} ${item.name}`
+    return fuzzyMatch(label, search)
+  }
+
+  const allItems = [
+    ...agents.filter(a => matchesSearch(a)),
+    ...commands.filter(c => matchesSearch(c)),
+    ...workflows.filter(w => matchesSearch(w)),
+    ...modes.filter(m => matchesSearch(m)),
+  ]
   const maxIndex = allItems.length - 1
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -97,6 +119,8 @@ export function QuickActionModal({ isOpen, onClose, onCloseComplete, onSelectCom
     if (!item) return
     if (item.kind === 'agent') {
       switchMode(item.id)
+    } else if (item.kind === 'mode') {
+      switchDangerLevel(item.id)
     } else if (item.kind === 'command') {
       onSelectCommand(item.id, textareaContent)
     } else {
@@ -108,12 +132,6 @@ export function QuickActionModal({ isOpen, onClose, onCloseComplete, onSelectCom
   const handleSearchChange = (value: string) => {
     setSearch(value)
     setSelectedIndex(0)
-  }
-
-  const getPrefix = (kind: 'agent' | 'command' | 'workflow') => {
-    if (kind === 'agent') return 'Agent > Switch to'
-    if (kind === 'command') return 'Command > Launch'
-    return 'Workflow > Run'
   }
 
   return isOpen ? createPortal(
