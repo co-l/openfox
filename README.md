@@ -4,13 +4,6 @@
 
 Autonomous coding agent for local LLMs with contract-driven execution.
 
-## Screenshots
-
-| | |
-|---|---|
-| ![Session](docs/screenshots/session.png) | ![Providers](docs/screenshots/providers.png) |
-| ![Workflows](docs/screenshots/workflows.png) |
-
 ## Quick Start
 
 ```bash
@@ -70,13 +63,40 @@ npx openfox provider remove   # Remove provider
 - **LSP Integration**: Immediate feedback on code validity
 - **Real-Time Metrics**: Prefill time, generation speed, context usage
 
-## More Screenshots
+## Screenshots
 
-| | | |
-|---|---|---|
-| ![Homepage](docs/screenshots/homepage.png) | ![Project Selected](docs/screenshots/project-selected.png) | ![Stats](docs/screenshots/stats.png) |
-| ![Terminal](docs/screenshots/terminal.png) | ![Notifications](docs/screenshots/notifications.png) | ![Agents](docs/screenshots/agents.png) |
-| ![Providers](docs/screenshots/providers.png) | ![Providers](docs/screenshots/general-instructions.png) | ![Vision Fallback](docs/screenshots/vision-fallback.png) |
+![Session](docs/screenshots/session.png)
+*Session — Criteria tracking, tool calls, and streaming responses*
+
+![Providers](docs/screenshots/providers.png)
+*Providers — Local LLM backend configuration*
+
+![Workflows](docs/screenshots/workflows.png)
+*Workflows — Contract-driven execution pipeline*
+
+![Homepage](docs/screenshots/homepage.png)
+*Homepage — Project overview and session history*
+
+![Project Selected](docs/screenshots/project-selected.png)
+*Project Selected — Active session with context stats*
+
+![Stats](docs/screenshots/stats.png)
+*Stats — Prefill time, generation speed, token usage*
+
+![Terminal](docs/screenshots/terminal.png)
+*Terminal — Integrated terminal for running commands*
+
+![Notifications](docs/screenshots/notifications.png)
+*Notifications — Event log and system messages*
+
+![Agents](docs/screenshots/agents.png)
+*Agents — Sub-agent management and execution*
+
+![General Instructions](docs/screenshots/general-instructions.png)
+*General Instructions — Global custom instructions*
+
+![Vision Fallback](docs/screenshots/vision-fallback.png)
+*Vision Fallback — Image processing configuration*
 
 ## License
 
