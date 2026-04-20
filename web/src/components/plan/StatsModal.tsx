@@ -1,5 +1,5 @@
 import { Fragment, useRef, useCallback, useEffect, useMemo, useState } from 'react'
-import { Modal } from '../shared/Modal'
+import { Modal } from '../shared/SelfContainedModal'
 import { DualSparkline } from '../shared/Sparkline'
 import { buildPerformanceChartData, buildResponseLogRows, type ResponseLogRow } from '@shared/stats-view.js'
 import type { CallStatsDataPoint, ModelSessionStats, SessionStats } from '@shared/types.js'

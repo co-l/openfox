@@ -5,7 +5,7 @@ import { useProjectStore } from '../../stores/project'
 import { useConfigStore } from '../../stores/config'
 import { useTerminalStore } from '../../stores/terminal'
 import { GlobalSettingsModal } from '../settings/GlobalSettingsModal'
-import { TerminalModal } from '../terminal/TerminalModal'
+import { TerminalDrawer } from '../terminal/TerminalDrawer'
 import { DropdownMenu, DropdownMenuItem } from '../shared/DropdownMenu'
 import { ChevronDown } from '../shared/ChevronDown'
 import { CheckIcon } from '../shared/CheckIcon'
@@ -457,8 +457,8 @@ export function Header({ onMenuClick, onCriteriaToggle }: HeaderProps) {
         onClose={() => setShowSettings(false)}
       />
 
-      {/* Terminal Modal */}
-      <TerminalModal 
+      {/* Terminal Drawer */}
+      <TerminalDrawer 
         isOpen={terminalIsOpen} 
         onClose={() => setTerminalOpen(false)} 
         onFocusChat={focusChatTextarea}

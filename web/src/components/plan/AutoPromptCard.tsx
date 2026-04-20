@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import type { Message } from '@shared/types.js'
-import { Modal } from '../shared/Modal'
+import { Modal } from '../shared/SelfContainedModal'
 
 interface AutoPromptCardProps {
   message: Message

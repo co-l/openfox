@@ -1,5 +1,5 @@
 import { useEffect, useState, useRef } from 'react'
-import { Modal } from '../shared/Modal'
+import { Modal } from '../shared/SelfContainedModal'
 import { Button } from '../shared/Button'
 import { EditButton } from '../shared/IconButton'
 import { useCommandsStore, type CommandFull } from '../../stores/commands'

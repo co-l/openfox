@@ -3,7 +3,7 @@ import { useTerminalStore } from '../../stores/terminal'
 import { useProjectStore } from '../../stores/project'
 import { TerminalPane } from './TerminalPane'
 
-interface TerminalModalProps {
+interface TerminalDrawerProps {
   isOpen: boolean
   onClose: () => void
   onFocusChat: () => void
@@ -15,7 +15,7 @@ function getGridClass(count: number): string {
   return 'grid-cols-1 lg:grid-cols-2 xl:grid-cols-3'
 }
 
-export function TerminalModal({ isOpen, onClose, onFocusChat }: TerminalModalProps) {
+export function TerminalDrawer({ isOpen, onClose, onFocusChat }: TerminalDrawerProps) {
   const createSession = useTerminalStore(state => state.createSession)
   const killSession = useTerminalStore(state => state.killSession)
   const sessions = useTerminalStore(state => state.sessions)

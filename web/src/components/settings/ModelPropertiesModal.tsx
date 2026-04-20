@@ -1,4 +1,6 @@
 import { useState, useEffect } from 'react'
+import { Modal } from '../shared/Modal'
+import { Button } from '../shared/Button'
 import { useConfigStore } from '../../stores/config'
 
 interface ModelConfig {
@@ -29,9 +31,7 @@ interface ModelSettings {
 function SettingsGroup({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div className="space-y-3">
-      <h4 className="text-sm font-medium text-text-secondary border-b border-border/50 pb-1">
-        {label}
-      </h4>
+      <h4 className="text-sm font-medium text-text-secondary border-b border-border/50 pb-1">{label}</h4>
       {children}
     </div>
   )
@@ -95,9 +95,7 @@ function NumberInput({
           type="button"
           onClick={handleToggle}
           className={`text-xs px-1.5 py-0.5 rounded border ${
-            useDefault
-              ? 'border-accent-primary/50 bg-accent-primary/10 text-accent-primary'
-              : 'border-border text-text-muted hover:text-text-secondary'
+            useDefault ? 'border-accent-primary/50 bg-accent-primary/10 text-accent-primary' : 'border-border text-text-muted hover:text-text-secondary'
           }`}
           title={useDefault ? 'Click to set a custom value' : 'Click to use default'}
         >
@@ -142,13 +140,8 @@ export function ModelPropertiesModal({ isOpen, onClose, providerId, model }: Mod
     })
   }, [model])
 
-  if (!isOpen) return null
-
   const handleSave = async () => {
-    if (settings.contextWindow < 1024 || settings.contextWindow > 10000000) {
-      return
-    }
-
+    if (settings.contextWindow < 1024 || settings.contextWindow > 10000000) return
     setSaving(true)
     const hasNonContextChanges =
       settings.temperature !== (model.temperature ?? null) ||
@@ -180,105 +173,89 @@ export function ModelPropertiesModal({ isOpen, onClose, providerId, model }: Mod
     onClose()
   }
 
+  if (!isOpen) return null
+
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-      <div className="bg-bg-secondary rounded-lg shadow-xl max-w-lg w-full mx-4 border border-border">
-        <div className="px-6 py-4 border-b border-border">
-          <h3 className="text-lg font-medium text-text-primary">Model Properties</h3>
-        </div>
-
-        <div className="px-6 py-4 space-y-5">
-          <div>
-            <label className="block text-sm font-medium text-text-secondary mb-1">
-              Model Name
-            </label>
-            <p className="text-text-primary bg-bg-tertiary px-3 py-2 rounded font-mono text-sm break-all">
-              {model.id}
-            </p>
-          </div>
-
-          <NumberInput
-            label="Context Window"
-            value={settings.contextWindow}
-            onChange={(v) => v !== null && setSettings(s => ({ ...s, contextWindow: v }))}
-            min={1024}
-            max={10000000}
-            helpText="Range: 1,024 - 10,000,000 tokens"
-          />
-
-          <SettingsGroup label="Sampling Parameters">
-            <div className="grid grid-cols-2 gap-3">
-              <NumberInput
-                label="Temperature"
-                value={settings.temperature}
-                onChange={(v) => setSettings(s => ({ ...s, temperature: v }))}
-                min={0}
-                max={2}
-                step={0.1}
-                helpText="0.0 - 2.0"
-                defaultValue={1}
-              />
-              <NumberInput
-                label="Top P"
-                value={settings.topP}
-                onChange={(v) => setSettings(s => ({ ...s, topP: v }))}
-                min={0}
-                max={1}
-                step={0.05}
-                helpText="0.0 - 1.0"
-                defaultValue={1}
-              />
-            </div>
-            <NumberInput
-              label="Top K"
-              value={settings.topK}
-              onChange={(v) => setSettings(s => ({ ...s, topK: v }))}
-              min={1}
-              max={200}
-              helpText="1 - 200 (leave as default if not supported)"
-            />
-          </SettingsGroup>
-
-          <NumberInput
-            label="Max Tokens"
-            value={settings.maxTokens}
-            onChange={(v) => setSettings(s => ({ ...s, maxTokens: v }))}
-            min={256}
-            max={32000}
-            helpText="Maximum tokens to generate per response"
-          />
-
-          <div>
-            <label className="block text-sm font-medium text-text-secondary mb-1">
-              Source
-            </label>
-            <p className="text-text-primary bg-bg-tertiary px-3 py-2 rounded text-sm">
-              {model.source === 'backend' && 'Auto-detected from backend'}
-              {model.source === 'user' && 'Manually set'}
-              {model.source === 'default' && 'Default value'}
-            </p>
-          </div>
-        </div>
-
-        <div className="px-6 py-4 border-t border-border flex justify-end gap-3">
-          <button
-            type="button"
-            onClick={handleCancel}
-            disabled={saving}
-            className="px-4 py-2 text-text-secondary hover:text-text-primary transition-colors disabled:opacity-50"
-          >
-            Cancel
-          </button>
-          <button
-            type="button"
-            onClick={handleSave}
-            disabled={saving || settings.contextWindow < 1024 || settings.contextWindow > 10000000}
-            className="px-4 py-2 bg-accent-primary text-white rounded hover:opacity-90 transition-opacity disabled:opacity-50 disabled:cursor-not-allowed"
-          >
+    <Modal
+      isOpen={isOpen}
+      onClose={onClose}
+      title="Model Properties"
+      size="sm"
+      footer={
+        <div className="flex justify-end gap-2">
+          <Button variant="secondary" onClick={handleCancel} disabled={saving}>Cancel</Button>
+          <Button variant="primary" onClick={handleSave} disabled={saving || settings.contextWindow < 1024 || settings.contextWindow > 10000000}>
             {saving ? 'Saving...' : 'Save'}
-          </button>
+          </Button>
+        </div>
+      }
+    >
+      <div className="space-y-4">
+        <div>
+          <label className="block text-sm font-medium text-text-secondary mb-1">Model Name</label>
+          <p className="text-text-primary bg-bg-tertiary px-3 py-2 rounded font-mono text-sm break-all">{model.id}</p>
+        </div>
+
+        <NumberInput
+          label="Context Window"
+          value={settings.contextWindow}
+          onChange={(v) => v !== null && setSettings(s => ({ ...s, contextWindow: v }))}
+          min={1024}
+          max={10000000}
+          helpText="Range: 1,024 - 10,000,000 tokens"
+        />
+
+        <SettingsGroup label="Sampling Parameters">
+          <div className="grid grid-cols-2 gap-3">
+            <NumberInput
+              label="Temperature"
+              value={settings.temperature}
+              onChange={(v) => setSettings(s => ({ ...s, temperature: v }))}
+              min={0}
+              max={2}
+              step={0.1}
+              helpText="0.0 - 2.0"
+              defaultValue={1}
+            />
+            <NumberInput
+              label="Top P"
+              value={settings.topP}
+              onChange={(v) => setSettings(s => ({ ...s, topP: v }))}
+              min={0}
+              max={1}
+              step={0.05}
+              helpText="0.0 - 1.0"
+              defaultValue={1}
+            />
+          </div>
+          <NumberInput
+            label="Top K"
+            value={settings.topK}
+            onChange={(v) => setSettings(s => ({ ...s, topK: v }))}
+            min={1}
+            max={200}
+            helpText="1 - 200 (leave as default if not supported)"
+          />
+        </SettingsGroup>
+
+        <NumberInput
+          label="Max Tokens"
+          value={settings.maxTokens}
+          onChange={(v) => setSettings(s => ({ ...s, maxTokens: v }))}
+          min={256}
+          max={32000}
+          helpText="Maximum tokens to generate per response"
+        />
+
+        <div>
+          <label className="block text-sm font-medium text-text-secondary mb-1">Source</label>
+          <p className="text-text-primary bg-bg-tertiary px-3 py-2 rounded text-sm">
+            {model.source === 'backend' && 'Auto-detected from backend'}
+            {model.source === 'user' && 'Manually set'}
+            {model.source === 'default' && 'Default value'}
+          </p>
         </div>
       </div>
-    </div>
+    </Modal>
   )
 }

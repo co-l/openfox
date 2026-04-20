@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { Modal } from '../shared/Modal'
+import { Modal } from '../shared/SelfContainedModal'
 import { useDevServerStore } from '../../stores/dev-server'
 
 interface DevServerConfigModalProps {

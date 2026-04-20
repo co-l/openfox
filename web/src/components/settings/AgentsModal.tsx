@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Modal } from '../shared/Modal'
+import { Modal } from '../shared/SelfContainedModal'
 import { Button } from '../shared/Button'
 import { DropdownMenu } from '../shared/DropdownMenu'
 import { useAgentsStore, type AgentFull } from '../../stores/agents'

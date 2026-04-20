@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useLocation } from 'wouter'
-import { Modal } from '../shared/Modal'
+import { Modal } from '../shared/SelfContainedModal'
 import { Button } from '../shared/Button'
 import { useSettingsStore, SETTINGS_KEYS } from '../../stores/settings'
 import { NotificationSettings } from './NotificationSettings'
@@ -17,7 +17,7 @@ export function GlobalSettingsModal({ isOpen, onClose }: GlobalSettingsModalProp
   const [activeTab, setActiveTab] = useState<Tab>('instructions')
 
   return (
-    <Modal isOpen={isOpen} onClose={onClose} title="Settings" size="xl">
+    <Modal isOpen={isOpen} onClose={onClose} title="Settings" size="xl" minHeight="500px">
       <div className="flex flex-col h-full">
         {/* Tab bar */}
         <div className="flex border-b border-border mb-4 -mt-1">

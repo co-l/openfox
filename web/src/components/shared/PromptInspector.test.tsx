@@ -3,7 +3,7 @@ import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it, vi } from 'vitest'
 import { PromptInspector } from './PromptInspector'
 
-vi.mock('./Modal', () => ({
+vi.mock('./SelfContainedModal', () => ({
   Modal: ({ isOpen, title, children }: { isOpen: boolean; title: string; children: ReactNode }) => (
     isOpen ? <div data-title={title}>{children}</div> : null
   ),

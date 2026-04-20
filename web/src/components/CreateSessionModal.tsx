@@ -1,12 +1,12 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { useLocation } from 'wouter'
 import { useProjectStore } from '../stores/project'
+import { Modal } from './shared/Modal'
 import { Button } from './shared/Button'
 import { Input } from './shared/Input'
 import { DeleteProjectConfirmationModal } from './DeleteProjectConfirmationModal.js'
 import { CreateProjectModal } from './CreateProjectModal.js'
 import { DirectoryBrowser } from './shared/DirectoryBrowser.js'
-import { CloseButton } from './shared/CloseButton'
 import { fetchDirectory } from '../lib/useDirectoryFetch'
 import { authFetch } from '../lib/api'
 
@@ -45,18 +45,14 @@ export function OpenProjectModal({ isOpen, onClose }: OpenProjectModalProps) {
   const [showBrowser, setShowBrowser] = useState(false)
   const itemsRef = useRef<HTMLButtonElement[]>([])
   
-  // Fetch workdir from config on mount
   useEffect(() => {
     authFetch('/api/config')
       .then(res => res.json())
       .then(data => {
-        if (data.workdir) {
-          setBaseWorkdir(data.workdir)
-        }
+        if (data.workdir) setBaseWorkdir(data.workdir)
       })
   }, [])
   
-  // Fetch directory listing
   const loadDirectory = useCallback(async (path?: string) => {
     setLoading(true)
     try {
@@ -69,7 +65,6 @@ export function OpenProjectModal({ isOpen, onClose }: OpenProjectModalProps) {
     }
   }, [baseWorkdir])
   
-  // Load initial directory when modal opens
   useEffect(() => {
     if (isOpen && baseWorkdir) {
       fetchDirectory(baseWorkdir)
@@ -77,18 +72,15 @@ export function OpenProjectModal({ isOpen, onClose }: OpenProjectModalProps) {
     }
   }, [isOpen, baseWorkdir, loadDirectory, listProjects])
   
-  // Filter directories based on search query
   const filteredDirectories = listing?.directories.filter(dir => 
     searchQuery === '' || dir.name.toLowerCase().includes(searchQuery.toLowerCase())
   ) ?? []
   
-  // Build unified list of visible items (parent + filtered directories)
   const visibleItems = [
     ...(listing?.parent && !searchQuery ? [{ type: 'parent' as const, path: listing.parent, name: '..' }] : []),
     ...filteredDirectories.map(dir => ({ type: 'directory' as const, path: dir.path, name: dir.name }))
   ]
   
-  // Handle clicking a project from recent list - navigate directly
   const handleProjectClick = (projectId: string) => {
     navigate(`/p/${projectId}`)
     onClose()
@@ -106,7 +98,6 @@ export function OpenProjectModal({ isOpen, onClose }: OpenProjectModalProps) {
     }
   }
   
-  // Handle clicking a directory from browse - create project
   const handleDirectoryClick = (path: string) => {
     const basename = path.split('/').filter(Boolean).pop() ?? ''
     createProject(basename, path)
@@ -114,7 +105,6 @@ export function OpenProjectModal({ isOpen, onClose }: OpenProjectModalProps) {
     setCreatingPath(path)
   }
   
-  // Navigate to newly created project when it appears in the list
   useEffect(() => {
     if (creatingPath) {
       const newProject = projects.find(p => p.workdir === creatingPath)
@@ -126,212 +116,126 @@ export function OpenProjectModal({ isOpen, onClose }: OpenProjectModalProps) {
     }
   }, [projects, creatingPath, navigate, onClose])
   
-  // Reset focus when filter changes
   useEffect(() => {
     setFocusedIndex(visibleItems.length > 0 ? 0 : -1)
   }, [searchQuery, visibleItems.length])
   
-  // Handle navigating into a directory (browse only)
   const handleNavigate = (path: string) => {
     setSearchQuery('')
     fetchDirectory(path)
   }
   
-  // Keyboard navigation handler
-  const handleKeyDown = useCallback((e: KeyboardEvent) => {
-    if (!isOpen) return
-    
-    // Handle Escape key to close modal
-    if (e.key === 'Escape') {
-      onClose()
-      return
-    }
-    
-    // Only handle navigation keys if search input is focused
-    if (!['ArrowDown', 'ArrowUp', 'Enter'].includes(e.key)) return
-    
-    const activeElement = document.activeElement
-    if (!activeElement || activeElement.tagName !== 'INPUT') return
-    
-    e.preventDefault()
-    
-    if (e.key === 'ArrowDown') {
-      setFocusedIndex(prev => {
-        const next = prev + 1
-        return next >= visibleItems.length ? 0 : next
-      })
-    } else if (e.key === 'ArrowUp') {
-      setFocusedIndex(prev => {
-        const next = prev - 1
-        return next < 0 ? visibleItems.length - 1 : next
-      })
-    } else if (e.key === 'Enter' && focusedIndex >= 0 && focusedIndex < visibleItems.length) {
-      const item = visibleItems[focusedIndex]
-      if (item?.type === 'parent') {
-        handleNavigate(item.path)
-      } else if (item) {
-        handleDirectoryClick(item.path)
-      }
-    }
-  }, [isOpen, visibleItems.length, focusedIndex, handleNavigate, handleDirectoryClick, onClose])
-  
-  // Attach keyboard listener
-  useEffect(() => {
-    if (!isOpen) return
-    
-    document.addEventListener('keydown', handleKeyDown)
-    return () => document.removeEventListener('keydown', handleKeyDown)
-  }, [isOpen, handleKeyDown])
-  
-  // Auto-scroll focused item into view
   useEffect(() => {
     if (focusedIndex >= 0 && itemsRef.current[focusedIndex]) {
-      itemsRef.current[focusedIndex].scrollIntoView({
-        behavior: 'smooth',
-        block: 'nearest'
-      })
+      itemsRef.current[focusedIndex].scrollIntoView({ behavior: 'smooth', block: 'nearest' })
     }
   }, [focusedIndex])
   
   if (!isOpen) return null
   
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50">
-      <div className="bg-bg-secondary border border-border rounded-lg w-full max-w-[90vw] md:max-w-4xl max-h-[90vh] flex flex-col">
-        {/* Header */}
-        <div className="p-4 border-b border-border flex items-center justify-between">
-          <h2 className="text-lg font-semibold text-text-primary">Open Project</h2>
-          <CloseButton onClick={onClose} variant="modal" size="lg" />
-        </div>
-        
-        {/* Split View Content */}
-        <div className="flex-1 flex overflow-hidden min-h-[400px]">
-          {/* Left Panel: Recent Projects */}
-          <div className="w-1/2 border-r border-border flex flex-col">
-            <div className="p-3 border-b border-border bg-bg-tertiary/30">
-              <h3 className="font-medium text-sm text-text-secondary">Recent Projects</h3>
-            </div>
-            
-            <div className="flex-1 overflow-y-auto">
-              {projects.length === 0 ? (
-                <div className="p-4 text-center text-text-muted text-sm">
-                  No recent projects
-                </div>
-              ) : (
-                <div className="divide-y divide-border">
-                  {projects.map(project => (
-                    <div
-                      key={project.id}
-                      className="group flex items-center gap-3 p-3 hover:bg-bg-tertiary/50 transition-colors"
-                    >
-                      <button
-                        onClick={() => handleProjectClick(project.id)}
-                        className="flex-1 flex items-center gap-3 text-left"
-                      >
-                        <svg className="w-5 h-5 text-accent-primary" fill="currentColor" viewBox="0 0 24 24">
-                          <path d="M10 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z" />
-                        </svg>
-                        <div className="flex-1 min-w-0">
-                          <div className="font-medium truncate">{project.name}</div>
-                          <div className="text-xs text-text-muted truncate">{project.workdir}</div>
-                        </div>
-                      </button>
-                      <button
-                        onClick={(e) => handleDeleteClick(project, e)}
-                        className="opacity-0 group-hover:opacity-100 text-accent-error/70 hover:text-accent-error p-1 transition-opacity"
-                        title="Delete project"
-                      >
-                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                        </svg>
-                      </button>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
+    <Modal isOpen={isOpen} onClose={onClose} title="Open Project" size="xl" footer={
+      <div className="flex justify-between gap-2">
+        <Button variant="secondary" onClick={() => setShowCreateModal(true)}>
+          Create Project
+        </Button>
+        <Button variant="secondary" onClick={onClose}>
+          Cancel
+        </Button>
+      </div>
+    }>
+      <div className="flex flex-1 -m-4">
+        {/* Recent Projects */}
+        <div className="w-1/2 border-r border-border flex flex-col">
+          <div className="p-3 border-b border-border bg-bg-tertiary/30">
+            <h3 className="font-medium text-sm text-text-secondary">Recent Projects</h3>
           </div>
-          
-          {/* Right Panel: Browse Filesystem */}
-          <div className="w-1/2 flex flex-col">
-            <div className="p-3 border-b border-border bg-bg-tertiary/30 flex items-center justify-between">
-              <h3 className="font-medium text-sm text-text-secondary">Browse Projects</h3>
-              <button
-                onClick={() => setShowBrowser(true)}
-                className="text-xs text-accent-primary hover:underline"
-              >
-                Open in dialog
-              </button>
-            </div>
-            
-            {/* Inline browser - simplified */}
-            <div className="p-3 border-b border-border">
-              <Input
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="Filter directories..."
-                className="w-full"
-              />
-            </div>
-            
-            {/* Directory list */}
-            <div className="flex-1 overflow-y-auto">
-              {loading ? (
-                <div className="p-8 text-center text-text-muted">
-                  <div className="animate-spin w-5 h-5 border-2 border-accent-primary border-t-transparent rounded-full mx-auto" />
-                </div>
-              ) : visibleItems.length === 0 ? (
-                <div className="p-8 text-center text-text-muted text-sm">
-                  {searchQuery ? 'No matching directories' : 'No subdirectories'}
-                </div>
-              ) : (
-                <div className="divide-y divide-border">
-                  {visibleItems.map((item, index) => (
+          <div className="flex-1 overflow-y-auto">
+            {projects.length === 0 ? (
+              <div className="p-4 text-center text-text-muted text-sm">No recent projects</div>
+            ) : (
+              <div className="divide-y divide-border">
+                {projects.map(project => (
+                  <div key={project.id} className="group flex items-center gap-3 p-3 hover:bg-bg-tertiary/50 transition-colors">
                     <button
-                      ref={el => {
-                        itemsRef.current[index] = el!
-                      }}
-                      key={item.path}
-                      onClick={() => item.type === 'parent' ? handleNavigate(item.path) : handleDirectoryClick(item.path)}
-                      className={`w-full p-3 flex items-center gap-3 text-left transition-colors ${
-                        index === focusedIndex 
-                          ? 'bg-accent-primary/20 text-accent-primary' 
-                          : 'hover:bg-bg-tertiary/50'
-                      }`}
+                      onClick={() => handleProjectClick(project.id)}
+                      className="flex-1 flex items-center gap-3 text-left"
                     >
-                      <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
+                      <svg className="w-5 h-5 text-accent-primary" fill="currentColor" viewBox="0 0 24 24">
                         <path d="M10 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z" />
                       </svg>
-                      <span className="flex-1">{item.name}</span>
+                      <div className="flex-1 min-w-0">
+                        <div className="font-medium truncate">{project.name}</div>
+                        <div className="text-xs text-text-muted truncate">{project.workdir}</div>
+                      </div>
                     </button>
-                  ))}
-                </div>
-              )}
-            </div>
-            
+                    <button
+                      onClick={(e) => handleDeleteClick(project, e)}
+                      className="opacity-0 group-hover:opacity-100 text-accent-error/70 hover:text-accent-error p-1 transition-opacity"
+                      title="Delete project"
+                    >
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                      </svg>
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         </div>
         
-        {/* Footer Actions */}
-        <div className="p-4 border-t border-border flex justify-between gap-2">
-          <Button variant="secondary" onClick={() => setShowCreateModal(true)}>
-            Create Project
-          </Button>
-          <Button variant="secondary" onClick={onClose}>
-            Cancel
-          </Button>
+        {/* Browse Filesystem */}
+        <div className="w-1/2 flex flex-col">
+          <div className="p-3 border-b border-border bg-bg-tertiary/30 flex items-center justify-between">
+            <h3 className="font-medium text-sm text-text-secondary">Browse Projects</h3>
+            <button onClick={() => setShowBrowser(true)} className="text-xs text-accent-primary hover:underline">
+              Open in dialog
+            </button>
+          </div>
+          <div className="p-3 border-b border-border">
+            <Input
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Filter directories..."
+              className="w-full"
+            />
+          </div>
+          <div className="flex-1 overflow-y-auto">
+            {loading ? (
+              <div className="p-8 text-center text-text-muted">
+                <div className="animate-spin w-5 h-5 border-2 border-accent-primary border-t-transparent rounded-full mx-auto" />
+              </div>
+            ) : visibleItems.length === 0 ? (
+              <div className="p-8 text-center text-text-muted text-sm">
+                {searchQuery ? 'No matching directories' : 'No subdirectories'}
+              </div>
+            ) : (
+              <div className="divide-y divide-border">
+                {visibleItems.map((item, index) => (
+                  <button
+                    ref={el => { if (el) itemsRef.current[index] = el }}
+                    key={item.path}
+                    onClick={() => item.type === 'parent' ? handleNavigate(item.path) : handleDirectoryClick(item.path)}
+                    className={`w-full p-3 flex items-center gap-3 text-left transition-colors ${
+                      index === focusedIndex ? 'bg-accent-primary/20 text-accent-primary' : 'hover:bg-bg-tertiary/50'
+                    }`}
+                  >
+                    <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
+                      <path d="M10 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z" />
+                    </svg>
+                    <span className="flex-1">{item.name}</span>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
         </div>
       </div>
       
-      {/* Create Project Modal */}
       {showCreateModal && (
-        <CreateProjectModal
-          isOpen={showCreateModal}
-          onClose={() => setShowCreateModal(false)}
-        />
+        <CreateProjectModal isOpen={showCreateModal} onClose={() => setShowCreateModal(false)} />
       )}
-      
-      {/* Delete Confirmation Modal */}
       {projectToDelete && (
         <DeleteProjectConfirmationModal
           isOpen={true}
@@ -340,18 +244,13 @@ export function OpenProjectModal({ isOpen, onClose }: OpenProjectModalProps) {
           onConfirm={handleConfirmDelete}
         />
       )}
-
-      {/* Directory Browser Modal */}
       {showBrowser && (
         <DirectoryBrowser
           initialPath={baseWorkdir ?? undefined}
-          onSelect={(path) => {
-            handleDirectoryClick(path)
-            setShowBrowser(false)
-          }}
+          onSelect={(path) => { handleDirectoryClick(path); setShowBrowser(false) }}
           onClose={() => setShowBrowser(false)}
         />
       )}
-    </div>
+    </Modal>
   )
 }

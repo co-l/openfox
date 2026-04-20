@@ -1,5 +1,5 @@
-import { Modal } from './shared/Modal.js'
-import { Button } from './shared/Button.js'
+import { Modal } from './shared/SelfContainedModal'
+import { Button } from './shared/Button'
 
 interface DeleteProjectConfirmationModalProps {
   isOpen: boolean

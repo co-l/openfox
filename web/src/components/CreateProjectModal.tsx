@@ -1,6 +1,6 @@
 import { useState, useCallback, useEffect, useRef } from 'react'
 import { useLocation } from 'wouter'
-import { Modal } from './shared/Modal'
+import { Modal } from './shared/SelfContainedModal'
 import { Button } from './shared/Button'
 import { Input } from './shared/Input'
 import { authFetch } from '../lib/api'

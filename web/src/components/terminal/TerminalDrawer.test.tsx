@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 
 const mockCreateSession = vi.fn()
 
-describe('TerminalModal auto-create logic', () => {
+describe('TerminalDrawer auto-create logic', () => {
   beforeEach(() => {
     vi.clearAllMocks()
   })

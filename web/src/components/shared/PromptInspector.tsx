@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import type { InjectedFile, PromptContext, PromptContextMessage, PromptContextTool } from '@shared/types.js'
-import { Modal } from './Modal'
+import { Modal } from './SelfContainedModal'
 
 interface PromptInspectorProps {
   isOpen: boolean
