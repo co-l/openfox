@@ -2,7 +2,6 @@ import { useState, useRef, useEffect } from 'react'
 import { useSessionStore } from '../../stores/session'
 import { useAgentsStore, getAgentColor } from '../../stores/agents'
 import { AgentsModal } from '../settings/AgentsModal'
-import { EditButton } from '../shared/IconButton'
 
 export function AgentSelector() {
   const currentMode = useSessionStore(state => state.currentSession?.mode)
@@ -62,9 +61,10 @@ export function AgentSelector() {
 
       {isOpen && topLevelAgents.length > 0 && (
         <div className="absolute bottom-full left-0 mb-1 w-56 bg-bg-secondary border border-border rounded-lg shadow-lg overflow-hidden z-50">
-          {topLevelAgents.map(agent => {
+          {topLevelAgents.map((agent, index) => {
             const isActive = agent.id === currentMode
             const color = getAgentColor(agents, agent.id)
+            const shortcut = index < 4 ? `Ctrl+${index + 1}` : null
             return (
               <div
                 key={agent.id}
@@ -80,26 +80,23 @@ export function AgentSelector() {
                     if (!isActive) switchMode(agent.id)
                     setIsOpen(false)
                   }}
-                  className="flex-1 text-left flex items-center gap-2"
+                  className="flex-1 text-left flex items-center gap-2 min-w-0"
                 >
-                  <span className="font-medium" style={{ color }}>
+                  <span className="font-medium truncate" style={{ color }}>
                     {agent.name}
                   </span>
                   {isActive && (
-                    <svg className="w-3.5 h-3.5 text-text-muted ml-auto" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <svg className="w-3.5 h-3.5 text-text-muted shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                       <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
                     </svg>
                   )}
                 </button>
-                <EditButton
-                  className="opacity-0 group-hover:opacity-100"
-                  onClick={(e) => {
-                    e.stopPropagation()
-                    setIsOpen(false)
-                    setEditId(agent.id)
-                    setShowManager(true)
-                  }}
-                />
+                {shortcut && (
+                  <span className="shrink-0 px-1.5 py-0.5 text-[10px] bg-bg-tertiary text-text-muted rounded">
+                    Ctrl+{index + 1}
+                  </span>
+                )}
+                
               </div>
             )
           })}

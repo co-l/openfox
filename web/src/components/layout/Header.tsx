@@ -323,7 +323,7 @@ export function Header({ onMenuClick, onCriteriaToggle }: HeaderProps) {
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === '²' || e.key === '`') {
+      if ((e.ctrlKey || e.metaKey) && e.code === 'Backquote') {
         e.preventDefault()
         if (!terminalIsOpen) {
           setTerminalOpen(true)
@@ -403,7 +403,7 @@ export function Header({ onMenuClick, onCriteriaToggle }: HeaderProps) {
             className={`p-2.5 rounded hover:bg-bg-tertiary transition-colors ${
               terminalIsOpen ? 'text-accent-primary' : 'text-text-muted hover:text-text-primary'
             }`}
-            title="Toggle terminal (²)"
+            title="Toggle terminal (Ctrl+\`)"
           >
             <svg className="w-4 h-4" viewBox="0 0 20 20" fill="currentColor">
               <path fillRule="evenodd" d="M2 5a2 2 0 012-2h12a2 2 0 012 2v10a2 2 0 01-2 2H4a2 2 0 01-2-2V5zm3 1h10v1H5V6zm10 7H5v1h10v-1zm-10 2H5v1h10v-1z" clipRule="evenodd" />

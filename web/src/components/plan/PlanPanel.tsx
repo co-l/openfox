@@ -20,6 +20,7 @@ import { Markdown } from '../shared/Markdown.js'
 import { CloseButton } from '../shared/CloseButton'
 import { useWorkflowsStore } from '../../stores/workflows'
 import { useAgentsStore } from '../../stores/agents'
+import { useCommandsStore } from '../../stores/commands'
 import { useDisplaySettings } from '../../stores/settings'
 import { processImageFile } from '../../lib/image-processing.js'
 import { buildPromptContextByUserMessageId } from './prompt-context-linking.js'
@@ -28,6 +29,7 @@ import { CommandMenu } from './CommandMenu'
 import { WorkflowMenu } from './WorkflowMenu'
 import { CommandsModal } from '../settings/CommandsModal'
 import { WorkflowsModal } from '../settings/WorkflowsModal'
+import { QuickActionModal } from '../QuickActionModal'
 
 import { groupMessages, type DisplayItem } from './groupMessages.js'
 import { usePromptHistory } from '../../hooks/usePromptHistory.js'
@@ -47,6 +49,7 @@ export function PlanPanel({ criteriaSidebarOpen: externalCriteriaSidebarOpen, on
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
   const [showCommandsModal, setShowCommandsModal] = useState(false)
   const [showWorkflowsModal, setShowWorkflowsModal] = useState(false)
+  const [showQuickAction, setShowQuickAction] = useState(false)
   const [turnStatsModal, setTurnStatsModal] = useState<{ model: string; mode: string; totalTime: number; prefillTokens: number; generationTokens: number; llmCalls?: Array<{ temperature?: number; topP?: number; topK?: number; maxTokens?: number; promptTokens: number; completionTokens: number; ttft: number; completionTime: number }> } | null>(null)
   const scrollContainerRef = useRef<HTMLDivElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
@@ -197,6 +200,18 @@ export function PlanPanel({ criteriaSidebarOpen: externalCriteriaSidebarOpen, on
     return () => window.removeEventListener('keydown', handleEscape)
   }, [isRunning, stopGeneration, isAutoScrollActive])
 
+  // Ctrl+Shift opens quick action modal
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.shiftKey && !e.altKey) {
+        e.preventDefault()
+        setShowQuickAction(true)
+      }
+    }
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [])
+
   // Paste event listener for textarea
   useEffect(() => {
     const textarea = textareaRef.current
@@ -252,7 +267,7 @@ export function PlanPanel({ criteriaSidebarOpen: externalCriteriaSidebarOpen, on
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     // Ctrl+1/2/3/4 to switch agents (layout-independent via e.code)
-    if (e.ctrlKey && e.code.startsWith('Digit')) {
+    if ((e.ctrlKey || e.metaKey) && e.code.startsWith('Digit')) {
       const digit = parseInt(e.code.slice(-1), 10)
       const agentIndex = digit - 1
       const agent = topLevelAgents[agentIndex]
@@ -640,11 +655,7 @@ export function PlanPanel({ criteriaSidebarOpen: externalCriteriaSidebarOpen, on
               }
             }}
             onKeyDown={handleKeyDown}
-            placeholder={
-              isPlanning
-                ? "What would you like to build?"
-                : "Send a message..."
-            }
+            placeholder="What would you like to build?"
             className="flex-1 bg-transparent text-sm placeholder:text-text-muted resize-none overflow-y-auto focus:outline-none"
             style={{ minHeight: '24px', maxHeight: '200px' }}
             spellCheck={false}
@@ -709,6 +720,38 @@ export function PlanPanel({ criteriaSidebarOpen: externalCriteriaSidebarOpen, on
       </form>
       <CommandsModal isOpen={showCommandsModal} onClose={() => setShowCommandsModal(false)} />
       <WorkflowsModal isOpen={showWorkflowsModal} onClose={() => setShowWorkflowsModal(false)} />
+      <QuickActionModal
+        isOpen={showQuickAction}
+        onClose={() => setShowQuickAction(false)}
+        textareaContent={input}
+        onCloseComplete={() => textareaRef.current?.focus()}
+        onSelectCommand={async (commandId, textareaContent) => {
+          const full = await useCommandsStore.getState().fetchCommand(commandId)
+          if (full) {
+            const combinedContent = textareaContent?.trim()
+              ? `${textareaContent.trim()}\n\n${full.prompt}`
+              : full.prompt
+            if (full.metadata.agentMode) {
+              useSessionStore.getState().switchMode(full.metadata.agentMode)
+            }
+            sendMessage(combinedContent, attachments?.length ? attachments : undefined, {
+              messageKind: 'command',
+              isSystemGenerated: true,
+            })
+            clearInput()
+          }
+        }}
+        onSelectWorkflow={(workflowId) => {
+          const content = input.trim() || undefined
+          const atts = attachments.length > 0 ? attachments : undefined
+          if (session?.mode === 'planner') {
+            useSessionStore.getState().acceptAndBuild(workflowId, content, atts)
+          } else {
+            useSessionStore.getState().launchRunner(content, atts, workflowId)
+          }
+          clearInput()
+        }}
+      />
     </SessionLayout>
   )
 }
