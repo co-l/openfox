@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { Modal } from '../shared/SelfContainedModal'
 import { Button } from '../shared/Button'
+import { KvCacheWarning } from '../shared/KvCacheWarning'
 
 interface InstructionsModalProps {
   isOpen: boolean
@@ -76,7 +77,9 @@ export function InstructionsModal({
           />
         </div>
 
-        <div className="flex justify-end gap-2 pt-2 mt-3 border-t border-border flex-shrink-0">
+        {isDirty && <KvCacheWarning />}
+
+        <div className="flex justify-end gap-2 pt-2 border-t border-border flex-shrink-0">
           <Button variant="secondary" onClick={handleCancel}>
             Cancel
           </Button>

@@ -5,6 +5,7 @@ import { Button } from '../shared/Button'
 import { useSettingsStore, SETTINGS_KEYS } from '../../stores/settings'
 import { NotificationSettings } from './NotificationSettings'
 import { SkillsContent } from './SkillsModal'
+import { KvCacheWarning } from '../shared/KvCacheWarning'
 
 interface GlobalSettingsModalProps {
   isOpen: boolean
@@ -229,6 +230,8 @@ function InstructionsTab({ isOpen }: { isOpen: boolean }) {
           disabled={isBusy}
         />
       </div>
+
+      {isDirty && <KvCacheWarning />}
 
       <div className="flex justify-end gap-2">
         <Button variant="secondary" onClick={handleDiscard} disabled={!isDirty}>

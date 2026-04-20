@@ -11,6 +11,7 @@ import { CRUDListItemSimple } from './CRUDListItem'
 import { CRUDListView } from './CRUDListView'
 import { NameIdFields } from './FormFields'
 import { useCRUDForm } from './useCRUDForm'
+import { KvCacheWarning } from '../shared/KvCacheWarning'
 
 type SkillFormData = {
   name: string
@@ -246,7 +247,9 @@ export function SkillsContent({ isOpen }: { isOpen: boolean }) {
           />
         </div>
 
-        <div className="flex justify-end gap-2 pt-3 mt-3 border-t border-border flex-shrink-0">
+        <KvCacheWarning />
+
+        <div className="flex justify-end gap-2 pt-3 border-t border-border flex-shrink-0">
           <Button variant="secondary" onClick={() => setView('list')}>Cancel</Button>
           {isReadOnly ? (
             <Button
