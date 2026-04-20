@@ -4,8 +4,13 @@
 
 Autonomous coding agent for local LLMs with contract-driven execution.
 
+*Session — Criteria tracking, tool calls, and streaming responses*
 ![Session](docs/screenshots/session.png)
+
+*Providers — Local LLM backend configuration*
 ![Providers](docs/screenshots/providers.png)
+
+*Workflows — Contract-driven execution pipeline*
 ![Workflows](docs/screenshots/workflows.png)
 
 ## Quick Start
@@ -69,29 +74,29 @@ npx openfox provider remove   # Remove provider
 
 ## Screenshots
 
-![Homepage](docs/screenshots/homepage.png)
 *Homepage — Project overview and session history*
+![Homepage](docs/screenshots/homepage.png)
 
-![Project Selected](docs/screenshots/project-selected.png)
 *Project Selected — Active session with context stats*
+![Project Selected](docs/screenshots/project-selected.png)
 
-![Stats](docs/screenshots/stats.png)
 *Stats — Prefill time, generation speed, token usage*
+![Stats](docs/screenshots/stats.png)
 
-![Terminal](docs/screenshots/terminal.png)
 *Terminal — Integrated terminal for running commands*
+![Terminal](docs/screenshots/terminal.png)
 
-![Notifications](docs/screenshots/notifications.png)
 *Notifications — Event log and system messages*
+![Notifications](docs/screenshots/notifications.png)
 
-![Agents](docs/screenshots/agents.png)
 *Agents — Sub-agent management and execution*
+![Agents](docs/screenshots/agents.png)
 
-![General Instructions](docs/screenshots/general-instructions.png)
 *General Instructions — Global custom instructions*
+![General Instructions](docs/screenshots/general-instructions.png)
 
-![Vision Fallback](docs/screenshots/vision-fallback.png)
 *Vision Fallback — Image processing configuration*
+![Vision Fallback](docs/screenshots/vision-fallback.png)
 
 ## License
 
