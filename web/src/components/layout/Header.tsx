@@ -1,4 +1,10 @@
 import { useState, useEffect, useCallback, useRef, type ReactNode } from 'react'
+
+const MenuIcon = () => (
+  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
+  </svg>
+)
 import { Link, useLocation } from 'wouter'
 import { useSessionStore } from '../../stores/session'
 import { useProjectStore } from '../../stores/project'
@@ -350,9 +356,7 @@ export function Header({ onMenuClick, onCriteriaToggle }: HeaderProps) {
             className="flex-shrink-0 p-2.5 rounded hover:bg-bg-tertiary text-text-muted hover:text-text-primary transition-colors"
             title="Toggle session list"
           >
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
-            </svg>
+            <MenuIcon />
           </button>
         )}
 
@@ -444,9 +448,7 @@ export function Header({ onMenuClick, onCriteriaToggle }: HeaderProps) {
             className="p-2.5 rounded hover:bg-bg-tertiary text-text-muted hover:text-text-primary transition-colors"
             title="Toggle summary sidebar"
           >
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
-            </svg>
+            <MenuIcon />
           </button>
         )}
       </div>
