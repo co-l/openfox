@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef, type ReactNode } from 'react'
+import { useState, useEffect, useCallback, useRef, useMemo, type ReactNode } from 'react'
 
 const MenuIcon = () => (
   <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -227,62 +227,64 @@ interface SessionDropdownProps {
   sessions: SessionSummary[]
   currentProject: { id: string; name: string; workdir: string }
   currentSession: { id: string; metadata?: { title?: string } } | null
+  isOpen?: boolean
+  onOpenChange?: (open: boolean) => void
 }
 
-function SessionDropdown({ sessions, currentProject, currentSession }: SessionDropdownProps) {
+function SessionDropdown({ sessions, currentProject, currentSession, isOpen, onOpenChange }: SessionDropdownProps) {
   const loadSession = useSessionStore(state => state.loadSession)
 
-  // Filter sessions to those belonging to the current project by ID
   const projectSessions = sessions.filter(session => session.projectId === currentProject.id).slice(0, 15)
-
   const groupedSessions = groupSessionsByDate(projectSessions)
 
-  const items: DropdownMenuItem[] = []
+  const items: DropdownMenuItem[] = useMemo(() => {
+    const result: DropdownMenuItem[] = []
 
-  // Add "New session" as the first item
-  items.push({
-    label: (
-      <div className="flex items-center gap-2">
-        <svg className="w-4 h-4 text-accent-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-        </svg>
-        <span className="text-sm">New session</span>
-      </div>
-    ),
-    href: `/p/${currentProject.id}/new`,
-    onClick: () => {},
-    
-  })
-
-  for (const [_dateKey, daySessions] of groupedSessions) {
-    const firstSession = daySessions[0]
-    if (!firstSession) continue
-
-    items.push({
+    result.push({
       label: (
-        <div className="px-3 py-2 text-text-muted text-xs font-medium cursor-default">
-          {formatDateHeader(firstSession.updatedAt)}
+        <div className="flex items-center gap-2">
+          <svg className="w-4 h-4 text-accent-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+          </svg>
+          <span className="text-sm">New session</span>
         </div>
       ),
+      href: `/p/${currentProject.id}/new`,
       onClick: () => {},
     })
 
-    for (const session of daySessions) {
-      items.push({
+    for (const [_dateKey, daySessions] of groupedSessions) {
+      const firstSession = daySessions[0]
+      if (!firstSession) continue
+
+      result.push({
         label: (
-          <div className="min-w-[160px]">
-            <div className="truncate text-sm">{session.title ?? session.id.slice(0, 8)}</div>
-            <div className="text-text-muted text-xs">{formatTime(session.updatedAt)}</div>
+          <div className="px-3 py-2 text-text-muted text-xs font-medium cursor-default">
+            {formatDateHeader(firstSession.updatedAt)}
           </div>
         ),
-        icon: session.id === currentSession?.id ? <CheckIcon /> : undefined,
-        href: `/p/${currentProject.id}/s/${session.id}`,
-        onClick: () => {
-          loadSession(session.id)
-        },
+        onClick: () => {},
       })
+
+      for (const session of daySessions) {
+        result.push({
+          label: (
+            <div className="min-w-[160px]">
+              <div className="truncate text-sm">{session.title ?? session.id.slice(0, 8)}</div>
+              <div className="text-text-muted text-xs">{formatTime(session.updatedAt)}</div>
+            </div>
+          ),
+          icon: session.id === currentSession?.id ? <CheckIcon /> : undefined,
+          href: `/p/${currentProject.id}/s/${session.id}`,
+          onClick: () => {
+            loadSession(session.id)
+          },
+        })
+      }
     }
-  }
+
+    return result
+  }, [currentProject.id, groupedSessions, currentSession?.id])
 
   const triggerLabel = currentSession
     ? (currentSession.metadata?.title ?? currentSession.id.slice(0, 8))
@@ -291,6 +293,8 @@ function SessionDropdown({ sessions, currentProject, currentSession }: SessionDr
   return (
     <DropdownMenu
       items={items}
+      isOpen={isOpen}
+      onOpenChange={onOpenChange}
       trigger={
         <button
           className="text-text-secondary hover:text-text-primary hover:underline text-sm truncate flex items-center gap-1"
@@ -308,6 +312,7 @@ function SessionDropdown({ sessions, currentProject, currentSession }: SessionDr
 
 export function Header({ onMenuClick, onCriteriaToggle }: HeaderProps) {
   const [showSettings, setShowSettings] = useState(false)
+  const [sessionDropdownOpen, setSessionDropdownOpen] = useState(false)
   const [location] = useLocation()
   const isProjectPage = location.startsWith('/p/')
   const isSessionPage = /^\/p\/[^/]+\/s\/[^/]+$/.test(location)
@@ -319,6 +324,12 @@ export function Header({ onMenuClick, onCriteriaToggle }: HeaderProps) {
   const stopAutoRefresh = useConfigStore(state => state.stopAutoRefresh)
   const setTerminalOpen = useTerminalStore(state => state.setOpen)
   const terminalIsOpen = useTerminalStore(state => state.isOpen)
+
+  useEffect(() => {
+    const handler = () => setSessionDropdownOpen(true)
+    window.addEventListener('open-session-dropdown', handler)
+    return () => window.removeEventListener('open-session-dropdown', handler)
+  }, [])
 
   const focusChatTextarea = useCallback(() => {
     const textarea = document.querySelector('textarea[placeholder*="What would you like to build"], textarea[placeholder*="Send a message"]') as HTMLTextAreaElement | null
@@ -398,6 +409,8 @@ export function Header({ onMenuClick, onCriteriaToggle }: HeaderProps) {
                 sessions={sessions}
                 currentProject={project}
                 currentSession={session}
+                isOpen={sessionDropdownOpen}
+                onOpenChange={setSessionDropdownOpen}
               />
             </span>
 

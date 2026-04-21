@@ -94,6 +94,12 @@ export function QuickActionModal({ isOpen, onClose, onCloseComplete, onSelectCom
       prefix: 'Action > Create',
       action: () => currentProjectId && createSession(currentProjectId),
     },
+    {
+      id: 'navigate-session',
+      name: 'Another Session',
+      prefix: 'Action > Navigate to',
+      action: () => window.dispatchEvent(new CustomEvent('open-session-dropdown')),
+    },
     ...dedupById(agentDefaults, agentUserItems)
       .filter(a => !a.subagent && a.id !== currentMode)
       .map(a => ({ id: a.id, name: a.name, prefix: 'Agent > Switch to', action: () => switchMode(a.id) })),
