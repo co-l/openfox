@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { useVisualViewport } from './hooks/useVisualViewport'
 import { Route, Switch, useRoute, useLocation } from 'wouter'
 import { useWebSocket } from './hooks/useWebSocket'
 import { useSessionStore } from './stores/session'
@@ -203,6 +204,7 @@ function App() {
   const [rightMobileOpen, setRightMobileOpen] = useState(false)
 
   const [isMobile, setIsMobile] = useState(false)
+  const viewport = useVisualViewport()
 
   useEffect(() => {
     const checkMobile = () => {
@@ -279,7 +281,7 @@ function App() {
         onSubmit={submitPassword}
         onCancel={cancelPassword}
       />
-      <div className="h-screen flex flex-col">
+      <div className="flex flex-col" style={{ height: isMobile ? `calc(${viewport.offsetTop}px + ${viewport.height}px)` : '100vh' }}>
         <PageTitle />
         <Header
           onMenuClick={handleLeftToggle}

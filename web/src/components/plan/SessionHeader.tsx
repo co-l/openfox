@@ -1,11 +1,8 @@
+import { useState } from 'react'
 import { useSessionStore } from '../../stores/session'
-import { Button } from '../shared/Button'
 import { ProgressBar, LowTokenWarning } from '../shared/ProgressBar'
 import { formatTokens } from '../../lib/format-stats'
 
-/**
- * Get text color class based on context usage
- */
 function getTextColor(percent: number, dangerZone: boolean): string {
   if (dangerZone) return 'text-accent-error'
   if (percent > 85) return 'text-accent-error'
@@ -17,55 +14,75 @@ export function SessionHeader() {
   const contextState = useSessionStore(state => state.contextState)
   const currentSession = useSessionStore(state => state.currentSession)
   const compactContext = useSessionStore(state => state.compactContext)
-  
-  // Don't render if no context state or no session
+
+  const [menuOpen, setMenuOpen] = useState(false)
+
   if (!contextState || !currentSession) {
     return null
   }
-  
+
   const { currentTokens, maxTokens, compactionCount, dangerZone } = contextState
   const percent = Math.round((currentTokens / maxTokens) * 100)
   const isRunning = currentSession.isRunning
-  
+
   return (
     <div className="flex-shrink-0 px-4 py-1.5 border-b border-border bg-bg-secondary/50">
       <div className="flex items-center justify-between gap-4">
-        {/* Left side: Context info */}
+        <div className="flex-1" />
+
         <div className="flex items-center gap-2">
-          <div className="flex items-center gap-1.5 text-sm">
-            <span className="text-text-muted">Context:</span>
-            <span className={getTextColor(percent, dangerZone)}>
-              {formatTokens(currentTokens)} / {formatTokens(maxTokens)}
-            </span>
-            <span className={getTextColor(percent, dangerZone)}>({percent}%)</span>
-          </div>
-          
+          <span className={getTextColor(percent, dangerZone)}>
+            {formatTokens(currentTokens)} / {formatTokens(maxTokens)}
+          </span>
+          <span className={getTextColor(percent, dangerZone)}>({percent}%)</span>
+
           <ProgressBar percent={percent} dangerZone={dangerZone} />
           <LowTokenWarning dangerZone={dangerZone} />
-          
+
           {compactionCount > 0 && (
             <span className="text-[10px] text-text-muted bg-bg-tertiary px-1 py-0.5 rounded">
               {compactionCount}x
             </span>
           )}
-          
-          <Button
-            variant="secondary"
-            size="md"
-            onClick={compactContext}
-            disabled={isRunning}
-            title={isRunning ? 'Cannot compact while running' : 'Compact context'}
-            className={dangerZone ? 'border-accent-error text-accent-error hover:bg-accent-error/10' : ''}
-          >
-            Compact
-          </Button>
         </div>
-        
-        
+
+        <div className="flex-1 flex justify-end">
+          <div className="relative">
+            <button
+              onClick={() => setMenuOpen(!menuOpen)}
+              className="p-1 rounded hover:bg-bg-tertiary text-text-muted hover:text-text-primary transition-colors"
+              title="More options"
+            >
+              <svg className="w-[18px] h-[18px]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                <circle cx="12" cy="5" r="1.5" fill="currentColor" stroke="none"/>
+                <circle cx="12" cy="12" r="1.5" fill="currentColor" stroke="none"/>
+                <circle cx="12" cy="19" r="1.5" fill="currentColor" stroke="none"/>
+              </svg>
+            </button>
+
+            {menuOpen && (
+              <>
+                <div className="fixed inset-0 z-40" onClick={() => setMenuOpen(false)} />
+                <div className="absolute right-0 top-full mt-1.5 z-50 bg-bg-secondary border border-border rounded-lg shadow-xl py-1 min-w-[160px]">
+                  <button
+                    onClick={() => {
+                      if (!isRunning) compactContext()
+                      setMenuOpen(false)
+                    }}
+                    disabled={isRunning}
+                    className="w-full px-3 py-1.5 text-left text-sm hover:bg-bg-tertiary transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                    title={isRunning ? 'Cannot compact while running' : 'Compact context'}
+                  >
+                    <span className={dangerZone ? 'text-accent-error' : ''}>Compact</span>
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
       </div>
     </div>
   )
 }
 
-// Keep the old export name for backwards compatibility during transition
 export { SessionHeader as ContextHeader }
