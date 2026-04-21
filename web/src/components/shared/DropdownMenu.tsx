@@ -39,6 +39,22 @@ export function DropdownMenu({ items, trigger, minWidth = '120px', isOpen: contr
   const selectedIndexRef = useRef(0)
   const itemsRef = useRef(items)
 
+  const calculatePosition = useCallback(() => {
+    if (!triggerRef.current) return
+
+    const triggerRect = triggerRef.current.getBoundingClientRect()
+    const menuHeight = 200
+
+    const spaceBelow = window.innerHeight - triggerRect.bottom
+    const alignToTop = spaceBelow < menuHeight
+
+    setPosition({
+      top: alignToTop ? triggerRect.top - menuHeight - 4 : triggerRect.bottom + 4,
+      left: triggerRect.left,
+      alignToTop,
+    })
+  }, [])
+
   useEffect(() => {
     itemsRef.current = items
   }, [items])
@@ -58,6 +74,12 @@ export function DropdownMenu({ items, trigger, minWidth = '120px', isOpen: contr
       document.removeEventListener('mousedown', handleClickOutside)
     }
   }, [isOpen])
+
+  useEffect(() => {
+    if (isOpen) {
+      calculatePosition()
+    }
+  }, [isOpen, calculatePosition])
 
   useEffect(() => {
     if (!isOpen) return
@@ -156,22 +178,6 @@ export function DropdownMenu({ items, trigger, minWidth = '120px', isOpen: contr
       selectedIndexRef.current = items.findIndex(item => !isHeaderItem(item))
     }
   }, [isOpen, items])
-
-  const calculatePosition = useCallback(() => {
-    if (!triggerRef.current) return
-
-    const triggerRect = triggerRef.current.getBoundingClientRect()
-    const menuHeight = 200
-
-    const spaceBelow = window.innerHeight - triggerRect.bottom
-    const alignToTop = spaceBelow < menuHeight
-
-    setPosition({
-      top: alignToTop ? triggerRect.top - menuHeight - 4 : triggerRect.bottom + 4,
-      left: triggerRect.left,
-      alignToTop,
-    })
-  }, [])
 
   const handleTriggerClick = (e: React.MouseEvent) => {
     e.stopPropagation()
