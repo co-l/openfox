@@ -15,25 +15,49 @@ interface QuickActionModalProps {
   textareaContent?: string
 }
 
+interface ActionItem {
+  id: string
+  name: string
+  prefix: string
+  action: () => void
+}
+
+const fuzzyMatch = (text: string, query: string): boolean => {
+  if (!query) return true
+  const queryParts = query.toLowerCase().split(/\s+/)
+  const words = text.toLowerCase().split(/\s+/)
+  return queryParts.every(qp => {
+    for (const word of words) {
+      let qi = 0
+      for (let ni = 0; ni < word.length && qi < qp.length; ni++) {
+        if (word[ni] === qp[qi]) qi++
+      }
+      if (qi === qp.length) return true
+    }
+    return false
+  })
+}
+
 export function QuickActionModal({ isOpen, onClose, onCloseComplete, onSelectCommand, onSelectWorkflow, textareaContent }: QuickActionModalProps) {
+  const fetchCommands = useCommandsStore(state => state.fetchCommands)
+  const fetchWorkflows = useWorkflowsStore(state => state.fetchWorkflows)
+  const fetchAgents = useAgentsStore(state => state.fetchAgents)
   const commandDefaults = useCommandsStore(state => state.defaults)
   const commandUserItems = useCommandsStore(state => state.userItems)
-  const fetchCommands = useCommandsStore(state => state.fetchCommands)
   const workflowDefaults = useWorkflowsStore(state => state.defaults)
   const workflowUserItems = useWorkflowsStore(state => state.userItems)
-  const fetchWorkflows = useWorkflowsStore(state => state.fetchWorkflows)
   const agentDefaults = useAgentsStore(state => state.defaults)
   const agentUserItems = useAgentsStore(state => state.userItems)
-  const fetchAgents = useAgentsStore(state => state.fetchAgents)
   const currentMode = useSessionStore(state => state.currentSession?.mode)
   const currentDangerLevel = useSessionStore(state => state.currentSession?.dangerLevel ?? 'normal')
   const switchMode = useSessionStore(state => state.switchMode)
   const switchDangerLevel = useSessionStore(state => state.switchDangerLevel)
+  const currentProjectId = useSessionStore(state => state.currentSession?.projectId)
+  const createSession = useSessionStore(state => state.createSession)
 
   const [search, setSearch] = useState('')
   const [selectedIndex, setSelectedIndex] = useState(0)
   const searchRef = useRef<HTMLInputElement>(null)
-
   const wasOpenRef = useRef(false)
 
   useEffect(() => {
@@ -53,54 +77,37 @@ export function QuickActionModal({ isOpen, onClose, onCloseComplete, onSelectCom
   }, [isOpen, fetchCommands, fetchWorkflows, fetchAgents])
 
   useEffect(() => {
-    const wasOpen = wasOpenRef.current
-    if (!isOpen && wasOpen) {
+    if (!isOpen && wasOpenRef.current) {
       onCloseComplete?.()
     }
   }, [isOpen, onCloseComplete])
 
-  const fuzzyMatch = (name: string, query: string): boolean => {
-    if (!query) return true
-    const queryParts = query.toLowerCase().split(/\s+/)
-    const nameWords = name.toLowerCase().split(/\s+/)
-    return queryParts.every(qp => {
-      for (const word of nameWords) {
-        let qi = 0
-        for (let ni = 0; ni < word.length && qi < qp.length; ni++) {
-          if (word[ni] === qp[qi]) qi++
-        }
-        if (qi === qp.length) return true
-      }
-      return false
-    })
+  const dedupById = <T extends { id: string }>(defaults: T[], userItems: T[]): T[] => {
+    const userIds = new Set(userItems.map(i => i.id))
+    return [...defaults.filter(i => !userIds.has(i.id)), ...userItems]
   }
 
-  const agents = [...agentDefaults, ...agentUserItems].filter(a => !a.subagent && a.id !== currentMode).map(a => ({ kind: 'agent' as const, id: a.id, name: a.name }))
-  const commands = [...commandDefaults, ...commandUserItems].map(c => ({ kind: 'command' as const, id: c.id, name: c.name }))
-  const workflows = [...workflowDefaults, ...workflowUserItems].map(w => ({ kind: 'workflow' as const, id: w.id, name: w.name }))
-  const modes = (['normal', 'dangerous'] as const).filter(m => m !== currentDangerLevel).map(m => ({ kind: 'mode' as const, id: m, name: m.charAt(0).toUpperCase() + m.slice(1) }))
-
-  type ActionEntry = typeof agents[number] | typeof commands[number] | typeof workflows[number] | typeof modes[number]
-
-  const getPrefix = (kind: ActionEntry['kind']) => {
-    if (kind === 'agent') return 'Agent > Switch to'
-    if (kind === 'mode') return 'Mode > Switch to'
-    if (kind === 'command') return 'Command > Launch'
-    return 'Workflow > Run'
-  }
-
-  const matchesSearch = (item: ActionEntry) => {
-    const label = `${getPrefix(item.kind)} ${item.name}`
-    return fuzzyMatch(label, search)
-  }
-
-  const allItems = [
-    ...agents.filter(a => matchesSearch(a)),
-    ...commands.filter(c => matchesSearch(c)),
-    ...workflows.filter(w => matchesSearch(w)),
-    ...modes.filter(m => matchesSearch(m)),
+  const items: ActionItem[] = [
+    {
+      id: 'create-session',
+      name: 'New Session',
+      prefix: 'Action > Create',
+      action: () => currentProjectId && createSession(currentProjectId),
+    },
+    ...dedupById(agentDefaults, agentUserItems)
+      .filter(a => !a.subagent && a.id !== currentMode)
+      .map(a => ({ id: a.id, name: a.name, prefix: 'Agent > Switch to', action: () => switchMode(a.id) })),
+    ...dedupById(commandDefaults, commandUserItems)
+      .map(c => ({ id: c.id, name: c.name, prefix: 'Command > Launch', action: () => onSelectCommand(c.id, textareaContent) })),
+    ...dedupById(workflowDefaults, workflowUserItems)
+      .map(w => ({ id: w.id, name: w.name, prefix: 'Workflow > Run', action: () => onSelectWorkflow(w.id) })),
+    ...(['normal', 'dangerous'] as const)
+      .filter(m => m !== currentDangerLevel)
+      .map(m => ({ id: m, name: m.charAt(0).toUpperCase() + m.slice(1), prefix: 'Mode > Switch to', action: () => switchDangerLevel(m) })),
   ]
-  const maxIndex = allItems.length - 1
+
+  const filteredItems = items.filter(item => fuzzyMatch(`${item.prefix} ${item.name}`, search))
+  const maxIndex = filteredItems.length - 1
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     switch (e.key) {
@@ -114,32 +121,14 @@ export function QuickActionModal({ isOpen, onClose, onCloseComplete, onSelectCom
         break
       case 'Enter':
         e.preventDefault()
-        activateItem(allItems[selectedIndex])
+        filteredItems[selectedIndex]?.action()
+        onClose()
         break
       case 'Escape':
         e.preventDefault()
         onClose()
         break
     }
-  }
-
-  const activateItem = (item: typeof allItems[number] | undefined) => {
-    if (!item) return
-    if (item.kind === 'agent') {
-      switchMode(item.id)
-    } else if (item.kind === 'mode') {
-      switchDangerLevel(item.id)
-    } else if (item.kind === 'command') {
-      onSelectCommand(item.id, textareaContent)
-    } else {
-      onSelectWorkflow(item.id)
-    }
-    onClose()
-  }
-
-  const handleSearchChange = (value: string) => {
-    setSearch(value)
-    setSelectedIndex(0)
   }
 
   return isOpen ? createPortal(
@@ -151,31 +140,31 @@ export function QuickActionModal({ isOpen, onClose, onCloseComplete, onSelectCom
             ref={searchRef}
             type="text"
             value={search}
-            onChange={e => handleSearchChange(e.target.value)}
+            onChange={e => { setSearch(e.target.value); setSelectedIndex(0) }}
             onKeyDown={handleKeyDown}
             placeholder="Search..."
             className="flex-1 bg-transparent text-sm focus:outline-none placeholder:text-text-muted"
           />
           <CloseButton onClick={onClose} className="shrink-0" aria-label="Close" />
         </div>
-        <div className="overflow-y-auto max-h-80 p-2">
-          {allItems.length === 0 ? (
+        <div className="overflow-y-auto max-h-[60vh] p-2">
+          {filteredItems.length === 0 ? (
             <div className="px-3 py-4 text-center text-text-muted text-sm">
               {commandDefaults.length + commandUserItems.length + workflowDefaults.length + workflowUserItems.length > 0 ? 'No matches' : 'No agents, commands, or workflows yet'}
             </div>
           ) : (
-            allItems.map((item, index) => (
+            filteredItems.map((item, index) => (
               <button
                 key={item.id}
                 type="button"
-                onClick={() => activateItem(item)}
+                onClick={() => { item.action(); onClose() }}
                 className={`w-full text-left px-3 py-2 rounded text-sm transition-colors ${
                   index === selectedIndex
                     ? 'bg-accent-primary/20 text-text-primary'
                     : 'text-text-secondary hover:bg-bg-tertiary hover:text-text-primary'
                 }`}
               >
-                <span className="text-text-muted font-normal">{getPrefix(item.kind)} </span>
+                <span className="text-text-muted font-normal">{item.prefix} </span>
                 <span>{item.name}</span>
               </button>
             ))
