@@ -481,7 +481,7 @@ export const useSessionStore = create<SessionState>((set, get) => {
 
     connect: async () => {
       const status = get().connectionStatus
-      if (status === 'connected' || status === 'reconnecting') return
+      if (status === 'connected') return
 
       set({ connectionStatus: 'reconnecting' })
 
@@ -535,14 +535,13 @@ export const useSessionStore = create<SessionState>((set, get) => {
     },
 
     reconnect: () => {
-      // Force reconnection by resetting state and calling connect
       wsClient.disconnect()
       if (wsUnsubscribe) {
         wsUnsubscribe()
         wsUnsubscribe = null
       }
       isSubscribed = false
-      set({ connectionStatus: 'reconnecting' })
+      set({ connectionStatus: 'disconnected' })
       get().connect()
     },
 
