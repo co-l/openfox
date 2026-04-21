@@ -243,7 +243,7 @@ export function SkillsContent({ isOpen }: { isOpen: boolean }) {
             onChange={e => setFormData(prev => ({ ...prev, prompt: e.target.value }))}
             readOnly={isReadOnly}
             placeholder="The system prompt for this skill..."
-            className="flex-1 w-full px-3 py-2 bg-bg-tertiary border border-border rounded text-sm font-mono resize-none focus:outline-none focus:ring-1 focus:ring-accent-primary"
+            className="h-80 w-full px-3 py-2 bg-bg-tertiary border border-border rounded text-sm font-mono resize-y focus:outline-none focus:ring-1 focus:ring-accent-primary"
           />
         </div>
 

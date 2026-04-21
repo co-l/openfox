@@ -526,7 +526,7 @@ export function AgentsModal({ isOpen, onClose, initialEditId }: AgentsModalProps
               onChange={e => !isReadOnly && setFormPrompt(e.target.value)}
               readOnly={isReadOnly}
               placeholder="Instructions for this agent..."
-              className={`flex-1 w-full px-3 py-2 bg-bg-tertiary border border-border rounded text-sm font-mono resize-none focus:outline-none focus:ring-1 focus:ring-accent-primary ${isReadOnly ? 'opacity-60' : ''}`}
+              className={`h-80 w-full px-3 py-2 bg-bg-tertiary border border-border rounded text-sm font-mono resize-y focus:outline-none focus:ring-1 focus:ring-accent-primary ${isReadOnly ? 'opacity-60' : ''}`}
             />
           </div>
 

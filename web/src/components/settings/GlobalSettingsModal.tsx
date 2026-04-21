@@ -226,7 +226,7 @@ function InstructionsTab({ isOpen }: { isOpen: boolean }) {
           value={localValue}
           onChange={(e) => { setLocalValue(e.target.value); setIsDirty(true) }}
           placeholder="Enter global instructions that apply to all projects..."
-          className="w-full h-64 px-3 py-2 bg-bg-tertiary border border-border rounded text-sm font-mono resize-none focus:outline-none focus:ring-1 focus:ring-accent-primary"
+          className="w-full min-h-80 px-3 py-2 bg-bg-tertiary border border-border rounded text-sm font-mono resize-y focus:outline-none focus:ring-1 focus:ring-accent-primary"
           disabled={isBusy}
         />
       </div>
