@@ -734,6 +734,7 @@ export function PlanPanel({ criteriaSidebarOpen: externalCriteriaSidebarOpen, on
         onClose={() => setShowQuickAction(false)}
         textareaContent={input}
         onCloseComplete={() => textareaRef.current?.focus()}
+        onCloseCompleteAction={() => window.dispatchEvent(new CustomEvent('open-session-dropdown'))}
         onSelectCommand={async (commandId, textareaContent) => {
           const full = await useCommandsStore.getState().fetchCommand(commandId)
           if (full) {

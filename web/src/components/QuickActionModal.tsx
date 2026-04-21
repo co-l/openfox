@@ -12,6 +12,7 @@ interface QuickActionModalProps {
   onCloseComplete?: () => void
   onSelectCommand: (commandId: string, textareaContent?: string) => void
   onSelectWorkflow: (workflowId: string) => void
+  onCloseCompleteAction?: () => void
   textareaContent?: string
 }
 
@@ -38,7 +39,7 @@ const fuzzyMatch = (text: string, query: string): boolean => {
   })
 }
 
-export function QuickActionModal({ isOpen, onClose, onCloseComplete, onSelectCommand, onSelectWorkflow, textareaContent }: QuickActionModalProps) {
+export function QuickActionModal({ isOpen, onClose, onCloseComplete, onSelectCommand, onSelectWorkflow, onCloseCompleteAction, textareaContent }: QuickActionModalProps) {
   const fetchCommands = useCommandsStore(state => state.fetchCommands)
   const fetchWorkflows = useWorkflowsStore(state => state.fetchWorkflows)
   const fetchAgents = useAgentsStore(state => state.fetchAgents)
@@ -54,6 +55,7 @@ export function QuickActionModal({ isOpen, onClose, onCloseComplete, onSelectCom
   const switchDangerLevel = useSessionStore(state => state.switchDangerLevel)
   const currentProjectId = useSessionStore(state => state.currentSession?.projectId)
   const createSession = useSessionStore(state => state.createSession)
+  const closeCompleteAction = useRef<(() => void) | undefined>(undefined)
 
   const [search, setSearch] = useState('')
   const [selectedIndex, setSelectedIndex] = useState(0)
@@ -79,6 +81,8 @@ export function QuickActionModal({ isOpen, onClose, onCloseComplete, onSelectCom
   useEffect(() => {
     if (!isOpen && wasOpenRef.current) {
       onCloseComplete?.()
+      closeCompleteAction.current?.()
+      closeCompleteAction.current = undefined
     }
   }, [isOpen, onCloseComplete])
 
@@ -98,7 +102,10 @@ export function QuickActionModal({ isOpen, onClose, onCloseComplete, onSelectCom
       id: 'navigate-session',
       name: 'Another Session',
       prefix: 'Action > Navigate to',
-      action: () => window.dispatchEvent(new CustomEvent('open-session-dropdown')),
+      action: () => {
+        closeCompleteAction.current = onCloseCompleteAction
+        onClose()
+      },
     },
     ...dedupById(agentDefaults, agentUserItems)
       .filter(a => !a.subagent && a.id !== currentMode)
