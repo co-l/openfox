@@ -34,6 +34,12 @@ export function QuickActionModal({ isOpen, onClose, onCloseComplete, onSelectCom
   const [selectedIndex, setSelectedIndex] = useState(0)
   const searchRef = useRef<HTMLInputElement>(null)
 
+  const wasOpenRef = useRef(false)
+
+  useEffect(() => {
+    if (isOpen) wasOpenRef.current = true
+  }, [isOpen])
+
   useEffect(() => {
     if (isOpen) {
       fetchCommands()
@@ -41,12 +47,14 @@ export function QuickActionModal({ isOpen, onClose, onCloseComplete, onSelectCom
       fetchAgents()
       setSearch('')
       setSelectedIndex(0)
-      setTimeout(() => searchRef.current?.focus(), 50)
+      const timer = setTimeout(() => searchRef.current?.focus(), 50)
+      return () => clearTimeout(timer)
     }
   }, [isOpen, fetchCommands, fetchWorkflows, fetchAgents])
 
   useEffect(() => {
-    if (!isOpen) {
+    const wasOpen = wasOpenRef.current
+    if (!isOpen && wasOpen) {
       onCloseComplete?.()
     }
   }, [isOpen, onCloseComplete])
