@@ -6,6 +6,7 @@ export const useAutoScroll = (
   session: Session | null,
 ) => {
   const is_active = useRef(true)
+  const startY = useRef<number | null>(null)
   const [isAutoScrollActive, setIsAutoScrollActive] = useState(true)
 
   const scroll_to_bottom = () => {
@@ -34,6 +35,28 @@ export const useAutoScroll = (
       setIsAutoScrollActive(false)
     }
 
+    const onTouchStart = (e: TouchEvent) => {
+      if (e.touches[0]) startY.current = e.touches[0].clientY
+    }
+    const onTouchMove = (e: TouchEvent) => {
+      if (startY.current === null) return
+      const touch = e.touches[0]
+      if (!touch) return
+      const deltaY = touch.clientY - startY.current
+      if (deltaY > 0) {
+        is_active.current = false
+        setIsAutoScrollActive(false)
+        return
+      }
+      requestAnimationFrame(() => requestAnimationFrame(() => {
+        const distance = scroller.scrollHeight - scroller.scrollTop - scroller.offsetHeight
+        if (distance < 100) {
+          is_active.current = true
+          setIsAutoScrollActive(true)
+        }
+      }))
+    }
+
     const observer = new MutationObserver(() => {
       if (!is_active.current) return
       requestAnimationFrame(scroll_to_bottom)
@@ -45,6 +68,8 @@ export const useAutoScroll = (
     }, 1000)
 
     scroller.addEventListener('wheel', onWheel, { passive: true })
+    scroller.addEventListener('touchstart', onTouchStart, { passive: true })
+    scroller.addEventListener('touchmove', onTouchMove, { passive: true })
     observer.observe(scroller, {
       childList: true,
       subtree: true,
@@ -53,6 +78,8 @@ export const useAutoScroll = (
 
     return () => {
       scroller.removeEventListener('wheel', onWheel)
+      scroller.removeEventListener('touchstart', onTouchStart)
+      scroller.removeEventListener('touchmove', onTouchMove)
       observer.disconnect()
       clearInterval(interval)
     }
