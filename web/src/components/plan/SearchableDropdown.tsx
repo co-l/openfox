@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, useCallback, type ReactNode } from 'react'
+import { ChevronDownIcon } from '../shared/icons'
 
 interface UseSearchableMenuOptions<T> {
   items: T[]
@@ -123,15 +124,7 @@ export function DropdownTrigger({ label, isOpen, onClick, className = '' }: Drop
       className={`flex items-center gap-1 text-sm text-text-muted hover:text-text-primary transition-colors ${className}`}
     >
       {label}
-      <svg
-        className={`w-3 h-3 transition-transform ${isOpen ? 'rotate-180' : ''}`}
-        fill="none"
-        viewBox="0 0 24 24"
-        stroke="currentColor"
-        strokeWidth={2}
-      >
-        <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
-      </svg>
+      <ChevronDownIcon className={`w-3 h-3 transition-transform`} rotate={isOpen ? 180 : 0} />
     </button>
   )
 }

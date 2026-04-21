@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import type { InjectedFile, PromptContext, PromptContextMessage, PromptContextTool } from '@shared/types.js'
 import { Modal } from './SelfContainedModal'
+import { ChevronDownIcon } from './icons'
 
 interface PromptInspectorProps {
   isOpen: boolean
@@ -152,14 +153,7 @@ function FileItem({ file, expanded, onToggle }: FileItemProps) {
         onClick={onToggle}
         className="w-full flex items-center gap-2 p-2 hover:bg-bg-primary/30 transition-colors"
       >
-        <svg
-          className={`w-3 h-3 text-text-muted transition-transform ${expanded ? 'rotate-90' : ''}`}
-          fill="none"
-          stroke="currentColor"
-          viewBox="0 0 24 24"
-        >
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-        </svg>
+        <ChevronDownIcon className={`w-3 h-3 text-text-muted transition-transform ${expanded ? 'rotate-90' : ''}`} />
         <span className={`text-xs px-1.5 py-0.5 rounded ${
           file.source === 'global' ? 'bg-purple-500/20 text-purple-400' :
           file.source === 'project' ? 'bg-blue-500/20 text-blue-400' :
@@ -203,14 +197,7 @@ function Section({ title, expanded, onToggle, badge, children }: SectionProps) {
         className="w-full flex items-center justify-between p-3 bg-bg-tertiary/50 hover:bg-bg-tertiary transition-colors"
       >
         <div className="flex items-center gap-2">
-          <svg
-            className={`w-4 h-4 text-text-muted transition-transform ${expanded ? 'rotate-90' : ''}`}
-            fill="none"
-            stroke="currentColor"
-            viewBox="0 0 24 24"
-          >
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-          </svg>
+          <ChevronDownIcon className={`w-4 h-4 text-text-muted transition-transform ${expanded ? 'rotate-90' : ''}`} />
           <span className="font-medium text-text-primary">{title}</span>
           {badge && (
             <span className="text-xs text-text-muted bg-bg-tertiary px-1.5 py-0.5 rounded">

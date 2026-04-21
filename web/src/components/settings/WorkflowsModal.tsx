@@ -3,6 +3,7 @@ import { Modal } from '../shared/SelfContainedModal'
 import { Button } from '../shared/Button'
 import { EditButton } from '../shared/IconButton'
 import { useWorkflowsStore, type WorkflowFull, type WorkflowStep, type TemplateVariable } from '../../stores/workflows'
+import { ArrowRightIcon, EyeIcon } from '../shared/icons'
 import type { AgentInfo } from '../../stores/agents'
 import { authFetch } from '../../lib/api'
 import {
@@ -740,9 +741,7 @@ function TransitionPanel({
 
       <div className="flex items-center gap-1.5 text-xs text-text-secondary">
         <span className="font-medium text-text-primary">{fromLabel}</span>
-        <svg className="w-3.5 h-3.5 shrink-0 text-text-muted" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14 5l7 7m0 0l-7 7m7-7H3" />
-        </svg>
+        <ArrowRightIcon />
         <span className="font-medium text-text-primary">{toLabel}</span>
       </div>
 
@@ -1392,9 +1391,7 @@ export function WorkflowsModal({ isOpen, onClose, initialEditId }: WorkflowsModa
                     {formEntryStep && (
                       <div className="flex items-center gap-1.5 text-xs text-text-secondary">
                         <span className="text-text-primary font-medium">Start</span>
-                        <svg className="w-3.5 h-3.5 shrink-0 text-text-muted" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14 5l7 7m0 0l-7 7m7-7H3" />
-                        </svg>
+                        <ArrowRightIcon />
                         <span className="text-text-primary font-medium">{edgeInfo.toLabel}</span>
                       </div>
                     )}
@@ -1542,9 +1539,7 @@ export function WorkflowsModal({ isOpen, onClose, initialEditId }: WorkflowsModa
                         className="p-1.5 rounded text-text-muted hover:text-text-primary hover:bg-bg-primary transition-colors"
                         title="View"
                       >
-                        <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
-                        </svg>
+                        <EyeIcon />
                       </button>
                       <DuplicateIcon onClick={() => handleDuplicate(workflow.id)} />
                     </div>

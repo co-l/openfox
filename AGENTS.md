@@ -79,7 +79,27 @@ Strict mode enabled with:
 - `noUncheckedIndexedAccess` - Index access returns `T | undefined`
 - `exactOptionalPropertyTypes` - `undefined` not allowed for optional props
 - `verbatimModuleSyntax` - Enforces proper import/export syntax
-- `noPropertyAccessFromIndexSignature` - Use bracket notation for index access
+- `noPropertyAccessFromIndexSignature` - Use bracket notation for index signatures
+
+### SVG Icons
+
+All SVG icons must be extracted into `web/src/components/shared/icons/` as reusable components. Each icon gets its own file named `{IconName}Icon.tsx`.
+
+**Forbidden:** Inline `<svg>` elements in component files.
+
+**Allowed exceptions:**
+- Complex interactive canvases (e.g., workflow editor diagram)
+- Generic pattern components that accept SVG paths as props (e.g., `IconButton`, `ToolIcon`)
+- Data visualizations with dynamic content (e.g., `Sparkline`)
+
+**Usage:**
+```typescript
+import { FolderIcon, CheckIcon, ChevronDownIcon } from './shared/icons'
+
+<FolderIcon className="w-5 h-5 text-accent-primary" />
+<CheckIcon />
+<ChevronDownIcon rotate={isOpen ? 180 : 0} />
+```
 
 ### Error Handling
 

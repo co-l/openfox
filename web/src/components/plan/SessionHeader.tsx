@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { useSessionStore } from '../../stores/session'
+import { MoreIcon } from '../shared/icons'
 import { ProgressBar, LowTokenWarning } from '../shared/ProgressBar'
 import { formatTokens } from '../../lib/format-stats'
 
@@ -53,11 +54,7 @@ export function SessionHeader() {
               className="p-1 rounded hover:bg-bg-tertiary text-text-muted hover:text-text-primary transition-colors"
               title="More options"
             >
-              <svg className="w-[18px] h-[18px]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-                <circle cx="12" cy="5" r="1.5" fill="currentColor" stroke="none"/>
-                <circle cx="12" cy="12" r="1.5" fill="currentColor" stroke="none"/>
-                <circle cx="12" cy="19" r="1.5" fill="currentColor" stroke="none"/>
-              </svg>
+              <MoreIcon />
             </button>
 
             {menuOpen && (

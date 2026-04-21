@@ -6,6 +6,7 @@ import type { SessionSummary } from '@shared/types.js'
 import { ProjectSettingsModal } from '../settings/ProjectSettingsModal'
 import { DropdownMenu } from '../shared/DropdownMenu'
 import { CloseButton } from '../shared/CloseButton'
+import { EllipsisIcon, SpinIcon } from '../shared/icons'
 import { groupSessionsByDate, formatDateHeader, formatTime } from '../../lib/format-date.js'
 
 interface SidebarProps {
@@ -121,11 +122,7 @@ export function Sidebar({ projectId, isOpen = true, onClose }: SidebarProps) {
                 className="flex-shrink-0 p-2.5 rounded hover:bg-bg-tertiary text-text-muted hover:text-text-primary transition-colors"
                 title="Options"
               >
-                <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
-                  <circle cx="12" cy="5" r="2" />
-                  <circle cx="12" cy="12" r="2" />
-                  <circle cx="12" cy="19" r="2" />
-                </svg>
+                <EllipsisIcon />
               </button>
             }
           />
@@ -227,11 +224,7 @@ function renderSessionGroups(
                         className="p-1.5 rounded hover:bg-bg-tertiary text-text-muted hover:text-text-primary transition-all"
                         title="Options"
                       >
-                        <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
-                          <circle cx="12" cy="5" r="2" />
-                          <circle cx="12" cy="12" r="2" />
-                          <circle cx="12" cy="19" r="2" />
-                        </svg>
+                        <EllipsisIcon />
                       </button>
                     }
                   />
@@ -239,16 +232,7 @@ function renderSessionGroups(
                 {/* Time displayed below the title as muted secondary text */}
                 <div className="flex items-center gap-2 mt-1">
                   {isRunning ? (
-                    <svg
-                      aria-label="Session running"
-                      className="w-3 h-3 text-blue-400 animate-spin flex-shrink-0"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                    >
-                      <title>Running</title>
-                      <circle className="opacity-30" cx="12" cy="12" r="9" stroke="currentColor" strokeWidth="3" />
-                      <path d="M21 12a9 9 0 00-9-9" stroke="currentColor" strokeWidth="3" strokeLinecap="round" />
-                    </svg>
+                    <SpinIcon />
                   ) : hasUnread && !isActive ? (
                     <span
                       aria-label="Unread activity"

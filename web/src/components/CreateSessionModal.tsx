@@ -8,6 +8,7 @@ import { DeleteProjectConfirmationModal } from './DeleteProjectConfirmationModal
 import { CreateProjectModal } from './CreateProjectModal.js'
 import { DirectoryBrowser } from './shared/DirectoryBrowser.js'
 import { fetchDirectory } from '../lib/useDirectoryFetch'
+import { FolderIcon, CopyIcon } from './shared/icons'
 import { authFetch } from '../lib/api'
 
 interface DirectoryEntry {
@@ -161,9 +162,7 @@ export function OpenProjectModal({ isOpen, onClose }: OpenProjectModalProps) {
                       onClick={() => handleProjectClick(project.id)}
                       className="flex-1 flex items-center gap-3 text-left"
                     >
-                      <svg className="w-5 h-5 text-accent-primary" fill="currentColor" viewBox="0 0 24 24">
-                        <path d="M10 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z" />
-                      </svg>
+                      <FolderIcon className="w-5 h-5 text-accent-primary" />
                       <div className="flex-1 min-w-0">
                         <div className="font-medium truncate">{project.name}</div>
                         <div className="text-xs text-text-muted truncate">{project.workdir}</div>
@@ -174,9 +173,7 @@ export function OpenProjectModal({ isOpen, onClose }: OpenProjectModalProps) {
                       className="opacity-0 group-hover:opacity-100 text-accent-error/70 hover:text-accent-error p-1 transition-opacity"
                       title="Delete project"
                     >
-                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                      </svg>
+                      <CopyIcon className="w-4 h-4" />
                     </button>
                   </div>
                 ))}
@@ -221,9 +218,7 @@ export function OpenProjectModal({ isOpen, onClose }: OpenProjectModalProps) {
                       index === focusedIndex ? 'bg-accent-primary/20 text-accent-primary' : 'hover:bg-bg-tertiary/50'
                     }`}
                   >
-                    <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
-                      <path d="M10 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z" />
-                    </svg>
+                    <FolderIcon className="w-5 h-5" />
                     <span className="flex-1">{item.name}</span>
                   </button>
                 ))}

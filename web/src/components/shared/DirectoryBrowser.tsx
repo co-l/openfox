@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
 import { Modal } from './Modal'
+import { ArrowLeftIcon, FolderIcon } from './icons'
 import { Spinner } from './Spinner'
 import { authFetch } from '../../lib/api'
 
@@ -78,9 +79,7 @@ export function DirectoryBrowser({ onSelect, onClose, initialPath }: DirectoryBr
           <div className="divide-y divide-border">
             {listing?.parent && (
               <button onClick={() => fetchDir(listing.parent!)} className="w-full p-3 flex items-center gap-3 hover:bg-bg-tertiary/50 text-text-muted">
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-                </svg>
+                <ArrowLeftIcon className="w-5 h-5" />
                 <span>..</span>
               </button>
             )}
@@ -90,9 +89,7 @@ export function DirectoryBrowser({ onSelect, onClose, initialPath }: DirectoryBr
                   onClick={() => fetchDir(dir.path)}
                   className="flex-1 p-3 flex items-center gap-3 text-left"
                 >
-                  <svg className="w-5 h-5 text-accent-primary" fill="currentColor" viewBox="0 0 24 24">
-                    <path d="M10 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z" />
-                  </svg>
+                  <FolderIcon />
                   <span>{dir.name}</span>
                 </button>
                 <button

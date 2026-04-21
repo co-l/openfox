@@ -8,6 +8,7 @@ import {
   type SoundEvent,
 } from '../../stores/notifications'
 import { requestNotificationPermission } from '../../lib/sound'
+import { ChevronDownIcon } from '../shared/icons'
 
 function SoundPicker({ value, defaultUrl, disabled, onChange }: {
   value: string | null
@@ -34,9 +35,7 @@ function SoundPicker({ value, defaultUrl, disabled, onChange }: {
           </option>
         ))}
       </select>
-      <svg className="absolute right-0.5 top-1/2 -translate-y-1/2 w-3 h-3 pointer-events-none text-text-muted" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-      </svg>
+      <ChevronDownIcon className="absolute right-0.5 top-1/2 -translate-y-1/2 w-3 h-3 pointer-events-none text-text-muted" />
     </div>
   )
 }

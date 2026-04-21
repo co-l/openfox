@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, memo } from 'react'
 import { createPortal } from 'react-dom'
 import { useDevServerStore } from '../../stores/dev-server'
+import { GearIcon, StopIcon, OpenExternalIcon } from '../shared/icons'
 import { DevServerConfigModal } from './DevServerConfigModal'
 import { LogViewer } from './LogViewer'
 import { ansiToReact } from '../../lib/ansiParser'
@@ -129,12 +130,6 @@ export const DevServerFooter = memo(function DevServerFooter({ workdir }: DevSer
     }
   }
 
-  const gearIcon = (
-    <svg className="w-4 h-4" viewBox="0 0 16 16" fill="currentColor">
-      <path d="M8 0a8.2 8.2 0 0 1 .701.031C9.444.095 9.99.645 10.16 1.29l.288 1.107c.018.066.079.158.212.224.231.114.454.243.668.386.123.082.233.09.299.071l1.1-.303c.652-.18 1.37.008 1.755.653a8.043 8.043 0 0 1 .683 1.18c.227.568.096 1.26-.378 1.726l-.812.804a.312.312 0 0 0-.081.283c.024.166.04.335.04.507s-.016.341-.04.507a.312.312 0 0 0 .08.283l.813.804c.474.466.605 1.158.378 1.726a8.07 8.07 0 0 1-.683 1.18c-.385.645-1.103.833-1.755.653l-1.1-.303c-.066-.019-.176-.011-.299.071a5.1 5.1 0 0 1-.668.386c-.133.066-.194.158-.211.224l-.29 1.107c-.168.645-.714 1.196-1.458 1.26a8.094 8.094 0 0 1-1.402 0c-.744-.064-1.29-.615-1.458-1.26l-.29-1.107a.426.426 0 0 0-.211-.224 5.11 5.11 0 0 1-.668-.386c-.123-.082-.233-.09-.299-.071l-1.1.303c-.652.18-1.37-.008-1.755-.653a8.044 8.044 0 0 1-.683-1.18c-.227-.568-.096-1.26.378-1.726l.812-.804a.312.312 0 0 0 .081-.283A5.18 5.18 0 0 1 2.3 8c0-.172.016-.341.04-.507a.312.312 0 0 0-.08-.283l-.813-.804C.973 5.94.842 5.248 1.069 4.68c.181-.452.395-.882.683-1.18.385-.645 1.103-.833 1.755-.653l1.1.303c.066.019.176.011.299-.071.214-.143.437-.272.668-.386a.426.426 0 0 0 .211-.224l.29-1.107C6.009.645 6.556.095 7.299.03 7.53.01 7.764 0 8 0Zm0 5.5a2.5 2.5 0 1 0 0 5 2.5 2.5 0 0 0 0-5Z" />
-    </svg>
-  )
-
   return (
     <div className="mt-2 pt-3 border-t border-border space-y-3">
       {/* Header row: [dot] Dev Server ... [settings] */}
@@ -153,7 +148,7 @@ export const DevServerFooter = memo(function DevServerFooter({ workdir }: DevSer
           className="p-1.5 rounded hover:bg-bg-tertiary transition-colors text-text-muted"
           title="Configure dev server"
         >
-          {gearIcon}
+          <GearIcon />
         </button>
       </div>
 
@@ -166,9 +161,7 @@ export const DevServerFooter = memo(function DevServerFooter({ workdir }: DevSer
                 onClick={handleAction}
                 className="flex-1 flex items-center justify-center gap-1.5 rounded font-medium text-sm px-3 py-1.5 bg-bg-tertiary text-text-primary hover:bg-border transition-colors"
               >
-                <svg className="w-4 h-4" viewBox="0 0 16 16" fill="currentColor">
-                  <rect x="3" y="3" width="10" height="10" rx="1" />
-                </svg>
+                <StopIcon />
                 Stop
               </button>
               {status?.url && (
@@ -179,11 +172,7 @@ export const DevServerFooter = memo(function DevServerFooter({ workdir }: DevSer
                   className="flex-1 flex items-center justify-center gap-1.5 rounded font-medium text-sm px-3 py-1.5 bg-accent-primary/25 text-white hover:bg-accent-primary/40 transition-colors"
                   title={status.url}
                 >
-                  <svg className="w-4 h-4" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-                    <path d="M6.5 3.5H3a1 1 0 0 0-1 1V13a1 1 0 0 0 1 1h8.5a1 1 0 0 0 1-1V9.5" />
-                    <path d="M9.5 2h4.5v4.5" />
-                    <path d="M14 2L7.5 8.5" />
-                  </svg>
+                  <OpenExternalIcon />
                   Open
                 </a>
               )}

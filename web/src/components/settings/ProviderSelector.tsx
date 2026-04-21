@@ -4,6 +4,7 @@ import { useConfigStore, getBackendDisplayName, type Provider } from '../../stor
 import { useSessionStore } from '../../stores/session'
 import { ModelPropertiesModal } from './ModelPropertiesModal'
 import { authFetch } from '../../lib/api'
+import { ChevronDownIcon, ReloadIcon, CheckIcon, EditSmallIcon } from '../shared/icons'
 
 function formatContextWindow(context: number): string {
   if (context >= 1000000) return `${(context / 1000000).toFixed(1)}M`
@@ -217,14 +218,7 @@ export function ProviderSelector() {
             {shortModelName}
           </span>
         )}
-        <svg 
-          className={`w-3 h-3 text-text-muted transition-transform ${isOpen ? 'rotate-180' : ''}`} 
-          fill="none" 
-          stroke="currentColor" 
-          viewBox="0 0 24 24"
-        >
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-        </svg>
+        <ChevronDownIcon className={`w-3 h-3 text-text-muted transition-transform`} rotate={isOpen ? 180 : 0} />
       </button>
       
       {/* Unified Provider + Model Dropdown */}
@@ -252,9 +246,7 @@ export function ProviderSelector() {
                   <div className="flex items-center gap-2 flex-shrink-0">
                     {provider.id === activeProviderId ? (
                       <span className="text-accent-success" title="Active">
-                        <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
-                          <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
-                        </svg>
+                        <CheckIcon className="w-4 h-4" />
                       </span>
                     ) : (
                       <span className="w-4" />
@@ -268,16 +260,9 @@ export function ProviderSelector() {
                       className="p-0.5 hover:bg-bg-tertiary rounded transition-colors"
                       title="Refresh models"
                     >
-                      <svg 
-                        className={`w-4 h-4 ${loadingModels === provider.id ? 'animate-spin' : ''} ${
-                          provider.id === activeProviderId ? 'text-accent-primary' : 'text-text-muted'
-                        }`}
-                        fill="none" 
-                        stroke="currentColor" 
-                        viewBox="0 0 24 24"
-                      >
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                      </svg>
+                      <ReloadIcon className={`w-4 h-4 ${loadingModels === provider.id ? 'animate-spin' : ''} ${
+                        provider.id === activeProviderId ? 'text-accent-primary' : 'text-text-muted'
+                      }`} />
                     </button>
                     <button
                       type="button"
@@ -288,16 +273,9 @@ export function ProviderSelector() {
                       className="p-0.5 hover:bg-bg-tertiary rounded transition-colors"
                       title="Show models"
                     >
-                      <svg 
-                        className={`w-4 h-4 transition-transform ${expandedProviderIds.includes(provider.id) ? 'rotate-180' : ''} ${
-                          provider.id === activeProviderId ? 'text-accent-primary' : 'text-text-muted'
-                        }`}
-                        fill="none" 
-                        stroke="currentColor" 
-                        viewBox="0 0 24 24"
-                      >
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                      </svg>
+                      <ChevronDownIcon className={`w-4 h-4 transition-transform ${expandedProviderIds.includes(provider.id) ? 'rotate-180' : ''} ${
+                        provider.id === activeProviderId ? 'text-accent-primary' : 'text-text-muted'
+                      }`} />
                     </button>
                   </div>
                 </div>
@@ -338,16 +316,12 @@ export function ProviderSelector() {
                               className="opacity-0 group-hover:opacity-100 p-0.5 hover:bg-bg-tertiary rounded transition-opacity"
                               title="Edit model context"
                             >
-                              <svg className="w-3 h-3 text-text-muted" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-                              </svg>
+                              <EditSmallIcon className="w-3 h-3 text-text-muted" />
                             </button>
                           </div>
                           {model === modelConfig.id && (
                             <span className="text-accent-success flex-shrink-0 ml-1">
-                              <svg className="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 20 20">
-                                <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
-                              </svg>
+                              <CheckIcon className="w-3.5 h-3.5" />
                             </span>
                           )}
                         </button>

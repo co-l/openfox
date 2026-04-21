@@ -5,6 +5,7 @@ import { useProjectStore } from '../stores/project'
 import { Button } from './shared/Button'
 import { OpenProjectModal } from './CreateSessionModal'
 import { formatRelativeDate } from '../lib/format-date'
+import { FolderIcon } from './shared/icons'
 
 export function HomePage() {
   const [showOpenModal, setShowOpenModal] = useState(false)
@@ -79,9 +80,7 @@ export function HomePage() {
                     href={`/p/${project.id}`}
                     className="flex items-center gap-2 cursor-pointer hover:opacity-80 transition-opacity flex-1"
                   >
-                    <svg className="w-5 h-5 text-accent-primary flex-shrink-0" fill="currentColor" viewBox="0 0 24 24">
-                      <path d="M10 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z" />
-                    </svg>
+                    <FolderIcon className="w-5 h-5 text-accent-primary flex-shrink-0" />
                     <span className="text-text-primary font-semibold">{project.name}</span>
                   </Link>
                   <Link

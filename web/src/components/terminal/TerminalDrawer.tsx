@@ -2,6 +2,7 @@ import { useEffect, useState, useRef, useCallback } from 'react'
 import { useTerminalStore } from '../../stores/terminal'
 import { useProjectStore } from '../../stores/project'
 import { TerminalPane } from './TerminalPane'
+import { PlusSquareIcon, XCloseIcon } from '../shared/icons'
 
 interface TerminalDrawerProps {
   isOpen: boolean
@@ -110,18 +111,14 @@ export function TerminalDrawer({ isOpen, onClose, onFocusChat }: TerminalDrawerP
             className="p-2 rounded hover:bg-bg-tertiary text-text-muted hover:text-text-primary transition-colors"
             title="New terminal"
           >
-            <svg className="w-5 h-5" viewBox="0 0 20 20" fill="currentColor">
-              <path fillRule="evenodd" d="M10 3a1 1 0 011 1v5h5a1 1 0 110 2h-5v5a1 1 0 11-2 0v-5H4a1 1 0 110-2h5V4a1 1 0 011-1z" clipRule="evenodd" />
-            </svg>
+            <PlusSquareIcon />
           </button>
           <button
             onClick={() => { onClose(); onFocusChat() }}
             className="p-2 rounded hover:bg-bg-tertiary text-text-muted hover:text-text-primary transition-colors"
             title="Close (Esc)"
           >
-            <svg className="w-5 h-5" viewBox="0 0 20 20" fill="currentColor">
-              <path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" />
-            </svg>
+            <XCloseIcon />
           </button>
         </div>
       </div>

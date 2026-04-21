@@ -5,6 +5,7 @@ import { useCopyToClipboard } from '../../hooks/useCopyToClipboard'
 import { DirectoryBrowser } from '../shared/DirectoryBrowser'
 import { CheckIcon } from '../shared/CheckIcon'
 import { CloseButton } from '../shared/CloseButton'
+import { PlusLgIcon, PlusMdIcon, TrashIcon, ClipboardIcon } from '../shared/icons'
 
 const COMMON_PORTS = [8000, 11434, 8080]
 
@@ -36,31 +37,7 @@ function getBackendDisplayName(backend: Backend): string {
   }
 }
 
-function Spinner({ size = 'md' }: { size?: 'sm' | 'md' }) {
-  const sizeClass = size === 'sm' ? 'w-4 h-4' : 'w-6 h-6'
-  return (
-    <svg className={`animate-spin ${sizeClass} text-text-muted`} fill="none" viewBox="0 0 24 24">
-      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
-    </svg>
-  )
-}
 
-function PlusIcon() {
-  return (
-    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-    </svg>
-  )
-}
-
-function TrashIcon() {
-  return (
-    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-    </svg>
-  )
-}
 
 interface StepIndicatorProps {
   currentStep: number
@@ -448,7 +425,7 @@ function ConnectLLMStep({ onNext }: ConnectLLMStepProps) {
                 disabled={!customUrl || testing}
                 className="flex-1 px-4 py-2 bg-bg-secondary border border-border rounded-lg hover:border-text-muted disabled:opacity-50"
               >
-                {testing ? <Spinner size="sm" /> : 'Test Connection'}
+                {testing ? <PlusMdIcon className="w-4 h-4" /> : 'Test Connection'}
               </button>
               <button
                 type="submit"
@@ -477,7 +454,7 @@ function ConnectLLMStep({ onNext }: ConnectLLMStepProps) {
             onClick={() => setShowAddForm(true)}
             className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-bg-secondary border border-dashed border-border rounded-lg text-text-secondary hover:text-text-primary hover:border-text-muted transition-colors"
           >
-            <PlusIcon />
+            <PlusLgIcon className="w-4 h-4" />
             Add Provider
           </button>
         )}
@@ -644,10 +621,7 @@ function VisionStep({ onNext }: VisionStepProps) {
               {copied ? (
                 <CheckIcon className="w-4 h-4 text-accent-primary" />
               ) : (
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <rect x="9" y="9" width="13" height="13" rx="2" strokeWidth="2" />
-                  <path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1" strokeWidth="2" />
-                </svg>
+                <ClipboardIcon className="w-4 h-4" />
               )}
             </button>
           </div>
@@ -773,7 +747,7 @@ export function OnboardingWizard({ onComplete }: OnboardingWizardProps) {
       <div className="max-w-xl mx-auto">
         {saving ? (
           <div className="text-center">
-            <Spinner size="md" />
+            <PlusLgIcon className="w-6 h-6" />
             <p className="mt-4 text-text-secondary">Saving your settings...</p>
           </div>
         ) : (
