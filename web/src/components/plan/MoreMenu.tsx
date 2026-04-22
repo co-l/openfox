@@ -164,14 +164,14 @@ export function MoreMenu({
       <button
         type="button"
         onClick={() => setIsOpen(!isOpen)}
-        className="p-2 rounded text-text-muted hover:text-text-primary hover:bg-bg-tertiary transition-colors"
+        className="px-1.5 py-2 rounded-r bg-bg-secondary text-text-muted hover:text-text-primary hover:bg-bg-tertiary transition-colors border-l border-border/50"
         title="More options"
       >
         <MoreIcon className="w-4 h-4" />
       </button>
 
       {isOpen && (
-        <div className="absolute bottom-full right-0 mb-1 w-80 bg-bg-secondary border border-border rounded-lg shadow-xl z-50">
+        <div className="absolute bottom-full right-0 mb-1 w-80 bg-bg-secondary border border-border rounded-lg shadow-xl z-50 overflow-hidden">
           <div className="flex border-b border-border">
             <button
               type="button"
