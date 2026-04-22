@@ -503,6 +503,10 @@ export const useSessionStore = create<SessionState>((set, get) => {
         set({ connectionStatus: newStatus })
         if (newStatus === 'connected') {
           get().listSessions(undefined)
+          const currentSessionId = get().currentSession?.id
+          if (currentSessionId) {
+            get().loadSession(currentSessionId)
+          }
         }
       })
 

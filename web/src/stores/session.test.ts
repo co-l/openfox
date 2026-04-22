@@ -1083,3 +1083,65 @@ describe('useSessionStore session isolation', () => {
     expect(useSessionStore.getState().pendingQuestion).toBeNull()
   })
 })
+
+describe('reconnect refreshes current session content', () => {
+  beforeEach(() => {
+    wsSendMock.mockClear()
+    wsSubscribeMock.mockClear()
+    wsConnectMock.mockClear()
+    wsDisconnectMock.mockClear()
+    wsStatusMock.mockClear()
+    fetchMock.mockClear()
+  })
+
+  it('calls loadSession when reconnecting with an active session', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    const useSessionStore = await loadSessionStore()
+
+    useSessionStore.setState({
+      currentSession: {
+        id: 'session-active',
+        projectId: 'project-1',
+        workdir: '/tmp/project-1',
+        mode: 'planner',
+        phase: 'plan',
+        isRunning: false,
+        criteria: [],
+        summary: null,
+      } as any,
+    })
+
+    const loadSessionSpy = vi.spyOn(useSessionStore.getState(), 'loadSession')
+
+    await useSessionStore.getState().connect()
+
+    vi.runAllTimers()
+    vi.useRealTimers()
+
+    const cb = (wsStatusMock.mock.calls[0] as Array<(s: string) => void>)[0]!
+    ;(cb as (s: string) => void)('connected')
+
+    expect(loadSessionSpy).toHaveBeenCalledWith('session-active')
+  })
+
+  it('does not call loadSession when reconnecting without an active session', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    const useSessionStore = await loadSessionStore()
+
+    useSessionStore.setState({
+      currentSession: null,
+    })
+
+    const loadSessionSpy = vi.spyOn(useSessionStore.getState(), 'loadSession')
+
+    await useSessionStore.getState().connect()
+
+    vi.runAllTimers()
+    vi.useRealTimers()
+
+    const cb = (wsStatusMock.mock.calls[0] as Array<(s: string) => void>)[0]!
+    ;(cb as (s: string) => void)('connected')
+
+    expect(loadSessionSpy).not.toHaveBeenCalled()
+  })
+})
