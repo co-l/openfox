@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useCallback, useMemo, memo } from 'react'
 import { useSessionStore, useIsRunning, useQueuedMessages } from '../../stores/session'
-import { AttachIcon } from '../shared/icons'
+
 // @ts-ignore
 import type { Message, ToolCall, Attachment } from '@shared/types.js'
 import { SessionLayout } from '../layout/SessionLayout'
@@ -26,8 +26,7 @@ import { useDisplaySettings } from '../../stores/settings'
 import { processImageFile } from '../../lib/image-processing.js'
 import { buildPromptContextByUserMessageId } from './prompt-context-linking.js'
 import { ProviderSelector } from '../settings/ProviderSelector'
-import { CommandMenu } from './CommandMenu'
-import { WorkflowMenu } from './WorkflowMenu'
+import { MoreMenu } from './MoreMenu'
 import { CommandsModal } from '../settings/CommandsModal'
 import { WorkflowsModal } from '../settings/WorkflowsModal'
 import { QuickActionModal } from '../QuickActionModal'
@@ -641,16 +640,6 @@ export function PlanPanel({ criteriaSidebarOpen: externalCriteriaSidebarOpen, on
           onDragLeave={handleDragLeave}
           onDrop={handleDrop}
         >
-          {/* Attach file button */}
-          <button
-            type="button"
-            onClick={handleAttachClick}
-            className="p-3 rounded hover:bg-bg-tertiary text-text-muted hover:text-text-primary transition-colors"
-            title="Attach image file"
-          >
-            <AttachIcon />
-          </button>
-
           <textarea
             ref={textareaRef}
             value={input}
@@ -667,9 +656,24 @@ export function PlanPanel({ criteriaSidebarOpen: externalCriteriaSidebarOpen, on
             style={{ minHeight: '24px', maxHeight: '200px' }}
             spellCheck={false}
           />
-          <div className="flex flex-col items-end gap-1">
-              <div className="flex items-center gap-3">
-                <CommandMenu
+          <div className="flex items-center gap-2 self-center">
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (!input.trim() && attachments.length === 0) return
+                    scrollContainerRef.current?.scrollTo({
+                      top: scrollContainerRef.current.scrollHeight,
+                      behavior: 'smooth',
+                    })
+                    sendMessage(input, attachments)
+                    clearInput()
+                  }}
+                  disabled={(!input.trim() && attachments.length === 0)}
+                  className="px-4 py-1.5 rounded bg-accent-primary/20 text-sm text-accent-primary font-medium hover:bg-accent-primary/30 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                >
+                  Send
+                </button>
+                <MoreMenu
                   onSendCommand={(content, agentMode, textareaContent, attachments) => {
                     if (agentMode && session?.mode !== agentMode) {
                       useSessionStore.getState().switchMode(agentMode)
@@ -687,36 +691,16 @@ export function PlanPanel({ criteriaSidebarOpen: externalCriteriaSidebarOpen, on
                     })
                     clearInput()
                   }}
-                  onOpenManager={() => setShowCommandsModal(true)}
+                  onSelectWorkflow={handleSelectWorkflow}
+                  onOpenCommandsManager={() => setShowCommandsModal(true)}
+                  onOpenWorkflowsManager={() => setShowWorkflowsModal(true)}
+                  onAttach={handleAttachClick}
                   textareaContent={input}
                   attachments={attachments.length > 0 ? attachments : undefined}
-                />
-                <WorkflowMenu
-                  onSelectWorkflow={handleSelectWorkflow}
-                  onOpenManager={() => setShowWorkflowsModal(true)}
                   criteria={session?.criteria ?? []}
                 />
               </div>
-              <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={() => {
-                    if (!input.trim() && attachments.length === 0) return
-                    scrollContainerRef.current?.scrollTo({
-                      top: scrollContainerRef.current.scrollHeight,
-                      behavior: 'smooth',
-                    })
-                    sendMessage(input, attachments)
-                    clearInput()
-                  }}
-                  disabled={(!input.trim() && attachments.length === 0)}
-                  className="px-4 py-1.5 rounded bg-accent-primary/20 text-sm text-accent-primary font-medium hover:bg-accent-primary/30 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
-                >
-                  Send
-                </button>
-              </div>
             </div>
-        </div>
         <div className="mt-3 flex items-center justify-between">
           <div className="flex items-center gap-2">
             <AgentSelector />
