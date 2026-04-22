@@ -27,7 +27,7 @@ export function SessionHeader() {
   const isRunning = currentSession.isRunning
 
   return (
-    <div className="flex-shrink-0 px-4 py-1.5 border-b border-border bg-bg-secondary/50">
+    <div className="flex-shrink-0 px-4 py-1.5 border-b border-border bg-secondary">
       <div className="flex items-center justify-between gap-4">
         <div className="flex-1" />
 

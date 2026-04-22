@@ -18,20 +18,20 @@ export function SessionLayout({ children, criteriaSidebarOpen = true, onCriteria
       {/* Backdrop - mobile only, when sidebar is open */}
       {criteriaSidebarOpen && (
         <div
-          className="fixed md:hidden inset-0 bg-black/50 z-40"
+          className="fixed md:hidden inset-0 bg-secondary/50 z-40"
           onClick={onCriteriaSidebarToggle}
         />
       )}
 
       {/* Main Content */}
       <div className="flex h-full">
-        <div className="flex-1 min-w-0 flex flex-col overflow-hidden">
+        <div className="flex-1 min-w-0 flex flex-col overflow-hidden bg-secondary">
           {children}
         </div>
 
         {/* Summary Sidebar - mobile: fixed overlay, desktop: flex item */}
         {criteriaSidebarOpen ? (
-          <aside className="hidden md:block w-[320px] shrink-0 border-l border-border p-4 overflow-y-auto bg-bg-secondary">
+          <aside className="hidden md:block w-[320px] shrink-0 border-l border-border p-4 overflow-y-auto bg-secondary">
             <SummaryDisplay summary={session?.summary ?? null} messages={messages} workdir={session?.workdir} />
           </aside>
         ) : (
@@ -42,7 +42,7 @@ export function SessionLayout({ children, criteriaSidebarOpen = true, onCriteria
         <aside
           className={`
             md:hidden
-            p-4 overflow-y-auto bg-bg-secondary
+            p-4 overflow-y-auto bg-secondary
             transition-all duration-300 ease-in-out
             fixed right-0 top-[32px] h-[calc(100vh-32px)] z-50
             ${criteriaSidebarOpen

@@ -58,7 +58,7 @@ export function HomePage() {
   }
 
   return (
-    <div className="flex-1 flex flex-col overflow-y-auto">
+    <div className="flex-1 flex flex-col overflow-y-auto bg-primary">
       <div className="max-w-5xl mx-auto w-full p-4 md:p-8">
         <div className="mb-6 md:mb-8 flex items-center justify-between">
           <div>

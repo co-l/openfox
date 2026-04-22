@@ -38,7 +38,7 @@ function UserMessage({ message, promptContext }: UserMessageProps) {
             : isAutoPrompt
               ? 'bg-slate-500/10 border border-slate-500/30'
               : 'bg-amber-500/10 border border-amber-500/30'
-          : 'bg-accent-primary/15 text-white'
+          : 'bg-accent-primary/15 text-neutral-200'
       }`}>
         {isSystemGenerated && (
           <span className={`text-[10px] block mb-0.5 ${

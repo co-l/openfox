@@ -61,7 +61,7 @@ function ProjectView({ sidebarOpen, onSidebarToggle }: { sidebarOpen: boolean, o
   return (
     <>
       <Sidebar projectId={projectId!} isOpen={sidebarOpen} onClose={onSidebarToggle} />
-      <div className="flex-1 min-w-0 bg-bg-primary">
+      <div className="flex-1 min-w-0 bg-primary">
         <EmptyProjectView />
       </div>
     </>
@@ -127,7 +127,7 @@ function ProjectSessionView({
   return (
     <>
       <Sidebar projectId={projectId!} isOpen={sidebarOpen} onClose={onSidebarToggle} />
-      <div className="flex-1 min-w-0 bg-bg-primary">
+      <div className="flex-1 min-w-0 bg-primary">
         <PlanPanel criteriaSidebarOpen={rightSidebarOpen} onCriteriaSidebarToggle={onRightSidebarToggle} />
       </div>
     </>

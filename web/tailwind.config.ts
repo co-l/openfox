@@ -19,8 +19,10 @@ export default {
           secondary: '#161b22',
           tertiary: '#21262d',
         },
+        primary: '#0a0a0a',
+        secondary: '#141414',
         text: {
-          primary: '#c9d1d9',
+          primary: '#8b949e',
           secondary: '#8b949e',
           muted: '#484f58',
         },

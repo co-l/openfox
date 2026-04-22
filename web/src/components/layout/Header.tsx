@@ -358,7 +358,7 @@ export function Header({ onMenuClick, onCriteriaToggle }: HeaderProps) {
   }, [startAutoRefresh, stopAutoRefresh])
 
   return (
-    <header className="h-8 bg-bg-secondary border-b border-border flex items-center justify-between px-2">
+    <header className="h-8 bg-secondary border-b border-border flex items-center justify-between px-2">
       <div className="flex items-center gap-2 flex-1 min-w-0">
         {/* Left sidebar toggle - only on project pages */}
         {onMenuClick && isProjectPage && (

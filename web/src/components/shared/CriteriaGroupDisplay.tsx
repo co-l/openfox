@@ -33,14 +33,14 @@ export const CriteriaGroupDisplay = memo(function CriteriaGroupDisplay({ toolCal
   const getAction = toolCalls.find(tc => tc.arguments['action'] === 'get' && tc.result?.success && tc.result?.output)
 
   return (
-    <div className="my-1 rounded border border-border bg-bg-tertiary overflow-hidden">
+    <div className="my-1 rounded border border-border bg-secondary overflow-hidden">
       {/* Header */}
-      <div className="px-2 py-1.5 border-b border-border bg-bg-secondary">
+      <div className="px-2 py-1.5 border-b border-border bg-secondary">
         <span className="text-xs font-medium text-text-muted">Acceptance Criteria</span>
       </div>
       
       {/* Criteria list */}
-      <div>
+      <div className="bg-primary">
         {getAction ? (
           (() => {
             const output = getAction.result!.output!

@@ -429,7 +429,7 @@ export function PlanPanel({ criteriaSidebarOpen: externalCriteriaSidebarOpen, on
       )}
       <ConnectionStatusBar />
 
-      <div ref={scrollContainerRef} data-testid="chat-scroll-container" className="flex-1 min-w-0 overflow-y-auto relative">
+      <div ref={scrollContainerRef} data-testid="chat-scroll-container" className="flex-1 min-w-0 overflow-y-auto relative bg-primary">
         <div className="pt-4">
           {displayItems.map((item, index) => {
             if (item.type === 'context-divider') {
@@ -548,7 +548,7 @@ export function PlanPanel({ criteriaSidebarOpen: externalCriteriaSidebarOpen, on
       </div>
 
       <form onSubmit={handleSubmit}
-            className="relative p-2 md:p-4 border-t border-border bg-gradient-to-t from-bg-secondary/50 to-transparent">
+            className="relative p-2 md:p-4 bg-secondary">
         <button
           type="button"
           className="absolute -top-8 right-2 md:right-4 text-sm text-text-muted hover:text-text-primary z-10 flex items-center gap-1.5"
@@ -631,10 +631,10 @@ export function PlanPanel({ criteriaSidebarOpen: externalCriteriaSidebarOpen, on
         )}
 
         <div
-          className={`flex items-end gap-3 p-3 rounded border transition-colors ${
+          className={`flex items-end gap-3 p-3 rounded transition-colors ${
             dragOver
-              ? 'border-accent-primary/50 bg-accent-primary/10'
-              : 'border-border bg-bg-tertiary/50'
+              ? 'bg-accent-primary/10'
+              : 'bg-primary'
           }`}
           onDragOver={handleDragOver}
           onDragLeave={handleDragLeave}

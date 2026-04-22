@@ -95,7 +95,7 @@ export const ToolCallDisplay = memo(function ToolCallDisplay({
   // Compact variant - single line, no expansion
   if (variant === 'compact') {
     return (
-      <div className="flex items-center gap-1.5 text-xs bg-bg-tertiary rounded px-2 py-1.5">
+      <div className="flex items-center gap-1.5 text-xs bg-secondary rounded px-2 py-1.5">
         <ToolIcon tool={tool} />
         <span className="text-accent-primary font-medium">{tool}</span>
         <span className="text-text-muted truncate flex-1">
@@ -111,7 +111,7 @@ export const ToolCallDisplay = memo(function ToolCallDisplay({
   return (
     <div className="border border-border rounded overflow-hidden my-1 min-w-0">
       <button
-        className="w-full flex items-center gap-1.5 p-2 bg-bg-tertiary hover:bg-bg-tertiary/80 text-left"
+        className="w-full flex items-center gap-1.5 p-2 bg-secondary hover:bg-secondary/80 text-left"
         onClick={() => setExpanded(!expanded)}
       >
         <span className={`${config.color} ${config.animate ? 'animate-pulse' : ''}`}>
@@ -130,7 +130,7 @@ export const ToolCallDisplay = memo(function ToolCallDisplay({
       )}
       
       {(expanded || isReadFile) && (
-        <div className="p-2 bg-bg-secondary border-t border-border space-y-2 min-w-0">
+        <div className="p-2 bg-primary border-t border-border space-y-2 min-w-0">
           {/* Specialized rendering for run_command with streaming output */}
           {tool === 'run_command' && (
             <RunCommandView

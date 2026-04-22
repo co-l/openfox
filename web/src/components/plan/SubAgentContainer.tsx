@@ -100,7 +100,7 @@ export const SubAgentContainer = memo(function SubAgentContainer({ messages, sub
   const displayMessages = messages.filter(m => m.role !== 'tool')
 
   return (
-    <div ref={containerRef} className="feed-item border border-border rounded overflow-hidden bg-bg-secondary">
+    <div ref={containerRef} className="feed-item border border-border rounded overflow-hidden bg-secondary">
       <div
         className="w-full flex items-center justify-between px-2 py-1 border-b relative"
         style={hStyle}

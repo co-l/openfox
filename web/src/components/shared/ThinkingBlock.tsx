@@ -19,7 +19,7 @@ export const ThinkingBlock = memo(function ThinkingBlock({ content, variant = 'd
   }
   
   return (
-    <div className="text-text-muted text-sm italic bg-bg-tertiary/50 rounded p-1.5 feed-item whitespace-pre-wrap">
+    <div className="text-text-muted text-sm italic bg-secondary rounded p-1.5 feed-item whitespace-pre-wrap">
       {content}
     </div>
   )
