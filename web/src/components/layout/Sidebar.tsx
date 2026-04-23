@@ -100,7 +100,7 @@ export function Sidebar({ projectId, isOpen = true, onClose }: SidebarProps) {
         <div className="p-4 border-b border-border flex gap-2">
           <Link
             href={`/p/${projectId}/new`}
-            className="flex-1 block text-center rounded font-medium transition-colors bg-accent-primary/25 text-white hover:bg-accent-primary/40 px-3 py-1.5 text-sm"
+            className="flex-1 block text-center rounded font-medium transition-colors bg-accent-primary/25 text-text-primary hover:bg-accent-primary/40 px-3 py-1.5 text-sm"
             data-testid="sidebar-new-session-button"
           >
             + New Session

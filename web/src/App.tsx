@@ -1,11 +1,12 @@
 import { useEffect, useState } from 'react'
+import { SETTINGS_KEYS, DISPLAY_SETTINGS_KEYS, useSettingsStore } from './stores/settings'
 import { useVisualViewport } from './hooks/useVisualViewport'
 import { Route, Switch, useRoute, useLocation } from 'wouter'
 import { useWebSocket } from './hooks/useWebSocket'
 import { useSessionStore } from './stores/session'
 import { useProjectStore } from './stores/project'
 import { useConfigStore } from './stores/config'
-import { DISPLAY_SETTINGS_KEYS, useSettingsStore } from './stores/settings'
+
 import { Header } from './components/layout/Header'
 import { Sidebar } from './components/layout/Sidebar'
 import { PageTitle } from './components/layout/PageTitle'
@@ -169,6 +170,7 @@ function App() {
         for (const key of DISPLAY_SETTINGS_KEYS) {
           loadDisplaySettings(key)
         }
+        loadDisplaySettings(SETTINGS_KEYS.DISPLAY_THEME)
       })
     }
   }, [connectionStatus, hasToken, fetchConfig, loadDisplaySettings])
@@ -186,6 +188,13 @@ function App() {
       navigate('/onboarding')
     }
   }, [configFetched, providers.length])
+
+  const displaySettings = useSettingsStore(state => state.settings)
+  useEffect(() => {
+    const theme = displaySettings[SETTINGS_KEYS.DISPLAY_THEME] ?? 'dark'
+    document.documentElement.classList.toggle('dark', theme === 'dark')
+    document.documentElement.classList.toggle('light', theme === 'light')
+  }, [displaySettings[SETTINGS_KEYS.DISPLAY_THEME]])
 
   const getInitialLeftSidebar = () => {
     const saved = localStorage.getItem('openfox:leftSidebar')

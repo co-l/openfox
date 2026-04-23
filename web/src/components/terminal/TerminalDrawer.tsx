@@ -134,7 +134,7 @@ export function TerminalDrawer({ isOpen, onClose, onFocusChat }: TerminalDrawerP
               <p className="mb-4">No terminal sessions</p>
               <button
                 onClick={() => createSession()}
-                className="px-4 py-2 bg-accent-primary/25 text-white rounded hover:bg-accent-primary/40 transition-colors"
+                className="px-4 py-2 bg-accent-primary/25 text-text-primary rounded hover:bg-accent-primary/40 transition-colors"
               >
                 Create Terminal
               </button>

@@ -85,7 +85,7 @@ export function HomePage() {
                   </Link>
                   <Link
                     href={`/p/${project.id}/new`}
-                    className="rounded font-medium transition-colors bg-accent-primary/25 text-white hover:bg-accent-primary/40 px-1.5 py-1 text-xs"
+                    className="rounded font-medium transition-colors bg-accent-primary/25 text-text-primary hover:bg-accent-primary/40 px-1.5 py-1 text-xs"
                   >
                     + New Session
                   </Link>

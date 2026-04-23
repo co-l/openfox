@@ -69,7 +69,7 @@ const LogHoverExpand = memo(function LogHoverExpand({
       </pre>
       <button
         onClick={() => { onClose(); onExpand() }}
-        className="fixed z-50 px-2 py-1 rounded text-xs font-medium bg-accent-primary/30 text-white hover:bg-accent-primary/50 transition-colors duration-150"
+        className="fixed z-50 px-2 py-1 rounded text-xs font-medium bg-accent-primary/30 text-text-primary hover:bg-accent-primary/50 transition-colors duration-150"
         style={{
           bottom: pos.bottom + 8,
           right: pos.right + 8,
@@ -169,7 +169,7 @@ export const DevServerFooter = memo(function DevServerFooter({ workdir }: DevSer
                   href={status.url}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="flex-1 flex items-center justify-center gap-1.5 rounded font-medium text-sm px-3 py-1.5 bg-accent-primary/25 text-white hover:bg-accent-primary/40 transition-colors"
+                  className="flex-1 flex items-center justify-center gap-1.5 rounded font-medium text-sm px-3 py-1.5 bg-accent-primary/25 text-text-primary hover:bg-accent-primary/40 transition-colors"
                   title={status.url}
                 >
                   <OpenExternalIcon />
@@ -181,7 +181,7 @@ export const DevServerFooter = memo(function DevServerFooter({ workdir }: DevSer
             /* Start button — full width */
             <button
               onClick={handleAction}
-              className="w-full rounded font-medium text-sm px-3 py-1.5 bg-accent-primary/25 text-white hover:bg-accent-primary/40 transition-colors"
+              className="w-full rounded font-medium text-sm px-3 py-1.5 bg-accent-primary/25 text-text-primary hover:bg-accent-primary/40 transition-colors"
             >
               Start
             </button>

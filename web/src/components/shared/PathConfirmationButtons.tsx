@@ -89,7 +89,7 @@ export function PathConfirmationButtons({ confirmation }: PathConfirmationButton
         </button>
         <button
           onClick={() => confirmPath(confirmation.callId, true, false)}
-          className="flex-1 px-3 py-1.5 text-xs font-medium rounded bg-accent-primary hover:bg-accent-primary/80 text-white transition-colors"
+          className="flex-1 px-3 py-1.5 text-xs font-medium rounded bg-accent-primary hover:bg-accent-primary/80 text-text-primary transition-colors"
         >
           Allow
         </button>

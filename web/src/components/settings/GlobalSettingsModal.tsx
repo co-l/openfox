@@ -87,6 +87,59 @@ function AdvancedTab({ onClose }: { onClose: () => void }) {
   )
 }
 
+function ThemePicker() {
+  const settings = useSettingsStore(state => state.settings)
+  const setSetting = useSettingsStore(state => state.setSetting)
+
+  const currentTheme = settings[SETTINGS_KEYS.DISPLAY_THEME] ?? 'dark'
+
+  const handleThemeChange = async (theme: string) => {
+    await setSetting(SETTINGS_KEYS.DISPLAY_THEME, theme)
+    document.documentElement.classList.toggle('dark', theme === 'dark')
+    document.documentElement.classList.toggle('light', theme === 'light')
+  }
+
+  return (
+    <div className="space-y-4">
+      <h3 className="text-sm font-medium text-text-primary">Theme</h3>
+      <div className="flex gap-2">
+        <button
+          type="button"
+          onClick={() => handleThemeChange('dark')}
+          className={`flex-1 px-4 py-3 rounded-lg border transition-colors ${
+            currentTheme === 'dark'
+              ? 'border-accent-primary bg-bg-tertiary text-text-primary'
+              : 'border-border bg-bg-secondary text-text-muted hover:border-text-muted'
+          }`}
+        >
+          <div className="flex flex-col items-center gap-2">
+            <div className="w-8 h-8 rounded bg-[#0d1117] border border-[#30363d] flex items-center justify-center">
+              <div className="w-3 h-3 rounded-full bg-[#8b949e]" />
+            </div>
+            <span className="text-sm">Dark</span>
+          </div>
+        </button>
+        <button
+          type="button"
+          onClick={() => handleThemeChange('light')}
+          className={`flex-1 px-4 py-3 rounded-lg border transition-colors ${
+            currentTheme === 'light'
+              ? 'border-accent-primary bg-bg-tertiary text-text-primary'
+              : 'border-border bg-bg-secondary text-text-muted hover:border-text-muted'
+          }`}
+        >
+          <div className="flex flex-col items-center gap-2">
+            <div className="w-8 h-8 rounded bg-white border border-slate-200 flex items-center justify-center shadow-sm">
+              <div className="w-3 h-3 rounded-full bg-slate-400" />
+            </div>
+            <span className="text-sm">Light</span>
+          </div>
+        </button>
+      </div>
+    </div>
+  )
+}
+
 function DisplayTab() {
   const settings = useSettingsStore(state => state.settings)
   const loading = useSettingsStore(state => state.loading)
@@ -94,6 +147,10 @@ function DisplayTab() {
   const setSetting = useSettingsStore(state => state.setSetting)
 
   const isLoading = loading[SETTINGS_KEYS.DISPLAY_SHOW_THINKING] ?? false
+
+  useEffect(() => {
+    getSetting(SETTINGS_KEYS.DISPLAY_THEME)
+  }, [getSetting])
 
   const toggles = [
     { key: SETTINGS_KEYS.DISPLAY_SHOW_THINKING, label: 'Show thinking blocks', description: 'Display AI reasoning content in the feed' },
@@ -130,6 +187,7 @@ function DisplayTab() {
 
   return (
     <div className="space-y-6">
+      <ThemePicker />
       <div>
         <h3 className="text-sm font-medium text-text-primary mb-4">Feed Display</h3>
         <div className="space-y-4">

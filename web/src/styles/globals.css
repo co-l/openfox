@@ -44,7 +44,7 @@
   }
   
   .btn-primary {
-    @apply bg-accent-primary/25 text-white hover:bg-accent-primary/40;
+    @apply bg-accent-primary/25 text-text-primary hover:bg-accent-primary/40;
   }
   
   .btn-secondary {

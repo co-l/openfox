@@ -61,9 +61,9 @@ function StepIndicator({ currentStep, totalSteps, labels, onStepClick }: StepInd
                 onClick={() => onStepClick?.(stepNum)}
                 className={`size-8 rounded-full flex items-center justify-center text-sm font-medium transition-colors shrink-0 ${
                   isCompleted
-                    ? 'bg-accent-primary text-white hover:opacity-80'
+                    ? 'bg-accent-primary text-text-primary hover:opacity-80'
                     : isCurrent
-                      ? 'bg-accent-primary text-white'
+                      ? 'bg-accent-primary text-text-primary'
                       : 'bg-bg-tertiary text-text-muted'
                 }`}
               >
@@ -430,7 +430,7 @@ function ConnectLLMStep({ onNext }: ConnectLLMStepProps) {
               <button
                 type="submit"
                 disabled={!customUrl}
-                className="flex-1 px-4 py-2 bg-accent-primary text-white rounded-lg hover:bg-accent-primary/90 disabled:opacity-50 disabled:cursor-not-allowed transition-colors font-medium"
+                className="flex-1 px-4 py-2 bg-accent-primary text-text-primary rounded-lg hover:bg-accent-primary/90 disabled:opacity-50 disabled:cursor-not-allowed transition-colors font-medium"
               >
                 {testResult?.success ? 'Add Provider ✓' : 'Add Provider'}
               </button>
@@ -462,7 +462,7 @@ function ConnectLLMStep({ onNext }: ConnectLLMStepProps) {
         <button
           onClick={handleSubmit}
           disabled={!hasProviders}
-          className="w-full mt-6 px-6 py-3 bg-accent-primary text-white rounded-lg font-medium hover:bg-accent-primary/90 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+          className="w-full mt-6 px-6 py-3 bg-accent-primary text-text-primary rounded-lg font-medium hover:bg-accent-primary/90 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
         >
           Continue
         </button>
@@ -547,7 +547,7 @@ function ProjectsFolderStep({ onNext }: ProjectsFolderStepProps) {
         <button
           onClick={() => onNext({ workdir })}
           disabled={!workdir}
-          className="w-full mt-6 px-6 py-3 bg-accent-primary text-white rounded-lg font-medium hover:bg-accent-primary/90 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+          className="w-full mt-6 px-6 py-3 bg-accent-primary text-text-primary rounded-lg font-medium hover:bg-accent-primary/90 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
         >
           Continue
         </button>
@@ -672,7 +672,7 @@ function VisionStep({ onNext }: VisionStepProps) {
           </button>
           <button
             onClick={() => handleFinish(false)}
-            className="px-6 py-3 bg-accent-primary text-white rounded-lg font-medium hover:bg-accent-primary/90 transition-colors"
+            className="px-6 py-3 bg-accent-primary text-text-primary rounded-lg font-medium hover:bg-accent-primary/90 transition-colors"
           >
             Finish Setup
           </button>

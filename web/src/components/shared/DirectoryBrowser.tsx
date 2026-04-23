@@ -111,7 +111,7 @@ export function DirectoryBrowser({ onSelect, onClose, initialPath }: DirectoryBr
         {listing?.current && (
           <button
             onClick={() => onSelect(listing.current)}
-            className="w-full px-4 py-2 bg-accent-primary text-white rounded-lg font-medium hover:bg-accent-primary/90 transition-colors"
+            className="w-full px-4 py-2 bg-accent-primary text-text-primary rounded-lg font-medium hover:bg-accent-primary/90 transition-colors"
           >
             Select this folder
           </button>

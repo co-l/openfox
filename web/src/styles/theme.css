@@ -20,3 +20,22 @@
   /* Border */
   --color-border: 40 46 54;
 }
+
+.light {
+  --color-bg-primary: 255 255 255;
+  --color-bg-secondary: 250 251 252;
+  --color-bg-tertiary: 243 244 246;
+  --color-primary: 245 245 245;
+  --color-secondary: 229 229 229;
+
+  --color-text-primary: 15 23 42;
+  --color-text-secondary: 30 41 59;
+  --color-text-muted: 100 116 139;
+
+  --color-accent-primary: 37 99 235;
+  --color-accent-success: 22 163 74;
+  --color-accent-warning: 217 119 6;
+  --color-accent-error: 220 38 38;
+
+  --color-border: 203 213 225;
+}
