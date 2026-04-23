@@ -5,6 +5,7 @@ import { useCommandsStore } from '../stores/commands'
 import { useWorkflowsStore } from '../stores/workflows'
 import { useAgentsStore } from '../stores/agents'
 import { useSessionStore } from '../stores/session'
+import { fuzzyMatch, handleModalNavigation } from '../lib/modal-utils'
 
 interface QuickActionModalProps {
   isOpen: boolean
@@ -14,6 +15,7 @@ interface QuickActionModalProps {
   onSelectWorkflow: (workflowId: string) => void
   onCloseCompleteAction?: () => void
   textareaContent?: string
+  onSearchMessages?: () => void
 }
 
 interface ActionItem {
@@ -23,23 +25,7 @@ interface ActionItem {
   action: () => void
 }
 
-const fuzzyMatch = (text: string, query: string): boolean => {
-  if (!query) return true
-  const queryParts = query.toLowerCase().split(/\s+/)
-  const words = text.toLowerCase().split(/\s+/)
-  return queryParts.every(qp => {
-    for (const word of words) {
-      let qi = 0
-      for (let ni = 0; ni < word.length && qi < qp.length; ni++) {
-        if (word[ni] === qp[qi]) qi++
-      }
-      if (qi === qp.length) return true
-    }
-    return false
-  })
-}
-
-export function QuickActionModal({ isOpen, onClose, onCloseComplete, onSelectCommand, onSelectWorkflow, onCloseCompleteAction, textareaContent }: QuickActionModalProps) {
+export function QuickActionModal({ isOpen, onClose, onCloseComplete, onSelectCommand, onSelectWorkflow, onCloseCompleteAction, textareaContent, onSearchMessages }: QuickActionModalProps) {
   const fetchCommands = useCommandsStore(state => state.fetchCommands)
   const fetchWorkflows = useWorkflowsStore(state => state.fetchWorkflows)
   const fetchAgents = useAgentsStore(state => state.fetchAgents)
@@ -107,6 +93,15 @@ export function QuickActionModal({ isOpen, onClose, onCloseComplete, onSelectCom
         onClose()
       },
     },
+    {
+      id: 'search-messages',
+      name: 'Messages',
+      prefix: 'Action > Search',
+      action: () => {
+        onClose()
+        onSearchMessages?.()
+      },
+    },
     ...dedupById(agentDefaults, agentUserItems)
       .filter(a => !a.subagent && a.id !== currentMode)
       .map(a => ({ id: a.id, name: a.name, prefix: 'Agent > Switch to', action: () => switchMode(a.id) })),
@@ -123,25 +118,10 @@ export function QuickActionModal({ isOpen, onClose, onCloseComplete, onSelectCom
   const maxIndex = filteredItems.length - 1
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
-    switch (e.key) {
-      case 'ArrowDown':
-        e.preventDefault()
-        setSelectedIndex(i => Math.min(i + 1, maxIndex))
-        break
-      case 'ArrowUp':
-        e.preventDefault()
-        setSelectedIndex(i => Math.max(i - 1, 0))
-        break
-      case 'Enter':
-        e.preventDefault()
-        filteredItems[selectedIndex]?.action()
-        onClose()
-        break
-      case 'Escape':
-        e.preventDefault()
-        onClose()
-        break
-    }
+    handleModalNavigation(e, maxIndex, setSelectedIndex, () => {
+      filteredItems[selectedIndex]?.action()
+      onClose()
+    }, onClose)
   }
 
   return isOpen ? createPortal(

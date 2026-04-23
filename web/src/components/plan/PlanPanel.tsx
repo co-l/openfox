@@ -19,6 +19,7 @@ import { AttachmentPreview } from '../shared/AttachmentPreview.js'
 import { PromptHistoryList } from '../shared/PromptHistory.js'
 import { Markdown } from '../shared/Markdown.js'
 import { CloseButton } from '../shared/CloseButton'
+import { SearchIcon } from '../shared/icons'
 import { useWorkflowsStore } from '../../stores/workflows'
 import { useAgentsStore } from '../../stores/agents'
 import { useCommandsStore } from '../../stores/commands'
@@ -30,6 +31,7 @@ import { MoreMenu } from './MoreMenu'
 import { CommandsModal } from '../settings/CommandsModal'
 import { WorkflowsModal } from '../settings/WorkflowsModal'
 import { QuickActionModal } from '../QuickActionModal'
+import { MessageSearchModal } from './MessageSearchModal'
 
 import { groupMessages, type DisplayItem } from './groupMessages.js'
 import { usePromptHistory } from '../../hooks/usePromptHistory.js'
@@ -50,6 +52,8 @@ export function PlanPanel({ criteriaSidebarOpen: externalCriteriaSidebarOpen, on
   const [showCommandsModal, setShowCommandsModal] = useState(false)
   const [showWorkflowsModal, setShowWorkflowsModal] = useState(false)
   const [showQuickAction, setShowQuickAction] = useState(false)
+  const [showMessageSearch, setShowMessageSearch] = useState(false)
+  const [highlightedMessageId, setHighlightedMessageId] = useState<string | null>(null)
   const [turnStatsModal, setTurnStatsModal] = useState<{ model: string; mode: string; totalTime: number; prefillTokens: number; generationTokens: number; llmCalls?: Array<{ temperature?: number; topP?: number; topK?: number; maxTokens?: number; promptTokens: number; completionTokens: number; ttft: number; completionTime: number }> } | null>(null)
   const scrollContainerRef = useRef<HTMLDivElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
@@ -97,6 +101,16 @@ export function PlanPanel({ criteriaSidebarOpen: externalCriteriaSidebarOpen, on
   } = usePromptHistory(rawMessages, sessions, session?.id)
 
   // Listen for open-turn-stats event from stats bar
+  const handleSelectSearchMessage = useCallback((messageId: string) => {
+    setHighlightedMessageId(messageId)
+    setAutoScroll(false)
+    const element = document.querySelector(`[data-message-id="${messageId}"]`)
+    if (element) {
+      element.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    }
+    setTimeout(() => setHighlightedMessageId(null), 3000)
+  }, [])
+
   useEffect(() => {
     const handler = (e: Event) => {
       const customEvent = e as CustomEvent<{ stats: { model: string; mode: string; totalTime: number; prefillTokens: number; generationTokens: number; llmCalls?: Array<{ temperature?: number; topP?: number; topK?: number; maxTokens?: number; promptTokens: number; completionTokens: number; ttft: number; completionTime: number }> } }>
@@ -414,6 +428,7 @@ export function PlanPanel({ criteriaSidebarOpen: externalCriteriaSidebarOpen, on
   }
 
   return (
+    <>
     <SessionLayout criteriaSidebarOpen={criteriaSidebarOpen} onCriteriaSidebarToggle={onCriteriaSidebarToggle} messages={messages}>
       {pendingQuestion && (
         <AskUserDialog question={pendingQuestion} />
@@ -489,11 +504,13 @@ export function PlanPanel({ criteriaSidebarOpen: externalCriteriaSidebarOpen, on
 
             return (
               <div key={index} className="px-2 md:px-4">
-                <ChatMessage
-                  message={message}
-                  isLastAssistantMessage={false}
-                  promptContext={message.role === 'user' ? promptContextByUserMessageId[message.id] : undefined}
-                />
+                <div data-message-id={message.id} className={highlightedMessageId === message.id ? 'rounded animate-highlight-fade' : undefined}>
+                  <ChatMessage
+                    message={message}
+                    isLastAssistantMessage={false}
+                    promptContext={message.role === 'user' ? promptContextByUserMessageId[message.id] : undefined}
+                  />
+                </div>
               </div>
             )
           })}
@@ -551,11 +568,19 @@ export function PlanPanel({ criteriaSidebarOpen: externalCriteriaSidebarOpen, on
             className="relative p-2 md:p-4 bg-secondary">
         <button
           type="button"
-          className="absolute -top-8 right-2 md:right-4 text-sm text-text-muted hover:text-text-primary z-10 flex items-center gap-1.5"
+          className="absolute -top-8 right-12 md:right-16 text-sm text-text-muted hover:text-text-primary z-10 flex items-center gap-1.5"
           onClick={() => setAutoScroll(!isAutoScrollActive)}
         >
           <span className={`w-1.5 h-1.5 rounded-full ${isAutoScrollActive ? 'bg-accent-success' : 'border border-text-muted'}`} />
           live
+        </button>
+        <button
+          type="button"
+          onClick={() => setShowMessageSearch(true)}
+          className="absolute -top-8 right-2 md:right-4 text-sm text-text-muted hover:text-text-primary z-10 flex items-center p-0.5 rounded hover:bg-bg-tertiary transition-colors"
+          aria-label="Search messages"
+        >
+          <SearchIcon />
         </button>
         {/* Hidden file input */}
         <input
@@ -714,6 +739,7 @@ export function PlanPanel({ criteriaSidebarOpen: externalCriteriaSidebarOpen, on
       <QuickActionModal
         isOpen={showQuickAction}
         onClose={() => setShowQuickAction(false)}
+        onSearchMessages={() => setShowMessageSearch(true)}
         textareaContent={input}
         onCloseComplete={() => textareaRef.current?.focus()}
         onCloseCompleteAction={() => window.dispatchEvent(new CustomEvent('open-session-dropdown'))}
@@ -745,6 +771,16 @@ export function PlanPanel({ criteriaSidebarOpen: externalCriteriaSidebarOpen, on
         }}
       />
     </SessionLayout>
+
+    {showMessageSearch && (
+      <MessageSearchModal
+        isOpen={showMessageSearch}
+        onClose={() => setShowMessageSearch(false)}
+        messages={rawMessages}
+        onSelectMessage={handleSelectSearchMessage}
+      />
+    )}
+    </>
   )
 }
 

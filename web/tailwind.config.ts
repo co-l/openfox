@@ -42,9 +42,14 @@ export default {
           '0%': { transform: 'translateY(-100%)', opacity: '0' },
           '100%': { transform: 'translateY(0)', opacity: '1' },
         },
+        'highlight-fade': {
+          '0%': { boxShadow: '0 0 0 2px rgb(var(--color-accent-primary) / 1)' },
+          '100%': { boxShadow: '0 0 0 2px rgb(var(--color-accent-primary) / 0)' },
+        },
       },
       animation: {
         'slide-down': 'slide-down 0.2s ease-out forwards',
+        'highlight-fade': 'highlight-fade 3s ease-out forwards',
       },
     },
   },
