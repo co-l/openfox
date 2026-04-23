@@ -209,6 +209,7 @@ export const AssistantMessage = memo(function AssistantMessage({ message, showSt
             
           case 'stats': {
             const stats = element.stats
+            if (!stats || 'error' in stats) return null
             const shortModel = stats.model.split('/').pop()?.split('-').slice(0, 2).join('-') ?? stats.model
             const modeColor = getAgentColor(agents, stats.mode)
             const formatTokens = (n: number) => n >= 1000 ? `${(n / 1000).toFixed(1)}k` : n.toString()
