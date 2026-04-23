@@ -16,6 +16,8 @@ interface QuickActionModalProps {
   onCloseCompleteAction?: () => void
   textareaContent?: string
   onSearchMessages?: () => void
+  onToggleAutoScroll?: (enabled: boolean) => void
+  isAutoScrollActive?: boolean
 }
 
 interface ActionItem {
@@ -25,7 +27,7 @@ interface ActionItem {
   action: () => void
 }
 
-export function QuickActionModal({ isOpen, onClose, onCloseComplete, onSelectCommand, onSelectWorkflow, onCloseCompleteAction, textareaContent, onSearchMessages }: QuickActionModalProps) {
+export function QuickActionModal({ isOpen, onClose, onCloseComplete, onSelectCommand, onSelectWorkflow, onCloseCompleteAction, textareaContent, onSearchMessages, onToggleAutoScroll, isAutoScrollActive }: QuickActionModalProps) {
   const fetchCommands = useCommandsStore(state => state.fetchCommands)
   const fetchWorkflows = useWorkflowsStore(state => state.fetchWorkflows)
   const fetchAgents = useAgentsStore(state => state.fetchAgents)
@@ -100,6 +102,15 @@ export function QuickActionModal({ isOpen, onClose, onCloseComplete, onSelectCom
       action: () => {
         onClose()
         onSearchMessages?.()
+      },
+    },
+    {
+      id: 'toggle-autoscroll',
+      name: isAutoScrollActive ? 'Auto-scroll Off' : 'Auto-scroll On',
+      prefix: 'Action > Toggle',
+      action: () => {
+        onClose()
+        onToggleAutoScroll?.(!isAutoScrollActive)
       },
     },
     ...dedupById(agentDefaults, agentUserItems)
