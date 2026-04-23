@@ -13,6 +13,7 @@ import type {
   ContextState,
   Todo,
   Attachment,
+  MessageStats,
 } from '../../shared/types.js'
 import type {
   StoredEvent,
@@ -20,10 +21,15 @@ import type {
   SessionSnapshot,
   SnapshotMessage,
   ReadFileEntry,
+  PendingPathConfirmation,
+  VisionFallback,
+  PendingUserInput,
+  TaskStats,
+  MessageStatsEntry,
+  ContextWindow,
 } from './types.js'
-import {
-  applyEvents,
-} from './apply-events.js'
+import { applyEvents } from './apply-events.js'
+import type { FormatRetry } from './apply-events.js'
 import { stripPromptContextMessages } from './optimize-storage.js'
 import stripAnsi from "strip-ansi"
 
@@ -153,6 +159,10 @@ export interface ContextMessageBuildOptions {
 
 type EventLike = Pick<StoredEvent, 'type' | 'data'> & Partial<Pick<StoredEvent, 'timestamp'>>
 
+function getTimestamp(event: EventLike): number {
+  return event.timestamp ?? Date.now()
+}
+
 function applyTurnEventsToSnapshotMessages(
   initialMessages: SnapshotMessage[],
   events: EventLike[]
@@ -161,9 +171,6 @@ function applyTurnEventsToSnapshotMessages(
   return messages.map((msg) => ({ ...msg, isStreaming: msg.isStreaming ?? true }))
 }
 
-/**
- * Full session state derived entirely from events
- */
 export interface FoldedSessionState {
   mode: SessionMode
   phase: SessionPhase
@@ -176,6 +183,19 @@ export interface FoldedSessionState {
   readFiles: ReadFileEntry[]
   lastModeWithReminder?: SessionMode
   pendingConfirmations: PendingPathConfirmation[]
+  sessionInit?: {
+    projectId: string
+    workdir: string
+    contextWindowId: string
+    maxTokens?: number
+  }
+  sessionTitle?: string
+  visionFallbacks?: VisionFallback[]
+  formatRetries?: FormatRetry[]
+  pendingUserInput?: PendingUserInput
+  taskStats?: TaskStats
+  messageStats?: MessageStatsEntry[]
+  contextWindows?: ContextWindow[]
 }
 
 // ============================================================================
@@ -323,6 +343,10 @@ export function foldTurnEventsToSnapshotMessages(events: EventLike[]): SnapshotM
   return applyTurnEventsToSnapshotMessages([], events)
 }
 
+export function foldTurnEventsToSnapshotMessagesFromInitial(events: EventLike[], initialMessages: SnapshotMessage[]): SnapshotMessage[] {
+  return applyTurnEventsToSnapshotMessages(initialMessages, events)
+}
+
 // ============================================================================
 // Criteria Folding
 // ============================================================================
@@ -408,8 +432,10 @@ export function foldContextState(events: EventLike[], initialWindowId: string): 
         compactionCount = data.contextState.compactionCount
         latestContextState = data.contextState
         readFilesMap.clear()
-        for (const entry of data.readFiles) {
-          readFilesMap.set(entry.path, { ...entry })
+        if (data.readFiles) {
+          for (const entry of data.readFiles) {
+            readFilesMap.set(entry.path, { ...entry })
+          }
         }
         break
       }
@@ -504,16 +530,7 @@ export function foldIsRunning(events: EventLike[]): boolean {
   return isRunning
 }
 
-/**
- * Pending path confirmation for folding
- */
-export interface PendingPathConfirmation {
-  callId: string
-  tool: string
-  paths: string[]
-  workdir: string
-  reason: 'outside_workdir' | 'sensitive_file' | 'both' | 'dangerous_command'
-}
+
 
 /**
  * Fold pending path confirmations from events
@@ -560,12 +577,15 @@ export function foldPendingConfirmations(events: EventLike[]): PendingPathConfir
 export function foldSessionState(
   events: EventLike[],
   initialWindowId: string,
-  maxTokens: number
+  maxTokens: number,
+  initialMessages?: SnapshotMessage[]
 ): FoldedSessionState {
   const mode = foldMode(events)
   const phase = foldPhase(events)
   const isRunning = foldIsRunning(events)
-  const messages = foldTurnEventsToSnapshotMessages(events)
+  const messages = initialMessages && initialMessages.length > 0
+    ? foldTurnEventsToSnapshotMessagesFromInitial(events, initialMessages)
+    : foldTurnEventsToSnapshotMessages(events)
   const criteria = foldCriteria(events)
   const todos = foldTodos(events)
   const contextResult = foldContextState(events, initialWindowId)
@@ -635,6 +655,89 @@ export function foldSessionState(
     }
   }
 
+  let sessionInit: FoldedSessionState['sessionInit']
+  let sessionTitle: string | undefined
+  let visionFallbacks: VisionFallback[] = []
+  let formatRetries: FormatRetry[] = []
+  let pendingUserInput: PendingUserInput | undefined
+  let taskStats: TaskStats | undefined
+  let messageStats: MessageStatsEntry[] = []
+  let contextWindows: ContextWindow[] = []
+
+  for (const event of events) {
+    switch (event.type) {
+      case 'session.initialized': {
+        const data = event.data as { projectId: string; workdir: string; contextWindowId: string; maxTokens?: number }
+        sessionInit = {
+          projectId: data.projectId,
+          workdir: data.workdir,
+          contextWindowId: data.contextWindowId,
+          ...(data.maxTokens !== undefined && { maxTokens: data.maxTokens }),
+        }
+        break
+      }
+      case 'session.name_generated': {
+        const data = event.data as { name: string }
+        sessionTitle = data.name
+        break
+      }
+      case 'vision_fallback.start': {
+        const data = event.data as { messageId: string; attachmentId: string; filename?: string }
+        visionFallbacks.push({
+          messageId: data.messageId,
+          attachmentId: data.attachmentId,
+          ...(data.filename !== undefined && { filename: data.filename }),
+          startedAt: getTimestamp(event),
+        })
+        break
+      }
+      case 'vision_fallback.done': {
+        const data = event.data as { messageId: string; attachmentId: string; description: string }
+        const existing = visionFallbacks.find(v => v.messageId === data.messageId && v.attachmentId === data.attachmentId)
+        if (existing) {
+          existing.description = data.description
+        }
+        break
+      }
+      case 'format.retry': {
+        const data = event.data as { attempt: number; maxAttempts: number }
+        formatRetries.push({
+          attempt: data.attempt,
+          maxAttempts: data.maxAttempts,
+          timestamp: getTimestamp(event),
+        })
+        break
+      }
+      case 'chat.ask_user': {
+        const data = event.data as { callId: string; question: string }
+        pendingUserInput = { callId: data.callId, question: data.question }
+        break
+      }
+      case 'task.completed': {
+        const data = event.data as TaskStats
+        taskStats = data
+        break
+      }
+      case 'chat.done': {
+        const data = event.data as { messageId: string; reason: 'complete' | 'stopped' | 'error' | 'waiting_for_user'; stats?: MessageStats }
+        messageStats.push({
+          messageId: data.messageId,
+          reason: data.reason,
+          ...(data.stats !== undefined && { stats: data.stats }),
+        })
+        break
+      }
+      case 'context.compacted': {
+        const data = event.data as { closedWindowId: string; newWindowId: string; beforeTokens: number; afterTokens: number; summary: string }
+        contextWindows.push({
+          ...data,
+          timestamp: getTimestamp(event),
+        })
+        break
+      }
+    }
+  }
+
   return {
     mode,
     phase,
@@ -647,6 +750,14 @@ export function foldSessionState(
     readFiles: contextResult.readFiles,
     ...(lastModeWithReminder !== undefined && { lastModeWithReminder }),
     pendingConfirmations,
+    ...(sessionInit !== undefined && { sessionInit }),
+    ...(sessionTitle !== undefined && { sessionTitle }),
+    ...(visionFallbacks.length > 0 && { visionFallbacks }),
+    ...(formatRetries.length > 0 && { formatRetries }),
+    ...(pendingUserInput !== undefined && { pendingUserInput }),
+    ...(taskStats !== undefined && { taskStats }),
+    ...(messageStats.length > 0 && { messageStats }),
+    ...(contextWindows.length > 0 && { contextWindows }),
   }
 }
 
@@ -675,6 +786,15 @@ export function buildSnapshot(
     ...(foldedState.lastModeWithReminder !== undefined && { lastModeWithReminder: foldedState.lastModeWithReminder }),
     snapshotSeq: latestSeq,
     snapshotAt,
+    ...(foldedState.sessionInit !== undefined && { sessionInit: foldedState.sessionInit }),
+    ...(foldedState.sessionTitle !== undefined && { sessionTitle: foldedState.sessionTitle }),
+    ...(foldedState.visionFallbacks !== undefined && { visionFallbacks: foldedState.visionFallbacks }),
+    ...(foldedState.formatRetries !== undefined && { formatRetries: foldedState.formatRetries }),
+    ...(foldedState.pendingUserInput !== undefined && { pendingUserInput: foldedState.pendingUserInput }),
+    ...(foldedState.taskStats !== undefined && { taskStats: foldedState.taskStats }),
+    ...(foldedState.messageStats !== undefined && { messageStats: foldedState.messageStats }),
+    ...(foldedState.pendingConfirmations !== undefined && { pendingConfirmations: foldedState.pendingConfirmations }),
+    ...(foldedState.contextWindows !== undefined && { contextWindows: foldedState.contextWindows }),
   }
 }
 

@@ -15,9 +15,10 @@
  */
 
 import type Database from 'better-sqlite3'
-import type { TurnEvent, StoredEvent, SessionSnapshot } from './types.js'
+import type { TurnEvent, StoredEvent, SessionSnapshot, SnapshotMessage } from './types.js'
 import { stripPromptContextMessages } from './optimize-storage.js'
 import { logger } from '../utils/logger.js'
+import { foldSessionState, buildSnapshot } from './folding.js'
 
 // ============================================================================
 // Types
@@ -497,22 +498,6 @@ export class EventStore {
   }
 
   /**
-   * Get the latest snapshot sequence number for a session
-   * @returns The sequence number of the latest snapshot, or 0 if none
-   */
-  getLatestSnapshotSeq(sessionId: string): number {
-    const row = this.db
-      .prepare(`
-        SELECT seq FROM events 
-        WHERE session_id = ? AND event_type = 'turn.snapshot' 
-        ORDER BY seq DESC LIMIT 1
-      `)
-      .get(sessionId) as { seq: number } | undefined
-
-    return row?.seq ?? 0
-  }
-
-  /**
    * One-time storage optimization: delete old snapshots and strip
    * promptContext.messages from remaining snapshots across all sessions.
    * Safe to run multiple times (idempotent).
@@ -563,6 +548,115 @@ export class EventStore {
 
     return { deletedSnapshots, strippedSnapshots }
   }
+
+  /**
+   * Get the latest snapshot sequence number for a session
+   * @returns The sequence number of the latest snapshot, or 0 if none
+   */
+  getLatestSnapshotSeq(sessionId: string): number {
+    const row = this.db
+      .prepare(`
+        SELECT seq FROM events 
+        WHERE session_id = ? AND event_type = 'turn.snapshot' 
+        ORDER BY seq DESC LIMIT 1
+      `)
+      .get(sessionId) as { seq: number } | undefined
+
+    return row?.seq ?? 0
+  }
+
+  /**
+   * Consolidate orphaned events into a new snapshot and delete raw events.
+   * Uses transaction to ensure atomicity.
+   * @returns Object with snapshotSeq and deletedCount, or null if no events to consolidate
+   */
+  consolidateSession(sessionId: string): { snapshotSeq: number; deletedCount: number } | null {
+    const transaction = this.db.transaction(() => {
+      const events = this.getEvents(sessionId)
+      if (events.length === 0) return null
+
+      const latestSnapshot = [...events].reverse().find(e => e.type === 'turn.snapshot')
+      const eventsAfterSnapshot = events.filter(e => e.seq > (latestSnapshot?.seq ?? 0))
+
+      if (eventsAfterSnapshot.length === 0) return null
+
+      const initEvent = events.find(e => e.type === 'session.initialized')
+      const initialWindowId = initEvent && typeof initEvent.data === 'object' && 'contextWindowId' in initEvent.data
+        ? (initEvent.data as { contextWindowId: string }).contextWindowId
+        : 'legacy-window-1'
+
+      const latestSeq = events[events.length - 1]!.seq
+
+      const snapshotMessages = latestSnapshot?.data && typeof latestSnapshot.data === 'object' && 'messages' in latestSnapshot.data
+        ? (latestSnapshot.data as { messages: SnapshotMessage[] }).messages
+        : []
+
+      const foldedState = foldSessionState(events, initialWindowId, 200000, snapshotMessages)
+      const newSnapshot = buildSnapshot(foldedState, latestSeq)
+
+      const deleteResult = this.db.prepare(`
+        DELETE FROM events 
+        WHERE session_id = ? AND seq <= ?
+      `).run(sessionId, latestSeq)
+
+      const snapshotEvent = this.append(sessionId, {
+        type: 'turn.snapshot',
+        data: newSnapshot,
+      })
+
+      return {
+        snapshotSeq: snapshotEvent.seq,
+        deletedCount: deleteResult.changes as number,
+      }
+    })
+
+    try {
+      return transaction()
+    } catch (error) {
+      const err = error instanceof Error ? error : new Error(String(error))
+      logger.error('Failed to consolidate session', { sessionId, error: err.message, stack: err.stack })
+      return null
+    }
+  }
+
+  /**
+   * Find session IDs that have orphaned events (events after latest snapshot)
+   * and are not currently running.
+   */
+  findOrphanedSessions(): string[] {
+    const cutoff = new Date(Date.now() - 5 * 60 * 1000).toISOString()
+    logger.debug('Looking for orphaned sessions', { cutoff })
+
+    const sessions = this.db.prepare(`
+      SELECT id, is_running 
+      FROM sessions 
+      WHERE is_running = 0 AND updated_at < ?
+    `).all(cutoff) as Array<{ id: string; is_running: number }>
+
+    logger.debug('Idle sessions found', { count: sessions.length })
+
+    const orphaned: string[] = []
+
+    for (const session of sessions) {
+      const hasSnapshot = this.db.prepare(`
+        SELECT 1 FROM events WHERE session_id = ? AND event_type = 'turn.snapshot' LIMIT 1
+      `).get(session.id)
+
+      if (hasSnapshot) {
+        const latestSnapshotSeq = this.getLatestSnapshotSeq(session.id)
+        const eventsAfter = this.db.prepare(`
+          SELECT 1 FROM events WHERE session_id = ? AND seq > ? LIMIT 1
+        `).get(session.id, latestSnapshotSeq)
+
+        if (eventsAfter) {
+          orphaned.push(session.id)
+        }
+      }
+    }
+
+    logger.info('Orphaned sessions found', { count: orphaned.length, ids: orphaned })
+    return orphaned
+  }
 }
 
 // ============================================================================
@@ -585,6 +679,30 @@ export function initEventStore(db: Database.Database): EventStore {
   if (result.deletedSnapshots > 0 || result.strippedSnapshots > 0) {
     logger.info('Storage optimized', result)
   }
+
+  // Consolidate orphaned sessions asynchronously (don't block startup)
+  setImmediate(() => {
+    try {
+      logger.info('Starting orphaned session consolidation')
+      const orphanedSessions = eventStoreInstance!.findOrphanedSessions()
+      if (orphanedSessions.length > 0) {
+        logger.info('Found orphaned sessions to consolidate', { count: orphanedSessions.length })
+        let consolidated = 0
+        for (const sessionId of orphanedSessions) {
+          const result = eventStoreInstance!.consolidateSession(sessionId)
+          if (result) {
+            consolidated++
+            logger.debug('Consolidated session', { sessionId, deletedCount: result.deletedCount })
+          }
+        }
+        logger.info('Sessions consolidated', { consolidated, total: orphanedSessions.length })
+      } else {
+        logger.info('No orphaned sessions to consolidate')
+      }
+    } catch {
+      // Ignore errors during startup consolidation - this is best-effort
+    }
+  })
 
   return eventStoreInstance
 }

@@ -23,6 +23,15 @@ export function initDatabase(config: Config): Database.Database {
   if (result.changes > 0) {
     logger.info('Reset stale running states', { count: result.changes })
   }
+
+  // Vacuum database if freelist has accumulated (deleted rows leave free pages)
+  // Only vacuum if > 10k free pages to avoid unnecessary I/O
+  const freelistCount = db.pragma('freelist_count', { simple: true }) as number
+  if (freelistCount > 10000) {
+    logger.info('Vacuuming database', { freelistCount })
+    db.exec('VACUUM')
+    logger.info('Database vacuumed')
+  }
   
   return db
 }

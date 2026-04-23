@@ -2,6 +2,8 @@
 @import '@fontsource/jetbrains-mono/500.css';
 @import '@fontsource/jetbrains-mono/600.css';
 
+@import './theme.css';
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;

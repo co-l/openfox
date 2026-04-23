@@ -15,24 +15,24 @@ export default {
     extend: {
       colors: {
         bg: {
-          primary: '#0d1117',
-          secondary: '#161b22',
-          tertiary: '#21262d',
+          primary: 'rgb(var(--color-bg-primary) / <alpha-value>)',
+          secondary: 'rgb(var(--color-bg-secondary) / <alpha-value>)',
+          tertiary: 'rgb(var(--color-bg-tertiary) / <alpha-value>)',
         },
-        primary: '#0a0a0a',
-        secondary: '#141414',
+        primary: 'rgb(var(--color-primary) / <alpha-value>)',
+        secondary: 'rgb(var(--color-secondary) / <alpha-value>)',
         text: {
-          primary: '#8b949e',
-          secondary: '#8b949e',
-          muted: '#484f58',
+          primary: 'rgb(var(--color-text-primary) / <alpha-value>)',
+          secondary: 'rgb(var(--color-text-secondary) / <alpha-value>)',
+          muted: 'rgb(var(--color-text-muted) / <alpha-value>)',
         },
         accent: {
-          primary: '#58a6ff',
-          success: '#3fb950',
-          warning: '#d29922',
-          error: '#f85149',
+          primary: 'rgb(var(--color-accent-primary) / <alpha-value>)',
+          success: 'rgb(var(--color-accent-success) / <alpha-value>)',
+          warning: 'rgb(var(--color-accent-warning) / <alpha-value>)',
+          error: 'rgb(var(--color-accent-error) / <alpha-value>)',
         },
-        border: '#282e36',
+        border: 'rgb(var(--color-border) / <alpha-value>)',
       },
       fontFamily: {
         mono: ['JetBrains Mono', 'Fira Code', 'Consolas', 'monospace'],

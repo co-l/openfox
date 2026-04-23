@@ -361,33 +361,35 @@ export type TurnEvent =
 // ============================================================================
 
 export interface SessionSnapshot {
-  // Core session info
   mode: SessionMode
   phase: SessionPhase
   isRunning: boolean
 
-  // Messages (fully reconstructed, with tool results attached)
   messages: SnapshotMessage[]
-
-  // Criteria
   criteria: Criterion[]
-
-  // Context state
   contextState: ContextState
   currentContextWindowId: string
-
-  // Builder todos
   todos: Todo[]
-
-  // File read cache (for current window)
-  readFiles: ReadFileEntry[]
-
-  // Mode reminder tracking (to avoid re-injecting system reminders)
+  readFiles?: ReadFileEntry[]
   lastModeWithReminder?: SessionMode
+  snapshotSeq: number
+  snapshotAt: number
 
-  // Metadata
-  snapshotSeq: number // The event seq this snapshot was taken at
-  snapshotAt: number // Unix timestamp
+  sessionInit?: {
+    projectId: string
+    workdir: string
+    contextWindowId: string
+    maxTokens?: number
+  }
+  sessionTitle?: string
+  preparingToolCalls?: PreparingToolCall[]
+  visionFallbacks?: VisionFallback[]
+  formatRetries?: FormatRetry[]
+  pendingUserInput?: PendingUserInput
+  taskStats?: TaskStats
+  messageStats?: MessageStatsEntry[]
+  pendingConfirmations?: PendingPathConfirmation[]
+  contextWindows?: ContextWindow[]
 }
 
 /**
@@ -396,6 +398,68 @@ export interface SessionSnapshot {
 export interface ReadFileEntry {
   path: string
   tokenCount: number
+}
+
+export interface PreparingToolCall {
+  index: number
+  name: string
+}
+
+export interface FormatRetry {
+  attempt: number
+  maxAttempts: number
+  timestamp: number
+}
+
+export interface VisionFallback {
+  messageId: string
+  attachmentId: string
+  filename?: string
+  description?: string
+  startedAt?: number
+}
+
+export interface PendingUserInput {
+  callId: string
+  question: string
+}
+
+export interface TaskStats {
+  summary: string | null
+  iterations: number
+  totalTimeSeconds: number
+  totalToolCalls: number
+  totalTokensGenerated: number
+  avgGenerationSpeed: number
+  responseCount: number
+  llmCallCount: number
+  criteria: Array<{ id: string; description: string; status: string }>
+  workflowName?: string
+  workflowId?: string
+  workflowColor?: string
+}
+
+export interface MessageStatsEntry {
+  messageId: string
+  reason: 'complete' | 'stopped' | 'error' | 'waiting_for_user'
+  stats?: MessageStats
+}
+
+export interface PendingPathConfirmation {
+  callId: string
+  tool: string
+  paths: string[]
+  workdir: string
+  reason: 'outside_workdir' | 'sensitive_file' | 'both' | 'dangerous_command'
+}
+
+export interface ContextWindow {
+  closedWindowId: string
+  newWindowId: string
+  beforeTokens: number
+  afterTokens: number
+  summary: string
+  timestamp: number
 }
 
 /**
@@ -408,6 +472,10 @@ export interface SnapshotMessage {
   content: string
   thinkingContent?: string
   toolCalls?: ToolCallWithResult[]
+  preparingToolCalls?: PreparingToolCall[]
+  formatRetries?: FormatRetry[]
+  isComplete?: boolean
+  completeReason?: 'complete' | 'stopped' | 'error' | 'waiting_for_user'
   segments?: MessageSegment[]
   stats?: MessageStats
   timestamp: number

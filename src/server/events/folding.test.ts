@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { StoredEvent } from './types.js'
+import type { MessageStats } from '../../shared/types.js'
 import {
   buildContextMessagesFromEventHistory,
   buildContextMessagesFromStoredEvents,
@@ -15,6 +16,59 @@ const baseEvent = {
   sessionId: 'session-1',
   timestamp: Date.parse('2024-01-01T00:00:00.000Z'),
 }
+
+describe('apply-events.ts new handlers', () => {
+  describe('tool.output events', () => {
+    it('populates streamingOutput on tool calls', () => {
+      const events: StoredEvent[] = [
+        { ...baseEvent, type: 'message.start', data: { messageId: 'm1', role: 'assistant' } },
+        { ...baseEvent, type: 'tool.call', data: { messageId: 'm1', toolCall: { id: 'call-1', name: 'run_command', arguments: {} } } },
+        { ...baseEvent, type: 'tool.output', data: { toolCallId: 'call-1', stream: 'stdout', content: 'First line\n' } },
+        { ...baseEvent, type: 'tool.output', data: { toolCallId: 'call-1', stream: 'stderr', content: 'Error output\n' } },
+        { ...baseEvent, type: 'tool.result', data: { messageId: 'm1', toolCallId: 'call-1', result: { success: true, output: 'Done', durationMs: 1, truncated: false } } },
+      ]
+
+      const messages = buildMessagesFromStoredEvents(events)
+      const tc = messages[0]!.toolCalls![0]!
+
+      expect(tc.streamingOutput).toHaveLength(2)
+      expect(tc.streamingOutput![0]).toEqual({ stream: 'stdout', content: 'First line\n', timestamp: baseEvent.timestamp })
+      expect(tc.streamingOutput![1]).toEqual({ stream: 'stderr', content: 'Error output\n', timestamp: baseEvent.timestamp })
+    })
+  })
+
+  describe('format.retry events', () => {
+    it('populates formatRetries on assistant messages', () => {
+      const events: StoredEvent[] = [
+        { ...baseEvent, type: 'message.start', data: { messageId: 'm1', role: 'assistant' } },
+        { ...baseEvent, type: 'format.retry', data: { attempt: 1, maxAttempts: 3 } },
+        { ...baseEvent, type: 'message.delta', data: { messageId: 'm1', content: 'Attempt 1 failed' } },
+        { ...baseEvent, type: 'format.retry', data: { attempt: 2, maxAttempts: 3 } },
+      ]
+
+      const messages = buildMessagesFromStoredEvents(events)
+      const retries = (messages[0] as { formatRetries?: { attempt: number; maxAttempts: number }[] }).formatRetries
+
+      expect(retries).toHaveLength(2)
+      expect(retries![0]).toEqual({ attempt: 1, maxAttempts: 3, timestamp: baseEvent.timestamp })
+      expect(retries![1]).toEqual({ attempt: 2, maxAttempts: 3, timestamp: baseEvent.timestamp })
+    })
+  })
+
+  describe('chat.done events', () => {
+    it('sets isComplete and completeReason on messages', () => {
+      const events: StoredEvent[] = [
+        { ...baseEvent, type: 'message.start', data: { messageId: 'm1', role: 'assistant' } },
+        { ...baseEvent, type: 'message.done', data: { messageId: 'm1' } },
+        { ...baseEvent, type: 'chat.done', data: { messageId: 'm1', reason: 'complete', stats: { totalTime: 100 } as unknown as MessageStats } },
+      ]
+
+      const messages = buildMessagesFromStoredEvents(events)
+      expect((messages[0] as { isComplete?: boolean; completeReason?: string }).isComplete).toBe(true)
+      expect((messages[0] as { isComplete?: boolean; completeReason?: string }).completeReason).toBe('complete')
+    })
+  })
+})
 
 describe('event folding', () => {
   it('builds ui messages from stored events, including tool results and streaming flags', () => {

@@ -412,7 +412,7 @@ export const useSessionStore = create<SessionState>((set, get) => {
               ...tc,
               streamingOutput: [
                 ...(tc.streamingOutput ?? []),
-                ...outputs.map((o) => ({ stream: o.stream, content: o.content })),
+                ...outputs.map((o) => ({ stream: o.stream, content: o.content, timestamp: Date.now() })),
               ],
             }
           })
@@ -439,7 +439,7 @@ export const useSessionStore = create<SessionState>((set, get) => {
               ...tc,
               streamingOutput: [
                 ...(tc.streamingOutput ?? []),
-                ...outputs.map((o) => ({ stream: o.stream, content: o.content })),
+                ...outputs.map((o) => ({ stream: o.stream, content: o.content, timestamp: Date.now() })),
               ],
             }
           })
@@ -1294,7 +1294,7 @@ export const useSessionStore = create<SessionState>((set, get) => {
                   arguments: payload.args,
                   startedAt: Date.now(),
                   ...(bufferedOutputs.length > 0
-                    ? { streamingOutput: bufferedOutputs.map((o) => ({ stream: o.stream, content: o.content })) }
+                    ? { streamingOutput: bufferedOutputs.map((o) => ({ stream: o.stream, content: o.content, timestamp: Date.now() })) }
                     : {}),
                 },
               ],

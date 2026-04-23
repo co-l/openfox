@@ -1,0 +1,22 @@
+:root {
+  /* Backgrounds */
+  --color-bg-primary: 13 17 23;
+  --color-bg-secondary: 22 27 34;
+  --color-bg-tertiary: 33 38 45;
+  --color-primary: 10 10 10;
+  --color-secondary: 20 20 20;
+
+  /* Text */
+  --color-text-primary: 139 148 158;
+  --color-text-secondary: 139 148 158;
+  --color-text-muted: 72 79 88;
+
+  /* Accents */
+  --color-accent-primary: 88 166 255;
+  --color-accent-success: 63 185 80;
+  --color-accent-warning: 210 153 34;
+  --color-accent-error: 248 81 73;
+
+  /* Border */
+  --color-border: 40 46 54;
+}

@@ -18,6 +18,14 @@ describe('EventStore', () => {
     // In-memory database for testing
     db = new Database(':memory:')
     store = new EventStore(db)
+    // Create sessions table for tests that need it
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS sessions (
+        id TEXT PRIMARY KEY,
+        is_running INTEGER DEFAULT 0,
+        updated_at INTEGER
+      )
+    `)
   })
 
   afterEach(() => {
@@ -942,6 +950,94 @@ describe('EventStore - Event Cleanup', () => {
 
       const remaining = store.getEvents('session-1')
       expect(remaining).toHaveLength(2)
+    })
+  })
+
+  describe('consolidateSession', () => {
+    it('should consolidate orphaned events into a new snapshot', () => {
+      const sessionId = 'session-1'
+
+      store.append(sessionId, { type: 'session.initialized', data: { projectId: 'p1', workdir: '/tmp', contextWindowId: 'window-1' } })
+      store.append(sessionId, { type: 'message.start', data: { messageId: 'msg-1', role: 'user', content: 'Hello' } })
+      store.append(sessionId, { type: 'turn.snapshot', data: { mode: 'planner', phase: 'plan', isRunning: false, messages: [], criteria: [], contextState: { currentTokens: 100, maxTokens: 200000, compactionCount: 0, dangerZone: false, canCompact: false }, currentContextWindowId: 'window-1', todos: [], readFiles: [], snapshotSeq: 2, snapshotAt: Date.now() } })
+      store.append(sessionId, { type: 'message.start', data: { messageId: 'msg-2', role: 'assistant' } })
+      store.append(sessionId, { type: 'message.delta', data: { messageId: 'msg-2', content: 'Hi there' } })
+
+      const eventsBefore = store.getEvents(sessionId)
+      expect(eventsBefore).toHaveLength(5)
+
+      const result = store.consolidateSession(sessionId)
+      expect(result).not.toBeNull()
+      expect(result!.deletedCount).toBe(5)
+
+      const eventsAfter = store.getEvents(sessionId)
+      expect(eventsAfter).toHaveLength(1)
+      expect(eventsAfter[0]!.type).toBe('turn.snapshot')
+      const snapshotData = eventsAfter[0]!.data as { messages: { id: string; content: string }[] }
+      expect(snapshotData.messages).toHaveLength(2)
+      expect(snapshotData.messages[0]!.id).toBe('msg-1')
+      expect(snapshotData.messages[1]!.id).toBe('msg-2')
+      expect(snapshotData.messages[1]!.content).toBe('Hi there')
+    })
+
+    it('should return null when no orphaned events to consolidate', () => {
+      const sessionId = 'session-1'
+
+      store.append(sessionId, { type: 'session.initialized', data: { projectId: 'p1', workdir: '/tmp', contextWindowId: 'window-1' } })
+      store.append(sessionId, { type: 'message.start', data: { messageId: 'msg-1', role: 'user', content: 'Hello' } })
+      store.append(sessionId, { type: 'turn.snapshot', data: { mode: 'planner', phase: 'plan', isRunning: false, messages: [], criteria: [], contextState: { currentTokens: 100, maxTokens: 200000, compactionCount: 0, dangerZone: false, canCompact: false }, currentContextWindowId: 'window-1', todos: [], readFiles: [], snapshotSeq: 2, snapshotAt: Date.now() } })
+
+      const result = store.consolidateSession(sessionId)
+      expect(result).toBeNull()
+    })
+  })
+
+  describe('findOrphanedSessions', () => {
+    beforeEach(() => {
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS sessions (
+          id TEXT PRIMARY KEY,
+          is_running INTEGER DEFAULT 0,
+          updated_at INTEGER
+        )
+      `)
+    })
+
+    it('should find sessions with events after latest snapshot', () => {
+      const sessionId = 'session-1'
+      db.prepare(`INSERT INTO sessions (id, is_running, updated_at) VALUES (?, 0, ?)`).run(sessionId, Date.now() - 10 * 60 * 1000)
+
+      store.append(sessionId, { type: 'session.initialized', data: { projectId: 'p1', workdir: '/tmp', contextWindowId: 'window-1' } })
+      store.append(sessionId, { type: 'message.start', data: { messageId: 'msg-1', role: 'user', content: 'Hello' } })
+      store.append(sessionId, { type: 'turn.snapshot', data: { mode: 'planner', phase: 'plan', isRunning: false, messages: [], criteria: [], contextState: { currentTokens: 100, maxTokens: 200000, compactionCount: 0, dangerZone: false, canCompact: false }, currentContextWindowId: 'window-1', todos: [], readFiles: [], snapshotSeq: 2, snapshotAt: Date.now() } })
+      store.append(sessionId, { type: 'message.start', data: { messageId: 'msg-2', role: 'assistant' } })
+
+      const orphaned = store.findOrphanedSessions()
+      expect(orphaned).toContain(sessionId)
+    })
+
+    it('should exclude sessions without orphaned events', () => {
+      const sessionId = 'session-1'
+      db.prepare(`INSERT INTO sessions (id, is_running, updated_at) VALUES (?, 0, ?)`).run(sessionId, Date.now() - 10 * 60 * 1000)
+
+      store.append(sessionId, { type: 'session.initialized', data: { projectId: 'p1', workdir: '/tmp', contextWindowId: 'window-1' } })
+      store.append(sessionId, { type: 'message.start', data: { messageId: 'msg-1', role: 'user', content: 'Hello' } })
+      store.append(sessionId, { type: 'turn.snapshot', data: { mode: 'planner', phase: 'plan', isRunning: false, messages: [], criteria: [], contextState: { currentTokens: 100, maxTokens: 200000, compactionCount: 0, dangerZone: false, canCompact: false }, currentContextWindowId: 'window-1', todos: [], readFiles: [], snapshotSeq: 2, snapshotAt: Date.now() } })
+
+      const orphaned = store.findOrphanedSessions()
+      expect(orphaned).not.toContain(sessionId)
+    })
+
+    it('should exclude currently running sessions', () => {
+      const sessionId = 'session-1'
+      db.prepare(`INSERT INTO sessions (id, is_running, updated_at) VALUES (?, 1, ?)`).run(sessionId, Date.now() - 10 * 60 * 1000)
+
+      store.append(sessionId, { type: 'session.initialized', data: { projectId: 'p1', workdir: '/tmp', contextWindowId: 'window-1' } })
+      store.append(sessionId, { type: 'turn.snapshot', data: { mode: 'planner', phase: 'plan', isRunning: true, messages: [], criteria: [], contextState: { currentTokens: 100, maxTokens: 200000, compactionCount: 0, dangerZone: false, canCompact: false }, currentContextWindowId: 'window-1', todos: [], readFiles: [], snapshotSeq: 1, snapshotAt: Date.now() } })
+      store.append(sessionId, { type: 'message.start', data: { messageId: 'msg-1', role: 'user', content: 'Hello' } })
+
+      const orphaned = store.findOrphanedSessions()
+      expect(orphaned).not.toContain(sessionId)
     })
   })
 })
