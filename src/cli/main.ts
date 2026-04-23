@@ -1,4 +1,5 @@
 import { parseArgs } from 'node:util'
+import { spawnSync } from 'node:child_process'
 import { select, password, isCancel, cancel } from '@clack/prompts'
 import { generateKeyPairSync } from 'node:crypto'
 import { writeFile } from 'node:fs/promises'
@@ -19,6 +20,8 @@ Commands:
   provider list    List configured providers
   provider use     Switch active provider
   provider remove  Remove a provider
+  service          Manage the systemd service (install, start, stop, status, logs, uninstall)
+  update           Update OpenFox to the latest version (see update.sh)
 
 Options:
   -p, --port <number>     Specify port (default: 10369 for prod, 10469 for dev)
@@ -149,12 +152,9 @@ export async function runCli(options: { mode: Mode }): Promise<void> {
     strict: true,
   })
 
-  if (values.help) {
-    printHelp()
-    process.exit(0)
-  }
+  const [command] = positionals
 
-  if (values.version) {
+  if (values.version && !command) {
     const { readFileSync } = await import('node:fs')
     const { fileURLToPath } = await import('node:url')
     const { dirname, join } = await import('node:path')
@@ -166,7 +166,10 @@ export async function runCli(options: { mode: Mode }): Promise<void> {
     process.exit(0)
   }
 
-  const [command] = positionals
+  if (values.help && !command) {
+    printHelp()
+    process.exit(0)
+  }
 
   switch (command) {
     case 'config': {
@@ -179,6 +182,24 @@ export async function runCli(options: { mode: Mode }): Promise<void> {
       await runProviderCommand(mode, subcommand)
       break
     }
+    case 'service': {
+      const { runServiceCommand } = await import('./service.js')
+      const [, subcommand] = positionals
+      if (subcommand === '--help' || subcommand === '-h' || values.help) {
+        runServiceCommand(mode, undefined)
+      } else {
+        await runServiceCommand(mode, subcommand)
+      }
+      break
+    }
+    case 'update': {
+      const result = spawnSync('./update.sh', [], { shell: true, stdio: 'inherit' })
+      if (result.status !== 0) {
+        process.exit(result.status ?? 1)
+      }
+      break
+    }
+    
     default: {
       // Check if config exists - only prompt network setup on first install
       const { configFileExists } = await import('./config.js')
