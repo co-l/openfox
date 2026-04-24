@@ -1,5 +1,7 @@
 import { parseArgs } from 'node:util'
 import { spawnSync } from 'node:child_process'
+import { fileURLToPath } from 'node:url'
+import { dirname, join } from 'node:path'
 import { select, password, isCancel, cancel } from '@clack/prompts'
 import { generateKeyPairSync } from 'node:crypto'
 import { writeFile } from 'node:fs/promises'
@@ -193,7 +195,10 @@ export async function runCli(options: { mode: Mode }): Promise<void> {
       break
     }
     case 'update': {
-      const result = spawnSync('./update.sh', [], { shell: true, stdio: 'inherit' })
+      const __filename = fileURLToPath(import.meta.url)
+      const __dirname = dirname(__filename)
+      const updateScriptPath = join(__dirname, 'cli', 'update.sh')
+      const result = spawnSync(updateScriptPath, [], { shell: true, stdio: 'inherit' })
       if (result.status !== 0) {
         process.exit(result.status ?? 1)
       }

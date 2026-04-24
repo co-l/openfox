@@ -6,6 +6,7 @@ import { useWebSocket } from './hooks/useWebSocket'
 import { useSessionStore } from './stores/session'
 import { useProjectStore } from './stores/project'
 import { useConfigStore } from './stores/config'
+import { useThemeStore, migrateLegacyThemeSetting } from './stores/theme'
 
 import { Header } from './components/layout/Header'
 import { Sidebar } from './components/layout/Sidebar'
@@ -183,17 +184,35 @@ function App() {
     }
   }, [configFetched, activeProviderId, refreshProviderModels, fetchConfig])
 
+  const displaySettings = useSettingsStore(state => state.settings)
+
   useEffect(() => {
     if (configFetched && providers.length === 0) {
       navigate('/onboarding')
     }
   }, [configFetched, providers.length])
 
-  const displaySettings = useSettingsStore(state => state.settings)
   useEffect(() => {
-    const theme = displaySettings[SETTINGS_KEYS.DISPLAY_THEME] ?? 'dark'
-    document.documentElement.classList.toggle('dark', theme === 'dark')
-    document.documentElement.classList.toggle('light', theme === 'light')
+    const { getSavedTheme, applyPreset, applyTokens } = useThemeStore.getState()
+    const savedTheme = getSavedTheme()
+    if (savedTheme) {
+      try {
+        const parsed = JSON.parse(savedTheme) as { preset?: string; tokens?: Record<string, string> }
+        if (parsed.preset) {
+          applyPreset(parsed.preset)
+        } else if (parsed.tokens) {
+          applyTokens(parsed.tokens)
+        }
+      } catch {
+        applyPreset('dark')
+      }
+    } else {
+      const legacyTheme = displaySettings[SETTINGS_KEYS.DISPLAY_THEME]
+      const migrated = migrateLegacyThemeSetting(legacyTheme)
+      const parsed = JSON.parse(migrated) as { preset: string }
+      applyPreset(parsed.preset)
+      useThemeStore.getState().saveTheme(migrated)
+    }
   }, [displaySettings[SETTINGS_KEYS.DISPLAY_THEME]])
 
   const getInitialLeftSidebar = () => {
