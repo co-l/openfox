@@ -6,7 +6,14 @@ import { useWebSocket } from './hooks/useWebSocket'
 import { useSessionStore } from './stores/session'
 import { useProjectStore } from './stores/project'
 import { useConfigStore } from './stores/config'
-import { useThemeStore, migrateLegacyThemeSetting } from './stores/theme'
+import { useThemeStore } from './stores/theme'
+
+// Apply theme synchronously from localStorage before React renders
+// to prevent flash of default theme
+if (typeof window !== 'undefined') {
+  useThemeStore.getState().loadUserPresets()
+  useThemeStore.getState().applySavedTheme()
+}
 
 import { Header } from './components/layout/Header'
 import { Sidebar } from './components/layout/Sidebar'
@@ -172,6 +179,7 @@ function App() {
           loadDisplaySettings(key)
         }
         loadDisplaySettings(SETTINGS_KEYS.DISPLAY_THEME)
+        loadDisplaySettings(SETTINGS_KEYS.DISPLAY_USER_PRESETS)
       })
     }
   }, [connectionStatus, hasToken, fetchConfig, loadDisplaySettings])
@@ -193,27 +201,23 @@ function App() {
   }, [configFetched, providers.length])
 
   useEffect(() => {
-    const { getSavedTheme, applyPreset, applyTokens } = useThemeStore.getState()
-    const savedTheme = getSavedTheme()
-    if (savedTheme) {
-      try {
-        const parsed = JSON.parse(savedTheme) as { preset?: string; tokens?: Record<string, string> }
-        if (parsed.preset) {
-          applyPreset(parsed.preset)
-        } else if (parsed.tokens) {
-          applyTokens(parsed.tokens)
-        }
-      } catch {
-        applyPreset('dark')
-      }
-    } else {
-      const legacyTheme = displaySettings[SETTINGS_KEYS.DISPLAY_THEME]
-      const migrated = migrateLegacyThemeSetting(legacyTheme)
-      const parsed = JSON.parse(migrated) as { preset: string }
-      applyPreset(parsed.preset)
-      useThemeStore.getState().saveTheme(migrated)
+    const { applySavedTheme, saveTheme } = useThemeStore.getState()
+    const serverTheme = displaySettings[SETTINGS_KEYS.DISPLAY_THEME]
+    const serverPresets = displaySettings[SETTINGS_KEYS.DISPLAY_USER_PRESETS]
+
+    if (serverTheme) {
+      localStorage.setItem('openfox:theme', serverTheme)
     }
-  }, [displaySettings[SETTINGS_KEYS.DISPLAY_THEME]])
+    if (serverPresets) {
+      localStorage.setItem('openfox:userPresets', serverPresets)
+    }
+
+    if (serverTheme) {
+      applySavedTheme()
+    } else {
+      saveTheme(JSON.stringify({ preset: 'dark' }))
+    }
+  }, [displaySettings[SETTINGS_KEYS.DISPLAY_THEME], displaySettings[SETTINGS_KEYS.DISPLAY_USER_PRESETS]])
 
   const getInitialLeftSidebar = () => {
     const saved = localStorage.getItem('openfox:leftSidebar')

@@ -1,4 +1,5 @@
 import { create } from 'zustand'
+import { SETTINGS_KEYS } from './settings'
 
 export interface ThemeToken {
   key: string
@@ -127,48 +128,135 @@ export const THEME_PRESETS: ThemePreset[] = [
   },
 ]
 
+export interface UserThemePreset {
+  id: string
+  name: string
+  basePreset: string
+  tokens: Record<string, string>
+}
+
 interface ThemeState {
   currentPreset: string
+  basePreset: string
   customTokens: Record<string, string>
   isCustom: boolean
+  isCustomizing: boolean
+  userPresets: UserThemePreset[]
 
+  applySavedTheme: () => void
   applyPreset: (presetId: string) => void
+  startCustomizing: () => void
+  setCustomToken: (key: string, value: string) => void
+  cancelCustomizing: () => void
+  saveCustomTheme: () => void
   applyTokens: (tokens: Record<string, string>) => void
   getActiveTheme: () => Record<string, string>
   applyTheme: () => void
   getSavedTheme: () => string | null
   saveTheme: (themeJson: string) => void
   clearCustomTheme: () => void
+  reset: () => void
+
+  addUserPreset: (name: string) => void
+  applyUserPreset: (index: number) => void
+  deleteUserPreset: (index: number) => void
+  loadUserPresets: () => void
+  saveUserPresets: () => void
+}
+
+function getUserPresets(): UserThemePreset[] {
+  try {
+    const saved = localStorage.getItem('openfox:userPresets')
+    if (saved) return JSON.parse(saved)
+  } catch {
+    // ignore
+  }
+  return []
 }
 
 export const useThemeStore = create<ThemeState>((set, get) => ({
   currentPreset: 'dark',
+  basePreset: '',
   customTokens: {},
   isCustom: false,
+  isCustomizing: false,
+  userPresets: getUserPresets(),
+
+  applySavedTheme: () => {
+    const { getSavedTheme, applyPreset, applyTokens } = get()
+    const savedTheme = getSavedTheme()
+    if (savedTheme) {
+      try {
+        const parsed = JSON.parse(savedTheme) as { preset?: string; tokens?: Record<string, string> }
+        if (parsed.preset) {
+          applyPreset(parsed.preset)
+        } else if (parsed.tokens) {
+          applyTokens(parsed.tokens)
+        }
+      } catch {
+        applyPreset('dark')
+      }
+    } else {
+      applyPreset('dark')
+    }
+  },
 
   applyPreset: (presetId: string) => {
     const preset = THEME_PRESETS.find(p => p.id === presetId)
     if (preset) {
-      set({ currentPreset: presetId, customTokens: {}, isCustom: false })
+      set({ currentPreset: presetId, basePreset: '', customTokens: {}, isCustom: false, isCustomizing: false })
       get().applyTheme()
     }
   },
 
+  startCustomizing: () => {
+    const { currentPreset } = get()
+    const presetTokens = THEME_PRESETS.find(p => p.id === currentPreset)?.tokens ?? {}
+    set({
+      basePreset: currentPreset,
+      customTokens: { ...presetTokens },
+      isCustom: true,
+      isCustomizing: true,
+    })
+  },
+
+  setCustomToken: (key: string, value: string) => {
+    set(state => ({
+      customTokens: { ...state.customTokens, [key]: value },
+    }))
+    get().applyTheme()
+  },
+
+  cancelCustomizing: () => {
+    get().applyPreset(get().basePreset || get().currentPreset)
+  },
+
+  saveCustomTheme: () => {
+    const { customTokens } = get()
+    get().saveTheme(JSON.stringify({ tokens: customTokens }))
+    set({ isCustomizing: false })
+  },
+
   applyTokens: (tokens: Record<string, string>) => {
-    set({ customTokens: tokens, isCustom: true, currentPreset: '' })
+    set({ customTokens: tokens, isCustom: true, isCustomizing: false })
     get().applyTheme()
   },
 
   getActiveTheme: () => {
-    const { currentPreset, customTokens, isCustom } = get()
+    const { basePreset, customTokens, isCustom } = get()
+    if (isCustom && basePreset) {
+      const base = THEME_PRESETS.find(p => p.id === basePreset)?.tokens ?? {}
+      return { ...base, ...customTokens }
+    }
     if (isCustom) {
       return { ...THEME_TOKENS.reduce((acc, t) => ({ ...acc, [t.key]: t.defaultValue }), {}), ...customTokens }
     }
-    const preset = THEME_PRESETS.find(p => p.id === currentPreset)
+    const preset = THEME_PRESETS.find(p => p.id === get().currentPreset)
     return preset?.tokens ?? THEME_PRESETS[0]?.tokens ?? {}
   },
 
   applyTheme: () => {
+    if (typeof document === 'undefined') return
     const theme = get().getActiveTheme()
     const root = document.documentElement
     Object.entries(theme).forEach(([key, value]) => {
@@ -196,11 +284,72 @@ export const useThemeStore = create<ThemeState>((set, get) => ({
 
   saveTheme: (themeJson: string) => {
     localStorage.setItem('openfox:theme', themeJson)
+    // Fire-and-forget sync to server
+    import('./settings').then(({ useSettingsStore }) => {
+      useSettingsStore.getState().setSetting(SETTINGS_KEYS.DISPLAY_THEME, themeJson).catch(() => {})
+    })
   },
 
   clearCustomTheme: () => {
     localStorage.removeItem('openfox:theme')
-    set({ isCustom: false })
+    set({ isCustom: false, isCustomizing: false, basePreset: '' })
+  },
+
+  reset: () => {
+    set({
+      currentPreset: 'dark',
+      basePreset: '',
+      customTokens: {},
+      isCustom: false,
+      isCustomizing: false,
+      userPresets: [],
+    })
+  },
+
+  addUserPreset: (name: string) => {
+    const { basePreset, customTokens, currentPreset } = get()
+    const preset: UserThemePreset = {
+      id: 'custom-' + Date.now(),
+      name,
+      basePreset: basePreset || currentPreset,
+      tokens: { ...customTokens },
+    }
+    const updated = [...get().userPresets, preset]
+    set({ userPresets: updated })
+    get().saveUserPresets()
+  },
+
+  applyUserPreset: (index: number) => {
+    const preset = get().userPresets[index]
+    if (preset) {
+      set({
+        currentPreset: preset.basePreset,
+        basePreset: preset.basePreset,
+        customTokens: { ...preset.tokens },
+        isCustom: true,
+        isCustomizing: false,
+      })
+      get().applyTheme()
+      get().saveTheme(JSON.stringify({ tokens: preset.tokens }))
+    }
+  },
+
+  deleteUserPreset: (index: number) => {
+    const updated = get().userPresets.filter((_, i) => i !== index)
+    set({ userPresets: updated })
+    get().saveUserPresets()
+  },
+
+  loadUserPresets: () => {
+    set({ userPresets: getUserPresets() })
+  },
+
+  saveUserPresets: () => {
+    localStorage.setItem('openfox:userPresets', JSON.stringify(get().userPresets))
+    // Fire-and-forget sync to server
+    import('./settings').then(({ useSettingsStore }) => {
+      useSettingsStore.getState().setSetting(SETTINGS_KEYS.DISPLAY_USER_PRESETS, JSON.stringify(get().userPresets)).catch(() => {})
+    })
   },
 }))
 

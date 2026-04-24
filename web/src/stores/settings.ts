@@ -11,6 +11,7 @@ export const SETTINGS_KEYS = {
   DISPLAY_SHOW_AGENT_DEFINITIONS: 'display.showAgentDefinitions',
   DISPLAY_SHOW_WORKFLOW_BARS: 'display.showWorkflowBars',
   DISPLAY_THEME: 'display.theme',
+  DISPLAY_USER_PRESETS: 'display.userPresets',
 } as const
 
 interface SettingsState {
