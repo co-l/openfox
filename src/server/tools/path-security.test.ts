@@ -428,6 +428,13 @@ describe('path-security', () => {
         const paths = extractAbsolutePathsFromCommand('pushd /var/log')
         expect(paths).toContain('/var/log')
       })
+
+      it('handles cd + sed -i with regex-like quoted strings', () => {
+        const cmd = 'cd /home/conrad/dev/openfox && sed -i "s/it(\'updates mode, phase, running state, and summary while emitting events\'/it(\'updates phase, running state, and summary while emitting events\'/" src/server/session/manager.test.ts'
+        const paths = extractAbsolutePathsFromCommand(cmd)
+        expect(paths).toContain('/home/conrad/dev/openfox')
+        expect(paths).not.toContain('/it(')
+      })
     })
 
     describe('complex commands', () => {

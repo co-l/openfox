@@ -221,7 +221,13 @@ export function extractAbsolutePathsFromCommand(command: string): string[] {
   let sanitized = command
     .replace(/https?:\/\/[^\s'"]+/g, ' __URL__ ')
     .replace(/ftp:\/\/[^\s'"]+/g, ' __URL__ ')
-  
+
+  // Strip sed substitution patterns to avoid false positives from regex replacements
+  // Handles: s/pattern/replacement/flags and s|pattern|replacement|flags etc.
+  sanitized = sanitized.replace(/s\/[^\/]*\/[^\/]*\/[gip]*/g, ' __SED__ ')
+  sanitized = sanitized.replace(/s\|[^|]*\|[^|]*\|[gip]*/g, ' __SED__ ')
+  sanitized = sanitized.replace(/s:[^:]*:[^:]*:[gip]*/g, ' __SED__ ')
+
   // Handle file:// URLs specially - extract the path
   const fileUrlMatches = command.matchAll(/file:\/\/([^\s'"]+)/g)
   for (const match of fileUrlMatches) {
