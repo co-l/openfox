@@ -119,5 +119,54 @@ describe('llm client pure helpers', () => {
         maxTokens: 2000,
       },
     })
+
+    // Non-streaming should respect request.disableThinking
+    expect(await buildNonStreamingCreateParams({
+      model: 'test-model',
+      request: { ...baseRequest, disableThinking: true },
+      profile,
+      capabilities: { supportsTopK: true, supportsChatTemplateKwargs: true },
+    })).toEqual({
+      params: {
+        model: 'test-model',
+        messages: [{ role: 'user', content: 'hello' }],
+        tools: [{ type: 'function', function: { name: 'glob', description: 'Search', parameters: { type: 'object' } } }],
+        tool_choice: 'auto',
+        temperature: 0.2,
+        max_tokens: 2000,
+        top_p: 0.9,
+        top_k: 40,
+        stream: false,
+        chat_template_kwargs: { enable_thinking: false },
+      },
+      modelParams: {
+        temperature: 0.2,
+        topP: 0.9,
+        topK: 40,
+        maxTokens: 2000,
+      },
+    })
+
+    // Empty tools array should be omitted (vLLM rejects tools: [])
+    expect(await buildNonStreamingCreateParams({
+      model: 'test-model',
+      request: { messages: [{ role: 'user' as const, content: 'hi' }], tools: [] },
+      profile,
+      capabilities: { supportsTopK: false, supportsChatTemplateKwargs: false },
+    })).toEqual({
+      params: {
+        model: 'test-model',
+        messages: [{ role: 'user', content: 'hi' }],
+        temperature: 0.2,
+        max_tokens: 2000,
+        top_p: 0.9,
+        stream: false,
+      },
+      modelParams: {
+        temperature: 0.2,
+        topP: 0.9,
+        maxTokens: 2000,
+      },
+    })
   })
 })

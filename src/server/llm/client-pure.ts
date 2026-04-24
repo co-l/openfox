@@ -342,7 +342,7 @@ async function buildChatCompletionCreateParams(
   const params: OpenAI.ChatCompletionCreateParamsNonStreaming | OpenAI.ChatCompletionCreateParamsStreaming = {
     model,
     messages: convertedMessages,
-    ...(request.tools ? { tools: convertTools(request.tools) } : {}),
+    ...(request.tools?.length ? { tools: convertTools(request.tools) } : {}),
     ...(request.toolChoice ? { tool_choice: request.toolChoice as ChatCompletionToolChoiceOption } : {}),
     temperature,
     max_tokens: maxTokens,
@@ -355,9 +355,7 @@ async function buildChatCompletionCreateParams(
     ;(params as unknown as Record<string, unknown>)['top_k'] = topK
   }
 
-  const shouldDisableThinking = isStreaming
-    ? (disableThinking || request.disableThinking)
-    : disableThinking
+  const shouldDisableThinking = disableThinking || request.disableThinking
 
   if (capabilities.supportsChatTemplateKwargs && profile.supportsReasoning && shouldDisableThinking) {
     ;(params as unknown as Record<string, unknown>)['chat_template_kwargs'] = { enable_thinking: false }
