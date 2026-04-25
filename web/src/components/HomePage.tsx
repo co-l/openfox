@@ -6,12 +6,14 @@ import { Button } from './shared/Button'
 import { OpenProjectModal } from './CreateSessionModal'
 import { formatRelativeDate } from '../lib/format-date'
 import { FolderIcon } from './shared/icons'
+import { Spinner } from './shared/Spinner'
 
 export function HomePage() {
   const [showOpenModal, setShowOpenModal] = useState(false)
 
   const sessions = useSessionStore((state) => state.sessions)
   const projects = useProjectStore((state) => state.projects)
+  const loading = useProjectStore((state) => state.loading)
   const listProjects = useProjectStore((state) => state.listProjects)
   const listSessions = useSessionStore((state) => state.listSessions)
 
@@ -126,9 +128,15 @@ export function HomePage() {
           )
         })}
 
-        {sortedProjects.length === 0 && (
+        {sortedProjects.length === 0 && !loading && (
           <div className="text-center py-12 text-text-muted">
             No projects yet. Open a project to get started.
+          </div>
+        )}
+
+        {loading && (
+          <div className="flex justify-center py-12">
+            <Spinner />
           </div>
         )}
       </div>

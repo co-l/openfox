@@ -1229,4 +1229,22 @@ describe('reconnect refreshes current session content', () => {
 
     expect(loadSessionSpy).not.toHaveBeenCalled()
   })
+
+  it('calls listProjects when connection status becomes connected', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    const useSessionStore = await loadSessionStore()
+
+    const { useProjectStore } = await import('./project')
+    const listProjectsSpy = vi.spyOn(useProjectStore.getState(), 'listProjects')
+
+    await useSessionStore.getState().connect()
+
+    vi.runAllTimers()
+    vi.useRealTimers()
+
+    const cb = (wsStatusMock.mock.calls[0] as Array<(s: string) => void>)[0]!
+    ;(cb as (s: string) => void)('connected')
+
+    expect(listProjectsSpy).toHaveBeenCalled()
+  })
 })
