@@ -42,16 +42,16 @@ export function TerminalDrawer({ isOpen, onClose, onFocusChat }: TerminalDrawerP
   useEffect(() => {
     if (isOpen) {
       setIsLoading(true)
-      fetchSessions().finally(() => setIsLoading(false))
+      fetchSessions(currentProject?.id).finally(() => setIsLoading(false))
     }
-  }, [isOpen, fetchSessions])
+  }, [isOpen, fetchSessions, currentProject?.id])
 
   useEffect(() => {
     if (isOpen && sessions.length === 0 && !isLoading && !hasAutoCreatedForOpenCycleRef.current) {
       hasAutoCreatedForOpenCycleRef.current = true
-      createSession()
+      createSession(undefined, currentProject?.id)
     }
-  }, [isOpen, sessions.length, isLoading, createSession])
+  }, [isOpen, sessions.length, isLoading, createSession, currentProject?.id])
 
   useEffect(() => {
     if (isOpen) {
@@ -107,7 +107,7 @@ export function TerminalDrawer({ isOpen, onClose, onFocusChat }: TerminalDrawerP
         <h3 className="text-sm font-semibold text-text-primary">Terminal</h3>
         <div className="flex items-center gap-2">
           <button
-            onClick={() => createSession()}
+            onClick={() => createSession(undefined, currentProject?.id)}
             className="p-2 rounded hover:bg-bg-tertiary text-text-muted hover:text-text-primary transition-colors"
             title="New terminal"
           >
@@ -133,7 +133,7 @@ export function TerminalDrawer({ isOpen, onClose, onFocusChat }: TerminalDrawerP
             <div className="text-center">
               <p className="mb-4">No terminal sessions</p>
               <button
-                onClick={() => createSession()}
+                onClick={() => createSession(undefined, currentProject?.id)}
                 className="px-4 py-2 bg-accent-primary/25 text-text-primary rounded hover:bg-accent-primary/40 transition-colors"
               >
                 Create Terminal

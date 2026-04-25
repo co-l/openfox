@@ -40,7 +40,7 @@ export const THEME_PRESETS: ThemePreset[] = [
       'color-bg-tertiary': '33 38 45',
       'color-primary': '10 10 10',
       'color-secondary': '20 20 20',
-      'color-text-primary': '139 148 158',
+      'color-text-primary': '255 255 255',
       'color-text-secondary': '139 148 158',
       'color-text-muted': '72 79 88',
       'color-accent-primary': '88 166 255',

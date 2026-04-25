@@ -4,24 +4,30 @@ import { terminalManager } from '../terminal/manager.js'
 export interface TerminalSessionResponse {
   id: string
   workdir: string
+  projectId: string
 }
 
 export function createTerminalRoutes(): Router {
   const router = Router()
 
-  router.get('/', (_req, res) => {
-    const sessions = terminalManager.getAll()
+  router.get('/', (req, res) => {
+    const projectId = req.query['projectId'] as string | undefined
+    const sessions = projectId
+      ? terminalManager.getByProject(projectId)
+      : []
     const response: TerminalSessionResponse[] = sessions.map(s => ({
       id: s.id,
       workdir: s.workdir,
+      projectId: s.projectId,
     }))
     res.json(response)
   })
 
   router.post('/', (req, res) => {
     const workdir = req.body?.workdir as string | undefined
-    const session = terminalManager.create(workdir)
-    res.status(201).json({ id: session.id, workdir: session.workdir })
+    const projectId = req.body?.projectId as string | undefined
+    const session = terminalManager.create(workdir, projectId)
+    res.status(201).json({ id: session.id, workdir: session.workdir, projectId: session.projectId })
   })
 
   router.delete('/:id', (req, res) => {
