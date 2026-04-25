@@ -173,6 +173,7 @@ export class LLMExecutor {
       disableThinking: true,
       ...(compactionCtx.customInstructions ? { customInstructions: compactionCtx.customInstructions } : {}),
       ...(skills.length > 0 ? { skills } : {}),
+      modelName: llmClient.getModel(),
     })
 
     const compactionReminder = `<system-reminder>\n${COMPACTION_PROMPT}\n</system-reminder>`

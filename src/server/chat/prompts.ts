@@ -10,10 +10,12 @@ import type { AgentDefinition } from '../agents/types.js'
  * Contains: environment, core behavior, tone, guardrails, skills.
  * Does NOT contain: agent-specific instructions, sub-agents list.
  */
-export function buildBasePrompt(workdir: string, customInstructions?: string, skills?: SkillMetadata[]): string {
+export function buildBasePrompt(workdir: string, customInstructions?: string, skills?: SkillMetadata[], modelName?: string): string {
   const instructionsSection = customInstructions
     ? `\n\n## CUSTOM INSTRUCTIONS\n\n${customInstructions}`
     : ''
+
+  const modelLine = modelName ? `\nModel: ${modelName}` : ''
 
   return `You are OpenFox, an agentic assistant.
 
@@ -21,7 +23,7 @@ Today's date is ${new Date().toISOString().split('T')[0]!.replace(/-/g, '/')}
 
 ## ENVIRONMENT
 Working directory: ${workdir}
-Platform: ${process.platform} (${process.arch})
+Platform: ${process.platform} (${process.arch})${modelLine}
 
 ## CORE BEHAVIOR
 - Help the user complete any tasks safely and efficiently.
@@ -200,8 +202,9 @@ export function buildTopLevelSystemPrompt(
   customInstructions?: string,
   skills?: SkillMetadata[],
   subAgentDefs?: AgentDefinition[],
+  modelName?: string,
 ): string {
-  const base = buildBasePrompt(workdir, customInstructions, skills)
+  const base = buildBasePrompt(workdir, customInstructions, skills, modelName)
   const subAgents = subAgentDefs ? buildSubAgentsSection(subAgentDefs) : ''
   return base + subAgents
 }
@@ -214,8 +217,9 @@ export function buildSubAgentSystemPrompt(
   workdir: string,
   agentDef: AgentDefinition,
   skills?: SkillMetadata[],
+  modelName?: string,
 ): string {
-  const base = buildBasePrompt(workdir, undefined, skills)
+  const base = buildBasePrompt(workdir, undefined, skills, modelName)
   return base + '\n\n' + agentDef.prompt
 }
 

@@ -63,6 +63,7 @@ export interface BaseAssemblyInput {
   requestTools?: LLMToolDefinition[]
   toolChoice?: PromptRequestOptions['toolChoice']
   disableThinking?: boolean
+  modelName?: string
 }
 
 interface AssemblyResult {
@@ -192,6 +193,7 @@ export function assembleAgentRequest(input: AgentAssemblyInput): AssemblyResult 
       baseInput.workdir,
       agentDef,
       baseInput.skills,
+      baseInput.modelName,
     )
     return buildAssemblyInput(systemPrompt, baseInput)
   }
@@ -201,6 +203,7 @@ export function assembleAgentRequest(input: AgentAssemblyInput): AssemblyResult 
     baseInput.customInstructions,
     baseInput.skills,
     subAgentDefs,
+    baseInput.modelName,
   )
 
   // DO NOT inject runtime reminder here - it's handled by orchestrator.injectModeReminderIfNeeded()

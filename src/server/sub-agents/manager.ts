@@ -200,6 +200,7 @@ export async function executeSubAgent(options: SubAgentExecutionOptions): Promis
     session.workdir,
     agentDef,
     skills.length > 0 ? skills : undefined,
+    llmClient.getModel(),
   )
 
   // Build custom messages for isolated context

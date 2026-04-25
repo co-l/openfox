@@ -77,6 +77,16 @@ describe('buildBasePrompt', () => {
     expect(prompt).toContain('AVAILABLE SKILLS')
     expect(prompt).toContain('playwright')
   })
+
+  it('includes model name in environment when provided', () => {
+    const prompt = buildBasePrompt('/tmp/project', undefined, undefined, 'MiniMax-M2.7')
+    expect(prompt).toContain('Model: MiniMax-M2.7')
+  })
+
+  it('omits model line when modelName not provided', () => {
+    const prompt = buildBasePrompt('/tmp/project')
+    expect(prompt).not.toContain('Model:')
+  })
 })
 
 describe('buildTopLevelSystemPrompt', () => {
