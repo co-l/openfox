@@ -42,6 +42,7 @@ interface ModelConfig {
   topP?: number
   topK?: number
   maxTokens?: number
+  supportsVision?: boolean
 }
 
 interface Provider {
@@ -83,7 +84,7 @@ interface ConfigState {
   startAutoRefresh: () => void
   stopAutoRefresh: () => void
   updateModelContext: (providerId: string, modelId: string, contextWindow: number) => Promise<boolean>
-  updateModelSettings: (providerId: string, modelId: string, settings: { contextWindow?: number; temperature?: number | null; topP?: number | null; topK?: number | null; maxTokens?: number | null }) => Promise<boolean>
+  updateModelSettings: (providerId: string, modelId: string, settings: { contextWindow?: number; temperature?: number | null; topP?: number | null; topK?: number | null; maxTokens?: number | null; supportsVision?: boolean }) => Promise<boolean>
   refreshProviderModels: (providerId: string) => Promise<boolean>
 
   // Selectors
@@ -257,7 +258,7 @@ export const useConfigStore = create<ConfigState>((set, get) => ({
     }
   },
 
-  updateModelSettings: async (providerId: string, modelId: string, settings: { contextWindow?: number; temperature?: number | null; topP?: number | null; topK?: number | null; maxTokens?: number | null }) => {
+  updateModelSettings: async (providerId: string, modelId: string, settings: { contextWindow?: number; temperature?: number | null; topP?: number | null; topK?: number | null; maxTokens?: number | null; supportsVision?: boolean }) => {
     set({ activating: true, error: null })
     try {
       const data = await postModelUpdate(providerId, modelId, settings)
@@ -270,6 +271,7 @@ export const useConfigStore = create<ConfigState>((set, get) => ({
           topK: settings.topK ?? undefined,
           maxTokens: settings.maxTokens ?? undefined,
         }),
+        ...(settings.supportsVision !== undefined && { supportsVision: settings.supportsVision }),
       }
       set({ providers: applyModelUpdate(providers, providerId, modelId, updated), activating: false })
       if (data.contextState) useSessionStore.getState().updateContextState(data.contextState)

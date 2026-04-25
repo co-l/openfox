@@ -8,16 +8,18 @@ function buildStreamRequestObject(params: {
   toolChoice?: LLMCompletionRequest['toolChoice']
   disableThinking?: boolean | undefined
   signal?: AbortSignal | undefined
+  modelSettings?: { temperature?: number; topP?: number; topK?: number; maxTokens?: number; supportsVision?: boolean } | undefined
   onVisionFallbackStart?: ((attachmentId: string, filename?: string) => void) | undefined
   onVisionFallbackDone?: ((attachmentId: string, description: string) => void) | undefined
 }): LLMCompletionRequest {
-  const { messages, tools, toolChoice, disableThinking, signal, onVisionFallbackStart, onVisionFallbackDone } = params
+  const { messages, tools, toolChoice, disableThinking, signal, modelSettings, onVisionFallbackStart, onVisionFallbackDone } = params
   const streamRequest: LLMCompletionRequest = {
     messages,
     ...(tools && { tools }),
     ...(toolChoice && { toolChoice }),
     disableThinking: disableThinking ?? false,
     ...(signal && { signal }),
+    ...(modelSettings && { modelSettings }),
   }
   if (onVisionFallbackStart) streamRequest.onVisionFallbackStart = onVisionFallbackStart
   if (onVisionFallbackDone) streamRequest.onVisionFallbackDone = onVisionFallbackDone

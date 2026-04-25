@@ -10,6 +10,7 @@ function defaultModelSettings(model: ModelConfig): ModelSettings {
     topP: model.topP ?? null,
     topK: model.topK ?? null,
     maxTokens: model.maxTokens ?? null,
+    supportsVision: model.supportsVision ?? null,
   }
 }
 
@@ -21,6 +22,7 @@ interface ModelConfig {
   topP?: number
   topK?: number
   maxTokens?: number
+  supportsVision?: boolean
 }
 
 interface ModelPropertiesModalProps {
@@ -36,6 +38,7 @@ interface ModelSettings {
   topP: number | null
   topK: number | null
   maxTokens: number | null
+  supportsVision: boolean | null
 }
 
 function SettingsGroup({ label, children }: { label: string; children: React.ReactNode }) {
@@ -143,7 +146,8 @@ export function ModelPropertiesModal({ isOpen, onClose, providerId, model }: Mod
       settings.temperature !== (model.temperature ?? null) ||
       settings.topP !== (model.topP ?? null) ||
       settings.topK !== (model.topK ?? null) ||
-      settings.maxTokens !== (model.maxTokens ?? null)
+      settings.maxTokens !== (model.maxTokens ?? null) ||
+      settings.supportsVision !== (model.supportsVision ?? null)
 
     await updateModelSettings(providerId, model.id, {
       contextWindow: settings.contextWindow,
@@ -152,6 +156,7 @@ export function ModelPropertiesModal({ isOpen, onClose, providerId, model }: Mod
         topP: settings.topP,
         topK: settings.topK,
         maxTokens: settings.maxTokens,
+        supportsVision: settings.supportsVision ?? undefined,
       }),
     })
     setSaving(false)
@@ -236,6 +241,19 @@ export function ModelPropertiesModal({ isOpen, onClose, providerId, model }: Mod
           max={32000}
           helpText="Maximum tokens to generate per response"
         />
+
+        <div>
+          <label className="flex items-center gap-2 text-sm font-medium text-text-secondary mb-1">
+            <input
+              type="checkbox"
+              checked={settings.supportsVision ?? false}
+              onChange={(e) => setSettings(s => ({ ...s, supportsVision: e.target.checked }))}
+              className="rounded border-border bg-bg-tertiary text-accent-primary focus:ring-accent-primary focus:ring-offset-0"
+            />
+            Vision Enabled
+          </label>
+          <p className="text-xs text-text-muted">Allow sending images directly to this model. Disable if the model doesn't support vision.</p>
+        </div>
 
         <div>
           <label className="block text-sm font-medium text-text-secondary mb-1">Source</label>
