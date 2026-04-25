@@ -287,7 +287,7 @@ export function createWebSocketServer(
     sessionManager.setRunning(sessionId, true)
     const eventStore = getEventStore()
     eventStore.append(sessionId, { type: 'running.changed', data: { isRunning: true } })
-    broadcastForSession(sessionId, createSessionRunningMessage(true))
+    broadcastForSession(sessionId, createSessionRunningMessage(true, sessionId))
 
     const nextAsap = queue.find(m => m.mode === 'asap') ?? queue[0]
     if (nextAsap) {

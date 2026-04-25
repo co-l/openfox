@@ -121,8 +121,8 @@ export function createSessionListMessage(sessions: SessionSummary[], correlation
   return createServerMessage('session.list', { sessions }, correlationId)
 }
 
-export function createSessionRunningMessage(isRunning: boolean): ServerMessage<SessionRunningPayload> {
-  return createServerMessage('session.running', { isRunning })
+export function createSessionRunningMessage(isRunning: boolean, sessionId?: string): ServerMessage<SessionRunningPayload> {
+  return createServerMessage('session.running', { isRunning }, sessionId)
 }
 
 // Project messages
