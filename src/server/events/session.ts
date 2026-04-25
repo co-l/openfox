@@ -100,6 +100,12 @@ export function getSessionState(
     }
   }
 
+  // Fallback: extract from snapshot's sessionInit if session.initialized was cleaned up
+  if (!initialWindowId && latestSnapshotEvent) {
+    const snapshotData = latestSnapshotEvent.data as { sessionInit?: { contextWindowId: string } }
+    initialWindowId = snapshotData.sessionInit?.contextWindowId
+  }
+
   if (!initialWindowId) {
     return undefined
   }

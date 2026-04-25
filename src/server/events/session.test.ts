@@ -6,7 +6,7 @@
 
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import Database from 'better-sqlite3'
-import { EventStore, initEventStore } from './store.js'
+import { initEventStore } from './store.js'
 import {
   emitSessionInitialized,
   emitUserMessage,
@@ -384,5 +384,51 @@ describe('tool events', () => {
     expect(msg).toBeDefined()
     expect(msg!.toolCalls).toBeDefined()
     expect(msg!.toolCalls!.length).toBeGreaterThanOrEqual(1)
+  })
+})
+
+describe('getSessionState with missing session.initialized', () => {
+  it('should still return valid state if sessionInit is present in snapshot', async () => {
+    const { getEventStore } = await import('./store.js')
+    const eventStore = getEventStore()
+    
+    initSession('s1', 'original-window')
+    emitUserMessage('s1', 'Hello', { contextWindowId: 'original-window' })
+
+    const state1 = getSessionState('s1')
+    expect(state1).toBeDefined()
+    expect(state1!.currentContextWindowId).toBe('original-window')
+
+    // Simulate what happens after cleanupOldEvents deletes session.initialized
+    // but a snapshot with sessionInit exists - directly insert a snapshot event
+    // with sessionInit but no actual messages (we just need sessionInit to be present)
+    const snapshotWithSessionInit = {
+      mode: 'planner' as const,
+      phase: 'plan' as const,
+      isRunning: false,
+      messages: state1!.messages,
+      criteria: [],
+      contextState: state1!.contextState,
+      currentContextWindowId: 'original-window',
+      todos: [],
+      readFiles: [],
+      snapshotSeq: 99,
+      snapshotAt: Date.now(),
+      sessionInit: {
+        projectId: 'proj-1',
+        workdir: '/tmp/test',
+        contextWindowId: 'original-window',
+      },
+    }
+    
+    // Delete the session.initialized event (seq 1)
+    eventStore.deleteEventsUpToSeq('s1', 1)
+    
+    // Insert a snapshot with sessionInit
+    eventStore.append('s1', { type: 'turn.snapshot', data: snapshotWithSessionInit })
+
+    const state2 = getSessionState('s1')
+    expect(state2).toBeDefined()
+    expect(state2!.currentContextWindowId).toBe('original-window')
   })
 })
