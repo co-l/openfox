@@ -159,7 +159,7 @@ function mergeSessionList(
       title: incomingSession.title ?? existingSession?.title,
       mode: currentSessionOverride?.mode ?? existingSession?.mode ?? incomingSession.mode,
       phase: currentSessionOverride?.phase ?? existingSession?.phase ?? incomingSession.phase,
-      isRunning: currentSessionOverride?.isRunning ?? existingSession?.isRunning ?? incomingSession.isRunning,
+      isRunning: incomingSession.isRunning,
       messageCount: incomingSession.messageCount,
       // Preserve recentUserPrompts from incoming session (server source of truth)
       recentUserPrompts: incomingSession.recentUserPrompts,
