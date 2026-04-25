@@ -188,7 +188,11 @@ export const useThemeStore = create<ThemeState>((set, get) => ({
     if (savedTheme) {
       try {
         const parsed = JSON.parse(savedTheme) as { preset?: string; tokens?: Record<string, string> }
-        if (parsed.preset) {
+        if (parsed.preset && parsed.tokens) {
+          applyPreset(parsed.preset)
+          set({ basePreset: parsed.preset })
+          applyTokens(parsed.tokens)
+        } else if (parsed.preset) {
           applyPreset(parsed.preset)
         } else if (parsed.tokens) {
           applyTokens(parsed.tokens)
@@ -330,7 +334,7 @@ export const useThemeStore = create<ThemeState>((set, get) => ({
         isCustomizing: false,
       })
       get().applyTheme()
-      get().saveTheme(JSON.stringify({ tokens: preset.tokens }))
+      get().saveTheme(JSON.stringify({ preset: preset.basePreset, tokens: preset.tokens }))
     }
   },
 
