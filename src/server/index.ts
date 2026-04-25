@@ -823,7 +823,7 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
 
   app.post('/api/providers/:id/models/:modelId', async (req, res) => {
     const { id, modelId } = req.params
-    const body = req.body as { contextWindow?: number; temperature?: number | null; topP?: number | null; topK?: number | null; maxTokens?: number | null }
+    const body = req.body as { contextWindow?: number; temperature?: number | null; topP?: number | null; topK?: number | null; maxTokens?: number | null; supportsVision?: boolean }
 
     logger.info('API: POST /api/providers/:id/models/:modelId', {
       providerId: id,

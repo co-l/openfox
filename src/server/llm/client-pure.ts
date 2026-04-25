@@ -55,11 +55,12 @@ async function convertMessagesWithOptions(
   messages: LLMMessage[],
   profile: MinimalProfile,
   visionFallbackEnabled: boolean,
+  userVisionOverride?: boolean | undefined,
   signal?: AbortSignal | undefined,
   onVisionFallbackStart?: ((attachmentId: string, filename?: string) => void) | undefined,
   onVisionFallbackDone?: ((attachmentId: string, description: string) => void) | undefined
 ): Promise<ChatCompletionMessageParam[]> {
-  const modelSupportsVision = profile.supportsVision ?? false
+  const modelSupportsVision = userVisionOverride ?? profile.supportsVision ?? false
   const options: ConvertMessagesOptions = {
     modelSupportsVision,
     visionFallbackEnabled,
@@ -325,10 +326,12 @@ async function buildChatCompletionCreateParams(
   onVisionFallbackStart?: ((attachmentId: string, filename?: string) => void) | undefined,
   onVisionFallbackDone?: ((attachmentId: string, description: string) => void) | undefined
 ): Promise<{ params: OpenAI.ChatCompletionCreateParamsNonStreaming | OpenAI.ChatCompletionCreateParamsStreaming; modelParams: ModelParams }> {
+  const userVisionOverride = request.modelSettings?.supportsVision
   const convertedMessages = await convertMessagesWithOptions(
     request.messages,
     profile,
     visionFallbackEnabled,
+    userVisionOverride,
     request.signal,
     onVisionFallbackStart,
     onVisionFallbackDone

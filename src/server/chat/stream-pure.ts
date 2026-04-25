@@ -44,8 +44,8 @@ export interface PureStreamOptions {
   disableThinking?: boolean
   onVisionFallbackStart?: (attachmentId: string, filename?: string) => void
   onVisionFallbackDone?: (attachmentId: string, description: string) => void
-  /** User-configured model settings (temperature, topP, topK, maxTokens) */
-  modelSettings?: ModelParams
+  /** User-configured model settings (temperature, topP, topK, maxTokens, supportsVision) */
+  modelSettings?: ModelParams & { supportsVision?: boolean }
 }
 
 export interface PureStreamResult {
@@ -151,6 +151,7 @@ export async function* streamLLMPure(
     toolChoice,
     disableThinking: disableThinking ?? false,
     signal,
+    modelSettings: options.modelSettings,
     onVisionFallbackStart,
     onVisionFallbackDone,
   })
