@@ -114,7 +114,7 @@ function ProjectSessionView({
   }, [canLoad, projectId, currentProject?.id, loadProject])
 
   useEffect(() => {
-    if (canLoad && sessionId && session?.id !== sessionId && !pendingSessionCreate) {
+    if (canLoad && sessionId && session?.id !== sessionId) {
       loadSession(sessionId)
     }
     if (canLoad && projectId) {

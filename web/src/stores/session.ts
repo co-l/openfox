@@ -638,6 +638,7 @@ export const useSessionStore = create<SessionState>((set, get) => {
             queuedMessages: [],
             abortInProgress: false,
             error: null,
+            pendingSessionCreate: false as boolean | string,
           })
         } else {
           set({ unreadSessionIds: removeUnreadSessionId(get().unreadSessionIds, sessionId) })
