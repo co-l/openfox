@@ -1136,6 +1136,17 @@ describe('useSessionStore session isolation', () => {
     expect(useSessionStore.getState().pendingQuestion).toBeNull()
   })
 
+  it('prevents concurrent createSession calls when pendingSessionCreate is already true', async () => {
+    const useSessionStore = await loadSessionStore()
+
+    useSessionStore.setState({ pendingSessionCreate: true })
+
+    const result = await useSessionStore.getState().createSession('project-1')
+
+    expect(result).toBeNull()
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
+
   it('clears pendingQuestion when answerQuestion is called with empty answer (skip)', async () => {
     const useSessionStore = await loadSessionStore()
 

@@ -593,6 +593,10 @@ export const useSessionStore = create<SessionState>((set, get) => {
     },
 
     createSession: async (projectId, title) => {
+      const state = get()
+      if (state.pendingSessionCreate) {
+        return null
+      }
       try {
         // Set pending flag BEFORE the API call to trigger navigation
         set({ pendingSessionCreate: true })
