@@ -137,7 +137,7 @@ export function OpenProjectModal({ isOpen, onClose }: OpenProjectModalProps) {
   return (
     <Modal isOpen={isOpen} onClose={onClose} title="Open Project" size="xl" footer={
       <div className="flex justify-between gap-2">
-        <Button variant="secondary" onClick={() => setShowCreateModal(true)}>
+        <Button variant="secondary" onClick={() => setShowCreateModal(true)} data-testid="open-project-create-button">
           Create Project
         </Button>
         <Button variant="secondary" onClick={onClose}>

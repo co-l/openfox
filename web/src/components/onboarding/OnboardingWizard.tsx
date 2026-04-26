@@ -371,6 +371,7 @@ function ConnectLLMStep({ onNext }: ConnectLLMStepProps) {
                   }
                 }}
                 placeholder="http://localhost:8000"
+                data-testid="onboarding-provider-url-input"
                 className="w-full px-4 py-2 bg-bg-secondary border border-border rounded-lg text-text-primary placeholder-text-muted focus:outline-none focus:border-accent-primary"
               />
             </div>
@@ -423,6 +424,7 @@ function ConnectLLMStep({ onNext }: ConnectLLMStepProps) {
                 type="button"
                 onClick={() => testConnection(customUrl)}
                 disabled={!customUrl || testing}
+                data-testid="onboarding-test-connection-button"
                 className="flex-1 px-4 py-2 bg-bg-secondary border border-border rounded-lg hover:border-text-muted disabled:opacity-50"
               >
                 {testing ? <PlusMdIcon className="w-4 h-4" /> : 'Test Connection'}
@@ -430,6 +432,7 @@ function ConnectLLMStep({ onNext }: ConnectLLMStepProps) {
               <button
                 type="submit"
                 disabled={!customUrl}
+                data-testid="onboarding-add-provider-submit-button"
                 className="flex-1 px-4 py-2 bg-accent-primary text-text-primary rounded-lg hover:bg-accent-primary/90 disabled:opacity-50 disabled:cursor-not-allowed transition-colors font-medium"
               >
                 {testResult?.success ? 'Add Provider ✓' : 'Add Provider'}
@@ -452,6 +455,7 @@ function ConnectLLMStep({ onNext }: ConnectLLMStepProps) {
         ) : (
           <button
             onClick={() => setShowAddForm(true)}
+            data-testid="onboarding-add-provider-button"
             className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-bg-secondary border border-dashed border-border rounded-lg text-text-secondary hover:text-text-primary hover:border-text-muted transition-colors"
           >
             <PlusLgIcon className="w-4 h-4" />
@@ -462,6 +466,7 @@ function ConnectLLMStep({ onNext }: ConnectLLMStepProps) {
         <button
           onClick={handleSubmit}
           disabled={!hasProviders}
+          data-testid="onboarding-continue-button"
           className="w-full mt-6 px-6 py-3 bg-accent-primary text-text-primary rounded-lg font-medium hover:bg-accent-primary/90 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
         >
           Continue
@@ -522,6 +527,7 @@ function ProjectsFolderStep({ onNext }: ProjectsFolderStepProps) {
               value={workdir}
               onChange={(e) => setWorkdir(e.target.value)}
               placeholder="/home/user/projects"
+              data-testid="onboarding-workdir-input"
               className="flex-1 px-4 py-2 bg-bg-secondary border border-border rounded-lg text-text-primary placeholder-text-muted focus:outline-none focus:border-accent-primary"
             />
             <button
@@ -547,6 +553,7 @@ function ProjectsFolderStep({ onNext }: ProjectsFolderStepProps) {
         <button
           onClick={() => onNext({ workdir })}
           disabled={!workdir}
+          data-testid="onboarding-workdir-continue-button"
           className="w-full mt-6 px-6 py-3 bg-accent-primary text-text-primary rounded-lg font-medium hover:bg-accent-primary/90 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
         >
           Continue
@@ -666,6 +673,7 @@ function VisionStep({ onNext }: VisionStepProps) {
         <div className="flex items-center justify-between pt-4">
           <button
             onClick={() => handleFinish(true)}
+            data-testid="onboarding-skip-button"
             className="text-text-muted hover:text-text-secondary text-sm underline"
           >
             Skip for now

@@ -545,6 +545,7 @@ export function PlanPanel({ criteriaSidebarOpen: externalCriteriaSidebarOpen, on
                   <button
                     key={w.id}
                     onClick={() => acceptAndBuild(w.id)}
+                    data-testid="workflow-run-button"
                     className="px-4 py-1.5 rounded text-sm font-medium transition-colors"
                     style={{ backgroundColor: bg, color: c, border: `1px solid ${border}` }}
                     onMouseEnter={e => {
@@ -683,6 +684,7 @@ export function PlanPanel({ criteriaSidebarOpen: externalCriteriaSidebarOpen, on
             }}
             onKeyDown={handleKeyDown}
             placeholder="What would you like to build?"
+            data-testid="chat-input-textarea"
             className="flex-1 bg-transparent text-sm placeholder:text-text-muted resize-none overflow-y-auto focus:outline-none"
             style={{ minHeight: '24px', maxHeight: '200px' }}
             spellCheck={false}
@@ -700,6 +702,7 @@ export function PlanPanel({ criteriaSidebarOpen: externalCriteriaSidebarOpen, on
                     clearInput()
                   }}
                   disabled={(!input.trim() && attachments.length === 0)}
+                  data-testid="chat-send-button"
                   className="px-4 py-1.5 rounded-l bg-accent-primary/20 text-sm text-accent-primary font-medium hover:bg-accent-primary/30 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
                 >
                   Send

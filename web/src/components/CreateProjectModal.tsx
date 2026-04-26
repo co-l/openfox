@@ -111,6 +111,7 @@ export function CreateProjectModal({ isOpen, onClose }: CreateProjectModalProps)
             }}
             placeholder="my-project"
             disabled={loading}
+            data-testid="create-project-name-input"
             className="w-full"
           />
           
@@ -143,6 +144,7 @@ export function CreateProjectModal({ isOpen, onClose }: CreateProjectModalProps)
             type="submit"
             variant="primary"
             disabled={loading || !projectName.trim()}
+            data-testid="create-project-submit-button"
             className="min-w-[100px]"
           >
             {loading ? (
