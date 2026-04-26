@@ -172,7 +172,7 @@ export interface PendingPathConfirmation {
   tool: string
   paths: string[]
   workdir: string
-  reason: 'outside_workdir' | 'sensitive_file' | 'both' | 'dangerous_command'
+  reason: 'outside_workdir' | 'sensitive_file' | 'both' | 'dangerous_command' | 'git_no_verify'
   alwaysAllow?: boolean  // Set when user clicks "Always Allow"
 }
 

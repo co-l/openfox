@@ -25,6 +25,11 @@ function getReasonMessage(reason: PendingPathConfirmation['reason']): {
         title: 'Dangerous Command',
         description: 'Running potentially dangerous command',
       }
+    case 'git_no_verify':
+      return {
+        title: 'Git --no-verify',
+        description: 'Bypassing git hooks/pre-commit checks',
+      }
     case 'outside_workdir':
     default:
       return {
@@ -43,6 +48,8 @@ export function PathConfirmationButtons({ confirmation }: PathConfirmationButton
   const isSensitive = confirmation.reason === 'sensitive_file' || confirmation.reason === 'both'
   const borderColor = isSensitive ? 'border-red-500/50' : 'border-amber-500/50'
   const bgColor = isSensitive ? 'bg-red-500/10' : 'bg-amber-500/10'
+
+  const isGitNoVerify = confirmation.reason === 'git_no_verify'
 
   const handleEnableDangerousAndAllow = () => {
     if (currentSession?.id) {
@@ -95,7 +102,7 @@ export function PathConfirmationButtons({ confirmation }: PathConfirmationButton
         </button>
         <button
           onClick={handleEnableDangerousAndAllow}
-          className="flex-1 px-3 py-1.5 text-xs font-medium rounded bg-red-600 hover:bg-red-700 text-white transition-colors"
+          className={`flex-1 px-3 py-1.5 text-xs font-medium rounded transition-colors ${isGitNoVerify ? 'hidden' : 'bg-red-600 hover:bg-red-700 text-white'}`}
           title="Enable dangerous mode and allow this request"
         >
           Allow Everything
