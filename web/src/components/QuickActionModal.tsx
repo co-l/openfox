@@ -1,5 +1,6 @@
 import { useEffect, useState, useRef } from 'react'
 import { createPortal } from 'react-dom'
+import { useLocation } from 'wouter'
 import { CloseButton } from './shared/IconButton'
 import { useCommandsStore } from '../stores/commands'
 import { useWorkflowsStore } from '../stores/workflows'
@@ -28,6 +29,7 @@ interface ActionItem {
 }
 
 export function QuickActionModal({ isOpen, onClose, onCloseComplete, onSelectCommand, onSelectWorkflow, onCloseCompleteAction, textareaContent, onSearchMessages, onToggleAutoScroll, isAutoScrollActive }: QuickActionModalProps) {
+  const [, navigate] = useLocation()
   const fetchCommands = useCommandsStore(state => state.fetchCommands)
   const fetchWorkflows = useWorkflowsStore(state => state.fetchWorkflows)
   const fetchAgents = useAgentsStore(state => state.fetchAgents)
@@ -42,7 +44,6 @@ export function QuickActionModal({ isOpen, onClose, onCloseComplete, onSelectCom
   const switchMode = useSessionStore(state => state.switchMode)
   const switchDangerLevel = useSessionStore(state => state.switchDangerLevel)
   const currentProjectId = useSessionStore(state => state.currentSession?.projectId)
-  const createSession = useSessionStore(state => state.createSession)
   const closeCompleteAction = useRef<(() => void) | undefined>(undefined)
 
   const [search, setSearch] = useState('')
@@ -84,7 +85,7 @@ export function QuickActionModal({ isOpen, onClose, onCloseComplete, onSelectCom
       id: 'create-session',
       name: 'New Session',
       prefix: 'Action > Create',
-      action: () => currentProjectId && createSession(currentProjectId),
+      action: () => currentProjectId && navigate(`/p/${currentProjectId}/new`),
     },
     {
       id: 'navigate-session',
