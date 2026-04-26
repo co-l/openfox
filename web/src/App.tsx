@@ -221,7 +221,7 @@ function App() {
 
   const getInitialLeftSidebar = () => {
     const saved = localStorage.getItem('openfox:leftSidebar')
-    return saved !== null ? saved === 'true' : false
+    return saved !== null ? saved === 'true' : true
   }
 
   const getInitialRightSidebar = () => {
