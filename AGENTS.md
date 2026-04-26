@@ -19,17 +19,35 @@ OpenFox is a local-LLM-first agentic coding assistant. It provides:
 - **LLM Integration**: OpenAI-compatible API (vLLM, sglang, ollama, llamacpp)
 - **Testing**: Vitest (unit + e2e)
 
+### Directory Structure
+
+```
+/                     # Root: server code lives here (NOT in ./server/)
+  src/                # Server source (tools, agents, workflows, database, websocket)
+  web/                # React frontend source
+  e2e/                # Vitest e2e tests
+  e2e-playwright/     # Playwright e2e tests
+  dist/               # Build output
+  docs/               # Documentation
+```
+
 ## Build, Lint, Test Commands
 
 ### From Root
 
 ```bash
 npm run build        # Build server (tsup) + web (vite)
-npm run dev          # Start dev servers (server + web with HMR) on port 10469
+npm run dev          # Start CLI dev server (tsx watch) on port 10469
+npm run start        # Start production server
 npm run test         # Run all tests (unit + e2e)
 npm run test:unit    # Run unit tests only
 npm run test:e2e     # Run e2e tests only
 npm run typecheck    # TypeScript type checking
+npm run lint         # ESLint server code
+npm run lint:fix     # ESLint with auto-fix
+npm run format       # Prettier check
+npm run format:fix   # Prettier write
+npm run check        # typecheck + duplicate detection
 npm run duplicate    # Check for duplicate code (server + web)
 ```
 
@@ -37,7 +55,7 @@ npm run duplicate    # Check for duplicate code (server + web)
 
 The dev server can already be running. Do not kill it.
 
-It runs on port 10469. The password is `password`.
+Default ports: **10469** (dev), **10369** (prod). The password is `password`.
 
 If it is not running, use the dev_server tool to start it
 
