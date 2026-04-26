@@ -42,6 +42,7 @@ describe('WebSocket Protocol', () => {
       const restSession = await createSession(server.url, { projectId: restProject.id })
       await client.send('session.load', { sessionId: restSession.id })
       
+      // chat.send is now routed to REST API, but unknown WS messages return UNKNOWN_MESSAGE
       const response = await client.send('chat.send', { content: 'Hello' })
       expect(response.id).toBeDefined()
       expect(response.type).toBe('ack')
@@ -52,13 +53,14 @@ describe('WebSocket Protocol', () => {
       const restSession = await createSession(server.url, { projectId: restProject.id })
       await client.send('session.load', { sessionId: restSession.id })
       
+      // chat.send is now routed to REST API and returns ack
       const response1 = client.send('chat.send', { content: 'First' })
       const response2 = client.send('context.compact', {})
       
       const [r1, r2] = await Promise.all([response1, response2])
 
       expect(r1.type).toBe('ack')
-      expect(r2.type).toBe('error')
+      expect(r2.type).toBe('ack')
     })
   })
 
@@ -76,8 +78,8 @@ describe('WebSocket Protocol', () => {
 
 
     it('returns error for operations without session', async () => {
-      // Try to send chat without loading a session
-      const response = await client.send('chat.send', { content: 'Hello' })
+      // Try to send message without loading a session
+      const response = await client.send('ask.answer', { callId: 'test', answer: 'yes' })
       expect(response.type).toBe('error')
       expect((response.payload as { code: string }).code).toBe('NO_SESSION')
     })
@@ -90,13 +92,13 @@ describe('WebSocket Protocol', () => {
   })
 
   describe('Acknowledgments', () => {
-    it('returns DEPRECATED for chat.stop', async () => {
+    it('returns UNKNOWN_MESSAGE for chat.stop', async () => {
       const restProject = await createProject(server.url, { name: 'test', workdir: project.path })
       const restSession = await createSession(server.url, { projectId: restProject.id })
       await client.send('session.load', { sessionId: restSession.id })
       
       const response = await client.send('chat.stop', {})
-      expect(response.payload.code).toBe('DEPRECATED')
+      expect(response.payload.code).toBe('UNKNOWN_MESSAGE')
     })
   })
 

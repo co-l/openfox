@@ -399,6 +399,17 @@ export async function createTestClient(options: TestClientOptions = {}): Promise
   
   return {
     send<T>(type: ClientMessageType, payload: T): Promise<ServerMessage> {
+      // Handle chat.send by routing to REST API
+      if (type === 'chat.send' && currentSession) {
+        const httpUrl = url.replace('/ws', '').replace('ws://', 'http://')
+        const { content, attachments } = payload as { content: string; attachments?: unknown[] }
+        return fetch(`${httpUrl}/api/sessions/${currentSession.id}/message`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ content, attachments }),
+        }).then(() => ({ type: 'ack', id: crypto.randomUUID(), payload: {} } as ServerMessage))
+      }
+      
       return new Promise((resolve, reject) => {
         const id = crypto.randomUUID()
         const message: ClientMessage<T> = { id, type, payload }

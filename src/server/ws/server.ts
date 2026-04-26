@@ -7,14 +7,14 @@ import type { Config } from '../config.js'
 import type { LLMClientWithModel } from '../llm/client.js'
 import type { SessionManager } from '../session/index.js'
 import { getEventStore, getCurrentContextWindowId } from '../events/index.js'
-import { buildContextMessagesFromEventHistory, buildMessagesFromStoredEvents, foldPendingConfirmations } from '../events/folding.js'
+import { buildMessagesFromStoredEvents, foldPendingConfirmations } from '../events/folding.js'
 import type { Provider, ProviderBackend, StatsIdentity, Attachment } from '../../shared/types.js'
 import type { ProviderManager } from '../provider-manager.js'
 import { createLLMClient } from '../llm/index.js'
-import { runChatTurn, createMessageStartEvent, createChatDoneEvent } from '../chat/orchestrator.js'
-import { loadAllAgentsDefault, findAgentById } from '../agents/registry.js'
+import { runChatTurn } from '../chat/orchestrator.js'
+
 import { runOrchestrator } from '../runner/index.js'
-import { maybeAutoCompactContext, performManualContextCompaction } from '../context/auto-compaction.js'
+import { performManualContextCompaction } from '../context/auto-compaction.js'
 import {
   providePathConfirmation,
   provideAnswer,
@@ -24,13 +24,8 @@ import {
 import { logger } from '../utils/logger.js'
 import { devServerManager } from '../dev-server/manager.js'
 import { onProcessEvent } from '../tools/background-process/manager.js'
-import { updateSessionMetadata } from '../db/sessions.js'
-import { generateSessionName, needsNameGeneration } from '../session/name-generator.js'
-import { generateSessionSummary, needsSummaryGeneration } from '../session/summary-generator.js'
-import { getAllInstructions } from '../context/instructions.js'
-import { getEnabledSkillMetadata } from '../skills/registry.js'
-import { getGlobalConfigDir } from '../../cli/paths.js'
-import { getRuntimeConfig } from '../runtime-config.js'
+
+
 import { requiresAuth, verifyPassword, getAuthConfig, isValidToken } from '../auth.js'
 import {
   parseClientMessage,
@@ -46,43 +41,12 @@ import {
   createCriteriaUpdatedMessage,
   createContextStateMessage,
   isSessionLoadPayload,
-  isChatSendPayload,
-  isModeSwitchPayload,
-  isCriteriaEditPayload,
   isPathConfirmPayload,
   isAskAnswerPayload,
   storedEventToServerMessage,
   createQueueStateMessage,
-  isQueueAsapPayload,
-  isQueueCompletionPayload,
-  isQueueCancelPayload,
 } from './protocol.js'
 
-function getCurrentWindowMessageOptions(sessionId: string): { contextWindowId: string } | undefined {
-  const contextWindowId = getCurrentContextWindowId(sessionId)
-  return contextWindowId ? { contextWindowId } : undefined
-}
-
-/**
- * Get the count of user messages in a session.
- * Used to determine if this is the first user message.
- */
-function getSessionMessageCount(sessionId: string): number {
-  const eventStore = getEventStore()
-  const events = eventStore.getEvents(sessionId)
-  
-  let count = 0
-  for (const event of events) {
-    if (event.type === 'message.start') {
-      const data = event.data as { role: string }
-      if (data.role === 'user') {
-        count++
-      }
-    }
-  }
-  
-  return count
-}
 
 function resolveStatsIdentity(
   llmClient: LLMClientWithModel,
@@ -98,6 +62,68 @@ function resolveStatsIdentity(
     backend,
     model,
   }
+}
+
+function buildSessionState(
+  sessionManager: SessionManager,
+  sessionId: string,
+): { session: ReturnType<SessionManager['getSession']>; messages: ReturnType<typeof buildMessagesFromStoredEvents>; pendingConfirmations: ReturnType<typeof foldPendingConfirmations> } {
+  const session = sessionManager.getSession(sessionId)
+  if (!session) {
+    return { session: null, messages: [], pendingConfirmations: [] }
+  }
+  const eventStore = getEventStore()
+  const events = eventStore.getEvents(sessionId)
+  const messages = events.length > 0 ? buildMessagesFromStoredEvents(events) : []
+  const pendingConfirmations = foldPendingConfirmations(events)
+  return { session, messages, pendingConfirmations }
+}
+
+function addUserMessageAndBroadcast(
+  sessionManager: SessionManager,
+  sessionId: string,
+  message: { content: string; attachments?: Attachment[]; messageKind?: string | undefined },
+  broadcastFn: (sessionId: string, msg: ServerMessage) => void,
+): ReturnType<SessionManager['addMessage']> {
+  const userMessage = sessionManager.addMessage(sessionId, {
+    role: 'user',
+    content: message.content,
+    ...(message.attachments ? { attachments: message.attachments } : {}),
+    ...(message.messageKind ? { messageKind: message.messageKind as any } : {}),
+  })
+  broadcastFn(sessionId, createChatMessageMessage(userMessage))
+  return userMessage
+}
+
+function processQueueAndRestartTurn(
+  sessionManager: SessionManager,
+  sessionId: string,
+  drainFn: (sessionId: string) => Array<{ content: string; attachments?: Attachment[]; messageKind?: string; queueId?: string }>,
+  queueMode: 'asap' | 'completion',
+  broadcastFn: (sessionId: string, msg: ServerMessage) => void,
+  activeAgents: Map<string, AbortController>,
+  startTurnFn: (sessionId: string, controller: AbortController) => void,
+  queueMessageFn?: (sessionId: string, mode: 'asap' | 'completion', content: string, attachments?: Attachment[], messageKind?: string) => void,
+): boolean {
+  const messages = drainFn(sessionId)
+  const next = messages[0]
+  if (!next) return false
+
+  for (const remaining of messages.slice(1)) {
+    if (queueMessageFn) {
+      queueMessageFn(sessionId, queueMode, remaining.content, remaining.attachments, remaining.messageKind as 'command' | undefined)
+    } else {
+      sessionManager.queueMessage(sessionId, queueMode, remaining.content, remaining.attachments)
+    }
+  }
+  broadcastFn(sessionId, createQueueStateMessage(sessionManager.getQueueState(sessionId)))
+
+  addUserMessageAndBroadcast(sessionManager, sessionId, { content: next.content, ...(next.attachments ? { attachments: next.attachments } : {}), ...(next.messageKind ? { messageKind: next.messageKind } : {}) }, broadcastFn)
+
+  const newController = new AbortController()
+  activeAgents.set(sessionId, newController)
+  startTurnFn(sessionId, newController)
+  return true
 }
 
 // Track active agent AbortControllers by sessionId
@@ -201,6 +227,51 @@ export function createWebSocketServer(
   const statsForSession = (sessionId: string): StatsIdentity =>
     getSessionStatsIdentity?.(sessionId) ?? resolveStatsIdentity(getLLMClient(), getActiveProvider)
 
+  function cleanupAfterTurn(
+    sessionId: string,
+    controller: AbortController,
+    sendFn: (sessionId: string, msg: ServerMessage) => void,
+    setRunningOnEarlyReturn: boolean,
+  ) {
+    if (activeAgents.get(sessionId) !== controller) {
+      return
+    }
+    activeAgents.delete(sessionId)
+
+    const processed = processQueueAndRestartTurn(
+      sessionManager, sessionId,
+      (sid) => sessionManager.drainAsapMessages(sid),
+      'asap',
+      sendFn,
+      activeAgents,
+      startTurnWithCompletionChain,
+      (sid, mode, content, attachments, messageKind) =>
+        sessionManager.queueMessage(sid, mode, content, attachments, messageKind as 'command' | undefined),
+    )
+    if (processed) {
+      if (setRunningOnEarlyReturn) sessionManager.setRunning(sessionId, false)
+      return
+    }
+
+    const processedCompletion = processQueueAndRestartTurn(
+      sessionManager, sessionId,
+      (sid) => sessionManager.drainCompletionMessages(sid),
+      'completion',
+      sendFn,
+      activeAgents,
+      startTurnWithCompletionChain,
+    )
+    if (processedCompletion) {
+      if (setRunningOnEarlyReturn) sessionManager.setRunning(sessionId, false)
+      return
+    }
+
+    sessionManager.clearMessageQueue(sessionId)
+    sessionManager.setRunning(sessionId, false)
+    const contextState = sessionManager.getContextState(sessionId)
+    sendFn(sessionId, createContextStateMessage(contextState))
+  }
+
   function startTurnWithCompletionChain(sessionId: string, controller: AbortController) {
     runChatTurn({
       sessionManager,
@@ -215,58 +286,7 @@ export function createWebSocketServer(
       }
       logger.error('Chat turn error', { error })
     }).finally(() => {
-      if (activeAgents.get(sessionId) !== controller) {
-        return
-      }
-      activeAgents.delete(sessionId)
-
-      const asapMsgs = sessionManager.drainAsapMessages(sessionId)
-      const nextAsap = asapMsgs[0]
-      if (nextAsap) {
-        for (const remaining of asapMsgs.slice(1)) {
-          sessionManager.queueMessage(sessionId, 'asap', remaining.content, remaining.attachments, remaining.messageKind as 'command' | undefined)
-        }
-        broadcastForSession(sessionId, createQueueStateMessage(sessionManager.getQueueState(sessionId)))
-
-        const userMessagePayload: { role: 'user'; content: string; attachments?: Attachment[] } = {
-          role: 'user',
-          content: nextAsap.content,
-          ...(nextAsap.attachments ? { attachments: nextAsap.attachments } : {}),
-        }
-        const userMessage = sessionManager.addMessage(sessionId, userMessagePayload)
-        broadcastForSession(sessionId, createChatMessageMessage(userMessage))
-
-        const newController = new AbortController()
-        activeAgents.set(sessionId, newController)
-        startTurnWithCompletionChain(sessionId, newController)
-        return
-      }
-
-      const completionMsgs = sessionManager.drainCompletionMessages(sessionId)
-      const next = completionMsgs[0]
-      if (next) {
-        for (const remaining of completionMsgs.slice(1)) {
-          sessionManager.queueMessage(sessionId, 'completion', remaining.content, remaining.attachments)
-        }
-        broadcastForSession(sessionId, createQueueStateMessage(sessionManager.getQueueState(sessionId)))
-
-        const userMessage = sessionManager.addMessage(sessionId, {
-          role: 'user',
-          content: next.content,
-          ...(next.attachments ? { attachments: next.attachments } : {}),
-        })
-        broadcastForSession(sessionId, createChatMessageMessage(userMessage))
-
-        const newController = new AbortController()
-        activeAgents.set(sessionId, newController)
-        startTurnWithCompletionChain(sessionId, newController)
-        return
-      }
-
-      sessionManager.clearMessageQueue(sessionId)
-      sessionManager.setRunning(sessionId, false)
-      const contextState = sessionManager.getContextState(sessionId)
-      broadcastForSession(sessionId, createContextStateMessage(contextState))
+      cleanupAfterTurn(sessionId, controller, broadcastForSession, false)
     })
   }
 
@@ -292,13 +312,7 @@ export function createWebSocketServer(
     const nextAsap = queue.find(m => m.mode === 'asap') ?? queue[0]
     if (nextAsap) {
       sessionManager.cancelQueuedMessage(sessionId, nextAsap.queueId)
-      const userMessage = sessionManager.addMessage(sessionId, {
-        role: 'user',
-        content: nextAsap.content,
-        ...(nextAsap.attachments ? { attachments: nextAsap.attachments } : {}),
-        ...(nextAsap.messageKind ? { messageKind: nextAsap.messageKind as any } : {}),
-      })
-      broadcastForSession(sessionId, createChatMessageMessage(userMessage))
+      addUserMessageAndBroadcast(sessionManager, sessionId, { content: nextAsap.content, ...(nextAsap.attachments ? { attachments: nextAsap.attachments } : {}), ...(nextAsap.messageKind ? { messageKind: nextAsap.messageKind } : {}) }, broadcastForSession)
     }
 
     startTurnWithCompletionChain(sessionId, controller)
@@ -320,13 +334,7 @@ export function createWebSocketServer(
       if (event.type === 'session_created') {
         const session = sessionManager.getSession(sessionId)
         if (session) {
-          // Get messages from EventStore
-          const eventStore = getEventStore()
-          const events = eventStore.getEvents(sessionId)
-          const messages = events.length > 0
-            ? buildMessagesFromStoredEvents(events)
-            : []
-          const pendingConfirmations = foldPendingConfirmations(events)
+          const { messages, pendingConfirmations } = buildSessionState(sessionManager, sessionId)
           ws.send(serializeServerMessage({ ...createSessionStateMessage(session, messages, pendingConfirmations), sessionId }))
         }
         continue
@@ -336,14 +344,8 @@ export function createWebSocketServer(
       if (isSubscribedToSession(client, sessionId)) {
         // Broadcast session.state for session_updated events
         if (event.type === 'session_updated') {
-          const session = sessionManager.getSession(sessionId)
+          const { session, messages, pendingConfirmations } = buildSessionState(sessionManager, sessionId)
           if (session) {
-            const eventStore = getEventStore()
-            const events = eventStore.getEvents(sessionId)
-            const messages = events.length > 0
-              ? buildMessagesFromStoredEvents(events)
-              : []
-            const pendingConfirmations = foldPendingConfirmations(events)
             ws.send(serializeServerMessage({ ...createSessionStateMessage(session, messages, pendingConfirmations), sessionId }))
           }
         }
@@ -451,7 +453,7 @@ export function createWebSocketServer(
       const client = clients.get(ws)!
       
       try {
-          await handleClientMessage(ws, client, message, getLLMClient, getActiveProvider, sessionManager, broadcastForSession, providerManager, getSessionLLMClient, getSessionStatsIdentity, llmForSession, statsForSession, startTurnWithCompletionChain)
+          await handleClientMessage(ws, client, message, getLLMClient, getActiveProvider, sessionManager, broadcastForSession, providerManager, getSessionLLMClient, getSessionStatsIdentity, llmForSession, statsForSession, startTurnWithCompletionChain, cleanupAfterTurn)
       } catch (error) {
         logger.error('Error handling client message', { error, type: message.type })
         ws.send(serializeServerMessage(
@@ -518,6 +520,12 @@ async function handleClientMessage(
   llmForSession: (sessionId: string) => LLMClientWithModel,
   statsForSession: (sessionId: string) => StatsIdentity,
   startTurnWithCompletionChain: (sessionId: string, controller: AbortController) => void,
+  cleanupAfterTurn: (
+    sessionId: string,
+    controller: AbortController,
+    sendFn: (sessionId: string, msg: ServerMessage) => void,
+    setRunningOnEarlyReturn: boolean,
+  ) => void,
 ): Promise<void> {
   const send = (msg: ServerMessage) => {
     if (ws.readyState === WebSocket.OPEN) {
@@ -608,407 +616,6 @@ async function handleClientMessage(
       // Send context state
       const contextState = sessionManager.getContextState(session.id)
       sendForSession(session.id, createContextStateMessage(contextState))
-      break
-    }
-
-    // =========================================================================
-    // Unified Chat (replaces plan.message, agent.start, etc.) - WS REQUIRED
-    // =========================================================================
-    
-    case 'chat.send': {
-      if (!client.activeSessionId) {
-        send(createErrorMessage('NO_SESSION', 'No active session', message.id))
-        return
-      }
-      
-      if (!isChatSendPayload(message.payload)) {
-        send(createErrorMessage('INVALID_PAYLOAD', 'Invalid chat.send payload', message.id))
-        return
-      }
-      
-      // Check if session is already running - reject concurrent execution
-      const currentSession = sessionManager.requireSession(client.activeSessionId)
-      if (currentSession.isRunning) {
-        send(createErrorMessage('ALREADY_RUNNING', 'Session is already running', message.id))
-        return
-      }
-      
-      // Check if session is blocked - user intervention resets it
-      if (currentSession.phase === 'blocked') {
-        logger.info('User intervention - resetting blocked state', { sessionId: client.activeSessionId })
-        sessionManager.setPhase(client.activeSessionId, 'build')
-        sessionManager.resetAllCriteriaAttempts(client.activeSessionId)
-        sendForSession(client.activeSessionId, createPhaseChangedMessage('build'))
-      }
-      
-      const sessionId = client.activeSessionId
-      const eventStore = getEventStore()
-
-      ensureEventStoreSubscription(sessionId)
-
-      // Create AbortController EARLY so escape works during all phases (including compaction)
-      const controller = new AbortController()
-      const existingController = activeAgents.get(sessionId)
-      if (existingController) {
-        logger.warn('Aborting existing agent before starting new one', { sessionId })
-        existingController.abort()
-      }
-      activeAgents.set(sessionId, controller)
-
-      // Mark session as running immediately so UI shows stop button
-      sessionManager.setRunning(sessionId, true)
-      sendForSession(sessionId, createSessionRunningMessage(true))
-
-      // Acknowledge immediately
-      send({ type: 'ack', payload: {}, id: message.id })
-
-      try {
-        await maybeAutoCompactContext({
-          sessionManager,
-          sessionId,
-          llmClient: llmForSession(sessionId),
-          statsIdentity: statsForSession(sessionId),
-          signal: controller.signal,
-        })
-
-        // Check if aborted during compaction
-        if (controller.signal.aborted) {
-          break
-        }
-
-        // Add user message with attachments (emits events to EventStore)
-        const userMessage = sessionManager.addMessage(sessionId, {
-          role: 'user',
-          content: message.payload.content,
-          ...(message.payload.attachments && { attachments: message.payload.attachments }),
-          ...(message.payload.messageKind && { messageKind: message.payload.messageKind }),
-          ...(message.payload.isSystemGenerated && { isSystemGenerated: message.payload.isSystemGenerated }),
-        })
-
-        // Send user message directly to client (don't rely on EventStore subscription for this)
-        sendForSession(sessionId, createChatMessageMessage(userMessage))
-
-        // Check if we need to generate a session name (first message with default/empty title)
-        const messageCount = getSessionMessageCount(sessionId)
-        if (needsNameGeneration(currentSession.metadata.title, messageCount)) {
-          // Generate name in parallel - don't block the chat turn
-          // Use the active LLM client (respects user's selected model)
-          generateSessionName({
-            userMessage: message.payload.content,
-            llmClient: llmForSession(sessionId),
-            signal: controller.signal,
-          })
-            .then(async (result) => {
-              if (result.success && result.name) {
-                // Update DB with the generated name
-                updateSessionMetadata(sessionId, { title: result.name })
-
-                // Emit session.name_generated event to EventStore
-                eventStore.append(sessionId, {
-                  type: 'session.name_generated',
-                  data: { name: result.name },
-                })
-
-                // Broadcast updated session state to all WebSocket clients
-                const updatedSession = sessionManager.getSession(sessionId)
-                if (updatedSession) {
-                  const events = eventStore.getEvents(sessionId)
-                  const messages = buildMessagesFromStoredEvents(events)
-                  const pendingConfirmations = foldPendingConfirmations(events)
-                  broadcastForSession(sessionId, createSessionStateMessage(updatedSession, messages, pendingConfirmations))
-                }
-
-                logger.info('Session name generated', { sessionId, name: result.name })
-              }
-            })
-            .catch((error) => {
-              logger.warn('Session name generation failed', { sessionId, error: error instanceof Error ? error.message : error })
-              // Don't propagate error - name generation is optional
-            })
-        }
-
-        // Use NEW orchestrator (events go through EventStore → WS subscription)
-        // Completion queue auto-sends next message when turn finishes
-        startTurnWithCompletionChain(sessionId, controller)
-      } catch (error) {
-        // Clean up on failure (including abort during pre-turn phase)
-        if (activeAgents.get(sessionId) === controller) {
-          activeAgents.delete(sessionId)
-        }
-        sessionManager.setRunning(sessionId, false)
-        sendForSession(sessionId, createSessionRunningMessage(false))
-        const contextState = sessionManager.getContextState(sessionId)
-        sendForSession(sessionId, createContextStateMessage(contextState))
-
-        if (!(error instanceof Error && error.message === 'Aborted')) {
-          logger.error('Chat send pre-turn error', { sessionId, error })
-        }
-      }
-
-      break
-    }
-
-    case 'chat.stop': {
-      send(createErrorMessage('DEPRECATED', 'chat.stop removed. Use REST API: POST /api/sessions/:id/stop', message.id))
-      break
-    }
-
-    // =========================================================================
-    // Message Queue
-    // =========================================================================
-
-    case 'queue.asap': {
-      send(createErrorMessage('DEPRECATED', 'queue.asap removed. Use REST API: POST /api/sessions/:id/queue/asap', message.id))
-      break
-    }
-
-    case 'queue.completion': {
-      send(createErrorMessage('DEPRECATED', 'queue.completion removed. Use REST API: POST /api/sessions/:id/queue/completion', message.id))
-      break
-    }
-
-    case 'queue.cancel': {
-      send(createErrorMessage('DEPRECATED', 'queue.cancel removed. Use REST API: DELETE /api/sessions/:id/queue/:queueId', message.id))
-      break
-    }
-
-    case 'chat.continue': {
-      send(createErrorMessage('DEPRECATED', 'chat.continue removed. Use REST API: POST /api/sessions/:id/continue', message.id))
-      break
-    }
-
-    // =========================================================================
-    // Mode Switching
-    // =========================================================================
-
-    case 'mode.switch': {
-      send(createErrorMessage('DEPRECATED', 'mode.switch removed. Use REST API: PUT /api/sessions/:id/mode', message.id))
-      break
-    }
-    
-    case 'mode.accept': {
-      if (!client.activeSessionId) {
-        send(createErrorMessage('NO_SESSION', 'No active session', message.id))
-        return
-      }
-
-      const session = sessionManager.requireSession(client.activeSessionId)
-      const acceptPayload = message.payload as { workflowId?: string; content?: string; attachments?: unknown[] } | undefined
-
-      // If running, queue for later processing instead of rejecting
-      if (session.isRunning) {
-        const content = acceptPayload?.content ?? ''
-        const attachments = acceptPayload?.attachments as Attachment[] | undefined
-        const workflowId = acceptPayload?.workflowId
-
-        // Build message content with workflow context
-        let fullContent = content
-        if (workflowId) {
-          const workflowInfo = `// Workflow: ${workflowId}`
-          fullContent = content ? `${workflowInfo}\n\n${content}` : workflowInfo
-        }
-
-        // Queue as ASAP message - will be processed at next turn boundary
-        sessionManager.queueMessage(client.activeSessionId, 'asap', fullContent, attachments, 'workflow-accept')
-
-        // Return success with queue state
-        const queueState = sessionManager.getQueueState(client.activeSessionId)
-        send({
-          type: 'queue.state',
-          payload: { success: true, queueState },
-          id: message.id,
-        })
-        return
-      }
-      
-      // Skip criteria check when a specific workflow is requested (workflow's own
-      // startCondition will be evaluated by the executor)
-      const acceptPayloadEarly = message.payload as { workflowId?: string } | undefined
-      if (!acceptPayloadEarly?.workflowId && session.criteria.length === 0) {
-        send(createErrorMessage('NO_CRITERIA', 'Cannot accept: no criteria defined', message.id))
-        return
-      }
-
-      const sessionId = client.activeSessionId
-      const eventStore = getEventStore()
-
-      // Acknowledge immediately
-      send({ type: 'ack', payload: {}, id: message.id })
-      
-      // Mark session as running
-      sessionManager.setRunning(sessionId, true)
-      eventStore.append(sessionId, { type: 'running.changed', data: { isRunning: true } })
-      sendForSession(sessionId, createSessionRunningMessage(true))
-      
-      // Generate summary if needed (summary generation on first entry to builder mode)
-      // Only if there are actual conversation messages to summarize
-      const currentSession = sessionManager.requireSession(sessionId)
-      if (needsSummaryGeneration(currentSession.summary)) {
-        const events = eventStore.getEvents(sessionId)
-        
-        // Filter out system-generated messages (like "Waiting for user input...")
-        const nonSystemEvents = events.filter(event => {
-          if (event.type !== 'message.start') return true
-          return (event.data as any).isSystemGenerated !== true
-        })
-        
-        const contextMessages = buildContextMessagesFromEventHistory(nonSystemEvents)
-        const summaryMessages = contextMessages.filter(m => m.role === 'user' || m.role === 'assistant')
-          .map(m => ({ role: m.role as 'user' | 'assistant', content: m.content }))
-        
-        // Only generate summary if there are conversation messages
-        if (summaryMessages.length > 0) {
-          const config = getRuntimeConfig()
-          const configDir = getGlobalConfigDir(config.mode ?? 'production')
-          const skills = await getEnabledSkillMetadata(configDir)
-          const { content: instructions } = await getAllInstructions(currentSession.workdir, currentSession.projectId)
-          
-          generateSessionSummary({
-            messages: summaryMessages,
-            llmClient: llmForSession(sessionId),
-            workdir: currentSession.workdir,
-            customInstructions: instructions || undefined,
-            skills,
-          })
-            .then(async (result) => {
-              if (result.success && result.summary) {
-                // Update DB with the generated summary
-                sessionManager.setSummary(sessionId, result.summary)
-              }
-            })
-            .catch((error) => {
-              logger.warn('Session summary generation failed', { sessionId, error: error instanceof Error ? error.message : error })
-            })
-        }
-      }
-
-      // Start builder asynchronously (summary already generated on mode.switch if needed)
-      ;(async () => {
-        let controller: AbortController | null = null
-        try {
-          // Switch to builder mode and phase
-          sessionManager.setMode(sessionId, 'builder')
-          sessionManager.setPhase(sessionId, 'build')
-          eventStore.append(sessionId, { type: 'mode.changed', data: { mode: 'builder', auto: false, reason: 'Criteria accepted' } })
-          eventStore.append(sessionId, { type: 'phase.changed', data: { phase: 'build' } })
-
-          // Create AbortController for builder (abort existing if any - defense in depth)
-          controller = new AbortController()
-          const existingController = activeAgents.get(sessionId)
-          if (existingController) {
-            logger.warn('Aborting existing agent before starting new one', { sessionId })
-            existingController.abort()
-          }
-          activeAgents.set(sessionId, controller)
-
-          // Pass user message through to orchestrator (injected after workflow-started marker)
-          const acceptPayload = message.payload as { content?: string; attachments?: unknown[]; workflowId?: string } | undefined
-          const acceptAttachments = acceptPayload?.attachments as Attachment[] | undefined
-          const hasAcceptContent = acceptPayload?.content && typeof acceptPayload.content === 'string' && acceptPayload.content.trim()
-          const hasAcceptAttachments = acceptAttachments && acceptAttachments.length > 0
-          const hasAcceptMessage = hasAcceptContent || hasAcceptAttachments
-
-          // Auto-start orchestrator (full state machine with verification)
-          await runOrchestrator({
-            sessionManager,
-            sessionId,
-            llmClient: llmForSession(sessionId),
-            statsIdentity: statsForSession(sessionId),
-            injectBuilderKickoff: !hasAcceptMessage,
-            ...(acceptPayload?.workflowId ? { workflowId: acceptPayload.workflowId } : {}),
-            ...(hasAcceptMessage ? { userMessage: { content: hasAcceptContent ? acceptPayload!.content! : '', ...(hasAcceptAttachments ? { attachments: acceptAttachments! } : {}) } } : {}),
-            signal: controller.signal,
-            onMessage: (msg) => sendForSession(sessionId, msg),  // For path confirmation dialogs
-          })
-        } catch (error) {
-          if (error instanceof Error && error.message === 'Aborted') {
-            return
-          }
-          logger.error('mode.accept error', { error })
-          // Emit error event
-          eventStore.append(sessionId, {
-            type: 'chat.error',
-            data: {
-              error: error instanceof Error ? error.message : 'Unknown error',
-              recoverable: false,
-            },
-          })
-          const errorMsgId = crypto.randomUUID()
-          eventStore.append(sessionId, createMessageStartEvent(errorMsgId, 'user', `Error: ${error instanceof Error ? error.message : 'Unknown error'}`, {
-            ...(getCurrentWindowMessageOptions(sessionId) ?? {}),
-            isSystemGenerated: true,
-            messageKind: 'correction',
-          }))
-          eventStore.append(sessionId, { type: 'message.done', data: { messageId: errorMsgId } })
-          eventStore.append(sessionId, createChatDoneEvent(errorMsgId, 'error'))
-        } finally {
-          if (!controller || activeAgents.get(sessionId) !== controller) {
-            return
-          }
-          activeAgents.delete(sessionId)
-
-          // Check completion queue before going idle
-          const completionMsgs = sessionManager.drainCompletionMessages(sessionId)
-          const nextCompletion = completionMsgs[0]
-          if (nextCompletion) {
-            for (const remaining of completionMsgs.slice(1)) {
-              sessionManager.queueMessage(sessionId, 'completion', remaining.content, remaining.attachments)
-            }
-            sendForSession(sessionId, createQueueStateMessage(sessionManager.getQueueState(sessionId)))
-            const userMessage = sessionManager.addMessage(sessionId, {
-              role: 'user',
-              content: nextCompletion.content,
-              ...(nextCompletion.attachments ? { attachments: nextCompletion.attachments } : {}),
-            })
-            sendForSession(sessionId, createChatMessageMessage(userMessage))
-            const newController = new AbortController()
-            activeAgents.set(sessionId, newController)
-            startTurnWithCompletionChain(sessionId, newController)
-            return
-          }
-
-          // Drain ASAP queue before going idle - process each as new turn
-          const asapMsgs = sessionManager.drainAsapMessages(sessionId)
-          const nextAsap = asapMsgs[0]
-          if (nextAsap) {
-            // Re-queue remaining ASAP messages
-            for (const remaining of asapMsgs.slice(1)) {
-              sessionManager.queueMessage(sessionId, 'asap', remaining.content, remaining.attachments, remaining.messageKind as 'command' | undefined)
-            }
-            // Broadcast updated queue state
-            sendForSession(sessionId, createQueueStateMessage(sessionManager.getQueueState(sessionId)))
-
-            // Add user message and start new turn
-            const userMessage = sessionManager.addMessage(sessionId, {
-              role: 'user',
-              content: nextAsap.content,
-              ...(nextAsap.attachments ? { attachments: nextAsap.attachments } : {}),
-            })
-            sendForSession(sessionId, createChatMessageMessage(userMessage))
-
-            const newerController = new AbortController()
-            activeAgents.set(sessionId, newerController)
-            startTurnWithCompletionChain(sessionId, newerController)
-            return
-          }
-
-          sessionManager.clearMessageQueue(sessionId)
-          sessionManager.setRunning(sessionId, false)
-          eventStore.append(sessionId, { type: 'running.changed', data: { isRunning: false } })
-          const contextState = sessionManager.getContextState(sessionId)
-          sendForSession(sessionId, createContextStateMessage(contextState))
-        }
-      })()
-      
-      break
-    }
-    
-    // =========================================================================
-    // Criteria Editing
-    // =========================================================================
-    
-    case 'criteria.edit': {
-      send(createErrorMessage('DEPRECATED', 'criteria.edit removed. Use REST API: PUT /api/sessions/:id/criteria', message.id))
       break
     }
 
@@ -1182,58 +789,7 @@ async function handleClientMessage(
         logger.error('Runner error', { error, sessionId })
         // Error events are handled inside runOrchestrator and appended to EventStore
       }).finally(() => {
-        if (activeAgents.get(sessionId) !== controller) {
-          return
-        }
-        activeAgents.delete(sessionId)
-
-        // Drain ASAP queue FIRST - process each as new turn before checking completion queue
-        const asapMsgs = sessionManager.drainAsapMessages(sessionId)
-        const nextAsap = asapMsgs[0]
-        if (nextAsap) {
-          // Re-queue remaining ASAP messages
-          for (const remaining of asapMsgs.slice(1)) {
-            sessionManager.queueMessage(sessionId, 'asap', remaining.content, remaining.attachments, remaining.messageKind as 'command' | undefined)
-          }
-          // Broadcast updated queue state
-          sendForSession(sessionId, createQueueStateMessage(sessionManager.getQueueState(sessionId)))
-
-          // Add user message and start new turn
-          const userMessage = sessionManager.addMessage(sessionId, {
-            role: 'user',
-            content: nextAsap.content,
-            ...(nextAsap.attachments ? { attachments: nextAsap.attachments } : {}),
-          })
-          sendForSession(sessionId, createChatMessageMessage(userMessage))
-
-          const newerController = new AbortController()
-          activeAgents.set(sessionId, newerController)
-          startTurnWithCompletionChain(sessionId, newerController)
-          return
-        }
-
-        // Check completion queue before going idle
-        const completionMsgs = sessionManager.drainCompletionMessages(sessionId)
-        const nextCompletion = completionMsgs[0]
-        if (nextCompletion) {
-          for (const remaining of completionMsgs.slice(1)) {
-            sessionManager.queueMessage(sessionId, 'completion', remaining.content, remaining.attachments)
-          }
-          sendForSession(sessionId, createQueueStateMessage(sessionManager.getQueueState(sessionId)))
-          const userMessage = sessionManager.addMessage(sessionId, {
-            role: 'user',
-            content: nextCompletion.content,
-            ...(nextCompletion.attachments ? { attachments: nextCompletion.attachments } : {}),
-          })
-          sendForSession(sessionId, createChatMessageMessage(userMessage))
-          const newController = new AbortController()
-          activeAgents.set(sessionId, newController)
-          startTurnWithCompletionChain(sessionId, newController)
-          return
-        }
-
-        sessionManager.clearMessageQueue(sessionId)
-        sessionManager.setRunning(sessionId, false)
+        cleanupAfterTurn(sessionId, controller, sendForSession, true)
       })
       
       break

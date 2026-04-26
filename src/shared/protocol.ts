@@ -21,15 +21,6 @@ import type {
 export type ClientMessageType =
   // Session management
   | 'session.load'         // Load session and subscribe to events (WS subscription mechanism)
-  // Unified chat (replaces plan.message, agent.start, etc.)
-  | 'chat.send'           // Send a message (works in any mode)
-  | 'chat.stop'           // Stop current generation
-  | 'chat.continue'       // Continue generation (after user interruption)
-  // Mode switching
-  | 'mode.switch'         // Switch to a different mode
-  | 'mode.accept'         // Accept criteria and switch to builder (generates summary)
-  // Criteria editing (from UI)
-  | 'criteria.edit'
   // Context management
   | 'context.compact'     // Manually trigger context compaction
   // Runner (auto-loop)
@@ -38,10 +29,6 @@ export type ClientMessageType =
   | 'path.confirm'        // User response to path confirmation request
   // Ask user
   | 'ask.answer'          // User response to ask_user question
-  // Message queue (while agent is running)
-  | 'queue.asap'          // Queue message for ASAP injection (between tool calls)
-  | 'queue.completion'    // Queue message for delivery on turn completion
-  | 'queue.cancel'        // Cancel a queued message
 
 export interface ClientMessage<T = unknown> {
   id: string
@@ -55,38 +42,6 @@ export interface ClientMessage<T = unknown> {
 export interface SessionLoadPayload {
   sessionId: string
   lastEventSeq?: number  // Resume from this sequence number (for reconnection)
-}
-
-// Chat payloads (unified)
-export interface ChatSendPayload {
-  content: string
-  attachments?: Attachment[]
-  messageKind?: 'command'
-  isSystemGenerated?: boolean
-}
-
-export interface ModeSwitchPayload {
-  mode: SessionMode
-}
-
-// Criteria payloads
-export interface CriteriaEditPayload {
-  criteria: Criterion[]
-}
-
-// Queue payloads
-export interface QueueAsapPayload {
-  content: string
-  attachments?: Attachment[]
-}
-
-export interface QueueCompletionPayload {
-  content: string
-  attachments?: Attachment[]
-}
-
-export interface QueueCancelPayload {
-  queueId: string
 }
 
 // Ask user payload

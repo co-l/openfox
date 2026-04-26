@@ -877,7 +877,18 @@ export const useSessionStore = create<SessionState>((set, get) => {
       if (workflowId) payload.workflowId = workflowId
       if (content?.trim()) payload.content = content
       if (attachments && attachments.length > 0) payload.attachments = attachments
-      wsClient.send('mode.accept', payload)
+
+      // Switch to builder mode first, then launch runner
+      const sessionId = get().currentSession?.id
+      if (sessionId) {
+        authFetch(`/api/sessions/${sessionId}/mode`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ mode: 'builder' }),
+        }).then(() => {
+          wsClient.send('runner.launch', payload)
+        })
+      }
     },
 
     editCriteria: async (criteria) => {
