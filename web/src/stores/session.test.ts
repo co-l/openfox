@@ -305,6 +305,157 @@ describe('useSessionStore session isolation', () => {
     expect(useSessionStore.getState().error).toBeNull()
   })
 
+  it('updates background session isRunning to false and it stays false', async () => {
+    const useSessionStore = await loadSessionStore()
+
+    useSessionStore.setState((state) => ({
+      ...state,
+      sessions: [
+        {
+          id: 'session-1',
+          projectId: 'project-1',
+          workdir: '/tmp/project-1',
+          mode: 'planner',
+          phase: 'build',
+          isRunning: true,
+          createdAt: 'a',
+          updatedAt: 'b',
+          criteriaCount: 0,
+          criteriaCompleted: 0,
+          messageCount: 0,
+        },
+      ],
+      currentSession: null,
+    }))
+
+    // Simulate background session stopping
+    useSessionStore.getState().handleServerMessage({
+      type: 'session.running',
+      sessionId: 'session-1',
+      payload: { isRunning: false },
+    })
+
+    // Bug: Previously isRunning would stay true because session.running only updated currentSession
+    expect(useSessionStore.getState().sessions[0]?.isRunning).toBe(false)
+  })
+
+  it('mergeSessionList prioritizes REST API isRunning over local state', async () => {
+    const useSessionStore = await loadSessionStore()
+
+    const staleSession: any = {
+      id: 'session-stale',
+      projectId: 'project-1',
+      workdir: '/tmp/project-1',
+      mode: 'planner',
+      phase: 'build',
+      isRunning: true,  // Stale local state - session is actually done
+      createdAt: 'a',
+      updatedAt: 'b',
+      criteriaCount: 0,
+      criteriaCompleted: 0,
+      messageCount: 5,
+    }
+
+    useSessionStore.setState((state) => ({
+      ...state,
+      sessions: [staleSession],
+      currentSession: {
+        id: 'session-other',
+        projectId: 'project-1',
+        workdir: '/tmp/project-other',
+        mode: 'planner',
+        phase: 'plan',
+        isRunning: false,
+        criteria: [],
+        summary: null,
+      } as any,
+    }))
+
+    const incomingSessions = [
+      {
+        id: 'session-stale',
+        projectId: 'project-1',
+        workdir: '/tmp/project-1',
+        mode: 'planner',
+        phase: 'build',
+        isRunning: false,  // Server says session is done
+        createdAt: 'a',
+        updatedAt: 'c',  // newer timestamp
+        criteriaCount: 0,
+        criteriaCompleted: 0,
+        messageCount: 10,
+      },
+    ]
+
+    useSessionStore.getState().handleServerMessage({
+      type: 'session.list',
+      payload: { sessions: incomingSessions },
+    })
+
+    // Bug: mergeSessionList used wrong priority: currentSessionOverride?.isRunning ?? existingSession?.isRunning ?? incomingSession.isRunning
+    // This meant local isRunning:true would override server's isRunning:false
+    expect(useSessionStore.getState().sessions.find(s => s.id === 'session-stale')?.isRunning).toBe(false)
+  })
+
+  it('session.list preserves real-time isRunning:false when server returns stale isRunning:true', async () => {
+    const useSessionStore = await loadSessionStore()
+
+    useSessionStore.setState((state) => ({
+      ...state,
+      sessions: [
+        {
+          id: 'session-1',
+          projectId: 'project-1',
+          workdir: '/tmp/project-1',
+          mode: 'planner',
+          phase: 'build',
+          isRunning: true,
+          createdAt: 'a',
+          updatedAt: 'b',
+          criteriaCount: 0,
+          criteriaCompleted: 0,
+          messageCount: 5,
+        },
+      ],
+    }))
+
+    // Real-time update: session stops running
+    useSessionStore.getState().handleServerMessage({
+      type: 'session.running',
+      sessionId: 'session-1',
+      payload: { isRunning: false },
+    })
+
+    // Session should now show as not running
+    expect(useSessionStore.getState().sessions.find(s => s.id === 'session-1')?.isRunning).toBe(false)
+
+    // Stale server list arrives after real-time update (race condition):
+    // Server still has isRunning:true because request was sent before agent finished
+    useSessionStore.getState().handleServerMessage({
+      type: 'session.list',
+      payload: {
+        sessions: [
+          {
+            id: 'session-1',
+            projectId: 'project-1',
+            workdir: '/tmp/project-1',
+            mode: 'planner',
+            phase: 'build',
+            isRunning: true,  // Stale server data
+            createdAt: 'a',
+            updatedAt: 'b',
+            criteriaCount: 0,
+            criteriaCompleted: 0,
+            messageCount: 5,
+          },
+        ],
+      },
+    })
+
+    // Real-time update should be preserved — session must stay not-running
+    expect(useSessionStore.getState().sessions.find(s => s.id === 'session-1')?.isRunning).toBe(false)
+  })
+
   it('marks background sessions unread and clears unread state when opened', async () => {
     const useSessionStore = await loadSessionStore()
 
@@ -516,7 +667,7 @@ describe('useSessionStore session isolation', () => {
     ])
   })
 
-  it('does not let a stale session.list clear a background running indicator', async () => {
+  it('session.list updates isRunning from server (source of truth)', async () => {
     const useSessionStore = await loadSessionStore()
 
     useSessionStore.setState((state) => ({
@@ -528,12 +679,12 @@ describe('useSessionStore session isolation', () => {
           workdir: '/tmp/project-1',
           mode: 'planner',
           phase: 'build',
-          isRunning: true,
+          isRunning: true,  // Local state says running
           createdAt: 'a',
           updatedAt: 'b',
           criteriaCount: 0,
           criteriaCompleted: 0,
-          messageCount: 0,
+          messageCount: 5,
         },
       ],
     }))
@@ -548,30 +699,23 @@ describe('useSessionStore session isolation', () => {
             workdir: '/tmp/project-1',
             mode: 'planner',
             phase: 'plan',
-            isRunning: false,
+            isRunning: false,  // Server says not running
             createdAt: 'a',
             updatedAt: 'c',
             criteriaCount: 0,
             criteriaCompleted: 0,
+            messageCount: 10,
           },
         ],
       },
     })
 
-    expect(useSessionStore.getState().sessions).toEqual([
-      {
-        id: 'session-1',
-        projectId: 'project-1',
-        workdir: '/tmp/project-1',
-        mode: 'planner',
-        phase: 'build',
-        isRunning: true,
-        createdAt: 'a',
-        updatedAt: 'c',
-        criteriaCount: 0,
-        criteriaCompleted: 0,
-      },
-    ])
+    const result = useSessionStore.getState().sessions.find(s => s.id === 'session-1')
+    // Server is source of truth for isRunning - not from local stale state
+    expect(result?.isRunning).toBe(false)
+    // Other fields merge correctly
+    expect(result?.phase).toBe('build')  // phase still uses existing override
+    expect(result?.messageCount).toBe(10)
   })
 
   it('plays completion notifications for background sessions too', async () => {
@@ -1051,6 +1195,17 @@ describe('useSessionStore session isolation', () => {
     expect(useSessionStore.getState().pendingQuestion).toBeNull()
   })
 
+  it('prevents concurrent createSession calls when pendingSessionCreate is already true', async () => {
+    const useSessionStore = await loadSessionStore()
+
+    useSessionStore.setState({ pendingSessionCreate: true })
+
+    const result = await useSessionStore.getState().createSession('project-1')
+
+    expect(result).toBeNull()
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
+
   it('clears pendingQuestion when answerQuestion is called with empty answer (skip)', async () => {
     const useSessionStore = await loadSessionStore()
 
@@ -1143,5 +1298,23 @@ describe('reconnect refreshes current session content', () => {
     ;(cb as (s: string) => void)('connected')
 
     expect(loadSessionSpy).not.toHaveBeenCalled()
+  })
+
+  it('calls listProjects when connection status becomes connected', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    const useSessionStore = await loadSessionStore()
+
+    const { useProjectStore } = await import('./project')
+    const listProjectsSpy = vi.spyOn(useProjectStore.getState(), 'listProjects')
+
+    await useSessionStore.getState().connect()
+
+    vi.runAllTimers()
+    vi.useRealTimers()
+
+    const cb = (wsStatusMock.mock.calls[0] as Array<(s: string) => void>)[0]!
+    ;(cb as (s: string) => void)('connected')
+
+    expect(listProjectsSpy).toHaveBeenCalled()
   })
 })

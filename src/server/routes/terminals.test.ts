@@ -38,16 +38,37 @@ describe('Terminal Routes', () => {
       expect(body).toEqual([])
     })
 
-    it('returns all sessions', async () => {
-      const s1 = terminalManager.create()
-      const s2 = terminalManager.create('/tmp')
+    it('returns all sessions for a project', async () => {
+      const s1 = terminalManager.create(undefined, 'project-a')
+      const s2 = terminalManager.create('/tmp', 'project-a')
       
-      const res = await fetch(`${baseUrl}/api/terminals`)
+      const res = await fetch(`${baseUrl}/api/terminals?projectId=project-a`)
       expect(res.status).toBe(200)
-      const body = await json<Array<{id: string; workdir: string}>>(res)
+      const body = await json<Array<{id: string; workdir: string; projectId: string}>>(res)
       expect(body).toHaveLength(2)
       expect(body.map(s => s.id)).toContain(s1.id)
       expect(body.map(s => s.id)).toContain(s2.id)
+    })
+
+    it('returns empty array when no projectId provided', async () => {
+      terminalManager.create(undefined, 'project-a')
+      
+      const res = await fetch(`${baseUrl}/api/terminals`)
+      expect(res.status).toBe(200)
+      const body = await json<[]>(res)
+      expect(body).toEqual([])
+    })
+
+    it('returns only sessions for the specified project', async () => {
+      const s1 = terminalManager.create(undefined, 'project-a')
+      terminalManager.create(undefined, 'project-b')
+      
+      const res = await fetch(`${baseUrl}/api/terminals?projectId=project-a`)
+      expect(res.status).toBe(200)
+      const body = await json<Array<{id: string; workdir: string; projectId: string}>>(res)
+      expect(body).toHaveLength(1)
+      expect(body[0]?.id).toBe(s1.id)
+      expect(body[0]?.projectId).toBe('project-a')
     })
   })
 
@@ -56,23 +77,25 @@ describe('Terminal Routes', () => {
       const res = await fetch(`${baseUrl}/api/terminals`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({}),
+        body: JSON.stringify({ projectId: 'project-a' }),
       })
       expect(res.status).toBe(201)
-      const body = await json<{id: string; workdir: string}>(res)
+      const body = await json<{id: string; workdir: string; projectId: string}>(res)
       expect(body.id).toMatch(/^term_/)
       expect(body.workdir).toBeDefined()
+      expect(body.projectId).toBe('project-a')
     })
 
     it('creates a terminal with workdir', async () => {
       const res = await fetch(`${baseUrl}/api/terminals`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ workdir: '/tmp' }),
+        body: JSON.stringify({ workdir: '/tmp', projectId: 'project-b' }),
       })
       expect(res.status).toBe(201)
-      const body = await json<{id: string; workdir: string}>(res)
+      const body = await json<{id: string; workdir: string; projectId: string}>(res)
       expect(body.workdir).toBe('/tmp')
+      expect(body.projectId).toBe('project-b')
     })
   })
 

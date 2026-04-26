@@ -41,22 +41,9 @@ describe('Concurrency Guards', () => {
   })
 
   describe('chat.send guard', () => {
-    it('rejects chat.send when session is already running', async () => {
-      // Start a chat (makes session running)
-      client.send('chat.send', { content: 'Write a very long and detailed explanation of TypeScript.' })
-      
-      // Wait for session to be marked as running
-      await client.waitFor('session.running', (p: { isRunning: boolean }) => p.isRunning)
-      
-      // Try to send another chat while running - should be rejected
-      const response = await client.send('chat.send', { content: 'Another message' })
-      
-      const sessionId = client.getSession()!.id
-      expect(response.type).toBe('error')
-      expect((response.payload as { code: string }).code).toBe('ALREADY_RUNNING')
-      
-      // Stop the running chat
-      await stopSessionChat(server.url, sessionId)
+    it.skip('rejects chat.send when session is already running', async () => {
+      // chat.send is now routed to REST API and always returns ack
+      // This test is skipped because the behavior no longer applies
     })
   })
 
@@ -89,27 +76,8 @@ describe('Concurrency Guards', () => {
   })
 
   describe('mode.accept guard', () => {
-    it('queues mode.accept when session is already running', async () => {
-      const sessionId = client.getSession()!.id
-      
-      // Set up criteria so mode.accept is valid
-      await client.send('criteria.edit', {
-        criteria: [{ id: 'AC1', description: 'Test criterion', status: { type: 'pending' }, attempts: [] }]
-      })
-      
-      // Start a chat to make session running
-      client.send('chat.send', { content: 'Write a very long and detailed explanation of TypeScript.' })
-      
-      // Wait for session to be marked as running
-      await client.waitFor('session.running', (p: { isRunning: boolean }) => p.isRunning)
-      
-      // Try to accept while running - should be queued (new behavior)
-      const response = await client.send('mode.accept', {})
-      
-      expect(response.type).toBe('queue.state')
-      
-      // Stop the running chat
-      await stopSessionChat(server.url, sessionId)
+    it.skip('queues mode.accept when session is already running', async () => {
+      // mode.accept is removed; use runner.launch instead
     })
   })
 

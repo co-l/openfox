@@ -13,7 +13,7 @@
         }
       ],
       "isActive": true,
-      "createdAt": "2026-04-18T11:54:26.240Z"
+      "createdAt": "2026-04-26T10:45:18.714Z"
     },
     {
       "id": "test-fuzzy-provider",
@@ -28,7 +28,7 @@
         }
       ],
       "isActive": true,
-      "createdAt": "2026-04-18T11:54:16.966Z"
+      "createdAt": "2026-04-26T10:45:09.468Z"
     },
     {
       "id": "test-restart-provider",
@@ -43,7 +43,7 @@
         }
       ],
       "isActive": false,
-      "createdAt": "2026-04-18T11:54:15.939Z"
+      "createdAt": "2026-04-26T10:45:08.436Z"
     },
     {
       "id": "96fa781a-4a1e-45b3-91d2-720594663fdb",
@@ -59,6 +59,216 @@
       ],
       "isActive": false,
       "createdAt": "2026-04-18T11:54:19.034Z"
+    },
+    {
+      "id": "0871e137-2eda-4495-804e-9c7e49546740",
+      "name": "Test Config Reload Provider",
+      "url": "http://localhost:8000",
+      "backend": "vllm",
+      "models": [
+        {
+          "id": "test-model",
+          "contextWindow": 200000,
+          "source": "user"
+        }
+      ],
+      "isActive": false,
+      "createdAt": "2026-04-26T10:23:29.376Z"
+    },
+    {
+      "id": "cee7b324-0607-4481-9e85-a308d57a57c1",
+      "name": "Test Config Reload Provider",
+      "url": "http://localhost:8000",
+      "backend": "vllm",
+      "models": [
+        {
+          "id": "test-model",
+          "contextWindow": 200000,
+          "source": "user"
+        }
+      ],
+      "isActive": false,
+      "createdAt": "2026-04-26T10:30:17.231Z"
+    },
+    {
+      "id": "ddb042c4-3512-43ee-a354-df2c6f5c3c3d",
+      "name": "Test Config Reload Provider",
+      "url": "http://localhost:8000",
+      "backend": "vllm",
+      "models": [
+        {
+          "id": "test-model",
+          "contextWindow": 200000,
+          "source": "user"
+        }
+      ],
+      "isActive": false,
+      "createdAt": "2026-04-26T10:34:34.128Z"
+    },
+    {
+      "id": "153570d6-6ea5-429a-afbc-52a34689870f",
+      "name": "Test Config Reload Provider",
+      "url": "http://localhost:8000",
+      "backend": "vllm",
+      "models": [
+        {
+          "id": "test-model",
+          "contextWindow": 200000,
+          "source": "user"
+        }
+      ],
+      "isActive": false,
+      "createdAt": "2026-04-26T10:34:52.930Z"
+    },
+    {
+      "id": "4d559105-69ff-48b6-acc9-b500166cff90",
+      "name": "Test Config Reload Provider",
+      "url": "http://localhost:8000",
+      "backend": "vllm",
+      "models": [
+        {
+          "id": "test-model",
+          "contextWindow": 200000,
+          "source": "user"
+        }
+      ],
+      "isActive": false,
+      "createdAt": "2026-04-26T10:36:53.515Z"
+    },
+    {
+      "id": "7c450b34-569d-4817-ac87-9311f18c2534",
+      "name": "Test Config Reload Provider",
+      "url": "http://localhost:8000",
+      "backend": "vllm",
+      "models": [
+        {
+          "id": "test-model",
+          "contextWindow": 200000,
+          "source": "user"
+        }
+      ],
+      "isActive": false,
+      "createdAt": "2026-04-26T10:39:19.982Z"
+    },
+    {
+      "id": "39c5ab5d-f91e-45ca-8d9d-3c56054b987a",
+      "name": "Test Config Reload Provider",
+      "url": "http://localhost:8000",
+      "backend": "vllm",
+      "models": [
+        {
+          "id": "test-model",
+          "contextWindow": 200000,
+          "source": "user"
+        }
+      ],
+      "isActive": false,
+      "createdAt": "2026-04-26T10:39:46.493Z"
+    },
+    {
+      "id": "c6e20f3f-7842-4adb-bced-909e048012b8",
+      "name": "Test Config Reload Provider",
+      "url": "http://localhost:8000",
+      "backend": "vllm",
+      "models": [
+        {
+          "id": "test-model",
+          "contextWindow": 200000,
+          "source": "user"
+        }
+      ],
+      "isActive": false,
+      "createdAt": "2026-04-26T10:42:58.666Z"
+    },
+    {
+      "id": "e090938e-12b0-42c3-94c6-fb5374de3a4c",
+      "name": "Test Config Reload Provider",
+      "url": "http://localhost:8000",
+      "backend": "vllm",
+      "models": [
+        {
+          "id": "test-model",
+          "contextWindow": 200000,
+          "source": "user"
+        }
+      ],
+      "isActive": false,
+      "createdAt": "2026-04-26T10:43:25.539Z"
+    },
+    {
+      "id": "7c565c1b-860e-406c-a210-2274b1bbd576",
+      "name": "Test Config Reload Provider",
+      "url": "http://localhost:8000",
+      "backend": "vllm",
+      "models": [
+        {
+          "id": "test-model",
+          "contextWindow": 200000,
+          "source": "user"
+        }
+      ],
+      "isActive": false,
+      "createdAt": "2026-04-26T10:43:46.043Z"
+    },
+    {
+      "id": "b4a193ed-ed6a-4053-bad9-32cf07925150",
+      "name": "Test Config Reload Provider",
+      "url": "http://localhost:8000",
+      "backend": "vllm",
+      "models": [
+        {
+          "id": "test-model",
+          "contextWindow": 200000,
+          "source": "user"
+        }
+      ],
+      "isActive": false,
+      "createdAt": "2026-04-26T10:44:07.828Z"
+    },
+    {
+      "id": "337b3ade-b2df-4bbc-a44c-f5f4fe2fb847",
+      "name": "Test Config Reload Provider",
+      "url": "http://localhost:8000",
+      "backend": "vllm",
+      "models": [
+        {
+          "id": "test-model",
+          "contextWindow": 200000,
+          "source": "user"
+        }
+      ],
+      "isActive": false,
+      "createdAt": "2026-04-26T10:44:28.995Z"
+    },
+    {
+      "id": "7864cbd7-2b24-4b7d-a499-2a434a46b0ff",
+      "name": "Test Config Reload Provider",
+      "url": "http://localhost:8000",
+      "backend": "vllm",
+      "models": [
+        {
+          "id": "test-model",
+          "contextWindow": 200000,
+          "source": "user"
+        }
+      ],
+      "isActive": false,
+      "createdAt": "2026-04-26T10:44:53.147Z"
+    },
+    {
+      "id": "f66f72f4-a874-4b84-bff9-54e22844c71b",
+      "name": "Test Config Reload Provider",
+      "url": "http://localhost:8000",
+      "backend": "vllm",
+      "models": [
+        {
+          "id": "test-model",
+          "contextWindow": 200000,
+          "source": "user"
+        }
+      ],
+      "isActive": false,
+      "createdAt": "2026-04-26T10:45:11.566Z"
     }
   ],
   "defaultModelSelection": "test-context-update-provider/test-context-update-model",

@@ -26,6 +26,7 @@ import { useCommandsStore } from '../../stores/commands'
 import { useDisplaySettings } from '../../stores/settings'
 import { processImageFile } from '../../lib/image-processing.js'
 import { buildPromptContextByUserMessageId } from './prompt-context-linking.js'
+import { CHAT_TEXTAREA_ID, focusChatTextarea } from '../../lib/focusChatTextarea'
 import { ProviderSelector } from '../settings/ProviderSelector'
 import { MoreMenu } from './MoreMenu'
 import { CommandsModal } from '../settings/CommandsModal'
@@ -544,6 +545,7 @@ export function PlanPanel({ criteriaSidebarOpen: externalCriteriaSidebarOpen, on
                   <button
                     key={w.id}
                     onClick={() => acceptAndBuild(w.id)}
+                    data-testid="workflow-run-button"
                     className="px-4 py-1.5 rounded text-sm font-medium transition-colors"
                     style={{ backgroundColor: bg, color: c, border: `1px solid ${border}` }}
                     onMouseEnter={e => {
@@ -670,6 +672,7 @@ export function PlanPanel({ criteriaSidebarOpen: externalCriteriaSidebarOpen, on
           onDrop={handleDrop}
         >
           <textarea
+            id={CHAT_TEXTAREA_ID}
             ref={textareaRef}
             value={input}
             onChange={(e) => {
@@ -681,6 +684,7 @@ export function PlanPanel({ criteriaSidebarOpen: externalCriteriaSidebarOpen, on
             }}
             onKeyDown={handleKeyDown}
             placeholder="What would you like to build?"
+            data-testid="chat-input-textarea"
             className="flex-1 bg-transparent text-sm placeholder:text-text-muted resize-none overflow-y-auto focus:outline-none"
             style={{ minHeight: '24px', maxHeight: '200px' }}
             spellCheck={false}
@@ -698,6 +702,7 @@ export function PlanPanel({ criteriaSidebarOpen: externalCriteriaSidebarOpen, on
                     clearInput()
                   }}
                   disabled={(!input.trim() && attachments.length === 0)}
+                  data-testid="chat-send-button"
                   className="px-4 py-1.5 rounded-l bg-accent-primary/20 text-sm text-accent-primary font-medium hover:bg-accent-primary/30 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
                 >
                   Send
@@ -747,7 +752,7 @@ export function PlanPanel({ criteriaSidebarOpen: externalCriteriaSidebarOpen, on
         isAutoScrollActive={isAutoScrollActive}
         onToggleAutoScroll={setAutoScroll}
         textareaContent={input}
-        onCloseComplete={() => textareaRef.current?.focus()}
+        onCloseComplete={focusChatTextarea}
         onCloseCompleteAction={() => window.dispatchEvent(new CustomEvent('open-session-dropdown'))}
         onSelectCommand={async (commandId, textareaContent) => {
           const full = await useCommandsStore.getState().fetchCommand(commandId)

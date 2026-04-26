@@ -90,38 +90,12 @@ describe('Mode Switching', () => {
   })
 
   describe('Accept Criteria (mode.accept)', () => {
-    it('fails without criteria defined', async () => {
-      const response = await client.send('mode.accept', {})
-      
-      expect(response.type).toBe('error')
-      expect((response.payload as { code: string }).code).toBe('NO_CRITERIA')
+    it.skip('fails without criteria defined', async () => {
+      // mode.accept is removed; use REST API or runner.launch instead
     })
 
-    it('generates summary and starts builder with criteria', async () => {
-      // First add some criteria via planner
-      await client.send('chat.send', { 
-        content: 'Add a simple criterion: "test criterion". Use add_criterion tool.' 
-      })
-      await client.waitForChatDone()
-      
-      // Verify criterion was added
-      const session = client.getSession()!
-      expect(session.criteria.length).toBeGreaterThan(0)
-      
-      // Accept and start builder
-      const response = await client.send('mode.accept', {})
-      expect(response.type).toBe('ack')
-      
-      // Should receive mode.changed event
-      const modeEvent = await client.waitFor('mode.changed')
-      const modePayload = modeEvent.payload as { mode: string; auto: boolean }
-      expect(modePayload.mode).toBe('builder')
-      expect(modePayload.auto).toBe(false)
-      
-      // Should receive phase.changed event
-      const phaseEvent = await client.waitFor('phase.changed')
-      const phasePayload = phaseEvent.payload as { phase: string }
-      expect(phasePayload.phase).toBe('build')
+    it.skip('generates summary and starts builder with criteria', async () => {
+      // mode.accept is removed; use REST API or runner.launch instead
     })
 
     it('generates summary when switching to builder mode', async () => {
@@ -272,18 +246,8 @@ describe('Mode Switching', () => {
       }
     })
 
-    it('does NOT generate summary for empty sessions when using mode.accept', async () => {
-      // Fresh session with no messages and no criteria
-      // This should fail because there are no criteria, but let's test the summary logic
-      const response = await client.send('mode.accept', {})
-      
-      // Should fail with NO_CRITERIA error
-      expect(response.type).toBe('error')
-      expect((response.payload as { code: string }).code).toBe('NO_CRITERIA')
-      
-      // Session should still have no summary
-      const session = client.getSession()!
-      expect(session.summary).toBeNull()
+    it.skip('does NOT generate summary for empty sessions when using mode.accept', async () => {
+      // mode.accept is removed
     })
   })
 })

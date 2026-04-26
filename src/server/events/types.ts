@@ -336,7 +336,7 @@ export type TurnEvent =
         tool: string
         paths: string[]
         workdir: string
-        reason: 'outside_workdir' | 'sensitive_file' | 'both' | 'dangerous_command'
+        reason: 'outside_workdir' | 'sensitive_file' | 'both' | 'dangerous_command' | 'git_no_verify'
       }
     }
   | {
@@ -450,7 +450,7 @@ export interface PendingPathConfirmation {
   tool: string
   paths: string[]
   workdir: string
-  reason: 'outside_workdir' | 'sensitive_file' | 'both' | 'dangerous_command'
+  reason: 'outside_workdir' | 'sensitive_file' | 'both' | 'dangerous_command' | 'git_no_verify'
 }
 
 export interface ContextWindow {

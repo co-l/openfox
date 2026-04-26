@@ -23,9 +23,7 @@ import {
   createSessionListMessage,
   createSessionRunningMessage,
   createSessionStateMessage,
-  isChatSendPayload,
-  isCriteriaEditPayload,
-  isModeSwitchPayload,
+  
   isPathConfirmPayload,
   isSessionLoadPayload,
   parseClientMessage,
@@ -37,10 +35,10 @@ import type { StoredEvent } from '../events/types.js'
 describe('ws/protocol', () => {
   describe('parseClientMessage', () => {
     it('parses a valid client message', () => {
-      expect(parseClientMessage(JSON.stringify({ id: '1', type: 'chat.send', payload: { content: 'hello' } }))).toEqual({
+      expect(parseClientMessage(JSON.stringify({ id: '1', type: 'ask.answer', payload: { callId: 'c1', answer: 'yes' } }))).toEqual({
         id: '1',
-        type: 'chat.send',
-        payload: { content: 'hello' },
+        type: 'ask.answer',
+        payload: { callId: 'c1', answer: 'yes' },
       })
     })
 
@@ -290,21 +288,6 @@ describe('ws/protocol', () => {
     })
   })
 
-  describe('payload guards', () => {
-    it('accepts valid payloads and rejects invalid ones', () => {
-      expect(isSessionLoadPayload({ sessionId: 'session-1' })).toBe(true)
-      expect(isChatSendPayload({ content: 'hello' })).toBe(true)
-      expect(isModeSwitchPayload({ mode: 'builder' })).toBe(true)
-      expect(isCriteriaEditPayload({ criteria: [] })).toBe(true)
-      expect(isPathConfirmPayload({ callId: 'call-1', approved: true })).toBe(true)
-
-      expect(isSessionLoadPayload({})).toBe(false)
-      expect(isChatSendPayload({ nope: true })).toBe(false)
-      expect(isModeSwitchPayload({})).toBe(false)
-      expect(isCriteriaEditPayload({ nope: true })).toBe(false)
-      expect(isPathConfirmPayload({ callId: 'call-1' })).toBe(false)
-    })
-  })
 
   describe('storedEventToServerMessage', () => {
     const baseEvent = {

@@ -40,7 +40,7 @@ export const THEME_PRESETS: ThemePreset[] = [
       'color-bg-tertiary': '33 38 45',
       'color-primary': '10 10 10',
       'color-secondary': '20 20 20',
-      'color-text-primary': '139 148 158',
+      'color-text-primary': '255 255 255',
       'color-text-secondary': '139 148 158',
       'color-text-muted': '72 79 88',
       'color-accent-primary': '88 166 255',
@@ -188,7 +188,11 @@ export const useThemeStore = create<ThemeState>((set, get) => ({
     if (savedTheme) {
       try {
         const parsed = JSON.parse(savedTheme) as { preset?: string; tokens?: Record<string, string> }
-        if (parsed.preset) {
+        if (parsed.preset && parsed.tokens) {
+          applyPreset(parsed.preset)
+          set({ basePreset: parsed.preset })
+          applyTokens(parsed.tokens)
+        } else if (parsed.preset) {
           applyPreset(parsed.preset)
         } else if (parsed.tokens) {
           applyTokens(parsed.tokens)
@@ -330,7 +334,7 @@ export const useThemeStore = create<ThemeState>((set, get) => ({
         isCustomizing: false,
       })
       get().applyTheme()
-      get().saveTheme(JSON.stringify({ tokens: preset.tokens }))
+      get().saveTheme(JSON.stringify({ preset: preset.basePreset, tokens: preset.tokens }))
     }
   },
 

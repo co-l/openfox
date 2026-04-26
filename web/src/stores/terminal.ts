@@ -19,6 +19,7 @@ function sendTerminalMessage(type: string, payload: unknown): void {
 export interface TerminalSession {
   id: string
   workdir: string
+  projectId: string
 }
 
 export interface TerminalState {
@@ -28,8 +29,8 @@ export interface TerminalState {
   setOpen: (open: boolean) => void
   toggleOpen: () => void
   setWorkdir: (workdir: string | null) => void
-  fetchSessions: () => Promise<void>
-  createSession: (workdir?: string) => Promise<void>
+  fetchSessions: (projectId?: string) => Promise<void>
+  createSession: (workdir?: string, projectId?: string) => Promise<void>
   writeSession: (sessionId: string, data: string) => void
   resizeSession: (sessionId: string, cols: number, rows: number) => void
   killSession: (sessionId: string) => Promise<void>
@@ -48,9 +49,13 @@ export const useTerminalStore = create<TerminalState>((set, get) => {
 
     setWorkdir: (workdir) => set({ workdir }),
 
-    fetchSessions: async () => {
+    fetchSessions: async (projectId?: string) => {
+      if (!projectId) {
+        set({ sessions: [] })
+        return
+      }
       try {
-        const res = await authFetch('/api/terminals')
+        const res = await authFetch(`/api/terminals?projectId=${encodeURIComponent(projectId)}`)
         if (res.ok) {
           const serverSessions = await res.json() as TerminalSession[]
           set({ sessions: serverSessions })
@@ -71,12 +76,12 @@ export const useTerminalStore = create<TerminalState>((set, get) => {
       }
     },
 
-    createSession: async (workdir) => {
+    createSession: async (workdir, projectId) => {
       try {
         const res = await authFetch('/api/terminals', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ workdir: workdir ?? get().workdir ?? undefined }),
+          body: JSON.stringify({ workdir: workdir ?? get().workdir ?? undefined, projectId }),
         })
         if (res.ok) {
           const session = await res.json() as TerminalSession

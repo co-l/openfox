@@ -242,7 +242,7 @@ async function runGenericAgentTurn(
     statsIdentity,
     signal: options.signal,
     onMessage: options.onMessage,
-    assembleRequest: (input) => assembleAgentRequest({ ...input, agentDef, subAgentDefs }),
+    assembleRequest: (input) => assembleAgentRequest({ ...input, agentDef, subAgentDefs, modelName: options.llmClient.getModel() }),
     getToolRegistry: () => getToolRegistryForAgent(agentDef),
   }, turnMetrics)
 }
@@ -296,7 +296,7 @@ export async function runBuilderTurn(
       statsIdentity,
       signal: options.signal,
       onMessage: options.onMessage,
-      assembleRequest: (input) => assembleAgentRequest({ ...input, agentDef: builderDef, subAgentDefs }),
+      assembleRequest: (input) => assembleAgentRequest({ ...input, agentDef: builderDef, subAgentDefs, modelName: options.llmClient.getModel() }),
       getToolRegistry: () => {
         const baseRegistry = getToolRegistryForAgent(builderDef)
         return filterToolRegistryForStepDone(baseRegistry, options.injectStepDone === true)

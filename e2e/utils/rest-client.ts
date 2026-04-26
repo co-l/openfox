@@ -78,6 +78,29 @@ export async function createSession(
 }
 
 /**
+ * Send a message to a session via REST API (queues message for processing)
+ */
+export async function sendMessage(
+  baseUrl: string,
+  sessionId: string,
+  content: string,
+  attachments?: { path: string; type: string }[]
+): Promise<{ success: boolean; queueState: unknown[] }> {
+  const response = await fetch(`${baseUrl}/api/sessions/${sessionId}/message`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ content, attachments }),
+  })
+  
+  if (!response.ok) {
+    const error = (await response.json().catch(() => ({}))) as { error?: string }
+    throw new Error(error.error || `Failed to send message: ${response.status}`)
+  }
+  
+  return response.json() as Promise<{ success: boolean; queueState: unknown[] }>
+}
+
+/**
  * Get a project via REST API
  */
 export async function getProject(baseUrl: string, projectId: string): Promise<Project> {

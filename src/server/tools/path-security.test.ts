@@ -20,6 +20,7 @@ import {
   isSensitivePath,
   registerPathConfirmation,
   requestPathAccess,
+  extractGitNoVerify,
 } from './path-security.js'
 
 // Test fixtures directory - use a unique subdir that's NOT in /tmp's allowed root
@@ -1053,6 +1054,129 @@ describe('path-security', () => {
         const paths = extractSensitivePathsFromCommand('cat .env && cat .env')
         expect(paths.filter((p: string) => p === '.env')).toHaveLength(1)
       })
+    })
+  })
+
+  // ===========================================================================
+  // extractGitNoVerify()
+  // ===========================================================================
+
+  describe('extractGitNoVerify', () => {
+    it('detects --no-verify in git commit', () => {
+      expect(extractGitNoVerify('git commit --no-verify -m "fix"')).toBe(true)
+    })
+
+    it('detects --no-verify in git push', () => {
+      expect(extractGitNoVerify('git push --no-verify origin main')).toBe(true)
+    })
+
+    it('detects -n shorthand in git rebase', () => {
+      expect(extractGitNoVerify('git rebase -n HEAD~3')).toBe(true)
+    })
+
+    it('does not detect --no-verify in non-git commands', () => {
+      expect(extractGitNoVerify('curl --no-verify https://example.com')).toBe(false)
+    })
+
+    it('does not detect --no-verify when git is not followed by a subcommand', () => {
+      expect(extractGitNoVerify('git --no-verify something')).toBe(false)
+    })
+  })
+
+  // ===========================================================================
+  // git --no-verify confirmation (even in dangerous mode)
+  // ===========================================================================
+
+  describe('git --no-verify confirmation', () => {
+    it('requests confirmation for git commit --no-verify even in dangerous mode', async () => {
+      const onEvent = vi.fn()
+      const waitForPending = async (callId: string) => {
+        for (let attempt = 0; attempt < 20; attempt++) {
+          if (hasPendingPathConfirmation(callId)) return
+          await new Promise<void>((resolve) => setTimeout(resolve, 5))
+        }
+      }
+
+      const promise = requestPathAccess(
+        [WORKDIR],
+        WORKDIR,
+        'session-git',
+        'call-git',
+        'run_command',
+        onEvent,
+        'dangerous',
+        'git commit --no-verify -m "skip hooks"'
+      )
+
+      await waitForPending('call-git')
+      expect(hasPendingPathConfirmation('call-git')).toBe(true)
+      expect(onEvent).toHaveBeenCalledWith(expect.objectContaining({
+        type: 'chat.path_confirmation',
+        payload: expect.objectContaining({
+          callId: 'call-git',
+          tool: 'run_command',
+          paths: ['git --no-verify detected'],
+          reason: 'git_no_verify',
+        }),
+      }))
+      providePathConfirmation('call-git', true)
+      await expect(promise).resolves.toBeUndefined()
+    })
+
+    it('rejects with clear error message when user denies git --no-verify', async () => {
+      const onEvent = vi.fn()
+      const waitForPending = async (callId: string) => {
+        for (let attempt = 0; attempt < 20; attempt++) {
+          if (hasPendingPathConfirmation(callId)) return
+          await new Promise<void>((resolve) => setTimeout(resolve, 5))
+        }
+      }
+
+      const promise = requestPathAccess(
+        [WORKDIR],
+        WORKDIR,
+        'session-deny',
+        'call-deny',
+        'run_command',
+        onEvent,
+        'dangerous',
+        'git push --no-verify'
+      )
+
+      await waitForPending('call-deny')
+      providePathConfirmation('call-deny', false)
+      await expect(promise).rejects.toThrow('must not use --no-verify')
+      await expect(promise).rejects.toMatchObject({
+        name: 'PathAccessDeniedError',
+        reason: 'git_no_verify',
+        tool: 'run_command',
+      })
+    })
+
+    it('does not trigger confirmation when git command has no --no-verify', async () => {
+      const onEvent = vi.fn()
+      const waitForPending = async (callId: string) => {
+        for (let attempt = 0; attempt < 20; attempt++) {
+          if (hasPendingPathConfirmation(callId)) return
+          await new Promise<void>((resolve) => setTimeout(resolve, 5))
+        }
+      }
+
+      const promise = requestPathAccess(
+        [WORKDIR],
+        WORKDIR,
+        'session-normal',
+        'call-normal',
+        'run_command',
+        onEvent,
+        'dangerous',
+        'git commit -m "normal commit"'
+      )
+
+      await new Promise<void>((resolve) => setTimeout(resolve, 50))
+      expect(hasPendingPathConfirmation('call-normal')).toBe(false)
+      expect(onEvent).not.toHaveBeenCalled()
+      await expect(promise).resolves.toBeUndefined()
     })
   })
 })

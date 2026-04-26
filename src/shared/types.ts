@@ -497,6 +497,7 @@ export interface ModelConfig {
   topP?: number
   topK?: number
   maxTokens?: number
+  supportsVision?: boolean
 }
 
 /** LLM provider configuration */

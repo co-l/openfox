@@ -159,9 +159,8 @@ function mergeSessionList(
       title: incomingSession.title ?? existingSession?.title,
       mode: currentSessionOverride?.mode ?? existingSession?.mode ?? incomingSession.mode,
       phase: currentSessionOverride?.phase ?? existingSession?.phase ?? incomingSession.phase,
-      isRunning: currentSessionOverride?.isRunning ?? existingSession?.isRunning ?? incomingSession.isRunning,
+      isRunning: incomingSession.isRunning && existingSession?.isRunning !== false,
       messageCount: incomingSession.messageCount,
-      // Preserve recentUserPrompts from incoming session (server source of truth)
       recentUserPrompts: incomingSession.recentUserPrompts,
     }
   })
@@ -173,7 +172,7 @@ export interface PendingPathConfirmation {
   tool: string
   paths: string[]
   workdir: string
-  reason: 'outside_workdir' | 'sensitive_file' | 'both' | 'dangerous_command'
+  reason: 'outside_workdir' | 'sensitive_file' | 'both' | 'dangerous_command' | 'git_no_verify'
   alwaysAllow?: boolean  // Set when user clicks "Always Allow"
 }
 
@@ -503,6 +502,7 @@ export const useSessionStore = create<SessionState>((set, get) => {
         set({ connectionStatus: newStatus })
         if (newStatus === 'connected') {
           get().listSessions(undefined)
+          useProjectStore.getState().listProjects()
           const currentSessionId = get().currentSession?.id
           if (currentSessionId) {
             get().loadSession(currentSessionId)
@@ -592,6 +592,10 @@ export const useSessionStore = create<SessionState>((set, get) => {
     },
 
     createSession: async (projectId, title) => {
+      const state = get()
+      if (state.pendingSessionCreate) {
+        return null
+      }
       try {
         // Set pending flag BEFORE the API call to trigger navigation
         set({ pendingSessionCreate: true })
@@ -637,6 +641,7 @@ export const useSessionStore = create<SessionState>((set, get) => {
             queuedMessages: [],
             abortInProgress: false,
             error: null,
+            pendingSessionCreate: false as boolean | string,
           })
         } else {
           set({ unreadSessionIds: removeUnreadSessionId(get().unreadSessionIds, sessionId) })
@@ -680,7 +685,11 @@ export const useSessionStore = create<SessionState>((set, get) => {
         }
         const res = await authFetch(`/api/sessions?${params.toString()}`)
         const data = await res.json()
-        set({ sessions: data.sessions ?? [], sessionsHasMore: projectId ? (data.hasMore ?? false) : true })
+        const incoming = (data.sessions ?? []) as SessionSummary[]
+        set((state) => ({
+          sessions: mergeSessionList(incoming, state.sessions, state.currentSession),
+          sessionsHasMore: projectId ? (data.hasMore ?? false) : true,
+        }))
       } catch {
         // ignore
       }
@@ -698,8 +707,12 @@ export const useSessionStore = create<SessionState>((set, get) => {
         params.set('projectId', projectId)
         const res = await authFetch(`/api/sessions?${params.toString()}`)
         const data = await res.json()
+        const moreSessions = (data.sessions ?? []) as SessionSummary[]
         set((state) => ({
-          sessions: [...state.sessions, ...(data.sessions ?? [])],
+          sessions: [...state.sessions, ...moreSessions.map((s) => {
+            const existing = state.sessions.find((e) => e.id === s.id)
+            return existing?.isRunning === false ? { ...s, isRunning: false } : s
+          })],
           sessionsHasMore: data.hasMore ?? false,
           sessionsPaginationLoading: false,
         }))
@@ -864,7 +877,18 @@ export const useSessionStore = create<SessionState>((set, get) => {
       if (workflowId) payload.workflowId = workflowId
       if (content?.trim()) payload.content = content
       if (attachments && attachments.length > 0) payload.attachments = attachments
-      wsClient.send('mode.accept', payload)
+
+      // Switch to builder mode first, then launch runner
+      const sessionId = get().currentSession?.id
+      if (sessionId) {
+        authFetch(`/api/sessions/${sessionId}/mode`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ mode: 'builder' }),
+        }).then(() => {
+          wsClient.send('runner.launch', payload)
+        })
+      }
     },
 
     editCriteria: async (criteria) => {

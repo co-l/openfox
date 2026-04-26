@@ -38,5 +38,6 @@ logs/
 
 # Test
 coverage/
+test-results/
 
 .playwright-cli/

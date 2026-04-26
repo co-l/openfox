@@ -2,9 +2,6 @@ import type {
   ClientMessage,
   ServerMessage,
   SessionLoadPayload,
-  ChatSendPayload,
-  ModeSwitchPayload,
-  CriteriaEditPayload,
   AskAnswerPayload,
   ProjectStatePayload,
   ProjectListPayload,
@@ -36,9 +33,6 @@ import type {
   CriteriaUpdatedPayload,
   ContextStatePayload,
   ErrorPayload,
-  QueueAsapPayload,
-  QueueCompletionPayload,
-  QueueCancelPayload,
   QueueStatePayload,
   QueuedMessage,
 } from '../../shared/protocol.js'
@@ -121,8 +115,8 @@ export function createSessionListMessage(sessions: SessionSummary[], correlation
   return createServerMessage('session.list', { sessions }, correlationId)
 }
 
-export function createSessionRunningMessage(isRunning: boolean): ServerMessage<SessionRunningPayload> {
-  return createServerMessage('session.running', { isRunning })
+export function createSessionRunningMessage(isRunning: boolean, sessionId?: string): ServerMessage<SessionRunningPayload> {
+  return createServerMessage('session.running', { isRunning }, sessionId)
 }
 
 // Project messages
@@ -276,17 +270,8 @@ export function isSessionLoadPayload(payload: unknown): payload is SessionLoadPa
 }
 
 // Chat payloads
-export function isChatSendPayload(payload: unknown): payload is ChatSendPayload {
-  return typeof payload === 'object' && payload !== null && 'content' in payload
-}
 
-export function isModeSwitchPayload(payload: unknown): payload is ModeSwitchPayload {
-  return typeof payload === 'object' && payload !== null && 'mode' in payload
-}
 
-export function isCriteriaEditPayload(payload: unknown): payload is CriteriaEditPayload {
-  return typeof payload === 'object' && payload !== null && 'criteria' in payload
-}
 
 // Path confirmation payloads
 export function isPathConfirmPayload(payload: unknown): payload is PathConfirmPayload {
@@ -303,18 +288,6 @@ export function createQueueStateMessage(messages: QueuedMessage[]): ServerMessag
   return createServerMessage('queue.state', { messages })
 }
 
-// Queue payload type guards
-export function isQueueAsapPayload(payload: unknown): payload is QueueAsapPayload {
-  return typeof payload === 'object' && payload !== null && 'content' in payload && typeof (payload as QueueAsapPayload).content === 'string'
-}
-
-export function isQueueCompletionPayload(payload: unknown): payload is QueueCompletionPayload {
-  return typeof payload === 'object' && payload !== null && 'content' in payload && typeof (payload as QueueCompletionPayload).content === 'string'
-}
-
-export function isQueueCancelPayload(payload: unknown): payload is QueueCancelPayload {
-  return typeof payload === 'object' && payload !== null && 'queueId' in payload && typeof (payload as QueueCancelPayload).queueId === 'string'
-}
 
 // ============================================================================
 // Event Store → Server Message Conversion

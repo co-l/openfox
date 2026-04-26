@@ -453,6 +453,12 @@ export function extractDangerousPatterns(command: string): string[] {
   return dangerous
 }
 
+const GIT_NO_VERIFY_PATTERN = /\bgit\s+\w+\s+.*(?:--no-verify|-n)/
+
+export function extractGitNoVerify(command: string): boolean {
+  return GIT_NO_VERIFY_PATTERN.test(command)
+}
+
 // ===========================================================================
 // Request Path Access (Promise-based flow)
 // ===========================================================================
@@ -485,7 +491,7 @@ export async function requestPathAccess(
   command?: string
 ): Promise<void> {
   // Helper to emit path.confirmation_pending event
-  const emitPendingEvent = (confirmationPaths: string[], confirmationReason: 'outside_workdir' | 'sensitive_file' | 'both' | 'dangerous_command') => {
+  const emitPendingEvent = (confirmationPaths: string[], confirmationReason: 'outside_workdir' | 'sensitive_file' | 'both' | 'dangerous_command' | 'git_no_verify') => {
     try {
       const eventStore = getEventStore()
       eventStore.append(sessionId, {
@@ -494,6 +500,23 @@ export async function requestPathAccess(
       })
     } catch {
       // Event store might not be initialized in tests
+    }
+  }
+
+  // Check for git --no-verify - ALWAYS requires confirmation, even in dangerous mode
+  // This ensures the user is aware the agent is bypassing hooks/pre-commit checks
+  if (command && extractGitNoVerify(command)) {
+    emitPendingEvent([workdir], 'git_no_verify')
+    const confirmationPromise = registerPathConfirmation(callId, [workdir], sessionId)
+    onEvent(createChatPathConfirmationMessage(callId, tool, ['git --no-verify detected'], workdir, 'git_no_verify'))
+    const approved = await confirmationPromise
+    if (!approved) {
+      throw new PathAccessDeniedError(
+        ['git --no-verify'],
+        tool,
+        'git_no_verify',
+        'User denied git command with --no-verify. The agent must not use --no-verify and must resolve the issue (e.g., fix lint errors, resolve conflicts) that prevents the commit.'
+      )
     }
   }
 
@@ -559,7 +582,7 @@ export async function requestPathAccess(
 // Error Classes
 // ===========================================================================
 
-export type PathDenialReason = 'outside_workdir' | 'sensitive_file' | 'both' | 'dangerous_command'
+export type PathDenialReason = 'outside_workdir' | 'sensitive_file' | 'both' | 'dangerous_command' | 'git_no_verify'
 
 /**
  * Error thrown when user denies path access.
@@ -569,14 +592,17 @@ export class PathAccessDeniedError extends Error {
   constructor(
     public readonly paths: string[],
     public readonly tool: string,
-    public readonly reason: PathDenialReason = 'outside_workdir'
+    public readonly reason: PathDenialReason = 'outside_workdir',
+    public readonly customMessage?: string
   ) {
     const reasonText = reason === 'sensitive_file' 
       ? 'sensitive files (may contain secrets)'
       : reason === 'both'
       ? 'paths outside workdir and sensitive files'
+      : reason === 'git_no_verify'
+      ? 'git commands with --no-verify'
       : 'paths outside workdir'
-    super(`User denied access to ${reasonText}: ${paths.join(', ')}`)
+    super(customMessage ?? `User denied access to ${reasonText}: ${paths.join(', ')}`)
     this.name = 'PathAccessDeniedError'
   }
 }

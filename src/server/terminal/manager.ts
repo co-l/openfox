@@ -7,6 +7,7 @@ export interface TerminalSession {
   id: string
   pty: pty.IPty
   workdir: string
+  projectId: string
 }
 
 export interface TerminalOutput {
@@ -38,7 +39,7 @@ class TerminalManager {
     return os.homedir()
   }
 
-  create(workdir?: string): TerminalSession {
+  create(workdir?: string, projectId?: string): TerminalSession {
     const id = this.generateId()
     const shell = this.getShell()
     const cwd = this.resolveWorkdir(workdir)
@@ -55,6 +56,7 @@ class TerminalManager {
       id,
       pty: ptyProcess,
       workdir: cwd,
+      projectId: projectId ?? '',
     }
 
     ptyProcess.onData((data: string) => {
@@ -126,6 +128,11 @@ class TerminalManager {
 
   getAll(): TerminalSession[] {
     return Array.from(this.sessions.values())
+  }
+
+  getByProject(projectId: string): TerminalSession[] {
+    if (!projectId) return []
+    return Array.from(this.sessions.values()).filter(s => s.projectId === projectId)
   }
 
   getOutputHistory(sessionId: string): string {

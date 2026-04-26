@@ -1,6 +1,6 @@
 {
   "name": "openfox",
-  "version": "1.6.44",
+  "version": "1.6.52",
   "description": "Local-LLM-first agentic coding assistant",
   "type": "module",
   "bin": {
@@ -52,8 +52,9 @@
     "duplicate": "npm run duplicate:server && npm run duplicate:web",
     "check": "npm run typecheck && npm run duplicate",
     "clean": "rm -rf dist",
-    "prepublishOnly": "npm run build",
-    "prepare": "husky"
+    "prepublishOnly": "npm run build && npm run test:publish:e2e",
+    "prepare": "husky",
+    "test:publish:e2e": "tsx scripts/run-publish-e2e.ts"
   },
   "dependencies": {
     "@clack/prompts": "^1.1.0",

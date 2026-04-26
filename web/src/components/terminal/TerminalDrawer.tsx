@@ -3,11 +3,11 @@ import { useTerminalStore } from '../../stores/terminal'
 import { useProjectStore } from '../../stores/project'
 import { TerminalPane } from './TerminalPane'
 import { PlusSquareIcon, XCloseIcon } from '../shared/icons'
+import { focusChatTextarea } from '../../lib/focusChatTextarea'
 
 interface TerminalDrawerProps {
   isOpen: boolean
   onClose: () => void
-  onFocusChat: () => void
 }
 
 function getGridClass(count: number): string {
@@ -16,7 +16,7 @@ function getGridClass(count: number): string {
   return 'grid-cols-1 lg:grid-cols-2 xl:grid-cols-3'
 }
 
-export function TerminalDrawer({ isOpen, onClose, onFocusChat }: TerminalDrawerProps) {
+export function TerminalDrawer({ isOpen, onClose }: TerminalDrawerProps) {
   const createSession = useTerminalStore(state => state.createSession)
   const killSession = useTerminalStore(state => state.killSession)
   const sessions = useTerminalStore(state => state.sessions)
@@ -30,8 +30,7 @@ export function TerminalDrawer({ isOpen, onClose, onFocusChat }: TerminalDrawerP
 
   const handleClose = useCallback(() => {
     onClose()
-    onFocusChat()
-  }, [onClose, onFocusChat])
+  }, [onClose])
 
   useEffect(() => {
     if (currentProject?.workdir) {
@@ -42,16 +41,18 @@ export function TerminalDrawer({ isOpen, onClose, onFocusChat }: TerminalDrawerP
   useEffect(() => {
     if (isOpen) {
       setIsLoading(true)
-      fetchSessions().finally(() => setIsLoading(false))
+      fetchSessions(currentProject?.id).finally(() => setIsLoading(false))
+    } else {
+      focusChatTextarea()
     }
-  }, [isOpen, fetchSessions])
+  }, [isOpen, fetchSessions, currentProject?.id])
 
   useEffect(() => {
     if (isOpen && sessions.length === 0 && !isLoading && !hasAutoCreatedForOpenCycleRef.current) {
       hasAutoCreatedForOpenCycleRef.current = true
-      createSession()
+      createSession(undefined, currentProject?.id)
     }
-  }, [isOpen, sessions.length, isLoading, createSession])
+  }, [isOpen, sessions.length, isLoading, createSession, currentProject?.id])
 
   useEffect(() => {
     if (isOpen) {
@@ -75,12 +76,11 @@ export function TerminalDrawer({ isOpen, onClose, onFocusChat }: TerminalDrawerP
       if (e.key === 'Escape') {
         e.preventDefault()
         onClose()
-        onFocusChat()
       }
     }
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [isOpen, onClose, onFocusChat])
+  }, [isOpen, onClose])
 
   if (!isOpen) return null
 
@@ -107,14 +107,14 @@ export function TerminalDrawer({ isOpen, onClose, onFocusChat }: TerminalDrawerP
         <h3 className="text-sm font-semibold text-text-primary">Terminal</h3>
         <div className="flex items-center gap-2">
           <button
-            onClick={() => createSession()}
+            onClick={() => createSession(undefined, currentProject?.id)}
             className="p-2 rounded hover:bg-bg-tertiary text-text-muted hover:text-text-primary transition-colors"
             title="New terminal"
           >
             <PlusSquareIcon />
           </button>
           <button
-            onClick={() => { onClose(); onFocusChat() }}
+            onClick={onClose}
             className="p-2 rounded hover:bg-bg-tertiary text-text-muted hover:text-text-primary transition-colors"
             title="Close (Esc)"
           >
@@ -133,7 +133,7 @@ export function TerminalDrawer({ isOpen, onClose, onFocusChat }: TerminalDrawerP
             <div className="text-center">
               <p className="mb-4">No terminal sessions</p>
               <button
-                onClick={() => createSession()}
+                onClick={() => createSession(undefined, currentProject?.id)}
                 className="px-4 py-2 bg-accent-primary/25 text-text-primary rounded hover:bg-accent-primary/40 transition-colors"
               >
                 Create Terminal

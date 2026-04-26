@@ -181,7 +181,7 @@ export interface ProviderManager {
   getProviderModels(providerId: string): Promise<ModelConfig[]>
   setDefaultModelSelection(providerId: string, model: string): Promise<{ success: boolean; error?: string }>
   updateModelContext(providerId: string, modelId: string, contextWindow: number): Promise<{ success: boolean; error?: string }>
-  updateModelSettings(providerId: string, modelId: string, settings: { contextWindow?: number; temperature?: number | null; topP?: number | null; topK?: number | null; maxTokens?: number | null }): Promise<{ success: boolean; error?: string; model?: ModelConfig }>
+  updateModelSettings(providerId: string, modelId: string, settings: { contextWindow?: number; temperature?: number | null; topP?: number | null; topK?: number | null; maxTokens?: number | null; supportsVision?: boolean }): Promise<{ success: boolean; error?: string; model?: ModelConfig }>
   refreshProviderModels(providerId: string): Promise<{ success: boolean; error?: string }>
   getModelSettings(modelId: string): { temperature?: number; topP?: number; topK?: number; maxTokens?: number } | undefined
 }
@@ -474,7 +474,7 @@ export function createProviderManager(config: Config): ProviderManager {
       return { success: true }
     },
 
-    async updateModelSettings(providerId: string, modelId: string, settings: { contextWindow?: number; temperature?: number | null; topP?: number | null; topK?: number | null; maxTokens?: number | null }) {
+    async updateModelSettings(providerId: string, modelId: string, settings: { contextWindow?: number; temperature?: number | null; topP?: number | null; topK?: number | null; maxTokens?: number | null; supportsVision?: boolean }) {
       const provider = providers.find(p => p.id === providerId)
       if (!provider) {
         return { success: false, error: 'Provider not found' }
@@ -487,13 +487,14 @@ export function createProviderManager(config: Config): ProviderManager {
       const finalTopP = settings.topP !== undefined && settings.topP !== null ? settings.topP : existingModel?.topP
       const finalTopK = settings.topK !== undefined && settings.topK !== null ? settings.topK : existingModel?.topK
       const finalMaxTokens = settings.maxTokens !== undefined && settings.maxTokens !== null ? settings.maxTokens : existingModel?.maxTokens
+      const finalSupportsVision = settings.supportsVision !== undefined ? settings.supportsVision : existingModel?.supportsVision
       
       logger.info('Updating model settings', {
         providerId,
         modelId,
         existing: existingModel,
         incoming: settings,
-        final: { temperature: finalTemp, topP: finalTopP, topK: finalTopK, maxTokens: finalMaxTokens },
+        final: { temperature: finalTemp, topP: finalTopP, topK: finalTopK, maxTokens: finalMaxTokens, supportsVision: finalSupportsVision },
       })
 
       // Merge with existing model to preserve any other settings
@@ -505,6 +506,7 @@ export function createProviderManager(config: Config): ProviderManager {
         ...(finalTopP !== undefined && { topP: finalTopP }),
         ...(finalTopK !== undefined && { topK: finalTopK }),
         ...(finalMaxTokens !== undefined && { maxTokens: finalMaxTokens }),
+        ...(finalSupportsVision !== undefined && { supportsVision: finalSupportsVision }),
       }
 
       if (existingModel) {
@@ -532,6 +534,7 @@ export function createProviderManager(config: Config): ProviderManager {
         ...(model.topP !== undefined && { topP: model.topP }),
         ...(model.topK !== undefined && { topK: model.topK }),
         ...(model.maxTokens !== undefined && { maxTokens: model.maxTokens }),
+        ...(model.supportsVision !== undefined && { supportsVision: model.supportsVision }),
       }
     },
 

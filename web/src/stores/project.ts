@@ -28,7 +28,8 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
       const res = await authFetch('/api/projects')
       const data = await res.json()
       set({ projects: data.projects ?? [], loading: false })
-    } catch {
+    } catch (error) {
+      console.error('Failed to load projects:', error)
       set({ loading: false })
     }
   },
