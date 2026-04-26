@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef, useMemo, type ReactNode } from 'react'
+import { useState, useEffect, useRef, useMemo, type ReactNode } from 'react'
 import {
   MenuIcon,
   PlusIcon,
@@ -324,12 +324,7 @@ export function Header({ onMenuClick, onCriteriaToggle }: HeaderProps) {
     return () => window.removeEventListener('open-session-dropdown', handler)
   }, [])
 
-  const focusChatTextarea = useCallback(() => {
-    const textarea = document.querySelector('textarea[placeholder*="What would you like to build"], textarea[placeholder*="Send a message"]') as HTMLTextAreaElement | null
-    if (textarea) {
-      textarea.focus()
-    }
-  }, [])
+  
 
   // Double Ctrl opens terminal
   const lastCtrlRef = useRef<number>(0)
@@ -487,7 +482,6 @@ export function Header({ onMenuClick, onCriteriaToggle }: HeaderProps) {
       <TerminalDrawer 
         isOpen={terminalIsOpen} 
         onClose={() => setTerminalOpen(false)} 
-        onFocusChat={focusChatTextarea}
       />
 
     </header>

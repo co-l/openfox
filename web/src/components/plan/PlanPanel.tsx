@@ -26,6 +26,7 @@ import { useCommandsStore } from '../../stores/commands'
 import { useDisplaySettings } from '../../stores/settings'
 import { processImageFile } from '../../lib/image-processing.js'
 import { buildPromptContextByUserMessageId } from './prompt-context-linking.js'
+import { CHAT_TEXTAREA_ID, focusChatTextarea } from '../../lib/focusChatTextarea'
 import { ProviderSelector } from '../settings/ProviderSelector'
 import { MoreMenu } from './MoreMenu'
 import { CommandsModal } from '../settings/CommandsModal'
@@ -670,6 +671,7 @@ export function PlanPanel({ criteriaSidebarOpen: externalCriteriaSidebarOpen, on
           onDrop={handleDrop}
         >
           <textarea
+            id={CHAT_TEXTAREA_ID}
             ref={textareaRef}
             value={input}
             onChange={(e) => {
@@ -747,7 +749,7 @@ export function PlanPanel({ criteriaSidebarOpen: externalCriteriaSidebarOpen, on
         isAutoScrollActive={isAutoScrollActive}
         onToggleAutoScroll={setAutoScroll}
         textareaContent={input}
-        onCloseComplete={() => textareaRef.current?.focus()}
+        onCloseComplete={focusChatTextarea}
         onCloseCompleteAction={() => window.dispatchEvent(new CustomEvent('open-session-dropdown'))}
         onSelectCommand={async (commandId, textareaContent) => {
           const full = await useCommandsStore.getState().fetchCommand(commandId)
