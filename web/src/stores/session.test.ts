@@ -397,6 +397,65 @@ describe('useSessionStore session isolation', () => {
     expect(useSessionStore.getState().sessions.find(s => s.id === 'session-stale')?.isRunning).toBe(false)
   })
 
+  it('session.list preserves real-time isRunning:false when server returns stale isRunning:true', async () => {
+    const useSessionStore = await loadSessionStore()
+
+    useSessionStore.setState((state) => ({
+      ...state,
+      sessions: [
+        {
+          id: 'session-1',
+          projectId: 'project-1',
+          workdir: '/tmp/project-1',
+          mode: 'planner',
+          phase: 'build',
+          isRunning: true,
+          createdAt: 'a',
+          updatedAt: 'b',
+          criteriaCount: 0,
+          criteriaCompleted: 0,
+          messageCount: 5,
+        },
+      ],
+    }))
+
+    // Real-time update: session stops running
+    useSessionStore.getState().handleServerMessage({
+      type: 'session.running',
+      sessionId: 'session-1',
+      payload: { isRunning: false },
+    })
+
+    // Session should now show as not running
+    expect(useSessionStore.getState().sessions.find(s => s.id === 'session-1')?.isRunning).toBe(false)
+
+    // Stale server list arrives after real-time update (race condition):
+    // Server still has isRunning:true because request was sent before agent finished
+    useSessionStore.getState().handleServerMessage({
+      type: 'session.list',
+      payload: {
+        sessions: [
+          {
+            id: 'session-1',
+            projectId: 'project-1',
+            workdir: '/tmp/project-1',
+            mode: 'planner',
+            phase: 'build',
+            isRunning: true,  // Stale server data
+            createdAt: 'a',
+            updatedAt: 'b',
+            criteriaCount: 0,
+            criteriaCompleted: 0,
+            messageCount: 5,
+          },
+        ],
+      },
+    })
+
+    // Real-time update should be preserved — session must stay not-running
+    expect(useSessionStore.getState().sessions.find(s => s.id === 'session-1')?.isRunning).toBe(false)
+  })
+
   it('marks background sessions unread and clears unread state when opened', async () => {
     const useSessionStore = await loadSessionStore()
 

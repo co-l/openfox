@@ -159,9 +159,8 @@ function mergeSessionList(
       title: incomingSession.title ?? existingSession?.title,
       mode: currentSessionOverride?.mode ?? existingSession?.mode ?? incomingSession.mode,
       phase: currentSessionOverride?.phase ?? existingSession?.phase ?? incomingSession.phase,
-      isRunning: incomingSession.isRunning,
+      isRunning: incomingSession.isRunning && existingSession?.isRunning !== false,
       messageCount: incomingSession.messageCount,
-      // Preserve recentUserPrompts from incoming session (server source of truth)
       recentUserPrompts: incomingSession.recentUserPrompts,
     }
   })
@@ -686,7 +685,11 @@ export const useSessionStore = create<SessionState>((set, get) => {
         }
         const res = await authFetch(`/api/sessions?${params.toString()}`)
         const data = await res.json()
-        set({ sessions: data.sessions ?? [], sessionsHasMore: projectId ? (data.hasMore ?? false) : true })
+        const incoming = (data.sessions ?? []) as SessionSummary[]
+        set((state) => ({
+          sessions: mergeSessionList(incoming, state.sessions, state.currentSession),
+          sessionsHasMore: projectId ? (data.hasMore ?? false) : true,
+        }))
       } catch {
         // ignore
       }
@@ -704,8 +707,12 @@ export const useSessionStore = create<SessionState>((set, get) => {
         params.set('projectId', projectId)
         const res = await authFetch(`/api/sessions?${params.toString()}`)
         const data = await res.json()
+        const moreSessions = (data.sessions ?? []) as SessionSummary[]
         set((state) => ({
-          sessions: [...state.sessions, ...(data.sessions ?? [])],
+          sessions: [...state.sessions, ...moreSessions.map((s) => {
+            const existing = state.sessions.find((e) => e.id === s.id)
+            return existing?.isRunning === false ? { ...s, isRunning: false } : s
+          })],
           sessionsHasMore: data.hasMore ?? false,
           sessionsPaginationLoading: false,
         }))
