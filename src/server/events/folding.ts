@@ -607,39 +607,45 @@ export function foldSessionState(
     ? { ...baseContextState, compactionCount: contextResult.compactionCount, maxTokens }
     : { ...baseContextState, maxTokens }
 
-  // Find last mode with reminder by scanning events newest to oldest
-  // Snapshot's lastModeWithReminder field is used as fallback, but newer message.start events take precedence
-  let lastModeWithReminder: SessionMode | undefined
-  let snapshotModeReminder: SessionMode | undefined
+  // Find last mode with reminder by scanning events to determine what was LAST active
+  // Priority: newer source wins (compare seq), snapshot field is fallback if no newer message
+  let messageReminderMode: { seq: number; mode: SessionMode } | undefined
+  let snapshotReminderMode: { seq: number; mode: SessionMode } | undefined
   
   for (let i = events.length - 1; i >= 0; i--) {
     const event = events[i]!
     
-    // Prioritize message.start events (they're more recent than snapshots)
+    // Track latest message.start auto-prompt (use any to access seq at runtime)
     if (event.type === 'message.start') {
       const data = event.data as { role?: string; messageKind?: string; content?: string }
       if (data.role === 'user' && data.messageKind === 'auto-prompt' && data.content?.includes('<system-reminder>')) {
         if (data.content.includes('Plan Mode')) {
-          lastModeWithReminder = 'planner'
+          messageReminderMode = { seq: (event as unknown as { seq: number }).seq, mode: 'planner' }
         } else if (data.content.includes('Build Mode')) {
-          lastModeWithReminder = 'builder'
+          messageReminderMode = { seq: (event as unknown as { seq: number }).seq, mode: 'builder' }
         }
-        break // Found the most recent, stop searching
       }
     }
     
-    // Remember snapshot's value but keep searching for newer message.start events
-    if (lastModeWithReminder === undefined && event.type === 'turn.snapshot') {
+    // Track latest snapshot's lastModeWithReminder field
+    if (event.type === 'turn.snapshot') {
       const snapshotData = event.data as SessionSnapshot
       if (snapshotData.lastModeWithReminder) {
-        snapshotModeReminder = snapshotData.lastModeWithReminder
+        snapshotReminderMode = { seq: (event as unknown as { seq: number }).seq, mode: snapshotData.lastModeWithReminder }
       }
     }
   }
   
-  // Use snapshot's value only if no newer message.start event was found
-  if (lastModeWithReminder === undefined && snapshotModeReminder) {
-    lastModeWithReminder = snapshotModeReminder
+  // Use whichever source has the higher seq (is more recent), or snapshot as fallback
+  let lastModeWithReminder: SessionMode | undefined
+  if (messageReminderMode && snapshotReminderMode) {
+    lastModeWithReminder = messageReminderMode.seq > snapshotReminderMode.seq 
+      ? messageReminderMode.mode 
+      : snapshotReminderMode.mode
+  } else if (snapshotReminderMode) {
+    lastModeWithReminder = snapshotReminderMode.mode
+  } else if (messageReminderMode) {
+    lastModeWithReminder = messageReminderMode.mode
   }
 
   let sessionInit: FoldedSessionState['sessionInit']
