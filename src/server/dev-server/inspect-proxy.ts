@@ -138,20 +138,34 @@ export function startInspectProxy(target: string, sessionManager: SessionManager
       }
 
       if (url === '/__openfox_feedback' && method === 'POST') {
-        const body = chunk.slice(he + 4).toString('utf8')
-        try {
-          const { sessionId, element, annotation, pageUrl } = JSON.parse(body)
-          if (sessionId) {
-            const elementDesc = element ? `${element.tag}${element.id ? '#' + element.id : ''}` : 'unknown'
-            const htmlSnippet = element?.outerHTML ? `\nHtml: ${element.outerHTML.slice(0, 300)}` : ''
-            const content = `# User feedback from page inspection on dev_server\n\n## Context\n\nPage: ${pageUrl || ''}\nElement: ${elementDesc}\nxPath: ${element?.xpath || ''}${htmlSnippet}\n\n## Feedback\n\n${annotation || '(none)'}`
-            sessionManager.queueMessage(sessionId, 'asap', content, [], 'ui_feedback')
+        const contentLength = parseInt(headers['content-length'] || '0', 10)
+        let bodyData = chunk.slice(he + 4)
+        let bodyTotal = bodyData.length
+        const handleFeedback = () => {
+          try {
+            const { sessionId, element, annotation, pageUrl } = JSON.parse(bodyData.toString('utf8'))
+            if (sessionId) {
+              const elementDesc = element ? `${element.tag}${element.id ? '#' + element.id : ''}` : 'unknown'
+              const htmlSnippet = element?.outerHTML ? `\nHtml: ${element.outerHTML.slice(0, 300)}` : ''
+              const content = `# User feedback from page inspection on dev_server\n\n## Context\n\nPage: ${pageUrl || ''}\nElement: ${elementDesc}\nxPath: ${element?.xpath || ''}${htmlSnippet}\n\n## Feedback\n\n${annotation || '(none)'}`
+              sessionManager.queueMessage(sessionId, 'asap', content, [], 'ui_feedback')
+            }
+            client.write(buildResponse(200, { 'Content-Type': 'application/json' }, Buffer.from('{"success":true}')))
+          } catch {
+            client.write(buildResponse(400, { 'Content-Type': 'application/json' }, Buffer.from('{"error":"Invalid request"}')))
           }
-          client.write(buildResponse(200, { 'Content-Type': 'application/json' }, Buffer.from('{"success":true}')))
-        } catch {
-          client.write(buildResponse(400, { 'Content-Type': 'application/json' }, Buffer.from('{"error":"Invalid request"}')))
+          client.end()
         }
-        client.end()
+        if (bodyTotal >= contentLength) {
+          handleFeedback()
+          return
+        }
+        client.on('data', (more) => {
+          bodyData = Buffer.concat([bodyData, more])
+          bodyTotal += more.length
+          if (bodyTotal < contentLength) return
+          handleFeedback()
+        })
         return
       }
 
