@@ -6,6 +6,7 @@
   window.__foxSessionTitle = null;
   window.__foxInspectEnabled = true;
   window.__foxSentPending = false;
+  window.__foxPopupOpen = false;
 
   var overlayStyle = document.createElement('style');
   overlayStyle.textContent = [
@@ -99,6 +100,7 @@
     var existing = document.getElementById('__fox-popup');
     if (existing) existing.remove();
 
+    window.__foxPopupOpen = true;
     var data = buildElementData(el);
     var viewportWidth = window.innerWidth;
     var viewportHeight = window.innerHeight;
@@ -141,6 +143,7 @@
 
     popup.querySelector('.__fox-cancel').addEventListener('click', function(e) {
       e.stopPropagation();
+      window.__foxPopupOpen = false;
       popup.remove();
     });
 
@@ -150,6 +153,7 @@
       window.__foxSentPending = true;
       setTimeout(function() { window.__foxSentPending = false; }, 3000);
       var annotation = textarea.value.trim();
+      window.__foxPopupOpen = false;
       popup.remove();
       setInspectMode(false);
 
@@ -171,6 +175,7 @@
 
     document.addEventListener('keydown', function escHandler(e) {
       if (e.key === 'Escape') {
+        window.__foxPopupOpen = false;
         popup.remove();
         document.removeEventListener('keydown', escHandler);
       }
@@ -178,14 +183,14 @@
   }
 
   document.addEventListener('mouseover', function(e) {
-    if (!window.__foxInspectMode) return;
+    if (!window.__foxInspectMode || window.__foxPopupOpen) return;
     if (e.target === document.documentElement || e.target === document.body) return;
     if (overlay.contains(e.target)) return;
     e.target.classList.add('__fox-highlight');
   }, true);
 
   document.addEventListener('mouseout', function(e) {
-    if (!window.__foxInspectMode) return;
+    if (!window.__foxInspectMode || window.__foxPopupOpen) return;
     if (e.target === document.documentElement || e.target === document.body) return;
     if (overlay.contains(e.target)) return;
     e.target.classList.remove('__fox-highlight');
