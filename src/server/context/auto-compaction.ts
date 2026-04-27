@@ -121,6 +121,7 @@ async function performContextCompaction(options: ContextCompactionOptions & {
     disableThinking: true,
     ...(instructions ? { customInstructions: instructions } : {}),
     ...(skills.length > 0 ? { skills } : {}),
+    modelName: options.llmClient.getModel(),
   })
 
   // Append compaction instruction as a system-reminder user message
