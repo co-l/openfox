@@ -104,7 +104,10 @@ export const DevServerFooter = memo(function DevServerFooter({ workdir }: DevSer
 
   const openInspectWindow = () => {
     const proxyPort = status?.inspectProxyPort
-    if (!proxyPort) return
+    if (!proxyPort) {
+      if (status?.url) window.open(status.url, '_blank')
+      return
+    }
     const base = `${window.location.protocol}//${window.location.hostname}:${proxyPort}`
     const win = window.open(base, 'openfox-inspect')
     if (win) {
