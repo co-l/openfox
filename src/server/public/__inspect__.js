@@ -3,6 +3,7 @@
 
   window.__foxInspectMode = false;
   window.__foxSessionId = null;
+  window.__foxSessionTitle = null;
   window.__foxInspectEnabled = true;
   window.__foxSentPending = false;
 
@@ -26,7 +27,8 @@
     '#__fox-popup button.__fox-send{background:#3b82f6;color:#fff;border:none;padding:6px 14px;border-radius:4px;cursor:pointer;font-size:12px;font-family:inherit}',
     '#__fox-popup button.__fox-send:hover{background:#2563eb}',
     '#__fox-popup button.__fox-cancel{background:transparent;color:#888;border:1px solid #444;padding:6px 14px;border-radius:4px;cursor:pointer;font-size:12px;font-family:inherit}',
-    '#__fox-popup button.__fox-cancel:hover{color:#aaa;border-color:#666}'
+    '#__fox-popup button.__fox-cancel:hover{color:#aaa;border-color:#666}',
+    '#__fox-popup .__fox-hint{font-size:11px;color:#666;margin-top:6px;line-height:1.4}'
   ].join('\n');
 
   var overlay = document.createElement('div');
@@ -119,6 +121,7 @@
       '<div class="__fox-tag">Element: <span>' + tagDisplay + '</span></div>' +
       '<div class="__fox-selector">' + data.xpath + '</div>' +
       '<textarea placeholder="What\'s wrong with this element?"></textarea>' +
+      '<div class="__fox-hint">Sending to: ' + (window.__foxSessionTitle || window.__foxSessionId || 'none') + '. To target a different session, close this, navigate to that session in OpenFox, and reopen the inspect window.</div>' +
       '<div class="__fox-actions">' +
         '<button class="__fox-cancel">Cancel</button>' +
         '<button class="__fox-send">Send to Agent</button>' +
@@ -207,6 +210,9 @@
   window.addEventListener('message', function(e) {
     if (e.data && e.data.type === 'setFoxSessionId') {
       window.__foxSessionId = e.data.sessionId;
+    }
+    if (e.data && e.data.type === 'setFoxSessionTitle') {
+      window.__foxSessionTitle = e.data.sessionTitle;
     }
     if (e.data && e.data.type === 'setFoxInspectEnabled') {
       window.__foxInspectEnabled = e.data.enabled;

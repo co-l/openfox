@@ -119,6 +119,10 @@ export const DevServerFooter = memo(function DevServerFooter({ workdir }: DevSer
           sessionId: currentSession?.id ?? null,
         }, '*')
         inspectWindowRef.current.postMessage({
+          type: 'setFoxSessionTitle',
+          sessionTitle: currentSession?.metadata?.title ?? null,
+        }, '*')
+        inspectWindowRef.current.postMessage({
           type: 'setFoxInspectEnabled',
           enabled: !config?.disableInspect,
         }, '*')
