@@ -597,6 +597,7 @@ export class EventStore {
       const deleteResult = this.db.prepare(`
         DELETE FROM events 
         WHERE session_id = ? AND seq <= ?
+        AND event_type != 'session.initialized'
       `).run(sessionId, latestSeq)
 
       const snapshotEvent = this.append(sessionId, {
@@ -716,6 +717,7 @@ function resetStaleRunningSessions(eventStore: EventStore, db: Database.Database
   const sessions = db.prepare(`SELECT id FROM sessions`).all() as { id: string }[]
 
   let resetCount = 0
+
   for (const { id: sessionId } of sessions) {
     // Get the last running.changed event for this session
     const lastRunningEvent = db.prepare(`

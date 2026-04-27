@@ -848,7 +848,6 @@ export function buildSnapshotFromSessionState(input: {
   // injectedFiles, requestOptions, userMessage) for the Prompt Inspector UI.
   stripPromptContextMessages(messages)
 
-  // Override with legacy session values where provided
   return {
     mode: session.mode,
     phase: session.phase,
@@ -867,6 +866,8 @@ export function buildSnapshotFromSessionState(input: {
     readFiles: foldedState.readFiles,
     snapshotSeq: latestSeq,
     snapshotAt,
+    ...(foldedState.sessionInit !== undefined && { sessionInit: foldedState.sessionInit }),
+    ...(foldedState.lastModeWithReminder !== undefined && { lastModeWithReminder: foldedState.lastModeWithReminder }),
   }
 }
 

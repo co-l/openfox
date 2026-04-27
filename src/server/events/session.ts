@@ -100,10 +100,36 @@ export function getSessionState(
     }
   }
 
-  // Fallback: extract from snapshot's sessionInit if session.initialized was cleaned up
-  if (!initialWindowId && latestSnapshotEvent) {
-    const snapshotData = latestSnapshotEvent.data as { sessionInit?: { contextWindowId: string } }
-    initialWindowId = snapshotData.sessionInit?.contextWindowId
+  // Fallback: extract from snapshot's sessionInit if session.initialized was cleaned up.
+  // Check ALL snapshots, not just the latest — the latest snapshot may not have
+  // sessionInit if session.initialized was already cleaned up before it was created.
+  if (!initialWindowId) {
+    for (const event of events) {
+      if (event.type === 'turn.snapshot') {
+        const snapshotData = event.data as { sessionInit?: { contextWindowId: string } }
+        if (snapshotData.sessionInit?.contextWindowId) {
+          initialWindowId = snapshotData.sessionInit.contextWindowId
+          break
+        }
+      }
+    }
+  }
+
+  // Fallback: extract from snapshot's currentContextWindowId field.
+  // This handles sessions where both session.initialized and sessionInit
+  // were lost (e.g., consolidateSession deleted all early events including
+  // session.initialized, and snapshots were created without sessionInit).
+  // Every snapshot has currentContextWindowId which is a valid initialWindowId.
+  if (!initialWindowId) {
+    for (const event of events) {
+      if (event.type === 'turn.snapshot') {
+        const snapshotData = event.data as { currentContextWindowId?: string }
+        if (snapshotData.currentContextWindowId) {
+          initialWindowId = snapshotData.currentContextWindowId
+          break
+        }
+      }
+    }
   }
 
   if (!initialWindowId) {

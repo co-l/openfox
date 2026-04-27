@@ -219,7 +219,11 @@ export class QueueProcessor {
       this.activeAgents.delete(sessionId)
 
       const session = this.deps.sessionManager.getSession(sessionId)
-      if (!session) return
+      if (!session) {
+        this.deps.sessionManager.setRunning(sessionId, false)
+        this.deps.broadcastForSession(sessionId, createSessionRunningMessage(false))
+        return
+      }
 
       const hasMore = sessionManager.hasQueuedMessages(sessionId)
       if (!hasMore) {

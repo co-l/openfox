@@ -431,4 +431,107 @@ describe('getSessionState with missing session.initialized', () => {
     expect(state2).toBeDefined()
     expect(state2!.currentContextWindowId).toBe('original-window')
   })
+
+  it('should still return valid state if sessionInit is only in an earlier snapshot (not latest)', async () => {
+    const { getEventStore } = await import('./store.js')
+    const eventStore = getEventStore()
+
+    initSession('s2', 'window-early')
+    emitUserMessage('s2', 'Hello', { contextWindowId: 'window-early' })
+
+    const state1 = getSessionState('s2')
+    expect(state1).toBeDefined()
+
+    // Simulate: snapshot WITH sessionInit is created (like a first snapshot)
+    const snapshotWithSessionInit = {
+      mode: 'planner' as const,
+      phase: 'plan' as const,
+      isRunning: false,
+      messages: state1!.messages,
+      criteria: [],
+      contextState: state1!.contextState,
+      currentContextWindowId: 'window-early',
+      todos: [],
+      readFiles: [],
+      snapshotSeq: 2,
+      snapshotAt: Date.now(),
+      sessionInit: {
+        projectId: 'proj-1',
+        workdir: '/tmp/test',
+        contextWindowId: 'window-early',
+      },
+    }
+    eventStore.append('s2', { type: 'turn.snapshot', data: snapshotWithSessionInit })
+
+    // Now simulate what happens after context compaction changes the window:
+    // A new snapshot is created WITHOUT sessionInit (because session.initialized
+    // was already deleted and the new context window doesn't carry sessionInit)
+    emitContextCompacted('s2', 'window-early', 'window-new', 100, 50, 'summary')
+    emitRunningChanged('s2', false)
+
+    const state2 = getSessionState('s2')
+    const compactedMessages = state2!.messages
+
+    const snapshotWithoutSessionInit = {
+      mode: 'planner' as const,
+      phase: 'plan' as const,
+      isRunning: false,
+      messages: compactedMessages,
+      criteria: [],
+      contextState: state2!.contextState,
+      currentContextWindowId: 'window-new',
+      todos: [],
+      readFiles: [],
+      snapshotSeq: 10,
+      snapshotAt: Date.now(),
+      // NO sessionInit here — this is the bug scenario
+    }
+    eventStore.append('s2', { type: 'turn.snapshot', data: snapshotWithoutSessionInit })
+
+    // Delete session.initialized (simulates cleanupOldEvents)
+    eventStore.deleteEventsUpToSeq('s2', 1)
+
+    // The latest snapshot has NO sessionInit, but an earlier one does
+    // getSessionState should still find the contextWindowId
+    const state3 = getSessionState('s2')
+    expect(state3).toBeDefined()
+    expect(state3!.currentContextWindowId).toBe('window-new')
+    expect(state3!.mode).toBe('planner')
+    expect(state3!.isRunning).toBe(false)
+  })
+
+  it('should use currentContextWindowId from snapshot when both session.initialized and sessionInit are missing', async () => {
+    const { getEventStore } = await import('./store.js')
+    const eventStore = getEventStore()
+
+    // Simulate a session where consolidateSession deleted session.initialized
+    // and snapshots were created without sessionInit (pre-fix)
+    // but snapshots DO have currentContextWindowId
+    const snapshotData = {
+      mode: 'planner' as const,
+      phase: 'plan' as const,
+      isRunning: false,
+      messages: [],
+      criteria: [],
+      contextState: { currentTokens: 1000, maxTokens: 200000, compactionCount: 0, dangerZone: false, canCompact: false },
+      currentContextWindowId: 'recovered-window-id',
+      todos: [],
+      readFiles: [],
+      snapshotSeq: 1,
+      snapshotAt: Date.now(),
+      // NO sessionInit field
+    }
+
+    eventStore.append('s3', { type: 'turn.snapshot', data: snapshotData })
+    emitRunningChanged('s3', false)
+
+    // No session.initialized event, no sessionInit in snapshot
+    // BUT currentContextWindowId is present in the snapshot
+    const state = getSessionState('s3')
+    expect(state).toBeDefined()
+    expect(state!.currentContextWindowId).toBe('recovered-window-id')
+    expect(state!.mode).toBe('planner')
+    expect(state!.isRunning).toBe(false)
+    expect(state!.messages).toBeDefined()
+  })
 })

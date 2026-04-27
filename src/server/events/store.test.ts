@@ -968,12 +968,14 @@ describe('EventStore - Event Cleanup', () => {
 
       const result = store.consolidateSession(sessionId)
       expect(result).not.toBeNull()
-      expect(result!.deletedCount).toBe(5)
+      expect(result!.deletedCount).toBe(4) // session.initialized is preserved
 
       const eventsAfter = store.getEvents(sessionId)
-      expect(eventsAfter).toHaveLength(1)
-      expect(eventsAfter[0]!.type).toBe('turn.snapshot')
-      const snapshotData = eventsAfter[0]!.data as { messages: { id: string; content: string }[] }
+      expect(eventsAfter).toHaveLength(2) // session.initialized + new snapshot
+      expect(eventsAfter.find(e => e.type === 'session.initialized')).toBeDefined()
+      expect(eventsAfter.find(e => e.type === 'turn.snapshot')).toBeDefined()
+      const snapshotEvent = eventsAfter.find(e => e.type === 'turn.snapshot')!
+      const snapshotData = snapshotEvent!.data as { messages: { id: string; content: string }[] }
       expect(snapshotData.messages).toHaveLength(2)
       expect(snapshotData.messages[0]!.id).toBe('msg-1')
       expect(snapshotData.messages[1]!.id).toBe('msg-2')
@@ -989,6 +991,29 @@ describe('EventStore - Event Cleanup', () => {
 
       const result = store.consolidateSession(sessionId)
       expect(result).toBeNull()
+    })
+
+    it('should preserve session.initialized event during consolidation', () => {
+      const sessionId = 'session-preserve-init'
+
+      store.append(sessionId, { type: 'session.initialized', data: { projectId: 'p1', workdir: '/tmp', contextWindowId: 'window-1' } })
+      store.append(sessionId, { type: 'message.start', data: { messageId: 'msg-1', role: 'user', content: 'Hello' } })
+      store.append(sessionId, { type: 'turn.snapshot', data: { mode: 'planner', phase: 'plan', isRunning: false, messages: [], criteria: [], contextState: { currentTokens: 100, maxTokens: 200000, compactionCount: 0, dangerZone: false, canCompact: false }, currentContextWindowId: 'window-1', todos: [], readFiles: [], snapshotSeq: 2, snapshotAt: Date.now() } })
+      store.append(sessionId, { type: 'message.start', data: { messageId: 'msg-2', role: 'assistant' } })
+
+      // Before consolidation: session.initialized exists at seq 1
+      const eventsBefore = store.getEvents(sessionId)
+      const initBefore = eventsBefore.find(e => e.type === 'session.initialized')
+      expect(initBefore).toBeDefined()
+
+      const result = store.consolidateSession(sessionId)
+      expect(result).not.toBeNull()
+
+      // After consolidation: session.initialized should still exist
+      const eventsAfter = store.getEvents(sessionId)
+      const initAfter = eventsAfter.find(e => e.type === 'session.initialized')
+      expect(initAfter).toBeDefined()
+      expect((initAfter!.data as { contextWindowId: string }).contextWindowId).toBe('window-1')
     })
   })
 
