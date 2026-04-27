@@ -49,6 +49,13 @@
     }
   }
 
+  function clearHighlights() {
+    var highlighted = document.querySelectorAll('.__fox-highlight');
+    for (var i = 0; i < highlighted.length; i++) {
+      highlighted[i].classList.remove('__fox-highlight');
+    }
+  }
+
   function generateXPath(el) {
     if (!el || el.nodeType !== Node.ELEMENT_NODE) return '';
     var parts = [];
@@ -155,6 +162,7 @@
       var annotation = textarea.value.trim();
       window.__foxPopupOpen = false;
       popup.remove();
+      clearHighlights();
       setInspectMode(false);
 
       fetch('/__openfox_feedback', {
@@ -177,6 +185,8 @@
       if (e.key === 'Escape') {
         window.__foxPopupOpen = false;
         popup.remove();
+        clearHighlights();
+        setInspectMode(false);
         document.removeEventListener('keydown', escHandler);
       }
     });
