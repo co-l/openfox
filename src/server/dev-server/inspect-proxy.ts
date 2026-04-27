@@ -79,13 +79,21 @@ export function startInspectProxy(target: string, sessionManager: SessionManager
     if (req.url === '/__inspect__.js') {
       import('node:fs/promises').then(async ({ readFile }) => {
         const dir = import.meta.dirname ?? __dirname
+        const devPath = `${dir}/../public/__inspect__.js`
+        const prodPath = `${dir}/server/public/__inspect__.js`
         try {
-          const content = await readFile(`${dir}/../public/__inspect__.js`, 'utf-8')
+          const content = await readFile(devPath, 'utf-8')
           res.writeHead(200, { 'Content-Type': 'application/javascript' })
           res.end(content)
         } catch {
-          res.writeHead(404)
-          res.end('Not found')
+          try {
+            const content = await readFile(prodPath, 'utf-8')
+            res.writeHead(200, { 'Content-Type': 'application/javascript' })
+            res.end(content)
+          } catch {
+            res.writeHead(404)
+            res.end('Not found')
+          }
         }
       })
       return

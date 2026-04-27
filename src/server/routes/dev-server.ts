@@ -80,12 +80,12 @@ export function createDevServerRoutes(): Router {
   router.post('/config', async (req, res) => {
     const workdir = req.query['workdir'] as string
     if (!workdir) return res.status(400).json({ error: 'workdir required' })
-    const { command, url, hotReload } = req.body
+    const { command, url, hotReload, disableInspect } = req.body
     if (!command || !url) {
       return res.status(400).json({ error: 'command and url are required' })
     }
     try {
-      const config = { command, url, hotReload: hotReload ?? false }
+      const config = { command, url, hotReload: hotReload ?? false, disableInspect: disableInspect ?? false }
       await devServerManager.saveConfig(workdir, config)
       res.json({ config })
     } catch (err) {
