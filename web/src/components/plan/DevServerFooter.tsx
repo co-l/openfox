@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, memo } from 'react'
 import { createPortal } from 'react-dom'
 import { useDevServerStore } from '../../stores/dev-server'
+import { useSessionStore } from '../../stores/session'
 import { GearIcon, StopIcon, OpenExternalIcon } from '../shared/icons'
 import { DevServerConfigModal } from './DevServerConfigModal'
 import { LogViewer } from './LogViewer'
@@ -89,6 +90,7 @@ export const DevServerFooter = memo(function DevServerFooter({ workdir }: DevSer
   const start = useDevServerStore(s => s.start)
   const stop = useDevServerStore(s => s.stop)
   const fetchLogs = useDevServerStore(s => s.fetchLogs)
+  const currentSession = useSessionStore(s => s.currentSession)
 
   const [showConfigModal, setShowConfigModal] = useState(false)
   const [showExpandModal, setShowExpandModal] = useState(false)
@@ -98,6 +100,35 @@ export const DevServerFooter = memo(function DevServerFooter({ workdir }: DevSer
   const hideTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const logRef = useRef<HTMLPreElement>(null)
   const logContainerRef = useRef<HTMLDivElement>(null)
+  const inspectWindowRef = useRef<Window | null>(null)
+
+  const openInspectWindow = () => {
+    const proxyPort = status?.inspectProxyPort
+    if (!proxyPort) return
+    const base = `${window.location.protocol}//${window.location.hostname}:${proxyPort}`
+    const win = window.open(base, 'openfox-inspect')
+    if (win) {
+      inspectWindowRef.current = win
+      const sendToWindow = () => {
+        if (!inspectWindowRef.current || inspectWindowRef.current.closed) return
+        inspectWindowRef.current.postMessage({
+          type: 'setFoxSessionId',
+          sessionId: currentSession?.id ?? null,
+        }, '*')
+        inspectWindowRef.current.postMessage({
+          type: 'setFoxInspectEnabled',
+          enabled: !config?.disableInspect,
+        }, '*')
+      }
+      const interval = setInterval(() => {
+        sendToWindow()
+        if (!inspectWindowRef.current || inspectWindowRef.current.closed) {
+          clearInterval(interval)
+        }
+      }, 500)
+      setTimeout(() => clearInterval(interval), 5000)
+    }
+  }
 
   const state = status?.state ?? 'off'
   const hasConfig = config !== null
@@ -165,16 +196,14 @@ export const DevServerFooter = memo(function DevServerFooter({ workdir }: DevSer
                 Stop
               </button>
               {status?.url && (
-                <a
-                  href={status.url}
-                  target="_blank"
-                  rel="noopener noreferrer"
+                <button
+                  onClick={() => openInspectWindow()}
                   className="flex-1 flex items-center justify-center gap-1.5 rounded font-medium text-sm px-3 py-1.5 bg-accent-primary/25 text-text-primary hover:bg-accent-primary/40 transition-colors"
                   title={status.url}
                 >
                   <OpenExternalIcon />
                   Open
-                </a>
+                </button>
               )}
             </div>
           ) : (

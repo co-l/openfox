@@ -2,6 +2,7 @@ export interface DevServerConfig {
   command: string
   url: string
   hotReload: boolean
+  disableInspect?: boolean
 }
 
 export type DevServerState = 'off' | 'running' | 'warning' | 'error'
@@ -12,4 +13,5 @@ export interface DevServerStatus {
   hotReload: boolean
   config: DevServerConfig | null
   errorMessage: string | undefined
+  inspectProxyPort: number | null
 }

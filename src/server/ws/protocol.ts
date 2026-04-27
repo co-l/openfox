@@ -283,6 +283,15 @@ export function isAskAnswerPayload(payload: unknown): payload is AskAnswerPayloa
   return typeof payload === 'object' && payload !== null && 'callId' in payload && 'answer' in payload
 }
 
+// UI feedback payloads
+export function isUIFeedbackPayload(payload: unknown): payload is { sessionId: string; element: unknown; annotation: string; pageUrl: string } {
+  return typeof payload === 'object' && payload !== null &&
+    'sessionId' in payload && typeof (payload as any).sessionId === 'string' &&
+    'element' in payload && typeof payload === 'object' &&
+    'annotation' in payload && typeof (payload as any).annotation === 'string' &&
+    'pageUrl' in payload && typeof (payload as any).pageUrl === 'string'
+}
+
 // Queue messages
 export function createQueueStateMessage(messages: QueuedMessage[]): ServerMessage<QueueStatePayload> {
   return createServerMessage('queue.state', { messages })

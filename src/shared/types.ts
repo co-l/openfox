@@ -559,3 +559,18 @@ export interface Config {
   /** Active workflow ID (defaults to "default") */
   activeWorkflowId?: string | undefined
 }
+
+// ============================================================================
+// UI Inspect Feedback Types
+// ============================================================================
+
+export interface ElementData {
+  tag: string
+  id: string | null
+  className: string | null
+  xpath: string
+  text: string | null
+  outerHTML: string
+  rect: { x: number; y: number; width: number; height: number }
+  attributes: Record<string, string>
+}

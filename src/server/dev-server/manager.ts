@@ -5,6 +5,8 @@ import { terminateProcessTree } from '../utils/process-tree.js'
 import { logger } from '../utils/logger.js'
 import { getPlatformShell } from '../utils/platform.js'
 import type { DevServerConfig, DevServerState, DevServerStatus } from '../../shared/dev-server.js'
+import { startInspectProxy } from './inspect-proxy.js'
+import type { SessionManager } from '../session/manager.js'
 
 const MAX_LOG_LINES = 2000
 const MAX_LOG_BYTES = 100_000
@@ -44,6 +46,8 @@ interface DevServerInstance {
   totalLogBytes: number
   errorMessage: string | undefined
   exited: boolean
+  inspectProxyPort: number | null
+  proxyCleanup: (() => void) | null
 }
 
 function createInstance(): DevServerInstance {
@@ -55,6 +59,8 @@ function createInstance(): DevServerInstance {
     totalLogBytes: 0,
     errorMessage: undefined,
     exited: true,
+    inspectProxyPort: null,
+    proxyCleanup: null,
   }
 }
 
@@ -62,6 +68,11 @@ class DevServerManager {
   private instances = new Map<string, DevServerInstance>()
   private outputListeners = new Set<OutputListener>()
   private stateListeners = new Set<StateListener>()
+  private _sessionManager: SessionManager | null = null
+
+  setSessionManager(sm: SessionManager): void {
+    this._sessionManager = sm
+  }
 
   private resolveWorkdir(workdir: string): string {
     return resolve(workdir)
@@ -101,6 +112,7 @@ class DevServerManager {
         command: parsed.command,
         url: parsed.url,
         hotReload: parsed.hotReload ?? false,
+        disableInspect: parsed.disableInspect ?? false,
       }
     } catch {
       return null
@@ -133,6 +145,18 @@ class DevServerManager {
     instance.totalLogBytes = 0
     instance.errorMessage = undefined
     instance.exited = false
+
+    // Start inspect proxy if not disabled
+    if (!config.disableInspect && config.url && this._sessionManager) {
+      try {
+        const { port, cleanup } = startInspectProxy(config.url, this._sessionManager)
+        instance.inspectProxyPort = port
+        instance.proxyCleanup = cleanup
+        logger.debug('Inspect proxy started', { workdir, port, target: config.url })
+      } catch (err) {
+        logger.warn('Failed to start inspect proxy', { workdir, error: err })
+      }
+    }
 
     const resolved = this.resolveWorkdir(workdir)
 
@@ -220,6 +244,13 @@ class DevServerManager {
       logger.info('Dev server stopped', { workdir })
     }
 
+    // Cleanup inspect proxy
+    if (instance.proxyCleanup) {
+      instance.proxyCleanup()
+      instance.proxyCleanup = null
+      instance.inspectProxyPort = null
+    }
+
     return this.getStatus(workdir)
   }
 
@@ -236,6 +267,7 @@ class DevServerManager {
       hotReload: instance.config?.hotReload ?? false,
       config: instance.config,
       errorMessage: instance.errorMessage,
+      inspectProxyPort: instance.inspectProxyPort,
     }
   }
 

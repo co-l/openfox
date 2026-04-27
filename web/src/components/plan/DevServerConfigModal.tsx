@@ -14,6 +14,7 @@ export function DevServerConfigModal({ isOpen, onClose }: DevServerConfigModalPr
   const [command, setCommand] = useState('')
   const [url, setUrl] = useState('')
   const [hotReload, setHotReload] = useState(false)
+  const [disableInspect, setDisableInspect] = useState(false)
   const [saving, setSaving] = useState(false)
 
   useEffect(() => {
@@ -21,13 +22,14 @@ export function DevServerConfigModal({ isOpen, onClose }: DevServerConfigModalPr
       setCommand(config?.command ?? '')
       setUrl(config?.url ?? '')
       setHotReload(config?.hotReload ?? false)
+      setDisableInspect(config?.disableInspect ?? false)
     }
   }, [isOpen, config])
 
   const handleSave = async () => {
     if (!command.trim() || !url.trim()) return
     setSaving(true)
-    await saveConfig({ command: command.trim(), url: url.trim(), hotReload })
+    await saveConfig({ command: command.trim(), url: url.trim(), hotReload, disableInspect })
     setSaving(false)
     onClose()
   }
@@ -67,6 +69,19 @@ export function DevServerConfigModal({ isOpen, onClose }: DevServerConfigModalPr
           />
           <label htmlFor="hotReload" className="text-xs text-text-secondary">
             Hot Reload
+          </label>
+        </div>
+
+        <div className="flex items-center gap-2">
+          <input
+            type="checkbox"
+            id="disableInspect"
+            checked={disableInspect}
+            onChange={e => setDisableInspect(e.target.checked)}
+            className="rounded border-border bg-bg-tertiary"
+          />
+          <label htmlFor="disableInspect" className="text-xs text-text-secondary">
+            Disable inspect feedback
           </label>
         </div>
 

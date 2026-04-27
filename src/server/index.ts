@@ -6,6 +6,7 @@ import { dirname, resolve, join } from 'node:path'
 import { readFile } from 'node:fs/promises'
 import { createServer as createViteServer, type ViteDevServer } from 'vite'
 
+
 import type { Config } from '../shared/types.js'
 import type { ServerHandle } from './context.js'
 import { initDatabase } from './db/index.js'
@@ -61,6 +62,9 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
 
   // Create SessionManager instance (not singleton!)
   const sessionManager = new SessionManager(providerManager)
+
+  // Wire sessionManager to devServerManager for inspect proxy feedback
+  devServerManager.setSessionManager(sessionManager)
 
   // Create LLM client - use mock if OPENFOX_MOCK_LLM is set
   const useMock = process.env['OPENFOX_MOCK_LLM'] === 'true'
@@ -1086,6 +1090,9 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
           res.status(404).send('Not found')
         })
     })
+
+    // Inspect tool: serve injection script via dedicated proxy servers
+    // (not served from main server anymore)
 
     app.use(
       '/sounds',
