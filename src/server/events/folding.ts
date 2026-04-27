@@ -607,52 +607,39 @@ export function foldSessionState(
     ? { ...baseContextState, compactionCount: contextResult.compactionCount, maxTokens }
     : { ...baseContextState, maxTokens }
 
-  // Find last mode with reminder
-  // Priority: 1) snapshot.lastModeWithReminder field, 2) snapshot messages array, 3) message.start events
+  // Find last mode with reminder by scanning events newest to oldest
+  // Snapshot's lastModeWithReminder field is used as fallback, but newer message.start events take precedence
   let lastModeWithReminder: SessionMode | undefined
+  let snapshotModeReminder: SessionMode | undefined
   
-  // First, check the latest snapshot event
   for (let i = events.length - 1; i >= 0; i--) {
     const event = events[i]!
-    if (event.type === 'turn.snapshot') {
-      const snapshotData = event.data as SessionSnapshot
-      // First check the lastModeWithReminder field
-      if (snapshotData.lastModeWithReminder) {
-        lastModeWithReminder = snapshotData.lastModeWithReminder
-        break
-      }
-      // If not in field, check snapshot messages array (for cases where field wasn't set)
-      for (let j = snapshotData.messages.length - 1; j >= 0; j--) {
-        const msg = snapshotData.messages[j]!
-        if (msg.role === 'user' && msg.messageKind === 'auto-prompt' && msg.content?.includes('<system-reminder>')) {
-          if (msg.content.includes('Plan Mode')) {
-            lastModeWithReminder = 'planner'
-          } else if (msg.content.includes('Build Mode')) {
-            lastModeWithReminder = 'builder'
-          }
-          break
+    
+    // Prioritize message.start events (they're more recent than snapshots)
+    if (event.type === 'message.start') {
+      const data = event.data as { role?: string; messageKind?: string; content?: string }
+      if (data.role === 'user' && data.messageKind === 'auto-prompt' && data.content?.includes('<system-reminder>')) {
+        if (data.content.includes('Plan Mode')) {
+          lastModeWithReminder = 'planner'
+        } else if (data.content.includes('Build Mode')) {
+          lastModeWithReminder = 'builder'
         }
+        break // Found the most recent, stop searching
       }
-      if (lastModeWithReminder) break
+    }
+    
+    // Remember snapshot's value but keep searching for newer message.start events
+    if (lastModeWithReminder === undefined && event.type === 'turn.snapshot') {
+      const snapshotData = event.data as SessionSnapshot
+      if (snapshotData.lastModeWithReminder) {
+        snapshotModeReminder = snapshotData.lastModeWithReminder
+      }
     }
   }
   
-  // If not found in snapshot, fall back to scanning message.start events
-  if (lastModeWithReminder === undefined) {
-    for (let i = events.length - 1; i >= 0; i--) {
-      const event = events[i]!
-      if (event.type === 'message.start') {
-        const data = event.data as { role?: string; messageKind?: string; content?: string }
-        if (data.role === 'user' && data.messageKind === 'auto-prompt' && data.content?.includes('<system-reminder>')) {
-          if (data.content.includes('Plan Mode')) {
-            lastModeWithReminder = 'planner'
-          } else if (data.content.includes('Build Mode')) {
-            lastModeWithReminder = 'builder'
-          }
-          break
-        }
-      }
-    }
+  // Use snapshot's value only if no newer message.start event was found
+  if (lastModeWithReminder === undefined && snapshotModeReminder) {
+    lastModeWithReminder = snapshotModeReminder
   }
 
   let sessionInit: FoldedSessionState['sessionInit']
