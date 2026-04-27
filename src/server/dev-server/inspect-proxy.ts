@@ -121,21 +121,11 @@ export function startInspectProxy(target: string, sessionManager: SessionManager
       clientParsed = true
 
       if (url === '/__inspect__.js') {
-        const possiblePaths = [
-          `${import.meta.dirname}/../public/__inspect__.js`,
-          `${import.meta.dirname}/../../src/server/public/__inspect__.js`,
-          `${process.cwd()}/dist/server/public/__inspect__.js`,
-        ]
+        const inspectPath = new URL('./server/public/__inspect__.js', import.meta.url)
         let inspectJs: Buffer | null = null
-        for (const p of possiblePaths) {
-          try {
-            inspectJs = fs.readFileSync(p)
-            break
-          } catch {
-            // try next path
-          }
-        }
-        if (!inspectJs) {
+        try {
+          inspectJs = fs.readFileSync(inspectPath)
+        } catch {
           const resp = buildResponse(404, { 'Content-Type': 'text/plain' }, Buffer.from('Not found'))
           client.write(resp)
           client.end()
