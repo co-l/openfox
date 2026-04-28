@@ -147,7 +147,8 @@ export function startInspectProxy(target: string, sessionManager: SessionManager
             if (sessionId) {
               const elementDesc = element ? `${element.tag}${element.id ? '#' + element.id : ''}` : 'unknown'
               const htmlSnippet = element?.outerHTML ? `\nHtml: ${element.outerHTML.slice(0, 300)}` : ''
-              const content = `# User feedback from page inspection on dev_server\n\n## Context\n\nPage: ${pageUrl || ''}\nElement: ${elementDesc}\nxPath: ${element?.xpath || ''}${htmlSnippet}\n\n## Feedback\n\n${annotation || '(none)'}`
+              const textSnippet = element?.textContent ? `\nText (SVG-stripped): ${element.textContent.slice(0, 500)}` : ''
+              const content = `# User feedback from page inspection on dev_server\n\n## Context\n\nPage: ${pageUrl || ''}\nElement: ${elementDesc}\nxPath: ${element?.xpath || ''}${htmlSnippet}${textSnippet}\n\n## Feedback\n\n${annotation || '(none)'}`
               sessionManager.queueMessage(sessionId, 'asap', content, [], 'ui_feedback')
             }
             client.write(buildResponse(200, { 'Content-Type': 'application/json' }, Buffer.from('{"success":true}')))

@@ -68,7 +68,7 @@ export function createDevServerRoutes(): Router {
     res.json({ logs: result.logs, total: result.total, offset, limit })
   })
 
-  // GET /config — read .openfox/dev.json
+  // GET /config — read .openfox/dev-dev.json (dev) or .openfox/dev.json (prod)
   router.get('/config', async (req, res) => {
     const workdir = req.query['workdir'] as string
     if (!workdir) return res.status(400).json({ error: 'workdir required' })
@@ -76,7 +76,7 @@ export function createDevServerRoutes(): Router {
     res.json({ config })
   })
 
-  // POST /config — write .openfox/dev.json
+  // POST /config — write .openfox/dev-dev.json (dev) or .openfox/dev.json (prod)
   router.post('/config', async (req, res) => {
     const workdir = req.query['workdir'] as string
     if (!workdir) return res.status(400).json({ error: 'workdir required' })

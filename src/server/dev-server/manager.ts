@@ -4,13 +4,17 @@ import { resolve, join } from 'node:path'
 import { terminateProcessTree } from '../utils/process-tree.js'
 import { logger } from '../utils/logger.js'
 import { getPlatformShell } from '../utils/platform.js'
+import { getRuntimeConfig } from '../runtime-config.js'
 import type { DevServerConfig, DevServerState, DevServerStatus } from '../../shared/dev-server.js'
 import { startInspectProxy } from './inspect-proxy.js'
 import type { SessionManager } from '../session/manager.js'
 
 const MAX_LOG_LINES = 2000
 const MAX_LOG_BYTES = 100_000
-const CONFIG_PATH = '.openfox/dev.json'
+const getDevServerConfigPath = (workdir: string) => {
+  const mode = getRuntimeConfig().mode ?? 'production'
+  return join(resolve(workdir), '.openfox', `${mode === 'development' ? 'dev-dev' : 'dev'}.json`)
+}
 
 // Patterns that indicate the server crashed even if the watcher stays alive
 const ERROR_PATTERNS = [
@@ -104,7 +108,7 @@ class DevServerManager {
 
   async loadConfig(workdir: string): Promise<DevServerConfig | null> {
     try {
-      const configPath = join(this.resolveWorkdir(workdir), CONFIG_PATH)
+      const configPath = getDevServerConfigPath(workdir)
       const raw = await readFile(configPath, 'utf-8')
       const parsed = JSON.parse(raw)
       if (!parsed.command || !parsed.url) return null
@@ -123,7 +127,7 @@ class DevServerManager {
     const resolved = this.resolveWorkdir(workdir)
     const dirPath = join(resolved, '.openfox')
     await mkdir(dirPath, { recursive: true })
-    const configPath = join(resolved, CONFIG_PATH)
+    const configPath = getDevServerConfigPath(workdir)
     await writeFile(configPath, JSON.stringify(config, null, 2) + '\n', 'utf-8')
   }
 

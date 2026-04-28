@@ -72,6 +72,20 @@
     return '/' + parts.join('/');
   }
 
+  function stripSvgAndGetText(el) {
+    try {
+      var clone = el.cloneNode(true);
+      var svgs = clone.querySelectorAll('svg');
+      for (var i = 0; i < svgs.length; i++) {
+        svgs[i].remove();
+      }
+      var text = (clone.textContent || '').replace(/\s+/g, ' ').trim();
+      return text.slice(0, 500) || null;
+    } catch (e) {
+      return null;
+    }
+  }
+
   function buildElementData(el) {
     var attrs = {};
     if (el.attributes) {
@@ -97,6 +111,7 @@
       className: (typeof el.className === 'string' ? el.className : '') || null,
       xpath: generateXPath(el),
       text: (el.innerText || '').slice(0, 500) || null,
+      textContent: stripSvgAndGetText(el),
       outerHTML: (el.outerHTML || '').slice(0, 1000) || '',
       rect: { x: rect.left, y: rect.top, width: rect.width, height: rect.height },
       attributes: attrs

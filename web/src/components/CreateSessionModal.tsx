@@ -3,7 +3,7 @@ import { useLocation } from 'wouter'
 import { useProjectStore } from '../stores/project'
 import { Modal } from './shared/Modal'
 import { Button } from './shared/Button'
-import { FolderIcon, CopyIcon } from './shared/icons'
+import { FolderIcon, TrashIcon } from './shared/icons'
 import { authFetch } from '../lib/api'
 import { DeleteProjectConfirmationModal } from './DeleteProjectConfirmationModal.js'
 import { CreateProjectModal } from './CreateProjectModal.js'
@@ -26,6 +26,20 @@ export function OpenProjectModal({ isOpen, onClose }: OpenProjectModalProps) {
   const deleteProject = useProjectStore(state => state.deleteProject)
   const [projectToDelete, setProjectToDelete] = useState<{ id: string; name: string } | null>(null)
   const [creatingPath, setCreatingPath] = useState<string | null>(null)
+
+  const truncateMiddle = (path: string, maxLen = 32) => {
+    if (path.length <= maxLen) return path
+    const parts = path.split('/').filter(Boolean)
+    if (parts.length <= 2) return path
+    const first = parts[0]!
+    const last = parts[parts.length - 1]!
+    const middle = parts.slice(1, -1).join('/')
+    const space = maxLen - first.length - last.length - 3
+    if (space < 0) return path
+    const lchars = middle.slice(0, Math.floor(space / 2))
+    const rchars = middle.slice(-Math.ceil(space / 2))
+    return `/${first}/${lchars}...${rchars}/${last}`
+  }
 
   useEffect(() => {
     authFetch('/api/config')
@@ -86,14 +100,14 @@ export function OpenProjectModal({ isOpen, onClose }: OpenProjectModalProps) {
         </Button>
       </div>
     }>
-      <div className="flex flex-1 -m-4">
-        <div className="w-1/2 border-r border-border flex flex-col">
-          <div className="p-3 border-b border-border bg-bg-tertiary/30">
+      <div className="flex flex-col sm:flex-row flex-1 -m-4">
+        <div className="w-full sm:w-1/2 border-b sm:border-b-0 sm:border-r border-border flex flex-col max-h-[40vh] sm:max-h-[50vh]">
+          <div className="p-3 border-b border-border bg-bg-tertiary/30 shrink-0">
             <h3 className="font-medium text-sm text-text-secondary">Recent Projects</h3>
           </div>
           <div className="flex-1 overflow-y-auto">
             {projects.length === 0 ? (
-              <div className="p-8 text-center text-text-muted text-sm">
+              <div className="p-6 text-center text-text-muted text-sm">
                 <p className="mb-2">No recent projects</p>
                 <p className="text-xs">Click "Create new project" to add one</p>
               </div>
@@ -108,15 +122,15 @@ export function OpenProjectModal({ isOpen, onClose }: OpenProjectModalProps) {
                       <FolderIcon className="w-5 h-5 text-accent-primary" />
                       <div className="flex-1 min-w-0">
                         <div className="font-medium truncate">{project.name}</div>
-                        <div className="text-xs text-text-muted truncate">{project.workdir}</div>
+                        <div className="text-xs text-text-muted truncate">{truncateMiddle(project.workdir)}</div>
                       </div>
                     </button>
                     <button
                       onClick={(e) => handleDeleteClick(project, e)}
-                      className="opacity-0 group-hover:opacity-100 text-accent-error/70 hover:text-accent-error p-1 transition-opacity"
+                      className="text-accent-error/70 hover:text-accent-error p-1"
                       title="Delete project"
                     >
-                      <CopyIcon className="w-4 h-4" />
+                      <TrashIcon className="w-4 h-4" />
                     </button>
                   </div>
                 ))}
@@ -125,8 +139,8 @@ export function OpenProjectModal({ isOpen, onClose }: OpenProjectModalProps) {
           </div>
         </div>
 
-        <div className="w-1/2 flex flex-col items-center justify-center p-8 text-center">
-          <div className="flex flex-col gap-3 w-full max-w-xs">
+        <div className="w-full sm:w-1/2 flex flex-col items-center justify-center p-6 sm:p-8 text-center">
+          <div className="flex flex-col gap-3 w-full max-w-sm">
             <Button variant="primary" onClick={() => setShowBrowser(true)}>
               Select existing project
             </Button>
