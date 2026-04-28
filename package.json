@@ -61,7 +61,7 @@
     "@fontsource/jetbrains-mono": "^5.2.8",
     "@xterm/addon-fit": "^0.11.0",
     "@xterm/xterm": "^6.0.0",
-    "bash-language-server": "^5.4.2",
+    "bash-language-server": "^5.6.0",
     "better-sqlite3": "^12.8.0",
     "cors": "^2.8.5",
     "express": "^5.2.1",
@@ -147,5 +147,17 @@
   "repository": {
     "type": "git",
     "url": "git@github.com:co-l/openfox.git"
+  },
+  "overrides": {
+    "mysql2": "3.22.3",
+    "ssh2": "1.17.0",
+    "tar": "7.5.13",
+    "uuid": "14.0.0",
+    "@tootallnate/once": "3.0.1",
+    "braces": "3.0.3",
+    "semver": "7.7.4",
+    "minimatch": "10.2.5",
+    "micromatch": "4.0.8",
+    "@rollup/plugin-terser": "1.0.0"
   }
 }
