@@ -1,8 +1,9 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { Modal } from './Modal'
-import { ArrowLeftIcon, FolderIcon } from './icons'
+import { ArrowLeftIcon, FolderIcon, SearchIcon } from './icons'
 import { Spinner } from './Spinner'
 import { authFetch } from '../../lib/api'
+import { Input } from './Input'
 
 interface DirectoryEntry {
   name: string
@@ -25,9 +26,15 @@ interface DirectoryBrowserProps {
 export function DirectoryBrowser({ onSelect, onClose, initialPath }: DirectoryBrowserProps) {
   const [listing, setListing] = useState<DirectoryListing | null>(null)
   const [loading, setLoading] = useState(true)
+  const [searchQuery, setSearchQuery] = useState('')
+  const [focusedIndex, setFocusedIndex] = useState(-1)
+  const inputRef = useRef<HTMLInputElement>(null)
+  const itemsRef = useRef<(HTMLButtonElement | null)[]>([])
 
   const fetchDir = useCallback(async (path?: string) => {
     setLoading(true)
+    setSearchQuery('')
+    setFocusedIndex(-1)
     try {
       const url = path ? `/api/directories?path=${encodeURIComponent(path)}` : '/api/directories'
       const response = await authFetch(url)
@@ -48,6 +55,48 @@ export function DirectoryBrowser({ onSelect, onClose, initialPath }: DirectoryBr
     name: part,
     path: '/' + arr.slice(0, i + 1).join('/'),
   }))
+
+  const filteredDirs = listing?.directories.filter(dir =>
+    searchQuery === '' || dir.name.toLowerCase().includes(searchQuery.toLowerCase())
+  ) ?? []
+
+  const visibleItems = [
+    ...(listing?.parent ? [{ type: 'parent' as const, path: listing.parent, name: '..' }] : []),
+    ...filteredDirs.map(dir => ({ type: 'dir' as const, path: dir.path, name: dir.name }))
+  ]
+
+  useEffect(() => {
+    setFocusedIndex(searchQuery ? 0 : -1)
+  }, [searchQuery, filteredDirs.length])
+
+  useEffect(() => {
+    if (focusedIndex >= 0 && itemsRef.current[focusedIndex]) {
+      itemsRef.current[focusedIndex]?.scrollIntoView({ block: 'nearest' })
+    }
+  }, [focusedIndex])
+
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'ArrowDown') {
+      e.preventDefault()
+      setFocusedIndex(i => Math.min(i + 1, visibleItems.length - 1))
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault()
+      setFocusedIndex(i => Math.max(i - 1, 0))
+    } else if (e.key === 'Enter') {
+      e.preventDefault()
+      if (focusedIndex >= 0 && visibleItems[focusedIndex]) {
+        const item = visibleItems[focusedIndex]
+        if (item.type === 'parent') {
+          fetchDir(item.path)
+        } else {
+          fetchDir(item.path)
+        }
+      }
+    } else if (e.key === 'Escape') {
+      setSearchQuery('')
+      inputRef.current?.focus()
+    }
+  }
 
   return (
     <Modal isOpen={true} onClose={onClose} title="Select Folder" size="lg">
@@ -72,37 +121,52 @@ export function DirectoryBrowser({ onSelect, onClose, initialPath }: DirectoryBr
         </div>
       )}
 
+      <div className="px-4 mb-3">
+        <div className="relative">
+          <span className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-text-muted pointer-events-none flex items-center justify-center">
+            <SearchIcon />
+          </span>
+          <Input
+            autoFocus ref={inputRef}
+            value={searchQuery}
+            onChange={e => setSearchQuery(e.target.value)}
+            onKeyDown={handleKeyDown}
+            placeholder="Filter directories..."
+            className="w-full pl-9"
+          />
+        </div>
+      </div>
+
       <div className="flex-1 overflow-y-auto -mx-4">
         {loading ? (
           <div className="p-8 text-center"><Spinner size="sm" /></div>
+        ) : visibleItems.length === 0 ? (
+          <div className="p-8 text-center text-text-muted text-sm">
+            {searchQuery ? 'No matching directories' : 'No subdirectories'}
+          </div>
         ) : (
           <div className="divide-y divide-border">
-            {listing?.parent && (
-              <button onClick={() => fetchDir(listing.parent!)} className="w-full p-3 flex items-center gap-3 hover:bg-bg-tertiary/50 text-text-muted">
-                <ArrowLeftIcon className="w-5 h-5" />
-                <span>..</span>
+            {visibleItems.map((item, index) => (
+              <button
+                ref={el => { itemsRef.current[index] = el }}
+                key={item.path}
+                onClick={() => fetchDir(item.path)}
+                onDoubleClick={() => onSelect(item.path)}
+                className={`w-full p-3 flex items-center gap-3 text-left transition-colors ${
+                  index === focusedIndex ? 'bg-accent-primary/20 text-accent-primary' : 'hover:bg-bg-tertiary/50'
+                }`}
+              >
+                {item.type === 'parent' ? (
+                  <ArrowLeftIcon className="w-5 h-5 text-text-muted" />
+                ) : (
+                  <FolderIcon className="w-5 h-5" />
+                )}
+                <span className="flex-1">{item.name}</span>
+                {index === focusedIndex && (
+                  <span className="text-xs text-text-muted">⏎ navigate · dbl-click select</span>
+                )}
               </button>
-            )}
-            {listing?.directories.map(dir => (
-              <div key={dir.path} className="group flex items-center gap-2 hover:bg-bg-tertiary/50">
-                <button
-                  onClick={() => fetchDir(dir.path)}
-                  className="flex-1 p-3 flex items-center gap-3 text-left"
-                >
-                  <FolderIcon />
-                  <span>{dir.name}</span>
-                </button>
-                <button
-                  onClick={() => onSelect(dir.path)}
-                  className="px-3 py-1 text-xs bg-accent-primary/10 text-accent-primary rounded opacity-0 group-hover:opacity-100 transition-opacity mr-3"
-                >
-                  Select
-                </button>
-              </div>
             ))}
-            {listing?.directories.length === 0 && (
-              <div className="p-8 text-center text-text-muted text-sm">No subdirectories</div>
-            )}
           </div>
         )}
       </div>
