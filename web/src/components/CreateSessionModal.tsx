@@ -130,7 +130,7 @@ export function OpenProjectModal({ isOpen, onClose }: OpenProjectModalProps) {
             <Button variant="primary" onClick={() => setShowBrowser(true)}>
               Select existing project
             </Button>
-            <Button variant="secondary" onClick={() => setShowCreateModal(true)}>
+            <Button variant="secondary" onClick={() => setShowCreateModal(true)} data-testid="open-project-create-button">
               Create new project
             </Button>
           </div>
