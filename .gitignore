@@ -15,6 +15,10 @@ dist/
 .env
 .env.local
 
+# Local vite config (local overrides only, not committed)
+web/vite.config.local.ts
+
+
 # IDE
 .idea/
 .vscode/
