@@ -99,6 +99,8 @@
     "@testing-library/react": "^16.3.2",
     "@testing-library/user-event": "^14.6.1",
     "@types/better-sqlite3": "^7.6.13",
+    "@types/cors": "^2.8.19",
+    "@types/express": "^5.0.6",
     "@types/http-proxy": "^1.17.17",
     "@types/node": "^22.19.15",
     "@types/react": "^19.0.8",
@@ -119,11 +121,13 @@
     "prettier": "^3.8.1",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
+    "serialize-javascript": "^7.0.5",
     "tailwindcss": "^3.4.17",
     "tsup": "^8.4.0",
     "tsx": "^4.19.2",
     "typescript": "^5.7.3",
     "typescript-eslint": "^8.57.2",
+    "vite-plugin-pwa": "^1.2.0",
     "vitest": "^4.1.2"
   },
   "lint-staged": {
