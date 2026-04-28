@@ -76,3 +76,23 @@ http:
 - **Set `server.host: "127.0.0.1"`** in your OpenFox config so the backend only listens locally
 - The WebSocket endpoint is `/ws` — the frontend always connects to the same origin as the page (e.g. `wss://yourdomain.com/ws`)
 - For local dev without a proxy, `ws://localhost:10469` is still the default
+
+## Local Dev Behind a Proxy
+
+If you need to run `npm run dev` while accessing via a domain (instead of `localhost`), create a local vite config:
+
+```bash
+cp web/vite.config.local.ts.example web/vite.config.local.ts
+```
+
+Edit `vite.config.local.ts` and add your domain to `allowedHosts`:
+
+```ts
+export default {
+  server: {
+    allowedHosts: ['yourdomain.com'],
+  },
+}
+```
+
+This file is gitignored — it won't be committed.
