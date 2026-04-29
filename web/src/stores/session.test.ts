@@ -1206,6 +1206,34 @@ describe('useSessionStore session isolation', () => {
     expect(fetchMock).not.toHaveBeenCalled()
   })
 
+  it('resets pendingSessionCreate when clearSession is called', async () => {
+    const useSessionStore = await loadSessionStore()
+
+    useSessionStore.setState({ pendingSessionCreate: 'session-123' })
+
+    useSessionStore.getState().clearSession()
+
+    expect(useSessionStore.getState().pendingSessionCreate).toBe(false)
+  })
+
+  it('allows createSession after clearSession resets pendingSessionCreate', async () => {
+    const useSessionStore = await loadSessionStore()
+
+    useSessionStore.setState({ pendingSessionCreate: 'session-123' })
+    useSessionStore.getState().clearSession()
+
+    const result = await useSessionStore.getState().createSession('project-1')
+
+    expect(result).toBeNull()
+    expect(fetchMock).toHaveBeenCalledWith(
+      '/api/sessions',
+      expect.objectContaining({
+        method: 'POST',
+        body: JSON.stringify({ projectId: 'project-1', title: undefined }),
+      }),
+    )
+  })
+
   it('clears pendingQuestion when answerQuestion is called with empty answer (skip)', async () => {
     const useSessionStore = await loadSessionStore()
 
