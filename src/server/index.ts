@@ -1221,6 +1221,8 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
         logger.info('Shutting down...')
         void (async () => {
           await devServerManager.stopAll()
+          const { stopAllInspectProxies } = await import('./dev-server/inspect-proxy.js')
+          stopAllInspectProxies()
           const { cleanupAllProcesses } = await import('./tools/background-process/store.js')
           cleanupAllProcesses()
           viteServer?.close()
