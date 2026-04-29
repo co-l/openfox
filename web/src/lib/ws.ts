@@ -193,5 +193,12 @@ class WebSocketClient {
 }
 
 // Singleton instance
-const wsUrl = `ws://${window.location.hostname}:${window.location.port || '10469'}/ws`
+const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
+let port = window.location.port
+if (!port) {
+  port = (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')
+    ? '10469'
+    : (window.location.protocol === 'https:' ? '443' : '80')
+}
+const wsUrl = `${protocol}//${window.location.hostname}:${port}/ws`
 export const wsClient = new WebSocketClient(wsUrl)
