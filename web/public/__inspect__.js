@@ -99,13 +99,6 @@
     }
     var rect = el.getBoundingClientRect();
     var tagName = el.tagName ? el.tagName.toLowerCase() : '';
-    // Avoid capturing the highlight overlay in xpath/outerHTML
-    if (el.classList && el.classList.contains('__fox-highlight')) {
-      var parent = el.parentNode;
-      if (parent) {
-        return buildElementData(parent);
-      }
-    }
     return {
       tag: tagName,
       id: el.id || null,
