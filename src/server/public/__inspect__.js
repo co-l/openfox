@@ -7,6 +7,7 @@
   window.__foxInspectEnabled = true;
   window.__foxSentPending = false;
   window.__foxPopupOpen = false;
+  window.__foxHighlightedEl = null;
 
   var overlayStyle = document.createElement('style');
   overlayStyle.textContent = [
@@ -50,9 +51,9 @@
   }
 
   function clearHighlights() {
-    var highlighted = document.querySelectorAll('.__fox-highlight');
-    for (var i = 0; i < highlighted.length; i++) {
-      highlighted[i].classList.remove('__fox-highlight');
+    if (window.__foxHighlightedEl) {
+      window.__foxHighlightedEl.classList.remove('__fox-highlight');
+      window.__foxHighlightedEl = null;
     }
   }
 
@@ -211,14 +212,9 @@
     if (!window.__foxInspectMode || window.__foxPopupOpen) return;
     if (e.target === document.documentElement || e.target === document.body) return;
     if (overlay.contains(e.target)) return;
+    clearHighlights();
     e.target.classList.add('__fox-highlight');
-  }, true);
-
-  document.addEventListener('mouseout', function(e) {
-    if (!window.__foxInspectMode || window.__foxPopupOpen) return;
-    if (e.target === document.documentElement || e.target === document.body) return;
-    if (overlay.contains(e.target)) return;
-    e.target.classList.remove('__fox-highlight');
+    window.__foxHighlightedEl = e.target;
   }, true);
 
   document.addEventListener('click', function(e) {
@@ -228,7 +224,9 @@
 
     e.preventDefault();
     e.stopPropagation();
-    showPopup(e.target, e.clientX, e.clientY);
+    var el = window.__foxHighlightedEl;
+    if (!el) return;
+    showPopup(el, e.clientX, e.clientY);
   }, true);
 
   document.addEventListener('keydown', function(e) {
