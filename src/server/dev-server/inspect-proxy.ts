@@ -1,10 +1,10 @@
 import net from 'net'
 import zlib from 'zlib'
-import fs from 'fs'
 import { logger } from '../utils/logger.js'
 import type { SessionManager } from '../session/manager.js'
 
-const INJECT_SCRIPT = '<script src="/__inspect__.js"></script>'
+const OPENFOX_BASE_PORT = Number(process.env['OPENFOX_PORT'] ?? 10369)
+const INJECT_SCRIPT = `<script src="http://127.0.0.1:${OPENFOX_BASE_PORT}/__inspect__.js"></script>`
 
 interface ProxyInstance {
   server: ReturnType<typeof net.createServer>
@@ -104,22 +104,6 @@ export function startInspectProxy(target: string, sessionManager: SessionManager
       const isWS = headers['upgrade'] === 'websocket'
       clientParsed = true
 
-      if (url === '/__inspect__.js') {
-        const inspectPath = new URL('./server/public/__inspect__.js', import.meta.url)
-        let inspectJs: Buffer | null = null
-        try {
-          inspectJs = fs.readFileSync(inspectPath)
-        } catch {
-          const resp = buildResponse(404, { 'Content-Type': 'text/plain' }, Buffer.from('Not found'))
-          client.write(resp)
-          client.end()
-          return
-        }
-        const resp = buildResponse(200, { 'Content-Type': 'application/javascript', 'Content-Length': inspectJs.length.toString() }, inspectJs)
-        client.write(resp)
-        client.end()
-        return
-      }
 
       if (url === '/__openfox_feedback' && method === 'POST') {
         const contentLength = parseInt(headers['content-length'] || '0', 10)
