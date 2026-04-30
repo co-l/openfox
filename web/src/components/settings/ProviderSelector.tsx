@@ -223,7 +223,7 @@ export function ProviderSelector() {
       
       {/* Unified Provider + Model Dropdown */}
       {isOpen && (
-        <div className="absolute bottom-full right-0 mb-1 w-72 bg-bg-secondary border border-border rounded-lg shadow-lg z-50 overflow-hidden">
+        <div className="absolute bottom-full right-0 mb-1 w-72 bg-bg-secondary border border-border rounded-lg shadow-lg z-50 overflow-hidden max-h-[80vh] overflow-y-auto">
           <div className="py-1">
             {providers.map(provider => (
               <div key={provider.id}>
@@ -282,7 +282,7 @@ export function ProviderSelector() {
                 
                 {/* Model submenu - shown for expanded provider */}
                 {expandedProviderIds.includes(provider.id) && (
-                  <div className="bg-bg-primary border-t border-border">
+                  <div className="bg-bg-primary border-t border-border max-h-40 overflow-y-auto">
                     {loadingModels === provider.id ? (
                       <div className="px-4 py-2 text-xs text-text-muted">
                         Loading models...
