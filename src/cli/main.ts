@@ -23,6 +23,7 @@ Commands:
   provider use     Switch active provider
   provider remove  Remove a provider
   service          Manage the systemd service (install, start, stop, status, logs, uninstall)
+  pwa              Manage the PWA installation (install, uninstall, launch, update, status)
   update           Update OpenFox to the latest version (see update.sh)
 
 Options:
@@ -191,6 +192,16 @@ export async function runCli(options: { mode: Mode }): Promise<void> {
         runServiceCommand(mode, undefined)
       } else {
         await runServiceCommand(mode, subcommand)
+      }
+      break
+    }
+    case 'pwa': {
+      const { runPwaCommand, printPwaHelp } = await import('./pwa.js')
+      const [, subcommand] = positionals
+      if (subcommand === '--help' || subcommand === '-h' || values.help) {
+        printPwaHelp()
+      } else {
+        await runPwaCommand(mode, subcommand)
       }
       break
     }
