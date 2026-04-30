@@ -216,8 +216,8 @@ export function DropdownMenu({ items, trigger, minWidth = '120px', isOpen: contr
             <Link
               key={index}
               href={item.href}
-              onClick={(e) => {
-                item.onClick?.(e)
+              onMouseDown={(e) => {
+                item.onClick?.(e as any)
                 setIsOpen(false)
               }}
               className={`w-full px-3 py-2 text-left text-sm flex items-center gap-2 transition-colors ${
