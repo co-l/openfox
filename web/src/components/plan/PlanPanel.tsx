@@ -215,19 +215,12 @@ export function PlanPanel({ criteriaSidebarOpen: externalCriteriaSidebarOpen, on
     return () => window.removeEventListener('keydown', handleEscape)
   }, [isRunning, stopGeneration, isAutoScrollActive])
 
-  // Double Shift opens quick action modal
-  const lastShiftRef = useRef<number>(0)
+  // Ctrl+K opens quick action modal
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Shift' && !e.ctrlKey && !e.metaKey && !e.altKey) {
-        const now = Date.now()
-        if (now - lastShiftRef.current < 300) {
-          e.preventDefault()
-          setShowQuickAction(true)
-          lastShiftRef.current = 0
-        } else {
-          lastShiftRef.current = now
-        }
+      if (e.key === 'k' && (e.ctrlKey || e.metaKey)) {
+        e.preventDefault()
+        setShowQuickAction(true)
       }
     }
     window.addEventListener('keydown', handleKeyDown)

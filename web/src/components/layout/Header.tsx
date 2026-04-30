@@ -326,20 +326,13 @@ export function Header({ onMenuClick, onCriteriaToggle }: HeaderProps) {
 
   
 
-  // Double Ctrl opens terminal
-  const lastCtrlRef = useRef<number>(0)
+  // Ctrl+J opens terminal
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Control' && !e.shiftKey && !e.metaKey && !e.altKey) {
-        const now = Date.now()
-        if (now - lastCtrlRef.current < 300) {
-          e.preventDefault()
-          e.stopPropagation()
-          useTerminalStore.getState().toggleOpen()
-          lastCtrlRef.current = 0
-        } else {
-          lastCtrlRef.current = now
-        }
+      if (e.key === 'j' && (e.ctrlKey || e.metaKey)) {
+        e.preventDefault()
+        e.stopPropagation()
+        useTerminalStore.getState().toggleOpen()
       }
     }
     window.addEventListener('keydown', handleKeyDown, true)
