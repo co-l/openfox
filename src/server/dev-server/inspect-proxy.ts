@@ -155,7 +155,6 @@ export function startInspectProxy(target: string, sessionManager: SessionManager
       targetSocket = net.connect(targetPort, targetHost)
       targetSocket.on('error', () => client.destroy())
       client.on('error', () => targetSocket!.destroy())
-      client.on('data', (chunk) => targetSocket!.write(chunk))
       client.on('end', () => targetSocket!.end())
 
       // Force target to close connection after response so we get on('end') promptly
