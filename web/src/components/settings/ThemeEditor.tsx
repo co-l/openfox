@@ -172,7 +172,7 @@ export function ThemeEditor() {
 
   const handlePresetSelect = (presetId: string) => {
     applyPreset(presetId)
-    saveTheme(JSON.stringify({ preset: presetId }))
+    saveTheme(JSON.stringify({ preset: presetId })).catch(() => {})
   }
 
   const handleUserPresetSelect = (index: number) => {

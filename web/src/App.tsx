@@ -201,21 +201,32 @@ function App() {
   }, [configFetched, providers.length])
 
   useEffect(() => {
-    const { applySavedTheme, saveTheme } = useThemeStore.getState()
+    const { applyPreset, applyTokens } = useThemeStore.getState()
     const serverTheme = displaySettings[SETTINGS_KEYS.DISPLAY_THEME]
     const serverPresets = displaySettings[SETTINGS_KEYS.DISPLAY_USER_PRESETS]
 
-    if (serverTheme) {
-      localStorage.setItem('openfox:theme', serverTheme)
-    }
     if (serverPresets) {
       localStorage.setItem('openfox:userPresets', serverPresets)
     }
 
     if (serverTheme) {
-      applySavedTheme()
+      localStorage.setItem('openfox:theme', serverTheme)
+      try {
+        const parsed = JSON.parse(serverTheme) as { preset?: string; tokens?: Record<string, string> }
+        if (parsed.preset && parsed.tokens) {
+          applyPreset(parsed.preset)
+          useThemeStore.setState({ basePreset: parsed.preset })
+          applyTokens(parsed.tokens)
+        } else if (parsed.preset) {
+          applyPreset(parsed.preset)
+        } else if (parsed.tokens) {
+          applyTokens(parsed.tokens)
+        }
+      } catch {
+        applyPreset('dark')
+      }
     } else {
-      saveTheme(JSON.stringify({ preset: 'dark' }))
+      applyPreset('dark')
     }
   }, [displaySettings[SETTINGS_KEYS.DISPLAY_THEME], displaySettings[SETTINGS_KEYS.DISPLAY_USER_PRESETS]])
 
