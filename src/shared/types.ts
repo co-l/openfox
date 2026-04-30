@@ -498,6 +498,11 @@ export interface ModelConfig {
   topK?: number
   maxTokens?: number
   supportsVision?: boolean
+  // Profile defaults for transparency
+  defaultTemperature?: number
+  defaultTopP?: number
+  defaultTopK?: number
+  defaultMaxTokens?: number
 }
 
 /** LLM provider configuration */

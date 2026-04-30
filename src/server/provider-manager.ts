@@ -1,5 +1,5 @@
 import type { Provider, Config, LlmBackend, ModelConfig } from '../shared/types.js'
-import { createLLMClient, detectBackend, detectModel, clearModelCache, setLlmStatus, type LLMClientWithModel } from './llm/index.js'
+import { createLLMClient, detectBackend, detectModel, clearModelCache, setLlmStatus, getModelProfile, type LLMClientWithModel } from './llm/index.js'
 import { logger } from './utils/logger.js'
 
 function normalizeModelId(s: string): string {
@@ -35,21 +35,32 @@ async function fetchModelsFromBackend(
   }
 }
 
+function enrichWithProfileDefaults(model: ModelConfig): ModelConfig {
+  const profile = getModelProfile(model.id)
+  return {
+    ...model,
+    defaultTemperature: profile.temperature,
+    defaultTopP: profile.topP,
+    ...(profile.topK !== undefined && { defaultTopK: profile.topK }),
+    defaultMaxTokens: profile.defaultMaxTokens,
+  }
+}
+
 function mergeModelsWithUserOverrides(backendModels: ModelConfig[], userModels: ModelConfig[]): ModelConfig[] {
   const normalizedUserIdMap = new Map(userModels.map(m => [normalizeModelId(m.id), m]))
 
   const updatedModels = backendModels.map(backendModel => {
     const existingUserModel = normalizedUserIdMap.get(normalizeModelId(backendModel.id))
     if (existingUserModel) {
-      return { ...existingUserModel, id: backendModel.id }
+      return enrichWithProfileDefaults({ ...existingUserModel, id: backendModel.id })
     }
-    return backendModel
+    return enrichWithProfileDefaults(backendModel)
   })
 
   const normalizedBackendIds = new Set(backendModels.map(m => normalizeModelId(m.id)))
   for (const userModel of userModels) {
     if (!normalizedBackendIds.has(normalizeModelId(userModel.id))) {
-      updatedModels.push(userModel)
+      updatedModels.push(enrichWithProfileDefaults(userModel))
     }
   }
 
@@ -498,7 +509,7 @@ export function createProviderManager(config: Config): ProviderManager {
       })
 
       // Merge with existing model to preserve any other settings
-      const updatedModel: ModelConfig = {
+      const updatedModel: ModelConfig = enrichWithProfileDefaults({
         id: modelId,
         contextWindow: settings.contextWindow ?? existingModel?.contextWindow ?? 200000,
         source: 'user',
@@ -507,7 +518,7 @@ export function createProviderManager(config: Config): ProviderManager {
         ...(finalTopK !== undefined && { topK: finalTopK }),
         ...(finalMaxTokens !== undefined && { maxTokens: finalMaxTokens }),
         ...(finalSupportsVision !== undefined && { supportsVision: finalSupportsVision }),
-      }
+      })
 
       if (existingModel) {
         providers = providers.map(p => p.id === providerId 

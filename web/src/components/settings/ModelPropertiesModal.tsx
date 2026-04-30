@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { Modal } from '../shared/Modal'
 import { Button } from '../shared/Button'
+import { Tooltip } from '../shared/Tooltip'
 import { useConfigStore } from '../../stores/config'
 
 function defaultModelSettings(model: ModelConfig): ModelSettings {
@@ -23,6 +24,10 @@ interface ModelConfig {
   topK?: number
   maxTokens?: number
   supportsVision?: boolean
+  defaultTemperature?: number
+  defaultTopP?: number
+  defaultTopK?: number
+  defaultMaxTokens?: number
 }
 
 interface ModelPropertiesModalProps {
@@ -59,6 +64,8 @@ function NumberInput({
   step = 1,
   helpText,
   defaultValue,
+  profileDefault,
+  tooltip,
 }: {
   label: string
   value: number | null
@@ -68,6 +75,8 @@ function NumberInput({
   step?: number
   helpText?: string
   defaultValue?: number
+  profileDefault?: number
+  tooltip?: string
 }) {
   const [localValue, setLocalValue] = useState(value?.toString() ?? '')
   const [useDefault, setUseDefault] = useState(value === null)
@@ -100,21 +109,30 @@ function NumberInput({
     }
   }
 
+  const labelContent = (
+    <label className="flex items-center gap-2 text-sm font-medium text-text-secondary mb-1">
+      {tooltip && (
+        <Tooltip content={tooltip}>
+          <span className="inline-flex items-center justify-center w-4 h-4 text-xs text-text-muted hover:text-text-secondary cursor-help rounded-full border border-border/50">?</span>
+        </Tooltip>
+      )}
+      {label}
+      <button
+        type="button"
+        onClick={handleToggle}
+        className={`text-xs px-1.5 py-0.5 rounded border ${
+          useDefault ? 'border-accent-primary/50 bg-accent-primary/10 text-accent-primary' : 'border-border text-text-muted hover:text-text-secondary'
+        }`}
+        title={useDefault ? 'Click to set a custom value' : 'Click to use default'}
+      >
+        {useDefault ? 'default' : 'custom'}
+      </button>
+    </label>
+  )
+
   return (
     <div>
-      <label className="flex items-center gap-2 text-sm font-medium text-text-secondary mb-1">
-        {label}
-        <button
-          type="button"
-          onClick={handleToggle}
-          className={`text-xs px-1.5 py-0.5 rounded border ${
-            useDefault ? 'border-accent-primary/50 bg-accent-primary/10 text-accent-primary' : 'border-border text-text-muted hover:text-text-secondary'
-          }`}
-          title={useDefault ? 'Click to set a custom value' : 'Click to use default'}
-        >
-          {useDefault ? 'default' : 'custom'}
-        </button>
-      </label>
+      {labelContent}
       <input
         type="number"
         min={min}
@@ -124,10 +142,24 @@ function NumberInput({
         readOnly={useDefault}
         onChange={(e) => handleLocalChange(e.target.value)}
         onClick={() => useDefault && handleToggle()}
-        placeholder={useDefault ? 'Using profile default (click to edit)' : ''}
+        placeholder={useDefault ? `${profileDefault !== undefined ? profileDefault : 'Using default'} (click to edit)` : ''}
         className={`w-full bg-bg-tertiary border border-border rounded px-3 py-2 text-text-primary focus:outline-none focus:border-accent-primary ${useDefault ? 'opacity-50 cursor-pointer' : ''}`}
       />
-      {helpText && <p className="text-xs text-text-muted mt-1">{helpText}</p>}
+      {helpText && (
+        <div className="flex items-center gap-2 mt-1">
+          <p className="text-xs text-text-muted">{helpText}</p>
+          {profileDefault !== undefined && (
+            <span className="text-xs text-text-muted/60">
+              (default: {profileDefault})
+            </span>
+          )}
+        </div>
+      )}
+      {!helpText && profileDefault !== undefined && (
+        <p className="text-xs text-text-muted mt-1">
+          Profile default: {profileDefault}
+        </p>
+      )}
     </div>
   )
 }
@@ -175,7 +207,7 @@ export function ModelPropertiesModal({ isOpen, onClose, providerId, model }: Mod
       isOpen={isOpen}
       onClose={onClose}
       title="Model Properties"
-      size="sm"
+      size="lg"
       footer={
         <div className="flex justify-end gap-2">
           <Button variant="secondary" onClick={handleCancel} disabled={saving}>Cancel</Button>
@@ -211,6 +243,8 @@ export function ModelPropertiesModal({ isOpen, onClose, providerId, model }: Mod
               step={0.1}
               helpText="0.0 - 2.0"
               defaultValue={1}
+              profileDefault={model.defaultTemperature}
+              tooltip="How random the response is. Low (0.1-0.3) = precise and predictable. High (0.7-1.5) = creative and varied."
             />
             <NumberInput
               label="Top P"
@@ -221,6 +255,8 @@ export function ModelPropertiesModal({ isOpen, onClose, providerId, model }: Mod
               step={0.05}
               helpText="0.0 - 1.0"
               defaultValue={1}
+              profileDefault={model.defaultTopP}
+              tooltip="How to pick the next word. Low (0.5-0.8) = stick to obvious choices. High (0.95-1.0) = allow surprising words."
             />
           </div>
           <NumberInput
@@ -230,6 +266,8 @@ export function ModelPropertiesModal({ isOpen, onClose, providerId, model }: Mod
             min={1}
             max={200}
             helpText="1 - 200 (leave as default if not supported)"
+            profileDefault={model.defaultTopK}
+            tooltip="Restricts word choices to the top K most likely ones. Low (10-20) = focused. High (50-200) = diverse. Not all backends support this."
           />
         </SettingsGroup>
 
@@ -240,6 +278,8 @@ export function ModelPropertiesModal({ isOpen, onClose, providerId, model }: Mod
           min={256}
           max={32000}
           helpText="Maximum tokens to generate per response"
+          profileDefault={model.defaultMaxTokens}
+          tooltip="Longest response length. Higher values let the model write more, but use up your context window faster."
         />
 
         <div>

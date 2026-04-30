@@ -43,6 +43,10 @@ interface ModelConfig {
   topK?: number
   maxTokens?: number
   supportsVision?: boolean
+  defaultTemperature?: number
+  defaultTopP?: number
+  defaultTopK?: number
+  defaultMaxTokens?: number
 }
 
 interface Provider {
