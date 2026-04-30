@@ -1,6 +1,6 @@
 import { memo, useState } from 'react'
 import { useBackgroundProcessesStore } from '../../stores/background-processes'
-import { ProcessLogModal } from './ProcessLogModal.tsx'
+import { LogViewer } from './LogViewer.tsx'
 
 interface BackgroundProcessesProps {
   sessionId: string | undefined
@@ -89,14 +89,13 @@ export const BackgroundProcesses = memo(function BackgroundProcesses({ sessionId
       </div>
 
       {expandedProcessId && (
-        <ProcessLogModal
-          isOpen={!!expandedProcessId}
+        <LogViewer
+          title={activeProcesses.find(p => p.id === expandedProcessId)?.name ?? ''}
+          logs={expandedLogs}
           onClose={() => {
             setExpandedProcessId(null)
             setExpandedLogs([])
           }}
-          processName={activeProcesses.find(p => p.id === expandedProcessId)?.name ?? ''}
-          logs={expandedLogs}
         />
       )}
     </div>
