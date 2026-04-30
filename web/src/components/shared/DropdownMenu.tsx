@@ -61,8 +61,11 @@ export function DropdownMenu({ items, trigger, minWidth = '120px', isOpen: contr
 
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
-      if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
-        setIsOpen(false)
+      if (menuRef.current) {
+        const target = event.target as Node
+        if (!menuRef.current.contains(target)) {
+          setIsOpen(false)
+        }
       }
     }
 
@@ -220,6 +223,7 @@ export function DropdownMenu({ items, trigger, minWidth = '120px', isOpen: contr
                 item.onClick?.(e)
                 setIsOpen(false)
               }}
+              onAuxClick={() => setIsOpen(false)}
               className={`w-full px-3 py-2 text-left text-sm flex items-center gap-2 transition-colors ${
                 item.danger ? 'text-accent-error hover:bg-accent-error/10' : isSelected ? 'bg-accent-primary/20 text-text-primary' : 'hover:bg-bg-tertiary text-text-primary'
               } ${index !== items.length - 1 ? 'border-b border-border' : ''}`}

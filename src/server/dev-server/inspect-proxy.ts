@@ -1,11 +1,10 @@
 import net from 'net'
 import zlib from 'zlib'
-import fs from 'fs'
-import { Server } from 'node:http'
 import { logger } from '../utils/logger.js'
 import type { SessionManager } from '../session/manager.js'
 
-const INJECT_SCRIPT = '<script src="/__inspect__.js"></script>'
+const OPENFOX_BASE_PORT = Number(process.env['OPENFOX_PORT'] ?? 10369)
+const INJECT_SCRIPT = `<script src="http://127.0.0.1:${OPENFOX_BASE_PORT}/__inspect__.js"></script>`
 
 interface ProxyInstance {
   server: ReturnType<typeof net.createServer>
@@ -16,7 +15,7 @@ const proxyPool = new Map<string, ProxyInstance>()
 let nextOffset = 0
 
 function getAvailablePort(): number {
-  const base = Number(process.env['OPENFOX_BASE_PROXY_PORT'] ?? 10_000)
+  const base = Number(process.env['OPENFOX_PORT'] ?? 10369)
   const used = new Set<number>()
   for (const instance of proxyPool.values()) {
     const addr = instance.server.address()
@@ -62,45 +61,26 @@ function buildResponse(status: number, headers: Record<string, string>, body: Bu
   return Buffer.concat([head, body])
 }
 
-function forwardHtml(client: net.Socket, body: Buffer, resHeaders: Record<string, string>, status: number) {
-  const bi = body.indexOf('</body>')
-  const hi = body.indexOf('</head>')
-  let modified: Buffer
-
-  if (bi >= 0) {
-    modified = Buffer.concat([body.slice(0, bi), Buffer.from(INJECT_SCRIPT, 'utf8'), body.slice(bi)])
-  } else if (hi >= 0) {
-    modified = Buffer.concat([body.slice(0, hi), Buffer.from(INJECT_SCRIPT, 'utf8'), body.slice(hi)])
-  } else {
-    client.write(body)
-    return
+function dechunk(buf: Buffer): Buffer {
+  const str = buf.toString('utf8')
+  const parts: string[] = []
+  let pos = 0
+  while (pos < str.length) {
+    const nlIdx = str.indexOf('\r\n', pos)
+    if (nlIdx < 0) break
+    const sizeStr = str.slice(pos, nlIdx)
+    const size = parseInt(sizeStr, 16)
+    if (isNaN(size) || size < 0) break
+    if (size === 0) break
+    const chunkStart = nlIdx + 2
+    const chunkEnd = chunkStart + size
+    if (chunkEnd > str.length) break
+    parts.push(str.slice(chunkStart, chunkEnd))
+    pos = chunkEnd + 2
   }
-
-  const newH = { ...resHeaders }
-  delete newH['content-length']
-  delete newH['transfer-encoding']
-  newH['content-length'] = Buffer.byteLength(modified).toString()
-  const newHead = `HTTP/1.1 ${status} OK\r\n` +
-    Object.entries(newH).map(([k, v]) => `${k}: ${v}`).join('\r\n') + '\r\n\r\n'
-  client.write(Buffer.from(newHead, 'utf8'))
-  client.write(modified)
+  return Buffer.from(parts.join(''), 'utf8')
 }
 
-function forwardHtmlChunk(client: net.Socket, chunk: Buffer) {
-  const str = chunk.toString('utf8')
-  const bi = str.indexOf('</body>')
-  const hi = str.indexOf('</head>')
-
-  if (bi >= 0) {
-    const modified = Buffer.from(str.slice(0, bi) + INJECT_SCRIPT + str.slice(bi), 'utf8')
-    client.write(modified)
-  } else if (hi >= 0) {
-    const modified = Buffer.from(str.slice(0, hi) + INJECT_SCRIPT + str.slice(hi), 'utf8')
-    client.write(modified)
-  } else {
-    client.write(chunk)
-  }
-}
 
 export function startInspectProxy(target: string, sessionManager: SessionManager): { port: number; cleanup: () => void } {
   const port = getAvailablePort()
@@ -108,9 +88,13 @@ export function startInspectProxy(target: string, sessionManager: SessionManager
   const server = net.createServer((client) => {
     let clientHead = ''
     let clientParsed = false
+    let targetSocket: net.Socket | undefined
 
     client.on('data', (chunk) => {
-      if (clientParsed) return
+      if (clientParsed) {
+        targetSocket?.write(chunk)
+        return
+      }
 
       clientHead += chunk.toString('utf8')
       const he = clientHead.indexOf('\r\n\r\n')
@@ -120,22 +104,6 @@ export function startInspectProxy(target: string, sessionManager: SessionManager
       const isWS = headers['upgrade'] === 'websocket'
       clientParsed = true
 
-      if (url === '/__inspect__.js') {
-        const inspectPath = new URL('./server/public/__inspect__.js', import.meta.url)
-        let inspectJs: Buffer | null = null
-        try {
-          inspectJs = fs.readFileSync(inspectPath)
-        } catch {
-          const resp = buildResponse(404, { 'Content-Type': 'text/plain' }, Buffer.from('Not found'))
-          client.write(resp)
-          client.end()
-          return
-        }
-        const resp = buildResponse(200, { 'Content-Type': 'application/javascript', 'Content-Length': inspectJs.length.toString() }, inspectJs)
-        client.write(resp)
-        client.end()
-        return
-      }
 
       if (url === '/__openfox_feedback' && method === 'POST') {
         const contentLength = parseInt(headers['content-length'] || '0', 10)
@@ -175,20 +143,26 @@ export function startInspectProxy(target: string, sessionManager: SessionManager
       const targetPort = parseInt(targetParts[1] ?? '80')
 
       if (isWS) {
-        const server = net.connect(targetPort, targetHost)
-        server.on('error', () => client.destroy())
-        client.on('error', () => server.destroy())
-        server.write(clientHead)
-        server.pipe(client)
-        client.pipe(server)
+        targetSocket = net.connect(targetPort, targetHost)
+        targetSocket.on('error', () => client.destroy())
+        client.on('error', () => targetSocket!.destroy())
+        targetSocket.write(clientHead)
+        targetSocket.pipe(client)
+        client.pipe(targetSocket!)
         return
       }
 
-      const server = net.connect(targetPort, targetHost)
-      server.on('error', () => client.destroy())
-      client.on('error', () => server.destroy())
-      server.write(clientHead)
-      client.pipe(server)
+      targetSocket = net.connect(targetPort, targetHost)
+      targetSocket.on('error', () => client.destroy())
+      client.on('error', () => targetSocket!.destroy())
+      client.on('end', () => targetSocket!.end())
+
+      // Force target to close connection after response so we get on('end') promptly
+      const connClose = '\r\nConnection: close'
+      const reqEnd = clientHead.indexOf('\r\n\r\n')
+      const forwardHead = clientHead.slice(0, reqEnd) + connClose + clientHead.slice(reqEnd)
+      targetSocket.write(forwardHead)
+      targetSocket.on('close', () => { if (!client.destroyed) client.end() })
 
       let serverHeadBuf = ''
       let serverParsed = false
@@ -199,7 +173,7 @@ export function startInspectProxy(target: string, sessionManager: SessionManager
       let bodyBuf: Buffer[] = []
       let headEnd = -1
 
-      server.on('data', (sChunk) => {
+      targetSocket.on('data', (sChunk) => {
         if (!serverParsed) {
           serverHeadBuf += sChunk.toString('utf8')
           const sHe = serverHeadBuf.indexOf('\r\n\r\n')
@@ -210,6 +184,7 @@ export function startInspectProxy(target: string, sessionManager: SessionManager
           resHeaders = p.headers
           isHtml = (resHeaders['content-type'] || '').includes('text/html')
           enc = resHeaders['content-encoding'] || null
+          const isChunked = (resHeaders['transfer-encoding'] || '').toLowerCase() === 'chunked'
           serverParsed = true
 
           if (isHtml && enc) {
@@ -217,9 +192,13 @@ export function startInspectProxy(target: string, sessionManager: SessionManager
             return
           }
 
+          if (isHtml && isChunked) {
+            bodyBuf.push(sChunk.slice(headEnd))
+            return
+          }
+
           if (isHtml) {
-            const body = sChunk.slice(headEnd)
-            forwardHtml(client, body, resHeaders, status)
+            bodyBuf.push(sChunk.slice(headEnd))
             return
           }
 
@@ -232,13 +211,13 @@ export function startInspectProxy(target: string, sessionManager: SessionManager
           return
         }
         if (isHtml) {
-          forwardHtmlChunk(client, sChunk)
+          bodyBuf.push(sChunk)
           return
         }
         client.write(sChunk)
       })
 
-      server.on('end', () => {
+      targetSocket.on('end', () => {
         if (!serverParsed) { client.end(); return }
 
         if (isHtml && enc) {
@@ -264,10 +243,31 @@ export function startInspectProxy(target: string, sessionManager: SessionManager
 
           const newH = { ...resHeaders }
           delete newH['content-length']
+          newH['connection'] = 'close'
           const headStr = `HTTP/1.1 ${status} OK\r\n` +
             Object.entries(newH).map(([k, v]) => `${k}: ${v}`).join('\r\n') + '\r\n\r\n'
           client.write(Buffer.from(headStr, 'utf8'))
           client.write(compressed)
+        } else if (isHtml && bodyBuf.length > 0) {
+          const fullBody = Buffer.concat(bodyBuf)
+          const isChunked = (resHeaders['transfer-encoding'] || '').toLowerCase() === 'chunked'
+          const dechunks = isChunked ? dechunk(fullBody) : fullBody
+          const bi = dechunks.indexOf('</body>')
+          const hi = dechunks.indexOf('</head>')
+          let modified: Buffer
+          if (bi >= 0) modified = Buffer.concat([dechunks.slice(0, bi), Buffer.from(INJECT_SCRIPT, 'utf8'), dechunks.slice(bi)])
+          else if (hi >= 0) modified = Buffer.concat([dechunks.slice(0, hi), Buffer.from(INJECT_SCRIPT, 'utf8'), dechunks.slice(hi)])
+          else { client.end(); return }
+
+          const newH: Record<string, string> = { ...resHeaders, 'content-type': 'text/html; charset=utf-8' }
+          delete newH['content-length']
+          delete newH['transfer-encoding']
+          newH['connection'] = 'close'
+          newH['content-length'] = Buffer.byteLength(modified).toString()
+          const headStr = `HTTP/1.1 ${status} OK\r\n` +
+            Object.entries(newH).map(([k, v]) => `${k}: ${v}`).join('\r\n') + '\r\n\r\n'
+          client.write(Buffer.from(headStr, 'utf8'))
+          client.write(modified)
         }
 
         client.end()

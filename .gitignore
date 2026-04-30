@@ -45,3 +45,4 @@ coverage/
 test-results/
 
 .playwright-cli/
+e2e-test-project/

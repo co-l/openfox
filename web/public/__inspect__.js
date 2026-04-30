@@ -158,12 +158,14 @@
     });
 
     popup.querySelector('.__fox-cancel').addEventListener('click', function(e) {
+      e.preventDefault();
       e.stopPropagation();
       window.__foxPopupOpen = false;
       popup.remove();
     });
 
     popup.querySelector('.__fox-send').addEventListener('click', function(e) {
+      e.preventDefault();
       e.stopPropagation();
       if (window.__foxSentPending) return;
       window.__foxSentPending = true;
@@ -224,7 +226,13 @@
 
   document.addEventListener('keydown', function(e) {
     if (e.key === 'Escape' && window.__foxInspectMode) {
+      clearHighlights();
       setInspectMode(false);
+    }
+    if (e.ctrlKey && e.shiftKey && e.key === 'X') {
+      e.preventDefault();
+      if (window.__foxInspectMode) clearHighlights();
+      setInspectMode(!window.__foxInspectMode);
     }
   });
 
@@ -247,8 +255,15 @@
     document.head.appendChild(overlayStyle);
     document.body.appendChild(overlay);
     toggleBtn = document.getElementById('__fox-toggle');
-    toggleBtn.addEventListener('click', function(e) {
+    var widget = document.getElementById('__fox-widget');
+    widget.addEventListener('mousedown', function(e) {
+      e.preventDefault();
       e.stopPropagation();
+    }, true);
+    toggleBtn.addEventListener('click', function(e) {
+      e.preventDefault();
+      e.stopPropagation();
+      if (window.__foxInspectMode) clearHighlights();
       setInspectMode(!window.__foxInspectMode);
     });
     overlay.style.display = window.__foxInspectEnabled ? '' : 'none';

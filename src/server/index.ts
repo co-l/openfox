@@ -130,7 +130,7 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
 
   // Middleware
   app.use(cors())
-  app.use(express.json())
+  app.use(express.json({ limit: '10mb' }))
 
   // Auth middleware for all /api routes (except /api/health and /api/auth/login)
   const authMiddleware = async (req: express.Request, res: express.Response, next: express.NextFunction) => {
@@ -1041,6 +1041,15 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
       }),
     )
 
+    // Inspect tool: serve injection script with CORS so proxied dev servers can load it
+    app.use('/__inspect__.js', (req, res) => {
+      res.set('Access-Control-Allow-Origin', '*')
+      res.set('Content-Type', 'application/javascript')
+      readFile(join(webDir, 'public', '__inspect__.js'))
+        .then((content) => res.send(content))
+        .catch(() => res.status(404).send('Not found'))
+    })
+
     // SPA fallback for non-API routes (must be last)
     app.get('/*path', (req, res) => {
       if (req.path.startsWith('/api/')) {
@@ -1091,9 +1100,6 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
         })
     })
 
-    // Inspect tool: serve injection script via dedicated proxy servers
-    // (not served from main server anymore)
-
     app.use(
       '/sounds',
       express.static(join(distWebDir, 'sounds'), {
@@ -1102,6 +1108,24 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
         },
       }),
     )
+
+    // Inspect tool: serve injection script from main server with CORS
+    app.use('/__inspect__.js', (req, res) => {
+      res.set('Access-Control-Allow-Origin', '*')
+      res.set('Content-Type', 'application/javascript')
+      readFile(join(distWebDir, '__inspect__.js'))
+        .then((content) => res.send(content))
+        .catch(() => res.status(404).send('Not found'))
+    })
+
+    // Inspect tool: serve injection script with CORS so proxied dev servers can load it
+    app.use('/__inspect__.js', (req, res) => {
+      res.set('Access-Control-Allow-Origin', '*')
+      res.set('Content-Type', 'application/javascript')
+      readFile(join(distWebDir, '__inspect__.js'))
+        .then((content) => res.send(content))
+        .catch(() => res.status(404).send('Not found'))
+    })
 
     // Root serves index.html
     app.get('/', (_req, res) => {
@@ -1197,6 +1221,8 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
         logger.info('Shutting down...')
         void (async () => {
           await devServerManager.stopAll()
+          const { stopAllInspectProxies } = await import('./dev-server/inspect-proxy.js')
+          stopAllInspectProxies()
           const { cleanupAllProcesses } = await import('./tools/background-process/store.js')
           cleanupAllProcesses()
           viteServer?.close()
