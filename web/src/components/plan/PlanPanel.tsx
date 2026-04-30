@@ -204,7 +204,8 @@ export function PlanPanel({ criteriaSidebarOpen: externalCriteriaSidebarOpen, on
   // Escape key to stop generation
   useEffect(() => {
     const handleEscape = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && isRunning) {
+      const popupOpen = showQuickAction || showCommandsModal || showWorkflowsModal || showMessageSearch
+      if (e.key === 'Escape' && isRunning && !popupOpen) {
         stopGeneration()
       }
       if (e.key === 'ScrollLock') {
@@ -213,7 +214,7 @@ export function PlanPanel({ criteriaSidebarOpen: externalCriteriaSidebarOpen, on
     }
     window.addEventListener('keydown', handleEscape)
     return () => window.removeEventListener('keydown', handleEscape)
-  }, [isRunning, stopGeneration, isAutoScrollActive])
+  }, [isRunning, stopGeneration, isAutoScrollActive, showQuickAction, showCommandsModal, showWorkflowsModal, showMessageSearch])
 
   // Ctrl+K opens quick action modal
   useEffect(() => {
