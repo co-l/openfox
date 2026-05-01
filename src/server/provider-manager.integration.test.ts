@@ -14,6 +14,7 @@ vi.mock('./llm/index.js', () => ({
   detectModel: vi.fn(() => Promise.resolve('test-model')),
   clearModelCache: vi.fn(),
   setLlmStatus: vi.fn(),
+  getModelProfile: vi.fn(() => ({ reasoning: false })),
 }))
 
 // Mock fetch
