@@ -60,14 +60,12 @@ export const editFileTool = createTool<EditFileArgs>(
     const fullPath = helpers.resolvePath(args.path)
     await helpers.checkPathAccess([fullPath])
     
-    // Validate file was read before editing
     const readFiles = context.sessionManager.getReadFiles(context.sessionId)
     const validation = await validateFileForWrite(fullPath, readFiles)
     if (!validation.valid) {
       return helpers.error(validation.error?.message ?? 'File validation failed')
     }
     
-    // Read file
     let content: string
     try {
       content = await readFile(fullPath, 'utf-8')
@@ -75,12 +73,10 @@ export const editFileTool = createTool<EditFileArgs>(
       return helpers.error(`File not found: ${args.path}`)
     }
 
-    // Detect and normalize line endings for matching
     const fileLineEnding = detectLineEnding(content)
     const normalizedContent = normalizeToLF(content)
     const normalizedOldString = normalizeToLF(args.old_string)
 
-    // Count occurrences on normalized content
     const occurrences = normalizedContent.split(normalizedOldString).length - 1
     
     if (occurrences === 0) {
@@ -99,10 +95,8 @@ export const editFileTool = createTool<EditFileArgs>(
       )
     }
     
-    // Extract edit context on normalized content (for consistent matching)
     const contextResult = extractEditContext(normalizedContent, normalizedOldString, normalizeToLF(args.new_string), replaceAll)
     
-    // Convert to shared types
     const editContextRegions: EditContextRegion[] = contextResult.regions.map(region => ({
       beforeContext: region.beforeContext.map(line => ({
         lineNumber: line.lineNumber,
@@ -124,27 +118,34 @@ export const editFileTool = createTool<EditFileArgs>(
       })),
     }))
     
-    // Perform replacement on normalized content (all LF)
-    const replacedContent = replaceAll
-      ? normalizedContent.replaceAll(normalizedOldString, args.new_string)
-      : normalizedContent.replace(normalizedOldString, args.new_string)
+    const normalizedNewString = normalizeToLF(args.new_string)
+    
+    // FIX: String.replace() treats $ as special replacement patterns ($&, $', $`, $$, $n)
+    // Our new_string contains '$' in code like "$' + value.toFixed(2)" which gets mangled
+    // Solution: Use index-based replacement to avoid regex/replace pattern interpretation
+    let replacedContent: string
+    if (replaceAll) {
+      replacedContent = normalizedContent.replaceAll(normalizedOldString, normalizedNewString)
+    } else {
+      const index = normalizedContent.indexOf(normalizedOldString)
+      if (index === -1) {
+        return helpers.error('old_string not found in file (unexpected)')
+      }
+      replacedContent = normalizedContent.slice(0, index) + normalizedNewString + normalizedContent.slice(index + normalizedOldString.length)
+    }
 
-    // Restore file's original line endings to entire file
     const newContent = replacedContent.replace(/\n/g, fileLineEnding === 'crlf' ? '\r\n' : fileLineEnding === 'cr' ? '\r' : '\n')
 
-    // Write file
     await writeFile(fullPath, newContent, 'utf-8')
     
     let output = `Successfully replaced ${replaceAll ? occurrences : 1} occurrence(s) in ${args.path}`
     let diagnostics: Diagnostic[] = []
     
-    // Get LSP diagnostics if available
     if (context.lspManager) {
       diagnostics = await context.lspManager.notifyFileChange(fullPath, newContent)
       output += formatDiagnosticsForLLM(diagnostics)
     }
     
-    // Update file hash after edit so subsequent edits don't require re-reading
     const newHash = await computeFileHash(fullPath)
     if (newHash) {
       context.sessionManager.updateFileHash(context.sessionId, fullPath, newHash)
