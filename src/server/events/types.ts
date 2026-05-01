@@ -112,6 +112,7 @@ export type TurnEvent =
         messageId: string
         index: number // Tool call index (for parallel calls)
         name: string // Tool name (available early in stream)
+        arguments?: string // Partial arguments (streaming JSON fragments)
       }
     }
   | {

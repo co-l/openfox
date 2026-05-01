@@ -190,6 +190,7 @@ export interface ChatToolPreparingPayload {
   messageId: string
   index: number      // Tool call index (for multiple parallel calls)
   name: string       // Tool name (available early in stream)
+  arguments?: string // Partial arguments (streaming JSON fragments)
 }
 
 export interface ChatToolCallPayload {
