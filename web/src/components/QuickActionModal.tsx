@@ -2,6 +2,11 @@ import { useEffect, useState, useRef } from 'react'
 import { createPortal } from 'react-dom'
 import { useLocation } from 'wouter'
 import { CloseButton } from './shared/IconButton'
+
+function getProjectIdFromPath(path: string): string | undefined {
+  const match = path.match(/^\/p\/([^/]+)/)
+  return match?.[1]
+}
 import { useCommandsStore } from '../stores/commands'
 import { useWorkflowsStore } from '../stores/workflows'
 import { useAgentsStore } from '../stores/agents'
@@ -85,7 +90,10 @@ export function QuickActionModal({ isOpen, onClose, onCloseComplete, onSelectCom
       id: 'create-session',
       name: 'New Session',
       prefix: 'Action > Create',
-      action: () => currentProjectId && navigate(`/p/${currentProjectId}/new`),
+      action: () => {
+        const projectId = currentProjectId ?? getProjectIdFromPath(window.location.pathname)
+        if (projectId) navigate(`/p/${projectId}/new`)
+      },
     },
     {
       id: 'navigate-session',

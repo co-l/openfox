@@ -13,7 +13,7 @@
         }
       ],
       "isActive": true,
-      "createdAt": "2026-04-26T10:45:18.714Z"
+      "createdAt": "2026-05-01T02:25:41.307Z"
     },
     {
       "id": "test-fuzzy-provider",
@@ -28,7 +28,7 @@
         }
       ],
       "isActive": true,
-      "createdAt": "2026-04-26T10:45:09.468Z"
+      "createdAt": "2026-05-01T02:25:34.298Z"
     },
     {
       "id": "test-restart-provider",
@@ -43,7 +43,7 @@
         }
       ],
       "isActive": false,
-      "createdAt": "2026-04-26T10:45:08.436Z"
+      "createdAt": "2026-05-01T02:25:33.255Z"
     },
     {
       "id": "96fa781a-4a1e-45b3-91d2-720594663fdb",
@@ -269,6 +269,21 @@
       ],
       "isActive": false,
       "createdAt": "2026-04-26T10:45:11.566Z"
+    },
+    {
+      "id": "f0cc40fa-500a-4946-bba6-5fd6434d64fe",
+      "name": "Test Config Reload Provider",
+      "url": "http://localhost:8000",
+      "backend": "vllm",
+      "models": [
+        {
+          "id": "test-model",
+          "contextWindow": 200000,
+          "source": "user"
+        }
+      ],
+      "isActive": false,
+      "createdAt": "2026-05-01T02:25:37.263Z"
     }
   ],
   "defaultModelSelection": "test-context-update-provider/test-context-update-model",
