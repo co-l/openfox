@@ -51,6 +51,7 @@
     "duplicate:web": "jscpd web/src/ --config .jscpd-web.json --threshold 0",
     "duplicate": "npm run duplicate:server && npm run duplicate:web",
     "check": "npm run typecheck && npm run duplicate",
+    "patch": "HUSKY=0 npm version patch",
     "clean": "rm -rf dist",
     "prepublishOnly": "npm run build && npm run test:publish:e2e",
     "prepare": "husky",
