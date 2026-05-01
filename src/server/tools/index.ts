@@ -8,7 +8,6 @@ import { runCommandTool } from './shell.js'
 import { askUserTool, AskUserInterrupt } from './ask.js'
 import {
   PathAccessDeniedError,
-  requestPathAccess,
 } from './path-security.js'
 import { criterionTool } from './criterion.js'
 import { todoTool } from './todo.js'

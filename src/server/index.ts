@@ -471,7 +471,6 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
 
   // Ask user answer (REST)
   app.post('/api/sessions/:id/answer', async (req, res) => {
-    const sessionId = req.params.id
     const { callId, answer } = req.body
 
     if (!callId || !answer) {
@@ -552,7 +551,7 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
       return res.status(404).json({ error: 'Session not found' })
     }
 
-    const { content, attachments, messageKind, isSystemGenerated } = req.body
+    const { content } = req.body
     if (!content) {
       return res.status(400).json({ error: 'content is required' })
     }
@@ -1042,7 +1041,7 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
     )
 
     // Inspect tool: serve injection script with CORS so proxied dev servers can load it
-    app.use('/__inspect__.js', (req, res) => {
+    app.use('/__inspect__.js', (_req, res) => {
       res.set('Access-Control-Allow-Origin', '*')
       res.set('Content-Type', 'application/javascript')
       readFile(join(webDir, 'public', '__inspect__.js'))
@@ -1110,7 +1109,7 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
     )
 
     // Inspect tool: serve injection script from main server with CORS
-    app.use('/__inspect__.js', (req, res) => {
+    app.use('/__inspect__.js', (_req, res) => {
       res.set('Access-Control-Allow-Origin', '*')
       res.set('Content-Type', 'application/javascript')
       readFile(join(distWebDir, '__inspect__.js'))
@@ -1119,7 +1118,7 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
     })
 
     // Inspect tool: serve injection script with CORS so proxied dev servers can load it
-    app.use('/__inspect__.js', (req, res) => {
+    app.use('/__inspect__.js', (_req, res) => {
       res.set('Access-Control-Allow-Origin', '*')
       res.set('Content-Type', 'application/javascript')
       readFile(join(distWebDir, '__inspect__.js'))

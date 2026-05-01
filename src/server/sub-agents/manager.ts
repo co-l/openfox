@@ -6,7 +6,7 @@
  * standalone context builders for fresh context assembly.
  */
 
-import type { Criterion, InjectedFile, StatsIdentity, ToolResult } from '../../shared/types.js'
+import type { Criterion, InjectedFile, StatsIdentity } from '../../shared/types.js'
 import type { SessionManager } from '../session/index.js'
 import type { LLMClientWithModel } from '../llm/client.js'
 import type { ToolRegistry } from '../tools/types.js'
@@ -16,7 +16,7 @@ import { loadAllAgentsDefault, findAgentById } from '../agents/registry.js'
 import { buildSubAgentSystemPrompt } from '../chat/prompts.js'
 import { streamLLMPure, consumeStreamGenerator, TurnMetrics, createMessageStartEvent, createMessageDoneEvent, createChatDoneEvent } from '../chat/stream-pure.js'
 import { executeToolBatch } from '../chat/agent-loop.js'
-import { assembleAgentRequest, type RequestContextMessage } from '../chat/request-context.js'
+import type { RequestContextMessage } from '../chat/request-context.js'
 import { getAllInstructions } from '../context/instructions.js'
 import { getEnabledSkillMetadata } from '../skills/registry.js'
 import { getRuntimeConfig } from '../runtime-config.js'
@@ -185,7 +185,7 @@ export async function executeSubAgent(options: SubAgentExecutionOptions): Promis
   }
 
   // Load instructions and skills for the sub-agent system prompt
-  const { content: instructionContent, files } = await getAllInstructions(session.workdir, session.projectId)
+  const { files } = await getAllInstructions(session.workdir, session.projectId)
   const injectedFiles: InjectedFile[] = files.map(file => ({
     path: file.path,
     content: file.content ?? '',

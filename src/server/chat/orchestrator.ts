@@ -172,7 +172,7 @@ function injectModeReminderIfNeeded(
   sessionId: string,
   agentId: string,
   allAgents: AgentDefinition[],
-  onMessage?: (msg: ServerMessage) => void
+  _onMessage?: (msg: ServerMessage) => void
 ): void {
   const eventStore = getEventStore()
   const session = sessionManager.requireSession(sessionId)
@@ -395,7 +395,7 @@ export async function runVerifierTurn(
 /**
  * Build a snapshot of current session state.
  */
-function buildSnapshot(sessionManager: SessionManager, sessionId: string, lastStats?: MessageStats): SessionSnapshot {
+function buildSnapshot(sessionManager: SessionManager, sessionId: string, _lastStats?: MessageStats): SessionSnapshot {
   const eventStore = getEventStore()
   const session = sessionManager.requireSession(sessionId)
   const events = eventStore.getEvents(sessionId)

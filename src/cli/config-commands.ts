@@ -1,6 +1,5 @@
-import { parseArgs } from 'node:util'
 import type { Mode } from './main.js'
-import { getActiveProvider, getDefaultModel } from './config.js'
+import { getDefaultModel } from './config.js'
 
 export function printHelp(): void {
   console.log(`

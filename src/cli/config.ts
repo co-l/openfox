@@ -13,7 +13,7 @@ const SMART_DEFAULTS = [
   'http://localhost:8080',
 ]
 
-export async function trySmartDefaults(mode: Mode): Promise<{ url: string; backend: string; model: string } | null> {
+export async function trySmartDefaults(_mode: Mode): Promise<{ url: string; backend: string; model: string } | null> {
   // Try all URLs in parallel, no retries
   const results = await Promise.all(
     SMART_DEFAULTS.map(async (url) => {

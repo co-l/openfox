@@ -25,7 +25,6 @@ import {
   updateSessionSummary,
   updateSessionMessageCount,
 } from './sessions.js'
-import { getDatabase } from './index.js'
 
 describe('db sessions', () => {
   let rootA: string

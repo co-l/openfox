@@ -11,7 +11,6 @@
 
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import Database from 'better-sqlite3'
-import { EventStore } from './store.js'
 import { getContextMessages, getCurrentContextWindowId, getSessionState } from './session.js'
 import { initEventStore, getEventStore } from './index.js'
 

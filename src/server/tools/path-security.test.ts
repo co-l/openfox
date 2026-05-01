@@ -593,7 +593,6 @@ describe('path-security', () => {
       })
 
       it('includes sensitive file allowed by session in neither array', async () => {
-        const sessionId = 'test-session-sensitive'
         // First call without session - should need confirmation
         const result1 = await checkPathsAccess([join(WORKDIR, '.env')], WORKDIR)
         expect(result1.needsConfirmation).toBe(true)
@@ -1002,7 +1001,6 @@ describe('path-security', () => {
       })
 
       it('extracts SSH keys', () => {
-        const paths = extractSensitivePathsFromCommand('ssh-add ~/.ssh/id_rsa')
         // This would be caught by extractAbsolutePathsFromCommand for tilde
         // But if just id_rsa is referenced
         const paths2 = extractSensitivePathsFromCommand('cat id_rsa')
@@ -1155,12 +1153,6 @@ describe('path-security', () => {
 
     it('does not trigger confirmation when git command has no --no-verify', async () => {
       const onEvent = vi.fn()
-      const waitForPending = async (callId: string) => {
-        for (let attempt = 0; attempt < 20; attempt++) {
-          if (hasPendingPathConfirmation(callId)) return
-          await new Promise<void>((resolve) => setTimeout(resolve, 5))
-        }
-      }
 
       const promise = requestPathAccess(
         [WORKDIR],

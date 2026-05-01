@@ -45,17 +45,13 @@ import {
   emitRunningChanged,
   emitUserMessage,
   emitAssistantMessageStart,
-  emitMessageDone,
   emitCriteriaSet,
   emitCriterionUpdated,
   emitContextCompacted,
   emitContextState,
-  getCurrentWindowMessages as getWindowMessages,
-  type FoldedSessionState,
 } from '../events/index.js'
 import type { Message, CriterionStatus } from '../../shared/types.js'
 import { isInDangerZone, canCompact } from '../context/tokenizer.js'
-import { getRuntimeConfig } from '../runtime-config.js'
 
 // ============================================================================
 // Event Types (for backward compatibility with existing subscribers)
@@ -462,7 +458,7 @@ export class SessionManager {
   /**
    * Update message stats. Delegates to EventStore (emits message.done if needed).
    */
-  updateMessageStats(sessionId: string, messageId: string, stats: Message['stats']): void {
+  updateMessageStats(sessionId: string, messageId: string, _stats: Message['stats']): void {
     this.requireSession(sessionId)
     // Stats are included in message.done event, which should already have been emitted
     // This is a no-op in the new model - stats come from LLM streaming

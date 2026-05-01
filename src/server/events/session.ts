@@ -36,15 +36,8 @@ import { getEventStore } from './store.js'
 import { getRuntimeConfig } from '../runtime-config.js'
 import {
   foldSessionState,
-  foldTurnEventsToSnapshotMessages,
-  foldCriteria,
-  foldTodos,
-  foldMode,
-  foldPhase,
-  foldIsRunning,
   foldContextState,
   buildContextMessagesFromEventHistory,
-  buildContextMessagesFromStoredEvents,
   buildMessagesFromStoredEvents,
   spreadOptionalMessageFields,
   type ContextMessage,

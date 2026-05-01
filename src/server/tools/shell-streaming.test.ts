@@ -110,7 +110,7 @@ describe('shell tool streaming', () => {
       context
     )
     
-    const endTime = Date.now()
+    
     
     // Should have received progress before command completed
     expect(onProgress).toHaveBeenCalled()

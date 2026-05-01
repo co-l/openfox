@@ -5,7 +5,7 @@
  * State is derived from session criteria, not persisted separately.
  */
 
-import type { Attachment, Criterion, MessageStats, StatsIdentity } from '../../shared/types.js'
+import type { Attachment, StatsIdentity } from '../../shared/types.js'
 import type { ServerMessage } from '../../shared/protocol.js'
 import type { LLMClientWithModel } from '../llm/client.js'
 import type { StreamTiming } from '../llm/streaming.js'

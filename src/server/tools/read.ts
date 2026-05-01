@@ -104,7 +104,6 @@ export const readFileTool = createTool<ReadFileArgs>(
     },
   },
   async (args, context, helpers) => {
-    const startTime = Date.now()
     const offset = args.offset ?? 1
     const limit = Math.min(
       args.limit ?? OUTPUT_LIMITS.read_file.maxLines,

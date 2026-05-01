@@ -94,9 +94,8 @@ export async function runProviderAdd(mode: Mode): Promise<void> {
 
   try {
     // Detect backend first if needed
-    let detectedBackend = backend as string
     if (backend === 'auto') {
-      detectedBackend = await detectBackend(url as string)
+      await detectBackend(url as string)
     }
 
     // Fetch available models

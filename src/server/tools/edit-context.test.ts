@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { extractEditContext, type EditRegion } from './edit-context.js'
+import { extractEditContext } from './edit-context.js'
 
 describe('extractEditContext', () => {
   const sampleFile = `line 1

@@ -1,4 +1,3 @@
-import { spawn } from 'node:child_process'
 import { resolve, isAbsolute } from 'node:path'
 import { OUTPUT_LIMITS } from './types.js'
 import { createTool } from './tool-helpers.js'

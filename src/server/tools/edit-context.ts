@@ -64,14 +64,6 @@ function findAllMatches(content: string, searchString: string): Array<{ index: n
 }
 
 /**
- * Get the line number where a character index falls.
- * Returns 1-indexed line number.
- */
-function getLineNumber(content: string, charIndex: number): number {
-  return content.slice(0, charIndex).split('\n').length
-}
-
-/**
  * Get the end line number for a multi-line string starting at a given line.
  */
 function getEndLine(startLine: number, str: string): number {

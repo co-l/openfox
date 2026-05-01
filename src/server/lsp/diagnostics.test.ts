@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from 'vitest'
+import { describe, it, expect } from 'vitest'
 import { formatDiagnosticsForLLM } from '../tools/diagnostics.js'
 import type { Diagnostic } from '../../shared/types.js'
 

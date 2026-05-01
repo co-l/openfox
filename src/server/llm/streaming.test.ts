@@ -113,14 +113,11 @@ describe('streamWithSegments', () => {
     ])
 
     const stream = streamWithSegments(client, { messages: [] })
-    const result: Awaited<ReturnType<typeof stream.next>>['value'] = null
 
-    for await (const event of stream) {
-      if (event.type === 'done') {
-        // Get the return value
-      }
+    for await (const _event of stream) {
+      // Just consume
     }
-    
+
     // Consume generator to get return value
     const gen = streamWithSegments(client, { messages: [] })
     let returnValue

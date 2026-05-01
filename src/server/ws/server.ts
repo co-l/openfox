@@ -6,7 +6,7 @@ import { handleTerminalMessage, unsubscribeAllFromTerminal } from './terminal.js
 import type { Config } from '../config.js'
 import type { LLMClientWithModel } from '../llm/client.js'
 import type { SessionManager } from '../session/index.js'
-import { getEventStore, getCurrentContextWindowId } from '../events/index.js'
+import { getEventStore } from '../events/index.js'
 import { buildMessagesFromStoredEvents, foldPendingConfirmations } from '../events/folding.js'
 import type { Provider, ProviderBackend, StatsIdentity, Attachment } from '../../shared/types.js'
 import type { ProviderManager } from '../provider-manager.js'
@@ -16,17 +16,14 @@ import { runChatTurn } from '../chat/orchestrator.js'
 import { runOrchestrator } from '../runner/index.js'
 import { performManualContextCompaction } from '../context/auto-compaction.js'
 import {
-  providePathConfirmation,
   provideAnswer,
-  cancelQuestionsForSession,
-  cancelPathConfirmationsForSession,
 } from '../tools/index.js'
 import { logger } from '../utils/logger.js'
 import { devServerManager } from '../dev-server/manager.js'
 import { onProcessEvent } from '../tools/background-process/manager.js'
 
 
-import { requiresAuth, verifyPassword, getAuthConfig, isValidToken } from '../auth.js'
+import { getAuthConfig, isValidToken } from '../auth.js'
 import {
   parseClientMessage,
   serializeServerMessage,
@@ -34,14 +31,9 @@ import {
   createSessionStateMessage,
   createSessionRunningMessage,
   createChatMessageMessage,
-  createChatDoneMessage,
   createChatErrorMessage,
-  createModeChangedMessage,
-  createPhaseChangedMessage,
-  createCriteriaUpdatedMessage,
   createContextStateMessage,
   isSessionLoadPayload,
-  isPathConfirmPayload,
   isAskAnswerPayload,
   storedEventToServerMessage,
   createQueueStateMessage,
@@ -206,9 +198,6 @@ export function createWebSocketServer(
     }
   }
 
-  function invalidateSessionLLMClient(sessionId: string): void {
-    sessionLLMClients.delete(sessionId)
-  }
   const isSubscribedToSession = (client: ClientConnection, sessionId: string) => {
     return client.activeSessionId === sessionId
   }
@@ -288,35 +277,6 @@ export function createWebSocketServer(
     }).finally(() => {
       cleanupAfterTurn(sessionId, controller, broadcastForSession, false)
     })
-  }
-
-  function triggerQueueProcessing(sessionId: string): boolean {
-    const currentSession = sessionManager.getSession(sessionId)
-    if (!currentSession || currentSession.isRunning) {
-      return false
-    }
-
-    const queue = sessionManager.getQueueState(sessionId)
-    if (queue.length === 0) {
-      return false
-    }
-
-    const controller = new AbortController()
-    activeAgents.set(sessionId, controller)
-
-    sessionManager.setRunning(sessionId, true)
-    const eventStore = getEventStore()
-    eventStore.append(sessionId, { type: 'running.changed', data: { isRunning: true } })
-    broadcastForSession(sessionId, createSessionRunningMessage(true, sessionId))
-
-    const nextAsap = queue.find(m => m.mode === 'asap') ?? queue[0]
-    if (nextAsap) {
-      sessionManager.cancelQueuedMessage(sessionId, nextAsap.queueId)
-      addUserMessageAndBroadcast(sessionManager, sessionId, { content: nextAsap.content, ...(nextAsap.attachments ? { attachments: nextAsap.attachments } : {}), ...(nextAsap.messageKind ? { messageKind: nextAsap.messageKind } : {}) }, broadcastForSession)
-    }
-
-    startTurnWithCompletionChain(sessionId, controller)
-    return true
   }
   
   // Subscribe to session events and broadcast to relevant clients
@@ -510,16 +470,16 @@ async function handleClientMessage(
   ws: WebSocket,
   client: ClientConnection,
   message: { id: string; type: string; payload: unknown },
-  getLLMClient: () => LLMClientWithModel,
-  getActiveProvider: (() => Provider | undefined) | undefined,
+  _getLLMClient: () => LLMClientWithModel,
+  _getActiveProvider: (() => Provider | undefined) | undefined,
   sessionManager: SessionManager,
-  broadcastForSession: (sessionId: string, msg: ServerMessage) => void,
-  providerManager: ProviderManager | undefined,
-  getSessionLLMClient: ((sessionId: string) => LLMClientWithModel) | undefined,
-  getSessionStatsIdentity: ((sessionId: string) => StatsIdentity) | undefined,
+  _broadcastForSession: (sessionId: string, msg: ServerMessage) => void,
+  _providerManager: ProviderManager | undefined,
+  _getSessionLLMClient: ((sessionId: string) => LLMClientWithModel) | undefined,
+  _getSessionStatsIdentity: ((sessionId: string) => StatsIdentity) | undefined,
   llmForSession: (sessionId: string) => LLMClientWithModel,
   statsForSession: (sessionId: string) => StatsIdentity,
-  startTurnWithCompletionChain: (sessionId: string, controller: AbortController) => void,
+  _startTurnWithCompletionChain: (sessionId: string, controller: AbortController) => void,
   cleanupAfterTurn: (
     sessionId: string,
     controller: AbortController,
@@ -535,24 +495,6 @@ async function handleClientMessage(
 
   const sendForSession = (sessionId: string, msg: ServerMessage) => {
     send({ ...msg, sessionId })
-  }
-
-  const abortSessionExecution = (sessionId: string, reason: string) => {
-    const controller = activeAgents.get(sessionId)
-    if (!controller) {
-      return false
-    }
-
-    activeAgents.delete(sessionId)
-    controller.abort()
-    cancelQuestionsForSession(sessionId, reason)
-    cancelPathConfirmationsForSession(sessionId, reason)
-    sessionManager.clearMessageQueue(sessionId)
-    sessionManager.setRunning(sessionId, false)
-    sendForSession(sessionId, createSessionRunningMessage(false))
-    const contextState = sessionManager.getContextState(sessionId)
-    sendForSession(sessionId, createContextStateMessage(contextState))
-    return true
   }
 
   const ensureEventStoreSubscription = (_sessionId: string) => {

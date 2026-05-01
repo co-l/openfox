@@ -3,12 +3,6 @@ import type { Config, LlmBackend } from '../shared/types.js'
 
 const backendSchema = z.enum(['auto', 'vllm', 'sglang', 'ollama', 'llamacpp']).default('auto')
 
-const visionFallbackSchema = z.object({
-  enabled: z.boolean().default(false),
-  url: z.string().default('http://localhost:11434'),
-  model: z.string().default('qwen3-vl:2b'),
-})
-
 const envSchema = z.object({
   // New env var name, with fallback to old name for backward compatibility
   OPENFOX_LLM_URL: z.string().url().optional(),

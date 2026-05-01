@@ -1,4 +1,4 @@
-import { describe, expect, it, vi, beforeEach } from 'vitest'
+import { describe, expect, it, beforeEach } from 'vitest'
 import { todoTool, clearTodos } from './todo.js'
 
 function createTodos() {
@@ -117,7 +117,6 @@ describe('todo tool', () => {
     })
 
     it('emits update callback', async () => {
-      const callback = vi.fn()
       const context = createContext()
       // The callback is registered globally in the actual implementation
       const newTodos = [{ content: 'Task', status: 'pending' as const }]

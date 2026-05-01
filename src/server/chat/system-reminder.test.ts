@@ -11,7 +11,6 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { getEventStore } from '../events/store.js'
 import { runChatTurn } from './orchestrator.js'
-import type { SessionManager } from '../session/index.js'
 import { loadAllAgentsDefault } from '../agents/registry.js'
 
 vi.mock('../events/store.js', () => ({

@@ -23,9 +23,7 @@ import {
   createSessionListMessage,
   createSessionRunningMessage,
   createSessionStateMessage,
-  
-  isPathConfirmPayload,
-  isSessionLoadPayload,
+
   parseClientMessage,
   serializeServerMessage,
   storedEventToServerMessage,

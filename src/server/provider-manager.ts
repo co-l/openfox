@@ -103,7 +103,7 @@ export async function fetchModelsWithContext(baseUrl: string, apiKey?: string, b
 }
 
 /** Fetch Ollama models with context windows via /api/show */
-async function fetchOllamaModelsWithContext(baseUrl: string, apiKey?: string): Promise<ModelConfig[]> {
+async function fetchOllamaModelsWithContext(baseUrl: string, _apiKey?: string): Promise<ModelConfig[]> {
   // First get list of models from /api/tags
   const tagsUrl = `${baseUrl}/api/tags`
   

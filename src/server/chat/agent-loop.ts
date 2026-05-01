@@ -28,7 +28,6 @@ import {
   createChatDoneEvent,
   createFormatRetryEvent,
 } from './stream-pure.js'
-import type { PureStreamResult } from './stream-pure.js'
 import { getEventStore, getContextMessages, getCurrentContextWindowId } from '../events/index.js'
 import { maybeAutoCompactContext } from '../context/auto-compaction.js'
 import { getAllInstructions } from '../context/instructions.js'
@@ -36,9 +35,7 @@ import { getEnabledSkillMetadata } from '../skills/registry.js'
 import { getRuntimeConfig } from '../runtime-config.js'
 import { getGlobalConfigDir } from '../../cli/paths.js'
 import { createQueueStateMessage, createChatVisionFallbackMessage } from '../ws/protocol.js'
-import { emitVisionFallbackStart, emitVisionFallbackDone } from '../events/session.js'
 import type { DangerLevel } from '../../shared/types.js'
-import { logger } from '../utils/logger.js'
 import stripAnsi from "strip-ansi"
 
 function emitPartialDoneEvents(

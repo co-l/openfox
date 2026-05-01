@@ -9,7 +9,7 @@
  * never sees it and the LLM gets the raw PathAccessDeniedError.message instead.
  */
 
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { PathAccessDeniedError } from './path-security.js'
 
 // Mock requestPathAccess to throw PathAccessDeniedError

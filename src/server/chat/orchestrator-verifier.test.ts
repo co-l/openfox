@@ -98,7 +98,7 @@ function createSessionManager(state: any) {
     addMessage: vi.fn(),
     updateMessage: vi.fn(),
     updateMessageStats: vi.fn(),
-    updateCriterionStatus: vi.fn((sessionId: string, criterionId: string, status: any) => {
+    updateCriterionStatus: vi.fn((_sessionId: string, criterionId: string, status: any) => {
       state.current.criteria = state.current.criteria.map((c: any) =>
         c.id === criterionId ? { ...c, status } : c
       )

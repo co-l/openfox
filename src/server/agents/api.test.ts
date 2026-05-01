@@ -14,7 +14,6 @@ import { createServer, type Server } from 'node:http'
 import type { AgentDefinition } from './types.js'
 import {
   loadAllAgents,
-  loadDefaultAgents,
   findAgentById,
   saveAgent,
   deleteAgent,

@@ -463,8 +463,6 @@ export function extractGitNoVerify(command: string): boolean {
 // Request Path Access (Promise-based flow)
 // ===========================================================================
 
-const PathDenialReasonDangerous = 'dangerous_command' as const
-
 /**
  * Request access to paths outside the sandbox or sensitive files.
  * If paths require confirmation, sends a confirmation event to the client and suspends

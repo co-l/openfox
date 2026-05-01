@@ -192,7 +192,7 @@ export class SessionEvents {
    * Clear all queues (used for testing or shutdown)
    */
   clearAll(): void {
-    for (const [sessionId, queue] of this.queues) {
+    for (const [_sessionId, queue] of this.queues) {
       if (queue.cleanupTimer) {
         clearTimeout(queue.cleanupTimer)
       }

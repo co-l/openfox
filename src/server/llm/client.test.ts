@@ -19,7 +19,6 @@ vi.mock('openai', () => ({
   },
 }))
 
-import { LLMError } from '../utils/errors.js'
 import { createLLMClient } from './client.js'
 
 function createConfig(overrides: Partial<Record<string, unknown>> = {}) {

@@ -4,9 +4,8 @@
 
 import { describe, it, expect, vi } from 'vitest'
 import { callSubAgentTool } from './sub-agent.js'
-import type { SessionManager } from '../session/index.js'
-import type { LLMClientWithModel } from '../llm/client.js'
 import type { ToolContext } from './types.js'
+import type { SessionManager } from '../session/index.js'
 
 describe('call_sub_agent tool', () => {
   it('should have correct tool definition', () => {

@@ -2,7 +2,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createServer } from 'node:http'
 import { once } from 'node:events'
 import WebSocket from 'ws'
-import type { StoredEvent, TurnEvent } from '../events/types.js'
 
 const {
   createProjectMock,
@@ -169,7 +168,7 @@ function createEventStore() {
 
   const mockDb = {
     prepare: vi.fn((query: string) => ({
-      all: vi.fn((...args: unknown[]) => {
+      all: vi.fn((..._args: unknown[]) => {
         // Mock query for recent user prompts - return empty array
         if (query.includes('SELECT payload') && query.includes('chat.message')) {
           return []
@@ -219,8 +218,7 @@ function createEventStore() {
     subscribe: vi.fn((sessionId: string) => {
       const events = eventsBySession.get(sessionId) ?? []
       let index = 0
-      let pendingResolve: ((event: { seq: number; sessionId: string; timestamp: number; type: string; data: unknown }) => void) | null = null
-      
+
       return {
         iterator: (async function* () {
           // Yield existing events first
@@ -238,7 +236,6 @@ function createEventStore() {
             } else {
               // Wait for next append
               yield await new Promise<{ seq: number; sessionId: string; timestamp: number; type: string; data: unknown }>((resolve) => {
-                pendingResolve = resolve
                 subscribers.set(sessionId, { resolve, event: null as any })
               })
               index++
@@ -585,7 +582,7 @@ describe('createWebSocketServer', () => {
     })
     
     let resolveRun: (() => void) | null = null
-    runChatTurnMock.mockImplementation(({ sessionManager, sessionId, signal }) => {
+    runChatTurnMock.mockImplementation(({ signal }) => {
       // The event store is already set up in the harness - we just need to wait
       return new Promise<void>((resolve) => {
         resolveRun = resolve
@@ -980,7 +977,7 @@ describe('createWebSocketServer', () => {
     let resolveChatDone: ((event: typeof chatDoneEvent) => void) | null = null
     eventStore.subscribe = vi.fn(() => ({
       iterator: (async function* () {
-        resolveChatDone = (event: typeof chatDoneEvent) => {
+        resolveChatDone = (_event: typeof chatDoneEvent) => {
           resolveChatDone = null
         }
       })(),

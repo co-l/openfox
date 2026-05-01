@@ -9,7 +9,6 @@ import { tmpdir } from 'node:os'
 import {
   loadAllAgents,
   loadDefaultAgents,
-  loadUserAgents,
   findAgentById,
   getSubAgents,
   getTopLevelAgents,

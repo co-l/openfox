@@ -20,7 +20,7 @@ const {
   streamLLMPureMock: vi.fn(),
   consumeStreamGeneratorMock: vi.fn(),
   consumeStreamWithToolLoopMock: vi.fn(),
-  streamLLMResponseMock: vi.fn(async (options?: any) => {
+  streamLLMResponseMock: vi.fn(async (_options?: any) => {
     const consumeResult = await consumeStreamGeneratorMock()
     if (!consumeResult) {
       return {
@@ -152,8 +152,8 @@ function createEventStore() {
       const events = eventsBySession.get(sessionId) ?? []
       return events.at(-1)?.seq ?? null
     }),
-    cleanupOldEvents: vi.fn((sessionId: string) => 0),
-    getLatestSnapshot: vi.fn((sessionId: string) => undefined),
+    cleanupOldEvents: vi.fn((_sessionId: string) => 0),
+    getLatestSnapshot: vi.fn((_sessionId: string) => undefined),
   }
 }
 

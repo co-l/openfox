@@ -1,10 +1,7 @@
 import OpenAI from 'openai'
-import type { ChatCompletionMessageParam, ChatCompletionTool, ChatCompletionToolChoiceOption } from 'openai/resources/chat/completions'
 import type { Config } from '../config.js'
 import type {
   LLMClient,
-  LLMMessage,
-  LLMToolDefinition,
   LLMCompletionRequest,
   LLMCompletionResponse,
   LLMStreamEvent,
@@ -13,7 +10,7 @@ import type { ToolCall } from '../../shared/types.js'
 import { logger } from '../utils/logger.js'
 import { LLMError } from '../utils/errors.js'
 import { getModelProfile, type ModelProfile } from './profiles.js'
-import { type Backend, type BackendCapabilities, getBackendCapabilities } from './backend.js'
+import { type Backend, getBackendCapabilities } from './backend.js'
 import { ensureVisionFallbackConfigLoaded } from './vision-fallback.js'
 import {
   buildNonStreamingCreateParams,

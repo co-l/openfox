@@ -1,1 +1,1 @@
-npm run check
+npm test && npm run check

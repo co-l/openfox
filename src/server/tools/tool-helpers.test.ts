@@ -1,7 +1,6 @@
 import { describe, it, expect, vi } from 'vitest'
-import { createTool, type ToolHelpers } from './tool-helpers.js'
+import { createTool } from './tool-helpers.js'
 import type { ToolContext } from './types.js'
-import type { ToolResult } from '../../shared/types.js'
 import { PathAccessDeniedError } from './path-security.js'
 
 describe('createTool', () => {

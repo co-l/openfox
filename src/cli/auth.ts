@@ -1,8 +1,8 @@
 import { readFile, writeFile, mkdir, access } from 'node:fs/promises'
 import { dirname } from 'node:path'
-import { createHash, publicEncrypt, constants } from 'node:crypto'
+import { createHash, publicEncrypt } from 'node:crypto'
 import type { Mode } from './main.js'
-import { getAuthConfigPath, getAuthKeyPath } from './paths.js'
+import { getAuthConfigPath } from './paths.js'
 
 export interface AuthConfig {
   strategy: 'local' | 'network'

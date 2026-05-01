@@ -15,7 +15,7 @@ import {
   formatModifiedFiles,
   buildReason,
 } from './executor.js'
-import type { TemplateContext, StepOutcome } from './executor.js'
+import type { TemplateContext } from './executor.js'
 import type { Session } from '../../shared/types.js'
 
 // ============================================================================

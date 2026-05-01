@@ -133,6 +133,7 @@
       "jscpd src/server/ --ignore '**/*.test.ts' --threshold 0"
     ],
     "web/src/**/*.{ts,tsx}": [
+      "tsc --noEmit",
       "jscpd web/src/ --config .jscpd-web.json --threshold 0"
     ]
   },

@@ -23,7 +23,6 @@ import {
   loadDefaultSkills,
   loadUserSkills,
   getEnabledSkills,
-  getEnabledSkillMetadata,
   isSkillEnabled,
   setSkillEnabled,
   findSkillById,

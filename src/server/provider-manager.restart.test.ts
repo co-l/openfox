@@ -33,7 +33,6 @@ describe('Provider Manager - Context Persistence', () => {
   it('preserves user-set context window during activateProvider with fuzzy matching', async () => {
     const testProviderId = 'test-provider'
     const userModelId = 'qwen3.5 397b cloud' // User sets with spaces
-    const backendModelId = 'qwen3.5:397b-cloud' // Backend returns with dashes/colons
     const customContextWindow = 300000
 
     const config: Config = {
@@ -73,7 +72,7 @@ describe('Provider Manager - Context Persistence', () => {
     
     // ActivateProvider will try to fetch from backend (will fail in test)
     // but should still preserve user models even if fetch fails
-    const result = await pm.activateProvider(testProviderId)
+    await pm.activateProvider(testProviderId)
     
     // After activation, user context should still be preserved
     const updatedProviders = pm.getProviders()

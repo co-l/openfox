@@ -8,7 +8,7 @@ export function checkAborted(signal: AbortSignal | undefined): boolean {
 export function spawnShellProcess(
   command: string,
   cwd: string,
-  signal?: AbortSignal,
+  _signal?: AbortSignal,
   detached = false,
 ): ReturnType<typeof spawn> {
   const shell = getPlatformShell()
