@@ -551,6 +551,7 @@ describe('chat orchestrator', () => {
     expect(eventStore.append.mock.calls.find(([, event]) => event.type === 'chat.done')?.[1]).toMatchObject({
       data: { reason: 'stopped' },
     })
+    expect(eventStore.append.mock.calls.some(([, event]) => event.type === 'turn.snapshot')).toBe(true)
   })
 
   it('aborts tool execution loop when signal is aborted between tool calls', async () => {

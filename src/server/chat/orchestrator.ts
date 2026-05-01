@@ -133,6 +133,8 @@ export async function runChatTurn(options: OrchestratorOptions): Promise<void> {
     }
 
     if (error instanceof Error && error.message === 'Aborted') {
+      const snapshot = buildSnapshot(sessionManager, sessionId, turnMetrics.buildStats(statsIdentity, mode))
+      eventStore.append(sessionId, { type: 'turn.snapshot', data: snapshot })
       return
     }
 
