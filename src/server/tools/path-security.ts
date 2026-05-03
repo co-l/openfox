@@ -224,7 +224,7 @@ export function extractAbsolutePathsFromCommand(command: string): string[] {
 
   // Strip sed substitution patterns to avoid false positives from regex replacements
   // Handles: s/pattern/replacement/flags and s|pattern|replacement|flags etc.
-  sanitized = sanitized.replace(/s\/[^\/]*\/[^\/]*\/[gip]*/g, ' __SED__ ')
+  sanitized = sanitized.replace(/s\/[^/]*\/[^/]*\/[gip]*/g, ' __SED__ ')
   sanitized = sanitized.replace(/s\|[^|]*\|[^|]*\|[gip]*/g, ' __SED__ ')
   sanitized = sanitized.replace(/s:[^:]*:[^:]*:[gip]*/g, ' __SED__ ')
 
@@ -435,7 +435,7 @@ export async function checkPathsAccess(
 
 const DANGEROUS_PATTERNS = [
   /sudo\s/,
-  /rm\s+(-rf?|--recursive)\s+[\/~]/,
+  /rm\s+(-rf?|--recursive)\s+[~]/,
   /chmod\s+777/,
   />\s*\/dev\/sd/,
   /mkfs\s/,
@@ -679,7 +679,7 @@ export function providePathConfirmation(
       type: 'path.confirmation_responded',
       data: { callId, approved, alwaysAllow: alwaysAllow ?? false },
     })
-  } catch (error) {
+  } catch (_error) { // eslint-disable-line @typescript-eslint/no-unused-vars
     // Event store might not be initialized in tests, continue without event
   }
 

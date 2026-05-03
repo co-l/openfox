@@ -789,6 +789,7 @@ export const useSessionStore = create<SessionState>((set, get) => {
         streamingMessage: null,
         currentTodos: [],
         contextState: null,
+        pendingSessionCreate: false as boolean | string,
         unreadSessionIds: state.currentSession
           ? removeUnreadSessionId(state.unreadSessionIds, state.currentSession.id)
           : state.unreadSessionIds,

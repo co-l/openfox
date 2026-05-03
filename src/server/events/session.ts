@@ -787,7 +787,7 @@ export function getRecentUserPromptsForSession(sessionId: string, limit: number 
     return [...promptMap.values()]
       .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
       .slice(0, limit)
-  } catch (error) {
+  } catch (_error) { // eslint-disable-line @typescript-eslint/no-unused-vars
     // If any error occurs (e.g., in tests), return empty array
     return []
   }

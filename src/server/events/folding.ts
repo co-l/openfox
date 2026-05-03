@@ -650,12 +650,12 @@ export function foldSessionState(
 
   let sessionInit: FoldedSessionState['sessionInit']
   let sessionTitle: string | undefined
-  let visionFallbacks: VisionFallback[] = []
-  let formatRetries: FormatRetry[] = []
+  const visionFallbacks: VisionFallback[] = []
+  const formatRetries: FormatRetry[] = []
   let pendingUserInput: PendingUserInput | undefined
   let taskStats: TaskStats | undefined
-  let messageStats: MessageStatsEntry[] = []
-  let contextWindows: ContextWindow[] = []
+  const messageStats: MessageStatsEntry[] = []
+  const contextWindows: ContextWindow[] = []
 
   for (const event of events) {
     switch (event.type) {

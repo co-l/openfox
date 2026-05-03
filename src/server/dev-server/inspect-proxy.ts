@@ -170,7 +170,7 @@ export function startInspectProxy(target: string, sessionManager: SessionManager
       let enc: string | null = null
       let status = 200
       let resHeaders: Record<string, string> = {}
-      let bodyBuf: Buffer[] = []
+      const bodyBuf: Buffer[] = []
       let headEnd = -1
 
       targetSocket.on('data', (sChunk) => {

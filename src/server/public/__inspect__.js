@@ -1,3 +1,4 @@
+/* global window, document, Node, setTimeout, fetch, console */
 (function() {
   'use strict';
 
@@ -82,7 +83,7 @@
       }
       var text = (clone.textContent || '').replace(/\s+/g, ' ').trim();
       return text.slice(0, 500) || null;
-    } catch (e) {
+    } catch (_e) {
       return null;
     }
   }

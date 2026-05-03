@@ -78,6 +78,7 @@ describe('stream-pure', () => {
       { type: 'message.thinking', data: { messageId: 'msg-1', content: 'Need to inspect files' } },
       { type: 'message.delta', data: { messageId: 'msg-1', content: 'I will help.' } },
       { type: 'tool.preparing', data: { messageId: 'msg-1', index: 0, name: 'read_file' } },
+      { type: 'tool.preparing', data: { messageId: 'msg-1', index: 0, name: 'read_file', arguments: '{"path":"src/index.ts"}' } },
     ])
     expect(result).toEqual({
       content: 'I will help.',
