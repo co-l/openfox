@@ -264,6 +264,7 @@ export interface InjectedFile {
 export interface PreparingToolCall {
   index: number   // Tool call index (for matching when complete)
   name: string    // Tool name (available early in stream)
+  arguments?: string // Partial arguments (streaming JSON fragments)
 }
 
 export interface Attachment {

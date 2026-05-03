@@ -162,7 +162,7 @@ export const AssistantMessage = memo(function AssistantMessage({ message, showSt
             )
           
           case 'preparing_tool_call':
-            return <ToolCallPreparing key={`preparing-${element.preparing.index}`} name={element.preparing.name} />
+            return <ToolCallPreparing key={`preparing-${element.preparing.index}`} name={element.preparing.name} arguments={element.preparing.arguments} />
             
           case 'tool_call': {
             const tc = element.toolCall

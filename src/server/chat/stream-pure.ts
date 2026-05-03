@@ -162,6 +162,8 @@ export async function* streamLLMPure(
   const toolIds = new Map<number, string>()
   // Accumulate raw JSON arguments for return_value to extract content
   const returnValueArgs = new Map<number, string>()
+  // Track accumulated tool arguments by index (for streaming partial args)
+  const toolArgs = new Map<number, string>()
 
   let result: Awaited<ReturnType<typeof stream.next>>['value'] = null
   let aborted = false
@@ -206,14 +208,30 @@ export async function* streamLLMPure(
           if (value.id) {
             toolIds.set(value.index, value.id)
           }
+          // Accumulate arguments if provided
+          if (value.arguments) {
+            const existingArgs = toolArgs.get(value.index) ?? ''
+            toolArgs.set(value.index, existingArgs + value.arguments)
+          }
 
           // Emit preparing event on first delta for this index (when we have a complete name)
           const fullName = toolNames.get(value.index)
           if (!seenToolIndices.has(value.index) && fullName) {
             seenToolIndices.add(value.index)
+            const accumulatedArgs = toolArgs.get(value.index)
             yield {
               type: 'tool.preparing',
-              data: { messageId, index: value.index, name: fullName },
+              data: { messageId, index: value.index, name: fullName, ...(accumulatedArgs ? { arguments: accumulatedArgs } : {}) },
+            }
+          } else if (seenToolIndices.has(value.index) && value.arguments) {
+            // Update existing preparing event with new partial arguments
+            const accumulatedArgs = toolArgs.get(value.index)
+            const name = toolNames.get(value.index)
+            if (accumulatedArgs && name) {
+              yield {
+                type: 'tool.preparing',
+                data: { messageId, index: value.index, name, arguments: accumulatedArgs },
+              }
             }
           }
 

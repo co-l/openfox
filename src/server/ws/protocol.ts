@@ -137,8 +137,8 @@ export function createChatThinkingMessage(messageId: string, content: string): S
   return createServerMessage('chat.thinking', { messageId, content })
 }
 
-export function createChatToolPreparingMessage(messageId: string, index: number, name: string): ServerMessage<ChatToolPreparingPayload> {
-  return createServerMessage('chat.tool_preparing', { messageId, index, name })
+export function createChatToolPreparingMessage(messageId: string, index: number, name: string, args?: string): ServerMessage<ChatToolPreparingPayload> {
+  return createServerMessage('chat.tool_preparing', { messageId, index, name, ...(args ? { arguments: args } : {}) })
 }
 
 export function createChatToolCallMessage(messageId: string, callId: string, tool: string, args: Record<string, unknown>): ServerMessage<ChatToolCallPayload> {
@@ -364,7 +364,7 @@ export function storedEventToServerMessage(event: StoredEvent): ServerMessage | 
 
     case 'tool.preparing': {
       const data = event.data as Extract<TurnEvent, { type: 'tool.preparing' }>['data']
-      return createChatToolPreparingMessage(data.messageId, data.index, data.name)
+      return createChatToolPreparingMessage(data.messageId, data.index, data.name, data.arguments)
     }
 
     case 'tool.call': {

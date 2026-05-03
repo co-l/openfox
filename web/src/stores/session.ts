@@ -758,7 +758,6 @@ export const useSessionStore = create<SessionState>((set, get) => {
         streamingMessage: null,
         currentTodos: [],
         contextState: null,
-        pendingSessionCreate: false,
         unreadSessionIds: state.currentSession
           ? removeUnreadSessionId(state.unreadSessionIds, state.currentSession.id)
           : state.unreadSessionIds,
@@ -1253,7 +1252,7 @@ export const useSessionStore = create<SessionState>((set, get) => {
         }
 
         case 'chat.tool_preparing': {
-          // Add preparing tool call indicator (temporary, replaced when full tool call arrives)
+          // Add or update preparing tool call indicator (temporary, replaced when full tool call arrives)
           if (!isMessageForCurrentSession(message, get().currentSession?.id ?? null)) {
             markBackgroundSessionUnread()
             break
@@ -1262,10 +1261,21 @@ export const useSessionStore = create<SessionState>((set, get) => {
           set((state) => {
             const sm = state.streamingMessage
             if (sm && sm.id === payload.messageId) {
+              const existing = sm.preparingToolCalls ?? []
+              const existingIndex = existing.findIndex((p) => p.index === payload.index)
+              let preparingToolCalls: typeof existing
+              if (existingIndex >= 0) {
+                // Update existing entry with new partial arguments
+                preparingToolCalls = existing.map((p, i) =>
+                  i === existingIndex ? { ...p, arguments: payload.arguments } : p
+                )
+              } else {
+                preparingToolCalls = [...existing, { index: payload.index, name: payload.name, ...(payload.arguments ? { arguments: payload.arguments } : {}) }]
+              }
               return {
                 streamingMessage: {
                   ...sm,
-                  preparingToolCalls: [...(sm.preparingToolCalls ?? []), { index: payload.index, name: payload.name }],
+                  preparingToolCalls,
                 },
               }
             }
@@ -1275,10 +1285,19 @@ export const useSessionStore = create<SessionState>((set, get) => {
                 m.id === payload.messageId
                   ? {
                       ...m,
-                      preparingToolCalls: [
-                        ...(m.preparingToolCalls ?? []),
-                        { index: payload.index, name: payload.name },
-                      ],
+                      preparingToolCalls: (() => {
+                        const existing = m.preparingToolCalls ?? []
+                        const existingIndex = existing.findIndex((p) => p.index === payload.index)
+                        if (existingIndex >= 0) {
+                          return existing.map((p, i) =>
+                            i === existingIndex ? { ...p, arguments: payload.arguments } : p
+                          )
+                        }
+                        return [
+                          ...existing,
+                          { index: payload.index, name: payload.name, ...(payload.arguments ? { arguments: payload.arguments } : {}) },
+                        ]
+                      })(),
                     }
                   : m,
               ),
