@@ -3,6 +3,11 @@ import { Modal } from '../shared/SelfContainedModal'
 import { Button } from '../shared/Button'
 import { KvCacheWarning } from '../shared/KvCacheWarning'
 
+interface InstructionsModalInfoRow {
+  label: string
+  value: string
+}
+
 interface InstructionsModalProps {
   isOpen: boolean
   onClose: () => void
@@ -12,6 +17,7 @@ interface InstructionsModalProps {
   placeholder: string
   value: string
   isLoading?: boolean
+  infoRows?: InstructionsModalInfoRow[]
   onSave: (value: string) => void | Promise<void>
 }
 
@@ -24,6 +30,7 @@ export function InstructionsModal({
   placeholder,
   value,
   isLoading = false,
+  infoRows,
   onSave,
 }: InstructionsModalProps) {
   const [localValue, setLocalValue] = useState(value)
@@ -60,12 +67,18 @@ export function InstructionsModal({
   return (
     <Modal isOpen={isOpen} onClose={handleCancel} title={title} size="lg">
       <div className="flex flex-col h-full -mt-1">
-        <label className="block text-sm font-medium text-text-primary mb-1 flex-shrink-0">
-          {label}
-        </label>
-        <p className="text-sm text-text-muted mb-3 flex-shrink-0">
-          {description}
-        </p>
+        <label className="block text-sm font-medium text-text-primary mb-1 flex-shrink-0">{label}</label>
+        <p className="text-sm text-text-muted mb-3 flex-shrink-0">{description}</p>
+        {infoRows && infoRows.length > 0 && (
+          <div className="flex flex-col gap-1.5 mb-3 flex-shrink-0">
+            {infoRows.map((row) => (
+              <div key={row.label} className="text-sm">
+                <span className="text-text-muted">{row.label}:</span>{' '}
+                <span className="font-mono text-text-primary">{row.value}</span>
+              </div>
+            ))}
+          </div>
+        )}
 
         <div className="flex-1 min-h-[150px]">
           <textarea
@@ -83,11 +96,7 @@ export function InstructionsModal({
           <Button variant="secondary" onClick={handleCancel}>
             Cancel
           </Button>
-          <Button
-            variant="primary"
-            onClick={handleSave}
-            disabled={!isDirty || isBusy}
-          >
+          <Button variant="primary" onClick={handleSave} disabled={!isDirty || isBusy}>
             {saving ? 'Saving...' : 'Save'}
           </Button>
         </div>

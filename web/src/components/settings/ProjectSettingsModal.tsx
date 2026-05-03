@@ -9,14 +9,14 @@ interface ProjectSettingsModalProps {
 }
 
 export function ProjectSettingsModal({ isOpen, onClose, project }: ProjectSettingsModalProps) {
-  const updateProject = useProjectStore(state => state.updateProject)
+  const updateProject = useProjectStore((state) => state.updateProject)
 
   const handleSave = async (value: string) => {
     updateProject(project.id, {
       customInstructions: value || null,
     })
     // Small delay to feel responsive
-    await new Promise(resolve => setTimeout(resolve, 100))
+    await new Promise((resolve) => setTimeout(resolve, 100))
   }
 
   return (
@@ -29,6 +29,7 @@ export function ProjectSettingsModal({ isOpen, onClose, project }: ProjectSettin
       placeholder="Enter project-specific instructions..."
       value={project.customInstructions ?? ''}
       onSave={handleSave}
+      infoRows={[{ label: 'Project Path', value: project.workdir }]}
     />
   )
 }
