@@ -22,6 +22,7 @@ export const SETTINGS_DEFAULTS: Record<string, string> = {
   [SETTINGS_KEYS.DISPLAY_SHOW_STATS]: 'true',
   [SETTINGS_KEYS.DISPLAY_SHOW_AGENT_DEFINITIONS]: 'true',
   [SETTINGS_KEYS.DISPLAY_SHOW_WORKFLOW_BARS]: 'true',
+  [SETTINGS_KEYS.DISPLAY_THEME]: JSON.stringify({ preset: 'dark' }),
 }
 
 export type SettingsKey = typeof SETTINGS_KEYS[keyof typeof SETTINGS_KEYS]

@@ -153,7 +153,7 @@ interface ThemeState {
   getActiveTheme: () => Record<string, string>
   applyTheme: () => void
   getSavedTheme: () => string | null
-  saveTheme: (themeJson: string) => void
+  saveTheme: (themeJson: string) => Promise<void>
   clearCustomTheme: () => void
   reset: () => void
 
@@ -206,7 +206,7 @@ export const useThemeStore = create<ThemeState>((set, get) => ({
   },
 
   applyPreset: (presetId: string) => {
-    const preset = THEME_PRESETS.find(p => p.id === presetId)
+    const preset = THEME_PRESETS.find((p) => p.id === presetId)
     if (preset) {
       set({ currentPreset: presetId, basePreset: '', customTokens: {}, isCustom: false, isCustomizing: false })
       get().applyTheme()
@@ -215,7 +215,7 @@ export const useThemeStore = create<ThemeState>((set, get) => ({
 
   startCustomizing: () => {
     const { currentPreset } = get()
-    const presetTokens = THEME_PRESETS.find(p => p.id === currentPreset)?.tokens ?? {}
+    const presetTokens = THEME_PRESETS.find((p) => p.id === currentPreset)?.tokens ?? {}
     set({
       basePreset: currentPreset,
       customTokens: { ...presetTokens },
@@ -225,7 +225,7 @@ export const useThemeStore = create<ThemeState>((set, get) => ({
   },
 
   setCustomToken: (key: string, value: string) => {
-    set(state => ({
+    set((state) => ({
       customTokens: { ...state.customTokens, [key]: value },
     }))
     get().applyTheme()
@@ -237,7 +237,9 @@ export const useThemeStore = create<ThemeState>((set, get) => ({
 
   saveCustomTheme: () => {
     const { customTokens } = get()
-    get().saveTheme(JSON.stringify({ tokens: customTokens }))
+    get()
+      .saveTheme(JSON.stringify({ tokens: customTokens }))
+      .catch(() => {})
     set({ isCustomizing: false })
   },
 
@@ -249,13 +251,13 @@ export const useThemeStore = create<ThemeState>((set, get) => ({
   getActiveTheme: () => {
     const { basePreset, customTokens, isCustom } = get()
     if (isCustom && basePreset) {
-      const base = THEME_PRESETS.find(p => p.id === basePreset)?.tokens ?? {}
+      const base = THEME_PRESETS.find((p) => p.id === basePreset)?.tokens ?? {}
       return { ...base, ...customTokens }
     }
     if (isCustom) {
       return { ...THEME_TOKENS.reduce((acc, t) => ({ ...acc, [t.key]: t.defaultValue }), {}), ...customTokens }
     }
-    const preset = THEME_PRESETS.find(p => p.id === get().currentPreset)
+    const preset = THEME_PRESETS.find((p) => p.id === get().currentPreset)
     return preset?.tokens ?? THEME_PRESETS[0]?.tokens ?? {}
   },
 
@@ -271,14 +273,15 @@ export const useThemeStore = create<ThemeState>((set, get) => ({
   getSavedTheme: () => {
     try {
       const saved = localStorage.getItem('openfox:theme')
-      if (saved) {
-        const parsed = JSON.parse(saved)
-        if (parsed.preset) {
-          return JSON.stringify({ preset: parsed.preset })
-        }
-        if (parsed.tokens) {
-          return JSON.stringify({ tokens: parsed.tokens })
-        }
+      if (!saved) return null
+      // Handle both plain preset name and JSON format
+      if (saved[0] !== '{') return JSON.stringify({ preset: saved })
+      const parsed = JSON.parse(saved)
+      if (parsed.preset) {
+        return JSON.stringify({ preset: parsed.preset })
+      }
+      if (parsed.tokens) {
+        return JSON.stringify({ tokens: parsed.tokens })
       }
     } catch {
       return null
@@ -286,12 +289,10 @@ export const useThemeStore = create<ThemeState>((set, get) => ({
     return null
   },
 
-  saveTheme: (themeJson: string) => {
+  saveTheme: async (themeJson: string) => {
     localStorage.setItem('openfox:theme', themeJson)
-    // Fire-and-forget sync to server
-    import('./settings').then(({ useSettingsStore }) => {
-      useSettingsStore.getState().setSetting(SETTINGS_KEYS.DISPLAY_THEME, themeJson).catch(() => {})
-    })
+    const { useSettingsStore } = await import('./settings')
+    await useSettingsStore.getState().setSetting(SETTINGS_KEYS.DISPLAY_THEME, themeJson)
   },
 
   clearCustomTheme: () => {
@@ -334,7 +335,9 @@ export const useThemeStore = create<ThemeState>((set, get) => ({
         isCustomizing: false,
       })
       get().applyTheme()
-      get().saveTheme(JSON.stringify({ preset: preset.basePreset, tokens: preset.tokens }))
+      get()
+        .saveTheme(JSON.stringify({ preset: preset.basePreset, tokens: preset.tokens }))
+        .catch(() => {})
     }
   },
 
@@ -352,7 +355,10 @@ export const useThemeStore = create<ThemeState>((set, get) => ({
     localStorage.setItem('openfox:userPresets', JSON.stringify(get().userPresets))
     // Fire-and-forget sync to server
     import('./settings').then(({ useSettingsStore }) => {
-      useSettingsStore.getState().setSetting(SETTINGS_KEYS.DISPLAY_USER_PRESETS, JSON.stringify(get().userPresets)).catch(() => {})
+      useSettingsStore
+        .getState()
+        .setSetting(SETTINGS_KEYS.DISPLAY_USER_PRESETS, JSON.stringify(get().userPresets))
+        .catch(() => {})
     })
   },
 }))
