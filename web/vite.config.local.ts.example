@@ -1,0 +1,9 @@
+// Local vite overrides (gitignored)
+// Copy this to `vite.config.local.ts` and add your custom host(s)
+// This file is not tracked in git — safe for host-specific settings
+
+export default {
+  server: {
+    allowedHosts: ['your-domain.example.com'],
+  },
+}
