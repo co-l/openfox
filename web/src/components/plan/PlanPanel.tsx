@@ -19,7 +19,7 @@ import { AttachmentPreview } from '../shared/AttachmentPreview.js'
 import { PromptHistoryList } from '../shared/PromptHistory.js'
 import { Markdown } from '../shared/Markdown.js'
 import { CloseButton } from '../shared/CloseButton'
-import { SearchIcon, ChevronDownIcon } from '../shared/icons'
+import { SearchIcon, ChevronDownIcon, StopIcon } from '../shared/icons'
 import { useWorkflowsStore } from '../../stores/workflows'
 import { useAgentsStore } from '../../stores/agents'
 import { useCommandsStore } from '../../stores/commands'
@@ -689,7 +689,18 @@ export function PlanPanel({ criteriaSidebarOpen: externalCriteriaSidebarOpen, on
             style={{ minHeight: '24px', maxHeight: '200px' }}
             spellCheck={false}
           />
-          <div className="flex items-center self-center">
+          <div className="flex items-center self-center gap-1.5">
+          {isRunning && (
+            <button
+              type="button"
+              onClick={() => stopGeneration()}
+              data-testid="chat-stop-button"
+              className="flex items-center gap-1 px-4 py-1.5 rounded bg-accent-error/20 text-sm text-accent-error font-medium hover:bg-accent-error/30 transition-colors whitespace-nowrap"
+            >
+              <StopIcon />
+              Abort
+            </button>
+          )}
                 <button
                   type="button"
                   onClick={() => {
