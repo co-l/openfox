@@ -1328,6 +1328,34 @@ describe('reconnect refreshes current session content', () => {
     expect(loadSessionSpy).not.toHaveBeenCalled()
   })
 
+  it('handles queue.state with undefined messages gracefully', async () => {
+    const useSessionStore = await loadSessionStore()
+    useSessionStore.setState({ queuedMessages: [{ queueId: '1', content: 'test', mode: 'asap' as const, queuedAt: '2024-01-01T00:00:00.000Z' }] })
+    expect(useSessionStore.getState().queuedMessages).toHaveLength(1)
+
+    useSessionStore.getState().handleServerMessage({
+      type: 'queue.state',
+      payload: { messages: undefined as unknown as [] },
+    })
+    expect(useSessionStore.getState().queuedMessages).toEqual([])
+  })
+
+  it('handles queue.state with valid messages', async () => {
+    const useSessionStore = await loadSessionStore()
+    useSessionStore.setState({ queuedMessages: [] })
+
+    useSessionStore.getState().handleServerMessage({
+      type: 'queue.state',
+      payload: {
+        messages: [
+          { queueId: '1', content: 'test1', mode: 'completion' as const, queuedAt: '2024-01-01T00:00:00.000Z' },
+          { queueId: '2', content: 'test2', mode: 'asap' as const, queuedAt: '2024-01-01T00:00:00.000Z' },
+        ],
+      },
+    })
+    expect(useSessionStore.getState().queuedMessages).toHaveLength(2)
+  })
+
   it('calls listProjects when connection status becomes connected', async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true })
     const useSessionStore = await loadSessionStore()

@@ -1703,7 +1703,7 @@ export const useSessionStore = create<SessionState>((set, get) => {
 
         case 'queue.state': {
           const payload = message.payload as QueueStatePayload
-          set({ queuedMessages: payload.messages })
+          set({ queuedMessages: payload.messages ?? [] })
           break
         }
 

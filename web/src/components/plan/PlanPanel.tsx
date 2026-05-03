@@ -639,7 +639,7 @@ export function PlanPanel({ criteriaSidebarOpen: externalCriteriaSidebarOpen, on
         )}
 
         {/* Queued messages display */}
-        {queuedMessages.length > 0 && (
+        {queuedMessages?.length > 0 && (
           <div className="mb-2 flex flex-wrap gap-1.5">
             {queuedMessages.map((qm) => (
               <div
