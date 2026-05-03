@@ -21,13 +21,11 @@ export const returnValueTool: Tool = {
         properties: {
           content: {
             type: 'string',
-            description:
-              'The return value content — a structured summary of findings, results, or recommendations',
+            description: 'The return value content — a structured summary of findings, results, or recommendations',
           },
           result: {
             type: 'string',
-            description:
-              'Result classification (e.g. "passed", "failed", "error"). Used for workflow routing.',
+            description: 'Result classification (e.g. "passed", "failed", "error"). Used for workflow routing.',
           },
         },
         required: ['content'],
@@ -37,9 +35,7 @@ export const returnValueTool: Tool = {
   async execute(args: Record<string, unknown>, _context: ToolContext): Promise<ToolResult> {
     const content = args['content'] as string | undefined
     const result = args['result'] as string | undefined
-    const output = content 
-      ? `Returned: ${content}${result ? ` (${result})` : ''}`
-      : 'No content provided'
+    const output = content ? `Returned: ${content}${result ? ` (${result})` : ''}` : 'No content provided'
 
     return {
       success: true,

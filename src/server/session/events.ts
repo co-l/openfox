@@ -1,6 +1,6 @@
 /**
  * Session Event Queue
- * 
+ *
  * Manages event queues for active sessions, enabling:
  * - Decoupled execution from WebSocket connections
  * - Event replay for reconnecting clients
@@ -88,10 +88,7 @@ export class SessionEvents {
    * Subscribe to events for a session
    * Returns an unsubscribe function
    */
-  subscribe(
-    sessionId: string,
-    callback: (event: ServerMessage, seq: number) => void
-  ): () => void {
+  subscribe(sessionId: string, callback: (event: ServerMessage, seq: number) => void): () => void {
     const queue = this.getQueue(sessionId)
     const id = Symbol()
     queue.subscribers.set(id, callback)

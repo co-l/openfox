@@ -29,7 +29,7 @@ describe('models', () => {
       vi.spyOn(globalThis, 'fetch').mockResolvedValue(mockResponse as Response)
 
       const model = await detectModel('http://localhost:8000/v1', 1)
-      
+
       expect(model).toBe('test-model')
       expect(getLlmStatus()).toBe('connected')
       expect(getCachedModel()).toBe('test-model')
@@ -40,7 +40,7 @@ describe('models', () => {
       vi.spyOn(globalThis, 'fetch').mockRejectedValue(new Error('fetch failed'))
 
       const model = await detectModel('http://localhost:8000/v1', 1)
-      
+
       expect(model).toBeNull()
       expect(getLlmStatus()).toBe('disconnected')
     })
@@ -53,7 +53,7 @@ describe('models', () => {
       vi.spyOn(globalThis, 'fetch').mockResolvedValue(mockResponse as Response)
 
       const model = await detectModel('http://localhost:8000/v1', 1)
-      
+
       expect(model).toBeNull()
       expect(getLlmStatus()).toBe('disconnected')
     })
@@ -69,7 +69,7 @@ describe('models', () => {
       vi.spyOn(globalThis, 'fetch').mockResolvedValue(mockResponse as Response)
 
       const model = await detectModel('http://localhost:8000/v1', 1)
-      
+
       expect(model).toBeNull()
       expect(getLlmStatus()).toBe('disconnected')
     })
@@ -98,16 +98,23 @@ describe('models', () => {
     })
 
     it('retries failed requests and keeps cached model when refresh fails later', async () => {
-      vi.spyOn(Date, 'now')
-        .mockReturnValueOnce(1_000)
-        .mockReturnValueOnce(35_000)
+      vi.spyOn(Date, 'now').mockReturnValueOnce(1_000).mockReturnValueOnce(35_000)
 
       const fetchSpy = vi.spyOn(globalThis, 'fetch')
       fetchSpy.mockResolvedValueOnce({
         ok: true,
         json: async () => ({
           object: 'list',
-          data: [{ id: 'cached-model', object: 'model', created: 123, owned_by: 'test', root: 'root', max_model_len: 200000 }],
+          data: [
+            {
+              id: 'cached-model',
+              object: 'model',
+              created: 123,
+              owned_by: 'test',
+              root: 'root',
+              max_model_len: 200000,
+            },
+          ],
         }),
       } as Response)
 

@@ -9,7 +9,7 @@ export function getGlobalConfigDir(mode: Mode): string {
   }
   const suffix = mode === 'development' ? '-dev' : ''
   const home = homedir()
-  
+
   switch (platform()) {
     case 'darwin':
       return join(home, 'Library', 'Application Support', `openfox${suffix}`)
@@ -35,7 +35,7 @@ export function getAuthKeyPath(mode: Mode): string {
 export function getGlobalDataDir(mode: Mode): string {
   const suffix = mode === 'development' ? '-dev' : ''
   const home = homedir()
-  
+
   switch (platform()) {
     case 'darwin':
       return join(home, 'Library', 'Application Support', `openfox${suffix}`)

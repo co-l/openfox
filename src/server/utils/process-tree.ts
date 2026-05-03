@@ -3,10 +3,7 @@ import { setTimeout as sleep } from 'node:timers/promises'
 
 const SIGKILL_TIMEOUT_MS = 200
 
-export async function terminateProcessTree(
-  proc: ChildProcess,
-  options?: { exited?: () => boolean }
-): Promise<void> {
+export async function terminateProcessTree(proc: ChildProcess, options?: { exited?: () => boolean }): Promise<void> {
   const pid = proc.pid
   if (!pid || options?.exited?.()) {
     return

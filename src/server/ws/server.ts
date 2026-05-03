@@ -15,13 +15,10 @@ import { runChatTurn } from '../chat/orchestrator.js'
 
 import { runOrchestrator } from '../runner/index.js'
 import { performManualContextCompaction } from '../context/auto-compaction.js'
-import {
-  provideAnswer,
-} from '../tools/index.js'
+import { provideAnswer } from '../tools/index.js'
 import { logger } from '../utils/logger.js'
 import { devServerManager } from '../dev-server/manager.js'
 import { onProcessEvent } from '../tools/background-process/manager.js'
-
 
 import { getAuthConfig, isValidToken } from '../auth.js'
 import {
@@ -38,7 +35,6 @@ import {
   storedEventToServerMessage,
   createQueueStateMessage,
 } from './protocol.js'
-
 
 function resolveStatsIdentity(
   llmClient: LLMClientWithModel,
@@ -59,7 +55,11 @@ function resolveStatsIdentity(
 function buildSessionState(
   sessionManager: SessionManager,
   sessionId: string,
-): { session: ReturnType<SessionManager['getSession']>; messages: ReturnType<typeof buildMessagesFromStoredEvents>; pendingConfirmations: ReturnType<typeof foldPendingConfirmations> } {
+): {
+  session: ReturnType<SessionManager['getSession']>
+  messages: ReturnType<typeof buildMessagesFromStoredEvents>
+  pendingConfirmations: ReturnType<typeof foldPendingConfirmations>
+} {
   const session = sessionManager.getSession(sessionId)
   if (!session) {
     return { session: null, messages: [], pendingConfirmations: [] }
@@ -90,12 +90,20 @@ function addUserMessageAndBroadcast(
 function processQueueAndRestartTurn(
   sessionManager: SessionManager,
   sessionId: string,
-  drainFn: (sessionId: string) => Array<{ content: string; attachments?: Attachment[]; messageKind?: string; queueId?: string }>,
+  drainFn: (
+    sessionId: string,
+  ) => Array<{ content: string; attachments?: Attachment[]; messageKind?: string; queueId?: string }>,
   queueMode: 'asap' | 'completion',
   broadcastFn: (sessionId: string, msg: ServerMessage) => void,
   activeAgents: Map<string, AbortController>,
   startTurnFn: (sessionId: string, controller: AbortController) => void,
-  queueMessageFn?: (sessionId: string, mode: 'asap' | 'completion', content: string, attachments?: Attachment[], messageKind?: string) => void,
+  queueMessageFn?: (
+    sessionId: string,
+    mode: 'asap' | 'completion',
+    content: string,
+    attachments?: Attachment[],
+    messageKind?: string,
+  ) => void,
 ): boolean {
   const messages = drainFn(sessionId)
   const next = messages[0]
@@ -103,14 +111,29 @@ function processQueueAndRestartTurn(
 
   for (const remaining of messages.slice(1)) {
     if (queueMessageFn) {
-      queueMessageFn(sessionId, queueMode, remaining.content, remaining.attachments, remaining.messageKind as 'command' | undefined)
+      queueMessageFn(
+        sessionId,
+        queueMode,
+        remaining.content,
+        remaining.attachments,
+        remaining.messageKind as 'command' | undefined,
+      )
     } else {
       sessionManager.queueMessage(sessionId, queueMode, remaining.content, remaining.attachments)
     }
   }
   broadcastFn(sessionId, createQueueStateMessage(sessionManager.getQueueState(sessionId)))
 
-  addUserMessageAndBroadcast(sessionManager, sessionId, { content: next.content, ...(next.attachments ? { attachments: next.attachments } : {}), ...(next.messageKind ? { messageKind: next.messageKind } : {}) }, broadcastFn)
+  addUserMessageAndBroadcast(
+    sessionManager,
+    sessionId,
+    {
+      content: next.content,
+      ...(next.attachments ? { attachments: next.attachments } : {}),
+      ...(next.messageKind ? { messageKind: next.messageKind } : {}),
+    },
+    broadcastFn,
+  )
 
   const newController = new AbortController()
   activeAgents.set(sessionId, newController)
@@ -123,8 +146,8 @@ const activeAgents = new Map<string, AbortController>()
 
 interface ClientConnection {
   ws: WebSocket
-  activeSessionId: string | null                    // Currently viewing session
-  globalSubscription: (() => void) | null           // Global all-session subscription unsubscribe
+  activeSessionId: string | null // Currently viewing session
+  globalSubscription: (() => void) | null // Global all-session subscription unsubscribe
 }
 
 export function createWebSocketServer(
@@ -154,11 +177,12 @@ export function createWebSocketServer(
     }
 
     // Look up the provider to get URL, apiKey, backend
-    const provider = providerManager.getProviders().find(p => p.id === session.providerId)
+    const provider = providerManager.getProviders().find((p) => p.id === session.providerId)
     if (!provider) {
       // Provider was deleted — clear preference and fall back to global
       logger.warn('Session references deleted provider, falling back to global', {
-        sessionId, providerId: session.providerId,
+        sessionId,
+        providerId: session.providerId,
       })
       sessionManager.setSessionProvider(sessionId, null, null)
       sessionLLMClients.delete(sessionId)
@@ -188,7 +212,7 @@ export function createWebSocketServer(
       return resolveStatsIdentity(getLLMClient(), getActiveProvider)
     }
 
-    const provider = providerManager.getProviders().find(p => p.id === session.providerId)
+    const provider = providerManager.getProviders().find((p) => p.id === session.providerId)
     const client = getSessionLLMClient(sessionId)
     return {
       providerId: provider?.id ?? session.providerId!,
@@ -201,7 +225,7 @@ export function createWebSocketServer(
   const isSubscribedToSession = (client: ClientConnection, sessionId: string) => {
     return client.activeSessionId === sessionId
   }
-  
+
   const broadcastForSession = (sessionId: string, msg: ServerMessage) => {
     for (const [clientWs, client] of clients) {
       if (isSubscribedToSession(client, sessionId) && clientWs.readyState === WebSocket.OPEN) {
@@ -210,8 +234,7 @@ export function createWebSocketServer(
     }
   }
 
-  const llmForSession = (sessionId: string): LLMClientWithModel =>
-    getSessionLLMClient?.(sessionId) ?? getLLMClient()
+  const llmForSession = (sessionId: string): LLMClientWithModel => getSessionLLMClient?.(sessionId) ?? getLLMClient()
 
   const statsForSession = (sessionId: string): StatsIdentity =>
     getSessionStatsIdentity?.(sessionId) ?? resolveStatsIdentity(getLLMClient(), getActiveProvider)
@@ -228,7 +251,8 @@ export function createWebSocketServer(
     activeAgents.delete(sessionId)
 
     const processed = processQueueAndRestartTurn(
-      sessionManager, sessionId,
+      sessionManager,
+      sessionId,
       (sid) => sessionManager.drainAsapMessages(sid),
       'asap',
       sendFn,
@@ -243,7 +267,8 @@ export function createWebSocketServer(
     }
 
     const processedCompletion = processQueueAndRestartTurn(
-      sessionManager, sessionId,
+      sessionManager,
+      sessionId,
       (sid) => sessionManager.drainCompletionMessages(sid),
       'completion',
       sendFn,
@@ -269,47 +294,58 @@ export function createWebSocketServer(
       statsIdentity: statsForSession(sessionId),
       signal: controller.signal,
       onMessage: (msg) => broadcastForSession(sessionId, msg),
-    }).catch((error) => {
-      if (error instanceof Error && error.message === 'Aborted') {
-        return
-      }
-      logger.error('Chat turn error', { error })
-    }).finally(() => {
-      cleanupAfterTurn(sessionId, controller, broadcastForSession, false)
     })
+      .catch((error) => {
+        if (error instanceof Error && error.message === 'Aborted') {
+          return
+        }
+        logger.error('Chat turn error', { error })
+      })
+      .finally(() => {
+        cleanupAfterTurn(sessionId, controller, broadcastForSession, false)
+      })
   }
-  
+
   // Subscribe to session events and broadcast to relevant clients
   sessionManager.subscribe((event) => {
-    const sessionId = 'sessionId' in event ? event.sessionId : 
-      'session' in event ? event.session.id : null
-    
+    const sessionId = 'sessionId' in event ? event.sessionId : 'session' in event ? event.session.id : null
+
     if (!sessionId) return
-    
+
     for (const [ws, client] of clients) {
       if (ws.readyState !== WebSocket.OPEN) continue
-      
+
       // Broadcast session.state for session_created events to ALL clients
       // This allows frontend to navigate to newly created sessions even before subscription
       if (event.type === 'session_created') {
         const session = sessionManager.getSession(sessionId)
         if (session) {
           const { messages, pendingConfirmations } = buildSessionState(sessionManager, sessionId)
-          ws.send(serializeServerMessage({ ...createSessionStateMessage(session, messages, pendingConfirmations), sessionId }))
+          ws.send(
+            serializeServerMessage({
+              ...createSessionStateMessage(session, messages, pendingConfirmations),
+              sessionId,
+            }),
+          )
         }
         continue
       }
-      
+
       // For other events, only send to subscribed clients
       if (isSubscribedToSession(client, sessionId)) {
         // Broadcast session.state for session_updated events
         if (event.type === 'session_updated') {
           const { session, messages, pendingConfirmations } = buildSessionState(sessionManager, sessionId)
           if (session) {
-            ws.send(serializeServerMessage({ ...createSessionStateMessage(session, messages, pendingConfirmations), sessionId }))
+            ws.send(
+              serializeServerMessage({
+                ...createSessionStateMessage(session, messages, pendingConfirmations),
+                sessionId,
+              }),
+            )
           }
         }
-        
+
         // Broadcast running state changes in real-time
         if (event.type === 'running_changed') {
           ws.send(serializeServerMessage({ ...createSessionRunningMessage(event.isRunning), sessionId }))
@@ -317,7 +353,7 @@ export function createWebSocketServer(
       }
     }
   })
-  
+
   // Broadcast dev server events to all connected clients
   const broadcastAll = (msg: ServerMessage) => {
     const serialized = serializeServerMessage(msg)
@@ -330,19 +366,23 @@ export function createWebSocketServer(
 
   // Global dev server event listeners — broadcast to all WS clients
   devServerManager.onOutput((workdir, chunk) => {
-    broadcastAll(createServerMessage('devServer.output', {
-      workdir,
-      stream: chunk.stream,
-      content: chunk.content,
-    }))
+    broadcastAll(
+      createServerMessage('devServer.output', {
+        workdir,
+        stream: chunk.stream,
+        content: chunk.content,
+      }),
+    )
   })
 
   devServerManager.onStateChange((workdir, state, errorMessage) => {
-    broadcastAll(createServerMessage('devServer.state', {
-      workdir,
-      state,
-      errorMessage,
-    }))
+    broadcastAll(
+      createServerMessage('devServer.state', {
+        workdir,
+        state,
+        errorMessage,
+      }),
+    )
   })
 
   // Background process event listeners — broadcast to session-specific clients
@@ -395,10 +435,10 @@ export function createWebSocketServer(
         logger.debug('Global event subscription ended', { error })
       }
     })()
-    
+
     ws.on('message', async (data) => {
       const message = parseClientMessage(data.toString())
-      
+
       if (!message) {
         ws.send(serializeServerMessage(createErrorMessage('INVALID_MESSAGE', 'Invalid message format')))
         return
@@ -409,23 +449,36 @@ export function createWebSocketServer(
         handleTerminalMessage(ws, message as any)
         return
       }
-      
+
       const client = clients.get(ws)!
-      
+
       try {
-          await handleClientMessage(ws, client, message, getLLMClient, getActiveProvider, sessionManager, broadcastForSession, providerManager, getSessionLLMClient, getSessionStatsIdentity, llmForSession, statsForSession, startTurnWithCompletionChain, cleanupAfterTurn)
+        await handleClientMessage(
+          ws,
+          client,
+          message,
+          getLLMClient,
+          getActiveProvider,
+          sessionManager,
+          broadcastForSession,
+          providerManager,
+          getSessionLLMClient,
+          getSessionStatsIdentity,
+          llmForSession,
+          statsForSession,
+          startTurnWithCompletionChain,
+          cleanupAfterTurn,
+        )
       } catch (error) {
         logger.error('Error handling client message', { error, type: message.type })
-        ws.send(serializeServerMessage(
-          createErrorMessage(
-            'INTERNAL_ERROR',
-            error instanceof Error ? error.message : 'Unknown error',
-            message.id
-          )
-        ))
+        ws.send(
+          serializeServerMessage(
+            createErrorMessage('INTERNAL_ERROR', error instanceof Error ? error.message : 'Unknown error', message.id),
+          ),
+        )
       }
     })
-    
+
     ws.on('close', () => {
       logger.debug('WebSocket client disconnected')
       const client = clients.get(ws)
@@ -437,12 +490,12 @@ export function createWebSocketServer(
       unsubscribeAllFromTerminal(ws)
       clients.delete(ws)
     })
-    
+
     ws.on('error', (error) => {
       logger.error('WebSocket error', { error })
     })
   })
-  
+
   return {
     wss,
     abortSession: (sessionId: string) => {
@@ -501,14 +554,14 @@ async function handleClientMessage(
     // No-op: clients now receive ALL events via global subscription
     // Per-session subscriptions were removed to prevent duplicate events
   }
-  
+
   switch (message.type) {
     // =========================================================================
     // DEPRECATED: All CRUD operations moved to REST API
     // If you see this error, update your code to use REST endpoints instead.
     // See docs/REST-API.md for details.
     // =========================================================================
-    
+
     case 'project.create':
     case 'project.create-with-dir':
     case 'project.list':
@@ -522,7 +575,13 @@ async function handleClientMessage(
     case 'session.delete':
     case 'session.deleteAll':
     case 'session.setProvider':
-      send(createErrorMessage('DEPRECATED_MESSAGE_TYPE', `${message.type} removed. Use REST API instead. See docs/REST-API.md`, message.id))
+      send(
+        createErrorMessage(
+          'DEPRECATED_MESSAGE_TYPE',
+          `${message.type} removed. Use REST API instead. See docs/REST-API.md`,
+          message.id,
+        ),
+      )
       return
 
     // =========================================================================
@@ -535,26 +594,31 @@ async function handleClientMessage(
         send(createErrorMessage('INVALID_PAYLOAD', 'Invalid session.load payload', message.id))
         return
       }
-      
+
       const session = sessionManager.getSession(message.payload.sessionId)
       if (!session) {
         send(createErrorMessage('NOT_FOUND', 'Session not found', message.id))
         return
       }
-      
+
       // Tab model: set active session and subscribe if not already subscribed
       client.activeSessionId = session.id
       ensureEventStoreSubscription(session.id)
-      
+
       // Fetch messages from EventStore
       const eventStore = getEventStore()
       const events = eventStore.getEvents(session.id)
       const messages = buildMessagesFromStoredEvents(events)
       const pendingConfirmations = foldPendingConfirmations(events)
-      logger.debug('Loaded messages from EventStore', { sessionId: session.id, eventCount: events.length, messageCount: messages.length, pendingConfirmationsCount: pendingConfirmations.length })
+      logger.debug('Loaded messages from EventStore', {
+        sessionId: session.id,
+        eventCount: events.length,
+        messageCount: messages.length,
+        pendingConfirmationsCount: pendingConfirmations.length,
+      })
 
       sendForSession(session.id, createSessionStateMessage(session, messages, pendingConfirmations, message.id))
-      
+
       // Send context state
       const contextState = sessionManager.getContextState(session.id)
       sendForSession(session.id, createContextStateMessage(contextState))
@@ -570,22 +634,22 @@ async function handleClientMessage(
         send(createErrorMessage('NO_SESSION', 'No active session', message.id))
         return
       }
-      
+
       const session = sessionManager.requireSession(client.activeSessionId)
       const sessionId = client.activeSessionId
-      
+
       // Check if session is running
       if (session.isRunning) {
         send(createErrorMessage('SESSION_RUNNING', 'Cannot compact while session is running', message.id))
         return
       }
-      
+
       const contextState = sessionManager.getContextState(sessionId)
       const tokensBefore = contextState.currentTokens
 
       // Acknowledge immediately
       send({ type: 'ack', payload: {}, id: message.id })
-      
+
       // Perform compaction asynchronously
       ;(async () => {
         try {
@@ -596,11 +660,11 @@ async function handleClientMessage(
             statsIdentity: statsForSession(sessionId),
             tokenCountAtClose: tokensBefore,
           })
-          
+
           // Send updated context state
           const newContextState = sessionManager.getContextState(sessionId)
           sendForSession(sessionId, createContextStateMessage(newContextState))
-          
+
           // Send updated session state so client sees all messages
           const updatedSession = sessionManager.requireSession(sessionId)
           const compactEventStore = getEventStore()
@@ -610,20 +674,23 @@ async function handleClientMessage(
           sendForSession(sessionId, createSessionStateMessage(updatedSession, compactMessages, pendingConfirmations))
         } catch (error) {
           logger.error('Compaction failed', { error, sessionId })
-          sendForSession(sessionId, createChatErrorMessage(
-            `Compaction failed: ${error instanceof Error ? error.message : 'Unknown error'}`,
-            true
-          ))
+          sendForSession(
+            sessionId,
+            createChatErrorMessage(
+              `Compaction failed: ${error instanceof Error ? error.message : 'Unknown error'}`,
+              true,
+            ),
+          )
         }
       })()
-      
+
       break
     }
-    
+
     // =========================================================================
     // Runner (Auto-Loop)
     // =========================================================================
-    
+
     case 'runner.launch': {
       if (!client.activeSessionId) {
         send(createErrorMessage('NO_SESSION', 'No active session', message.id))
@@ -634,7 +701,9 @@ async function handleClientMessage(
 
       // If running, queue for later processing instead of rejecting
       if (session.isRunning) {
-        const launchPayload = message.payload as { workflowId?: string; content?: string; attachments?: unknown[] } | undefined
+        const launchPayload = message.payload as
+          | { workflowId?: string; content?: string; attachments?: unknown[] }
+          | undefined
         const content = launchPayload?.content ?? ''
         const attachments = launchPayload?.attachments as Attachment[] | undefined
         const workflowId = launchPayload?.workflowId
@@ -668,7 +737,7 @@ async function handleClientMessage(
       // Check if there are pending criteria (skip when a specific workflow is
       // requested — the workflow's own startCondition handles validation)
       const launchPayloadEarly = message.payload as { workflowId?: string } | undefined
-      const pendingCriteria = session.criteria.filter(c => c.status.type !== 'passed')
+      const pendingCriteria = session.criteria.filter((c) => c.status.type !== 'passed')
       if (!launchPayloadEarly?.workflowId && pendingCriteria.length === 0) {
         send(createErrorMessage('NO_WORK', 'No pending criteria to work on', message.id))
         return
@@ -685,9 +754,12 @@ async function handleClientMessage(
       }
 
       // Parse launch payload
-      const launchPayload = message.payload as { content?: string; attachments?: unknown[]; workflowId?: string } | undefined
+      const launchPayload = message.payload as
+        | { content?: string; attachments?: unknown[]; workflowId?: string }
+        | undefined
       const launchAttachments = launchPayload?.attachments as Attachment[] | undefined
-      const hasUserContent = launchPayload?.content && typeof launchPayload.content === 'string' && launchPayload.content.trim()
+      const hasUserContent =
+        launchPayload?.content && typeof launchPayload.content === 'string' && launchPayload.content.trim()
       const hasUserAttachments = launchAttachments && launchAttachments.length > 0
       const hasUserMessage = hasUserContent || hasUserAttachments
 
@@ -720,29 +792,44 @@ async function handleClientMessage(
         statsIdentity: statsForSession(sessionId),
         injectBuilderKickoff: !hasUserMessage,
         ...(launchPayload?.workflowId ? { workflowId: launchPayload.workflowId } : {}),
-        ...(hasUserMessage ? { userMessage: { content: hasUserContent ? launchPayload!.content! : '', ...(hasUserAttachments ? { attachments: launchAttachments! } : {}) } } : {}),
+        ...(hasUserMessage
+          ? {
+              userMessage: {
+                content: hasUserContent ? launchPayload!.content! : '',
+                ...(hasUserAttachments ? { attachments: launchAttachments! } : {}),
+              },
+            }
+          : {}),
         signal: controller.signal,
-        onMessage: (msg) => sendForSession(sessionId, msg),  // For path confirmation dialogs
-      }).catch((error) => {
-        // Don't create error message for controlled abort
-        if (error instanceof Error && error.message === 'Aborted') {
-          return
-        }
-        logger.error('Runner error', { error, sessionId })
-        // Error events are handled inside runOrchestrator and appended to EventStore
-      }).finally(() => {
-        cleanupAfterTurn(sessionId, controller, sendForSession, true)
+        onMessage: (msg) => sendForSession(sessionId, msg), // For path confirmation dialogs
       })
-      
+        .catch((error) => {
+          // Don't create error message for controlled abort
+          if (error instanceof Error && error.message === 'Aborted') {
+            return
+          }
+          logger.error('Runner error', { error, sessionId })
+          // Error events are handled inside runOrchestrator and appended to EventStore
+        })
+        .finally(() => {
+          cleanupAfterTurn(sessionId, controller, sendForSession, true)
+        })
+
       break
     }
-    
+
     // =========================================================================
     // Path Confirmation
     // =========================================================================
 
     case 'path.confirm': {
-      send(createErrorMessage('DEPRECATED', 'path.confirm removed. Use REST API: POST /api/sessions/:id/confirm-path', message.id))
+      send(
+        createErrorMessage(
+          'DEPRECATED',
+          'path.confirm removed. Use REST API: POST /api/sessions/:id/confirm-path',
+          message.id,
+        ),
+      )
       break
     }
 
@@ -755,31 +842,31 @@ async function handleClientMessage(
         send(createErrorMessage('NO_SESSION', 'No active session', message.id))
         return
       }
-      
+
       if (!isAskAnswerPayload(message.payload)) {
         send(createErrorMessage('INVALID_PAYLOAD', 'Invalid ask.answer payload', message.id))
         return
       }
-      
+
       const { callId, answer } = message.payload
       const found = provideAnswer(callId, answer)
-      
+
       if (!found) {
         send(createErrorMessage('NOT_FOUND', 'No pending question with that ID', message.id))
         return
       }
-      
-      logger.debug('Ask user answer received', { 
-        sessionId: client.activeSessionId, 
-        callId, 
-        answerLength: answer.length 
+
+      logger.debug('Ask user answer received', {
+        sessionId: client.activeSessionId,
+        callId,
+        answerLength: answer.length,
       })
-      
+
       // Just acknowledge - the Promise resolution will resume tool execution automatically.
       send({ type: 'ack', payload: {}, id: message.id })
       break
     }
-    
+
     default: {
       send(createErrorMessage('UNKNOWN_MESSAGE', `Unknown message type: ${message.type}`, message.id))
     }

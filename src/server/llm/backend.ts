@@ -56,21 +56,17 @@ export function getBackendCapabilities(backend: Backend): BackendCapabilities {
 
 /**
  * Detect which LLM backend is running at the given URL.
- * 
+ *
  * Detection order:
  * 1. Ollama: /api/tags endpoint exists
  * 2. llama.cpp: /health returns slots_idle/slots_processing
  * 3. SGLang: /get_model_info endpoint exists
  * 4. vLLM: /v1/models works (default for OpenAI-compatible)
  * 5. unknown: nothing responds
- * 
+ *
  * @param silent - If true, use debug logging instead of info/warn (for auto-detection)
  */
-export async function detectBackend(
-  baseUrl: string,
-  explicitBackend?: Backend,
-  silent = false
-): Promise<Backend> {
+export async function detectBackend(baseUrl: string, explicitBackend?: Backend, silent = false): Promise<Backend> {
   // Allow explicit override
   if (explicitBackend && explicitBackend !== 'unknown') {
     if (silent) {
@@ -133,14 +129,14 @@ export async function detectBackend(
     return 'unknown'
   } catch (error) {
     if (silent) {
-      logger.debug('Backend detection failed', { 
-        url: baseUrl, 
-        error: error instanceof Error ? error.message : String(error) 
+      logger.debug('Backend detection failed', {
+        url: baseUrl,
+        error: error instanceof Error ? error.message : String(error),
       })
     } else {
-      logger.warn('Backend detection failed', { 
-        url: baseUrl, 
-        error: error instanceof Error ? error.message : String(error) 
+      logger.warn('Backend detection failed', {
+        url: baseUrl,
+        error: error instanceof Error ? error.message : String(error),
       })
     }
     return 'unknown'
@@ -164,8 +160,8 @@ async function probeLlamaCpp(baseUrl: string): Promise<boolean> {
       signal: AbortSignal.timeout(5000),
     })
     if (!response.ok) return false
-    
-    const data = await response.json() as Record<string, unknown>
+
+    const data = (await response.json()) as Record<string, unknown>
     // llama.cpp health returns slots_idle and slots_processing
     return 'slots_idle' in data || 'slots_processing' in data
   } catch {
@@ -200,11 +196,17 @@ async function probeOpenAI(baseUrl: string): Promise<boolean> {
 /** Display name for each backend */
 export function getBackendDisplayName(backend: Backend): string {
   switch (backend) {
-    case 'vllm': return 'vLLM'
-    case 'sglang': return 'SGLang'
-    case 'ollama': return 'Ollama'
-    case 'llamacpp': return 'llama.cpp'
-    case 'opencode-go': return 'OpenCode Go'
-    case 'unknown': return 'Unknown'
+    case 'vllm':
+      return 'vLLM'
+    case 'sglang':
+      return 'SGLang'
+    case 'ollama':
+      return 'Ollama'
+    case 'llamacpp':
+      return 'llama.cpp'
+    case 'opencode-go':
+      return 'OpenCode Go'
+    case 'unknown':
+      return 'Unknown'
   }
 }

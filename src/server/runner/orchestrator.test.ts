@@ -66,7 +66,7 @@ describe('runOrchestrator', () => {
     vi.mocked(findWorkflowById).mockReturnValue(undefined)
 
     await expect(runOrchestrator({ ...mockOptions, workflowId: 'custom' })).rejects.toThrow(
-      'Workflow "custom" not found'
+      'Workflow "custom" not found',
     )
     expect(findWorkflowById).toHaveBeenCalledWith('custom', [])
   })
@@ -87,7 +87,16 @@ describe('runOrchestrator', () => {
       metadata: { id: 'default', name: 'Default', description: '', version: '1' },
       entryStep: 'build',
       settings: { maxIterations: 50 },
-      steps: [{ id: 'build', name: 'Build', type: 'agent' as const, toolMode: 'builder' as const, phase: 'build', transitions: [] }],
+      steps: [
+        {
+          id: 'build',
+          name: 'Build',
+          type: 'agent' as const,
+          toolMode: 'builder' as const,
+          phase: 'build',
+          transitions: [],
+        },
+      ],
     }
 
     vi.mocked(loadAllWorkflows).mockResolvedValue([mockWorkflow])
@@ -108,7 +117,7 @@ describe('runOrchestrator', () => {
     vi.mocked(findWorkflowById).mockReturnValue(undefined)
 
     await expect(runOrchestrator({ ...mockOptions, workflowId: 'override' })).rejects.toThrow(
-      'Workflow "override" not found'
+      'Workflow "override" not found',
     )
     expect(findWorkflowById).toHaveBeenCalledWith('override', [])
   })

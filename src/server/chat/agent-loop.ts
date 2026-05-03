@@ -8,7 +8,15 @@
  * - runTopLevelAgentLoop(): replaces duplicated planner/builder turns
  */
 
-import type { Attachment, InjectedFile, PromptContext, StatsIdentity, ToolCall, ToolMode, ToolResult } from '../../shared/types.js'
+import type {
+  Attachment,
+  InjectedFile,
+  PromptContext,
+  StatsIdentity,
+  ToolCall,
+  ToolMode,
+  ToolResult,
+} from '../../shared/types.js'
 import type { ServerMessage } from '../../shared/protocol.js'
 import type { LLMClientWithModel } from '../llm/client.js'
 import type { LLMToolDefinition } from '../llm/types.js'
@@ -36,7 +44,7 @@ import { getRuntimeConfig } from '../runtime-config.js'
 import { getGlobalConfigDir } from '../../cli/paths.js'
 import { createQueueStateMessage, createChatVisionFallbackMessage } from '../ws/protocol.js'
 import type { DangerLevel } from '../../shared/types.js'
-import stripAnsi from "strip-ansi"
+import stripAnsi from 'strip-ansi'
 
 function emitPartialDoneEvents(
   sessionId: string,
@@ -48,11 +56,14 @@ function emitPartialDoneEvents(
   eventStore: ReturnType<typeof getEventStore>,
 ): void {
   const stats = turnMetrics.buildStats(statsIdentity, mode)
-  eventStore.append(sessionId, createMessageDoneEvent(assistantMsgId, {
-    stats,
-    partial: true,
-    promptContext,
-  }))
+  eventStore.append(
+    sessionId,
+    createMessageDoneEvent(assistantMsgId, {
+      stats,
+      partial: true,
+      promptContext,
+    }),
+  )
   eventStore.append(sessionId, createChatDoneEvent(assistantMsgId, 'stopped', stats))
 }
 
@@ -188,7 +199,7 @@ export async function executeToolBatch(
           type: 'chat.ask_user',
           data: { callId: error.callId, question: error.question },
         })
-        
+
         // Wait for user to provide answer via ask.answer
         const { awaitAnswer } = await import('../tools/ask.js')
         const answerPromise = awaitAnswer(error.callId)
@@ -219,11 +230,13 @@ export async function executeToolBatch(
 
     toolMessages.push({
       role: 'tool',
-      content: stripAnsi(toolResult.success
-        ? (toolResult.output ?? 'Success')
-        : toolResult.output 
-          ? `${toolResult.output}\n\nError: ${toolResult.error}`
-          : `Error: ${toolResult.error}`),
+      content: stripAnsi(
+        toolResult.success
+          ? (toolResult.output ?? 'Success')
+          : toolResult.output
+            ? `${toolResult.output}\n\nError: ${toolResult.error}`
+            : `Error: ${toolResult.error}`,
+      ),
       source: 'history',
       toolCallId: toolCall.id,
     })
@@ -246,18 +259,28 @@ export async function executeToolBatch(
 const MAX_FORMAT_RETRIES = 10
 const FORMAT_CORRECTION_PROMPT = `IMPORTANT: You MUST use the JSON function calling API. Do NOT output XML tags like <tool_call>, <function=>, or <parameter=>. Your previous attempt was stopped because you used the wrong format. Use the proper tool_calls format.`
 
-function toRequestContextMessages(messages: Array<{
-  role: 'user' | 'assistant' | 'tool'
-  content: string
-  toolCalls?: ToolCall[]
-  toolCallId?: string
-  attachments?: Attachment[]
-}>): RequestContextMessage[] {
+function toRequestContextMessages(
+  messages: Array<{
+    role: 'user' | 'assistant' | 'tool'
+    content: string
+    toolCalls?: ToolCall[]
+    toolCallId?: string
+    attachments?: Attachment[]
+  }>,
+): RequestContextMessage[] {
   return messages.map((message) => ({
     role: message.role,
     content: message.content,
     source: 'history' as const,
-    ...(message.toolCalls ? { toolCalls: message.toolCalls.map((toolCall) => ({ id: toolCall.id, name: toolCall.name, arguments: toolCall.arguments })) } : {}),
+    ...(message.toolCalls
+      ? {
+          toolCalls: message.toolCalls.map((toolCall) => ({
+            id: toolCall.id,
+            name: toolCall.name,
+            arguments: toolCall.arguments,
+          })),
+        }
+      : {}),
     ...(message.toolCallId ? { toolCallId: message.toolCallId } : {}),
     ...(message.attachments ? { attachments: message.attachments } : {}),
   }))
@@ -295,7 +318,7 @@ export async function runTopLevelAgentLoop(
     const { content: instructionContent, files } = await getAllInstructions(session.workdir, session.projectId)
     if (signal?.aborted) throw new Error('Aborted')
 
-    const injectedFiles: InjectedFile[] = files.map(f => ({
+    const injectedFiles: InjectedFile[] = files.map((f) => ({
       path: f.path,
       content: f.content ?? '',
       source: f.source,
@@ -308,11 +331,14 @@ export async function runTopLevelAgentLoop(
 
     if (formatRetryCount > 0) {
       const correctionMsgId = crypto.randomUUID()
-      eventStore.append(sessionId, createMessageStartEvent(correctionMsgId, 'user', FORMAT_CORRECTION_PROMPT, {
-        ...(currentWindowMessageOptions ?? {}),
-        isSystemGenerated: true,
-        messageKind: 'correction',
-      }))
+      eventStore.append(
+        sessionId,
+        createMessageStartEvent(correctionMsgId, 'user', FORMAT_CORRECTION_PROMPT, {
+          ...(currentWindowMessageOptions ?? {}),
+          isSystemGenerated: true,
+          messageKind: 'correction',
+        }),
+      )
       eventStore.append(sessionId, createFormatRetryEvent(formatRetryCount, MAX_FORMAT_RETRIES))
       requestMessages.push({ role: 'user', content: FORMAT_CORRECTION_PROMPT, source: 'runtime' })
     }
@@ -332,9 +358,14 @@ export async function runTopLevelAgentLoop(
     })
 
     const assistantMsgId = crypto.randomUUID()
-    eventStore.append(sessionId, createMessageStartEvent(assistantMsgId, 'assistant', undefined, currentWindowMessageOptions))
+    eventStore.append(
+      sessionId,
+      createMessageStartEvent(assistantMsgId, 'assistant', undefined, currentWindowMessageOptions),
+    )
 
-    const doOnMessage = (msg: ServerMessage) => { onMessage?.(msg) }
+    const doOnMessage = (msg: ServerMessage) => {
+      onMessage?.(msg)
+    }
 
     const onVisionFallbackStart = (attachmentId: string, filename?: string) => {
       const eventData: { messageId: string; attachmentId: string; filename?: string } = {
@@ -363,11 +394,13 @@ export async function runTopLevelAgentLoop(
         type: 'vision_fallback.done',
         data: { messageId: assistantMsgId, attachmentId, description },
       })
-      doOnMessage(createChatVisionFallbackMessage({ type: 'done', messageId: assistantMsgId, attachmentId, description }))
+      doOnMessage(
+        createChatVisionFallbackMessage({ type: 'done', messageId: assistantMsgId, attachmentId, description }),
+      )
     }
 
     const modelSettings = sessionManager.getCurrentModelSettings()
-    
+
     const streamGen = streamLLMPure({
       messageId: assistantMsgId,
       systemPrompt: assembledRequest.systemPrompt,
@@ -381,7 +414,7 @@ export async function runTopLevelAgentLoop(
       ...(modelSettings && { modelSettings }),
     })
 
-    const result = await consumeStreamGenerator(streamGen, event => {
+    const result = await consumeStreamGenerator(streamGen, (event) => {
       eventStore.append(sessionId, event)
     })
 
@@ -400,7 +433,15 @@ export async function runTopLevelAgentLoop(
     }
 
     if (result.aborted) {
-      emitPartialDoneEvents(sessionId, assistantMsgId, statsIdentity, mode, turnMetrics, assembledRequest.promptContext, eventStore)
+      emitPartialDoneEvents(
+        sessionId,
+        assistantMsgId,
+        statsIdentity,
+        mode,
+        turnMetrics,
+        assembledRequest.promptContext,
+        eventStore,
+      )
       throw new Error('Aborted')
     }
 
@@ -408,10 +449,13 @@ export async function runTopLevelAgentLoop(
     sessionManager.setCurrentContextSize(sessionId, result.usage.promptTokens)
 
     if (result.toolCalls.length > 0) {
-      eventStore.append(sessionId, createMessageDoneEvent(assistantMsgId, {
-        segments: result.segments,
-        promptContext: assembledRequest.promptContext,
-      }))
+      eventStore.append(
+        sessionId,
+        createMessageDoneEvent(assistantMsgId, {
+          segments: result.segments,
+          promptContext: assembledRequest.promptContext,
+        }),
+      )
 
       try {
         const batchContext: any = {
@@ -438,24 +482,43 @@ export async function runTopLevelAgentLoop(
         }
       } catch (error) {
         if (error instanceof Error && error.message === 'Aborted') {
-          emitPartialDoneEvents(sessionId, assistantMsgId, statsIdentity, mode, turnMetrics, assembledRequest.promptContext, eventStore)
+          emitPartialDoneEvents(
+            sessionId,
+            assistantMsgId,
+            statsIdentity,
+            mode,
+            turnMetrics,
+            assembledRequest.promptContext,
+            eventStore,
+          )
           throw error
         }
         throw error
       }
 
       if (signal?.aborted) {
-        emitPartialDoneEvents(sessionId, assistantMsgId, statsIdentity, mode, turnMetrics, assembledRequest.promptContext, eventStore)
+        emitPartialDoneEvents(
+          sessionId,
+          assistantMsgId,
+          statsIdentity,
+          mode,
+          turnMetrics,
+          assembledRequest.promptContext,
+          eventStore,
+        )
         throw new Error('Aborted')
       }
 
       const asapMessages = sessionManager.drainAsapMessages(sessionId)
       for (const asap of asapMessages) {
         const asapMsgId = crypto.randomUUID()
-        eventStore.append(sessionId, createMessageStartEvent(asapMsgId, 'user', asap.content, {
-          ...getCurrentWindowMessageOptions(sessionId),
-          ...(asap.attachments ? { attachments: asap.attachments } : {}),
-        }))
+        eventStore.append(
+          sessionId,
+          createMessageStartEvent(asapMsgId, 'user', asap.content, {
+            ...getCurrentWindowMessageOptions(sessionId),
+            ...(asap.attachments ? { attachments: asap.attachments } : {}),
+          }),
+        )
         eventStore.append(sessionId, { type: 'message.done', data: { messageId: asapMsgId } })
       }
       if (asapMessages.length > 0) {
@@ -467,19 +530,22 @@ export async function runTopLevelAgentLoop(
     }
 
     const stats = turnMetrics.buildStats(statsIdentity, mode)
-    eventStore.append(sessionId, createMessageDoneEvent(assistantMsgId, {
-      segments: result.segments,
-      stats,
-      promptContext: assembledRequest.promptContext,
-    }))
+    eventStore.append(
+      sessionId,
+      createMessageDoneEvent(assistantMsgId, {
+        segments: result.segments,
+        stats,
+        promptContext: assembledRequest.promptContext,
+      }),
+    )
     eventStore.append(sessionId, createChatDoneEvent(assistantMsgId, 'complete', stats))
-    
+
     const currentWindowMessages = sessionManager.getCurrentWindowMessages(sessionId)
-    const lastUserMessage = [...currentWindowMessages].reverse().find(m => m.role === 'user')
+    const lastUserMessage = [...currentWindowMessages].reverse().find((m) => m.role === 'user')
     if (lastUserMessage) {
       sessionManager.updateMessage(sessionId, lastUserMessage.id, { promptContext: assembledRequest.promptContext })
     }
-    
+
     break
   }
 

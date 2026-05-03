@@ -3,6 +3,7 @@ import { join, dirname } from 'node:path'
 import { constants } from 'node:fs'
 import { getSetting, SETTINGS_KEYS } from '../db/settings.js'
 import { getProject } from '../db/projects.js'
+import type { InjectedFile } from '../../shared/types.js'
 
 // ============================================================================
 // Types
@@ -34,12 +35,12 @@ const INSTRUCTION_FILENAMES = ['AGENTS.md', 'CLAUDE.md']
 export async function findInstructionFiles(workdir: string): Promise<InstructionFile[]> {
   const foundFiles: InstructionFile[] = []
   const pathsToCheck: string[] = []
-  
+
   // Walk up the directory tree
   let currentDir = workdir
   while (true) {
     pathsToCheck.unshift(currentDir) // Add to front (we want root-first order)
-    
+
     const parentDir = dirname(currentDir)
     // Stop if we've reached the root (dirname returns same path)
     if (parentDir === currentDir) {
@@ -47,7 +48,7 @@ export async function findInstructionFiles(workdir: string): Promise<Instruction
     }
     currentDir = parentDir
   }
-  
+
   // Check each directory for instruction files
   for (const dir of pathsToCheck) {
     for (const filename of INSTRUCTION_FILENAMES) {
@@ -60,7 +61,7 @@ export async function findInstructionFiles(workdir: string): Promise<Instruction
       }
     }
   }
-  
+
   return foundFiles
 }
 
@@ -70,7 +71,7 @@ export async function findInstructionFiles(workdir: string): Promise<Instruction
  */
 export async function loadInstructions(files: InstructionFile[]): Promise<string> {
   const contents: string[] = []
-  
+
   for (const file of files) {
     try {
       const content = await readFile(file.path, 'utf-8')
@@ -80,7 +81,7 @@ export async function loadInstructions(files: InstructionFile[]): Promise<string
       continue
     }
   }
-  
+
   return contents.join('\n')
 }
 
@@ -102,27 +103,24 @@ export async function getInstructionsForWorkdir(workdir: string): Promise<{
  * Order: global → project → AGENTS.md files
  * This is the primary function that should be used when building prompts.
  */
-export async function getAllInstructions(
-  workdir: string,
-  projectId: string
-): Promise<AllInstructions> {
+export async function getAllInstructions(workdir: string, projectId: string): Promise<AllInstructions> {
   const sections: string[] = []
   const allFiles: InstructionFile[] = []
-  
+
   // 1. Global instructions (from settings)
   const globalInstructions = getSetting(SETTINGS_KEYS.GLOBAL_INSTRUCTIONS)
   if (globalInstructions) {
     sections.push(`## GLOBAL INSTRUCTIONS\n\n${globalInstructions}`)
     allFiles.push({ path: 'Global Instructions', source: 'global', content: globalInstructions })
   }
-  
+
   // 2. Project instructions (from project record)
   const project = getProject(projectId)
   if (project?.customInstructions) {
     sections.push(`## PROJECT INSTRUCTIONS\n\n${project.customInstructions}`)
     allFiles.push({ path: `Project: ${project.name}`, source: 'project', content: project.customInstructions })
   }
-  
+
   // 3. AGENTS.md files (from filesystem)
   const agentFiles = await findInstructionFiles(workdir)
   if (agentFiles.length > 0) {
@@ -140,7 +138,7 @@ export async function getAllInstructions(
       }
     }
   }
-  
+
   return {
     content: sections.join('\n\n'),
     files: allFiles,
@@ -158,4 +156,12 @@ async function fileExists(path: string): Promise<boolean> {
   } catch {
     return false
   }
+}
+
+export function toInjectedFiles(files: InstructionFile[]): InjectedFile[] {
+  return files.map((file) => ({
+    path: file.path,
+    content: file.content ?? '',
+    source: file.source,
+  }))
 }

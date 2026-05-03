@@ -2,7 +2,7 @@ export class OpenFoxError extends Error {
   constructor(
     message: string,
     public readonly code: string,
-    public readonly details?: unknown
+    public readonly details?: unknown,
   ) {
     super(message)
     this.name = 'OpenFoxError'
@@ -25,7 +25,7 @@ export class InvalidPhaseTransitionError extends OpenFoxError {
 
 export class ToolExecutionError extends OpenFoxError {
   constructor(tool: string, message: string, details?: unknown) {
-    super(`Tool '${tool}' failed: ${message}`, 'TOOL_EXECUTION_ERROR', { tool, ...details as object })
+    super(`Tool '${tool}' failed: ${message}`, 'TOOL_EXECUTION_ERROR', { tool, ...(details as object) })
     this.name = 'ToolExecutionError'
   }
 }

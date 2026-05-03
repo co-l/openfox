@@ -36,10 +36,7 @@ export async function authConfigExists(mode: Mode): Promise<boolean> {
 }
 
 export function encryptPassword(password: string, publicKey: string): string {
-  const encrypted = publicEncrypt(
-    { key: publicKey, padding: 1 },
-    Buffer.from(password)
-  )
+  const encrypted = publicEncrypt({ key: publicKey, padding: 1 }, Buffer.from(password))
   return encrypted.toString('base64')
 }
 

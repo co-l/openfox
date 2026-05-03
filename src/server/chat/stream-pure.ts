@@ -10,7 +10,15 @@
  * - Managing session state
  */
 
-import type { PromptContext, ToolCall, MessageSegment, MessageStats, StatsIdentity, ToolResult, Attachment } from '../../shared/types.js'
+import type {
+  PromptContext,
+  ToolCall,
+  MessageSegment,
+  MessageStats,
+  StatsIdentity,
+  ToolResult,
+  Attachment,
+} from '../../shared/types.js'
 import type { LLMClientWithModel } from '../llm/client.js'
 import type { LLMToolDefinition } from '../llm/types.js'
 import { buildModelParams } from '../llm/client-pure.js'
@@ -67,7 +75,7 @@ export interface PureStreamResult {
 function createEmptyStreamResult(
   aborted: boolean,
   xmlFormatError: boolean,
-  modelParams: ModelParams
+  modelParams: ModelParams,
 ): PureStreamResult {
   return {
     content: '',
@@ -106,10 +114,19 @@ function createEmptyStreamResult(
  * const result = gen.value // Available after iteration completes
  * ```
  */
-export async function* streamLLMPure(
-  options: PureStreamOptions
-): AsyncGenerator<TurnEvent, PureStreamResult> {
-  const { messageId, systemPrompt, llmClient, messages, tools, toolChoice, signal, disableThinking, onVisionFallbackStart, onVisionFallbackDone } = options
+export async function* streamLLMPure(options: PureStreamOptions): AsyncGenerator<TurnEvent, PureStreamResult> {
+  const {
+    messageId,
+    systemPrompt,
+    llmClient,
+    messages,
+    tools,
+    toolChoice,
+    signal,
+    disableThinking,
+    onVisionFallbackStart,
+    onVisionFallbackDone,
+  } = options
 
   // Build LLM messages
   const llmMessages = [{ role: 'system' as const, content: systemPrompt }, ...messages]
@@ -127,7 +144,7 @@ export async function* streamLLMPure(
   const topP = userTopP ?? profile.topP
   const topK = userTopK ?? (backend.supportsTopK ? profile.topK : undefined)
   const modelParams = buildModelParams({ temperature, topP, topK, maxTokens })
-  
+
   // Log model settings for debugging
   logger.debug('LLM request settings', {
     model: llmClient.getModel(),
@@ -221,7 +238,12 @@ export async function* streamLLMPure(
             const accumulatedArgs = toolArgs.get(value.index)
             yield {
               type: 'tool.preparing',
-              data: { messageId, index: value.index, name: fullName, ...(accumulatedArgs ? { arguments: accumulatedArgs } : {}) },
+              data: {
+                messageId,
+                index: value.index,
+                name: fullName,
+                ...(accumulatedArgs ? { arguments: accumulatedArgs } : {}),
+              },
             }
           } else if (seenToolIndices.has(value.index) && value.arguments) {
             // Update existing preparing event with new partial arguments
@@ -253,15 +275,18 @@ export async function* streamLLMPure(
                   const valueStart = newRaw.indexOf('"', colonPos + 1)
                   if (valueStart >= 0) {
                     // Everything after the opening quote (minus trailing `"}` if complete)
-                    const prevContent = prevRaw.length > valueStart + 1
-                      ? prevRaw.slice(valueStart + 1).replace(/"\s*\}\s*$/, '')
-                      : ''
+                    const prevContent =
+                      prevRaw.length > valueStart + 1 ? prevRaw.slice(valueStart + 1).replace(/"\s*\}\s*$/, '') : ''
                     const currentContent = newRaw.slice(valueStart + 1).replace(/"\s*\}\s*$/, '')
                     // Emit only the new delta
                     const delta = currentContent.slice(prevContent.length)
                     if (delta) {
                       // Unescape JSON string escapes
-                      const unescaped = delta.replace(/\\n/g, '\n').replace(/\\t/g, '\t').replace(/\\"/g, '"').replace(/\\\\/g, '\\')
+                      const unescaped = delta
+                        .replace(/\\n/g, '\n')
+                        .replace(/\\t/g, '\t')
+                        .replace(/\\"/g, '"')
+                        .replace(/\\\\/g, '\\')
                       yield {
                         type: 'tool.output',
                         data: { toolCallId, stream: 'stdout' as const, content: unescaped },
@@ -349,7 +374,9 @@ export class TurnMetrics {
   private totalGenTokens = 0
   private totalGenTime = 0 // seconds
   private totalToolTime = 0 // seconds
-  private llmCalls: Array<Omit<NonNullable<MessageStats['llmCalls']>[number], 'providerId' | 'providerName' | 'backend' | 'model'>> = []
+  private llmCalls: Array<
+    Omit<NonNullable<MessageStats['llmCalls']>[number], 'providerId' | 'providerName' | 'backend' | 'model'>
+  > = []
   private modelParams: ModelParams = {}
 
   constructor() {
@@ -375,7 +402,8 @@ export class TurnMetrics {
         ttft: timing.ttft,
         completionTime: timing.completionTime,
         prefillSpeed: timing.ttft > 0 ? Math.round((promptTokens / timing.ttft) * 10) / 10 : 0,
-        generationSpeed: timing.completionTime > 0 ? Math.round((completionTokens / timing.completionTime) * 10) / 10 : 0,
+        generationSpeed:
+          timing.completionTime > 0 ? Math.round((completionTokens / timing.completionTime) * 10) / 10 : 0,
         totalTime: Math.round((timing.ttft + timing.completionTime) * 10) / 10,
         timestamp: new Date().toISOString(),
         ...(this.modelParams.temperature !== undefined && { temperature: this.modelParams.temperature }),
@@ -433,7 +461,7 @@ export function createMessageStartEvent(
     isSystemGenerated?: boolean
     messageKind?: 'correction' | 'auto-prompt' | 'context-reset' | 'task-completed' | 'workflow-started' | 'command'
     metadata?: { type: string; name: string; color: string }
-  }
+  },
 ): TurnEvent {
   return {
     type: 'message.start',
@@ -461,7 +489,7 @@ export function createMessageDoneEvent(
     segments?: MessageSegment[]
     partial?: boolean
     promptContext?: PromptContext
-  }
+  },
 ): TurnEvent {
   return {
     type: 'message.done',
@@ -501,7 +529,7 @@ export function createToolResultEvent(messageId: string, toolCallId: string, res
 export function createChatDoneEvent(
   messageId: string,
   reason: 'complete' | 'stopped' | 'error' | 'waiting_for_user',
-  stats?: MessageStats
+  stats?: MessageStats,
 ): TurnEvent {
   return {
     type: 'chat.done',
@@ -533,7 +561,7 @@ export function createFormatRetryEvent(attempt: number, maxAttempts: number): Tu
  */
 export async function consumeStreamGenerator(
   gen: AsyncGenerator<TurnEvent, PureStreamResult>,
-  onEvent: (event: TurnEvent) => void
+  onEvent: (event: TurnEvent) => void,
 ): Promise<PureStreamResult> {
   let result: IteratorResult<TurnEvent, PureStreamResult>
 
@@ -568,15 +596,19 @@ export interface ConsumeStreamWithToolLoopOptions {
   signal?: AbortSignal
   turnMetrics: TurnMetrics
   toolRegistry: {
-    execute: (name: string, args: Record<string, unknown>, ctx: {
-      sessionId: string
-      workdir: string
-      signal?: AbortSignal
-      llmClient: LLMClientWithModel
-      statsIdentity: StatsIdentity
-      dangerLevel?: 'normal' | 'dangerous'
-      toolCallId: string
-    }) => Promise<ToolResult>
+    execute: (
+      name: string,
+      args: Record<string, unknown>,
+      ctx: {
+        sessionId: string
+        workdir: string
+        signal?: AbortSignal
+        llmClient: LLMClientWithModel
+        statsIdentity: StatsIdentity
+        dangerLevel?: 'normal' | 'dangerous'
+        toolCallId: string
+      },
+    ) => Promise<ToolResult>
   }
   sessionId: string
   workdir: string
@@ -585,9 +617,7 @@ export interface ConsumeStreamWithToolLoopOptions {
   dangerLevel?: 'normal' | 'dangerous'
 }
 
-export async function consumeStreamWithToolLoop(
-  options: ConsumeStreamWithToolLoopOptions
-): Promise<PureStreamResult> {
+export async function consumeStreamWithToolLoop(options: ConsumeStreamWithToolLoopOptions): Promise<PureStreamResult> {
   const {
     messageId,
     systemPrompt,
@@ -651,10 +681,12 @@ export async function consumeStreamWithToolLoop(
 
     if (result.toolCalls.length > 0) {
       const stats = turnMetrics.buildStats(statsIdentity, 'compaction')
-      onEvent(createMessageDoneEvent(messageId, {
-        segments: result.segments,
-        stats,
-      }))
+      onEvent(
+        createMessageDoneEvent(messageId, {
+          segments: result.segments,
+          stats,
+        }),
+      )
 
       const toolContext = {
         sessionId,
@@ -713,7 +745,7 @@ async function executeToolBatchWithContext(
   assistantMsgId: string,
   toolCalls: ToolCall[],
   ctx: ToolBatchExecutionContext,
-  onEvent: (event: TurnEvent) => void
+  onEvent: (event: TurnEvent) => void,
 ): Promise<{ toolMessages: Array<{ role: 'tool'; content: string; toolCallId?: string }>; criteriaChanged: boolean }> {
   const toolMessages: Array<{ role: 'tool'; content: string; toolCallId?: string }> = []
   const criteriaChanged = false

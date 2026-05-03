@@ -5,7 +5,12 @@ import { logger } from '../utils/logger.js'
 import type { ServerMessage } from '../../shared/protocol.js'
 import { createSessionRunningMessage, createChatMessageMessage } from '../ws/protocol.js'
 import { finalizeTurnCompletion, getSessionMessageCount, buildRunChatTurnParams } from '../utils/session-utils.js'
-import { needsNameGenerationCheck, generateSessionName, applyGeneratedSessionName, type ApplyGeneratedSessionNameDeps } from '../session/name-generator.js'
+import {
+  needsNameGenerationCheck,
+  generateSessionName,
+  applyGeneratedSessionName,
+  type ApplyGeneratedSessionNameDeps,
+} from '../session/name-generator.js'
 import { getEventStore } from '../events/index.js'
 
 interface QueueProcessorDeps {
@@ -119,7 +124,7 @@ export class QueueProcessor {
     sessionManager.setRunning(sessionId, true)
     broadcastForSession(sessionId, createSessionRunningMessage(true))
 
-    const nextAsap = queue.find(m => m.mode === 'asap') ?? queue[0]
+    const nextAsap = queue.find((m) => m.mode === 'asap') ?? queue[0]
     if (nextAsap) {
       sessionManager.cancelQueuedMessage(sessionId, nextAsap.queueId)
       const userMessage = sessionManager.addMessage(sessionId, {
@@ -128,7 +133,11 @@ export class QueueProcessor {
         ...(nextAsap.attachments ? { attachments: nextAsap.attachments } : {}),
       })
       broadcastForSession(sessionId, createChatMessageMessage(userMessage))
-      logger.debug('Added queued message to session', { sessionId, queueId: nextAsap.queueId, messageId: userMessage.id })
+      logger.debug('Added queued message to session', {
+        sessionId,
+        queueId: nextAsap.queueId,
+        messageId: userMessage.id,
+      })
 
       const messageCount = this.getSessionMessageCount(sessionId)
       const currentSession = sessionManager.getSession(sessionId)
@@ -210,29 +219,31 @@ export class QueueProcessor {
       onMessage: (msg) => broadcastForSession(sessionId, msg),
     })
 
-    runChatTurn(runChatTurnParams).catch((error) => {
-      if (error instanceof Error && error.message === 'Aborted') {
-        return
-      }
-      logger.error('QueueProcessor turn error', { sessionId, error })
-    }).finally(() => {
-      this.activeAgents.delete(sessionId)
+    runChatTurn(runChatTurnParams)
+      .catch((error) => {
+        if (error instanceof Error && error.message === 'Aborted') {
+          return
+        }
+        logger.error('QueueProcessor turn error', { sessionId, error })
+      })
+      .finally(() => {
+        this.activeAgents.delete(sessionId)
 
-      const session = this.deps.sessionManager.getSession(sessionId)
-      if (!session) {
-        this.deps.sessionManager.setRunning(sessionId, false)
-        this.deps.broadcastForSession(sessionId, createSessionRunningMessage(false))
-        return
-      }
+        const session = this.deps.sessionManager.getSession(sessionId)
+        if (!session) {
+          this.deps.sessionManager.setRunning(sessionId, false)
+          this.deps.broadcastForSession(sessionId, createSessionRunningMessage(false))
+          return
+        }
 
-      const hasMore = sessionManager.hasQueuedMessages(sessionId)
-      if (!hasMore) {
-        finalizeTurnCompletion(sessionId, sessionManager, broadcastForSession)
-        return
-      }
+        const hasMore = sessionManager.hasQueuedMessages(sessionId)
+        if (!hasMore) {
+          finalizeTurnCompletion(sessionId, sessionManager, broadcastForSession)
+          return
+        }
 
-      this.startTurn(sessionId)
-    })
+        this.startTurn(sessionId)
+      })
   }
 
   private getSessionMessageCount(sessionId: string): number {

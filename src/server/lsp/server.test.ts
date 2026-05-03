@@ -1,12 +1,7 @@
 import { EventEmitter } from 'node:events'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-const {
-  spawnMock,
-  createMessageConnectionMock,
-  streamMessageReaderMock,
-  streamMessageWriterMock,
-} = vi.hoisted(() => ({
+const { spawnMock, createMessageConnectionMock, streamMessageReaderMock, streamMessageWriterMock } = vi.hoisted(() => ({
   spawnMock: vi.fn(),
   createMessageConnectionMock: vi.fn(),
   streamMessageReaderMock: vi.fn(),
@@ -88,10 +83,17 @@ describe('LspServer', () => {
     await server.start()
 
     expect(spawnMock).toHaveBeenCalledTimes(1)
-    expect(spawnMock).toHaveBeenCalledWith('/usr/bin/typescript-language-server', ['--stdio'], expect.objectContaining({ cwd: '/tmp/project' }))
+    expect(spawnMock).toHaveBeenCalledWith(
+      '/usr/bin/typescript-language-server',
+      ['--stdio'],
+      expect.objectContaining({ cwd: '/tmp/project' }),
+    )
     expect(createMessageConnectionMock).toHaveBeenCalledTimes(1)
     expect(connection.listen).toHaveBeenCalledTimes(1)
-    expect(connection.sendRequest).toHaveBeenCalledWith('initialize', expect.objectContaining({ rootPath: '/tmp/project', rootUri: 'file:///tmp/project' }))
+    expect(connection.sendRequest).toHaveBeenCalledWith(
+      'initialize',
+      expect.objectContaining({ rootPath: '/tmp/project', rootUri: 'file:///tmp/project' }),
+    )
     expect(connection.sendNotification).toHaveBeenCalledWith('initialized', {})
     expect(server.isRunning()).toBe(true)
     expect(server.getState()).toBe('running')
@@ -114,42 +116,62 @@ describe('LspServer', () => {
     })
 
     await server.didOpen('/tmp/project/App.tsx', 'const x = 1')
-    expect(connection.sendNotification).toHaveBeenCalledWith('textDocument/didOpen', expect.objectContaining({
-      textDocument: expect.objectContaining({ languageId: 'typescriptreact', version: 1, text: 'const x = 1' }),
-    }))
-
+    expect(connection.sendNotification).toHaveBeenCalledWith(
+      'textDocument/didOpen',
+      expect.objectContaining({
+        textDocument: expect.objectContaining({ languageId: 'typescriptreact', version: 1, text: 'const x = 1' }),
+      }),
+    )
     ;(server as any).handleDiagnostics({
       uri: 'file:///tmp/project/App.tsx',
-      diagnostics: [{
-        range: { start: { line: 1, character: 2 }, end: { line: 1, character: 4 } },
-        severity: 1,
-        code: 2345,
-        source: 'tsserver',
-        message: 'Type error',
-      }],
+      diagnostics: [
+        {
+          range: { start: { line: 1, character: 2 }, end: { line: 1, character: 4 } },
+          severity: 1,
+          code: 2345,
+          source: 'tsserver',
+          message: 'Type error',
+        },
+      ],
     })
-    expect(server.getDiagnostics('/tmp/project/App.tsx')).toEqual([{ path: '/tmp/project/App.tsx', range: { start: { line: 1, character: 2 }, end: { line: 1, character: 4 } }, severity: 'error', message: 'Type error', source: 'tsserver', code: '2345' }])
+    expect(server.getDiagnostics('/tmp/project/App.tsx')).toEqual([
+      {
+        path: '/tmp/project/App.tsx',
+        range: { start: { line: 1, character: 2 }, end: { line: 1, character: 4 } },
+        severity: 'error',
+        message: 'Type error',
+        source: 'tsserver',
+        code: '2345',
+      },
+    ])
     expect(updates[0]?.diagnostics).toEqual(server.getDiagnostics('/tmp/project/App.tsx'))
 
     await server.didChange('/tmp/project/App.tsx', 'const x = 2')
-    expect(connection.sendNotification).toHaveBeenCalledWith('textDocument/didChange', expect.objectContaining({
-      textDocument: { uri: 'file:///tmp/project/App.tsx', version: 2 },
-      contentChanges: [{ text: 'const x = 2' }],
-    }))
+    expect(connection.sendNotification).toHaveBeenCalledWith(
+      'textDocument/didChange',
+      expect.objectContaining({
+        textDocument: { uri: 'file:///tmp/project/App.tsx', version: 2 },
+        contentChanges: [{ text: 'const x = 2' }],
+      }),
+    )
 
     unsubscribe()
     ;(server as any).handleDiagnostics({
       uri: 'file:///tmp/project/App.tsx',
-      diagnostics: [{
-        range: { start: { line: 0, character: 0 }, end: { line: 0, character: 1 } },
-        severity: 4,
-        message: 'Hint',
-      }],
+      diagnostics: [
+        {
+          range: { start: { line: 0, character: 0 }, end: { line: 0, character: 1 } },
+          severity: 4,
+          message: 'Hint',
+        },
+      ],
     })
     expect(updates).toHaveLength(1)
 
     await server.didClose('/tmp/project/App.tsx')
-    expect(connection.sendNotification).toHaveBeenCalledWith('textDocument/didClose', { textDocument: { uri: 'file:///tmp/project/App.tsx' } })
+    expect(connection.sendNotification).toHaveBeenCalledWith('textDocument/didClose', {
+      textDocument: { uri: 'file:///tmp/project/App.tsx' },
+    })
   })
 
   it('returns fallback diagnostics on timeout and handles unopened documents', async () => {
@@ -166,9 +188,12 @@ describe('LspServer', () => {
     await expect(server.getDiagnosticsWithWait('/tmp/project/missing.ts')).resolves.toEqual([])
 
     await server.didChange('/tmp/project/new.ts', 'const x = 1')
-    expect(connection.sendNotification).toHaveBeenCalledWith('textDocument/didOpen', expect.objectContaining({
-      textDocument: expect.objectContaining({ uri: 'file:///tmp/project/new.ts', languageId: 'typescript' }),
-    }))
+    expect(connection.sendNotification).toHaveBeenCalledWith(
+      'textDocument/didOpen',
+      expect.objectContaining({
+        textDocument: expect.objectContaining({ uri: 'file:///tmp/project/new.ts', languageId: 'typescript' }),
+      }),
+    )
 
     const pending = server.getDiagnosticsWithWait('/tmp/project/new.ts', 250)
     await vi.advanceTimersByTimeAsync(250)

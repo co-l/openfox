@@ -35,10 +35,10 @@ describe('stats computation', () => {
       const stats = computeAggregatedStats({
         identity,
         mode: 'builder',
-        totalPrefillTokens: 350000,  // 5 × 70k
-        totalGenTokens: 2500,        // 5 × 500
-        totalPrefillTime: 25,        // 5 × 5 seconds ttft
-        totalGenTime: 17,            // sum of completion times
+        totalPrefillTokens: 350000, // 5 × 70k
+        totalGenTokens: 2500, // 5 × 500
+        totalPrefillTime: 25, // 5 × 5 seconds ttft
+        totalGenTime: 17, // sum of completion times
         totalToolTime: 10,
         totalTime: 145,
       })
@@ -83,8 +83,8 @@ describe('stats computation', () => {
         totalPrefillTokens: 350000,
         totalGenTokens: 2500,
         // Cumulative timing from all 5 calls
-        totalPrefillTime: 27.5,  // 5 × 5.5 seconds
-        totalGenTime: 17,        // 5 × 3.4 seconds
+        totalPrefillTime: 27.5, // 5 × 5.5 seconds
+        totalGenTime: 17, // 5 × 3.4 seconds
         totalToolTime: 52,
         totalTime: 145,
       })

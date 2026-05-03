@@ -3,7 +3,15 @@
  * multiple assistant messages into SessionStats for benchmarking and trends.
  */
 
-import type { CallStatsDataPoint, Message, MessageStats, ModelSessionStats, SessionStats, StatsDataPoint, StatsIdentity } from './types.js'
+import type {
+  CallStatsDataPoint,
+  Message,
+  MessageStats,
+  ModelSessionStats,
+  SessionStats,
+  StatsDataPoint,
+  StatsIdentity,
+} from './types.js'
 
 const roundTo1 = (n: number): number => Math.round(n * 10) / 10
 
@@ -117,16 +125,16 @@ function buildSessionStats(messagesWithStats: MessageWithStats[]): Omit<SessionS
 
 /**
  * Compute aggregated session stats from an array of messages.
- * 
+ *
  * Returns null if no messages have stats.
- * 
+ *
  * Weighted average for speeds: totalTokens / totalTime
  * This gives accurate average throughput across varying context sizes.
  */
 export function computeSessionStats(messages: Message[]): SessionStats | null {
-  const messagesWithStats = messages.filter(
-    (msg): msg is MessageWithStats => msg.stats !== undefined && msg.stats !== null
-  ).sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime())
+  const messagesWithStats = messages
+    .filter((msg): msg is MessageWithStats => msg.stats !== undefined && msg.stats !== null)
+    .sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime())
 
   if (messagesWithStats.length === 0) {
     return null

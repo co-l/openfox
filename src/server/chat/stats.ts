@@ -57,15 +57,15 @@ export interface StatsInput {
 
 /**
  * Compute message stats from LLM timing and usage data.
- * 
+ *
  * For single LLM calls: totalTime = ttft + completionTime + toolTime
  * For multi-call flows: pass totalTimeOverride with wall clock time
  */
 export function computeMessageStats(input: StatsInput): MessageStats {
   const { identity, mode, timing, usage, toolTime = 0, totalTimeOverride, timestamp, modelParams } = input
-  
-  const totalTime = totalTimeOverride ?? (timing.ttft + timing.completionTime + toolTime)
-  
+
+  const totalTime = totalTimeOverride ?? timing.ttft + timing.completionTime + toolTime
+
   return {
     ...identity,
     mode,
@@ -75,15 +75,17 @@ export function computeMessageStats(input: StatsInput): MessageStats {
     prefillSpeed: timing.ttft > 0 ? roundTo1(usage.promptTokens / timing.ttft) : 0,
     generationTokens: usage.completionTokens,
     generationSpeed: timing.completionTime > 0 ? roundTo1(usage.completionTokens / timing.completionTime) : 0,
-    llmCalls: [buildCallStats({
-      identity,
-      callIndex: 1,
-      timing,
-      promptTokens: usage.promptTokens,
-      completionTokens: usage.completionTokens,
-      ...(timestamp ? { timestamp } : {}),
-      ...(modelParams && { modelParams }),
-    })],
+    llmCalls: [
+      buildCallStats({
+        identity,
+        callIndex: 1,
+        timing,
+        promptTokens: usage.promptTokens,
+        completionTokens: usage.completionTokens,
+        ...(timestamp ? { timestamp } : {}),
+        ...(modelParams && { modelParams }),
+      }),
+    ],
   }
 }
 
@@ -96,14 +98,24 @@ export function computeAggregatedStats(input: {
   mode: ToolMode
   totalPrefillTokens: number
   totalGenTokens: number
-  totalPrefillTime: number  // sum of ttft across all calls
-  totalGenTime: number      // sum of completionTime across all calls
-  totalToolTime: number     // seconds
-  totalTime: number         // wall clock seconds
+  totalPrefillTime: number // sum of ttft across all calls
+  totalGenTime: number // sum of completionTime across all calls
+  totalToolTime: number // seconds
+  totalTime: number // wall clock seconds
   llmCalls?: LLMCallStats[]
 }): MessageStats {
-  const { identity, mode, totalPrefillTokens, totalGenTokens, totalPrefillTime, totalGenTime, totalToolTime, totalTime, llmCalls } = input
-  
+  const {
+    identity,
+    mode,
+    totalPrefillTokens,
+    totalGenTokens,
+    totalPrefillTime,
+    totalGenTime,
+    totalToolTime,
+    totalTime,
+    llmCalls,
+  } = input
+
   return {
     ...identity,
     mode,

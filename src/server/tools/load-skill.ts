@@ -31,7 +31,7 @@ const handler: ToolHandler<LoadSkillArgs> = async (args, _context, helpers): Pro
   const skill = findSkillById(skillId, allSkills)
 
   if (!skill) {
-    const available = allSkills.map(s => s.metadata.id).join(', ')
+    const available = allSkills.map((s) => s.metadata.id).join(', ')
     return helpers.error(`Skill "${skillId}" not found. Available skills: ${available}`)
   }
 
@@ -44,7 +44,8 @@ export const loadSkillTool = createTool<LoadSkillArgs>(
     type: 'function',
     function: {
       name: 'load_skill',
-      description: 'Load a skill\'s detailed instructions into context. Use this when you need domain-specific knowledge for a task. Call with the skill ID shown in the AVAILABLE SKILLS section.',
+      description:
+        "Load a skill's detailed instructions into context. Use this when you need domain-specific knowledge for a task. Call with the skill ID shown in the AVAILABLE SKILLS section.",
       parameters: {
         type: 'object',
         properties: {
@@ -57,5 +58,5 @@ export const loadSkillTool = createTool<LoadSkillArgs>(
       },
     },
   },
-  handler
+  handler,
 )

@@ -12,10 +12,8 @@ export function createTerminalRoutes(): Router {
 
   router.get('/', (req, res) => {
     const projectId = req.query['projectId'] as string | undefined
-    const sessions = projectId
-      ? terminalManager.getByProject(projectId)
-      : []
-    const response: TerminalSessionResponse[] = sessions.map(s => ({
+    const sessions = projectId ? terminalManager.getByProject(projectId) : []
+    const response: TerminalSessionResponse[] = sessions.map((s) => ({
       id: s.id,
       workdir: s.workdir,
       projectId: s.projectId,

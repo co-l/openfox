@@ -12,13 +12,7 @@ import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { createServer, type Server } from 'node:http'
 import type { AgentDefinition } from './types.js'
-import {
-  loadAllAgents,
-  findAgentById,
-  saveAgent,
-  deleteAgent,
-  agentExists,
-} from './registry.js'
+import { loadAllAgents, findAgentById, saveAgent, deleteAgent, agentExists } from './registry.js'
 
 let tempDir: string
 let server: Server
@@ -29,7 +23,7 @@ function mountAgentRoutes(app: express.Express, configDir: string) {
 
   app.get('/api/agents', async (_req, res) => {
     const agents = await loadAllAgents(configDir)
-    res.json({ agents: agents.map(a => a.metadata) })
+    res.json({ agents: agents.map((a) => a.metadata) })
   })
 
   app.get('/api/agents/:id', async (req, res) => {
@@ -77,7 +71,9 @@ function mountAgentRoutes(app: express.Express, configDir: string) {
     const { id } = req.params
     const result = await deleteAgent(configDir, id as string)
     if (!result.success) {
-      return res.status(result.reason?.includes('Cannot delete built-in defaults') ? 403 : 404).json({ error: result.reason ?? 'Agent not found' })
+      return res
+        .status(result.reason?.includes('Cannot delete built-in defaults') ? 403 : 404)
+        .json({ error: result.reason ?? 'Agent not found' })
     }
     res.json({ success: true })
   })
@@ -120,7 +116,7 @@ describe('GET /api/agents', () => {
     expect(status).toBe(200)
     expect(data.agents.length).toBeGreaterThanOrEqual(5)
 
-    const ids = data.agents.map(a => a.id)
+    const ids = data.agents.map((a) => a.id)
     expect(ids).toContain('planner')
     expect(ids).toContain('builder')
     expect(ids).toContain('verifier')

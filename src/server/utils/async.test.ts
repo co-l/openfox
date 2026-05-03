@@ -22,33 +22,42 @@ describe('async utilities', () => {
 
   it('retries operations with backoff and stops when shouldRetry says no', async () => {
     let attempts = 0
-    const successPromise = withRetry(async () => {
-      attempts++
-      if (attempts < 3) {
-        throw new Error(`fail-${attempts}`)
-      }
-      return 'ok'
-    }, { maxRetries: 3, backoffMs: [10, 20] })
+    const successPromise = withRetry(
+      async () => {
+        attempts++
+        if (attempts < 3) {
+          throw new Error(`fail-${attempts}`)
+        }
+        return 'ok'
+      },
+      { maxRetries: 3, backoffMs: [10, 20] },
+    )
 
     await vi.runAllTimersAsync()
     await expect(successPromise).resolves.toBe('ok')
     expect(attempts).toBe(3)
 
-    const stopEarly = withRetry(async () => {
-      throw new Error('fatal')
-    }, {
-      maxRetries: 3,
-      backoffMs: [10],
-      shouldRetry: () => false,
-    })
+    const stopEarly = withRetry(
+      async () => {
+        throw new Error('fatal')
+      },
+      {
+        maxRetries: 3,
+        backoffMs: [10],
+        shouldRetry: () => false,
+      },
+    )
 
     await expect(stopEarly).rejects.toThrow('fatal')
   })
 
   it('rethrows the last error after exhausting retries and supports event subscriptions', async () => {
-    const failed = withRetry(async () => {
-      throw new Error('still failing')
-    }, { maxRetries: 2, backoffMs: [5] })
+    const failed = withRetry(
+      async () => {
+        throw new Error('still failing')
+      },
+      { maxRetries: 2, backoffMs: [5] },
+    )
     const failedAssertion = expect(failed).rejects.toThrow('still failing')
 
     await vi.runAllTimersAsync()

@@ -22,18 +22,46 @@ describe('apply-events.ts new handlers', () => {
     it('populates streamingOutput on tool calls', () => {
       const events: StoredEvent[] = [
         { ...baseEvent, type: 'message.start', data: { messageId: 'm1', role: 'assistant' } },
-        { ...baseEvent, type: 'tool.call', data: { messageId: 'm1', toolCall: { id: 'call-1', name: 'run_command', arguments: {} } } },
-        { ...baseEvent, type: 'tool.output', data: { toolCallId: 'call-1', stream: 'stdout', content: 'First line\n' } },
-        { ...baseEvent, type: 'tool.output', data: { toolCallId: 'call-1', stream: 'stderr', content: 'Error output\n' } },
-        { ...baseEvent, type: 'tool.result', data: { messageId: 'm1', toolCallId: 'call-1', result: { success: true, output: 'Done', durationMs: 1, truncated: false } } },
+        {
+          ...baseEvent,
+          type: 'tool.call',
+          data: { messageId: 'm1', toolCall: { id: 'call-1', name: 'run_command', arguments: {} } },
+        },
+        {
+          ...baseEvent,
+          type: 'tool.output',
+          data: { toolCallId: 'call-1', stream: 'stdout', content: 'First line\n' },
+        },
+        {
+          ...baseEvent,
+          type: 'tool.output',
+          data: { toolCallId: 'call-1', stream: 'stderr', content: 'Error output\n' },
+        },
+        {
+          ...baseEvent,
+          type: 'tool.result',
+          data: {
+            messageId: 'm1',
+            toolCallId: 'call-1',
+            result: { success: true, output: 'Done', durationMs: 1, truncated: false },
+          },
+        },
       ]
 
       const messages = buildMessagesFromStoredEvents(events)
       const tc = messages[0]!.toolCalls![0]!
 
       expect(tc.streamingOutput).toHaveLength(2)
-      expect(tc.streamingOutput![0]).toEqual({ stream: 'stdout', content: 'First line\n', timestamp: baseEvent.timestamp })
-      expect(tc.streamingOutput![1]).toEqual({ stream: 'stderr', content: 'Error output\n', timestamp: baseEvent.timestamp })
+      expect(tc.streamingOutput![0]).toEqual({
+        stream: 'stdout',
+        content: 'First line\n',
+        timestamp: baseEvent.timestamp,
+      })
+      expect(tc.streamingOutput![1]).toEqual({
+        stream: 'stderr',
+        content: 'Error output\n',
+        timestamp: baseEvent.timestamp,
+      })
     })
   })
 
@@ -60,7 +88,11 @@ describe('apply-events.ts new handlers', () => {
       const events: StoredEvent[] = [
         { ...baseEvent, type: 'message.start', data: { messageId: 'm1', role: 'assistant' } },
         { ...baseEvent, type: 'message.done', data: { messageId: 'm1' } },
-        { ...baseEvent, type: 'chat.done', data: { messageId: 'm1', reason: 'complete', stats: { totalTime: 100 } as unknown as MessageStats } },
+        {
+          ...baseEvent,
+          type: 'chat.done',
+          data: { messageId: 'm1', reason: 'complete', stats: { totalTime: 100 } as unknown as MessageStats },
+        },
       ]
 
       const messages = buildMessagesFromStoredEvents(events)
@@ -76,10 +108,53 @@ describe('event folding', () => {
       { ...baseEvent, type: 'message.start', data: { messageId: 'm1', role: 'assistant' } },
       { ...baseEvent, type: 'message.delta', data: { messageId: 'm1', content: 'Hello' } },
       { ...baseEvent, type: 'message.thinking', data: { messageId: 'm1', content: 'Thinking...' } },
-      { ...baseEvent, type: 'tool.call', data: { messageId: 'm1', toolCall: { id: 'call-1', name: 'read_file', arguments: { path: 'src/index.ts' } } } },
-      { ...baseEvent, type: 'tool.result', data: { messageId: 'm1', toolCallId: 'call-1', result: { success: true, output: 'ok', durationMs: 1, truncated: false } } },
-      { ...baseEvent, type: 'message.done', data: { messageId: 'm1', partial: true, stats: { providerId: 'provider-1', providerName: 'Local vLLM', backend: 'vllm', model: 'qwen', mode: 'builder', totalTime: 1, toolTime: 0, prefillTokens: 1, prefillSpeed: 1, generationTokens: 1, generationSpeed: 1 }, segments: [{ type: 'text', content: 'Hello' }] } },
-      { ...baseEvent, type: 'message.start', data: { messageId: 'm2', role: 'user', content: 'Question', isSystemGenerated: true, messageKind: 'auto-prompt' } },
+      {
+        ...baseEvent,
+        type: 'tool.call',
+        data: { messageId: 'm1', toolCall: { id: 'call-1', name: 'read_file', arguments: { path: 'src/index.ts' } } },
+      },
+      {
+        ...baseEvent,
+        type: 'tool.result',
+        data: {
+          messageId: 'm1',
+          toolCallId: 'call-1',
+          result: { success: true, output: 'ok', durationMs: 1, truncated: false },
+        },
+      },
+      {
+        ...baseEvent,
+        type: 'message.done',
+        data: {
+          messageId: 'm1',
+          partial: true,
+          stats: {
+            providerId: 'provider-1',
+            providerName: 'Local vLLM',
+            backend: 'vllm',
+            model: 'qwen',
+            mode: 'builder',
+            totalTime: 1,
+            toolTime: 0,
+            prefillTokens: 1,
+            prefillSpeed: 1,
+            generationTokens: 1,
+            generationSpeed: 1,
+          },
+          segments: [{ type: 'text', content: 'Hello' }],
+        },
+      },
+      {
+        ...baseEvent,
+        type: 'message.start',
+        data: {
+          messageId: 'm2',
+          role: 'user',
+          content: 'Question',
+          isSystemGenerated: true,
+          messageKind: 'auto-prompt',
+        },
+      },
     ]
 
     expect(buildMessagesFromStoredEvents(events)).toEqual([
@@ -92,9 +167,28 @@ describe('event folding', () => {
         tokenCount: 0,
         isStreaming: false,
         partial: true,
-        stats: { providerId: 'provider-1', providerName: 'Local vLLM', backend: 'vllm', model: 'qwen', mode: 'builder', totalTime: 1, toolTime: 0, prefillTokens: 1, prefillSpeed: 1, generationTokens: 1, generationSpeed: 1 },
+        stats: {
+          providerId: 'provider-1',
+          providerName: 'Local vLLM',
+          backend: 'vllm',
+          model: 'qwen',
+          mode: 'builder',
+          totalTime: 1,
+          toolTime: 0,
+          prefillTokens: 1,
+          prefillSpeed: 1,
+          generationTokens: 1,
+          generationSpeed: 1,
+        },
         segments: [{ type: 'text', content: 'Hello' }],
-        toolCalls: [{ id: 'call-1', name: 'read_file', arguments: { path: 'src/index.ts' }, result: { success: true, output: 'ok', durationMs: 1, truncated: false } }],
+        toolCalls: [
+          {
+            id: 'call-1',
+            name: 'read_file',
+            arguments: { path: 'src/index.ts' },
+            result: { success: true, output: 'ok', durationMs: 1, truncated: false },
+          },
+        ],
       },
       {
         id: 'm2',
@@ -114,8 +208,20 @@ describe('event folding', () => {
       { ...baseEvent, type: 'message.start', data: { messageId: 'm1', role: 'system', content: 'ignored' } },
       { ...baseEvent, type: 'message.start', data: { messageId: 'm2', role: 'assistant' } },
       { ...baseEvent, type: 'message.delta', data: { messageId: 'm2', content: 'Hello' } },
-      { ...baseEvent, type: 'tool.call', data: { messageId: 'm2', toolCall: { id: 'call-1', name: 'glob', arguments: { pattern: '*.ts' } } } },
-      { ...baseEvent, type: 'tool.result', data: { messageId: 'm2', toolCallId: 'call-1', result: { success: false, error: 'bad path', durationMs: 1, truncated: false } } },
+      {
+        ...baseEvent,
+        type: 'tool.call',
+        data: { messageId: 'm2', toolCall: { id: 'call-1', name: 'glob', arguments: { pattern: '*.ts' } } },
+      },
+      {
+        ...baseEvent,
+        type: 'tool.result',
+        data: {
+          messageId: 'm2',
+          toolCallId: 'call-1',
+          result: { success: false, error: 'bad path', durationMs: 1, truncated: false },
+        },
+      },
     ]
 
     expect(buildContextMessagesFromStoredEvents(events)).toEqual([
@@ -134,18 +240,64 @@ describe('event folding', () => {
 
   it('filters llm context messages by context window when requested', () => {
     const events: StoredEvent[] = [
-      { ...baseEvent, type: 'message.start', data: { messageId: 'old-user', role: 'user', content: 'old', contextWindowId: 'window-1' } },
+      {
+        ...baseEvent,
+        type: 'message.start',
+        data: { messageId: 'old-user', role: 'user', content: 'old', contextWindowId: 'window-1' },
+      },
       { ...baseEvent, type: 'message.done', data: { messageId: 'old-user' } },
-      { ...baseEvent, type: 'message.start', data: { messageId: 'old-assistant', role: 'assistant', contextWindowId: 'window-1' } },
+      {
+        ...baseEvent,
+        type: 'message.start',
+        data: { messageId: 'old-assistant', role: 'assistant', contextWindowId: 'window-1' },
+      },
       { ...baseEvent, type: 'message.delta', data: { messageId: 'old-assistant', content: 'previous answer' } },
-      { ...baseEvent, type: 'tool.call', data: { messageId: 'old-assistant', toolCall: { id: 'old-call', name: 'glob', arguments: { pattern: '*.ts' } } } },
-      { ...baseEvent, type: 'tool.result', data: { messageId: 'old-assistant', toolCallId: 'old-call', result: { success: true, output: 'old result', durationMs: 1, truncated: false } } },
-      { ...baseEvent, type: 'message.start', data: { messageId: 'new-user', role: 'user', content: 'new', contextWindowId: 'window-2' } },
+      {
+        ...baseEvent,
+        type: 'tool.call',
+        data: {
+          messageId: 'old-assistant',
+          toolCall: { id: 'old-call', name: 'glob', arguments: { pattern: '*.ts' } },
+        },
+      },
+      {
+        ...baseEvent,
+        type: 'tool.result',
+        data: {
+          messageId: 'old-assistant',
+          toolCallId: 'old-call',
+          result: { success: true, output: 'old result', durationMs: 1, truncated: false },
+        },
+      },
+      {
+        ...baseEvent,
+        type: 'message.start',
+        data: { messageId: 'new-user', role: 'user', content: 'new', contextWindowId: 'window-2' },
+      },
       { ...baseEvent, type: 'message.done', data: { messageId: 'new-user' } },
-      { ...baseEvent, type: 'message.start', data: { messageId: 'new-assistant', role: 'assistant', contextWindowId: 'window-2' } },
+      {
+        ...baseEvent,
+        type: 'message.start',
+        data: { messageId: 'new-assistant', role: 'assistant', contextWindowId: 'window-2' },
+      },
       { ...baseEvent, type: 'message.delta', data: { messageId: 'new-assistant', content: 'current answer' } },
-      { ...baseEvent, type: 'tool.call', data: { messageId: 'new-assistant', toolCall: { id: 'new-call', name: 'read_file', arguments: { path: 'src/app.ts' } } } },
-      { ...baseEvent, type: 'tool.result', data: { messageId: 'new-assistant', toolCallId: 'new-call', result: { success: true, output: 'new result', durationMs: 1, truncated: false } } },
+      {
+        ...baseEvent,
+        type: 'tool.call',
+        data: {
+          messageId: 'new-assistant',
+          toolCall: { id: 'new-call', name: 'read_file', arguments: { path: 'src/app.ts' } },
+        },
+      },
+      {
+        ...baseEvent,
+        type: 'tool.result',
+        data: {
+          messageId: 'new-assistant',
+          toolCallId: 'new-call',
+          result: { success: true, output: 'new result', durationMs: 1, truncated: false },
+        },
+      },
     ]
 
     expect(buildContextMessagesFromStoredEvents(events, 'window-2')).toEqual([
@@ -193,7 +345,13 @@ describe('event folding', () => {
             },
           ],
           criteria: [],
-          contextState: { currentTokens: 50, maxTokens: 200000, compactionCount: 0, dangerZone: false, canCompact: false },
+          contextState: {
+            currentTokens: 50,
+            maxTokens: 200000,
+            compactionCount: 0,
+            dangerZone: false,
+            canCompact: false,
+          },
           currentContextWindowId: 'window-1',
           todos: [],
           readFiles: [],
@@ -205,7 +363,12 @@ describe('event folding', () => {
         ...baseEvent,
         seq: 2,
         type: 'message.start',
-        data: { messageId: 'msg-3', role: 'user', content: 'Redirect to the project view instead of hanging', contextWindowId: 'window-1' },
+        data: {
+          messageId: 'msg-3',
+          role: 'user',
+          content: 'Redirect to the project view instead of hanging',
+          contextWindowId: 'window-1',
+        },
       },
       {
         ...baseEvent,
@@ -258,7 +421,13 @@ describe('event folding', () => {
             },
           ],
           criteria: [],
-          contextState: { currentTokens: 50, maxTokens: 200000, compactionCount: 1, dangerZone: false, canCompact: false },
+          contextState: {
+            currentTokens: 50,
+            maxTokens: 200000,
+            compactionCount: 1,
+            dangerZone: false,
+            canCompact: false,
+          },
           currentContextWindowId: 'window-2',
           todos: [],
           readFiles: [],
@@ -294,11 +463,30 @@ describe('event folding', () => {
 
   it('excludes verifier sub-agent messages from main-context reconstruction when requested', () => {
     const events: StoredEvent[] = [
-      { ...baseEvent, type: 'message.start', data: { messageId: 'user-1', role: 'user', content: 'build it', contextWindowId: 'window-1' } },
+      {
+        ...baseEvent,
+        type: 'message.start',
+        data: { messageId: 'user-1', role: 'user', content: 'build it', contextWindowId: 'window-1' },
+      },
       { ...baseEvent, type: 'message.done', data: { messageId: 'user-1' } },
-      { ...baseEvent, type: 'message.start', data: { messageId: 'reset', role: 'user', content: 'Fresh Context', contextWindowId: 'window-1', subAgentType: 'verifier', messageKind: 'context-reset' } },
+      {
+        ...baseEvent,
+        type: 'message.start',
+        data: {
+          messageId: 'reset',
+          role: 'user',
+          content: 'Fresh Context',
+          contextWindowId: 'window-1',
+          subAgentType: 'verifier',
+          messageKind: 'context-reset',
+        },
+      },
       { ...baseEvent, type: 'message.done', data: { messageId: 'reset' } },
-      { ...baseEvent, type: 'message.start', data: { messageId: 'verifier-1', role: 'assistant', contextWindowId: 'window-1', subAgentType: 'verifier' } },
+      {
+        ...baseEvent,
+        type: 'message.start',
+        data: { messageId: 'verifier-1', role: 'assistant', contextWindowId: 'window-1', subAgentType: 'verifier' },
+      },
       { ...baseEvent, type: 'message.delta', data: { messageId: 'verifier-1', content: 'verification thoughts' } },
     ]
 
@@ -333,7 +521,13 @@ describe('event folding', () => {
             { id: 'msg-2', role: 'assistant', content: 'Hi there!', timestamp: Date.now() },
           ],
           criteria: [],
-          contextState: { currentTokens: 50, maxTokens: 200000, compactionCount: 0, dangerZone: false, canCompact: false },
+          contextState: {
+            currentTokens: 50,
+            maxTokens: 200000,
+            compactionCount: 0,
+            dangerZone: false,
+            canCompact: false,
+          },
           currentContextWindowId: 'window-1',
           todos: [],
           readFiles: [],
@@ -379,7 +573,13 @@ describe('event folding', () => {
             },
           ],
           criteria: [],
-          contextState: { currentTokens: 100, maxTokens: 200000, compactionCount: 0, dangerZone: false, canCompact: false },
+          contextState: {
+            currentTokens: 100,
+            maxTokens: 200000,
+            compactionCount: 0,
+            dangerZone: false,
+            canCompact: false,
+          },
           currentContextWindowId: 'window-1',
           todos: [],
           readFiles: [],
@@ -418,11 +618,15 @@ describe('event folding', () => {
           mode: 'builder',
           phase: 'plan',
           isRunning: false,
-          messages: [
-            { id: 'msg-1', role: 'assistant', content: 'old answer', timestamp: firstTimestamp },
-          ],
+          messages: [{ id: 'msg-1', role: 'assistant', content: 'old answer', timestamp: firstTimestamp }],
           criteria: [],
-          contextState: { currentTokens: 100, maxTokens: 200000, compactionCount: 0, dangerZone: false, canCompact: false },
+          contextState: {
+            currentTokens: 100,
+            maxTokens: 200000,
+            compactionCount: 0,
+            dangerZone: false,
+            canCompact: false,
+          },
           currentContextWindowId: 'window-1',
           todos: [],
           readFiles: [],
@@ -444,7 +648,13 @@ describe('event folding', () => {
             { id: 'msg-2', role: 'assistant', content: 'latest answer', timestamp: secondTimestamp },
           ],
           criteria: [],
-          contextState: { currentTokens: 200, maxTokens: 200000, compactionCount: 1, dangerZone: false, canCompact: false },
+          contextState: {
+            currentTokens: 200,
+            maxTokens: 200000,
+            compactionCount: 1,
+            dangerZone: false,
+            canCompact: false,
+          },
           currentContextWindowId: 'window-1',
           todos: [],
           readFiles: [],
@@ -491,11 +701,15 @@ describe('event folding', () => {
           mode: 'planner',
           phase: 'plan',
           isRunning: false,
-          messages: [
-            { id: 'msg-1', role: 'user', content: 'hello', timestamp: snapshotTimestamp },
-          ],
+          messages: [{ id: 'msg-1', role: 'user', content: 'hello', timestamp: snapshotTimestamp }],
           criteria: [],
-          contextState: { currentTokens: 10, maxTokens: 200000, compactionCount: 0, dangerZone: false, canCompact: false },
+          contextState: {
+            currentTokens: 10,
+            maxTokens: 200000,
+            compactionCount: 0,
+            dangerZone: false,
+            canCompact: false,
+          },
           currentContextWindowId: 'window-1',
           todos: [],
           readFiles: [],
@@ -524,7 +738,19 @@ describe('event folding', () => {
         type: 'message.done',
         data: {
           messageId: 'msg-2',
-          stats: { providerId: 'provider-1', providerName: 'Local vLLM', backend: 'vllm', model: 'qwen', mode: 'planner', totalTime: 2, toolTime: 0, prefillTokens: 100, prefillSpeed: 50, generationTokens: 20, generationSpeed: 10 },
+          stats: {
+            providerId: 'provider-1',
+            providerName: 'Local vLLM',
+            backend: 'vllm',
+            model: 'qwen',
+            mode: 'planner',
+            totalTime: 2,
+            toolTime: 0,
+            prefillTokens: 100,
+            prefillSpeed: 50,
+            generationTokens: 20,
+            generationSpeed: 10,
+          },
         },
       },
     ]
@@ -543,19 +769,64 @@ describe('event folding', () => {
         timestamp: '2024-01-01T00:05:00.000Z',
         tokenCount: 0,
         isStreaming: false,
-        stats: { providerId: 'provider-1', providerName: 'Local vLLM', backend: 'vllm', model: 'qwen', mode: 'planner', totalTime: 2, toolTime: 0, prefillTokens: 100, prefillSpeed: 50, generationTokens: 20, generationSpeed: 10 },
+        stats: {
+          providerId: 'provider-1',
+          providerName: 'Local vLLM',
+          backend: 'vllm',
+          model: 'qwen',
+          mode: 'planner',
+          totalTime: 2,
+          toolTime: 0,
+          prefillTokens: 100,
+          prefillSpeed: 50,
+          generationTokens: 20,
+          generationSpeed: 10,
+        },
       },
     ])
   })
 
   it('folds turn events into snapshot messages and builds a snapshot', () => {
     const events: Array<{ type: any; timestamp: number; data: any }> = [
-      { type: 'message.start', timestamp: 123, data: { messageId: 'm1', role: 'assistant' as const, contextWindowId: 'window-1' } },
+      {
+        type: 'message.start',
+        timestamp: 123,
+        data: { messageId: 'm1', role: 'assistant' as const, contextWindowId: 'window-1' },
+      },
       { type: 'message.delta', timestamp: 123, data: { messageId: 'm1', content: 'Hello' } },
       { type: 'message.thinking', timestamp: 123, data: { messageId: 'm1', content: 'Thinking' } },
-      { type: 'tool.call', timestamp: 123, data: { messageId: 'm1', toolCall: { id: 'call-1', name: 'read_file', arguments: { path: 'x' } } } },
-      { type: 'tool.result', timestamp: 123, data: { messageId: 'm1', toolCallId: 'call-1', result: { success: true, output: 'ok', durationMs: 1, truncated: false } } },
-      { type: 'message.done', timestamp: 123, data: { messageId: 'm1', partial: true, stats: { model: 'qwen', mode: 'planner' as const, totalTime: 1, toolTime: 0, prefillTokens: 1, prefillSpeed: 1, generationTokens: 1, generationSpeed: 1 } } },
+      {
+        type: 'tool.call',
+        timestamp: 123,
+        data: { messageId: 'm1', toolCall: { id: 'call-1', name: 'read_file', arguments: { path: 'x' } } },
+      },
+      {
+        type: 'tool.result',
+        timestamp: 123,
+        data: {
+          messageId: 'm1',
+          toolCallId: 'call-1',
+          result: { success: true, output: 'ok', durationMs: 1, truncated: false },
+        },
+      },
+      {
+        type: 'message.done',
+        timestamp: 123,
+        data: {
+          messageId: 'm1',
+          partial: true,
+          stats: {
+            model: 'qwen',
+            mode: 'planner' as const,
+            totalTime: 1,
+            toolTime: 0,
+            prefillTokens: 1,
+            prefillSpeed: 1,
+            generationTokens: 1,
+            generationSpeed: 1,
+          },
+        },
+      },
     ]
 
     const messages = foldTurnEventsToSnapshotMessages(events)
@@ -568,22 +839,31 @@ describe('event folding', () => {
       isStreaming: false,
       partial: true,
       contextWindowId: 'window-1',
-      toolCalls: [{ id: 'call-1', name: 'read_file', arguments: { path: 'x' }, result: { success: true, output: 'ok', durationMs: 1, truncated: false } }],
+      toolCalls: [
+        {
+          id: 'call-1',
+          name: 'read_file',
+          arguments: { path: 'x' },
+          result: { success: true, output: 'ok', durationMs: 1, truncated: false },
+        },
+      ],
     })
 
-    expect(buildSnapshotFromSessionState({
-      session: {
-        mode: 'builder',
-        phase: 'build',
-        isRunning: true,
-        criteria: [],
-        executionState: { currentTokenCount: 100, compactionCount: 2 },
-      },
-      events,
-      latestSeq: 42,
-      snapshotAt: 999,
-      maxTokens: 200000,
-    })).toEqual({
+    expect(
+      buildSnapshotFromSessionState({
+        session: {
+          mode: 'builder',
+          phase: 'build',
+          isRunning: true,
+          criteria: [],
+          executionState: { currentTokenCount: 100, compactionCount: 2 },
+        },
+        events,
+        latestSeq: 42,
+        snapshotAt: 999,
+        maxTokens: 200000,
+      }),
+    ).toEqual({
       mode: 'builder',
       phase: 'build',
       isRunning: true,
@@ -630,11 +910,29 @@ describe('event folding', () => {
             phase: 'plan',
             isRunning: false,
             messages: [
-              { id: 'msg-1', role: 'user', content: 'First turn', timestamp: initialTimestamp, contextWindowId: 'window-1' },
-              { id: 'msg-2', role: 'assistant', content: 'First reply', timestamp: initialTimestamp, contextWindowId: 'window-1' },
+              {
+                id: 'msg-1',
+                role: 'user',
+                content: 'First turn',
+                timestamp: initialTimestamp,
+                contextWindowId: 'window-1',
+              },
+              {
+                id: 'msg-2',
+                role: 'assistant',
+                content: 'First reply',
+                timestamp: initialTimestamp,
+                contextWindowId: 'window-1',
+              },
             ],
             criteria: [],
-            contextState: { currentTokens: 40, maxTokens: 200000, compactionCount: 0, dangerZone: false, canCompact: false },
+            contextState: {
+              currentTokens: 40,
+              maxTokens: 200000,
+              compactionCount: 0,
+              dangerZone: false,
+              canCompact: false,
+            },
             currentContextWindowId: 'window-1',
             todos: [],
             readFiles: [],
@@ -700,7 +998,13 @@ describe('event folding', () => {
           isRunning: false,
           messages: [],
           criteria: [],
-          contextState: { currentTokens: 50, maxTokens: 200000, compactionCount: 0, dangerZone: false, canCompact: false },
+          contextState: {
+            currentTokens: 50,
+            maxTokens: 200000,
+            compactionCount: 0,
+            dangerZone: false,
+            canCompact: false,
+          },
           currentContextWindowId: 'window-1',
           todos: [],
           readFiles: [],
@@ -774,7 +1078,13 @@ describe('event folding', () => {
           isRunning: false,
           messages: [],
           criteria: [],
-          contextState: { currentTokens: 50, maxTokens: 200000, compactionCount: 0, dangerZone: false, canCompact: false },
+          contextState: {
+            currentTokens: 50,
+            maxTokens: 200000,
+            compactionCount: 0,
+            dangerZone: false,
+            canCompact: false,
+          },
           currentContextWindowId: 'window-1',
           todos: [],
           readFiles: [],
@@ -792,8 +1102,24 @@ describe('event folding', () => {
   describe('foldPendingConfirmations', () => {
     it('returns pending confirmations when no response received', () => {
       const events: StoredEvent[] = [
-        { ...baseEvent, seq: 1, type: 'session.initialized', data: { projectId: 'proj-1', workdir: '/tmp', contextWindowId: 'window-1' } },
-        { ...baseEvent, seq: 2, type: 'path.confirmation_pending', data: { callId: 'call-1', tool: 'read_file', paths: ['/etc/passwd'], workdir: '/tmp', reason: 'outside_workdir' } },
+        {
+          ...baseEvent,
+          seq: 1,
+          type: 'session.initialized',
+          data: { projectId: 'proj-1', workdir: '/tmp', contextWindowId: 'window-1' },
+        },
+        {
+          ...baseEvent,
+          seq: 2,
+          type: 'path.confirmation_pending',
+          data: {
+            callId: 'call-1',
+            tool: 'read_file',
+            paths: ['/etc/passwd'],
+            workdir: '/tmp',
+            reason: 'outside_workdir',
+          },
+        },
       ]
 
       const state = foldSessionState(events, 'window-1', 200000)
@@ -809,9 +1135,30 @@ describe('event folding', () => {
 
     it('excludes confirmed paths when response received', () => {
       const events: StoredEvent[] = [
-        { ...baseEvent, seq: 1, type: 'session.initialized', data: { projectId: 'proj-1', workdir: '/tmp', contextWindowId: 'window-1' } },
-        { ...baseEvent, seq: 2, type: 'path.confirmation_pending', data: { callId: 'call-1', tool: 'read_file', paths: ['/etc/passwd'], workdir: '/tmp', reason: 'outside_workdir' } },
-        { ...baseEvent, seq: 3, type: 'path.confirmation_responded', data: { callId: 'call-1', approved: true, alwaysAllow: false } },
+        {
+          ...baseEvent,
+          seq: 1,
+          type: 'session.initialized',
+          data: { projectId: 'proj-1', workdir: '/tmp', contextWindowId: 'window-1' },
+        },
+        {
+          ...baseEvent,
+          seq: 2,
+          type: 'path.confirmation_pending',
+          data: {
+            callId: 'call-1',
+            tool: 'read_file',
+            paths: ['/etc/passwd'],
+            workdir: '/tmp',
+            reason: 'outside_workdir',
+          },
+        },
+        {
+          ...baseEvent,
+          seq: 3,
+          type: 'path.confirmation_responded',
+          data: { callId: 'call-1', approved: true, alwaysAllow: false },
+        },
       ]
 
       const state = foldSessionState(events, 'window-1', 200000)
@@ -820,10 +1167,42 @@ describe('event folding', () => {
 
     it('handles multiple pending confirmations', () => {
       const events: StoredEvent[] = [
-        { ...baseEvent, seq: 1, type: 'session.initialized', data: { projectId: 'proj-1', workdir: '/tmp', contextWindowId: 'window-1' } },
-        { ...baseEvent, seq: 2, type: 'path.confirmation_pending', data: { callId: 'call-1', tool: 'read_file', paths: ['/etc/passwd'], workdir: '/tmp', reason: 'outside_workdir' } },
-        { ...baseEvent, seq: 3, type: 'path.confirmation_pending', data: { callId: 'call-2', tool: 'run_command', paths: ['/bin/rm'], workdir: '/tmp', reason: 'dangerous_command' } },
-        { ...baseEvent, seq: 4, type: 'path.confirmation_responded', data: { callId: 'call-1', approved: true, alwaysAllow: true } },
+        {
+          ...baseEvent,
+          seq: 1,
+          type: 'session.initialized',
+          data: { projectId: 'proj-1', workdir: '/tmp', contextWindowId: 'window-1' },
+        },
+        {
+          ...baseEvent,
+          seq: 2,
+          type: 'path.confirmation_pending',
+          data: {
+            callId: 'call-1',
+            tool: 'read_file',
+            paths: ['/etc/passwd'],
+            workdir: '/tmp',
+            reason: 'outside_workdir',
+          },
+        },
+        {
+          ...baseEvent,
+          seq: 3,
+          type: 'path.confirmation_pending',
+          data: {
+            callId: 'call-2',
+            tool: 'run_command',
+            paths: ['/bin/rm'],
+            workdir: '/tmp',
+            reason: 'dangerous_command',
+          },
+        },
+        {
+          ...baseEvent,
+          seq: 4,
+          type: 'path.confirmation_responded',
+          data: { callId: 'call-1', approved: true, alwaysAllow: true },
+        },
       ]
 
       const state = foldSessionState(events, 'window-1', 200000)
@@ -838,20 +1217,104 @@ describe('event folding', () => {
       // to the same session with subAgentId set. These must be excluded from the
       // main agent's context to avoid invalid message sequences (400 errors).
       const events: StoredEvent[] = [
-        { ...baseEvent, seq: 1, type: 'session.initialized', data: { projectId: 'p1', workdir: '/tmp', contextWindowId: 'window-1' } },
+        {
+          ...baseEvent,
+          seq: 1,
+          type: 'session.initialized',
+          data: { projectId: 'p1', workdir: '/tmp', contextWindowId: 'window-1' },
+        },
         // Main agent user message
-        { ...baseEvent, seq: 2, type: 'message.start', data: { messageId: 'user-main', role: 'user', content: 'Do something', contextWindowId: 'window-1' } },
+        {
+          ...baseEvent,
+          seq: 2,
+          type: 'message.start',
+          data: { messageId: 'user-main', role: 'user', content: 'Do something', contextWindowId: 'window-1' },
+        },
         // Main agent assistant calls call_sub_agent
-        { ...baseEvent, seq: 3, type: 'message.start', data: { messageId: 'asst-main', role: 'assistant', contextWindowId: 'window-1' } },
-        { ...baseEvent, seq: 4, type: 'tool.call', data: { messageId: 'asst-main', toolCall: { id: 'tc-main', name: 'call_sub_agent', arguments: { subAgentType: 'planner', prompt: 'task' } } } },
+        {
+          ...baseEvent,
+          seq: 3,
+          type: 'message.start',
+          data: { messageId: 'asst-main', role: 'assistant', contextWindowId: 'window-1' },
+        },
+        {
+          ...baseEvent,
+          seq: 4,
+          type: 'tool.call',
+          data: {
+            messageId: 'asst-main',
+            toolCall: { id: 'tc-main', name: 'call_sub_agent', arguments: { subAgentType: 'planner', prompt: 'task' } },
+          },
+        },
         // Sub-agent messages (have subAgentId set - must be excluded)
-        { ...baseEvent, seq: 5, type: 'message.start', data: { messageId: 'user-sub-1', role: 'user', content: 'Fresh Context', contextWindowId: 'window-1', subAgentId: 'sub-1', subAgentType: 'planner' } },
-        { ...baseEvent, seq: 6, type: 'message.start', data: { messageId: 'user-sub-2', role: 'user', content: 'task prompt', contextWindowId: 'window-1', subAgentId: 'sub-1', subAgentType: 'planner' } },
-        { ...baseEvent, seq: 7, type: 'message.start', data: { messageId: 'asst-sub', role: 'assistant', contextWindowId: 'window-1', subAgentId: 'sub-1', subAgentType: 'planner' } },
-        { ...baseEvent, seq: 8, type: 'tool.call', data: { messageId: 'asst-sub', toolCall: { id: 'tc-sub', name: 'read_file', arguments: { path: 'package.json' } } } },
-        { ...baseEvent, seq: 9, type: 'tool.result', data: { messageId: 'asst-sub', toolCallId: 'tc-sub', result: { success: true, output: 'file content', durationMs: 1, truncated: false } } },
+        {
+          ...baseEvent,
+          seq: 5,
+          type: 'message.start',
+          data: {
+            messageId: 'user-sub-1',
+            role: 'user',
+            content: 'Fresh Context',
+            contextWindowId: 'window-1',
+            subAgentId: 'sub-1',
+            subAgentType: 'planner',
+          },
+        },
+        {
+          ...baseEvent,
+          seq: 6,
+          type: 'message.start',
+          data: {
+            messageId: 'user-sub-2',
+            role: 'user',
+            content: 'task prompt',
+            contextWindowId: 'window-1',
+            subAgentId: 'sub-1',
+            subAgentType: 'planner',
+          },
+        },
+        {
+          ...baseEvent,
+          seq: 7,
+          type: 'message.start',
+          data: {
+            messageId: 'asst-sub',
+            role: 'assistant',
+            contextWindowId: 'window-1',
+            subAgentId: 'sub-1',
+            subAgentType: 'planner',
+          },
+        },
+        {
+          ...baseEvent,
+          seq: 8,
+          type: 'tool.call',
+          data: {
+            messageId: 'asst-sub',
+            toolCall: { id: 'tc-sub', name: 'read_file', arguments: { path: 'package.json' } },
+          },
+        },
+        {
+          ...baseEvent,
+          seq: 9,
+          type: 'tool.result',
+          data: {
+            messageId: 'asst-sub',
+            toolCallId: 'tc-sub',
+            result: { success: true, output: 'file content', durationMs: 1, truncated: false },
+          },
+        },
         // Main agent tool result for call_sub_agent (no subAgentId - must be included)
-        { ...baseEvent, seq: 10, type: 'tool.result', data: { messageId: 'asst-main', toolCallId: 'tc-main', result: { success: true, output: 'sub-agent result', durationMs: 10, truncated: false } } },
+        {
+          ...baseEvent,
+          seq: 10,
+          type: 'tool.result',
+          data: {
+            messageId: 'asst-main',
+            toolCallId: 'tc-main',
+            result: { success: true, output: 'sub-agent result', durationMs: 10, truncated: false },
+          },
+        },
       ]
 
       const messages = buildContextMessagesFromStoredEvents(events, 'window-1')
@@ -863,8 +1326,8 @@ describe('event folding', () => {
       expect(messages[2]).toMatchObject({ role: 'tool', toolCallId: 'tc-main', content: 'sub-agent result' })
 
       // Sub-agent messages must NOT appear
-      const subAgentMessages = messages.filter(m =>
-        m.content === 'Fresh Context' || m.content === 'task prompt' || m.content === 'file content'
+      const subAgentMessages = messages.filter(
+        (m) => m.content === 'Fresh Context' || m.content === 'task prompt' || m.content === 'file content',
       )
       expect(subAgentMessages).toHaveLength(0)
     })
@@ -874,13 +1337,61 @@ describe('event folding', () => {
       // assistant message with tool_calls is immediately followed by its tool result,
       // with no user messages in between (which would cause 400 errors).
       const events: StoredEvent[] = [
-        { ...baseEvent, seq: 1, type: 'message.start', data: { messageId: 'user-main', role: 'user', content: 'task', contextWindowId: 'win-1' } },
-        { ...baseEvent, seq: 2, type: 'message.start', data: { messageId: 'asst-main', role: 'assistant', contextWindowId: 'win-1' } },
-        { ...baseEvent, seq: 3, type: 'tool.call', data: { messageId: 'asst-main', toolCall: { id: 'tc-main', name: 'call_sub_agent', arguments: {} } } },
+        {
+          ...baseEvent,
+          seq: 1,
+          type: 'message.start',
+          data: { messageId: 'user-main', role: 'user', content: 'task', contextWindowId: 'win-1' },
+        },
+        {
+          ...baseEvent,
+          seq: 2,
+          type: 'message.start',
+          data: { messageId: 'asst-main', role: 'assistant', contextWindowId: 'win-1' },
+        },
+        {
+          ...baseEvent,
+          seq: 3,
+          type: 'tool.call',
+          data: { messageId: 'asst-main', toolCall: { id: 'tc-main', name: 'call_sub_agent', arguments: {} } },
+        },
         // Sub-agent user messages appear between assistant and its tool result
-        { ...baseEvent, seq: 4, type: 'message.start', data: { messageId: 'u1', role: 'user', content: 'Fresh Context', contextWindowId: 'win-1', subAgentId: 'sa', subAgentType: 'planner' } },
-        { ...baseEvent, seq: 5, type: 'message.start', data: { messageId: 'u2', role: 'user', content: 'prompt', contextWindowId: 'win-1', subAgentId: 'sa', subAgentType: 'planner' } },
-        { ...baseEvent, seq: 6, type: 'tool.result', data: { messageId: 'asst-main', toolCallId: 'tc-main', result: { success: true, output: 'result', durationMs: 1, truncated: false } } },
+        {
+          ...baseEvent,
+          seq: 4,
+          type: 'message.start',
+          data: {
+            messageId: 'u1',
+            role: 'user',
+            content: 'Fresh Context',
+            contextWindowId: 'win-1',
+            subAgentId: 'sa',
+            subAgentType: 'planner',
+          },
+        },
+        {
+          ...baseEvent,
+          seq: 5,
+          type: 'message.start',
+          data: {
+            messageId: 'u2',
+            role: 'user',
+            content: 'prompt',
+            contextWindowId: 'win-1',
+            subAgentId: 'sa',
+            subAgentType: 'planner',
+          },
+        },
+        {
+          ...baseEvent,
+          seq: 6,
+          type: 'tool.result',
+          data: {
+            messageId: 'asst-main',
+            toolCallId: 'tc-main',
+            result: { success: true, output: 'result', durationMs: 1, truncated: false },
+          },
+        },
       ]
 
       const messages = buildContextMessagesFromStoredEvents(events, 'win-1')
@@ -895,10 +1406,37 @@ describe('event folding', () => {
   describe('context.state sub-agent filtering', () => {
     it('filters out context.state events with subAgentId', () => {
       const events: StoredEvent[] = [
-        { ...baseEvent, seq: 1, type: 'session.initialized', data: { projectId: 'p1', workdir: '/tmp', contextWindowId: 'window-1' } },
-        { ...baseEvent, seq: 2, type: 'context.state', data: { currentTokens: 50000, maxTokens: 128000, compactionCount: 0, dangerZone: false, canCompact: false } },
-        { ...baseEvent, seq: 3, type: 'context.state', data: { currentTokens: 30000, maxTokens: 128000, compactionCount: 0, dangerZone: false, canCompact: false, subAgentId: 'sub-1' } },
-        { ...baseEvent, seq: 4, type: 'context.state', data: { currentTokens: 60000, maxTokens: 128000, compactionCount: 1, dangerZone: true, canCompact: false } },
+        {
+          ...baseEvent,
+          seq: 1,
+          type: 'session.initialized',
+          data: { projectId: 'p1', workdir: '/tmp', contextWindowId: 'window-1' },
+        },
+        {
+          ...baseEvent,
+          seq: 2,
+          type: 'context.state',
+          data: { currentTokens: 50000, maxTokens: 128000, compactionCount: 0, dangerZone: false, canCompact: false },
+        },
+        {
+          ...baseEvent,
+          seq: 3,
+          type: 'context.state',
+          data: {
+            currentTokens: 30000,
+            maxTokens: 128000,
+            compactionCount: 0,
+            dangerZone: false,
+            canCompact: false,
+            subAgentId: 'sub-1',
+          },
+        },
+        {
+          ...baseEvent,
+          seq: 4,
+          type: 'context.state',
+          data: { currentTokens: 60000, maxTokens: 128000, compactionCount: 1, dangerZone: true, canCompact: false },
+        },
       ]
 
       const result = foldContextState(events, 'window-1')
@@ -910,11 +1448,50 @@ describe('event folding', () => {
 
     it('uses last main agent context state after subagent emits one', () => {
       const events: StoredEvent[] = [
-        { ...baseEvent, seq: 1, type: 'session.initialized', data: { projectId: 'p1', workdir: '/tmp', contextWindowId: 'window-1' } },
-        { ...baseEvent, seq: 2, type: 'context.state', data: { currentTokens: 20000, maxTokens: 128000, compactionCount: 0, dangerZone: false, canCompact: false } },
-        { ...baseEvent, seq: 3, type: 'context.state', data: { currentTokens: 10000, maxTokens: 128000, compactionCount: 0, dangerZone: false, canCompact: false, subAgentId: 'sub-1' } },
-        { ...baseEvent, seq: 4, type: 'context.state', data: { currentTokens: 45000, maxTokens: 128000, compactionCount: 0, dangerZone: false, canCompact: false, subAgentId: 'sub-2' } },
-        { ...baseEvent, seq: 5, type: 'context.state', data: { currentTokens: 25000, maxTokens: 128000, compactionCount: 0, dangerZone: false, canCompact: false } },
+        {
+          ...baseEvent,
+          seq: 1,
+          type: 'session.initialized',
+          data: { projectId: 'p1', workdir: '/tmp', contextWindowId: 'window-1' },
+        },
+        {
+          ...baseEvent,
+          seq: 2,
+          type: 'context.state',
+          data: { currentTokens: 20000, maxTokens: 128000, compactionCount: 0, dangerZone: false, canCompact: false },
+        },
+        {
+          ...baseEvent,
+          seq: 3,
+          type: 'context.state',
+          data: {
+            currentTokens: 10000,
+            maxTokens: 128000,
+            compactionCount: 0,
+            dangerZone: false,
+            canCompact: false,
+            subAgentId: 'sub-1',
+          },
+        },
+        {
+          ...baseEvent,
+          seq: 4,
+          type: 'context.state',
+          data: {
+            currentTokens: 45000,
+            maxTokens: 128000,
+            compactionCount: 0,
+            dangerZone: false,
+            canCompact: false,
+            subAgentId: 'sub-2',
+          },
+        },
+        {
+          ...baseEvent,
+          seq: 5,
+          type: 'context.state',
+          data: { currentTokens: 25000, maxTokens: 128000, compactionCount: 0, dangerZone: false, canCompact: false },
+        },
       ]
 
       const result = foldContextState(events, 'window-1')
@@ -924,9 +1501,31 @@ describe('event folding', () => {
 
     it('uses last main agent context state when last event is from subagent', () => {
       const events: StoredEvent[] = [
-        { ...baseEvent, seq: 1, type: 'session.initialized', data: { projectId: 'p1', workdir: '/tmp', contextWindowId: 'window-1' } },
-        { ...baseEvent, seq: 2, type: 'context.state', data: { currentTokens: 50000, maxTokens: 128000, compactionCount: 0, dangerZone: false, canCompact: false } },
-        { ...baseEvent, seq: 3, type: 'context.state', data: { currentTokens: 10000, maxTokens: 128000, compactionCount: 0, dangerZone: false, canCompact: false, subAgentId: 'sub-1' } },
+        {
+          ...baseEvent,
+          seq: 1,
+          type: 'session.initialized',
+          data: { projectId: 'p1', workdir: '/tmp', contextWindowId: 'window-1' },
+        },
+        {
+          ...baseEvent,
+          seq: 2,
+          type: 'context.state',
+          data: { currentTokens: 50000, maxTokens: 128000, compactionCount: 0, dangerZone: false, canCompact: false },
+        },
+        {
+          ...baseEvent,
+          seq: 3,
+          type: 'context.state',
+          data: {
+            currentTokens: 10000,
+            maxTokens: 128000,
+            compactionCount: 0,
+            dangerZone: false,
+            canCompact: false,
+            subAgentId: 'sub-1',
+          },
+        },
       ]
 
       const result = foldContextState(events, 'window-1')

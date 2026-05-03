@@ -30,11 +30,11 @@ function shouldLog(level: LogLevel): boolean {
 function formatMessage(level: LogLevel, message: string, context?: Record<string, unknown>): string {
   const timestamp = new Date().toISOString()
   const prefix = `[${timestamp}] [${level.toUpperCase()}]`
-  
+
   if (context && Object.keys(context).length > 0) {
     return `${prefix} ${message} ${JSON.stringify(context)}`
   }
-  
+
   return `${prefix} ${message}`
 }
 
@@ -44,19 +44,19 @@ export const logger = {
       console.debug(formatMessage('debug', message, context))
     }
   },
-  
+
   info(message: string, context?: Record<string, unknown>): void {
     if (shouldLog('info')) {
       console.info(formatMessage('info', message, context))
     }
   },
-  
+
   warn(message: string, context?: Record<string, unknown>): void {
     if (shouldLog('warn')) {
       console.warn(formatMessage('warn', message, context))
     }
   },
-  
+
   error(message: string, context?: Record<string, unknown>): void {
     if (shouldLog('error')) {
       console.error(formatMessage('error', message, context))

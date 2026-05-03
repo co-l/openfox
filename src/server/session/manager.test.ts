@@ -178,9 +178,7 @@ describe('SessionManager', () => {
   it('manages criteria lifecycle and verification attempts', () => {
     const session = manager.createSession(projectId)
 
-    manager.setCriteria(session.id, [
-      { id: '0', description: 'Tests pass', status: { type: 'pending' }, attempts: [] },
-    ])
+    manager.setCriteria(session.id, [{ id: '0', description: 'Tests pass', status: { type: 'pending' }, attempts: [] }])
     expect(manager.requireSession(session.id).criteria).toHaveLength(1)
 
     const addResult = manager.addCriterion(session.id, {
@@ -191,7 +189,9 @@ describe('SessionManager', () => {
     })
     expect('criteria' in addResult && addResult.actualId).toBe('1')
 
-    expect(() => manager.updateCriterionFull(session.id, 'missing', { description: 'x' })).toThrow('Criterion not found: missing')
+    expect(() => manager.updateCriterionFull(session.id, 'missing', { description: 'x' })).toThrow(
+      'Criterion not found: missing',
+    )
     expect(() => manager.removeCriterion(session.id, 'missing')).toThrow('Criterion not found: missing')
 
     const updatedCriteria = manager.updateCriterionFull(session.id, '0', { description: 'Tests pass in CI' })
@@ -204,12 +204,14 @@ describe('SessionManager', () => {
       timestamp: '2024-01-01T00:00:00.000Z',
       details: 'Needed one more fix',
     })
-    expect(() => manager.addCriterionAttempt(session.id, 'missing', {
-      attemptNumber: 1,
-      status: 'failed',
-      timestamp: '2024-01-01T00:00:00.000Z',
-      details: 'nope',
-    })).toThrow('Criterion not found: missing')
+    expect(() =>
+      manager.addCriterionAttempt(session.id, 'missing', {
+        attemptNumber: 1,
+        status: 'failed',
+        timestamp: '2024-01-01T00:00:00.000Z',
+        details: 'nope',
+      }),
+    ).toThrow('Criterion not found: missing')
 
     manager.resetAllCriteriaAttempts(session.id)
     expect(manager.requireSession(session.id).criteria.find((criterion) => criterion.id === '0')?.attempts).toEqual([])
@@ -320,7 +322,7 @@ describe('SessionManager', () => {
 
     // Verify it's also in the stored session
     const storedSession = manager.requireSession(session.id)
-    const storedMessage = storedSession.messages.find(m => m.id === message.id)
+    const storedMessage = storedSession.messages.find((m) => m.id === message.id)
     expect(storedMessage).toBeDefined()
     expect(storedMessage?.subAgentId).toBe(subAgentId)
     expect(storedMessage?.subAgentType).toBe(subAgentType)
@@ -360,10 +362,10 @@ describe('SessionManager', () => {
     const allMessages = manager.requireSession(session.id).messages
 
     // All messages should have the verifier sub-agent metadata
-    const verifierMessages = allMessages.filter(m => m.subAgentId === verifierId && m.subAgentType === 'verifier')
+    const verifierMessages = allMessages.filter((m) => m.subAgentId === verifierId && m.subAgentType === 'verifier')
     expect(verifierMessages).toHaveLength(3)
-    expect(verifierMessages.every(m => m.subAgentId === verifierId)).toBe(true)
-    expect(verifierMessages.every(m => m.subAgentType === 'verifier')).toBe(true)
+    expect(verifierMessages.every((m) => m.subAgentId === verifierId)).toBe(true)
+    expect(verifierMessages.every((m) => m.subAgentType === 'verifier')).toBe(true)
   })
 
   it('uses maxTokens from providerManager when provided', () => {
@@ -402,7 +404,7 @@ describe('SessionManager', () => {
 
       manager.queueMessage(session.id, 'asap', 'hello')
 
-      expect(events.some(e => e.type === 'queue_added')).toBe(true)
+      expect(events.some((e) => e.type === 'queue_added')).toBe(true)
     })
 
     it('emits queue_cancelled event when cancelling', () => {
@@ -413,7 +415,7 @@ describe('SessionManager', () => {
 
       manager.cancelQueuedMessage(session.id, queueId)
 
-      expect(events.some(e => e.type === 'queue_cancelled')).toBe(true)
+      expect(events.some((e) => e.type === 'queue_cancelled')).toBe(true)
     })
   })
 })

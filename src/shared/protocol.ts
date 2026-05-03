@@ -20,15 +20,15 @@ import type {
 
 export type ClientMessageType =
   // Session management
-  | 'session.load'         // Load session and subscribe to events (WS subscription mechanism)
+  | 'session.load' // Load session and subscribe to events (WS subscription mechanism)
   // Context management
-  | 'context.compact'     // Manually trigger context compaction
+  | 'context.compact' // Manually trigger context compaction
   // Runner (auto-loop)
-  | 'runner.launch'       // Start the auto-loop runner (build → verify → done)
+  | 'runner.launch' // Start the auto-loop runner (build → verify → done)
   // Path confirmation
-  | 'path.confirm'        // User response to path confirmation request
+  | 'path.confirm' // User response to path confirmation request
   // Ask user
-  | 'ask.answer'          // User response to ask_user question
+  | 'ask.answer' // User response to ask_user question
 
 export interface ClientMessage<T = unknown> {
   id: string
@@ -41,7 +41,7 @@ export interface ClientMessage<T = unknown> {
 // Session payloads
 export interface SessionLoadPayload {
   sessionId: string
-  lastEventSeq?: number  // Resume from this sequence number (for reconnection)
+  lastEventSeq?: number // Resume from this sequence number (for reconnection)
 }
 
 // Ask user payload
@@ -74,51 +74,51 @@ export type ServerMessageType =
   | 'session.list'
   | 'session.deleted'
   | 'session.deletedAll'
-  | 'session.running'    // Real-time running state change
+  | 'session.running' // Real-time running state change
   | 'session.name_generated' // Session name was auto-generated
   // Unified chat events (replaces plan.delta, agent.event, etc.)
-  | 'chat.delta'          // Text streaming
-  | 'chat.thinking'       // Thinking block content
+  | 'chat.delta' // Text streaming
+  | 'chat.thinking' // Thinking block content
   | 'chat.tool_preparing' // Tool call detected, streaming arguments
-  | 'chat.tool_call'      // Tool being called
-  | 'chat.tool_output'    // Streaming tool output (stdout/stderr for run_command)
-  | 'chat.tool_result'    // Tool result
-  | 'chat.todo'           // Todo list update (displayed in chat)
-  | 'chat.summary'        // Summary block (displayed in chat)
-  | 'chat.progress'       // Progress update (e.g., "Generating summary...")
-  | 'chat.format_retry'   // Model used wrong format (XML tools), retrying
-  | 'chat.message'        // Full message added (system-generated, etc.)
+  | 'chat.tool_call' // Tool being called
+  | 'chat.tool_output' // Streaming tool output (stdout/stderr for run_command)
+  | 'chat.tool_result' // Tool result
+  | 'chat.todo' // Todo list update (displayed in chat)
+  | 'chat.summary' // Summary block (displayed in chat)
+  | 'chat.progress' // Progress update (e.g., "Generating summary...")
+  | 'chat.format_retry' // Model used wrong format (XML tools), retrying
+  | 'chat.message' // Full message added (system-generated, etc.)
   | 'chat.message_updated' // Message updated (e.g., isStreaming changed)
-  | 'chat.done'           // Current generation complete
+  | 'chat.done' // Current generation complete
   // Vision fallback events
   | 'chat.vision_fallback' // Vision model is describing an image
-  | 'chat.error'          // Error during generation
+  | 'chat.error' // Error during generation
   | 'chat.path_confirmation' // Request user confirmation for outside-workdir path access
-  | 'chat.ask_user'       // Request user answer to a question
+  | 'chat.ask_user' // Request user answer to a question
   // Mode events
-  | 'mode.changed'        // Mode was changed
+  | 'mode.changed' // Mode was changed
   // Phase events
-  | 'phase.changed'       // Workflow phase changed (plan/build/verification/done)
+  | 'phase.changed' // Workflow phase changed (plan/build/verification/done)
   // Task completion
-  | 'task.completed'      // Task finished with summary stats
+  | 'task.completed' // Task finished with summary stats
   // Criteria events
-  | 'criteria.updated'    // Criteria changed
+  | 'criteria.updated' // Criteria changed
   // Context events
-  | 'context.state'       // Context window state update
+  | 'context.state' // Context window state update
   // Settings events
-  | 'settings.value'      // Setting value response
+  | 'settings.value' // Setting value response
   // Provider events
-  | 'provider.changed'    // Active provider was switched
+  | 'provider.changed' // Active provider was switched
   // Message queue events
-  | 'queue.state'         // Broadcast current queue state to client
+  | 'queue.state' // Broadcast current queue state to client
   // Dev server events
-  | 'devServer.output'    // Streaming log chunk from dev server
-  | 'devServer.state'     // Dev server state change
+  | 'devServer.output' // Streaming log chunk from dev server
+  | 'devServer.state' // Dev server state change
   // Background process events
   | 'backgroundProcess.started' // New process created and started
-  | 'backgroundProcess.output'   // Streaming log chunk from background process
-  | 'backgroundProcess.exited'   // Process exited
-  | 'backgroundProcess.removed'  // Process removed from list
+  | 'backgroundProcess.output' // Streaming log chunk from background process
+  | 'backgroundProcess.exited' // Process exited
+  | 'backgroundProcess.removed' // Process removed from list
   // Other
   | 'lsp.diagnostics'
   | 'error'
@@ -150,7 +150,7 @@ export interface ProjectDeletedPayload {
 // Session payloads
 export interface SessionStatePayload {
   session: Session
-  messages: Message[]  // All messages for this session
+  messages: Message[] // All messages for this session
   pendingConfirmations: PendingPathConfirmationPayload[]
 }
 
@@ -188,8 +188,8 @@ export interface ChatThinkingPayload {
 
 export interface ChatToolPreparingPayload {
   messageId: string
-  index: number      // Tool call index (for multiple parallel calls)
-  name: string       // Tool name (available early in stream)
+  index: number // Tool call index (for multiple parallel calls)
+  name: string // Tool name (available early in stream)
   arguments?: string // Partial arguments (streaming JSON fragments)
 }
 
@@ -237,7 +237,7 @@ export interface ChatVisionFallbackPayload {
   messageId: string
   attachmentId: string
   filename?: string
-  description?: string  // Only present for 'done' type
+  description?: string // Only present for 'done' type
 }
 
 export interface ChatMessagePayload {
@@ -246,16 +246,18 @@ export interface ChatMessagePayload {
 
 export interface ChatMessageUpdatedPayload {
   messageId: string
-  updates: Partial<Pick<Message, 'content' | 'thinkingContent' | 'toolCalls' | 'isStreaming' | 'stats' | 'promptContext' | 'partial'>>
+  updates: Partial<
+    Pick<Message, 'content' | 'thinkingContent' | 'toolCalls' | 'isStreaming' | 'stats' | 'promptContext' | 'partial'>
+  >
 }
 
 export interface ChatDonePayload {
   messageId: string
   reason: 'complete' | 'stopped' | 'error' | 'waiting_for_user'
-  agentType?: 'sub-agent'  // Set when this is a sub-agent completion
+  agentType?: 'sub-agent' // Set when this is a sub-agent completion
   stats?: {
     model: string
-    mode: ToolMode  // Which system prompt was used (planner, builder, verifier)
+    mode: ToolMode // Which system prompt was used (planner, builder, verifier)
     totalTime: number
     toolTime: number
     prefillTokens: number
@@ -271,21 +273,26 @@ export interface ChatErrorPayload {
 }
 
 // Path confirmation payloads
-export type PathConfirmationReason = 'outside_workdir' | 'sensitive_file' | 'both' | 'dangerous_command' | 'git_no_verify'
+export type PathConfirmationReason =
+  | 'outside_workdir'
+  | 'sensitive_file'
+  | 'both'
+  | 'dangerous_command'
+  | 'git_no_verify'
 
 export interface ChatPathConfirmationPayload {
   callId: string
   tool: string
-  paths: string[]       // The paths requiring confirmation
-  workdir: string       // For context in UI
-  reason: PathConfirmationReason  // Why confirmation is needed
+  paths: string[] // The paths requiring confirmation
+  workdir: string // For context in UI
+  reason: PathConfirmationReason // Why confirmation is needed
 }
 
 // Client payload for path confirmation response
 export interface PathConfirmPayload {
   callId: string
   approved: boolean
-  alwaysAllow?: boolean  // If true, add paths to session allowlist permanently
+  alwaysAllow?: boolean // If true, add paths to session allowlist permanently
 }
 
 // Ask user payloads
@@ -297,7 +304,7 @@ export interface ChatAskUserPayload {
 // Mode payloads
 export interface ModeChangedPayload {
   mode: SessionMode
-  auto: boolean  // Was this an automatic switch?
+  auto: boolean // Was this an automatic switch?
   reason?: string
 }
 
@@ -325,7 +332,7 @@ export interface TaskCompletedPayload {
 // Criteria payloads
 export interface CriteriaUpdatedPayload {
   criteria: Criterion[]
-  changedId?: string  // Which criterion changed, if specific
+  changedId?: string // Which criterion changed, if specific
 }
 
 // Context payloads
@@ -456,10 +463,7 @@ export type AgentEvent =
 // Helper Functions
 // ============================================================================
 
-export function createClientMessage<T>(
-  type: ClientMessageType,
-  payload: T
-): ClientMessage<T> {
+export function createClientMessage<T>(type: ClientMessageType, payload: T): ClientMessage<T> {
   return {
     id: crypto.randomUUID(),
     type,
@@ -467,11 +471,7 @@ export function createClientMessage<T>(
   }
 }
 
-export function createServerMessage<T>(
-  type: ServerMessageType,
-  payload: T,
-  correlationId?: string
-): ServerMessage<T> {
+export function createServerMessage<T>(type: ServerMessageType, payload: T, correlationId?: string): ServerMessage<T> {
   const message: ServerMessage<T> = { type, payload }
   if (correlationId !== undefined) {
     message.id = correlationId
@@ -481,22 +481,11 @@ export function createServerMessage<T>(
 
 // Type guards
 export function isClientMessage(msg: unknown): msg is ClientMessage {
-  return (
-    typeof msg === 'object' &&
-    msg !== null &&
-    'id' in msg &&
-    'type' in msg &&
-    'payload' in msg
-  )
+  return typeof msg === 'object' && msg !== null && 'id' in msg && 'type' in msg && 'payload' in msg
 }
 
 export function isServerMessage(msg: unknown): msg is ServerMessage {
-  return (
-    typeof msg === 'object' &&
-    msg !== null &&
-    'type' in msg &&
-    'payload' in msg
-  )
+  return typeof msg === 'object' && msg !== null && 'type' in msg && 'payload' in msg
 }
 
 // ============================================================================

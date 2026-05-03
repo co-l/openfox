@@ -21,7 +21,7 @@ const mockConfig: Config = {
   context: {
     maxTokens: 200000,
     compactionThreshold: 0.85,
-    compactionTarget: 0.60,
+    compactionTarget: 0.6,
   },
   agent: {
     maxIterations: 10,
@@ -50,8 +50,8 @@ describe('Provider Manager - Model Refresh', () => {
       createdAt: new Date().toISOString(),
       models: [
         {
-          id: 'qwen3.5-397b-cloud',  // User set with dashes
-          contextWindow: 262144,      // Custom context
+          id: 'qwen3.5-397b-cloud', // User set with dashes
+          contextWindow: 262144, // Custom context
           source: 'user' as const,
         },
         {
@@ -74,12 +74,12 @@ describe('Provider Manager - Model Refresh', () => {
     // Note: We can't actually call refreshProviderModels without a real backend,
     // but we can verify the providers are set up correctly
     const providers = pm.getProviders()
-    const testProvider = providers.find(p => p.id === 'test-provider')
-    
+    const testProvider = providers.find((p) => p.id === 'test-provider')
+
     expect(testProvider).toBeDefined()
     expect(testProvider?.models).toHaveLength(2)
-    
-    const userModel = testProvider?.models.find(m => m.source === 'user')
+
+    const userModel = testProvider?.models.find((m) => m.source === 'user')
     expect(userModel?.id).toBe('qwen3.5-397b-cloud')
     expect(userModel?.contextWindow).toBe(262144)
   })
@@ -87,12 +87,12 @@ describe('Provider Manager - Model Refresh', () => {
   it('normalize-function: handles various ID formats correctly', () => {
     // Test the normalization logic that's used in refreshProviderModels
     const normalize = (s: string) => s.toLowerCase().replace(/[-_\s]+/g, '')
-    
+
     // These should all match
     expect(normalize('qwen3.5-397b-cloud')).toBe(normalize('qwen3.5 397b cloud'))
     expect(normalize('qwen3.5-397b-cloud')).toBe(normalize('qwen3.5_397b_cloud'))
     expect(normalize('qwen3.5-397b-cloud')).toBe(normalize('QWEN3.5-397B-CLOUD'))
-    
+
     // These should NOT match
     expect(normalize('qwen3.5-397b-cloud')).not.toBe(normalize('qwen3.5-27b-cloud'))
     expect(normalize('qwen3.5-397b-cloud')).not.toBe(normalize('glm-4-7-cloud'))

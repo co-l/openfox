@@ -162,8 +162,8 @@ describe('db sessions', () => {
 
     const sessions = listSessions()
     expect(sessions).toHaveLength(2)
-    expect(sessions.map(s => s.title)).toContain('Session A')
-    expect(sessions.map(s => s.title)).toContain('Session B')
+    expect(sessions.map((s) => s.title)).toContain('Session A')
+    expect(sessions.map((s) => s.title)).toContain('Session B')
   })
 
   it('lists sessions by project using project_id only', () => {
@@ -175,9 +175,9 @@ describe('db sessions', () => {
     createSession(projectBId, join(rootA, 'nested'), 'Nested Session B')
 
     const filtered = listSessionsByProject(projectAId)
-    expect(filtered.sessions.map(s => s.id)).toContain(sessionA.id)
-    expect(filtered.sessions.map(s => s.id)).toContain(sessionANested.id)
-    expect(filtered.sessions.map(s => s.id)).not.toContain(sessionB.id)
+    expect(filtered.sessions.map((s) => s.id)).toContain(sessionA.id)
+    expect(filtered.sessions.map((s) => s.id)).toContain(sessionANested.id)
+    expect(filtered.sessions.map((s) => s.id)).not.toContain(sessionB.id)
     expect(filtered.sessions).toHaveLength(2)
   })
 
@@ -211,18 +211,18 @@ describe('db sessions', () => {
     // List sessions for project A - should only return A sessions
     const projectASessions = listSessionsByProject(projectAId)
     expect(projectASessions.sessions).toHaveLength(2)
-    expect(projectASessions.sessions.map(s => s.id)).toContain(sessionA1.id)
-    expect(projectASessions.sessions.map(s => s.id)).toContain(sessionA2.id)
-    expect(projectASessions.sessions.map(s => s.id)).not.toContain(sessionB1.id)
-    expect(projectASessions.sessions.map(s => s.id)).not.toContain(sessionB2.id)
+    expect(projectASessions.sessions.map((s) => s.id)).toContain(sessionA1.id)
+    expect(projectASessions.sessions.map((s) => s.id)).toContain(sessionA2.id)
+    expect(projectASessions.sessions.map((s) => s.id)).not.toContain(sessionB1.id)
+    expect(projectASessions.sessions.map((s) => s.id)).not.toContain(sessionB2.id)
 
     // List sessions for project B - should only return B sessions
     const projectBSessions = listSessionsByProject(projectBId)
     expect(projectBSessions.sessions).toHaveLength(2)
-    expect(projectBSessions.sessions.map(s => s.id)).toContain(sessionB1.id)
-    expect(projectBSessions.sessions.map(s => s.id)).toContain(sessionB2.id)
-    expect(projectBSessions.sessions.map(s => s.id)).not.toContain(sessionA1.id)
-    expect(projectBSessions.sessions.map(s => s.id)).not.toContain(sessionA2.id)
+    expect(projectBSessions.sessions.map((s) => s.id)).toContain(sessionB1.id)
+    expect(projectBSessions.sessions.map((s) => s.id)).toContain(sessionB2.id)
+    expect(projectBSessions.sessions.map((s) => s.id)).not.toContain(sessionA1.id)
+    expect(projectBSessions.sessions.map((s) => s.id)).not.toContain(sessionA2.id)
 
     // Verify all sessions exist in the global list
     const allSessions = listSessions()
@@ -235,10 +235,10 @@ describe('db sessions', () => {
 
     const allSessions = listSessions()
     expect(allSessions).toHaveLength(2)
-    
-    const sessionASummary = allSessions.find(s => s.id === sessionA.id)
-    const sessionBSummary = allSessions.find(s => s.id === sessionB.id)
-    
+
+    const sessionASummary = allSessions.find((s) => s.id === sessionA.id)
+    const sessionBSummary = allSessions.find((s) => s.id === sessionB.id)
+
     expect(sessionASummary).toBeDefined()
     expect(sessionASummary?.messageCount).toBe(0)
     expect(sessionBSummary).toBeDefined()
@@ -247,15 +247,15 @@ describe('db sessions', () => {
 
   it('counts messages correctly in session summaries', () => {
     const session = createSession(projectAId, rootA, 'Test Session')
-    
+
     // Simulate emitting user and assistant messages by incrementing the counter
     // (tool messages are not counted - they use a different code path)
     updateSessionMessageCount(session.id, 1) // user message
     updateSessionMessageCount(session.id, 1) // assistant message
 
     const sessions = listSessionsByProject(projectAId)
-    const sessionSummary = sessions.sessions.find(s => s.id === session.id)
-    
+    const sessionSummary = sessions.sessions.find((s) => s.id === session.id)
+
     expect(sessionSummary).toBeDefined()
     expect(sessionSummary?.messageCount).toBe(2) // Only user and assistant messages
   })

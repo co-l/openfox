@@ -29,8 +29,8 @@ describe('TerminalManager', () => {
       const s2 = terminalManager.create()
       const sessions = terminalManager.getAll()
       expect(sessions).toHaveLength(2)
-      expect(sessions.map(s => s.id)).toContain(s1.id)
-      expect(sessions.map(s => s.id)).toContain(s2.id)
+      expect(sessions.map((s) => s.id)).toContain(s1.id)
+      expect(sessions.map((s) => s.id)).toContain(s2.id)
     })
   })
 
@@ -50,9 +50,9 @@ describe('TerminalManager', () => {
     it('removes session from getAll', () => {
       const session = terminalManager.create()
       expect(terminalManager.getAll()).toHaveLength(1)
-      
+
       terminalManager.kill(session.id)
-      
+
       expect(terminalManager.getAll()).toHaveLength(0)
       expect(terminalManager.get(session.id)).toBeUndefined()
     })

@@ -8,7 +8,8 @@ import type { Criterion } from '../../shared/types.js'
 import type { NudgeConfig } from './manager.js'
 
 export const MAX_CONSECUTIVE_VERIFIER_NUDGES = 10
-export const VERIFIER_STALL_REASON = 'Verifier stopped repeatedly before terminalizing verification after repeated nudges.'
+export const VERIFIER_STALL_REASON =
+  'Verifier stopped repeatedly before terminalizing verification after repeated nudges.'
 
 export function getCriteriaAwaitingVerification(criteria: Criterion[]): Criterion[] {
   return criteria.filter((criterion) => criterion.status.type === 'completed')

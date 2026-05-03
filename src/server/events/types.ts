@@ -541,9 +541,6 @@ export type EventData<T extends EventType> = Extract<TurnEvent, { type: T }>['da
 /**
  * Create a typed event (useful for event emission)
  */
-export function createEvent<T extends EventType>(
-  type: T,
-  data: EventData<T>
-): Extract<TurnEvent, { type: T }> {
+export function createEvent<T extends EventType>(type: T, data: EventData<T>): Extract<TurnEvent, { type: T }> {
   return { type, data } as Extract<TurnEvent, { type: T }>
 }

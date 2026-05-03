@@ -1,5 +1,15 @@
 import { Router } from 'express'
-import { loadDefaultAgents, loadUserAgents, loadAllAgents, findAgentById, saveAgent, deleteAgent, agentExists, getDefaultAgentIds, getDefaultAgentContent } from '../agents/registry.js'
+import {
+  loadDefaultAgents,
+  loadUserAgents,
+  loadAllAgents,
+  findAgentById,
+  saveAgent,
+  deleteAgent,
+  agentExists,
+  getDefaultAgentIds,
+  getDefaultAgentContent,
+} from '../agents/registry.js'
 import type { AgentDefinition } from '../agents/types.js'
 import { computeOverrideIds } from './crud-helpers.js'
 
@@ -7,14 +17,11 @@ export function createAgentRoutes(configDir: string): Router {
   const router = Router()
 
   router.get('/', async (_req, res) => {
-    const [defaults, userItems] = await Promise.all([
-      loadDefaultAgents(),
-      loadUserAgents(configDir),
-    ])
+    const [defaults, userItems] = await Promise.all([loadDefaultAgents(), loadUserAgents(configDir)])
     const overrideIds = computeOverrideIds(defaults, userItems)
     res.json({
-      defaults: defaults.map(a => a.metadata),
-      userItems: userItems.map(a => a.metadata),
+      defaults: defaults.map((a) => a.metadata),
+      userItems: userItems.map((a) => a.metadata),
       overrideIds,
     })
   })
@@ -88,7 +95,7 @@ export function createAgentRoutes(configDir: string): Router {
     const { id } = req.params
     const defaults = await loadDefaultAgents()
     const userItems = await loadUserAgents(configDir)
-    const source = defaults.find(a => a.metadata.id === id) ?? userItems.find(a => a.metadata.id === id)
+    const source = defaults.find((a) => a.metadata.id === id) ?? userItems.find((a) => a.metadata.id === id)
     if (!source) {
       return res.status(404).json({ error: 'Agent not found' })
     }

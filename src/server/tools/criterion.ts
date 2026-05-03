@@ -12,16 +12,17 @@ function completeCriterion(
   context: ToolContext,
   id: string,
   statusType: 'passed' | 'failed',
-  reason: string | undefined
+  reason: string | undefined,
 ): { success: boolean; output: string } {
-  const criterion = session.criteria.find(c => c.id === id)
+  const criterion = session.criteria.find((c) => c.id === id)
   if (!criterion) {
     return { success: false, output: `Criterion "${id}" not found` }
   }
 
-  const status = statusType === 'passed'
-    ? { type: 'passed' as const, verifiedAt: new Date().toISOString(), ...(reason && { reason }) }
-    : { type: 'failed' as const, failedAt: new Date().toISOString(), reason: reason! }
+  const status =
+    statusType === 'passed'
+      ? { type: 'passed' as const, verifiedAt: new Date().toISOString(), ...(reason && { reason }) }
+      : { type: 'failed' as const, failedAt: new Date().toISOString(), reason: reason! }
 
   context.sessionManager.updateCriterionStatus(context.sessionId, id, status)
   context.sessionManager.addCriterionAttempt(context.sessionId, id, {
@@ -33,9 +34,10 @@ function completeCriterion(
 
   return {
     success: true,
-    output: statusType === 'passed'
-      ? `Criterion "${id}" verified as PASSED.${reason ? ` Verification: ${reason}` : ''}`
-      : `Criterion "${id}" marked as FAILED. Reason: ${reason}`,
+    output:
+      statusType === 'passed'
+        ? `Criterion "${id}" verified as PASSED.${reason ? ` Verification: ${reason}` : ''}`
+        : `Criterion "${id}" marked as FAILED. Reason: ${reason}`,
   }
 }
 
@@ -52,7 +54,8 @@ export const criterionTool = createTool<CriterionArgs>(
     type: 'function',
     function: {
       name: 'criterion',
-      description: 'Manage acceptance criteria. Actions: get (list all), add (create new), update (modify), remove (delete), complete (mark done), pass (verify), fail (reject).',
+      description:
+        'Manage acceptance criteria. Actions: get (list all), add (create new), update (modify), remove (delete), complete (mark done), pass (verify), fail (reject).',
       parameters: {
         type: 'object',
         properties: {
@@ -79,7 +82,12 @@ export const criterionTool = createTool<CriterionArgs>(
     },
   },
   async (args, context, helpers) => {
-    const actionError = validateActionWithPermission(args.action, ['get', 'add', 'update', 'remove', 'complete', 'pass', 'fail'], 'criterion', context.permittedActions)
+    const actionError = validateActionWithPermission(
+      args.action,
+      ['get', 'add', 'update', 'remove', 'complete', 'pass', 'fail'],
+      'criterion',
+      context.permittedActions,
+    )
     if (actionError) return actionError
 
     const session = requireSession(context.sessionManager, context.sessionId)
@@ -88,7 +96,11 @@ export const criterionTool = createTool<CriterionArgs>(
       return helpers.success(
         session.criteria.length === 0
           ? 'No criteria defined yet.'
-          : JSON.stringify(session.criteria.map(c => ({ id: c.id, description: c.description })), null, 2)
+          : JSON.stringify(
+              session.criteria.map((c) => ({ id: c.id, description: c.description })),
+              null,
+              2,
+            ),
       )
     }
 
@@ -102,37 +114,47 @@ export const criterionTool = createTool<CriterionArgs>(
       }
       const result = context.sessionManager.addCriterion(context.sessionId, criterion)
       if ('error' in result) return helpers.error(result.error)
-      return helpers.success(`Added criterion "${result.actualId}". Current criteria:\n${formatCriteriaList(result.criteria)}`)
+      return helpers.success(
+        `Added criterion "${result.actualId}". Current criteria:\n${formatCriteriaList(result.criteria)}`,
+      )
     }
 
     if (args.action === 'update') {
       if (!args.id) return helpers.error('Missing required field: id')
       if (!args.description) return helpers.error('Missing required field: description')
-      if (!session.criteria.find(c => c.id === args.id)) return helpers.error(`Criterion "${args.id}" not found`)
-      const criteria = context.sessionManager.updateCriterionFull(context.sessionId, args.id, { description: args.description })
+      if (!session.criteria.find((c) => c.id === args.id)) return helpers.error(`Criterion "${args.id}" not found`)
+      const criteria = context.sessionManager.updateCriterionFull(context.sessionId, args.id, {
+        description: args.description,
+      })
       return helpers.success(`Updated criterion "${args.id}". Current criteria:\n${formatCriteriaList(criteria)}`)
     }
 
     if (args.action === 'remove') {
       if (!args.id) return helpers.error('Missing required field: id')
-      if (!session.criteria.find(c => c.id === args.id)) return helpers.error(`Criterion "${args.id}" not found`)
+      if (!session.criteria.find((c) => c.id === args.id)) return helpers.error(`Criterion "${args.id}" not found`)
       const criteria = context.sessionManager.removeCriterion(context.sessionId, args.id)
-      return helpers.success(criteria.length === 0
-        ? `Removed criterion "${args.id}". No criteria remaining.`
-        : `Removed criterion "${args.id}". Current criteria:\n${formatCriteriaList(criteria)}`
+      return helpers.success(
+        criteria.length === 0
+          ? `Removed criterion "${args.id}". No criteria remaining.`
+          : `Removed criterion "${args.id}". Current criteria:\n${formatCriteriaList(criteria)}`,
       )
     }
 
     if (args.action === 'complete') {
       if (!args.id) return helpers.error('Missing required field: id')
-      const criterion = session.criteria.find(c => c.id === args.id)
-      if (!criterion) return helpers.error(`Criterion "${args.id}" not found. Available: ${session.criteria.map(c => c.id).join(', ')}`)
+      const criterion = session.criteria.find((c) => c.id === args.id)
+      if (!criterion)
+        return helpers.error(
+          `Criterion "${args.id}" not found. Available: ${session.criteria.map((c) => c.id).join(', ')}`,
+        )
       context.sessionManager.updateCriterionStatus(context.sessionId, args.id, {
         type: 'completed' as const,
         completedAt: new Date().toISOString(),
         ...(args.reason ? { reason: args.reason } : {}),
       })
-      return helpers.success(`Criterion "${args.id}" marked as completed.${args.reason ? ` Reason: ${args.reason}` : ''}`)
+      return helpers.success(
+        `Criterion "${args.id}" marked as completed.${args.reason ? ` Reason: ${args.reason}` : ''}`,
+      )
     }
 
     if (args.action === 'pass') {
@@ -149,5 +171,5 @@ export const criterionTool = createTool<CriterionArgs>(
     }
 
     return helpers.error('Unexpected error')
-  }
+  },
 )

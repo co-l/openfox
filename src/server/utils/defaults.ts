@@ -5,7 +5,7 @@ export async function findModifiedDefaultFiles(
   defaultIds: string[],
   extension: string,
   bundledDirs: readonly [string, string],
-  userDir: string
+  userDir: string,
 ): Promise<string[]> {
   const [primaryDir, altDir] = bundledDirs
   const modified: string[] = []
@@ -19,7 +19,9 @@ export async function findModifiedDefaultFiles(
       try {
         bundledContent = await readFile(join(dir, filename), 'utf-8')
         break
-      } catch { /* try next */ }
+      } catch {
+        /* try next */
+      }
     }
     if (!bundledContent) continue
 

@@ -13,11 +13,14 @@ describe('ask_user tool', () => {
     let interrupt: AskUserInterrupt | null = null
 
     try {
-      await askUserTool.execute({ question: 'Which backend should I use?' }, {
-        workdir: '/tmp/project',
-        sessionId: 'session-1',
-        sessionManager: {} as never,
-      })
+      await askUserTool.execute(
+        { question: 'Which backend should I use?' },
+        {
+          workdir: '/tmp/project',
+          sessionId: 'session-1',
+          sessionManager: {} as never,
+        },
+      )
     } catch (error) {
       interrupt = error as AskUserInterrupt
     }
@@ -34,11 +37,14 @@ describe('ask_user tool', () => {
     let interrupt: AskUserInterrupt | null = null
 
     try {
-      await askUserTool.execute({ question: 'Need approval?' }, {
-        workdir: '/tmp/project',
-        sessionId: 'session-1',
-        sessionManager: {} as never,
-      })
+      await askUserTool.execute(
+        { question: 'Need approval?' },
+        {
+          workdir: '/tmp/project',
+          sessionId: 'session-1',
+          sessionManager: {} as never,
+        },
+      )
     } catch (error) {
       interrupt = error as AskUserInterrupt
     }
@@ -54,11 +60,14 @@ describe('ask_user tool', () => {
 
     for (const sessionId of ['session-1', 'session-1', 'session-2']) {
       try {
-        await askUserTool.execute({ question: `Question for ${sessionId}` }, {
-          workdir: '/tmp/project',
-          sessionId,
-          sessionManager: {} as never,
-        })
+        await askUserTool.execute(
+          { question: `Question for ${sessionId}` },
+          {
+            workdir: '/tmp/project',
+            sessionId,
+            sessionManager: {} as never,
+          },
+        )
       } catch (error) {
         interrupts.push(error as AskUserInterrupt)
       }

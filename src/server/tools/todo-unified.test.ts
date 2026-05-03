@@ -44,20 +44,32 @@ describe('todo tool', () => {
 
     it('rejects write with invalid todo items', async () => {
       const context = createContext()
-      const result = await todoTool.execute({ action: 'write', todos: [{ content: 'missing status' }] as any }, context as never)
-      expect(result).toMatchObject({ success: false, error: expect.stringContaining('Each todo must have content and status') })
+      const result = await todoTool.execute(
+        { action: 'write', todos: [{ content: 'missing status' }] as any },
+        context as never,
+      )
+      expect(result).toMatchObject({
+        success: false,
+        error: expect.stringContaining('Each todo must have content and status'),
+      })
     })
 
     it('rejects write with invalid status', async () => {
       const context = createContext()
-      const result = await todoTool.execute({ action: 'write', todos: [{ content: 'test', status: 'invalid' }] as any }, context as never)
+      const result = await todoTool.execute(
+        { action: 'write', todos: [{ content: 'test', status: 'invalid' }] as any },
+        context as never,
+      )
       expect(result).toMatchObject({ success: false, error: expect.stringContaining('Invalid status') })
     })
 
     it('rejects add without content', async () => {
       const context = createContext()
       const result = await todoTool.execute({ action: 'add' }, context as never)
-      expect(result).toMatchObject({ success: false, error: expect.stringContaining('Missing required field: content') })
+      expect(result).toMatchObject({
+        success: false,
+        error: expect.stringContaining('Missing required field: content'),
+      })
     })
 
     it('rejects update without index', async () => {
@@ -69,7 +81,10 @@ describe('todo tool', () => {
     it('rejects update without content or status', async () => {
       const context = createContext()
       const result = await todoTool.execute({ action: 'update', index: 0 }, context as never)
-      expect(result).toMatchObject({ success: false, error: expect.stringContaining('update requires content or status') })
+      expect(result).toMatchObject({
+        success: false,
+        error: expect.stringContaining('update requires content or status'),
+      })
     })
 
     it('rejects update with invalid status', async () => {
@@ -90,7 +105,7 @@ describe('todo tool', () => {
       const context = createContext()
       const existingTodos = createTodos()
       await todoTool.execute({ action: 'write', todos: existingTodos }, context as never)
-      
+
       const result = await todoTool.execute({ action: 'list' }, context as never)
       expect(result.success).toBe(true)
       expect(result.output).toContain('Write tests')
@@ -162,7 +177,10 @@ describe('todo tool', () => {
     it('updates both content and status', async () => {
       const context = createContext()
       await todoTool.execute({ action: 'add', content: 'Old', status: 'pending' }, context as never)
-      const result = await todoTool.execute({ action: 'update', index: 0, content: 'New', status: 'completed' }, context as never)
+      const result = await todoTool.execute(
+        { action: 'update', index: 0, content: 'New', status: 'completed' },
+        context as never,
+      )
       expect(result.success).toBe(true)
     })
 

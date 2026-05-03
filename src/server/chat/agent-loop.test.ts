@@ -25,7 +25,7 @@ describe('executeToolBatch', () => {
       append: vi.fn(),
       getEvents: vi.fn().mockReturnValue([]),
     } as unknown as EventStore
-    
+
     // Mock the event store singleton
     ;(getEventStore as any).mockReturnValue(mockEventStore)
 

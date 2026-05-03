@@ -29,7 +29,8 @@ export const editFileTool = createTool<EditFileArgs>(
     type: 'function',
     function: {
       name: 'edit_file',
-      description: 'Replace specific text in a file. Use this for surgical edits. The old_string must match exactly (including whitespace and indentation).',
+      description:
+        'Replace specific text in a file. Use this for surgical edits. The old_string must match exactly (including whitespace and indentation).',
       parameters: {
         type: 'object',
         properties: {
@@ -47,7 +48,8 @@ export const editFileTool = createTool<EditFileArgs>(
           },
           replace_all: {
             type: 'boolean',
-            description: 'Replace all occurrences (default: false). If false and multiple matches found, the operation fails.',
+            description:
+              'Replace all occurrences (default: false). If false and multiple matches found, the operation fails.',
           },
         },
         required: ['path', 'old_string', 'new_string'],
@@ -56,16 +58,16 @@ export const editFileTool = createTool<EditFileArgs>(
   },
   async (args, context, helpers) => {
     const replaceAll = args.replace_all ?? false
-    
+
     const fullPath = helpers.resolvePath(args.path)
     await helpers.checkPathAccess([fullPath])
-    
+
     const readFiles = context.sessionManager.getReadFiles(context.sessionId)
     const validation = await validateFileForWrite(fullPath, readFiles)
     if (!validation.valid) {
       return helpers.error(validation.error?.message ?? 'File validation failed')
     }
-    
+
     let content: string
     try {
       content = await readFile(fullPath, 'utf-8')
@@ -78,31 +80,34 @@ export const editFileTool = createTool<EditFileArgs>(
     const normalizedOldString = normalizeToLF(args.old_string)
 
     const occurrences = normalizedContent.split(normalizedOldString).length - 1
-    
+
     if (occurrences === 0) {
-      const preview = args.old_string.length > 100 
-        ? args.old_string.slice(0, 100) + '...' 
-        : args.old_string
-      
+      const preview = args.old_string.length > 100 ? args.old_string.slice(0, 100) + '...' : args.old_string
+
       return helpers.error(
-        `old_string not found in file.\n\nSearched for:\n${preview}\n\nMake sure whitespace and indentation match exactly.`
+        `old_string not found in file.\n\nSearched for:\n${preview}\n\nMake sure whitespace and indentation match exactly.`,
       )
     }
-    
+
     if (occurrences > 1 && !replaceAll) {
       return helpers.error(
-        `Found ${occurrences} matches for old_string. Use replace_all: true to replace all, or provide more context to make the match unique.`
+        `Found ${occurrences} matches for old_string. Use replace_all: true to replace all, or provide more context to make the match unique.`,
       )
     }
-    
-    const contextResult = extractEditContext(normalizedContent, normalizedOldString, normalizeToLF(args.new_string), replaceAll)
-    
-    const editContextRegions: EditContextRegion[] = contextResult.regions.map(region => ({
-      beforeContext: region.beforeContext.map(line => ({
+
+    const contextResult = extractEditContext(
+      normalizedContent,
+      normalizedOldString,
+      normalizeToLF(args.new_string),
+      replaceAll,
+    )
+
+    const editContextRegions: EditContextRegion[] = contextResult.regions.map((region) => ({
+      beforeContext: region.beforeContext.map((line) => ({
         lineNumber: line.lineNumber,
         content: line.content,
       })),
-      afterContext: region.afterContext.map(line => ({
+      afterContext: region.afterContext.map((line) => ({
         lineNumber: line.lineNumber,
         content: line.content,
       })),
@@ -110,16 +115,16 @@ export const editFileTool = createTool<EditFileArgs>(
       endLine: region.endLine,
       oldContent: region.oldContent,
       newContent: region.newContent,
-      edits: region.edits.map(edit => ({
+      edits: region.edits.map((edit) => ({
         startLine: edit.startLine,
         endLine: edit.endLine,
         oldContent: edit.oldContent,
         newContent: edit.newContent,
       })),
     }))
-    
+
     const normalizedNewString = normalizeToLF(args.new_string)
-    
+
     // FIX: String.replace() treats $ as special replacement patterns ($&, $', $`, $$, $n)
     // Our new_string contains '$' in code like "$' + value.toFixed(2)" which gets mangled
     // Solution: Use index-based replacement to avoid regex/replace pattern interpretation
@@ -131,29 +136,35 @@ export const editFileTool = createTool<EditFileArgs>(
       if (index === -1) {
         return helpers.error('old_string not found in file (unexpected)')
       }
-      replacedContent = normalizedContent.slice(0, index) + normalizedNewString + normalizedContent.slice(index + normalizedOldString.length)
+      replacedContent =
+        normalizedContent.slice(0, index) +
+        normalizedNewString +
+        normalizedContent.slice(index + normalizedOldString.length)
     }
 
-    const newContent = replacedContent.replace(/\n/g, fileLineEnding === 'crlf' ? '\r\n' : fileLineEnding === 'cr' ? '\r' : '\n')
+    const newContent = replacedContent.replace(
+      /\n/g,
+      fileLineEnding === 'crlf' ? '\r\n' : fileLineEnding === 'cr' ? '\r' : '\n',
+    )
 
     await writeFile(fullPath, newContent, 'utf-8')
-    
+
     let output = `Successfully replaced ${replaceAll ? occurrences : 1} occurrence(s) in ${args.path}`
     let diagnostics: Diagnostic[] = []
-    
+
     if (context.lspManager) {
       diagnostics = await context.lspManager.notifyFileChange(fullPath, newContent)
       output += formatDiagnosticsForLLM(diagnostics)
     }
-    
+
     const newHash = await computeFileHash(fullPath)
     if (newHash) {
       context.sessionManager.updateFileHash(context.sessionId, fullPath, newHash)
     }
-    
+
     return helpers.success(output, false, {
       ...(diagnostics.length > 0 && { diagnostics }),
       ...(editContextRegions.length > 0 && { editContext: { regions: editContextRegions } }),
     })
-  }
+  },
 )

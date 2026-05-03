@@ -47,7 +47,7 @@ const MOCK_PROFILE: ModelProfile = {
   supportsVision: false,
 }
 
-/** 
+/**
  * Model profiles indexed by model name patterns.
  * Patterns are matched against the model name (case-insensitive, partial match).
  */
@@ -223,18 +223,18 @@ const MODEL_PROFILES: Array<{ pattern: string; profile: ModelProfile }> = [
  */
 export function getModelProfile(modelName: string): ModelProfile {
   const lowerName = modelName.toLowerCase()
-  
+
   // Mock model
   if (lowerName.includes('mock')) {
     return MOCK_PROFILE
   }
-  
+
   for (const { pattern, profile } of MODEL_PROFILES) {
     if (lowerName.includes(pattern.toLowerCase())) {
       return profile
     }
   }
-  
+
   return DEFAULT_PROFILE
 }
 

@@ -39,16 +39,19 @@ export function appendNudgedDoneEvent(options: AppendNudgedDoneEventOptions): st
   const { eventStore, sessionId } = options
   const nudgeMsgId = crypto.randomUUID()
 
-  eventStore.append(sessionId, createMessageDoneEvent(options.assistantMsgId, {
-    segments: [],
-    promptContext: buildPromptContextForNudge(
-      options.systemPrompt,
-      options.injectedFiles,
-      options.prompt,
-      options.messages,
-      options.tools,
-    ),
-  }))
+  eventStore.append(
+    sessionId,
+    createMessageDoneEvent(options.assistantMsgId, {
+      segments: [],
+      promptContext: buildPromptContextForNudge(
+        options.systemPrompt,
+        options.injectedFiles,
+        options.prompt,
+        options.messages,
+        options.tools,
+      ),
+    }),
+  )
 
   const contextWindowId = options.currentWindowMessageOptions?.['contextWindowId'] as string | undefined
   const startEventOptions = {
@@ -64,7 +67,7 @@ export function appendNudgedDoneEvent(options: AppendNudgedDoneEventOptions): st
   return nudgeMsgId
 }
 
-function buildPromptContextForNudge(
+export function buildPromptContextForNudge(
   systemPrompt: string,
   injectedFiles: InjectedFile[],
   userMessage: string,
@@ -75,8 +78,16 @@ function buildPromptContextForNudge(
     systemPrompt,
     injectedFiles,
     userMessage,
-    messages: messages.map(m => ({ role: m.role as 'user' | 'assistant' | 'tool', content: m.content, source: m.source })),
-    tools: tools.map(t => ({ name: t.function.name, description: t.function.description, parameters: t.function.parameters })),
+    messages: messages.map((m) => ({
+      role: m.role as 'user' | 'assistant' | 'tool',
+      content: m.content,
+      source: m.source,
+    })),
+    tools: tools.map((t) => ({
+      name: t.function.name,
+      description: t.function.description,
+      parameters: t.function.parameters,
+    })),
     requestOptions: { toolChoice: 'auto' as const, disableThinking: true },
   }
 }
@@ -89,12 +100,15 @@ export function appendNudgeMessage(
   options: NudgeMessageOptions,
 ): void {
   const msgId = crypto.randomUUID()
-  eventStore.append(sessionId, createMessageStartEvent(msgId, 'user', content, {
-    ...(currentWindowMessageOptions ?? {}),
-    isSystemGenerated: true,
-    messageKind: 'correction',
-    subAgentId: options.subAgentId,
-    subAgentType: options.subAgentType,
-  }))
+  eventStore.append(
+    sessionId,
+    createMessageStartEvent(msgId, 'user', content, {
+      ...(currentWindowMessageOptions ?? {}),
+      isSystemGenerated: true,
+      messageKind: 'correction',
+      subAgentId: options.subAgentId,
+      subAgentType: options.subAgentType,
+    }),
+  )
   eventStore.append(sessionId, { type: 'message.done', data: { messageId: msgId } })
 }

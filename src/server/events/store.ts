@@ -53,7 +53,7 @@ interface EventRow {
 
 function createEventIterator(
   state: SubscriberState,
-  subscriber: Subscriber | GlobalSubscriber
+  subscriber: Subscriber | GlobalSubscriber,
 ): AsyncIterableIterator<StoredEvent> {
   return {
     [Symbol.asyncIterator]() {
@@ -107,7 +107,7 @@ type SubscriberState = ReturnType<typeof createIteratorState>
 
 function createSubscriber(
   state: SubscriberState,
-  id: { sessionId: string } | { wsId: number }
+  id: { sessionId: string } | { wsId: number },
 ): Subscriber | GlobalSubscriber {
   return {
     ...id,
@@ -184,7 +184,7 @@ export class EventStore {
     this.db
       .prepare(
         `INSERT INTO events (session_id, seq, timestamp, event_type, payload)
-         VALUES (?, ?, ?, ?, ?)`
+         VALUES (?, ?, ?, ?, ?)`,
       )
       .run(sessionId, seq, timestamp, event.type, payload)
 
@@ -213,7 +213,7 @@ export class EventStore {
 
     const insert = this.db.prepare(
       `INSERT INTO events (session_id, seq, timestamp, event_type, payload)
-       VALUES (?, ?, ?, ?, ?)`
+       VALUES (?, ?, ?, ?, ?)`,
     )
 
     const transaction = this.db.transaction(() => {
@@ -244,9 +244,9 @@ export class EventStore {
   }
 
   private getNextSeq(sessionId: string): number {
-    const row = this.db
-      .prepare(`SELECT MAX(seq) as max_seq FROM events WHERE session_id = ?`)
-      .get(sessionId) as { max_seq: number | null } | undefined
+    const row = this.db.prepare(`SELECT MAX(seq) as max_seq FROM events WHERE session_id = ?`).get(sessionId) as
+      | { max_seq: number | null }
+      | undefined
 
     return (row?.max_seq ?? 0) + 1
   }
@@ -276,9 +276,9 @@ export class EventStore {
    * Get the latest sequence number for a session
    */
   getLatestSeq(sessionId: string): number | undefined {
-    const row = this.db
-      .prepare(`SELECT MAX(seq) as max_seq FROM events WHERE session_id = ?`)
-      .get(sessionId) as { max_seq: number | null } | undefined
+    const row = this.db.prepare(`SELECT MAX(seq) as max_seq FROM events WHERE session_id = ?`).get(sessionId) as
+      | { max_seq: number | null }
+      | undefined
 
     return row?.max_seq ?? undefined
   }
@@ -291,7 +291,7 @@ export class EventStore {
       .prepare(
         `SELECT * FROM events 
          WHERE session_id = ? AND event_type = 'turn.snapshot' 
-         ORDER BY seq DESC LIMIT 1`
+         ORDER BY seq DESC LIMIT 1`,
       )
       .get(sessionId) as EventRow | undefined
 
@@ -346,7 +346,7 @@ export class EventStore {
    */
   subscribe(
     sessionId: string,
-    fromSeq?: number
+    fromSeq?: number,
   ): { iterator: AsyncIterableIterator<StoredEvent>; unsubscribe: () => void } {
     const state = createIteratorState()
 
@@ -440,15 +440,13 @@ export class EventStore {
   /**
    * Delete all events up to (and including) a given sequence number.
    * This is used to clean up events that are now contained in a snapshot.
-   * 
+   *
    * @param sessionId - The session ID
    * @param upToSeq - The sequence number to delete up to (inclusive)
    * @returns The number of events deleted
    */
   deleteEventsUpToSeq(sessionId: string, upToSeq: number): number {
-    const result = this.db
-      .prepare(`DELETE FROM events WHERE session_id = ? AND seq <= ?`)
-      .run(sessionId, upToSeq)
+    const result = this.db.prepare(`DELETE FROM events WHERE session_id = ? AND seq <= ?`).run(sessionId, upToSeq)
 
     return result.changes as number
   }
@@ -459,16 +457,16 @@ export class EventStore {
    * - All snapshot events
    * - State-changing events (criteria.set, criterion.updated, mode.changed, phase.changed, context.state, etc.)
    * - Events after the latest snapshot (current window)
-   * 
+   *
    * This is the recommended cleanup method that preserves all snapshots and state.
-   * 
+   *
    * @param sessionId - The session ID
    * @returns The number of events deleted
    */
   cleanupOldEvents(sessionId: string): number {
     // Get the latest snapshot sequence
     const latestSnapshotSeq = this.getLatestSnapshotSeq(sessionId)
-    
+
     if (latestSnapshotSeq === 0) {
       // No snapshots yet, nothing to clean up
       return 0
@@ -480,7 +478,8 @@ export class EventStore {
     // Old snapshots are also deleted — the latest snapshot is always a
     // superset of all previous ones (messages are cumulative).
     const result = this.db
-      .prepare(`
+      .prepare(
+        `
         DELETE FROM events
         WHERE session_id = ? AND seq > 1 AND seq < ?
         AND event_type NOT IN (
@@ -491,7 +490,8 @@ export class EventStore {
           'todo.updated',
           'context.state'
         )
-      `)
+      `,
+      )
       .run(sessionId, latestSnapshotSeq)
 
     return result.changes as number
@@ -508,7 +508,8 @@ export class EventStore {
 
     // 1. Delete all non-latest snapshots per session
     const deleteResult = this.db
-      .prepare(`
+      .prepare(
+        `
         DELETE FROM events
         WHERE event_type = 'turn.snapshot'
         AND id NOT IN (
@@ -520,7 +521,8 @@ export class EventStore {
             AND e2.event_type = 'turn.snapshot'
           )
         )
-      `)
+      `,
+      )
       .run()
     deletedSnapshots = deleteResult.changes as number
 
@@ -555,11 +557,13 @@ export class EventStore {
    */
   getLatestSnapshotSeq(sessionId: string): number {
     const row = this.db
-      .prepare(`
+      .prepare(
+        `
         SELECT seq FROM events 
         WHERE session_id = ? AND event_type = 'turn.snapshot' 
         ORDER BY seq DESC LIMIT 1
-      `)
+      `,
+      )
       .get(sessionId) as { seq: number } | undefined
 
     return row?.seq ?? 0
@@ -575,30 +579,36 @@ export class EventStore {
       const events = this.getEvents(sessionId)
       if (events.length === 0) return null
 
-      const latestSnapshot = [...events].reverse().find(e => e.type === 'turn.snapshot')
-      const eventsAfterSnapshot = events.filter(e => e.seq > (latestSnapshot?.seq ?? 0))
+      const latestSnapshot = [...events].reverse().find((e) => e.type === 'turn.snapshot')
+      const eventsAfterSnapshot = events.filter((e) => e.seq > (latestSnapshot?.seq ?? 0))
 
       if (eventsAfterSnapshot.length === 0) return null
 
-      const initEvent = events.find(e => e.type === 'session.initialized')
-      const initialWindowId = initEvent && typeof initEvent.data === 'object' && 'contextWindowId' in initEvent.data
-        ? (initEvent.data as { contextWindowId: string }).contextWindowId
-        : 'legacy-window-1'
+      const initEvent = events.find((e) => e.type === 'session.initialized')
+      const initialWindowId =
+        initEvent && typeof initEvent.data === 'object' && 'contextWindowId' in initEvent.data
+          ? (initEvent.data as { contextWindowId: string }).contextWindowId
+          : 'legacy-window-1'
 
       const latestSeq = events[events.length - 1]!.seq
 
-      const snapshotMessages = latestSnapshot?.data && typeof latestSnapshot.data === 'object' && 'messages' in latestSnapshot.data
-        ? (latestSnapshot.data as { messages: SnapshotMessage[] }).messages
-        : []
+      const snapshotMessages =
+        latestSnapshot?.data && typeof latestSnapshot.data === 'object' && 'messages' in latestSnapshot.data
+          ? (latestSnapshot.data as { messages: SnapshotMessage[] }).messages
+          : []
 
       const foldedState = foldSessionState(events, initialWindowId, 200000, snapshotMessages)
       const newSnapshot = buildSnapshot(foldedState, latestSeq)
 
-      const deleteResult = this.db.prepare(`
+      const deleteResult = this.db
+        .prepare(
+          `
         DELETE FROM events 
         WHERE session_id = ? AND seq <= ?
         AND event_type != 'session.initialized'
-      `).run(sessionId, latestSeq)
+      `,
+        )
+        .run(sessionId, latestSeq)
 
       const snapshotEvent = this.append(sessionId, {
         type: 'turn.snapshot',
@@ -628,26 +638,38 @@ export class EventStore {
     const cutoff = new Date(Date.now() - 5 * 60 * 1000).toISOString()
     logger.debug('Looking for orphaned sessions', { cutoff })
 
-    const sessions = this.db.prepare(`
+    const sessions = this.db
+      .prepare(
+        `
       SELECT id, is_running 
       FROM sessions 
       WHERE is_running = 0 AND updated_at < ?
-    `).all(cutoff) as Array<{ id: string; is_running: number }>
+    `,
+      )
+      .all(cutoff) as Array<{ id: string; is_running: number }>
 
     logger.debug('Idle sessions found', { count: sessions.length })
 
     const orphaned: string[] = []
 
     for (const session of sessions) {
-      const hasSnapshot = this.db.prepare(`
+      const hasSnapshot = this.db
+        .prepare(
+          `
         SELECT 1 FROM events WHERE session_id = ? AND event_type = 'turn.snapshot' LIMIT 1
-      `).get(session.id)
+      `,
+        )
+        .get(session.id)
 
       if (hasSnapshot) {
         const latestSnapshotSeq = this.getLatestSnapshotSeq(session.id)
-        const eventsAfter = this.db.prepare(`
+        const eventsAfter = this.db
+          .prepare(
+            `
           SELECT 1 FROM events WHERE session_id = ? AND seq > ? LIMIT 1
-        `).get(session.id, latestSnapshotSeq)
+        `,
+          )
+          .get(session.id, latestSnapshotSeq)
 
         if (eventsAfter) {
           orphaned.push(session.id)
@@ -720,11 +742,15 @@ function resetStaleRunningSessions(eventStore: EventStore, db: Database.Database
 
   for (const { id: sessionId } of sessions) {
     // Get the last running.changed event for this session
-    const lastRunningEvent = db.prepare(`
+    const lastRunningEvent = db
+      .prepare(
+        `
       SELECT payload FROM events 
       WHERE session_id = ? AND event_type = 'running.changed'
       ORDER BY seq DESC LIMIT 1
-    `).get(sessionId) as { payload: string } | undefined
+    `,
+      )
+      .get(sessionId) as { payload: string } | undefined
 
     if (lastRunningEvent) {
       const data = JSON.parse(lastRunningEvent.payload) as { isRunning: boolean }

@@ -28,6 +28,7 @@ vi.mock('../events/index.js', () => ({
 
 vi.mock('../context/instructions.js', () => ({
   getAllInstructions: getAllInstructionsMock,
+  toInjectedFiles: (files: unknown[]) => files as unknown,
 }))
 
 vi.mock('../tools/index.js', async (importOriginal) => {
@@ -54,7 +55,13 @@ vi.mock('./stream-pure.js', async (importOriginal) => {
 vi.mock('../agents/registry.js', () => {
   const agents = [
     {
-      metadata: { id: 'verifier', name: 'Verifier', description: 'Verify criteria', subagent: true, allowedTools: ['read_file', 'pass_criterion'] },
+      metadata: {
+        id: 'verifier',
+        name: 'Verifier',
+        description: 'Verify criteria',
+        subagent: true,
+        allowedTools: ['read_file', 'pass_criterion'],
+      },
       prompt: 'You are a verifier',
     },
   ]
@@ -84,7 +91,10 @@ import { TurnMetrics } from './stream-pure.js'
 function createEventStore() {
   return {
     append: vi.fn((_sessionId: string, event: { type: string; data: unknown }) => ({
-      seq: 1, sessionId: _sessionId, timestamp: Date.now(), ...event,
+      seq: 1,
+      sessionId: _sessionId,
+      timestamp: Date.now(),
+      ...event,
     })),
     getEvents: vi.fn().mockReturnValue([]),
     getLatestSeq: vi.fn().mockReturnValue(0),
@@ -99,9 +109,7 @@ function createSessionManager(state: any) {
     updateMessage: vi.fn(),
     updateMessageStats: vi.fn(),
     updateCriterionStatus: vi.fn((_sessionId: string, criterionId: string, status: any) => {
-      state.current.criteria = state.current.criteria.map((c: any) =>
-        c.id === criterionId ? { ...c, status } : c
-      )
+      state.current.criteria = state.current.criteria.map((c: any) => (c.id === criterionId ? { ...c, status } : c))
     }),
     addCriterionAttempt: vi.fn(),
     setCurrentContextSize: vi.fn(),
@@ -151,23 +159,28 @@ describe('runVerifierTurn - Agent Registry Integration', () => {
         isRunning: true,
         summary: 'Test summary',
         messages: [],
-        criteria: [{
-          id: 'test-1',
-          description: 'Test criterion',
-          status: { type: 'completed', completedAt: new Date().toISOString() },
-          attempts: [],
-        }],
+        criteria: [
+          {
+            id: 'test-1',
+            description: 'Test criterion',
+            status: { type: 'completed', completedAt: new Date().toISOString() },
+            attempts: [],
+          },
+        ],
         executionState: { modifiedFiles: ['src/test.ts'] },
       },
     }
     const sessionManager = createSessionManager(state)
 
-    const result = await runVerifierTurn({
-      sessionManager: sessionManager as never,
-      sessionId: 'test-session',
-      llmClient: { getModel: () => 'test-model' } as never,
-      onMessage: vi.fn(),
-    }, new TurnMetrics())
+    const result = await runVerifierTurn(
+      {
+        sessionManager: sessionManager as never,
+        sessionId: 'test-session',
+        llmClient: { getModel: () => 'test-model' } as never,
+        onMessage: vi.fn(),
+      },
+      new TurnMetrics(),
+    )
 
     // Verify result structure
     expect(result).toHaveProperty('allPassed')

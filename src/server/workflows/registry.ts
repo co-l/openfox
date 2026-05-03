@@ -33,13 +33,13 @@ async function pathExists(path: string): Promise<boolean> {
 }
 
 async function loadWorkflowsFromDir(dir: string): Promise<WorkflowDefinition[]> {
-  if (!await pathExists(dir)) {
+  if (!(await pathExists(dir))) {
     return []
   }
 
   let files: string[]
   try {
-    files = (await readdir(dir)).filter(f => f.endsWith(WORKFLOW_EXTENSION))
+    files = (await readdir(dir)).filter((f) => f.endsWith(WORKFLOW_EXTENSION))
   } catch {
     return []
   }
@@ -75,10 +75,7 @@ export async function loadUserWorkflows(configDir: string): Promise<WorkflowDefi
 }
 
 export async function loadAllWorkflows(configDir: string): Promise<WorkflowDefinition[]> {
-  const [defaultWorkflows, userWorkflows] = await Promise.all([
-    loadDefaultWorkflows(),
-    loadUserWorkflows(configDir),
-  ])
+  const [defaultWorkflows, userWorkflows] = await Promise.all([loadDefaultWorkflows(), loadUserWorkflows(configDir)])
 
   const workflowMap = new Map<string, WorkflowDefinition>()
   for (const workflow of defaultWorkflows) {
@@ -94,16 +91,18 @@ export async function loadAllWorkflows(configDir: string): Promise<WorkflowDefin
 export async function getDefaultWorkflowIds(): Promise<string[]> {
   for (const dir of [DEFAULTS_DIR, DEFAULTS_DIR_ALT]) {
     try {
-      const files = (await readdir(dir)).filter(f => f.endsWith(WORKFLOW_EXTENSION))
-      return files.map(f => f.replace(WORKFLOW_EXTENSION, ''))
-    } catch { /* try next */ }
+      const files = (await readdir(dir)).filter((f) => f.endsWith(WORKFLOW_EXTENSION))
+      return files.map((f) => f.replace(WORKFLOW_EXTENSION, ''))
+    } catch {
+      /* try next */
+    }
   }
   return []
 }
 
 export async function getDefaultWorkflowContent(workflowId: string): Promise<WorkflowDefinition | null> {
   const defaults = await loadDefaultWorkflows()
-  return defaults.find(w => w.metadata.id === workflowId) ?? null
+  return defaults.find((w) => w.metadata.id === workflowId) ?? null
 }
 
 export async function isDefaultWorkflow(workflowId: string): Promise<boolean> {
@@ -112,7 +111,7 @@ export async function isDefaultWorkflow(workflowId: string): Promise<boolean> {
 }
 
 export function findWorkflowById(workflowId: string, workflows: WorkflowDefinition[]): WorkflowDefinition | undefined {
-  return workflows.find(p => p.metadata.id === workflowId)
+  return workflows.find((p) => p.metadata.id === workflowId)
 }
 
 export async function workflowExists(configDir: string, workflowId: string): Promise<boolean> {
@@ -122,14 +121,17 @@ export async function workflowExists(configDir: string, workflowId: string): Pro
 
 export async function saveWorkflow(configDir: string, workflow: WorkflowDefinition): Promise<void> {
   const workflowsDir = getWorkflowsDir(configDir)
-  if (!await pathExists(workflowsDir)) {
+  if (!(await pathExists(workflowsDir))) {
     await mkdir(workflowsDir, { recursive: true })
   }
   const filePath = join(workflowsDir, `${workflow.metadata.id}${WORKFLOW_EXTENSION}`)
   await writeFile(filePath, JSON.stringify(workflow, null, 2) + '\n', 'utf-8')
 }
 
-export async function deleteWorkflow(configDir: string, workflowId: string): Promise<{ success: boolean; reason?: string }> {
+export async function deleteWorkflow(
+  configDir: string,
+  workflowId: string,
+): Promise<{ success: boolean; reason?: string }> {
   const isDefault = await isDefaultWorkflow(workflowId)
   if (isDefault) {
     return { success: false, reason: 'Cannot delete built-in defaults' }
@@ -144,11 +146,6 @@ export async function deleteWorkflow(configDir: string, workflowId: string): Pro
 }
 
 export async function getOverrideWorkflowIds(configDir: string): Promise<string[]> {
-  const [defaultIds, userWorkflows] = await Promise.all([
-    getDefaultWorkflowIds(),
-    loadUserWorkflows(configDir),
-  ])
-  return userWorkflows
-    .map(w => w.metadata.id)
-    .filter(id => defaultIds.includes(id))
+  const [defaultIds, userWorkflows] = await Promise.all([getDefaultWorkflowIds(), loadUserWorkflows(configDir)])
+  return userWorkflows.map((w) => w.metadata.id).filter((id) => defaultIds.includes(id))
 }

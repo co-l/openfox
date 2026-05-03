@@ -10,12 +10,21 @@ import {
 
 describe('llm client pure helpers', () => {
   it('converts messages and filters empty assistant placeholders', () => {
-    expect(convertMessages([
-      { role: 'system', content: 'system' },
-      { role: 'assistant', content: '', toolCalls: [] },
-      { role: 'assistant', content: '', toolCalls: [{ id: 'call-1', name: 'glob', arguments: { pattern: '*.ts' } }] },
-      { role: 'tool', content: 'ok', toolCallId: 'call-1' },
-    ], { modelSupportsVision: false, visionFallbackEnabled: false })).toEqual([
+    expect(
+      convertMessages(
+        [
+          { role: 'system', content: 'system' },
+          { role: 'assistant', content: '', toolCalls: [] },
+          {
+            role: 'assistant',
+            content: '',
+            toolCalls: [{ id: 'call-1', name: 'glob', arguments: { pattern: '*.ts' } }],
+          },
+          { role: 'tool', content: 'ok', toolCallId: 'call-1' },
+        ],
+        { modelSupportsVision: false, visionFallbackEnabled: false },
+      ),
+    ).toEqual([
       { role: 'system', content: 'system' },
       {
         role: 'assistant',
@@ -27,11 +36,11 @@ describe('llm client pure helpers', () => {
   })
 
   it('converts tool definitions to openai function schema', () => {
-    expect(convertTools([
-      { type: 'function', function: { name: 'grep', description: 'Search', parameters: { type: 'object' } } },
-    ])).toEqual([
-      { type: 'function', function: { name: 'grep', description: 'Search', parameters: { type: 'object' } } },
-    ])
+    expect(
+      convertTools([
+        { type: 'function', function: { name: 'grep', description: 'Search', parameters: { type: 'object' } } },
+      ]),
+    ).toEqual([{ type: 'function', function: { name: 'grep', description: 'Search', parameters: { type: 'object' } } }])
   })
 
   it('maps finish reasons and extracts thinking tags', () => {
@@ -54,7 +63,12 @@ describe('llm client pure helpers', () => {
   it('builds request params with backend capabilities and profile defaults', async () => {
     const baseRequest = {
       messages: [{ role: 'user' as const, content: 'hello' }],
-      tools: [{ type: 'function' as const, function: { name: 'glob', description: 'Search', parameters: { type: 'object' } } }],
+      tools: [
+        {
+          type: 'function' as const,
+          function: { name: 'glob', description: 'Search', parameters: { type: 'object' } },
+        },
+      ],
       toolChoice: 'auto' as const,
       disableThinking: false,
     }
@@ -67,16 +81,20 @@ describe('llm client pure helpers', () => {
       supportsVision: false,
     }
 
-    expect(await buildNonStreamingCreateParams({
-      model: 'test-model',
-      request: baseRequest,
-      profile,
-      capabilities: { supportsTopK: true, supportsChatTemplateKwargs: true },
-    })).toEqual({
+    expect(
+      await buildNonStreamingCreateParams({
+        model: 'test-model',
+        request: baseRequest,
+        profile,
+        capabilities: { supportsTopK: true, supportsChatTemplateKwargs: true },
+      }),
+    ).toEqual({
       params: {
         model: 'test-model',
         messages: [{ role: 'user', content: 'hello' }],
-        tools: [{ type: 'function', function: { name: 'glob', description: 'Search', parameters: { type: 'object' } } }],
+        tools: [
+          { type: 'function', function: { name: 'glob', description: 'Search', parameters: { type: 'object' } } },
+        ],
         tool_choice: 'auto',
         temperature: 0.2,
         max_tokens: 2000,
@@ -92,17 +110,21 @@ describe('llm client pure helpers', () => {
       },
     })
 
-    expect(await buildStreamingCreateParams({
-      model: 'test-model',
-      request: baseRequest,
-      profile,
-      capabilities: { supportsTopK: true, supportsChatTemplateKwargs: true },
-      disableThinking: true,
-    })).toEqual({
+    expect(
+      await buildStreamingCreateParams({
+        model: 'test-model',
+        request: baseRequest,
+        profile,
+        capabilities: { supportsTopK: true, supportsChatTemplateKwargs: true },
+        disableThinking: true,
+      }),
+    ).toEqual({
       params: {
         model: 'test-model',
         messages: [{ role: 'user', content: 'hello' }],
-        tools: [{ type: 'function', function: { name: 'glob', description: 'Search', parameters: { type: 'object' } } }],
+        tools: [
+          { type: 'function', function: { name: 'glob', description: 'Search', parameters: { type: 'object' } } },
+        ],
         tool_choice: 'auto',
         temperature: 0.2,
         max_tokens: 2000,
@@ -121,16 +143,20 @@ describe('llm client pure helpers', () => {
     })
 
     // Non-streaming should respect request.disableThinking
-    expect(await buildNonStreamingCreateParams({
-      model: 'test-model',
-      request: { ...baseRequest, disableThinking: true },
-      profile,
-      capabilities: { supportsTopK: true, supportsChatTemplateKwargs: true },
-    })).toEqual({
+    expect(
+      await buildNonStreamingCreateParams({
+        model: 'test-model',
+        request: { ...baseRequest, disableThinking: true },
+        profile,
+        capabilities: { supportsTopK: true, supportsChatTemplateKwargs: true },
+      }),
+    ).toEqual({
       params: {
         model: 'test-model',
         messages: [{ role: 'user', content: 'hello' }],
-        tools: [{ type: 'function', function: { name: 'glob', description: 'Search', parameters: { type: 'object' } } }],
+        tools: [
+          { type: 'function', function: { name: 'glob', description: 'Search', parameters: { type: 'object' } } },
+        ],
         tool_choice: 'auto',
         temperature: 0.2,
         max_tokens: 2000,
@@ -148,12 +174,14 @@ describe('llm client pure helpers', () => {
     })
 
     // Empty tools array should be omitted (vLLM rejects tools: [])
-    expect(await buildNonStreamingCreateParams({
-      model: 'test-model',
-      request: { messages: [{ role: 'user' as const, content: 'hi' }], tools: [] },
-      profile,
-      capabilities: { supportsTopK: false, supportsChatTemplateKwargs: false },
-    })).toEqual({
+    expect(
+      await buildNonStreamingCreateParams({
+        model: 'test-model',
+        request: { messages: [{ role: 'user' as const, content: 'hi' }], tools: [] },
+        profile,
+        capabilities: { supportsTopK: false, supportsChatTemplateKwargs: false },
+      }),
+    ).toEqual({
       params: {
         model: 'test-model',
         messages: [{ role: 'user', content: 'hi' }],

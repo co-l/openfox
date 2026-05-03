@@ -1,6 +1,6 @@
 /**
  * Runner State Machine Types
- * 
+ *
  * The runner orchestrates the build → verify → done/blocked cycle.
  * State is derived from session criteria, not persisted separately.
  */
@@ -56,7 +56,7 @@ export interface StepResult {
   content: string
   timing: StreamTiming
   usage: { promptTokens: number; completionTokens: number }
-  toolTime: number  // Total tool execution time in milliseconds
+  toolTime: number // Total tool execution time in milliseconds
 }
 
 // ============================================================================
@@ -64,5 +64,5 @@ export interface StepResult {
 // ============================================================================
 
 export const RUNNER_CONFIG = {
-  maxVerifyRetries: 10,      // Max times to retry a failing criterion
+  maxVerifyRetries: 10, // Max times to retry a failing criterion
 } as const

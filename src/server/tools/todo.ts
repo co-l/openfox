@@ -18,9 +18,9 @@ export function clearTodos(sessionId: string): void {
 }
 
 function buildTaskListSummary(todosList: Todo[]): string {
-  const pending = todosList.filter(t => t.status === 'pending').length
-  const inProgress = todosList.filter(t => t.status === 'in_progress').length
-  const completed = todosList.filter(t => t.status === 'completed').length
+  const pending = todosList.filter((t) => t.status === 'pending').length
+  const inProgress = todosList.filter((t) => t.status === 'in_progress').length
+  const completed = todosList.filter((t) => t.status === 'completed').length
   return `${completed} completed, ${inProgress} in progress, ${pending} pending`
 }
 
@@ -46,7 +46,8 @@ export const todoTool = createTool<TodoArgs>(
     type: 'function',
     function: {
       name: 'todo',
-      description: 'Manage task list. Actions: list (show all), write (replace all), add (create new), update (modify), remove (delete).',
+      description:
+        'Manage task list. Actions: list (show all), write (replace all), add (create new), update (modify), remove (delete).',
       parameters: {
         type: 'object',
         properties: {
@@ -86,16 +87,17 @@ export const todoTool = createTool<TodoArgs>(
     },
   },
   async (args, context, helpers) => {
-    const actionError = validateActionWithPermission(args.action, ['list', 'write', 'add', 'update', 'remove'], 'todo', context.permittedActions)
+    const actionError = validateActionWithPermission(
+      args.action,
+      ['list', 'write', 'add', 'update', 'remove'],
+      'todo',
+      context.permittedActions,
+    )
     if (actionError) return actionError
 
     if (args.action === 'list') {
       const todosList = sessionTodos.get(context.sessionId) ?? []
-      return helpers.success(
-        todosList.length === 0
-          ? 'No tasks defined yet.'
-          : JSON.stringify(todosList, null, 2)
-      )
+      return helpers.success(todosList.length === 0 ? 'No tasks defined yet.' : JSON.stringify(todosList, null, 2))
     }
 
     if (args.action === 'write') {
@@ -109,7 +111,9 @@ export const todoTool = createTool<TodoArgs>(
       }
       sessionTodos.set(context.sessionId, args.todos)
       if (onTodoUpdate) onTodoUpdate(context.sessionId, args.todos)
-      return helpers.success(`${args.todos.filter(t => t.status === 'completed').length} completed, ${args.todos.filter(t => t.status === 'in_progress').length} in progress, ${args.todos.filter(t => t.status === 'pending').length} pending`)
+      return helpers.success(
+        `${args.todos.filter((t) => t.status === 'completed').length} completed, ${args.todos.filter((t) => t.status === 'in_progress').length} in progress, ${args.todos.filter((t) => t.status === 'pending').length} pending`,
+      )
     }
 
     if (args.action === 'add') {
@@ -147,10 +151,10 @@ export const todoTool = createTool<TodoArgs>(
       return helpers.success(
         todosList.length === 0
           ? `Removed task "${removed.content}". No tasks remaining.`
-          : `Removed task "${removed.content}". Task list: ${buildTaskListSummary(todosList)}`
+          : `Removed task "${removed.content}". Task list: ${buildTaskListSummary(todosList)}`,
       )
     }
 
     return helpers.error('Unexpected error')
-  }
+  },
 )

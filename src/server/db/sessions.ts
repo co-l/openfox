@@ -5,12 +5,7 @@
  * is stored in the events table and derived via EventStore folding.
  */
 
-import type {
-  Session,
-  SessionSummary,
-  SessionMode,
-  SessionPhase,
-} from '../../shared/types.js'
+import type { Session, SessionSummary, SessionMode, SessionPhase } from '../../shared/types.js'
 import { getDatabase } from './index.js'
 
 export type DangerLevel = 'normal' | 'dangerous'
@@ -19,15 +14,23 @@ export type DangerLevel = 'normal' | 'dangerous'
 // Session Operations
 // ============================================================================
 
-export function createSession(projectId: string, workdir: string, title?: string, providerId?: string | null, providerModel?: string | null): Session {
+export function createSession(
+  projectId: string,
+  workdir: string,
+  title?: string,
+  providerId?: string | null,
+  providerModel?: string | null,
+): Session {
   const db = getDatabase()
   const now = new Date().toISOString()
   const id = crypto.randomUUID()
 
-  db.prepare(`
+  db.prepare(
+    `
     INSERT INTO sessions (id, project_id, workdir, phase, mode, workflow_phase, is_running, created_at, updated_at, title, provider_id, provider_model, danger_level)
     VALUES (?, ?, ?, 'idle', 'planner', 'plan', 0, ?, ?, ?, ?, ?, 'normal')
-  `).run(id, projectId, workdir, now, now, title ?? null, providerId ?? null, providerModel ?? null)
+  `,
+  ).run(id, projectId, workdir, now, now, title ?? null, providerId ?? null, providerModel ?? null)
 
   return {
     id,
@@ -57,15 +60,19 @@ export function createSession(projectId: string, workdir: string, title?: string
 
 export function getSession(id: string): Session | null {
   const db = getDatabase()
-  
-  const row = db.prepare(`
+
+  const row = db
+    .prepare(
+      `
     SELECT * FROM sessions WHERE id = ?
-  `).get(id) as SessionRow | undefined
-  
+  `,
+    )
+    .get(id) as SessionRow | undefined
+
   if (!row) {
     return null
   }
-  
+
   // Note: messages, criteria, contextWindows, executionState are derived from EventStore
   // This function returns the DB row data only - caller should enrich with event data
   return {
@@ -98,66 +105,75 @@ export function updateSessionProvider(id: string, providerId: string | null, pro
   const db = getDatabase()
   const now = new Date().toISOString()
 
-  db.prepare(`
+  db.prepare(
+    `
     UPDATE sessions SET provider_id = ?, provider_model = ?, updated_at = ? WHERE id = ?
-  `).run(providerId, providerModel, now, id)
+  `,
+  ).run(providerId, providerModel, now, id)
 }
 
 export function updateSessionMode(id: string, mode: SessionMode): void {
   const db = getDatabase()
   const now = new Date().toISOString()
-  
-  db.prepare(`
+
+  db.prepare(
+    `
     UPDATE sessions SET mode = ?, updated_at = ? WHERE id = ?
-  `).run(mode, now, id)
+  `,
+  ).run(mode, now, id)
 }
 
 export function updateSessionDangerLevel(id: string, dangerLevel: DangerLevel): void {
   const db = getDatabase()
   const now = new Date().toISOString()
-  
-  db.prepare(`
+
+  db.prepare(
+    `
     UPDATE sessions SET danger_level = ?, updated_at = ? WHERE id = ?
-  `).run(dangerLevel, now, id)
+  `,
+  ).run(dangerLevel, now, id)
 }
 
 export function updateSessionPhase(id: string, phase: SessionPhase): void {
   const db = getDatabase()
   const now = new Date().toISOString()
-  
-  db.prepare(`
+
+  db.prepare(
+    `
     UPDATE sessions SET workflow_phase = ?, updated_at = ? WHERE id = ?
-  `).run(phase, now, id)
+  `,
+  ).run(phase, now, id)
 }
 
 export function updateSessionRunning(id: string, isRunning: boolean): void {
   const db = getDatabase()
   const now = new Date().toISOString()
-  
-  db.prepare(`
+
+  db.prepare(
+    `
     UPDATE sessions SET is_running = ?, updated_at = ? WHERE id = ?
-  `).run(isRunning ? 1 : 0, now, id)
+  `,
+  ).run(isRunning ? 1 : 0, now, id)
 }
 
 export function updateSessionSummary(id: string, summary: string): void {
   const db = getDatabase()
   const now = new Date().toISOString()
-  
-  db.prepare(`
+
+  db.prepare(
+    `
     UPDATE sessions SET summary = ?, updated_at = ? WHERE id = ?
-  `).run(summary, now, id)
+  `,
+  ).run(summary, now, id)
 }
 
-export function updateSessionMetadata(
-  id: string,
-  metadata: Partial<Session['metadata']>
-): void {
+export function updateSessionMetadata(id: string, metadata: Partial<Session['metadata']>): void {
   const db = getDatabase()
   const now = new Date().toISOString()
-  
+
   const updates: string[] = ['updated_at = ?']
   const values: (string | number)[] = [now]
-  
+
   if (metadata.title !== undefined) {
     updates.push('title = ?')
     values.push(metadata.title ?? '')
@@ -174,22 +190,26 @@ export function updateSessionMetadata(
     updates.push('iteration_count = ?')
     values.push(metadata.iterationCount)
   }
-  
+
   values.push(id)
-  
-  db.prepare(`
+
+  db.prepare(
+    `
     UPDATE sessions SET ${updates.join(', ')} WHERE id = ?
-  `).run(...values)
+  `,
+  ).run(...values)
 }
 
 export function updateSessionMessageCount(id: string, delta: number): void {
   try {
     const db = getDatabase()
     const now = new Date().toISOString()
-    
-    db.prepare(`
+
+    db.prepare(
+      `
       UPDATE sessions SET message_count = message_count + ?, updated_at = ? WHERE id = ?
-    `).run(delta, now, id)
+    `,
+    ).run(delta, now, id)
   } catch {
     // Database not initialized (test scenarios) - silently skip
   }
@@ -198,7 +218,9 @@ export function updateSessionMessageCount(id: string, delta: number): void {
 export function getSessionMessageCount(id: string): number {
   try {
     const db = getDatabase()
-    const row = db.prepare(`SELECT message_count FROM sessions WHERE id = ?`).get(id) as { message_count: number } | undefined
+    const row = db.prepare(`SELECT message_count FROM sessions WHERE id = ?`).get(id) as
+      | { message_count: number }
+      | undefined
     return row?.message_count ?? 0
   } catch {
     // Database not initialized (test scenarios) - return 0
@@ -208,8 +230,10 @@ export function getSessionMessageCount(id: string): number {
 
 export function listSessions(): SessionSummary[] {
   const db = getDatabase()
-  
-  const rows = db.prepare(`
+
+  const rows = db
+    .prepare(
+      `
     SELECT
       s.id,
       s.project_id,
@@ -225,15 +249,23 @@ export function listSessions(): SessionSummary[] {
       s.message_count
     FROM sessions s
     ORDER BY s.updated_at DESC
-  `).all() as SessionSummaryRow[]
+  `,
+    )
+    .all() as SessionSummaryRow[]
 
   return rows.map(mapSessionSummaryRow)
 }
 
-export function listSessionsByProject(projectId: string, limit = 20, offset = 0): { sessions: SessionSummary[]; hasMore: boolean } {
+export function listSessionsByProject(
+  projectId: string,
+  limit = 20,
+  offset = 0,
+): { sessions: SessionSummary[]; hasMore: boolean } {
   const db = getDatabase()
 
-  const rows = db.prepare(`
+  const rows = db
+    .prepare(
+      `
     SELECT
       s.id,
       s.project_id,
@@ -251,7 +283,9 @@ export function listSessionsByProject(projectId: string, limit = 20, offset = 0)
     WHERE s.project_id = ?
     ORDER BY s.updated_at DESC
     LIMIT ? OFFSET ?
-  `).all(projectId, limit + 1, offset) as SessionSummaryRow[]
+  `,
+    )
+    .all(projectId, limit + 1, offset) as SessionSummaryRow[]
 
   const hasMore = rows.length > limit
   const sessions = rows.slice(0, limit).map(mapSessionSummaryRow)

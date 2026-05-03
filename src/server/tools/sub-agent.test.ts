@@ -12,7 +12,7 @@ describe('call_sub_agent tool', () => {
     expect(callSubAgentTool.name).toBe('call_sub_agent')
     expect(callSubAgentTool.definition.type).toBe('function')
     expect(callSubAgentTool.definition.function.name).toBe('call_sub_agent')
-    
+
     const params = callSubAgentTool.definition.function.parameters as any
     expect(params.properties.subAgentType.type).toBe('string')
     expect(params.required).toContain('subAgentType')
@@ -30,10 +30,7 @@ describe('call_sub_agent tool', () => {
       onProgress: vi.fn(),
     }
 
-    const result = await callSubAgentTool.execute(
-      { 'subAgentType': 'unknown_type' as any, 'prompt': 'test' },
-      context
-    )
+    const result = await callSubAgentTool.execute({ subAgentType: 'unknown_type' as any, prompt: 'test' }, context)
 
     expect(result.success).toBe(false)
     expect(result.error).toContain('Unknown sub-agent type')
@@ -51,10 +48,7 @@ describe('call_sub_agent tool', () => {
     }
 
     // Missing prompt
-    const result = await callSubAgentTool.execute(
-      { 'subAgentType': 'verifier' } as any,
-      context
-    )
+    const result = await callSubAgentTool.execute({ subAgentType: 'verifier' } as any, context)
 
     expect(result.success).toBe(false)
     expect(result.error).toContain('Missing required parameter')

@@ -45,13 +45,16 @@ describe('loadUserCommands', () => {
   it('should load valid .command.md files', async () => {
     const commandsDir = join(tempDir, 'commands')
     await mkdir(commandsDir, { recursive: true })
-    await writeFile(join(commandsDir, 'test.command.md'), `---
+    await writeFile(
+      join(commandsDir, 'test.command.md'),
+      `---
 id: test
 name: Test Command
 ---
 
 Do the test thing.
-`)
+`,
+    )
 
     const commands = await loadUserCommands(tempDir)
     expect(commands).toHaveLength(1)
@@ -63,12 +66,15 @@ Do the test thing.
   it('should skip files without an id', async () => {
     const commandsDir = join(tempDir, 'commands')
     await mkdir(commandsDir, { recursive: true })
-    await writeFile(join(commandsDir, 'bad.command.md'), `---
+    await writeFile(
+      join(commandsDir, 'bad.command.md'),
+      `---
 name: No ID
 ---
 
 Some prompt.
-`)
+`,
+    )
 
     const commands = await loadUserCommands(tempDir)
     expect(commands).toEqual([])
@@ -77,11 +83,14 @@ Some prompt.
   it('should skip files with empty prompt', async () => {
     const commandsDir = join(tempDir, 'commands')
     await mkdir(commandsDir, { recursive: true })
-    await writeFile(join(commandsDir, 'empty.command.md'), `---
+    await writeFile(
+      join(commandsDir, 'empty.command.md'),
+      `---
 id: empty
 name: Empty
 ---
-`)
+`,
+    )
 
     const commands = await loadUserCommands(tempDir)
     expect(commands).toEqual([])
@@ -91,13 +100,16 @@ name: Empty
     const commandsDir = join(tempDir, 'commands')
     await mkdir(commandsDir, { recursive: true })
     await writeFile(join(commandsDir, 'readme.md'), '# Not a command')
-    await writeFile(join(commandsDir, 'valid.command.md'), `---
+    await writeFile(
+      join(commandsDir, 'valid.command.md'),
+      `---
 id: valid
 name: Valid
 ---
 
 Prompt.
-`)
+`,
+    )
 
     const commands = await loadUserCommands(tempDir)
     expect(commands).toHaveLength(1)
@@ -109,34 +121,40 @@ describe('loadAllCommands', () => {
   it('should merge defaults and user commands', async () => {
     const commandsDir = join(tempDir, 'commands')
     await mkdir(commandsDir, { recursive: true })
-    await writeFile(join(commandsDir, 'test.command.md'), `---
+    await writeFile(
+      join(commandsDir, 'test.command.md'),
+      `---
 id: test
 name: Test Command
 ---
 
 Do the test thing.
-`)
+`,
+    )
 
     const defaults = await loadDefaultCommands()
     const commands = await loadAllCommands(tempDir)
     // Should have user command plus all defaults
-    expect(commands.some(c => c.metadata.id === 'test')).toBe(true)
+    expect(commands.some((c) => c.metadata.id === 'test')).toBe(true)
     expect(commands.length).toBeGreaterThanOrEqual(defaults.length + 1)
   })
 
   it('should give precedence to user commands over defaults', async () => {
     const commandsDir = join(tempDir, 'commands')
     await mkdir(commandsDir, { recursive: true })
-    await writeFile(join(commandsDir, 'custom.command.md'), `---
+    await writeFile(
+      join(commandsDir, 'custom.command.md'),
+      `---
 id: custom
 name: Custom Command
 ---
 
 Custom prompt.
-`)
+`,
+    )
 
     const commands = await loadAllCommands(tempDir)
-    const custom = commands.find(c => c.metadata.id === 'custom')
+    const custom = commands.find((c) => c.metadata.id === 'custom')
     expect(custom).toBeDefined()
     expect(custom!.prompt).toBe('Custom prompt.')
   })
@@ -154,9 +172,7 @@ describe('findCommandById', () => {
   })
 
   it('should return undefined for non-existent id', () => {
-    const commands: CommandDefinition[] = [
-      { metadata: { id: 'a', name: 'A' }, prompt: 'Do A' },
-    ]
+    const commands: CommandDefinition[] = [{ metadata: { id: 'a', name: 'A' }, prompt: 'Do A' }]
     expect(findCommandById('missing', commands)).toBeUndefined()
   })
 })
@@ -170,7 +186,7 @@ describe('CRUD', () => {
 
     await saveCommand(tempDir, command)
     const commands = await loadAllCommands(tempDir)
-    const loaded = commands.find(c => c.metadata.id === 'my_cmd')
+    const loaded = commands.find((c) => c.metadata.id === 'my_cmd')
 
     expect(loaded).toBeDefined()
     expect(loaded!.metadata.name).toBe('My Command')
@@ -188,7 +204,7 @@ describe('CRUD', () => {
     expect(result.success).toBe(true)
 
     const commands = await loadAllCommands(tempDir)
-    expect(commands.find(c => c.metadata.id === 'deleteme')).toBeUndefined()
+    expect(commands.find((c) => c.metadata.id === 'deleteme')).toBeUndefined()
   })
 
   it('should not delete built-in default commands', async () => {

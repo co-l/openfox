@@ -8,11 +8,22 @@ function buildStreamRequestObject(params: {
   toolChoice?: LLMCompletionRequest['toolChoice']
   disableThinking?: boolean | undefined
   signal?: AbortSignal | undefined
-  modelSettings?: { temperature?: number; topP?: number; topK?: number; maxTokens?: number; supportsVision?: boolean } | undefined
+  modelSettings?:
+    | { temperature?: number; topP?: number; topK?: number; maxTokens?: number; supportsVision?: boolean }
+    | undefined
   onVisionFallbackStart?: ((attachmentId: string, filename?: string) => void) | undefined
   onVisionFallbackDone?: ((attachmentId: string, description: string) => void) | undefined
 }): LLMCompletionRequest {
-  const { messages, tools, toolChoice, disableThinking, signal, modelSettings, onVisionFallbackStart, onVisionFallbackDone } = params
+  const {
+    messages,
+    tools,
+    toolChoice,
+    disableThinking,
+    signal,
+    modelSettings,
+    onVisionFallbackStart,
+    onVisionFallbackDone,
+  } = params
   const streamRequest: LLMCompletionRequest = {
     messages,
     ...(tools && { tools }),
@@ -28,7 +39,18 @@ function buildStreamRequestObject(params: {
 
 export function createStreamRequest(client: LLMClient, request: LLMCompletionRequest) {
   const { messages, tools, toolChoice, disableThinking, signal, onVisionFallbackStart, onVisionFallbackDone } = request
-  return streamWithSegments(client, buildStreamRequestObject({ messages, tools, toolChoice, disableThinking, signal, onVisionFallbackStart, onVisionFallbackDone }))
+  return streamWithSegments(
+    client,
+    buildStreamRequestObject({
+      messages,
+      tools,
+      toolChoice,
+      disableThinking,
+      signal,
+      onVisionFallbackStart,
+      onVisionFallbackDone,
+    }),
+  )
 }
 
 export type BuildStreamRequestOptions = Parameters<typeof buildStreamRequestObject>[0]

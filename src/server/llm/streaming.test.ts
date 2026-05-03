@@ -41,7 +41,7 @@ describe('streamWithSegments', () => {
     }
 
     // Should include tool_call_delta events
-    const toolDeltas = events.filter(e => e.type === 'tool_call_delta')
+    const toolDeltas = events.filter((e) => e.type === 'tool_call_delta')
     expect(toolDeltas).toHaveLength(3)
     expect(toolDeltas[0]).toMatchObject({ type: 'tool_call_delta', index: 0, name: 'read_file' })
     expect(toolDeltas[1]).toMatchObject({ type: 'tool_call_delta', index: 0, arguments: '{"path":"src/' })
@@ -54,10 +54,16 @@ describe('streamWithSegments', () => {
       { type: 'tool_call_delta', index: 1, id: 'call-2', name: 'glob' },
       { type: 'tool_call_delta', index: 0, arguments: '{"path":"a.ts"}' },
       { type: 'tool_call_delta', index: 1, arguments: '{"pattern":"*.ts"}' },
-      { type: 'done', response: { ...mockResponse, toolCalls: [
-        { id: 'call-1', name: 'read_file', arguments: { path: 'a.ts' } },
-        { id: 'call-2', name: 'glob', arguments: { pattern: '*.ts' } },
-      ]}},
+      {
+        type: 'done',
+        response: {
+          ...mockResponse,
+          toolCalls: [
+            { id: 'call-1', name: 'read_file', arguments: { path: 'a.ts' } },
+            { id: 'call-2', name: 'glob', arguments: { pattern: '*.ts' } },
+          ],
+        },
+      },
     ])
 
     const events: StreamEvent[] = []
@@ -67,13 +73,13 @@ describe('streamWithSegments', () => {
       events.push(event)
     }
 
-    const toolDeltas = events.filter(e => e.type === 'tool_call_delta')
+    const toolDeltas = events.filter((e) => e.type === 'tool_call_delta')
     expect(toolDeltas).toHaveLength(4)
-    
+
     // Check each index has its own events
-    const index0Events = toolDeltas.filter(e => e.type === 'tool_call_delta' && e.index === 0)
-    const index1Events = toolDeltas.filter(e => e.type === 'tool_call_delta' && e.index === 1)
-    
+    const index0Events = toolDeltas.filter((e) => e.type === 'tool_call_delta' && e.index === 0)
+    const index1Events = toolDeltas.filter((e) => e.type === 'tool_call_delta' && e.index === 1)
+
     expect(index0Events).toHaveLength(2)
     expect(index1Events).toHaveLength(2)
   })
@@ -91,7 +97,7 @@ describe('streamWithSegments', () => {
       events.push(event)
     }
 
-    const delta = events.find(e => e.type === 'tool_call_delta')
+    const delta = events.find((e) => e.type === 'tool_call_delta')
     expect(delta).toBeDefined()
     expect(delta).toMatchObject({ type: 'tool_call_delta', index: 0, name: 'read_file' })
     expect('id' in delta!).toBe(false)
@@ -105,7 +111,7 @@ describe('streamWithSegments', () => {
       finishReason: 'stop',
       usage: { promptTokens: 100, completionTokens: 10, totalTokens: 110 },
     }
-    
+
     const client = createMockClient([
       { type: 'thinking_delta', content: '\n\n' },
       { type: 'text_delta', content: 'Hello' },
@@ -142,7 +148,7 @@ describe('streamWithSegments', () => {
       finishReason: 'stop',
       usage: { promptTokens: 100, completionTokens: 10, totalTokens: 110 },
     }
-    
+
     const client = createMockClient([
       { type: 'text_delta', content: '  \n  ' },
       { type: 'thinking_delta', content: 'Thinking...' },
@@ -172,9 +178,7 @@ describe('streamWithSegments', () => {
   })
 
   it('aborts immediately on xml tool syntax and returns null', async () => {
-    const client = createMockClient([
-      { type: 'text_delta', content: '<tool_call>' },
-    ])
+    const client = createMockClient([{ type: 'text_delta', content: '<tool_call>' }])
 
     const events: StreamEvent[] = []
     const gen = streamWithSegments(client, { messages: [] })
@@ -193,9 +197,7 @@ describe('streamWithSegments', () => {
   })
 
   it('returns null on explicit error events and abort errors', async () => {
-    const errorClient = createMockClient([
-      { type: 'error', error: 'backend failed' },
-    ])
+    const errorClient = createMockClient([{ type: 'error', error: 'backend failed' }])
     const errorEvents: StreamEvent[] = []
     const errorGen = streamWithSegments(errorClient, { messages: [] })
     let errorResult: unknown = undefined
@@ -227,9 +229,7 @@ describe('streamWithSegments', () => {
   })
 
   it('returns null if the stream ends without a done response', async () => {
-    const client = createMockClient([
-      { type: 'text_delta', content: 'partial' },
-    ])
+    const client = createMockClient([{ type: 'text_delta', content: 'partial' }])
 
     const gen = streamWithSegments(client, { messages: [] })
     let result: unknown = undefined

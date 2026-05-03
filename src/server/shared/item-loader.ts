@@ -20,8 +20,8 @@ export async function pathExists(path: string): Promise<boolean> {
 
 export async function getDefaultIds(dir: string, extension: string): Promise<string[]> {
   try {
-    const files = (await readdir(dir)).filter(f => f.endsWith(extension))
-    return files.map(f => f.replace(extension, ''))
+    const files = (await readdir(dir)).filter((f) => f.endsWith(extension))
+    return files.map((f) => f.replace(extension, ''))
   } catch {
     return []
   }
@@ -39,14 +39,14 @@ export interface ItemLoaderOptions {
 
 export async function loadItemsFromDir<T extends ItemDefinition>(
   dir: string,
-  options: ItemLoaderOptions
+  options: ItemLoaderOptions,
 ): Promise<T[]> {
-  if (!await pathExists(dir)) {
+  if (!(await pathExists(dir))) {
     return []
   }
   let files: string[]
   try {
-    files = (await readdir(dir)).filter(f => f.endsWith(options.extension))
+    files = (await readdir(dir)).filter((f) => f.endsWith(options.extension))
   } catch {
     return []
   }

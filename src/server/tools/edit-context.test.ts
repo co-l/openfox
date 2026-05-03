@@ -26,20 +26,20 @@ line 20`
   describe('single replacement', () => {
     it('extracts 4 lines before and after with line numbers', () => {
       const result = extractEditContext(sampleFile, 'target line', 'new line')
-      
+
       expect(result.regions).toHaveLength(1)
       const region = result.regions[0]!
-      
+
       // Should have 4 lines of context before
       expect(region.beforeContext).toHaveLength(4)
       expect(region.beforeContext[0]).toEqual({ lineNumber: 7, content: 'line 7' })
       expect(region.beforeContext[3]).toEqual({ lineNumber: 10, content: 'line 10' })
-      
+
       // The edit itself
       expect(region.startLine).toBe(11)
       expect(region.oldContent).toBe('target line')
       expect(region.newContent).toBe('new line')
-      
+
       // Should have 4 lines of context after
       expect(region.afterContext).toHaveLength(4)
       expect(region.afterContext[0]).toEqual({ lineNumber: 12, content: 'line 12' })
@@ -51,10 +51,10 @@ line 20`
 second line
 third line`
       const result = extractEditContext(content, 'first line', 'new first')
-      
+
       expect(result.regions).toHaveLength(1)
       const region = result.regions[0]!
-      
+
       expect(region.beforeContext).toHaveLength(0)
       expect(region.startLine).toBe(1)
       expect(region.afterContext).toHaveLength(2)
@@ -66,10 +66,10 @@ third line`
 line 2
 last line`
       const result = extractEditContext(content, 'last line', 'new last')
-      
+
       expect(result.regions).toHaveLength(1)
       const region = result.regions[0]!
-      
+
       expect(region.beforeContext).toHaveLength(2)
       expect(region.afterContext).toHaveLength(0)
       expect(region.startLine).toBe(3)
@@ -84,12 +84,12 @@ after`
       const result = extractEditContext(
         content,
         'start of edit\nmiddle of edit\nend of edit',
-        'single replacement line'
+        'single replacement line',
       )
-      
+
       expect(result.regions).toHaveLength(1)
       const region = result.regions[0]!
-      
+
       expect(region.startLine).toBe(2)
       expect(region.endLine).toBe(4)
       expect(region.beforeContext).toHaveLength(1)
@@ -123,9 +123,9 @@ line 19
 line 20
 target
 line 22`
-      
+
       const result = extractEditContext(content, 'target', 'replaced', true)
-      
+
       expect(result.regions).toHaveLength(2)
       expect(result.regions[0]!.startLine).toBe(3)
       expect(result.regions[1]!.startLine).toBe(21)
@@ -143,22 +143,22 @@ line 7
 second target
 line 9
 line 10`
-      
+
       const result = extractEditContext(content, 'target', 'replaced', true)
-      
+
       // Should merge into a single region since contexts overlap
       expect(result.regions).toHaveLength(1)
       const region = result.regions[0]!
-      
+
       // The merged region should span both edits
       expect(region.edits).toHaveLength(2)
       expect(region.edits[0]!.startLine).toBe(3)
       expect(region.edits[1]!.startLine).toBe(8)
-      
+
       // Context before first edit
       expect(region.beforeContext).toHaveLength(2)
       expect(region.beforeContext[0]).toEqual({ lineNumber: 1, content: 'line 1' })
-      
+
       // Context after last edit
       expect(region.afterContext).toHaveLength(2)
       expect(region.afterContext[0]).toEqual({ lineNumber: 9, content: 'line 9' })
@@ -169,9 +169,9 @@ line 10`
 target
 target
 line 4`
-      
+
       const result = extractEditContext(content, 'target', 'replaced', true)
-      
+
       // Adjacent edits should be in one region
       expect(result.regions).toHaveLength(1)
       expect(result.regions[0]!.edits).toHaveLength(2)
@@ -192,7 +192,7 @@ line 4`
     it('handles edit that spans entire file', () => {
       const content = 'entire file'
       const result = extractEditContext(content, 'entire file', 'new content')
-      
+
       expect(result.regions).toHaveLength(1)
       expect(result.regions[0]!.beforeContext).toHaveLength(0)
       expect(result.regions[0]!.afterContext).toHaveLength(0)

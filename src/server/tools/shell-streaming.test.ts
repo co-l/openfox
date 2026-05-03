@@ -8,7 +8,7 @@ import { join } from 'node:path'
 describe('shell tool streaming', () => {
   let tempDir: string
   let context: ToolContext
-  
+
   // Mock sessionManager for test context
   const mockSessionManager = {
     recordFileRead: vi.fn(),
@@ -33,22 +33,17 @@ describe('shell tool streaming', () => {
     const onProgress = vi.fn()
     context.onProgress = onProgress
 
-    await runCommandTool.execute(
-      { command: 'echo "line1" && echo "line2"' },
-      context
-    )
+    await runCommandTool.execute({ command: 'echo "line1" && echo "line2"' }, context)
 
     // Should have called onProgress at least once for stdout
     expect(onProgress).toHaveBeenCalled()
-    
+
     // All calls should have [stdout] prefix
-    const stdoutCalls = onProgress.mock.calls.filter(
-      (call) => (call[0] as string).startsWith('[stdout]')
-    )
+    const stdoutCalls = onProgress.mock.calls.filter((call) => (call[0] as string).startsWith('[stdout]'))
     expect(stdoutCalls.length).toBeGreaterThan(0)
-    
+
     // Combined output should contain both lines
-    const allOutput = stdoutCalls.map(c => c[0]).join('')
+    const allOutput = stdoutCalls.map((c) => c[0]).join('')
     expect(allOutput).toContain('line1')
     expect(allOutput).toContain('line2')
   })
@@ -57,18 +52,13 @@ describe('shell tool streaming', () => {
     const onProgress = vi.fn()
     context.onProgress = onProgress
 
-    await runCommandTool.execute(
-      { command: 'echo "error message" >&2' },
-      context
-    )
+    await runCommandTool.execute({ command: 'echo "error message" >&2' }, context)
 
     // Should have called onProgress with stderr prefix
-    const stderrCalls = onProgress.mock.calls.filter(
-      (call) => (call[0] as string).startsWith('[stderr]')
-    )
+    const stderrCalls = onProgress.mock.calls.filter((call) => (call[0] as string).startsWith('[stderr]'))
     expect(stderrCalls.length).toBeGreaterThan(0)
-    
-    const allOutput = stderrCalls.map(c => c[0]).join('')
+
+    const allOutput = stderrCalls.map((c) => c[0]).join('')
     expect(allOutput).toContain('error message')
   })
 
@@ -76,23 +66,16 @@ describe('shell tool streaming', () => {
     const onProgress = vi.fn()
     context.onProgress = onProgress
 
-    await runCommandTool.execute(
-      { command: 'echo "out" && echo "err" >&2' },
-      context
-    )
+    await runCommandTool.execute({ command: 'echo "out" && echo "err" >&2' }, context)
 
-    const stdoutCalls = onProgress.mock.calls.filter(
-      (call) => (call[0] as string).startsWith('[stdout]')
-    )
-    const stderrCalls = onProgress.mock.calls.filter(
-      (call) => (call[0] as string).startsWith('[stderr]')
-    )
+    const stdoutCalls = onProgress.mock.calls.filter((call) => (call[0] as string).startsWith('[stdout]'))
+    const stderrCalls = onProgress.mock.calls.filter((call) => (call[0] as string).startsWith('[stderr]'))
 
     expect(stdoutCalls.length).toBeGreaterThan(0)
     expect(stderrCalls.length).toBeGreaterThan(0)
-    
-    expect(stdoutCalls.map(c => c[0]).join('')).toContain('out')
-    expect(stderrCalls.map(c => c[0]).join('')).toContain('err')
+
+    expect(stdoutCalls.map((c) => c[0]).join('')).toContain('out')
+    expect(stderrCalls.map((c) => c[0]).join('')).toContain('err')
   })
 
   it('streams output before completion for slow commands', async () => {
@@ -103,18 +86,13 @@ describe('shell tool streaming', () => {
     context.onProgress = onProgress
 
     const startTime = Date.now()
-    
+
     // Command that outputs, waits, then outputs again
-    await runCommandTool.execute(
-      { command: 'echo "first" && sleep 0.1 && echo "second"', timeout: 5000 },
-      context
-    )
-    
-    
-    
+    await runCommandTool.execute({ command: 'echo "first" && sleep 0.1 && echo "second"', timeout: 5000 }, context)
+
     // Should have received progress before command completed
     expect(onProgress).toHaveBeenCalled()
-    
+
     // The first progress call should have happened before the sleep completed
     // (total time > 100ms due to sleep, first call should be < 100ms from start)
     if (progressTimes.length > 0) {
@@ -129,23 +107,23 @@ describe('shell tool streaming', () => {
 
     // Create a script that outputs multiple lines
     const scriptPath = join(tempDir, 'multiline.sh')
-    await writeFile(scriptPath, `#!/bin/bash
+    await writeFile(
+      scriptPath,
+      `#!/bin/bash
 echo "line 1"
 echo "line 2"
 echo "line 3"
-`)
-    
-    await runCommandTool.execute(
-      { command: `bash ${scriptPath}` },
-      context
+`,
     )
+
+    await runCommandTool.execute({ command: `bash ${scriptPath}` }, context)
 
     // Get all stdout output
     const allOutput = onProgress.mock.calls
       .filter((call) => (call[0] as string).startsWith('[stdout]'))
-      .map(c => (c[0] as string).replace('[stdout] ', ''))
+      .map((c) => (c[0] as string).replace('[stdout] ', ''))
       .join('')
-    
+
     // Should contain all lines (may be in one chunk or multiple)
     expect(allOutput).toContain('line 1')
     expect(allOutput).toContain('line 2')
@@ -161,10 +139,7 @@ echo "line 3"
     }
 
     // Should not throw
-    const result = await runCommandTool.execute(
-      { command: 'echo "test"' },
-      plainContext
-    )
+    const result = await runCommandTool.execute({ command: 'echo "test"' }, plainContext)
 
     expect(result.success).toBe(true)
     expect(result.output).toContain('test')
@@ -182,11 +157,11 @@ echo "line 3"
     // Start command: echo immediately, then sleep
     const resultPromise = runCommandTool.execute(
       { command: 'echo "partial output"; sleep 4; echo "never reached"' },
-      contextWithSignal
+      contextWithSignal,
     )
 
     // Wait for echo to complete, then abort
-    await new Promise(r => setTimeout(r, 500))
+    await new Promise((r) => setTimeout(r, 500))
     controller.abort()
 
     const result = await resultPromise
@@ -219,7 +194,7 @@ echo "line 3"
       contextWithSignal,
     )
 
-    await new Promise(r => setTimeout(r, 300))
+    await new Promise((r) => setTimeout(r, 300))
     controller.abort()
 
     const result = await resultPromise

@@ -10,11 +10,13 @@ describe('mock llm runtime reminders', () => {
       messages: [
         {
           role: 'user',
-          content: 'Add criterion with ID "inspect-src": "Inspect the src directory and report what exists". Use add_criterion.',
+          content:
+            'Add criterion with ID "inspect-src": "Inspect the src directory and report what exists". Use add_criterion.',
         },
         {
           role: 'user',
-          content: '<system-reminder>\n# Plan Mode - System Reminder\n\nCRITICAL: Plan mode ACTIVE - you are in read-only phase.\n</system-reminder>',
+          content:
+            '<system-reminder>\n# Plan Mode - System Reminder\n\nCRITICAL: Plan mode ACTIVE - you are in read-only phase.\n</system-reminder>',
         },
       ],
     })
@@ -38,7 +40,8 @@ describe('mock llm runtime reminders', () => {
       messages: [
         {
           role: 'user',
-          content: 'Use get_criteria to show the current criteria.\n\n<system-reminder>\n# Plan Mode - System Reminder\n\nCRITICAL: Plan mode ACTIVE - you are in read-only phase.\n</system-reminder>',
+          content:
+            'Use get_criteria to show the current criteria.\n\n<system-reminder>\n# Plan Mode - System Reminder\n\nCRITICAL: Plan mode ACTIVE - you are in read-only phase.\n</system-reminder>',
         },
       ],
     })
@@ -60,11 +63,13 @@ describe('mock llm runtime reminders', () => {
       messages: [
         {
           role: 'user',
-          content: 'Add criterion with ID "trivial-pass": "This is a trivial test criterion that passes immediately". Use add_criterion.',
+          content:
+            'Add criterion with ID "trivial-pass": "This is a trivial test criterion that passes immediately". Use add_criterion.',
         },
         {
           role: 'user',
-          content: '<system-reminder>\n# Build Mode - System Reminder\n\nCRITICAL: Build mode ACTIVE - implementation is now allowed.\n</system-reminder>',
+          content:
+            '<system-reminder>\n# Build Mode - System Reminder\n\nCRITICAL: Build mode ACTIVE - implementation is now allowed.\n</system-reminder>',
         },
         {
           role: 'user',
@@ -93,7 +98,8 @@ describe('mock llm runtime reminders', () => {
       messages: [
         {
           role: 'user',
-          content: 'Create the file src/utils.ts with any content, then call complete_criterion for "file-created".\n\n<system-reminder>\n# Build Mode - System Reminder\n\nCRITICAL: Build mode ACTIVE - implementation is now allowed.\n</system-reminder>',
+          content:
+            'Create the file src/utils.ts with any content, then call complete_criterion for "file-created".\n\n<system-reminder>\n# Build Mode - System Reminder\n\nCRITICAL: Build mode ACTIVE - implementation is now allowed.\n</system-reminder>',
         },
       ],
     })
@@ -112,12 +118,19 @@ describe('mock llm runtime reminders', () => {
       messages: [
         {
           role: 'user',
-          content: 'Add criterion ID "get-test": "For testing get". Use criterion.\n\n<system-reminder>\n# Plan Mode - System Reminder\n</system-reminder>',
+          content:
+            'Add criterion ID "get-test": "For testing get". Use criterion.\n\n<system-reminder>\n# Plan Mode - System Reminder\n</system-reminder>',
         },
         {
           role: 'assistant',
           content: 'Added the criterion.',
-          toolCalls: [{ id: 'call-1', name: 'criterion', arguments: { action: 'add', id: 'get-test', description: 'For testing get' } }],
+          toolCalls: [
+            {
+              id: 'call-1',
+              name: 'criterion',
+              arguments: { action: 'add', id: 'get-test', description: 'For testing get' },
+            },
+          ],
         },
         {
           role: 'tool',
@@ -126,7 +139,8 @@ describe('mock llm runtime reminders', () => {
         },
         {
           role: 'user',
-          content: 'Use get_criteria to show the current criteria.\n\n<system-reminder>\n# Plan Mode - System Reminder\n</system-reminder>',
+          content:
+            'Use get_criteria to show the current criteria.\n\n<system-reminder>\n# Plan Mode - System Reminder\n</system-reminder>',
         },
       ],
     })
@@ -148,12 +162,19 @@ describe('mock llm runtime reminders', () => {
       messages: [
         {
           role: 'user',
-          content: 'Add criterion with ID "inspect-src": "Inspect the src directory and report what exists". Use add_criterion.',
+          content:
+            'Add criterion with ID "inspect-src": "Inspect the src directory and report what exists". Use add_criterion.',
         },
         {
           role: 'assistant',
           content: 'Added the criterion.',
-          toolCalls: [{ id: 'call-1', name: 'add_criterion', arguments: { id: 'inspect-src', description: 'Inspect the src directory and report what exists' } }],
+          toolCalls: [
+            {
+              id: 'call-1',
+              name: 'add_criterion',
+              arguments: { id: 'inspect-src', description: 'Inspect the src directory and report what exists' },
+            },
+          ],
         },
         {
           role: 'tool',
@@ -169,7 +190,14 @@ describe('mock llm runtime reminders', () => {
 
     expect(response.toolCalls).toEqual([
       expect.objectContaining({ name: 'read_file' }),
-      expect.objectContaining({ name: 'criterion', arguments: { action: 'complete', id: 'inspect-src', reason: 'Inspected the src directory and reported what exists' } }),
+      expect.objectContaining({
+        name: 'criterion',
+        arguments: {
+          action: 'complete',
+          id: 'inspect-src',
+          reason: 'Inspected the src directory and reported what exists',
+        },
+      }),
       expect.objectContaining({ name: 'step_done', arguments: {} }),
     ])
   })
@@ -181,12 +209,19 @@ describe('mock llm runtime reminders', () => {
       messages: [
         {
           role: 'user',
-          content: 'Add criterion with ID "inspect-src": "Inspect the src directory and report what exists". Use add_criterion.',
+          content:
+            'Add criterion with ID "inspect-src": "Inspect the src directory and report what exists". Use add_criterion.',
         },
         {
           role: 'assistant',
           content: 'Added the criterion.',
-          toolCalls: [{ id: 'call-1', name: 'add_criterion', arguments: { id: 'inspect-src', description: 'Inspect the src directory and report what exists' } }],
+          toolCalls: [
+            {
+              id: 'call-1',
+              name: 'add_criterion',
+              arguments: { id: 'inspect-src', description: 'Inspect the src directory and report what exists' },
+            },
+          ],
         },
         {
           role: 'tool',
@@ -201,8 +236,18 @@ describe('mock llm runtime reminders', () => {
     })
 
     expect(response.toolCalls).toEqual([
-      expect.objectContaining({ name: 'criterion', arguments: { action: 'pass', id: 'inspect-src', reason: 'Verified the src directory was inspected successfully' } }),
-      expect.objectContaining({ name: 'return_value', arguments: { summary: 'Terminalized verifier work for: inspect-src.' } }),
+      expect.objectContaining({
+        name: 'criterion',
+        arguments: {
+          action: 'pass',
+          id: 'inspect-src',
+          reason: 'Verified the src directory was inspected successfully',
+        },
+      }),
+      expect.objectContaining({
+        name: 'return_value',
+        arguments: { summary: 'Terminalized verifier work for: inspect-src.' },
+      }),
     ])
   })
 
@@ -218,7 +263,13 @@ describe('mock llm runtime reminders', () => {
         {
           role: 'assistant',
           content: 'Added the criterion.',
-          toolCalls: [{ id: 'call-1', name: 'add_criterion', arguments: { id: 'file-created', description: 'A new file utils.ts exists' } }],
+          toolCalls: [
+            {
+              id: 'call-1',
+              name: 'add_criterion',
+              arguments: { id: 'file-created', description: 'A new file utils.ts exists' },
+            },
+          ],
         },
         {
           role: 'tool',
@@ -233,8 +284,14 @@ describe('mock llm runtime reminders', () => {
     })
 
     expect(response.toolCalls).toEqual([
-      expect.objectContaining({ name: 'write_file', arguments: { path: 'src/utils.ts', content: 'export const created = true' } }),
-      expect.objectContaining({ name: 'criterion', arguments: { action: 'complete', id: 'file-created', reason: 'Created the requested file' } }),
+      expect.objectContaining({
+        name: 'write_file',
+        arguments: { path: 'src/utils.ts', content: 'export const created = true' },
+      }),
+      expect.objectContaining({
+        name: 'criterion',
+        arguments: { action: 'complete', id: 'file-created', reason: 'Created the requested file' },
+      }),
       expect.objectContaining({ name: 'step_done', arguments: {} }),
     ])
   })
@@ -251,7 +308,13 @@ describe('mock llm runtime reminders', () => {
         {
           role: 'assistant',
           content: 'Added the criterion.',
-          toolCalls: [{ id: 'call-1', name: 'add_criterion', arguments: { id: 'file-created', description: 'A new file utils.ts exists' } }],
+          toolCalls: [
+            {
+              id: 'call-1',
+              name: 'add_criterion',
+              arguments: { id: 'file-created', description: 'A new file utils.ts exists' },
+            },
+          ],
         },
         {
           role: 'tool',
@@ -265,7 +328,13 @@ describe('mock llm runtime reminders', () => {
         {
           role: 'assistant',
           content: 'Added the criterion.',
-          toolCalls: [{ id: 'call-2', name: 'add_criterion', arguments: { id: 'trivial-pass', description: 'Trivial pass criterion' } }],
+          toolCalls: [
+            {
+              id: 'call-2',
+              name: 'add_criterion',
+              arguments: { id: 'trivial-pass', description: 'Trivial pass criterion' },
+            },
+          ],
         },
         {
           role: 'tool',
@@ -280,9 +349,18 @@ describe('mock llm runtime reminders', () => {
     })
 
     expect(response.toolCalls).toEqual([
-      expect.objectContaining({ name: 'criterion', arguments: { action: 'pass', id: 'trivial-pass', reason: 'Verified successfully' } }),
-      expect.objectContaining({ name: 'criterion', arguments: { action: 'pass', id: 'file-created', reason: 'Verified the file was created successfully' } }),
-      expect.objectContaining({ name: 'return_value', arguments: { summary: 'Terminalized verifier work for: trivial-pass, file-created.' } }),
+      expect.objectContaining({
+        name: 'criterion',
+        arguments: { action: 'pass', id: 'trivial-pass', reason: 'Verified successfully' },
+      }),
+      expect.objectContaining({
+        name: 'criterion',
+        arguments: { action: 'pass', id: 'file-created', reason: 'Verified the file was created successfully' },
+      }),
+      expect.objectContaining({
+        name: 'return_value',
+        arguments: { summary: 'Terminalized verifier work for: trivial-pass, file-created.' },
+      }),
     ])
   })
 
@@ -298,7 +376,13 @@ describe('mock llm runtime reminders', () => {
         {
           role: 'assistant',
           content: 'Added the criterion.',
-          toolCalls: [{ id: 'call-1', name: 'add_criterion', arguments: { id: 'trivial-pass', description: 'Trivial pass criterion' } }],
+          toolCalls: [
+            {
+              id: 'call-1',
+              name: 'add_criterion',
+              arguments: { id: 'trivial-pass', description: 'Trivial pass criterion' },
+            },
+          ],
         },
         {
           role: 'tool',
@@ -307,13 +391,17 @@ describe('mock llm runtime reminders', () => {
         },
         {
           role: 'user',
-          content: 'Continue working on the acceptance criteria. Complete the trivial-pass criterion. 1 criteria remaining.',
+          content:
+            'Continue working on the acceptance criteria. Complete the trivial-pass criterion. 1 criteria remaining.',
         },
       ],
     })
 
     expect(response.toolCalls).toEqual([
-      expect.objectContaining({ name: 'criterion', arguments: { action: 'complete', id: 'trivial-pass', reason: 'Trivial criterion passes immediately' } }),
+      expect.objectContaining({
+        name: 'criterion',
+        arguments: { action: 'complete', id: 'trivial-pass', reason: 'Trivial criterion passes immediately' },
+      }),
       expect.objectContaining({ name: 'step_done', arguments: {} }),
     ])
   })
@@ -325,15 +413,22 @@ describe('mock llm runtime reminders', () => {
       messages: [
         {
           role: 'user',
-          content: 'First call get_criteria to see what needs to be done, then create src/test.ts and call complete_criterion for "test-file".',
+          content:
+            'First call get_criteria to see what needs to be done, then create src/test.ts and call complete_criterion for "test-file".',
         },
       ],
     })
 
     expect(response.toolCalls).toEqual([
       expect.objectContaining({ name: 'criterion', arguments: { action: 'get' } }),
-      expect.objectContaining({ name: 'write_file', arguments: { path: 'src/test.ts', content: 'export const created = true' } }),
-      expect.objectContaining({ name: 'criterion', arguments: { action: 'complete', id: 'test-file', reason: 'Created the requested file' } }),
+      expect.objectContaining({
+        name: 'write_file',
+        arguments: { path: 'src/test.ts', content: 'export const created = true' },
+      }),
+      expect.objectContaining({
+        name: 'criterion',
+        arguments: { action: 'complete', id: 'test-file', reason: 'Created the requested file' },
+      }),
       expect.objectContaining({ name: 'step_done', arguments: {} }),
     ])
   })
@@ -342,13 +437,15 @@ describe('mock llm runtime reminders', () => {
     const client = createMockLLMClient()
 
     const response = await client.complete({
-      messages: [{
-        role: 'user',
-        content: `Generate a concise, descriptive session name (max 50 characters) based on the user's message.
+      messages: [
+        {
+          role: 'user',
+          content: `Generate a concise, descriptive session name (max 50 characters) based on the user's message.
 Return ONLY the name, nothing else.
 
 User message: How do I set up a React project with TypeScript?`,
-      }],
+        },
+      ],
     })
 
     expect(response.toolCalls).toEqual([])

@@ -1,6 +1,6 @@
 /**
  * Provider Context Restart Tests
- * 
+ *
  * Tests that user-set context windows survive server restarts.
  */
 
@@ -59,27 +59,27 @@ describe('Provider Manager - Context Persistence', () => {
     }
 
     const pm = createProviderManager(config)
-    
+
     // First, verify the model is loaded correctly from config
     const providers = pm.getProviders()
-    const provider = providers.find(p => p.id === testProviderId)
+    const provider = providers.find((p) => p.id === testProviderId)
     expect(provider).toBeDefined()
-    
-    const userModel = provider?.models.find(m => m.id === userModelId)
+
+    const userModel = provider?.models.find((m) => m.id === userModelId)
     expect(userModel).toBeDefined()
     expect(userModel?.contextWindow).toBe(customContextWindow)
     expect(userModel?.source).toBe('user')
-    
+
     // ActivateProvider will try to fetch from backend (will fail in test)
     // but should still preserve user models even if fetch fails
     await pm.activateProvider(testProviderId)
-    
+
     // After activation, user context should still be preserved
     const updatedProviders = pm.getProviders()
-    const updatedProvider = updatedProviders.find(p => p.id === testProviderId)
-    
+    const updatedProvider = updatedProviders.find((p) => p.id === testProviderId)
+
     // User model should still exist with original context
-    const preservedModel = updatedProvider?.models.find(m => m.id === userModelId)
+    const preservedModel = updatedProvider?.models.find((m) => m.id === userModelId)
     expect(preservedModel).toBeDefined()
     expect(preservedModel?.contextWindow).toBe(customContextWindow)
     expect(preservedModel?.source).toBe('user')
@@ -116,11 +116,11 @@ describe('Provider Manager - Context Persistence', () => {
     const pm = createProviderManager(config)
     const result = await pm.activateProvider(testProviderId)
     expect(result.success).toBe(true)
-    
+
     const updatedProviders = pm.getProviders()
-    const updatedProvider = updatedProviders.find(p => p.id === testProviderId)
-    const model = updatedProvider?.models.find(m => m.id === modelId)
-    
+    const updatedProvider = updatedProviders.find((p) => p.id === testProviderId)
+    const model = updatedProvider?.models.find((m) => m.id === modelId)
+
     expect(model?.contextWindow).toBe(customContextWindow)
     expect(model?.source).toBe('user')
   })
@@ -152,13 +152,13 @@ describe('Provider Manager - Context Persistence', () => {
 
     const pm = createProviderManager(config)
     await pm.activateProvider(testProviderId)
-    
+
     const providers = pm.getProviders()
-    const provider = providers.find(p => p.id === testProviderId)
-    
-    const model1 = provider?.models.find(m => m.id === 'model1')
-    const model2 = provider?.models.find(m => m.id === 'model2')
-    
+    const provider = providers.find((p) => p.id === testProviderId)
+
+    const model1 = provider?.models.find((m) => m.id === 'model1')
+    const model2 = provider?.models.find((m) => m.id === 'model2')
+
     expect(model1?.contextWindow).toBe(customContext1)
     expect(model1?.source).toBe('user')
     expect(model2?.contextWindow).toBe(customContext2)

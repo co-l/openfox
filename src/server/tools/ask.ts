@@ -3,12 +3,15 @@ import type { Tool, ToolContext } from './types.js'
 import { createDeferred } from '../utils/async.js'
 
 // Store pending questions by call ID
-const pendingQuestions = new Map<string, {
-  promise: Promise<string>
-  resolve: (answer: string) => void
-  reject: (error: Error) => void
-  sessionId: string
-}>()
+const pendingQuestions = new Map<
+  string,
+  {
+    promise: Promise<string>
+    resolve: (answer: string) => void
+    reject: (error: Error) => void
+    sessionId: string
+  }
+>()
 
 export const askUserTool: Tool = {
   name: 'ask_user',
@@ -16,7 +19,8 @@ export const askUserTool: Tool = {
     type: 'function',
     function: {
       name: 'ask_user',
-      description: 'Pause execution and ask the user a question. Use this when you need clarification or user input before proceeding.',
+      description:
+        'Pause execution and ask the user a question. Use this when you need clarification or user input before proceeding.',
       parameters: {
         type: 'object',
         properties: {
@@ -29,27 +33,27 @@ export const askUserTool: Tool = {
       },
     },
   },
-  
+
   async execute(args: Record<string, unknown>, context: ToolContext): Promise<ToolResult> {
     const question = args['question'] as string
-    
+
     // Generate a unique ID for this question
     const callId = crypto.randomUUID()
-    
+
     // Create a deferred promise for the answer
     const deferred = createDeferred<string>()
     void deferred.promise.catch(() => {})
-    
+
     pendingQuestions.set(callId, {
       promise: deferred.promise,
       resolve: deferred.resolve,
       reject: deferred.reject,
       sessionId: context.sessionId,
     })
-    
+
     // The agent runner will see this and pause execution,
     // sending an event to the client with the question and callId
-    
+
     // This is a special case - we throw a custom error that the agent runner catches
     throw new AskUserInterrupt(callId, question)
   },
@@ -59,7 +63,7 @@ export const askUserTool: Tool = {
 export class AskUserInterrupt extends Error {
   constructor(
     public readonly callId: string,
-    public readonly question: string
+    public readonly question: string,
   ) {
     super('Ask user interrupt')
     this.name = 'AskUserInterrupt'
@@ -72,7 +76,7 @@ export function provideAnswer(callId: string, answer: string): boolean {
   if (!pending) {
     return false
   }
-  
+
   pending.resolve(answer)
   pendingQuestions.delete(callId)
   return true
@@ -84,7 +88,7 @@ export function cancelQuestion(callId: string, reason: string): boolean {
   if (!pending) {
     return false
   }
-  
+
   pending.reject(new Error(reason))
   pendingQuestions.delete(callId)
   return true

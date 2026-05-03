@@ -2,15 +2,16 @@ import type { InjectedFile, Provider, StatsIdentity } from '../../shared/types.j
 import type { LLMClientWithModel } from '../llm/client.js'
 import type { SessionManager } from '../session/index.js'
 import { getEventStore, getContextMessages, getCurrentContextWindowId } from '../events/index.js'
-import { getAllInstructions } from './instructions.js'
+import { getAllInstructions, toInjectedFiles } from './instructions.js'
 import { shouldCompact } from './compactor.js'
 import { COMPACTION_PROMPT } from '../chat/prompts.js'
-import { assembleAgentRequest, minimalMessagesToRequestContextMessages, type MinimalMessage, type RequestContextMessage } from '../chat/request-context.js'
 import {
-  TurnMetrics,
-  createMessageStartEvent,
-  createChatDoneEvent,
-} from '../chat/stream-pure.js'
+  assembleAgentRequest,
+  minimalMessagesToRequestContextMessages,
+  type MinimalMessage,
+  type RequestContextMessage,
+} from '../chat/request-context.js'
+import { TurnMetrics, createMessageStartEvent, createChatDoneEvent } from '../chat/stream-pure.js'
 import { consumeStreamWithToolLoop } from '../chat/stream-pure.js'
 import { loadAllAgentsDefault, findAgentById, getSubAgents } from '../agents/registry.js'
 import { getToolRegistryForAgent } from '../tools/index.js'
@@ -77,28 +78,28 @@ export async function maybeAutoCompactContext(options: ContextCompactionOptions)
   }
 }
 
-export async function performManualContextCompaction(options: ContextCompactionOptions & {
-  tokenCountAtClose: number
-}): Promise<void> {
+export async function performManualContextCompaction(
+  options: ContextCompactionOptions & {
+    tokenCountAtClose: number
+  },
+): Promise<void> {
   await performContextCompaction({
     ...options,
     trigger: 'manual',
   })
 }
 
-async function performContextCompaction(options: ContextCompactionOptions & {
-  tokenCountAtClose: number
-  trigger: 'auto' | 'manual'
-}): Promise<void> {
+async function performContextCompaction(
+  options: ContextCompactionOptions & {
+    tokenCountAtClose: number
+    trigger: 'auto' | 'manual'
+  },
+): Promise<void> {
   const { sessionManager, sessionId, llmClient, statsIdentity, signal, tokenCountAtClose, trigger } = options
   const eventStore = getEventStore()
   const session = sessionManager.requireSession(sessionId)
   const { content: instructions, files } = await getAllInstructions(session.workdir, session.projectId)
-  const injectedFiles: InjectedFile[] = files.map((file) => ({
-    path: file.path,
-    content: file.content ?? '',
-    source: file.source,
-  }))
+  const injectedFiles: InjectedFile[] = toInjectedFiles(files)
   const requestMessages = toRequestContextMessages(getContextMessages(sessionId))
 
   const config = getRuntimeConfig()
@@ -127,35 +128,42 @@ async function performContextCompaction(options: ContextCompactionOptions & {
   // Append compaction instruction as a system-reminder user message
   // (same pattern as planner/builder mode transitions — preserves cache prefix)
   const compactionReminder = `<system-reminder>\n${COMPACTION_PROMPT}\n</system-reminder>`
-  const llmMessages = [
-    ...assembledRequest.messages,
-    { role: 'user' as const, content: compactionReminder },
-  ]
+  const llmMessages = [...assembledRequest.messages, { role: 'user' as const, content: compactionReminder }]
 
   const compactPromptMsgId = crypto.randomUUID()
-  eventStore.append(sessionId, createMessageStartEvent(compactPromptMsgId, 'user', COMPACTION_PROMPT, {
-    ...(getCurrentWindowMessageOptions(sessionId) ?? {}),
-    isSystemGenerated: true,
-    messageKind: 'auto-prompt',
-    metadata: { type: 'compaction', name: 'Compaction', color: '#64748b' },
-  }))
+  eventStore.append(
+    sessionId,
+    createMessageStartEvent(compactPromptMsgId, 'user', COMPACTION_PROMPT, {
+      ...(getCurrentWindowMessageOptions(sessionId) ?? {}),
+      isSystemGenerated: true,
+      messageKind: 'auto-prompt',
+      metadata: { type: 'compaction', name: 'Compaction', color: '#64748b' },
+    }),
+  )
   eventStore.append(sessionId, { type: 'message.done', data: { messageId: compactPromptMsgId } })
 
   const assistantMsgId = crypto.randomUUID()
-  eventStore.append(sessionId, createMessageStartEvent(assistantMsgId, 'assistant', undefined, getCurrentWindowMessageOptions(sessionId)))
+  eventStore.append(
+    sessionId,
+    createMessageStartEvent(assistantMsgId, 'assistant', undefined, getCurrentWindowMessageOptions(sessionId)),
+  )
 
   const turnMetrics = new TurnMetrics()
 
   const compactionToolRegistry = {
-    execute: async (name: string, args: Record<string, unknown>, ctx: {
-      sessionId: string
-      workdir: string
-      signal?: AbortSignal
-      llmClient: LLMClientWithModel
-      statsIdentity: StatsIdentity
-      dangerLevel?: 'normal' | 'dangerous'
-      toolCallId: string
-    }) => {
+    execute: async (
+      name: string,
+      args: Record<string, unknown>,
+      ctx: {
+        sessionId: string
+        workdir: string
+        signal?: AbortSignal
+        llmClient: LLMClientWithModel
+        statsIdentity: StatsIdentity
+        dangerLevel?: 'normal' | 'dangerous'
+        toolCallId: string
+      },
+    ) => {
       return toolRegistry.execute(name, args, {
         ...ctx,
         sessionManager,

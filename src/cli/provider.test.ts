@@ -63,16 +63,18 @@ describe('provider commands', () => {
 
     it('adds second provider without changing active', () => {
       const config = {
-        providers: [{
-          id: 'first-id',
-          name: 'First',
-          url: 'http://localhost:8000/v1',
-  
-          backend: 'vllm' as const,
-          models: [],
-          isActive: true,
-          createdAt: new Date().toISOString(),
-        }],
+        providers: [
+          {
+            id: 'first-id',
+            name: 'First',
+            url: 'http://localhost:8000/v1',
+
+            backend: 'vllm' as const,
+            models: [],
+            isActive: true,
+            createdAt: new Date().toISOString(),
+          },
+        ],
         activeProviderId: 'first-id',
         server: { port: 10369, host: '127.0.0.1', openBrowser: true },
         logging: { level: 'info' as const },
@@ -97,16 +99,18 @@ describe('provider commands', () => {
 
     it('adds provider with isActive=true and updates existing providers', () => {
       const config = {
-        providers: [{
-          id: 'first-id',
-          name: 'First',
-          url: 'http://localhost:8000/v1',
-  
-          backend: 'vllm' as const,
-          models: [],
-          isActive: true,
-          createdAt: new Date().toISOString(),
-        }],
+        providers: [
+          {
+            id: 'first-id',
+            name: 'First',
+            url: 'http://localhost:8000/v1',
+
+            backend: 'vllm' as const,
+            models: [],
+            isActive: true,
+            createdAt: new Date().toISOString(),
+          },
+        ],
         activeProviderId: 'first-id',
         server: { port: 10369, host: '127.0.0.1', openBrowser: true },
         logging: { level: 'info' as const },
@@ -125,7 +129,7 @@ describe('provider commands', () => {
 
       expect(updated.providers).toHaveLength(2)
       expect(updated.providers[0]?.isActive).toBe(false) // First deactivated
-      expect(updated.providers[1]?.isActive).toBe(true)  // Second is active
+      expect(updated.providers[1]?.isActive).toBe(true) // Second is active
       expect(updated.activeProviderId).toBe(updated.providers[1]?.id)
     })
   })
@@ -138,7 +142,7 @@ describe('provider commands', () => {
             id: 'first-id',
             name: 'First',
             url: 'http://localhost:8000/v1',
-    
+
             backend: 'vllm' as const,
             models: [],
             isActive: true,
@@ -148,7 +152,7 @@ describe('provider commands', () => {
             id: 'second-id',
             name: 'Second',
             url: 'http://localhost:11434',
-    
+
             backend: 'ollama' as const,
             models: [],
             isActive: false,
@@ -177,7 +181,7 @@ describe('provider commands', () => {
             id: 'first-id',
             name: 'First',
             url: 'http://localhost:8000/v1',
-    
+
             backend: 'vllm' as const,
             models: [],
             isActive: true,
@@ -187,7 +191,7 @@ describe('provider commands', () => {
             id: 'second-id',
             name: 'Second',
             url: 'http://localhost:11434',
-    
+
             backend: 'ollama' as const,
             models: [],
             isActive: false,
@@ -210,16 +214,18 @@ describe('provider commands', () => {
 
     it('clears activeProviderId when last provider is removed', () => {
       const config = {
-        providers: [{
-          id: 'only-id',
-          name: 'Only',
-          url: 'http://localhost:8000/v1',
-  
-          backend: 'vllm' as const,
-          models: [],
-          isActive: true,
-          createdAt: new Date().toISOString(),
-        }],
+        providers: [
+          {
+            id: 'only-id',
+            name: 'Only',
+            url: 'http://localhost:8000/v1',
+
+            backend: 'vllm' as const,
+            models: [],
+            isActive: true,
+            createdAt: new Date().toISOString(),
+          },
+        ],
         activeProviderId: 'only-id',
         server: { port: 10369, host: '127.0.0.1', openBrowser: true },
         logging: { level: 'info' as const },
@@ -242,7 +248,7 @@ describe('provider commands', () => {
             id: 'first-id',
             name: 'First',
             url: 'http://localhost:8000/v1',
-    
+
             backend: 'vllm' as const,
             models: [],
             isActive: true,
@@ -252,7 +258,7 @@ describe('provider commands', () => {
             id: 'second-id',
             name: 'Second',
             url: 'http://localhost:11434',
-    
+
             backend: 'ollama' as const,
             models: [],
             isActive: false,
@@ -275,16 +281,18 @@ describe('provider commands', () => {
 
     it('returns unchanged config for non-existent provider', () => {
       const config = {
-        providers: [{
-          id: 'first-id',
-          name: 'First',
-          url: 'http://localhost:8000/v1',
-  
-          backend: 'vllm' as const,
-          models: [],
-          isActive: true,
-          createdAt: new Date().toISOString(),
-        }],
+        providers: [
+          {
+            id: 'first-id',
+            name: 'First',
+            url: 'http://localhost:8000/v1',
+
+            backend: 'vllm' as const,
+            models: [],
+            isActive: true,
+            createdAt: new Date().toISOString(),
+          },
+        ],
         activeProviderId: 'first-id',
         defaultModelSelection: undefined,
         activeWorkflowId: undefined,
@@ -309,7 +317,7 @@ describe('provider commands', () => {
             id: 'first-id',
             name: 'First',
             url: 'http://localhost:8000/v1',
-    
+
             backend: 'vllm' as const,
             models: [],
             isActive: true,
@@ -348,16 +356,18 @@ describe('provider commands', () => {
   describe('provider persistence', () => {
     it('saves and loads providers correctly', async () => {
       const config = {
-        providers: [{
-          id: 'test-id',
-          name: 'Test Provider',
-          url: 'http://localhost:8000/v1',
-  
-          backend: 'vllm' as const,
-          models: [],
-          isActive: true,
-          createdAt: new Date().toISOString(),
-        }],
+        providers: [
+          {
+            id: 'test-id',
+            name: 'Test Provider',
+            url: 'http://localhost:8000/v1',
+
+            backend: 'vllm' as const,
+            models: [],
+            isActive: true,
+            createdAt: new Date().toISOString(),
+          },
+        ],
         activeProviderId: 'test-id',
         server: { port: 10369, host: '127.0.0.1', openBrowser: true },
         logging: { level: 'info' as const },

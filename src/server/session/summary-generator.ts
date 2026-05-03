@@ -16,7 +16,8 @@ import type { RequestContextMessage } from '../chat/request-context.js'
 // Constants
 // ============================================================================
 
-const SUMMARY_INSTRUCTION = 'Write a 2-3 sentence summary of what the user wants to accomplish. Focus on WHAT and WHY, not HOW. Output only the summary, no preamble.'
+const SUMMARY_INSTRUCTION =
+  'Write a 2-3 sentence summary of what the user wants to accomplish. Focus on WHAT and WHY, not HOW. Output only the summary, no preamble.'
 
 export interface GenerateSessionSummaryOptions {
   messages: Array<{ role: 'user' | 'assistant'; content: string }>
@@ -39,17 +40,15 @@ export interface GenerateSessionSummaryResult {
  * Disables thinking output for minimal latency.
  */
 export async function generateSessionSummary(
-  options: GenerateSessionSummaryOptions
+  options: GenerateSessionSummaryOptions,
 ): Promise<GenerateSessionSummaryResult> {
   const { messages, llmClient, workdir, customInstructions, skills } = options
-  
+
   try {
-    const messagesText = messages
-      .map(m => `${m.role}: ${m.content}`)
-      .join('\n')
-    
+    const messagesText = messages.map((m) => `${m.role}: ${m.content}`).join('\n')
+
     const userPrompt = `${SUMMARY_INSTRUCTION}\n\n## Conversation History\n${messagesText}\n\n## Summary`
-    
+
     const contextMessages: RequestContextMessage[] = [
       {
         role: 'user',
@@ -57,7 +56,7 @@ export async function generateSessionSummary(
         source: 'history',
       },
     ]
-    
+
     const mockAgentDef: AgentDefinition = {
       metadata: {
         id: 'summary',
@@ -68,7 +67,7 @@ export async function generateSessionSummary(
       },
       prompt: SUMMARY_INSTRUCTION,
     }
-    
+
     const assembledRequest = assembleAgentRequest({
       agentDef: mockAgentDef,
       workdir,
@@ -80,8 +79,8 @@ export async function generateSessionSummary(
       toolChoice: 'none',
       disableThinking: true,
     })
-    
-    const llmMessages: LLMMessage[] = assembledRequest.messages.map(msg => ({
+
+    const llmMessages: LLMMessage[] = assembledRequest.messages.map((msg) => ({
       role: msg.role as 'system' | 'user' | 'assistant' | 'tool',
       content: msg.content,
     }))
@@ -95,7 +94,7 @@ export async function generateSessionSummary(
 
     // Clean up the response: trim whitespace
     let summary = response.content.trim()
-    
+
     // Truncate to 500 characters if needed
     if (summary.length > 500) {
       summary = summary.substring(0, 497) + '...'

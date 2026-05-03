@@ -26,10 +26,10 @@ import {
 // Test fixtures directory - use a unique subdir that's NOT in /tmp's allowed root
 // We create workdir INSIDE /tmp but treat sibling tests specially
 const TEST_DIR = join(tmpdir(), 'openfox-path-security-test')
-const WORKDIR = join(TEST_DIR, 'project', 'workdir')  // Nested to allow sibling tests
-const OUTSIDE_DIR = join(TEST_DIR, 'project', 'outside')  // Sibling of workdir but still in /tmp
+const WORKDIR = join(TEST_DIR, 'project', 'workdir') // Nested to allow sibling tests
+const OUTSIDE_DIR = join(TEST_DIR, 'project', 'outside') // Sibling of workdir but still in /tmp
 // For true outside-workdir tests, we use paths that aren't in /tmp
-const TRULY_OUTSIDE = '/var/lib'  // This is outside both workdir AND /tmp
+const TRULY_OUTSIDE = '/var/lib' // This is outside both workdir AND /tmp
 
 describe('path-security', () => {
   beforeEach(async () => {
@@ -38,7 +38,7 @@ describe('path-security', () => {
     await mkdir(OUTSIDE_DIR, { recursive: true })
     await mkdir(join(WORKDIR, 'subdir'), { recursive: true })
     await writeFile(join(WORKDIR, 'file.txt'), 'test')
-    await writeFile(join(OUTSIDE_DIR, 'secret.txt'), 'secret')  // For symlink tests (in /tmp, so creatable)
+    await writeFile(join(OUTSIDE_DIR, 'secret.txt'), 'secret') // For symlink tests (in /tmp, so creatable)
   })
 
   afterEach(async () => {
@@ -254,7 +254,7 @@ describe('path-security', () => {
         // Use a hypothetical path - the logic should still work
         const fakeWorkdir = '/home/user/project'
         const evilPath = '/home/user/project-evil/file.txt'
-        
+
         const result = await isPathWithinSandbox(evilPath, fakeWorkdir)
         expect(result.allowed).toBe(false)
       })
@@ -290,7 +290,7 @@ describe('path-security', () => {
 
       it('deduplicates repeated paths', () => {
         const paths = extractAbsolutePathsFromCommand('cat /etc/passwd && cat /etc/passwd')
-        expect(paths.filter(p => p === '/etc/passwd')).toHaveLength(1)
+        expect(paths.filter((p) => p === '/etc/passwd')).toHaveLength(1)
       })
     })
 
@@ -431,7 +431,8 @@ describe('path-security', () => {
       })
 
       it('handles cd + sed -i with regex-like quoted strings', () => {
-        const cmd = 'cd /home/conrad/dev/openfox && sed -i "s/it(\'updates mode, phase, running state, and summary while emitting events\'/it(\'updates phase, running state, and summary while emitting events\'/" src/server/session/manager.test.ts'
+        const cmd =
+          "cd /home/conrad/dev/openfox && sed -i \"s/it('updates mode, phase, running state, and summary while emitting events'/it('updates phase, running state, and summary while emitting events'/\" src/server/session/manager.test.ts"
         const paths = extractAbsolutePathsFromCommand(cmd)
         expect(paths).toContain('/home/conrad/dev/openfox')
         expect(paths).not.toContain('/it(')
@@ -582,9 +583,9 @@ describe('path-security', () => {
 
       it('separates sensitive and denied paths correctly', async () => {
         const paths = [
-          join(WORKDIR, '.env'),        // sensitive, in workdir
-          join(WORKDIR, 'file.ts'),     // normal, in workdir
-          '/etc/passwd',                 // denied, not sensitive
+          join(WORKDIR, '.env'), // sensitive, in workdir
+          join(WORKDIR, 'file.ts'), // normal, in workdir
+          '/etc/passwd', // denied, not sensitive
         ]
         const result = await checkPathsAccess(paths, WORKDIR)
         expect(result.needsConfirmation).toBe(true)
@@ -613,7 +614,7 @@ describe('path-security', () => {
         'call-123',
         ['/etc/passwd', '/var/log'],
         'run_command',
-        '/home/user/project'
+        '/home/user/project',
       )
 
       expect(interrupt.callId).toBe('call-123')
@@ -636,25 +637,18 @@ describe('path-security', () => {
 
   describe('PathAccessDeniedError', () => {
     it('creates error with correct properties', () => {
-      const error = new PathAccessDeniedError(
-        ['/etc/passwd'],
-        'read_file'
-      )
+      const error = new PathAccessDeniedError(['/etc/passwd'], 'read_file')
 
       expect(error.paths).toEqual(['/etc/passwd'])
       expect(error.tool).toBe('read_file')
-      expect(error.reason).toBe('outside_workdir')  // default
+      expect(error.reason).toBe('outside_workdir') // default
       expect(error.name).toBe('PathAccessDeniedError')
       expect(error.message).toContain('/etc/passwd')
       expect(error.message).toContain('User denied')
     })
 
     it('includes reason in message for sensitive files', () => {
-      const error = new PathAccessDeniedError(
-        ['.env'],
-        'read_file',
-        'sensitive_file'
-      )
+      const error = new PathAccessDeniedError(['.env'], 'read_file', 'sensitive_file')
 
       expect(error.reason).toBe('sensitive_file')
       expect(error.message).toContain('sensitive files')
@@ -662,10 +656,7 @@ describe('path-security', () => {
     })
 
     it('includes all paths in message', () => {
-      const error = new PathAccessDeniedError(
-        ['/etc/passwd', '/var/log/syslog'],
-        'run_command'
-      )
+      const error = new PathAccessDeniedError(['/etc/passwd', '/var/log/syslog'], 'run_command')
 
       expect(error.message).toContain('/etc/passwd')
       expect(error.message).toContain('/var/log/syslog')
@@ -768,15 +759,17 @@ describe('path-security', () => {
 
       await waitForPending('call-sensitive')
       expect(hasPendingPathConfirmation('call-sensitive')).toBe(true)
-      expect(onEvent).toHaveBeenCalledWith(expect.objectContaining({
-        type: 'chat.path_confirmation',
-        payload: expect.objectContaining({
-          callId: 'call-sensitive',
-          tool: 'read_file',
-          paths: [sensitivePath],
-          reason: 'sensitive_file',
+      expect(onEvent).toHaveBeenCalledWith(
+        expect.objectContaining({
+          type: 'chat.path_confirmation',
+          payload: expect.objectContaining({
+            callId: 'call-sensitive',
+            tool: 'read_file',
+            paths: [sensitivePath],
+            reason: 'sensitive_file',
+          }),
         }),
-      }))
+      )
       providePathConfirmation('call-sensitive', true)
       await expect(approvedPromise).resolves.toBeUndefined()
       expect(isPathAllowed('session-sensitive', sensitivePath)).toBe(true)
@@ -796,10 +789,12 @@ describe('path-security', () => {
         tool: 'run_command',
         paths: ['/etc/.env'],
       })
-      expect(onEvent).toHaveBeenLastCalledWith(expect.objectContaining({
-        type: 'chat.path_confirmation',
-        payload: expect.objectContaining({ reason: 'both', paths: ['/etc/.env'] }),
-      }))
+      expect(onEvent).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          type: 'chat.path_confirmation',
+          payload: expect.objectContaining({ reason: 'both', paths: ['/etc/.env'] }),
+        }),
+      )
       providePathConfirmation('call-both', false)
       await deniedAssertion
     })
@@ -1103,20 +1098,22 @@ describe('path-security', () => {
         'run_command',
         onEvent,
         'dangerous',
-        'git commit --no-verify -m "skip hooks"'
+        'git commit --no-verify -m "skip hooks"',
       )
 
       await waitForPending('call-git')
       expect(hasPendingPathConfirmation('call-git')).toBe(true)
-      expect(onEvent).toHaveBeenCalledWith(expect.objectContaining({
-        type: 'chat.path_confirmation',
-        payload: expect.objectContaining({
-          callId: 'call-git',
-          tool: 'run_command',
-          paths: ['git --no-verify detected'],
-          reason: 'git_no_verify',
+      expect(onEvent).toHaveBeenCalledWith(
+        expect.objectContaining({
+          type: 'chat.path_confirmation',
+          payload: expect.objectContaining({
+            callId: 'call-git',
+            tool: 'run_command',
+            paths: ['git --no-verify detected'],
+            reason: 'git_no_verify',
+          }),
         }),
-      }))
+      )
       providePathConfirmation('call-git', true)
       await expect(promise).resolves.toBeUndefined()
     })
@@ -1138,7 +1135,7 @@ describe('path-security', () => {
         'run_command',
         onEvent,
         'dangerous',
-        'git push --no-verify'
+        'git push --no-verify',
       )
 
       await waitForPending('call-deny')
@@ -1162,7 +1159,7 @@ describe('path-security', () => {
         'run_command',
         onEvent,
         'dangerous',
-        'git commit -m "normal commit"'
+        'git commit -m "normal commit"',
       )
 
       await new Promise<void>((resolve) => setTimeout(resolve, 50))

@@ -9,10 +9,7 @@ import type {
 import type { LLMToolDefinition } from '../llm/types.js'
 import type { SkillMetadata } from '../skills/types.js'
 import type { AgentDefinition } from '../agents/types.js'
-import {
-  buildTopLevelSystemPrompt,
-  buildSubAgentSystemPrompt,
-} from './prompts.js'
+import { buildTopLevelSystemPrompt, buildSubAgentSystemPrompt } from './prompts.js'
 
 export type RequestContextMessage = PromptContextMessage
 
@@ -24,11 +21,20 @@ export type MinimalMessage = {
   attachments?: Attachment[]
 }
 
-export function minimalMessagesToRequestContextMessages(messages: MinimalMessage[], source: 'history' | 'runtime' = 'history'): RequestContextMessage[] {
+export function minimalMessagesToRequestContextMessages(
+  messages: MinimalMessage[],
+  source: 'history' | 'runtime' = 'history',
+): RequestContextMessage[] {
   return messages.map((message) => minimalMessageToRequestContextMessage(message, source))
 }
 
-function spreadMessageProps<T extends { toolCalls?: { id: string; name: string; arguments: Record<string, unknown> }[]; toolCallId?: string; attachments?: Attachment[] }>(message: T) {
+function spreadMessageProps<
+  T extends {
+    toolCalls?: { id: string; name: string; arguments: Record<string, unknown> }[]
+    toolCallId?: string
+    attachments?: Attachment[]
+  },
+>(message: T) {
   return {
     ...(message.toolCalls ? { toolCalls: message.toolCalls } : {}),
     ...(message.toolCallId ? { toolCallId: message.toolCallId } : {}),
@@ -36,7 +42,10 @@ function spreadMessageProps<T extends { toolCalls?: { id: string; name: string; 
   }
 }
 
-export function minimalMessageToRequestContextMessage(message: MinimalMessage, source: 'history' | 'runtime' = 'history'): RequestContextMessage {
+export function minimalMessageToRequestContextMessage(
+  message: MinimalMessage,
+  source: 'history' | 'runtime' = 'history',
+): RequestContextMessage {
   return {
     role: message.role,
     content: message.content,
@@ -76,7 +85,7 @@ function getTriggerUserMessage(messages: RequestContextMessage[]): string {
   const stripRuntimeReminders = (content: string): string => {
     return content.replace(/\n*<system-reminder>[\s\S]*<\/system-reminder>\s*/gi, '').trim()
   }
-  
+
   for (let index = messages.length - 1; index >= 0; index -= 1) {
     const message = messages[index]
     if (message?.role === 'user' && message.source === 'history') {
@@ -130,14 +139,14 @@ function createAssemblyResult(input: {
   skills?: SkillMetadata[]
 }): AssemblyResult {
   const triggerUserMessage = getTriggerUserMessage(input.messages)
-  
+
   // Filter out runtime messages (auto-prompts) from messages sent to LLM
   // These are only for internal tracking, not part of conversation history
-  const messagesForLLM = input.messages.filter(m => m.source !== 'runtime')
+  const messagesForLLM = input.messages.filter((m) => m.source !== 'runtime')
 
   return {
     systemPrompt: input.systemPrompt,
-    messages: messagesForLLM.map(message => messageToMinimal(message)),
+    messages: messagesForLLM.map((message) => messageToMinimal(message)),
     promptContext: createPromptContext({
       ...input,
       userMessage: triggerUserMessage,
@@ -164,7 +173,7 @@ export interface AgentAssemblyInput extends BaseAssemblyInput {
  * Sub-agents (subagent: true):
  *   - System prompt = buildSubAgentSystemPrompt() (base + agent body)
  *   - No runtime reminder
- * 
+ *
  * NOTE: Runtime reminders are now injected by the orchestrator only on mode switch,
  * not on every turn. This preserves vLLM prefix cache by keeping historical messages
  * identical across turns within the same mode.
@@ -189,12 +198,7 @@ export function assembleAgentRequest(input: AgentAssemblyInput): AssemblyResult 
   const { agentDef, subAgentDefs, ...baseInput } = input
 
   if (agentDef.metadata.subagent) {
-    const systemPrompt = buildSubAgentSystemPrompt(
-      baseInput.workdir,
-      agentDef,
-      baseInput.skills,
-      baseInput.modelName,
-    )
+    const systemPrompt = buildSubAgentSystemPrompt(baseInput.workdir, agentDef, baseInput.skills, baseInput.modelName)
     return buildAssemblyInput(systemPrompt, baseInput)
   }
 

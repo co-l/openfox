@@ -43,18 +43,18 @@ describe('edit_file corruption bug reproduction', () => {
   beforeEach(async () => {
     initDatabase(createTestConfig())
     initEventStore(getDatabase())
-    
+
     testDir = join(tmpdir(), `openfox-edit-corruption-test-${Date.now()}`)
     await rm(testDir, { recursive: true, force: true })
     await mkdir(testDir, { recursive: true })
-    
+
     sessionManager = new SessionManager(mockProviderManager as any)
     const { createProject } = await import('../db/projects.js')
     const project = createProject('test-project', testDir)
     const session = sessionManager.createSession(project.id)
     sessionId = session.id
     context = createTestContext(sessionManager, sessionId, testDir)
-    
+
     testFile = join(testDir, 'compare.html')
   })
 
@@ -132,7 +132,7 @@ describe('edit_file corruption bug reproduction', () => {
 
     await writeFile(testFile, originalContent, 'utf-8')
     await readFileTool.execute({ path: 'compare.html' }, context)
-    
+
     // First edit - matches session seq 900
     const firstOldString = `<div class="power-card">
             <h3>System Cost</h3>
@@ -191,11 +191,11 @@ describe('edit_file corruption bug reproduction', () => {
 
     const result1 = await editFileTool.execute(
       { path: 'compare.html', old_string: firstOldString, new_string: firstNewString },
-      context
+      context,
     )
-    
+
     expect(result1.success).toBe(true)
-    
+
     // Second edit - matches session seq 982
     const secondOldString = `document.getElementById('priceRatio').textContent = (rtxJson.price_dollars / sparkJson.price_dollars).toFixed(1) + 'x'
 
@@ -216,17 +216,17 @@ describe('edit_file corruption bug reproduction', () => {
 
     const result2 = await editFileTool.execute(
       { path: 'compare.html', old_string: secondOldString, new_string: secondNewString },
-      context
+      context,
     )
-    
+
     expect(result2.success).toBe(true)
-    
+
     // The bug manifests on the second edit - file gets corrupted with multiple </html> tags
     // This happens even though the edit reports success
     const { readFile } = await import('node:fs/promises')
     const content2 = await readFile(testFile, 'utf-8')
     const htmlCount2 = (content2.match(/<\/html>/g) || []).length
-    
+
     // BUG: htmlCount2 is 5 instead of 1 - the second edit silently corrupted the file
     expect(htmlCount2).toBe(1)
     expect(content2.trim().endsWith('</html>')).toBe(true)

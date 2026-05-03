@@ -61,7 +61,7 @@ describe('SubAgentRegistry (via agent registry)', () => {
     const all = getSubAgents(agents)
 
     expect(all.length).toBeGreaterThanOrEqual(3)
-    const ids = all.map(a => a.metadata.id)
+    const ids = all.map((a) => a.metadata.id)
     expect(ids).toContain('verifier')
     expect(ids).toContain('code_reviewer')
     expect(ids).toContain('explorer')

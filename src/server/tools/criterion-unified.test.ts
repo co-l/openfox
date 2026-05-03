@@ -29,10 +29,10 @@ function createContext(overrides: Record<string, unknown> = {}) {
         const actualId = criteria.length.toString()
         return { criteria: [...criteria, { ...criterion, id: actualId }], actualId }
       }),
-      updateCriterionFull: vi.fn((_sessionId, id, updates) => createCriteria().map(c => (
-        c.id === id ? { ...c, ...updates } : c
-      ))),
-      removeCriterion: vi.fn((_sessionId, id) => createCriteria().filter(c => c.id !== id)),
+      updateCriterionFull: vi.fn((_sessionId, id, updates) =>
+        createCriteria().map((c) => (c.id === id ? { ...c, ...updates } : c)),
+      ),
+      removeCriterion: vi.fn((_sessionId, id) => createCriteria().filter((c) => c.id !== id)),
       updateCriterionStatus: vi.fn(),
       addCriterionAttempt: vi.fn(),
       ...overrides,
@@ -58,7 +58,10 @@ describe('criterion tool', () => {
     it('rejects add without description', async () => {
       const context = createContext()
       const result = await criterionTool.execute({ action: 'add', id: 'test' }, context as never)
-      expect(result).toMatchObject({ success: false, error: expect.stringContaining('Missing required field: description') })
+      expect(result).toMatchObject({
+        success: false,
+        error: expect.stringContaining('Missing required field: description'),
+      })
     })
 
     it('rejects update without id', async () => {
@@ -70,7 +73,10 @@ describe('criterion tool', () => {
     it('rejects update without description', async () => {
       const context = createContext()
       const result = await criterionTool.execute({ action: 'update', id: 'tests-pass' }, context as never)
-      expect(result).toMatchObject({ success: false, error: expect.stringContaining('Missing required field: description') })
+      expect(result).toMatchObject({
+        success: false,
+        error: expect.stringContaining('Missing required field: description'),
+      })
     })
 
     it('rejects remove without id', async () => {
@@ -135,7 +141,13 @@ describe('criterion tool', () => {
 
     it('increments id for multiple criteria', async () => {
       const context = createContext({
-        addCriterion: vi.fn(() => ({ criteria: [...createCriteria(), { id: '0', description: 'First', status: { type: 'pending' as const }, attempts: [] }], actualId: '1' })),
+        addCriterion: vi.fn(() => ({
+          criteria: [
+            ...createCriteria(),
+            { id: '0', description: 'First', status: { type: 'pending' as const }, attempts: [] },
+          ],
+          actualId: '1',
+        })),
       })
       const result = await criterionTool.execute({ action: 'add', description: 'Second' }, context as never)
       expect(context.sessionManager.addCriterion).toHaveBeenCalledWith(
@@ -157,8 +169,13 @@ describe('criterion tool', () => {
   describe('update action', () => {
     it('updates a criterion', async () => {
       const context = createContext()
-      const result = await criterionTool.execute({ action: 'update', id: '0', description: 'Updated desc' }, context as never)
-      expect(context.sessionManager.updateCriterionFull).toHaveBeenCalledWith('session-1', '0', { description: 'Updated desc' })
+      const result = await criterionTool.execute(
+        { action: 'update', id: '0', description: 'Updated desc' },
+        context as never,
+      )
+      expect(context.sessionManager.updateCriterionFull).toHaveBeenCalledWith('session-1', '0', {
+        description: 'Updated desc',
+      })
       expect(result.success).toBe(true)
       expect(result.output).toContain('Updated criterion "0"')
     })
@@ -167,7 +184,10 @@ describe('criterion tool', () => {
       const context = createContext({
         requireSession: vi.fn(() => ({ criteria: [] })),
       })
-      const result = await criterionTool.execute({ action: 'update', id: 'missing', description: 'test' }, context as never)
+      const result = await criterionTool.execute(
+        { action: 'update', id: 'missing', description: 'test' },
+        context as never,
+      )
       expect(result).toMatchObject({ success: false, error: expect.stringContaining('not found') })
     })
   })
@@ -193,7 +213,10 @@ describe('criterion tool', () => {
   describe('complete action', () => {
     it('marks criterion as completed with optional reason', async () => {
       const context = createContext()
-      const result = await criterionTool.execute({ action: 'complete', id: '0', reason: 'Tests passed' }, context as never)
+      const result = await criterionTool.execute(
+        { action: 'complete', id: '0', reason: 'Tests passed' },
+        context as never,
+      )
       expect(context.sessionManager.updateCriterionStatus).toHaveBeenCalledWith(
         'session-1',
         '0',
@@ -259,7 +282,10 @@ describe('criterion tool', () => {
   describe('fail action', () => {
     it('marks criterion as failed with reason', async () => {
       const context = createContext()
-      const result = await criterionTool.execute({ action: 'fail', id: '0', reason: 'Snapshot mismatch' }, context as never)
+      const result = await criterionTool.execute(
+        { action: 'fail', id: '0', reason: 'Snapshot mismatch' },
+        context as never,
+      )
       expect(context.sessionManager.updateCriterionStatus).toHaveBeenCalledWith(
         'session-1',
         '0',

@@ -31,10 +31,10 @@ export function getNetworkInterfaces(): NetworkInterface[] {
 
 export function getValidIPv4Addresses(): string[] {
   const interfaces = getNetworkInterfaces()
-  
+
   // Filter out loopback and internal addresses
   const valid = interfaces
-    .filter(addr => {
+    .filter((addr) => {
       // Exclude loopback
       if (addr.ip.startsWith('127.')) return false
       // Exclude link-local
@@ -42,21 +42,21 @@ export function getValidIPv4Addresses(): string[] {
       // Exclude unique local addresses (fc00::/7 for IPv6, but we're only looking at IPv4)
       return true
     })
-    .map(addr => addr.ip)
+    .map((addr) => addr.ip)
 
   // Sort: prefer eth*, wlan*, then others
   const sorted = valid.sort((a, b) => {
-    const aInterface = interfaces.find(i => i.ip === a)?.name || ''
-    const bInterface = interfaces.find(i => i.ip === b)?.name || ''
-    
+    const aInterface = interfaces.find((i) => i.ip === a)?.name || ''
+    const bInterface = interfaces.find((i) => i.ip === b)?.name || ''
+
     // Prefer eth* interfaces
     if (aInterface.startsWith('eth') && !bInterface.startsWith('eth')) return -1
     if (!aInterface.startsWith('eth') && bInterface.startsWith('eth')) return 1
-    
+
     // Then prefer wlan* interfaces
     if (aInterface.startsWith('wlan') && !bInterface.startsWith('wlan')) return -1
     if (!aInterface.startsWith('wlan') && bInterface.startsWith('wlan')) return 1
-    
+
     return 0
   })
 
@@ -65,11 +65,11 @@ export function getValidIPv4Addresses(): string[] {
 
 export function formatFileSize(bytes: number): string {
   if (bytes === 0) return '0KB'
-  
+
   const KB = 1024
   const MB = KB * 1024
   const GB = MB * 1024
-  
+
   if (bytes >= GB) {
     return `${(bytes / GB).toFixed(1)}GB`
   } else if (bytes >= MB) {
@@ -96,15 +96,15 @@ export function displayStartupBanner(config: {
 }): void {
   const { host, port, databasePath, configPath } = config
   const isLocalhost = host === '127.0.0.1'
-  
+
   console.log(`\n🦊 OpenFox v${VERSION}\n`)
-  
+
   if (isLocalhost) {
     console.log(`  🌐 Server: http://localhost:${port}`)
     console.log('  🔒 Access: Localhost only')
   } else {
     const ips = getValidIPv4Addresses()
-    
+
     if (ips.length === 0) {
       console.log(`  🌐 Server: http://0.0.0.0:${port}`)
       console.warn('  ⚠️  Warning: No valid network interfaces detected')
@@ -116,7 +116,7 @@ export function displayStartupBanner(config: {
       console.log('  🌍 Access: Local network')
     }
   }
-  
+
   const size = getDatabaseSize(databasePath)
   console.log(`  💾 Database: ${databasePath} (${size})`)
   console.log(`  ⚙️  Config:  ${configPath}`)

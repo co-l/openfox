@@ -258,14 +258,16 @@ describe('auth', () => {
 
   describe('verifyPassword with config loaded', () => {
     it('returns true for correct password', async () => {
-      const { privateKey, publicKey } = await import('node:crypto').then(c => c.generateKeyPairSync('rsa', {
-        modulusLength: 2048,
-        privateKeyEncoding: { type: 'pkcs8', format: 'pem' },
-        publicKeyEncoding: { type: 'spki', format: 'pem' },
-      }))
+      const { privateKey, publicKey } = await import('node:crypto').then((c) =>
+        c.generateKeyPairSync('rsa', {
+          modulusLength: 2048,
+          privateKeyEncoding: { type: 'pkcs8', format: 'pem' },
+          publicKeyEncoding: { type: 'spki', format: 'pem' },
+        }),
+      )
 
-      const encryptedPassword = await import('node:crypto').then(c =>
-        c.publicEncrypt({ key: publicKey, padding: 1 }, Buffer.from('correctpassword')).toString('base64')
+      const encryptedPassword = await import('node:crypto').then((c) =>
+        c.publicEncrypt({ key: publicKey, padding: 1 }, Buffer.from('correctpassword')).toString('base64'),
       )
 
       vi.mocked(readFile).mockResolvedValueOnce(JSON.stringify({ strategy: 'network', encryptedPassword }))
@@ -278,14 +280,16 @@ describe('auth', () => {
     })
 
     it('returns false for incorrect password', async () => {
-      const { privateKey, publicKey } = await import('node:crypto').then(c => c.generateKeyPairSync('rsa', {
-        modulusLength: 2048,
-        privateKeyEncoding: { type: 'pkcs8', format: 'pem' },
-        publicKeyEncoding: { type: 'spki', format: 'pem' },
-      }))
+      const { privateKey, publicKey } = await import('node:crypto').then((c) =>
+        c.generateKeyPairSync('rsa', {
+          modulusLength: 2048,
+          privateKeyEncoding: { type: 'pkcs8', format: 'pem' },
+          publicKeyEncoding: { type: 'spki', format: 'pem' },
+        }),
+      )
 
-      const encryptedPassword = await import('node:crypto').then(c =>
-        c.publicEncrypt({ key: publicKey, padding: 1 }, Buffer.from('correctpassword')).toString('base64')
+      const encryptedPassword = await import('node:crypto').then((c) =>
+        c.publicEncrypt({ key: publicKey, padding: 1 }, Buffer.from('correctpassword')).toString('base64'),
       )
 
       vi.mocked(readFile).mockResolvedValueOnce(JSON.stringify({ strategy: 'network', encryptedPassword }))
@@ -300,24 +304,26 @@ describe('auth', () => {
 
   describe('isValidToken with config loaded', () => {
     it('returns true for valid token', async () => {
-      const { privateKey, publicKey } = await import('node:crypto').then(c => c.generateKeyPairSync('rsa', {
-        modulusLength: 2048,
-        privateKeyEncoding: { type: 'pkcs8', format: 'pem' },
-        publicKeyEncoding: { type: 'spki', format: 'pem' },
-      }))
+      const { privateKey, publicKey } = await import('node:crypto').then((c) =>
+        c.generateKeyPairSync('rsa', {
+          modulusLength: 2048,
+          privateKeyEncoding: { type: 'pkcs8', format: 'pem' },
+          publicKeyEncoding: { type: 'spki', format: 'pem' },
+        }),
+      )
 
       const password = 'testpassword'
       const passwordHash = hashPassword(password)
 
-      const sign = await import('node:crypto').then(c => {
+      const sign = await import('node:crypto').then((c) => {
         const s = c.createSign('SHA256')
         s.update(passwordHash)
         s.end()
         return s.sign(privateKey, 'base64')
       })
 
-      const encryptedPassword = await import('node:crypto').then(c =>
-        c.publicEncrypt({ key: publicKey, padding: 1 }, Buffer.from(password)).toString('base64')
+      const encryptedPassword = await import('node:crypto').then((c) =>
+        c.publicEncrypt({ key: publicKey, padding: 1 }, Buffer.from(password)).toString('base64'),
       )
 
       vi.mocked(readFile).mockResolvedValueOnce(JSON.stringify({ strategy: 'network', encryptedPassword }))
@@ -330,14 +336,16 @@ describe('auth', () => {
     })
 
     it('returns false for invalid token', async () => {
-      const { privateKey, publicKey } = await import('node:crypto').then(c => c.generateKeyPairSync('rsa', {
-        modulusLength: 2048,
-        privateKeyEncoding: { type: 'pkcs8', format: 'pem' },
-        publicKeyEncoding: { type: 'spki', format: 'pem' },
-      }))
+      const { privateKey, publicKey } = await import('node:crypto').then((c) =>
+        c.generateKeyPairSync('rsa', {
+          modulusLength: 2048,
+          privateKeyEncoding: { type: 'pkcs8', format: 'pem' },
+          publicKeyEncoding: { type: 'spki', format: 'pem' },
+        }),
+      )
 
-      const encryptedPassword = await import('node:crypto').then(c =>
-        c.publicEncrypt({ key: publicKey, padding: 1 }, Buffer.from('password')).toString('base64')
+      const encryptedPassword = await import('node:crypto').then((c) =>
+        c.publicEncrypt({ key: publicKey, padding: 1 }, Buffer.from('password')).toString('base64'),
       )
 
       vi.mocked(readFile).mockResolvedValueOnce(JSON.stringify({ strategy: 'network', encryptedPassword }))
@@ -362,14 +370,16 @@ describe('auth', () => {
 
   describe('tokenFromPassword with config loaded', () => {
     it('generates valid signature token', async () => {
-      const { privateKey, publicKey } = await import('node:crypto').then(c => c.generateKeyPairSync('rsa', {
-        modulusLength: 2048,
-        privateKeyEncoding: { type: 'pkcs8', format: 'pem' },
-        publicKeyEncoding: { type: 'spki', format: 'pem' },
-      }))
+      const { privateKey, publicKey } = await import('node:crypto').then((c) =>
+        c.generateKeyPairSync('rsa', {
+          modulusLength: 2048,
+          privateKeyEncoding: { type: 'pkcs8', format: 'pem' },
+          publicKeyEncoding: { type: 'spki', format: 'pem' },
+        }),
+      )
 
-      const encryptedPassword = await import('node:crypto').then(c =>
-        c.publicEncrypt({ key: publicKey, padding: 1 }, Buffer.from('password')).toString('base64')
+      const encryptedPassword = await import('node:crypto').then((c) =>
+        c.publicEncrypt({ key: publicKey, padding: 1 }, Buffer.from('password')).toString('base64'),
       )
 
       vi.mocked(readFile).mockResolvedValueOnce(JSON.stringify({ strategy: 'network', encryptedPassword }))
@@ -379,14 +389,14 @@ describe('auth', () => {
 
       const token = await tokenFromPassword('password')
 
-      const verify = await import('node:crypto').then(c => {
+      const verify = await import('node:crypto').then((c) => {
         const v = c.createVerify('SHA256')
         v.update(hashPassword('password'))
         v.end()
         return v
       })
 
-      const publicKeyObj = await import('node:crypto').then(c => c.createPublicKey(privateKey))
+      const publicKeyObj = await import('node:crypto').then((c) => c.createPublicKey(privateKey))
       const exportedPublicKey = publicKeyObj.export({ type: 'spki', format: 'pem' })
 
       const isValid = verify.verify(exportedPublicKey, token, 'base64')

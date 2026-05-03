@@ -25,7 +25,7 @@ export function getSessionMessageCount(sessionId: string): number {
 export function finalizeTurnCompletion(
   sessionId: string,
   sessionManager: SessionManager,
-  broadcastForSession: (sessionId: string, msg: ServerMessage) => void
+  broadcastForSession: (sessionId: string, msg: ServerMessage) => void,
 ): void {
   sessionManager.setRunning(sessionId, false)
   const contextState = sessionManager.getContextState(sessionId)
@@ -41,9 +41,7 @@ export interface RunChatTurnParams {
   onMessage: (msg: ServerMessage) => void
 }
 
-export function buildRunChatTurnParams(
-  params: RunChatTurnParams,
-): {
+export function buildRunChatTurnParams(params: RunChatTurnParams): {
   sessionManager: SessionManager
   sessionId: string
   llmClient: LLMClientWithModel

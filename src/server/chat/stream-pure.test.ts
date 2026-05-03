@@ -70,7 +70,7 @@ describe('stream-pure', () => {
     })
 
     const events: Array<{ type: string; data: unknown }> = []
-    const result = await consumeStreamGenerator(gen, event => {
+    const result = await consumeStreamGenerator(gen, (event) => {
       events.push(event)
     })
 
@@ -78,7 +78,10 @@ describe('stream-pure', () => {
       { type: 'message.thinking', data: { messageId: 'msg-1', content: 'Need to inspect files' } },
       { type: 'message.delta', data: { messageId: 'msg-1', content: 'I will help.' } },
       { type: 'tool.preparing', data: { messageId: 'msg-1', index: 0, name: 'read_file' } },
-      { type: 'tool.preparing', data: { messageId: 'msg-1', index: 0, name: 'read_file', arguments: '{"path":"src/index.ts"}' } },
+      {
+        type: 'tool.preparing',
+        data: { messageId: 'msg-1', index: 0, name: 'read_file', arguments: '{"path":"src/index.ts"}' },
+      },
     ])
     expect(result).toEqual({
       content: 'I will help.',
@@ -93,14 +96,16 @@ describe('stream-pure', () => {
       timing: expect.objectContaining({ ttft: expect.any(Number), completionTime: expect.any(Number) }),
       aborted: false,
       xmlFormatError: false,
-      modelParams: expect.objectContaining({ temperature: expect.any(Number), topP: expect.any(Number), maxTokens: expect.any(Number) }),
+      modelParams: expect.objectContaining({
+        temperature: expect.any(Number),
+        topP: expect.any(Number),
+        maxTokens: expect.any(Number),
+      }),
     })
   })
 
   it('marks XML tool output as a format error and returns an empty result', async () => {
-    const client = createMockClient([
-      { type: 'text_delta', content: '<tool_call><function=' },
-    ])
+    const client = createMockClient([{ type: 'text_delta', content: '<tool_call><function=' }])
 
     const gen = streamLLMPure({
       messageId: 'msg-2',
@@ -110,7 +115,7 @@ describe('stream-pure', () => {
     })
 
     const events: Array<{ type: string; data: unknown }> = []
-    const result = await consumeStreamGenerator(gen, event => {
+    const result = await consumeStreamGenerator(gen, (event) => {
       events.push(event)
     })
 
@@ -123,7 +128,11 @@ describe('stream-pure', () => {
       timing: { ttft: 0, completionTime: 0, tps: 0, prefillTps: 0 },
       aborted: false,
       xmlFormatError: true,
-      modelParams: expect.objectContaining({ temperature: expect.any(Number), topP: expect.any(Number), maxTokens: expect.any(Number) }),
+      modelParams: expect.objectContaining({
+        temperature: expect.any(Number),
+        topP: expect.any(Number),
+        maxTokens: expect.any(Number),
+      }),
     })
   })
 
@@ -156,12 +165,17 @@ describe('stream-pure', () => {
     metrics.addLLMCall({ ttft: 1, completionTime: 3, tps: 7, prefillTps: 20 }, 25, 18)
     metrics.addToolTime(500)
 
-    expect(metrics.buildStats({
-      providerId: 'provider-1',
-      providerName: 'Local vLLM',
-      backend: 'vllm',
-      model: 'test-model',
-    }, 'builder')).toMatchObject({
+    expect(
+      metrics.buildStats(
+        {
+          providerId: 'provider-1',
+          providerName: 'Local vLLM',
+          backend: 'vllm',
+          model: 'test-model',
+        },
+        'builder',
+      ),
+    ).toMatchObject({
       providerId: 'provider-1',
       providerName: 'Local vLLM',
       backend: 'vllm',
@@ -214,13 +228,15 @@ describe('stream-pure', () => {
       data: { messageId: 'msg-1', role: 'assistant' },
     })
 
-    expect(createMessageStartEvent('msg-2', 'user', 'hello', {
-      contextWindowId: 'window-1',
-      subAgentId: 'sub-1',
-      subAgentType: 'verifier',
-      isSystemGenerated: true,
-      messageKind: 'correction',
-    })).toEqual({
+    expect(
+      createMessageStartEvent('msg-2', 'user', 'hello', {
+        contextWindowId: 'window-1',
+        subAgentId: 'sub-1',
+        subAgentType: 'verifier',
+        isSystemGenerated: true,
+        messageKind: 'correction',
+      }),
+    ).toEqual({
       type: 'message.start',
       data: {
         messageId: 'msg-2',
@@ -247,12 +263,14 @@ describe('stream-pure', () => {
       },
     })
 
-    expect(createToolResultEvent('msg-4', 'call-1', {
-      success: true,
-      output: 'ok',
-      durationMs: 1,
-      truncated: false,
-    })).toEqual({
+    expect(
+      createToolResultEvent('msg-4', 'call-1', {
+        success: true,
+        output: 'ok',
+        durationMs: 1,
+        truncated: false,
+      }),
+    ).toEqual({
       type: 'tool.result',
       data: {
         messageId: 'msg-4',
@@ -275,16 +293,19 @@ describe('stream-pure', () => {
   describe('MiniMax empty response regression', () => {
     it('should handle empty first response then continue (MiniMax disableThinking bug)', async () => {
       const emptyThenContent: LLMStreamEvent[] = [
-        { type: 'done', response: { 
-          id: 'resp-1', 
-          content: '', 
-          finishReason: 'stop', 
-          usage: { promptTokens: 10, completionTokens: 0, totalTokens: 10 } 
-        }},
+        {
+          type: 'done',
+          response: {
+            id: 'resp-1',
+            content: '',
+            finishReason: 'stop',
+            usage: { promptTokens: 10, completionTokens: 0, totalTokens: 10 },
+          },
+        },
       ]
 
       const client = createMockClient(emptyThenContent)
-      
+
       const gen = streamLLMPure({
         messageId: 'msg-empty',
         systemPrompt: 'system',
@@ -294,7 +315,7 @@ describe('stream-pure', () => {
       })
 
       const events: Array<{ type: string; data: unknown }> = []
-      const result = await consumeStreamGenerator(gen, event => {
+      const result = await consumeStreamGenerator(gen, (event) => {
         events.push(event)
       })
 
@@ -305,17 +326,20 @@ describe('stream-pure', () => {
     it('should use reasoning_content as fallback when content is empty and no thinking_delta', async () => {
       // MiniMax with disableThinking=true: no thinking_delta, but reasoning_content in done response
       const withReasoningOnly: LLMStreamEvent[] = [
-        { type: 'done', response: { 
-          id: 'resp-2', 
-          content: '', 
-          reasoning_content: 'This is the thinking summary that should be used',
-          finishReason: 'stop', 
-          usage: { promptTokens: 100, completionTokens: 50, totalTokens: 150 } 
-        }},
+        {
+          type: 'done',
+          response: {
+            id: 'resp-2',
+            content: '',
+            reasoning_content: 'This is the thinking summary that should be used',
+            finishReason: 'stop',
+            usage: { promptTokens: 100, completionTokens: 50, totalTokens: 150 },
+          },
+        },
       ]
 
       const client = createMockClient(withReasoningOnly)
-      
+
       const gen = streamLLMPure({
         messageId: 'msg-thinking',
         systemPrompt: 'system',

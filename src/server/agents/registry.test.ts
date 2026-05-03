@@ -35,7 +35,7 @@ describe('loadDefaultAgents', () => {
 
     expect(agents.length).toBeGreaterThanOrEqual(5)
 
-    const ids = agents.map(a => a.metadata.id)
+    const ids = agents.map((a) => a.metadata.id)
     expect(ids).toContain('planner')
     expect(ids).toContain('builder')
     expect(ids).toContain('verifier')
@@ -45,7 +45,7 @@ describe('loadDefaultAgents', () => {
 
   it('should parse agent metadata correctly', async () => {
     const agents = await loadDefaultAgents()
-    const verifier = agents.find(a => a.metadata.id === 'verifier')!
+    const verifier = agents.find((a) => a.metadata.id === 'verifier')!
 
     expect(verifier.metadata.name).toBe('Verifier')
     expect(verifier.metadata.description).toBe('Verifies completed criteria against actual code changes')
@@ -56,9 +56,9 @@ describe('loadDefaultAgents', () => {
 
   it('should distinguish subagent vs top-level agents', async () => {
     const agents = await loadDefaultAgents()
-    const planner = agents.find(a => a.metadata.id === 'planner')!
-    const builder = agents.find(a => a.metadata.id === 'builder')!
-    const verifier = agents.find(a => a.metadata.id === 'verifier')!
+    const planner = agents.find((a) => a.metadata.id === 'planner')!
+    const builder = agents.find((a) => a.metadata.id === 'builder')!
+    const verifier = agents.find((a) => a.metadata.id === 'verifier')!
 
     expect(planner.metadata.subagent).toBe(false)
     expect(builder.metadata.subagent).toBe(false)
@@ -70,7 +70,9 @@ describe('loadAllAgents', () => {
   it('should merge built-in and user agents, with user overriding by id', async () => {
     const agentsDir = join(tempDir, 'agents')
     await mkdir(agentsDir, { recursive: true })
-    await writeFile(join(agentsDir, 'verifier.agent.md'), `---
+    await writeFile(
+      join(agentsDir, 'verifier.agent.md'),
+      `---
 id: verifier
 name: Custom Verifier
 description: My custom verifier
@@ -81,10 +83,11 @@ tools:
 ---
 
 Custom verifier instructions.
-`)
+`,
+    )
 
     const agents = await loadAllAgents(tempDir)
-    const verifier = agents.find(a => a.metadata.id === 'verifier')!
+    const verifier = agents.find((a) => a.metadata.id === 'verifier')!
 
     expect(verifier.metadata.name).toBe('Custom Verifier')
     expect(verifier.prompt).toBe('Custom verifier instructions.')
@@ -93,7 +96,9 @@ Custom verifier instructions.
   it('should include user-defined agents alongside built-in', async () => {
     const agentsDir = join(tempDir, 'agents')
     await mkdir(agentsDir, { recursive: true })
-    await writeFile(join(agentsDir, 'security-auditor.agent.md'), `---
+    await writeFile(
+      join(agentsDir, 'security-auditor.agent.md'),
+      `---
 id: security_auditor
 name: Security Auditor
 description: Audit code for security issues
@@ -104,10 +109,11 @@ tools:
 ---
 
 Audit the code for OWASP top 10 vulnerabilities.
-`)
+`,
+    )
 
     const agents = await loadAllAgents(tempDir)
-    const auditor = agents.find(a => a.metadata.id === 'security_auditor')
+    const auditor = agents.find((a) => a.metadata.id === 'security_auditor')
 
     expect(auditor).toBeDefined()
     expect(auditor!.metadata.name).toBe('Security Auditor')
@@ -121,8 +127,8 @@ describe('filter helpers', () => {
     const subs = getSubAgents(agents)
     const topLevel = getTopLevelAgents(agents)
 
-    expect(subs.every(a => a.metadata.subagent)).toBe(true)
-    expect(topLevel.every(a => !a.metadata.subagent)).toBe(true)
+    expect(subs.every((a) => a.metadata.subagent)).toBe(true)
+    expect(topLevel.every((a) => !a.metadata.subagent)).toBe(true)
     expect(subs.length + topLevel.length).toBe(agents.length)
   })
 
@@ -151,7 +157,7 @@ describe('CRUD', () => {
 
     await saveAgent(tempDir, agent)
     const agents = await loadAllAgents(tempDir)
-    const loaded = agents.find(a => a.metadata.id === 'my_agent')
+    const loaded = agents.find((a) => a.metadata.id === 'my_agent')
 
     expect(loaded).toBeDefined()
     expect(loaded!.metadata.name).toBe('My Agent')
@@ -175,7 +181,7 @@ describe('CRUD', () => {
     expect(result.success).toBe(true)
 
     const agents = await loadAllAgents(tempDir)
-    expect(agents.find(a => a.metadata.id === 'deleteme')).toBeUndefined()
+    expect(agents.find((a) => a.metadata.id === 'deleteme')).toBeUndefined()
   })
 
   it('should not delete built-in default agents', async () => {

@@ -199,7 +199,7 @@ describe('Session Name Generator', () => {
       expect(SESSION_NAME_PROMPT).not.toContain('workdir')
       expect(SESSION_NAME_PROMPT).not.toContain('project context')
       expect(SESSION_NAME_PROMPT).not.toContain('system instructions')
-      
+
       // Should contain name generation instructions
       expect(SESSION_NAME_PROMPT).toContain('Generate')
       expect(SESSION_NAME_PROMPT).toContain('session name')

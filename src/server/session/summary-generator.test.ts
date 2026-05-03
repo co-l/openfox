@@ -43,9 +43,7 @@ describe('generateSessionSummary', () => {
   it('returns failure when LLM call fails', async () => {
     ;(mockLLMClient.complete as any).mockRejectedValue(new Error('LLM error'))
 
-    const messages = [
-      { role: 'user' as const, content: 'Test message' },
-    ]
+    const messages = [{ role: 'user' as const, content: 'Test message' }]
 
     const result = await generateSessionSummary({
       messages,
@@ -63,9 +61,7 @@ describe('generateSessionSummary', () => {
       toolCalls: [],
     })
 
-    const messages = [
-      { role: 'user' as const, content: 'Test message' },
-    ]
+    const messages = [{ role: 'user' as const, content: 'Test message' }]
 
     const result = await generateSessionSummary({
       messages,
@@ -84,9 +80,7 @@ describe('generateSessionSummary', () => {
       toolCalls: [],
     })
 
-    const messages = [
-      { role: 'user' as const, content: 'Test message' },
-    ]
+    const messages = [{ role: 'user' as const, content: 'Test message' }]
 
     const result = await generateSessionSummary({
       messages,

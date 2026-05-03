@@ -38,13 +38,10 @@ describe('web_fetch tool', () => {
       mockResponse('Hello world', {
         status: 200,
         headers: { 'content-type': 'text/plain' },
-      })
+      }),
     )
 
-    const result = await webFetchTool.execute(
-      { url: 'https://example.com/file.txt', format: 'text' },
-      mockContext
-    )
+    const result = await webFetchTool.execute({ url: 'https://example.com/file.txt', format: 'text' }, mockContext)
     expect(result.success).toBe(true)
     expect(result.output).toBe('Hello world')
   })
@@ -54,13 +51,10 @@ describe('web_fetch tool', () => {
       mockResponse('<h1>Title</h1><p>Paragraph</p>', {
         status: 200,
         headers: { 'content-type': 'text/html; charset=utf-8' },
-      })
+      }),
     )
 
-    const result = await webFetchTool.execute(
-      { url: 'https://example.com', format: 'markdown' },
-      mockContext
-    )
+    const result = await webFetchTool.execute({ url: 'https://example.com', format: 'markdown' }, mockContext)
     expect(result.success).toBe(true)
     expect(result.output).toContain('# Title')
     expect(result.output).toContain('Paragraph')
@@ -68,16 +62,13 @@ describe('web_fetch tool', () => {
 
   it('strips HTML tags for text format', async () => {
     fetchSpy.mockResolvedValueOnce(
-      mockResponse(
-        '<html><script>evil()</script><body><h1>Hello</h1><p>World</p></body></html>',
-        { status: 200, headers: { 'content-type': 'text/html' } }
-      )
+      mockResponse('<html><script>evil()</script><body><h1>Hello</h1><p>World</p></body></html>', {
+        status: 200,
+        headers: { 'content-type': 'text/html' },
+      }),
     )
 
-    const result = await webFetchTool.execute(
-      { url: 'https://example.com', format: 'text' },
-      mockContext
-    )
+    const result = await webFetchTool.execute({ url: 'https://example.com', format: 'text' }, mockContext)
     expect(result.success).toBe(true)
     expect(result.output).not.toContain('<')
     expect(result.output).not.toContain('evil')
@@ -91,30 +82,24 @@ describe('web_fetch tool', () => {
       mockResponse(html, {
         status: 200,
         headers: { 'content-type': 'text/html' },
-      })
+      }),
     )
 
-    const result = await webFetchTool.execute(
-      { url: 'https://example.com', format: 'html' },
-      mockContext
-    )
+    const result = await webFetchTool.execute({ url: 'https://example.com', format: 'html' }, mockContext)
     expect(result.success).toBe(true)
     expect(result.output).toBe(html)
   })
 
   it('returns image as base64 in metadata', async () => {
-    const imageData = Buffer.from([0x89, 0x50, 0x4E, 0x47]) // PNG header bytes
+    const imageData = Buffer.from([0x89, 0x50, 0x4e, 0x47]) // PNG header bytes
     fetchSpy.mockResolvedValueOnce(
       new Response(imageData, {
         status: 200,
         headers: { 'content-type': 'image/png' },
-      })
+      }),
     )
 
-    const result = await webFetchTool.execute(
-      { url: 'https://example.com/img.png' },
-      mockContext
-    )
+    const result = await webFetchTool.execute({ url: 'https://example.com/img.png' }, mockContext)
     expect(result.success).toBe(true)
     expect(result.output).toBe('Image fetched successfully')
     expect(result.metadata).toBeDefined()
@@ -128,13 +113,10 @@ describe('web_fetch tool', () => {
       mockResponse(svg, {
         status: 200,
         headers: { 'content-type': 'image/svg+xml' },
-      })
+      }),
     )
 
-    const result = await webFetchTool.execute(
-      { url: 'https://example.com/icon.svg', format: 'html' },
-      mockContext
-    )
+    const result = await webFetchTool.execute({ url: 'https://example.com/icon.svg', format: 'html' }, mockContext)
     expect(result.success).toBe(true)
     expect(result.output).toContain('<svg')
   })
@@ -145,14 +127,9 @@ describe('web_fetch tool', () => {
     })
     fetchSpy
       .mockResolvedValueOnce(new Response('blocked', { status: 403, headers: cfHeaders }))
-      .mockResolvedValueOnce(
-        mockResponse('Success', { status: 200, headers: { 'content-type': 'text/plain' } })
-      )
+      .mockResolvedValueOnce(mockResponse('Success', { status: 200, headers: { 'content-type': 'text/plain' } }))
 
-    const result = await webFetchTool.execute(
-      { url: 'https://example.com', format: 'text' },
-      mockContext
-    )
+    const result = await webFetchTool.execute({ url: 'https://example.com', format: 'text' }, mockContext)
     expect(result.success).toBe(true)
     expect(result.output).toBe('Success')
     expect(fetchSpy).toHaveBeenCalledTimes(2)
@@ -162,14 +139,9 @@ describe('web_fetch tool', () => {
   })
 
   it('returns error on non-403 Cloudflare blocks (no retry)', async () => {
-    fetchSpy.mockResolvedValueOnce(
-      new Response('Server Error', { status: 500 })
-    )
+    fetchSpy.mockResolvedValueOnce(new Response('Server Error', { status: 500 }))
 
-    const result = await webFetchTool.execute(
-      { url: 'https://example.com', format: 'text' },
-      mockContext
-    )
+    const result = await webFetchTool.execute({ url: 'https://example.com', format: 'text' }, mockContext)
     expect(result.success).toBe(false)
     expect(result.error).toContain('500')
     expect(fetchSpy).toHaveBeenCalledTimes(1)
@@ -180,13 +152,10 @@ describe('web_fetch tool', () => {
       mockResponse('x', {
         status: 200,
         headers: { 'content-length': '10000000', 'content-type': 'text/plain' },
-      })
+      }),
     )
 
-    const result = await webFetchTool.execute(
-      { url: 'https://example.com/huge', format: 'text' },
-      mockContext
-    )
+    const result = await webFetchTool.execute({ url: 'https://example.com/huge', format: 'text' }, mockContext)
     expect(result.success).toBe(false)
     expect(result.error).toContain('5MB')
   })
@@ -196,13 +165,10 @@ describe('web_fetch tool', () => {
       mockResponse('<h1>Title</h1>', {
         status: 200,
         headers: { 'content-type': 'text/html' },
-      })
+      }),
     )
 
-    const result = await webFetchTool.execute(
-      { url: 'https://example.com' },
-      mockContext
-    )
+    const result = await webFetchTool.execute({ url: 'https://example.com' }, mockContext)
     expect(result.success).toBe(true)
     expect(result.output).toContain('# Title')
   })
@@ -213,13 +179,10 @@ describe('web_fetch tool', () => {
       mockResponse(largeContent, {
         status: 200,
         headers: { 'content-type': 'text/plain' },
-      })
+      }),
     )
 
-    const result = await webFetchTool.execute(
-      { url: 'https://example.com/large', format: 'text' },
-      mockContext
-    )
+    const result = await webFetchTool.execute({ url: 'https://example.com/large', format: 'text' }, mockContext)
     expect(result.success).toBe(true)
     expect(result.truncated).toBe(true)
     expect(result.output).toContain('[Output truncated')

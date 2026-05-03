@@ -24,12 +24,12 @@ Options:
 export async function runConfig(mode: Mode): Promise<void> {
   const { loadGlobalConfig, getActiveProvider } = await import('./config.js')
   const { getGlobalConfigPath } = await import('./paths.js')
-  
+
   const config = await loadGlobalConfig(mode)
   const configPath = getGlobalConfigPath(mode)
   const activeProvider = getActiveProvider(config)
   const defaultModel = getDefaultModel(config)
-  
+
   console.log(`Configuration (${mode}):`)
   console.log(`  Location: ${configPath}`)
   console.log(`  Providers: ${config.providers.length}`)

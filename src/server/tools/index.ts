@@ -6,9 +6,7 @@ import { writeFileTool } from './write.js'
 import { editFileTool } from './edit.js'
 import { runCommandTool } from './shell.js'
 import { askUserTool, AskUserInterrupt } from './ask.js'
-import {
-  PathAccessDeniedError,
-} from './path-security.js'
+import { PathAccessDeniedError } from './path-security.js'
 import { criterionTool } from './criterion.js'
 import { todoTool } from './todo.js'
 import { callSubAgentTool } from './sub-agent.js'
@@ -56,7 +54,7 @@ export function parseToolPermissions(allowedTools: string[]): Record<string, Set
  */
 export function getToolPermissions(
   toolName: string,
-  permissions: Record<string, Set<string>>
+  permissions: Record<string, Set<string>>,
 ): Set<string> | undefined {
   const perms = permissions[toolName]
   if (!perms || perms.size === 0) {
@@ -73,7 +71,7 @@ export function getToolPermissions(
 export function validateToolAction(
   toolName: string,
   action: string,
-  permissions: Record<string, Set<string>>
+  permissions: Record<string, Set<string>>,
 ): string | undefined {
   const perms = permissions[toolName]
   if (!perms || perms.size === 0) {
@@ -93,7 +91,7 @@ export function validateToolAction(
 export function createRegistryFromTools(
   tools: Tool[],
   allowedTools?: string[],
-  toolPermissions?: Record<string, Set<string>>
+  toolPermissions?: Record<string, Set<string>>,
 ): ToolRegistry {
   const toolMap = new Map<string, Tool>()
   const allowedToolsSet = new Set(allowedTools || [])
@@ -104,26 +102,23 @@ export function createRegistryFromTools(
 
   return {
     tools,
-    definitions: tools.map(t => t.definition),
+    definitions: tools.map((t) => t.definition),
 
-    async execute(
-      name: string,
-      args: Record<string, unknown>,
-      context: ToolContext
-    ): Promise<ToolResult> {
+    async execute(name: string, args: Record<string, unknown>, context: ToolContext): Promise<ToolResult> {
       const tool = toolMap.get(name)
 
       if (!tool) {
         return {
           success: false,
-          error: `Unknown tool: ${name}. Available tools: ${tools.map(t => t.name).join(', ')}`,
+          error: `Unknown tool: ${name}. Available tools: ${tools.map((t) => t.name).join(', ')}`,
           durationMs: 0,
           truncated: false,
         }
       }
 
       // Check base tool permission (considering granular permissions like "criterion:pass,fail")
-      const hasBaseToolPermission = allowedToolsSet.has(name) || [...allowedToolsSet].some(entry => entry.startsWith(`${name}:`))
+      const hasBaseToolPermission =
+        allowedToolsSet.has(name) || [...allowedToolsSet].some((entry) => entry.startsWith(`${name}:`))
       if (allowedTools && allowedTools.length > 0 && !hasBaseToolPermission) {
         logger.debug('Permission denied: tool not in allowed list', {
           tool: name,
@@ -207,22 +202,28 @@ export function createRegistryFromTools(
 function getAllToolsMap(): Map<string, Tool> {
   return new Map<string, Tool>([
     ...[
-      readFileTool, writeFileTool, editFileTool, runCommandTool,
+      readFileTool,
+      writeFileTool,
+      editFileTool,
+      runCommandTool,
       askUserTool,
       criterionTool,
-      todoTool, callSubAgentTool, loadSkillTool, returnValueTool, webFetchTool,
-      devServerTool, stepDoneTool, backgroundProcessTool,
-    ].map(t => [t.name, t] as const),
+      todoTool,
+      callSubAgentTool,
+      loadSkillTool,
+      returnValueTool,
+      webFetchTool,
+      devServerTool,
+      stepDoneTool,
+      backgroundProcessTool,
+    ].map((t) => [t.name, t] as const),
   ])
 }
 
 /**
  * Creates a permission error message for unauthorized tool access
  */
-function createPermissionErrorMessage(
-  toolName: string,
-  allowedTools: string[]
-): string {
+function createPermissionErrorMessage(toolName: string, allowedTools: string[]): string {
   if (allowedTools.length === 0) {
     return `Tool '${toolName}' is not in your allowed tools list. No tools are allowed.`
   }
@@ -265,7 +266,7 @@ export function getToolRegistryForSubAgent(toolNames: string[]): ToolRegistry {
       logger.warn(`Unknown tool '${baseName}' in sub-agent allowedTools list`)
     }
   }
-  if (!tools.some(t => t.name === 'return_value')) {
+  if (!tools.some((t) => t.name === 'return_value')) {
     const rv = allTools.get('return_value')
     if (rv) tools.push(rv)
   }
@@ -275,29 +276,29 @@ export function getToolRegistryForSubAgent(toolNames: string[]): ToolRegistry {
 
 /**
  * Create a tool registry for an agent definition.
- * 
+ *
  * For top-level agents (subagent: false):
  *   - Returns ALL tools to ensure vLLM prefix cache consistency across mode switches
  *   - The allowedTools list is ignored for tool filtering
  *   - return_value is excluded (top-level agents finish with chat.done, not return_value)
- * 
+ *
  * For sub-agents (subagent: true):
  *   - Filters tools based on allowedTools list
  *   - return_value is automatically added
  *   - Sub-agents have isolated contexts, so filtering is safe
- * 
+ *
  * Logs warnings for unknown tool names.
  */
 export function getToolRegistryForAgent(agentDef: AgentDefinition): ToolRegistry {
   if (agentDef.metadata.subagent) {
     return getToolRegistryForSubAgent(agentDef.metadata.allowedTools)
   }
-  
+
   // Top-level agents: return ALL tools for vLLM cache consistency
   const allTools = getAllToolsMap()
   const tools: Tool[] = []
   const allowedTools: string[] = []
-  
+
   for (const [name, tool] of allTools.entries()) {
     // Exclude return_value from top-level agents
     if (name === 'return_value') {
@@ -306,7 +307,7 @@ export function getToolRegistryForAgent(agentDef: AgentDefinition): ToolRegistry
     tools.push(tool)
     allowedTools.push(name)
   }
-  
+
   return createRegistryFromTools(tools, allowedTools)
 }
 

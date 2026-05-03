@@ -37,12 +37,24 @@ import type {
   QueuedMessage,
 } from '../../shared/protocol.js'
 import { isClientMessage, createServerMessage } from '../../shared/protocol.js'
-import type { Project, Session, SessionSummary, SessionMode, SessionPhase, Criterion, Todo, ToolResult, Message, ContextState, ToolCall } from '../../shared/types.js'
+import type {
+  Project,
+  Session,
+  SessionSummary,
+  SessionMode,
+  SessionPhase,
+  Criterion,
+  Todo,
+  ToolResult,
+  Message,
+  ContextState,
+  ToolCall,
+} from '../../shared/types.js'
 
 /**
  * Enrich messages by attaching tool results to their parent toolCalls.
  * This ensures frontend receives consistent data shape whether streaming or loading from DB.
- * 
+ *
  * Tool results are stored in separate 'tool' role messages, but for display purposes
  * the frontend expects results attached to the toolCall objects on assistant messages.
  */
@@ -54,18 +66,18 @@ function enrichMessagesWithToolResults(messages: Message[]): Message[] {
       resultMap.set(msg.toolCallId, msg.toolResult)
     }
   }
-  
+
   // If no tool results, return as-is
   if (resultMap.size === 0) return messages
-  
+
   // Attach results to toolCalls on assistant messages
-  return messages.map(msg => {
+  return messages.map((msg) => {
     if (msg.role !== 'assistant' || !msg.toolCalls?.length) return msg
-    
+
     // Check if any toolCalls need enrichment
-    const needsEnrichment = msg.toolCalls.some(tc => !tc.result && resultMap.has(tc.id))
+    const needsEnrichment = msg.toolCalls.some((tc) => !tc.result && resultMap.has(tc.id))
     if (!needsEnrichment) return msg
-    
+
     return {
       ...msg,
       toolCalls: msg.toolCalls.map((tc): ToolCall => {
@@ -73,7 +85,7 @@ function enrichMessagesWithToolResults(messages: Message[]): Message[] {
         const result = resultMap.get(tc.id)
         // Only add result if it exists (satisfies exactOptionalPropertyTypes)
         return result ? { ...tc, result } : tc
-      })
+      }),
     }
   })
 }
@@ -104,27 +116,43 @@ export function createSessionStateMessage(
   session: Session,
   messages: Message[],
   pendingConfirmations: PendingPathConfirmationPayload[] = [],
-  correlationId?: string
+  correlationId?: string,
 ): ServerMessage<SessionStatePayload> {
   // Enrich messages so toolCalls have their results attached
   const enrichedMessages = enrichMessagesWithToolResults(messages)
-  return createServerMessage('session.state', { session, messages: enrichedMessages, pendingConfirmations }, correlationId)
+  return createServerMessage(
+    'session.state',
+    { session, messages: enrichedMessages, pendingConfirmations },
+    correlationId,
+  )
 }
 
-export function createSessionListMessage(sessions: SessionSummary[], correlationId?: string): ServerMessage<SessionListPayload> {
+export function createSessionListMessage(
+  sessions: SessionSummary[],
+  correlationId?: string,
+): ServerMessage<SessionListPayload> {
   return createServerMessage('session.list', { sessions }, correlationId)
 }
 
-export function createSessionRunningMessage(isRunning: boolean, sessionId?: string): ServerMessage<SessionRunningPayload> {
+export function createSessionRunningMessage(
+  isRunning: boolean,
+  sessionId?: string,
+): ServerMessage<SessionRunningPayload> {
   return createServerMessage('session.running', { isRunning }, sessionId)
 }
 
 // Project messages
-export function createProjectStateMessage(project: Project, correlationId?: string): ServerMessage<ProjectStatePayload> {
+export function createProjectStateMessage(
+  project: Project,
+  correlationId?: string,
+): ServerMessage<ProjectStatePayload> {
   return createServerMessage('project.state', { project }, correlationId)
 }
 
-export function createProjectListMessage(projects: Project[], correlationId?: string): ServerMessage<ProjectListPayload> {
+export function createProjectListMessage(
+  projects: Project[],
+  correlationId?: string,
+): ServerMessage<ProjectListPayload> {
   return createServerMessage('project.list', { projects }, correlationId)
 }
 
@@ -137,15 +165,30 @@ export function createChatThinkingMessage(messageId: string, content: string): S
   return createServerMessage('chat.thinking', { messageId, content })
 }
 
-export function createChatToolPreparingMessage(messageId: string, index: number, name: string, args?: string): ServerMessage<ChatToolPreparingPayload> {
+export function createChatToolPreparingMessage(
+  messageId: string,
+  index: number,
+  name: string,
+  args?: string,
+): ServerMessage<ChatToolPreparingPayload> {
   return createServerMessage('chat.tool_preparing', { messageId, index, name, ...(args ? { arguments: args } : {}) })
 }
 
-export function createChatToolCallMessage(messageId: string, callId: string, tool: string, args: Record<string, unknown>): ServerMessage<ChatToolCallPayload> {
+export function createChatToolCallMessage(
+  messageId: string,
+  callId: string,
+  tool: string,
+  args: Record<string, unknown>,
+): ServerMessage<ChatToolCallPayload> {
   return createServerMessage('chat.tool_call', { messageId, callId, tool, args })
 }
 
-export function createChatToolResultMessage(messageId: string, callId: string, tool: string, result: ToolResult): ServerMessage<ChatToolResultPayload> {
+export function createChatToolResultMessage(
+  messageId: string,
+  callId: string,
+  tool: string,
+  result: ToolResult,
+): ServerMessage<ChatToolResultPayload> {
   return createServerMessage('chat.tool_result', { messageId, callId, tool, result })
 }
 
@@ -153,7 +196,7 @@ export function createChatToolOutputMessage(
   messageId: string,
   callId: string,
   output: string,
-  stream: 'stdout' | 'stderr'
+  stream: 'stdout' | 'stderr',
 ): ServerMessage<ChatToolOutputPayload> {
   return createServerMessage('chat.tool_output', { messageId, callId, output, stream })
 }
@@ -168,14 +211,14 @@ export function createChatSummaryMessage(summary: string): ServerMessage<ChatSum
 
 export function createChatProgressMessage(
   message: string,
-  phase?: 'summary' | 'mode_switch' | 'starting' | 'context_warning' | 'context_error'
+  phase?: 'summary' | 'mode_switch' | 'starting' | 'context_warning' | 'context_error',
 ): ServerMessage<ChatProgressPayload> {
   return createServerMessage('chat.progress', { message, ...(phase ? { phase } : {}) })
 }
 
 export function createChatFormatRetryMessage(
   attempt: number,
-  maxAttempts: number
+  maxAttempts: number,
 ): ServerMessage<ChatFormatRetryPayload> {
   return createServerMessage('chat.format_retry', { attempt, maxAttempts })
 }
@@ -186,7 +229,7 @@ export function createChatMessageMessage(message: Message): ServerMessage<ChatMe
 
 export function createChatMessageUpdatedMessage(
   messageId: string,
-  updates: ChatMessageUpdatedPayload['updates']
+  updates: ChatMessageUpdatedPayload['updates'],
 ): ServerMessage<ChatMessageUpdatedPayload> {
   return createServerMessage('chat.message_updated', { messageId, updates })
 }
@@ -195,9 +238,14 @@ export function createChatDoneMessage(
   messageId: string,
   reason: 'complete' | 'stopped' | 'error' | 'waiting_for_user',
   stats?: ChatDonePayload['stats'],
-  agentType?: 'sub-agent'
+  agentType?: 'sub-agent',
 ): ServerMessage<ChatDonePayload> {
-  return createServerMessage('chat.done', { messageId, reason, ...(stats ? { stats } : {}), ...(agentType ? { agentType } : {}) })
+  return createServerMessage('chat.done', {
+    messageId,
+    reason,
+    ...(stats ? { stats } : {}),
+    ...(agentType ? { agentType } : {}),
+  })
 }
 
 export function createChatErrorMessage(error: string, recoverable: boolean): ServerMessage<ChatErrorPayload> {
@@ -210,28 +258,29 @@ export function createChatPathConfirmationMessage(
   tool: string,
   paths: string[],
   workdir: string,
-  reason: ChatPathConfirmationPayload['reason']
+  reason: ChatPathConfirmationPayload['reason'],
 ): ServerMessage<ChatPathConfirmationPayload> {
   return createServerMessage('chat.path_confirmation', { callId, tool, paths, workdir, reason })
 }
 
 // Ask user messages
-export function createChatAskUserMessage(
-  callId: string,
-  question: string
-): ServerMessage<ChatAskUserPayload> {
+export function createChatAskUserMessage(callId: string, question: string): ServerMessage<ChatAskUserPayload> {
   return createServerMessage('chat.ask_user', { callId, question })
 }
 
 // Vision fallback messages
 export function createChatVisionFallbackMessage(
-  payload: ChatVisionFallbackPayload
+  payload: ChatVisionFallbackPayload,
 ): ServerMessage<ChatVisionFallbackPayload> {
   return createServerMessage('chat.vision_fallback', payload)
 }
 
 // Mode messages
-export function createModeChangedMessage(mode: SessionMode, auto: boolean, reason?: string): ServerMessage<ModeChangedPayload> {
+export function createModeChangedMessage(
+  mode: SessionMode,
+  auto: boolean,
+  reason?: string,
+): ServerMessage<ModeChangedPayload> {
   return createServerMessage('mode.changed', { mode, auto, ...(reason ? { reason } : {}) })
 }
 
@@ -241,17 +290,26 @@ export function createPhaseChangedMessage(phase: SessionPhase): ServerMessage<Ph
 }
 
 // Criteria messages
-export function createCriteriaUpdatedMessage(criteria: Criterion[], changedId?: string): ServerMessage<CriteriaUpdatedPayload> {
+export function createCriteriaUpdatedMessage(
+  criteria: Criterion[],
+  changedId?: string,
+): ServerMessage<CriteriaUpdatedPayload> {
   return createServerMessage('criteria.updated', { criteria, ...(changedId ? { changedId } : {}) })
 }
 
 // Context messages
-export function createContextStateMessage(context: ContextState, subAgentId?: string): ServerMessage<ContextStatePayload> {
+export function createContextStateMessage(
+  context: ContextState,
+  subAgentId?: string,
+): ServerMessage<ContextStatePayload> {
   return createServerMessage('context.state', { context, ...(subAgentId && { subAgentId }) })
 }
 
 // Session name messages
-export function createSessionNameGeneratedMessage(name: string, sessionId?: string): ServerMessage<SessionNameGeneratedPayload> {
+export function createSessionNameGeneratedMessage(
+  name: string,
+  sessionId?: string,
+): ServerMessage<SessionNameGeneratedPayload> {
   const msg: ServerMessage<SessionNameGeneratedPayload> = {
     type: 'session.name_generated',
     payload: { name },
@@ -271,8 +329,6 @@ export function isSessionLoadPayload(payload: unknown): payload is SessionLoadPa
 
 // Chat payloads
 
-
-
 // Path confirmation payloads
 export function isPathConfirmPayload(payload: unknown): payload is PathConfirmPayload {
   return typeof payload === 'object' && payload !== null && 'callId' in payload && 'approved' in payload
@@ -284,19 +340,27 @@ export function isAskAnswerPayload(payload: unknown): payload is AskAnswerPayloa
 }
 
 // UI feedback payloads
-export function isUIFeedbackPayload(payload: unknown): payload is { sessionId: string; element: unknown; annotation: string; pageUrl: string } {
-  return typeof payload === 'object' && payload !== null &&
-    'sessionId' in payload && typeof (payload as any).sessionId === 'string' &&
-    'element' in payload && typeof payload === 'object' &&
-    'annotation' in payload && typeof (payload as any).annotation === 'string' &&
-    'pageUrl' in payload && typeof (payload as any).pageUrl === 'string'
+export function isUIFeedbackPayload(
+  payload: unknown,
+): payload is { sessionId: string; element: unknown; annotation: string; pageUrl: string } {
+  return (
+    typeof payload === 'object' &&
+    payload !== null &&
+    'sessionId' in payload &&
+    typeof (payload as any).sessionId === 'string' &&
+    'element' in payload &&
+    typeof payload === 'object' &&
+    'annotation' in payload &&
+    typeof (payload as any).annotation === 'string' &&
+    'pageUrl' in payload &&
+    typeof (payload as any).pageUrl === 'string'
+  )
 }
 
 // Queue messages
 export function createQueueStateMessage(messages: QueuedMessage[]): ServerMessage<QueueStatePayload> {
   return createServerMessage('queue.state', { messages })
 }
-
 
 // ============================================================================
 // Event Store → Server Message Conversion
@@ -307,7 +371,7 @@ import type { StoredEvent, TurnEvent } from '../events/types.js'
 /**
  * Convert a StoredEvent from EventStore to a ServerMessage for WebSocket.
  * This bridges the new event sourcing layer with the existing frontend protocol.
- * 
+ *
  * Returns null for events that don't have a direct WebSocket equivalent
  * (e.g., turn.snapshot events are used for efficient loading, not streaming).
  */
@@ -369,12 +433,7 @@ export function storedEventToServerMessage(event: StoredEvent): ServerMessage | 
 
     case 'tool.call': {
       const data = event.data as Extract<TurnEvent, { type: 'tool.call' }>['data']
-      return createChatToolCallMessage(
-        data.messageId,
-        data.toolCall.id,
-        data.toolCall.name,
-        data.toolCall.arguments
-      )
+      return createChatToolCallMessage(data.messageId, data.toolCall.id, data.toolCall.name, data.toolCall.arguments)
     }
 
     case 'tool.output': {
@@ -389,7 +448,7 @@ export function storedEventToServerMessage(event: StoredEvent): ServerMessage | 
         data.messageId,
         data.toolCallId,
         '', // Tool name not available in event, but not used by frontend for matching
-        data.result
+        data.result,
       )
     }
 

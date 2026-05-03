@@ -31,19 +31,21 @@ import type {
 import { applyEvents } from './apply-events.js'
 import type { FormatRetry } from './apply-events.js'
 import { stripPromptContextMessages } from './optimize-storage.js'
-import stripAnsi from "strip-ansi"
+import stripAnsi from 'strip-ansi'
 
 function cloneMessage(message: Message): Message {
   return {
     ...message,
     ...(message.attachments ? { attachments: [...message.attachments] } : {}),
-    ...(message.toolCalls ? {
-      toolCalls: message.toolCalls.map((toolCall) => ({
-        ...toolCall,
-        ...(toolCall.streamingOutput ? { streamingOutput: [...toolCall.streamingOutput] } : {}),
-        ...(toolCall.result ? { result: { ...toolCall.result } } : {}),
-      })),
-    } : {}),
+    ...(message.toolCalls
+      ? {
+          toolCalls: message.toolCalls.map((toolCall) => ({
+            ...toolCall,
+            ...(toolCall.streamingOutput ? { streamingOutput: [...toolCall.streamingOutput] } : {}),
+            ...(toolCall.result ? { result: { ...toolCall.result } } : {}),
+          })),
+        }
+      : {}),
     ...(message.segments ? { segments: [...message.segments] } : {}),
     ...(message.preparingToolCalls ? { preparingToolCalls: [...message.preparingToolCalls] } : {}),
   }
@@ -87,16 +89,15 @@ function shouldIncludeContextMessage(
 ): boolean {
   const includeVerifier = options?.includeVerifier ?? true
 
-  return message.role !== 'system'
-    && (windowId === undefined || message.contextWindowId === windowId)
-    && (includeVerifier || message.subAgentType !== 'verifier')
-    && !message.subAgentId
+  return (
+    message.role !== 'system' &&
+    (windowId === undefined || message.contextWindowId === windowId) &&
+    (includeVerifier || message.subAgentType !== 'verifier') &&
+    !message.subAgentId
+  )
 }
 
-function appendSnapshotMessageContext(
-  result: ContextMessage[],
-  message: SnapshotMessage,
-): void {
+function appendSnapshotMessageContext(result: ContextMessage[], message: SnapshotMessage): void {
   const contextMsg: ContextMessage = {
     role: message.role as 'user' | 'assistant',
     content: message.content,
@@ -127,11 +128,13 @@ function appendSnapshotMessageContext(
 
     result.push({
       role: 'tool',
-      content: stripAnsi(toolCall.result.success
-        ? (toolCall.result.output ?? 'Success')
-        : toolCall.result.output
-          ? `${toolCall.result.output}\n\nError: ${toolCall.result.error}`
-          : `Error: ${toolCall.result.error}`),
+      content: stripAnsi(
+        toolCall.result.success
+          ? (toolCall.result.output ?? 'Success')
+          : toolCall.result.output
+            ? `${toolCall.result.output}\n\nError: ${toolCall.result.error}`
+            : `Error: ${toolCall.result.error}`,
+      ),
       toolCallId: toolCall.id,
     })
   }
@@ -163,11 +166,10 @@ function getTimestamp(event: EventLike): number {
   return event.timestamp ?? Date.now()
 }
 
-function applyTurnEventsToSnapshotMessages(
-  initialMessages: SnapshotMessage[],
-  events: EventLike[]
-): SnapshotMessage[] {
-  const messages = applyEvents(initialMessages as unknown as Message[], events as unknown as StoredEvent[], { timestampAsNumber: true }) as unknown as SnapshotMessage[]
+function applyTurnEventsToSnapshotMessages(initialMessages: SnapshotMessage[], events: EventLike[]): SnapshotMessage[] {
+  const messages = applyEvents(initialMessages as unknown as Message[], events as unknown as StoredEvent[], {
+    timestampAsNumber: true,
+  }) as unknown as SnapshotMessage[]
   return messages.map((msg) => ({ ...msg, isStreaming: msg.isStreaming ?? true }))
 }
 
@@ -204,7 +206,7 @@ export interface FoldedSessionState {
 
 /**
  * Build Message[] from stored events (for backward compatibility with shared types)
- * 
+ *
  * If a snapshot exists, messages are extracted from it since individual message events
  * may have been deleted to save space.
  */
@@ -225,7 +227,7 @@ export function buildMessagesFromStoredEvents(events: StoredEvent[]): Message[] 
 /**
  * Build context messages for LLM from stored events.
  * When windowId is provided, only messages in that context window are included.
- * 
+ *
  * If events are missing (deleted after snapshot), this function will not find them.
  * Callers should ensure they have access to the latest snapshot for complete message history.
  */
@@ -243,10 +245,10 @@ export function buildContextMessagesFromStoredEvents(
       case 'message.start': {
         const data = event.data as Extract<TurnEvent, { type: 'message.start' }>['data']
         if (
-          data.role !== 'system'
-          && (windowId === undefined || data.contextWindowId === windowId)
-          && (includeVerifier || data.subAgentType !== 'verifier')
-          && !data.subAgentId
+          data.role !== 'system' &&
+          (windowId === undefined || data.contextWindowId === windowId) &&
+          (includeVerifier || data.subAgentType !== 'verifier') &&
+          !data.subAgentId
         ) {
           const message: ContextMessage & { id: string } = {
             id: data.messageId,
@@ -279,25 +281,31 @@ export function buildContextMessagesFromStoredEvents(
       case 'tool.result': {
         const data = event.data as Extract<TurnEvent, { type: 'tool.result' }>['data']
         if (messageMap.has(data.messageId)) {
-          const imageMeta = data.result.metadata as { mimeType?: string; dataUrl?: string; path?: string; size?: number } | undefined
+          const imageMeta = data.result.metadata as
+            | { mimeType?: string; dataUrl?: string; path?: string; size?: number }
+            | undefined
           const msg: ContextMessage & { id: string } = {
             id: `tool-${data.toolCallId}`,
             role: 'tool',
-            content: stripAnsi(data.result.success
-              ? (data.result.output ?? 'Success')
-              : data.result.output
-                ? `${data.result.output}\n\nError: ${data.result.error}`
-                : `Error: ${data.result.error}`),
+            content: stripAnsi(
+              data.result.success
+                ? (data.result.output ?? 'Success')
+                : data.result.output
+                  ? `${data.result.output}\n\nError: ${data.result.error}`
+                  : `Error: ${data.result.error}`,
+            ),
             toolCallId: data.toolCallId,
           }
           if (imageMeta?.dataUrl && imageMeta?.mimeType?.startsWith('image/')) {
-            msg.attachments = [{
-              id: crypto.randomUUID(),
-              filename: imageMeta.path ?? 'image',
-              mimeType: imageMeta.mimeType as Attachment['mimeType'],
-              size: imageMeta.size ?? 0,
-              data: imageMeta.dataUrl,
-            }]
+            msg.attachments = [
+              {
+                id: crypto.randomUUID(),
+                filename: imageMeta.path ?? 'image',
+                mimeType: imageMeta.mimeType as Attachment['mimeType'],
+                size: imageMeta.size ?? 0,
+                data: imageMeta.dataUrl,
+              },
+            ]
           }
           messages.push(msg)
         }
@@ -330,10 +338,7 @@ export function buildContextMessagesFromEventHistory(
   }, [])
   const laterEvents = events.filter((event) => event.seq > snapshotEvent.seq)
 
-  return [
-    ...snapshotMessages,
-    ...buildContextMessagesFromStoredEvents(laterEvents, windowId, options),
-  ]
+  return [...snapshotMessages, ...buildContextMessagesFromStoredEvents(laterEvents, windowId, options)]
 }
 
 /**
@@ -343,7 +348,10 @@ export function foldTurnEventsToSnapshotMessages(events: EventLike[]): SnapshotM
   return applyTurnEventsToSnapshotMessages([], events)
 }
 
-export function foldTurnEventsToSnapshotMessagesFromInitial(events: EventLike[], initialMessages: SnapshotMessage[]): SnapshotMessage[] {
+export function foldTurnEventsToSnapshotMessagesFromInitial(
+  events: EventLike[],
+  initialMessages: SnapshotMessage[],
+): SnapshotMessage[] {
   return applyTurnEventsToSnapshotMessages(initialMessages, events)
 }
 
@@ -366,9 +374,7 @@ export function foldCriteria(events: EventLike[]): Criterion[] {
       }
       case 'criterion.updated': {
         const data = event.data as Extract<TurnEvent, { type: 'criterion.updated' }>['data']
-        criteria = criteria.map((c) =>
-          c.id === data.criterionId ? { ...c, status: data.status } : c
-        )
+        criteria = criteria.map((c) => (c.id === data.criterionId ? { ...c, status: data.status } : c))
         break
       }
     }
@@ -530,8 +536,6 @@ export function foldIsRunning(events: EventLike[]): boolean {
   return isRunning
 }
 
-
-
 /**
  * Fold pending path confirmations from events
  */
@@ -578,14 +582,15 @@ export function foldSessionState(
   events: EventLike[],
   initialWindowId: string,
   maxTokens: number,
-  initialMessages?: SnapshotMessage[]
+  initialMessages?: SnapshotMessage[],
 ): FoldedSessionState {
   const mode = foldMode(events)
   const phase = foldPhase(events)
   const isRunning = foldIsRunning(events)
-  const messages = initialMessages && initialMessages.length > 0
-    ? foldTurnEventsToSnapshotMessagesFromInitial(events, initialMessages)
-    : foldTurnEventsToSnapshotMessages(events)
+  const messages =
+    initialMessages && initialMessages.length > 0
+      ? foldTurnEventsToSnapshotMessagesFromInitial(events, initialMessages)
+      : foldTurnEventsToSnapshotMessages(events)
   const criteria = foldCriteria(events)
   const todos = foldTodos(events)
   const contextResult = foldContextState(events, initialWindowId)
@@ -603,18 +608,19 @@ export function foldSessionState(
 
   // Ensure compactionCount is up-to-date from events (in case compaction happened after last context.state)
   // Also ensure maxTokens is always from the parameter (current model config), not from cached event data
-  const contextState: ContextState = baseContextState.compactionCount !== contextResult.compactionCount || baseContextState.maxTokens !== maxTokens
-    ? { ...baseContextState, compactionCount: contextResult.compactionCount, maxTokens }
-    : { ...baseContextState, maxTokens }
+  const contextState: ContextState =
+    baseContextState.compactionCount !== contextResult.compactionCount || baseContextState.maxTokens !== maxTokens
+      ? { ...baseContextState, compactionCount: contextResult.compactionCount, maxTokens }
+      : { ...baseContextState, maxTokens }
 
   // Find last mode with reminder by scanning events to determine what was LAST active
   // Priority: newer source wins (compare seq), snapshot field is fallback if no newer message
   let messageReminderMode: { seq: number; mode: SessionMode } | undefined
   let snapshotReminderMode: { seq: number; mode: SessionMode } | undefined
-  
+
   for (let i = events.length - 1; i >= 0; i--) {
     const event = events[i]!
-    
+
     // Track latest message.start auto-prompt (use any to access seq at runtime)
     if (event.type === 'message.start') {
       const data = event.data as { role?: string; messageKind?: string; content?: string }
@@ -626,22 +632,24 @@ export function foldSessionState(
         }
       }
     }
-    
+
     // Track latest snapshot's lastModeWithReminder field
     if (event.type === 'turn.snapshot') {
       const snapshotData = event.data as SessionSnapshot
       if (snapshotData.lastModeWithReminder) {
-        snapshotReminderMode = { seq: (event as unknown as { seq: number }).seq, mode: snapshotData.lastModeWithReminder }
+        snapshotReminderMode = {
+          seq: (event as unknown as { seq: number }).seq,
+          mode: snapshotData.lastModeWithReminder,
+        }
       }
     }
   }
-  
+
   // Use whichever source has the higher seq (is more recent), or snapshot as fallback
   let lastModeWithReminder: SessionMode | undefined
   if (messageReminderMode && snapshotReminderMode) {
-    lastModeWithReminder = messageReminderMode.seq > snapshotReminderMode.seq 
-      ? messageReminderMode.mode 
-      : snapshotReminderMode.mode
+    lastModeWithReminder =
+      messageReminderMode.seq > snapshotReminderMode.seq ? messageReminderMode.mode : snapshotReminderMode.mode
   } else if (snapshotReminderMode) {
     lastModeWithReminder = snapshotReminderMode.mode
   } else if (messageReminderMode) {
@@ -686,7 +694,9 @@ export function foldSessionState(
       }
       case 'vision_fallback.done': {
         const data = event.data as { messageId: string; attachmentId: string; description: string }
-        const existing = visionFallbacks.find(v => v.messageId === data.messageId && v.attachmentId === data.attachmentId)
+        const existing = visionFallbacks.find(
+          (v) => v.messageId === data.messageId && v.attachmentId === data.attachmentId,
+        )
         if (existing) {
           existing.description = data.description
         }
@@ -712,7 +722,11 @@ export function foldSessionState(
         break
       }
       case 'chat.done': {
-        const data = event.data as { messageId: string; reason: 'complete' | 'stopped' | 'error' | 'waiting_for_user'; stats?: MessageStats }
+        const data = event.data as {
+          messageId: string
+          reason: 'complete' | 'stopped' | 'error' | 'waiting_for_user'
+          stats?: MessageStats
+        }
         messageStats.push({
           messageId: data.messageId,
           reason: data.reason,
@@ -721,7 +735,13 @@ export function foldSessionState(
         break
       }
       case 'context.compacted': {
-        const data = event.data as { closedWindowId: string; newWindowId: string; beforeTokens: number; afterTokens: number; summary: string }
+        const data = event.data as {
+          closedWindowId: string
+          newWindowId: string
+          beforeTokens: number
+          afterTokens: number
+          summary: string
+        }
         contextWindows.push({
           ...data,
           timestamp: getTimestamp(event),
@@ -764,7 +784,7 @@ export function foldSessionState(
 export function buildSnapshot(
   foldedState: FoldedSessionState,
   latestSeq: number,
-  snapshotAt: number = Date.now()
+  snapshotAt: number = Date.now(),
 ): SessionSnapshot {
   return {
     mode: foldedState.mode,
@@ -867,20 +887,14 @@ export function buildSnapshotFromSessionState(input: {
 /**
  * Get messages for a specific context window
  */
-export function getMessagesForWindow(
-  messages: SnapshotMessage[],
-  windowId: string
-): SnapshotMessage[] {
+export function getMessagesForWindow(messages: SnapshotMessage[], windowId: string): SnapshotMessage[] {
   return messages.filter((m) => m.contextWindowId === windowId)
 }
 
 /**
  * Build context messages for LLM from messages in current window
  */
-export function buildContextMessagesFromMessages(
-  messages: SnapshotMessage[],
-  windowId: string
-): ContextMessage[] {
+export function buildContextMessagesFromMessages(messages: SnapshotMessage[], windowId: string): ContextMessage[] {
   return getMessagesForWindow(messages, windowId).reduce<ContextMessage[]>((result, message) => {
     if (!shouldIncludeContextMessage(message, windowId)) {
       return result

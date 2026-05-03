@@ -113,15 +113,12 @@ export const webFetchTool = createTool<WebFetchArgs>(
     }
 
     // Build timeout signal
-    const timeoutMs = Math.min(
-      (args.timeout ?? DEFAULT_TIMEOUT_MS / 1000) * 1000,
-      MAX_TIMEOUT_MS
-    )
+    const timeoutMs = Math.min((args.timeout ?? DEFAULT_TIMEOUT_MS / 1000) * 1000, MAX_TIMEOUT_MS)
     const signal = buildSignal(timeoutMs, context.signal)
 
     const headers = {
       'User-Agent': USER_AGENT,
-      'Accept': buildAcceptHeader(format),
+      Accept: buildAcceptHeader(format),
       'Accept-Language': 'en-US,en;q=0.9',
     }
 
@@ -153,10 +150,7 @@ export const webFetchTool = createTool<WebFetchArgs>(
     const mime = contentType.split(';')[0]?.trim().toLowerCase() || ''
 
     // Image handling — return base64 in metadata (like read_file does)
-    const isImage =
-      mime.startsWith('image/') &&
-      mime !== 'image/svg+xml' &&
-      mime !== 'image/vnd.fastbidsheet'
+    const isImage = mime.startsWith('image/') && mime !== 'image/svg+xml' && mime !== 'image/vnd.fastbidsheet'
 
     if (isImage) {
       const base64Data = Buffer.from(arrayBuffer).toString('base64')
@@ -176,14 +170,10 @@ export const webFetchTool = createTool<WebFetchArgs>(
 
     switch (format) {
       case 'markdown':
-        output = contentType.includes('text/html')
-          ? convertHTMLToMarkdown(rawContent)
-          : rawContent
+        output = contentType.includes('text/html') ? convertHTMLToMarkdown(rawContent) : rawContent
         break
       case 'text':
-        output = contentType.includes('text/html')
-          ? stripHTMLTags(rawContent)
-          : rawContent
+        output = contentType.includes('text/html') ? stripHTMLTags(rawContent) : rawContent
         break
       case 'html':
         output = rawContent
@@ -203,5 +193,5 @@ export const webFetchTool = createTool<WebFetchArgs>(
     return helpers.success(output, truncated, {
       metadata: { url, contentType },
     })
-  }
+  },
 )

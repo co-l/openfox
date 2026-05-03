@@ -30,7 +30,13 @@ describe('QueueProcessor', () => {
       addMessage: vi.fn(() => ({ id: 'msg-1' })),
       cancelQueuedMessage: vi.fn(),
       getQueueState: vi.fn(),
-      getContextState: vi.fn(() => ({ currentTokens: 100, maxTokens: 1000, compactionCount: 0, dangerZone: false, canCompact: true })),
+      getContextState: vi.fn(() => ({
+        currentTokens: 100,
+        maxTokens: 1000,
+        compactionCount: 0,
+        dangerZone: false,
+        canCompact: true,
+      })),
     }
 
     mockProviderManager = {
@@ -152,7 +158,7 @@ describe('QueueProcessor', () => {
       callback({ type: 'queue_added', sessionId: 'sess-1', queueId: 'q-1', mode: 'asap', content: 'hello' })
 
       // Wait for the async runTurn to complete
-      await new Promise(resolve => setTimeout(resolve, 50))
+      await new Promise((resolve) => setTimeout(resolve, 50))
 
       // Verify activateProvider was called with the session's provider and model
       expect(mockActivateProvider).toHaveBeenCalledWith('provider-2', { model: 'custom-model' })
@@ -179,7 +185,7 @@ describe('QueueProcessor', () => {
       callback({ type: 'queue_added', sessionId: 'sess-1', queueId: 'q-1', mode: 'asap', content: 'hello' })
 
       // Wait for the async runTurn to complete
-      await new Promise(resolve => setTimeout(resolve, 50))
+      await new Promise((resolve) => setTimeout(resolve, 50))
 
       // Verify activateProvider was NOT called when session has no custom provider
       expect(mockActivateProvider).not.toHaveBeenCalled()

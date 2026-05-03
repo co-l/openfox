@@ -16,7 +16,9 @@ export interface PerformanceChartData {
   points: Array<{ x: number; ppSpeed: number; tgSpeed: number }>
 }
 
-type StatsViewData = Pick<SessionStats, 'dataPoints' | 'callDataPoints'> | Pick<ModelSessionStats, 'dataPoints' | 'callDataPoints'>
+type StatsViewData =
+  | Pick<SessionStats, 'dataPoints' | 'callDataPoints'>
+  | Pick<ModelSessionStats, 'dataPoints' | 'callDataPoints'>
 
 export function buildResponseLogRows(stats: StatsViewData): ResponseLogRow[] {
   const callsByMessageId = new Map<string, CallStatsDataPoint[]>()
@@ -27,8 +29,7 @@ export function buildResponseLogRows(stats: StatsViewData): ResponseLogRow[] {
   }
 
   return stats.dataPoints.map((response) => {
-    const calls = [...(callsByMessageId.get(response.messageId) ?? [])]
-      .sort((a, b) => a.callIndex - b.callIndex)
+    const calls = [...(callsByMessageId.get(response.messageId) ?? [])].sort((a, b) => a.callIndex - b.callIndex)
 
     return {
       ...response,
@@ -67,9 +68,7 @@ function buildCallChartData(stats: StatsViewData): PerformanceChartData {
   }
 }
 
-export function buildPerformanceChartData(
-  stats: StatsViewData
-): PerformanceChartData {
+export function buildPerformanceChartData(stats: StatsViewData): PerformanceChartData {
   if (stats.callDataPoints.length > 0) {
     return buildCallChartData(stats)
   }

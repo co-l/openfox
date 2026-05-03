@@ -22,28 +22,72 @@ const {
   webFetchExecuteMock: vi.fn(async () => ({ success: true, output: 'web_fetch', durationMs: 1, truncated: false })),
 }))
 
-vi.mock('./read.js', () => ({ readFileTool: { name: 'read_file', definition: { type: 'function', function: { name: 'read_file', description: 'Read', parameters: {} } }, execute: readExecuteMock } }))
-vi.mock('./write.js', () => ({ writeFileTool: { name: 'write_file', definition: { type: 'function', function: { name: 'write_file', description: 'Write', parameters: {} } }, execute: writeExecuteMock } }))
-vi.mock('./edit.js', () => ({ editFileTool: { name: 'edit_file', definition: { type: 'function', function: { name: 'edit_file', description: 'Edit', parameters: {} } }, execute: editExecuteMock } }))
-vi.mock('./shell.js', () => ({ runCommandTool: { name: 'run_command', definition: { type: 'function', function: { name: 'run_command', description: 'Shell', parameters: {} } }, execute: shellExecuteMock } }))
+vi.mock('./read.js', () => ({
+  readFileTool: {
+    name: 'read_file',
+    definition: { type: 'function', function: { name: 'read_file', description: 'Read', parameters: {} } },
+    execute: readExecuteMock,
+  },
+}))
+vi.mock('./write.js', () => ({
+  writeFileTool: {
+    name: 'write_file',
+    definition: { type: 'function', function: { name: 'write_file', description: 'Write', parameters: {} } },
+    execute: writeExecuteMock,
+  },
+}))
+vi.mock('./edit.js', () => ({
+  editFileTool: {
+    name: 'edit_file',
+    definition: { type: 'function', function: { name: 'edit_file', description: 'Edit', parameters: {} } },
+    execute: editExecuteMock,
+  },
+}))
+vi.mock('./shell.js', () => ({
+  runCommandTool: {
+    name: 'run_command',
+    definition: { type: 'function', function: { name: 'run_command', description: 'Shell', parameters: {} } },
+    execute: shellExecuteMock,
+  },
+}))
 vi.mock('./ask.js', async (importOriginal) => {
   const actual = await importOriginal<typeof import('./ask.js')>()
   return {
     ...actual,
-    askUserTool: { name: 'ask_user', definition: { type: 'function', function: { name: 'ask_user', description: 'Ask', parameters: {} } }, execute: askExecuteMock },
+    askUserTool: {
+      name: 'ask_user',
+      definition: { type: 'function', function: { name: 'ask_user', description: 'Ask', parameters: {} } },
+      execute: askExecuteMock,
+    },
   }
 })
 vi.mock('./criterion.js', () => ({
-  criterionTool: { name: 'criterion', definition: { type: 'function', function: { name: 'criterion', description: 'Criterion', parameters: {} } }, execute: criterionExecuteMock },
+  criterionTool: {
+    name: 'criterion',
+    definition: { type: 'function', function: { name: 'criterion', description: 'Criterion', parameters: {} } },
+    execute: criterionExecuteMock,
+  },
 }))
 vi.mock('./todo.js', () => ({
-  todoTool: { name: 'todo', definition: { type: 'function', function: { name: 'todo', description: 'Todo', parameters: {} } }, execute: todoExecuteMock },
+  todoTool: {
+    name: 'todo',
+    definition: { type: 'function', function: { name: 'todo', description: 'Todo', parameters: {} } },
+    execute: todoExecuteMock,
+  },
 }))
 vi.mock('./load-skill.js', () => ({
-  loadSkillTool: { name: 'load_skill', definition: { type: 'function', function: { name: 'load_skill', description: 'Load Skill', parameters: {} } }, execute: loadSkillExecuteMock },
+  loadSkillTool: {
+    name: 'load_skill',
+    definition: { type: 'function', function: { name: 'load_skill', description: 'Load Skill', parameters: {} } },
+    execute: loadSkillExecuteMock,
+  },
 }))
 vi.mock('./web-fetch.js', () => ({
-  webFetchTool: { name: 'web_fetch', definition: { type: 'function', function: { name: 'web_fetch', description: 'Web Fetch', parameters: {} } }, execute: webFetchExecuteMock },
+  webFetchTool: {
+    name: 'web_fetch',
+    definition: { type: 'function', function: { name: 'web_fetch', description: 'Web Fetch', parameters: {} } },
+    execute: webFetchExecuteMock,
+  },
 }))
 
 import { AskUserInterrupt } from './ask.js'
@@ -52,24 +96,65 @@ import { createToolRegistry, getToolRegistryForAgent, createRegistryFromTools } 
 import type { AgentDefinition } from '../agents/types.js'
 
 const builderDef: AgentDefinition = {
-  metadata: { id: 'builder', name: 'Builder', description: 'Builds', subagent: false, allowedTools: ['read_file', 'web_fetch', 'write_file', 'edit_file', 'run_command', 'ask_user', 'criterion', 'todo', 'call_sub_agent', 'load_skill'] },
+  metadata: {
+    id: 'builder',
+    name: 'Builder',
+    description: 'Builds',
+    subagent: false,
+    allowedTools: [
+      'read_file',
+      'web_fetch',
+      'write_file',
+      'edit_file',
+      'run_command',
+      'ask_user',
+      'criterion',
+      'todo',
+      'call_sub_agent',
+      'load_skill',
+    ],
+  },
   prompt: 'Build mode.',
 }
 
 const builderWithReturnValueDef: AgentDefinition = {
-  metadata: { id: 'builder', name: 'Builder', description: 'Builds', subagent: false, allowedTools: ['read_file', 'web_fetch', 'write_file', 'edit_file', 'run_command', 'ask_user', 'criterion', 'todo', 'call_sub_agent', 'load_skill', 'return_value'] },
+  metadata: {
+    id: 'builder',
+    name: 'Builder',
+    description: 'Builds',
+    subagent: false,
+    allowedTools: [
+      'read_file',
+      'web_fetch',
+      'write_file',
+      'edit_file',
+      'run_command',
+      'ask_user',
+      'criterion',
+      'todo',
+      'call_sub_agent',
+      'load_skill',
+      'return_value',
+    ],
+  },
   prompt: 'Build mode.',
 }
 
 const verifierDef: AgentDefinition = {
-  metadata: { id: 'verifier', name: 'Verifier', description: 'Verifies', subagent: true, allowedTools: ['read_file', 'run_command', 'criterion:pass,fail', 'web_fetch'] },
+  metadata: {
+    id: 'verifier',
+    name: 'Verifier',
+    description: 'Verifies',
+    subagent: true,
+    allowedTools: ['read_file', 'run_command', 'criterion:pass,fail', 'web_fetch'],
+  },
   prompt: 'Verify.',
 }
 
 describe('tool registries', () => {
   it('getToolRegistryForAgent returns correct tools for top-level agent', () => {
     const registry = getToolRegistryForAgent(builderDef)
-    const toolNames = registry.tools.map(t => t.name)
+    const toolNames = registry.tools.map((t) => t.name)
     expect(toolNames).toContain('read_file')
     expect(toolNames).toContain('write_file')
     expect(toolNames).toContain('edit_file')
@@ -79,13 +164,13 @@ describe('tool registries', () => {
 
   it('getToolRegistryForAgent filters out return_value even if in allowedTools', () => {
     const registry = getToolRegistryForAgent(builderWithReturnValueDef)
-    const toolNames = registry.tools.map(t => t.name)
+    const toolNames = registry.tools.map((t) => t.name)
     expect(toolNames).not.toContain('return_value')
   })
 
   it('getToolRegistryForAgent returns correct tools for sub-agent with return_value', () => {
     const registry = getToolRegistryForAgent(verifierDef)
-    const toolNames = registry.tools.map(t => t.name)
+    const toolNames = registry.tools.map((t) => t.name)
     expect(toolNames).toContain('read_file')
     expect(toolNames).toContain('criterion')
     expect(toolNames).toContain('return_value')
@@ -93,7 +178,7 @@ describe('tool registries', () => {
 
   it('createToolRegistry returns all available tools', () => {
     const registry = createToolRegistry()
-    const toolNames = registry.tools.map(t => t.name)
+    const toolNames = registry.tools.map((t) => t.name)
     expect(toolNames).toContain('read_file')
     expect(toolNames).toContain('write_file')
     expect(toolNames).toContain('run_command')
@@ -104,14 +189,20 @@ describe('tool registries', () => {
     const registry = getToolRegistryForAgent(builderDef)
     const context = { workdir: '/tmp/project', sessionId: 'session-1', sessionManager: {} as never }
 
-    await expect(registry.execute('write_file', { path: 'a.ts' }, context)).resolves.toMatchObject({ success: true, output: 'write' })
+    await expect(registry.execute('write_file', { path: 'a.ts' }, context)).resolves.toMatchObject({
+      success: true,
+      output: 'write',
+    })
     await expect(registry.execute('missing', {}, context)).resolves.toMatchObject({
       success: false,
       error: expect.stringContaining('Unknown tool: missing'),
     })
 
     editExecuteMock.mockRejectedValueOnce(new Error('edit exploded'))
-    await expect(registry.execute('edit_file', { path: 'a.ts' }, context)).resolves.toMatchObject({ success: false, error: 'edit exploded' })
+    await expect(registry.execute('edit_file', { path: 'a.ts' }, context)).resolves.toMatchObject({
+      success: false,
+      error: 'edit exploded',
+    })
   })
 
   it('rethrows ask-user and path access interrupts instead of swallowing them', async () => {
@@ -164,7 +255,7 @@ describe('tool registries', () => {
     const allToolsRegistry = createToolRegistry()
     const context = { workdir: '/tmp/project', sessionId: 'session-1', sessionManager: {} as never }
 
-    const tools = allToolsRegistry.tools.filter(t => t.name === 'read_file')
+    const tools = allToolsRegistry.tools.filter((t) => t.name === 'read_file')
     const allowedTools = ['write_file']
 
     const restrictedRegistry = createRegistryFromTools(tools, allowedTools)
@@ -186,7 +277,7 @@ describe('tool registries', () => {
 
     expect(result).toMatchObject({
       success: false,
-      error: expect.stringContaining("Unknown tool: write_file"),
+      error: expect.stringContaining('Unknown tool: write_file'),
     })
   })
 
@@ -215,7 +306,7 @@ describe('tool registries', () => {
     const allToolsRegistry = createToolRegistry()
     const context = { workdir: '/tmp/project', sessionId: 'session-1', sessionManager: {} as never }
 
-    const tools = allToolsRegistry.tools.filter(t => t.name === 'criterion')
+    const tools = allToolsRegistry.tools.filter((t) => t.name === 'criterion')
     const allowedTools = ['criterion:pass,fail']
 
     const restrictedRegistry = createRegistryFromTools(tools, allowedTools)

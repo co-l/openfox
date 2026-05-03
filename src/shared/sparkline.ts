@@ -46,9 +46,7 @@ export function buildSparklineChart(data: SparklinePoint[], width: number): Spar
   const columnValues = new Map<number, number[]>()
 
   for (const point of sorted) {
-    const column = maxX === minX
-      ? 0
-      : Math.round(((point.x - minX) / (maxX - minX)) * (width - 1))
+    const column = maxX === minX ? 0 : Math.round(((point.x - minX) / (maxX - minX)) * (width - 1))
     const existing = columnValues.get(column) ?? []
     columnValues.set(column, [...existing, point.y])
   }

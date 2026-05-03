@@ -209,7 +209,13 @@ describe('EventStore', () => {
           isRunning: false,
           messages: [],
           criteria: [],
-          contextState: { currentTokens: 0, maxTokens: 200000, compactionCount: 0, dangerZone: false, canCompact: false },
+          contextState: {
+            currentTokens: 0,
+            maxTokens: 200000,
+            compactionCount: 0,
+            dangerZone: false,
+            canCompact: false,
+          },
           currentContextWindowId: 'window-1',
           todos: [],
           readFiles: [],
@@ -229,7 +235,13 @@ describe('EventStore', () => {
           isRunning: true,
           messages: [],
           criteria: [],
-          contextState: { currentTokens: 1000, maxTokens: 200000, compactionCount: 0, dangerZone: false, canCompact: false },
+          contextState: {
+            currentTokens: 1000,
+            maxTokens: 200000,
+            compactionCount: 0,
+            dangerZone: false,
+            canCompact: false,
+          },
           currentContextWindowId: 'window-1',
           todos: [],
           readFiles: [],
@@ -270,7 +282,13 @@ describe('EventStore', () => {
           isRunning: false,
           messages: [],
           criteria: [],
-          contextState: { currentTokens: 0, maxTokens: 200000, compactionCount: 0, dangerZone: false, canCompact: false },
+          contextState: {
+            currentTokens: 0,
+            maxTokens: 200000,
+            compactionCount: 0,
+            dangerZone: false,
+            canCompact: false,
+          },
           currentContextWindowId: 'window-1',
           todos: [],
           readFiles: [],
@@ -586,7 +604,7 @@ describe('initEventStore', () => {
     db.prepare(`INSERT INTO sessions (id, project_id, workdir) VALUES (?, ?, ?)`).run(
       'session-1',
       'project-1',
-      '/tmp/test'
+      '/tmp/test',
     )
 
     // Manually create the EventStore first (simulates first server run)
@@ -597,7 +615,7 @@ describe('initEventStore', () => {
 
     // Verify the session shows as running
     const eventsBeforeRestart = firstStore.getEvents('session-1')
-    const lastRunningBefore = eventsBeforeRestart.filter(e => e.type === 'running.changed').pop()
+    const lastRunningBefore = eventsBeforeRestart.filter((e) => e.type === 'running.changed').pop()
     expect((lastRunningBefore?.data as { isRunning: boolean }).isRunning).toBe(true)
 
     // Now simulate server restart by calling initEventStore
@@ -606,7 +624,7 @@ describe('initEventStore', () => {
 
     // Check that a running.changed: false event was emitted
     const eventsAfterRestart = restartedStore.getEvents('session-1')
-    const lastRunningAfter = eventsAfterRestart.filter(e => e.type === 'running.changed').pop()
+    const lastRunningAfter = eventsAfterRestart.filter((e) => e.type === 'running.changed').pop()
     expect((lastRunningAfter?.data as { isRunning: boolean }).isRunning).toBe(false)
 
     // Should have one more event than before
@@ -629,7 +647,7 @@ describe('initEventStore', () => {
     db.prepare(`INSERT INTO sessions (id, project_id, workdir) VALUES (?, ?, ?)`).run(
       'session-1',
       'project-1',
-      '/tmp/test'
+      '/tmp/test',
     )
 
     const firstStore = new EventStore(db)
@@ -664,7 +682,7 @@ describe('initEventStore', () => {
     db.prepare(`INSERT INTO sessions (id, project_id, workdir) VALUES (?, ?, ?)`).run(
       'session-1',
       'project-1',
-      '/tmp/test'
+      '/tmp/test',
     )
 
     const firstStore = new EventStore(db)
@@ -797,7 +815,13 @@ describe('EventStore - Event Cleanup', () => {
           isRunning: false,
           messages: [],
           criteria: [],
-          contextState: { currentTokens: 100, maxTokens: 200000, compactionCount: 0, dangerZone: false, canCompact: false },
+          contextState: {
+            currentTokens: 100,
+            maxTokens: 200000,
+            compactionCount: 0,
+            dangerZone: false,
+            canCompact: false,
+          },
           currentContextWindowId: 'window-1',
           todos: [],
           readFiles: [],
@@ -833,7 +857,13 @@ describe('EventStore - Event Cleanup', () => {
           isRunning: false,
           messages: [],
           criteria: [],
-          contextState: { currentTokens: 100, maxTokens: 200000, compactionCount: 0, dangerZone: false, canCompact: false },
+          contextState: {
+            currentTokens: 100,
+            maxTokens: 200000,
+            compactionCount: 0,
+            dangerZone: false,
+            canCompact: false,
+          },
           currentContextWindowId: 'window-1',
           todos: [],
           readFiles: [],
@@ -853,7 +883,13 @@ describe('EventStore - Event Cleanup', () => {
           isRunning: false,
           messages: [],
           criteria: [],
-          contextState: { currentTokens: 200, maxTokens: 200000, compactionCount: 1, dangerZone: false, canCompact: false },
+          contextState: {
+            currentTokens: 200,
+            maxTokens: 200000,
+            compactionCount: 1,
+            dangerZone: false,
+            canCompact: false,
+          },
           currentContextWindowId: 'window-2',
           todos: [],
           readFiles: [],
@@ -894,7 +930,13 @@ describe('EventStore - Event Cleanup', () => {
           isRunning: false,
           messages: [{ id: 'msg-1', role: 'user', content: 'Hello world', timestamp: Date.now() }],
           criteria: [],
-          contextState: { currentTokens: 100, maxTokens: 200000, compactionCount: 0, dangerZone: false, canCompact: false },
+          contextState: {
+            currentTokens: 100,
+            maxTokens: 200000,
+            compactionCount: 0,
+            dangerZone: false,
+            canCompact: false,
+          },
           currentContextWindowId: 'window-1',
           todos: [],
           readFiles: [],
@@ -932,7 +974,13 @@ describe('EventStore - Event Cleanup', () => {
           isRunning: false,
           messages: [],
           criteria: [],
-          contextState: { currentTokens: 100, maxTokens: 200000, compactionCount: 0, dangerZone: false, canCompact: false },
+          contextState: {
+            currentTokens: 100,
+            maxTokens: 200000,
+            compactionCount: 0,
+            dangerZone: false,
+            canCompact: false,
+          },
           currentContextWindowId: 'window-1',
           todos: [],
           readFiles: [],
@@ -957,9 +1005,33 @@ describe('EventStore - Event Cleanup', () => {
     it('should consolidate orphaned events into a new snapshot', () => {
       const sessionId = 'session-1'
 
-      store.append(sessionId, { type: 'session.initialized', data: { projectId: 'p1', workdir: '/tmp', contextWindowId: 'window-1' } })
+      store.append(sessionId, {
+        type: 'session.initialized',
+        data: { projectId: 'p1', workdir: '/tmp', contextWindowId: 'window-1' },
+      })
       store.append(sessionId, { type: 'message.start', data: { messageId: 'msg-1', role: 'user', content: 'Hello' } })
-      store.append(sessionId, { type: 'turn.snapshot', data: { mode: 'planner', phase: 'plan', isRunning: false, messages: [], criteria: [], contextState: { currentTokens: 100, maxTokens: 200000, compactionCount: 0, dangerZone: false, canCompact: false }, currentContextWindowId: 'window-1', todos: [], readFiles: [], snapshotSeq: 2, snapshotAt: Date.now() } })
+      store.append(sessionId, {
+        type: 'turn.snapshot',
+        data: {
+          mode: 'planner',
+          phase: 'plan',
+          isRunning: false,
+          messages: [],
+          criteria: [],
+          contextState: {
+            currentTokens: 100,
+            maxTokens: 200000,
+            compactionCount: 0,
+            dangerZone: false,
+            canCompact: false,
+          },
+          currentContextWindowId: 'window-1',
+          todos: [],
+          readFiles: [],
+          snapshotSeq: 2,
+          snapshotAt: Date.now(),
+        },
+      })
       store.append(sessionId, { type: 'message.start', data: { messageId: 'msg-2', role: 'assistant' } })
       store.append(sessionId, { type: 'message.delta', data: { messageId: 'msg-2', content: 'Hi there' } })
 
@@ -972,9 +1044,9 @@ describe('EventStore - Event Cleanup', () => {
 
       const eventsAfter = store.getEvents(sessionId)
       expect(eventsAfter).toHaveLength(2) // session.initialized + new snapshot
-      expect(eventsAfter.find(e => e.type === 'session.initialized')).toBeDefined()
-      expect(eventsAfter.find(e => e.type === 'turn.snapshot')).toBeDefined()
-      const snapshotEvent = eventsAfter.find(e => e.type === 'turn.snapshot')!
+      expect(eventsAfter.find((e) => e.type === 'session.initialized')).toBeDefined()
+      expect(eventsAfter.find((e) => e.type === 'turn.snapshot')).toBeDefined()
+      const snapshotEvent = eventsAfter.find((e) => e.type === 'turn.snapshot')!
       const snapshotData = snapshotEvent!.data as { messages: { id: string; content: string }[] }
       expect(snapshotData.messages).toHaveLength(2)
       expect(snapshotData.messages[0]!.id).toBe('msg-1')
@@ -985,9 +1057,33 @@ describe('EventStore - Event Cleanup', () => {
     it('should return null when no orphaned events to consolidate', () => {
       const sessionId = 'session-1'
 
-      store.append(sessionId, { type: 'session.initialized', data: { projectId: 'p1', workdir: '/tmp', contextWindowId: 'window-1' } })
+      store.append(sessionId, {
+        type: 'session.initialized',
+        data: { projectId: 'p1', workdir: '/tmp', contextWindowId: 'window-1' },
+      })
       store.append(sessionId, { type: 'message.start', data: { messageId: 'msg-1', role: 'user', content: 'Hello' } })
-      store.append(sessionId, { type: 'turn.snapshot', data: { mode: 'planner', phase: 'plan', isRunning: false, messages: [], criteria: [], contextState: { currentTokens: 100, maxTokens: 200000, compactionCount: 0, dangerZone: false, canCompact: false }, currentContextWindowId: 'window-1', todos: [], readFiles: [], snapshotSeq: 2, snapshotAt: Date.now() } })
+      store.append(sessionId, {
+        type: 'turn.snapshot',
+        data: {
+          mode: 'planner',
+          phase: 'plan',
+          isRunning: false,
+          messages: [],
+          criteria: [],
+          contextState: {
+            currentTokens: 100,
+            maxTokens: 200000,
+            compactionCount: 0,
+            dangerZone: false,
+            canCompact: false,
+          },
+          currentContextWindowId: 'window-1',
+          todos: [],
+          readFiles: [],
+          snapshotSeq: 2,
+          snapshotAt: Date.now(),
+        },
+      })
 
       const result = store.consolidateSession(sessionId)
       expect(result).toBeNull()
@@ -996,14 +1092,38 @@ describe('EventStore - Event Cleanup', () => {
     it('should preserve session.initialized event during consolidation', () => {
       const sessionId = 'session-preserve-init'
 
-      store.append(sessionId, { type: 'session.initialized', data: { projectId: 'p1', workdir: '/tmp', contextWindowId: 'window-1' } })
+      store.append(sessionId, {
+        type: 'session.initialized',
+        data: { projectId: 'p1', workdir: '/tmp', contextWindowId: 'window-1' },
+      })
       store.append(sessionId, { type: 'message.start', data: { messageId: 'msg-1', role: 'user', content: 'Hello' } })
-      store.append(sessionId, { type: 'turn.snapshot', data: { mode: 'planner', phase: 'plan', isRunning: false, messages: [], criteria: [], contextState: { currentTokens: 100, maxTokens: 200000, compactionCount: 0, dangerZone: false, canCompact: false }, currentContextWindowId: 'window-1', todos: [], readFiles: [], snapshotSeq: 2, snapshotAt: Date.now() } })
+      store.append(sessionId, {
+        type: 'turn.snapshot',
+        data: {
+          mode: 'planner',
+          phase: 'plan',
+          isRunning: false,
+          messages: [],
+          criteria: [],
+          contextState: {
+            currentTokens: 100,
+            maxTokens: 200000,
+            compactionCount: 0,
+            dangerZone: false,
+            canCompact: false,
+          },
+          currentContextWindowId: 'window-1',
+          todos: [],
+          readFiles: [],
+          snapshotSeq: 2,
+          snapshotAt: Date.now(),
+        },
+      })
       store.append(sessionId, { type: 'message.start', data: { messageId: 'msg-2', role: 'assistant' } })
 
       // Before consolidation: session.initialized exists at seq 1
       const eventsBefore = store.getEvents(sessionId)
-      const initBefore = eventsBefore.find(e => e.type === 'session.initialized')
+      const initBefore = eventsBefore.find((e) => e.type === 'session.initialized')
       expect(initBefore).toBeDefined()
 
       const result = store.consolidateSession(sessionId)
@@ -1011,7 +1131,7 @@ describe('EventStore - Event Cleanup', () => {
 
       // After consolidation: session.initialized should still exist
       const eventsAfter = store.getEvents(sessionId)
-      const initAfter = eventsAfter.find(e => e.type === 'session.initialized')
+      const initAfter = eventsAfter.find((e) => e.type === 'session.initialized')
       expect(initAfter).toBeDefined()
       expect((initAfter!.data as { contextWindowId: string }).contextWindowId).toBe('window-1')
     })
@@ -1030,11 +1150,38 @@ describe('EventStore - Event Cleanup', () => {
 
     it('should find sessions with events after latest snapshot', () => {
       const sessionId = 'session-1'
-      db.prepare(`INSERT INTO sessions (id, is_running, updated_at) VALUES (?, 0, ?)`).run(sessionId, Date.now() - 10 * 60 * 1000)
+      db.prepare(`INSERT INTO sessions (id, is_running, updated_at) VALUES (?, 0, ?)`).run(
+        sessionId,
+        Date.now() - 10 * 60 * 1000,
+      )
 
-      store.append(sessionId, { type: 'session.initialized', data: { projectId: 'p1', workdir: '/tmp', contextWindowId: 'window-1' } })
+      store.append(sessionId, {
+        type: 'session.initialized',
+        data: { projectId: 'p1', workdir: '/tmp', contextWindowId: 'window-1' },
+      })
       store.append(sessionId, { type: 'message.start', data: { messageId: 'msg-1', role: 'user', content: 'Hello' } })
-      store.append(sessionId, { type: 'turn.snapshot', data: { mode: 'planner', phase: 'plan', isRunning: false, messages: [], criteria: [], contextState: { currentTokens: 100, maxTokens: 200000, compactionCount: 0, dangerZone: false, canCompact: false }, currentContextWindowId: 'window-1', todos: [], readFiles: [], snapshotSeq: 2, snapshotAt: Date.now() } })
+      store.append(sessionId, {
+        type: 'turn.snapshot',
+        data: {
+          mode: 'planner',
+          phase: 'plan',
+          isRunning: false,
+          messages: [],
+          criteria: [],
+          contextState: {
+            currentTokens: 100,
+            maxTokens: 200000,
+            compactionCount: 0,
+            dangerZone: false,
+            canCompact: false,
+          },
+          currentContextWindowId: 'window-1',
+          todos: [],
+          readFiles: [],
+          snapshotSeq: 2,
+          snapshotAt: Date.now(),
+        },
+      })
       store.append(sessionId, { type: 'message.start', data: { messageId: 'msg-2', role: 'assistant' } })
 
       const orphaned = store.findOrphanedSessions()
@@ -1043,11 +1190,38 @@ describe('EventStore - Event Cleanup', () => {
 
     it('should exclude sessions without orphaned events', () => {
       const sessionId = 'session-1'
-      db.prepare(`INSERT INTO sessions (id, is_running, updated_at) VALUES (?, 0, ?)`).run(sessionId, Date.now() - 10 * 60 * 1000)
+      db.prepare(`INSERT INTO sessions (id, is_running, updated_at) VALUES (?, 0, ?)`).run(
+        sessionId,
+        Date.now() - 10 * 60 * 1000,
+      )
 
-      store.append(sessionId, { type: 'session.initialized', data: { projectId: 'p1', workdir: '/tmp', contextWindowId: 'window-1' } })
+      store.append(sessionId, {
+        type: 'session.initialized',
+        data: { projectId: 'p1', workdir: '/tmp', contextWindowId: 'window-1' },
+      })
       store.append(sessionId, { type: 'message.start', data: { messageId: 'msg-1', role: 'user', content: 'Hello' } })
-      store.append(sessionId, { type: 'turn.snapshot', data: { mode: 'planner', phase: 'plan', isRunning: false, messages: [], criteria: [], contextState: { currentTokens: 100, maxTokens: 200000, compactionCount: 0, dangerZone: false, canCompact: false }, currentContextWindowId: 'window-1', todos: [], readFiles: [], snapshotSeq: 2, snapshotAt: Date.now() } })
+      store.append(sessionId, {
+        type: 'turn.snapshot',
+        data: {
+          mode: 'planner',
+          phase: 'plan',
+          isRunning: false,
+          messages: [],
+          criteria: [],
+          contextState: {
+            currentTokens: 100,
+            maxTokens: 200000,
+            compactionCount: 0,
+            dangerZone: false,
+            canCompact: false,
+          },
+          currentContextWindowId: 'window-1',
+          todos: [],
+          readFiles: [],
+          snapshotSeq: 2,
+          snapshotAt: Date.now(),
+        },
+      })
 
       const orphaned = store.findOrphanedSessions()
       expect(orphaned).not.toContain(sessionId)
@@ -1055,10 +1229,37 @@ describe('EventStore - Event Cleanup', () => {
 
     it('should exclude currently running sessions', () => {
       const sessionId = 'session-1'
-      db.prepare(`INSERT INTO sessions (id, is_running, updated_at) VALUES (?, 1, ?)`).run(sessionId, Date.now() - 10 * 60 * 1000)
+      db.prepare(`INSERT INTO sessions (id, is_running, updated_at) VALUES (?, 1, ?)`).run(
+        sessionId,
+        Date.now() - 10 * 60 * 1000,
+      )
 
-      store.append(sessionId, { type: 'session.initialized', data: { projectId: 'p1', workdir: '/tmp', contextWindowId: 'window-1' } })
-      store.append(sessionId, { type: 'turn.snapshot', data: { mode: 'planner', phase: 'plan', isRunning: true, messages: [], criteria: [], contextState: { currentTokens: 100, maxTokens: 200000, compactionCount: 0, dangerZone: false, canCompact: false }, currentContextWindowId: 'window-1', todos: [], readFiles: [], snapshotSeq: 1, snapshotAt: Date.now() } })
+      store.append(sessionId, {
+        type: 'session.initialized',
+        data: { projectId: 'p1', workdir: '/tmp', contextWindowId: 'window-1' },
+      })
+      store.append(sessionId, {
+        type: 'turn.snapshot',
+        data: {
+          mode: 'planner',
+          phase: 'plan',
+          isRunning: true,
+          messages: [],
+          criteria: [],
+          contextState: {
+            currentTokens: 100,
+            maxTokens: 200000,
+            compactionCount: 0,
+            dangerZone: false,
+            canCompact: false,
+          },
+          currentContextWindowId: 'window-1',
+          todos: [],
+          readFiles: [],
+          snapshotSeq: 1,
+          snapshotAt: Date.now(),
+        },
+      })
       store.append(sessionId, { type: 'message.start', data: { messageId: 'msg-1', role: 'user', content: 'Hello' } })
 
       const orphaned = store.findOrphanedSessions()

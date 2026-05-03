@@ -1,5 +1,15 @@
 import { Router } from 'express'
-import { loadDefaultWorkflows, loadUserWorkflows, loadAllWorkflows, findWorkflowById, saveWorkflow, deleteWorkflow, workflowExists, getDefaultWorkflowIds, getDefaultWorkflowContent } from '../workflows/registry.js'
+import {
+  loadDefaultWorkflows,
+  loadUserWorkflows,
+  loadAllWorkflows,
+  findWorkflowById,
+  saveWorkflow,
+  deleteWorkflow,
+  workflowExists,
+  getDefaultWorkflowIds,
+  getDefaultWorkflowContent,
+} from '../workflows/registry.js'
 import { TEMPLATE_VARIABLES } from '../workflows/executor.js'
 import type { WorkflowDefinition } from '../workflows/types.js'
 import type { Config } from '../../shared/types.js'
@@ -9,14 +19,11 @@ export function createWorkflowRoutes(configDir: string, config: Config): Router 
   const router = Router()
 
   router.get('/', async (_req, res) => {
-    const [defaults, userItems] = await Promise.all([
-      loadDefaultWorkflows(),
-      loadUserWorkflows(configDir),
-    ])
+    const [defaults, userItems] = await Promise.all([loadDefaultWorkflows(), loadUserWorkflows(configDir)])
     const overrideIds = computeOverrideIds(defaults, userItems)
     res.json({
-      defaults: defaults.map(p => ({ ...p.metadata, startCondition: p.startCondition })),
-      userItems: userItems.map(p => ({ ...p.metadata, startCondition: p.startCondition })),
+      defaults: defaults.map((p) => ({ ...p.metadata, startCondition: p.startCondition })),
+      userItems: userItems.map((p) => ({ ...p.metadata, startCondition: p.startCondition })),
       activeWorkflowId: config.activeWorkflowId ?? 'default',
       overrideIds,
     })
@@ -92,7 +99,7 @@ export function createWorkflowRoutes(configDir: string, config: Config): Router 
     const { id } = req.params
     const defaults = await loadDefaultWorkflows()
     const userItems = await loadUserWorkflows(configDir)
-    const source = defaults.find(w => w.metadata.id === id) ?? userItems.find(w => w.metadata.id === id)
+    const source = defaults.find((w) => w.metadata.id === id) ?? userItems.find((w) => w.metadata.id === id)
     if (!source) {
       return res.status(404).json({ error: 'Workflow not found' })
     }

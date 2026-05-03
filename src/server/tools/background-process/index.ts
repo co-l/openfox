@@ -84,31 +84,39 @@ These processes run independently of agent turns and persist across session comp
       case 'start': {
         const count = store.getSessionProcessCount(sessionId)
         const maxPerSession = store.getMaxPerSession()
-        
+
         if (count >= maxPerSession) {
-          return helpers.error(`Maximum number of background processes (${maxPerSession}) reached. Stop existing processes before starting new ones.`)
+          return helpers.error(
+            `Maximum number of background processes (${maxPerSession}) reached. Stop existing processes before starting new ones.`,
+          )
         }
 
         const name = args.name ?? args.command?.split(' ')[0] ?? 'process'
         const process = manager.createProcess(sessionId, name, args.command!, cwd, args.timeout)
-        
+
         if (!process) {
           return helpers.error(`Failed to create process. Maximum limit may have been reached.`)
         }
 
         const pid = manager.startProcessCommand(process.id, sessionId, args.command!, cwd)
-        
+
         if (!pid) {
           return helpers.error(`Failed to start process.`)
         }
 
-        return helpers.success(JSON.stringify({
-          processId: process.id,
-          name: process.name,
-          pid,
-          status: 'running',
-          maxReached: count + 1 >= maxPerSession,
-        }, null, 2))
+        return helpers.success(
+          JSON.stringify(
+            {
+              processId: process.id,
+              name: process.name,
+              pid,
+              status: 'running',
+              maxReached: count + 1 >= maxPerSession,
+            },
+            null,
+            2,
+          ),
+        )
       }
 
       case 'stop': {
@@ -122,22 +130,34 @@ These processes run independently of agent turns and persist across session comp
         }
 
         await manager.stopProcess(args.processId!, sessionId)
-        
-        return helpers.success(JSON.stringify({
-          processId: args.processId,
-          status: 'removed',
-        }, null, 2))
+
+        return helpers.success(
+          JSON.stringify(
+            {
+              processId: args.processId,
+              status: 'removed',
+            },
+            null,
+            2,
+          ),
+        )
       }
 
       case 'list': {
         const processes = manager.getSessionProcesses(sessionId)
         const maxPerSession = store.getMaxPerSession()
-        
-        return helpers.success(JSON.stringify({
-          processes,
-          maxPerSession,
-          currentCount: processes.filter(p => p.status !== 'exited').length,
-        }, null, 2))
+
+        return helpers.success(
+          JSON.stringify(
+            {
+              processes,
+              maxPerSession,
+              currentCount: processes.filter((p) => p.status !== 'exited').length,
+            },
+            null,
+            2,
+          ),
+        )
       }
 
       case 'status': {
@@ -147,11 +167,17 @@ These processes run independently of agent turns and persist across session comp
         }
 
         const uptime = proc.startedAt ? Date.now() - proc.startedAt : null
-        
-        return helpers.success(JSON.stringify({
-          process: proc,
-          uptime,
-        }, null, 2))
+
+        return helpers.success(
+          JSON.stringify(
+            {
+              process: proc,
+              uptime,
+            },
+            null,
+            2,
+          ),
+        )
       }
 
       case 'logs': {
@@ -163,19 +189,25 @@ These processes run independently of agent turns and persist across session comp
         const since = args.since ?? 0
         const maxLines = Math.min(args.maxLines ?? 500, 2000)
         const { lines, totalLines, nextOffset, hasMore } = manager.getProcessLogs(args.processId!, since, maxLines)
-        
-        return helpers.success(JSON.stringify({
-          processId: args.processId,
-          lines,
-          totalLines,
-          nextOffset,
-          hasMore,
-          truncated: hasMore,
-        }, null, 2))
+
+        return helpers.success(
+          JSON.stringify(
+            {
+              processId: args.processId,
+              lines,
+              totalLines,
+              nextOffset,
+              hasMore,
+              truncated: hasMore,
+            },
+            null,
+            2,
+          ),
+        )
       }
 
       default:
         return helpers.error(`Unknown action: ${args.action}`)
     }
-  }
+  },
 )

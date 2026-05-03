@@ -62,9 +62,7 @@ describe('config', () => {
         backend: 'vllm',
         isActive: true,
       })
-      expect(migrated.providers[0]?.models).toEqual([
-        { id: 'qwen3-32b', contextWindow: 200000, source: 'user' },
-      ])
+      expect(migrated.providers[0]?.models).toEqual([{ id: 'qwen3-32b', contextWindow: 200000, source: 'user' }])
       expect(migrated.defaultModelSelection).toMatch(/^[a-f0-9-]+\/qwen3-32b$/)
       // Old llm key should be removed
       expect('llm' in migrated).toBe(false)
@@ -180,10 +178,7 @@ describe('config', () => {
         workspace: { workdir: process.cwd() },
       }
 
-      await writeFile(
-        join(TEST_DIR, 'production', 'config.json'),
-        JSON.stringify(oldConfig)
-      )
+      await writeFile(join(TEST_DIR, 'production', 'config.json'), JSON.stringify(oldConfig))
 
       const loaded = await loadGlobalConfig('production')
 
@@ -387,11 +382,11 @@ describe('config', () => {
       }
 
       await saveGlobalConfig('production', originalConfig)
-      
+
       // Simulate updating only logging level
       const updatedConfig = await loadGlobalConfig('production')
       updatedConfig.logging.level = 'error' as const
-      
+
       await saveGlobalConfig('production', updatedConfig)
       const reloaded = await loadGlobalConfig('production')
 
@@ -409,9 +404,7 @@ describe('config', () => {
             name: 'Test Provider',
             url: 'http://localhost:8000/v1',
             backend: 'vllm' as const,
-            models: [
-              { id: 'Intel/Qwen3.5-397B', contextWindow: 200000, source: 'user' as const },
-            ],
+            models: [{ id: 'Intel/Qwen3.5-397B', contextWindow: 200000, source: 'user' as const }],
             isActive: true,
             createdAt: new Date().toISOString(),
           },
@@ -426,10 +419,10 @@ describe('config', () => {
       const result = migrateConfig(configWithSlashInModel)
       expect(result.migrated).toBe(false)
       expect(result.config.defaultModelSelection).toBe('test-provider/Intel/Qwen3.5-397B')
-      
+
       const activeProvider = getActiveProvider(result.config)
       expect(activeProvider?.id).toBe('test-provider')
-      
+
       const defaultModel = getDefaultModel(result.config)
       expect(defaultModel).toBe('Intel/Qwen3.5-397B')
     })

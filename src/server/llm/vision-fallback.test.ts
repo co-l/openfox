@@ -1,5 +1,12 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
-import { describeImage, describeImageFromDataUrl, setVisionFallbackConfig, getVisionFallbackConfig, isVisionFallbackEnabled, clearDescriptionCache } from './vision-fallback.js'
+import {
+  describeImage,
+  describeImageFromDataUrl,
+  setVisionFallbackConfig,
+  getVisionFallbackConfig,
+  isVisionFallbackEnabled,
+  clearDescriptionCache,
+} from './vision-fallback.js'
 
 global.fetch = vi.fn()
 
@@ -21,7 +28,7 @@ describe('vision-fallback', () => {
       setVisionFallbackConfig({ enabled: true })
       const mockResponse = {
         ok: true,
-        json: async () => ({ message: { content: 'A test image showing a cat' } })
+        json: async () => ({ message: { content: 'A test image showing a cat' } }),
       }
       vi.mocked(fetch).mockResolvedValue(mockResponse as unknown as Response)
 
@@ -34,7 +41,7 @@ describe('vision-fallback', () => {
       const mockResponse = {
         ok: false,
         status: 500,
-        text: async () => 'Internal error'
+        text: async () => 'Internal error',
       }
       vi.mocked(fetch).mockResolvedValue(mockResponse as unknown as Response)
 
@@ -45,7 +52,7 @@ describe('vision-fallback', () => {
     it('is interrupted by external AbortSignal', async () => {
       setVisionFallbackConfig({ enabled: true })
       const abortController = new AbortController()
-      
+
       vi.mocked(fetch).mockImplementation(async (_url, init) => {
         return new Promise((_resolve, reject) => {
           if (init?.signal?.aborted) {
@@ -72,7 +79,7 @@ describe('vision-fallback', () => {
       setVisionFallbackConfig({ enabled: true })
       const mockResponse = {
         ok: true,
-        json: async () => ({ message: { content: 'A test image' } })
+        json: async () => ({ message: { content: 'A test image' } }),
       }
       vi.mocked(fetch).mockResolvedValue(mockResponse as unknown as Response)
 

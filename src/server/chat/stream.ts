@@ -1,6 +1,6 @@
 /**
  * Core LLM streaming function - the ONE place all LLM interactions go through.
- * 
+ *
  * Every LLM call:
  * - Uses the current conversation as context
  * - Creates a visible assistant message
@@ -39,7 +39,12 @@ export interface StreamOptions {
   signal?: AbortSignal | undefined
   onEvent: (event: ServerMessage) => void
   /** Optional: provide custom messages instead of using session's current window */
-  customMessages?: Array<{ role: 'user' | 'assistant' | 'tool'; content: string; toolCalls?: ToolCall[]; toolCallId?: string }>
+  customMessages?: Array<{
+    role: 'user' | 'assistant' | 'tool'
+    content: string
+    toolCalls?: ToolCall[]
+    toolCallId?: string
+  }>
   /** Optional: sub-agent ID to tag the created assistant message */
   subAgentId?: string
   /** Optional: sub-agent type to tag the created assistant message */
@@ -67,7 +72,7 @@ export interface StreamResult {
 /**
  * Stream an LLM response, creating a visible assistant message.
  * Handles XML tool format retry automatically.
- * 
+ *
  * @returns The result including messageId, content, tool calls, and usage stats
  */
 export async function streamLLMResponse(options: StreamOptions): Promise<StreamResult> {
@@ -77,9 +82,24 @@ export async function streamLLMResponse(options: StreamOptions): Promise<StreamR
 async function streamLLMResponseInternal(
   options: StreamOptions,
   formatRetryCount: number,
-  existingMessageId?: string
+  existingMessageId?: string,
 ): Promise<StreamResult> {
-  const { sessionManager, sessionId, systemPrompt, llmClient, tools, toolChoice, signal, onEvent, customMessages, subAgentId, subAgentType, disableThinking, onVisionFallbackStart, onVisionFallbackDone } = options
+  const {
+    sessionManager,
+    sessionId,
+    systemPrompt,
+    llmClient,
+    tools,
+    toolChoice,
+    signal,
+    onEvent,
+    customMessages,
+    subAgentId,
+    subAgentType,
+    disableThinking,
+    onVisionFallbackStart,
+    onVisionFallbackDone,
+  } = options
 
   // If retrying due to XML format error, inject correction prompt
   if (formatRetryCount > 0) {
@@ -94,18 +114,21 @@ async function streamLLMResponseInternal(
   }
 
   // Build messages - use custom messages if provided, otherwise session's current window
-  let llmMessages: Array<{ role: 'system' | 'user' | 'assistant' | 'tool'; content: string; toolCalls?: ToolCall[]; toolCallId?: string; attachments?: Attachment[] }>
-  
+  let llmMessages: Array<{
+    role: 'system' | 'user' | 'assistant' | 'tool'
+    content: string
+    toolCalls?: ToolCall[]
+    toolCallId?: string
+    attachments?: Attachment[]
+  }>
+
   if (customMessages) {
-    llmMessages = [
-      { role: 'system', content: systemPrompt },
-      ...customMessages,
-    ]
+    llmMessages = [{ role: 'system', content: systemPrompt }, ...customMessages]
   } else {
     const currentWindowMessages = sessionManager.getCurrentWindowMessages(sessionId)
     llmMessages = [
       { role: 'system', content: systemPrompt },
-      ...currentWindowMessages.map(m => ({
+      ...currentWindowMessages.map((m) => ({
         role: m.role as 'user' | 'assistant' | 'tool',
         content: m.content,
         ...(m.toolCalls && { toolCalls: m.toolCalls }),
@@ -119,34 +142,35 @@ async function streamLLMResponseInternal(
   const config = getRuntimeConfig()
   const estimate = estimateContextSize(
     systemPrompt,
-    llmMessages.map(m => ({ role: m.role, content: m.content })),
-    config.context.maxTokens
+    llmMessages.map((m) => ({ role: m.role, content: m.content })),
+    config.context.maxTokens,
   )
-  
+
   if (estimate.isOverLimit) {
-    logger.warn('Context exceeds limit', { 
-      sessionId, 
-      estimated: estimate.estimatedTokens, 
+    logger.warn('Context exceeds limit', {
+      sessionId,
+      estimated: estimate.estimatedTokens,
       max: estimate.maxTokens,
-      percent: estimate.percentUsed 
+      percent: estimate.percentUsed,
     })
-    onEvent(createChatProgressMessage(
-      `Context is full (~${estimate.percentUsed}%). Please compact before continuing.`,
-      'context_error'
-    ))
+    onEvent(
+      createChatProgressMessage(
+        `Context is full (~${estimate.percentUsed}%). Please compact before continuing.`,
+        'context_error',
+      ),
+    )
     // Don't throw - let the LLM truncate or error naturally
     // The real promptTokens will be reported after the call
   } else if (estimate.isNearLimit) {
-    logger.info('Context nearing limit', { 
-      sessionId, 
-      estimated: estimate.estimatedTokens, 
+    logger.info('Context nearing limit', {
+      sessionId,
+      estimated: estimate.estimatedTokens,
       max: estimate.maxTokens,
-      percent: estimate.percentUsed 
+      percent: estimate.percentUsed,
     })
-    onEvent(createChatProgressMessage(
-      `Context at ~${estimate.percentUsed}%. Consider compacting soon.`,
-      'context_warning'
-    ))
+    onEvent(
+      createChatProgressMessage(`Context at ~${estimate.percentUsed}%. Consider compacting soon.`, 'context_warning'),
+    )
   }
 
   // Create or reuse assistant message
@@ -174,7 +198,7 @@ async function streamLLMResponseInternal(
   })
 
   let result: Awaited<ReturnType<typeof stream.next>>['value'] = null
-  
+
   // Track tool call indices we've emitted preparing events for
   const seenToolIndices = new Set<number>()
   // Track accumulated tool names by index (for when name comes in multiple chunks)
@@ -208,7 +232,7 @@ async function streamLLMResponseInternal(
           const existingName = toolNames.get(value.index) ?? ''
           toolNames.set(value.index, existingName + value.name)
         }
-        
+
         // Emit preparing event on first delta for this index (when we have a complete name)
         const fullName = toolNames.get(value.index)
         if (!seenToolIndices.has(value.index) && fullName) {

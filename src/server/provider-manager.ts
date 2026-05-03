@@ -1,5 +1,13 @@
 import type { Provider, Config, LlmBackend, ModelConfig } from '../shared/types.js'
-import { createLLMClient, detectBackend, detectModel, clearModelCache, setLlmStatus, getModelProfile, type LLMClientWithModel } from './llm/index.js'
+import {
+  createLLMClient,
+  detectBackend,
+  detectModel,
+  clearModelCache,
+  setLlmStatus,
+  getModelProfile,
+  type LLMClientWithModel,
+} from './llm/index.js'
 import { logger } from './utils/logger.js'
 
 function normalizeModelId(s: string): string {
@@ -21,9 +29,9 @@ async function fetchModelsFromBackend(
       logger.debug('Failed to fetch models', { url, status: response.status })
       return []
     }
-    const data = await response.json() as { data?: { id: string; max_model_len?: number }[] }
+    const data = (await response.json()) as { data?: { id: string; max_model_len?: number }[] }
     if (data.data && Array.isArray(data.data)) {
-      return data.data.map(m => ({
+      return data.data.map((m) => ({
         id: m.id,
         contextWindow: m.max_model_len ?? undefined,
       }))
@@ -47,9 +55,9 @@ function enrichWithProfileDefaults(model: ModelConfig): ModelConfig {
 }
 
 function mergeModelsWithUserOverrides(backendModels: ModelConfig[], userModels: ModelConfig[]): ModelConfig[] {
-  const normalizedUserIdMap = new Map(userModels.map(m => [normalizeModelId(m.id), m]))
+  const normalizedUserIdMap = new Map(userModels.map((m) => [normalizeModelId(m.id), m]))
 
-  const updatedModels = backendModels.map(backendModel => {
+  const updatedModels = backendModels.map((backendModel) => {
     const existingUserModel = normalizedUserIdMap.get(normalizeModelId(backendModel.id))
     if (existingUserModel) {
       return enrichWithProfileDefaults({ ...existingUserModel, id: backendModel.id })
@@ -57,7 +65,7 @@ function mergeModelsWithUserOverrides(backendModels: ModelConfig[], userModels: 
     return enrichWithProfileDefaults(backendModel)
   })
 
-  const normalizedBackendIds = new Set(backendModels.map(m => normalizeModelId(m.id)))
+  const normalizedBackendIds = new Set(backendModels.map((m) => normalizeModelId(m.id)))
   for (const userModel of userModels) {
     if (!normalizedBackendIds.has(normalizeModelId(userModel.id))) {
       updatedModels.push(enrichWithProfileDefaults(userModel))
@@ -70,11 +78,15 @@ function mergeModelsWithUserOverrides(backendModels: ModelConfig[], userModels: 
 export async function fetchAvailableModelsFromBackend(baseUrl: string, apiKey?: string): Promise<string[]> {
   const url = baseUrl.includes('/v1') ? `${baseUrl}/models` : `${baseUrl}/v1/models`
   const models = await fetchModelsFromBackend(url, apiKey)
-  return models.map(m => m.id)
+  return models.map((m) => m.id)
 }
 
 /** Fetch models with context window metadata */
-export async function fetchModelsWithContext(baseUrl: string, apiKey?: string, backend?: 'ollama' | 'vllm' | 'sglang' | 'llamacpp' | 'unknown'): Promise<ModelConfig[]> {
+export async function fetchModelsWithContext(
+  baseUrl: string,
+  apiKey?: string,
+  backend?: 'ollama' | 'vllm' | 'sglang' | 'llamacpp' | 'unknown',
+): Promise<ModelConfig[]> {
   logger.info('fetchModelsWithContext called', { baseUrl, apiKey: !!apiKey, backend })
 
   // Ollama uses /api/show for context detection
@@ -87,7 +99,9 @@ export async function fetchModelsWithContext(baseUrl: string, apiKey?: string, b
   const isOpenCodeGo = baseUrl.includes('opencode.ai/zen/go')
   const url = isOpenCodeGo
     ? baseUrl.replace('/zen/go', '/zen').replace(/\/v1$/, '') + '/v1/models'
-    : baseUrl.includes('/v1') ? `${baseUrl}/models` : `${baseUrl}/v1/models`
+    : baseUrl.includes('/v1')
+      ? `${baseUrl}/models`
+      : `${baseUrl}/v1/models`
 
   logger.info('Fetching models via /v1/models', { url })
   const models = await fetchModelsFromBackend(url, apiKey)
@@ -95,10 +109,10 @@ export async function fetchModelsWithContext(baseUrl: string, apiKey?: string, b
   if (models.length === 0) return []
 
   logger.info('Fetched models from /v1/models', { count: models.length })
-  return models.map(m => ({
+  return models.map((m) => ({
     id: m.id,
     contextWindow: m.contextWindow ?? 200000,
-    source: m.contextWindow ? 'backend' : 'default' as const,
+    source: m.contextWindow ? 'backend' : ('default' as const),
   }))
 }
 
@@ -106,22 +120,22 @@ export async function fetchModelsWithContext(baseUrl: string, apiKey?: string, b
 async function fetchOllamaModelsWithContext(baseUrl: string, _apiKey?: string): Promise<ModelConfig[]> {
   // First get list of models from /api/tags
   const tagsUrl = `${baseUrl}/api/tags`
-  
+
   try {
     const tagsResponse = await fetch(tagsUrl, {
       signal: AbortSignal.timeout(10000),
     })
-    
+
     if (!tagsResponse.ok) {
       logger.debug('Failed to fetch Ollama tags', { url: tagsUrl })
       return []
     }
-    
-    const tagsData = await tagsResponse.json() as { models?: Array<{ name: string }> }
+
+    const tagsData = (await tagsResponse.json()) as { models?: Array<{ name: string }> }
     if (!tagsData.models || !Array.isArray(tagsData.models)) {
       return []
     }
-    
+
     // Fetch context info for each model via /api/show
     const modelsWithContext: ModelConfig[] = []
     for (const model of tagsData.models) {
@@ -133,20 +147,21 @@ async function fetchOllamaModelsWithContext(baseUrl: string, _apiKey?: string): 
           body: JSON.stringify({ name: model.name, verbose: true }),
           signal: AbortSignal.timeout(5000),
         })
-        
+
         if (showResponse.ok) {
-          const showData = await showResponse.json() as { 
-            model_info?: { 
+          const showData = (await showResponse.json()) as {
+            model_info?: {
               llama?: { context_length?: number }
               context_length?: number
             }
           }
-          
-          const contextLength = showData.model_info?.llama?.context_length ?? showData.model_info?.context_length ?? 200000
+
+          const contextLength =
+            showData.model_info?.llama?.context_length ?? showData.model_info?.context_length ?? 200000
           modelsWithContext.push({
             id: model.name,
             contextWindow: contextLength,
-            source: contextLength !== 200000 ? 'backend' : 'default' as const,
+            source: contextLength !== 200000 ? 'backend' : ('default' as const),
           })
         } else {
           // Fall back to default if /api/show fails
@@ -157,9 +172,9 @@ async function fetchOllamaModelsWithContext(baseUrl: string, _apiKey?: string): 
           })
         }
       } catch (error) {
-        logger.debug('Failed to fetch Ollama model context', { 
-          model: model.name, 
-          error: error instanceof Error ? error.message : String(error) 
+        logger.debug('Failed to fetch Ollama model context', {
+          model: model.name,
+          error: error instanceof Error ? error.message : String(error),
         })
         // Fall back to default
         modelsWithContext.push({
@@ -169,10 +184,13 @@ async function fetchOllamaModelsWithContext(baseUrl: string, _apiKey?: string): 
         })
       }
     }
-    
+
     return modelsWithContext
   } catch (error) {
-    logger.info('Error fetching Ollama models', { url: baseUrl, error: error instanceof Error ? error.message : String(error) })
+    logger.info('Error fetching Ollama models', {
+      url: baseUrl,
+      error: error instanceof Error ? error.message : String(error),
+    })
     return []
   }
 }
@@ -191,13 +209,33 @@ export interface ProviderManager {
   getProviderStatus(providerId: string): 'connected' | 'disconnected' | 'unknown'
   getProviderModels(providerId: string): Promise<ModelConfig[]>
   setDefaultModelSelection(providerId: string, model: string): Promise<{ success: boolean; error?: string }>
-  updateModelContext(providerId: string, modelId: string, contextWindow: number): Promise<{ success: boolean; error?: string }>
-  updateModelSettings(providerId: string, modelId: string, settings: { contextWindow?: number; temperature?: number | null; topP?: number | null; topK?: number | null; maxTokens?: number | null; supportsVision?: boolean }): Promise<{ success: boolean; error?: string; model?: ModelConfig }>
+  updateModelContext(
+    providerId: string,
+    modelId: string,
+    contextWindow: number,
+  ): Promise<{ success: boolean; error?: string }>
+  updateModelSettings(
+    providerId: string,
+    modelId: string,
+    settings: {
+      contextWindow?: number
+      temperature?: number | null
+      topP?: number | null
+      topK?: number | null
+      maxTokens?: number | null
+      supportsVision?: boolean
+    },
+  ): Promise<{ success: boolean; error?: string; model?: ModelConfig }>
   refreshProviderModels(providerId: string): Promise<{ success: boolean; error?: string }>
-  getModelSettings(modelId: string): { temperature?: number; topP?: number; topK?: number; maxTokens?: number } | undefined
+  getModelSettings(
+    modelId: string,
+  ): { temperature?: number; topP?: number; topK?: number; maxTokens?: number } | undefined
 }
 
-export function parseDefaultModelSelection(selection?: string): { providerId: string | undefined; model: string | undefined } {
+export function parseDefaultModelSelection(selection?: string): {
+  providerId: string | undefined
+  model: string | undefined
+} {
   if (!selection) return { providerId: undefined, model: undefined }
   const slashIndex = selection.indexOf('/')
   if (slashIndex === -1) return { providerId: selection, model: 'auto' }
@@ -212,13 +250,18 @@ export function createProviderManager(config: Config): ProviderManager {
   let defaultModelSelection: string | undefined = config.defaultModelSelection
   let llmClient = createLLMClient(config)
   const providerStatus = new Map<string, 'connected' | 'disconnected' | 'unknown'>()
-  
-  logger.debug('ProviderManager created', { providers: providers.map(p => ({ id: p.id, models: p.models.map(m => ({ id: m.id, contextWindow: m.contextWindow, source: m.source })) })) })
-  
+
+  logger.debug('ProviderManager created', {
+    providers: providers.map((p) => ({
+      id: p.id,
+      models: p.models.map((m) => ({ id: m.id, contextWindow: m.contextWindow, source: m.source })),
+    })),
+  })
+
   for (const p of providers) {
     providerStatus.set(p.id, 'unknown')
   }
-  
+
   function createConfigForProvider(provider: Provider, model: string): Config {
     return {
       ...config,
@@ -231,42 +274,45 @@ export function createProviderManager(config: Config): ProviderManager {
       },
     }
   }
-  
+
   return {
     getProviders() {
       return [...providers]
     },
-    
+
     getActiveProvider() {
       const { providerId } = parseDefaultModelSelection(defaultModelSelection)
       if (!providerId) return undefined
-      return providers.find(p => p.id === providerId)
+      return providers.find((p) => p.id === providerId)
     },
-    
+
     getActiveProviderId() {
       const { providerId } = parseDefaultModelSelection(defaultModelSelection)
       return providerId
     },
-    
+
     getCurrentModel() {
       const { model } = parseDefaultModelSelection(defaultModelSelection)
       return model
     },
-    
+
     getLLMClient() {
       return llmClient
     },
-    
+
     async activateProvider(providerId: string, options?: { model?: string }) {
-      const provider = providers.find(p => p.id === providerId)
+      const provider = providers.find((p) => p.id === providerId)
       if (!provider) {
         return { success: false, error: 'Provider not found' }
       }
 
       const currentModel = parseDefaultModelSelection(defaultModelSelection).model ?? 'auto'
       const targetModel = options?.model ?? currentModel
-      const isModelSwitch = providerId === parseDefaultModelSelection(defaultModelSelection).providerId && options?.model && options.model !== currentModel
-      
+      const isModelSwitch =
+        providerId === parseDefaultModelSelection(defaultModelSelection).providerId &&
+        options?.model &&
+        options.model !== currentModel
+
       if (providerId === parseDefaultModelSelection(defaultModelSelection).providerId && !isModelSwitch) {
         return { success: true }
       }
@@ -290,17 +336,24 @@ export function createProviderManager(config: Config): ProviderManager {
         const backend = provider.backend as 'ollama' | 'vllm' | 'sglang' | 'llamacpp' | 'unknown'
         logger.info('activateProvider fetching models', { providerId, providerName: provider.name, url, backend })
         const modelsWithContext = await fetchModelsWithContext(url, provider.apiKey, backend)
-        
-        const userModels = provider.models.filter(m => m.source === 'user')
-        logger.debug('activateProvider', { providerId, backendModelsCount: modelsWithContext.length, userModelsCount: userModels.length })
-        
+
+        const userModels = provider.models.filter((m) => m.source === 'user')
+        logger.debug('activateProvider', {
+          providerId,
+          backendModelsCount: modelsWithContext.length,
+          userModelsCount: userModels.length,
+        })
+
         if (modelsWithContext.length > 0) {
           const updatedModels = mergeModelsWithUserOverrides(modelsWithContext, userModels)
-          providers = providers.map(p => p.id === providerId ? { ...p, models: updatedModels } : p)
+          providers = providers.map((p) => (p.id === providerId ? { ...p, models: updatedModels } : p))
         } else if (userModels.length > 0) {
           // Backend unavailable but we have user models - preserve them
-          logger.debug('Backend unavailable during provider switch, preserving user models', { providerId, userModelsCount: userModels.length })
-          providers = providers.map(p => p.id === providerId ? { ...p, models: userModels } : p)
+          logger.debug('Backend unavailable during provider switch, preserving user models', {
+            providerId,
+            userModelsCount: userModels.length,
+          })
+          providers = providers.map((p) => (p.id === providerId ? { ...p, models: userModels } : p))
         }
 
         if (provider.backend === 'auto') {
@@ -328,7 +381,7 @@ export function createProviderManager(config: Config): ProviderManager {
         providerStatus.set(providerId, 'disconnected')
       }
 
-      providers = providers.map(p => ({
+      providers = providers.map((p) => ({
         ...p,
         isActive: p.id === providerId,
       }))
@@ -344,7 +397,7 @@ export function createProviderManager(config: Config): ProviderManager {
 
       return { success: true }
     },
-    
+
     addProvider(providerData) {
       const id = crypto.randomUUID()
       const provider: Provider = {
@@ -352,52 +405,52 @@ export function createProviderManager(config: Config): ProviderManager {
         id,
         createdAt: new Date().toISOString(),
       }
-      
+
       if (providerData.isActive || providers.length === 0) {
-        providers = providers.map(p => ({ ...p, isActive: false }))
+        providers = providers.map((p) => ({ ...p, isActive: false }))
         provider.isActive = true
         defaultModelSelection = `${id}/auto`
       }
-      
+
       providers.push(provider)
       providerStatus.set(id, 'unknown')
-      
+
       return provider
     },
-    
+
     removeProvider(providerId) {
-      const index = providers.findIndex(p => p.id === providerId)
+      const index = providers.findIndex((p) => p.id === providerId)
       if (index === -1) return false
-      
+
       const wasActive = providers[index]?.isActive
       providers.splice(index, 1)
       providerStatus.delete(providerId)
-      
+
       if (wasActive && providers.length > 0) {
         providers[0]!.isActive = true
         defaultModelSelection = `${providers[0]!.id}/auto`
       } else if (providers.length === 0) {
         defaultModelSelection = undefined
       }
-      
+
       return true
     },
-    
+
     setProviders(newProviders, newDefaultModelSelection) {
       const wasActiveProviderId = this.getActiveProviderId()
-      
+
       providers = [...newProviders]
       defaultModelSelection = newDefaultModelSelection
-      
+
       providerStatus.clear()
       for (const p of providers) {
         providerStatus.set(p.id, 'unknown')
       }
-      
+
       // If the active provider changed, recreate the LLM client with the new provider's config
       const newActiveProviderId = this.getActiveProviderId()
       if (newActiveProviderId && newActiveProviderId !== wasActiveProviderId) {
-        const activeProvider = providers.find(p => p.id === newActiveProviderId)
+        const activeProvider = providers.find((p) => p.id === newActiveProviderId)
         if (activeProvider) {
           const providerConfig = createConfigForProvider(activeProvider, this.getCurrentModel() ?? 'auto')
           llmClient = createLLMClient(providerConfig)
@@ -409,13 +462,13 @@ export function createProviderManager(config: Config): ProviderManager {
         }
       }
     },
-    
+
     getProviderStatus(providerId) {
       return providerStatus.get(providerId) ?? 'unknown'
     },
 
     async getProviderModels(providerId: string): Promise<ModelConfig[]> {
-      const provider = providers.find(p => p.id === providerId)
+      const provider = providers.find((p) => p.id === providerId)
       if (!provider) {
         return []
       }
@@ -432,7 +485,7 @@ export function createProviderManager(config: Config): ProviderManager {
     },
 
     async setDefaultModelSelection(providerId: string, model: string) {
-      const provider = providers.find(p => p.id === providerId)
+      const provider = providers.find((p) => p.id === providerId)
       if (!provider) {
         return { success: false, error: 'Provider not found' }
       }
@@ -440,7 +493,7 @@ export function createProviderManager(config: Config): ProviderManager {
       logger.info('Setting default model selection', { providerId, model, providerName: provider.name })
 
       defaultModelSelection = `${providerId}/${model}`
-      providers = providers.map(p => ({ ...p, isActive: p.id === providerId }))
+      providers = providers.map((p) => ({ ...p, isActive: p.id === providerId }))
 
       const currentProviderId = parseDefaultModelSelection(defaultModelSelection).providerId
       if (currentProviderId === providerId) {
@@ -454,30 +507,37 @@ export function createProviderManager(config: Config): ProviderManager {
     getCurrentModelContext(): number {
       const { providerId, model } = parseDefaultModelSelection(defaultModelSelection)
       if (!providerId || !model) return config.context.maxTokens
-      
-      const provider = providers.find(p => p.id === providerId)
+
+      const provider = providers.find((p) => p.id === providerId)
       if (!provider) return config.context.maxTokens
-      
-      const modelConfig = provider.models.find(m => m.id === model)
+
+      const modelConfig = provider.models.find((m) => m.id === model)
       return modelConfig?.contextWindow ?? config.context.maxTokens
     },
 
     async updateModelContext(providerId: string, modelId: string, contextWindow: number) {
-      const provider = providers.find(p => p.id === providerId)
+      const provider = providers.find((p) => p.id === providerId)
       if (!provider) {
         return { success: false, error: 'Provider not found' }
       }
 
-      const modelIndex = provider.models.findIndex(m => m.id === modelId)
+      const modelIndex = provider.models.findIndex((m) => m.id === modelId)
       if (modelIndex === -1) {
-        providers = providers.map(p => p.id === providerId 
-          ? { ...p, models: [...p.models, { id: modelId, contextWindow, source: 'user' as const }] }
-          : p
+        providers = providers.map((p) =>
+          p.id === providerId
+            ? { ...p, models: [...p.models, { id: modelId, contextWindow, source: 'user' as const }] }
+            : p,
         )
       } else {
-        providers = providers.map(p => p.id === providerId 
-          ? { ...p, models: p.models.map((m, i) => i === modelIndex ? { ...m, contextWindow, source: 'user' as const } : m) }
-          : p
+        providers = providers.map((p) =>
+          p.id === providerId
+            ? {
+                ...p,
+                models: p.models.map((m, i) =>
+                  i === modelIndex ? { ...m, contextWindow, source: 'user' as const } : m,
+                ),
+              }
+            : p,
         )
       }
 
@@ -485,27 +545,49 @@ export function createProviderManager(config: Config): ProviderManager {
       return { success: true }
     },
 
-    async updateModelSettings(providerId: string, modelId: string, settings: { contextWindow?: number; temperature?: number | null; topP?: number | null; topK?: number | null; maxTokens?: number | null; supportsVision?: boolean }) {
-      const provider = providers.find(p => p.id === providerId)
+    async updateModelSettings(
+      providerId: string,
+      modelId: string,
+      settings: {
+        contextWindow?: number
+        temperature?: number | null
+        topP?: number | null
+        topK?: number | null
+        maxTokens?: number | null
+        supportsVision?: boolean
+      },
+    ) {
+      const provider = providers.find((p) => p.id === providerId)
       if (!provider) {
         return { success: false, error: 'Provider not found' }
       }
 
-      const existingModel = provider.models.find(m => m.id === modelId)
-      
+      const existingModel = provider.models.find((m) => m.id === modelId)
+
       // Merge new settings with existing settings
-      const finalTemp = settings.temperature !== undefined && settings.temperature !== null ? settings.temperature : existingModel?.temperature
+      const finalTemp =
+        settings.temperature !== undefined && settings.temperature !== null
+          ? settings.temperature
+          : existingModel?.temperature
       const finalTopP = settings.topP !== undefined && settings.topP !== null ? settings.topP : existingModel?.topP
       const finalTopK = settings.topK !== undefined && settings.topK !== null ? settings.topK : existingModel?.topK
-      const finalMaxTokens = settings.maxTokens !== undefined && settings.maxTokens !== null ? settings.maxTokens : existingModel?.maxTokens
-      const finalSupportsVision = settings.supportsVision !== undefined ? settings.supportsVision : existingModel?.supportsVision
-      
+      const finalMaxTokens =
+        settings.maxTokens !== undefined && settings.maxTokens !== null ? settings.maxTokens : existingModel?.maxTokens
+      const finalSupportsVision =
+        settings.supportsVision !== undefined ? settings.supportsVision : existingModel?.supportsVision
+
       logger.info('Updating model settings', {
         providerId,
         modelId,
         existing: existingModel,
         incoming: settings,
-        final: { temperature: finalTemp, topP: finalTopP, topK: finalTopK, maxTokens: finalMaxTokens, supportsVision: finalSupportsVision },
+        final: {
+          temperature: finalTemp,
+          topP: finalTopP,
+          topK: finalTopK,
+          maxTokens: finalMaxTokens,
+          supportsVision: finalSupportsVision,
+        },
       })
 
       // Merge with existing model to preserve any other settings
@@ -521,15 +603,11 @@ export function createProviderManager(config: Config): ProviderManager {
       })
 
       if (existingModel) {
-        providers = providers.map(p => p.id === providerId 
-          ? { ...p, models: p.models.map(m => m.id === modelId ? updatedModel : m) }
-          : p
+        providers = providers.map((p) =>
+          p.id === providerId ? { ...p, models: p.models.map((m) => (m.id === modelId ? updatedModel : m)) } : p,
         )
       } else {
-        providers = providers.map(p => p.id === providerId 
-          ? { ...p, models: [...p.models, updatedModel] }
-          : p
-        )
+        providers = providers.map((p) => (p.id === providerId ? { ...p, models: [...p.models, updatedModel] } : p))
       }
 
       logger.info('Model settings updated', { providerId, modelId, final: updatedModel })
@@ -537,8 +615,8 @@ export function createProviderManager(config: Config): ProviderManager {
     },
 
     getModelSettings(modelId: string) {
-      const provider = providers.find(p => p.models.some(m => m.id === modelId))
-      const model = provider?.models.find(m => m.id === modelId)
+      const provider = providers.find((p) => p.models.some((m) => m.id === modelId))
+      const model = provider?.models.find((m) => m.id === modelId)
       if (!model) return undefined
       return {
         ...(model.temperature !== undefined && { temperature: model.temperature }),
@@ -550,7 +628,7 @@ export function createProviderManager(config: Config): ProviderManager {
     },
 
     async refreshProviderModels(providerId: string) {
-      const provider = providers.find(p => p.id === providerId)
+      const provider = providers.find((p) => p.id === providerId)
       if (!provider) {
         return { success: false, error: 'Provider not found' }
       }
@@ -559,17 +637,24 @@ export function createProviderManager(config: Config): ProviderManager {
       const backend = provider.backend as 'ollama' | 'vllm' | 'sglang' | 'llamacpp' | 'unknown'
       logger.info('refreshProviderModels fetching models', { providerId, providerName: provider.name, url, backend })
       const modelsWithContext = await fetchModelsWithContext(url, provider.apiKey, backend)
-      
+
       // Preserve user-set models even if backend fetch fails or returns empty
-      const userModels = provider.models.filter(m => m.source === 'user')
-      logger.info('refreshProviderModels', { providerId, userModelsCount: userModels.length, backendModelsCount: modelsWithContext.length })
+      const userModels = provider.models.filter((m) => m.source === 'user')
+      logger.info('refreshProviderModels', {
+        providerId,
+        userModelsCount: userModels.length,
+        backendModelsCount: modelsWithContext.length,
+      })
 
       if (modelsWithContext.length === 0) {
         setLlmStatus('disconnected')
         // Keep existing user models when backend is unavailable
         if (userModels.length > 0) {
-          logger.debug('Backend unavailable, preserving user models', { providerId, userModels: userModels.map(m => ({ id: m.id, contextWindow: m.contextWindow })) })
-          providers = providers.map(p => p.id === providerId ? { ...p, models: userModels } : p)
+          logger.debug('Backend unavailable, preserving user models', {
+            providerId,
+            userModels: userModels.map((m) => ({ id: m.id, contextWindow: m.contextWindow })),
+          })
+          providers = providers.map((p) => (p.id === providerId ? { ...p, models: userModels } : p))
           return { success: true }
         }
         return { success: false, error: 'No models returned from backend' }
@@ -578,13 +663,13 @@ export function createProviderManager(config: Config): ProviderManager {
       setLlmStatus('connected')
 
       const updatedModels = mergeModelsWithUserOverrides(modelsWithContext, userModels)
-      providers = providers.map(p => p.id === providerId ? { ...p, models: updatedModels } : p)
-      
+      providers = providers.map((p) => (p.id === providerId ? { ...p, models: updatedModels } : p))
+
       // Update defaultModelSelection if the model ID was changed due to fuzzy matching
       const { providerId: currentProviderId, model: currentModel } = parseDefaultModelSelection(defaultModelSelection)
       if (currentProviderId === providerId && currentModel) {
         const normalizedCurrentModel = normalizeModelId(currentModel)
-        const matchedModel = updatedModels.find(m => normalizeModelId(m.id) === normalizedCurrentModel)
+        const matchedModel = updatedModels.find((m) => normalizeModelId(m.id) === normalizedCurrentModel)
         if (matchedModel && matchedModel.id !== currentModel) {
           defaultModelSelection = `${providerId}/${matchedModel.id}`
           logger.debug('Updated defaultModelSelection after fuzzy match', { from: currentModel, to: matchedModel.id })

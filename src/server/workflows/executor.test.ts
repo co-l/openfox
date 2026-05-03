@@ -77,9 +77,7 @@ describe('evaluateCondition', () => {
     })
 
     it('returns false when some criteria are completed but not passed', () => {
-      const criteria = [
-        makeCriterion({ id: 'c1', status: { type: 'completed', completedAt: '2025-01-01' } }),
-      ]
+      const criteria = [makeCriterion({ id: 'c1', status: { type: 'completed', completedAt: '2025-01-01' } })]
       expect(evaluateCondition(condition, criteria, null)).toBe(false)
     })
   })
@@ -108,9 +106,7 @@ describe('evaluateCondition', () => {
     })
 
     it('returns false when some criteria are failed', () => {
-      const criteria = [
-        makeCriterion({ id: 'c1', status: { type: 'failed', reason: 'bad', failedAt: '2025-01-01' } }),
-      ]
+      const criteria = [makeCriterion({ id: 'c1', status: { type: 'failed', reason: 'bad', failedAt: '2025-01-01' } })]
       expect(evaluateCondition(condition, criteria, null)).toBe(false)
     })
   })
@@ -146,9 +142,7 @@ describe('evaluateCondition', () => {
     })
 
     it('returns false when criteria are not in failed status', () => {
-      const criteria = [
-        makeCriterion({ id: 'c1', status: { type: 'pending' } }),
-      ]
+      const criteria = [makeCriterion({ id: 'c1', status: { type: 'pending' } })]
       expect(evaluateCondition(condition, criteria, null)).toBe(false)
     })
 
@@ -169,9 +163,7 @@ describe('evaluateCondition', () => {
     })
 
     it('returns true when a criterion is completed but not passed', () => {
-      const criteria = [
-        makeCriterion({ id: 'c1', status: { type: 'completed', completedAt: '2025-01-01' } }),
-      ]
+      const criteria = [makeCriterion({ id: 'c1', status: { type: 'completed', completedAt: '2025-01-01' } })]
       expect(evaluateCondition(condition, criteria, null)).toBe(true)
     })
 
@@ -250,9 +242,7 @@ describe('evaluateTransitions', () => {
       { when: { type: 'always' }, goto: 'build' },
     ]
     // All passed => first transition matches
-    const criteria = [
-      makeCriterion({ id: 'c1', status: { type: 'passed', verifiedAt: '2025-01-01' } }),
-    ]
+    const criteria = [makeCriterion({ id: 'c1', status: { type: 'passed', verifiedAt: '2025-01-01' } })]
     expect(evaluateTransitions(transitions, criteria, null)).toBe(TERMINAL_DONE)
   })
 
@@ -262,19 +252,13 @@ describe('evaluateTransitions', () => {
       { when: { type: 'has_pending_criteria' }, goto: 'build' },
       { when: { type: 'always' }, goto: 'fallback' },
     ]
-    const criteria = [
-      makeCriterion({ id: 'c1', status: { type: 'pending' } }),
-    ]
+    const criteria = [makeCriterion({ id: 'c1', status: { type: 'pending' } })]
     expect(evaluateTransitions(transitions, criteria, null)).toBe('build')
   })
 
   it('returns TERMINAL_BLOCKED when no transitions match', () => {
-    const transitions: Transition[] = [
-      { when: { type: 'all_criteria_passed' }, goto: TERMINAL_DONE },
-    ]
-    const criteria = [
-      makeCriterion({ id: 'c1', status: { type: 'pending' } }),
-    ]
+    const transitions: Transition[] = [{ when: { type: 'all_criteria_passed' }, goto: TERMINAL_DONE }]
+    const criteria = [makeCriterion({ id: 'c1', status: { type: 'pending' } })]
     expect(evaluateTransitions(transitions, criteria, null)).toBe(TERMINAL_BLOCKED)
   })
 
@@ -298,7 +282,8 @@ describe('evaluateTransitions', () => {
 describe('resolveTemplate', () => {
   it('replaces all template variables', () => {
     const ctx = makeTemplateContext()
-    const template = 'Dir: {{workdir}}, Reason: {{reason}}, Findings: {{verifierFindings}}, ' +
+    const template =
+      'Dir: {{workdir}}, Reason: {{reason}}, Findings: {{verifierFindings}}, ' +
       'Prev: {{previousStepOutput}}, Count: {{criteriaCount}}, Pending: {{pendingCount}}, ' +
       'Summary: {{summary}}, List: {{criteriaList}}, Files: {{modifiedFiles}}'
 
@@ -306,8 +291,8 @@ describe('resolveTemplate', () => {
 
     expect(result).toBe(
       'Dir: /tmp/project, Reason: 2 criteria remaining, Findings: Some findings, ' +
-      'Prev: exit 0, Count: 3, Pending: 2, ' +
-      'Summary: Build a widget, List: - c1 [PASSED]: do thing, Files: - src/index.ts'
+        'Prev: exit 0, Count: 3, Pending: 2, ' +
+        'Summary: Build a widget, List: - c1 [PASSED]: do thing, Files: - src/index.ts',
     )
   })
 
@@ -327,7 +312,8 @@ describe('resolveTemplate', () => {
     const ctx = makeTemplateContext({
       stepOutput: { content: 'Test passed', stdout: 'output', stderr: 'error', exitCode: '0' },
     })
-    const template = 'Content: {{stepOutput.content}}, Stdout: {{stepOutput.stdout}}, Stderr: {{stepOutput.stderr}}, ExitCode: {{stepOutput.exitCode}}'
+    const template =
+      'Content: {{stepOutput.content}}, Stdout: {{stepOutput.stdout}}, Stderr: {{stepOutput.stderr}}, ExitCode: {{stepOutput.exitCode}}'
     expect(resolveTemplate(template, ctx)).toBe('Content: Test passed, Stdout: output, Stderr: error, ExitCode: 0')
   })
 
@@ -357,22 +343,24 @@ describe('formatCriteriaList', () => {
     const criteria: Criterion[] = [
       makeCriterion({ id: 'c1', description: 'Add tests', status: { type: 'passed', verifiedAt: '2025-01-01' } }),
       makeCriterion({ id: 'c2', description: 'Fix bug', status: { type: 'completed', completedAt: '2025-01-01' } }),
-      makeCriterion({ id: 'c3', description: 'Update docs', status: { type: 'failed', reason: 'bad', failedAt: '2025-01-01' } }),
+      makeCriterion({
+        id: 'c3',
+        description: 'Update docs',
+        status: { type: 'failed', reason: 'bad', failedAt: '2025-01-01' },
+      }),
       makeCriterion({ id: 'c4', description: 'Refactor', status: { type: 'pending' } }),
     ]
     const result = formatCriteriaList(criteria)
     expect(result).toBe(
       '- **c1** [PASSED]: Add tests\n' +
-      '- **c2** [NEEDS VERIFICATION]: Fix bug\n' +
-      '- **c3** [FAILED]: Update docs\n' +
-      '- **c4** [NOT COMPLETED]: Refactor'
+        '- **c2** [NEEDS VERIFICATION]: Fix bug\n' +
+        '- **c3** [FAILED]: Update docs\n' +
+        '- **c4** [NOT COMPLETED]: Refactor',
     )
   })
 
   it('formats a single criterion', () => {
-    const criteria = [
-      makeCriterion({ id: 'only', description: 'One thing', status: { type: 'pending' } }),
-    ]
+    const criteria = [makeCriterion({ id: 'only', description: 'One thing', status: { type: 'pending' } })]
     expect(formatCriteriaList(criteria)).toBe('- **only** [NOT COMPLETED]: One thing')
   })
 })
@@ -422,9 +410,7 @@ describe('buildReason', () => {
   })
 
   it('returns 0 when all criteria are passed', () => {
-    const criteria = [
-      makeCriterion({ id: 'c1', status: { type: 'passed', verifiedAt: '2025-01-01' } }),
-    ]
+    const criteria = [makeCriterion({ id: 'c1', status: { type: 'passed', verifiedAt: '2025-01-01' } })]
     expect(buildReason(criteria)).toBe('0 criteria remaining')
   })
 
@@ -441,7 +427,7 @@ describe('Backwards Compatibility', () => {
   it('step_result with success/failure still works', () => {
     const successCondition: TransitionCondition = { type: 'step_result', result: 'success' }
     const failureCondition: TransitionCondition = { type: 'step_result', result: 'failure' }
-    
+
     expect(evaluateCondition(successCondition, [], { result: 'success', output: {} })).toBe(true)
     expect(evaluateCondition(failureCondition, [], { result: 'failure', output: {} })).toBe(true)
   })
@@ -456,35 +442,27 @@ describe('Backwards Compatibility', () => {
   })
 
   it('sub-agent without result defaults to success', () => {
-    const transitions: Transition[] = [
-      { when: { type: 'step_result', result: 'success' }, goto: 'next' },
-    ]
+    const transitions: Transition[] = [{ when: { type: 'step_result', result: 'success' }, goto: 'next' }]
     expect(evaluateTransitions(transitions, [], { result: 'success', output: {} })).toBe('next')
   })
 })
 
 describe('Agent completed result', () => {
   it('agent steps produce result: completed', () => {
-    const transitions: Transition[] = [
-      { when: { type: 'step_result', result: 'completed' }, goto: 'test' },
-    ]
+    const transitions: Transition[] = [{ when: { type: 'step_result', result: 'completed' }, goto: 'test' }]
     expect(evaluateTransitions(transitions, [], { result: 'completed', output: {} })).toBe('test')
   })
 })
 
 describe('Example workflow: build → test → fix', () => {
   it('routes correctly based on test result', () => {
-    const buildTransitions: Transition[] = [
-      { when: { type: 'always' }, goto: 'test' },
-    ]
+    const buildTransitions: Transition[] = [{ when: { type: 'always' }, goto: 'test' }]
     const testTransitions: Transition[] = [
       { when: { type: 'step_result', result: 'passed' }, goto: '$done' },
       { when: { type: 'step_result', result: 'failed' }, goto: 'fix' },
       { when: { type: 'step_result', result: 'error' }, goto: '$blocked' },
     ]
-    const fixTransitions: Transition[] = [
-      { when: { type: 'always' }, goto: 'test' },
-    ]
+    const fixTransitions: Transition[] = [{ when: { type: 'always' }, goto: 'test' }]
 
     const buildOutcome = { result: 'completed', output: {} }
     expect(evaluateTransitions(buildTransitions, [], buildOutcome)).toBe('test')

@@ -42,7 +42,7 @@ export async function runProviderAdd(mode: Mode): Promise<void> {
     placeholder: 'My Local vLLM',
     validate: (value) => {
       if (!value || value.length === 0) return 'Name is required'
-      if (config.providers.some(p => p.name === value)) return 'Provider with this name already exists'
+      if (config.providers.some((p) => p.name === value)) return 'Provider with this name already exists'
     },
   })
   if (isCancel(name)) {
@@ -59,7 +59,7 @@ export async function runProviderAdd(mode: Mode): Promise<void> {
   Anthropic:    https://api.anthropic.com
   
   (Don't include /v1 - it's added automatically)`)
-  
+
   const url = await text({
     message: 'API URL:',
     placeholder: 'http://localhost:8000',
@@ -109,7 +109,7 @@ export async function runProviderAdd(mode: Mode): Promise<void> {
     // Show dropdown of available models
     const modelChoice = await select({
       message: 'Select model:',
-      options: availableModels.map(m => ({
+      options: availableModels.map((m) => ({
         value: m,
         label: m.split('/').pop() ?? m,
         hint: m,
@@ -198,7 +198,7 @@ export async function runProviderAdd(mode: Mode): Promise<void> {
       finalBackend = await detectBackend(url as string)
     }
     if (selectedModel === 'auto') {
-      finalDetectedModel = await detectModel(url as string) ?? 'auto'
+      finalDetectedModel = (await detectModel(url as string)) ?? 'auto'
     }
     testSpinner.stop(`✓ Connected to ${finalBackend}${finalDetectedModel !== 'auto' ? ` (${finalDetectedModel})` : ''}`)
   } catch {
@@ -217,17 +217,19 @@ export async function runProviderAdd(mode: Mode): Promise<void> {
   }
 
   // Make active?
-  const makeActive = config.providers.length === 0 || await (async () => {
-    const choice = await select({
-      message: 'Make this the active provider?',
-      options: [
-        { value: 'yes', label: 'Yes' },
-        { value: 'no', label: 'No' },
-      ],
-    })
-    if (isCancel(choice)) return false
-    return choice === 'yes'
-  })()
+  const makeActive =
+    config.providers.length === 0 ||
+    (await (async () => {
+      const choice = await select({
+        message: 'Make this the active provider?',
+        options: [
+          { value: 'yes', label: 'Yes' },
+          { value: 'no', label: 'No' },
+        ],
+      })
+      if (isCancel(choice)) return false
+      return choice === 'yes'
+    })())
 
   // Fetch models with context windows
   const modelsWithContent: Array<{ id: string; contextWindow: number; source: 'backend' | 'user' | 'default' }> = []
@@ -240,7 +242,7 @@ export async function runProviderAdd(mode: Mode): Promise<void> {
         signal: AbortSignal.timeout(10000),
       })
       if (response.ok) {
-        const data = await response.json() as { data?: Array<{ id: string; max_model_len?: number }> }
+        const data = (await response.json()) as { data?: Array<{ id: string; max_model_len?: number }> }
         if (data.data && Array.isArray(data.data)) {
           for (const modelData of data.data) {
             modelsWithContent.push({
@@ -276,7 +278,11 @@ export async function runProviderAdd(mode: Mode): Promise<void> {
   // If making active, set the default model selection
   if (makeActive) {
     const { setDefaultModelSelection } = await import('./config.js')
-    newConfig = setDefaultModelSelection(newConfig, newConfig.providers[newConfig.providers.length - 1]!.id, selectedModel)
+    newConfig = setDefaultModelSelection(
+      newConfig,
+      newConfig.providers[newConfig.providers.length - 1]!.id,
+      selectedModel,
+    )
   }
 
   await saveGlobalConfig(mode, newConfig)
@@ -325,7 +331,7 @@ export async function runProviderUse(mode: Mode): Promise<void> {
 
   const choice = await select({
     message: 'Select provider to activate:',
-    options: config.providers.map(p => ({
+    options: config.providers.map((p) => ({
       value: p.id,
       label: `${p.name}${p.isActive ? ' (current)' : ''}`,
       hint: `${p.url} - ${p.model}`,
@@ -346,7 +352,7 @@ export async function runProviderUse(mode: Mode): Promise<void> {
   const newConfig = activateProvider(config, choice as string)
   await saveGlobalConfig(mode, newConfig)
 
-  const activated = newConfig.providers.find(p => p.id === choice)
+  const activated = newConfig.providers.find((p) => p.id === choice)
   outro(`✓ Now using "${activated?.name}"`)
 }
 
@@ -360,7 +366,7 @@ export async function runProviderRemove(mode: Mode): Promise<void> {
 
   const choice = await select({
     message: 'Select provider to remove:',
-    options: config.providers.map(p => ({
+    options: config.providers.map((p) => ({
       value: p.id,
       label: `${p.name}${p.isActive ? ' (active)' : ''}`,
       hint: p.url,
@@ -372,7 +378,7 @@ export async function runProviderRemove(mode: Mode): Promise<void> {
     return
   }
 
-  const providerToRemove = config.providers.find(p => p.id === choice)
+  const providerToRemove = config.providers.find((p) => p.id === choice)
 
   if (providerToRemove?.isActive && config.providers.length > 1) {
     const confirm = await select({

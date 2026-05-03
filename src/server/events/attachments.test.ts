@@ -41,7 +41,7 @@ describe('Attachment Preservation in Event Folding', () => {
       ]
 
       const messages = buildMessagesFromStoredEvents(events)
-      
+
       expect(messages).toHaveLength(1)
       const msg = messages[0]
       expect(msg?.role).toBe('user')
@@ -73,7 +73,7 @@ describe('Attachment Preservation in Event Folding', () => {
       ]
 
       const messages = buildMessagesFromStoredEvents(events)
-      
+
       expect(messages).toHaveLength(1)
       expect(messages[0]?.attachments).toBeUndefined()
     })
@@ -113,7 +113,7 @@ describe('Attachment Preservation in Event Folding', () => {
       ]
 
       const contextMessages = buildContextMessagesFromStoredEvents(events, 'window-1')
-      
+
       expect(contextMessages).toHaveLength(1)
       const msg = contextMessages[0]
       expect(msg?.role).toBe('user')
@@ -164,7 +164,7 @@ describe('Attachment Preservation in Event Folding', () => {
       ]
 
       const contextMessages = buildContextMessagesFromStoredEvents(events, 'window-1')
-      
+
       expect(contextMessages).toHaveLength(1)
       const msg = contextMessages[0]
       expect(msg?.attachments).toHaveLength(2)
@@ -196,7 +196,7 @@ describe('Attachment Preservation in Event Folding', () => {
       ]
 
       const contextMessages = buildContextMessagesFromStoredEvents(events, 'window-1')
-      
+
       expect(contextMessages).toHaveLength(1)
       expect(contextMessages[0]?.attachments).toBeUndefined()
     })
@@ -253,7 +253,7 @@ describe('Attachment Preservation in Event Folding', () => {
       ]
 
       const contextMessages = buildContextMessagesFromStoredEvents(events, 'window-1')
-      
+
       expect(contextMessages).toHaveLength(2)
       expect(contextMessages[0]?.attachments).toBeUndefined()
       expect(contextMessages[1]?.attachments).toHaveLength(1)

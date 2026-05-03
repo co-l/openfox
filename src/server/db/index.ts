@@ -8,15 +8,15 @@ export function initDatabase(config: Config): Database.Database {
   if (db) {
     return db
   }
-  
+
   logger.info('Initializing database', { path: config.database.path })
-  
+
   db = new Database(config.database.path)
   db.pragma('journal_mode = WAL')
   db.pragma('foreign_keys = ON')
-  
+
   runMigrations(db)
-  
+
   // Reset any stale running states from previous server runs
   // Sessions cannot actually be running when server starts
   const result = db.prepare(`UPDATE sessions SET is_running = 0 WHERE is_running = 1`).run()
@@ -32,7 +32,7 @@ export function initDatabase(config: Config): Database.Database {
     db.exec('VACUUM')
     logger.info('Database vacuumed')
   }
-  
+
   return db
 }
 
@@ -52,7 +52,7 @@ export function closeDatabase(): void {
 
 function runMigrations(db: Database.Database): void {
   logger.info('Running database migrations')
-  
+
   // Create projects table
   db.exec(`
     CREATE TABLE IF NOT EXISTS projects (
@@ -63,7 +63,7 @@ function runMigrations(db: Database.Database): void {
       updated_at TEXT NOT NULL
     )
   `)
-  
+
   // Create sessions table with project_id
   // Note: mode, phase, isRunning, summary are persisted here for quick access
   // Full session state (messages, criteria, todos) is derived from events table
@@ -82,16 +82,16 @@ function runMigrations(db: Database.Database): void {
       FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE
     )
   `)
-  
+
   // Create indexes
   db.exec(`
     CREATE INDEX IF NOT EXISTS idx_sessions_project ON sessions(project_id)
   `)
-  
+
   // Migration: Add mode, is_running, summary columns if they don't exist
   const columns = db.prepare(`PRAGMA table_info(sessions)`).all() as { name: string }[]
-  const columnNames = columns.map(c => c.name)
-  
+  const columnNames = columns.map((c) => c.name)
+
   if (!columnNames.includes('mode')) {
     logger.info('Migrating sessions table: adding mode column')
     db.exec(`ALTER TABLE sessions ADD COLUMN mode TEXT NOT NULL DEFAULT 'planner'`)
@@ -107,17 +107,17 @@ function runMigrations(db: Database.Database): void {
       END
     `)
   }
-  
+
   if (!columnNames.includes('is_running')) {
     logger.info('Migrating sessions table: adding is_running column')
     db.exec(`ALTER TABLE sessions ADD COLUMN is_running INTEGER NOT NULL DEFAULT 0`)
   }
-  
+
   if (!columnNames.includes('summary')) {
     logger.info('Migrating sessions table: adding summary column')
     db.exec(`ALTER TABLE sessions ADD COLUMN summary TEXT`)
   }
-  
+
   // Note: The old 'phase' column was for the state machine (idle/planning/executing/etc.)
   // This new 'workflow_phase' column is for UI display (plan/build/verification/done)
   if (!columnNames.includes('workflow_phase')) {
@@ -130,7 +130,7 @@ function runMigrations(db: Database.Database): void {
     logger.info('Migrating sessions table: adding danger_level column')
     db.exec(`ALTER TABLE sessions ADD COLUMN danger_level TEXT NOT NULL DEFAULT 'normal'`)
   }
-  
+
   // Create settings table for global configuration (e.g., global instructions)
   db.exec(`
     CREATE TABLE IF NOT EXISTS settings (
@@ -139,16 +139,16 @@ function runMigrations(db: Database.Database): void {
       updated_at TEXT NOT NULL
     )
   `)
-  
+
   // Migration: Add custom_instructions column to projects table
   const projectColumns = db.prepare(`PRAGMA table_info(projects)`).all() as { name: string }[]
-  const projectColumnNames = projectColumns.map(c => c.name)
-  
+  const projectColumnNames = projectColumns.map((c) => c.name)
+
   if (!projectColumnNames.includes('custom_instructions')) {
     logger.info('Migrating projects table: adding custom_instructions column')
     db.exec(`ALTER TABLE projects ADD COLUMN custom_instructions TEXT`)
   }
-  
+
   // Create events table for EventStore (single source of truth)
   // Note: EventStore creates this table with its own schema in initSchema()
   // We just ensure the index exists for the event_type column
@@ -164,15 +164,15 @@ function runMigrations(db: Database.Database): void {
       FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE
     )
   `)
-  
+
   db.exec(`
     CREATE INDEX IF NOT EXISTS idx_events_session_seq ON events(session_id, seq)
   `)
-  
+
   db.exec(`
     CREATE INDEX IF NOT EXISTS idx_events_session_type ON events(session_id, event_type)
   `)
-  
+
   // Migration: Add per-session provider/model columns
   if (!columnNames.includes('provider_id')) {
     logger.info('Migrating sessions table: adding provider_id column')
@@ -188,10 +188,12 @@ function runMigrations(db: Database.Database): void {
   if (!columnNames.includes('message_count')) {
     logger.info('Migrating sessions table: adding message_count column')
     db.exec(`ALTER TABLE sessions ADD COLUMN message_count INTEGER NOT NULL DEFAULT 0`)
-    
+
     // Backfill message_count from snapshots OR message.start events
     logger.info('Backfilling message counts')
-    const backfillResult = db.prepare(`
+    const backfillResult = db
+      .prepare(
+        `
       UPDATE sessions 
       SET message_count = (
         SELECT COALESCE(
@@ -207,7 +209,9 @@ function runMigrations(db: Database.Database): void {
            AND json_extract(e.payload, '$.role') IN ('user', 'assistant'))
         )
       )
-    `).run()
+    `,
+      )
+      .run()
     logger.info('Backfilled message counts', { count: backfillResult.changes })
   }
 

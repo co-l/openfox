@@ -61,21 +61,18 @@ function toSnapshotMessage(message: import('../../shared/types.js').Message): Sn
 /**
  * Get full session state by folding all events.
  * Returns undefined if no session.initialized event exists.
- * 
+ *
  * If a snapshot exists, messages are loaded from the snapshot instead of
  * reconstructing from individual events (which may have been deleted).
- * 
+ *
  * maxTokens should come from providerManager.getCurrentModelContext()
  */
-export function getSessionState(
-  sessionId: string,
-  maxTokens?: number
-): FoldedSessionState | undefined {
+export function getSessionState(sessionId: string, maxTokens?: number): FoldedSessionState | undefined {
   const eventStore = getEventStore()
-  
+
   // Check for the latest snapshot first
   const latestSnapshotEvent = eventStore.getLatestSnapshot(sessionId)
-  
+
   // Get all events (snapshots + current window events)
   const events = eventStore.getEvents(sessionId)
 
@@ -136,7 +133,7 @@ export function getSessionState(
   // If we have a snapshot, use it as the base for messages and replay newer events
   if (latestSnapshotEvent) {
     const state = foldSessionState(events, initialWindowId, effectiveMaxTokens)
-    
+
     // Override folded messages with the latest snapshot plus replayed events.
     return {
       ...state,
@@ -149,7 +146,7 @@ export function getSessionState(
 
 /**
  * Get messages for the current context window (for LLM context building)
- * 
+ *
  * If a snapshot exists, messages are loaded from the snapshot.
  * Otherwise, they're built from events.
  */
@@ -160,13 +157,13 @@ export function getCurrentWindowMessages(sessionId: string): SnapshotMessage[] {
 
   const state = getSessionState(sessionId)
   if (!state) return []
-  
+
   return state.messages.filter((m) => m.contextWindowId === currentWindowId)
 }
 
 /**
  * Get context messages for LLM from current window
- * 
+ *
  * If a snapshot exists, messages are loaded from the snapshot.
  * Otherwise, they're built from events.
  */
@@ -222,7 +219,7 @@ export function emitSessionInitialized(
   projectId: string,
   workdir: string,
   contextWindowId: string,
-  title?: string
+  title?: string,
 ): void {
   const eventStore = getEventStore()
   eventStore.append(sessionId, {
@@ -252,7 +249,7 @@ export function emitUserMessage(
     subAgentId?: string
     subAgentType?: string
     metadata?: { type: string; name: string; color: string }
-  }
+  },
 ): string {
   const eventStore = getEventStore()
   const messageId = crypto.randomUUID()
@@ -294,7 +291,7 @@ export function emitAssistantMessageStart(
     contextWindowId?: string
     subAgentId?: string
     subAgentType?: string
-  }
+  },
 ): string {
   const eventStore = getEventStore()
   const messageId = crypto.randomUUID()
@@ -349,7 +346,7 @@ export function emitMessageDone(
     partial?: boolean
     promptContext?: PromptContext
     tokenCount?: number
-  }
+  },
 ): void {
   const eventStore = getEventStore()
   eventStore.append(sessionId, {
@@ -368,12 +365,7 @@ export function emitMessageDone(
 /**
  * Emit tool preparing (early in stream when tool name is known but args not complete)
  */
-export function emitToolPreparing(
-  sessionId: string,
-  messageId: string,
-  index: number,
-  name: string
-): void {
+export function emitToolPreparing(sessionId: string, messageId: string, index: number, name: string): void {
   const eventStore = getEventStore()
   eventStore.append(sessionId, {
     type: 'tool.preparing',
@@ -399,7 +391,7 @@ export function emitToolOutput(
   sessionId: string,
   toolCallId: string,
   stream: 'stdout' | 'stderr',
-  content: string
+  content: string,
 ): void {
   const eventStore = getEventStore()
   eventStore.append(sessionId, {
@@ -411,12 +403,7 @@ export function emitToolOutput(
 /**
  * Emit tool result
  */
-export function emitToolResult(
-  sessionId: string,
-  messageId: string,
-  toolCallId: string,
-  result: ToolResult
-): void {
+export function emitToolResult(sessionId: string, messageId: string, toolCallId: string, result: ToolResult): void {
   const eventStore = getEventStore()
   eventStore.append(sessionId, {
     type: 'tool.result',
@@ -427,12 +414,7 @@ export function emitToolResult(
 /**
  * Emit mode changed
  */
-export function emitModeChanged(
-  sessionId: string,
-  mode: SessionMode,
-  auto: boolean,
-  reason?: string
-): void {
+export function emitModeChanged(sessionId: string, mode: SessionMode, auto: boolean, reason?: string): void {
   const eventStore = getEventStore()
   eventStore.append(sessionId, {
     type: 'mode.changed',
@@ -480,11 +462,7 @@ export function emitCriteriaSet(sessionId: string, criteria: Criterion[]): void 
 /**
  * Emit criterion updated
  */
-export function emitCriterionUpdated(
-  sessionId: string,
-  criterionId: string,
-  status: CriterionStatus
-): void {
+export function emitCriterionUpdated(sessionId: string, criterionId: string, status: CriterionStatus): void {
   const eventStore = getEventStore()
   eventStore.append(sessionId, {
     type: 'criterion.updated',
@@ -506,12 +484,7 @@ export function emitTodosUpdated(sessionId: string, todos: Todo[]): void {
 /**
  * Emit file read (for cache tracking)
  */
-export function emitFileRead(
-  sessionId: string,
-  path: string,
-  tokenCount: number,
-  contextWindowId: string
-): void {
+export function emitFileRead(sessionId: string, path: string, tokenCount: number, contextWindowId: string): void {
   const eventStore = getEventStore()
   eventStore.append(sessionId, {
     type: 'file.read',
@@ -528,7 +501,7 @@ export function emitContextCompacted(
   newWindowId: string,
   beforeTokens: number,
   afterTokens: number,
-  summary: string
+  summary: string,
 ): void {
   const eventStore = getEventStore()
   eventStore.append(sessionId, {
@@ -553,7 +526,7 @@ export function emitContextState(
   compactionCount: number,
   dangerZone: boolean,
   canCompact: boolean,
-  subAgentId?: string
+  subAgentId?: string,
 ): void {
   const eventStore = getEventStore()
   eventStore.append(sessionId, {
@@ -576,7 +549,7 @@ export function emitChatDone(
   sessionId: string,
   messageId: string,
   reason: 'complete' | 'stopped' | 'error' | 'waiting_for_user',
-  stats?: MessageStats
+  stats?: MessageStats,
 ): void {
   const eventStore = getEventStore()
   eventStore.append(sessionId, {
@@ -618,7 +591,7 @@ export function emitVisionFallbackStart(
   sessionId: string,
   messageId: string,
   attachmentId: string,
-  filename?: string
+  filename?: string,
 ): void {
   const eventStore = getEventStore()
   const data: { messageId: string; attachmentId: string; filename?: string } = {
@@ -641,7 +614,7 @@ export function emitVisionFallbackDone(
   sessionId: string,
   messageId: string,
   attachmentId: string,
-  description: string
+  description: string,
 ): void {
   const eventStore = getEventStore()
   eventStore.append(sessionId, {
@@ -671,7 +644,7 @@ export function emitTurnSnapshot(sessionId: string, snapshot: SessionSnapshot): 
 export function compactContext(
   sessionId: string,
   summary: string,
-  beforeTokens: number
+  beforeTokens: number,
 ): { newWindowId: string; summaryMessageId: string } {
   const state = getSessionState(sessionId)
   if (!state) {
@@ -712,12 +685,15 @@ export function compactContext(
 /**
  * Get the most recent user prompts for a session.
  * Queries the events table directly for efficiency, returning only necessary fields.
- * 
+ *
  * @param sessionId - The session ID
  * @param limit - Maximum number of prompts to return (default: 10)
  * @returns Array of recent user prompts with id, content, and timestamp
  */
-export function getRecentUserPromptsForSession(sessionId: string, limit: number = 10): { id: string, content: string, timestamp: string }[] {
+export function getRecentUserPromptsForSession(
+  sessionId: string,
+  limit: number = 10,
+): { id: string; content: string; timestamp: string }[] {
   try {
     const eventStore = getEventStore()
     const db = (eventStore as any).db as import('better-sqlite3').Database | undefined
@@ -727,27 +703,43 @@ export function getRecentUserPromptsForSession(sessionId: string, limit: number 
       return []
     }
 
-    const isRealUserMessage = (msg: { role: string, isSystemGenerated?: boolean, messageKind?: string, subAgentType?: string }) =>
-      msg.role === 'user' && !msg.isSystemGenerated && !msg.messageKind && !msg.subAgentType
+    const isRealUserMessage = (msg: {
+      role: string
+      isSystemGenerated?: boolean
+      messageKind?: string
+      subAgentType?: string
+    }) => msg.role === 'user' && !msg.isSystemGenerated && !msg.messageKind && !msg.subAgentType
 
     // Collect user prompts from both snapshots and message.start events.
     // After a snapshot is created, older message.start events may be deleted,
     // so we must extract messages from the latest snapshot as well.
-    const promptMap = new Map<string, { id: string, content: string, timestamp: string }>()
+    const promptMap = new Map<string, { id: string; content: string; timestamp: string }>()
 
     // 1. Extract user messages from the latest snapshot (if any)
     const snapshotRow = db
-      .prepare(`
+      .prepare(
+        `
         SELECT payload, timestamp
         FROM events
         WHERE session_id = ? AND event_type = 'turn.snapshot'
         ORDER BY timestamp DESC
         LIMIT 1
-      `)
-      .get(sessionId) as { payload: string, timestamp: number } | undefined
+      `,
+      )
+      .get(sessionId) as { payload: string; timestamp: number } | undefined
 
     if (snapshotRow) {
-      const snapshot = JSON.parse(snapshotRow.payload) as { messages: Array<{ id: string, role: string, content: string, timestamp: number, isSystemGenerated?: boolean, messageKind?: string, subAgentType?: string }> }
+      const snapshot = JSON.parse(snapshotRow.payload) as {
+        messages: Array<{
+          id: string
+          role: string
+          content: string
+          timestamp: number
+          isSystemGenerated?: boolean
+          messageKind?: string
+          subAgentType?: string
+        }>
+      }
       for (const msg of snapshot.messages) {
         if (isRealUserMessage(msg)) {
           promptMap.set(msg.id, {
@@ -761,7 +753,8 @@ export function getRecentUserPromptsForSession(sessionId: string, limit: number 
 
     // 2. Add/override with message.start events (these may be newer than the snapshot)
     const rows = db
-      .prepare(`
+      .prepare(
+        `
         SELECT payload, timestamp
         FROM events
         WHERE session_id = ? AND event_type = 'message.start'
@@ -771,11 +764,12 @@ export function getRecentUserPromptsForSession(sessionId: string, limit: number 
           AND json_extract(payload, '$.subAgentType') IS NULL
         ORDER BY timestamp DESC
         LIMIT ?
-      `)
-      .all(sessionId, limit) as { payload: string, timestamp: number }[]
+      `,
+      )
+      .all(sessionId, limit) as { payload: string; timestamp: number }[]
 
     for (const row of rows) {
-      const message = JSON.parse(row.payload) as { messageId: string, content: string }
+      const message = JSON.parse(row.payload) as { messageId: string; content: string }
       promptMap.set(message.messageId, {
         id: message.messageId,
         content: message.content,
@@ -787,7 +781,8 @@ export function getRecentUserPromptsForSession(sessionId: string, limit: number 
     return [...promptMap.values()]
       .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
       .slice(0, limit)
-  } catch (_error) { // eslint-disable-line @typescript-eslint/no-unused-vars
+  } catch (_error) {
+    // eslint-disable-line @typescript-eslint/no-unused-vars
     // If any error occurs (e.g., in tests), return empty array
     return []
   }

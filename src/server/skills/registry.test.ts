@@ -12,8 +12,12 @@ vi.mock('../db/settings.js', () => {
   const store = new Map<string, string>()
   return {
     getSetting: (key: string) => store.get(key) ?? null,
-    setSetting: (key: string, value: string) => { store.set(key, value) },
-    deleteSetting: (key: string) => { store.delete(key) },
+    setSetting: (key: string, value: string) => {
+      store.set(key, value)
+    },
+    deleteSetting: (key: string) => {
+      store.delete(key)
+    },
     __store: store,
   }
 })
@@ -36,7 +40,7 @@ import { getSetting } from '../db/settings.js'
 
 let tempDir: string
 
-const mockStore = (await import('../db/settings.js') as any).__store as Map<string, string>
+const mockStore = ((await import('../db/settings.js')) as any).__store as Map<string, string>
 
 beforeEach(async () => {
   tempDir = await mkdtemp(join(tmpdir(), 'skill-registry-test-'))
@@ -50,7 +54,9 @@ afterEach(async () => {
 async function createSkillFile(dir: string, id: string, name: string, prompt: string): Promise<void> {
   const skillsDir = join(dir, 'skills')
   await mkdir(skillsDir, { recursive: true })
-  await writeFile(join(skillsDir, `${id}.skill.md`), `---
+  await writeFile(
+    join(skillsDir, `${id}.skill.md`),
+    `---
 id: ${id}
 name: ${name}
 description: Test skill ${id}
@@ -58,14 +64,15 @@ version: "1.0"
 ---
 
 ${prompt}
-`)
+`,
+  )
 }
 
 describe('loadDefaultSkills', () => {
   it('should load bundled default skills', async () => {
     const defaults = await loadDefaultSkills()
     expect(defaults.length).toBeGreaterThanOrEqual(1)
-    expect(defaults.some(s => s.metadata.id === 'browser')).toBe(true)
+    expect(defaults.some((s) => s.metadata.id === 'browser')).toBe(true)
   })
 })
 
@@ -88,12 +95,15 @@ describe('loadUserSkills', () => {
   it('should skip files without an id', async () => {
     const skillsDir = join(tempDir, 'skills')
     await mkdir(skillsDir, { recursive: true })
-    await writeFile(join(skillsDir, 'bad.skill.md'), `---
+    await writeFile(
+      join(skillsDir, 'bad.skill.md'),
+      `---
 name: No ID
 ---
 
 Some prompt.
-`)
+`,
+    )
 
     const skills = await loadUserSkills(tempDir)
     expect(skills).toEqual([])
@@ -102,13 +112,16 @@ Some prompt.
   it('should skip files with empty prompt', async () => {
     const skillsDir = join(tempDir, 'skills')
     await mkdir(skillsDir, { recursive: true })
-    await writeFile(join(skillsDir, 'empty.skill.md'), `---
+    await writeFile(
+      join(skillsDir, 'empty.skill.md'),
+      `---
 id: empty
 name: Empty
 description: Empty
 version: "1.0"
 ---
-`)
+`,
+    )
 
     const skills = await loadUserSkills(tempDir)
     expect(skills).toEqual([])
@@ -121,14 +134,16 @@ describe('loadAllSkills', () => {
 
     const defaults = await loadDefaultSkills()
     const skills = await loadAllSkills(tempDir)
-    expect(skills.some(s => s.metadata.id === 'test')).toBe(true)
+    expect(skills.some((s) => s.metadata.id === 'test')).toBe(true)
     expect(skills.length).toBeGreaterThanOrEqual(defaults.length + 1)
   })
 
   it('should give precedence to user skills over defaults', async () => {
     const skillsDir = join(tempDir, 'skills')
     await mkdir(skillsDir, { recursive: true })
-    await writeFile(join(skillsDir, 'custom.skill.md'), `---
+    await writeFile(
+      join(skillsDir, 'custom.skill.md'),
+      `---
 id: custom
 name: Custom Skill
 description: Custom
@@ -136,10 +151,11 @@ version: "1.0"
 ---
 
 Custom prompt.
-`)
+`,
+    )
 
     const skills = await loadAllSkills(tempDir)
-    const custom = skills.find(s => s.metadata.id === 'custom')
+    const custom = skills.find((s) => s.metadata.id === 'custom')
     expect(custom).toBeDefined()
     expect(custom!.prompt).toBe('Custom prompt.')
   })
@@ -175,8 +191,8 @@ describe('getEnabledSkills', () => {
     setSkillEnabled('disabled_one', false)
 
     const enabled = await getEnabledSkills(tempDir)
-    expect(enabled.some(s => s.metadata.id === 'enabled_one')).toBe(true)
-    expect(enabled.every(s => s.metadata.id === 'disabled_one' ? false : true)).toBe(true)
+    expect(enabled.some((s) => s.metadata.id === 'enabled_one')).toBe(true)
+    expect(enabled.every((s) => (s.metadata.id === 'disabled_one' ? false : true))).toBe(true)
   })
 })
 
@@ -205,7 +221,7 @@ describe('CRUD', () => {
 
     await saveSkill(tempDir, skill)
     const skills = await loadAllSkills(tempDir)
-    const loaded = skills.find(s => s.metadata.id === 'my_skill')
+    const loaded = skills.find((s) => s.metadata.id === 'my_skill')
 
     expect(loaded).toBeDefined()
     expect(loaded!.metadata.name).toBe('My Skill')
@@ -226,7 +242,7 @@ describe('CRUD', () => {
     expect(result.success).toBe(true)
 
     const skills = await loadAllSkills(tempDir)
-    expect(skills.find(s => s.metadata.id === 'deleteme')).toBeUndefined()
+    expect(skills.find((s) => s.metadata.id === 'deleteme')).toBeUndefined()
     expect(getSetting('skill.enabled.deleteme')).toBeNull()
   })
 

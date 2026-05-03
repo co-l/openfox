@@ -12,10 +12,7 @@ import type { LLMClientWithModel } from '../llm/client.js'
 import type { ToolRegistry } from '../tools/types.js'
 import type { TurnMetrics } from '../chat/stream-pure.js'
 
-const {
-  getEventStoreMock,
-  getAllInstructionsMock,
-} = vi.hoisted(() => ({
+const { getEventStoreMock, getAllInstructionsMock } = vi.hoisted(() => ({
   getEventStoreMock: vi.fn(),
   getAllInstructionsMock: vi.fn(),
 }))
@@ -27,6 +24,7 @@ vi.mock('../events/index.js', () => ({
 
 vi.mock('../context/instructions.js', () => ({
   getAllInstructions: getAllInstructionsMock,
+  toInjectedFiles: (files: unknown[]) => files as unknown,
 }))
 
 vi.mock('../skills/registry.js', () => ({
@@ -101,11 +99,13 @@ describe('SubAgentManager', () => {
             id: 'mock-1',
             content: 'Completed.',
             thinkingContent: '',
-            toolCalls: [{
-              id: 'call-1',
-              name: 'return_value',
-              arguments: { content: 'Test result content', result: 'success' },
-            }],
+            toolCalls: [
+              {
+                id: 'call-1',
+                name: 'return_value',
+                arguments: { content: 'Test result content', result: 'success' },
+              },
+            ],
             finishReason: 'tool_calls',
             usage: { promptTokens: 50, completionTokens: 30, totalTokens: 80 },
           },
@@ -114,17 +114,24 @@ describe('SubAgentManager', () => {
     } as unknown as LLMClientWithModel
 
     const mockToolRegistry = {
-      definitions: [{
-        type: 'function',
-        function: {
-          name: 'return_value',
-          description: 'Return value',
-          parameters: { type: 'object', properties: { content: { type: 'string' }, result: { type: 'string' } } },
+      definitions: [
+        {
+          type: 'function',
+          function: {
+            name: 'return_value',
+            description: 'Return value',
+            parameters: { type: 'object', properties: { content: { type: 'string' }, result: { type: 'string' } } },
+          },
         },
-      }],
+      ],
       execute: vi.fn().mockImplementation(async (name: string, args: Record<string, unknown>) => {
         if (name === 'return_value') {
-          return { success: true, output: `Returned: ${args['content']} (${args['result']})`, durationMs: 1, truncated: false }
+          return {
+            success: true,
+            output: `Returned: ${args['content']} (${args['result']})`,
+            durationMs: 1,
+            truncated: false,
+          }
         }
         return { success: true, output: 'ok', durationMs: 1, truncated: false }
       }),
@@ -155,18 +162,15 @@ describe('SubAgentManager', () => {
     expect(result.result).toBe('success')
 
     const allCalls: Array<[unknown]> = mockOnMessage.mock.calls as Array<[unknown]>
-    const chatDoneMessages = allCalls.filter(([msg]) => 
-      (msg as { type: string }).type === 'chat.done'
-    )
+    const chatDoneMessages = allCalls.filter(([msg]) => (msg as { type: string }).type === 'chat.done')
     expect(chatDoneMessages.length).toBe(1)
     const chatDonePayload = (chatDoneMessages[0]![0] as { payload: { reason: string } }).payload
     expect(chatDonePayload.reason).toBe('complete')
-    
-    const messageUpdatedMessages = allCalls.filter(([msg]) => 
-      (msg as { type: string }).type === 'chat.message_updated'
-    )
+
+    const messageUpdatedMessages = allCalls.filter(([msg]) => (msg as { type: string }).type === 'chat.message_updated')
     expect(messageUpdatedMessages.length).toBe(1)
-    const messageUpdatedPayload = (messageUpdatedMessages[0]![0] as { payload: { updates: { stats?: unknown } } }).payload
+    const messageUpdatedPayload = (messageUpdatedMessages[0]![0] as { payload: { updates: { stats?: unknown } } })
+      .payload
     expect('stats' in messageUpdatedPayload.updates).toBe(true)
   })
 
@@ -196,15 +200,8 @@ describe('SubAgentManager', () => {
       'web_fetch',
     ])
 
-    expect(findAgentById('code_reviewer', agents)?.metadata.allowedTools).toEqual([
-      'read_file',
-      'web_fetch',
-    ])
+    expect(findAgentById('code_reviewer', agents)?.metadata.allowedTools).toEqual(['read_file', 'web_fetch'])
 
-    expect(findAgentById('explorer', agents)?.metadata.allowedTools).toEqual([
-      'read_file',
-      'run_command',
-      'web_fetch',
-    ])
+    expect(findAgentById('explorer', agents)?.metadata.allowedTools).toEqual(['read_file', 'run_command', 'web_fetch'])
   })
 })

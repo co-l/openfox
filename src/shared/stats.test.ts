@@ -6,7 +6,7 @@ import type { Message, MessageStats } from './types.js'
 function createMessageWithStats(
   id: string,
   stats: Partial<MessageStats> & { mode: MessageStats['mode'] },
-  timestamp = '2024-01-01T10:00:00Z'
+  timestamp = '2024-01-01T10:00:00Z',
 ): Message {
   const {
     mode,
@@ -92,24 +92,32 @@ describe('computeSessionStats', () => {
 
   it('aggregates multiple messages correctly', () => {
     const messages = [
-      createMessageWithStats('1', {
-        mode: 'planner',
-        totalTime: 10,
-        toolTime: 2,
-        prefillTokens: 50000,
-        prefillSpeed: 10000,
-        generationTokens: 500,
-        generationSpeed: 150,
-      }, '2024-01-01T10:00:00Z'),
-      createMessageWithStats('2', {
-        mode: 'builder',
-        totalTime: 20,
-        toolTime: 5,
-        prefillTokens: 100000,
-        prefillSpeed: 8000,
-        generationTokens: 1000,
-        generationSpeed: 120,
-      }, '2024-01-01T10:00:30Z'),
+      createMessageWithStats(
+        '1',
+        {
+          mode: 'planner',
+          totalTime: 10,
+          toolTime: 2,
+          prefillTokens: 50000,
+          prefillSpeed: 10000,
+          generationTokens: 500,
+          generationSpeed: 150,
+        },
+        '2024-01-01T10:00:00Z',
+      ),
+      createMessageWithStats(
+        '2',
+        {
+          mode: 'builder',
+          totalTime: 20,
+          toolTime: 5,
+          prefillTokens: 100000,
+          prefillSpeed: 8000,
+          generationTokens: 1000,
+          generationSpeed: 120,
+        },
+        '2024-01-01T10:00:30Z',
+      ),
     ]
 
     const result = computeSessionStats(messages)
@@ -130,18 +138,18 @@ describe('computeSessionStats', () => {
     const messages = [
       createMessageWithStats('1', {
         mode: 'builder',
-        totalTime: 5,   // 5 seconds total
+        totalTime: 5, // 5 seconds total
         toolTime: 0,
-        prefillTokens: 50000,   // 50k in ~5s = 10k tok/s
+        prefillTokens: 50000, // 50k in ~5s = 10k tok/s
         prefillSpeed: 10000,
-        generationTokens: 500,  // 500 in ~3.3s = 150 tok/s
+        generationTokens: 500, // 500 in ~3.3s = 150 tok/s
         generationSpeed: 150,
       }),
       createMessageWithStats('2', {
         mode: 'builder',
-        totalTime: 15,  // 15 seconds total
+        totalTime: 15, // 15 seconds total
         toolTime: 0,
-        prefillTokens: 150000,  // 150k in ~12.5s = 12k tok/s
+        prefillTokens: 150000, // 150k in ~12.5s = 12k tok/s
         prefillSpeed: 12000,
         generationTokens: 1500, // 1500 in ~10s = 150 tok/s
         generationSpeed: 150,
@@ -178,7 +186,7 @@ describe('computeSessionStats', () => {
     const result = computeSessionStats(messages)
 
     expect(result!.responseCount).toBe(2)
-    expect(result!.dataPoints.some(dp => dp.mode === 'verifier')).toBe(true)
+    expect(result!.dataPoints.some((dp) => dp.mode === 'verifier')).toBe(true)
   })
 
   it('skips messages without stats', () => {
@@ -266,16 +274,24 @@ describe('computeSessionStats', () => {
 
   it('tracks prompt work per response instead of pretending it is context size', () => {
     const messages = [
-      createMessageWithStats('1', {
-        mode: 'builder',
-        prefillTokens: 12000000,
-        prefillSpeed: 19500,
-      }, '2024-01-01T10:00:00Z'),
-      createMessageWithStats('2', {
-        mode: 'builder',
-        prefillTokens: 17500,
-        prefillSpeed: 2200,
-      }, '2024-01-01T10:10:00Z'),
+      createMessageWithStats(
+        '1',
+        {
+          mode: 'builder',
+          prefillTokens: 12000000,
+          prefillSpeed: 19500,
+        },
+        '2024-01-01T10:00:00Z',
+      ),
+      createMessageWithStats(
+        '2',
+        {
+          mode: 'builder',
+          prefillTokens: 17500,
+          prefillSpeed: 2200,
+        },
+        '2024-01-01T10:10:00Z',
+      ),
     ]
 
     const result = computeSessionStats(messages)
@@ -370,9 +386,27 @@ describe('computeSessionStats', () => {
 
     expect(result!.llmCallCount).toBe(3)
     expect(result!.callDataPoints).toEqual([
-      expect.objectContaining({ sessionCallIndex: 1, responseIndex: 1, callIndex: 1, promptTokens: 40, completionTokens: 8 }),
-      expect.objectContaining({ sessionCallIndex: 2, responseIndex: 1, callIndex: 2, promptTokens: 80, completionTokens: 16 }),
-      expect.objectContaining({ sessionCallIndex: 3, responseIndex: 2, callIndex: 1, promptTokens: 60, completionTokens: 12 }),
+      expect.objectContaining({
+        sessionCallIndex: 1,
+        responseIndex: 1,
+        callIndex: 1,
+        promptTokens: 40,
+        completionTokens: 8,
+      }),
+      expect.objectContaining({
+        sessionCallIndex: 2,
+        responseIndex: 1,
+        callIndex: 2,
+        promptTokens: 80,
+        completionTokens: 16,
+      }),
+      expect.objectContaining({
+        sessionCallIndex: 3,
+        responseIndex: 2,
+        callIndex: 1,
+        promptTokens: 60,
+        completionTokens: 12,
+      }),
     ])
   })
 

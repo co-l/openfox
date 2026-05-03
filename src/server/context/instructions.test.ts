@@ -6,7 +6,13 @@ import { loadConfig } from '../config.js'
 import { closeDatabase, initDatabase } from '../db/index.js'
 import { createProject, updateProject } from '../db/projects.js'
 import { setSetting, SETTINGS_KEYS } from '../db/settings.js'
-import { findInstructionFiles, getAllInstructions, getInstructionsForWorkdir, loadInstructions, type InstructionFile } from './instructions.js'
+import {
+  findInstructionFiles,
+  getAllInstructions,
+  getInstructionsForWorkdir,
+  loadInstructions,
+  type InstructionFile,
+} from './instructions.js'
 
 describe('instructions', () => {
   let testDir: string
@@ -61,8 +67,8 @@ describe('instructions', () => {
 
       expect(result).toHaveLength(2)
       // AGENTS.md comes before CLAUDE.md alphabetically
-      expect(result.map(f => f.path)).toContain(join(testDir, 'AGENTS.md'))
-      expect(result.map(f => f.path)).toContain(join(testDir, 'CLAUDE.md'))
+      expect(result.map((f) => f.path)).toContain(join(testDir, 'AGENTS.md'))
+      expect(result.map((f) => f.path)).toContain(join(testDir, 'CLAUDE.md'))
     })
 
     it('walks up directory tree to find instruction files', async () => {
@@ -132,9 +138,7 @@ describe('instructions', () => {
     it('includes source path comments', async () => {
       await writeFile(join(testDir, 'AGENTS.md'), 'Instructions here')
 
-      const files: InstructionFile[] = [
-        { path: join(testDir, 'AGENTS.md'), source: 'agents-md' },
-      ]
+      const files: InstructionFile[] = [{ path: join(testDir, 'AGENTS.md'), source: 'agents-md' }]
 
       const result = await loadInstructions(files)
 
@@ -142,9 +146,7 @@ describe('instructions', () => {
     })
 
     it('handles non-existent files gracefully', async () => {
-      const files: InstructionFile[] = [
-        { path: join(testDir, 'nonexistent.md'), source: 'agents-md' },
-      ]
+      const files: InstructionFile[] = [{ path: join(testDir, 'nonexistent.md'), source: 'agents-md' }]
 
       const result = await loadInstructions(files)
       expect(result).toBe('')

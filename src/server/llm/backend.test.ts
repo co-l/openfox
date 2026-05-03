@@ -29,9 +29,9 @@ describe('backend', () => {
           return { ok: false } as Response
         }
         if (String(url).includes('/health')) {
-          return { 
-            ok: true, 
-            json: async () => ({ status: 'ok', slots_idle: 1, slots_processing: 0 }) 
+          return {
+            ok: true,
+            json: async () => ({ status: 'ok', slots_idle: 1, slots_processing: 0 }),
           } as Response
         }
         return { ok: false } as Response

@@ -101,7 +101,15 @@ describe('LspManager', () => {
 
     expect(serverInstances).toHaveLength(1)
     const server = serverInstances[0]!
-    server.diagnostics = [{ path: '/tmp/project/file.ts', severity: 'error', message: 'boom', range: { start: { line: 0, character: 0 }, end: { line: 0, character: 1 } }, source: 'ts' }]
+    server.diagnostics = [
+      {
+        path: '/tmp/project/file.ts',
+        severity: 'error',
+        message: 'boom',
+        range: { start: { line: 0, character: 0 }, end: { line: 0, character: 1 } },
+        source: 'ts',
+      },
+    ]
 
     await expect(manager.notifyFileChange('/tmp/project/file.ts', 'const x = 2')).resolves.toEqual(server.diagnostics)
     expect(whichMock).toHaveBeenCalledTimes(1)

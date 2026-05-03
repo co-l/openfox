@@ -80,7 +80,11 @@ describe('compaction summary generation', () => {
 
   it('replaces context with summary message', () => {
     const originalMessages = [
-      { role: 'user', content: 'First message with lots of detailed content about the task', source: 'history' as const },
+      {
+        role: 'user',
+        content: 'First message with lots of detailed content about the task',
+        source: 'history' as const,
+      },
       { role: 'assistant', content: 'Response 1 with detailed analysis and findings', source: 'history' as const },
       { role: 'user', content: 'Second message with additional information and context', source: 'history' as const },
       { role: 'assistant', content: 'Response 2 with more analysis and tool usage', source: 'history' as const },

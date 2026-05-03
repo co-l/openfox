@@ -48,8 +48,12 @@ export function executeShellCommand(
     }
     signal?.addEventListener('abort', onAbort)
 
-    proc.stdout?.on('data', (data: Buffer) => { stdout += data.toString() })
-    proc.stderr?.on('data', (data: Buffer) => { stderr += data.toString() })
+    proc.stdout?.on('data', (data: Buffer) => {
+      stdout += data.toString()
+    })
+    proc.stderr?.on('data', (data: Buffer) => {
+      stderr += data.toString()
+    })
 
     proc.on('close', (code) => {
       clearTimeout(timer)

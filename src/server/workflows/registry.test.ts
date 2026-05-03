@@ -21,18 +21,22 @@ import type { WorkflowDefinition } from './types.js'
 
 let tempDir: string
 
-function makeWorkflow(overrides: Partial<WorkflowDefinition> & { metadata: WorkflowDefinition['metadata'] }): WorkflowDefinition {
+function makeWorkflow(
+  overrides: Partial<WorkflowDefinition> & { metadata: WorkflowDefinition['metadata'] },
+): WorkflowDefinition {
   return {
     entryStep: 'build',
     settings: { maxIterations: 50 },
-    steps: [{
-      id: 'build',
-      name: 'Build',
-      type: 'agent' as const,
-      toolMode: 'builder' as const,
-      phase: 'build',
-      transitions: [{ when: { type: 'always' as const }, goto: '$done' }],
-    }],
+    steps: [
+      {
+        id: 'build',
+        name: 'Build',
+        type: 'agent' as const,
+        toolMode: 'builder' as const,
+        phase: 'build',
+        transitions: [{ when: { type: 'always' as const }, goto: '$done' }],
+      },
+    ],
     ...overrides,
   }
 }
@@ -70,10 +74,13 @@ describe('loadUserWorkflows', () => {
   it('should skip files without metadata.id', async () => {
     const workflowsDir = join(tempDir, 'workflows')
     await mkdir(workflowsDir, { recursive: true })
-    await writeFile(join(workflowsDir, 'bad.workflow.json'), JSON.stringify({
-      metadata: { name: 'No ID' },
-      steps: [{ id: 's', name: 's', type: 'agent', toolMode: 'builder', phase: 'build', transitions: [] }],
-    }))
+    await writeFile(
+      join(workflowsDir, 'bad.workflow.json'),
+      JSON.stringify({
+        metadata: { name: 'No ID' },
+        steps: [{ id: 's', name: 's', type: 'agent', toolMode: 'builder', phase: 'build', transitions: [] }],
+      }),
+    )
 
     const workflows = await loadUserWorkflows(tempDir)
     expect(workflows).toEqual([])
@@ -82,10 +89,13 @@ describe('loadUserWorkflows', () => {
   it('should skip files with empty steps array', async () => {
     const workflowsDir = join(tempDir, 'workflows')
     await mkdir(workflowsDir, { recursive: true })
-    await writeFile(join(workflowsDir, 'empty.workflow.json'), JSON.stringify({
-      metadata: { id: 'empty', name: 'Empty' },
-      steps: [],
-    }))
+    await writeFile(
+      join(workflowsDir, 'empty.workflow.json'),
+      JSON.stringify({
+        metadata: { id: 'empty', name: 'Empty' },
+        steps: [],
+      }),
+    )
 
     const workflows = await loadUserWorkflows(tempDir)
     expect(workflows).toEqual([])
@@ -134,7 +144,7 @@ describe('loadAllWorkflows', () => {
 
     const defaults = await loadDefaultWorkflows()
     const workflows = await loadAllWorkflows(tempDir)
-    expect(workflows.some(w => w.metadata.id === 'test')).toBe(true)
+    expect(workflows.some((w) => w.metadata.id === 'test')).toBe(true)
     expect(workflows.length).toBeGreaterThanOrEqual(defaults.length + 1)
   })
 
@@ -148,7 +158,7 @@ describe('loadAllWorkflows', () => {
     await writeFile(join(workflowsDir, 'custom.workflow.json'), JSON.stringify(workflow))
 
     const workflows = await loadAllWorkflows(tempDir)
-    const custom = workflows.find(w => w.metadata.id === 'custom')
+    const custom = workflows.find((w) => w.metadata.id === 'custom')
     expect(custom).toBeDefined()
   })
 })
@@ -157,7 +167,7 @@ describe('loadDefaultWorkflows', () => {
   it('should load bundled default workflows', async () => {
     const defaults = await loadDefaultWorkflows()
     expect(defaults.length).toBeGreaterThanOrEqual(1)
-    expect(defaults.some(w => w.metadata.id === 'default')).toBe(true)
+    expect(defaults.some((w) => w.metadata.id === 'default')).toBe(true)
   })
 })
 
@@ -173,9 +183,7 @@ describe('findWorkflowById', () => {
   })
 
   it('should return undefined for non-existent id', () => {
-    const workflows = [
-      makeWorkflow({ metadata: { id: 'a', name: 'A', description: 'A', version: '1' } }),
-    ]
+    const workflows = [makeWorkflow({ metadata: { id: 'a', name: 'A', description: 'A', version: '1' } })]
     expect(findWorkflowById('missing', workflows)).toBeUndefined()
   })
 })
@@ -188,7 +196,7 @@ describe('CRUD', () => {
 
     await saveWorkflow(tempDir, workflow)
     const loaded = await loadAllWorkflows(tempDir)
-    const found = loaded.find(w => w.metadata.id === 'my_wf')
+    const found = loaded.find((w) => w.metadata.id === 'my_wf')
 
     expect(found).toBeDefined()
     expect(found!.metadata.name).toBe('My Workflow')
@@ -218,7 +226,7 @@ describe('CRUD', () => {
     expect(result.success).toBe(true)
 
     const workflows = await loadAllWorkflows(tempDir)
-    expect(workflows.find(w => w.metadata.id === 'deleteme')).toBeUndefined()
+    expect(workflows.find((w) => w.metadata.id === 'deleteme')).toBeUndefined()
   })
 
   it('should not delete built-in default workflows', async () => {
@@ -235,9 +243,12 @@ describe('CRUD', () => {
   it('should check workflow existence', async () => {
     expect(await workflowExists(tempDir, 'nope')).toBe(false)
 
-    await saveWorkflow(tempDir, makeWorkflow({
-      metadata: { id: 'exists', name: 'Exists', description: 'E', version: '1' },
-    }))
+    await saveWorkflow(
+      tempDir,
+      makeWorkflow({
+        metadata: { id: 'exists', name: 'Exists', description: 'E', version: '1' },
+      }),
+    )
     expect(await workflowExists(tempDir, 'exists')).toBe(true)
   })
 })

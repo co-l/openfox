@@ -26,12 +26,12 @@ describe('LLM Message Conversion with Attachments', () => {
       ]
 
       const result = convertMessages(messages, { modelSupportsVision: true, visionFallbackEnabled: false })
-      
+
       expect(result).toHaveLength(1)
       const msg = result[0]
       expect(msg?.role).toBe('user')
       expect(msg?.content).toBeInstanceOf(Array)
-      
+
       const content = msg?.content as Array<{ type: string; text?: string; image_url?: { url: string } }>
       expect(content).toHaveLength(2)
       expect(content[0]).toEqual({ type: 'text', text: 'What is in this image?' })
@@ -66,7 +66,7 @@ describe('LLM Message Conversion with Attachments', () => {
       ]
 
       const result = convertMessages(messages, { modelSupportsVision: true, visionFallbackEnabled: false })
-      
+
       expect(result).toHaveLength(1)
       const msg2 = result[0]
       const content = msg2?.content as Array<{ type: string; text?: string; image_url?: { url: string } }>
@@ -100,7 +100,7 @@ describe('LLM Message Conversion with Attachments', () => {
       ]
 
       const result = convertMessages(messages, { modelSupportsVision: true, visionFallbackEnabled: false })
-      
+
       expect(result).toHaveLength(1)
       const msg3 = result[0]
       const content = msg3?.content as Array<{ type: string; text?: string; image_url?: { url: string } }>
@@ -120,7 +120,7 @@ describe('LLM Message Conversion with Attachments', () => {
       ]
 
       const result = convertMessages(messages, { modelSupportsVision: true, visionFallbackEnabled: false })
-      
+
       expect(result).toHaveLength(1)
       const msg4 = result[0]
       expect(msg4?.role).toBe('user')
@@ -143,7 +143,7 @@ describe('LLM Message Conversion with Attachments', () => {
       ]
 
       const result = convertMessages(messages, { modelSupportsVision: true, visionFallbackEnabled: false })
-      
+
       expect(result).toHaveLength(1)
       const msg5 = result[0]
       expect(msg5?.role).toBe('assistant')
@@ -160,7 +160,7 @@ describe('LLM Message Conversion with Attachments', () => {
       ]
 
       const result = convertMessages(messages, { modelSupportsVision: true, visionFallbackEnabled: false })
-      
+
       expect(result).toHaveLength(1)
       const msg6 = result[0]
       expect(msg6?.role).toBe('tool')
@@ -181,7 +181,7 @@ describe('LLM Message Conversion with Attachments', () => {
       ]
 
       const result = convertMessages(messages, { modelSupportsVision: true, visionFallbackEnabled: false })
-      
+
       expect(result).toHaveLength(1)
       const msg7 = result[0]
       expect(msg7?.role).toBe('user')

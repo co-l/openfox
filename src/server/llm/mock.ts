@@ -1,9 +1,9 @@
 /**
  * Mock LLM Client for E2E Tests
- * 
+ *
  * Provides deterministic LLM responses for testing without real inference.
  * Activated via OPENFOX_MOCK_LLM=true environment variable.
- * 
+ *
  * Pattern-matches prompts to return specific tool calls, enabling fast
  * deterministic testing of the entire system through the WebSocket API.
  */
@@ -75,7 +75,8 @@ const RULES: MockRule[] = [
     response: 'Added both criteria.',
   },
   {
-    match: /Add these two acceptance criteria:[\s\S]*?1\.\s*([^\n]+)[\s\S]*?2\.\s*([^\n]+)[\s\S]*?Use (?:add_)?criterion for each one\./i,
+    match:
+      /Add these two acceptance criteria:[\s\S]*?1\.\s*([^\n]+)[\s\S]*?2\.\s*([^\n]+)[\s\S]*?Use (?:add_)?criterion for each one\./i,
     tools: [
       { name: 'criterion', arguments: { action: 'add', id: 'criterion-1', description: '$1' } },
       { name: 'criterion', arguments: { action: 'add', id: 'criterion-2', description: '$2' } },
@@ -349,7 +350,12 @@ const RULES: MockRule[] = [
   },
   {
     match: /create.*src\/utils\.ts.*greet/i,
-    tools: [{ name: 'write_file', arguments: { path: 'src/utils.ts', content: 'export function greet() { return "Hello!" }' } }],
+    tools: [
+      {
+        name: 'write_file',
+        arguments: { path: 'src/utils.ts', content: 'export function greet() { return "Hello!" }' },
+      },
+    ],
     response: 'Created utils.ts with greet function.',
   },
   {
@@ -380,7 +386,10 @@ const RULES: MockRule[] = [
     match: /edit_file.*replaceAll.*const.*let/i,
     tools: [
       { name: 'read_file', arguments: { path: 'src/multi.ts' } },
-      { name: 'edit_file', arguments: { path: 'src/multi.ts', old_string: 'const', new_string: 'let', replaceAll: true } },
+      {
+        name: 'edit_file',
+        arguments: { path: 'src/multi.ts', old_string: 'const', new_string: 'let', replaceAll: true },
+      },
     ],
     response: 'Replaced all occurrences.',
   },
@@ -388,7 +397,10 @@ const RULES: MockRule[] = [
     match: /edit_file.*NONEXISTENT_STRING/i,
     tools: [
       { name: 'read_file', arguments: { path: 'src/math.ts' } },
-      { name: 'edit_file', arguments: { path: 'src/math.ts', old_string: 'NONEXISTENT_STRING_XYZ', new_string: 'replacement' } },
+      {
+        name: 'edit_file',
+        arguments: { path: 'src/math.ts', old_string: 'NONEXISTENT_STRING_XYZ', new_string: 'replacement' },
+      },
     ],
     response: 'Attempted to edit with non-existent string.',
   },
@@ -496,27 +508,31 @@ const RULES: MockRule[] = [
   // -------------------------------------------------------------------------
   {
     match: /todo_write.*Read files.*Make changes/i,
-    tools: [{
-      name: 'todo',
-      arguments: {
-        action: 'write',
-        todos: [
-          { content: 'Read files', status: 'in_progress' },
-          { content: 'Make changes', status: 'pending' },
-        ],
+    tools: [
+      {
+        name: 'todo',
+        arguments: {
+          action: 'write',
+          todos: [
+            { content: 'Read files', status: 'in_progress' },
+            { content: 'Make changes', status: 'pending' },
+          ],
+        },
       },
-    }],
+    ],
     response: 'Created todo list.',
   },
   {
     match: /todo_write|todo.*list/i,
-    tools: [{
-      name: 'todo',
-      arguments: {
-        action: 'write',
-        todos: [{ content: 'Test task', status: 'pending' }],
+    tools: [
+      {
+        name: 'todo',
+        arguments: {
+          action: 'write',
+          todos: [{ content: 'Test task', status: 'pending' }],
+        },
       },
-    }],
+    ],
     response: 'Created todo list.',
   },
 
@@ -526,12 +542,14 @@ const RULES: MockRule[] = [
   {
     match: /think.*step.*step/i,
     tools: [],
-    response: 'Let me think step by step about this problem. First, I need to understand the requirements. Then I can propose a solution.',
+    response:
+      'Let me think step by step about this problem. First, I need to understand the requirements. Then I can propose a solution.',
   },
   {
     match: /long.*explanation|detailed.*explanation/i,
     tools: [],
-    response: 'Here is a detailed explanation of the topic. TypeScript is a statically typed superset of JavaScript that adds optional type annotations. It provides better tooling, catches errors at compile time, and makes code more maintainable.',
+    response:
+      'Here is a detailed explanation of the topic. TypeScript is a statically typed superset of JavaScript that adds optional type annotations. It provides better tooling, catches errors at compile time, and makes code more maintainable.',
   },
 
   // -------------------------------------------------------------------------
@@ -547,7 +565,7 @@ const RULES: MockRule[] = [
     tools: [{ name: 'ask_user', arguments: { question: 'Should I proceed with this action?' } }],
     response: 'I asked for confirmation.',
   },
-  
+
   // -------------------------------------------------------------------------
   // Default Responses (no tools)
   // -------------------------------------------------------------------------
@@ -625,7 +643,7 @@ function getLastUserPrompt(request: LLMCompletionRequest): string {
     return content.replace(/\n*<system-reminder>[\s\S]*<\/system-reminder>\s*/gi, '').trim()
   }
 
-  const userMessages = request.messages.filter(message => message.role === 'user')
+  const userMessages = request.messages.filter((message) => message.role === 'user')
   const latestUserMessage = userMessages.at(-1)
   if (!latestUserMessage) {
     return ''
@@ -680,11 +698,11 @@ function getLastUserPrompt(request: LLMCompletionRequest): string {
   }
 
   if (
-    isBuilderKickoff(latestPrompt)
-    || isSummaryPrompt(latestPrompt)
-    || isCompactionPrompt(latestPrompt)
-    || isWaitingPrompt(latestPrompt)
-    || isXmlCorrectionPrompt(latestPrompt)
+    isBuilderKickoff(latestPrompt) ||
+    isSummaryPrompt(latestPrompt) ||
+    isCompactionPrompt(latestPrompt) ||
+    isWaitingPrompt(latestPrompt) ||
+    isXmlCorrectionPrompt(latestPrompt)
   ) {
     return latestPrompt
   }
@@ -704,20 +722,20 @@ function getLastUserPrompt(request: LLMCompletionRequest): string {
 }
 
 function getConversationText(request: LLMCompletionRequest): string {
-  return request.messages.map(message => message.content).join('\n\n')
+  return request.messages.map((message) => message.content).join('\n\n')
 }
 
 function getInstructionAwareResponse(request: LLMCompletionRequest): string | null {
   const prompt = getLastUserPrompt(request)
   const conversationText = getConversationText(request)
   const previousUserPrompts = request.messages
-    .filter(message => message.role === 'user')
+    .filter((message) => message.role === 'user')
     .slice(0, -1)
-    .map(message => message.content)
+    .map((message) => message.content)
 
   const projectName = [...previousUserPrompts]
     .reverse()
-    .map(content => content.match(/project name is ["']([^"']+)["']/i)?.[1])
+    .map((content) => content.match(/project name is ["']([^"']+)["']/i)?.[1])
     .find((value): value is string => Boolean(value))
 
   if (/Generate a concise, descriptive session name/i.test(prompt)) {
@@ -780,25 +798,31 @@ function getInstructionAwareResponse(request: LLMCompletionRequest): string | nu
 
 function getPromptAwareToolResponse(prompt: string): MockMatchResult | null {
   const exactCommandMatch = prompt.match(/Run the exact command:\s*(.+)$/i) ?? prompt.match(/^Run exactly:\s*(.+)$/i)
-  const quotedValues = [...prompt.matchAll(/"([^"]+)"/g)].map(match => match[1]!)
+  const quotedValues = [...prompt.matchAll(/"([^"]+)"/g)].map((match) => match[1]!)
 
   if (/Use the todo_write tool to create a todo list with 2 items/i.test(prompt)) {
     return {
-      tools: [{
-        name: 'todo',
-        arguments: {
-          action: 'write',
-          todos: [
-            { content: 'Read files', status: 'in_progress' },
-            { content: 'Make changes', status: 'pending' },
-          ],
+      tools: [
+        {
+          name: 'todo',
+          arguments: {
+            action: 'write',
+            todos: [
+              { content: 'Read files', status: 'in_progress' },
+              { content: 'Make changes', status: 'pending' },
+            ],
+          },
         },
-      }],
+      ],
       response: 'Created todo list.',
     }
   }
 
-  if (/First call get_criteria to see what needs to be done, then create src\/test\.ts and call complete_criterion for ["']test-file["']\./i.test(prompt)) {
+  if (
+    /First call get_criteria to see what needs to be done, then create src\/test\.ts and call complete_criterion for ["']test-file["']\./i.test(
+      prompt,
+    )
+  ) {
     return {
       tools: [
         { name: 'criterion', arguments: { action: 'get' } },
@@ -814,7 +838,10 @@ function getPromptAwareToolResponse(prompt: string): MockMatchResult | null {
     return {
       tools: [
         { name: 'write_file', arguments: { path: 'src/utils.ts', content: 'export const created = true' } },
-        { name: 'criterion', arguments: { action: 'complete', id: 'file-created', reason: 'Created the requested file' } },
+        {
+          name: 'criterion',
+          arguments: { action: 'complete', id: 'file-created', reason: 'Created the requested file' },
+        },
         { name: 'step_done', arguments: {} },
       ],
       response: 'Created the file and completed the criterion.',
@@ -823,14 +850,21 @@ function getPromptAwareToolResponse(prompt: string): MockMatchResult | null {
 
   if (/Create a new file called src\/utils\.ts/i.test(prompt)) {
     return {
-      tools: [{ name: 'write_file', arguments: { path: 'src/utils.ts', content: 'export function greet() { return "Hello!" }' } }],
+      tools: [
+        {
+          name: 'write_file',
+          arguments: { path: 'src/utils.ts', content: 'export function greet() { return "Hello!" }' },
+        },
+      ],
       response: 'Created src/utils.ts.',
     }
   }
 
   if (/Create a new file at src\/newfile\.ts/i.test(prompt)) {
     return {
-      tools: [{ name: 'write_file', arguments: { path: 'src/newfile.ts', content: 'export const greeting = "hello"' } }],
+      tools: [
+        { name: 'write_file', arguments: { path: 'src/newfile.ts', content: 'export const greeting = "hello"' } },
+      ],
       response: 'Created src/newfile.ts.',
     }
   }
@@ -846,7 +880,10 @@ function getPromptAwareToolResponse(prompt: string): MockMatchResult | null {
     return {
       tools: [
         { name: 'read_file', arguments: { path: 'src/math.ts' } },
-        { name: 'edit_file', arguments: { path: 'src/math.ts', old_string: quotedValues[0], new_string: quotedValues[1] } },
+        {
+          name: 'edit_file',
+          arguments: { path: 'src/math.ts', old_string: quotedValues[0], new_string: quotedValues[1] },
+        },
       ],
       response: 'Updated src/math.ts.',
     }
@@ -891,7 +928,7 @@ function getPromptAwareToolResponse(prompt: string): MockMatchResult | null {
     const commands = quotedValues
     if (/and then run/i.test(prompt) && commands.length >= 2) {
       return {
-        tools: commands.slice(0, 2).map(command => ({ name: 'run_command', arguments: { command } })),
+        tools: commands.slice(0, 2).map((command) => ({ name: 'run_command', arguments: { command } })),
         response: 'Ran both commands.',
       }
     }
@@ -913,8 +950,8 @@ function getConversationAwareToolResponse(request: LLMCompletionRequest): MockMa
 
   // Builder workflow: implement criteria and call step_done
   if (
-    /Implement the task and make sure you fulfil the \d+ criteria\./i.test(prompt)
-    || /Continue working on the acceptance criteria\./i.test(prompt)
+    /Implement the task and make sure you fulfil the \d+ criteria\./i.test(prompt) ||
+    /Continue working on the acceptance criteria\./i.test(prompt)
   ) {
     const tools: Array<{ name: string; arguments: Record<string, unknown> }> = []
     const completedCriteria: string[] = []
@@ -922,32 +959,51 @@ function getConversationAwareToolResponse(request: LLMCompletionRequest): MockMa
     if (conversationText.includes('inspect-src')) {
       tools.push(
         { name: 'read_file', arguments: { path: 'src' } },
-        { name: 'criterion', arguments: { action: 'complete', id: 'inspect-src', reason: 'Inspected the src directory and reported what exists' } },
+        {
+          name: 'criterion',
+          arguments: {
+            action: 'complete',
+            id: 'inspect-src',
+            reason: 'Inspected the src directory and reported what exists',
+          },
+        },
       )
       completedCriteria.push('inspect-src')
     }
 
     if (conversationText.includes('trivial-pass')) {
-      tools.push({ name: 'criterion', arguments: { action: 'complete', id: 'trivial-pass', reason: 'Trivial criterion passes immediately' } })
+      tools.push({
+        name: 'criterion',
+        arguments: { action: 'complete', id: 'trivial-pass', reason: 'Trivial criterion passes immediately' },
+      })
       completedCriteria.push('trivial-pass')
     }
 
     if (conversationText.includes('verify-fail')) {
-      tools.push({ name: 'criterion', arguments: { action: 'complete', id: 'verify-fail', reason: 'Prepared criterion for verification' } })
+      tools.push({
+        name: 'criterion',
+        arguments: { action: 'complete', id: 'verify-fail', reason: 'Prepared criterion for verification' },
+      })
       completedCriteria.push('verify-fail')
     }
 
     if (conversationText.includes('file-created')) {
       tools.push(
         { name: 'write_file', arguments: { path: 'src/utils.ts', content: 'export const created = true' } },
-        { name: 'criterion', arguments: { action: 'complete', id: 'file-created', reason: 'Created the requested file' } },
+        {
+          name: 'criterion',
+          arguments: { action: 'complete', id: 'file-created', reason: 'Created the requested file' },
+        },
       )
       completedCriteria.push('file-created')
     }
 
     // Fallback: if no specific criterion matched, just complete a mock one
     if (tools.length === 0) {
-      tools.push({ name: 'criterion', arguments: { action: 'complete', id: 'mock-crit', reason: 'Completed for testing' } })
+      tools.push({
+        name: 'criterion',
+        arguments: { action: 'complete', id: 'mock-crit', reason: 'Completed for testing' },
+      })
       completedCriteria.push('mock-crit')
     }
 
@@ -958,7 +1014,7 @@ function getConversationAwareToolResponse(request: LLMCompletionRequest): MockMa
       response: `Completed builder work for: ${completedCriteria.join(', ')}.`,
     }
   }
-  
+
   // Fallback: workflow builder prompts with criteria count should complete and call step_done
   if (/fulfil the \d+ criteria/i.test(prompt)) {
     return {
@@ -969,30 +1025,45 @@ function getConversationAwareToolResponse(request: LLMCompletionRequest): MockMa
       response: 'Completed criterion and finished step.',
     }
   }
-  
+
   // Builder retry prompts should also call step_done
   if (/Continue working on the acceptance criteria/i.test(prompt)) {
     const tools: Array<{ name: string; arguments: Record<string, unknown> }> = []
-    
+
     if (conversationText.includes('file-created')) {
       tools.push(
         { name: 'write_file', arguments: { path: 'src/utils.ts', content: 'export const created = true' } },
-        { name: 'criterion', arguments: { action: 'complete', id: 'file-created', reason: 'Created the requested file' } },
+        {
+          name: 'criterion',
+          arguments: { action: 'complete', id: 'file-created', reason: 'Created the requested file' },
+        },
       )
     } else if (conversationText.includes('trivial-pass')) {
-      tools.push({ name: 'criterion', arguments: { action: 'complete', id: 'trivial-pass', reason: 'Trivial criterion passes immediately' } })
+      tools.push({
+        name: 'criterion',
+        arguments: { action: 'complete', id: 'trivial-pass', reason: 'Trivial criterion passes immediately' },
+      })
     } else if (conversationText.includes('verify-fail')) {
       // Builder retry after verifier failed - just complete it again
-      tools.push({ name: 'criterion', arguments: { action: 'complete', id: 'verify-fail', reason: 'Prepared criterion for verification' } })
+      tools.push({
+        name: 'criterion',
+        arguments: { action: 'complete', id: 'verify-fail', reason: 'Prepared criterion for verification' },
+      })
     } else {
       // Check prompt for criteria count hint
       if (/1 criteria remaining/i.test(prompt)) {
-        tools.push({ name: 'criterion', arguments: { action: 'complete', id: 'trivial-pass', reason: 'Trivial criterion passes immediately' } })
+        tools.push({
+          name: 'criterion',
+          arguments: { action: 'complete', id: 'trivial-pass', reason: 'Trivial criterion passes immediately' },
+        })
       } else {
-        tools.push({ name: 'criterion', arguments: { action: 'complete', id: 'mock-crit', reason: 'Completed for testing' } })
+        tools.push({
+          name: 'criterion',
+          arguments: { action: 'complete', id: 'mock-crit', reason: 'Completed for testing' },
+        })
       }
     }
-    
+
     tools.push({ name: 'step_done', arguments: {} })
     return {
       tools,
@@ -1002,10 +1073,12 @@ function getConversationAwareToolResponse(request: LLMCompletionRequest): MockMa
 
   if (/Verify each criterion marked \[NEEDS VERIFICATION\]\./i.test(prompt)) {
     // Only return verifier tools on the first call — if we already called pass/fail, stop
-    const alreadyVerified = request.messages.some(m =>
-      m.role === 'assistant' && m.toolCalls?.some(tc =>
-        tc.name === 'criterion' && (tc.arguments['action'] === 'pass' || tc.arguments['action'] === 'fail')
-      )
+    const alreadyVerified = request.messages.some(
+      (m) =>
+        m.role === 'assistant' &&
+        m.toolCalls?.some(
+          (tc) => tc.name === 'criterion' && (tc.arguments['action'] === 'pass' || tc.arguments['action'] === 'fail'),
+        ),
     )
     if (alreadyVerified) {
       return null
@@ -1015,32 +1088,58 @@ function getConversationAwareToolResponse(request: LLMCompletionRequest): MockMa
     const terminalizedCriteria: string[] = []
 
     if (conversationText.includes('trivial-pass')) {
-      tools.push({ name: 'criterion', arguments: { action: 'pass', id: 'trivial-pass', reason: 'Verified successfully' } })
+      tools.push({
+        name: 'criterion',
+        arguments: { action: 'pass', id: 'trivial-pass', reason: 'Verified successfully' },
+      })
       terminalizedCriteria.push('trivial-pass')
     }
 
     if (conversationText.includes('inspect-src')) {
-      tools.push({ name: 'criterion', arguments: { action: 'pass', id: 'inspect-src', reason: 'Verified the src directory was inspected successfully' } })
+      tools.push({
+        name: 'criterion',
+        arguments: {
+          action: 'pass',
+          id: 'inspect-src',
+          reason: 'Verified the src directory was inspected successfully',
+        },
+      })
       terminalizedCriteria.push('inspect-src')
     }
 
     if (conversationText.includes('verify-fail')) {
-      tools.push({ name: 'criterion', arguments: { action: 'complete', id: 'verify-fail', reason: 'Verification fails intentionally for this criterion' } })
+      tools.push({
+        name: 'criterion',
+        arguments: {
+          action: 'complete',
+          id: 'verify-fail',
+          reason: 'Verification fails intentionally for this criterion',
+        },
+      })
       terminalizedCriteria.push('verify-fail')
     }
 
     if (conversationText.includes('file-created')) {
-      tools.push({ name: 'criterion', arguments: { action: 'pass', id: 'file-created', reason: 'Verified the file was created successfully' } })
+      tools.push({
+        name: 'criterion',
+        arguments: { action: 'pass', id: 'file-created', reason: 'Verified the file was created successfully' },
+      })
       terminalizedCriteria.push('file-created')
     }
 
     if (conversationText.includes('impossible/path')) {
-      tools.push({ name: 'criterion', arguments: { action: 'complete', id: 'auto-impossible', reason: 'Impossible path does not exist' } })
+      tools.push({
+        name: 'criterion',
+        arguments: { action: 'complete', id: 'auto-impossible', reason: 'Impossible path does not exist' },
+      })
       terminalizedCriteria.push('auto-impossible')
     }
 
     if (tools.length > 0) {
-      tools.push({ name: 'return_value', arguments: { summary: `Terminalized verifier work for: ${terminalizedCriteria.join(', ')}.` } })
+      tools.push({
+        name: 'return_value',
+        arguments: { summary: `Terminalized verifier work for: ${terminalizedCriteria.join(', ')}.` },
+      })
       return {
         tools,
         response: `Terminalized verifier work for: ${terminalizedCriteria.join(', ')}.`,
@@ -1085,7 +1184,8 @@ function buildMockResponse(request: LLMCompletionRequest): {
   // Detect compaction requests: no tools, toolChoice 'none' (summary generation)
   if (request.toolChoice === 'none' && (!request.tools || request.tools.length === 0)) {
     return {
-      content: 'Summary of conversation: The user has been working on the project. Files were modified and progress was made on all tasks. No errors were encountered during the session.',
+      content:
+        'Summary of conversation: The user has been working on the project. Files were modified and progress was made on all tasks. No errors were encountered during the session.',
       toolCalls: [],
       finishReason: 'stop',
     }
@@ -1168,7 +1268,9 @@ export function createMockLLMClient(): LLMClientWithModel {
     setModel: () => {},
     getProfile: () => profile,
     getBackend: () => backend,
-    setBackend: (b: Backend) => { backend = b },
+    setBackend: (b: Backend) => {
+      backend = b
+    },
 
     async complete(request: LLMCompletionRequest): Promise<LLMCompletionResponse> {
       const prompt = getLastUserPrompt(request)
@@ -1177,7 +1279,11 @@ export function createMockLLMClient(): LLMClientWithModel {
       const response = buildMockResponse(request)
 
       if (process.env['OPENFOX_TEST_VERBOSE'] === 'true') {
-        logger.debug('MockLLM completion', { prompt: prompt.slice(0, 50), hasTools: response.toolCalls.length > 0, tools: response.toolCalls.map(tc => tc.name) })
+        logger.debug('MockLLM completion', {
+          prompt: prompt.slice(0, 50),
+          hasTools: response.toolCalls.length > 0,
+          tools: response.toolCalls.map((tc) => tc.name),
+        })
       }
 
       return {
@@ -1197,7 +1303,11 @@ export function createMockLLMClient(): LLMClientWithModel {
       const response = buildMockResponse(request)
 
       if (process.env['OPENFOX_TEST_VERBOSE'] === 'true') {
-        logger.debug('MockLLM stream', { prompt: prompt.slice(0, 50), hasTools: response.toolCalls.length > 0, tools: response.toolCalls.map(tc => tc.name) })
+        logger.debug('MockLLM stream', {
+          prompt: prompt.slice(0, 50),
+          hasTools: response.toolCalls.length > 0,
+          tools: response.toolCalls.map((tc) => tc.name),
+        })
       }
 
       // Stream tool calls

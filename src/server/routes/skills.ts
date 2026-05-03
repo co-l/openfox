@@ -1,5 +1,17 @@
 import { Router } from 'express'
-import { loadDefaultSkills, loadUserSkills, loadAllSkills, isSkillEnabled, setSkillEnabled, findSkillById, saveSkill, deleteSkill, skillExists, getDefaultSkillIds, getDefaultSkillContent } from '../skills/registry.js'
+import {
+  loadDefaultSkills,
+  loadUserSkills,
+  loadAllSkills,
+  isSkillEnabled,
+  setSkillEnabled,
+  findSkillById,
+  saveSkill,
+  deleteSkill,
+  skillExists,
+  getDefaultSkillIds,
+  getDefaultSkillContent,
+} from '../skills/registry.js'
 import type { SkillDefinition } from '../skills/types.js'
 import { computeOverrideIds } from './crud-helpers.js'
 
@@ -7,17 +19,14 @@ export function createSkillRoutes(configDir: string): Router {
   const router = Router()
 
   router.get('/', async (_req, res) => {
-    const [defaults, userItems] = await Promise.all([
-      loadDefaultSkills(),
-      loadUserSkills(configDir),
-    ])
+    const [defaults, userItems] = await Promise.all([loadDefaultSkills(), loadUserSkills(configDir)])
     const overrideIds = computeOverrideIds(defaults, userItems)
     res.json({
-      defaults: defaults.map(s => ({
+      defaults: defaults.map((s) => ({
         ...s.metadata,
         enabled: isSkillEnabled(s.metadata.id),
       })),
-      userItems: userItems.map(s => ({
+      userItems: userItems.map((s) => ({
         ...s.metadata,
         enabled: isSkillEnabled(s.metadata.id),
       })),
@@ -101,7 +110,7 @@ export function createSkillRoutes(configDir: string): Router {
     const { id } = req.params
     const defaults = await loadDefaultSkills()
     const userItems = await loadUserSkills(configDir)
-    const source = defaults.find(s => s.metadata.id === id) ?? userItems.find(s => s.metadata.id === id)
+    const source = defaults.find((s) => s.metadata.id === id) ?? userItems.find((s) => s.metadata.id === id)
     if (!source) {
       return res.status(404).json({ error: 'Skill not found' })
     }

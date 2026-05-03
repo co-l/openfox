@@ -115,12 +115,12 @@ async function runNetworkSetup(mode: Mode): Promise<void> {
 export async function runConfig(mode: Mode): Promise<void> {
   const { loadGlobalConfig, getActiveProvider, getDefaultModel } = await import('./config.js')
   const { getGlobalConfigPath } = await import('./paths.js')
-  
+
   const config = await loadGlobalConfig(mode)
   const configPath = getGlobalConfigPath(mode)
   const activeProvider = getActiveProvider(config)
   const defaultModel = getDefaultModel(config)
-  
+
   console.log(`Configuration (${mode}):`)
   console.log(`  Location: ${configPath}`)
   console.log(`  Providers: ${config.providers.length}`)
@@ -132,18 +132,19 @@ export async function runConfig(mode: Mode): Promise<void> {
   } else {
     console.log(`  Active: (none configured)`)
   }
-  
+
   // Display server host with human-readable description
-  const hostDisplay = config.server.host === '0.0.0.0' 
-    ? `${config.server.host} (accessible from local network)`
-    : `${config.server.host} (localhost only)`
+  const hostDisplay =
+    config.server.host === '0.0.0.0'
+      ? `${config.server.host} (accessible from local network)`
+      : `${config.server.host} (localhost only)`
   console.log(`  Server: ${hostDisplay}`)
   console.log(`  Port: ${config.server.port}`)
 }
 
 export async function runCli(options: { mode: Mode }): Promise<void> {
   const { mode } = options
-  
+
   const { values, positionals } = parseArgs({
     options: {
       port: { type: 'string', short: 'p' },
@@ -215,7 +216,7 @@ export async function runCli(options: { mode: Mode }): Promise<void> {
       }
       break
     }
-    
+
     default: {
       // Check if config exists - only prompt network setup on first install
       const { configFileExists } = await import('./config.js')

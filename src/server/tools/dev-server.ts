@@ -13,7 +13,8 @@ export const devServerTool = createTool<DevServerArgs>(
     type: 'function',
     function: {
       name: 'dev_server',
-      description: 'Control the project dev server. Start, stop, restart, check status, or fetch logs with optional pagination. The dev server command and URL are configured in .openfox/dev-dev.json (dev mode) or .openfox/dev.json (prod).',
+      description:
+        'Control the project dev server. Start, stop, restart, check status, or fetch logs with optional pagination. The dev server command and URL are configured in .openfox/dev-dev.json (dev mode) or .openfox/dev.json (prod).',
       parameters: {
         type: 'object',
         properties: {
@@ -43,17 +44,23 @@ export const devServerTool = createTool<DevServerArgs>(
       const limit = args.limit ?? 100
       const result = devServerManager.getLogsSlice(workdir, offset, limit)
 
-      const formattedLogs = result.logs.map(entry =>
-        `${entry.stream === 'stderr' ? '[stderr] ' : ''}${entry.content}`
-      ).join('')
+      const formattedLogs = result.logs
+        .map((entry) => `${entry.stream === 'stderr' ? '[stderr] ' : ''}${entry.content}`)
+        .join('')
 
-      return helpers.success(JSON.stringify({
-        logs: formattedLogs,
-        total: result.total,
-        offset,
-        limit,
-        hasMore: offset + limit < result.total,
-      }, null, 2))
+      return helpers.success(
+        JSON.stringify(
+          {
+            logs: formattedLogs,
+            total: result.total,
+            offset,
+            limit,
+            hasMore: offset + limit < result.total,
+          },
+          null,
+          2,
+        ),
+      )
     }
 
     let status
@@ -83,15 +90,21 @@ export const devServerTool = createTool<DevServerArgs>(
     if (!status.config) {
       return helpers.error(
         'No .openfox/dev-dev.json (dev mode) or .openfox/dev.json (prod) config found. Create one with:\n\n' +
-        '{\n  "command": "npm run dev",\n  "url": "http://localhost:3000",\n  "hotReload": true\n}'
+          '{\n  "command": "npm run dev",\n  "url": "http://localhost:3000",\n  "hotReload": true\n}',
       )
     }
 
-    return helpers.success(JSON.stringify({
-      state: status.state,
-      url: status.url,
-      hotReload: status.hotReload,
-      ...(status.errorMessage ? { error: status.errorMessage } : {}),
-    }, null, 2))
-  }
+    return helpers.success(
+      JSON.stringify(
+        {
+          state: status.state,
+          url: status.url,
+          hotReload: status.hotReload,
+          ...(status.errorMessage ? { error: status.errorMessage } : {}),
+        },
+        null,
+        2,
+      ),
+    )
+  },
 )

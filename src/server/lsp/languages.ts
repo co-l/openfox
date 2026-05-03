@@ -23,7 +23,7 @@ export const LANGUAGES: LanguageConfig[] = [
       '.cjs': 'javascript',
     },
   },
-  
+
   // Python
   {
     id: 'python',
@@ -33,7 +33,7 @@ export const LANGUAGES: LanguageConfig[] = [
     serverArgs: ['--stdio'],
     rootPatterns: ['pyproject.toml', 'setup.py', 'requirements.txt', 'Pipfile'],
   },
-  
+
   // Rust
   {
     id: 'rust',
@@ -43,7 +43,7 @@ export const LANGUAGES: LanguageConfig[] = [
     serverArgs: [],
     rootPatterns: ['Cargo.toml'],
   },
-  
+
   // Go
   {
     id: 'go',
@@ -53,7 +53,7 @@ export const LANGUAGES: LanguageConfig[] = [
     serverArgs: ['serve'],
     rootPatterns: ['go.mod', 'go.sum'],
   },
-  
+
   // C/C++
   {
     id: 'cpp',
@@ -63,7 +63,7 @@ export const LANGUAGES: LanguageConfig[] = [
     serverArgs: ['--background-index'],
     rootPatterns: ['compile_commands.json', 'CMakeLists.txt', '.clangd', 'Makefile'],
   },
-  
+
   // Zig
   {
     id: 'zig',
@@ -73,7 +73,7 @@ export const LANGUAGES: LanguageConfig[] = [
     serverArgs: [],
     rootPatterns: ['build.zig', 'build.zig.zon'],
   },
-  
+
   // Lua
   {
     id: 'lua',
@@ -83,7 +83,7 @@ export const LANGUAGES: LanguageConfig[] = [
     serverArgs: [],
     rootPatterns: ['.luarc.json', '.luarc.jsonc', '.luacheckrc'],
   },
-  
+
   // Ruby
   {
     id: 'ruby',
@@ -93,7 +93,7 @@ export const LANGUAGES: LanguageConfig[] = [
     serverArgs: ['stdio'],
     rootPatterns: ['Gemfile', '.ruby-version'],
   },
-  
+
   // Elixir
   {
     id: 'elixir',
@@ -103,7 +103,7 @@ export const LANGUAGES: LanguageConfig[] = [
     serverArgs: [],
     rootPatterns: ['mix.exs'],
   },
-  
+
   // Haskell
   {
     id: 'haskell',
@@ -113,7 +113,7 @@ export const LANGUAGES: LanguageConfig[] = [
     serverArgs: ['--lsp'],
     rootPatterns: ['stack.yaml', 'cabal.project', '*.cabal'],
   },
-  
+
   // OCaml
   {
     id: 'ocaml',
@@ -123,7 +123,7 @@ export const LANGUAGES: LanguageConfig[] = [
     serverArgs: [],
     rootPatterns: ['dune-project', 'dune', '*.opam'],
   },
-  
+
   // Scala
   {
     id: 'scala',
@@ -133,7 +133,7 @@ export const LANGUAGES: LanguageConfig[] = [
     serverArgs: [],
     rootPatterns: ['build.sbt', 'build.sc', '.metals'],
   },
-  
+
   // Kotlin
   {
     id: 'kotlin',
@@ -143,7 +143,7 @@ export const LANGUAGES: LanguageConfig[] = [
     serverArgs: [],
     rootPatterns: ['build.gradle.kts', 'build.gradle', 'settings.gradle.kts'],
   },
-  
+
   // Java
   {
     id: 'java',
@@ -153,7 +153,7 @@ export const LANGUAGES: LanguageConfig[] = [
     serverArgs: [],
     rootPatterns: ['pom.xml', 'build.gradle', '.project'],
   },
-  
+
   // C#
   {
     id: 'csharp',
@@ -163,7 +163,7 @@ export const LANGUAGES: LanguageConfig[] = [
     serverArgs: ['-lsp'],
     rootPatterns: ['*.csproj', '*.sln'],
   },
-  
+
   // Swift
   {
     id: 'swift',
@@ -173,7 +173,7 @@ export const LANGUAGES: LanguageConfig[] = [
     serverArgs: [],
     rootPatterns: ['Package.swift', '*.xcodeproj', '*.xcworkspace'],
   },
-  
+
   // PHP
   {
     id: 'php',
@@ -183,7 +183,7 @@ export const LANGUAGES: LanguageConfig[] = [
     serverArgs: ['language-server'],
     rootPatterns: ['composer.json', 'phpunit.xml'],
   },
-  
+
   // YAML
   {
     id: 'yaml',
@@ -193,7 +193,7 @@ export const LANGUAGES: LanguageConfig[] = [
     serverArgs: ['--stdio'],
     rootPatterns: [],
   },
-  
+
   // JSON
   {
     id: 'json',
@@ -203,7 +203,7 @@ export const LANGUAGES: LanguageConfig[] = [
     serverArgs: ['--stdio'],
     rootPatterns: [],
   },
-  
+
   // HTML
   {
     id: 'html',
@@ -213,7 +213,7 @@ export const LANGUAGES: LanguageConfig[] = [
     serverArgs: ['--stdio'],
     rootPatterns: [],
   },
-  
+
   // CSS
   {
     id: 'css',
@@ -223,7 +223,7 @@ export const LANGUAGES: LanguageConfig[] = [
     serverArgs: ['--stdio'],
     rootPatterns: [],
   },
-  
+
   // Vue
   {
     id: 'vue',
@@ -233,7 +233,7 @@ export const LANGUAGES: LanguageConfig[] = [
     serverArgs: ['--stdio'],
     rootPatterns: ['vite.config.ts', 'vite.config.js', 'vue.config.js'],
   },
-  
+
   // Svelte
   {
     id: 'svelte',
@@ -243,7 +243,7 @@ export const LANGUAGES: LanguageConfig[] = [
     serverArgs: ['--stdio'],
     rootPatterns: ['svelte.config.js', 'svelte.config.ts'],
   },
-  
+
   // Terraform
   {
     id: 'terraform',
@@ -253,17 +253,17 @@ export const LANGUAGES: LanguageConfig[] = [
     serverArgs: ['serve'],
     rootPatterns: ['.terraform', 'main.tf'],
   },
-  
+
   // Dockerfile
   {
     id: 'dockerfile',
     name: 'Docker',
-    extensions: [],  // Uses filename matching
+    extensions: [], // Uses filename matching
     serverCommand: 'docker-langserver',
     serverArgs: ['--stdio'],
     rootPatterns: ['Dockerfile', 'docker-compose.yml'],
   },
-  
+
   // Bash/Shell
   {
     id: 'bash',
@@ -273,7 +273,7 @@ export const LANGUAGES: LanguageConfig[] = [
     serverArgs: ['start'],
     rootPatterns: [],
   },
-  
+
   // SQL
   {
     id: 'sql',
@@ -283,7 +283,7 @@ export const LANGUAGES: LanguageConfig[] = [
     serverArgs: ['up', '--method', 'stdio'],
     rootPatterns: [],
   },
-  
+
   // GraphQL
   {
     id: 'graphql',
@@ -293,7 +293,7 @@ export const LANGUAGES: LanguageConfig[] = [
     serverArgs: ['server', '-m', 'stream'],
     rootPatterns: ['.graphqlrc', '.graphqlrc.yml', '.graphqlrc.json', 'graphql.config.js'],
   },
-  
+
   // Nix
   {
     id: 'nix',
@@ -303,7 +303,7 @@ export const LANGUAGES: LanguageConfig[] = [
     serverArgs: [],
     rootPatterns: ['flake.nix', 'default.nix', 'shell.nix'],
   },
-  
+
   // Gleam
   {
     id: 'gleam',
@@ -313,7 +313,7 @@ export const LANGUAGES: LanguageConfig[] = [
     serverArgs: ['lsp'],
     rootPatterns: ['gleam.toml'],
   },
-  
+
   // Elm
   {
     id: 'elm',
@@ -323,7 +323,7 @@ export const LANGUAGES: LanguageConfig[] = [
     serverArgs: [],
     rootPatterns: ['elm.json'],
   },
-  
+
   // Dart
   {
     id: 'dart',
@@ -333,7 +333,7 @@ export const LANGUAGES: LanguageConfig[] = [
     serverArgs: ['language-server', '--protocol=lsp'],
     rootPatterns: ['pubspec.yaml'],
   },
-  
+
   // Julia
   {
     id: 'julia',
@@ -343,7 +343,7 @@ export const LANGUAGES: LanguageConfig[] = [
     serverArgs: ['--startup-file=no', '--history-file=no', '-e', 'using LanguageServer; runserver()'],
     rootPatterns: ['Project.toml'],
   },
-  
+
   // R
   {
     id: 'r',
@@ -353,7 +353,7 @@ export const LANGUAGES: LanguageConfig[] = [
     serverArgs: ['--slave', '-e', 'languageserver::run()'],
     rootPatterns: ['DESCRIPTION', '.Rproj'],
   },
-  
+
   // Clojure
   {
     id: 'clojure',
@@ -363,7 +363,7 @@ export const LANGUAGES: LanguageConfig[] = [
     serverArgs: [],
     rootPatterns: ['deps.edn', 'project.clj', 'shadow-cljs.edn'],
   },
-  
+
   // Nim
   {
     id: 'nim',
@@ -373,7 +373,7 @@ export const LANGUAGES: LanguageConfig[] = [
     serverArgs: [],
     rootPatterns: ['*.nimble'],
   },
-  
+
   // V
   {
     id: 'vlang',
@@ -383,7 +383,7 @@ export const LANGUAGES: LanguageConfig[] = [
     serverArgs: [],
     rootPatterns: ['v.mod'],
   },
-  
+
   // Crystal
   {
     id: 'crystal',
@@ -393,7 +393,7 @@ export const LANGUAGES: LanguageConfig[] = [
     serverArgs: [],
     rootPatterns: ['shard.yml'],
   },
-  
+
   // D
   {
     id: 'd',
@@ -403,7 +403,7 @@ export const LANGUAGES: LanguageConfig[] = [
     serverArgs: [],
     rootPatterns: ['dub.json', 'dub.sdl'],
   },
-  
+
   // Erlang
   {
     id: 'erlang',
@@ -413,7 +413,7 @@ export const LANGUAGES: LanguageConfig[] = [
     serverArgs: [],
     rootPatterns: ['rebar.config', 'erlang.mk'],
   },
-  
+
   // F#
   {
     id: 'fsharp',
@@ -423,7 +423,7 @@ export const LANGUAGES: LanguageConfig[] = [
     serverArgs: ['--adaptive-lsp-server-enabled'],
     rootPatterns: ['*.fsproj'],
   },
-  
+
   // Fortran
   {
     id: 'fortran',
@@ -433,7 +433,7 @@ export const LANGUAGES: LanguageConfig[] = [
     serverArgs: [],
     rootPatterns: [],
   },
-  
+
   // LaTeX
   {
     id: 'latex',
@@ -443,7 +443,7 @@ export const LANGUAGES: LanguageConfig[] = [
     serverArgs: [],
     rootPatterns: ['*.tex'],
   },
-  
+
   // Markdown
   {
     id: 'markdown',
@@ -453,7 +453,7 @@ export const LANGUAGES: LanguageConfig[] = [
     serverArgs: [],
     rootPatterns: [],
   },
-  
+
   // TOML
   {
     id: 'toml',
@@ -463,7 +463,7 @@ export const LANGUAGES: LanguageConfig[] = [
     serverArgs: ['lsp', 'stdio'],
     rootPatterns: [],
   },
-  
+
   // Protobuf
   {
     id: 'protobuf',
@@ -473,7 +473,7 @@ export const LANGUAGES: LanguageConfig[] = [
     serverArgs: ['serve'],
     rootPatterns: ['buf.yaml', 'buf.gen.yaml'],
   },
-  
+
   // Assembly (various)
   {
     id: 'asm',
@@ -483,7 +483,7 @@ export const LANGUAGES: LanguageConfig[] = [
     serverArgs: [],
     rootPatterns: [],
   },
-  
+
   // CMake
   {
     id: 'cmake',
@@ -493,7 +493,7 @@ export const LANGUAGES: LanguageConfig[] = [
     serverArgs: [],
     rootPatterns: ['CMakeLists.txt'],
   },
-  
+
   // Perl
   {
     id: 'perl',
@@ -515,7 +515,7 @@ for (const lang of LANGUAGES) {
 
 // Special filename matching (case-insensitive)
 const specialFilenames: Record<string, LanguageConfig> = {}
-const dockerLang = LANGUAGES.find(l => l.id === 'dockerfile')
+const dockerLang = LANGUAGES.find((l) => l.id === 'dockerfile')
 if (dockerLang) {
   specialFilenames['dockerfile'] = dockerLang
   specialFilenames['containerfile'] = dockerLang
@@ -531,13 +531,13 @@ export function detectLanguage(filePath: string): LanguageConfig | null {
   if (special) {
     return special
   }
-  
+
   // Check extension
   const ext = extname(filePath).toLowerCase()
   if (!ext) {
     return null
   }
-  
+
   return extensionToLanguage.get(ext) ?? null
 }
 
@@ -552,5 +552,5 @@ export function getSupportedLanguages(): LanguageConfig[] {
  * Get language by ID
  */
 export function getLanguageById(id: string): LanguageConfig | null {
-  return LANGUAGES.find(l => l.id === id) ?? null
+  return LANGUAGES.find((l) => l.id === id) ?? null
 }

@@ -8,7 +8,10 @@ export function validateProjectName(name: string): { valid: true } | { valid: fa
     return { valid: false, error: 'Project name cannot be empty' }
   }
   if (!/^[a-zA-Z0-9._ -]+$/.test(name)) {
-    return { valid: false, error: 'Project name can only contain letters, numbers, hyphens, underscores, dots, and spaces' }
+    return {
+      valid: false,
+      error: 'Project name can only contain letters, numbers, hyphens, underscores, dots, and spaces',
+    }
   }
   if (name.includes('/') || name.includes('\\') || name.includes('..')) {
     return { valid: false, error: 'Project name cannot contain path separators' }
@@ -32,10 +35,10 @@ export async function createDirectoryWithGit(projectName: string, workdir: strin
   if (!validation.valid) {
     throw new Error(validation.error)
   }
-  
+
   const fullPath = workdir.replace(/\/+$/, '')
   const { stat, mkdir } = await import('node:fs/promises')
-  
+
   try {
     const stats = await stat(fullPath)
     if (!stats.isDirectory()) {
@@ -44,8 +47,8 @@ export async function createDirectoryWithGit(projectName: string, workdir: strin
   } catch {
     await mkdir(fullPath, { recursive: true })
   }
-  
-  if (!await directoryExists(join(fullPath, '.git'))) {
+
+  if (!(await directoryExists(join(fullPath, '.git')))) {
     try {
       execSync('git init', { cwd: fullPath, stdio: 'pipe' })
     } catch (gitErr) {
@@ -54,6 +57,6 @@ export async function createDirectoryWithGit(projectName: string, workdir: strin
       throw new Error(`Failed to initialize git: ${gitErr instanceof Error ? gitErr.message : 'Unknown'}`)
     }
   }
-  
+
   return createProjectDb(projectName, fullPath)
 }

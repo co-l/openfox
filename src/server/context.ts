@@ -1,6 +1,6 @@
 /**
  * Server Context
- * 
+ *
  * Holds all server dependencies in a single object that can be passed through
  * the application. This replaces singleton imports and enables:
  * - Easy testing with isolated instances
@@ -24,7 +24,7 @@ export interface ServerContext {
   sessionManager: SessionManager
   llmClient: LLMClientWithModel
   toolRegistry: ToolRegistry
-  providerManager?: ProviderManager  // Optional for backwards compat
+  providerManager?: ProviderManager // Optional for backwards compat
 }
 
 export interface ServerHandle {

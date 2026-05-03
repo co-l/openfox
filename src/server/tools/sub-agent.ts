@@ -17,7 +17,8 @@ export const callSubAgentTool: Tool = {
     type: 'function',
     function: {
       name: 'call_sub_agent',
-      description: 'Call a sub-agent to perform a specialized task. Available sub-agents: verifier (verify criteria), code_reviewer (review code quality), explorer (explore codebase). The sub-agent will execute with isolated context and return a text result.',
+      description:
+        'Call a sub-agent to perform a specialized task. Available sub-agents: verifier (verify criteria), code_reviewer (review code quality), explorer (explore codebase). The sub-agent will execute with isolated context and return a text result.',
       parameters: {
         type: 'object',
         properties: {
@@ -63,7 +64,7 @@ export const callSubAgentTool: Tool = {
     const agentDef = findAgentById(subAgentType, agents)
 
     if (!agentDef || !agentDef.metadata.subagent) {
-      const validIds = getSubAgents(agents).map(a => a.metadata.id)
+      const validIds = getSubAgents(agents).map((a) => a.metadata.id)
       return {
         success: false,
         error: `Unknown sub-agent type: ${subAgentType}. Available types: ${validIds.join(', ')}`,

@@ -24,27 +24,23 @@ const SAFE_PATHS = new Set([
 ])
 
 /** Directories that are always allowed (in addition to workdir) */
-const ALLOWED_ROOTS = [
-  '/tmp',
-  '/var/tmp',
-  tmpdir(),
-]
+const ALLOWED_ROOTS = ['/tmp', '/var/tmp', tmpdir()]
 
 /**
  * Patterns for files that may contain secrets and require confirmation
  * regardless of whether they're inside the workdir.
- * 
+ *
  * Note: .env.example is excluded as it typically contains placeholder values.
  */
 const SENSITIVE_FILE_PATTERNS: RegExp[] = [
   // Dotenv files (but not .envrc, .env-example, .env.example)
-  /^\.env$/,                              // .env
-  /^\.env\.(?!example)[a-zA-Z0-9_.-]+$/,  // .env.local, .env.production (not .env.example)
-  
+  /^\.env$/, // .env
+  /^\.env\.(?!example)[a-zA-Z0-9_.-]+$/, // .env.local, .env.production (not .env.example)
+
   // Credential files
   /^credentials\.json$/i,
   /^secrets?\.(?:json|ya?ml|toml)$/i,
-  
+
   // Private keys
   /\.pem$/i,
   /\.key$/i,
@@ -52,7 +48,7 @@ const SENSITIVE_FILE_PATTERNS: RegExp[] = [
   /^id_ed25519/,
   /^id_ecdsa/,
   /^id_dsa/,
-  
+
   // Auth configs
   /^\.netrc$/,
 ]
@@ -60,15 +56,15 @@ const SENSITIVE_FILE_PATTERNS: RegExp[] = [
 /**
  * Check if a path points to a sensitive file that may contain secrets.
  * Checks the basename of the path against known sensitive patterns.
- * 
+ *
  * @param path - The path to check (can be relative or absolute)
  * @returns true if the file matches a sensitive pattern
  */
 export function isSensitivePath(path: string): boolean {
   const fileName = basename(path)
   if (!fileName) return false
-  
-  return SENSITIVE_FILE_PATTERNS.some(pattern => pattern.test(fileName))
+
+  return SENSITIVE_FILE_PATTERNS.some((pattern) => pattern.test(fileName))
 }
 
 // ===========================================================================
@@ -135,7 +131,7 @@ async function safeRealpath(path: string): Promise<string> {
  * Check if a resolved path is within the sandbox (workdir or allowed roots).
  * Resolves symlinks to prevent escape via symlink chains.
  * Also checks the session's allowlist for user-approved paths.
- * 
+ *
  * @param path - The path to check (can be relative or absolute)
  * @param workdir - The session's working directory
  * @param sessionId - Optional session ID to check allowlist
@@ -144,11 +140,11 @@ async function safeRealpath(path: string): Promise<string> {
 export async function isPathWithinSandbox(
   path: string,
   workdir: string,
-  sessionId?: string
+  sessionId?: string,
 ): Promise<{ allowed: boolean; resolvedPath: string }> {
   // Normalize and resolve both paths
   const normalizedWorkdir = normalize((await safeRealpath(workdir)).replace(/\/+$/, ''))
-  
+
   // For the path, we need to handle the case where it might be a symlink
   // pointing outside the workdir
   let resolvedPath: string
@@ -174,16 +170,14 @@ export async function isPathWithinSandbox(
   resolvedPath = resolvedPath.replace(/\/+$/, '')
 
   // Check if in workdir
-  if (resolvedPath === normalizedWorkdir ||
-      resolvedPath.startsWith(normalizedWorkdir + sep)) {
+  if (resolvedPath === normalizedWorkdir || resolvedPath.startsWith(normalizedWorkdir + sep)) {
     return { allowed: true, resolvedPath }
   }
 
   // Check if in allowed roots (/tmp, /var/tmp)
   for (const root of ALLOWED_ROOTS) {
     const normalizedRoot = normalize(root)
-    if (resolvedPath === normalizedRoot ||
-        resolvedPath.startsWith(normalizedRoot + sep)) {
+    if (resolvedPath === normalizedRoot || resolvedPath.startsWith(normalizedRoot + sep)) {
       return { allowed: true, resolvedPath }
     }
   }
@@ -204,7 +198,7 @@ export async function isPathWithinSandbox(
  * Extract absolute paths from a shell command (heuristic).
  * Handles: /absolute/paths, ~/tilde/paths, quoted paths.
  * Filters out safe paths (/dev/*) and URLs.
- * 
+ *
  * @param command - The shell command to parse
  * @returns Array of absolute paths found (deduplicated)
  */
@@ -218,9 +212,7 @@ export function extractAbsolutePathsFromCommand(command: string): string[] {
 
   // Remove URL schemes to avoid false positives
   // Replace http://, https://, ftp://, file:// with markers
-  let sanitized = command
-    .replace(/https?:\/\/[^\s'"]+/g, ' __URL__ ')
-    .replace(/ftp:\/\/[^\s'"]+/g, ' __URL__ ')
+  let sanitized = command.replace(/https?:\/\/[^\s'"]+/g, ' __URL__ ').replace(/ftp:\/\/[^\s'"]+/g, ' __URL__ ')
 
   // Strip sed substitution patterns to avoid false positives from regex replacements
   // Handles: s/pattern/replacement/flags and s|pattern|replacement|flags etc.
@@ -257,12 +249,12 @@ export function extractAbsolutePathsFromCommand(command: string): string[] {
   const quotedPattern = /["']([^"']+)["']/g
   while ((match = quotedPattern.exec(sanitized)) !== null) {
     const content = match[1]!
-    
+
     // Check if it looks like a regex pattern (starts and ends with /)
     if (content.startsWith('/') && content.endsWith('/')) {
       continue // Skip regex patterns
     }
-    
+
     // Check for absolute path
     if (content.startsWith('/')) {
       const resolved = normalize(content)
@@ -287,17 +279,17 @@ export function extractAbsolutePathsFromCommand(command: string): string[] {
   const absolutePattern = /(?:^|[\s=(])(\/?\/[a-zA-Z0-9_\-./]+)/g
   while ((match = absolutePattern.exec(sanitized)) !== null) {
     const pathCandidate = match[1]!
-    
+
     // Skip if it's a URL marker
     if (pathCandidate.includes('__URL__') || pathCandidate.includes('__FILEURL__')) {
       continue
     }
-    
+
     // Skip if it looks like a regex (surrounded by /)
     if (pathCandidate.endsWith('/') && pathCandidate.split('/').length <= 2) {
       continue
     }
-    
+
     const resolved = normalize(pathCandidate)
     if (!isSafePath(resolved)) {
       paths.push(resolved)
@@ -312,7 +304,7 @@ export function extractAbsolutePathsFromCommand(command: string): string[] {
  * Extract sensitive file paths from a shell command.
  * Unlike extractAbsolutePathsFromCommand, this looks for relative paths
  * that match sensitive file patterns (like .env, credentials.json, etc.).
- * 
+ *
  * @param command - The shell command to parse
  * @returns Array of sensitive paths found (deduplicated)
  */
@@ -326,7 +318,7 @@ export function extractSensitivePathsFromCommand(command: string): string[] {
   // Pattern to match potential file paths (relative or in subdirectories)
   // Matches: .env, config/.env, "./file", 'file', paths with common extensions
   // Word boundaries are tricky in shell, so we look for common delimiters
-  
+
   // Pattern 1: Quoted strings that might contain sensitive paths
   const quotedPattern = /["']([^"']+)["']/g
   let match
@@ -341,19 +333,19 @@ export function extractSensitivePathsFromCommand(command: string): string[] {
   // Split by common shell delimiters and check each token
   // Remove quoted sections first to avoid double-matching
   const unquoted = command
-    .replace(/["'][^"']*["']/g, ' ')  // Remove quoted strings
-    .replace(/[|&;><]/g, ' ')          // Replace shell operators with spaces
-  
+    .replace(/["'][^"']*["']/g, ' ') // Remove quoted strings
+    .replace(/[|&;><]/g, ' ') // Replace shell operators with spaces
+
   // Split by whitespace and check each token
   const tokens = unquoted.split(/\s+/).filter(Boolean)
-  
+
   for (const token of tokens) {
     // Skip flags (start with -)
     if (token.startsWith('-')) continue
-    
+
     // Skip URLs
     if (token.includes('://')) continue
-    
+
     // Check if token is or contains a sensitive file
     if (isSensitivePath(token)) {
       paths.push(token)
@@ -378,13 +370,13 @@ function isSafePath(path: string): boolean {
 
 export interface PathAccessResult {
   needsConfirmation: boolean
-  deniedPaths: string[]      // Paths outside the sandbox
-  sensitivePaths: string[]   // Paths matching sensitive file patterns (may overlap with deniedPaths)
+  deniedPaths: string[] // Paths outside the sandbox
+  sensitivePaths: string[] // Paths matching sensitive file patterns (may overlap with deniedPaths)
 }
 
 /**
  * Check multiple paths and return which ones need confirmation
- * 
+ *
  * @param paths - Array of paths to check
  * @param workdir - The session's working directory
  * @param sessionId - Optional session ID to check allowlist
@@ -393,7 +385,7 @@ export interface PathAccessResult {
 export async function checkPathsAccess(
   paths: string[],
   workdir: string,
-  sessionId?: string
+  sessionId?: string,
 ): Promise<PathAccessResult> {
   if (paths.length === 0) {
     return { needsConfirmation: false, deniedPaths: [], sensitivePaths: [] }
@@ -404,12 +396,12 @@ export async function checkPathsAccess(
 
   for (const path of paths) {
     const result = await isPathWithinSandbox(path, workdir, sessionId)
-    
+
     // Check if path is outside sandbox
     if (!result.allowed) {
       deniedPaths.push(result.resolvedPath)
     }
-    
+
     // Check if path is sensitive (regardless of sandbox status)
     // But only if not already in session allowlist
     if (isSensitivePath(path) && !isPathAllowed(sessionId ?? '', path)) {
@@ -467,7 +459,7 @@ export function extractGitNoVerify(command: string): boolean {
  * Request access to paths outside the sandbox or sensitive files.
  * If paths require confirmation, sends a confirmation event to the client and suspends
  * tool execution until the user responds.
- * 
+ *
  * @param paths - Array of paths to check
  * @param workdir - The session's working directory
  * @param sessionId - Session ID for allowlist tracking
@@ -486,10 +478,13 @@ export async function requestPathAccess(
   tool: string,
   onEvent: (event: ServerMessage) => void,
   dangerLevel?: string,
-  command?: string
+  command?: string,
 ): Promise<void> {
   // Helper to emit path.confirmation_pending event
-  const emitPendingEvent = (confirmationPaths: string[], confirmationReason: 'outside_workdir' | 'sensitive_file' | 'both' | 'dangerous_command' | 'git_no_verify') => {
+  const emitPendingEvent = (
+    confirmationPaths: string[],
+    confirmationReason: 'outside_workdir' | 'sensitive_file' | 'both' | 'dangerous_command' | 'git_no_verify',
+  ) => {
     try {
       const eventStore = getEventStore()
       eventStore.append(sessionId, {
@@ -513,7 +508,7 @@ export async function requestPathAccess(
         ['git --no-verify'],
         tool,
         'git_no_verify',
-        'User denied git command with --no-verify. The agent must not use --no-verify and must resolve the issue (e.g., fix lint errors, resolve conflicts) that prevents the commit.'
+        'User denied git command with --no-verify. The agent must not use --no-verify and must resolve the issue (e.g., fix lint errors, resolve conflicts) that prevents the commit.',
       )
     }
   }
@@ -524,7 +519,9 @@ export async function requestPathAccess(
     if (dangerousPatterns.length > 0) {
       emitPendingEvent([workdir], 'dangerous_command')
       const confirmationPromise = registerPathConfirmation(callId, [workdir], sessionId)
-      onEvent(createChatPathConfirmationMessage(callId, tool, [dangerousPatterns.join(', ')], workdir, 'dangerous_command'))
+      onEvent(
+        createChatPathConfirmationMessage(callId, tool, [dangerousPatterns.join(', ')], workdir, 'dangerous_command'),
+      )
       const approved = await confirmationPromise
       if (!approved) {
         throw new PathAccessDeniedError(dangerousPatterns, tool, 'dangerous_command')
@@ -534,45 +531,48 @@ export async function requestPathAccess(
 
   // Check which paths need confirmation
   const result = await checkPathsAccess(paths, workdir, sessionId)
-  
+
   if (!result.needsConfirmation) {
     // All paths allowed
     return
   }
-  
+
   // Bypass confirmation in dangerous mode - auto-approve all paths
   if (dangerLevel === 'dangerous') {
     const allPaths = [...new Set([...result.deniedPaths, ...result.sensitivePaths])]
     addAllowedPaths(sessionId, allPaths)
     return
   }
-  
+
   // Combine all paths that need confirmation (may overlap)
   const allPathsNeedingConfirmation = [...new Set([...result.deniedPaths, ...result.sensitivePaths])]
-  
+
   // Determine reason based on which arrays have entries
   const hasDenied = result.deniedPaths.length > 0
   const hasSensitive = result.sensitivePaths.length > 0
-  const reason = hasDenied && hasSensitive ? 'both' as const
-    : hasDenied ? 'outside_workdir' as const
-    : 'sensitive_file' as const
-  
+  const reason =
+    hasDenied && hasSensitive
+      ? ('both' as const)
+      : hasDenied
+        ? ('outside_workdir' as const)
+        : ('sensitive_file' as const)
+
   // Emit pending event for persistence
   emitPendingEvent(allPathsNeedingConfirmation, reason)
-  
+
   // Create the confirmation Promise and send event to client
   const confirmationPromise = registerPathConfirmation(callId, allPathsNeedingConfirmation, sessionId)
-  
+
   // Send path confirmation event to client (this shows the modal)
   onEvent(createChatPathConfirmationMessage(callId, tool, allPathsNeedingConfirmation, workdir, reason))
-  
+
   // Suspend tool execution until user responds
   const approved = await confirmationPromise
-  
+
   if (!approved) {
     throw new PathAccessDeniedError(allPathsNeedingConfirmation, tool, reason)
   }
-  
+
   // If approved, paths have already been added to allowlist by providePathConfirmation
 }
 
@@ -591,15 +591,16 @@ export class PathAccessDeniedError extends Error {
     public readonly paths: string[],
     public readonly tool: string,
     public readonly reason: PathDenialReason = 'outside_workdir',
-    public readonly customMessage?: string
+    public readonly customMessage?: string,
   ) {
-    const reasonText = reason === 'sensitive_file' 
-      ? 'sensitive files (may contain secrets)'
-      : reason === 'both'
-      ? 'paths outside workdir and sensitive files'
-      : reason === 'git_no_verify'
-      ? 'git commands with --no-verify'
-      : 'paths outside workdir'
+    const reasonText =
+      reason === 'sensitive_file'
+        ? 'sensitive files (may contain secrets)'
+        : reason === 'both'
+          ? 'paths outside workdir and sensitive files'
+          : reason === 'git_no_verify'
+            ? 'git commands with --no-verify'
+            : 'paths outside workdir'
     super(customMessage ?? `User denied access to ${reasonText}: ${paths.join(', ')}`)
     this.name = 'PathAccessDeniedError'
   }
@@ -614,7 +615,7 @@ export class PathConfirmationInterrupt extends Error {
     public readonly callId: string,
     public readonly paths: string[],
     public readonly tool: string,
-    public readonly workdir: string
+    public readonly workdir: string,
   ) {
     super('Path confirmation required')
     this.name = 'PathConfirmationInterrupt'
@@ -626,22 +627,21 @@ export class PathConfirmationInterrupt extends Error {
 // ===========================================================================
 
 /** Pending path confirmations, keyed by callId */
-const pendingConfirmations = new Map<string, {
-  resolve: (approved: boolean) => void
-  reject: (error: Error) => void
-  paths: string[]
-  sessionId: string
-}>()
+const pendingConfirmations = new Map<
+  string,
+  {
+    resolve: (approved: boolean) => void
+    reject: (error: Error) => void
+    paths: string[]
+    sessionId: string
+  }
+>()
 
 /**
  * Register a pending path confirmation.
  * Stores the paths and sessionId so they can be added to allowlist on approval.
  */
-export function registerPathConfirmation(
-  callId: string,
-  paths: string[],
-  sessionId: string
-): Promise<boolean> {
+export function registerPathConfirmation(callId: string, paths: string[], sessionId: string): Promise<boolean> {
   return new Promise((resolve, reject) => {
     pendingConfirmations.set(callId, { resolve, reject, paths, sessionId })
   })
@@ -652,7 +652,7 @@ export function registerPathConfirmation(
  * Called by the WebSocket handler when user responds.
  * If approved, adds the paths to the session's allowlist.
  * If alwaysAllow is true, paths are added permanently to allowlist.
- * 
+ *
  * @param callId - The confirmation's unique ID
  * @param approved - Whether the user approved the access
  * @param alwaysAllow - If true, add paths to session allowlist permanently
@@ -661,7 +661,7 @@ export function registerPathConfirmation(
 export function providePathConfirmation(
   callId: string,
   approved: boolean,
-  alwaysAllow?: boolean
+  alwaysAllow?: boolean,
 ): {
   found: boolean
   sessionId?: string
@@ -679,7 +679,8 @@ export function providePathConfirmation(
       type: 'path.confirmation_responded',
       data: { callId, approved, alwaysAllow: alwaysAllow ?? false },
     })
-  } catch (_error) { // eslint-disable-line @typescript-eslint/no-unused-vars
+  } catch (_error) {
+    // eslint-disable-line @typescript-eslint/no-unused-vars
     // Event store might not be initialized in tests, continue without event
   }
 
@@ -695,13 +696,13 @@ export function providePathConfirmation(
 
   pending.resolve(approved)
   pendingConfirmations.delete(callId)
-  
+
   return { found: true, sessionId: pending.sessionId, approved }
 }
 
 /**
  * Cancel a pending path confirmation (e.g., on session abort).
- * 
+ *
  * @param callId - The confirmation's unique ID
  * @param reason - Reason for cancellation
  * @returns true if confirmation was found and cancelled, false otherwise
@@ -735,7 +736,7 @@ export function cancelPathConfirmationsForSession(sessionId: string, reason: str
 
 /**
  * Check if there's a pending path confirmation.
- * 
+ *
  * @param callId - The confirmation's unique ID
  * @returns true if confirmation is pending
  */

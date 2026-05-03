@@ -16,7 +16,8 @@ export const writeFileTool = createTool<WriteFileArgs>(
     type: 'function',
     function: {
       name: 'write_file',
-      description: 'Write content to a file. Creates the file if it does not exist, or overwrites if it does. Creates parent directories as needed.',
+      description:
+        'Write content to a file. Creates the file if it does not exist, or overwrites if it does. Creates parent directories as needed.',
       parameters: {
         type: 'object',
         properties: {
@@ -36,43 +37,39 @@ export const writeFileTool = createTool<WriteFileArgs>(
   async (args, context, helpers) => {
     const fullPath = helpers.resolvePath(args.path)
     await helpers.checkPathAccess([fullPath])
-    
+
     // Validate file was read before writing (only for existing files)
     const readFiles = context.sessionManager.getReadFiles(context.sessionId)
     const validation = await validateFileForWrite(fullPath, readFiles)
     if (!validation.valid) {
       return helpers.error(validation.error?.message ?? 'File validation failed')
     }
-    
+
     // Ensure parent directory exists
     const dir = dirname(fullPath)
     await mkdir(dir, { recursive: true })
-    
+
     // Write file
     await writeFile(fullPath, args.content, 'utf-8')
-    
+
     const lineCount = args.content.split('\n').length
     const byteCount = Buffer.byteLength(args.content, 'utf-8')
-    
+
     let output = `Successfully wrote ${lineCount} lines (${byteCount} bytes) to ${args.path}`
     let diagnostics: Diagnostic[] = []
-    
+
     // Get LSP diagnostics if available
     if (context.lspManager) {
       diagnostics = await context.lspManager.notifyFileChange(fullPath, args.content)
       output += formatDiagnosticsForLLM(diagnostics)
     }
-    
+
     // Update file hash after write so subsequent writes don't require re-reading
     const newHash = await computeFileHash(fullPath)
     if (newHash) {
       context.sessionManager.updateFileHash(context.sessionId, fullPath, newHash)
     }
-    
-    return helpers.success(
-      output,
-      false,
-      diagnostics.length > 0 ? { diagnostics } : undefined
-    )
-  }
+
+    return helpers.success(output, false, diagnostics.length > 0 ? { diagnostics } : undefined)
+  },
 )

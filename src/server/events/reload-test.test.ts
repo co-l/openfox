@@ -1,6 +1,6 @@
 /**
  * Test to reproduce the "empty conversation after reload" bug
- * 
+ *
  * This simulates:
  * 1. User sends a message
  * 2. Turn completes, snapshot is created
@@ -38,7 +38,7 @@ describe('Session Reload After Cleanup', () => {
   it('should preserve conversation after cleanup and reload', () => {
     const sessionId = 'session-1'
     const eventStore = getEventStore()
-    
+
     // Step 1: Initialize session
     eventStore.append(sessionId, {
       type: 'session.initialized',
@@ -115,7 +115,7 @@ describe('Session Reload After Cleanup', () => {
   it('should preserve conversation with tool calls after cleanup and reload', () => {
     const sessionId = 'session-1'
     const eventStore = getEventStore()
-    
+
     // Initialize
     eventStore.append(sessionId, {
       type: 'session.initialized',
@@ -165,12 +165,19 @@ describe('Session Reload After Cleanup', () => {
       isRunning: false,
       messages: [
         { id: 'msg-1', role: 'user', content: 'Read this file', timestamp: Date.now() },
-        { 
-          id: 'msg-2', 
-          role: 'assistant', 
+        {
+          id: 'msg-2',
+          role: 'assistant',
           content: '',
-          toolCalls: [{ id: 'call-1', name: 'read_file', arguments: { path: 'test.txt' }, result: { success: true, output: 'File content here', durationMs: 100, truncated: false } }],
-          timestamp: Date.now() 
+          toolCalls: [
+            {
+              id: 'call-1',
+              name: 'read_file',
+              arguments: { path: 'test.txt' },
+              result: { success: true, output: 'File content here', durationMs: 100, truncated: false },
+            },
+          ],
+          timestamp: Date.now(),
         },
       ],
       criteria: [],
@@ -205,7 +212,7 @@ describe('Session Reload After Cleanup', () => {
   it('should handle multiple turns with cleanup and reload', () => {
     const sessionId = 'session-1'
     const eventStore = getEventStore()
-    
+
     // Initialize
     eventStore.append(sessionId, {
       type: 'session.initialized',
@@ -229,7 +236,13 @@ describe('Session Reload After Cleanup', () => {
         isRunning: false,
         messages: [{ id: 'msg-1', role: 'user', content: 'Hello', timestamp: Date.now() }],
         criteria: [],
-        contextState: { currentTokens: 20, maxTokens: 200000, compactionCount: 0, dangerZone: false, canCompact: false },
+        contextState: {
+          currentTokens: 20,
+          maxTokens: 200000,
+          compactionCount: 0,
+          dangerZone: false,
+          canCompact: false,
+        },
         currentContextWindowId: 'window-1',
         todos: [],
         readFiles: [],
@@ -259,7 +272,13 @@ describe('Session Reload After Cleanup', () => {
           { id: 'msg-2', role: 'assistant', content: 'Hi there!', timestamp: Date.now() },
         ],
         criteria: [],
-        contextState: { currentTokens: 40, maxTokens: 200000, compactionCount: 1, dangerZone: false, canCompact: false },
+        contextState: {
+          currentTokens: 40,
+          maxTokens: 200000,
+          compactionCount: 1,
+          dangerZone: false,
+          canCompact: false,
+        },
         currentContextWindowId: 'window-1',
         todos: [],
         readFiles: [],
@@ -296,7 +315,13 @@ describe('Session Reload After Cleanup', () => {
         isRunning: false,
         messages: [{ id: 'msg-1', role: 'user', content: 'Hello', timestamp: Date.now() }],
         criteria: [],
-        contextState: { currentTokens: 20, maxTokens: 200000, compactionCount: 0, dangerZone: false, canCompact: false },
+        contextState: {
+          currentTokens: 20,
+          maxTokens: 200000,
+          compactionCount: 0,
+          dangerZone: false,
+          canCompact: false,
+        },
         currentContextWindowId: 'window-1',
         todos: [],
         readFiles: [],
@@ -345,7 +370,12 @@ describe('Session Reload After Cleanup', () => {
     })
     eventStore.append(sessionId, {
       type: 'message.start',
-      data: { messageId: 'old-assistant', role: 'assistant', content: 'Old window response', contextWindowId: 'window-1' },
+      data: {
+        messageId: 'old-assistant',
+        role: 'assistant',
+        content: 'Old window response',
+        contextWindowId: 'window-1',
+      },
     })
     eventStore.append(sessionId, {
       type: 'message.done',
@@ -380,12 +410,36 @@ describe('Session Reload After Cleanup', () => {
         phase: 'plan',
         isRunning: false,
         messages: [
-          { id: 'old-user', role: 'user', content: 'Old window request', timestamp: Date.now(), contextWindowId: 'window-1' },
-          { id: 'old-assistant', role: 'assistant', content: 'Old window response', timestamp: Date.now(), contextWindowId: 'window-1' },
-          { id: 'new-user', role: 'user', content: 'Fresh context request', timestamp: Date.now(), contextWindowId: 'window-2' },
+          {
+            id: 'old-user',
+            role: 'user',
+            content: 'Old window request',
+            timestamp: Date.now(),
+            contextWindowId: 'window-1',
+          },
+          {
+            id: 'old-assistant',
+            role: 'assistant',
+            content: 'Old window response',
+            timestamp: Date.now(),
+            contextWindowId: 'window-1',
+          },
+          {
+            id: 'new-user',
+            role: 'user',
+            content: 'Fresh context request',
+            timestamp: Date.now(),
+            contextWindowId: 'window-2',
+          },
         ],
         criteria: [],
-        contextState: { currentTokens: 12, maxTokens: 200000, compactionCount: 1, dangerZone: false, canCompact: false },
+        contextState: {
+          currentTokens: 12,
+          maxTokens: 200000,
+          compactionCount: 1,
+          dangerZone: false,
+          canCompact: false,
+        },
         currentContextWindowId: 'window-2',
         todos: [],
         readFiles: [],

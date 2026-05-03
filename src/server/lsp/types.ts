@@ -10,7 +10,7 @@ export interface LanguageConfig {
   extensions: string[]
   serverCommand: string
   serverArgs: string[]
-  rootPatterns: string[]  // Files that indicate project root for this language
+  rootPatterns: string[] // Files that indicate project root for this language
   initOptions?: Record<string, unknown>
   /** Map file extension to LSP languageId (e.g., '.tsx' -> 'typescriptreact') */
   languageIds?: Record<string, string>
@@ -49,17 +49,17 @@ export interface LspManagerInterface {
    * Returns diagnostics for the file (may be empty if no issues)
    */
   notifyFileChange(path: string, content: string): Promise<Diagnostic[]>
-  
+
   /**
    * Get current diagnostics for a file without triggering a change
    */
   getDiagnostics(path: string): Diagnostic[]
-  
+
   /**
    * Check if LSP is available for a given file
    */
   isAvailableFor(path: string): boolean
-  
+
   /**
    * Shutdown all LSP servers
    */

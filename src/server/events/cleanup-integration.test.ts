@@ -1,6 +1,6 @@
 /**
  * Integration test for event cleanup after snapshot creation
- * 
+ *
  * This test demonstrates the memory optimization:
  * 1. Events are created during a turn
  * 2. Snapshot is created at the end
@@ -35,7 +35,7 @@ describe('Event Cleanup Integration', () => {
 
   it('should preserve history in snapshot after event cleanup', () => {
     const sessionId = 'session-1'
-    
+
     // Step 1: Initialize session
     eventStore.append(sessionId, {
       type: 'session.initialized',
@@ -82,7 +82,7 @@ describe('Event Cleanup Integration', () => {
 
     // Step 3: Create snapshot with full message history
     const eventsBeforeCleanup = eventStore.getEvents(sessionId)
-    
+
     // Build snapshot manually (simulating what buildSnapshot does)
     const snapshotData: any = {
       mode: 'planner',
@@ -90,7 +90,20 @@ describe('Event Cleanup Integration', () => {
       isRunning: false,
       messages: [
         { id: 'msg-1', role: 'user', content: 'Hello world', timestamp: Date.now() },
-        { id: 'msg-2', role: 'assistant', content: '', toolCalls: [{ id: 'call-1', name: 'read_file', arguments: { path: 'test.txt' }, result: { success: true, output: 'File content', durationMs: 100, truncated: false } }], timestamp: Date.now() },
+        {
+          id: 'msg-2',
+          role: 'assistant',
+          content: '',
+          toolCalls: [
+            {
+              id: 'call-1',
+              name: 'read_file',
+              arguments: { path: 'test.txt' },
+              result: { success: true, output: 'File content', durationMs: 100, truncated: false },
+            },
+          ],
+          timestamp: Date.now(),
+        },
       ],
       criteria: [],
       contextState: { currentTokens: 100, maxTokens: 200000, compactionCount: 0, dangerZone: false, canCompact: false },
@@ -119,7 +132,7 @@ describe('Event Cleanup Integration', () => {
     expect(eventsAfterCleanup[1]!.type).toBe('turn.snapshot')
 
     // Step 6: Verify history is accessible from snapshot
-    const snapshotEvent = eventsAfterCleanup.find(e => e.type === 'turn.snapshot')
+    const snapshotEvent = eventsAfterCleanup.find((e) => e.type === 'turn.snapshot')
     expect(snapshotEvent).toBeDefined()
     const snapshot = snapshotEvent!.data as any
     expect(snapshot.messages).toHaveLength(2)
@@ -131,7 +144,7 @@ describe('Event Cleanup Integration', () => {
 
   it('should handle multiple turns with incremental cleanup', () => {
     const sessionId = 'session-1'
-    
+
     // Initialize
     eventStore.append(sessionId, {
       type: 'session.initialized',
@@ -157,7 +170,13 @@ describe('Event Cleanup Integration', () => {
         isRunning: false,
         messages: [{ id: 'msg-1', role: 'user', content: 'First message', timestamp: Date.now() }],
         criteria: [],
-        contextState: { currentTokens: 50, maxTokens: 200000, compactionCount: 0, dangerZone: false, canCompact: false },
+        contextState: {
+          currentTokens: 50,
+          maxTokens: 200000,
+          compactionCount: 0,
+          dangerZone: false,
+          canCompact: false,
+        },
         currentContextWindowId: 'window-1',
         todos: [],
         readFiles: [],
@@ -191,7 +210,13 @@ describe('Event Cleanup Integration', () => {
           { id: 'msg-2', role: 'assistant', content: 'Second message', timestamp: Date.now() },
         ],
         criteria: [],
-        contextState: { currentTokens: 100, maxTokens: 200000, compactionCount: 1, dangerZone: false, canCompact: false },
+        contextState: {
+          currentTokens: 100,
+          maxTokens: 200000,
+          compactionCount: 1,
+          dangerZone: false,
+          canCompact: false,
+        },
         currentContextWindowId: 'window-1',
         todos: [],
         readFiles: [],
@@ -218,7 +243,7 @@ describe('Event Cleanup Integration', () => {
 
   it('should not delete current window events', () => {
     const sessionId = 'session-1'
-    
+
     // Initialize
     eventStore.append(sessionId, {
       type: 'session.initialized',

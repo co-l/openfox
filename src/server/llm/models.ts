@@ -34,12 +34,12 @@ function getCacheKey(url: string): string {
 
 /**
  * Detect model from LLM server.
- * 
+ *
  * @param silent - If true, use debug logging instead of info/warn (for auto-detection)
  */
 export async function detectModel(llmBaseUrl: string, retries = 3, silent = false): Promise<string | null> {
   const cacheKey = getCacheKey(llmBaseUrl)
-  
+
   // Return cached model if still fresh for this URL
   const now = Date.now()
   const cached = modelCache.get(cacheKey)
@@ -48,20 +48,20 @@ export async function detectModel(llmBaseUrl: string, retries = 3, silent = fals
     llmStatus = 'connected'
     return cached.model
   }
-  
+
   // Ensure URL has /v1 for OpenAI-compatible endpoint
   const url = llmBaseUrl.includes('/v1') ? `${llmBaseUrl}/models` : `${llmBaseUrl}/v1/models`
-  
+
   for (let attempt = 1; attempt <= retries; attempt++) {
     try {
       if (silent) {
         logger.debug('Fetching models from LLM server', { url, attempt })
       }
-      
+
       const response = await fetch(url, {
         signal: AbortSignal.timeout(10000),
       })
-      
+
       if (!response.ok) {
         if (silent) {
           logger.debug('Failed to fetch models from LLM server', { status: response.status, attempt })
@@ -69,20 +69,20 @@ export async function detectModel(llmBaseUrl: string, retries = 3, silent = fals
           logger.warn('Failed to fetch models from LLM server', { status: response.status, attempt })
         }
         if (attempt < retries) {
-          await new Promise(r => setTimeout(r, 1000 * attempt))
+          await new Promise((r) => setTimeout(r, 1000 * attempt))
           continue
         }
         llmStatus = 'disconnected'
         return cached?.model ?? null
       }
-      
-      const data = await response.json() as ModelsResponse
-      
+
+      const data = (await response.json()) as ModelsResponse
+
       if (data.data && data.data.length > 0) {
         // Get the first (usually only) model
         const modelData = data.data[0]!
         const modelId = modelData.id
-        
+
         // Cache with URL as key
         modelCache.set(cacheKey, {
           model: modelId,
@@ -91,23 +91,23 @@ export async function detectModel(llmBaseUrl: string, retries = 3, silent = fals
         })
         lastActiveUrl = cacheKey
         llmStatus = 'connected'
-        
+
         if (silent) {
-          logger.debug('Detected LLM model', { 
+          logger.debug('Detected LLM model', {
             model: modelId,
             maxLen: modelData.max_model_len,
-            root: modelData.root
+            root: modelData.root,
           })
         } else {
-          logger.info('Detected LLM model', { 
+          logger.info('Detected LLM model', {
             model: modelId,
             maxLen: modelData.max_model_len,
-            root: modelData.root
+            root: modelData.root,
           })
         }
         return modelId
       }
-      
+
       if (silent) {
         logger.debug('LLM server returned empty models list')
       } else {
@@ -122,14 +122,14 @@ export async function detectModel(llmBaseUrl: string, retries = 3, silent = fals
       } else {
         logger.warn('Could not detect model from LLM server', { error: errMsg, attempt })
       }
-      
+
       if (attempt < retries) {
-        await new Promise(r => setTimeout(r, 1000 * attempt))
+        await new Promise((r) => setTimeout(r, 1000 * attempt))
         continue
       }
     }
   }
-  
+
   llmStatus = 'disconnected'
   return cached?.model ?? null
 }

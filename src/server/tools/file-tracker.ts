@@ -16,7 +16,9 @@ export class FileNotReadError extends Error {
 
 export class FileChangedExternallyError extends Error {
   constructor(path: string) {
-    super(`File "${path}" was modified externally and must be read before writing. Use read_file to see current contents.`)
+    super(
+      `File "${path}" was modified externally and must be read before writing. Use read_file to see current contents.`,
+    )
     this.name = 'FileChangedExternallyError'
   }
 }
@@ -54,7 +56,7 @@ export interface ValidationResult {
 
 /**
  * Validate that a file can be written to.
- * 
+ *
  * Rules:
  * - New files (don't exist on disk) → allowed
  * - Existing files must be in readFiles map with matching hash
@@ -62,29 +64,29 @@ export interface ValidationResult {
  */
 export async function validateFileForWrite(
   filePath: string,
-  readFiles: Record<string, FileReadEntry>
+  readFiles: Record<string, FileReadEntry>,
 ): Promise<ValidationResult> {
   // Normalize path for consistent comparison
   const normalizedPath = resolve(filePath)
-  
+
   // Check if file exists on disk
   const currentHash = await computeFileHash(normalizedPath)
-  
+
   // New file - no read required
   if (currentHash === null) {
     return { valid: true }
   }
-  
+
   // File exists - check if it was read
   const readEntry = readFiles[normalizedPath]
-  
+
   if (!readEntry) {
     return {
       valid: false,
       error: new FileNotReadError(filePath),
     }
   }
-  
+
   // Check if file changed since read
   if (readEntry.hash !== currentHash) {
     return {
@@ -92,7 +94,7 @@ export async function validateFileForWrite(
       error: new FileChangedExternallyError(filePath),
     }
   }
-  
+
   return { valid: true }
 }
 

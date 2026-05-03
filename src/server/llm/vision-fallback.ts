@@ -60,7 +60,9 @@ export async function ensureVisionFallbackConfigLoaded(): Promise<void> {
     configLoaded = true
     logger.debug('Vision fallback config loaded from global config', { config })
   } catch (error) {
-    logger.warn('Failed to load vision fallback config from global config', { error: error instanceof Error ? error.message : String(error) })
+    logger.warn('Failed to load vision fallback config from global config', {
+      error: error instanceof Error ? error.message : String(error),
+    })
   }
 }
 
@@ -94,7 +96,7 @@ Provide a concise but comprehensive description.`
 
 export async function describeImage(
   base64Data: string,
-  options?: { timeout?: number; context?: string | undefined; signal?: AbortSignal | undefined }
+  options?: { timeout?: number; context?: string | undefined; signal?: AbortSignal | undefined },
 ): Promise<string> {
   await ensureVisionFallbackConfigLoaded()
 
@@ -119,9 +121,7 @@ export async function describeImage(
       messages: [
         {
           role: 'user',
-          content: options?.context
-            ? `${IMAGE_PROMPT}\n\nContext: ${options.context}`
-            : IMAGE_PROMPT,
+          content: options?.context ? `${IMAGE_PROMPT}\n\nContext: ${options.context}` : IMAGE_PROMPT,
           images: [base64Data],
         },
       ],
@@ -179,7 +179,7 @@ export async function describeImage(
 
 export async function describeImageFromDataUrl(
   dataUrl: string,
-  options?: { timeout?: number; context?: string | undefined; signal?: AbortSignal | undefined }
+  options?: { timeout?: number; context?: string | undefined; signal?: AbortSignal | undefined },
 ): Promise<string> {
   const base64Match = dataUrl.match(/^data:image\/[^;]+;base64,(.+)$/)
   if (!base64Match || !base64Match[1]) {

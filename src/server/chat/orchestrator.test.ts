@@ -54,6 +54,7 @@ vi.mock('../events/index.js', () => ({
 
 vi.mock('../context/instructions.js', () => ({
   getAllInstructions: getAllInstructionsMock,
+  toInjectedFiles: (files: unknown[]) => files as unknown,
 }))
 
 vi.mock('../skills/registry.js', () => ({
@@ -108,15 +109,62 @@ vi.mock('./stream.js', async (importOriginal) => {
 vi.mock('../agents/registry.js', () => {
   const agents = [
     {
-      metadata: { id: 'planner', name: 'Planner', description: 'Plans work', subagent: false, tools: ['read_file', 'glob', 'grep', 'web_fetch', 'run_command', 'git', 'get_criteria', 'add_criterion', 'update_criterion', 'remove_criterion', 'call_sub_agent', 'load_skill'] },
-      prompt: '# Plan Mode\n\nCRITICAL: Plan mode ACTIVE - you are in read-only phase.\n\nYou may only inspect, analyze, ask clarifying questions, and propose, refine and/or add acceptance criteria.\nYou MUST NOT make any edits, implementations, commits, config changes, or other system modifications.',
+      metadata: {
+        id: 'planner',
+        name: 'Planner',
+        description: 'Plans work',
+        subagent: false,
+        tools: [
+          'read_file',
+          'glob',
+          'grep',
+          'web_fetch',
+          'run_command',
+          'git',
+          'get_criteria',
+          'add_criterion',
+          'update_criterion',
+          'remove_criterion',
+          'call_sub_agent',
+          'load_skill',
+        ],
+      },
+      prompt:
+        '# Plan Mode\n\nCRITICAL: Plan mode ACTIVE - you are in read-only phase.\n\nYou may only inspect, analyze, ask clarifying questions, and propose, refine and/or add acceptance criteria.\nYou MUST NOT make any edits, implementations, commits, config changes, or other system modifications.',
     },
     {
-      metadata: { id: 'builder', name: 'Builder', description: 'Builds work', subagent: false, tools: ['read_file', 'glob', 'grep', 'web_fetch', 'write_file', 'edit_file', 'run_command', 'ask_user', 'complete_criterion', 'get_criteria', 'todo_write', 'call_sub_agent', 'load_skill'] },
-      prompt: '# Build Mode\n\nCRITICAL: Build mode ACTIVE - implementation is now allowed.\n\nYou are no longer in read-only mode.\nYou may read files, edit files, run commands, and use tools as needed to satisfy the approved criteria.',
+      metadata: {
+        id: 'builder',
+        name: 'Builder',
+        description: 'Builds work',
+        subagent: false,
+        tools: [
+          'read_file',
+          'glob',
+          'grep',
+          'web_fetch',
+          'write_file',
+          'edit_file',
+          'run_command',
+          'ask_user',
+          'complete_criterion',
+          'get_criteria',
+          'todo_write',
+          'call_sub_agent',
+          'load_skill',
+        ],
+      },
+      prompt:
+        '# Build Mode\n\nCRITICAL: Build mode ACTIVE - implementation is now allowed.\n\nYou are no longer in read-only mode.\nYou may read files, edit files, run commands, and use tools as needed to satisfy the approved criteria.',
     },
     {
-      metadata: { id: 'verifier', name: 'Verifier', description: 'Verify criteria', subagent: true, tools: ['read_file', 'run_command', 'pass_criterion', 'fail_criterion'] },
+      metadata: {
+        id: 'verifier',
+        name: 'Verifier',
+        description: 'Verify criteria',
+        subagent: true,
+        tools: ['read_file', 'run_command', 'pass_criterion', 'fail_criterion'],
+      },
       prompt: 'You are a verifier',
     },
   ]
@@ -132,7 +180,10 @@ import { PathAccessDeniedError } from '../tools/path-security.js'
 import { TurnMetrics, runBuilderTurn, runChatTurn, runVerifierTurn } from './orchestrator.js'
 
 function createEventStore() {
-  const eventsBySession = new Map<string, Array<{ seq: number; sessionId: string; timestamp: number; type: string; data: unknown }>>()
+  const eventsBySession = new Map<
+    string,
+    Array<{ seq: number; sessionId: string; timestamp: number; type: string; data: unknown }>
+  >()
 
   return {
     append: vi.fn((sessionId: string, event: { type: string; data: unknown }) => {
@@ -180,16 +231,25 @@ function createSessionManager(state: Record<string, any>) {
     }),
     addCriterionAttempt: vi.fn((_: string, criterionId: string, attempt: Record<string, unknown>) => {
       state['current'].criteria = state['current'].criteria.map((criterion: any) =>
-        criterion.id === criterionId
-          ? { ...criterion, attempts: [...criterion.attempts, attempt] }
-          : criterion,
+        criterion.id === criterionId ? { ...criterion, attempts: [...criterion.attempts, attempt] } : criterion,
       )
     }),
     addModifiedFile: vi.fn((_: string, path: string) => {
       state['current'].executionState = { ...(state['current'].executionState ?? {}), modifiedFiles: [path] }
     }),
-    addMessage: vi.fn((_: string, __: any) => ({ id: crypto.randomUUID(), role: 'user', content: '', timestamp: new Date().toISOString() })),
-    addAssistantMessage: vi.fn((_: string, __: any) => ({ id: crypto.randomUUID(), role: 'assistant', content: '', timestamp: new Date().toISOString(), isStreaming: true })),
+    addMessage: vi.fn((_: string, __: any) => ({
+      id: crypto.randomUUID(),
+      role: 'user',
+      content: '',
+      timestamp: new Date().toISOString(),
+    })),
+    addAssistantMessage: vi.fn((_: string, __: any) => ({
+      id: crypto.randomUUID(),
+      role: 'assistant',
+      content: '',
+      timestamp: new Date().toISOString(),
+      isStreaming: true,
+    })),
     updateMessage: vi.fn(),
     updateMessageStats: vi.fn(),
     drainAsapMessages: vi.fn(() => []),
@@ -226,7 +286,10 @@ describe('chat orchestrator', () => {
     const eventStore = createEventStore()
     getEventStoreMock.mockReturnValue(eventStore)
     getAllInstructionsMock.mockResolvedValue({ content: 'Plan carefully', files: [] })
-    getToolRegistryForModeMock.mockReturnValue({ definitions: [{ type: 'function', function: { name: 'glob', description: 'Search', parameters: {} } }], execute: vi.fn() })
+    getToolRegistryForModeMock.mockReturnValue({
+      definitions: [{ type: 'function', function: { name: 'glob', description: 'Search', parameters: {} } }],
+      execute: vi.fn(),
+    })
     streamLLMPureMock.mockReturnValue({ kind: 'stream' })
     consumeStreamGeneratorMock.mockResolvedValue({
       content: 'Planned response',
@@ -282,7 +345,12 @@ describe('chat orchestrator', () => {
       .mockResolvedValueOnce({
         content: 'Compacted summary of the session including all file modifications and current progress on tasks',
         toolCalls: [],
-        segments: [{ type: 'text', content: 'Compacted summary of the session including all file modifications and current progress on tasks' }],
+        segments: [
+          {
+            type: 'text',
+            content: 'Compacted summary of the session including all file modifications and current progress on tasks',
+          },
+        ],
         usage: { promptTokens: 190000, completionTokens: 100 },
         timing: { ttft: 1, completionTime: 1, tps: 100, prefillTps: 190000 },
         aborted: false,
@@ -328,7 +396,11 @@ describe('chat orchestrator', () => {
     expect(consumeStreamGeneratorMock).toHaveBeenCalled()
     const callArgs = consumeStreamGeneratorMock.mock.calls[0]?.[0] ?? {}
     expect(callArgs.toolChoice ?? 'auto').toBe('auto')
-    expect(sessionManager.compactContext).toHaveBeenCalledWith('session-1', 'Compacted summary of the session including all file modifications and current progress on tasks', 190000)
+    expect(sessionManager.compactContext).toHaveBeenCalledWith(
+      'session-1',
+      'Compacted summary of the session including all file modifications and current progress on tasks',
+      190000,
+    )
   })
 
   it('persists provider and model identity in emitted stats', async () => {
@@ -380,7 +452,7 @@ describe('chat orchestrator', () => {
       const data = event.data as { stats?: unknown }
       return data.stats !== undefined
     })
-    
+
     expect(messageDoneEvent?.[1]).toMatchObject({
       data: {
         stats: expect.objectContaining({
@@ -397,7 +469,7 @@ describe('chat orchestrator', () => {
     const eventStore = createEventStore()
     getEventStoreMock.mockReturnValue(eventStore)
     getAllInstructionsMock.mockResolvedValue({ content: '', files: [] })
-    
+
     // Mock ask_user tool to simulate the new behavior: emit event, wait for answer, return it
     const executeMock = vi.fn(async (name: string, args: Record<string, unknown>) => {
       if (name === 'ask_user') {
@@ -416,7 +488,7 @@ describe('chat orchestrator', () => {
       }
       return { success: true, output: 'ok', durationMs: 0, truncated: false }
     })
-    
+
     getToolRegistryForModeMock.mockReturnValue({
       definitions: [{ type: 'function', function: { name: 'ask_user', description: 'Ask', parameters: {} } }],
       execute: executeMock,
@@ -466,12 +538,12 @@ describe('chat orchestrator', () => {
     const askUserEvent = eventStore.append.mock.calls.find(([, event]) => event.type === 'chat.ask_user')
     expect(askUserEvent).toBeDefined()
     expect((askUserEvent![1].data as any).question).toBe('Need help?')
-    
+
     // Verify tool.result event was emitted with the answer
     const toolResultEvent = eventStore.append.mock.calls.find(([, event]) => event.type === 'tool.result')
     expect(toolResultEvent).toBeDefined()
     expect((toolResultEvent![1].data as any).result.success).toBe(true)
-    
+
     // Agent should complete normally (not stop with waiting_for_user)
     const doneEvent = eventStore.append.mock.calls.find(([, event]) => event.type === 'chat.done')
     expect(doneEvent).toBeDefined()
@@ -496,7 +568,11 @@ describe('chat orchestrator', () => {
       },
     })
 
-    await runChatTurn({ sessionManager: sessionManager as never, sessionId: 'session-1', llmClient: { getModel: () => 'qwen3-32b' } as never })
+    await runChatTurn({
+      sessionManager: sessionManager as never,
+      sessionId: 'session-1',
+      llmClient: { getModel: () => 'qwen3-32b' } as never,
+    })
     expect(pathErrorStore.append.mock.calls.find(([, event]) => event.type === 'chat.error')?.[1]).toMatchObject({
       data: { error: 'User denied access to files outside the project and sensitive files.', recoverable: false },
     })
@@ -505,7 +581,11 @@ describe('chat orchestrator', () => {
     getEventStoreMock.mockReturnValue(unknownStore)
     getAllInstructionsMock.mockRejectedValueOnce(new Error('boom'))
 
-    await runChatTurn({ sessionManager: sessionManager as never, sessionId: 'session-1', llmClient: { getModel: () => 'qwen3-32b' } as never })
+    await runChatTurn({
+      sessionManager: sessionManager as never,
+      sessionId: 'session-1',
+      llmClient: { getModel: () => 'qwen3-32b' } as never,
+    })
     expect(unknownStore.append.mock.calls.find(([, event]) => event.type === 'chat.error')?.[1]).toMatchObject({
       data: { error: 'boom', recoverable: false },
     })
@@ -647,12 +727,32 @@ describe('chat orchestrator', () => {
     }
     const sessionManager = createSessionManager(state)
     const execute = vi.fn(async () => {
-      state.current.criteria = [{ id: 'tests-pass', description: 'Tests pass', status: { type: 'completed', completedAt: '2024-01-01T00:00:00.000Z' }, attempts: [] }]
+      state.current.criteria = [
+        {
+          id: 'tests-pass',
+          description: 'Tests pass',
+          status: { type: 'completed', completedAt: '2024-01-01T00:00:00.000Z' },
+          attempts: [],
+        },
+      ]
       return { success: true, output: 'written', durationMs: 25, truncated: false }
     })
     getToolRegistryForModeMock.mockImplementation((mode: string) => ({
-      tools: [{ name: mode === 'builder' ? 'write_file' : 'noop', definition: { type: 'function', function: { name: mode === 'builder' ? 'write_file' : 'noop', description: 'Tool', parameters: {} } } }],
-      definitions: [{ type: 'function', function: { name: mode === 'builder' ? 'write_file' : 'noop', description: 'Tool', parameters: {} } }],
+      tools: [
+        {
+          name: mode === 'builder' ? 'write_file' : 'noop',
+          definition: {
+            type: 'function',
+            function: { name: mode === 'builder' ? 'write_file' : 'noop', description: 'Tool', parameters: {} },
+          },
+        },
+      ],
+      definitions: [
+        {
+          type: 'function',
+          function: { name: mode === 'builder' ? 'write_file' : 'noop', description: 'Tool', parameters: {} },
+        },
+      ],
       execute,
     }))
     streamLLMPureMock.mockReturnValue({ kind: 'stream' })
@@ -685,12 +785,15 @@ describe('chat orchestrator', () => {
         xmlFormatError: false,
       })
 
-    await runBuilderTurn({
-      sessionManager: sessionManager as never,
-      sessionId: 'session-1',
-      llmClient: { getModel: () => 'qwen3-32b' } as never,
-      onMessage: vi.fn(),
-    }, new TurnMetrics())
+    await runBuilderTurn(
+      {
+        sessionManager: sessionManager as never,
+        sessionId: 'session-1',
+        llmClient: { getModel: () => 'qwen3-32b' } as never,
+        onMessage: vi.fn(),
+      },
+      new TurnMetrics(),
+    )
 
     const appendedTypes = eventStore.append.mock.calls.map(([, event]) => event.type)
     expect(appendedTypes).toContain('format.retry')
@@ -720,8 +823,21 @@ describe('chat orchestrator', () => {
     }
     const deniedManager = createSessionManager(deniedState)
     getToolRegistryForModeMock.mockImplementation((mode: string) => ({
-      tools: [{ name: mode === 'builder' ? 'edit_file' : 'noop', definition: { type: 'function', function: { name: mode === 'builder' ? 'edit_file' : 'noop', description: 'Tool', parameters: {} } } }],
-      definitions: [{ type: 'function', function: { name: mode === 'builder' ? 'edit_file' : 'noop', description: 'Tool', parameters: {} } }],
+      tools: [
+        {
+          name: mode === 'builder' ? 'edit_file' : 'noop',
+          definition: {
+            type: 'function',
+            function: { name: mode === 'builder' ? 'edit_file' : 'noop', description: 'Tool', parameters: {} },
+          },
+        },
+      ],
+      definitions: [
+        {
+          type: 'function',
+          function: { name: mode === 'builder' ? 'edit_file' : 'noop', description: 'Tool', parameters: {} },
+        },
+      ],
       execute: vi.fn(async () => {
         throw new PathAccessDeniedError(['/etc/passwd'], 'edit_file')
       }),
@@ -747,12 +863,15 @@ describe('chat orchestrator', () => {
         xmlFormatError: false,
       })
 
-    await runBuilderTurn({
-      sessionManager: deniedManager as never,
-      sessionId: 'session-1',
-      llmClient: { getModel: () => 'qwen3-32b' } as never,
-      onMessage: vi.fn(),
-    }, new TurnMetrics())
+    await runBuilderTurn(
+      {
+        sessionManager: deniedManager as never,
+        sessionId: 'session-1',
+        llmClient: { getModel: () => 'qwen3-32b' } as never,
+        onMessage: vi.fn(),
+      },
+      new TurnMetrics(),
+    )
     expect(deniedStore.append.mock.calls.find(([, event]) => event.type === 'tool.result')?.[1]).toMatchObject({
       data: {
         result: {
@@ -779,8 +898,21 @@ describe('chat orchestrator', () => {
     }
     const errorManager = createSessionManager(errorState)
     getToolRegistryForModeMock.mockImplementation((mode: string) => ({
-      tools: [{ name: mode === 'builder' ? 'edit_file' : 'noop', definition: { type: 'function', function: { name: mode === 'builder' ? 'edit_file' : 'noop', description: 'Tool', parameters: {} } } }],
-      definitions: [{ type: 'function', function: { name: mode === 'builder' ? 'edit_file' : 'noop', description: 'Tool', parameters: {} } }],
+      tools: [
+        {
+          name: mode === 'builder' ? 'edit_file' : 'noop',
+          definition: {
+            type: 'function',
+            function: { name: mode === 'builder' ? 'edit_file' : 'noop', description: 'Tool', parameters: {} },
+          },
+        },
+      ],
+      definitions: [
+        {
+          type: 'function',
+          function: { name: mode === 'builder' ? 'edit_file' : 'noop', description: 'Tool', parameters: {} },
+        },
+      ],
       execute: vi.fn(async () => {
         throw new Error('unexpected builder failure')
       }),
@@ -796,12 +928,17 @@ describe('chat orchestrator', () => {
       xmlFormatError: false,
     })
 
-    await expect(runBuilderTurn({
-      sessionManager: errorManager as never,
-      sessionId: 'session-1',
-      llmClient: { getModel: () => 'qwen3-32b' } as never,
-      onMessage: vi.fn(),
-    }, new TurnMetrics())).rejects.toThrow('unexpected builder failure')
+    await expect(
+      runBuilderTurn(
+        {
+          sessionManager: errorManager as never,
+          sessionId: 'session-1',
+          llmClient: { getModel: () => 'qwen3-32b' } as never,
+          onMessage: vi.fn(),
+        },
+        new TurnMetrics(),
+      ),
+    ).rejects.toThrow('unexpected builder failure')
   })
 
   it('returns error tool result when tool call has parseError', async () => {
@@ -809,12 +946,15 @@ describe('chat orchestrator', () => {
     getEventStoreMock.mockReturnValue(eventStore)
     getCurrentContextWindowIdMock.mockReturnValue('window-1')
     getAllInstructionsMock.mockResolvedValue({ content: '', files: [] })
-    getContextMessagesMock.mockReturnValue([
-      { role: 'user' as const, content: 'Do something' },
-    ])
+    getContextMessagesMock.mockReturnValue([{ role: 'user' as const, content: 'Do something' }])
     const execute = vi.fn()
     getToolRegistryForModeMock.mockReturnValue({
-      tools: [{ name: 'glob', definition: { type: 'function', function: { name: 'glob', description: 'Tool', parameters: {} } } }],
+      tools: [
+        {
+          name: 'glob',
+          definition: { type: 'function', function: { name: 'glob', description: 'Tool', parameters: {} } },
+        },
+      ],
       definitions: [{ type: 'function', function: { name: 'glob', description: 'Tool', parameters: {} } }],
       execute,
     })
@@ -822,13 +962,15 @@ describe('chat orchestrator', () => {
     consumeStreamGeneratorMock
       .mockResolvedValueOnce({
         content: '',
-        toolCalls: [{
-          id: 'call-1',
-          name: 'glob',
-          arguments: {},
-          parseError: 'Unexpected token in JSON at position 1',
-          rawArguments: '{bad-json',
-        }],
+        toolCalls: [
+          {
+            id: 'call-1',
+            name: 'glob',
+            arguments: {},
+            parseError: 'Unexpected token in JSON at position 1',
+            rawArguments: '{bad-json',
+          },
+        ],
         segments: [],
         usage: { promptTokens: 10, completionTokens: 3 },
         timing: { ttft: 1, completionTime: 1, tps: 3, prefillTps: 10 },
@@ -859,12 +1001,15 @@ describe('chat orchestrator', () => {
       },
     })
 
-    await runBuilderTurn({
-      sessionManager: sessionManager as never,
-      sessionId: 'session-1',
-      llmClient: { getModel: () => 'qwen3-32b' } as never,
-      onMessage: vi.fn(),
-    }, new TurnMetrics())
+    await runBuilderTurn(
+      {
+        sessionManager: sessionManager as never,
+        sessionId: 'session-1',
+        llmClient: { getModel: () => 'qwen3-32b' } as never,
+        onMessage: vi.fn(),
+      },
+      new TurnMetrics(),
+    )
 
     // Verify tool execution was NOT called
     expect(execute).not.toHaveBeenCalled()
@@ -872,7 +1017,10 @@ describe('chat orchestrator', () => {
     // Verify tool.result event was emitted with error
     const toolResultEvent = eventStore.append.mock.calls.find(([, event]) => event.type === 'tool.result')
     expect(toolResultEvent).toBeDefined()
-    const toolResultData = toolResultEvent![1].data as { toolCallId: string; result: { success: boolean; error: string } }
+    const toolResultData = toolResultEvent![1].data as {
+      toolCallId: string
+      result: { success: boolean; error: string }
+    }
     expect(toolResultData.toolCallId).toBe('call-1')
     expect(toolResultData.result.success).toBe(false)
     expect(toolResultData.result.error).toContain('Failed to parse tool call arguments')
@@ -885,15 +1033,19 @@ describe('chat orchestrator', () => {
     getEventStoreMock.mockReturnValue(eventStore)
     getCurrentContextWindowIdMock.mockReturnValue('window-1')
     getAllInstructionsMock.mockResolvedValue({ content: 'Build carefully', files: [] })
-    getContextMessagesMock.mockReturnValue([
-      { role: 'user' as const, content: 'Do something' },
-    ])
-    
+    getContextMessagesMock.mockReturnValue([{ role: 'user' as const, content: 'Do something' }])
+
     let capturedTools: any[] = []
     getToolRegistryForModeMock.mockImplementation(() => ({
       tools: [
-        { name: 'read_file', definition: { type: 'function', function: { name: 'read_file', description: 'Read', parameters: {} } } },
-        { name: 'step_done', definition: { type: 'function', function: { name: 'step_done', description: 'Step done', parameters: {} } } },
+        {
+          name: 'read_file',
+          definition: { type: 'function', function: { name: 'read_file', description: 'Read', parameters: {} } },
+        },
+        {
+          name: 'step_done',
+          definition: { type: 'function', function: { name: 'step_done', description: 'Step done', parameters: {} } },
+        },
       ],
       definitions: [
         { type: 'function', function: { name: 'read_file', description: 'Read', parameters: {} } },
@@ -929,12 +1081,15 @@ describe('chat orchestrator', () => {
       },
     })
 
-    await runBuilderTurn({
-      sessionManager: sessionManager as never,
-      sessionId: 'session-1',
-      llmClient: { getModel: () => 'qwen3-32b' } as never,
-      onMessage: vi.fn(),
-    }, new TurnMetrics())
+    await runBuilderTurn(
+      {
+        sessionManager: sessionManager as never,
+        sessionId: 'session-1',
+        llmClient: { getModel: () => 'qwen3-32b' } as never,
+        onMessage: vi.fn(),
+      },
+      new TurnMetrics(),
+    )
 
     // step_done is now ALWAYS included to maintain stable tools hash for LLM caching
     expect(capturedTools).toContain('step_done')
@@ -945,15 +1100,19 @@ describe('chat orchestrator', () => {
     getEventStoreMock.mockReturnValue(eventStore)
     getCurrentContextWindowIdMock.mockReturnValue('window-1')
     getAllInstructionsMock.mockResolvedValue({ content: 'Build carefully', files: [] })
-    getContextMessagesMock.mockReturnValue([
-      { role: 'user' as const, content: 'Do something' },
-    ])
-    
+    getContextMessagesMock.mockReturnValue([{ role: 'user' as const, content: 'Do something' }])
+
     let capturedTools: any[] = []
     getToolRegistryForModeMock.mockImplementation(() => ({
       tools: [
-        { name: 'read_file', definition: { type: 'function', function: { name: 'read_file', description: 'Read', parameters: {} } } },
-        { name: 'step_done', definition: { type: 'function', function: { name: 'step_done', description: 'Step done', parameters: {} } } },
+        {
+          name: 'read_file',
+          definition: { type: 'function', function: { name: 'read_file', description: 'Read', parameters: {} } },
+        },
+        {
+          name: 'step_done',
+          definition: { type: 'function', function: { name: 'step_done', description: 'Step done', parameters: {} } },
+        },
       ],
       definitions: [
         { type: 'function', function: { name: 'read_file', description: 'Read', parameters: {} } },
@@ -989,13 +1148,16 @@ describe('chat orchestrator', () => {
       },
     })
 
-    await runBuilderTurn({
-      sessionManager: sessionManager as never,
-      sessionId: 'session-1',
-      llmClient: { getModel: () => 'qwen3-32b' } as never,
-      onMessage: vi.fn(),
-      injectStepDone: true,
-    }, new TurnMetrics())
+    await runBuilderTurn(
+      {
+        sessionManager: sessionManager as never,
+        sessionId: 'session-1',
+        llmClient: { getModel: () => 'qwen3-32b' } as never,
+        onMessage: vi.fn(),
+        injectStepDone: true,
+      },
+      new TurnMetrics(),
+    )
 
     expect(capturedTools).toContain('step_done')
   })
@@ -1005,9 +1167,7 @@ describe('chat orchestrator', () => {
     getEventStoreMock.mockReturnValue(eventStore)
     getCurrentContextWindowIdMock.mockReturnValue('window-1')
     getAllInstructionsMock.mockResolvedValue({ content: 'Build carefully', files: [] })
-    getContextMessagesMock.mockReturnValue([
-      { role: 'user' as const, content: 'Rename the helper function' },
-    ])
+    getContextMessagesMock.mockReturnValue([{ role: 'user' as const, content: 'Rename the helper function' }])
     getToolRegistryForModeMock.mockReturnValue({ tools: [], definitions: [], execute: vi.fn() })
     streamLLMPureMock.mockReturnValue({ kind: 'stream' })
     consumeStreamGeneratorMock.mockResolvedValueOnce({
@@ -1034,11 +1194,14 @@ describe('chat orchestrator', () => {
       },
     })
 
-    await runBuilderTurn({
-      sessionManager: sessionManager as never,
-      sessionId: 'session-1',
-      llmClient: { getModel: () => 'qwen3-32b' } as never,
-    }, new TurnMetrics())
+    await runBuilderTurn(
+      {
+        sessionManager: sessionManager as never,
+        sessionId: 'session-1',
+        llmClient: { getModel: () => 'qwen3-32b' } as never,
+      },
+      new TurnMetrics(),
+    )
 
     const kickoffEvent = eventStore.append.mock.calls.find(([, event]) => {
       if (event.type !== 'message.start') return false
@@ -1054,9 +1217,7 @@ describe('chat orchestrator', () => {
     getEventStoreMock.mockReturnValue(eventStore)
     getCurrentContextWindowIdMock.mockReturnValue('window-1')
     getAllInstructionsMock.mockResolvedValue({ content: 'Build carefully', files: [] })
-    getContextMessagesMock.mockReturnValue([
-      { role: 'user' as const, content: 'Rename the helper function' },
-    ])
+    getContextMessagesMock.mockReturnValue([{ role: 'user' as const, content: 'Rename the helper function' }])
     getToolRegistryForModeMock.mockReturnValue({ tools: [], definitions: [], execute: vi.fn() })
     streamLLMPureMock.mockReturnValue({ kind: 'stream' })
     consumeStreamGeneratorMock.mockResolvedValueOnce({
@@ -1083,12 +1244,15 @@ describe('chat orchestrator', () => {
       },
     })
 
-    await runBuilderTurn({
-      sessionManager: sessionManager as never,
-      sessionId: 'session-1',
-      llmClient: { getModel: () => 'qwen3-32b' } as never,
-      injectBuilderKickoff: true,
-    }, new TurnMetrics())
+    await runBuilderTurn(
+      {
+        sessionManager: sessionManager as never,
+        sessionId: 'session-1',
+        llmClient: { getModel: () => 'qwen3-32b' } as never,
+        injectBuilderKickoff: true,
+      },
+      new TurnMetrics(),
+    )
 
     const kickoffEvent = eventStore.append.mock.calls.find(([, event]) => {
       if (event.type !== 'message.start') return false
@@ -1117,11 +1281,16 @@ describe('chat orchestrator', () => {
       },
     })
 
-    await expect(runVerifierTurn({
-      sessionManager: emptyManager as never,
-      sessionId: 'session-1',
-      llmClient: { getModel: () => 'qwen3-32b' } as never,
-    }, new TurnMetrics())).resolves.toMatchObject({ allPassed: true, failed: [] })
+    await expect(
+      runVerifierTurn(
+        {
+          sessionManager: emptyManager as never,
+          sessionId: 'session-1',
+          llmClient: { getModel: () => 'qwen3-32b' } as never,
+        },
+        new TurnMetrics(),
+      ),
+    ).resolves.toMatchObject({ allPassed: true, failed: [] })
 
     const eventStore = createEventStore()
     getEventStoreMock.mockReturnValue(eventStore)
@@ -1134,7 +1303,14 @@ describe('chat orchestrator', () => {
         mode: 'builder',
         phase: 'verification',
         isRunning: true,
-        criteria: [{ id: 'tests-pass', description: 'Tests pass', status: { type: 'completed', completedAt: '2024-01-01T00:00:00.000Z' }, attempts: [] }],
+        criteria: [
+          {
+            id: 'tests-pass',
+            description: 'Tests pass',
+            status: { type: 'completed', completedAt: '2024-01-01T00:00:00.000Z' },
+            attempts: [],
+          },
+        ],
         executionState: { modifiedFiles: ['src/index.ts'] },
         summary: 'Task summary',
         messages: [],
@@ -1142,10 +1318,20 @@ describe('chat orchestrator', () => {
     }
     const sessionManager = createSessionManager(state)
     const execute = vi.fn(async () => {
-      state.current.criteria = [{ id: 'tests-pass', description: 'Tests pass', status: { type: 'failed', failedAt: '2024-01-01T00:00:00.000Z', reason: 'still broken' }, attempts: [] }]
+      state.current.criteria = [
+        {
+          id: 'tests-pass',
+          description: 'Tests pass',
+          status: { type: 'failed', failedAt: '2024-01-01T00:00:00.000Z', reason: 'still broken' },
+          attempts: [],
+        },
+      ]
       return { success: true, output: 'verification failed', durationMs: 15, truncated: false }
     })
-    getToolRegistryForModeMock.mockReturnValue({ definitions: [{ type: 'function', function: { name: 'fail_criterion', description: 'Fail', parameters: {} } }], execute })
+    getToolRegistryForModeMock.mockReturnValue({
+      definitions: [{ type: 'function', function: { name: 'fail_criterion', description: 'Fail', parameters: {} } }],
+      execute,
+    })
     streamLLMPureMock.mockReturnValue({ kind: 'stream' })
     consumeStreamGeneratorMock
       .mockResolvedValueOnce({
@@ -1177,12 +1363,15 @@ describe('chat orchestrator', () => {
         xmlFormatError: false,
       })
 
-    const result = await runVerifierTurn({
-      sessionManager: sessionManager as never,
-      sessionId: 'session-1',
-      llmClient: { getModel: () => 'qwen3-32b' } as never,
-      onMessage: vi.fn(),
-    }, new TurnMetrics())
+    const result = await runVerifierTurn(
+      {
+        sessionManager: sessionManager as never,
+        sessionId: 'session-1',
+        llmClient: { getModel: () => 'qwen3-32b' } as never,
+        onMessage: vi.fn(),
+      },
+      new TurnMetrics(),
+    )
 
     expect(result).toMatchObject({ allPassed: false, failed: [{ id: 'tests-pass', reason: 'still broken' }] })
     const types = eventStore.append.mock.calls.map(([, event]) => event.type)
@@ -1205,7 +1394,14 @@ describe('chat orchestrator', () => {
         mode: 'builder',
         phase: 'verification',
         isRunning: true,
-        criteria: [{ id: 'tests-pass', description: 'Tests pass', status: { type: 'completed', completedAt: '2024-01-01T00:00:00.000Z' }, attempts: [] }],
+        criteria: [
+          {
+            id: 'tests-pass',
+            description: 'Tests pass',
+            status: { type: 'completed', completedAt: '2024-01-01T00:00:00.000Z' },
+            attempts: [],
+          },
+        ],
         executionState: { modifiedFiles: ['src/index.ts'] },
         summary: 'Task summary',
         messages: [],
@@ -1213,7 +1409,14 @@ describe('chat orchestrator', () => {
     }
     const sessionManager = createSessionManager(state)
     const execute = vi.fn(async () => {
-      state.current.criteria = [{ id: 'tests-pass', description: 'Tests pass', status: { type: 'failed', failedAt: '2024-01-01T00:00:00.000Z', reason: 'still broken' }, attempts: [] }]
+      state.current.criteria = [
+        {
+          id: 'tests-pass',
+          description: 'Tests pass',
+          status: { type: 'failed', failedAt: '2024-01-01T00:00:00.000Z', reason: 'still broken' },
+          attempts: [],
+        },
+      ]
       return { success: true, output: 'verification failed', durationMs: 15, truncated: false }
     })
 
@@ -1261,12 +1464,15 @@ describe('chat orchestrator', () => {
         xmlFormatError: false,
       })
 
-    const result = await runVerifierTurn({
-      sessionManager: sessionManager as never,
-      sessionId: 'session-1',
-      llmClient: { getModel: () => 'qwen3-32b' } as never,
-      onMessage: vi.fn(),
-    }, new TurnMetrics())
+    const result = await runVerifierTurn(
+      {
+        sessionManager: sessionManager as never,
+        sessionId: 'session-1',
+        llmClient: { getModel: () => 'qwen3-32b' } as never,
+        onMessage: vi.fn(),
+      },
+      new TurnMetrics(),
+    )
 
     expect(result).toMatchObject({ allPassed: false, failed: [{ id: 'tests-pass', reason: 'still broken' }] })
     expect(execute).toHaveBeenCalledTimes(1)
@@ -1282,13 +1488,17 @@ describe('chat orchestrator', () => {
       ]),
     })
 
-    expect(eventStore.append.mock.calls.find(([, event]) => {
-      if (event.type !== 'message.start') return false
-      const data = event.data as { content?: string; subAgentType?: string; messageKind?: string }
-      return data.subAgentType === 'verifier'
-        && data.messageKind === 'correction'
-        && data.content?.includes('tests-pass') === true
-    })).toBeDefined()
+    expect(
+      eventStore.append.mock.calls.find(([, event]) => {
+        if (event.type !== 'message.start') return false
+        const data = event.data as { content?: string; subAgentType?: string; messageKind?: string }
+        return (
+          data.subAgentType === 'verifier' &&
+          data.messageKind === 'correction' &&
+          data.content?.includes('tests-pass') === true
+        )
+      }),
+    ).toBeDefined()
   })
 
   it('verifier continues without nudge after tool calls (tool calls are progress)', async () => {
@@ -1306,7 +1516,14 @@ describe('chat orchestrator', () => {
         mode: 'builder',
         phase: 'verification',
         isRunning: true,
-        criteria: [{ id: 'tests-pass', description: 'Tests pass', status: { type: 'completed', completedAt: '2024-01-01T00:00:00.000Z' }, attempts: [] }],
+        criteria: [
+          {
+            id: 'tests-pass',
+            description: 'Tests pass',
+            status: { type: 'completed', completedAt: '2024-01-01T00:00:00.000Z' },
+            attempts: [],
+          },
+        ],
         executionState: { modifiedFiles: ['src/index.ts'] },
         summary: 'Task summary',
         messages: [],
@@ -1321,10 +1538,10 @@ describe('chat orchestrator', () => {
       if (name === 'fail_criterion') {
         const id = args['id'] as string
         // Trigger the session manager mock to update the criterion
-        sessionManager.updateCriterionStatus('session-1', id, { 
-          type: 'failed', 
-          failedAt: '2024-01-01T00:00:00.000Z', 
-          reason: 'still broken' 
+        sessionManager.updateCriterionStatus('session-1', id, {
+          type: 'failed',
+          failedAt: '2024-01-01T00:00:00.000Z',
+          reason: 'still broken',
         })
         return { success: true, output: 'verification failed', durationMs: 15, truncated: false }
       }
@@ -1379,20 +1596,24 @@ describe('chat orchestrator', () => {
         xmlFormatError: false,
       })
 
-    const result = await runVerifierTurn({
-      sessionManager: sessionManager as never,
-      sessionId: 'session-1',
-      llmClient: { getModel: () => 'qwen3-32b' } as never,
-      onMessage: vi.fn(),
-    }, new TurnMetrics())
+    const result = await runVerifierTurn(
+      {
+        sessionManager: sessionManager as never,
+        sessionId: 'session-1',
+        llmClient: { getModel: () => 'qwen3-32b' } as never,
+        onMessage: vi.fn(),
+      },
+      new TurnMetrics(),
+    )
 
     expect(result).toMatchObject({ allPassed: false, failed: [{ id: 'tests-pass', reason: 'still broken' }] })
 
     // Verify NO nudge messages were sent after tool calls
     const nudgeMessages = eventStore.append.mock.calls.filter(
-      ([, event]) => event.type === 'message.start' &&
+      ([, event]) =>
+        event.type === 'message.start' &&
         (event.data as any).messageKind === 'correction' &&
-        (event.data as any).content?.includes('stopped before finalizing')
+        (event.data as any).content?.includes('stopped before finalizing'),
     )
     expect(nudgeMessages).toHaveLength(0)
 
@@ -1419,7 +1640,14 @@ describe('chat orchestrator', () => {
         mode: 'builder',
         phase: 'verification',
         isRunning: true,
-        criteria: [{ id: 'tests-pass', description: 'Tests pass', status: { type: 'completed', completedAt: '2024-01-01T00:00:00.000Z' }, attempts: [] }],
+        criteria: [
+          {
+            id: 'tests-pass',
+            description: 'Tests pass',
+            status: { type: 'completed', completedAt: '2024-01-01T00:00:00.000Z' },
+            attempts: [],
+          },
+        ],
         executionState: { modifiedFiles: ['src/index.ts'] },
         summary: 'Task summary',
         messages: [],
@@ -1445,12 +1673,15 @@ describe('chat orchestrator', () => {
       })
     }
 
-    const result = await runVerifierTurn({
-      sessionManager: sessionManager as never,
-      sessionId: 'session-1',
-      llmClient: { getModel: () => 'qwen3-32b' } as never,
-      onMessage: vi.fn(),
-    }, new TurnMetrics())
+    const result = await runVerifierTurn(
+      {
+        sessionManager: sessionManager as never,
+        sessionId: 'session-1',
+        llmClient: { getModel: () => 'qwen3-32b' } as never,
+        onMessage: vi.fn(),
+      },
+      new TurnMetrics(),
+    )
 
     expect(result).toMatchObject({ allPassed: false, failed: [] })
     expect(sessionManager.updateCriterionStatus).not.toHaveBeenCalled()
@@ -1458,10 +1689,11 @@ describe('chat orchestrator', () => {
     expect(streamLLMPureMock.mock.calls).toHaveLength(12)
 
     const nudgeMessages = eventStore.append.mock.calls.filter(
-      ([, event]) => event.type === 'message.start'
-        && (event.data as any).messageKind === 'correction'
-        && (event.data as any).subAgentType === 'verifier'
-        && (event.data as any).content?.includes('You stopped before finalizing verification.')
+      ([, event]) =>
+        event.type === 'message.start' &&
+        (event.data as any).messageKind === 'correction' &&
+        (event.data as any).subAgentType === 'verifier' &&
+        (event.data as any).content?.includes('You stopped before finalizing verification.'),
     )
     expect(nudgeMessages).toHaveLength(10)
   })
@@ -1482,7 +1714,14 @@ describe('chat orchestrator', () => {
         mode: 'builder',
         phase: 'verification',
         isRunning: true,
-        criteria: [{ id: 'tests-pass', description: 'Tests pass', status: { type: 'completed', completedAt: '2024-01-01T00:00:00.000Z' }, attempts: [] }],
+        criteria: [
+          {
+            id: 'tests-pass',
+            description: 'Tests pass',
+            status: { type: 'completed', completedAt: '2024-01-01T00:00:00.000Z' },
+            attempts: [],
+          },
+        ],
         executionState: { modifiedFiles: ['src/index.ts'] },
         summary: 'Task summary',
         messages: [],
@@ -1493,10 +1732,8 @@ describe('chat orchestrator', () => {
       if (name === 'pass_criterion') {
         // Update criterion status to 'passed' (terminalized)
         const id = args['id'] as string
-        state.current.criteria = state.current.criteria.map((c: any) => 
-          c.id === id 
-            ? { ...c, status: { type: 'passed', verifiedAt: '2024-01-01T00:00:00.000Z' } }
-            : c
+        state.current.criteria = state.current.criteria.map((c: any) =>
+          c.id === id ? { ...c, status: { type: 'passed', verifiedAt: '2024-01-01T00:00:00.000Z' } } : c,
         )
         return { success: true, output: 'Criterion passed', durationMs: 5, truncated: false }
       }
@@ -1525,7 +1762,9 @@ describe('chat orchestrator', () => {
     // Passes the criterion
     consumeStreamGeneratorMock.mockResolvedValueOnce({
       content: 'verified',
-      toolCalls: [{ id: 'call-pass', name: 'pass_criterion', arguments: { id: 'tests-pass', reason: 'All checks pass' } }],
+      toolCalls: [
+        { id: 'call-pass', name: 'pass_criterion', arguments: { id: 'tests-pass', reason: 'All checks pass' } },
+      ],
       segments: [],
       usage: { promptTokens: 8, completionTokens: 1 },
       timing: { ttft: 1, completionTime: 1, tps: 1, prefillTps: 8 },
@@ -1553,12 +1792,15 @@ describe('chat orchestrator', () => {
       xmlFormatError: false,
     })
 
-    const result = await runVerifierTurn({
-      sessionManager: sessionManager as never,
-      sessionId: 'session-1',
-      llmClient: { getModel: () => 'qwen3-32b' } as never,
-      onMessage: vi.fn(),
-    }, new TurnMetrics())
+    const result = await runVerifierTurn(
+      {
+        sessionManager: sessionManager as never,
+        sessionId: 'session-1',
+        llmClient: { getModel: () => 'qwen3-32b' } as never,
+        onMessage: vi.fn(),
+      },
+      new TurnMetrics(),
+    )
 
     // Should pass - criterion was terminalized
     expect(result).toMatchObject({ allPassed: true, failed: [] })
@@ -1567,10 +1809,11 @@ describe('chat orchestrator', () => {
     // Verify NO nudge messages were emitted (criteria were terminalized)
     // Filter for stall messages specifically
     const stallMessages = eventStore.append.mock.calls.filter(
-      ([, event]) => event.type === 'message.start' &&
+      ([, event]) =>
+        event.type === 'message.start' &&
         (event.data as any).messageKind === 'correction' &&
         (event.data as any).subAgentType === 'verifier' &&
-        (event.data as any).content?.includes('Verifier stopped repeatedly')
+        (event.data as any).content?.includes('Verifier stopped repeatedly'),
     )
     expect(stallMessages).toHaveLength(0)
   })
@@ -1590,7 +1833,14 @@ describe('chat orchestrator', () => {
         mode: 'builder',
         phase: 'verification',
         isRunning: true,
-        criteria: [{ id: 'tests-pass', description: 'Tests pass', status: { type: 'completed', completedAt: '2024-01-01T00:00:00.000Z' }, attempts: [] }],
+        criteria: [
+          {
+            id: 'tests-pass',
+            description: 'Tests pass',
+            status: { type: 'completed', completedAt: '2024-01-01T00:00:00.000Z' },
+            attempts: [],
+          },
+        ],
         executionState: { modifiedFiles: ['src/index.ts'] },
         summary: 'Task summary',
         messages: [],
@@ -1600,11 +1850,11 @@ describe('chat orchestrator', () => {
     const execute = vi.fn(async (name: string, args: Record<string, unknown>) => {
       if (name === 'pass_criterion') {
         const id = args['id'] as string
-        state.current.criteria = state.current.criteria.map((criterion: any) => (
+        state.current.criteria = state.current.criteria.map((criterion: any) =>
           criterion.id === id
             ? { ...criterion, status: { type: 'passed', verifiedAt: '2024-01-01T00:00:00.000Z' } }
-            : criterion
-        ))
+            : criterion,
+        )
         return { success: true, output: 'criterion passed', durationMs: 5, truncated: false }
       }
 
@@ -1651,7 +1901,13 @@ describe('chat orchestrator', () => {
       if (toolCallCount === 6) {
         return {
           content: 'passing criterion',
-          toolCalls: [{ id: 'call-pass', name: 'pass_criterion', arguments: { id: 'tests-pass', reason: 'verified after continued checking' } }],
+          toolCalls: [
+            {
+              id: 'call-pass',
+              name: 'pass_criterion',
+              arguments: { id: 'tests-pass', reason: 'verified after continued checking' },
+            },
+          ],
           segments: [],
           usage: { promptTokens: 8, completionTokens: 1 },
           timing: { ttft: 1, completionTime: 1, tps: 1, prefillTps: 8 },
@@ -1672,12 +1928,15 @@ describe('chat orchestrator', () => {
       }
     })
 
-    const result = await runVerifierTurn({
-      sessionManager: sessionManager as never,
-      sessionId: 'session-1',
-      llmClient: { getModel: () => 'qwen3-32b' } as never,
-      onMessage: vi.fn(),
-    }, new TurnMetrics())
+    const result = await runVerifierTurn(
+      {
+        sessionManager: sessionManager as never,
+        sessionId: 'session-1',
+        llmClient: { getModel: () => 'qwen3-32b' } as never,
+        onMessage: vi.fn(),
+      },
+      new TurnMetrics(),
+    )
 
     expect(result).toMatchObject({ allPassed: true, failed: [] })
     expect(sessionManager.updateCriterionStatus).not.toHaveBeenCalledWith(
@@ -1687,10 +1946,11 @@ describe('chat orchestrator', () => {
     )
 
     const verifierNudgeMessages = eventStore.append.mock.calls.filter(
-      ([, event]) => event.type === 'message.start' &&
+      ([, event]) =>
+        event.type === 'message.start' &&
         (event.data as any).messageKind === 'correction' &&
         (event.data as any).subAgentType === 'verifier' &&
-        (event.data as any).content?.includes('Use criterion with action')
+        (event.data as any).content?.includes('Use criterion with action'),
     )
     expect(verifierNudgeMessages).toHaveLength(1)
   })
@@ -1708,7 +1968,14 @@ describe('chat orchestrator', () => {
         mode: 'builder',
         phase: 'verification',
         isRunning: true,
-        criteria: [{ id: 'tests-pass', description: 'Tests pass', status: { type: 'completed', completedAt: '2024-01-01T00:00:00.000Z' }, attempts: [] }],
+        criteria: [
+          {
+            id: 'tests-pass',
+            description: 'Tests pass',
+            status: { type: 'completed', completedAt: '2024-01-01T00:00:00.000Z' },
+            attempts: [],
+          },
+        ],
         executionState: { modifiedFiles: ['src/index.ts'] },
         summary: 'Task summary',
         messages: [],
@@ -1756,21 +2023,25 @@ describe('chat orchestrator', () => {
       }
     })
 
-    const result = await runVerifierTurn({
-      sessionManager: sessionManager as never,
-      sessionId: 'session-1',
-      llmClient: { getModel: () => 'qwen3-32b' } as never,
-      onMessage: vi.fn(),
-    }, new TurnMetrics())
+    const result = await runVerifierTurn(
+      {
+        sessionManager: sessionManager as never,
+        sessionId: 'session-1',
+        llmClient: { getModel: () => 'qwen3-32b' } as never,
+        onMessage: vi.fn(),
+      },
+      new TurnMetrics(),
+    )
 
     expect(result).toMatchObject({ allPassed: false, failed: [] })
     expect(sessionManager.updateCriterionStatus).not.toHaveBeenCalled()
     expect(sessionManager.addCriterionAttempt).not.toHaveBeenCalled()
 
     const correctionMessages = eventStore.append.mock.calls.filter(
-      ([, event]) => event.type === 'message.start' &&
+      ([, event]) =>
+        event.type === 'message.start' &&
         (event.data as any).messageKind === 'correction' &&
-        (event.data as any).subAgentType === 'verifier'
+        (event.data as any).subAgentType === 'verifier',
     )
     // 10 nudges + 1 stall restart message + 1 return_value nudge + 1 return_value stall = 13
     expect(correctionMessages).toHaveLength(13)
@@ -1789,7 +2060,14 @@ describe('chat orchestrator', () => {
         mode: 'builder',
         phase: 'verification',
         isRunning: true,
-        criteria: [{ id: 'tests-pass', description: 'Tests pass', status: { type: 'completed', completedAt: '2024-01-01T00:00:00.000Z' }, attempts: [] }],
+        criteria: [
+          {
+            id: 'tests-pass',
+            description: 'Tests pass',
+            status: { type: 'completed', completedAt: '2024-01-01T00:00:00.000Z' },
+            attempts: [],
+          },
+        ],
         executionState: { modifiedFiles: ['src/index.ts'] },
         summary: 'Task summary',
         messages: [],
@@ -1805,13 +2083,15 @@ describe('chat orchestrator', () => {
     streamLLMPureMock.mockReturnValue({ kind: 'stream' })
     consumeStreamGeneratorMock.mockResolvedValueOnce({
       content: 'checking',
-      toolCalls: [{
-        id: 'call-1',
-        name: 'read_file',
-        arguments: {},
-        parseError: 'Unexpected token in JSON at position 1',
-        rawArguments: '{bad-json',
-      }],
+      toolCalls: [
+        {
+          id: 'call-1',
+          name: 'read_file',
+          arguments: {},
+          parseError: 'Unexpected token in JSON at position 1',
+          rawArguments: '{bad-json',
+        },
+      ],
       segments: [],
       usage: { promptTokens: 8, completionTokens: 1 },
       timing: { ttft: 1, completionTime: 1, tps: 1, prefillTps: 8 },
@@ -1832,12 +2112,15 @@ describe('chat orchestrator', () => {
       })
     }
 
-    const result = await runVerifierTurn({
-      sessionManager: sessionManager as never,
-      sessionId: 'session-1',
-      llmClient: { getModel: () => 'qwen3-32b' } as never,
-      onMessage: vi.fn(),
-    }, new TurnMetrics())
+    const result = await runVerifierTurn(
+      {
+        sessionManager: sessionManager as never,
+        sessionId: 'session-1',
+        llmClient: { getModel: () => 'qwen3-32b' } as never,
+        onMessage: vi.fn(),
+      },
+      new TurnMetrics(),
+    )
 
     expect(result).toMatchObject({ allPassed: false, failed: [] })
     expect(execute).not.toHaveBeenCalled()
@@ -1858,7 +2141,14 @@ describe('chat orchestrator', () => {
         mode: 'builder',
         phase: 'verification',
         isRunning: true,
-        criteria: [{ id: 'tests-pass', description: 'Tests pass', status: { type: 'completed', completedAt: '2024-01-01T00:00:00.000Z' }, attempts: [] }],
+        criteria: [
+          {
+            id: 'tests-pass',
+            description: 'Tests pass',
+            status: { type: 'completed', completedAt: '2024-01-01T00:00:00.000Z' },
+            attempts: [],
+          },
+        ],
         executionState: { modifiedFiles: ['src/index.ts'] },
         summary: 'Task summary',
         messages: [],
@@ -1870,7 +2160,14 @@ describe('chat orchestrator', () => {
         throw new PathAccessDeniedError(['/etc/passwd'], 'read_file')
       }
 
-      state.current.criteria = [{ id: 'tests-pass', description: 'Tests pass', status: { type: 'passed', verifiedAt: '2024-01-01T00:00:00.000Z' }, attempts: [] }]
+      state.current.criteria = [
+        {
+          id: 'tests-pass',
+          description: 'Tests pass',
+          status: { type: 'passed', verifiedAt: '2024-01-01T00:00:00.000Z' },
+          attempts: [],
+        },
+      ]
       return { success: true, output: 'verification passed', durationMs: 10, truncated: false }
     })
     getToolRegistryForModeMock.mockReturnValue({
@@ -1902,7 +2199,13 @@ describe('chat orchestrator', () => {
       })
       .mockResolvedValueOnce({
         content: 'passing criterion',
-        toolCalls: [{ id: 'call-2', name: 'pass_criterion', arguments: { id: 'tests-pass', reason: 'verified from available signals' } }],
+        toolCalls: [
+          {
+            id: 'call-2',
+            name: 'pass_criterion',
+            arguments: { id: 'tests-pass', reason: 'verified from available signals' },
+          },
+        ],
         segments: [],
         usage: { promptTokens: 6, completionTokens: 2 },
         timing: { ttft: 1, completionTime: 1, tps: 2, prefillTps: 6 },
@@ -1929,12 +2232,15 @@ describe('chat orchestrator', () => {
         xmlFormatError: false,
       })
 
-    const result = await runVerifierTurn({
-      sessionManager: sessionManager as never,
-      sessionId: 'session-1',
-      llmClient: { getModel: () => 'qwen3-32b' } as never,
-      onMessage: vi.fn(),
-    }, new TurnMetrics())
+    const result = await runVerifierTurn(
+      {
+        sessionManager: sessionManager as never,
+        sessionId: 'session-1',
+        llmClient: { getModel: () => 'qwen3-32b' } as never,
+        onMessage: vi.fn(),
+      },
+      new TurnMetrics(),
+    )
 
     expect(result).toMatchObject({ allPassed: true, failed: [] })
     const toolResultEvent = eventStore.append.mock.calls.find(([, event]) => event.type === 'tool.result')?.[1]
@@ -1951,25 +2257,25 @@ describe('chat orchestrator', () => {
   it('🐛 REPRODUCTION: System reminder appears on EVERY user message (vLLM cache invalidation)', async () => {
     /**
      * USER REPORT: "I've seen the system reminder 3 times in our conversation"
-     * 
+     *
      * THE BUG: The system reminder is being injected into EVERY user message
      * sent to the LLM, not just once when switching modes. This causes:
-     * 
+     *
      * 1. vLLM prefix cache invalidation on every turn (massive compute waste)
      * 2. User sees the reminder repeated in conversation history
      * 3. Response times increase dramatically after each turn
-     * 
+     *
      * EXPECTED: Reminder appears ONCE when switching to a new mode
      * ACTUAL: Reminder appears on EVERY single message/turn
      */
-    
+
     const { assembleAgentRequest } = await import('./request-context.js')
-    
+
     const plannerAgent = {
       metadata: { id: 'planner', name: 'Planner', description: 'Plans', subagent: false, tools: [] },
       prompt: '# Plan Mode\n\nCRITICAL: Plan mode ACTIVE - you are in read-only phase.',
     }
-    
+
     // Simulate a conversation with 3 user messages
     const conversationHistory = [
       { role: 'user' as const, content: 'Build a feature', source: 'history' as const },
@@ -1978,42 +2284,42 @@ describe('chat orchestrator', () => {
       { role: 'assistant' as const, content: 'Let me check the codebase.', source: 'history' as const },
       { role: 'user' as const, content: 'Any updates?', source: 'history' as const },
     ]
-    
+
     // Simulate 3 consecutive LLM requests (as would happen in a real conversation)
     const results = []
     for (let i = 0; i < 3; i++) {
-      results.push(assembleAgentRequest({
-        workdir: '/test',
-        messages: conversationHistory as any,
-        injectedFiles: [],
-        promptTools: [],
-        agentDef: plannerAgent as any,
-      }))
+      results.push(
+        assembleAgentRequest({
+          workdir: '/test',
+          messages: conversationHistory as any,
+          injectedFiles: [],
+          promptTools: [],
+          agentDef: plannerAgent as any,
+        }),
+      )
     }
-    
+
     // Extract what would be sent to vLLM on each turn
-    const userMessagesSentToLLM = results.map(r => 
-      r.messages.filter(m => m.role === 'user').map(m => m.content)
-    )
-    
+    const userMessagesSentToLLM = results.map((r) => r.messages.filter((m) => m.role === 'user').map((m) => m.content))
+
     // THE BUG: Every message contains the reminder
     console.log('Turn 1 user messages:', userMessagesSentToLLM[0])
     console.log('Turn 2 user messages:', userMessagesSentToLLM[1])
     console.log('Turn 3 user messages:', userMessagesSentToLLM[2])
-    
+
     // Count how many times the reminder appears
-    const reminderCount = userMessagesSentToLLM.flat().filter(
-      msg => msg.includes('<system-reminder>')
-    ).length
-    
-    console.log(`\n❌ BUG DETECTED: Reminder appears ${reminderCount} times across ${userMessagesSentToLLM.length} turns`)
+    const reminderCount = userMessagesSentToLLM.flat().filter((msg) => msg.includes('<system-reminder>')).length
+
+    console.log(
+      `\n❌ BUG DETECTED: Reminder appears ${reminderCount} times across ${userMessagesSentToLLM.length} turns`,
+    )
     console.log('Expected: 0 times (reminder should be separate message, not in history)')
     console.log('This causes vLLM to invalidate cache and recompute EVERY turn!\n')
-    
+
     // FAILING: The reminder should NOT be in historical messages
     // It should be injected as a separate message only on mode switch
     expect(reminderCount).toBe(0)
-    
+
     // For vLLM cache to work, all turns should send IDENTICAL messages
     expect(userMessagesSentToLLM[0]).toEqual(userMessagesSentToLLM[1])
     expect(userMessagesSentToLLM[1]).toEqual(userMessagesSentToLLM[2])
@@ -2031,7 +2337,14 @@ describe('chat orchestrator', () => {
         mode: 'builder',
         phase: 'verification',
         isRunning: true,
-        criteria: [{ id: 'tests-pass', description: 'Tests pass', status: { type: 'completed', completedAt: '2024-01-01T00:00:00.000Z' }, attempts: [] }],
+        criteria: [
+          {
+            id: 'tests-pass',
+            description: 'Tests pass',
+            status: { type: 'completed', completedAt: '2024-01-01T00:00:00.000Z' },
+            attempts: [],
+          },
+        ],
         executionState: { modifiedFiles: [] },
         summary: 'Task summary',
         messages: [],
@@ -2050,12 +2363,19 @@ describe('chat orchestrator', () => {
       xmlFormatError: false,
     })
 
-    await expect(runVerifierTurn({
-      sessionManager: abortedManager as never,
-      sessionId: 'session-1',
-      llmClient: { getModel: () => 'qwen3-32b' } as never,
-    }, new TurnMetrics())).rejects.toThrow('Aborted')
-    expect(abortedStore.append.mock.calls.find(([, event]) => event.type === 'chat.done')?.[1]).toMatchObject({ data: { reason: 'stopped' } })
+    await expect(
+      runVerifierTurn(
+        {
+          sessionManager: abortedManager as never,
+          sessionId: 'session-1',
+          llmClient: { getModel: () => 'qwen3-32b' } as never,
+        },
+        new TurnMetrics(),
+      ),
+    ).rejects.toThrow('Aborted')
+    expect(abortedStore.append.mock.calls.find(([, event]) => event.type === 'chat.done')?.[1]).toMatchObject({
+      data: { reason: 'stopped' },
+    })
 
     const errorStore = createEventStore()
     getEventStoreMock.mockReturnValue(errorStore)
@@ -2067,7 +2387,14 @@ describe('chat orchestrator', () => {
         mode: 'builder',
         phase: 'verification',
         isRunning: true,
-        criteria: [{ id: 'tests-pass', description: 'Tests pass', status: { type: 'completed', completedAt: '2024-01-01T00:00:00.000Z' }, attempts: [] }],
+        criteria: [
+          {
+            id: 'tests-pass',
+            description: 'Tests pass',
+            status: { type: 'completed', completedAt: '2024-01-01T00:00:00.000Z' },
+            attempts: [],
+          },
+        ],
         executionState: { modifiedFiles: [] },
         summary: 'Task summary',
         messages: [],
@@ -2091,26 +2418,29 @@ describe('chat orchestrator', () => {
       xmlFormatError: false,
     })
 
-    await expect(runVerifierTurn({
-      sessionManager: errorManager as never,
-      sessionId: 'session-1',
-      llmClient: { getModel: () => 'qwen3-32b' } as never,
-      onMessage: vi.fn(),
-    }, new TurnMetrics())).rejects.toThrow('unexpected verifier failure')
+    await expect(
+      runVerifierTurn(
+        {
+          sessionManager: errorManager as never,
+          sessionId: 'session-1',
+          llmClient: { getModel: () => 'qwen3-32b' } as never,
+          onMessage: vi.fn(),
+        },
+        new TurnMetrics(),
+      ),
+    ).rejects.toThrow('unexpected verifier failure')
   })
 
   describe('context window filtering', () => {
     it('planner turn uses getContextMessages to filter by current window', async () => {
       const eventStore = createEventStore()
       getEventStoreMock.mockReturnValue(eventStore)
-      
+
       // Mock getContextMessages to return only current-window messages
-      const currentWindowMessages = [
-        { role: 'user' as const, content: 'Current window message' },
-      ]
+      const currentWindowMessages = [{ role: 'user' as const, content: 'Current window message' }]
       getContextMessagesMock.mockReturnValue(currentWindowMessages)
       getCurrentContextWindowIdMock.mockReturnValue('window-2')
-      
+
       getAllInstructionsMock.mockResolvedValue({ content: '', files: [] })
       getToolRegistryForModeMock.mockReturnValue({ definitions: [], execute: vi.fn() })
       streamLLMPureMock.mockReturnValue({ kind: 'stream' })
@@ -2146,15 +2476,13 @@ describe('chat orchestrator', () => {
 
       // Verify getContextMessages was called with session ID
       expect(getContextMessagesMock).toHaveBeenCalledWith('session-1')
-      
+
       // After fix: streamLLMPure does NOT merge reminder into messages (preserves vLLM cache)
       // The reminder is injected as a separate message by injectModeReminderIfNeeded()
       expect(streamLLMPureMock).toHaveBeenCalledWith(
         expect.objectContaining({
-          messages: [
-            expect.objectContaining({ role: 'user', content: 'Current window message' }),
-          ],
-        })
+          messages: [expect.objectContaining({ role: 'user', content: 'Current window message' })],
+        }),
       )
       // The message should NOT contain the reminder (it's a separate message now)
       expect(streamLLMPureMock.mock.calls[0]?.[0]?.messages[0]?.content).not.toContain('Plan mode ACTIVE')
@@ -2163,13 +2491,11 @@ describe('chat orchestrator', () => {
     it('builder turn uses getContextMessages to filter by current window', async () => {
       const eventStore = createEventStore()
       getEventStoreMock.mockReturnValue(eventStore)
-      
-      const currentWindowMessages = [
-        { role: 'user' as const, content: 'Build this' },
-      ]
+
+      const currentWindowMessages = [{ role: 'user' as const, content: 'Build this' }]
       getContextMessagesMock.mockReturnValue(currentWindowMessages)
       getCurrentContextWindowIdMock.mockReturnValue('window-2')
-      
+
       getAllInstructionsMock.mockResolvedValue({ content: '', files: [] })
       getToolRegistryForModeMock.mockReturnValue({ tools: [], definitions: [], execute: vi.fn() })
       streamLLMPureMock.mockReturnValue({ kind: 'stream' })
@@ -2197,21 +2523,22 @@ describe('chat orchestrator', () => {
         },
       })
 
-      await runBuilderTurn({
-        sessionManager: sessionManager as never,
-        sessionId: 'session-1',
-        llmClient: { getModel: () => 'qwen3-32b' } as never,
-      }, new TurnMetrics())
+      await runBuilderTurn(
+        {
+          sessionManager: sessionManager as never,
+          sessionId: 'session-1',
+          llmClient: { getModel: () => 'qwen3-32b' } as never,
+        },
+        new TurnMetrics(),
+      )
 
       expect(getContextMessagesMock).toHaveBeenCalledWith('session-1')
       // After fix: Builder does NOT inject reminder into messages (preserves vLLM cache)
       // The reminder is injected as a separate message by injectModeReminderIfNeeded()
       expect(streamLLMPureMock).toHaveBeenCalledWith(
         expect.objectContaining({
-          messages: [
-            expect.objectContaining({ role: 'user', content: 'Build this' }),
-          ],
-        })
+          messages: [expect.objectContaining({ role: 'user', content: 'Build this' })],
+        }),
       )
       // The message should NOT contain the reminder (it's a separate message now)
       expect(streamLLMPureMock.mock.calls[0]?.[0]?.messages[0]?.content).not.toContain('Build mode ACTIVE')
@@ -2220,14 +2547,14 @@ describe('chat orchestrator', () => {
     it('does not inject step_done tool by default in builder turns', async () => {
       const eventStore = createEventStore()
       getEventStoreMock.mockReturnValue(eventStore)
-      
+
       getContextMessagesMock.mockReturnValue([{ role: 'user' as const, content: 'Build this' }])
       getAllInstructionsMock.mockResolvedValue({ content: '', files: [] })
-      
-      const mockToolRegistry = { 
-        definitions: [{ type: 'function' as const, function: { name: 'read_file', parameters: {} } }], 
+
+      const mockToolRegistry = {
+        definitions: [{ type: 'function' as const, function: { name: 'read_file', parameters: {} } }],
         execute: vi.fn(),
-        tools: []
+        tools: [],
       }
       getToolRegistryForModeMock.mockReturnValue(mockToolRegistry)
       streamLLMPureMock.mockReturnValue({ kind: 'stream' })
@@ -2255,11 +2582,14 @@ describe('chat orchestrator', () => {
         },
       })
 
-      await runBuilderTurn({
-        sessionManager: sessionManager as never,
-        sessionId: 'session-1',
-        llmClient: { getModel: () => 'qwen3-32b' } as never,
-      }, new TurnMetrics())
+      await runBuilderTurn(
+        {
+          sessionManager: sessionManager as never,
+          sessionId: 'session-1',
+          llmClient: { getModel: () => 'qwen3-32b' } as never,
+        },
+        new TurnMetrics(),
+      )
 
       expect(getToolRegistryForModeMock).toHaveBeenCalled()
       expect(streamLLMPureMock).toHaveBeenCalledWith(
@@ -2267,27 +2597,31 @@ describe('chat orchestrator', () => {
           tools: expect.arrayContaining([
             expect.objectContaining({ type: 'function', function: expect.objectContaining({ name: 'read_file' }) }),
           ]),
-        })
+        }),
       )
       const calledTools = streamLLMPureMock.mock.calls[0]?.[0]?.tools
       expect(calledTools).not.toEqual(
-        expect.arrayContaining([
-          expect.objectContaining({ function: expect.objectContaining({ name: 'step_done' }) }),
-        ])
+        expect.arrayContaining([expect.objectContaining({ function: expect.objectContaining({ name: 'step_done' }) })]),
       )
     })
 
     it('injects step_done tool when injectStepDone is true', async () => {
       const eventStore = createEventStore()
       getEventStoreMock.mockReturnValue(eventStore)
-      
+
       getContextMessagesMock.mockReturnValue([{ role: 'user' as const, content: 'Build this' }])
       getAllInstructionsMock.mockResolvedValue({ content: '', files: [] })
-      
-      const mockToolRegistry = { 
+
+      const mockToolRegistry = {
         tools: [
-          { name: 'read_file', definition: { type: 'function' as const, function: { name: 'read_file', parameters: {} } } },
-          { name: 'step_done', definition: { type: 'function' as const, function: { name: 'step_done', parameters: {} } } },
+          {
+            name: 'read_file',
+            definition: { type: 'function' as const, function: { name: 'read_file', parameters: {} } },
+          },
+          {
+            name: 'step_done',
+            definition: { type: 'function' as const, function: { name: 'step_done', parameters: {} } },
+          },
         ],
         definitions: [
           { type: 'function' as const, function: { name: 'read_file', parameters: {} } },
@@ -2321,19 +2655,22 @@ describe('chat orchestrator', () => {
         },
       })
 
-      await runBuilderTurn({
-        sessionManager: sessionManager as never,
-        sessionId: 'session-1',
-        llmClient: { getModel: () => 'qwen3-32b' } as never,
-        injectStepDone: true,
-      }, new TurnMetrics())
+      await runBuilderTurn(
+        {
+          sessionManager: sessionManager as never,
+          sessionId: 'session-1',
+          llmClient: { getModel: () => 'qwen3-32b' } as never,
+          injectStepDone: true,
+        },
+        new TurnMetrics(),
+      )
 
       expect(streamLLMPureMock).toHaveBeenCalledWith(
         expect.objectContaining({
           tools: expect.arrayContaining([
             expect.objectContaining({ function: expect.objectContaining({ name: 'step_done' }) }),
           ]),
-        })
+        }),
       )
     })
 
@@ -2349,7 +2686,13 @@ describe('chat orchestrator', () => {
         .mockResolvedValueOnce({
           content: 'Compacted summary of the session including all file modifications and current progress on tasks',
           toolCalls: [],
-          segments: [{ type: 'text', content: 'Compacted summary of the session including all file modifications and current progress on tasks' }],
+          segments: [
+            {
+              type: 'text',
+              content:
+                'Compacted summary of the session including all file modifications and current progress on tasks',
+            },
+          ],
           usage: { promptTokens: 190000, completionTokens: 100 },
           timing: { ttft: 1, completionTime: 1, tps: 100, prefillTps: 190000 },
           aborted: false,
@@ -2386,23 +2729,34 @@ describe('chat orchestrator', () => {
         canCompact: true,
       }))
 
-      await runBuilderTurn({
-        sessionManager: sessionManager as never,
-        sessionId: 'session-1',
-        llmClient: { getModel: () => 'qwen3-32b' } as never,
-      }, new TurnMetrics())
+      await runBuilderTurn(
+        {
+          sessionManager: sessionManager as never,
+          sessionId: 'session-1',
+          llmClient: { getModel: () => 'qwen3-32b' } as never,
+        },
+        new TurnMetrics(),
+      )
 
-      expect(sessionManager.compactContext).toHaveBeenCalledWith('session-1', 'Compacted summary of the session including all file modifications and current progress on tasks', 190000)
-      expect(sessionManager.compactContext).toHaveBeenCalledWith('session-1', 'Compacted summary of the session including all file modifications and current progress on tasks', 190000)
+      expect(sessionManager.compactContext).toHaveBeenCalledWith(
+        'session-1',
+        'Compacted summary of the session including all file modifications and current progress on tasks',
+        190000,
+      )
+      expect(sessionManager.compactContext).toHaveBeenCalledWith(
+        'session-1',
+        'Compacted summary of the session including all file modifications and current progress on tasks',
+        190000,
+      )
     })
 
     it('assistant messages include contextWindowId', async () => {
       const eventStore = createEventStore()
       getEventStoreMock.mockReturnValue(eventStore)
-      
+
       getContextMessagesMock.mockReturnValue([{ role: 'user' as const, content: 'Hello' }])
       getCurrentContextWindowIdMock.mockReturnValue('window-123')
-      
+
       getAllInstructionsMock.mockResolvedValue({ content: '', files: [] })
       getToolRegistryForModeMock.mockReturnValue({ definitions: [], execute: vi.fn() })
       streamLLMPureMock.mockReturnValue({ kind: 'stream' })
@@ -2438,9 +2792,9 @@ describe('chat orchestrator', () => {
 
       // Find the message.start event for the assistant
       const assistantStart = eventStore.append.mock.calls.find(
-        ([, event]) => event.type === 'message.start' && (event.data as any).role === 'assistant'
+        ([, event]) => event.type === 'message.start' && (event.data as any).role === 'assistant',
       )
-      
+
       expect(assistantStart).toBeDefined()
       expect((assistantStart![1].data as any).contextWindowId).toBe('window-123')
     })

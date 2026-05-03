@@ -21,13 +21,13 @@ const envSchema = z.object({
 
 export function loadConfig(): Config {
   const env = envSchema.parse(process.env)
-  
+
   // Use new env var, fall back to old one, then default
   const llmUrl = env.OPENFOX_LLM_URL ?? env.OPENFOX_VLLM_URL ?? 'http://localhost:8000/v1'
-  
+
   // Workdir from env only (serve.ts will merge with global config)
   const workdir = env.OPENFOX_WORKDIR ?? process.cwd()
-  
+
   return {
     llm: {
       baseUrl: llmUrl,
@@ -40,7 +40,7 @@ export function loadConfig(): Config {
     context: {
       maxTokens: env.OPENFOX_MAX_CONTEXT,
       compactionThreshold: 0.85,
-      compactionTarget: 0.60,
+      compactionTarget: 0.6,
     },
     agent: {
       maxIterations: 10,

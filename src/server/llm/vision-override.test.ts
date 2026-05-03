@@ -1,9 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import {
-  buildNonStreamingCreateParams,
-  buildStreamingCreateParams,
-  convertMessages,
-} from './client-pure.js'
+import { buildNonStreamingCreateParams, buildStreamingCreateParams, convertMessages } from './client-pure.js'
 import type { LLMMessage } from './types.js'
 import type { Attachment } from '../../shared/types.js'
 
@@ -29,7 +25,10 @@ describe('user vision override', () => {
   }
 
   it('profile says no vision -> image replaced with placeholder', () => {
-    const result = convertMessages(makeMessagesWithImage(), { modelSupportsVision: false, visionFallbackEnabled: false })
+    const result = convertMessages(makeMessagesWithImage(), {
+      modelSupportsVision: false,
+      visionFallbackEnabled: false,
+    })
     expect(result[0]).toEqual({
       role: 'user',
       content: [
@@ -69,13 +68,15 @@ describe('user vision override', () => {
       disableThinking: false,
     })
 
-    expect((result.params as any).messages).toEqual([{
-      role: 'user',
-      content: [
-        { type: 'text', text: 'hello' },
-        { type: 'text', text: '[Image: test.png] (vision not supported, cannot describe)' },
-      ],
-    }])
+    expect((result.params as any).messages).toEqual([
+      {
+        role: 'user',
+        content: [
+          { type: 'text', text: 'hello' },
+          { type: 'text', text: '[Image: test.png] (vision not supported, cannot describe)' },
+        ],
+      },
+    ])
   })
 
   it('buildStreamingCreateParams: profile says no vision, user overrides to true -> image_url', async () => {
@@ -98,13 +99,15 @@ describe('user vision override', () => {
       disableThinking: false,
     })
 
-    expect((result.params as any).messages).toEqual([{
-      role: 'user',
-      content: [
-        { type: 'text', text: 'hello' },
-        { type: 'image_url', image_url: { url: 'abc' } },
-      ],
-    }])
+    expect((result.params as any).messages).toEqual([
+      {
+        role: 'user',
+        content: [
+          { type: 'text', text: 'hello' },
+          { type: 'image_url', image_url: { url: 'abc' } },
+        ],
+      },
+    ])
   })
 
   it('buildStreamingCreateParams: profile says vision, user overrides to false -> text placeholder', async () => {
@@ -127,13 +130,15 @@ describe('user vision override', () => {
       disableThinking: false,
     })
 
-    expect((result.params as any).messages).toEqual([{
-      role: 'user',
-      content: [
-        { type: 'text', text: 'hello' },
-        { type: 'text', text: '[Image: test.png] (vision not supported, cannot describe)' },
-      ],
-    }])
+    expect((result.params as any).messages).toEqual([
+      {
+        role: 'user',
+        content: [
+          { type: 'text', text: 'hello' },
+          { type: 'text', text: '[Image: test.png] (vision not supported, cannot describe)' },
+        ],
+      },
+    ])
   })
 
   it('buildNonStreamingCreateParams: user vision override works the same way', async () => {
@@ -155,12 +160,14 @@ describe('user vision override', () => {
       capabilities: { supportsTopK: false, supportsChatTemplateKwargs: false },
     })
 
-    expect((result.params as any).messages).toEqual([{
-      role: 'user',
-      content: [
-        { type: 'text', text: 'hello' },
-        { type: 'image_url', image_url: { url: 'abc' } },
-      ],
-    }])
+    expect((result.params as any).messages).toEqual([
+      {
+        role: 'user',
+        content: [
+          { type: 'text', text: 'hello' },
+          { type: 'image_url', image_url: { url: 'abc' } },
+        ],
+      },
+    ])
   })
 })

@@ -19,7 +19,11 @@ describe('error utilities', () => {
     const validation = new ValidationError('bad input', { field: 'mode' })
 
     expect(base).toMatchObject({ name: 'OpenFoxError', code: 'BASE', details: { detail: true } })
-    expect(missing).toMatchObject({ name: 'SessionNotFoundError', code: 'SESSION_NOT_FOUND', details: { sessionId: 'session-1' } })
+    expect(missing).toMatchObject({
+      name: 'SessionNotFoundError',
+      code: 'SESSION_NOT_FOUND',
+      details: { sessionId: 'session-1' },
+    })
     expect(transition.message).toBe('Invalid phase transition: plan -> done')
     expect(tool).toMatchObject({ code: 'TOOL_EXECUTION_ERROR', details: { tool: 'edit_file', reason: 'oops' } })
     expect(llm.code).toBe('LLM_ERROR')

@@ -14,7 +14,7 @@ describe('cache preservation bug - tool result output in snapshots', () => {
 
     const toolCallId = 'call-1'
     const messageId = 'msg-1'
-    
+
     // Simulate a failing command with both output and error
     const toolResult = {
       success: false,
@@ -54,8 +54,8 @@ describe('cache preservation bug - tool result output in snapshots', () => {
         isRunning: false,
         criteria: [],
         todos: [],
-        contextState: { 
-          promptTokens: 0, 
+        contextState: {
+          promptTokens: 0,
           compactionCount: 0,
           currentTokens: 0,
           maxTokens: 200000,
@@ -73,15 +73,15 @@ describe('cache preservation bug - tool result output in snapshots', () => {
 
     // Reconstruct messages from snapshot (this is what happens on subsequent calls)
     const reconstructedMessages = buildContextMessagesFromEventHistory(events)
-    const reconstructedToolMessage = reconstructedMessages.find(m => m.role === 'tool')
-    
+    const reconstructedToolMessage = reconstructedMessages.find((m) => m.role === 'tool')
+
     expect(reconstructedToolMessage).toBeDefined()
-    
+
     // THIS IS THE BUG: The reconstructed message should contain the FULL output,
     // not just the error message!
     const expectedContent = `${toolResult.output}\n\nError: ${toolResult.error}`
     expect(reconstructedToolMessage!.content).toBe(expectedContent)
-    
+
     // Verify the content includes both output and error
     expect(reconstructedToolMessage!.content).toContain('line 1')
     expect(reconstructedToolMessage!.content).toContain('line 2')

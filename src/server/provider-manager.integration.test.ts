@@ -27,7 +27,7 @@ describe('ProviderManager - Integration', () => {
 
   beforeEach(() => {
     vi.resetAllMocks()
-    
+
     config = {
       providers: [
         {
@@ -45,7 +45,13 @@ describe('ProviderManager - Integration', () => {
       server: { port: 10369, host: '127.0.0.1', openBrowser: true },
       logging: { level: 'info' as const },
       database: { path: '' },
-      llm: { baseUrl: 'http://localhost:8000/v1', model: 'model-a', timeout: 120000, idleTimeout: 30000, backend: 'vllm' },
+      llm: {
+        baseUrl: 'http://localhost:8000/v1',
+        model: 'model-a',
+        timeout: 120000,
+        idleTimeout: 30000,
+        backend: 'vllm',
+      },
       context: { maxTokens: 4096, compactionThreshold: 10000, compactionTarget: 8000 },
       agent: { maxIterations: 100, maxConsecutiveFailures: 5, toolTimeout: 30000 },
       workdir: process.cwd(),
@@ -61,9 +67,7 @@ describe('ProviderManager - Integration', () => {
   describe('Full model selection flow', () => {
     it('returns stored models', async () => {
       const availableModels = await providerManager.getProviderModels('provider-1')
-      expect(availableModels).toEqual([
-        { id: 'model-a', contextWindow: 200000, source: 'default' },
-      ])
+      expect(availableModels).toEqual([{ id: 'model-a', contextWindow: 200000, source: 'default' }])
     })
 
     it('handles model switch for active provider correctly', async () => {
@@ -83,7 +87,7 @@ describe('ProviderManager - Integration', () => {
       })
 
       await providerManager.activateProvider('provider-1', { model: 'model-new' })
-      
+
       expect(providerManager.getCurrentModel()).toBe('model-new')
     })
 
@@ -127,11 +131,11 @@ describe('ProviderManager - Integration', () => {
         ],
       }
       const pm = createProviderManager(configNoModels)
-      
+
       mockFetch.mockRejectedValueOnce(new Error('Connection refused'))
 
       const models = await pm.getProviderModels('provider-1')
-      
+
       expect(models).toEqual([])
     })
 
@@ -147,7 +151,7 @@ describe('ProviderManager - Integration', () => {
         ],
       }
       const pm = createProviderManager(configNoModels)
-      
+
       mockFetch.mockResolvedValueOnce({
         ok: false,
         status: 503,
@@ -155,10 +159,9 @@ describe('ProviderManager - Integration', () => {
       })
 
       const models = await pm.getProviderModels('provider-1')
-      
+
       expect(models).toEqual([])
     })
-
   })
 
   describe('Edge cases', () => {
@@ -177,16 +180,14 @@ describe('ProviderManager - Integration', () => {
 
       mockFetch.mockResolvedValueOnce({
         ok: true,
-        json: async () => ({ 
+        json: async () => ({
           data: [{ id: 'model-fetched', max_model_len: 150000 }],
         }),
       })
 
       const models = await pm.getProviderModels('provider-1')
-      
-      expect(models).toEqual([
-        { id: 'model-fetched', contextWindow: 150000, source: 'backend' },
-      ])
+
+      expect(models).toEqual([{ id: 'model-fetched', contextWindow: 150000, source: 'backend' }])
     })
 
     it('handles provider without /v1 in URL', async () => {
@@ -210,10 +211,7 @@ describe('ProviderManager - Integration', () => {
 
       await pm.getProviderModels('provider-1')
 
-      expect(mockFetch).toHaveBeenCalledWith(
-        'http://localhost:8000/v1/models',
-        expect.any(Object)
-      )
+      expect(mockFetch).toHaveBeenCalledWith('http://localhost:8000/v1/models', expect.any(Object))
     })
 
     it('handles provider with /v1 in URL (no double /v1)', async () => {
@@ -237,10 +235,7 @@ describe('ProviderManager - Integration', () => {
 
       await pm.getProviderModels('provider-1')
 
-      expect(mockFetch).toHaveBeenCalledWith(
-        'http://localhost:8000/v1/models',
-        expect.any(Object)
-      )
+      expect(mockFetch).toHaveBeenCalledWith('http://localhost:8000/v1/models', expect.any(Object))
     })
   })
 })

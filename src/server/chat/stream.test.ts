@@ -49,20 +49,25 @@ describe('streamLLMResponse', () => {
   })
 
   it('creates an assistant message, forwards streaming events, and persists the final result', async () => {
-    streamWithSegmentsMock.mockReturnValueOnce(createStream([
-      { type: 'thinking_delta', content: 'thinking' },
-      { type: 'text_delta', content: 'answer' },
-      { type: 'tool_call_delta', index: 0, name: 'read_file' },
-    ], {
-      content: 'answer',
-      thinkingContent: 'thinking',
-      toolCalls: [{ id: 'call-1', name: 'read_file', arguments: { path: 'src/index.ts' } }],
-      response: {
-        usage: { promptTokens: 10, completionTokens: 4, totalTokens: 14 },
-      },
-      segments: [{ type: 'text', content: 'answer' }],
-      timing: { ttft: 1, completionTime: 2, tps: 2, prefillTps: 10 },
-    }))
+    streamWithSegmentsMock.mockReturnValueOnce(
+      createStream(
+        [
+          { type: 'thinking_delta', content: 'thinking' },
+          { type: 'text_delta', content: 'answer' },
+          { type: 'tool_call_delta', index: 0, name: 'read_file' },
+        ],
+        {
+          content: 'answer',
+          thinkingContent: 'thinking',
+          toolCalls: [{ id: 'call-1', name: 'read_file', arguments: { path: 'src/index.ts' } }],
+          response: {
+            usage: { promptTokens: 10, completionTokens: 4, totalTokens: 14 },
+          },
+          segments: [{ type: 'text', content: 'answer' }],
+          timing: { ttft: 1, completionTime: 2, tps: 2, prefillTps: 10 },
+        },
+      ),
+    )
 
     const sessionManager = createSessionManager()
     const emitted = [] as Array<{ type: string; payload: Record<string, unknown> }>
@@ -72,7 +77,9 @@ describe('streamLLMResponse', () => {
       sessionId: 'session-1',
       systemPrompt: 'system prompt',
       llmClient: { getModel: () => 'qwen3-32b' } as never,
-      tools: [{ type: 'function', function: { name: 'read_file', description: 'Read', parameters: { type: 'object' } } }],
+      tools: [
+        { type: 'function', function: { name: 'read_file', description: 'Read', parameters: { type: 'object' } } },
+      ],
       toolChoice: 'auto',
       onEvent: (event) => {
         emitted.push(event as never)
@@ -84,7 +91,9 @@ describe('streamLLMResponse', () => {
         { role: 'system', content: 'system prompt' },
         { role: 'user', content: 'hello' },
       ],
-      tools: [{ type: 'function', function: { name: 'read_file', description: 'Read', parameters: { type: 'object' } } }],
+      tools: [
+        { type: 'function', function: { name: 'read_file', description: 'Read', parameters: { type: 'object' } } },
+      ],
       toolChoice: 'auto',
       disableThinking: false,
     })
@@ -115,9 +124,8 @@ describe('streamLLMResponse', () => {
   })
 
   it('injects a correction prompt and retries when xml tool output is detected', async () => {
-    streamWithSegmentsMock
-      .mockReturnValueOnce(createStream([{ type: 'xml_tool_abort' }], null))
-      .mockReturnValueOnce(createStream([], {
+    streamWithSegmentsMock.mockReturnValueOnce(createStream([{ type: 'xml_tool_abort' }], null)).mockReturnValueOnce(
+      createStream([], {
         content: 'fixed',
         toolCalls: [],
         response: {
@@ -125,7 +133,8 @@ describe('streamLLMResponse', () => {
         },
         segments: [],
         timing: { ttft: 1, completionTime: 1, tps: 2, prefillTps: 8 },
-      }))
+      }),
+    )
 
     const sessionManager = createSessionManager()
     const emitted = [] as Array<{ type: string; payload: Record<string, unknown> }>
@@ -142,41 +151,49 @@ describe('streamLLMResponse', () => {
 
     expect(sessionManager.addAssistantMessage).toHaveBeenCalledTimes(1)
     expect(sessionManager.addMessage).toHaveBeenCalledTimes(1)
-    expect(sessionManager.addMessage).toHaveBeenCalledWith('session-1', expect.objectContaining({
-      role: 'user',
-      isSystemGenerated: true,
-      messageKind: 'correction',
-    }))
-    expect(emitted.map((event) => event.type)).toEqual([
-      'chat.message',
-    ])
+    expect(sessionManager.addMessage).toHaveBeenCalledWith(
+      'session-1',
+      expect.objectContaining({
+        role: 'user',
+        isSystemGenerated: true,
+        messageKind: 'correction',
+      }),
+    )
+    expect(emitted.map((event) => event.type)).toEqual(['chat.message'])
     expect(result.messageId).toBe('msg-1')
     expect(streamWithSegmentsMock).toHaveBeenCalledTimes(2)
   })
 
   it('marks the message partial and throws when aborted', async () => {
-    streamWithSegmentsMock.mockReturnValueOnce(createStream([], {
-      content: 'unused',
-      toolCalls: [],
-      response: { usage: { promptTokens: 1, completionTokens: 1, totalTokens: 2 } },
-      segments: [],
-      timing: { ttft: 1, completionTime: 1, tps: 1, prefillTps: 1 },
-    }))
+    streamWithSegmentsMock.mockReturnValueOnce(
+      createStream([], {
+        content: 'unused',
+        toolCalls: [],
+        response: { usage: { promptTokens: 1, completionTokens: 1, totalTokens: 2 } },
+        segments: [],
+        timing: { ttft: 1, completionTime: 1, tps: 1, prefillTps: 1 },
+      }),
+    )
 
     const controller = new AbortController()
     controller.abort()
     const sessionManager = createSessionManager()
 
-    await expect(streamLLMResponse({
-      sessionManager: sessionManager as never,
-      sessionId: 'session-1',
-      systemPrompt: 'system prompt',
-      llmClient: { getModel: () => 'qwen3-32b' } as never,
-      signal: controller.signal,
-      onEvent: () => {},
-    })).rejects.toThrow('Aborted')
+    await expect(
+      streamLLMResponse({
+        sessionManager: sessionManager as never,
+        sessionId: 'session-1',
+        systemPrompt: 'system prompt',
+        llmClient: { getModel: () => 'qwen3-32b' } as never,
+        signal: controller.signal,
+        onEvent: () => {},
+      }),
+    ).rejects.toThrow('Aborted')
 
-    expect(sessionManager.updateMessage).toHaveBeenCalledWith('session-1', 'msg-1', { isStreaming: false, partial: true })
+    expect(sessionManager.updateMessage).toHaveBeenCalledWith('session-1', 'msg-1', {
+      isStreaming: false,
+      partial: true,
+    })
   })
 
   it('emits an error completion when the stream ends without a result', async () => {
@@ -185,15 +202,17 @@ describe('streamLLMResponse', () => {
     const sessionManager = createSessionManager()
     const emitted = [] as Array<{ type: string; payload: Record<string, unknown> }>
 
-    await expect(streamLLMResponse({
-      sessionManager: sessionManager as never,
-      sessionId: 'session-1',
-      systemPrompt: 'system prompt',
-      llmClient: { getModel: () => 'qwen3-32b' } as never,
-      onEvent: (event) => {
-        emitted.push(event as never)
-      },
-    })).rejects.toThrow('LLM stream returned no result')
+    await expect(
+      streamLLMResponse({
+        sessionManager: sessionManager as never,
+        sessionId: 'session-1',
+        systemPrompt: 'system prompt',
+        llmClient: { getModel: () => 'qwen3-32b' } as never,
+        onEvent: (event) => {
+          emitted.push(event as never)
+        },
+      }),
+    ).rejects.toThrow('LLM stream returned no result')
 
     expect(sessionManager.updateMessage).toHaveBeenCalledWith('session-1', 'msg-1', { isStreaming: false })
     expect(emitted.map((event) => event.type)).toEqual(['chat.message', 'chat.done'])

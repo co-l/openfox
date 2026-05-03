@@ -16,7 +16,14 @@ import type { LLMClientWithModel } from '../llm/client.js'
 import type { SessionManager } from '../session/index.js'
 import type { ToolRegistry } from '../tools/types.js'
 import type { RequestContextMessage } from '../chat/request-context.js'
-import { streamLLMPure, consumeStreamGenerator, TurnMetrics, createMessageStartEvent, createMessageDoneEvent, createChatDoneEvent } from '../chat/stream-pure.js'
+import {
+  streamLLMPure,
+  consumeStreamGenerator,
+  TurnMetrics,
+  createMessageStartEvent,
+  createMessageDoneEvent,
+  createChatDoneEvent,
+} from '../chat/stream-pure.js'
 import { getEventStore } from '../events/index.js'
 import { emitContextState } from '../events/session.js'
 import { shouldCompact } from './compactor.js'
@@ -83,15 +90,7 @@ export class LLMExecutor {
     sessionManager.setCurrentContextSize(sessionId, tokens)
     this.currentTokens = tokens
 
-    emitContextState(
-      sessionId,
-      tokens,
-      this.maxTokens,
-      this.compactionCount,
-      dangerZone,
-      canCompact,
-      subAgentId,
-    )
+    emitContextState(sessionId, tokens, this.maxTokens, this.compactionCount, dangerZone, canCompact, subAgentId)
   }
 
   private async checkAndCompact(): Promise<boolean> {
@@ -145,7 +144,8 @@ export class LLMExecutor {
       systemPrompt: this.config.systemPrompt,
       messages: this.config.messages,
       tools: this.config.tools,
-      injectedFiles: this.config.injectedFiles ?? files.map(f => ({ path: f.path, content: f.content ?? '', source: f.source })),
+      injectedFiles:
+        this.config.injectedFiles ?? files.map((f) => ({ path: f.path, content: f.content ?? '', source: f.source })),
       customInstructions: this.config.customInstructions ?? instructions,
     }
 
@@ -159,7 +159,7 @@ export class LLMExecutor {
       agentDef: plannerDef,
       subAgentDefs: [],
       workdir: session.workdir,
-      messages: compactionCtx.messages.map(m => ({
+      messages: compactionCtx.messages.map((m) => ({
         role: m.role,
         content: m.content,
         source: m.source,
@@ -177,44 +177,50 @@ export class LLMExecutor {
     })
 
     const compactionReminder = `<system-reminder>\n${COMPACTION_PROMPT}\n</system-reminder>`
-    const llmMessages = [
-      ...assembledRequest.messages,
-      { role: 'user' as const, content: compactionReminder },
-    ]
+    const llmMessages = [...assembledRequest.messages, { role: 'user' as const, content: compactionReminder }]
 
     const compactPromptMsgId = crypto.randomUUID()
-    this.eventStore.append(sessionId, createMessageStartEvent(compactPromptMsgId, 'user', COMPACTION_PROMPT, {
-      ...(subAgentId ? { subAgentId } : {}),
-      ...(this.config.subAgentType ? { subAgentType: this.config.subAgentType } : {}),
-      isSystemGenerated: true,
-      messageKind: 'auto-prompt',
-      metadata: {
-        type: 'compaction',
-        name: 'Compaction',
-        color: '#64748b',
+    this.eventStore.append(
+      sessionId,
+      createMessageStartEvent(compactPromptMsgId, 'user', COMPACTION_PROMPT, {
         ...(subAgentId ? { subAgentId } : {}),
-      },
-    }))
+        ...(this.config.subAgentType ? { subAgentType: this.config.subAgentType } : {}),
+        isSystemGenerated: true,
+        messageKind: 'auto-prompt',
+        metadata: {
+          type: 'compaction',
+          name: 'Compaction',
+          color: '#64748b',
+          ...(subAgentId ? { subAgentId } : {}),
+        },
+      }),
+    )
     this.eventStore.append(sessionId, { type: 'message.done', data: { messageId: compactPromptMsgId } })
 
     const assistantMsgId = crypto.randomUUID()
-    this.eventStore.append(sessionId, createMessageStartEvent(assistantMsgId, 'assistant', undefined, {
-      ...(subAgentId ? { subAgentId } : {}),
-      ...(this.config.subAgentType ? { subAgentType: this.config.subAgentType } : {}),
-    }))
+    this.eventStore.append(
+      sessionId,
+      createMessageStartEvent(assistantMsgId, 'assistant', undefined, {
+        ...(subAgentId ? { subAgentId } : {}),
+        ...(this.config.subAgentType ? { subAgentType: this.config.subAgentType } : {}),
+      }),
+    )
 
     const compactionTurnMetrics = new TurnMetrics()
 
-    const result = await consumeStreamGenerator(streamLLMPure({
-      messageId: assistantMsgId,
-      systemPrompt: assembledRequest.systemPrompt,
-      llmClient,
-      messages: llmMessages,
-      tools: plannerToolRegistry.definitions,
-      toolChoice: 'none',
-      disableThinking: true,
-      signal,
-    }), event => this.eventStore.append(sessionId, event))
+    const result = await consumeStreamGenerator(
+      streamLLMPure({
+        messageId: assistantMsgId,
+        systemPrompt: assembledRequest.systemPrompt,
+        llmClient,
+        messages: llmMessages,
+        tools: plannerToolRegistry.definitions,
+        toolChoice: 'none',
+        disableThinking: true,
+        signal,
+      }),
+      (event) => this.eventStore.append(sessionId, event),
+    )
 
     if (result.aborted) {
       throw new Error('Aborted')
@@ -231,7 +237,11 @@ export class LLMExecutor {
     this.compactionCount++
     this.config.messages = [{ role: 'user', content: `Previous context summary: ${summary}`, source: 'history' }]
 
-    const contextEstimate = estimateContextSize(compactionCtx.systemPrompt, [{ role: 'user', content: summary }], this.maxTokens)
+    const contextEstimate = estimateContextSize(
+      compactionCtx.systemPrompt,
+      [{ role: 'user', content: summary }],
+      this.maxTokens,
+    )
     this.emitContextState(contextEstimate.estimatedTokens)
 
     logger.info('Compaction complete in executor', {
@@ -252,16 +262,19 @@ export class LLMExecutor {
     const { llmClient, signal, systemPrompt, messages, tools, subAgentId, subAgentType } = this.config
 
     const assistantMsgId = crypto.randomUUID()
-    this.eventStore.append(this.sessionId, createMessageStartEvent(assistantMsgId, 'assistant', undefined, {
-      ...(subAgentId ? { subAgentId } : {}),
-      ...(subAgentType ? { subAgentType } : {}),
-    }))
+    this.eventStore.append(
+      this.sessionId,
+      createMessageStartEvent(assistantMsgId, 'assistant', undefined, {
+        ...(subAgentId ? { subAgentId } : {}),
+        ...(subAgentType ? { subAgentType } : {}),
+      }),
+    )
 
     const streamGen = streamLLMPure({
       messageId: assistantMsgId,
       systemPrompt,
       llmClient,
-      messages: messages.map(m => ({
+      messages: messages.map((m) => ({
         role: m.role,
         content: m.content,
         ...(m.toolCalls ? { toolCalls: m.toolCalls } : {}),
@@ -273,10 +286,15 @@ export class LLMExecutor {
       disableThinking: true,
     })
 
-    const result = await consumeStreamGenerator(streamGen, event => this.eventStore.append(this.sessionId, event))
+    const result = await consumeStreamGenerator(streamGen, (event) => this.eventStore.append(this.sessionId, event))
 
     if (!result.aborted) {
-      this.config.turnMetrics.addLLMCall(result.timing, result.usage.promptTokens, result.usage.completionTokens, result.modelParams)
+      this.config.turnMetrics.addLLMCall(
+        result.timing,
+        result.usage.promptTokens,
+        result.usage.completionTokens,
+        result.modelParams,
+      )
       this.emitContextState(result.usage.promptTokens)
     }
 
@@ -350,8 +368,16 @@ function buildPromptContext(
     systemPrompt,
     injectedFiles,
     userMessage,
-    messages: messages.map(m => ({ role: m.role as 'user' | 'assistant' | 'tool', content: m.content, source: m.source })) as import('../../shared/types.js').PromptContextMessage[],
-    tools: tools.map(t => ({ name: t.function.name, description: t.function.description, parameters: t.function.parameters })),
+    messages: messages.map((m) => ({
+      role: m.role as 'user' | 'assistant' | 'tool',
+      content: m.content,
+      source: m.source,
+    })) as import('../../shared/types.js').PromptContextMessage[],
+    tools: tools.map((t) => ({
+      name: t.function.name,
+      description: t.function.description,
+      parameters: t.function.parameters,
+    })),
     requestOptions: { toolChoice: 'auto', disableThinking: true },
   }
 }
@@ -377,7 +403,8 @@ export interface SubAgentResult {
   failed?: Array<{ id: string; reason: string }>
 }
 
-const RETURN_VALUE_NUDGE = 'You must call return_value with a summary of your findings before finishing. Call return_value now.'
+const RETURN_VALUE_NUDGE =
+  'You must call return_value with a summary of your findings before finishing. Call return_value now.'
 
 export async function runSubAgentWithExecutor(options: RunSubAgentOptions): Promise<SubAgentResult> {
   const {
@@ -407,7 +434,7 @@ export async function runSubAgentWithExecutor(options: RunSubAgentOptions): Prom
   }
 
   const { content: instructionContent, files } = await getAllInstructions(session.workdir, session.projectId)
-  const injectedFiles: InjectedFile[] = files.map(f => ({ path: f.path, content: f.content ?? '', source: f.source }))
+  const injectedFiles: InjectedFile[] = files.map((f) => ({ path: f.path, content: f.content ?? '', source: f.source }))
   const configDir = getGlobalConfigDir(getRuntimeConfig().mode ?? 'production')
   const skills = await getEnabledSkillMetadata(configDir)
 
@@ -417,9 +444,7 @@ export async function runSubAgentWithExecutor(options: RunSubAgentOptions): Prom
     skills.length > 0 ? skills : undefined,
   )
 
-  const initialContextMessages: RequestContextMessage[] = [
-    { role: 'user', content: prompt, source: 'runtime' },
-  ]
+  const initialContextMessages: RequestContextMessage[] = [{ role: 'user', content: prompt, source: 'runtime' }]
 
   const executor = new LLMExecutor({
     sessionId,
@@ -448,27 +473,33 @@ export async function runSubAgentWithExecutor(options: RunSubAgentOptions): Prom
     }
 
     const assistantMsgId = crypto.randomUUID()
-    eventStore.append(sessionId, createMessageStartEvent(assistantMsgId, 'assistant', undefined, {
-      contextWindowId: currentWindowMessageOptions.contextWindowId,
-      subAgentId: subAgentInstanceId,
-      subAgentType,
-    }))
+    eventStore.append(
+      sessionId,
+      createMessageStartEvent(assistantMsgId, 'assistant', undefined, {
+        contextWindowId: currentWindowMessageOptions.contextWindowId,
+        subAgentId: subAgentInstanceId,
+        subAgentType,
+      }),
+    )
 
     const result = await executor.executeWithCompaction()
 
     if (result.aborted) {
       const stats = turnMetrics.buildStats(statsIdentity, subAgentType)
-      eventStore.append(sessionId, createMessageDoneEvent(assistantMsgId, {
-        stats,
-        partial: true,
-        promptContext: buildPromptContext(
-          systemPrompt,
-          injectedFiles,
-          prompt,
-          executor.getMessages().map(m => ({ role: m.role, content: m.content, source: m.source })),
-          toolRegistry.definitions,
-        ),
-      }))
+      eventStore.append(
+        sessionId,
+        createMessageDoneEvent(assistantMsgId, {
+          stats,
+          partial: true,
+          promptContext: buildPromptContext(
+            systemPrompt,
+            injectedFiles,
+            prompt,
+            executor.getMessages().map((m) => ({ role: m.role, content: m.content, source: m.source })),
+            toolRegistry.definitions,
+          ),
+        }),
+      )
       eventStore.append(sessionId, createChatDoneEvent(assistantMsgId, 'stopped', stats))
       throw new Error('Aborted')
     }
@@ -508,13 +539,16 @@ export async function runSubAgentWithExecutor(options: RunSubAgentOptions): Prom
           }
 
           const stalledMsgId = crypto.randomUUID()
-          eventStore.append(sessionId, createMessageStartEvent(stalledMsgId, 'user', nudgeConfig.buildRestartContent(criteriaAwaiting), {
-            contextWindowId: currentWindowMessageOptions.contextWindowId,
-            isSystemGenerated: true,
-            messageKind: 'correction',
-            subAgentId: subAgentInstanceId,
-            subAgentType,
-          }))
+          eventStore.append(
+            sessionId,
+            createMessageStartEvent(stalledMsgId, 'user', nudgeConfig.buildRestartContent(criteriaAwaiting), {
+              contextWindowId: currentWindowMessageOptions.contextWindowId,
+              isSystemGenerated: true,
+              messageKind: 'correction',
+              subAgentId: subAgentInstanceId,
+              subAgentType,
+            }),
+          )
           eventStore.append(sessionId, { type: 'message.done', data: { messageId: stalledMsgId } })
         }
       }
@@ -540,19 +574,37 @@ export async function runSubAgentWithExecutor(options: RunSubAgentOptions): Prom
       }
 
       const stats = turnMetrics.buildStats(statsIdentity, subAgentType)
-      eventStore.append(sessionId, createMessageDoneEvent(assistantMsgId, {
-        segments: [],
-        stats,
-        promptContext: buildPromptContext(systemPrompt, injectedFiles, prompt, executor.getMessages(), toolRegistry.definitions),
-      }))
+      eventStore.append(
+        sessionId,
+        createMessageDoneEvent(assistantMsgId, {
+          segments: [],
+          stats,
+          promptContext: buildPromptContext(
+            systemPrompt,
+            injectedFiles,
+            prompt,
+            executor.getMessages(),
+            toolRegistry.definitions,
+          ),
+        }),
+      )
       eventStore.append(sessionId, createChatDoneEvent(assistantMsgId, 'complete', stats))
       break
     }
 
-    eventStore.append(sessionId, createMessageDoneEvent(assistantMsgId, {
-      segments: [],
-      promptContext: buildPromptContext(systemPrompt, injectedFiles, prompt, executor.getMessages(), toolRegistry.definitions),
-    }))
+    eventStore.append(
+      sessionId,
+      createMessageDoneEvent(assistantMsgId, {
+        segments: [],
+        promptContext: buildPromptContext(
+          systemPrompt,
+          injectedFiles,
+          prompt,
+          executor.getMessages(),
+          toolRegistry.definitions,
+        ),
+      }),
+    )
 
     const batchResult = await (async () => {
       const { executeToolBatch } = await import('../chat/agent-loop.js')
@@ -574,7 +626,11 @@ export async function runSubAgentWithExecutor(options: RunSubAgentOptions): Prom
       returnValueResult = batchResult.returnValueResult
     }
 
-    executor.addMessage({ role: 'tool', content: batchResult.toolMessages.map(m => m.content).join('\n'), source: 'history' })
+    executor.addMessage({
+      role: 'tool',
+      content: batchResult.toolMessages.map((m) => m.content).join('\n'),
+      source: 'history',
+    })
 
     session = sessionManager.requireSession(sessionId)
 
@@ -584,9 +640,15 @@ export async function runSubAgentWithExecutor(options: RunSubAgentOptions): Prom
   }
 
   const failed = session.criteria
-    .filter(c => c.status.type === 'failed')
-    .map(c => ({ id: c.id, reason: ((c.status as { reason?: string | null }).reason ?? 'unknown') as string }))
+    .filter((c) => c.status.type === 'failed')
+    .map((c) => ({ id: c.id, reason: ((c.status as { reason?: string | null }).reason ?? 'unknown') as string }))
   const remaining = nudgeConfig?.getCriteriaAwaiting(session.criteria) ?? []
 
-  return buildSubAgentResult(returnValueContent, returnValueResult ?? (subAgentType !== 'verifier' ? 'success' : undefined), subAgentType ?? '', failed, remaining)
+  return buildSubAgentResult(
+    returnValueContent,
+    returnValueResult ?? (subAgentType !== 'verifier' ? 'success' : undefined),
+    subAgentType ?? '',
+    failed,
+    remaining,
+  )
 }

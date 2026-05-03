@@ -1,5 +1,15 @@
 import { Router } from 'express'
-import { loadDefaultCommands, loadUserCommands, loadAllCommands, findCommandById, saveCommand, deleteCommand, commandExists, getDefaultCommandIds, getDefaultCommandContent } from '../commands/registry.js'
+import {
+  loadDefaultCommands,
+  loadUserCommands,
+  loadAllCommands,
+  findCommandById,
+  saveCommand,
+  deleteCommand,
+  commandExists,
+  getDefaultCommandIds,
+  getDefaultCommandContent,
+} from '../commands/registry.js'
 import type { CommandDefinition } from '../commands/types.js'
 import { computeOverrideIds } from './crud-helpers.js'
 
@@ -7,14 +17,11 @@ export function createCommandRoutes(configDir: string): Router {
   const router = Router()
 
   router.get('/', async (_req, res) => {
-    const [defaults, userItems] = await Promise.all([
-      loadDefaultCommands(),
-      loadUserCommands(configDir),
-    ])
+    const [defaults, userItems] = await Promise.all([loadDefaultCommands(), loadUserCommands(configDir)])
     const overrideIds = computeOverrideIds(defaults, userItems)
     res.json({
-      defaults: defaults.map(c => c.metadata),
-      userItems: userItems.map(c => c.metadata),
+      defaults: defaults.map((c) => c.metadata),
+      userItems: userItems.map((c) => c.metadata),
       overrideIds,
     })
   })
@@ -88,7 +95,7 @@ export function createCommandRoutes(configDir: string): Router {
     const { id } = req.params
     const defaults = await loadDefaultCommands()
     const userItems = await loadUserCommands(configDir)
-    const source = defaults.find(c => c.metadata.id === id) ?? userItems.find(c => c.metadata.id === id)
+    const source = defaults.find((c) => c.metadata.id === id) ?? userItems.find((c) => c.metadata.id === id)
     if (!source) {
       return res.status(404).json({ error: 'Command not found' })
     }

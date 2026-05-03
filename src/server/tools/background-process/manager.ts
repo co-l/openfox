@@ -10,7 +10,9 @@ const listeners = new Set<ProcessEventListener>()
 
 export function onProcessEvent(callback: ProcessEventListener): () => void {
   listeners.add(callback)
-  return () => { listeners.delete(callback) }
+  return () => {
+    listeners.delete(callback)
+  }
 }
 
 function emitProcessEvent(processId: string, msg: ServerMessage): void {
@@ -41,12 +43,7 @@ export function createProcess(
   return process
 }
 
-export function startProcessCommand(
-  processId: string,
-  sessionId: string,
-  command: string,
-  cwd: string,
-): number | null {
+export function startProcessCommand(processId: string, sessionId: string, command: string, cwd: string): number | null {
   const proc = store.startProcess(processId, sessionId, 0)
   if (!proc) return null
 
@@ -109,12 +106,9 @@ export function startProcessCommand(
   return child.pid ?? null
 }
 
-export async function stopProcess(
-  processId: string,
-  sessionId: string,
-): Promise<void> {
+export async function stopProcess(processId: string, sessionId: string): Promise<void> {
   const proc = store.getProcess(processId, sessionId)
-  
+
   if (!proc || proc.status !== 'running' || !proc.pid) {
     return
   }

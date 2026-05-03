@@ -1,2 +1,1 @@
-
-export const VERSION = process.env["VERSION"] ?? 'unknown'
+export const VERSION = process.env['VERSION'] ?? 'unknown'

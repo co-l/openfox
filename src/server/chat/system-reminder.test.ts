@@ -1,6 +1,6 @@
 /**
  * System Reminder Tests
- * 
+ *
  * Tests for mode reminder injection behavior:
  * - Reminder sent exactly once when mode is first activated
  * - No reminder on subsequent messages in same mode
@@ -20,7 +20,13 @@ vi.mock('../events/store.js', () => ({
 vi.mock('../agents/registry.js', () => ({
   loadAllAgentsDefault: vi.fn(),
   findAgentById: vi.fn((id: string) => ({
-    metadata: { id, name: id === 'planner' ? 'Planner' : 'Builder', description: '', allowedTools: [], subagent: false },
+    metadata: {
+      id,
+      name: id === 'planner' ? 'Planner' : 'Builder',
+      description: '',
+      allowedTools: [],
+      subagent: false,
+    },
     prompt: id === 'planner' ? '# Plan Mode\nPlan carefully' : '# Build Mode\nBuild carefully',
   })),
 }))
@@ -94,10 +100,11 @@ describe('System Reminder Injection', () => {
     })
 
     // Check that a system reminder was injected
-    const reminderCall = eventStore.append.mock.calls.find(([, event]: any) => 
-      event.type === 'message.start' && 
-      event.data.messageKind === 'auto-prompt' &&
-      event.data.content?.includes('<system-reminder>')
+    const reminderCall = eventStore.append.mock.calls.find(
+      ([, event]: any) =>
+        event.type === 'message.start' &&
+        event.data.messageKind === 'auto-prompt' &&
+        event.data.content?.includes('<system-reminder>'),
     )
 
     expect(reminderCall).toBeDefined()
@@ -144,10 +151,11 @@ describe('System Reminder Injection', () => {
     })
 
     // Check that NO new system reminder was injected
-    const reminderCalls = eventStore.append.mock.calls.filter(([, event]: any) => 
-      event.type === 'message.start' && 
-      event.data.messageKind === 'auto-prompt' &&
-      event.data.content?.includes('<system-reminder>')
+    const reminderCalls = eventStore.append.mock.calls.filter(
+      ([, event]: any) =>
+        event.type === 'message.start' &&
+        event.data.messageKind === 'auto-prompt' &&
+        event.data.content?.includes('<system-reminder>'),
     )
 
     expect(reminderCalls).toHaveLength(0)
@@ -193,11 +201,12 @@ describe('System Reminder Injection', () => {
     })
 
     // Check that a NEW builder reminder was injected
-    const reminderCall = eventStore.append.mock.calls.find(([, event]: any) => 
-      event.type === 'message.start' && 
-      event.data.messageKind === 'auto-prompt' &&
-      event.data.content?.includes('<system-reminder>') &&
-      event.data.content?.includes('Build Mode')
+    const reminderCall = eventStore.append.mock.calls.find(
+      ([, event]: any) =>
+        event.type === 'message.start' &&
+        event.data.messageKind === 'auto-prompt' &&
+        event.data.content?.includes('<system-reminder>') &&
+        event.data.content?.includes('Build Mode'),
     )
 
     expect(reminderCall).toBeDefined()
@@ -265,10 +274,11 @@ describe('System Reminder Injection', () => {
     }
 
     // Count how many system reminders were injected
-    const reminderCalls = eventStore.append.mock.calls.filter(([, event]: any) => 
-      event.type === 'message.start' && 
-      event.data.messageKind === 'auto-prompt' &&
-      event.data.content?.includes('<system-reminder>')
+    const reminderCalls = eventStore.append.mock.calls.filter(
+      ([, event]: any) =>
+        event.type === 'message.start' &&
+        event.data.messageKind === 'auto-prompt' &&
+        event.data.content?.includes('<system-reminder>'),
     )
 
     // Should only have exactly 1 reminder (from the first iteration)

@@ -57,13 +57,13 @@ function parseAgentFile(raw: string, filename: string): AgentDefinition | undefi
 }
 
 async function loadAgentsFromDir(dir: string): Promise<AgentDefinition[]> {
-  if (!await pathExists(dir)) {
+  if (!(await pathExists(dir))) {
     return []
   }
 
   let files: string[]
   try {
-    files = (await readdir(dir)).filter(f => f.endsWith(AGENT_EXTENSION))
+    files = (await readdir(dir)).filter((f) => f.endsWith(AGENT_EXTENSION))
   } catch {
     return []
   }
@@ -95,10 +95,7 @@ export async function loadUserAgents(configDir: string): Promise<AgentDefinition
 }
 
 export async function loadAllAgents(configDir: string): Promise<AgentDefinition[]> {
-  const [defaultAgents, userAgents] = await Promise.all([
-    loadDefaultAgents(),
-    loadUserAgents(configDir),
-  ])
+  const [defaultAgents, userAgents] = await Promise.all([loadDefaultAgents(), loadUserAgents(configDir)])
 
   const agentMap = new Map<string, AgentDefinition>()
   for (const agent of defaultAgents) {
@@ -123,16 +120,18 @@ export async function loadAllAgentsDefault(): Promise<AgentDefinition[]> {
 export async function getDefaultAgentIds(): Promise<string[]> {
   for (const dir of [DEFAULTS_DIR, DEFAULTS_DIR_ALT]) {
     try {
-      const files = (await readdir(dir)).filter(f => f.endsWith(AGENT_EXTENSION))
-      return files.map(f => f.replace(AGENT_EXTENSION, ''))
-    } catch { /* try next */ }
+      const files = (await readdir(dir)).filter((f) => f.endsWith(AGENT_EXTENSION))
+      return files.map((f) => f.replace(AGENT_EXTENSION, ''))
+    } catch {
+      /* try next */
+    }
   }
   return []
 }
 
 export async function getDefaultAgentContent(agentId: string): Promise<AgentDefinition | null> {
   const defaults = await loadDefaultAgents()
-  return defaults.find(a => a.metadata.id === agentId) ?? null
+  return defaults.find((a) => a.metadata.id === agentId) ?? null
 }
 
 export async function isDefaultAgent(agentId: string): Promise<boolean> {
@@ -142,22 +141,19 @@ export async function isDefaultAgent(agentId: string): Promise<boolean> {
 
 function getAgentFilePaths(agentsDir: string, agentId: string): string[] {
   const hyphenated = agentId.replace(/_/g, '-')
-  return [
-    join(agentsDir, `${agentId}${AGENT_EXTENSION}`),
-    join(agentsDir, `${hyphenated}${AGENT_EXTENSION}`),
-  ]
+  return [join(agentsDir, `${agentId}${AGENT_EXTENSION}`), join(agentsDir, `${hyphenated}${AGENT_EXTENSION}`)]
 }
 
 export function findAgentById(agentId: string, agents: AgentDefinition[]): AgentDefinition | undefined {
-  return agents.find(a => a.metadata.id === agentId)
+  return agents.find((a) => a.metadata.id === agentId)
 }
 
 export function getSubAgents(agents: AgentDefinition[]): AgentDefinition[] {
-  return agents.filter(a => a.metadata.subagent)
+  return agents.filter((a) => a.metadata.subagent)
 }
 
 export function getTopLevelAgents(agents: AgentDefinition[]): AgentDefinition[] {
-  return agents.filter(a => !a.metadata.subagent)
+  return agents.filter((a) => !a.metadata.subagent)
 }
 
 export async function agentExists(configDir: string, agentId: string): Promise<boolean> {
@@ -173,7 +169,7 @@ export async function agentExists(configDir: string, agentId: string): Promise<b
 
 export async function saveAgent(configDir: string, agent: AgentDefinition): Promise<void> {
   const agentsDir = getAgentsDir(configDir)
-  if (!await pathExists(agentsDir)) {
+  if (!(await pathExists(agentsDir))) {
     await mkdir(agentsDir, { recursive: true })
   }
   const filePath = join(agentsDir, `${agent.metadata.id}${AGENT_EXTENSION}`)
@@ -200,11 +196,6 @@ export async function deleteAgent(configDir: string, agentId: string): Promise<{
 }
 
 export async function getOverrideAgentIds(configDir: string): Promise<string[]> {
-  const [defaultIds, userAgents] = await Promise.all([
-    getDefaultAgentIds(),
-    loadUserAgents(configDir),
-  ])
-  return userAgents
-    .map(agent => agent.metadata.id)
-    .filter(id => defaultIds.includes(id))
+  const [defaultIds, userAgents] = await Promise.all([getDefaultAgentIds(), loadUserAgents(configDir)])
+  return userAgents.map((agent) => agent.metadata.id).filter((id) => defaultIds.includes(id))
 }

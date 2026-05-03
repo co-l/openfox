@@ -118,7 +118,7 @@ describe('getCurrentWindowMessages', () => {
     emitUserMessage('s1', 'Message in win-2', { contextWindowId: 'win-2' })
 
     const messages = getCurrentWindowMessages('s1')
-    const contents = messages.map(m => m.content)
+    const contents = messages.map((m) => m.content)
     expect(contents).toContain('Message in win-2')
     expect(contents).not.toContain('Message in win-1')
   })
@@ -141,8 +141,8 @@ describe('emitUserMessage', () => {
     emitUserMessage('s1', 'Test message', { contextWindowId: 'win-1' })
 
     const state = getSessionState('s1')
-    const userMessages = state!.messages.filter(m => m.role === 'user')
-    expect(userMessages.some(m => m.content === 'Test message')).toBe(true)
+    const userMessages = state!.messages.filter((m) => m.role === 'user')
+    expect(userMessages.some((m) => m.content === 'Test message')).toBe(true)
   })
 
   it('should support system-generated messages', () => {
@@ -154,7 +154,7 @@ describe('emitUserMessage', () => {
     })
 
     const state = getSessionState('s1')
-    const autoMsg = state!.messages.find(m => m.content === 'Auto prompt')
+    const autoMsg = state!.messages.find((m) => m.content === 'Auto prompt')
     expect(autoMsg).toBeDefined()
     expect(autoMsg!.isSystemGenerated).toBe(true)
     expect(autoMsg!.messageKind).toBe('auto-prompt')
@@ -170,7 +170,7 @@ describe('emitAssistantMessageStart / emitMessageDelta / emitMessageDone', () =>
     emitMessageDone('s1', msgId)
 
     const state = getSessionState('s1')
-    const assistantMsg = state!.messages.find(m => m.id === msgId)
+    const assistantMsg = state!.messages.find((m) => m.id === msgId)
     expect(assistantMsg).toBeDefined()
     expect(assistantMsg!.role).toBe('assistant')
     expect(assistantMsg!.content).toBe('Hello world')
@@ -183,7 +183,7 @@ describe('emitAssistantMessageStart / emitMessageDelta / emitMessageDone', () =>
     emitMessageDone('s1', msgId, { partial: true })
 
     const state = getSessionState('s1')
-    const msg = state!.messages.find(m => m.id === msgId)
+    const msg = state!.messages.find((m) => m.id === msgId)
     expect(msg!.partial).toBe(true)
   })
 })
@@ -254,9 +254,7 @@ describe('emitCriteriaSet / emitCriterionUpdated', () => {
 
   it('should update individual criterion status', () => {
     initSession('s1')
-    emitCriteriaSet('s1', [
-      { id: 'c1', description: 'Build the thing', status: { type: 'pending' }, attempts: [] },
-    ])
+    emitCriteriaSet('s1', [{ id: 'c1', description: 'Build the thing', status: { type: 'pending' }, attempts: [] }])
     emitCriterionUpdated('s1', 'c1', { type: 'passed', verifiedAt: new Date().toISOString() })
 
     const state = getSessionState('s1')
@@ -376,11 +374,16 @@ describe('tool events', () => {
       arguments: { path: '/tmp/test.ts' } as Record<string, unknown>,
     }
     emitToolCall('s1', msgId, toolCall)
-    emitToolResult('s1', msgId, 'tc-1', { success: true, output: 'file contents here', durationMs: 10, truncated: false })
+    emitToolResult('s1', msgId, 'tc-1', {
+      success: true,
+      output: 'file contents here',
+      durationMs: 10,
+      truncated: false,
+    })
     emitMessageDone('s1', msgId)
 
     const state = getSessionState('s1')
-    const msg = state!.messages.find(m => m.id === msgId)
+    const msg = state!.messages.find((m) => m.id === msgId)
     expect(msg).toBeDefined()
     expect(msg!.toolCalls).toBeDefined()
     expect(msg!.toolCalls!.length).toBeGreaterThanOrEqual(1)
@@ -391,7 +394,7 @@ describe('getSessionState with missing session.initialized', () => {
   it('should still return valid state if sessionInit is present in snapshot', async () => {
     const { getEventStore } = await import('./store.js')
     const eventStore = getEventStore()
-    
+
     initSession('s1', 'original-window')
     emitUserMessage('s1', 'Hello', { contextWindowId: 'original-window' })
 
@@ -420,10 +423,10 @@ describe('getSessionState with missing session.initialized', () => {
         contextWindowId: 'original-window',
       },
     }
-    
+
     // Delete the session.initialized event (seq 1)
     eventStore.deleteEventsUpToSeq('s1', 1)
-    
+
     // Insert a snapshot with sessionInit
     eventStore.append('s1', { type: 'turn.snapshot', data: snapshotWithSessionInit })
 
@@ -513,7 +516,13 @@ describe('getSessionState with missing session.initialized', () => {
       isRunning: false,
       messages: [],
       criteria: [],
-      contextState: { currentTokens: 1000, maxTokens: 200000, compactionCount: 0, dangerZone: false, canCompact: false },
+      contextState: {
+        currentTokens: 1000,
+        maxTokens: 200000,
+        compactionCount: 0,
+        dangerZone: false,
+        canCompact: false,
+      },
       currentContextWindowId: 'recovered-window-id',
       todos: [],
       readFiles: [],

@@ -59,9 +59,7 @@ export interface GenerateSessionNameResult {
  * Uses the provided LLM client (respecting user's selected model).
  * Disables thinking output for minimal latency.
  */
-export async function generateSessionName(
-  options: GenerateSessionNameOptions
-): Promise<GenerateSessionNameResult> {
+export async function generateSessionName(options: GenerateSessionNameOptions): Promise<GenerateSessionNameResult> {
   const { userMessage, llmClient, signal } = options
 
   try {
@@ -79,20 +77,18 @@ export async function generateSessionName(
     ]
 
     const timeoutSignal = AbortSignal.timeout(60000)
-    const composedSignal = signal
-      ? AbortSignal.any([timeoutSignal, signal])
-      : timeoutSignal
+    const composedSignal = signal ? AbortSignal.any([timeoutSignal, signal]) : timeoutSignal
 
     const response = await llmClient.complete({
       messages,
       tools: [],
       signal: composedSignal,
-      disableThinking: true
+      disableThinking: true,
     })
 
     // Clean up the response: trim whitespace and ensure it's under 50 chars
     let name = response.content.trim()
-    
+
     // Truncate to 50 characters if needed
     if (name.length > 50) {
       name = name.substring(0, 47) + '...'
@@ -168,11 +164,7 @@ export interface ApplyGeneratedSessionNameDeps {
   broadcastForSession: (sessionId: string, msg: ReturnType<typeof createSessionStateMessage>) => void
 }
 
-export function applyGeneratedSessionName(
-  sessionId: string,
-  name: string,
-  deps: ApplyGeneratedSessionNameDeps
-): void {
+export function applyGeneratedSessionName(sessionId: string, name: string, deps: ApplyGeneratedSessionNameDeps): void {
   updateSessionMetadata(sessionId, { title: name })
   deps.eventStore.append(sessionId, {
     type: 'session.name_generated',

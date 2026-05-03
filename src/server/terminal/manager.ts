@@ -132,7 +132,7 @@ class TerminalManager {
 
   getByProject(projectId: string): TerminalSession[] {
     if (!projectId) return []
-    return Array.from(this.sessions.values()).filter(s => s.projectId === projectId)
+    return Array.from(this.sessions.values()).filter((s) => s.projectId === projectId)
   }
 
   getOutputHistory(sessionId: string): string {

@@ -46,10 +46,10 @@ describe('project-creator', () => {
       // Frontend passes full path as workdir
       const fullPath = join(testDir, 'my-project')
       const project = await createDirectoryWithGit('my-project', fullPath)
-      
+
       expect(project.name).toBe('my-project')
       expect(project.workdir).toBe(fullPath)
-      
+
       const gitDir = join(fullPath, '.git')
       expect(await checkExists(gitDir)).toBe(true)
     })
@@ -58,12 +58,12 @@ describe('project-creator', () => {
       // User clicked on existing folder
       const existingDir = join(testDir, 'existing')
       await mkdir(existingDir)
-      
+
       const project = await createDirectoryWithGit('existing', existingDir)
-      
+
       expect(project.name).toBe('existing')
       expect(project.workdir).toBe(existingDir)
-      
+
       const gitDir = join(existingDir, '.git')
       expect(await checkExists(gitDir)).toBe(true)
     })
@@ -71,7 +71,7 @@ describe('project-creator', () => {
     it('handles special chars in name', async () => {
       const fullPath = join(testDir, 'test.project-123')
       const project = await createDirectoryWithGit('test.project-123', fullPath)
-      
+
       expect(project.name).toBe('test.project-123')
       expect(project.workdir).toBe(fullPath)
     })

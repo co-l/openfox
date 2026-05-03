@@ -196,7 +196,7 @@ class DevServerManager {
       this.emitOutput(workdir, { stream: 'stderr', content })
 
       // Detect error patterns in stderr — set warning if process is still running
-      if (instance.state === 'running' && ERROR_PATTERNS.some(p => p.test(content))) {
+      if (instance.state === 'running' && ERROR_PATTERNS.some((p) => p.test(content))) {
         instance.state = 'warning'
         instance.errorMessage = content.trim().slice(0, 500)
         this.emitStateChange(workdir, 'warning', instance.errorMessage)
@@ -290,17 +290,21 @@ class DevServerManager {
   /** Register a global listener for output from any dev server */
   onOutput(callback: OutputListener): () => void {
     this.outputListeners.add(callback)
-    return () => { this.outputListeners.delete(callback) }
+    return () => {
+      this.outputListeners.delete(callback)
+    }
   }
 
   /** Register a global listener for state changes from any dev server */
   onStateChange(callback: StateListener): () => void {
     this.stateListeners.add(callback)
-    return () => { this.stateListeners.delete(callback) }
+    return () => {
+      this.stateListeners.delete(callback)
+    }
   }
 
   async stopAll(): Promise<void> {
-    const stops = Array.from(this.instances.keys()).map(workdir => this.stop(workdir))
+    const stops = Array.from(this.instances.keys()).map((workdir) => this.stop(workdir))
     await Promise.allSettled(stops)
     this.instances.clear()
   }

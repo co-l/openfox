@@ -10,10 +10,13 @@ import type { AgentDefinition } from '../agents/types.js'
  * Contains: environment, core behavior, tone, guardrails, skills.
  * Does NOT contain: agent-specific instructions, sub-agents list.
  */
-export function buildBasePrompt(workdir: string, customInstructions?: string, skills?: SkillMetadata[], modelName?: string): string {
-  const instructionsSection = customInstructions
-    ? `\n\n## CUSTOM INSTRUCTIONS\n\n${customInstructions}`
-    : ''
+export function buildBasePrompt(
+  workdir: string,
+  customInstructions?: string,
+  skills?: SkillMetadata[],
+  modelName?: string,
+): string {
+  const instructionsSection = customInstructions ? `\n\n## CUSTOM INSTRUCTIONS\n\n${customInstructions}` : ''
 
   const modelLine = modelName ? `\nModel: ${modelName}` : ''
 
@@ -146,9 +149,7 @@ ${buildSkillsSection(skills)}
 function buildSkillsSection(skills?: SkillMetadata[]): string {
   if (!skills || skills.length === 0) return ''
 
-  const listing = skills
-    .map((s, i) => `${i + 1}. **${s.id}** - ${s.description}`)
-    .join('\n')
+  const listing = skills.map((s, i) => `${i + 1}. **${s.id}** - ${s.description}`).join('\n')
 
   return `
 ## AVAILABLE SKILLS
@@ -296,7 +297,8 @@ export const SUMMARY_REQUEST_PROMPT = `Write a 2-3 sentence summary of what the 
 export const BUILDER_KICKOFF_PROMPT = (criteriaCount: number) =>
   `Implement the task and make sure you fulfil the ${criteriaCount} criteria.`
 
-export const VERIFIER_KICKOFF_PROMPT = 'Verify each criterion marked [NEEDS VERIFICATION]. Read the code, run tests if applicable, then call criterion with action "pass" or "fail" for each.'
+export const VERIFIER_KICKOFF_PROMPT =
+  'Verify each criterion marked [NEEDS VERIFICATION]. Read the code, run tests if applicable, then call criterion with action "pass" or "fail" for each.'
 
 export const COMPACTION_PROMPT = `You are a helpful AI assistant tasked with summarizing conversations for continuation.
 

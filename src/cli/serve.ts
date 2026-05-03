@@ -16,40 +16,40 @@ export interface ServeOptions {
 
 export async function runServe(options: ServeOptions): Promise<void> {
   const { mode, port, openBrowser } = options
-  
+
   // Ensure data directory exists before starting server
   await ensureDataDirExists(mode)
-  
+
   const globalConfig = await loadGlobalConfig(mode)
   const activeProvider = getActiveProvider(globalConfig)
   const env = loadConfig()
-  
+
   // Environment variables take precedence over global config file
   // This allows CLI overrides and e2e test configuration to work properly
   const envBackend = env.llm.backend
   const envModel = env.llm.model
   const envUrl = env.llm.baseUrl
-  
+
   // Only use env values if they're not the defaults (meaning they were explicitly set)
   const isEnvBackendExplicit = envBackend !== 'auto'
   const isEnvModelExplicit = envModel !== 'qwen3.5-122b-int4-autoround' // default in config.ts
   const isEnvUrlExplicit = envUrl !== 'http://localhost:8000/v1' // default in config.ts
-  
+
   // Get provider values with fallbacks
   const providerUrl = activeProvider?.url ?? envUrl
   const defaultModel = getDefaultModel(globalConfig) ?? envModel
   const providerBackend = (activeProvider?.backend ?? envBackend) as LlmBackend | 'auto'
-  
+
   const merged = {
     ...env,
-    llm: { 
-      ...env.llm, 
+    llm: {
+      ...env.llm,
       baseUrl: isEnvUrlExplicit ? envUrl : providerUrl,
       model: isEnvModelExplicit ? envModel : defaultModel,
       backend: isEnvBackendExplicit ? envBackend : providerBackend,
     },
-    server: { 
-      ...env.server, 
+    server: {
+      ...env.server,
       port: port ?? env.server.port,
       host: env.server.host ?? globalConfig.server.host ?? '127.0.0.1',
       openBrowser: openBrowser ?? globalConfig.server.openBrowser,
@@ -59,7 +59,7 @@ export async function runServe(options: ServeOptions): Promise<void> {
       path: env.database.path !== './openfox.db' ? env.database.path : getDatabasePath(mode),
     },
     logging: {
-      level: globalConfig.logging?.level ?? 'error' as const,
+      level: globalConfig.logging?.level ?? ('error' as const),
     },
     mode,
     // Pass providers for the server to use
@@ -71,9 +71,9 @@ export async function runServe(options: ServeOptions): Promise<void> {
     // Normalize: remove trailing slash to prevent double slashes in paths
     workdir: (process.env['OPENFOX_WORKDIR'] ?? globalConfig.workspace?.workdir ?? process.cwd()).replace(/\/$/, ''),
   }
-  
+
   await createServer(merged)
-  
+
   // Display startup banner
   displayStartupBanner({
     host: merged.server.host,
@@ -81,10 +81,12 @@ export async function runServe(options: ServeOptions): Promise<void> {
     databasePath: merged.database.path,
     configPath: getGlobalConfigPath(mode),
   })
-  
+
   if (merged.server.openBrowser) {
-    open(`http://${merged.server.host === '127.0.0.1' ? 'localhost' : merged.server.host}:${merged.server.port}`).catch(() => {
-      logger.warn('Could not open browser automatically')
-    })
+    open(`http://${merged.server.host === '127.0.0.1' ? 'localhost' : merged.server.host}:${merged.server.port}`).catch(
+      () => {
+        logger.warn('Could not open browser automatically')
+      },
+    )
   }
 }

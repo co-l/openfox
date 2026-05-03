@@ -20,7 +20,14 @@ import { buildSnapshotFromSessionState } from '../events/folding.js'
 import type { SessionManager } from '../session/index.js'
 import { getToolRegistryForAgent, PathAccessDeniedError, type ToolRegistry } from '../tools/index.js'
 import { BUILDER_KICKOFF_PROMPT, VERIFIER_KICKOFF_PROMPT, buildAgentReminder } from './prompts.js'
-import { TurnMetrics, createMessageStartEvent, createMessageDoneEvent, createToolCallEvent, createToolResultEvent, createChatDoneEvent } from './stream-pure.js'
+import {
+  TurnMetrics,
+  createMessageStartEvent,
+  createMessageDoneEvent,
+  createToolCallEvent,
+  createToolResultEvent,
+  createChatDoneEvent,
+} from './stream-pure.js'
 import { assembleAgentRequest } from './request-context.js'
 import { runTopLevelAgentLoop } from './agent-loop.js'
 import { executeSubAgent } from '../sub-agents/manager.js'
@@ -28,9 +35,15 @@ import { createVerifierNudgeConfig } from '../sub-agents/verifier-helpers.js'
 import { loadAllAgentsDefault, findAgentById, getSubAgents } from '../agents/registry.js'
 import { logger } from '../utils/logger.js'
 
-
 // Re-export for runner orchestrator
-export { TurnMetrics, createMessageStartEvent, createMessageDoneEvent, createToolCallEvent, createToolResultEvent, createChatDoneEvent }
+export {
+  TurnMetrics,
+  createMessageStartEvent,
+  createMessageDoneEvent,
+  createToolCallEvent,
+  createToolResultEvent,
+  createChatDoneEvent,
+}
 
 function getCurrentWindowMessageOptions(sessionId: string): { contextWindowId: string } | undefined {
   const contextWindowId = getCurrentContextWindowId(sessionId)
@@ -107,15 +120,15 @@ export async function runChatTurn(options: OrchestratorOptions): Promise<void> {
     if (deletedCount > 0) {
       logger.debug('Cleaned up old events after snapshot', { sessionId, deletedCount, snapshotSeq: snapshotEvent.seq })
     }
-
   } catch (error) {
     if (error instanceof PathAccessDeniedError) {
       const errorMsgId = crypto.randomUUID()
-      const reasonText = error.reason === 'sensitive_file'
-        ? 'sensitive files that may contain secrets'
-        : error.reason === 'both'
-        ? 'files outside the project and sensitive files'
-        : 'files outside the project directory'
+      const reasonText =
+        error.reason === 'sensitive_file'
+          ? 'sensitive files that may contain secrets'
+          : error.reason === 'both'
+            ? 'files outside the project and sensitive files'
+            : 'files outside the project directory'
       eventStore.append(sessionId, {
         type: 'chat.error',
         data: {
@@ -123,11 +136,19 @@ export async function runChatTurn(options: OrchestratorOptions): Promise<void> {
           recoverable: false,
         },
       })
-      eventStore.append(sessionId, createMessageStartEvent(errorMsgId, 'user', `Access denied: ${error.paths.join(', ')}. If you need this file, explain why and ask the user for permission.`, {
-        ...(getCurrentWindowMessageOptions(sessionId) ?? {}),
-        isSystemGenerated: true,
-        messageKind: 'correction',
-      }))
+      eventStore.append(
+        sessionId,
+        createMessageStartEvent(
+          errorMsgId,
+          'user',
+          `Access denied: ${error.paths.join(', ')}. If you need this file, explain why and ask the user for permission.`,
+          {
+            ...(getCurrentWindowMessageOptions(sessionId) ?? {}),
+            isSystemGenerated: true,
+            messageKind: 'correction',
+          },
+        ),
+      )
       eventStore.append(sessionId, createChatDoneEvent(errorMsgId, 'error'))
       return
     }
@@ -147,11 +168,19 @@ export async function runChatTurn(options: OrchestratorOptions): Promise<void> {
         recoverable: false,
       },
     })
-    eventStore.append(sessionId, createMessageStartEvent(errorMsgId, 'user', `Error: ${error instanceof Error ? error.message : 'Unknown error'}`, {
-      ...(getCurrentWindowMessageOptions(sessionId) ?? {}),
-      isSystemGenerated: true,
-      messageKind: 'correction',
-    }))
+    eventStore.append(
+      sessionId,
+      createMessageStartEvent(
+        errorMsgId,
+        'user',
+        `Error: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        {
+          ...(getCurrentWindowMessageOptions(sessionId) ?? {}),
+          isSystemGenerated: true,
+          messageKind: 'correction',
+        },
+      ),
+    )
     eventStore.append(sessionId, createChatDoneEvent(errorMsgId, 'error'))
   } finally {
     eventStore.append(sessionId, { type: 'running.changed', data: { isRunning: false } })
@@ -172,29 +201,29 @@ function injectModeReminderIfNeeded(
   sessionId: string,
   agentId: string,
   allAgents: AgentDefinition[],
-  _onMessage?: (msg: ServerMessage) => void
+  _onMessage?: (msg: ServerMessage) => void,
 ): void {
   const eventStore = getEventStore()
   const session = sessionManager.requireSession(sessionId)
-  
+
   // Check if we already injected this mode's reminder
   const lastModeReminder = session.executionState?.lastModeWithReminder
-  
+
   // Only inject if mode changed or this is the first time
   if (lastModeReminder === agentId) {
     return
   }
-  
+
   // Inject reminder for new mode
   const agentDef = findAgentById(agentId, allAgents)
   if (!agentDef) return
-  
+
   const reminderContent = buildAgentReminder(agentDef)
   const reminderMsgId = crypto.randomUUID()
   const currentWindowMessageOptions = getCurrentContextWindowId(sessionId)
     ? { contextWindowId: getCurrentContextWindowId(sessionId)! }
     : undefined
-  
+
   eventStore.append(sessionId, {
     type: 'message.start',
     data: {
@@ -215,7 +244,7 @@ function injectModeReminderIfNeeded(
     type: 'message.done',
     data: { messageId: reminderMsgId },
   })
-  
+
   // Update execution state to track which mode we injected the reminder for
   sessionManager.updateExecutionState(sessionId, {
     lastModeWithReminder: agentId,
@@ -229,24 +258,28 @@ async function runGenericAgentTurn(
 ): Promise<void> {
   const statsIdentity = resolveStatsIdentity(options)
   const allAgents = await loadAllAgentsDefault()
-  
+
   // Inject mode reminder only on mode switch
   injectModeReminderIfNeeded(options.sessionManager, options.sessionId, agentId, allAgents, options.onMessage)
-  
+
   const agentDef = findAgentById(agentId, allAgents) ?? findAgentById('planner', allAgents)!
   const subAgentDefs = getSubAgents(allAgents)
 
-  await runTopLevelAgentLoop({
-    mode: agentId,
-    sessionManager: options.sessionManager,
-    sessionId: options.sessionId,
-    llmClient: options.llmClient,
-    statsIdentity,
-    signal: options.signal,
-    onMessage: options.onMessage,
-    assembleRequest: (input) => assembleAgentRequest({ ...input, agentDef, subAgentDefs, modelName: options.llmClient.getModel() }),
-    getToolRegistry: () => getToolRegistryForAgent(agentDef),
-  }, turnMetrics)
+  await runTopLevelAgentLoop(
+    {
+      mode: agentId,
+      sessionManager: options.sessionManager,
+      sessionId: options.sessionId,
+      llmClient: options.llmClient,
+      statsIdentity,
+      signal: options.signal,
+      onMessage: options.onMessage,
+      assembleRequest: (input) =>
+        assembleAgentRequest({ ...input, agentDef, subAgentDefs, modelName: options.llmClient.getModel() }),
+      getToolRegistry: () => getToolRegistryForAgent(agentDef),
+    },
+    turnMetrics,
+  )
 }
 
 // ============================================================================
@@ -264,10 +297,7 @@ export interface BuilderTurnOptions extends OrchestratorOptions {
  * The tools hash MUST remain stable regardless of injectStepDone.
  * All tools must ALWAYS be available to maintain LLM context caching.
  */
-export function filterToolRegistryForStepDone(
-  baseRegistry: ToolRegistry,
-  _injectStepDone: boolean,
-): ToolRegistry {
+export function filterToolRegistryForStepDone(baseRegistry: ToolRegistry, _injectStepDone: boolean): ToolRegistry {
   // Always return the base registry - do NOT filter tools
   return baseRegistry
 }
@@ -280,61 +310,77 @@ export async function runBuilderTurn(
   const statsIdentity = resolveStatsIdentity(options)
   const eventStore = getEventStore()
   const allAgents = await loadAllAgentsDefault()
-  
+
   // Inject mode reminder only on mode switch
   injectModeReminderIfNeeded(options.sessionManager, options.sessionId, 'builder', allAgents, options.onMessage)
-  
+
   const builderDef = findAgentById('builder', allAgents)!
   const subAgentDefs = getSubAgents(allAgents)
 
   let stepDoneCalled = false
 
   return {
-    ...(await runTopLevelAgentLoop({
-      mode: 'builder',
-      sessionManager,
-      sessionId,
-      llmClient: options.llmClient,
-      statsIdentity,
-      signal: options.signal,
-      onMessage: options.onMessage,
-      assembleRequest: (input) => assembleAgentRequest({ ...input, agentDef: builderDef, subAgentDefs, modelName: options.llmClient.getModel() }),
-      getToolRegistry: () => {
-        const baseRegistry = getToolRegistryForAgent(builderDef)
-        return filterToolRegistryForStepDone(baseRegistry, options.injectStepDone === true)
-      },
-      onToolExecuted: (toolCall: ToolCall, toolResult: ToolResult) => {
-        if (toolCall.name === 'step_done' && toolResult.success) {
-          stepDoneCalled = true
-        }
-        if (toolResult.success && ['write_file', 'edit_file'].includes(toolCall.name)) {
-          const path = toolCall.arguments['path'] as string
-          sessionManager.addModifiedFile(sessionId, path)
-        }
-      },
-      injectKickoff: () => {
-        if (options.injectBuilderKickoff !== true) return
-        const session = sessionManager.requireSession(sessionId)
-        const events = eventStore.getEvents(sessionId)
-        const hasBuilderKickoff = events.some(e => {
-          if (e.type !== 'message.start') return false
-          const data = e.data as { messageKind?: string; content?: string }
-          return data.messageKind === 'auto-prompt' && data.content?.includes('fulfil the')
-        })
+    ...(await runTopLevelAgentLoop(
+      {
+        mode: 'builder',
+        sessionManager,
+        sessionId,
+        llmClient: options.llmClient,
+        statsIdentity,
+        signal: options.signal,
+        onMessage: options.onMessage,
+        assembleRequest: (input) =>
+          assembleAgentRequest({
+            ...input,
+            agentDef: builderDef,
+            subAgentDefs,
+            modelName: options.llmClient.getModel(),
+          }),
+        getToolRegistry: () => {
+          const baseRegistry = getToolRegistryForAgent(builderDef)
+          return filterToolRegistryForStepDone(baseRegistry, options.injectStepDone === true)
+        },
+        onToolExecuted: (toolCall: ToolCall, toolResult: ToolResult) => {
+          if (toolCall.name === 'step_done' && toolResult.success) {
+            stepDoneCalled = true
+          }
+          if (toolResult.success && ['write_file', 'edit_file'].includes(toolCall.name)) {
+            const path = toolCall.arguments['path'] as string
+            sessionManager.addModifiedFile(sessionId, path)
+          }
+        },
+        injectKickoff: () => {
+          if (options.injectBuilderKickoff !== true) return
+          const session = sessionManager.requireSession(sessionId)
+          const currentWindowMessageOptions = getCurrentContextWindowId(sessionId)
+            ? { contextWindowId: getCurrentContextWindowId(sessionId)! }
+            : undefined
+          const events = eventStore.getEvents(sessionId)
+          const hasBuilderKickoff = events.some((e) => {
+            if (e.type !== 'message.start') return false
+            const data = e.data as { messageKind?: string; content?: string }
+            return data.messageKind === 'auto-prompt' && data.content?.includes('fulfil the')
+          })
 
-        if (!hasBuilderKickoff) {
-          const kickoffMsgId = crypto.randomUUID()
-          const kickoffContent = BUILDER_KICKOFF_PROMPT(session.criteria.length)
-          eventStore.append(sessionId, createMessageStartEvent(kickoffMsgId, 'user', kickoffContent, {
-            ...(getCurrentWindowMessageOptions(sessionId) ?? {}),
-            isSystemGenerated: true,
-            messageKind: 'auto-prompt',
-            metadata: { type: 'workflow', name: 'Workflow', color: '#f59e0b' },
-          }))
-          eventStore.append(sessionId, { type: 'message.done', data: { messageId: kickoffMsgId } })
-        }
+          if (!hasBuilderKickoff) {
+            const kickoffMsgId = crypto.randomUUID()
+            const kickoffContent = BUILDER_KICKOFF_PROMPT(session.criteria.length)
+            const msgMetadata = { type: 'workflow', name: 'Workflow', color: '#f59e0b' }
+            eventStore.append(
+              sessionId,
+              createMessageStartEvent(kickoffMsgId, 'user', kickoffContent, {
+                ...(currentWindowMessageOptions ?? {}),
+                isSystemGenerated: true,
+                messageKind: 'auto-prompt',
+                metadata: msgMetadata,
+              }),
+            )
+            eventStore.append(sessionId, { type: 'message.done', data: { messageId: kickoffMsgId } })
+          }
+        },
       },
-    }, turnMetrics)),
+      turnMetrics,
+    )),
     stepDoneCalled,
   }
 }
@@ -353,15 +399,12 @@ export interface VerifierResult {
  * Run a verifier turn with fresh context.
  * Delegates to SubAgentManager for execution.
  */
-export async function runVerifierTurn(
-  options: OrchestratorOptions,
-  turnMetrics: TurnMetrics
-): Promise<VerifierResult> {
+export async function runVerifierTurn(options: OrchestratorOptions, turnMetrics: TurnMetrics): Promise<VerifierResult> {
   const { sessionManager, sessionId, llmClient, signal, onMessage } = options
   const statsIdentity = resolveStatsIdentity(options)
 
   const session = sessionManager.requireSession(sessionId)
-  const toVerify = session.criteria.filter(c => c.status.type === 'completed')
+  const toVerify = session.criteria.filter((c) => c.status.type === 'completed')
   if (toVerify.length === 0) {
     logger.debug('Nothing to verify', { sessionId })
     return { allPassed: true, failed: [] }

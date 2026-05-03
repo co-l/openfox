@@ -9,23 +9,23 @@ import type { LLMClientWithModel } from '../llm/client.js'
 export interface ToolContext {
   workdir: string
   sessionId: string
-  sessionManager: SessionManager  // Injected dependency (replaces singleton import)
-  dangerLevel?: DangerLevel  // When 'dangerous', bypass path confirmations
-  signal?: AbortSignal | undefined  // For cancelling long-running operations (e.g., shell commands)
+  sessionManager: SessionManager // Injected dependency (replaces singleton import)
+  dangerLevel?: DangerLevel // When 'dangerous', bypass path confirmations
+  signal?: AbortSignal | undefined // For cancelling long-running operations (e.g., shell commands)
   onProgress?: ((message: string) => void) | undefined
-  onEvent?: ((event: ServerMessage) => void) | undefined  // For sending events to client (e.g., path confirmation)
-  lspManager?: LspManagerInterface | undefined  // Optional LSP manager for file diagnostics
-  llmClient?: LLMClientWithModel | undefined  // For tools that need to spawn LLM calls (e.g., call_sub_agent)
-  statsIdentity?: StatsIdentity | undefined  // For tools that track metrics
-  permittedActions?: Record<string, string[]> | undefined  // Map of tool name -> allowed actions (e.g., { criterion: ['pass', 'fail'] })
-  toolCallId?: string  // ID of the tool call being executed (for matching confirmations)
+  onEvent?: ((event: ServerMessage) => void) | undefined // For sending events to client (e.g., path confirmation)
+  lspManager?: LspManagerInterface | undefined // Optional LSP manager for file diagnostics
+  llmClient?: LLMClientWithModel | undefined // For tools that need to spawn LLM calls (e.g., call_sub_agent)
+  statsIdentity?: StatsIdentity | undefined // For tools that track metrics
+  permittedActions?: Record<string, string[]> | undefined // Map of tool name -> allowed actions (e.g., { criterion: ['pass', 'fail'] })
+  toolCallId?: string // ID of the tool call being executed (for matching confirmations)
 }
 
 export interface Tool {
   name: string
   definition: LLMToolDefinition
   execute: (args: Record<string, unknown>, context: ToolContext) => Promise<ToolResult>
-  permittedActions?: string[]  // Actions this tool supports for granular permissions
+  permittedActions?: string[] // Actions this tool supports for granular permissions
 }
 
 export interface ToolRegistry {

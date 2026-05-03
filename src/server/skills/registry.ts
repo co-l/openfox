@@ -47,10 +47,7 @@ export async function loadUserSkills(configDir: string): Promise<SkillDefinition
 }
 
 export async function loadAllSkills(configDir: string): Promise<SkillDefinition[]> {
-  const [defaultSkills, userSkills] = await Promise.all([
-    loadDefaultSkills(),
-    loadUserSkills(configDir),
-  ])
+  const [defaultSkills, userSkills] = await Promise.all([loadDefaultSkills(), loadUserSkills(configDir)])
 
   const skillMap = new Map<string, SkillDefinition>()
   for (const skill of defaultSkills) {
@@ -65,12 +62,12 @@ export async function loadAllSkills(configDir: string): Promise<SkillDefinition[
 
 export async function getEnabledSkills(configDir: string): Promise<SkillDefinition[]> {
   const all = await loadAllSkills(configDir)
-  return all.filter(s => isSkillEnabled(s.metadata.id))
+  return all.filter((s) => isSkillEnabled(s.metadata.id))
 }
 
 export async function getEnabledSkillMetadata(configDir: string) {
   const enabled = await getEnabledSkills(configDir)
-  return enabled.map(s => s.metadata)
+  return enabled.map((s) => s.metadata)
 }
 
 export function isSkillEnabled(skillId: string): boolean {
@@ -91,7 +88,7 @@ export async function getDefaultSkillIds(): Promise<string[]> {
 
 export async function getDefaultSkillContent(skillId: string): Promise<SkillDefinition | null> {
   const defaults = await loadDefaultSkills()
-  return defaults.find(s => s.metadata.id === skillId) ?? null
+  return defaults.find((s) => s.metadata.id === skillId) ?? null
 }
 
 export async function isDefaultSkill(skillId: string): Promise<boolean> {
@@ -100,7 +97,7 @@ export async function isDefaultSkill(skillId: string): Promise<boolean> {
 }
 
 export function findSkillById(skillId: string, skills: SkillDefinition[]): SkillDefinition | undefined {
-  return skills.find(s => s.metadata.id === skillId)
+  return skills.find((s) => s.metadata.id === skillId)
 }
 
 export async function skillExists(configDir: string, skillId: string): Promise<boolean> {
@@ -109,7 +106,7 @@ export async function skillExists(configDir: string, skillId: string): Promise<b
 
 export async function saveSkill(configDir: string, skill: SkillDefinition): Promise<void> {
   const skillsDir = getSkillsDir(configDir)
-  if (!await pathExists(skillsDir)) {
+  if (!(await pathExists(skillsDir))) {
     await mkdir(skillsDir, { recursive: true })
   }
   const filePath = join(skillsDir, `${skill.metadata.id}${SKILL_EXTENSION}`)
@@ -133,11 +130,6 @@ export async function deleteSkill(configDir: string, skillId: string): Promise<{
 }
 
 export async function getOverrideSkillIds(configDir: string): Promise<string[]> {
-  const [defaultIds, userSkills] = await Promise.all([
-    getDefaultSkillIds(),
-    loadUserSkills(configDir),
-  ])
-  return userSkills
-    .map(skill => skill.metadata.id)
-    .filter(id => defaultIds.includes(id))
+  const [defaultIds, userSkills] = await Promise.all([getDefaultSkillIds(), loadUserSkills(configDir)])
+  return userSkills.map((skill) => skill.metadata.id).filter((id) => defaultIds.includes(id))
 }

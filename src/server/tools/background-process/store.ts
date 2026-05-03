@@ -20,7 +20,7 @@ export function getSessionProcesses(sessionId: string): BackgroundProcess[] {
 }
 
 export function getSessionProcessCount(sessionId: string): number {
-  return getSessionProcesses(sessionId).filter(p => p.status !== 'exited').length
+  return getSessionProcesses(sessionId).filter((p) => p.status !== 'exited').length
 }
 
 export function createProcess(sessionId: string, name: string, command: string, cwd: string): BackgroundProcess | null {
@@ -62,7 +62,12 @@ export function startProcess(processId: string, sessionId: string, pid: number):
   return process
 }
 
-export function updateStatus(processId: string, sessionId: string, status: BackgroundProcess['status'], exitCode?: number | null): BackgroundProcess | undefined {
+export function updateStatus(
+  processId: string,
+  sessionId: string,
+  status: BackgroundProcess['status'],
+  exitCode?: number | null,
+): BackgroundProcess | undefined {
   const process = getProcess(processId, sessionId)
   if (!process) return undefined
 
@@ -115,14 +120,14 @@ export interface PaginatedLogs {
 export function getLogsPaginated(processId: string, since = 0, maxLines = 500): PaginatedLogs {
   const logs = logsByProcess.get(processId) ?? []
   const totalLines = logs.length
-  
+
   const filteredLogs = logs.filter((_, index) => index >= since)
   const slicedLogs = filteredLogs.slice(0, maxLines)
-  
+
   const lastLine = slicedLogs[slicedLogs.length - 1]
   const nextOffset = lastLine ? lastLine.offset + 1 : totalLines
   const hasMore = slicedLogs.length < filteredLogs.length
-  
+
   return {
     lines: slicedLogs,
     totalLines,

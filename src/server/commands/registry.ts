@@ -44,10 +44,7 @@ export async function loadUserCommands(configDir: string): Promise<CommandDefini
 }
 
 export async function loadAllCommands(configDir: string): Promise<CommandDefinition[]> {
-  const [defaultCommands, userCommands] = await Promise.all([
-    loadDefaultCommands(),
-    loadUserCommands(configDir),
-  ])
+  const [defaultCommands, userCommands] = await Promise.all([loadDefaultCommands(), loadUserCommands(configDir)])
 
   const commandMap = new Map<string, CommandDefinition>()
   for (const cmd of defaultCommands) {
@@ -68,7 +65,7 @@ export async function getDefaultCommandIds(): Promise<string[]> {
 
 export async function getDefaultCommandContent(commandId: string): Promise<CommandDefinition | null> {
   const defaults = await loadDefaultCommands()
-  return defaults.find(c => c.metadata.id === commandId) ?? null
+  return defaults.find((c) => c.metadata.id === commandId) ?? null
 }
 
 export async function isDefaultCommand(commandId: string): Promise<boolean> {
@@ -77,7 +74,7 @@ export async function isDefaultCommand(commandId: string): Promise<boolean> {
 }
 
 export function findCommandById(commandId: string, commands: CommandDefinition[]): CommandDefinition | undefined {
-  return commands.find(c => c.metadata.id === commandId)
+  return commands.find((c) => c.metadata.id === commandId)
 }
 
 export async function commandExists(configDir: string, commandId: string): Promise<boolean> {
@@ -86,7 +83,7 @@ export async function commandExists(configDir: string, commandId: string): Promi
 
 export async function saveCommand(configDir: string, command: CommandDefinition): Promise<void> {
   const commandsDir = getCommandsDir(configDir)
-  if (!await pathExists(commandsDir)) {
+  if (!(await pathExists(commandsDir))) {
     await mkdir(commandsDir, { recursive: true })
   }
   const filePath = join(commandsDir, `${command.metadata.id}${COMMAND_EXTENSION}`)
@@ -94,7 +91,10 @@ export async function saveCommand(configDir: string, command: CommandDefinition)
   await writeFile(filePath, content, 'utf-8')
 }
 
-export async function deleteCommand(configDir: string, commandId: string): Promise<{ success: boolean; reason?: string }> {
+export async function deleteCommand(
+  configDir: string,
+  commandId: string,
+): Promise<{ success: boolean; reason?: string }> {
   const isDefault = await isDefaultCommand(commandId)
   if (isDefault) {
     return { success: false, reason: 'Cannot delete built-in defaults' }
@@ -109,11 +109,6 @@ export async function deleteCommand(configDir: string, commandId: string): Promi
 }
 
 export async function getOverrideCommandIds(configDir: string): Promise<string[]> {
-  const [defaultIds, userCommands] = await Promise.all([
-    getDefaultCommandIds(),
-    loadUserCommands(configDir),
-  ])
-  return userCommands
-    .map(cmd => cmd.metadata.id)
-    .filter(id => defaultIds.includes(id))
+  const [defaultIds, userCommands] = await Promise.all([getDefaultCommandIds(), loadUserCommands(configDir)])
+  return userCommands.map((cmd) => cmd.metadata.id).filter((id) => defaultIds.includes(id))
 }

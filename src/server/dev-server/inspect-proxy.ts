@@ -6,6 +6,27 @@ import type { SessionManager } from '../session/manager.js'
 const OPENFOX_BASE_PORT = Number(process.env['OPENFOX_PORT'] ?? 10369)
 const INJECT_SCRIPT = `<script src="http://127.0.0.1:${OPENFOX_BASE_PORT}/__inspect__.js"></script>`
 
+function buildHttpHeaders(
+  resHeaders: Record<string, string>,
+  status: number,
+  contentLengthOverride?: number,
+  contentTypeOverride?: string,
+): string {
+  const newH: Record<string, string> = { ...resHeaders }
+  delete newH['content-length']
+  delete newH['transfer-encoding']
+  newH['connection'] = 'close'
+  if (contentLengthOverride !== undefined) newH['content-length'] = contentLengthOverride.toString()
+  if (contentTypeOverride !== undefined) newH['content-type'] = contentTypeOverride
+  return (
+    `HTTP/1.1 ${status} OK\r\n` +
+    Object.entries(newH)
+      .map(([k, v]) => `${k}: ${v}`)
+      .join('\r\n') +
+    '\r\n\r\n'
+  )
+}
+
 interface ProxyInstance {
   server: ReturnType<typeof net.createServer>
   target: string
@@ -56,7 +77,9 @@ function parseHeaderLines(lines: string[]): Record<string, string> {
 
 function buildResponse(status: number, headers: Record<string, string>, body: Buffer) {
   const statusLine = `HTTP/1.1 ${status} ${status === 200 ? 'OK' : status === 404 ? 'Not Found' : 'Error'}`
-  const headerLines = Object.entries(headers).map(([k, v]) => `${k}: ${v}`).join('\r\n')
+  const headerLines = Object.entries(headers)
+    .map(([k, v]) => `${k}: ${v}`)
+    .join('\r\n')
   const head = Buffer.from(`${statusLine}\r\n${headerLines}\r\n\r\n`, 'utf8')
   return Buffer.concat([head, body])
 }
@@ -81,8 +104,10 @@ function dechunk(buf: Buffer): Buffer {
   return Buffer.from(parts.join(''), 'utf8')
 }
 
-
-export function startInspectProxy(target: string, sessionManager: SessionManager): { port: number; cleanup: () => void } {
+export function startInspectProxy(
+  target: string,
+  sessionManager: SessionManager,
+): { port: number; cleanup: () => void } {
   const port = getAvailablePort()
 
   const server = net.createServer((client) => {
@@ -104,7 +129,6 @@ export function startInspectProxy(target: string, sessionManager: SessionManager
       const isWS = headers['upgrade'] === 'websocket'
       clientParsed = true
 
-
       if (url === '/__openfox_feedback' && method === 'POST') {
         const contentLength = parseInt(headers['content-length'] || '0', 10)
         let bodyData = chunk.slice(he + 4)
@@ -115,13 +139,17 @@ export function startInspectProxy(target: string, sessionManager: SessionManager
             if (sessionId) {
               const elementDesc = element ? `${element.tag}${element.id ? '#' + element.id : ''}` : 'unknown'
               const htmlSnippet = element?.outerHTML ? `\nHtml: ${element.outerHTML.slice(0, 300)}` : ''
-              const textSnippet = element?.textContent ? `\nText (SVG-stripped): ${element.textContent.slice(0, 500)}` : ''
+              const textSnippet = element?.textContent
+                ? `\nText (SVG-stripped): ${element.textContent.slice(0, 500)}`
+                : ''
               const content = `# User feedback from page inspection on dev_server\n\n## Context\n\nPage: ${pageUrl || ''}\nElement: ${elementDesc}\nxPath: ${element?.xpath || ''}${htmlSnippet}${textSnippet}\n\n## Feedback\n\n${annotation || '(none)'}`
               sessionManager.queueMessage(sessionId, 'asap', content, [], 'ui_feedback')
             }
             client.write(buildResponse(200, { 'Content-Type': 'application/json' }, Buffer.from('{"success":true}')))
           } catch {
-            client.write(buildResponse(400, { 'Content-Type': 'application/json' }, Buffer.from('{"error":"Invalid request"}')))
+            client.write(
+              buildResponse(400, { 'Content-Type': 'application/json' }, Buffer.from('{"error":"Invalid request"}')),
+            )
           }
           client.end()
         }
@@ -162,7 +190,9 @@ export function startInspectProxy(target: string, sessionManager: SessionManager
       const reqEnd = clientHead.indexOf('\r\n\r\n')
       const forwardHead = clientHead.slice(0, reqEnd) + connClose + clientHead.slice(reqEnd)
       targetSocket.write(forwardHead)
-      targetSocket.on('close', () => { if (!client.destroyed) client.end() })
+      targetSocket.on('close', () => {
+        if (!client.destroyed) client.end()
+      })
 
       let serverHeadBuf = ''
       let serverParsed = false
@@ -218,7 +248,10 @@ export function startInspectProxy(target: string, sessionManager: SessionManager
       })
 
       targetSocket.on('end', () => {
-        if (!serverParsed) { client.end(); return }
+        if (!serverParsed) {
+          client.end()
+          return
+        }
 
         if (isHtml && enc) {
           const fullBody = Buffer.concat(bodyBuf)
@@ -227,25 +260,27 @@ export function startInspectProxy(target: string, sessionManager: SessionManager
             if (enc === 'gzip') text = zlib.gunzipSync(fullBody).toString('utf8')
             else if (enc === 'deflate') text = zlib.inflateSync(fullBody).toString('utf8')
             else text = fullBody.toString('utf8')
-          } catch { client.end(); return }
+          } catch {
+            client.end()
+            return
+          }
 
           const bi = text.indexOf('</body>')
           const hi = text.indexOf('</head>')
           let modified: string
           if (bi >= 0) modified = text.slice(0, bi) + INJECT_SCRIPT + text.slice(bi)
           else if (hi >= 0) modified = text.slice(0, hi) + INJECT_SCRIPT + text.slice(hi)
-          else { client.end(); return }
+          else {
+            client.end()
+            return
+          }
 
           let compressed: Buffer
           if (enc === 'gzip') compressed = zlib.gzipSync(Buffer.from(modified, 'utf8'))
           else if (enc === 'deflate') compressed = zlib.deflateSync(Buffer.from(modified, 'utf8'))
           else compressed = Buffer.from(modified, 'utf8')
 
-          const newH = { ...resHeaders }
-          delete newH['content-length']
-          newH['connection'] = 'close'
-          const headStr = `HTTP/1.1 ${status} OK\r\n` +
-            Object.entries(newH).map(([k, v]) => `${k}: ${v}`).join('\r\n') + '\r\n\r\n'
+          const headStr = buildHttpHeaders(resHeaders, status)
           client.write(Buffer.from(headStr, 'utf8'))
           client.write(compressed)
         } else if (isHtml && bodyBuf.length > 0) {
@@ -255,19 +290,18 @@ export function startInspectProxy(target: string, sessionManager: SessionManager
           const bi = dechunks.indexOf('</body>')
           const hi = dechunks.indexOf('</head>')
           let modified: Buffer
-          if (bi >= 0) modified = Buffer.concat([dechunks.slice(0, bi), Buffer.from(INJECT_SCRIPT, 'utf8'), dechunks.slice(bi)])
-          else if (hi >= 0) modified = Buffer.concat([dechunks.slice(0, hi), Buffer.from(INJECT_SCRIPT, 'utf8'), dechunks.slice(hi)])
-          else { client.end(); return }
+          if (bi >= 0)
+            modified = Buffer.concat([dechunks.slice(0, bi), Buffer.from(INJECT_SCRIPT, 'utf8'), dechunks.slice(bi)])
+          else if (hi >= 0)
+            modified = Buffer.concat([dechunks.slice(0, hi), Buffer.from(INJECT_SCRIPT, 'utf8'), dechunks.slice(hi)])
+          else {
+            client.end()
+            return
+          }
 
-          const newH: Record<string, string> = { ...resHeaders, 'content-type': 'text/html; charset=utf-8' }
-          delete newH['content-length']
-          delete newH['transfer-encoding']
-          newH['connection'] = 'close'
-          newH['content-length'] = Buffer.byteLength(modified).toString()
-          const headStr = `HTTP/1.1 ${status} OK\r\n` +
-            Object.entries(newH).map(([k, v]) => `${k}: ${v}`).join('\r\n') + '\r\n\r\n'
+          const headStr = buildHttpHeaders(resHeaders, status, Buffer.byteLength(modified), 'text/html; charset=utf-8')
           client.write(Buffer.from(headStr, 'utf8'))
-          client.write(modified)
+          client.write(modified as Buffer)
         }
 
         client.end()
