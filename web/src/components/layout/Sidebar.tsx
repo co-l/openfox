@@ -19,16 +19,16 @@ export function Sidebar({ projectId, isOpen = true, onClose }: SidebarProps) {
   const [, navigate] = useLocation()
   const [showSettings, setShowSettings] = useState(false)
 
-  const sessions = useSessionStore(state => state.sessions)
-  const currentSession = useSessionStore(state => state.currentSession)
-  const unreadSessionIds = useSessionStore(state => state.unreadSessionIds)
-  const deleteSession = useSessionStore(state => state.deleteSession)
-  const deleteAllSessions = useSessionStore(state => state.deleteAllSessions)
-  const loadMoreSessions = useSessionStore(state => state.loadMoreSessions)
-  const sessionsHasMore = useSessionStore(state => state.sessionsHasMore)
-  const sessionsPaginationLoading = useSessionStore(state => state.sessionsPaginationLoading)
+  const sessions = useSessionStore((state) => state.sessions)
+  const currentSession = useSessionStore((state) => state.currentSession)
+  const unreadSessionIds = useSessionStore((state) => state.unreadSessionIds)
+  const deleteSession = useSessionStore((state) => state.deleteSession)
+  const deleteAllSessions = useSessionStore((state) => state.deleteAllSessions)
+  const loadMoreSessions = useSessionStore((state) => state.loadMoreSessions)
+  const sessionsHasMore = useSessionStore((state) => state.sessionsHasMore)
+  const sessionsPaginationLoading = useSessionStore((state) => state.sessionsPaginationLoading)
 
-  const currentProject = useProjectStore(state => state.currentProject)
+  const currentProject = useProjectStore((state) => state.currentProject)
 
   const loadMoreRef = useRef<HTMLDivElement>(null)
 
@@ -48,7 +48,7 @@ export function Sidebar({ projectId, isOpen = true, onClose }: SidebarProps) {
           handleLoadMore()
         }
       },
-      { threshold: 0.1 }
+      { threshold: 0.1 },
     )
 
     observer.observe(loadMoreRef.current)
@@ -56,7 +56,7 @@ export function Sidebar({ projectId, isOpen = true, onClose }: SidebarProps) {
   }, [sessionsHasMore, handleLoadMore])
 
   // Filter sessions to those belonging to the current project by ID
-  const projectSessions = sessions.filter(session => session.projectId === currentProject?.id)
+  const projectSessions = sessions.filter((session) => session.projectId === currentProject?.id)
 
   const handleDeleteSession = (sessionId: string, e?: React.MouseEvent) => {
     e?.stopPropagation()
@@ -66,6 +66,17 @@ export function Sidebar({ projectId, isOpen = true, onClose }: SidebarProps) {
       if (currentSession?.id === sessionId) {
         navigate(`/p/${projectId}`)
       }
+    }
+  }
+
+  const handleRenameSession = (sessionId: string, e?: React.MouseEvent) => {
+    e?.stopPropagation()
+    const session = sessions.find((s) => s.id === sessionId)
+    const currentTitle = session?.title ?? sessionId.slice(0, 6)
+    const newTitle = prompt('Rename session:', currentTitle)
+    if (newTitle !== null && newTitle.trim() !== '') {
+      const renameSession = useSessionStore.getState().renameSession
+      renameSession(sessionId, newTitle.trim())
     }
   }
 
@@ -79,12 +90,7 @@ export function Sidebar({ projectId, isOpen = true, onClose }: SidebarProps) {
   return (
     <>
       {/* Mobile/tablet backdrop */}
-      {isOpen && onClose && (
-        <div
-          className="md:hidden fixed inset-0 bg-black/50 z-40"
-          onClick={onClose}
-        />
-      )}
+      {isOpen && onClose && <div className="md:hidden fixed inset-0 bg-black/50 z-40" onClick={onClose} />}
 
       <aside
         className={`
@@ -127,39 +133,31 @@ export function Sidebar({ projectId, isOpen = true, onClose }: SidebarProps) {
             }
           />
           {/* Mobile close button */}
-          {onClose && (
-            <CloseButton
-              onClick={onClose}
-              className="md:hidden"
-              variant="sidebar"
-              size="md"
-            />
-          )}
+          {onClose && <CloseButton onClick={onClose} className="md:hidden" variant="sidebar" size="md" />}
         </div>
 
         {/* Project Settings Modal */}
         {currentProject && (
-          <ProjectSettingsModal
-            isOpen={showSettings}
-            onClose={() => setShowSettings(false)}
-            project={currentProject}
-          />
+          <ProjectSettingsModal isOpen={showSettings} onClose={() => setShowSettings(false)} project={currentProject} />
         )}
 
         <div className="flex-1 overflow-y-auto">
           {projectSessions.length === 0 ? (
-            <div className="p-4 text-center text-text-muted text-xs">
-              No sessions
-            </div>
+            <div className="p-4 text-center text-text-muted text-xs">No sessions</div>
           ) : (
             <>
               <div className="divide-y divide-border">
-                {renderSessionGroups(projectSessions, currentSession, unreadSessionIds, handleDeleteSession, projectId)}
+                {renderSessionGroups(
+                  projectSessions,
+                  currentSession,
+                  unreadSessionIds,
+                  handleDeleteSession,
+                  handleRenameSession,
+                  projectId,
+                )}
               </div>
               {sessionsPaginationLoading && (
-                <div className="p-4 text-center text-text-muted text-xs">
-                  Loading more...
-                </div>
+                <div className="p-4 text-center text-text-muted text-xs">Loading more...</div>
               )}
               <div ref={loadMoreRef} className="h-px" />
             </>
@@ -175,23 +173,24 @@ function renderSessionGroups(
   currentSession: { id: string | null } | null,
   unreadSessionIds: string[],
   handleDeleteSession: (sessionId: string, e?: React.MouseEvent) => void,
+  handleRenameSession: (sessionId: string, e?: React.MouseEvent) => void,
   projectId: string,
 ) {
   const groups = groupSessionsByDate(projectSessions)
-  
+
   return Array.from(groups).map(([dateKey, daySessions]) => {
     const firstSession = daySessions[0]
     if (!firstSession) return null
-    
+
     return (
       <div key={dateKey}>
         {/* Date header */}
         <div className="px-4 py-2 bg-bg-tertiary/30 text-text-muted text-xs font-medium">
           {formatDateHeader(firstSession.updatedAt)}
         </div>
-        
+
         {/* Sessions for this day */}
-        {daySessions.map(session => {
+        {daySessions.map((session) => {
           const isActive = currentSession?.id === session.id
           const hasUnread = unreadSessionIds.includes(session.id)
           const isRunning = session.isRunning
@@ -207,11 +206,17 @@ function renderSessionGroups(
                 className={`block ${isActive ? 'text-accent-primary' : 'text-text-primary'} hover:text-accent-primary`}
               >
                 <div className="flex justify-between items-center mb-1">
-                  <span className={`font-medium truncate text-sm ${isActive ? 'text-accent-primary' : 'text-text-primary'}`}>
+                  <span
+                    className={`font-medium truncate text-sm ${isActive ? 'text-accent-primary' : 'text-text-primary'}`}
+                  >
                     {session.title ?? session.id.slice(0, 6)}
                   </span>
                   <DropdownMenu
                     items={[
+                      {
+                        label: 'Rename session',
+                        onClick: (e?: React.MouseEvent) => handleRenameSession(session.id, e),
+                      },
                       {
                         label: 'Delete session',
                         onClick: (e?: React.MouseEvent) => handleDeleteSession(session.id, e),
@@ -241,13 +246,9 @@ function renderSessionGroups(
                     />
                   ) : null}
                   {/* Time in muted style */}
-                  <span className="text-text-muted text-xs flex-shrink-0">
-                    {formatTime(session.updatedAt)}
-                  </span>
+                  <span className="text-text-muted text-xs flex-shrink-0">{formatTime(session.updatedAt)}</span>
                   {/* Message count in muted style */}
-                  <span className="text-text-muted text-xs flex-shrink-0">
-                    {session.messageCount} messages
-                  </span>
+                  <span className="text-text-muted text-xs flex-shrink-0">{session.messageCount} messages</span>
                 </div>
               </Link>
             </div>

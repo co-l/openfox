@@ -90,7 +90,9 @@ export class SessionManager {
     this.providerManager = providerManager
   }
 
-  getCurrentModelSettings(): { temperature?: number; topP?: number; topK?: number; maxTokens?: number; supportsVision?: boolean } | undefined {
+  getCurrentModelSettings():
+    | { temperature?: number; topP?: number; topK?: number; maxTokens?: number; supportsVision?: boolean }
+    | undefined {
     const model = this.providerManager.getCurrentModel()
     if (!model) return undefined
     return this.providerManager.getModelSettings(model)
@@ -281,6 +283,18 @@ export class SessionManager {
   }
 
   /**
+   * Rename session. Updates title in DB and emits session_updated.
+   */
+  renameSession(sessionId: string, title: string): Session {
+    this.requireSession(sessionId)
+    logger.debug('Renaming session', { sessionId, title })
+    updateSessionMetadata(sessionId, { title })
+    const updatedSession = this.requireSession(sessionId)
+    this.emit({ type: 'session_updated', session: updatedSession })
+    return updatedSession
+  }
+
+  /**
    * Set session running state. Emits running.changed event.
    */
   setRunning(sessionId: string, isRunning: boolean): Session {
@@ -361,10 +375,7 @@ export class SessionManager {
   /**
    * Add a message. Delegates to EventStore.
    */
-  addMessage(
-    sessionId: string,
-    message: Omit<Message, 'id' | 'timestamp'>
-  ): Message {
+  addMessage(sessionId: string, message: Omit<Message, 'id' | 'timestamp'>): Message {
     this.requireSession(sessionId)
 
     const state = getSessionState(sessionId)
@@ -414,10 +425,7 @@ export class SessionManager {
   /**
    * Add an assistant message. Delegates to EventStore.
    */
-  addAssistantMessage(
-    sessionId: string,
-    message: Omit<Message, 'id' | 'timestamp' | 'role'>
-  ): Message {
+  addAssistantMessage(sessionId: string, message: Omit<Message, 'id' | 'timestamp' | 'role'>): Message {
     this.requireSession(sessionId)
 
     const state = getSessionState(sessionId)
@@ -471,7 +479,7 @@ export class SessionManager {
   updateMessage(
     sessionId: string,
     messageId: string,
-    updates: Partial<Omit<Message, 'id' | 'timestamp' | 'role'>>
+    updates: Partial<Omit<Message, 'id' | 'timestamp' | 'role'>>,
   ): void {
     this.requireSession(sessionId)
     // In the event model, messages are immutable after message.done
@@ -549,7 +557,7 @@ export class SessionManager {
       compactionCount,
       isInDangerZone(promptTokens, maxTokens),
       canCompact(promptTokens, maxTokens),
-      subAgentId
+      subAgentId,
     )
 
     logger.debug('Context state updated', { sessionId, promptTokens, maxTokens, subAgentId })
@@ -594,11 +602,7 @@ export class SessionManager {
   /**
    * Add a criterion attempt.
    */
-  addCriterionAttempt(
-    sessionId: string,
-    criterionId: string,
-    attempt: Criterion['attempts'][number]
-  ): void {
+  addCriterionAttempt(sessionId: string, criterionId: string, attempt: Criterion['attempts'][number]): void {
     const state = getSessionState(sessionId)
     if (!state) return
 
@@ -609,9 +613,7 @@ export class SessionManager {
 
     // Re-emit criteria with new attempt added
     const updatedCriteria = state.criteria.map((c) =>
-      c.id === criterionId
-        ? { ...c, attempts: [...c.attempts, attempt] }
-        : c
+      c.id === criterionId ? { ...c, attempts: [...c.attempts, attempt] } : c,
     )
     emitCriteriaSet(sessionId, updatedCriteria)
   }
@@ -632,7 +634,10 @@ export class SessionManager {
   /**
    * Add a criterion. Returns the updated criteria list.
    */
-  addCriterion(sessionId: string, criterion: Criterion): { criteria: Criterion[]; actualId: string } | { error: string } {
+  addCriterion(
+    sessionId: string,
+    criterion: Criterion,
+  ): { criteria: Criterion[]; actualId: string } | { error: string } {
     const state = getSessionState(sessionId)
     if (!state) {
       return { error: 'Session not found' }
@@ -652,7 +657,7 @@ export class SessionManager {
   updateCriterionFull(
     sessionId: string,
     criterionId: string,
-    updates: Partial<Pick<Criterion, 'description'>>
+    updates: Partial<Pick<Criterion, 'description'>>,
   ): Criterion[] {
     const state = getSessionState(sessionId)
     if (!state) {
@@ -663,9 +668,7 @@ export class SessionManager {
       throw new Error(`Criterion not found: ${criterionId}`)
     }
 
-    const updatedCriteria = state.criteria.map((c) =>
-      c.id === criterionId ? { ...c, ...updates } : c
-    )
+    const updatedCriteria = state.criteria.map((c) => (c.id === criterionId ? { ...c, ...updates } : c))
     emitCriteriaSet(sessionId, updatedCriteria)
 
     return updatedCriteria
@@ -696,7 +699,13 @@ export class SessionManager {
 
   private messageQueues = new Map<string, QueuedMessage[]>()
 
-  queueMessage(sessionId: string, mode: 'asap' | 'completion', content: string, attachments?: Attachment[], messageKind?: string): QueuedMessage {
+  queueMessage(
+    sessionId: string,
+    mode: 'asap' | 'completion',
+    content: string,
+    attachments?: Attachment[],
+    messageKind?: string,
+  ): QueuedMessage {
     const queue = this.messageQueues.get(sessionId) ?? []
     const msg: QueuedMessage = {
       queueId: crypto.randomUUID(),
@@ -715,7 +724,7 @@ export class SessionManager {
   cancelQueuedMessage(sessionId: string, queueId: string): boolean {
     const queue = this.messageQueues.get(sessionId)
     if (!queue) return false
-    const idx = queue.findIndex(m => m.queueId === queueId)
+    const idx = queue.findIndex((m) => m.queueId === queueId)
     if (idx === -1) return false
     queue.splice(idx, 1)
     this.emit({ type: 'queue_cancelled', sessionId, queueId })
@@ -725,8 +734,11 @@ export class SessionManager {
   drainAsapMessages(sessionId: string): QueuedMessage[] {
     const queue = this.messageQueues.get(sessionId)
     if (!queue) return []
-    const asap = queue.filter(m => m.mode === 'asap')
-    this.messageQueues.set(sessionId, queue.filter(m => m.mode !== 'asap'))
+    const asap = queue.filter((m) => m.mode === 'asap')
+    this.messageQueues.set(
+      sessionId,
+      queue.filter((m) => m.mode !== 'asap'),
+    )
     for (const msg of asap) {
       this.emit({ type: 'queue_drained', sessionId, queueId: msg.queueId })
     }
@@ -736,8 +748,11 @@ export class SessionManager {
   drainCompletionMessages(sessionId: string): QueuedMessage[] {
     const queue = this.messageQueues.get(sessionId)
     if (!queue) return []
-    const completion = queue.filter(m => m.mode === 'completion')
-    this.messageQueues.set(sessionId, queue.filter(m => m.mode !== 'completion'))
+    const completion = queue.filter((m) => m.mode === 'completion')
+    this.messageQueues.set(
+      sessionId,
+      queue.filter((m) => m.mode !== 'completion'),
+    )
     for (const msg of completion) {
       this.emit({ type: 'queue_drained', sessionId, queueId: msg.queueId })
     }
@@ -851,26 +866,28 @@ export class SessionManager {
   getContextState(sessionId: string): ContextState {
     const session = this.getSession(sessionId)
     const providerManager = this.providerManager
-    
+
     // Get maxTokens from session's provider/model if set, otherwise use global
     let maxTokens: number
     if (session?.providerId && session.providerModel) {
       // Session has explicit provider/model - get context from that
       const providers = providerManager.getProviders()
-      const provider = providers.find(p => p.id === session.providerId)
+      const provider = providers.find((p) => p.id === session.providerId)
       if (provider) {
         // Try exact match first
-        let modelConfig = provider.models.find(m => m.id === session.providerModel)
+        let modelConfig = provider.models.find((m) => m.id === session.providerModel)
         // If not found, try fuzzy match (handle spaces/dashes/underscores variations)
         if (!modelConfig && session.providerModel) {
           const normalize = (s: string) => s.toLowerCase().replace(/[-_\s]+/g, '')
           const sessionModelNormalized = normalize(session.providerModel)
-          modelConfig = provider.models.find(m => {
+          modelConfig = provider.models.find((m) => {
             const modelIdNormalized = normalize(m.id)
             // Check if normalized IDs match or one contains the other
-            return modelIdNormalized === sessionModelNormalized || 
-                   modelIdNormalized.includes(sessionModelNormalized) ||
-                   sessionModelNormalized.includes(modelIdNormalized)
+            return (
+              modelIdNormalized === sessionModelNormalized ||
+              modelIdNormalized.includes(sessionModelNormalized) ||
+              sessionModelNormalized.includes(modelIdNormalized)
+            )
           })
         }
         maxTokens = modelConfig?.contextWindow ?? providerManager.getCurrentModelContext()
@@ -881,7 +898,7 @@ export class SessionManager {
       // Use global provider/model
       maxTokens = providerManager.getCurrentModelContext()
     }
-    
+
     const state = getSessionState(sessionId, maxTokens)
     if (!state) {
       return {
@@ -998,7 +1015,9 @@ export class SessionManager {
       messages,
       criteria: eventState.criteria,
       contextWindows: [], // Derived from events, not stored separately
-      executionState: eventState.lastModeWithReminder ? { lastModeWithReminder: eventState.lastModeWithReminder } as any : null,
+      executionState: eventState.lastModeWithReminder
+        ? ({ lastModeWithReminder: eventState.lastModeWithReminder } as any)
+        : null,
     }
   }
 }

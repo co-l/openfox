@@ -173,7 +173,7 @@ export interface PendingPathConfirmation {
   paths: string[]
   workdir: string
   reason: 'outside_workdir' | 'sensitive_file' | 'both' | 'dangerous_command' | 'git_no_verify'
-  alwaysAllow?: boolean  // Set when user clicks "Always Allow"
+  alwaysAllow?: boolean // Set when user clicks "Always Allow"
 }
 
 // Pending ask_user question from server
@@ -220,7 +220,10 @@ interface SessionState {
   pendingQuestion: PendingQuestion | null
 
   // Vision fallback state per message (for inline display in feed)
-  visionFallbackByMessage: Record<string, { type: 'start' | 'done'; attachmentId: string; filename?: string; description?: string }>
+  visionFallbackByMessage: Record<
+    string,
+    { type: 'start' | 'done'; attachmentId: string; filename?: string; description?: string }
+  >
 
   // Message queue (while agent is running)
   queuedMessages: QueuedMessage[]
@@ -248,6 +251,7 @@ interface SessionState {
   loadSession: (sessionId: string) => Promise<void>
   listSessions: (projectId?: string, limit?: number) => Promise<void>
   deleteSession: (sessionId: string) => Promise<boolean>
+  renameSession: (sessionId: string, title: string) => Promise<boolean>
   deleteAllSessions: (projectId: string) => Promise<boolean>
   loadMoreSessions: (projectId: string) => Promise<void>
   clearSession: () => void
@@ -521,7 +525,7 @@ export const useSessionStore = create<SessionState>((set, get) => {
       } catch (error) {
         console.error('Failed to connect:', error)
         const closeCode = wsClient.getLastCloseCode()
-        
+
         // Only show password modal if we don't have a token AND auth failed
         // If we have a token, just show disconnected - the token is still valid
         if (!wsClient.hasToken() && (closeCode === 1006 || closeCode === 4000)) {
@@ -709,10 +713,13 @@ export const useSessionStore = create<SessionState>((set, get) => {
         const data = await res.json()
         const moreSessions = (data.sessions ?? []) as SessionSummary[]
         set((state) => ({
-          sessions: [...state.sessions, ...moreSessions.map((s) => {
-            const existing = state.sessions.find((e) => e.id === s.id)
-            return existing?.isRunning === false ? { ...s, isRunning: false } : s
-          })],
+          sessions: [
+            ...state.sessions,
+            ...moreSessions.map((s) => {
+              const existing = state.sessions.find((e) => e.id === s.id)
+              return existing?.isRunning === false ? { ...s, isRunning: false } : s
+            }),
+          ],
           sessionsHasMore: data.hasMore ?? false,
           sessionsPaginationLoading: false,
         }))
@@ -730,6 +737,30 @@ export const useSessionStore = create<SessionState>((set, get) => {
         // Clear current session if it was deleted
         if (get().currentSession?.id === sessionId) {
           get().clearSession()
+        }
+        return true
+      } catch {
+        return false
+      }
+    },
+
+    renameSession: async (sessionId: string, title: string) => {
+      try {
+        const res = await authFetch(`/api/sessions/${sessionId}/title`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ title }),
+        })
+        if (!res.ok) return false
+        // Refresh session list to pick up new title
+        await get().listSessions()
+        // Update current session title if it's the one being renamed
+        const currentSessionId = get().currentSession?.id
+        if (currentSessionId === sessionId) {
+          const data = await res.json()
+          if (data.session) {
+            set({ currentSession: data.session })
+          }
         }
         return true
       } catch {
@@ -1086,7 +1117,8 @@ export const useSessionStore = create<SessionState>((set, get) => {
           const currentConfirmation = stateSnapshot.pendingPathConfirmation
 
           // Only keep server confirmation if we don't have one locally (user already responded)
-          const pendingPathConfirmation = currentConfirmation ?? (serverConfirmations.length > 0 ? serverConfirmations[0] ?? null : null)
+          const pendingPathConfirmation =
+            currentConfirmation ?? (serverConfirmations.length > 0 ? (serverConfirmations[0] ?? null) : null)
 
           set({
             currentSession: payload.session,
@@ -1338,7 +1370,13 @@ export const useSessionStore = create<SessionState>((set, get) => {
                   arguments: payload.args,
                   startedAt: Date.now(),
                   ...(bufferedOutputs.length > 0
-                    ? { streamingOutput: bufferedOutputs.map((o) => ({ stream: o.stream, content: o.content, timestamp: Date.now() })) }
+                    ? {
+                        streamingOutput: bufferedOutputs.map((o) => ({
+                          stream: o.stream,
+                          content: o.content,
+                          timestamp: Date.now(),
+                        })),
+                      }
                     : {}),
                 },
               ],

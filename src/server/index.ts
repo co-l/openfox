@@ -6,7 +6,6 @@ import { dirname, resolve, join } from 'node:path'
 import { readFile } from 'node:fs/promises'
 import { createServer as createViteServer, type ViteDevServer } from 'vite'
 
-
 import type { Config } from '../shared/types.js'
 import type { ServerHandle } from './context.js'
 import { initDatabase } from './db/index.js'
@@ -28,7 +27,15 @@ import { devServerManager } from './dev-server/manager.js'
 import { getGlobalConfigDir } from '../cli/paths.js'
 import { logger, setLogLevel } from './utils/logger.js'
 import { VERSION } from '../constants.js'
-import { loadServerAuthConfig, requiresAuth, hasPassword, getAuthConfig, verifyPassword, isValidToken, tokenFromPassword } from './auth.js'
+import {
+  loadServerAuthConfig,
+  requiresAuth,
+  hasPassword,
+  getAuthConfig,
+  verifyPassword,
+  isValidToken,
+  tokenFromPassword,
+} from './auth.js'
 const __dirname = dirname(fileURLToPath(import.meta.url))
 
 /**
@@ -354,7 +361,7 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
     const globalConfig = await loadGlobalConfig(config.mode ?? 'production')
     const updatedConfig = setDefaultModelSelection(globalConfig, providerId, model ?? 'auto')
     await saveGlobalConfig(config.mode ?? 'production', updatedConfig)
-    
+
     // Update in-memory config so new sessions inherit the selection
     config.defaultModelSelection = updatedConfig.defaultModelSelection
 
@@ -433,6 +440,24 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
     sessionManager.setDangerLevel(sessionId, dangerLevel)
     const updatedSession = sessionManager.getSession(sessionId)
 
+    res.json({ session: updatedSession })
+  })
+
+  // Rename session (REST)
+  app.put('/api/sessions/:id/title', async (req, res) => {
+    const sessionId = req.params.id
+    const session = sessionManager.getSession(sessionId)
+    if (!session) {
+      return res.status(404).json({ error: 'Session not found' })
+    }
+
+    const { title } = req.body
+    if (!title || typeof title !== 'string') {
+      return res.status(400).json({ error: 'title is required' })
+    }
+
+    sessionManager.renameSession(sessionId, title.slice(0, 100))
+    const updatedSession = sessionManager.getSession(sessionId)
     res.json({ session: updatedSession })
   })
 
@@ -600,7 +625,7 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
   app.get('/api/config', async (_req, res) => {
     const llmClient = getLLMClient()
     const activeProvider = providerManager.getActiveProvider()
-    
+
     let visionFallback: { enabled: boolean; url: string; model: string; timeout: number } | undefined
     let globalWorkdir: string | undefined
     try {
@@ -705,10 +730,19 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
     }
 
     try {
-      const { loadGlobalConfig, saveGlobalConfig, addProvider, setDefaultModelSelection } = await import('../cli/config.js')
+      const { loadGlobalConfig, saveGlobalConfig, addProvider, setDefaultModelSelection } =
+        await import('../cli/config.js')
       const globalConfig = await loadGlobalConfig(config.mode ?? 'production')
 
-      const providerBackend = backend as 'auto' | 'vllm' | 'sglang' | 'ollama' | 'llamacpp' | 'openai' | 'anthropic' | 'opencode-go'
+      const providerBackend = backend as
+        | 'auto'
+        | 'vllm'
+        | 'sglang'
+        | 'ollama'
+        | 'llamacpp'
+        | 'openai'
+        | 'anthropic'
+        | 'opencode-go'
 
       const configWithProvider = addProvider(globalConfig, {
         name,
@@ -722,7 +756,7 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
       const finalConfig = setDefaultModelSelection(
         configWithProvider,
         configWithProvider.providers[configWithProvider.providers.length - 1]!.id,
-        model ?? 'auto'
+        model ?? 'auto',
       )
 
       await saveGlobalConfig(config.mode ?? 'production', finalConfig)
@@ -789,9 +823,9 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
     const globalConfig = await loadGlobalConfig(config.mode ?? 'production')
     const updatedConfig = removeProvider(globalConfig, id)
     await saveGlobalConfig(config.mode ?? 'production', updatedConfig)
-    
+
     providerManager.setProviders(updatedConfig.providers, updatedConfig.defaultModelSelection ?? undefined)
-    
+
     res.json({ success: true })
   })
 
@@ -826,7 +860,14 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
 
   app.post('/api/providers/:id/models/:modelId', async (req, res) => {
     const { id, modelId } = req.params
-    const body = req.body as { contextWindow?: number; temperature?: number | null; topP?: number | null; topK?: number | null; maxTokens?: number | null; supportsVision?: boolean }
+    const body = req.body as {
+      contextWindow?: number
+      temperature?: number | null
+      topP?: number | null
+      topK?: number | null
+      maxTokens?: number | null
+      supportsVision?: boolean
+    }
 
     logger.info('API: POST /api/providers/:id/models/:modelId', {
       providerId: id,
@@ -835,7 +876,11 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
     })
 
     // Support both old API (contextWindow only) and new API (full settings)
-    const hasFullSettings = body.temperature !== undefined || body.topP !== undefined || body.topK !== undefined || body.maxTokens !== undefined
+    const hasFullSettings =
+      body.temperature !== undefined ||
+      body.topP !== undefined ||
+      body.topK !== undefined ||
+      body.maxTokens !== undefined
 
     let result: { success: boolean; error?: string; model?: import('../shared/types.js').ModelConfig }
     if (hasFullSettings) {
@@ -880,10 +925,10 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
       }
     }
 
-    res.json({ 
-      success: true, 
-      providerId: id, 
-      modelId, 
+    res.json({
+      success: true,
+      providerId: id,
+      modelId,
       contextWindow: body.contextWindow,
       model: result.model,
       contextState,
