@@ -216,11 +216,15 @@ export function convertMessages(messages: LLMMessage[], options: ConvertMessages
     }
 
     if (msg.role === 'assistant' && msg.toolCalls?.length) {
-      return {
+      const assistantMsg: Record<string, unknown> = {
         role: 'assistant',
         content: msg.content || null,
         tool_calls: convertToolCalls(msg.toolCalls),
       }
+      if (msg.thinkingContent) {
+        assistantMsg['reasoning_content'] = msg.thinkingContent
+      }
+      return assistantMsg as unknown as ChatCompletionMessageParam
     }
 
     if (msg.role === 'user' && msg.attachments && msg.attachments.length > 0) {
@@ -231,10 +235,14 @@ export function convertMessages(messages: LLMMessage[], options: ConvertMessages
       }
     }
 
-    return {
+    const baseMsg: Record<string, unknown> = {
       role: msg.role as 'system' | 'user' | 'assistant',
       content: msg.content,
     }
+    if (msg.role === 'assistant' && msg.thinkingContent) {
+      baseMsg['reasoning_content'] = msg.thinkingContent
+    }
+    return baseMsg as unknown as ChatCompletionMessageParam
   })
 }
 
@@ -269,11 +277,15 @@ export async function convertMessagesWithFallback(
     }
 
     if (msg.role === 'assistant' && msg.toolCalls?.length) {
-      converted.push({
+      const assistantMsg: Record<string, unknown> = {
         role: 'assistant',
         content: msg.content || null,
         tool_calls: convertToolCalls(msg.toolCalls),
-      })
+      }
+      if (msg.thinkingContent) {
+        assistantMsg['reasoning_content'] = msg.thinkingContent
+      }
+      converted.push(assistantMsg as unknown as ChatCompletionMessageParam)
       continue
     }
 
@@ -286,10 +298,14 @@ export async function convertMessagesWithFallback(
       continue
     }
 
-    converted.push({
+    const baseMsg: Record<string, unknown> = {
       role: msg.role as 'system' | 'user' | 'assistant',
       content: msg.content,
-    })
+    }
+    if (msg.role === 'assistant' && msg.thinkingContent) {
+      baseMsg['reasoning_content'] = msg.thinkingContent
+    }
+    converted.push(baseMsg as unknown as ChatCompletionMessageParam)
   }
 
   return converted

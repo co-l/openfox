@@ -26,6 +26,7 @@ const {
   getRuntimeConfigMock,
   getGlobalConfigDirMock,
   generateSessionSummaryMock,
+  createLLMClientMock,
 } = vi.hoisted(() => ({
   createProjectMock: vi.fn(),
   getProjectMock: vi.fn(),
@@ -49,6 +50,7 @@ const {
   getRuntimeConfigMock: vi.fn(),
   getGlobalConfigDirMock: vi.fn(),
   generateSessionSummaryMock: vi.fn(),
+  createLLMClientMock: vi.fn(),
 }))
 
 vi.mock('../db/projects.js', () => ({
@@ -209,6 +211,14 @@ vi.mock('../events/index.js', async (importOriginal) => {
     getEventStore: getEventStoreMock,
     getContextMessages: getContextMessagesMock,
     getCurrentContextWindowId: getCurrentContextWindowIdMock,
+  }
+})
+
+vi.mock('../llm/index.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../llm/index.js')>()
+  return {
+    ...actual,
+    createLLMClient: createLLMClientMock,
   }
 })
 
@@ -422,6 +432,7 @@ async function createHarness(
   options: {
     sessionManager?: ReturnType<typeof createSessionManager>
     eventStore?: ReturnType<typeof createEventStore>
+    providerManager?: unknown
   } = {},
 ) {
   const httpServer = createServer()
@@ -441,7 +452,7 @@ async function createHarness(
     () => mockLLMClient,
     undefined,
     sessionManager as never,
-    { tools: [], definitions: [], execute: vi.fn() } as never,
+    options.providerManager as never,
   )
 
   await new Promise<void>((resolve) => httpServer.listen(0, resolve))
@@ -1359,6 +1370,88 @@ describe('createWebSocketServer', () => {
       sessionId: 'session-1',
       payload: { callId: 'path-1' },
     })
+
+    await harness.close()
+  })
+
+  it('includes provider apiKey when creating per-session LLM client via runner.launch', async () => {
+    const mockSessionClient = {
+      getModel: () => 'deepseek-chat',
+      getBackend: () => 'openai',
+      setBackend: vi.fn(),
+      setModel: vi.fn(),
+      complete: vi.fn(),
+      stream: vi.fn(),
+      getProfile: vi.fn(),
+    } as never
+
+    createLLMClientMock.mockReturnValue(mockSessionClient)
+    runOrchestratorMock.mockResolvedValue({ success: true })
+
+    const provider = {
+      id: 'deepseek-provider',
+      name: 'DeepSeek',
+      url: 'https://api.deepseek.com',
+      backend: 'openai',
+      apiKey: 'sk-real-key-12345',
+      models: [{ id: 'deepseek-chat', contextWindow: 64000 }],
+      isActive: true,
+      createdAt: '2024-01-01T00:00:00.000Z',
+    }
+
+    const providerManager = {
+      getProviders: vi.fn(() => [provider]),
+      getActiveProvider: vi.fn(() => provider),
+      getActiveProviderId: vi.fn(() => 'deepseek-provider'),
+      getCurrentModel: vi.fn(() => 'deepseek-chat'),
+      getCurrentModelContext: vi.fn(() => 64000),
+      getLLMClient: vi.fn(() => mockSessionClient),
+      activateProvider: vi.fn(),
+      addProvider: vi.fn(),
+      removeProvider: vi.fn(),
+      setProviders: vi.fn(),
+      getProviderStatus: vi.fn(),
+      getProviderModels: vi.fn(),
+      setDefaultModelSelection: vi.fn(),
+      updateModelContext: vi.fn(),
+      updateModelSettings: vi.fn(),
+      refreshProviderModels: vi.fn(),
+      getModelSettings: vi.fn(),
+    } as never
+
+    const session = {
+      id: 'session-apikey-test',
+      projectId: 'project-1',
+      workdir: '/tmp/project',
+      mode: 'builder' as const,
+      phase: 'build' as const,
+      isRunning: false,
+      criteria: [{ id: 'tests-pass', description: 'Tests pass', status: { type: 'pending' }, attempts: [] }],
+      summary: 'test',
+      providerId: 'deepseek-provider',
+      providerModel: 'deepseek-chat',
+      metadata: { totalTokensUsed: 0, totalToolCalls: 0, iterationCount: 0 },
+    }
+
+    const sessionManager = createSessionManager({
+      getSession: vi.fn(() => session),
+      requireSession: vi.fn(() => session),
+      setRunning: vi.fn((_id: string, isRunning: boolean) => {
+        session.isRunning = isRunning
+      }),
+    })
+
+    const harness = await createHarness({ sessionManager, providerManager })
+
+    harness.send({ id: 'sl-ok', type: 'session.load', payload: { sessionId: 'session-apikey-test' } })
+    await harness.nextMessage((message) => message.id === 'sl-ok')
+
+    harness.send({ id: 'runner-launch', type: 'runner.launch', payload: {} })
+    expect(await harness.nextMessage((message) => message.id === 'runner-launch')).toMatchObject({ type: 'ack' })
+
+    expect(createLLMClientMock).toHaveBeenCalled()
+    const configArg = createLLMClientMock.mock.calls[0]![0] as { llm: { apiKey?: string } }
+    expect(configArg.llm!.apiKey).toBe('sk-real-key-12345')
 
     await harness.close()
   })

@@ -275,6 +275,16 @@ export function createProviderManager(config: Config): ProviderManager {
     }
   }
 
+  // If there's an active provider (from defaultModelSelection), recreate the
+  // initial client with the provider's apiKey instead of the bare config
+  const { providerId: activeProviderId, model: activeModel } = parseDefaultModelSelection(defaultModelSelection)
+  if (activeProviderId && activeModel) {
+    const activeProvider = providers.find((p) => p.id === activeProviderId)
+    if (activeProvider && activeProvider.apiKey) {
+      llmClient = createLLMClient(createConfigForProvider(activeProvider, activeModel))
+    }
+  }
+
   return {
     getProviders() {
       return [...providers]

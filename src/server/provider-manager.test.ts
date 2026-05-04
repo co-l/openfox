@@ -147,6 +147,60 @@ describe('ProviderManager - Model Selection', () => {
     })
   })
 
+  describe('initialization with apiKey', () => {
+    it('includes active provider apiKey when creating initial LLM client', async () => {
+      const providerWithKey: Provider = {
+        id: 'provider-key',
+        name: 'Key Provider',
+        url: 'https://api.deepseek.com',
+        backend: 'openai',
+        apiKey: 'sk-my-secret-key',
+        models: [{ id: 'deepseek-chat', contextWindow: 64000, source: 'default' }],
+        isActive: true,
+        createdAt: new Date().toISOString(),
+      }
+
+      const configWithKey: Config = {
+        ...config,
+        providers: [providerWithKey],
+        defaultModelSelection: 'provider-key/deepseek-chat',
+        llm: {
+          ...config.llm,
+          baseUrl: 'https://api.deepseek.com/v1',
+        },
+      }
+
+      createProviderManager(configWithKey)
+
+      const { createLLMClient } = await import('./llm/index.js')
+      const calls = (createLLMClient as ReturnType<typeof vi.fn>).mock.calls
+      expect(calls.length).toBeGreaterThanOrEqual(2)
+      const lastCallConfig = calls[calls.length - 1]![0] as { llm: { apiKey?: string } }
+      expect(lastCallConfig.llm.apiKey).toBe('sk-my-secret-key')
+    })
+
+    it('still works when active provider has no apiKey', async () => {
+      const providerNoKey: Provider = {
+        id: 'provider-nokey',
+        name: 'No Key Provider',
+        url: 'http://localhost:8000',
+        backend: 'vllm',
+        apiKey: undefined,
+        models: [{ id: 'model-a', contextWindow: 200000, source: 'default' }],
+        isActive: true,
+        createdAt: new Date().toISOString(),
+      }
+
+      const configNoKey: Config = {
+        ...config,
+        providers: [providerNoKey],
+        defaultModelSelection: 'provider-nokey/model-a',
+      }
+
+      expect(() => createProviderManager(configNoKey)).not.toThrow()
+    })
+  })
+
   describe('setDefaultModelSelection', () => {
     it('returns error for non-existent provider', async () => {
       const result = await providerManager.setDefaultModelSelection('non-existent', 'new-model')

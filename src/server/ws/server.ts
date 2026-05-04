@@ -193,7 +193,12 @@ export function createWebSocketServer(
     const baseUrl = provider.url.includes('/v1') ? provider.url : `${provider.url}/v1`
     const sessionConfig: Config = {
       ...config,
-      llm: { ...config.llm, baseUrl, model: session.providerModel! },
+      llm: {
+        ...config.llm,
+        baseUrl,
+        model: session.providerModel!,
+        ...(provider.apiKey && { apiKey: provider.apiKey }),
+      },
     }
     const client = createLLMClient(sessionConfig)
     // Set backend from provider (skip auto-detect for cached clients)
