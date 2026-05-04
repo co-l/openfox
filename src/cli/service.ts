@@ -50,7 +50,8 @@ async function createWrapperScript(): Promise<void> {
 
   const scriptPath = expandPath(RUN_SCRIPT_PATH)
   const scriptContent = `#!/bin/bash
-source ~/.bashrc
+source ~/.profile 2>/dev/null || true
+source ~/.bashrc 2>/dev/null || true
 exec openfox
 `
   await writeFile(scriptPath, scriptContent, { encoding: 'utf-8' })
