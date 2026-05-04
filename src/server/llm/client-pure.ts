@@ -97,6 +97,20 @@ function convertToolCalls(
   }))
 }
 
+function buildAssistantMessage(msg: LLMMessage): Record<string, unknown> {
+  const result: Record<string, unknown> = {
+    role: 'assistant',
+    content: msg.content || null,
+  }
+  if (msg.toolCalls?.length) {
+    result['tool_calls'] = convertToolCalls(msg.toolCalls)
+  }
+  if (msg.thinkingContent) {
+    result['reasoning_content'] = msg.thinkingContent
+  }
+  return result
+}
+
 function convertAttachmentSync(
   attachment: { data: string; filename?: string },
   modelSupportsVision: boolean,
@@ -215,16 +229,8 @@ export function convertMessages(messages: LLMMessage[], options: ConvertMessages
       }
     }
 
-    if (msg.role === 'assistant' && msg.toolCalls?.length) {
-      const assistantMsg: Record<string, unknown> = {
-        role: 'assistant',
-        content: msg.content || null,
-        tool_calls: convertToolCalls(msg.toolCalls),
-      }
-      if (msg.thinkingContent) {
-        assistantMsg['reasoning_content'] = msg.thinkingContent
-      }
-      return assistantMsg as unknown as ChatCompletionMessageParam
+    if (msg.role === 'assistant') {
+      return buildAssistantMessage(msg) as unknown as ChatCompletionMessageParam
     }
 
     if (msg.role === 'user' && msg.attachments && msg.attachments.length > 0) {
@@ -235,14 +241,10 @@ export function convertMessages(messages: LLMMessage[], options: ConvertMessages
       }
     }
 
-    const baseMsg: Record<string, unknown> = {
+    return {
       role: msg.role as 'system' | 'user' | 'assistant',
       content: msg.content,
     }
-    if (msg.role === 'assistant' && msg.thinkingContent) {
-      baseMsg['reasoning_content'] = msg.thinkingContent
-    }
-    return baseMsg as unknown as ChatCompletionMessageParam
   })
 }
 
@@ -276,16 +278,8 @@ export async function convertMessagesWithFallback(
       continue
     }
 
-    if (msg.role === 'assistant' && msg.toolCalls?.length) {
-      const assistantMsg: Record<string, unknown> = {
-        role: 'assistant',
-        content: msg.content || null,
-        tool_calls: convertToolCalls(msg.toolCalls),
-      }
-      if (msg.thinkingContent) {
-        assistantMsg['reasoning_content'] = msg.thinkingContent
-      }
-      converted.push(assistantMsg as unknown as ChatCompletionMessageParam)
+    if (msg.role === 'assistant') {
+      converted.push(buildAssistantMessage(msg) as unknown as ChatCompletionMessageParam)
       continue
     }
 
@@ -298,14 +292,10 @@ export async function convertMessagesWithFallback(
       continue
     }
 
-    const baseMsg: Record<string, unknown> = {
+    converted.push({
       role: msg.role as 'system' | 'user' | 'assistant',
       content: msg.content,
-    }
-    if (msg.role === 'assistant' && msg.thinkingContent) {
-      baseMsg['reasoning_content'] = msg.thinkingContent
-    }
-    converted.push(baseMsg as unknown as ChatCompletionMessageParam)
+    })
   }
 
   return converted

@@ -3,6 +3,7 @@ import type { ToolCall, Attachment } from '../../shared/types.js'
 export interface LLMMessage {
   role: 'system' | 'user' | 'assistant' | 'tool'
   content: string
+  thinkingContent?: string
   toolCalls?: ToolCall[]
   toolCallId?: string
   name?: string

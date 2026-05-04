@@ -103,6 +103,10 @@ function appendSnapshotMessageContext(result: ContextMessage[], message: Snapsho
     content: message.content,
   }
 
+  if (message.thinkingContent) {
+    contextMsg.thinkingContent = message.thinkingContent
+  }
+
   if (message.toolCalls && message.toolCalls.length > 0) {
     contextMsg.toolCalls = message.toolCalls.map((toolCall) => ({
       id: toolCall.id,
@@ -151,6 +155,7 @@ function applyStoredMessageEvents(initialMessages: Message[], events: StoredEven
 export interface ContextMessage {
   role: 'user' | 'assistant' | 'tool'
   content: string
+  thinkingContent?: string
   toolCalls?: Array<{ id: string; name: string; arguments: Record<string, unknown> }>
   toolCallId?: string
   attachments?: Attachment[]
@@ -258,6 +263,14 @@ export function buildContextMessagesFromStoredEvents(
           }
           messageMap.set(data.messageId, message)
           messages.push(message)
+        }
+        break
+      }
+      case 'message.thinking': {
+        const data = event.data as Extract<TurnEvent, { type: 'message.thinking' }>['data']
+        const msg = messageMap.get(data.messageId)
+        if (msg) {
+          msg.thinkingContent = (msg.thinkingContent ?? '') + data.content
         }
         break
       }

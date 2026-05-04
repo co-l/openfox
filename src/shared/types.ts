@@ -237,6 +237,7 @@ export interface PromptContext {
 export interface PromptContextMessage {
   role: 'user' | 'assistant' | 'tool'
   content: string
+  thinkingContent?: string
   source: 'history' | 'runtime'
   toolCalls?: Array<{ id: string; name: string; arguments: Record<string, unknown> }>
   toolCallId?: string

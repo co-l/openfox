@@ -42,6 +42,7 @@ export interface StreamOptions {
   customMessages?: Array<{
     role: 'user' | 'assistant' | 'tool'
     content: string
+    thinkingContent?: string
     toolCalls?: ToolCall[]
     toolCallId?: string
   }>
@@ -131,6 +132,7 @@ async function streamLLMResponseInternal(
       ...currentWindowMessages.map((m) => ({
         role: m.role as 'user' | 'assistant' | 'tool',
         content: m.content,
+        ...(m.thinkingContent && { thinkingContent: m.thinkingContent }),
         ...(m.toolCalls && { toolCalls: m.toolCalls }),
         ...(m.toolCallId && { toolCallId: m.toolCallId }),
         ...(m.attachments && { attachments: m.attachments }),

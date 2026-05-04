@@ -42,6 +42,7 @@ export interface PureStreamOptions {
   messages: Array<{
     role: 'system' | 'user' | 'assistant' | 'tool'
     content: string
+    thinkingContent?: string
     toolCalls?: ToolCall[]
     toolCallId?: string
     attachments?: Attachment[]
@@ -587,6 +588,7 @@ export interface ConsumeStreamWithToolLoopOptions {
   messages: Array<{
     role: 'system' | 'user' | 'assistant' | 'tool'
     content: string
+    thinkingContent?: string
     toolCalls?: ToolCall[]
     toolCallId?: string
   }>
@@ -639,6 +641,7 @@ export async function consumeStreamWithToolLoop(options: ConsumeStreamWithToolLo
   let currentMessages: Array<{
     role: 'system' | 'user' | 'assistant' | 'tool'
     content: string
+    thinkingContent?: string
     toolCalls?: ToolCall[]
     toolCallId?: string
   }> = [...messages]
@@ -713,6 +716,7 @@ export async function consumeStreamWithToolLoop(options: ConsumeStreamWithToolLo
       currentMessages.push({
         role: 'assistant' as const,
         content: result.content,
+        ...(result.thinkingContent ? { thinkingContent: result.thinkingContent } : {}),
         toolCalls: result.toolCalls,
       })
 

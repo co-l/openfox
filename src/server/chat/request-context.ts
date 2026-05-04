@@ -6,6 +6,7 @@ import type {
   PromptContextTool,
   PromptRequestOptions,
 } from '../../shared/types.js'
+import type { ContextMessage } from '../events/folding.js'
 import type { LLMToolDefinition } from '../llm/types.js'
 import type { SkillMetadata } from '../skills/types.js'
 import type { AgentDefinition } from '../agents/types.js'
@@ -13,13 +14,7 @@ import { buildTopLevelSystemPrompt, buildSubAgentSystemPrompt } from './prompts.
 
 export type RequestContextMessage = PromptContextMessage
 
-export type MinimalMessage = {
-  role: 'user' | 'assistant' | 'tool'
-  content: string
-  toolCalls?: Array<{ id: string; name: string; arguments: Record<string, unknown> }>
-  toolCallId?: string
-  attachments?: Attachment[]
-}
+export type MinimalMessage = ContextMessage
 
 export function minimalMessagesToRequestContextMessages(
   messages: MinimalMessage[],
@@ -50,6 +45,7 @@ export function minimalMessageToRequestContextMessage(
     role: message.role,
     content: message.content,
     source,
+    ...(message.thinkingContent ? { thinkingContent: message.thinkingContent } : {}),
     ...spreadMessageProps(message),
   }
 }
@@ -58,6 +54,7 @@ function messageToMinimal(message: RequestContextMessage): MinimalMessage {
   return {
     role: message.role,
     content: message.content,
+    ...(message.thinkingContent ? { thinkingContent: message.thinkingContent } : {}),
     ...spreadMessageProps(message),
   }
 }

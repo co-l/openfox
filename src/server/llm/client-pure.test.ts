@@ -35,6 +35,35 @@ describe('llm client pure helpers', () => {
     ])
   })
 
+  it('passes reasoning_content through on assistant messages with thinkingContent', () => {
+    const result = convertMessages(
+      [
+        {
+          role: 'assistant',
+          content: '',
+          thinkingContent: 'I need to read the file first',
+          toolCalls: [{ id: 'call-1', name: 'read_file', arguments: { path: 'foo.ts' } }],
+        },
+        { role: 'tool', content: 'file contents', toolCallId: 'call-1' },
+        { role: 'assistant', content: 'Here is the file.', thinkingContent: 'Summarizing the result' },
+      ],
+      { modelSupportsVision: false, visionFallbackEnabled: false },
+    )
+
+    // First assistant message with tool calls includes reasoning_content
+    const firstAssistant = result[0] as unknown as Record<string, unknown>
+    expect(firstAssistant['role']).toBe('assistant')
+    expect(firstAssistant['content']).toBeNull()
+    expect(firstAssistant['reasoning_content']).toBe('I need to read the file first')
+    expect(firstAssistant['tool_calls']).toBeDefined()
+
+    // Second assistant message (no tool calls) also includes reasoning_content
+    const secondAssistant = result[2] as unknown as Record<string, unknown>
+    expect(secondAssistant['role']).toBe('assistant')
+    expect(secondAssistant['content']).toBe('Here is the file.')
+    expect(secondAssistant['reasoning_content']).toBe('Summarizing the result')
+  })
+
   it('converts tool definitions to openai function schema', () => {
     expect(
       convertTools([

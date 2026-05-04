@@ -263,6 +263,7 @@ function toRequestContextMessages(
   messages: Array<{
     role: 'user' | 'assistant' | 'tool'
     content: string
+    thinkingContent?: string
     toolCalls?: ToolCall[]
     toolCallId?: string
     attachments?: Attachment[]
@@ -272,6 +273,7 @@ function toRequestContextMessages(
     role: message.role,
     content: message.content,
     source: 'history' as const,
+    ...(message.thinkingContent ? { thinkingContent: message.thinkingContent } : {}),
     ...(message.toolCalls
       ? {
           toolCalls: message.toolCalls.map((toolCall) => ({
