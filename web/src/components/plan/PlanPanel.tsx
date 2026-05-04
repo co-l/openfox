@@ -701,7 +701,7 @@ export function PlanPanel({ criteriaSidebarOpen: externalCriteriaSidebarOpen, on
               Abort
             </button>
           )}
-                <div>
+                <div className="flex items-center">
                 <button
                   type="button"
                   onClick={() => {
