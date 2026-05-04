@@ -83,7 +83,7 @@
       }
       var text = (clone.textContent || '').replace(/\s+/g, ' ').trim();
       return text.slice(0, 500) || null;
-    } catch (_e) {
+    } catch {
       return null;
     }
   }

@@ -503,6 +503,7 @@ export class EventStore {
    * Safe to run multiple times (idempotent).
    */
   optimizeStorage(): { deletedSnapshots: number; strippedSnapshots: number } {
+    // eslint-disable-next-line no-useless-assignment
     let deletedSnapshots = 0
     let strippedSnapshots = 0
 

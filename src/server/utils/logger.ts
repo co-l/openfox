@@ -41,12 +41,14 @@ function formatMessage(level: LogLevel, message: string, context?: Record<string
 export const logger = {
   debug(message: string, context?: Record<string, unknown>): void {
     if (shouldLog('debug')) {
+      // eslint-disable-next-line no-console
       console.debug(formatMessage('debug', message, context))
     }
   },
 
   info(message: string, context?: Record<string, unknown>): void {
     if (shouldLog('info')) {
+      // eslint-disable-next-line no-console
       console.info(formatMessage('info', message, context))
     }
   },

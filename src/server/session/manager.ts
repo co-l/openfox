@@ -1016,7 +1016,9 @@ export class SessionManager {
       criteria: eventState.criteria,
       contextWindows: [], // Derived from events, not stored separately
       executionState: eventState.lastModeWithReminder
-        ? ({ lastModeWithReminder: eventState.lastModeWithReminder } as any)
+        ? ({
+            lastModeWithReminder: eventState.lastModeWithReminder,
+          } as unknown as import('../../shared/types.js').ExecutionState)
         : null,
     }
   }
@@ -1025,7 +1027,7 @@ export class SessionManager {
 // Singleton for gradual migration
 // Note: This is deprecated - use the SessionManager from createServerHandle instead
 let _sessionManager: SessionManager | null = null
-export const sessionManager: SessionManager = null as any
+export const sessionManager: SessionManager = null as any // eslint-disable-line @typescript-eslint/no-explicit-any
 export function getSessionManager(): SessionManager {
   if (!_sessionManager) {
     throw new Error('SessionManager not initialized. Use createServerHandle to get a SessionManager instance.')

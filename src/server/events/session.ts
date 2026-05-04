@@ -696,7 +696,7 @@ export function getRecentUserPromptsForSession(
 ): { id: string; content: string; timestamp: string }[] {
   try {
     const eventStore = getEventStore()
-    const db = (eventStore as any).db as import('better-sqlite3').Database | undefined
+    const db = (eventStore as unknown as { db?: import('better-sqlite3').Database }).db
 
     // If no db available (e.g., in tests), return empty array
     if (!db) {
@@ -781,8 +781,7 @@ export function getRecentUserPromptsForSession(
     return [...promptMap.values()]
       .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
       .slice(0, limit)
-  } catch (_error) {
-    // eslint-disable-line @typescript-eslint/no-unused-vars
+  } catch {
     // If any error occurs (e.g., in tests), return empty array
     return []
   }

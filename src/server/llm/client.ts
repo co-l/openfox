@@ -171,9 +171,11 @@ export function createLLMClient(config: Config, initialBackend: Backend = 'unkno
             totalTokens: response.usage?.total_tokens ?? 0,
           },
         }
-      } catch (error: any) {
-        logger.error('LLM complete error', { error: error.toString() })
-        throw new LLMError(error instanceof Error ? error.message : 'Unknown LLM error', { originalError: error })
+      } catch (error: unknown) {
+        logger.error('LLM complete error', { error: String(error) })
+        throw new LLMError(error instanceof Error ? error.message : 'Unknown LLM error', {
+          originalError: error instanceof Error ? error : undefined,
+        })
       }
     },
 

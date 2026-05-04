@@ -197,7 +197,7 @@ async function streamLLMResponseInternal(
     onVisionFallbackDone,
   })
 
-  let result: Awaited<ReturnType<typeof stream.next>>['value'] = null
+  let result: Awaited<ReturnType<typeof stream.next>>['value']
 
   // Track tool call indices we've emitted preparing events for
   const seenToolIndices = new Set<number>()

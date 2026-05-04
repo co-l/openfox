@@ -21,7 +21,7 @@ import type { ServerMessage } from '../../shared/protocol.js'
 import type { LLMClientWithModel } from '../llm/client.js'
 import type { LLMToolDefinition } from '../llm/types.js'
 import type { SessionManager } from '../session/index.js'
-import type { ToolRegistry } from '../tools/types.js'
+import type { ToolContext, ToolRegistry } from '../tools/types.js'
 import type { RequestContextMessage, MinimalMessage } from './request-context.js'
 import { PathAccessDeniedError, AskUserInterrupt } from '../tools/index.js'
 import { createToolProgressHandler } from './tool-streaming.js'
@@ -166,7 +166,7 @@ export async function executeToolBatch(
 
     const onProgress = ctx.onMessage ? createToolProgressHandler(assistantMsgId, toolCall.id, ctx.onMessage) : undefined
 
-    const toolContext: any = {
+    const toolContext: ToolContext = {
       sessionManager: ctx.sessionManager,
       workdir: ctx.workdir,
       sessionId: ctx.sessionId,
@@ -458,7 +458,7 @@ export async function runTopLevelAgentLoop(
       )
 
       try {
-        const batchContext: any = {
+        const batchContext: ToolBatchContext = {
           toolRegistry,
           sessionManager,
           sessionId,

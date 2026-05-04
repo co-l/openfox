@@ -227,11 +227,10 @@ export async function runCli(options: { mode: Mode }): Promise<void> {
       }
 
       const { runServe } = await import('./serve.js')
-      await runServe({
-        mode,
-        port: values.port ? parseInt(values.port) : undefined,
-        openBrowser: values['no-browser'] === true ? false : undefined,
-      } as any)
+      const serveOptions: { mode: Mode; port?: number; openBrowser?: boolean } = { mode }
+      if (values.port) serveOptions.port = parseInt(values.port)
+      if (values['no-browser'] === true) serveOptions.openBrowser = false
+      await runServe(serveOptions)
     }
   }
 }

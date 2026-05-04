@@ -217,7 +217,7 @@ export async function executeSubAgent(options: SubAgentExecutionOptions): Promis
   let customMessages: RequestContextMessage[] = [...contextMessages]
 
   let consecutiveEmptyStops = 0
-  let finalContent = ''
+  let finalContent: string
   let returnValueContent: string | null = null
   let returnValueResult: string | undefined = undefined
   let returnValueNudged = false
@@ -404,7 +404,6 @@ export async function executeSubAgent(options: SubAgentExecutionOptions): Promis
     if (batchResult.returnValueContent) {
       returnValueContent = batchResult.returnValueContent
       returnValueResult = batchResult.returnValueResult
-      customMessages = [...customMessages, ...batchResult.toolMessages]
 
       const stats = turnMetrics.buildStats(statsIdentity, subAgentType)
       eventStore.append(
@@ -429,6 +428,7 @@ export async function executeSubAgent(options: SubAgentExecutionOptions): Promis
     customMessages = [...customMessages, ...batchResult.toolMessages]
 
     // Check criteria changes
+    // eslint-disable-next-line no-useless-assignment
     session = sessionManager.requireSession(sessionId)
 
     // Reset nudge counter when tools were called

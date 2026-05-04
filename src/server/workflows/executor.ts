@@ -340,8 +340,8 @@ export async function executeWorkflow(
           "You haven't called step_done(). If you haven't finished the task, continue and when you're finished call step_done()"
 
         // Build prompt content
-        let promptContent: string | null = null
-        let nudgeContent: string | null = null
+        let promptContent: string | null
+        let nudgeContent: string | null
 
         if (isFirstBuilderEntry && agentStep.prompt) {
           const resolvedPrompt = resolveTemplate(agentStep.prompt, templateCtx)

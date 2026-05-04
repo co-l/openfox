@@ -8,7 +8,7 @@ import type { LLMClientWithModel } from '../llm/client.js'
 import type { SessionManager } from '../session/index.js'
 import { getEventStore } from '../events/index.js'
 import { buildMessagesFromStoredEvents, foldPendingConfirmations } from '../events/folding.js'
-import type { Provider, ProviderBackend, StatsIdentity, Attachment } from '../../shared/types.js'
+import type { Message, Provider, ProviderBackend, StatsIdentity, Attachment } from '../../shared/types.js'
 import type { ProviderManager } from '../provider-manager.js'
 import { createLLMClient } from '../llm/index.js'
 import { runChatTurn } from '../chat/orchestrator.js'
@@ -81,7 +81,7 @@ function addUserMessageAndBroadcast(
     role: 'user',
     content: message.content,
     ...(message.attachments ? { attachments: message.attachments } : {}),
-    ...(message.messageKind ? { messageKind: message.messageKind as any } : {}),
+    ...(message.messageKind ? { messageKind: message.messageKind as Exclude<Message['messageKind'], undefined> } : {}),
   })
   broadcastFn(sessionId, createChatMessageMessage(userMessage))
   return userMessage
@@ -446,7 +446,7 @@ export function createWebSocketServer(
 
       // Handle terminal messages separately
       if (message.type.startsWith('terminal.')) {
-        handleTerminalMessage(ws, message as any)
+        handleTerminalMessage(ws, message as unknown as Parameters<typeof handleTerminalMessage>[1])
         return
       }
 

@@ -158,7 +158,7 @@ export function cleanupAllProcesses(): void {
         } catch {
           try {
             process.kill(proc.pid, 'SIGTERM')
-          } catch (_) {
+          } catch {
             // Process already dead
           }
         }

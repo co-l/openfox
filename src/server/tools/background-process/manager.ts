@@ -130,7 +130,7 @@ export async function stopProcess(processId: string, sessionId: string): Promise
         } catch {
           try {
             process.kill(pid, 'SIGKILL')
-          } catch (_) {
+          } catch {
             // Process already dead
           }
         }
@@ -145,7 +145,7 @@ export async function stopProcess(processId: string, sessionId: string): Promise
       sessionId,
     })
     store.removeProcess(processId, sessionId)
-  } catch (_) {
+  } catch {
     store.updateStatus(processId, sessionId, 'exited', 1)
     emitProcessEvent(processId, {
       type: 'backgroundProcess.removed',

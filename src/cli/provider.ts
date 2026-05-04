@@ -90,8 +90,6 @@ export async function runProviderAdd(mode: Mode): Promise<void> {
   s.start(`Fetching available models from ${url}...`)
 
   let availableModels: string[] = []
-  let detectedModel: string | null = null
-
   try {
     // Detect backend first if needed
     if (backend === 'auto') {
@@ -137,6 +135,7 @@ export async function runProviderAdd(mode: Mode): Promise<void> {
     if (selectedModel === 'auto') {
       const detectSpinner = spinner()
       detectSpinner.start('Detecting model...')
+      let detectedModel: string | null
       try {
         detectedModel = await detectModel(url as string)
         if (detectedModel) {

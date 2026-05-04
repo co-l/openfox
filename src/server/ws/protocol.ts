@@ -343,17 +343,16 @@ export function isAskAnswerPayload(payload: unknown): payload is AskAnswerPayloa
 export function isUIFeedbackPayload(
   payload: unknown,
 ): payload is { sessionId: string; element: unknown; annotation: string; pageUrl: string } {
+  if (typeof payload !== 'object' || payload === null) return false
+  const obj = payload as { sessionId?: unknown; annotation?: unknown; pageUrl?: unknown; element?: unknown }
   return (
-    typeof payload === 'object' &&
-    payload !== null &&
     'sessionId' in payload &&
-    typeof (payload as any).sessionId === 'string' &&
+    typeof obj.sessionId === 'string' &&
     'element' in payload &&
-    typeof payload === 'object' &&
     'annotation' in payload &&
-    typeof (payload as any).annotation === 'string' &&
+    typeof obj.annotation === 'string' &&
     'pageUrl' in payload &&
-    typeof (payload as any).pageUrl === 'string'
+    typeof obj.pageUrl === 'string'
   )
 }
 

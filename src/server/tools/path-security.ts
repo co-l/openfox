@@ -679,8 +679,7 @@ export function providePathConfirmation(
       type: 'path.confirmation_responded',
       data: { callId, approved, alwaysAllow: alwaysAllow ?? false },
     })
-  } catch (_error) {
-    // eslint-disable-line @typescript-eslint/no-unused-vars
+  } catch {
     // Event store might not be initialized in tests, continue without event
   }
 

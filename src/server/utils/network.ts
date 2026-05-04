@@ -97,28 +97,39 @@ export function displayStartupBanner(config: {
   const { host, port, databasePath, configPath } = config
   const isLocalhost = host === '127.0.0.1'
 
+  // eslint-disable-next-line no-console
   console.log(`\n🦊 OpenFox v${VERSION}\n`)
 
   if (isLocalhost) {
+    // eslint-disable-next-line no-console
     console.log(`  🌐 Server: http://localhost:${port}`)
+    // eslint-disable-next-line no-console
     console.log('  🔒 Access: Localhost only')
   } else {
     const ips = getValidIPv4Addresses()
 
     if (ips.length === 0) {
+      // eslint-disable-next-line no-console
       console.log(`  🌐 Server: http://0.0.0.0:${port}`)
+
       console.warn('  ⚠️  Warning: No valid network interfaces detected')
     } else {
+      // eslint-disable-next-line no-console
       console.log('  🌐 Server:')
       for (const ip of ips) {
+        // eslint-disable-next-line no-console
         console.log(`     • http://${ip}:${port}`)
       }
+      // eslint-disable-next-line no-console
       console.log('  🌍 Access: Local network')
     }
   }
 
   const size = getDatabaseSize(databasePath)
+  // eslint-disable-next-line no-console
   console.log(`  💾 Database: ${databasePath} (${size})`)
+  // eslint-disable-next-line no-console
   console.log(`  ⚙️  Config:  ${configPath}`)
+  // eslint-disable-next-line no-console
   console.log('\n💡 Tip: Press Ctrl+C to stop the server\n')
 }
