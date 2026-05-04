@@ -701,6 +701,7 @@ export function PlanPanel({ criteriaSidebarOpen: externalCriteriaSidebarOpen, on
               Abort
             </button>
           )}
+                <div>
                 <button
                   type="button"
                   onClick={() => {
@@ -745,6 +746,7 @@ export function PlanPanel({ criteriaSidebarOpen: externalCriteriaSidebarOpen, on
                   criteria={session?.criteria ?? []}
                 />
               </div>
+                </div>
             </div>
         <div className="mt-3 flex items-center justify-between">
           <div className="flex items-center gap-2">
