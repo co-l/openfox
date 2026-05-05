@@ -445,10 +445,20 @@ export function extractDangerousPatterns(command: string): string[] {
   return dangerous
 }
 
-const GIT_NO_VERIFY_PATTERN = /\bgit\s+\w+\s+.*(?:--no-verify|-n)/
-
 export function extractGitNoVerify(command: string): boolean {
-  return GIT_NO_VERIFY_PATTERN.test(command)
+  const parts = command.split(/\s+/)
+  for (let i = 0; i < parts.length - 1; i++) {
+    if (parts[i] === 'git') {
+      const sub = parts[i + 1]
+      if (sub && !sub.startsWith('-')) {
+        const args = parts.slice(i + 2)
+        if (args.includes('--no-verify') || args.includes('-n')) {
+          return true
+        }
+      }
+    }
+  }
+  return false
 }
 
 // ===========================================================================
