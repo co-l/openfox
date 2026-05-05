@@ -247,13 +247,16 @@ export async function* streamLLMPure(options: PureStreamOptions): AsyncGenerator
               },
             }
           } else if (seenToolIndices.has(value.index) && value.arguments) {
-            // Update existing preparing event with new partial arguments
-            const accumulatedArgs = toolArgs.get(value.index)
+            // Only stream partial arguments for tools that display them live
+            // (run_command shows the command text, return_value shows sub-agent output)
             const name = toolNames.get(value.index)
-            if (accumulatedArgs && name) {
-              yield {
-                type: 'tool.preparing',
-                data: { messageId, index: value.index, name, arguments: accumulatedArgs },
+            if (name === 'run_command' || name === 'return_value') {
+              const accumulatedArgs = toolArgs.get(value.index)
+              if (accumulatedArgs) {
+                yield {
+                  type: 'tool.preparing',
+                  data: { messageId, index: value.index, name, arguments: accumulatedArgs },
+                }
               }
             }
           }

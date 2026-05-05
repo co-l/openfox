@@ -78,10 +78,6 @@ describe('stream-pure', () => {
       { type: 'message.thinking', data: { messageId: 'msg-1', content: 'Need to inspect files' } },
       { type: 'message.delta', data: { messageId: 'msg-1', content: 'I will help.' } },
       { type: 'tool.preparing', data: { messageId: 'msg-1', index: 0, name: 'read_file' } },
-      {
-        type: 'tool.preparing',
-        data: { messageId: 'msg-1', index: 0, name: 'read_file', arguments: '{"path":"src/index.ts"}' },
-      },
     ])
     expect(result).toEqual({
       content: 'I will help.',
@@ -102,6 +98,43 @@ describe('stream-pure', () => {
         maxTokens: expect.any(Number),
       }),
     })
+  })
+
+  it('streams partial arguments for run_command', async () => {
+    const client = createMockClient([
+      { type: 'tool_call_delta', index: 0, name: 'run_command' },
+      { type: 'tool_call_delta', index: 0, arguments: '{"command":"echo' },
+      { type: 'tool_call_delta', index: 0, arguments: ' hello"}' },
+      {
+        type: 'done',
+        response: {
+          id: 'resp-1',
+          content: '',
+          toolCalls: [{ id: 'call-1', name: 'run_command', arguments: { command: 'echo hello' } }],
+          finishReason: 'tool_calls',
+          usage: { promptTokens: 10, completionTokens: 10, totalTokens: 20 },
+        },
+      },
+    ])
+
+    const gen = streamLLMPure({
+      messageId: 'msg-run',
+      systemPrompt: 'system',
+      llmClient: client,
+      messages: [{ role: 'user', content: 'run' }],
+      tools: [{ type: 'function', function: { name: 'run_command', description: 'Run', parameters: {} } }],
+    })
+
+    const events: Array<{ type: string; data: unknown }> = []
+    await consumeStreamGenerator(gen, (event) => {
+      events.push(event)
+    })
+
+    const preparingEvents = events.filter((e) => e.type === 'tool.preparing')
+    expect(preparingEvents).toHaveLength(3)
+    expect(preparingEvents[0]!).toMatchObject({ data: { name: 'run_command' } })
+    expect(preparingEvents[1]!).toMatchObject({ data: { name: 'run_command', arguments: '{"command":"echo' } })
+    expect(preparingEvents[2]!).toMatchObject({ data: { name: 'run_command', arguments: '{"command":"echo hello"}' } })
   })
 
   it('marks XML tool output as a format error and returns an empty result', async () => {

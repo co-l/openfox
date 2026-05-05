@@ -218,7 +218,17 @@ export function applyEvents<
         const msg = messages.get(data.messageId)
         if (msg) {
           const preparing = (msg as T & { preparingToolCalls?: PreparingToolCall[] }).preparingToolCalls ?? []
-          preparing.push({ index: data.index, name: data.name })
+          const existingIndex = preparing.findIndex((p) => p.index === data.index)
+          const entry: PreparingToolCall = {
+            index: data.index,
+            name: data.name,
+            ...(data.arguments ? { arguments: data.arguments } : {}),
+          }
+          if (existingIndex >= 0) {
+            preparing[existingIndex] = entry
+          } else {
+            preparing.push(entry)
+          }
           ;(msg as T & { preparingToolCalls: PreparingToolCall[] }).preparingToolCalls = preparing
         }
         break
