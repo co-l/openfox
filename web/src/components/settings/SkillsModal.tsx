@@ -310,15 +310,15 @@ export function SkillsContent({ isOpen }: { isOpen: boolean }) {
           <ItemsHeader>
             {userItems.map((skill) => (
               <SkillListItem
-                  key={skill.id}
-                  skill={skill}
-                  isBuiltIn={false}
-                  isConfirmingDelete={false}
-                  onView={() => handleView(skill.id)}
-                  onEdit={() => handleEdit(skill.id)}
-                  onDuplicate={() => handleDuplicate(skill.id)}
-                  onDelete={() => handleDelete(skill.id)}
-                />
+                key={skill.id}
+                skill={skill}
+                isBuiltIn={false}
+                isConfirmingDelete={false}
+                onView={() => handleView(skill.id)}
+                onEdit={() => handleEdit(skill.id)}
+                onDuplicate={() => handleDuplicate(skill.id)}
+                onDelete={() => handleDelete(skill.id)}
+              />
             ))}
           </ItemsHeader>
         )}

@@ -115,7 +115,17 @@ function ProjectSessionView({
     if (canLoad && projectId) {
       listSessions(projectId)
     }
-  }, [canLoad, projectId, currentProject?.id, loadProject, sessionId, session?.id, loadSession, listSessions, pendingSessionCreate])
+  }, [
+    canLoad,
+    projectId,
+    currentProject?.id,
+    loadProject,
+    sessionId,
+    session?.id,
+    loadSession,
+    listSessions,
+    pendingSessionCreate,
+  ])
 
   useEffect(() => {
     if (error?.code === 'NOT_FOUND' && projectId) {
