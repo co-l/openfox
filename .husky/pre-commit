@@ -1,1 +1,4 @@
-npx prettier --write . 1>/dev/null 2>&1 && npm test && npm run check
+STAGED=$(git diff --cached --name-only)
+[ -n "$STAGED" ] && echo "$STAGED" | xargs npx prettier --write --ignore-unknown 1>/dev/null 2>&1
+echo "$STAGED" | xargs git add
+npm test && npm run check
