@@ -137,7 +137,7 @@ export function MoreMenu({
   const handleSelectCommand = async (commandId: string) => {
     const full = await useCommandsStore.getState().fetchCommand(commandId)
     if (full) {
-      onSendCommand(full.prompt, full.metadata.agentMode, textareaContent, attachments)
+      onSendCommand(full.prompt, full.metadata?.agentMode, textareaContent, attachments)
     }
     setIsOpen(false)
   }

@@ -773,8 +773,8 @@ export function PlanPanel({ criteriaSidebarOpen: externalCriteriaSidebarOpen, on
             const combinedContent = textareaContent?.trim()
               ? `${textareaContent.trim()}\n\n${full.prompt}`
               : full.prompt
-            if (full.metadata.agentMode) {
-              useSessionStore.getState().switchMode(full.metadata.agentMode)
+            if (full.metadata?.agentMode) {
+              useSessionStore.getState().switchMode(full.metadata?.agentMode)
             }
             sendMessage(combinedContent, attachments?.length ? attachments : undefined, {
               messageKind: 'command',
