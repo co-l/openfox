@@ -1533,4 +1533,169 @@ describe('event folding', () => {
       expect(result.latestContextState?.currentTokens).toBe(50000)
     })
   })
+
+  describe('orphaned tool call filtering (abort scenario)', () => {
+    it('strips orphaned toolCalls from assistant message in buildContextMessagesFromStoredEvents when tool.result is missing', () => {
+      const events: StoredEvent[] = [
+        { ...baseEvent, type: 'message.start', data: { messageId: 'm1', role: 'user', content: 'do it' } },
+        { ...baseEvent, type: 'message.done', data: { messageId: 'm1' } },
+        { ...baseEvent, type: 'message.start', data: { messageId: 'm2', role: 'assistant' } },
+        {
+          ...baseEvent,
+          type: 'tool.call',
+          data: {
+            messageId: 'm2',
+            toolCall: { id: 'call-1', name: 'run_command', arguments: { command: 'sleep 10' } },
+          },
+        },
+        // NO tool.result for call-1 — simulates tool that threw on abort
+        { ...baseEvent, type: 'message.done', data: { messageId: 'm2', partial: true } },
+        { ...baseEvent, type: 'chat.done', data: { messageId: 'm2', reason: 'stopped' } },
+      ]
+
+      const messages = buildContextMessagesFromStoredEvents(events)
+
+      // Assistant message should NOT have the orphaned tool call
+      const assistant = messages.find((m) => m.role === 'assistant')
+      expect(assistant).toBeDefined()
+      expect(assistant!.toolCalls).toBeUndefined()
+
+      // Only user message and assistant (no tool message since result is missing)
+      expect(messages).toHaveLength(2)
+      expect(messages[0]).toMatchObject({ role: 'user', content: 'do it' })
+      expect(messages[1]).toMatchObject({ role: 'assistant' })
+    })
+
+    it('keeps toolCalls when all have matching tool.result events', () => {
+      const events: StoredEvent[] = [
+        { ...baseEvent, type: 'message.start', data: { messageId: 'm1', role: 'user', content: 'do it' } },
+        { ...baseEvent, type: 'message.done', data: { messageId: 'm1' } },
+        { ...baseEvent, type: 'message.start', data: { messageId: 'm2', role: 'assistant' } },
+        {
+          ...baseEvent,
+          type: 'tool.call',
+          data: { messageId: 'm2', toolCall: { id: 'call-1', name: 'run_command', arguments: { command: 'echo hi' } } },
+        },
+        {
+          ...baseEvent,
+          type: 'tool.result',
+          data: {
+            messageId: 'm2',
+            toolCallId: 'call-1',
+            result: { success: true, output: 'hi', durationMs: 1, truncated: false },
+          },
+        },
+        { ...baseEvent, type: 'message.done', data: { messageId: 'm2' } },
+      ]
+
+      const messages = buildContextMessagesFromStoredEvents(events)
+
+      // Assistant should have toolCalls, and tool message should follow
+      const assistant = messages.find((m) => m.role === 'assistant')
+      expect(assistant!.toolCalls).toHaveLength(1)
+      expect(assistant!.toolCalls![0]!.id).toBe('call-1')
+      expect(messages.some((m) => m.role === 'tool' && m.toolCallId === 'call-1')).toBe(true)
+    })
+
+    it('strips orphaned toolCalls only (keeps fulfilled ones) when partial abort', () => {
+      const events: StoredEvent[] = [
+        { ...baseEvent, type: 'message.start', data: { messageId: 'm1', role: 'assistant' } },
+        {
+          ...baseEvent,
+          type: 'tool.call',
+          data: { messageId: 'm1', toolCall: { id: 'call-1', name: 'read_file', arguments: { path: 'a.txt' } } },
+        },
+        {
+          ...baseEvent,
+          type: 'tool.result',
+          data: {
+            messageId: 'm1',
+            toolCallId: 'call-1',
+            result: { success: true, output: 'a', durationMs: 1, truncated: false },
+          },
+        },
+        {
+          ...baseEvent,
+          type: 'tool.call',
+          data: {
+            messageId: 'm1',
+            toolCall: { id: 'call-2', name: 'run_command', arguments: { command: 'sleep 10' } },
+          },
+        },
+        // NO tool.result for call-2 — this tool was aborted mid-execution
+        { ...baseEvent, type: 'message.done', data: { messageId: 'm1', partial: true } },
+      ]
+
+      const messages = buildContextMessagesFromStoredEvents(events)
+
+      // Assistant should only have call-1 (fulfilled), not call-2 (orphaned)
+      const assistant = messages.find((m) => m.role === 'assistant')
+      expect(assistant!.toolCalls).toHaveLength(1)
+      expect(assistant!.toolCalls![0]!.id).toBe('call-1')
+
+      // Tool message for call-1 should be present
+      expect(messages.some((m) => m.role === 'tool' && m.toolCallId === 'call-1')).toBe(true)
+    })
+
+    it('strips orphaned toolCalls from snapshot messages via buildContextMessagesFromEventHistory', () => {
+      const events: StoredEvent[] = [
+        {
+          ...baseEvent,
+          seq: 1,
+          type: 'turn.snapshot',
+          data: {
+            mode: 'planner',
+            phase: 'plan',
+            isRunning: false,
+            messages: [
+              {
+                id: 'msg-1',
+                role: 'assistant',
+                content: '',
+                toolCalls: [
+                  {
+                    id: 'call-1',
+                    name: 'run_command',
+                    arguments: { command: 'sleep 10' },
+                    // NO result — tool was aborted
+                  },
+                  {
+                    id: 'call-2',
+                    name: 'read_file',
+                    arguments: { path: 'x.txt' },
+                    result: { success: true, output: 'content', durationMs: 100, truncated: false },
+                  },
+                ],
+                timestamp: baseEvent.timestamp,
+                contextWindowId: 'window-1',
+              },
+            ],
+            criteria: [],
+            contextState: {
+              currentTokens: 50,
+              maxTokens: 200000,
+              compactionCount: 0,
+              dangerZone: false,
+              canCompact: false,
+            },
+            currentContextWindowId: 'window-1',
+            todos: [],
+            readFiles: [],
+            snapshotSeq: 1,
+            snapshotAt: baseEvent.timestamp,
+          },
+        },
+      ]
+
+      const messages = buildContextMessagesFromEventHistory(events, 'window-1')
+
+      // Assistant should only have call-2 (with result), not call-1 (orphaned)
+      const assistant = messages.find((m) => m.role === 'assistant')
+      expect(assistant!.toolCalls).toHaveLength(1)
+      expect(assistant!.toolCalls![0]!.id).toBe('call-2')
+
+      // Tool message for call-2 should be present
+      expect(messages.some((m) => m.role === 'tool' && m.toolCallId === 'call-2')).toBe(true)
+    })
+  })
 })

@@ -108,11 +108,14 @@ function appendSnapshotMessageContext(result: ContextMessage[], message: Snapsho
   }
 
   if (message.toolCalls && message.toolCalls.length > 0) {
-    contextMsg.toolCalls = message.toolCalls.map((toolCall) => ({
-      id: toolCall.id,
-      name: toolCall.name,
-      arguments: toolCall.arguments,
-    }))
+    const fulfilledToolCalls = message.toolCalls.filter((tc) => tc.result)
+    if (fulfilledToolCalls.length > 0) {
+      contextMsg.toolCalls = fulfilledToolCalls.map((toolCall) => ({
+        id: toolCall.id,
+        name: toolCall.name,
+        arguments: toolCall.arguments,
+      }))
+    }
   }
 
   if (message.attachments !== undefined) {
@@ -244,6 +247,7 @@ export function buildContextMessagesFromStoredEvents(
   const includeVerifier = options?.includeVerifier ?? true
   const messages: Array<ContextMessage & { id: string }> = []
   const messageMap = new Map<string, ContextMessage & { id: string }>()
+  const fulfilledToolCallIds = new Set<string>()
 
   for (const event of events) {
     switch (event.type) {
@@ -293,6 +297,7 @@ export function buildContextMessagesFromStoredEvents(
       }
       case 'tool.result': {
         const data = event.data as Extract<TurnEvent, { type: 'tool.result' }>['data']
+        fulfilledToolCallIds.add(data.toolCallId)
         if (messageMap.has(data.messageId)) {
           const imageMeta = data.result.metadata as
             | { mimeType?: string; dataUrl?: string; path?: string; size?: number }
@@ -323,6 +328,18 @@ export function buildContextMessagesFromStoredEvents(
           messages.push(msg)
         }
         break
+      }
+    }
+  }
+
+  // Strip orphaned toolCalls from assistant messages (no matching tool.result)
+  for (const msg of messages) {
+    if (msg.role === 'assistant' && msg.toolCalls) {
+      const fulfilled = msg.toolCalls.filter((tc) => fulfilledToolCallIds.has(tc.id))
+      if (fulfilled.length === 0) {
+        delete msg.toolCalls
+      } else {
+        msg.toolCalls = fulfilled
       }
     }
   }
