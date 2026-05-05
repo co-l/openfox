@@ -19,6 +19,7 @@ import type {
   ToolResult,
   Attachment,
 } from '../../shared/types.js'
+import type { RequestContextMessage } from '../chat/request-context.js'
 import type { LLMClientWithModel } from '../llm/client.js'
 import type { LLMToolDefinition } from '../llm/types.js'
 import { buildModelParams } from '../llm/client-pure.js'
@@ -67,6 +68,42 @@ export interface PureStreamResult {
   aborted: boolean
   xmlFormatError: boolean
   modelParams?: ModelParams
+}
+
+type StreamMessageInput = {
+  role: string
+  content: string
+  thinkingContent?: string
+  toolCalls?: Array<{ id: string; name: string; arguments: Record<string, unknown> }>
+  toolCallId?: string
+  attachments?: Attachment[]
+}
+
+export function toStreamMessages(messages: StreamMessageInput[]): PureStreamOptions['messages'] {
+  return messages.map((m) => ({
+    role: m.role as PureStreamOptions['messages'][0]['role'],
+    content: m.content,
+    ...(m.thinkingContent ? { thinkingContent: m.thinkingContent } : {}),
+    ...(m.toolCalls?.length
+      ? { toolCalls: m.toolCalls.map((tc) => ({ id: tc.id, name: tc.name, arguments: tc.arguments })) }
+      : {}),
+    ...(m.toolCallId ? { toolCallId: m.toolCallId } : {}),
+    ...(m.attachments?.length ? { attachments: m.attachments } : {}),
+  }))
+}
+
+export function createAssistantMessage(
+  content: string,
+  thinkingContent: string | undefined,
+  toolCalls: ToolCall[],
+): RequestContextMessage {
+  return {
+    role: 'assistant',
+    content,
+    source: 'history',
+    ...(thinkingContent ? { thinkingContent } : {}),
+    ...(toolCalls.length > 0 ? { toolCalls } : {}),
+  }
 }
 
 // ============================================================================

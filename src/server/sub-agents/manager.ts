@@ -21,6 +21,8 @@ import {
   createMessageStartEvent,
   createMessageDoneEvent,
   createChatDoneEvent,
+  toStreamMessages,
+  createAssistantMessage,
 } from '../chat/stream-pure.js'
 import { executeToolBatch } from '../chat/agent-loop.js'
 import type { RequestContextMessage } from '../chat/request-context.js'
@@ -261,14 +263,7 @@ export async function executeSubAgent(options: SubAgentExecutionOptions): Promis
       messageId: assistantMsgId,
       systemPrompt: systemPrompt + RETURN_VALUE_INSTRUCTION,
       llmClient,
-      messages: customMessages.map((m) => ({
-        role: m.role,
-        content: m.content,
-        ...(m.toolCalls
-          ? { toolCalls: m.toolCalls.map((tc) => ({ id: tc.id, name: tc.name, arguments: tc.arguments })) }
-          : {}),
-        ...(m.toolCallId ? { toolCallId: m.toolCallId } : {}),
-      })),
+      messages: toStreamMessages(customMessages),
       tools: toolRegistry.definitions,
       toolChoice: 'auto',
       signal,
@@ -300,12 +295,7 @@ export async function executeSubAgent(options: SubAgentExecutionOptions): Promis
     finalContent = result.content
 
     // Add assistant response to custom context
-    customMessages.push({
-      role: 'assistant',
-      content: result.content,
-      source: 'history',
-      ...(result.toolCalls.length > 0 && { toolCalls: result.toolCalls }),
-    })
+    customMessages.push(createAssistantMessage(result.content, result.thinkingContent, result.toolCalls))
 
     session = sessionManager.requireSession(sessionId)
 

@@ -23,6 +23,8 @@ import {
   createMessageStartEvent,
   createMessageDoneEvent,
   createChatDoneEvent,
+  toStreamMessages,
+  createAssistantMessage,
 } from '../chat/stream-pure.js'
 import { getEventStore } from '../events/index.js'
 import { emitContextState } from '../events/session.js'
@@ -163,6 +165,7 @@ export class LLMExecutor {
         role: m.role,
         content: m.content,
         source: m.source,
+        ...(m.thinkingContent ? { thinkingContent: m.thinkingContent } : {}),
         ...(m.toolCalls ? { toolCalls: m.toolCalls } : {}),
         ...(m.toolCallId ? { toolCallId: m.toolCallId } : {}),
       })),
@@ -255,6 +258,7 @@ export class LLMExecutor {
 
   async execute(): Promise<{
     content: string
+    thinkingContent?: string
     toolCalls: ToolCall[]
     usage: { promptTokens: number; completionTokens: number }
     aborted: boolean
@@ -274,12 +278,7 @@ export class LLMExecutor {
       messageId: assistantMsgId,
       systemPrompt,
       llmClient,
-      messages: messages.map((m) => ({
-        role: m.role,
-        content: m.content,
-        ...(m.toolCalls ? { toolCalls: m.toolCalls } : {}),
-        ...(m.toolCallId ? { toolCallId: m.toolCallId } : {}),
-      })),
+      messages: toStreamMessages(messages),
       tools,
       toolChoice: 'auto',
       signal,
@@ -300,6 +299,7 @@ export class LLMExecutor {
 
     return {
       content: result.content,
+      ...(result.thinkingContent ? { thinkingContent: result.thinkingContent } : {}),
       toolCalls: result.toolCalls,
       usage: result.usage,
       aborted: result.aborted,
@@ -308,6 +308,7 @@ export class LLMExecutor {
 
   async executeWithCompaction(): Promise<{
     content: string
+    thinkingContent?: string
     toolCalls: ToolCall[]
     usage: { promptTokens: number; completionTokens: number }
     aborted: boolean
@@ -504,12 +505,7 @@ export async function runSubAgentWithExecutor(options: RunSubAgentOptions): Prom
       throw new Error('Aborted')
     }
 
-    executor.addMessage({
-      role: 'assistant',
-      content: result.content,
-      source: 'history',
-      ...(result.toolCalls.length > 0 && { toolCalls: result.toolCalls }),
-    })
+    executor.addMessage(createAssistantMessage(result.content, result.thinkingContent, result.toolCalls))
 
     if (result.toolCalls.length === 0) {
       if (nudgeConfig) {
