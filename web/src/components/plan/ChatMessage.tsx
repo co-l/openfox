@@ -13,14 +13,18 @@ interface ChatMessageProps {
   message: Message
   isLastAssistantMessage?: boolean
   promptContext?: PromptContext
+  messageIndex?: number
+  sessionId?: string
 }
 
 interface UserMessageProps {
   message: Message
   promptContext?: PromptContext
+  messageIndex?: number
+  sessionId?: string
 }
 
-function UserMessage({ message, promptContext }: UserMessageProps) {
+function UserMessage({ message, promptContext, messageIndex, sessionId }: UserMessageProps) {
   const isAutoPrompt = message.messageKind === 'auto-prompt'
   const isCommand = message.messageKind === 'command'
   const isSystemGenerated = message.isSystemGenerated
@@ -28,7 +32,13 @@ function UserMessage({ message, promptContext }: UserMessageProps) {
   return (
     <div className="flex justify-end items-start gap-1.5 feed-item">
       {!isSystemGenerated && (
-        <MessageOptionsMenu content={message.content} promptContext={promptContext} align="right" />
+        <MessageOptionsMenu
+          content={message.content}
+          promptContext={promptContext}
+          align="right"
+          messageIndex={messageIndex}
+          sessionId={sessionId}
+        />
       )}
 
       <div
@@ -72,6 +82,8 @@ export const ChatMessage = memo(function ChatMessage({
   message,
   isLastAssistantMessage = false,
   promptContext,
+  messageIndex,
+  sessionId,
 }: ChatMessageProps) {
   const isUser = message.role === 'user'
   const isAssistant = message.role === 'assistant'
@@ -144,7 +156,9 @@ export const ChatMessage = memo(function ChatMessage({
 
   // User message
   if (isUser) {
-    return <UserMessage message={message} promptContext={promptContext} />
+    return (
+      <UserMessage message={message} promptContext={promptContext} messageIndex={messageIndex} sessionId={sessionId} />
+    )
   }
 
   return (

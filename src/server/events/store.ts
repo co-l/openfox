@@ -452,6 +452,21 @@ export class EventStore {
   }
 
   /**
+   * Delete all events after a given sequence number (exclusive).
+   * Retains session.initialized (seq 1) and any events at/below fromSeq.
+   * Used when truncating session history.
+   *
+   * @param sessionId - The session ID
+   * @param fromSeq - Events with seq > fromSeq will be deleted
+   * @returns The number of events deleted
+   */
+  deleteEventsAfterSeq(sessionId: string, fromSeq: number): number {
+    const result = this.db.prepare(`DELETE FROM events WHERE session_id = ? AND seq > ?`).run(sessionId, fromSeq)
+
+    return result.changes as number
+  }
+
+  /**
    * Clean up old events, keeping only:
    * - session.initialized event (seq 1)
    * - All snapshot events

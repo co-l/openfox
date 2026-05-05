@@ -11,3 +11,16 @@ export async function authFetch(url: string, options: RequestInit = {}): Promise
 
   return fetch(url, { ...options, headers })
 }
+
+export async function truncateSession(sessionId: string, messageIndex: number): Promise<boolean> {
+  try {
+    const res = await authFetch(`/api/sessions/${sessionId}/truncate`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ messageIndex }),
+    })
+    return res.ok
+  } catch {
+    return false
+  }
+}

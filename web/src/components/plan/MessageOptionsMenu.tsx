@@ -1,19 +1,31 @@
 import { useEffect, useRef, useState } from 'react'
 import type { PromptContext } from '@shared/types.js'
 import { PromptInspector } from '../shared/PromptInspector'
-import { CheckIcon, CopyIcon, EyeIcon, EllipsisIcon } from '../shared/icons'
+import { CheckIcon, CopyIcon, EyeIcon, EllipsisIcon, TrashIcon } from '../shared/icons'
+import { truncateSession } from '../../lib/api.js'
+import { useSessionStore } from '../../stores/session.js'
 
 interface MessageOptionsMenuProps {
   content: string
   promptContext?: PromptContext
   align?: 'left' | 'right'
+  messageIndex?: number
+  sessionId?: string
 }
 
-export function MessageOptionsMenu({ content, promptContext, align = 'right' }: MessageOptionsMenuProps) {
+export function MessageOptionsMenu({
+  content,
+  promptContext,
+  align = 'right',
+  messageIndex,
+  sessionId,
+}: MessageOptionsMenuProps) {
   const [showMenu, setShowMenu] = useState(false)
   const [showInspector, setShowInspector] = useState(false)
   const [copied, setCopied] = useState(false)
+  const [deleting, setDeleting] = useState(false)
   const menuRef = useRef<HTMLDivElement>(null)
+  const loadSession = useSessionStore((s) => s.loadSession)
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -34,7 +46,6 @@ export function MessageOptionsMenu({ content, promptContext, align = 'right' }: 
       if (navigator.clipboard) {
         await navigator.clipboard.writeText(content)
       } else {
-        // Fallback for non-secure contexts where clipboard API is unavailable
         const textArea = document.createElement('textarea')
         textArea.value = content
         textArea.style.position = 'fixed'
@@ -50,6 +61,19 @@ export function MessageOptionsMenu({ content, promptContext, align = 'right' }: 
     } catch (err) {
       console.error('Failed to copy:', err)
     }
+  }
+
+  const handleDeleteAfter = async () => {
+    if (!sessionId || messageIndex === undefined) return
+    if (!window.confirm('Delete all messages after this point?')) return
+
+    setDeleting(true)
+    setShowMenu(false)
+    const ok = await truncateSession(sessionId, messageIndex)
+    if (ok) {
+      loadSession(sessionId)
+    }
+    setDeleting(false)
   }
 
   const isRightAligned = align === 'right'
@@ -79,6 +103,19 @@ export function MessageOptionsMenu({ content, promptContext, align = 'right' }: 
                 <CopyIcon className="w-4 h-4" />
                 Copy
               </button>
+              {sessionId && messageIndex !== undefined && (
+                <>
+                  <div className="border-t border-border my-1" />
+                  <button
+                    onClick={handleDeleteAfter}
+                    disabled={deleting}
+                    className="w-full px-3 py-1.5 text-left text-sm text-red-400 hover:bg-bg-tertiary flex items-center gap-2 disabled:opacity-50"
+                  >
+                    <TrashIcon className="w-4 h-4" />
+                    {deleting ? 'Deleting...' : 'Delete after'}
+                  </button>
+                </>
+              )}
               {promptContext && (
                 <button
                   onClick={() => {

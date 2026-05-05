@@ -495,6 +495,8 @@ export function PlanPanel({
                   >
                     <ChatMessage
                       message={message}
+                      messageIndex={index}
+                      sessionId={session?.id}
                       isLastAssistantMessage={false}
                       promptContext={message.role === 'user' ? promptContextByUserMessageId[message.id] : undefined}
                     />

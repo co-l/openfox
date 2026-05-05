@@ -568,6 +568,25 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
     res.json({ success: true })
   })
 
+  // Truncate session messages at a given index
+  app.post('/api/sessions/:id/truncate', async (req, res) => {
+    const sessionId = req.params.id as string
+    const session = sessionManager.getSession(sessionId)
+    if (!session) {
+      return res.status(404).json({ error: 'Session not found' })
+    }
+
+    const { messageIndex } = req.body
+    if (typeof messageIndex !== 'number' || messageIndex < 0) {
+      return res.status(400).json({ error: 'messageIndex must be a non-negative number' })
+    }
+
+    const { truncateSessionMessages } = await import('./events/index.js')
+    truncateSessionMessages(sessionId, messageIndex)
+
+    res.json({ success: true })
+  })
+
   // Chat operations (REST)
   app.post('/api/sessions/:id/chat', async (req, res) => {
     const sessionId = req.params.id

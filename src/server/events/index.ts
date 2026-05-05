@@ -96,6 +96,7 @@ export {
   emitChatError,
   emitFormatRetry,
   emitTurnSnapshot,
+  truncateSessionMessages,
   compactContext,
   getRecentUserPromptsForSession,
 } from './session.js'

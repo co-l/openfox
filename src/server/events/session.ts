@@ -634,6 +634,37 @@ export function emitTurnSnapshot(sessionId: string, snapshot: SessionSnapshot): 
   })
 }
 
+/**
+ * Truncate session messages at a given index.
+ * Keeps messages[0..messageIndex], removes everything after.
+ * messageIndex is 0-based — the message at that index is kept.
+ * Emits a new snapshot with the truncated messages and cleans up stale events.
+ */
+export function truncateSessionMessages(sessionId: string, messageIndex: number): void {
+  const eventStore = getEventStore()
+
+  const snapshotEvent = eventStore.getLatestSnapshot(sessionId)
+  if (!snapshotEvent) return
+
+  const snapshot = snapshotEvent.data
+  const messages = snapshot.messages
+
+  const lastKept = messageIndex + 1
+  if (lastKept < 1 || lastKept >= messages.length) return
+
+  snapshot.messages = messages.slice(0, lastKept)
+
+  eventStore.deleteEventsAfterSeq(sessionId, snapshotEvent.seq)
+
+  eventStore.append(sessionId, {
+    type: 'turn.snapshot',
+    data: snapshot,
+  })
+
+  const removed = messages.length - messageIndex
+  updateSessionMessageCount(sessionId, -removed)
+}
+
 // ============================================================================
 // Convenience Helpers
 // ============================================================================
