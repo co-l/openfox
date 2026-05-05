@@ -41,7 +41,13 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ name, workdir }),
       })
-      if (!res.ok) return null
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}))
+        if (data.code === 'EACCES') {
+          return { error: { code: 'EACCES', path: data.path, message: data.error } } as const
+        }
+        return null
+      }
       const data = await res.json()
       // Refresh project list
       await get().listProjects()

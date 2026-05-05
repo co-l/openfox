@@ -217,8 +217,64 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
       return res.status(400).json({ error: 'name and workdir are required' })
     }
     const { createDirectoryWithGit } = await import('./utils/project-creator.js')
-    const project = await createDirectoryWithGit(name, workdir)
-    res.status(201).json({ project })
+    try {
+      const project = await createDirectoryWithGit(name, workdir)
+      res.status(201).json({ project })
+    } catch (err) {
+      if (err instanceof Error && 'code' in err && err.code === 'EACCES') {
+        const eaccError = err as Error & { code?: string; cause?: unknown }
+        return res.status(403).json({
+          error: eaccError.message || 'Permission denied',
+          code: 'EACCES',
+          path: workdir,
+        })
+      }
+      res.status(500).json({ error: err instanceof Error ? err.message : 'Unknown error' })
+    }
+  })
+
+  app.post('/api/projects/fix-permissions', async (req, res) => {
+    const { path: targetPath } = req.body
+    if (!targetPath) {
+      return res.status(400).json({ error: 'path is required' })
+    }
+
+    try {
+      const { execSync } = await import('node:child_process')
+      const { resolve } = await import('node:path')
+      const { access } = await import('node:fs/promises')
+      const { constants } = await import('node:fs')
+
+      const resolvedPath = resolve(targetPath)
+
+      // Check if passwordless sudo is available
+      try {
+        execSync('sudo -n true', { stdio: 'pipe' })
+      } catch {
+        return res.json({ success: false, sudoAvailable: false })
+      }
+
+      // Check if the path exists
+      try {
+        await access(resolvedPath, constants.F_OK)
+      } catch {
+        return res.status(404).json({ error: 'Path not found' })
+      }
+
+      // Get current user
+      const currentUser = process.env['USER'] || process.env['USERNAME'] || 'root'
+
+      // Take ownership
+      execSync(`sudo chown -R ${currentUser} "${resolvedPath}"`, { stdio: 'pipe' })
+
+      res.json({ success: true, sudoAvailable: true })
+    } catch (err) {
+      res.status(500).json({
+        success: false,
+        sudoAvailable: true,
+        error: err instanceof Error ? err.message : 'Failed to fix permissions',
+      })
+    }
   })
 
   app.get('/api/projects/:id', async (req, res) => {

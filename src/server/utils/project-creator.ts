@@ -37,23 +37,40 @@ export async function createDirectoryWithGit(projectName: string, workdir: strin
   }
 
   const fullPath = workdir.replace(/\/+$/, '')
-  const { stat, mkdir } = await import('node:fs/promises')
+  const { stat, mkdir, rm } = await import('node:fs/promises')
 
   try {
     const stats = await stat(fullPath)
     if (!stats.isDirectory()) {
       throw new Error(`A file named '${projectName}' already exists at ${fullPath}`)
     }
-  } catch {
-    await mkdir(fullPath, { recursive: true })
+  } catch (err) {
+    if (err instanceof Error && 'code' in err && err.code === 'ENOENT') {
+      try {
+        await mkdir(fullPath, { recursive: true })
+      } catch (mkdirErr) {
+        if (mkdirErr instanceof Error && 'code' in mkdirErr && mkdirErr.code === 'EACCES') {
+          const eaccError = mkdirErr as NodeJS.ErrnoException
+          const permError = new Error(`Permission denied: cannot create directory at ${fullPath}`, { cause: eaccError }) as Error & { code?: string }
+          permError.code = 'EACCES'
+          throw permError
+        }
+        throw mkdirErr
+      }
+    } else {
+      throw err
+    }
   }
 
   if (!(await directoryExists(join(fullPath, '.git')))) {
     try {
       execSync('git init', { cwd: fullPath, stdio: 'pipe' })
     } catch (gitErr) {
-      const { rm } = await import('node:fs/promises')
-      await rm(fullPath, { recursive: true, force: true })
+      try {
+        await rm(fullPath, { recursive: true, force: true })
+      } catch {
+        // ignore cleanup errors
+      }
       throw new Error(`Failed to initialize git: ${gitErr instanceof Error ? gitErr.message : 'Unknown'}`)
     }
   }
