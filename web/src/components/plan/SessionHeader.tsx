@@ -12,9 +12,9 @@ function getTextColor(percent: number, dangerZone: boolean): string {
 }
 
 export function SessionHeader() {
-  const contextState = useSessionStore(state => state.contextState)
-  const currentSession = useSessionStore(state => state.currentSession)
-  const compactContext = useSessionStore(state => state.compactContext)
+  const contextState = useSessionStore((state) => state.contextState)
+  const currentSession = useSessionStore((state) => state.currentSession)
+  const compactContext = useSessionStore((state) => state.compactContext)
 
   const [menuOpen, setMenuOpen] = useState(false)
 
@@ -41,9 +41,7 @@ export function SessionHeader() {
           <LowTokenWarning dangerZone={dangerZone} />
 
           {compactionCount > 0 && (
-            <span className="text-[10px] text-text-muted bg-bg-tertiary px-1 py-0.5 rounded">
-              {compactionCount}x
-            </span>
+            <span className="text-[10px] text-text-muted bg-bg-tertiary px-1 py-0.5 rounded">{compactionCount}x</span>
           )}
         </div>
 

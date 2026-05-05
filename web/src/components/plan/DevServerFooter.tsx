@@ -5,6 +5,7 @@ import { useSessionStore } from '../../stores/session'
 import { GearIcon, StopIcon, OpenExternalIcon } from '../shared/icons'
 import { DevServerConfigModal } from './DevServerConfigModal'
 import { LogViewer } from './LogViewer'
+import { LogRenderer } from '../shared/LogRenderer'
 import { ansiToReact } from '../../lib/ansiParser'
 
 interface DevServerFooterProps {
@@ -69,7 +70,10 @@ const LogHoverExpand = memo(function LogHoverExpand({
         ))}
       </pre>
       <button
-        onClick={() => { onClose(); onExpand() }}
+        onClick={() => {
+          onClose()
+          onExpand()
+        }}
         className="fixed z-50 px-2 py-1 rounded text-xs font-medium bg-accent-primary/30 text-text-primary hover:bg-accent-primary/50 transition-colors duration-150"
         style={{
           bottom: pos.bottom + 8,
@@ -83,14 +87,14 @@ const LogHoverExpand = memo(function LogHoverExpand({
 })
 
 export const DevServerFooter = memo(function DevServerFooter({ workdir }: DevServerFooterProps) {
-  const setWorkdir = useDevServerStore(s => s.setWorkdir)
-  const status = useDevServerStore(s => s.status)
-  const config = useDevServerStore(s => s.config)
-  const logs = useDevServerStore(s => s.logs)
-  const start = useDevServerStore(s => s.start)
-  const stop = useDevServerStore(s => s.stop)
-  const fetchLogs = useDevServerStore(s => s.fetchLogs)
-  const currentSession = useSessionStore(s => s.currentSession)
+  const setWorkdir = useDevServerStore((s) => s.setWorkdir)
+  const status = useDevServerStore((s) => s.status)
+  const config = useDevServerStore((s) => s.config)
+  const logs = useDevServerStore((s) => s.logs)
+  const start = useDevServerStore((s) => s.start)
+  const stop = useDevServerStore((s) => s.stop)
+  const fetchLogs = useDevServerStore((s) => s.fetchLogs)
+  const currentSession = useSessionStore((s) => s.currentSession)
 
   const [showConfigModal, setShowConfigModal] = useState(false)
   const [showExpandModal, setShowExpandModal] = useState(false)
@@ -114,18 +118,27 @@ export const DevServerFooter = memo(function DevServerFooter({ workdir }: DevSer
       inspectWindowRef.current = win
       const sendToWindow = () => {
         if (!inspectWindowRef.current || inspectWindowRef.current.closed) return
-        inspectWindowRef.current.postMessage({
-          type: 'setFoxSessionId',
-          sessionId: currentSession?.id ?? null,
-        }, '*')
-        inspectWindowRef.current.postMessage({
-          type: 'setFoxSessionTitle',
-          sessionTitle: currentSession?.metadata?.title ?? null,
-        }, '*')
-        inspectWindowRef.current.postMessage({
-          type: 'setFoxInspectEnabled',
-          enabled: !config?.disableInspect,
-        }, '*')
+        inspectWindowRef.current.postMessage(
+          {
+            type: 'setFoxSessionId',
+            sessionId: currentSession?.id ?? null,
+          },
+          '*',
+        )
+        inspectWindowRef.current.postMessage(
+          {
+            type: 'setFoxSessionTitle',
+            sessionTitle: currentSession?.metadata?.title ?? null,
+          },
+          '*',
+        )
+        inspectWindowRef.current.postMessage(
+          {
+            type: 'setFoxInspectEnabled',
+            enabled: !config?.disableInspect,
+          },
+          '*',
+        )
       }
       const interval = setInterval(() => {
         sendToWindow()
@@ -173,12 +186,17 @@ export const DevServerFooter = memo(function DevServerFooter({ workdir }: DevSer
       {/* Header row: [dot] Dev Server ... [settings] */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
-          <span className={`inline-block w-2.5 h-2.5 rounded-full flex-shrink-0 ${
-            state === 'running' ? 'bg-accent-success' :
-            state === 'warning' ? 'bg-accent-warning' :
-            state === 'error' ? 'bg-accent-error' :
-            'bg-text-muted'
-          }`} />
+          <span
+            className={`inline-block w-2.5 h-2.5 rounded-full flex-shrink-0 ${
+              state === 'running'
+                ? 'bg-accent-success'
+                : state === 'warning'
+                  ? 'bg-accent-warning'
+                  : state === 'error'
+                    ? 'bg-accent-error'
+                    : 'bg-text-muted'
+            }`}
+          />
           <h3 className="text-sm font-semibold text-text-primary">Dev Server</h3>
         </div>
         <button
@@ -241,35 +259,25 @@ export const DevServerFooter = memo(function DevServerFooter({ workdir }: DevSer
                 hideTimeoutRef.current = setTimeout(() => setIsHoveringLogs(false), 150)
               }}
             >
-              <pre
-                ref={logRef}
-                className="text-sm bg-bg-primary p-2 rounded overflow-auto max-h-[200px] border border-border"
-              >
-                {logs.length === 0 ? (
-                  <span className="text-text-muted">No output yet</span>
-                ) : (
-                  logs.map((chunk, i) => (
-                    <span
-                      key={i}
-                      className={chunk.stream === 'stderr' ? 'text-accent-warning' : ''}
-                    >
-                      {ansiToReact(chunk.content)}
-                    </span>
-                  ))
-                )}
-              </pre>
+              <LogRenderer
+                logs={logs}
+                preRef={logRef}
+                preClassName="text-sm bg-bg-primary p-2 rounded overflow-auto max-h-[200px] border border-border"
+              />
 
               {/* Hover expansion portal */}
-              {(isHoveringLogs || isHidingLogs) && logContainerRef.current && createPortal(
-                <LogHoverExpand
-                  logs={logs}
-                  anchorRef={logContainerRef}
-                  isHiding={isHidingLogs}
-                  onExpand={() => setShowExpandModal(true)}
-                  onClose={() => setIsHoveringLogs(false)}
-                />,
-                document.body
-              )}
+              {(isHoveringLogs || isHidingLogs) &&
+                logContainerRef.current &&
+                createPortal(
+                  <LogHoverExpand
+                    logs={logs}
+                    anchorRef={logContainerRef}
+                    isHiding={isHidingLogs}
+                    onExpand={() => setShowExpandModal(true)}
+                    onClose={() => setIsHoveringLogs(false)}
+                  />,
+                  document.body,
+                )}
             </div>
           )}
         </>
@@ -282,18 +290,9 @@ export const DevServerFooter = memo(function DevServerFooter({ workdir }: DevSer
         </button>
       )}
 
-      <DevServerConfigModal
-        isOpen={showConfigModal}
-        onClose={() => setShowConfigModal(false)}
-      />
+      <DevServerConfigModal isOpen={showConfigModal} onClose={() => setShowConfigModal(false)} />
 
-      {showExpandModal && (
-        <LogViewer
-          title="Dev Server Logs"
-          logs={logs}
-          onClose={() => setShowExpandModal(false)}
-        />
-      )}
+      {showExpandModal && <LogViewer title="Dev Server Logs" logs={logs} onClose={() => setShowExpandModal(false)} />}
     </div>
   )
 })

@@ -92,12 +92,7 @@ export function InstructionsModal({
 
         {isDirty && <KvCacheWarning />}
 
-        <ModalFooter
-          onCancel={handleCancel}
-          onSave={handleSave}
-          saving={saving}
-          saveDisabled={!isDirty || isBusy}
-        />
+        <ModalFooter onCancel={handleCancel} onSave={handleSave} saving={saving} saveDisabled={!isDirty || isBusy} />
       </div>
     </Modal>
   )

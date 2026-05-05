@@ -51,18 +51,22 @@ export function DirectoryBrowser({ onSelect, onClose, initialPath }: DirectoryBr
     fetchDir(initialPath)
   }, [initialPath, fetchDir])
 
-  const crumbs = (listing?.current ?? '').split('/').filter(Boolean).map((part, i, arr) => ({
-    name: part,
-    path: '/' + arr.slice(0, i + 1).join('/'),
-  }))
+  const crumbs = (listing?.current ?? '')
+    .split('/')
+    .filter(Boolean)
+    .map((part, i, arr) => ({
+      name: part,
+      path: '/' + arr.slice(0, i + 1).join('/'),
+    }))
 
-  const filteredDirs = listing?.directories.filter(dir =>
-    searchQuery === '' || dir.name.toLowerCase().includes(searchQuery.toLowerCase())
-  ) ?? []
+  const filteredDirs =
+    listing?.directories.filter(
+      (dir) => searchQuery === '' || dir.name.toLowerCase().includes(searchQuery.toLowerCase()),
+    ) ?? []
 
   const visibleItems = [
     ...(listing?.parent ? [{ type: 'parent' as const, path: listing.parent, name: '..' }] : []),
-    ...filteredDirs.map(dir => ({ type: 'dir' as const, path: dir.path, name: dir.name }))
+    ...filteredDirs.map((dir) => ({ type: 'dir' as const, path: dir.path, name: dir.name })),
   ]
 
   useEffect(() => {
@@ -78,10 +82,10 @@ export function DirectoryBrowser({ onSelect, onClose, initialPath }: DirectoryBr
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'ArrowDown') {
       e.preventDefault()
-      setFocusedIndex(i => Math.min(i + 1, visibleItems.length - 1))
+      setFocusedIndex((i) => Math.min(i + 1, visibleItems.length - 1))
     } else if (e.key === 'ArrowUp') {
       e.preventDefault()
-      setFocusedIndex(i => Math.max(i - 1, 0))
+      setFocusedIndex((i) => Math.max(i - 1, 0))
     } else if (e.key === 'Enter') {
       e.preventDefault()
       if (focusedIndex >= 0 && visibleItems[focusedIndex]) {
@@ -115,7 +119,9 @@ export function DirectoryBrowser({ onSelect, onClose, initialPath }: DirectoryBr
               </span>
             ))}
             {crumbs.length === 0 && (
-              <button onClick={() => fetchDir('/')} className="text-text-muted hover:text-accent-primary">/</button>
+              <button onClick={() => fetchDir('/')} className="text-text-muted hover:text-accent-primary">
+                /
+              </button>
             )}
           </div>
         </div>
@@ -127,9 +133,10 @@ export function DirectoryBrowser({ onSelect, onClose, initialPath }: DirectoryBr
             <SearchIcon />
           </span>
           <Input
-            autoFocus ref={inputRef}
+            autoFocus
+            ref={inputRef}
             value={searchQuery}
-            onChange={e => setSearchQuery(e.target.value)}
+            onChange={(e) => setSearchQuery(e.target.value)}
             onKeyDown={handleKeyDown}
             placeholder="Filter directories..."
             className="w-full pl-9"
@@ -139,7 +146,9 @@ export function DirectoryBrowser({ onSelect, onClose, initialPath }: DirectoryBr
 
       <div className="flex-1 overflow-y-auto -mx-4">
         {loading ? (
-          <div className="p-8 text-center"><Spinner size="sm" /></div>
+          <div className="p-8 text-center">
+            <Spinner size="sm" />
+          </div>
         ) : visibleItems.length === 0 ? (
           <div className="p-8 text-center text-text-muted text-sm">
             {searchQuery ? 'No matching directories' : 'No subdirectories'}
@@ -148,7 +157,9 @@ export function DirectoryBrowser({ onSelect, onClose, initialPath }: DirectoryBr
           <div className="divide-y divide-border">
             {visibleItems.map((item, index) => (
               <button
-                ref={el => { itemsRef.current[index] = el }}
+                ref={(el) => {
+                  itemsRef.current[index] = el
+                }}
                 key={item.path}
                 onClick={() => fetchDir(item.path)}
                 onDoubleClick={() => onSelect(item.path)}

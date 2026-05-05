@@ -46,10 +46,14 @@ describe('Auto-Compaction Trigger', () => {
   it('automatically compacts before the next turn after threshold is exceeded', async () => {
     await client.send('chat.send', { content: 'First message that fills the tiny test context window.' })
     await client.waitForChatDone(3000)
-    await client.waitFor('context.state', (payload: unknown) => {
-      const context = (payload as { context: ContextState }).context
-      return context.currentTokens > 0
-    }, 3000)
+    await client.waitFor(
+      'context.state',
+      (payload: unknown) => {
+        const context = (payload as { context: ContextState }).context
+        return context.currentTokens > 0
+      },
+      3000,
+    )
 
     expect(client.getContextState()?.maxTokens).toBe(100)
     expect(client.getContextState()?.currentTokens).toBeGreaterThanOrEqual(100)
@@ -64,10 +68,14 @@ describe('Auto-Compaction Trigger', () => {
     expect(compactionTurn.reason).toBe('complete')
     expect(finalTurn.reason).toBe('complete')
 
-    await client.waitFor('context.state', (payload: unknown) => {
-      const context = (payload as { context: ContextState }).context
-      return context.compactionCount >= 1
-    }, 3000)
+    await client.waitFor(
+      'context.state',
+      (payload: unknown) => {
+        const context = (payload as { context: ContextState }).context
+        return context.compactionCount >= 1
+      },
+      3000,
+    )
 
     const contextState = client.getContextState()!
     expect(contextState.compactionCount).toBeGreaterThanOrEqual(1)

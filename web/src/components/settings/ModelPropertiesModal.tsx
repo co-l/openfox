@@ -113,7 +113,9 @@ function NumberInput({
     <label className="flex items-center gap-2 text-sm font-medium text-text-secondary mb-1">
       {tooltip && (
         <Tooltip content={tooltip}>
-          <span className="inline-flex items-center justify-center w-4 h-4 text-xs text-text-muted hover:text-text-secondary cursor-help rounded-full border border-border/50">?</span>
+          <span className="inline-flex items-center justify-center w-4 h-4 text-xs text-text-muted hover:text-text-secondary cursor-help rounded-full border border-border/50">
+            ?
+          </span>
         </Tooltip>
       )}
       {label}
@@ -121,7 +123,9 @@ function NumberInput({
         type="button"
         onClick={handleToggle}
         className={`text-xs px-1.5 py-0.5 rounded border ${
-          useDefault ? 'border-accent-primary/50 bg-accent-primary/10 text-accent-primary' : 'border-border text-text-muted hover:text-text-secondary'
+          useDefault
+            ? 'border-accent-primary/50 bg-accent-primary/10 text-accent-primary'
+            : 'border-border text-text-muted hover:text-text-secondary'
         }`}
         title={useDefault ? 'Click to set a custom value' : 'Click to use default'}
       >
@@ -142,23 +146,21 @@ function NumberInput({
         readOnly={useDefault}
         onChange={(e) => handleLocalChange(e.target.value)}
         onClick={() => useDefault && handleToggle()}
-        placeholder={useDefault ? `${profileDefault !== undefined ? profileDefault : 'Using default'} (click to edit)` : ''}
+        placeholder={
+          useDefault ? `${profileDefault !== undefined ? profileDefault : 'Using default'} (click to edit)` : ''
+        }
         className={`w-full bg-bg-tertiary border border-border rounded px-3 py-2 text-text-primary focus:outline-none focus:border-accent-primary ${useDefault ? 'opacity-50 cursor-pointer' : ''}`}
       />
       {helpText && (
         <div className="flex items-center gap-2 mt-1">
           <p className="text-xs text-text-muted">{helpText}</p>
           {profileDefault !== undefined && (
-            <span className="text-xs text-text-muted/60">
-              (default: {profileDefault})
-            </span>
+            <span className="text-xs text-text-muted/60">(default: {profileDefault})</span>
           )}
         </div>
       )}
       {!helpText && profileDefault !== undefined && (
-        <p className="text-xs text-text-muted mt-1">
-          Profile default: {profileDefault}
-        </p>
+        <p className="text-xs text-text-muted mt-1">Profile default: {profileDefault}</p>
       )}
     </div>
   )
@@ -167,9 +169,11 @@ function NumberInput({
 export function ModelPropertiesModal({ isOpen, onClose, providerId, model }: ModelPropertiesModalProps) {
   const [settings, setSettings] = useState<ModelSettings>(() => defaultModelSettings(model))
   const [saving, setSaving] = useState(false)
-  const updateModelSettings = useConfigStore(state => state.updateModelSettings)
+  const updateModelSettings = useConfigStore((state) => state.updateModelSettings)
 
-  useEffect(() => { setSettings(defaultModelSettings(model)) }, [model])
+  useEffect(() => {
+    setSettings(defaultModelSettings(model))
+  }, [model])
 
   const handleSave = async () => {
     if (settings.contextWindow < 1024 || settings.contextWindow > 10000000) return
@@ -210,8 +214,14 @@ export function ModelPropertiesModal({ isOpen, onClose, providerId, model }: Mod
       size="lg"
       footer={
         <div className="flex justify-end gap-2">
-          <Button variant="secondary" onClick={handleCancel} disabled={saving}>Cancel</Button>
-          <Button variant="primary" onClick={handleSave} disabled={saving || settings.contextWindow < 1024 || settings.contextWindow > 10000000}>
+          <Button variant="secondary" onClick={handleCancel} disabled={saving}>
+            Cancel
+          </Button>
+          <Button
+            variant="primary"
+            onClick={handleSave}
+            disabled={saving || settings.contextWindow < 1024 || settings.contextWindow > 10000000}
+          >
             {saving ? 'Saving...' : 'Save'}
           </Button>
         </div>
@@ -226,7 +236,7 @@ export function ModelPropertiesModal({ isOpen, onClose, providerId, model }: Mod
         <NumberInput
           label="Context Window"
           value={settings.contextWindow}
-          onChange={(v) => v !== null && setSettings(s => ({ ...s, contextWindow: v }))}
+          onChange={(v) => v !== null && setSettings((s) => ({ ...s, contextWindow: v }))}
           min={1024}
           max={10000000}
           helpText="Range: 1,024 - 10,000,000 tokens"
@@ -237,7 +247,7 @@ export function ModelPropertiesModal({ isOpen, onClose, providerId, model }: Mod
             <NumberInput
               label="Temperature"
               value={settings.temperature}
-              onChange={(v) => setSettings(s => ({ ...s, temperature: v }))}
+              onChange={(v) => setSettings((s) => ({ ...s, temperature: v }))}
               min={0}
               max={2}
               step={0.1}
@@ -249,7 +259,7 @@ export function ModelPropertiesModal({ isOpen, onClose, providerId, model }: Mod
             <NumberInput
               label="Top P"
               value={settings.topP}
-              onChange={(v) => setSettings(s => ({ ...s, topP: v }))}
+              onChange={(v) => setSettings((s) => ({ ...s, topP: v }))}
               min={0}
               max={1}
               step={0.05}
@@ -262,7 +272,7 @@ export function ModelPropertiesModal({ isOpen, onClose, providerId, model }: Mod
           <NumberInput
             label="Top K"
             value={settings.topK}
-            onChange={(v) => setSettings(s => ({ ...s, topK: v }))}
+            onChange={(v) => setSettings((s) => ({ ...s, topK: v }))}
             min={1}
             max={200}
             helpText="1 - 200 (leave as default if not supported)"
@@ -274,7 +284,7 @@ export function ModelPropertiesModal({ isOpen, onClose, providerId, model }: Mod
         <NumberInput
           label="Max Tokens"
           value={settings.maxTokens}
-          onChange={(v) => setSettings(s => ({ ...s, maxTokens: v }))}
+          onChange={(v) => setSettings((s) => ({ ...s, maxTokens: v }))}
           min={256}
           max={32000}
           helpText="Maximum tokens to generate per response"
@@ -287,12 +297,14 @@ export function ModelPropertiesModal({ isOpen, onClose, providerId, model }: Mod
             <input
               type="checkbox"
               checked={settings.supportsVision ?? false}
-              onChange={(e) => setSettings(s => ({ ...s, supportsVision: e.target.checked }))}
+              onChange={(e) => setSettings((s) => ({ ...s, supportsVision: e.target.checked }))}
               className="rounded border-border bg-bg-tertiary text-accent-primary focus:ring-accent-primary focus:ring-offset-0"
             />
             Vision Enabled
           </label>
-          <p className="text-xs text-text-muted">Allow sending images directly to this model. Disable if the model doesn't support vision.</p>
+          <p className="text-xs text-text-muted">
+            Allow sending images directly to this model. Disable if the model doesn't support vision.
+          </p>
         </div>
 
         <div>

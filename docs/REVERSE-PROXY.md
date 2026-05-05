@@ -54,19 +54,19 @@ backend openfox
 http:
   routers:
     openfox:
-      rule: "Host(`yourdomain.com`)"
+      rule: 'Host(`yourdomain.com`)'
       service: openfox
       tls: {}
       middlewares:
         - basicAuth:
             users:
-              - "user:$hash"
+              - 'user:$hash'
 
   services:
     openfox:
       loadBalancer:
         servers:
-          - url: "http://127.0.0.1:10369"
+          - url: 'http://127.0.0.1:10369'
         passHostHeader: true
 ```
 

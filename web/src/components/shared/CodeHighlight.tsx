@@ -92,8 +92,8 @@ const codeStyle: React.CSSProperties = {
   margin: 0,
   padding: 0,
   borderRadius: 0,
-  fontSize: '0.875rem',    // 14px to match text-sm
-  lineHeight: '1.5rem',    // 24px for consistent line alignment
+  fontSize: '0.875rem', // 14px to match text-sm
+  lineHeight: '1.5rem', // 24px for consistent line alignment
   background: 'transparent',
   whiteSpace: 'pre-wrap',
   overflowWrap: 'break-word',
@@ -126,12 +126,7 @@ export const CodeHighlight = memo(function CodeHighlight({ code, language, varia
   const style = variant === 'inline' ? inlineCodeStyle : variant === 'block-nowrap' ? codeStyle : wrappedCodeStyle
 
   return (
-    <SyntaxHighlighter
-      style={oneDarkTransparent}
-      language={language}
-      PreTag={preTag}
-      customStyle={style}
-    >
+    <SyntaxHighlighter style={oneDarkTransparent} language={language} PreTag={preTag} customStyle={style}>
       {code}
     </SyntaxHighlighter>
   )

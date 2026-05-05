@@ -7,12 +7,15 @@ interface ProjectState {
   projects: Project[]
   currentProject: Project | null
   loading: boolean
-  
+
   // Actions
   listProjects: () => Promise<void>
   createProject: (name: string, workdir: string) => Promise<Project | null>
   loadProject: (projectId: string) => Promise<Project | null>
-  updateProject: (projectId: string, updates: { name?: string; customInstructions?: string | null }) => Promise<Project | null>
+  updateProject: (
+    projectId: string,
+    updates: { name?: string; customInstructions?: string | null },
+  ) => Promise<Project | null>
   deleteProject: (projectId: string) => Promise<boolean>
   clearProject: () => void
 }
@@ -21,7 +24,7 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
   projects: [],
   currentProject: null,
   loading: false,
-  
+
   listProjects: async () => {
     set({ loading: true })
     try {
@@ -33,7 +36,7 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
       set({ loading: false })
     }
   },
-  
+
   createProject: async (name, workdir) => {
     try {
       const res = await authFetch('/api/projects', {
@@ -50,7 +53,7 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
       return null
     }
   },
-  
+
   loadProject: async (projectId) => {
     try {
       const res = await authFetch(`/api/projects/${projectId}`)
@@ -65,7 +68,7 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
       return null
     }
   },
-  
+
   updateProject: async (projectId, updates) => {
     try {
       const res = await authFetch(`/api/projects/${projectId}`, {
@@ -86,7 +89,7 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
       return null
     }
   },
-  
+
   deleteProject: async (projectId) => {
     try {
       const res = await authFetch(`/api/projects/${projectId}`, { method: 'DELETE' })
@@ -102,7 +105,7 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
       return false
     }
   },
-  
+
   clearProject: () => {
     set({ currentProject: null })
   },

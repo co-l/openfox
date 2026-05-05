@@ -24,10 +24,14 @@ async function main() {
     }, TIMEOUT_MS)
 
     // Run playwright test - it handles its own config isolation when spawning server
-    const child = spawn('npx', ['playwright', 'test', 'full-stack.spec.ts', '--config=e2e-playwright/playwright.publish.config.ts'], {
-      cwd: process.cwd(),
-      stdio: 'inherit',
-    })
+    const child = spawn(
+      'npx',
+      ['playwright', 'test', 'full-stack.spec.ts', '--config=e2e-playwright/playwright.publish.config.ts'],
+      {
+        cwd: process.cwd(),
+        stdio: 'inherit',
+      },
+    )
 
     child.on('close', async (code) => {
       clearTimeout(timeout)

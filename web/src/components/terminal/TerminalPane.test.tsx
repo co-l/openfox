@@ -40,8 +40,12 @@ vi.mock('@xterm/xterm', () => ({
       mockRows = rows
     }
     dispose() {}
-    get cols() { return mockCols }
-    get rows() { return mockRows }
+    get cols() {
+      return mockCols
+    }
+    get rows() {
+      return mockRows
+    }
   },
 }))
 

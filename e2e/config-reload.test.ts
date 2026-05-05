@@ -32,17 +32,17 @@ describe('Config reload after provider update', () => {
     })
 
     expect(createRes.status).toBe(201)
-    const createData = await createRes.json() as { success: boolean; provider: { id: string; name: string } }
+    const createData = (await createRes.json()) as { success: boolean; provider: { id: string; name: string } }
     expect(createData.success).toBe(true)
     expect(createData.provider.name).toBe('Test Config Reload Provider')
 
     // Immediately fetch config again - should reflect the new provider
     const updatedRes = await fetch(`${server.url}/api/config`)
     expect(updatedRes.status).toBe(200)
-    const updatedConfig = await updatedRes.json() as { providers: Array<{ id: string; name: string }> }
+    const updatedConfig = (await updatedRes.json()) as { providers: Array<{ id: string; name: string }> }
 
     // The new provider should be in the config - THIS IS THE KEY TEST
-    const foundProvider = updatedConfig.providers.find(p => p.id === createData.provider.id)
+    const foundProvider = updatedConfig.providers.find((p) => p.id === createData.provider.id)
     expect(foundProvider).toBeDefined()
     expect(foundProvider?.name).toBe('Test Config Reload Provider')
   })
@@ -50,7 +50,7 @@ describe('Config reload after provider update', () => {
   it('config-reflects-provider-activation: /api/config returns updated activeProviderId after activate', async () => {
     // Get initial providers
     const initialRes = await fetch(`${server.url}/api/providers`)
-    const initialData = await initialRes.json() as { providers: Array<{ id: string; isActive: boolean }> }
+    const initialData = (await initialRes.json()) as { providers: Array<{ id: string; isActive: boolean }> }
 
     if (initialData.providers.length < 2) {
       console.log('Need at least 2 providers to test activation, skipping')
@@ -58,7 +58,7 @@ describe('Config reload after provider update', () => {
     }
 
     // Find a non-active provider
-    const inactiveProvider = initialData.providers.find(p => !p.isActive)
+    const inactiveProvider = initialData.providers.find((p) => !p.isActive)
     if (!inactiveProvider) {
       console.log('No inactive provider found, skipping')
       return
@@ -66,7 +66,7 @@ describe('Config reload after provider update', () => {
 
     // Get initial config
     const initialConfigRes = await fetch(`${server.url}/api/config`)
-    const initialConfig = await initialConfigRes.json() as { activeProviderId: string | null }
+    const initialConfig = (await initialConfigRes.json()) as { activeProviderId: string | null }
 
     // Activate the inactive provider
     const activateRes = await fetch(`${server.url}/api/providers/${inactiveProvider.id}/activate`, {
@@ -79,7 +79,7 @@ describe('Config reload after provider update', () => {
 
     // Immediately fetch config again - should reflect the new active provider
     const updatedRes = await fetch(`${server.url}/api/config`)
-    const updatedConfig = await updatedRes.json() as { activeProviderId: string | null }
+    const updatedConfig = (await updatedRes.json()) as { activeProviderId: string | null }
 
     // Active provider should have changed
     expect(updatedConfig.activeProviderId).toBe(inactiveProvider.id)

@@ -1,8 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import {
-  formatTimestampLocal,
-  trimContent,
-} from './cross-session-history'
+import { formatTimestampLocal, trimContent } from './cross-session-history'
 
 describe('cross-session-history', () => {
   describe('formatTimestampLocal', () => {

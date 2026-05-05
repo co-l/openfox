@@ -30,12 +30,7 @@ export function PasswordModal({ isOpen, isRetry, onSubmit, onCancel }: PasswordM
   }
 
   return (
-    <Modal
-      isOpen={isOpen}
-      onClose={onCancel}
-      title={isRetry ? 'Invalid Password' : 'Password Required'}
-      size="sm"
-    >
+    <Modal isOpen={isOpen} onClose={onCancel} title={isRetry ? 'Invalid Password' : 'Password Required'} size="sm">
       <form onSubmit={handleSubmit} className="space-y-4">
         <p className="text-text-secondary text-sm">
           {isRetry

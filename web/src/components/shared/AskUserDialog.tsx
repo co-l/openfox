@@ -8,7 +8,7 @@ interface AskUserDialogProps {
 }
 
 export function AskUserDialog({ question }: AskUserDialogProps) {
-  const answerQuestion = useSessionStore(state => state.answerQuestion)
+  const answerQuestion = useSessionStore((state) => state.answerQuestion)
   const [answer, setAnswer] = useState('')
 
   const handleSubmit = () => {
@@ -42,18 +42,10 @@ export function AskUserDialog({ question }: AskUserDialogProps) {
           autoFocus
         />
         <div className="flex justify-end gap-2">
-          <Button
-            variant="secondary"
-            size="sm"
-            onClick={() => answerQuestion(question.callId, '')}
-          >
+          <Button variant="secondary" size="sm" onClick={() => answerQuestion(question.callId, '')}>
             Skip
           </Button>
-          <Button
-            variant="primary"
-            size="sm"
-            onClick={handleSubmit}
-          >
+          <Button variant="primary" size="sm" onClick={handleSubmit}>
             Send Answer
           </Button>
         </div>

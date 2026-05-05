@@ -4,9 +4,9 @@
 
 ## Database Locations
 
-| Environment | Path |
-|-------------|------|
-| Production | `~/.local/share/openfox/sessions.db` |
+| Environment | Path                                     |
+| ----------- | ---------------------------------------- |
+| Production  | `~/.local/share/openfox/sessions.db`     |
 | Development | `~/.local/share/openfox-dev/sessions.db` |
 
 > **Tip:** The agent workdir tells you which DB to use. If `workdir` contains "openfox" and it's your dev machine → dev DB. Otherwise → production DB.
@@ -24,38 +24,38 @@ settings    → Global configuration (e.g., custom instructions)
 
 ### projects
 
-| Column | Type | Description |
-|--------|------|-------------|
-| id | TEXT | UUID |
-| name | TEXT | Project display name |
-| workdir | TEXT | Absolute path to project root |
-| created_at | TEXT | ISO timestamp |
-| updated_at | TEXT | ISO timestamp |
+| Column              | Type | Description                            |
+| ------------------- | ---- | -------------------------------------- |
+| id                  | TEXT | UUID                                   |
+| name                | TEXT | Project display name                   |
+| workdir             | TEXT | Absolute path to project root          |
+| created_at          | TEXT | ISO timestamp                          |
+| updated_at          | TEXT | ISO timestamp                          |
 | custom_instructions | TEXT | Optional project-specific instructions |
 
 ### sessions
 
-| Column | Type | Description |
-|--------|------|-------------|
-| id | TEXT | Session UUID |
-| project_id | TEXT | FK to projects |
-| workdir | TEXT | Working directory for this session |
-| mode | TEXT | `planner` or `builder` |
-| phase | TEXT | `plan`, `build`, `verification`, `done` |
-| is_running | INTEGER | 0 or 1 |
-| workflow_phase | TEXT | Alias for phase (legacy) |
-| phase | TEXT | Legacy state machine phase |
-| title | TEXT | Session title |
-| summary | TEXT | Completion summary (filled on done) |
-| provider_id | TEXT | Override LLM provider ID |
-| provider_model | TEXT | Override model name |
-| danger_level | TEXT | `normal` or `dangerous` |
-| message_count | INTEGER | Cached message count |
-| total_tokens_used | INTEGER | Cumulative token count |
-| total_tool_calls | INTEGER | Cumulative tool call count |
-| iteration_count | INTEGER | Number of agent iterations |
-| created_at | TEXT | ISO timestamp |
-| updated_at | TEXT | ISO timestamp |
+| Column            | Type    | Description                             |
+| ----------------- | ------- | --------------------------------------- |
+| id                | TEXT    | Session UUID                            |
+| project_id        | TEXT    | FK to projects                          |
+| workdir           | TEXT    | Working directory for this session      |
+| mode              | TEXT    | `planner` or `builder`                  |
+| phase             | TEXT    | `plan`, `build`, `verification`, `done` |
+| is_running        | INTEGER | 0 or 1                                  |
+| workflow_phase    | TEXT    | Alias for phase (legacy)                |
+| phase             | TEXT    | Legacy state machine phase              |
+| title             | TEXT    | Session title                           |
+| summary           | TEXT    | Completion summary (filled on done)     |
+| provider_id       | TEXT    | Override LLM provider ID                |
+| provider_model    | TEXT    | Override model name                     |
+| danger_level      | TEXT    | `normal` or `dangerous`                 |
+| message_count     | INTEGER | Cached message count                    |
+| total_tokens_used | INTEGER | Cumulative token count                  |
+| total_tool_calls  | INTEGER | Cumulative tool call count              |
+| iteration_count   | INTEGER | Number of agent iterations              |
+| created_at        | TEXT    | ISO timestamp                           |
+| updated_at        | TEXT    | ISO timestamp                           |
 
 **Key insight**: The `sessions` table only stores metadata. The actual conversation lives in `events`.
 
@@ -63,16 +63,17 @@ settings    → Global configuration (e.g., custom instructions)
 
 This is the single source of truth. All session state derives from events.
 
-| Column | Type | Description |
-|--------|------|-------------|
-| id | INTEGER | Auto-increment PK |
-| session_id | TEXT | FK to sessions |
-| seq | INTEGER | Per-session sequence number (1, 2, 3...) |
-| timestamp | INTEGER | Unix timestamp (ms) |
-| event_type | TEXT | Event type (see below) |
-| payload | TEXT | JSON event data |
+| Column     | Type    | Description                              |
+| ---------- | ------- | ---------------------------------------- |
+| id         | INTEGER | Auto-increment PK                        |
+| session_id | TEXT    | FK to sessions                           |
+| seq        | INTEGER | Per-session sequence number (1, 2, 3...) |
+| timestamp  | INTEGER | Unix timestamp (ms)                      |
+| event_type | TEXT    | Event type (see below)                   |
+| payload    | TEXT    | JSON event data                          |
 
 **Indexes**:
+
 - `idx_events_session_seq` - For fetching events by session + sequence
 - `idx_events_session_type` - For filtering by event type
 
@@ -80,64 +81,64 @@ This is the single source of truth. All session state derives from events.
 
 ### Session Lifecycle
 
-| Event Type | Description |
-|------------|-------------|
-| `session.initialized` | Session created (seq 1). Contains: projectId, workdir, contextWindowId, title |
-| `session.name_generated` | Auto-generated session title |
+| Event Type               | Description                                                                   |
+| ------------------------ | ----------------------------------------------------------------------------- |
+| `session.initialized`    | Session created (seq 1). Contains: projectId, workdir, contextWindowId, title |
+| `session.name_generated` | Auto-generated session title                                                  |
 
 ### Message Lifecycle
 
-| Event Type | Description |
-|------------|-------------|
-| `message.start` | Message begun. Contains: messageId, role, content, contextWindowId, subAgentId, subAgentType, isSystemGenerated, messageKind, tokenCount |
-| `message.delta` | Streaming content chunk. Contains: messageId, content |
-| `message.thinking` | Streaming thinking chunk. Contains: messageId, content |
-| `message.done` | Message complete. Contains: messageId, stats, segments, partial, promptContext, tokenCount |
+| Event Type         | Description                                                                                                                              |
+| ------------------ | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| `message.start`    | Message begun. Contains: messageId, role, content, contextWindowId, subAgentId, subAgentType, isSystemGenerated, messageKind, tokenCount |
+| `message.delta`    | Streaming content chunk. Contains: messageId, content                                                                                    |
+| `message.thinking` | Streaming thinking chunk. Contains: messageId, content                                                                                   |
+| `message.done`     | Message complete. Contains: messageId, stats, segments, partial, promptContext, tokenCount                                               |
 
 ### Tool Lifecycle
 
-| Event Type | Description |
-|------------|-------------|
-| `tool.preparing` | Tool call starting. Contains: messageId, index, name |
-| `tool.call` | Tool invoked. Contains: messageId, toolCall (id, name, arguments) |
-| `tool.output` | Streaming stdout/stderr. Contains: toolCallId, stream, content |
-| `tool.result` | Tool finished. Contains: messageId, toolCallId, result (success, output, error, durationMs, truncated) |
+| Event Type       | Description                                                                                            |
+| ---------------- | ------------------------------------------------------------------------------------------------------ |
+| `tool.preparing` | Tool call starting. Contains: messageId, index, name                                                   |
+| `tool.call`      | Tool invoked. Contains: messageId, toolCall (id, name, arguments)                                      |
+| `tool.output`    | Streaming stdout/stderr. Contains: toolCallId, stream, content                                         |
+| `tool.result`    | Tool finished. Contains: messageId, toolCallId, result (success, output, error, durationMs, truncated) |
 
 ### State Changes
 
-| Event Type | Description |
-|------------|-------------|
-| `mode.changed` | Mode switched (planner ↔ builder). Contains: mode, auto, reason |
-| `phase.changed` | Phase changed (plan → build → verification → done). Contains: phase |
-| `running.changed` | Execution state. Contains: isRunning |
-| `criteria.set` | Criteria assigned. Contains: criteria[] |
-| `criterion.updated` | Criterion status changed. Contains: criterionId, status |
+| Event Type          | Description                                                         |
+| ------------------- | ------------------------------------------------------------------- |
+| `mode.changed`      | Mode switched (planner ↔ builder). Contains: mode, auto, reason     |
+| `phase.changed`     | Phase changed (plan → build → verification → done). Contains: phase |
+| `running.changed`   | Execution state. Contains: isRunning                                |
+| `criteria.set`      | Criteria assigned. Contains: criteria[]                             |
+| `criterion.updated` | Criterion status changed. Contains: criterionId, status             |
 
 ### Context Management
 
-| Event Type | Description |
-|------------|-------------|
-| `context.state` | Token tracking. Contains: currentTokens, maxTokens, compactionCount, dangerZone, canCompact |
+| Event Type          | Description                                                                                         |
+| ------------------- | --------------------------------------------------------------------------------------------------- |
+| `context.state`     | Token tracking. Contains: currentTokens, maxTokens, compactionCount, dangerZone, canCompact         |
 | `context.compacted` | Context window compacted. Contains: closedWindowId, newWindowId, beforeTokens, afterTokens, summary |
-| `file.read` | File read for cache tracking. Contains: path, tokenCount, contextWindowId |
+| `file.read`         | File read for cache tracking. Contains: path, tokenCount, contextWindowId                           |
 
 ### Snapshots (Critical!)
 
-| Event Type | Description |
-|------------|-------------|
+| Event Type      | Description                                                                                                                                                                    |
+| --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `turn.snapshot` | Full state at end of turn. Contains everything: mode, phase, isRunning, messages[], criteria[], todos[], contextState, currentContextWindowId, readFiles, lastModeWithReminder |
 
 > **This is the most important event type.** Snapshots capture the complete session state at a point in time.
 
 ### Other Events
 
-| Event Type | Description |
-|------------|-------------|
-| `todo.updated` | Builder todo list. Contains: todos[] |
-| `task.completed` | Session finished. Contains: summary, iterations, totalTimeSeconds, totalToolCalls, totalTokensGenerated, criteria[], workflowName, workflowId |
-| `queue.added`, `queue.drained`, `queue.cancelled` | Message queue for deferred prompts |
-| `chat.done`, `chat.error`, `chat.ask_user` | Control flow |
-| `path.confirmation_pending`, `path.confirmation_responded` | Permission persistence |
+| Event Type                                                 | Description                                                                                                                                   |
+| ---------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
+| `todo.updated`                                             | Builder todo list. Contains: todos[]                                                                                                          |
+| `task.completed`                                           | Session finished. Contains: summary, iterations, totalTimeSeconds, totalToolCalls, totalTokensGenerated, criteria[], workflowName, workflowId |
+| `queue.added`, `queue.drained`, `queue.cancelled`          | Message queue for deferred prompts                                                                                                            |
+| `chat.done`, `chat.error`, `chat.ask_user`                 | Control flow                                                                                                                                  |
+| `path.confirmation_pending`, `path.confirmation_responded` | Permission persistence                                                                                                                        |
 
 ## The Snapshot Mechanism (Key Concept)
 
@@ -383,6 +384,7 @@ Messages in a `turn.snapshot` have this structure:
 ```
 
 **Key fields**:
+
 - `toolCalls[].result` - Only present in snapshots (filled in after tool completes)
 - `promptContext` - What was sent to the LLM (system prompt, injected files, etc.)
 - `contextWindowId` - Groups messages into context windows (resets on compaction)

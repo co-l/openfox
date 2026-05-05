@@ -1,12 +1,12 @@
 /**
  * Mode Switching E2E Tests
- * 
+ *
  * Tests mode transitions, accept criteria, and phase changes.
  */
 
 import { describe, it, expect, beforeAll, afterAll, beforeEach, afterEach } from 'vitest'
-import { 
-  createTestClient, 
+import {
+  createTestClient,
   createTestProject,
   createTestServer,
   collectUntilPhase,
@@ -14,9 +14,9 @@ import {
   createProject,
   createSession,
   setSessionMode,
-  type TestClient, 
+  type TestClient,
   type TestProject,
-  type TestServerHandle 
+  type TestServerHandle,
 } from './utils/index.js'
 
 describe('Mode Switching', () => {
@@ -35,7 +35,7 @@ describe('Mode Switching', () => {
   beforeEach(async () => {
     client = await createTestClient({ url: server.wsUrl })
     testDir = await createTestProject({ template: 'typescript' })
-    
+
     const restProject = await createProject(server.url, { name: 'Mode Test', workdir: testDir.path })
     const restSession = await createSession(server.url, { projectId: restProject.id })
     await client.send('session.load', { sessionId: restSession.id })
@@ -57,10 +57,10 @@ describe('Mode Switching', () => {
 
     it('switches from builder back to planner', async () => {
       const sessionId = client.getSession()!.id
-      
+
       // First switch to builder
       await setSessionMode(server.url, sessionId, 'builder', server.wsUrl)
-      
+
       // Then back to planner
       await setSessionMode(server.url, sessionId, 'planner', server.wsUrl)
 
@@ -81,8 +81,10 @@ describe('Mode Switching', () => {
       const injectedKickoff = client.allEvents().some((event) => {
         if (event.type !== 'chat.message') return false
         const payload = event.payload as { message: { content: string; isSystemGenerated?: boolean } }
-        return payload.message.isSystemGenerated === true
-          && payload.message.content.includes('Implement the task and make sure you fulfil')
+        return (
+          payload.message.isSystemGenerated === true &&
+          payload.message.content.includes('Implement the task and make sure you fulfil')
+        )
       })
 
       expect(injectedKickoff).toBe(false)
@@ -100,16 +102,16 @@ describe('Mode Switching', () => {
 
     it('generates summary when switching to builder mode', async () => {
       const sessionId = client.getSession()!.id
-      
+
       // Add criterion
-      await client.send('chat.send', { 
-        content: 'Add criterion: File exists. Use add_criterion.' 
+      await client.send('chat.send', {
+        content: 'Add criterion: File exists. Use add_criterion.',
       })
       await client.waitForChatDone()
-      
+
       // Switch to builder mode (this triggers summary generation)
       await setSessionMode(server.url, sessionId, 'builder', server.wsUrl)
-      
+
       // Wait for session state update (summary should be populated)
       await client.waitFor('session.state')
 
@@ -120,7 +122,7 @@ describe('Mode Switching', () => {
     it.skip('generates summary when using mode.accept (Start Building button)', async () => {
       // Add criterion
       await client.send('chat.send', {
-        content: 'Add criterion: File exists. Use add_criterion.'
+        content: 'Add criterion: File exists. Use add_criterion.',
       })
       await client.waitForChatDone()
 
@@ -128,9 +130,13 @@ describe('Mode Switching', () => {
       await client.send('mode.accept', {})
 
       // Wait for runner to complete
-      await client.waitFor('session.running', (payload: unknown) => {
-        return (payload as { isRunning: boolean }).isRunning === false
-      }, 10000)
+      await client.waitFor(
+        'session.running',
+        (payload: unknown) => {
+          return (payload as { isRunning: boolean }).isRunning === false
+        },
+        10000,
+      )
 
       const session = client.getSession()!
       expect(session.mode).toBe('builder')
@@ -138,22 +144,29 @@ describe('Mode Switching', () => {
 
     it.skip('injects the builder kickoff exactly once after accepting criteria', async () => {
       await client.send('chat.send', {
-        content: 'Add criterion with ID "inspect-src": "Inspect the src directory and report what exists". Use add_criterion.',
+        content:
+          'Add criterion with ID "inspect-src": "Inspect the src directory and report what exists". Use add_criterion.',
       })
       await client.waitForChatDone()
 
       client.clearEvents()
 
       await client.send('mode.accept', {})
-      await client.waitFor('session.running', (payload: unknown) => {
-        return (payload as { isRunning: boolean }).isRunning === false
-      }, 20_000)
+      await client.waitFor(
+        'session.running',
+        (payload: unknown) => {
+          return (payload as { isRunning: boolean }).isRunning === false
+        },
+        20_000,
+      )
 
       const kickoffMessages = client.allEvents().filter((event) => {
         if (event.type !== 'chat.message') return false
         const payload = event.payload as { message: { content: string; isSystemGenerated?: boolean } }
-        return payload.message.isSystemGenerated === true
-          && payload.message.content.includes('Implement the task and make sure you fulfil')
+        return (
+          payload.message.isSystemGenerated === true &&
+          payload.message.content.includes('Implement the task and make sure you fulfil')
+        )
       })
 
       expect(kickoffMessages).toHaveLength(1)
@@ -165,13 +178,14 @@ describe('Mode Switching', () => {
       // Start in plan phase
       let session = client.getSession()!
       expect(session.phase).toBe('plan')
-      
+
       // Add a trivial criterion
-      await client.send('chat.send', { 
-        content: 'Add criterion with ID "trivial-pass": "This is a trivial test criterion that passes immediately". Use add_criterion.' 
+      await client.send('chat.send', {
+        content:
+          'Add criterion with ID "trivial-pass": "This is a trivial test criterion that passes immediately". Use add_criterion.',
       })
       await client.waitForChatDone()
-      
+
       // Accept criteria and switch into build phase
       await client.send('mode.accept', {})
 
@@ -180,7 +194,7 @@ describe('Mode Switching', () => {
 
       // Verify we entered build phase
       const phaseEvents = events.get('phase.changed')
-      const phases = phaseEvents.map(e => (e.payload as { phase: string }).phase)
+      const phases = phaseEvents.map((e) => (e.payload as { phase: string }).phase)
 
       expect(phases).toContain('build')
 
@@ -190,11 +204,11 @@ describe('Mode Switching', () => {
 
     it.skip('sets phase to blocked after max failures', async () => {
       // Add a criterion the mock verifier intentionally fails repeatedly
-      await client.send('chat.send', { 
-        content: 'Add criterion ID "verify-fail": "Verifier should fail this criterion". Use add_criterion.' 
+      await client.send('chat.send', {
+        content: 'Add criterion ID "verify-fail": "Verifier should fail this criterion". Use add_criterion.',
       })
       await client.waitForChatDone()
-      
+
       // Accept and start
       await client.send('mode.accept', {})
       await client.waitFor('phase.changed', (payload: unknown) => {
@@ -216,7 +230,7 @@ describe('Mode Switching', () => {
     it('includes phase in session state', async () => {
       const sessionId = client.getSession()!.id
       await setSessionMode(server.url, sessionId, 'builder', server.wsUrl)
-      
+
       const session = client.getSession()!
       expect(session.phase).toBe('plan') // Phase doesn't auto-change on manual mode switch
     })
@@ -225,16 +239,16 @@ describe('Mode Switching', () => {
   describe('Summary Generation', () => {
     it('does NOT generate summary for empty sessions when switching to builder', async () => {
       const sessionId = client.getSession()!.id
-      
+
       // Fresh session with no messages - switch to builder mode
       await setSessionMode(server.url, sessionId, 'builder', server.wsUrl)
-      
+
       // Wait for session state update
       await client.waitFor('session.state')
-      
+
       // Give any potential async summary generation time to complete
-      await new Promise(resolve => setTimeout(resolve, 100))
-      
+      await new Promise((resolve) => setTimeout(resolve, 100))
+
       const session = client.getSession()!
       // Summary should remain null/empty for sessions without conversation history
       // OR should not be a generic placeholder

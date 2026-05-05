@@ -12,7 +12,7 @@ export function formatDateHeader(isoString: string): string {
   const year = date.getFullYear()
   const month = String(date.getMonth() + 1).padStart(2, '0')
   const day = String(date.getDate()).padStart(2, '0')
-  
+
   return `${dayName} ${year}/${month}/${day}`
 }
 
@@ -82,7 +82,7 @@ export function extractDateKey(isoString: string): string {
 export function groupSessionsByDate(sessions: SessionSummary[]): Map<string, SessionSummary[]> {
   // Group sessions by date key
   const groups = new Map<string, SessionSummary[]>()
-  
+
   for (const session of sessions) {
     const dateKey = extractDateKey(session.updatedAt)
     if (!groups.has(dateKey)) {
@@ -90,7 +90,7 @@ export function groupSessionsByDate(sessions: SessionSummary[]): Map<string, Ses
     }
     groups.get(dateKey)!.push(session)
   }
-  
+
   // Sort sessions within each group by time (latest to earliest)
   for (const [_dateKey, groupSessions] of groups) {
     groupSessions.sort((a, b) => {
@@ -99,17 +99,17 @@ export function groupSessionsByDate(sessions: SessionSummary[]): Map<string, Ses
       return timeB - timeA // Descending order (latest first)
     })
   }
-  
+
   // Sort the date keys (newest first)
   const sortedKeys = Array.from(groups.keys()).sort((a, b) => {
     return b.localeCompare(a) // Descending order (newest first)
   })
-  
+
   // Create a new map with sorted keys
   const sortedGroups = new Map<string, SessionSummary[]>()
   for (const key of sortedKeys) {
     sortedGroups.set(key, groups.get(key)!)
   }
-  
+
   return sortedGroups
 }

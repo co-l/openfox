@@ -1,10 +1,7 @@
-import { RefObject, useEffect, useRef, useState } from "react"
-import { Session } from "@shared/types.ts"
+import { RefObject, useEffect, useRef, useState } from 'react'
+import { Session } from '@shared/types.ts'
 
-export const useAutoScroll = (
-  container_ref: RefObject<HTMLDivElement | null>,
-  session: Session | null,
-) => {
+export const useAutoScroll = (container_ref: RefObject<HTMLDivElement | null>, session: Session | null) => {
   const is_active = useRef(true)
   const startY = useRef<number | null>(null)
   const [isAutoScrollActive, setIsAutoScrollActive] = useState(true)
@@ -22,13 +19,15 @@ export const useAutoScroll = (
 
     const onWheel = (e: WheelEvent) => {
       if (e.deltaY > 0) {
-        requestAnimationFrame(() => requestAnimationFrame(() => {
-          const distance = scroller.scrollHeight - scroller.scrollTop - scroller.offsetHeight
-          if (distance < 100) {
-            is_active.current = true
-            setIsAutoScrollActive(true)
-          }
-        }))
+        requestAnimationFrame(() =>
+          requestAnimationFrame(() => {
+            const distance = scroller.scrollHeight - scroller.scrollTop - scroller.offsetHeight
+            if (distance < 100) {
+              is_active.current = true
+              setIsAutoScrollActive(true)
+            }
+          }),
+        )
         return
       }
       is_active.current = false
@@ -48,13 +47,15 @@ export const useAutoScroll = (
         setIsAutoScrollActive(false)
         return
       }
-      requestAnimationFrame(() => requestAnimationFrame(() => {
-        const distance = scroller.scrollHeight - scroller.scrollTop - scroller.offsetHeight
-        if (distance < 100) {
-          is_active.current = true
-          setIsAutoScrollActive(true)
-        }
-      }))
+      requestAnimationFrame(() =>
+        requestAnimationFrame(() => {
+          const distance = scroller.scrollHeight - scroller.scrollTop - scroller.offsetHeight
+          if (distance < 100) {
+            is_active.current = true
+            setIsAutoScrollActive(true)
+          }
+        }),
+      )
     }
 
     const observer = new MutationObserver(() => {

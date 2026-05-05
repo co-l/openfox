@@ -9,14 +9,16 @@ describe('Modal', () => {
   })
 
   it('renders label with className', () => {
-    const html = renderToStaticMarkup(<Modal label="Open" className="my-class">Content</Modal>)
+    const html = renderToStaticMarkup(
+      <Modal label="Open" className="my-class">
+        Content
+      </Modal>,
+    )
     expect(html).toContain('class="my-class"')
   })
 
   it('renders label as span when not string', () => {
-    const html = renderToStaticMarkup(
-      <Modal label={<span>Click here</span>}>Content</Modal>
-    )
+    const html = renderToStaticMarkup(<Modal label={<span>Click here</span>}>Content</Modal>)
     expect(html).toContain('Click here')
   })
 })

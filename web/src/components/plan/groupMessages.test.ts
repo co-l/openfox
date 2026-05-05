@@ -7,7 +7,7 @@ function createMessage(
   id: string,
   role: 'user' | 'assistant' | 'system' | 'tool' = 'assistant',
   content: string = 'Test content',
-  extras: Partial<Message> = {}
+  extras: Partial<Message> = {},
 ): Message {
   return {
     id,
@@ -45,15 +45,15 @@ describe('groupMessages identity preservation', () => {
     const msg4 = createMessage('msg-4', 'assistant', 'I am good')
 
     const initialItems = groupMessages([msg1, msg2, msg3])
-    
+
     // Add a new message, passing previous items
     const newItems = groupMessages([msg1, msg2, msg3, msg4], initialItems)
-    
+
     // First 3 items should be identical
     expect(initialItems[0]).toBe(newItems[0])
     expect(initialItems[1]).toBe(newItems[1])
     expect(initialItems[2]).toBe(newItems[2])
-    
+
     // Fourth item should be new
     expect(newItems[3]).toBeDefined()
   })
@@ -62,17 +62,17 @@ describe('groupMessages identity preservation', () => {
     const msg1 = createMessage('msg-1', 'user', 'Hello')
     const msg2 = createMessage('msg-2', 'assistant', 'Hi there')
     const msg3 = createMessage('msg-3', 'user', 'How are you?')
-    
+
     const initialItems = groupMessages([msg1, msg2, msg3])
-    
+
     // Update msg2 content
     const updatedMsg2 = createMessage('msg-2', 'assistant', 'Hello! How can I help?')
     const newItems = groupMessages([msg1, updatedMsg2, msg3], initialItems)
-    
+
     // msg1 and msg3 items should be identical
     expect(initialItems[0]).toBe(newItems[0])
     expect(initialItems[2]).toBe(newItems[2])
-    
+
     // msg2 item should be different (new object)
     expect(initialItems[1]).not.toBe(newItems[1])
   })
@@ -96,14 +96,10 @@ describe('groupMessages identity preservation', () => {
   it('should handle criteria-only message batching with identity preservation', () => {
     const msg1 = createMessage('msg-1', 'user', 'Check criteria')
     const msg2 = createMessage('msg-2', 'assistant', '', {
-      toolCalls: [
-        { id: 'tool-1', name: 'criterion', arguments: { action: 'get' }, startedAt: Date.now() },
-      ],
+      toolCalls: [{ id: 'tool-1', name: 'criterion', arguments: { action: 'get' }, startedAt: Date.now() }],
     })
     const msg3 = createMessage('msg-3', 'assistant', '', {
-      toolCalls: [
-        { id: 'tool-2', name: 'criterion', arguments: { action: 'get' }, startedAt: Date.now() },
-      ],
+      toolCalls: [{ id: 'tool-2', name: 'criterion', arguments: { action: 'get' }, startedAt: Date.now() }],
     })
     const msg4 = createMessage('msg-4', 'user', 'Next')
 
@@ -120,7 +116,7 @@ describe('groupMessages identity preservation', () => {
     const msg2 = createMessage('msg-2', 'assistant', 'Hi there')
 
     const items = groupMessages([msg1, autoPrompt, msg2])
-    
+
     // Should have 3 items (auto-prompt included)
     expect(items.length).toBe(3)
     expect(items[0]).toEqual({ type: 'message', message: msg1 })

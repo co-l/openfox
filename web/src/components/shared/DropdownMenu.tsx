@@ -19,7 +19,13 @@ interface DropdownMenuProps {
   onOpenChange?: (open: boolean) => void
 }
 
-export function DropdownMenu({ items, trigger, minWidth = '120px', isOpen: controlledIsOpen, onOpenChange }: DropdownMenuProps) {
+export function DropdownMenu({
+  items,
+  trigger,
+  minWidth = '120px',
+  isOpen: controlledIsOpen,
+  onOpenChange,
+}: DropdownMenuProps) {
   const [internalIsOpen, setInternalIsOpen] = useState(false)
   const isControlled = controlledIsOpen !== undefined
   const isOpen = isControlled ? controlledIsOpen : internalIsOpen
@@ -93,7 +99,7 @@ export function DropdownMenu({ items, trigger, minWidth = '120px', isOpen: contr
 
     function handleKeyDown(e: KeyboardEvent) {
       const currentItems = itemsRef.current
-      const navigableItems = currentItems.filter(item => !isHeaderItem(item))
+      const navigableItems = currentItems.filter((item) => !isHeaderItem(item))
       const currentNavigableIndex = getNavigableIndexRef(selectedIndexRef.current, currentItems)
 
       switch (e.key) {
@@ -165,20 +171,20 @@ export function DropdownMenu({ items, trigger, minWidth = '120px', isOpen: contr
   }
 
   function activateItemRef(index: number, itemsArr: DropdownMenuItem[]) {
-      const item = itemsArr[index]
-      if (!item || isHeaderItem(item)) return
-      item.onClick?.()
-      if (item.href) {
-        window.history.pushState(null, '', item.href)
-        window.dispatchEvent(new PopStateEvent('popstate'))
-      }
-      setIsOpen(false)
+    const item = itemsArr[index]
+    if (!item || isHeaderItem(item)) return
+    item.onClick?.()
+    if (item.href) {
+      window.history.pushState(null, '', item.href)
+      window.dispatchEvent(new PopStateEvent('popstate'))
     }
+    setIsOpen(false)
+  }
 
   useEffect(() => {
     if (isOpen) {
-      setSelectedIndex(items.findIndex(item => !isHeaderItem(item)))
-      selectedIndexRef.current = items.findIndex(item => !isHeaderItem(item))
+      setSelectedIndex(items.findIndex((item) => !isHeaderItem(item)))
+      selectedIndexRef.current = items.findIndex((item) => !isHeaderItem(item))
     }
   }, [isOpen, items])
 
@@ -225,7 +231,11 @@ export function DropdownMenu({ items, trigger, minWidth = '120px', isOpen: contr
               }}
               onAuxClick={() => setIsOpen(false)}
               className={`w-full px-3 py-2 text-left text-sm flex items-center gap-2 transition-colors ${
-                item.danger ? 'text-accent-error hover:bg-accent-error/10' : isSelected ? 'bg-accent-primary/20 text-text-primary' : 'hover:bg-bg-tertiary text-text-primary'
+                item.danger
+                  ? 'text-accent-error hover:bg-accent-error/10'
+                  : isSelected
+                    ? 'bg-accent-primary/20 text-text-primary'
+                    : 'hover:bg-bg-tertiary text-text-primary'
               } ${index !== items.length - 1 ? 'border-b border-border' : ''}`}
             >
               {content}
@@ -243,7 +253,11 @@ export function DropdownMenu({ items, trigger, minWidth = '120px', isOpen: contr
               }
             }}
             className={`w-full px-3 py-2 text-left text-sm flex items-center gap-2 transition-colors ${
-              item.danger ? 'text-accent-error hover:bg-accent-error/10' : isSelected ? 'bg-accent-primary/20 text-text-primary' : 'hover:bg-bg-tertiary text-text-primary'
+              item.danger
+                ? 'text-accent-error hover:bg-accent-error/10'
+                : isSelected
+                  ? 'bg-accent-primary/20 text-text-primary'
+                  : 'hover:bg-bg-tertiary text-text-primary'
             } ${index !== items.length - 1 ? 'border-b border-border' : ''}`}
           >
             {content}
@@ -256,7 +270,9 @@ export function DropdownMenu({ items, trigger, minWidth = '120px', isOpen: contr
   return (
     <>
       <div className="relative">
-        <div ref={triggerRef} onClick={handleTriggerClick}>{trigger}</div>
+        <div ref={triggerRef} onClick={handleTriggerClick}>
+          {trigger}
+        </div>
       </div>
       {isOpen && createPortal(menuContent, document.body)}
     </>

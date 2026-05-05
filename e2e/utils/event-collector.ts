@@ -1,6 +1,6 @@
 /**
  * Event collection utilities for E2E tests.
- * 
+ *
  * Provides higher-level patterns for collecting and asserting on events.
  */
 
@@ -35,11 +35,10 @@ export interface CollectedEvents {
  * Create a collected events object from an array of events.
  */
 export function createCollectedEvents(events: ServerMessage[]): CollectedEvents {
-  const normalizedEvents = events.map(event => ({
+  const normalizedEvents = events.map((event) => ({
     ...event,
-    payload: typeof event.payload === 'object' && event.payload !== null
-      ? structuredClone(event.payload)
-      : event.payload,
+    payload:
+      typeof event.payload === 'object' && event.payload !== null ? structuredClone(event.payload) : event.payload,
   }))
 
   const toolNamesByCallId = new Map<string, string>()
@@ -80,13 +79,13 @@ export function createCollectedEvents(events: ServerMessage[]): CollectedEvents 
   }
 
   const byType = new Map<ServerMessageType, ServerMessage[]>()
-  
+
   for (const event of normalizedEvents) {
     const list = byType.get(event.type) ?? []
     list.push(event)
     byType.set(event.type, list)
   }
-  
+
   return {
     all: normalizedEvents,
     byType,
@@ -104,7 +103,7 @@ export function createCollectedEvents(events: ServerMessage[]): CollectedEvents 
 
 /**
  * Collect events from client until a condition is met.
- * 
+ *
  * @param client - Test client to collect from
  * @param stopCondition - Function that returns true when we should stop
  * @param timeout - Maximum time to wait
@@ -112,7 +111,7 @@ export function createCollectedEvents(events: ServerMessage[]): CollectedEvents 
 export async function collectUntil(
   client: TestClient,
   stopCondition: (event: ServerMessage) => boolean,
-  timeout = DEFAULT_COLLECTION_TIMEOUT_MS
+  timeout = DEFAULT_COLLECTION_TIMEOUT_MS,
 ): Promise<CollectedEvents> {
   const collectedEvents = await client.consumeEventsUntil(stopCondition, timeout)
   return createCollectedEvents(collectedEvents)
@@ -124,13 +123,9 @@ export async function collectUntil(
  */
 export async function collectChatEvents(
   client: TestClient,
-  timeout = DEFAULT_COLLECTION_TIMEOUT_MS
+  timeout = DEFAULT_COLLECTION_TIMEOUT_MS,
 ): Promise<CollectedEvents> {
-  return collectUntil(
-    client,
-    (event) => event.type === 'chat.done',
-    timeout
-  )
+  return collectUntil(client, (event) => event.type === 'chat.done', timeout)
 }
 
 /**
@@ -139,23 +134,19 @@ export async function collectChatEvents(
 export async function collectUntilPhase(
   client: TestClient,
   phase: 'plan' | 'build' | 'verification' | 'blocked' | 'done',
-  timeout = DEFAULT_PHASE_TIMEOUT_MS
+  timeout = DEFAULT_PHASE_TIMEOUT_MS,
 ): Promise<CollectedEvents> {
   return collectUntil(
     client,
-    (event) => event.type === 'phase.changed' && 
-      (event.payload as { phase: string }).phase === phase,
-    timeout
+    (event) => event.type === 'phase.changed' && (event.payload as { phase: string }).phase === phase,
+    timeout,
   )
 }
 
 /**
  * Assert helper: check that collected events contain expected types.
  */
-export function assertEventTypes(
-  collected: CollectedEvents,
-  expectedTypes: ServerMessageType[]
-): void {
+export function assertEventTypes(collected: CollectedEvents, expectedTypes: ServerMessageType[]): void {
   for (const type of expectedTypes) {
     const events = collected.get(type)
     if (events.length === 0) {
@@ -170,10 +161,10 @@ export function assertEventTypes(
 export function assertNoErrors(collected: CollectedEvents): void {
   const errors = collected.get('error')
   const chatErrors = collected.get('chat.error')
-  
+
   if (errors.length > 0 || chatErrors.length > 0) {
     const allErrors = [...errors, ...chatErrors]
-    const messages = allErrors.map(e => {
+    const messages = allErrors.map((e) => {
       const payload = e.payload as { message?: string; error?: string }
       return payload.message ?? payload.error ?? 'Unknown error'
     })

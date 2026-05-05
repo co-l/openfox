@@ -15,7 +15,7 @@ class WebSocketClient {
   private connectingPromise: Promise<void> | null = null
   private lastCloseCode: number = 0
   private reconnectAttempts: number = 0
-  private manualReconnectScheduled = false  // User triggered reconnect pending
+  private manualReconnectScheduled = false // User triggered reconnect pending
 
   constructor(url: string) {
     this.baseUrl = url
@@ -107,7 +107,7 @@ class WebSocketClient {
           try {
             const data = JSON.parse(event.data)
             if (isServerMessage(data)) {
-              this.handlers.forEach(handler => handler(data))
+              this.handlers.forEach((handler) => handler(data))
             }
           } catch (error) {
             console.error('Failed to parse WebSocket message:', error)
@@ -196,9 +196,12 @@ class WebSocketClient {
 const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
 let port = window.location.port
 if (!port) {
-  port = (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')
-    ? '10469'
-    : (window.location.protocol === 'https:' ? '443' : '80')
+  port =
+    window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
+      ? '10469'
+      : window.location.protocol === 'https:'
+        ? '443'
+        : '80'
 }
 const wsUrl = `${protocol}//${window.location.hostname}:${port}/ws`
 export const wsClient = new WebSocketClient(wsUrl)

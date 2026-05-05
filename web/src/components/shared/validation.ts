@@ -7,7 +7,7 @@ export function validateProjectName(name: string): { valid: true } | { valid: fa
   if (!validPattern.test(name)) {
     return {
       valid: false,
-      error: 'Project name can only contain letters, numbers, hyphens, underscores, and dots'
+      error: 'Project name can only contain letters, numbers, hyphens, underscores, and dots',
     }
   }
 

@@ -94,6 +94,7 @@ OPENFOX_TEST_VERBOSE=true npx vitest run
 ### TypeScript Configuration
 
 Strict mode enabled with:
+
 - `noUncheckedIndexedAccess` - Index access returns `T | undefined`
 - `exactOptionalPropertyTypes` - `undefined` not allowed for optional props
 - `verbatimModuleSyntax` - Enforces proper import/export syntax
@@ -106,11 +107,13 @@ All SVG icons must be extracted into `web/src/components/shared/icons/` as reusa
 **Forbidden:** Inline `<svg>` elements in component files.
 
 **Allowed exceptions:**
+
 - Complex interactive canvases (e.g., workflow editor diagram)
 - Generic pattern components that accept SVG paths as props (e.g., `IconButton`, `ToolIcon`)
 - Data visualizations with dynamic content (e.g., `Sparkline`)
 
 **Usage:**
+
 ```typescript
 import { FolderIcon, CheckIcon, ChevronDownIcon } from './shared/icons'
 
@@ -134,7 +137,6 @@ return { success: false, error: error.message, durationMs, truncated: false }
 - Use Zod for runtime validation of config/external input
 - Event sourcing pattern for session state (EventStore)
 
-
 ## Design Principles
 
 ### Dumb Client, Smart Server
@@ -152,22 +154,19 @@ Data streamed during real-time operations must be identical in shape to data fet
 ### Event Sourcing
 
 Session state is derived from EventStore, not persisted directly:
+
 - All state changes go through events
 - EventStore replays events to reconstruct state
 - Enables time-travel debugging and audit trails
-
 
 ## TDD Workflow
 
 When fixing or refactoring: write/update the failing test FIRST, then make it pass.
 
-
 ## Debugging
 
 Need to trace through a session, understand why the agent did something, or find that pesky bug? Check out [docs/SESSION-DEBUGGING.md](SESSION-DEBUGGING.md) — it has everything you need to query the database directly, including DB locations, table schemas, event types, and ready-to-use queries.
 
-
 ## Production Config
 
 NEVER modify production configuration files (e.g., `~/.config/openfox/`). These are user-specific and should only be changed by the user.
-

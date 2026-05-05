@@ -20,13 +20,12 @@ function getAudio(url: string): HTMLAudioElement {
 }
 
 // Browser notification permission state
-let notificationPermission: NotificationPermission = typeof Notification !== 'undefined'
-  ? Notification.permission
-  : 'denied'
+let notificationPermission: NotificationPermission =
+  typeof Notification !== 'undefined' ? Notification.permission : 'denied'
 
 export function requestNotificationPermission(): Promise<NotificationPermission> {
   if (typeof Notification === 'undefined') return Promise.resolve('denied')
-  return Notification.requestPermission().then(perm => {
+  return Notification.requestPermission().then((perm) => {
     notificationPermission = perm
     return perm
   })

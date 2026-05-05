@@ -17,7 +17,10 @@ const mockAudio = {
   currentTime: 0,
   volume: 0.5,
 }
-vi.stubGlobal('Audio', vi.fn(() => mockAudio))
+vi.stubGlobal(
+  'Audio',
+  vi.fn(() => mockAudio),
+)
 
 describe('sound integration', () => {
   beforeEach(() => {
@@ -32,9 +35,9 @@ describe('sound integration', () => {
     vi.mocked(playNotificationMock).mockImplementation((agent: any) => {
       console.log('playNotification called with:', agent)
     })
-    
+
     const { useNotificationSettingsStore } = await import('../stores/notifications')
-    
+
     useNotificationSettingsStore.setState({
       settings: {
         soundEnabled: true,
@@ -47,7 +50,7 @@ describe('sound integration', () => {
           new_message: { soundEnabled: false, browserNotification: false, customSoundUrl: null },
         },
         agentOverrides: {
-          'build': { complete: { soundEnabled: false } },
+          build: { complete: { soundEnabled: false } },
           'sub-agent': { complete: { soundEnabled: false } },
         },
       },
@@ -55,7 +58,7 @@ describe('sound integration', () => {
     })
 
     const { resolveEventConfig } = await import('../stores/notifications')
-    
+
     const buildConfig = resolveEventConfig(useNotificationSettingsStore.getState().settings, 'complete', 'build')
     const subAgentConfig = resolveEventConfig(useNotificationSettingsStore.getState().settings, 'complete', 'sub-agent')
     const generalConfig = resolveEventConfig(useNotificationSettingsStore.getState().settings, 'complete', undefined)

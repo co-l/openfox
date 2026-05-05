@@ -75,7 +75,7 @@ describe('groupSessionsByDate', () => {
     ]
 
     const groups = groupSessionsByDate(sessions)
-    
+
     expect(groups.size).toBe(2)
     expect(groups.has('2024-01-15')).toBe(true)
     expect(groups.has('2024-01-16')).toBe(true)
@@ -90,7 +90,7 @@ describe('groupSessionsByDate', () => {
 
     const groups = groupSessionsByDate(sessions)
     const keys = Array.from(groups.keys())
-    
+
     expect(keys).toEqual(['2024-01-16', '2024-01-15', '2024-01-14'])
   })
 
@@ -103,7 +103,7 @@ describe('groupSessionsByDate', () => {
 
     const groups = groupSessionsByDate(sessions)
     const daySessions = groups.get('2024-01-15')!
-    
+
     expect(daySessions[0]?.id).toBe('3') // 18:00 (latest)
     expect(daySessions[1]?.id).toBe('1') // 14:30
     expect(daySessions[2]?.id).toBe('2') // 09:15 (earliest)
@@ -117,7 +117,7 @@ describe('groupSessionsByDate', () => {
   it('handles single session', () => {
     const sessions = [createSession('1', '2024-01-15T14:30:00Z')]
     const groups = groupSessionsByDate(sessions)
-    
+
     expect(groups.size).toBe(1)
     expect(groups.has('2024-01-15')).toBe(true)
     expect(groups.get('2024-01-15')?.length).toBe(1)

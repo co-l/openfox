@@ -1,12 +1,12 @@
 /**
  * Mock LLM Server Setup for E2E Tests
- * 
+ *
  * Alternative to setup.ts that uses a mock LLM instead of real vLLM.
  * This allows testing the system without depending on LLM inference.
- * 
+ *
  * Usage:
  *   OPENFOX_MOCK_LLM=true npx vitest run
- * 
+ *
  * Or import directly in test files:
  *   import { setupMockLLMServer } from './utils/mock-setup.js'
  */
@@ -52,7 +52,7 @@ export async function setupMockLLMServer(): Promise<void> {
   // Clean up any leftover process
   killProcessOnPort(TEST_PORT)
   await sleep(500)
-  
+
   const verbose = process.env['OPENFOX_TEST_VERBOSE'] === 'true'
   if (verbose) {
     console.log('\n🚀 Starting OpenFox server with MOCK LLM...')
@@ -60,7 +60,7 @@ export async function setupMockLLMServer(): Promise<void> {
     console.log(`   Backend: ${MOCK_BACKEND}`)
     console.log(`   Port: ${TEST_PORT}`)
   }
-  
+
   // Start the server with mock LLM configuration
   // The server will use the mock LLM client when OPENFOX_MOCK_LLM is set
   serverProcess = spawn('node', ['dist/cli/index.js', '--no-browser'], {
@@ -75,42 +75,42 @@ export async function setupMockLLMServer(): Promise<void> {
       OPENFOX_MODEL_NAME: MOCK_MODEL,
       OPENFOX_LOG_LEVEL: 'warn',
       OPENFOX_HOST: '127.0.0.1',
-      OPENFOX_MOCK_LLM: 'true',  // Flag to enable mock mode
+      OPENFOX_MOCK_LLM: 'true', // Flag to enable mock mode
     },
     stdio: ['ignore', 'pipe', 'pipe'],
     detached: true,
   })
-  
+
   // Log server output (only in verbose mode)
   if (verbose) {
     serverProcess.stdout?.on('data', (data: Buffer) => {
       const msg = data.toString().trim()
       if (msg) console.log(`[server] ${msg}`)
     })
-    
+
     serverProcess.stderr?.on('data', (data: Buffer) => {
       const msg = data.toString().trim()
       if (msg) console.error(`[server:err] ${msg}`)
     })
-    
+
     serverProcess.on('error', (err) => {
       console.error('Server process error:', err)
     })
   }
-  
+
   // Wait for server to be healthy
   const serverUrl = `http://localhost:${TEST_PORT}`
   await waitForServer(serverUrl)
-  
+
   if (verbose) {
     console.log(`✅ Mock LLM server running at ${serverUrl}`)
   }
-  
+
   // Store URL for tests to use
   process.env['OPENFOX_TEST_URL'] = serverUrl
   process.env['OPENFOX_TEST_WS_URL'] = `ws://localhost:${TEST_PORT}/ws`
   process.env['OPENFOX_MOCK_LLM_ENABLED'] = 'true'
-  
+
   // Cleanup on interrupt
   const cleanup = () => {
     if (serverProcess?.pid) {
@@ -132,13 +132,13 @@ export async function teardownMockLLMServer(): Promise<void> {
     if (verbose) {
       console.log('\n🛑 Stopping mock LLM server...')
     }
-    
+
     try {
       process.kill(-serverProcess.pid, 'SIGTERM')
     } catch {
       serverProcess.kill('SIGTERM')
     }
-    
+
     await new Promise<void>((resolve) => {
       const timeout = setTimeout(() => {
         try {
@@ -150,13 +150,13 @@ export async function teardownMockLLMServer(): Promise<void> {
         }
         resolve()
       }, 3000)
-      
+
       serverProcess?.on('exit', () => {
         clearTimeout(timeout)
         resolve()
       })
     })
-    
+
     serverProcess = null
     if (verbose) {
       console.log('✅ Mock server stopped')

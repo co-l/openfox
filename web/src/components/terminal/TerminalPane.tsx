@@ -18,8 +18,8 @@ export function TerminalPane({ sessionId, onClose, onEscape, autoFocus }: Termin
   const termRef = useRef<any>(null)
   const resizeTimeoutRef = useRef<NodeJS.Timeout | null>(null)
 
-  const writeSession = useTerminalStore(state => state.writeSession)
-  const resizeSession = useTerminalStore(state => state.resizeSession)
+  const writeSession = useTerminalStore((state) => state.writeSession)
+  const resizeSession = useTerminalStore((state) => state.resizeSession)
 
   useEffect(() => {
     sessionIdRef.current = sessionId
@@ -146,8 +146,8 @@ export function TerminalPane({ sessionId, onClose, onEscape, autoFocus }: Termin
           <XCloseSmallIcon />
         </button>
       </div>
-      <div 
-        ref={terminalRef} 
+      <div
+        ref={terminalRef}
         className="flex-1 relative overflow-hidden"
         tabIndex={0}
         onKeyDown={(e) => {

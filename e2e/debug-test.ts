@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest'
-import { 
+import {
   createSessionPool,
   createTestServer,
   collectChatEvents,
@@ -27,14 +27,15 @@ describe('Debug', () => {
 
   it('debug criteria', async () => {
     const { client } = pool.get()
-    
-    await client.send('chat.send', { 
-      content: 'I want to add a multiply function to math.ts. Propose acceptance criteria for this task. Use the add_criterion tool.' 
+
+    await client.send('chat.send', {
+      content:
+        'I want to add a multiply function to math.ts. Propose acceptance criteria for this task. Use the add_criterion tool.',
     })
-    
+
     const events = await collectChatEvents(client)
     console.log('All events:', JSON.stringify(Array.from(events.entries()), null, 2))
-    
+
     const session = client.getSession()!
     console.log('Session criteria:', session.criteria)
   })

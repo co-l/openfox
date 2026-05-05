@@ -31,27 +31,33 @@ function UserMessage({ message, promptContext }: UserMessageProps) {
         <MessageOptionsMenu content={message.content} promptContext={promptContext} align="right" />
       )}
 
-      <div className={`max-w-[75%] rounded p-2 ${
-        isSystemGenerated
-          ? isCommand
-            ? 'bg-teal-500/10 border border-teal-500/30'
-            : isAutoPrompt
-              ? 'bg-slate-500/10 border border-slate-500/30'
-              : 'bg-amber-500/10 border border-amber-500/30'
-          : 'bg-accent-primary/15 text-text-primary'
-      }`}>
+      <div
+        className={`max-w-[75%] rounded p-2 ${
+          isSystemGenerated
+            ? isCommand
+              ? 'bg-teal-500/10 border border-teal-500/30'
+              : isAutoPrompt
+                ? 'bg-slate-500/10 border border-slate-500/30'
+                : 'bg-amber-500/10 border border-amber-500/30'
+            : 'bg-accent-primary/15 text-text-primary'
+        }`}
+      >
         {isSystemGenerated && (
-          <span className={`text-[10px] block mb-0.5 ${
-            isCommand ? 'text-teal-400' : isAutoPrompt ? 'text-slate-400' : 'text-amber-400'
-          }`}>
+          <span
+            className={`text-[10px] block mb-0.5 ${
+              isCommand ? 'text-teal-400' : isAutoPrompt ? 'text-slate-400' : 'text-amber-400'
+            }`}
+          >
             {isCommand ? 'Command' : isAutoPrompt ? 'Auto' : 'System'}
           </span>
         )}
-        <div className={`whitespace-pre-wrap text-sm ${
-          isSystemGenerated
-            ? `${isCommand ? 'text-teal-200' : isAutoPrompt ? 'text-slate-200' : 'text-amber-200 italic'}`
-            : ''
-        }`}>
+        <div
+          className={`whitespace-pre-wrap text-sm ${
+            isSystemGenerated
+              ? `${isCommand ? 'text-teal-200' : isAutoPrompt ? 'text-slate-200' : 'text-amber-200 italic'}`
+              : ''
+          }`}
+        >
           {message.content}
         </div>
         {message.attachments && message.attachments.length > 0 && (
@@ -62,17 +68,21 @@ function UserMessage({ message, promptContext }: UserMessageProps) {
   )
 }
 
-export const ChatMessage = memo(function ChatMessage({ message, isLastAssistantMessage = false, promptContext }: ChatMessageProps) {
+export const ChatMessage = memo(function ChatMessage({
+  message,
+  isLastAssistantMessage = false,
+  promptContext,
+}: ChatMessageProps) {
   const isUser = message.role === 'user'
   const isAssistant = message.role === 'assistant'
   const isSystem = message.role === 'system'
   const isTool = message.role === 'tool'
-  
+
   // Use unified AssistantMessage for assistant role
   if (isAssistant) {
     return <AssistantMessage message={message} showStats={isLastAssistantMessage} />
   }
-  
+
   if (isSystem && message.isCompacted) {
     return (
       <div className="feed-item bg-bg-tertiary/50 border border-border rounded p-2">
@@ -83,13 +93,11 @@ export const ChatMessage = memo(function ChatMessage({ message, isLastAssistantM
       </div>
     )
   }
-  
+
   if (isTool) {
     return (
       <div className="feed-item bg-bg-tertiary/30 border-l-2 border-accent-primary rounded-r p-2">
-        <div className="text-accent-primary text-xs mb-0.5">
-          Tool: {message.toolName}
-        </div>
+        <div className="text-accent-primary text-xs mb-0.5">Tool: {message.toolName}</div>
         <pre className="text-text-secondary text-xs whitespace-pre-wrap overflow-x-auto max-h-32">
           {message.content.slice(0, 500)}
           {message.content.length > 500 && '...'}
@@ -97,7 +105,7 @@ export const ChatMessage = memo(function ChatMessage({ message, isLastAssistantM
       </div>
     )
   }
-  
+
   // Workflow started card
   if (message.messageKind === 'workflow-started') {
     try {
@@ -128,7 +136,7 @@ export const ChatMessage = memo(function ChatMessage({ message, isLastAssistantM
       </div>
     )
   }
-  
+
   // Auto-prompt message - show compact card instead of full content
   if (message.messageKind === 'auto-prompt' && message.isSystemGenerated) {
     return <AutoPromptCard message={message} />
@@ -138,7 +146,7 @@ export const ChatMessage = memo(function ChatMessage({ message, isLastAssistantM
   if (isUser) {
     return <UserMessage message={message} promptContext={promptContext} />
   }
-  
+
   return (
     <div className="flex justify-start feed-item">
       <div className="max-w-[75%] rounded p-2 bg-bg-tertiary text-text-primary">

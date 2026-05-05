@@ -25,16 +25,20 @@ if (!row) {
 const data = JSON.parse(row.payload)
 const messages = data.messages ?? []
 
-const last10 = messages.slice(-10).map((m: {
-  role: string
-  content?: string
-  thinkingContent?: string | null
-  segments?: Array<{ type: string; content?: string }>
-}) => ({
-  role: m.role,
-  content: m.content ?? '',
-  thinkingContent: m.thinkingContent,
-  segments: m.segments ?? []
-}))
+const last10 = messages
+  .slice(-10)
+  .map(
+    (m: {
+      role: string
+      content?: string
+      thinkingContent?: string | null
+      segments?: Array<{ type: string; content?: string }>
+    }) => ({
+      role: m.role,
+      content: m.content ?? '',
+      thinkingContent: m.thinkingContent,
+      segments: m.segments ?? [],
+    }),
+  )
 
 console.log(JSON.stringify(last10, null, 2))

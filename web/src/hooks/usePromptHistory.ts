@@ -1,9 +1,6 @@
 import { useState, useCallback, useMemo } from 'react'
 import type { Message, SessionSummary } from '@shared/types.js'
-import { 
-  formatTimestampLocal as formatTimestamp,
-  trimContent
-} from '../lib/cross-session-history'
+import { formatTimestampLocal as formatTimestamp, trimContent } from '../lib/cross-session-history'
 
 export { formatTimestamp, trimContent }
 
@@ -22,7 +19,7 @@ export interface PromptHistoryItem {
 
 export function extractUserMessages(messages: Message[]): Message[] {
   return messages
-    .filter(msg => msg.role === 'user')
+    .filter((msg) => msg.role === 'user')
     .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
 }
 
@@ -34,17 +31,17 @@ export function buildHistoryFromMessages(messages: Message[], maxCount: number):
   // Get user messages sorted by timestamp descending (newest first)
   // Exclude auto-prompts and system-generated messages
   const userMessages = messages
-    .filter(msg => msg.role === 'user' && !msg.isSystemGenerated && msg.messageKind !== 'auto-prompt')
+    .filter((msg) => msg.role === 'user' && !msg.isSystemGenerated && msg.messageKind !== 'auto-prompt')
     .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
-  
+
   // Take the maxCount most recent messages
   const recentMessages = userMessages.slice(0, maxCount)
-  
+
   // Reverse to get oldest-first order for display (newest at bottom)
   recentMessages.reverse()
-  
+
   const history: PromptHistoryItem[] = []
-  
+
   for (const msg of recentMessages) {
     history.push({
       id: msg.id,
@@ -54,11 +51,11 @@ export function buildHistoryFromMessages(messages: Message[], maxCount: number):
       trimmedContent: trimContent(msg.content, MAX_CONTENT_LENGTH),
     })
   }
-  
+
   return history
 }
 
-type PromptData = { id: string, content: string, timestamp: string, sessionId: string, sessionName?: string }
+type PromptData = { id: string; content: string; timestamp: string; sessionId: string; sessionName?: string }
 
 function extractSessionPrompts(session: SessionSummary): PromptData[] {
   const prompts: PromptData[] = []
@@ -79,7 +76,7 @@ function extractSessionPrompts(session: SessionSummary): PromptData[] {
 function buildHistoryFromPrompts(prompts: PromptData[]): PromptHistoryItem[] {
   const sorted = [...prompts].sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
   const recent = sorted.slice(0, MAX_HISTORY_SIZE).reverse()
-  return recent.map(prompt => ({
+  return recent.map((prompt) => ({
     id: prompt.id,
     content: prompt.content,
     timestamp: prompt.timestamp,
@@ -98,12 +95,12 @@ export function buildFromSessions(sessions: SessionSummary[]): PromptHistoryItem
 export function buildCombinedHistory(
   messages: Message[],
   sessions: SessionSummary[],
-  currentSessionId: string | null
+  currentSessionId: string | null,
 ): PromptHistoryItem[] {
   const allPrompts: PromptData[] = []
 
-  const currentUserMessages = messages.filter(msg =>
-    msg.role === 'user' && !msg.isSystemGenerated && msg.messageKind !== 'auto-prompt'
+  const currentUserMessages = messages.filter(
+    (msg) => msg.role === 'user' && !msg.isSystemGenerated && msg.messageKind !== 'auto-prompt',
   )
   for (const msg of currentUserMessages) {
     allPrompts.push({
@@ -137,49 +134,49 @@ interface UsePromptHistoryReturn {
 export function usePromptHistory(
   messages: Message[],
   sessions: SessionSummary[] = [],
-  currentSessionId: string | null = null
+  currentSessionId: string | null = null,
 ): UsePromptHistoryReturn {
   const [selectedIndex, setSelectedIndex] = useState(0)
   const [showHistory, setShowHistory] = useState(false)
-  
+
   const history = useMemo(() => {
     // Always combine current session messages with all other sessions
     // and return the 10 most recent prompts
     return buildCombinedHistory(messages, sessions, currentSessionId)
   }, [messages, sessions, currentSessionId])
-  
+
   const openHistory = useCallback(() => {
     if (history.length > 0) {
       setSelectedIndex(history.length - 1) // Select the newest (last) item
       setShowHistory(true)
     }
   }, [history.length])
-  
+
   const closeHistory = useCallback(() => {
     setShowHistory(false)
     setSelectedIndex(0)
   }, [])
-  
+
   const navigateUp = useCallback(() => {
-    setSelectedIndex(prev => {
+    setSelectedIndex((prev) => {
       if (history.length === 0) return prev
       return prev === 0 ? history.length - 1 : prev - 1
     })
   }, [history.length])
-  
+
   const navigateDown = useCallback(() => {
-    setSelectedIndex(prev => {
+    setSelectedIndex((prev) => {
       if (history.length === 0) return prev
       return prev === history.length - 1 ? 0 : prev + 1
     })
   }, [history.length])
-  
+
   const selectCurrent = useCallback((): string | null => {
     if (history.length === 0 || !showHistory) return null
     const item = history[selectedIndex]
     return item?.content ?? null
   }, [history, selectedIndex, showHistory])
-  
+
   return {
     history,
     selectedIndex,

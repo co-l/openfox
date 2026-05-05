@@ -14,14 +14,22 @@ export interface AgentInfo {
 }
 
 export interface AgentFull {
-  metadata: { id: string; name: string; description: string; subagent: boolean; allowedTools: string[]; color?: string; results?: string[] }
+  metadata: {
+    id: string
+    name: string
+    description: string
+    subagent: boolean
+    allowedTools: string[]
+    color?: string
+    results?: string[]
+  }
   prompt: string
 }
 
 const DEFAULT_AGENT_COLOR = '#6b7280'
 
 export function getAgentColor(agents: AgentInfo[], agentId: string): string {
-  return agents.find(a => a.id === agentId)?.color ?? DEFAULT_AGENT_COLOR
+  return agents.find((a) => a.id === agentId)?.color ?? DEFAULT_AGENT_COLOR
 }
 
 interface AgentsState {
@@ -53,7 +61,7 @@ export const useAgentsStore = create<AgentsState>((set) => {
       try {
         const res = await authFetch(`/api/agents/${agentId}`)
         if (!res.ok) return null
-        return await res.json() as AgentFull
+        return (await res.json()) as AgentFull
       } catch {
         return null
       }
@@ -63,7 +71,7 @@ export const useAgentsStore = create<AgentsState>((set) => {
       try {
         const res = await authFetch(`/api/agents/defaults/${agentId}`)
         if (!res.ok) return null
-        return await res.json() as AgentFull
+        return (await res.json()) as AgentFull
       } catch {
         return null
       }
@@ -86,8 +94,8 @@ export const useAgentsStore = create<AgentsState>((set) => {
         const res = await authFetch(`/api/agents/${agentId}`, { method: 'DELETE' })
         const data = await res.json()
         if (res.ok) {
-          set(state => ({
-            userItems: state.userItems.filter(a => a.id !== agentId),
+          set((state) => ({
+            userItems: state.userItems.filter((a) => a.id !== agentId),
           }))
           return { success: true }
         }

@@ -36,7 +36,12 @@ describe('buildPromptContextByUserMessageId', () => {
       createMessage({ id: 'user-1', role: 'user', content: 'Ship it' }),
       createMessage({ id: 'assistant-1', role: 'assistant', content: 'Planning', promptContext }),
       createMessage({ id: 'auto-1', role: 'user', content: 'Continue', isSystemGenerated: true }),
-      createMessage({ id: 'assistant-2', role: 'assistant', content: 'Building', promptContext: { ...promptContext, userMessage: 'Continue' } }),
+      createMessage({
+        id: 'assistant-2',
+        role: 'assistant',
+        content: 'Building',
+        promptContext: { ...promptContext, userMessage: 'Continue' },
+      }),
     ]
 
     expect(buildPromptContextByUserMessageId(messages)).toEqual({

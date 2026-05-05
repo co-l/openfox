@@ -18,7 +18,7 @@ interface SettingsState {
   // Cached settings values
   settings: Record<string, string>
   loading: Record<string, boolean>
-  
+
   // Actions
   getSetting: (key: string) => Promise<string | null>
   setSetting: (key: string, value: string) => Promise<void>
@@ -45,18 +45,21 @@ export const DISPLAY_SETTINGS_KEYS = [
 
 export function useDisplaySettings() {
   return {
-    showThinking: useSettingsStore(state => state.settings[SETTINGS_KEYS.DISPLAY_SHOW_THINKING] ?? 'true') === 'true',
-    showVerboseToolOutput: useSettingsStore(state => state.settings[SETTINGS_KEYS.DISPLAY_SHOW_VERBOSE_TOOL_OUTPUT] ?? 'true') === 'true',
-    showStats: useSettingsStore(state => state.settings[SETTINGS_KEYS.DISPLAY_SHOW_STATS] ?? 'true') === 'true',
-    showAgentDefinitions: useSettingsStore(state => state.settings[SETTINGS_KEYS.DISPLAY_SHOW_AGENT_DEFINITIONS] ?? 'true') === 'true',
-    showWorkflowBars: useSettingsStore(state => state.settings[SETTINGS_KEYS.DISPLAY_SHOW_WORKFLOW_BARS] ?? 'true') === 'true',
+    showThinking: useSettingsStore((state) => state.settings[SETTINGS_KEYS.DISPLAY_SHOW_THINKING] ?? 'true') === 'true',
+    showVerboseToolOutput:
+      useSettingsStore((state) => state.settings[SETTINGS_KEYS.DISPLAY_SHOW_VERBOSE_TOOL_OUTPUT] ?? 'true') === 'true',
+    showStats: useSettingsStore((state) => state.settings[SETTINGS_KEYS.DISPLAY_SHOW_STATS] ?? 'true') === 'true',
+    showAgentDefinitions:
+      useSettingsStore((state) => state.settings[SETTINGS_KEYS.DISPLAY_SHOW_AGENT_DEFINITIONS] ?? 'true') === 'true',
+    showWorkflowBars:
+      useSettingsStore((state) => state.settings[SETTINGS_KEYS.DISPLAY_SHOW_WORKFLOW_BARS] ?? 'true') === 'true',
   }
 }
 
 export const useSettingsStore = create<SettingsState>((set) => ({
   settings: {},
   loading: {},
-  
+
   getSetting: async (key) => {
     set(setLoading(key, true))
     try {
@@ -69,7 +72,7 @@ export const useSettingsStore = create<SettingsState>((set) => ({
       return null
     }
   },
-  
+
   setSetting: async (key, value) => {
     set(setLoading(key, true))
     try {

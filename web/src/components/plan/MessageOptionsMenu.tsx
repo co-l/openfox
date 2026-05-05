@@ -57,9 +57,7 @@ export function MessageOptionsMenu({ content, promptContext, align = 'right' }: 
   return (
     <>
       <div className={`flex items-start gap-1.5 ${isRightAligned ? '' : 'order-first'}`}>
-        {copied && (
-          <CheckIcon className="w-4 h-4 text-accent-success" />
-        )}
+        {copied && <CheckIcon className="w-4 h-4 text-accent-success" />}
 
         <div ref={menuRef} className="relative">
           <button
@@ -71,7 +69,9 @@ export function MessageOptionsMenu({ content, promptContext, align = 'right' }: 
           </button>
 
           {showMenu && (
-            <div className={`absolute top-full mt-1 bg-bg-secondary border border-border rounded shadow-xl z-50 py-1 min-w-36 ${isRightAligned ? 'right-0' : 'left-0'}`}>
+            <div
+              className={`absolute top-full mt-1 bg-bg-secondary border border-border rounded shadow-xl z-50 py-1 min-w-36 ${isRightAligned ? 'right-0' : 'left-0'}`}
+            >
               <button
                 onClick={handleCopy}
                 className="w-full px-3 py-1.5 text-left text-sm text-text-primary hover:bg-bg-tertiary flex items-center gap-2"
@@ -97,11 +97,7 @@ export function MessageOptionsMenu({ content, promptContext, align = 'right' }: 
       </div>
 
       {promptContext && (
-        <PromptInspector
-          isOpen={showInspector}
-          onClose={() => setShowInspector(false)}
-          promptContext={promptContext}
-        />
+        <PromptInspector isOpen={showInspector} onClose={() => setShowInspector(false)} promptContext={promptContext} />
       )}
     </>
   )

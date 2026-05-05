@@ -1,6 +1,6 @@
 /**
  * Global setup for E2E tests.
- * 
+ *
  * Starts OpenFox server with mock LLM for fast deterministic testing.
  */
 
@@ -43,7 +43,7 @@ async function waitForServer(url: string, maxAttempts = 40): Promise<void> {
 export async function setup(): Promise<void> {
   await rm(TEST_CONFIG_DIR, { recursive: true, force: true })
   await mkdir(TEST_CONFIG_DIR, { recursive: true })
-  
+
   killProcessOnPort(TEST_PORT)
   await sleep(300)
 
@@ -83,7 +83,11 @@ export async function setup(): Promise<void> {
 
   const cleanup = () => {
     if (serverProcess?.pid) {
-      try { process.kill(-serverProcess.pid, 'SIGKILL') } catch { serverProcess?.kill('SIGKILL') }
+      try {
+        process.kill(-serverProcess.pid, 'SIGKILL')
+      } catch {
+        serverProcess?.kill('SIGKILL')
+      }
     }
     killProcessOnPort(TEST_PORT)
   }
@@ -97,14 +101,22 @@ export async function teardown(): Promise<void> {
     if (verbose) {
       console.log('\n🛑 Stopping server...')
     }
-    try { process.kill(-serverProcess.pid, 'SIGTERM') } catch { serverProcess?.kill('SIGTERM') }
+    try {
+      process.kill(-serverProcess.pid, 'SIGTERM')
+    } catch {
+      serverProcess?.kill('SIGTERM')
+    }
     await sleep(500)
-    try { process.kill(-serverProcess.pid, 'SIGKILL') } catch { /* already dead */ }
+    try {
+      process.kill(-serverProcess.pid, 'SIGKILL')
+    } catch {
+      /* already dead */
+    }
     serverProcess = null
     if (verbose) {
       console.log('✅ Stopped')
     }
   }
-  
+
   await rm(TEST_CONFIG_DIR, { recursive: true, force: true })
 }

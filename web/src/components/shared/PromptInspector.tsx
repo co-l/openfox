@@ -20,7 +20,7 @@ export function PromptInspector({ isOpen, onClose, promptContext }: PromptInspec
   })
 
   const toggleSection = (section: string) => {
-    setExpandedSections(prev => ({ ...prev, [section]: !prev[section] }))
+    setExpandedSections((prev) => ({ ...prev, [section]: !prev[section] }))
   }
 
   return (
@@ -113,9 +113,9 @@ export function PromptInspector({ isOpen, onClose, promptContext }: PromptInspec
           >
             <div className="space-y-2">
               {promptContext.injectedFiles.map((file: InjectedFile, index: number) => (
-                <FileItem 
-                  key={index} 
-                  file={file} 
+                <FileItem
+                  key={index}
+                  file={file}
                   expanded={expandedSections[`file-${index}`] ?? false}
                   onToggle={() => toggleSection(`file-${index}`)}
                 />
@@ -154,20 +154,20 @@ function FileItem({ file, expanded, onToggle }: FileItemProps) {
         className="w-full flex items-center gap-2 p-2 hover:bg-bg-primary/30 transition-colors"
       >
         <ChevronDownIcon className={`w-3 h-3 text-text-muted transition-transform ${expanded ? 'rotate-90' : ''}`} />
-        <span className={`text-xs px-1.5 py-0.5 rounded ${
-          file.source === 'global' ? 'bg-purple-500/20 text-purple-400' :
-          file.source === 'project' ? 'bg-blue-500/20 text-blue-400' :
-          'bg-green-500/20 text-green-400'
-        }`}>
+        <span
+          className={`text-xs px-1.5 py-0.5 rounded ${
+            file.source === 'global'
+              ? 'bg-purple-500/20 text-purple-400'
+              : file.source === 'project'
+                ? 'bg-blue-500/20 text-blue-400'
+                : 'bg-green-500/20 text-green-400'
+          }`}
+        >
           {file.source}
         </span>
-        <span className="text-sm text-text-primary font-mono truncate flex-1 text-left">
-          {file.path}
-        </span>
+        <span className="text-sm text-text-primary font-mono truncate flex-1 text-left">{file.path}</span>
         {file.content && (
-          <span className="text-xs text-text-muted">
-            {Math.round(file.content.length / 1000)}K chars
-          </span>
+          <span className="text-xs text-text-muted">{Math.round(file.content.length / 1000)}K chars</span>
         )}
       </button>
       {expanded && file.content && (
@@ -199,18 +199,10 @@ function Section({ title, expanded, onToggle, badge, children }: SectionProps) {
         <div className="flex items-center gap-2">
           <ChevronDownIcon className={`w-4 h-4 text-text-muted transition-transform ${expanded ? 'rotate-90' : ''}`} />
           <span className="font-medium text-text-primary">{title}</span>
-          {badge && (
-            <span className="text-xs text-text-muted bg-bg-tertiary px-1.5 py-0.5 rounded">
-              {badge}
-            </span>
-          )}
+          {badge && <span className="text-xs text-text-muted bg-bg-tertiary px-1.5 py-0.5 rounded">{badge}</span>}
         </div>
       </button>
-      {expanded && (
-        <div className="p-3 border-t border-border">
-          {children}
-        </div>
-      )}
+      {expanded && <div className="p-3 border-t border-border">{children}</div>}
     </div>
   )
 }

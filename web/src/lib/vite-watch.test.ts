@@ -11,19 +11,23 @@ describe('createViteWatchOptions', () => {
   })
 
   it('allows polling to be disabled explicitly', () => {
-    expect(createViteWatchOptions({
-      platform: 'linux',
-      env: { OPENFOX_VITE_USE_POLLING: '0' },
-    })).toMatchObject({
+    expect(
+      createViteWatchOptions({
+        platform: 'linux',
+        env: { OPENFOX_VITE_USE_POLLING: '0' },
+      }),
+    ).toMatchObject({
       usePolling: false,
     })
   })
 
   it('allows polling to be enabled explicitly on any platform', () => {
-    expect(createViteWatchOptions({
-      platform: 'darwin',
-      env: { OPENFOX_VITE_USE_POLLING: 'true' },
-    })).toMatchObject({
+    expect(
+      createViteWatchOptions({
+        platform: 'darwin',
+        env: { OPENFOX_VITE_USE_POLLING: 'true' },
+      }),
+    ).toMatchObject({
       usePolling: true,
       interval: 150,
     })

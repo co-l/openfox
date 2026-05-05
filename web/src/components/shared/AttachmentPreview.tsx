@@ -35,9 +35,7 @@ export function AttachmentPreview({ attachment, onRemove }: AttachmentPreviewPro
       <div className="mt-1 text-xs text-text-muted text-center max-w-16 truncate" title={attachment.filename}>
         {attachment.filename}
       </div>
-      <div className="text-[10px] text-text-muted">
-        {formatFileSize(attachment.size)}
-      </div>
+      <div className="text-[10px] text-text-muted">{formatFileSize(attachment.size)}</div>
     </div>
   )
 }

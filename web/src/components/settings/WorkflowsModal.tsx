@@ -6,12 +6,7 @@ import { useWorkflowsStore, type WorkflowFull, type WorkflowStep, type TemplateV
 import { ArrowRightIcon, EyeIcon } from '../shared/icons'
 import type { AgentInfo } from '../../stores/agents'
 import { authFetch } from '../../lib/api'
-import {
-  ConfirmButton,
-  DeleteIcon,
-  DuplicateIcon,
-  useConfirmDialog,
-} from './CRUDModal'
+import { ConfirmButton, DeleteIcon, DuplicateIcon, useConfirmDialog } from './CRUDModal'
 
 interface WorkflowsModalProps {
   isOpen: boolean
@@ -20,12 +15,15 @@ interface WorkflowsModalProps {
 }
 
 function toSlug(name: string): string {
-  return name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')
+  return name
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-|-$/g, '')
 }
 
 function generateStepId(steps: WorkflowStep[]): string {
   let i = 1
-  while (steps.some(s => s.id === `s${i}`)) i++
+  while (steps.some((s) => s.id === `s${i}`)) i++
   return `s${i}`
 }
 
@@ -73,11 +71,11 @@ const PORT_R = 4
 
 function resolveAgent(step: WorkflowStep, agentTypes: AgentInfo[]): { name: string; color: string } {
   if (step.type === 'agent') {
-    const agent = agentTypes.find(a => a.id === step.toolMode)
+    const agent = agentTypes.find((a) => a.id === step.toolMode)
     return { name: agent?.name ?? (step.toolMode || 'Agent'), color: agent?.color || '#3b82f6' }
   }
   if (step.type === 'sub_agent') {
-    const agent = agentTypes.find(a => a.id === step.subAgentType)
+    const agent = agentTypes.find((a) => a.id === step.subAgentType)
     return { name: agent?.name ?? (step.subAgentType || 'Sub-Agent'), color: agent?.color || '#a855f7' }
   }
   return { name: 'Shell', color: '#22c55e' }
@@ -121,8 +119,8 @@ function computeLayout(steps: WorkflowStep[], entryStep: string, startConditionL
   const posMap = new Map<string, { cx: number; cy: number; w: number; h: number }>()
 
   // Determine columns: left = agents/shell + Start/Done, right = sub-agents
-  const leftSteps = steps.filter(s => s.type === 'agent' || s.type === 'shell')
-  const rightSteps = steps.filter(s => s.type === 'sub_agent')
+  const leftSteps = steps.filter((s) => s.type === 'agent' || s.type === 'shell')
+  const rightSteps = steps.filter((s) => s.type === 'sub_agent')
   const hasRight = rightSteps.length > 0
   const effectiveLeftCx = hasRight ? leftColCx : centerX
   const effectiveRightCx = leftSteps.length > 0 ? rightColCx : centerX
@@ -146,9 +144,14 @@ function computeLayout(steps: WorkflowStep[], entryStep: string, startConditionL
       const cy = startY + i * (NODE_H + GAP_Y) + NODE_H / 2
       const { name: agentName, color } = resolveAgent(step, agentTypes)
       nodes.push({
-        id: step.id, type: 'step', label: agentName,
+        id: step.id,
+        type: 'step',
+        label: agentName,
         color,
-        cx, cy, w: NODE_W, h: NODE_H,
+        cx,
+        cy,
+        w: NODE_W,
+        h: NODE_H,
       })
       posMap.set(step.id, { cx, cy, w: NODE_W, h: NODE_H })
     })
@@ -165,11 +168,25 @@ function computeLayout(steps: WorkflowStep[], entryStep: string, startConditionL
   posMap.set('$done', { cx: effectiveLeftCx, cy: bottomY, w: TERM_W, h: TERM_H })
 
   // Build raw edges
-  interface RawEdge { from: string; to: string; label: string; edgeKey: string; direction: 'down' | 'back' | 'same'; backEdgeIndex: number }
+  interface RawEdge {
+    from: string
+    to: string
+    label: string
+    edgeKey: string
+    direction: 'down' | 'back' | 'same'
+    backEdgeIndex: number
+  }
   const rawEdges: RawEdge[] = []
 
   if (entryStep && posMap.has(entryStep)) {
-    rawEdges.push({ from: '$start', to: entryStep, label: startConditionLabel, edgeKey: 'start', direction: 'down', backEdgeIndex: 0 })
+    rawEdges.push({
+      from: '$start',
+      to: entryStep,
+      label: startConditionLabel,
+      edgeKey: 'start',
+      direction: 'down',
+      backEdgeIndex: 0,
+    })
   }
 
   let backIdx = 0
@@ -178,14 +195,22 @@ function computeLayout(steps: WorkflowStep[], entryStep: string, startConditionL
       if (!t.goto || !posMap.has(t.goto)) return
       const fp = posMap.get(step.id)!
       const tp = posMap.get(t.goto)!
-      const condLabel = t.when.type === 'step_result' ? `${t.when.result}` : (CONDITION_LABELS[t.when.type] ?? t.when.type)
+      const condLabel =
+        t.when.type === 'step_result' ? `${t.when.result}` : (CONDITION_LABELS[t.when.type] ?? t.when.type)
       const isSelf = step.id === t.goto
       let dir: 'down' | 'back' | 'same'
       if (isSelf) dir = 'back'
       else if (tp.cy > fp.cy + 1) dir = 'down'
       else if (tp.cy < fp.cy - 1) dir = 'back'
       else dir = 'same'
-      rawEdges.push({ from: step.id, to: t.goto, label: condLabel, edgeKey: `${step.id}:${ti}`, direction: dir, backEdgeIndex: dir === 'back' ? backIdx++ : 0 })
+      rawEdges.push({
+        from: step.id,
+        to: t.goto,
+        label: condLabel,
+        edgeKey: `${step.id}:${ti}`,
+        direction: dir,
+        backEdgeIndex: dir === 'back' ? backIdx++ : 0,
+      })
     })
   }
 
@@ -238,9 +263,9 @@ function computeLayout(steps: WorkflowStep[], entryStep: string, startConditionL
 
 interface DragState {
   type: 'new' | 'reconnect-to' | 'reconnect-from'
-  fromNodeId: string       // source node for new/reconnect-to
-  fixedTargetId?: string   // for reconnect-from: the fixed target
-  edgeKey?: string         // for reconnects: which edge
+  fromNodeId: string // source node for new/reconnect-to
+  fixedTargetId?: string // for reconnect-from: the fixed target
+  edgeKey?: string // for reconnects: which edge
   mouseX: number
   mouseY: number
 }
@@ -250,9 +275,20 @@ interface DragState {
 // ============================================================================
 
 function FlowDiagram({
-  steps, entryStep, selectedNodeId, selectedEdgeKey, startConditionLabel, agentTypes, isReadOnly,
-  onSelectNode, onSelectEdge, onRemoveStep,
-  onCreateTransition, onReconnectTo, onReconnectFrom, onDeleteTransition,
+  steps,
+  entryStep,
+  selectedNodeId,
+  selectedEdgeKey,
+  startConditionLabel,
+  agentTypes,
+  isReadOnly,
+  onSelectNode,
+  onSelectEdge,
+  onRemoveStep,
+  onCreateTransition,
+  onReconnectTo,
+  onReconnectFrom,
+  onDeleteTransition,
 }: {
   steps: WorkflowStep[]
   entryStep: string
@@ -277,7 +313,7 @@ function FlowDiagram({
 
   const { nodes, edges, width, height, posMap } = useMemo(
     () => computeLayout(steps, entryStep, startConditionLabel, agentTypes),
-    [steps, entryStep, startConditionLabel, agentTypes]
+    [steps, entryStep, startConditionLabel, agentTypes],
   )
 
   // SVG coordinate conversion
@@ -294,46 +330,68 @@ function FlowDiagram({
   }, [])
 
   // Valid drop target check
-  const isValidTarget = useCallback((nodeId: string): boolean => {
-    if (!nodeId || !dragState) return false
-    if (nodeId === '$start') return false
-    if (dragState.type === 'reconnect-from') {
-      // Source must be a step node (terminals don't have transitions)
-      return nodeId !== '$done'
-    }
-    return true
-  }, [dragState])
+  const isValidTarget = useCallback(
+    (nodeId: string): boolean => {
+      if (!nodeId || !dragState) return false
+      if (nodeId === '$start') return false
+      if (dragState.type === 'reconnect-from') {
+        // Source must be a step node (terminals don't have transitions)
+        return nodeId !== '$done'
+      }
+      return true
+    },
+    [dragState],
+  )
 
   // Drag handlers
-  const startNewDrag = useCallback((ev: React.MouseEvent, fromNodeId: string) => {
-    if (isReadOnly) return
-    ev.stopPropagation()
-    ev.preventDefault()
-    const pt = getSVGPoint(ev)
-    setDragState({ type: 'new', fromNodeId, mouseX: pt.x, mouseY: pt.y })
-  }, [getSVGPoint, isReadOnly])
+  const startNewDrag = useCallback(
+    (ev: React.MouseEvent, fromNodeId: string) => {
+      if (isReadOnly) return
+      ev.stopPropagation()
+      ev.preventDefault()
+      const pt = getSVGPoint(ev)
+      setDragState({ type: 'new', fromNodeId, mouseX: pt.x, mouseY: pt.y })
+    },
+    [getSVGPoint, isReadOnly],
+  )
 
-  const startReconnectTo = useCallback((ev: React.MouseEvent, edge: LayoutEdge) => {
-    if (isReadOnly) return
-    ev.stopPropagation()
-    ev.preventDefault()
-    const pt = getSVGPoint(ev)
-    setDragState({ type: 'reconnect-to', fromNodeId: edge.from, edgeKey: edge.edgeKey, mouseX: pt.x, mouseY: pt.y })
-  }, [getSVGPoint, isReadOnly])
+  const startReconnectTo = useCallback(
+    (ev: React.MouseEvent, edge: LayoutEdge) => {
+      if (isReadOnly) return
+      ev.stopPropagation()
+      ev.preventDefault()
+      const pt = getSVGPoint(ev)
+      setDragState({ type: 'reconnect-to', fromNodeId: edge.from, edgeKey: edge.edgeKey, mouseX: pt.x, mouseY: pt.y })
+    },
+    [getSVGPoint, isReadOnly],
+  )
 
-  const startReconnectFrom = useCallback((ev: React.MouseEvent, edge: LayoutEdge) => {
-    if (isReadOnly) return
-    ev.stopPropagation()
-    ev.preventDefault()
-    const pt = getSVGPoint(ev)
-    setDragState({ type: 'reconnect-from', fromNodeId: edge.from, fixedTargetId: edge.to, edgeKey: edge.edgeKey, mouseX: pt.x, mouseY: pt.y })
-  }, [getSVGPoint, isReadOnly])
+  const startReconnectFrom = useCallback(
+    (ev: React.MouseEvent, edge: LayoutEdge) => {
+      if (isReadOnly) return
+      ev.stopPropagation()
+      ev.preventDefault()
+      const pt = getSVGPoint(ev)
+      setDragState({
+        type: 'reconnect-from',
+        fromNodeId: edge.from,
+        fixedTargetId: edge.to,
+        edgeKey: edge.edgeKey,
+        mouseX: pt.x,
+        mouseY: pt.y,
+      })
+    },
+    [getSVGPoint, isReadOnly],
+  )
 
-  const handleMouseMove = useCallback((ev: React.MouseEvent) => {
-    if (!dragState) return
-    const pt = getSVGPoint(ev)
-    setDragState(prev => prev ? { ...prev, mouseX: pt.x, mouseY: pt.y } : null)
-  }, [dragState, getSVGPoint])
+  const handleMouseMove = useCallback(
+    (ev: React.MouseEvent) => {
+      if (!dragState) return
+      const pt = getSVGPoint(ev)
+      setDragState((prev) => (prev ? { ...prev, mouseX: pt.x, mouseY: pt.y } : null))
+    },
+    [dragState, getSVGPoint],
+  )
 
   const handleMouseUp = useCallback(() => {
     if (!dragState) return
@@ -352,7 +410,10 @@ function FlowDiagram({
   }, [dragState, dragHoverTarget, isValidTarget, onCreateTransition, onReconnectTo, onReconnectFrom])
 
   const handleBackgroundClick = useCallback(() => {
-    if (dragEndedRef.current) { dragEndedRef.current = false; return }
+    if (dragEndedRef.current) {
+      dragEndedRef.current = false
+      return
+    }
     onSelectNode(null)
     onSelectEdge(null)
   }, [onSelectNode, onSelectEdge])
@@ -361,7 +422,12 @@ function FlowDiagram({
   useEffect(() => {
     if (isReadOnly) return
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement || e.target instanceof HTMLSelectElement) return
+      if (
+        e.target instanceof HTMLInputElement ||
+        e.target instanceof HTMLTextAreaElement ||
+        e.target instanceof HTMLSelectElement
+      )
+        return
       if ((e.key === 'Delete' || e.key === 'Backspace') && selectedEdgeKey && selectedEdgeKey !== 'start') {
         e.preventDefault()
         onDeleteTransition(selectedEdgeKey)
@@ -373,7 +439,16 @@ function FlowDiagram({
   }, [isReadOnly, selectedEdgeKey, onDeleteTransition, onSelectEdge])
 
   // Compute edge path and endpoints
-  const computeEdgePath = (e: LayoutEdge): { path: string; labelX: number; labelY: number; labelAnchor: 'middle' | 'start' | 'end'; fromPt: { x: number; y: number }; toPt: { x: number; y: number } } | null => {
+  const computeEdgePath = (
+    e: LayoutEdge,
+  ): {
+    path: string
+    labelX: number
+    labelY: number
+    labelAnchor: 'middle' | 'start' | 'end'
+    fromPt: { x: number; y: number }
+    toPt: { x: number; y: number }
+  } | null => {
     const from = posMap.get(e.from)
     const to = posMap.get(e.to)
     if (!from || !to) return null
@@ -435,7 +510,7 @@ function FlowDiagram({
     } else {
       // Same level (cross-column)
       const goesRight = to.cx > from.cx
-      const yOff = (e.sameEdgeIndex === 0 ? -12 : 12)
+      const yOff = e.sameEdgeIndex === 0 ? -12 : 12
       const x1 = goesRight ? from.cx + from.w / 2 : from.cx - from.w / 2
       const x2 = goesRight ? to.cx - to.w / 2 : to.cx + to.w / 2
       const y1 = from.cy + yOff
@@ -462,12 +537,21 @@ function FlowDiagram({
     return (
       <g key={i}>
         {/* Hit area — invisible wide stroke for clicking */}
-        <path d={path} fill="none" stroke="transparent" strokeWidth={14}
+        <path
+          d={path}
+          fill="none"
+          stroke="transparent"
+          strokeWidth={14}
           className="cursor-pointer"
-          onClick={(ev) => { ev.stopPropagation(); onSelectEdge(isSelected ? null : e.edgeKey) }}
+          onClick={(ev) => {
+            ev.stopPropagation()
+            onSelectEdge(isSelected ? null : e.edgeKey)
+          }}
         />
         {/* Visible edge */}
-        <path d={path} fill="none"
+        <path
+          d={path}
+          fill="none"
           stroke={isSelected ? '#58a6ff' : '#484f58'}
           strokeWidth={isSelected ? 2.2 : 1.2}
           markerEnd={isSelected ? 'url(#arrow-selected)' : 'url(#arrow)'}
@@ -476,8 +560,10 @@ function FlowDiagram({
         {showLabel && (
           <text
             x={labelX + (labelAnchor === 'start' ? 5 : labelAnchor === 'end' ? -5 : 0)}
-            y={labelY + 3} textAnchor={labelAnchor}
-            className="text-[8px]" fill={isSelected ? '#79c0ff' : '#8b949e'}
+            y={labelY + 3}
+            textAnchor={labelAnchor}
+            className="text-[8px]"
+            fill={isSelected ? '#79c0ff' : '#8b949e'}
             style={{ paintOrder: 'stroke', stroke: '#0d1117', strokeWidth: 3, strokeLinejoin: 'round' }}
             pointerEvents="none"
           >
@@ -491,7 +577,7 @@ function FlowDiagram({
   // Render handles on selected edge for reconnection
   const renderEdgeHandles = () => {
     if (!selectedEdgeKey || dragState) return null
-    const edge = edges.find(e => e.edgeKey === selectedEdgeKey)
+    const edge = edges.find((e) => e.edgeKey === selectedEdgeKey)
     if (!edge) return null
     const computed = computeEdgePath(edge)
     if (!computed) return null
@@ -503,15 +589,29 @@ function FlowDiagram({
       <>
         {/* From handle — not shown for start edge */}
         {edge.edgeKey !== 'start' && (
-          <circle cx={fromPt.x} cy={fromPt.y} r={handleR}
-            fill="#58a6ff" fillOpacity={0.25} stroke="#58a6ff" strokeWidth={2} strokeOpacity={0.8}
+          <circle
+            cx={fromPt.x}
+            cy={fromPt.y}
+            r={handleR}
+            fill="#58a6ff"
+            fillOpacity={0.25}
+            stroke="#58a6ff"
+            strokeWidth={2}
+            strokeOpacity={0.8}
             className="cursor-grab"
             onMouseDown={(ev) => startReconnectFrom(ev, edge)}
           />
         )}
         {/* To handle */}
-        <circle cx={toPt.x} cy={toPt.y} r={handleR}
-          fill="#58a6ff" fillOpacity={0.25} stroke="#58a6ff" strokeWidth={2} strokeOpacity={0.8}
+        <circle
+          cx={toPt.x}
+          cy={toPt.y}
+          r={handleR}
+          fill="#58a6ff"
+          fillOpacity={0.25}
+          stroke="#58a6ff"
+          strokeWidth={2}
+          strokeOpacity={0.8}
           className="cursor-grab"
           onMouseDown={(ev) => startReconnectTo(ev, edge)}
         />
@@ -542,13 +642,21 @@ function FlowDiagram({
     }
 
     const dy = y2 - y1
-    const path = Math.abs(dy) > 10
-      ? `M ${x1} ${y1} C ${x1} ${y1 + dy * 0.4}, ${x2} ${y2 - dy * 0.4}, ${x2} ${y2}`
-      : `M ${x1} ${y1} L ${x2} ${y2}`
+    const path =
+      Math.abs(dy) > 10
+        ? `M ${x1} ${y1} C ${x1} ${y1 + dy * 0.4}, ${x2} ${y2 - dy * 0.4}, ${x2} ${y2}`
+        : `M ${x1} ${y1} L ${x2} ${y2}`
 
     return (
-      <path d={path} fill="none" stroke="#58a6ff" strokeWidth={2}
-        strokeDasharray="6 3" strokeOpacity={0.7} pointerEvents="none" />
+      <path
+        d={path}
+        fill="none"
+        stroke="#58a6ff"
+        strokeWidth={2}
+        strokeDasharray="6 3"
+        strokeOpacity={0.7}
+        pointerEvents="none"
+      />
     )
   }
 
@@ -558,10 +666,13 @@ function FlowDiagram({
     const isActive = dragState?.fromNodeId === node.id
     return (
       <circle
-        cx={node.cx} cy={py} r={PORT_R}
+        cx={node.cx}
+        cy={py}
+        r={PORT_R}
         fill={isActive ? '#58a6ff' : '#1c2128'}
         stroke={isActive ? '#58a6ff' : '#484f58'}
-        strokeWidth={1.5} strokeOpacity={isActive ? 1 : 0.5}
+        strokeWidth={1.5}
+        strokeOpacity={isActive ? 1 : 0.5}
         className="cursor-crosshair"
         onMouseDown={(ev) => startNewDrag(ev, node.id)}
       />
@@ -574,10 +685,13 @@ function FlowDiagram({
     const isTarget = dragState && dragHoverTarget === node.id && isValidTarget(node.id)
     return (
       <circle
-        cx={node.cx} cy={py} r={PORT_R}
+        cx={node.cx}
+        cy={py}
+        r={PORT_R}
         fill={isTarget ? '#3fb950' : '#1c2128'}
         stroke={isTarget ? '#3fb950' : '#484f58'}
-        strokeWidth={1.5} strokeOpacity={isTarget ? 1 : 0.5}
+        strokeWidth={1.5}
+        strokeOpacity={isTarget ? 1 : 0.5}
       />
     )
   }
@@ -596,7 +710,15 @@ function FlowDiagram({
         <marker id="arrow" viewBox="0 0 10 7" refX="10" refY="3.5" markerWidth="7" markerHeight="5" orient="auto">
           <polygon points="0 0, 10 3.5, 0 7" fill="#484f58" />
         </marker>
-        <marker id="arrow-selected" viewBox="0 0 10 7" refX="10" refY="3.5" markerWidth="7" markerHeight="5" orient="auto">
+        <marker
+          id="arrow-selected"
+          viewBox="0 0 10 7"
+          refX="10"
+          refY="3.5"
+          markerWidth="7"
+          markerHeight="5"
+          orient="auto"
+        >
           <polygon points="0 0, 10 3.5, 0 7" fill="#58a6ff" />
         </marker>
       </defs>
@@ -605,7 +727,7 @@ function FlowDiagram({
       {edges.map((e, i) => renderEdge(e, i))}
 
       {/* Nodes */}
-      {nodes.map(node => {
+      {nodes.map((node) => {
         const isNodeSelected = selectedNodeId === node.id
         const x = node.cx - node.w / 2
         const y = node.cy - node.h / 2
@@ -619,25 +741,62 @@ function FlowDiagram({
           const hasInput = !isStart
 
           return (
-            <g key={node.id}
+            <g
+              key={node.id}
               onClick={(ev) => {
                 ev.stopPropagation()
-                if (isStart && !isReadOnly) { onSelectEdge('start') }
+                if (isStart && !isReadOnly) {
+                  onSelectEdge('start')
+                }
               }}
               className={isStart && !isReadOnly ? 'cursor-pointer' : undefined}
             >
               {isDragTarget && (
-                <rect x={x - 3} y={y - 3} width={node.w + 6} height={node.h + 6} rx={node.h / 2 + 3}
-                  fill="none" stroke="#3fb950" strokeOpacity={0.6} strokeWidth={2} />
+                <rect
+                  x={x - 3}
+                  y={y - 3}
+                  width={node.w + 6}
+                  height={node.h + 6}
+                  rx={node.h / 2 + 3}
+                  fill="none"
+                  stroke="#3fb950"
+                  strokeOpacity={0.6}
+                  strokeWidth={2}
+                />
               )}
               {isStart && selectedEdgeKey === 'start' && (
-                <rect x={x - 3} y={y - 3} width={node.w + 6} height={node.h + 6} rx={node.h / 2 + 3}
-                  fill="none" stroke="#58a6ff" strokeOpacity={0.5} strokeWidth={2} />
+                <rect
+                  x={x - 3}
+                  y={y - 3}
+                  width={node.w + 6}
+                  height={node.h + 6}
+                  rx={node.h / 2 + 3}
+                  fill="none"
+                  stroke="#58a6ff"
+                  strokeOpacity={0.5}
+                  strokeWidth={2}
+                />
               )}
-              <rect x={x} y={y} width={node.w} height={node.h} rx={node.h / 2}
-                fill={color} fillOpacity={0.08} stroke={color} strokeOpacity={0.4} strokeWidth={1.5} />
-              <text x={node.cx} y={node.cy + 4} textAnchor="middle"
-                fill={color} className="text-[10px] font-medium" pointerEvents="none">
+              <rect
+                x={x}
+                y={y}
+                width={node.w}
+                height={node.h}
+                rx={node.h / 2}
+                fill={color}
+                fillOpacity={0.08}
+                stroke={color}
+                strokeOpacity={0.4}
+                strokeWidth={1.5}
+              />
+              <text
+                x={node.cx}
+                y={node.cy + 4}
+                textAnchor="middle"
+                fill={color}
+                className="text-[10px] font-medium"
+                pointerEvents="none"
+              >
                 {node.label}
               </text>
               {hasOutput && renderOutputPort(node)}
@@ -648,24 +807,62 @@ function FlowDiagram({
 
         const color = node.color ?? '#6b7280'
         return (
-          <g key={node.id}
-            onClick={(ev) => { ev.stopPropagation(); if (!isReadOnly) onSelectNode(isNodeSelected ? null : node.id) }}
+          <g
+            key={node.id}
+            onClick={(ev) => {
+              ev.stopPropagation()
+              if (!isReadOnly) onSelectNode(isNodeSelected ? null : node.id)
+            }}
             onMouseEnter={() => setHoveredNodeId(node.id)}
             onMouseLeave={() => setHoveredNodeId(null)}
             className={isReadOnly ? undefined : 'cursor-pointer'}
           >
             {isDragTarget && (
-              <rect x={x - 3} y={y - 3} width={node.w + 6} height={node.h + 6} rx={12}
-                fill="none" stroke="#3fb950" strokeOpacity={0.6} strokeWidth={2} />
+              <rect
+                x={x - 3}
+                y={y - 3}
+                width={node.w + 6}
+                height={node.h + 6}
+                rx={12}
+                fill="none"
+                stroke="#3fb950"
+                strokeOpacity={0.6}
+                strokeWidth={2}
+              />
             )}
             {isNodeSelected && (
-              <rect x={x - 3} y={y - 3} width={node.w + 6} height={node.h + 6} rx={12}
-                fill="none" stroke="#58a6ff" strokeOpacity={0.5} strokeWidth={2} />
+              <rect
+                x={x - 3}
+                y={y - 3}
+                width={node.w + 6}
+                height={node.h + 6}
+                rx={12}
+                fill="none"
+                stroke="#58a6ff"
+                strokeOpacity={0.5}
+                strokeWidth={2}
+              />
             )}
-            <rect x={x} y={y} width={node.w} height={node.h} rx={10}
-              fill={color} fillOpacity={0.08} stroke={color} strokeOpacity={0.6}
-              strokeWidth={isNodeSelected ? 2 : 1.5} />
-            <text x={node.cx} y={node.cy + 4} textAnchor="middle" fill="#c9d1d9" className="text-[11px] font-medium" pointerEvents="none">
+            <rect
+              x={x}
+              y={y}
+              width={node.w}
+              height={node.h}
+              rx={10}
+              fill={color}
+              fillOpacity={0.08}
+              stroke={color}
+              strokeOpacity={0.6}
+              strokeWidth={isNodeSelected ? 2 : 1.5}
+            />
+            <text
+              x={node.cx}
+              y={node.cy + 4}
+              textAnchor="middle"
+              fill="#c9d1d9"
+              className="text-[11px] font-medium"
+              pointerEvents="none"
+            >
               {node.label}
             </text>
             {/* Ports */}
@@ -673,10 +870,41 @@ function FlowDiagram({
             {!isReadOnly && renderInputPort(node)}
             {/* Hover delete button */}
             {isHovered && !dragState && !isReadOnly && (
-              <g onClick={(ev) => { ev.stopPropagation(); onRemoveStep(node.id) }} className="cursor-pointer">
-                <circle cx={x + node.w - 2} cy={y + 2} r={8} fill="#0d1117" fillOpacity={0.9} stroke="#f85149" strokeOpacity={0.5} strokeWidth={1} />
-                <line x1={x + node.w - 5} y1={y - 1} x2={x + node.w + 1} y2={y + 5} stroke="#f85149" strokeWidth={1.5} strokeLinecap="round" />
-                <line x1={x + node.w + 1} y1={y - 1} x2={x + node.w - 5} y2={y + 5} stroke="#f85149" strokeWidth={1.5} strokeLinecap="round" />
+              <g
+                onClick={(ev) => {
+                  ev.stopPropagation()
+                  onRemoveStep(node.id)
+                }}
+                className="cursor-pointer"
+              >
+                <circle
+                  cx={x + node.w - 2}
+                  cy={y + 2}
+                  r={8}
+                  fill="#0d1117"
+                  fillOpacity={0.9}
+                  stroke="#f85149"
+                  strokeOpacity={0.5}
+                  strokeWidth={1}
+                />
+                <line
+                  x1={x + node.w - 5}
+                  y1={y - 1}
+                  x2={x + node.w + 1}
+                  y2={y + 5}
+                  stroke="#f85149"
+                  strokeWidth={1.5}
+                  strokeLinecap="round"
+                />
+                <line
+                  x1={x + node.w + 1}
+                  y1={y - 1}
+                  x2={x + node.w - 5}
+                  y2={y + 5}
+                  stroke="#f85149"
+                  strokeWidth={1.5}
+                  strokeLinecap="round"
+                />
               </g>
             )}
           </g>
@@ -684,19 +912,27 @@ function FlowDiagram({
       })}
 
       {/* Drop target overlay during drag — large invisible hit areas */}
-      {dragState && nodes.map(node => {
-        if (!isValidTarget(node.id)) return null
-        return (
-          <rect key={`drop-${node.id}`}
-            x={node.cx - node.w / 2 - 8} y={node.cy - node.h / 2 - 8}
-            width={node.w + 16} height={node.h + 16}
-            fill="transparent" rx={12}
-            onMouseEnter={() => setDragHoverTarget(node.id)}
-            onMouseLeave={() => setDragHoverTarget(null)}
-            onMouseUp={(ev) => { ev.stopPropagation(); handleMouseUp() }}
-          />
-        )
-      })}
+      {dragState &&
+        nodes.map((node) => {
+          if (!isValidTarget(node.id)) return null
+          return (
+            <rect
+              key={`drop-${node.id}`}
+              x={node.cx - node.w / 2 - 8}
+              y={node.cy - node.h / 2 - 8}
+              width={node.w + 16}
+              height={node.h + 16}
+              fill="transparent"
+              rx={12}
+              onMouseEnter={() => setDragHoverTarget(node.id)}
+              onMouseLeave={() => setDragHoverTarget(null)}
+              onMouseUp={(ev) => {
+                ev.stopPropagation()
+                handleMouseUp()
+              }}
+            />
+          )
+        })}
 
       {/* Drag visual */}
       {renderDragLine()}
@@ -711,13 +947,20 @@ function FlowDiagram({
 // Transition Properties Panel
 // ============================================================================
 
-const inputClass = 'w-full px-2 py-1.5 bg-bg-tertiary border border-border rounded text-sm focus:outline-none focus:ring-1 focus:ring-accent-primary'
-const selectClass = 'w-full px-2 py-1.5 bg-bg-tertiary border border-border rounded text-sm focus:outline-none focus:ring-1 focus:ring-accent-primary'
+const inputClass =
+  'w-full px-2 py-1.5 bg-bg-tertiary border border-border rounded text-sm focus:outline-none focus:ring-1 focus:ring-accent-primary'
+const selectClass =
+  'w-full px-2 py-1.5 bg-bg-tertiary border border-border rounded text-sm focus:outline-none focus:ring-1 focus:ring-accent-primary'
 const labelClass = 'block text-[11px] text-text-secondary mb-0.5'
 
 function TransitionPanel({
-  fromLabel, toLabel, condition, fromStep, agentTypes,
-  onUpdateCondition, onDelete,
+  fromLabel,
+  toLabel,
+  condition,
+  fromStep,
+  agentTypes,
+  onUpdateCondition,
+  onDelete,
 }: {
   fromLabel: string
   toLabel: string
@@ -727,16 +970,19 @@ function TransitionPanel({
   onUpdateCondition: (when: { type: string; result?: string }) => void
   onDelete: () => void
 }) {
-  const stepAgent = fromStep && (fromStep.type === 'sub_agent' || fromStep.type === 'agent')
-    ? agentTypes.find(a => a.id === (fromStep.type === 'sub_agent' ? fromStep.subAgentType : fromStep.toolMode))
-    : undefined
+  const stepAgent =
+    fromStep && (fromStep.type === 'sub_agent' || fromStep.type === 'agent')
+      ? agentTypes.find((a) => a.id === (fromStep.type === 'sub_agent' ? fromStep.subAgentType : fromStep.toolMode))
+      : undefined
   const hasResults = stepAgent?.results && stepAgent.results.length > 0
 
   return (
     <div className="space-y-3 text-sm">
       <div className="flex items-center justify-between">
         <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-blue-500/15 text-blue-300">Transition</span>
-        <button onClick={onDelete} className="p-1 rounded text-text-muted hover:text-accent-error text-xs">Delete</button>
+        <button onClick={onDelete} className="p-1 rounded text-text-muted hover:text-accent-error text-xs">
+          Delete
+        </button>
       </div>
 
       <div className="flex items-center gap-1.5 text-xs text-text-secondary">
@@ -747,10 +993,20 @@ function TransitionPanel({
 
       <div>
         <label className={labelClass}>Condition</label>
-        <select value={condition.type} onChange={e => {
-          onUpdateCondition(e.target.value === 'step_result' ? { type: 'step_result', result: 'success' } : { type: e.target.value })
-        }} className={selectClass}>
-          {CONDITION_TYPES.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}
+        <select
+          value={condition.type}
+          onChange={(e) => {
+            onUpdateCondition(
+              e.target.value === 'step_result' ? { type: 'step_result', result: 'success' } : { type: e.target.value },
+            )
+          }}
+          className={selectClass}
+        >
+          {CONDITION_TYPES.map((c) => (
+            <option key={c.value} value={c.value}>
+              {c.label}
+            </option>
+          ))}
         </select>
       </div>
 
@@ -758,16 +1014,24 @@ function TransitionPanel({
         <div>
           <label className={labelClass}>Result</label>
           {hasResults ? (
-            <select value={condition.result ?? stepAgent!.results![0]} onChange={e => {
-              onUpdateCondition({ type: 'step_result', result: e.target.value })
-            }} className={selectClass}>
-              {stepAgent!.results!.map(r => <option key={r} value={r}>{r}</option>)}
+            <select
+              value={condition.result ?? stepAgent!.results![0]}
+              onChange={(e) => {
+                onUpdateCondition({ type: 'step_result', result: e.target.value })
+              }}
+              className={selectClass}
+            >
+              {stepAgent!.results!.map((r) => (
+                <option key={r} value={r}>
+                  {r}
+                </option>
+              ))}
             </select>
           ) : (
             <input
               type="text"
               value={condition.result ?? 'success'}
-              onChange={e => onUpdateCondition({ type: 'step_result', result: e.target.value })}
+              onChange={(e) => onUpdateCondition({ type: 'step_result', result: e.target.value })}
               placeholder="e.g. success, passed, failed"
               className={inputClass}
             />
@@ -784,11 +1048,17 @@ function TransitionPanel({
 // Step Properties Panel
 // ============================================================================
 
-function TemplateVariablesHint({ variables, onInsert }: { variables: TemplateVariable[]; onInsert: (name: string) => void }) {
+function TemplateVariablesHint({
+  variables,
+  onInsert,
+}: {
+  variables: TemplateVariable[]
+  onInsert: (name: string) => void
+}) {
   if (variables.length === 0) return null
   return (
     <div className="flex flex-wrap gap-1 mt-1">
-      {variables.map(v => (
+      {variables.map((v) => (
         <button
           key={v.name}
           type="button"
@@ -804,8 +1074,14 @@ function TemplateVariablesHint({ variables, onInsert }: { variables: TemplateVar
 }
 
 function StepPanel({
-  step, isEntry, agentTypes, transitionCount, templateVariables,
-  onUpdate, onRemove, onSetEntry,
+  step,
+  isEntry,
+  agentTypes,
+  transitionCount,
+  templateVariables,
+  onUpdate,
+  onRemove,
+  onSetEntry,
 }: {
   step: WorkflowStep
   isEntry: boolean
@@ -823,36 +1099,67 @@ function StepPanel({
       {/* Header */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
-          <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold" style={{ backgroundColor: color + '20', color }}>
+          <span
+            className="px-1.5 py-0.5 rounded text-[10px] font-semibold"
+            style={{ backgroundColor: color + '20', color }}
+          >
             {agentName}
           </span>
-          {isEntry && <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-accent-primary/15 text-accent-primary">Entry</span>}
+          {isEntry && (
+            <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-accent-primary/15 text-accent-primary">
+              Entry
+            </span>
+          )}
         </div>
         <div className="flex items-center gap-1">
           {!isEntry && (
-            <button onClick={onSetEntry} className="p-1 rounded text-text-muted hover:text-accent-primary text-xs">Set entry</button>
+            <button onClick={onSetEntry} className="p-1 rounded text-text-muted hover:text-accent-primary text-xs">
+              Set entry
+            </button>
           )}
-          <button onClick={onRemove} className="p-1 rounded text-text-muted hover:text-accent-error text-xs">Delete</button>
+          <button onClick={onRemove} className="p-1 rounded text-text-muted hover:text-accent-error text-xs">
+            Delete
+          </button>
         </div>
       </div>
 
       {/* Type */}
       <div>
         <label className={labelClass}>Type</label>
-        <select value={step.type} onChange={e => {
-          const newType = e.target.value as WorkflowStep['type']
-          const phase = newType === 'sub_agent' ? 'verification' : 'build'
-          if (newType === 'agent') {
-            const agent = agentTypes.find(a => !a.subagent)
-            onUpdate({ ...step, type: newType, phase, toolMode: (agent?.id ?? 'builder') as 'builder' | 'planner', name: agent?.name ?? 'Agent' })
-          } else if (newType === 'sub_agent') {
-            const agent = agentTypes.find(a => a.subagent)
-            onUpdate({ ...step, type: newType, phase, subAgentType: agent?.id ?? '', name: agent?.name ?? 'Sub-Agent' })
-          } else {
-            onUpdate({ ...step, type: newType, phase, name: 'Shell' })
-          }
-        }} className={selectClass}>
-          {STEP_TYPES.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
+        <select
+          value={step.type}
+          onChange={(e) => {
+            const newType = e.target.value as WorkflowStep['type']
+            const phase = newType === 'sub_agent' ? 'verification' : 'build'
+            if (newType === 'agent') {
+              const agent = agentTypes.find((a) => !a.subagent)
+              onUpdate({
+                ...step,
+                type: newType,
+                phase,
+                toolMode: (agent?.id ?? 'builder') as 'builder' | 'planner',
+                name: agent?.name ?? 'Agent',
+              })
+            } else if (newType === 'sub_agent') {
+              const agent = agentTypes.find((a) => a.subagent)
+              onUpdate({
+                ...step,
+                type: newType,
+                phase,
+                subAgentType: agent?.id ?? '',
+                name: agent?.name ?? 'Sub-Agent',
+              })
+            } else {
+              onUpdate({ ...step, type: newType, phase, name: 'Shell' })
+            }
+          }}
+          className={selectClass}
+        >
+          {STEP_TYPES.map((t) => (
+            <option key={t.value} value={t.value}>
+              {t.label}
+            </option>
+          ))}
         </select>
       </div>
 
@@ -860,11 +1167,25 @@ function StepPanel({
       {step.type === 'agent' && (
         <div>
           <label className={labelClass}>Agent Type</label>
-          <select value={step.toolMode ?? 'builder'} onChange={e => {
-            const agent = agentTypes.find(a => a.id === e.target.value)
-            onUpdate({ ...step, toolMode: e.target.value as 'builder' | 'planner', name: agent?.name ?? e.target.value })
-          }} className={selectClass}>
-            {agentTypes.filter(a => !a.subagent).map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
+          <select
+            value={step.toolMode ?? 'builder'}
+            onChange={(e) => {
+              const agent = agentTypes.find((a) => a.id === e.target.value)
+              onUpdate({
+                ...step,
+                toolMode: e.target.value as 'builder' | 'planner',
+                name: agent?.name ?? e.target.value,
+              })
+            }}
+            className={selectClass}
+          >
+            {agentTypes
+              .filter((a) => !a.subagent)
+              .map((a) => (
+                <option key={a.id} value={a.id}>
+                  {a.name}
+                </option>
+              ))}
           </select>
         </div>
       )}
@@ -872,12 +1193,22 @@ function StepPanel({
       {step.type === 'sub_agent' && (
         <div>
           <label className={labelClass}>Sub-Agent Type</label>
-          <select value={step.subAgentType ?? ''} onChange={e => {
-            const agent = agentTypes.find(a => a.id === e.target.value)
-            onUpdate({ ...step, subAgentType: e.target.value, name: agent?.name ?? e.target.value })
-          }} className={selectClass}>
+          <select
+            value={step.subAgentType ?? ''}
+            onChange={(e) => {
+              const agent = agentTypes.find((a) => a.id === e.target.value)
+              onUpdate({ ...step, subAgentType: e.target.value, name: agent?.name ?? e.target.value })
+            }}
+            className={selectClass}
+          >
             <option value="">— select —</option>
-            {agentTypes.filter(a => a.subagent).map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
+            {agentTypes
+              .filter((a) => a.subagent)
+              .map((a) => (
+                <option key={a.id} value={a.id}>
+                  {a.name}
+                </option>
+              ))}
           </select>
         </div>
       )}
@@ -886,13 +1217,31 @@ function StepPanel({
         <>
           <div>
             <label className={labelClass}>Prompt</label>
-            <textarea value={step.prompt ?? ''} onChange={e => onUpdate({ ...step, prompt: e.target.value || undefined })} rows={6} className={`${inputClass} resize-y text-xs`} placeholder="Injected on first entry..." />
-            <TemplateVariablesHint variables={templateVariables} onInsert={name => onUpdate({ ...step, prompt: (step.prompt ?? '') + `{{${name}}}` })} />
+            <textarea
+              value={step.prompt ?? ''}
+              onChange={(e) => onUpdate({ ...step, prompt: e.target.value || undefined })}
+              rows={6}
+              className={`${inputClass} resize-y text-xs`}
+              placeholder="Injected on first entry..."
+            />
+            <TemplateVariablesHint
+              variables={templateVariables}
+              onInsert={(name) => onUpdate({ ...step, prompt: (step.prompt ?? '') + `{{${name}}}` })}
+            />
           </div>
           <div>
             <label className={labelClass}>Nudge Prompt</label>
-            <textarea value={step.nudgePrompt ?? ''} onChange={e => onUpdate({ ...step, nudgePrompt: e.target.value || undefined })} rows={6} className={`${inputClass} resize-y text-xs`} placeholder="Injected on re-entry..." />
-            <TemplateVariablesHint variables={templateVariables} onInsert={name => onUpdate({ ...step, nudgePrompt: (step.nudgePrompt ?? '') + `{{${name}}}` })} />
+            <textarea
+              value={step.nudgePrompt ?? ''}
+              onChange={(e) => onUpdate({ ...step, nudgePrompt: e.target.value || undefined })}
+              rows={6}
+              className={`${inputClass} resize-y text-xs`}
+              placeholder="Injected on re-entry..."
+            />
+            <TemplateVariablesHint
+              variables={templateVariables}
+              onInsert={(name) => onUpdate({ ...step, nudgePrompt: (step.nudgePrompt ?? '') + `{{${name}}}` })}
+            />
           </div>
         </>
       )}
@@ -901,17 +1250,43 @@ function StepPanel({
         <>
           <div>
             <label className={labelClass}>Command</label>
-            <textarea value={step.command ?? ''} onChange={e => onUpdate({ ...step, command: e.target.value })} rows={3} className={`${inputClass} font-mono text-xs resize-y`} placeholder="cd {{workdir}} && npm run lint" />
-            <TemplateVariablesHint variables={templateVariables} onInsert={name => onUpdate({ ...step, command: (step.command ?? '') + `{{${name}}}` })} />
+            <textarea
+              value={step.command ?? ''}
+              onChange={(e) => onUpdate({ ...step, command: e.target.value })}
+              rows={3}
+              className={`${inputClass} font-mono text-xs resize-y`}
+              placeholder="cd {{workdir}} && npm run lint"
+            />
+            <TemplateVariablesHint
+              variables={templateVariables}
+              onInsert={(name) => onUpdate({ ...step, command: (step.command ?? '') + `{{${name}}}` })}
+            />
           </div>
           <div className="grid grid-cols-2 gap-2">
             <div>
               <label className={labelClass}>Timeout (ms)</label>
-              <input type="number" value={step.timeout ?? 60000} onChange={e => onUpdate({ ...step, timeout: Number(e.target.value) })} className={`${inputClass} font-mono text-xs`} />
+              <input
+                type="number"
+                value={step.timeout ?? 60000}
+                onChange={(e) => onUpdate({ ...step, timeout: Number(e.target.value) })}
+                className={`${inputClass} font-mono text-xs`}
+              />
             </div>
             <div>
               <label className={labelClass}>Success Codes</label>
-              <input value={(step.successExitCodes ?? [0]).join(', ')} onChange={e => onUpdate({ ...step, successExitCodes: e.target.value.split(',').map(s => Number(s.trim())).filter(n => !isNaN(n)) })} className={`${inputClass} font-mono text-xs`} />
+              <input
+                value={(step.successExitCodes ?? [0]).join(', ')}
+                onChange={(e) =>
+                  onUpdate({
+                    ...step,
+                    successExitCodes: e.target.value
+                      .split(',')
+                      .map((s) => Number(s.trim()))
+                      .filter((n) => !isNaN(n)),
+                  })
+                }
+                className={`${inputClass} font-mono text-xs`}
+              />
             </div>
           </div>
         </>
@@ -920,7 +1295,8 @@ function StepPanel({
       {/* Transition count (read-only) */}
       <div className="pt-1 border-t border-border/50">
         <p className="text-text-muted text-[10px]">
-          {transitionCount} outgoing transition{transitionCount !== 1 ? 's' : ''} — drag from the bottom port to connect.
+          {transitionCount} outgoing transition{transitionCount !== 1 ? 's' : ''} — drag from the bottom port to
+          connect.
         </p>
       </div>
     </div>
@@ -938,17 +1314,17 @@ const DEFAULT_STEPS: WorkflowStep[] = []
 // ============================================================================
 
 export function WorkflowsModal({ isOpen, onClose, initialEditId }: WorkflowsModalProps) {
-  const defaults = useWorkflowsStore(state => state.defaults)
-  const userItems = useWorkflowsStore(state => state.userItems)
-  const loading = useWorkflowsStore(state => state.loading)
-  const templateVariables = useWorkflowsStore(state => state.templateVariables)
-  const fetchWorkflows = useWorkflowsStore(state => state.fetchWorkflows)
-  const fetchWorkflow = useWorkflowsStore(state => state.fetchWorkflow)
-  const fetchDefaultContent = useWorkflowsStore(state => state.fetchDefaultContent)
-  const fetchTemplateVariables = useWorkflowsStore(state => state.fetchTemplateVariables)
-  const createWorkflow = useWorkflowsStore(state => state.createWorkflow)
-  const updateWorkflow = useWorkflowsStore(state => state.updateWorkflow)
-  const deleteWorkflowAction = useWorkflowsStore(state => state.deleteWorkflow)
+  const defaults = useWorkflowsStore((state) => state.defaults)
+  const userItems = useWorkflowsStore((state) => state.userItems)
+  const loading = useWorkflowsStore((state) => state.loading)
+  const templateVariables = useWorkflowsStore((state) => state.templateVariables)
+  const fetchWorkflows = useWorkflowsStore((state) => state.fetchWorkflows)
+  const fetchWorkflow = useWorkflowsStore((state) => state.fetchWorkflow)
+  const fetchDefaultContent = useWorkflowsStore((state) => state.fetchDefaultContent)
+  const fetchTemplateVariables = useWorkflowsStore((state) => state.fetchTemplateVariables)
+  const createWorkflow = useWorkflowsStore((state) => state.createWorkflow)
+  const updateWorkflow = useWorkflowsStore((state) => state.updateWorkflow)
+  const deleteWorkflowAction = useWorkflowsStore((state) => state.deleteWorkflow)
 
   const { requestDelete, clearConfirm, isConfirming } = useConfirmDialog()
 
@@ -979,13 +1355,16 @@ export function WorkflowsModal({ isOpen, onClose, initialEditId }: WorkflowsModa
     if (isOpen) {
       fetchWorkflows()
       fetchTemplateVariables()
-      authFetch('/api/agents').then(r => r.json()).then(d => setAgentTypes(d.agents ?? [])).catch(() => {})
+      authFetch('/api/agents')
+        .then((r) => r.json())
+        .then((d) => setAgentTypes(d.agents ?? []))
+        .catch(() => {})
       setSelectedNodeKey(null)
       setSelectedEdgeKey(null)
       if (initialEditId) {
-        const isDefault = defaults.some(d => d.id === initialEditId)
+        const isDefault = defaults.some((d) => d.id === initialEditId)
         if (isDefault) {
-          fetchDefaultContent(initialEditId).then(workflow => {
+          fetchDefaultContent(initialEditId).then((workflow) => {
             if (!workflow) return
             setFormName(workflow.metadata.name + ' (copy)')
             setFormId(`${initialEditId}-copy-${Date.now()}`)
@@ -1002,7 +1381,7 @@ export function WorkflowsModal({ isOpen, onClose, initialEditId }: WorkflowsModa
             setView('edit')
           })
         } else {
-          fetchWorkflow(initialEditId).then(workflow => {
+          fetchWorkflow(initialEditId).then((workflow) => {
             if (!workflow) return
             setFormName(workflow.metadata.name)
             setFormId(workflow.metadata.id)
@@ -1031,42 +1410,67 @@ export function WorkflowsModal({ isOpen, onClose, initialEditId }: WorkflowsModa
     const workflow = await fetchWorkflow(workflowId)
     if (!workflow) return
     setEditingId(workflowId)
-    setFormName(workflow.metadata.name); setFormId(workflow.metadata.id)
-    setFormDescription(workflow.metadata.description); setFormVersion(workflow.metadata.version)
+    setFormName(workflow.metadata.name)
+    setFormId(workflow.metadata.id)
+    setFormDescription(workflow.metadata.description)
+    setFormVersion(workflow.metadata.version)
     setFormColor(workflow.metadata.color ?? '#3b82f6')
     setFormEntryStep(workflow.entryStep)
     setFormMaxIterations(workflow.settings.maxIterations)
     setFormSteps(workflow.steps)
     setFormStartCondition(workflow.startCondition ?? { type: 'always' })
-    setFormError(''); setSelectedNodeKey(null); setSelectedEdgeKey(null); setView('edit')
+    setFormError('')
+    setSelectedNodeKey(null)
+    setSelectedEdgeKey(null)
+    setView('edit')
   }
 
   const doSave = async () => {
     const id = editingId ?? formId
-    if (!id || !formName) { setFormError('Name is required.'); return false }
-    if (formSteps.length === 0) { setFormError('Add at least one step.'); return false }
+    if (!id || !formName) {
+      setFormError('Name is required.')
+      return false
+    }
+    if (formSteps.length === 0) {
+      setFormError('Add at least one step.')
+      return false
+    }
     let entry = formEntryStep
-    if (!entry || !formSteps.some(s => s.id === entry)) {
-      entry = formSteps.find(s => s.id)?.id ?? ''
-      if (!entry) { setFormError('All steps need an ID.'); return false }
+    if (!entry || !formSteps.some((s) => s.id === entry)) {
+      entry = formSteps.find((s) => s.id)?.id ?? ''
+      if (!entry) {
+        setFormError('All steps need an ID.')
+        return false
+      }
       setFormEntryStep(entry)
     }
-    setSaving(true); setFormError('')
+    setSaving(true)
+    setFormError('')
     const workflow: WorkflowFull = {
       metadata: { id, name: formName, description: formDescription, version: formVersion || '1.0.0', color: formColor },
       entryStep: entry,
       settings: { maxIterations: formMaxIterations },
-      steps: formSteps, startCondition: formStartCondition,
+      steps: formSteps,
+      startCondition: formStartCondition,
     }
     const result = editingId ? await updateWorkflow(editingId, workflow) : await createWorkflow(workflow)
     setSaving(false)
-    if (!result.success) { setFormError(result.error ?? 'Failed to save.'); return false }
+    if (!result.success) {
+      setFormError(result.error ?? 'Failed to save.')
+      return false
+    }
     if (!editingId) setEditingId(id)
     return true
   }
 
-  const handleSave = async () => { await doSave() }
-  const handleSaveAndClose = async () => { if (await doSave()) { initialEditId ? onClose() : setView('list') } }
+  const handleSave = async () => {
+    await doSave()
+  }
+  const handleSaveAndClose = async () => {
+    if (await doSave()) {
+      initialEditId ? onClose() : setView('list')
+    }
+  }
 
   const handleCancelEdit = () => {
     if (initialEditId) {
@@ -1082,7 +1486,7 @@ export function WorkflowsModal({ isOpen, onClose, initialEditId }: WorkflowsModa
   }
 
   const handleView = async (workflowId: string) => {
-    const isDefault = defaults.some(d => d.id === workflowId)
+    const isDefault = defaults.some((d) => d.id === workflowId)
     if (isDefault) {
       const content = await fetchDefaultContent(workflowId)
       if (!content) return
@@ -1118,7 +1522,7 @@ export function WorkflowsModal({ isOpen, onClose, initialEditId }: WorkflowsModa
   }
 
   const handleDuplicate = async (workflowId: string) => {
-    const isDefault = defaults.some(d => d.id === workflowId)
+    const isDefault = defaults.some((d) => d.id === workflowId)
     const content = isDefault ? await fetchDefaultContent(workflowId) : await fetchWorkflow(workflowId)
     if (!content) return
     setFormName(content.metadata.name + ' (copy)')
@@ -1138,11 +1542,20 @@ export function WorkflowsModal({ isOpen, onClose, initialEditId }: WorkflowsModa
 
   const handleNew = () => {
     setEditingId(null)
-    setFormName(''); setFormId(''); setFormDescription(''); setFormVersion('1.0.0'); setFormColor('#3b82f6')
-    setFormEntryStep(''); setFormMaxIterations(50)
+    setFormName('')
+    setFormId('')
+    setFormDescription('')
+    setFormVersion('1.0.0')
+    setFormColor('#3b82f6')
+    setFormEntryStep('')
+    setFormMaxIterations(50)
     setFormSteps(structuredClone(DEFAULT_STEPS))
     setFormStartCondition({ type: 'always' })
-    setFormError(''); setSelectedNodeKey(null); setSelectedEdgeKey(null); setIsReadOnly(false); setView('edit')
+    setFormError('')
+    setSelectedNodeKey(null)
+    setSelectedEdgeKey(null)
+    setIsReadOnly(false)
+    setView('edit')
   }
 
   const handleDelete = async (workflowId: string) => {
@@ -1151,47 +1564,70 @@ export function WorkflowsModal({ isOpen, onClose, initialEditId }: WorkflowsModa
   }
 
   // Selection helpers
-  const selectNode = useCallback((key: string | null) => { setSelectedNodeKey(key); setSelectedEdgeKey(null) }, [])
-  const selectEdge = useCallback((key: string | null) => { setSelectedEdgeKey(key); setSelectedNodeKey(null) }, [])
+  const selectNode = useCallback((key: string | null) => {
+    setSelectedNodeKey(key)
+    setSelectedEdgeKey(null)
+  }, [])
+  const selectEdge = useCallback((key: string | null) => {
+    setSelectedEdgeKey(key)
+    setSelectedNodeKey(null)
+  }, [])
 
   const selectedStepIndex = selectedNodeKey !== null ? Number(selectedNodeKey) : -1
-  const selectedStep = selectedStepIndex >= 0 ? formSteps[selectedStepIndex] ?? null : null
+  const selectedStep = selectedStepIndex >= 0 ? (formSteps[selectedStepIndex] ?? null) : null
 
-  const updateStep = useCallback((updated: WorkflowStep) => {
-    setFormSteps(prev => prev.map((s, i) => i === selectedStepIndex ? updated : s))
-  }, [selectedStepIndex])
+  const updateStep = useCallback(
+    (updated: WorkflowStep) => {
+      setFormSteps((prev) => prev.map((s, i) => (i === selectedStepIndex ? updated : s)))
+    },
+    [selectedStepIndex],
+  )
 
-  const startConditionLabel = formStartCondition.type === 'step_result'
-    ? `${formStartCondition.result}`
-    : (CONDITION_LABELS[formStartCondition.type] ?? formStartCondition.type)
+  const startConditionLabel =
+    formStartCondition.type === 'step_result'
+      ? `${formStartCondition.result}`
+      : (CONDITION_LABELS[formStartCondition.type] ?? formStartCondition.type)
 
   const addStep = () => {
     const newIndex = formSteps.length
     const id = generateStepId(formSteps)
-    const defaultAgent = agentTypes.find(a => !a.subagent)
-    setFormSteps([...formSteps, { id, name: defaultAgent?.name ?? 'Agent', type: 'agent', phase: 'build', toolMode: (defaultAgent?.id ?? 'builder') as 'builder' | 'planner', transitions: [] }])
+    const defaultAgent = agentTypes.find((a) => !a.subagent)
+    setFormSteps([
+      ...formSteps,
+      {
+        id,
+        name: defaultAgent?.name ?? 'Agent',
+        type: 'agent',
+        phase: 'build',
+        toolMode: (defaultAgent?.id ?? 'builder') as 'builder' | 'planner',
+        transitions: [],
+      },
+    ])
     if (!formEntryStep) setFormEntryStep(id)
     selectNode(String(newIndex))
   }
 
   // Transition action handlers
-  const handleCreateTransition = useCallback((fromNodeId: string, toNodeId: string) => {
-    if (fromNodeId === '$start') {
-      setFormEntryStep(toNodeId)
-      selectEdge('start')
-    } else {
-      setFormSteps(prev => {
-        const step = prev.find(s => s.id === fromNodeId)
-        const newTransIdx = step ? step.transitions.length : 0
-        selectEdge(`${fromNodeId}:${newTransIdx}`)
-        return prev.map(s =>
-          s.id === fromNodeId
-            ? { ...s, transitions: [...s.transitions, { when: { type: 'always' }, goto: toNodeId }] }
-            : s
-        )
-      })
-    }
-  }, [selectEdge])
+  const handleCreateTransition = useCallback(
+    (fromNodeId: string, toNodeId: string) => {
+      if (fromNodeId === '$start') {
+        setFormEntryStep(toNodeId)
+        selectEdge('start')
+      } else {
+        setFormSteps((prev) => {
+          const step = prev.find((s) => s.id === fromNodeId)
+          const newTransIdx = step ? step.transitions.length : 0
+          selectEdge(`${fromNodeId}:${newTransIdx}`)
+          return prev.map((s) =>
+            s.id === fromNodeId
+              ? { ...s, transitions: [...s.transitions, { when: { type: 'always' }, goto: toNodeId }] }
+              : s,
+          )
+        })
+      }
+    },
+    [selectEdge],
+  )
 
   const handleReconnectTo = useCallback((edgeKey: string, newTarget: string) => {
     if (edgeKey === 'start') {
@@ -1200,11 +1636,13 @@ export function WorkflowsModal({ isOpen, onClose, initialEditId }: WorkflowsModa
       const sepIdx = edgeKey.lastIndexOf(':')
       const stepId = edgeKey.slice(0, sepIdx)
       const transIdx = parseInt(edgeKey.slice(sepIdx + 1))
-      setFormSteps(prev => prev.map(s =>
-        s.id === stepId
-          ? { ...s, transitions: s.transitions.map((t, i) => i === transIdx ? { ...t, goto: newTarget } : t) }
-          : s
-      ))
+      setFormSteps((prev) =>
+        prev.map((s) =>
+          s.id === stepId
+            ? { ...s, transitions: s.transitions.map((t, i) => (i === transIdx ? { ...t, goto: newTarget } : t)) }
+            : s,
+        ),
+      )
     }
   }, [])
 
@@ -1212,12 +1650,12 @@ export function WorkflowsModal({ isOpen, onClose, initialEditId }: WorkflowsModa
     const sepIdx = edgeKey.lastIndexOf(':')
     const stepId = edgeKey.slice(0, sepIdx)
     const transIdx = parseInt(edgeKey.slice(sepIdx + 1))
-    setFormSteps(prev => {
-      const oldStep = prev.find(s => s.id === stepId)
+    setFormSteps((prev) => {
+      const oldStep = prev.find((s) => s.id === stepId)
       if (!oldStep) return prev
       const trans = oldStep.transitions[transIdx]
       if (!trans) return prev
-      return prev.map(s => {
+      return prev.map((s) => {
         if (s.id === stepId) return { ...s, transitions: s.transitions.filter((_, i) => i !== transIdx) }
         if (s.id === newSourceId) return { ...s, transitions: [...s.transitions, trans] }
         return s
@@ -1233,11 +1671,9 @@ export function WorkflowsModal({ isOpen, onClose, initialEditId }: WorkflowsModa
       const sepIdx = edgeKey.lastIndexOf(':')
       const stepId = edgeKey.slice(0, sepIdx)
       const transIdx = parseInt(edgeKey.slice(sepIdx + 1))
-      setFormSteps(prev => prev.map(s =>
-        s.id === stepId
-          ? { ...s, transitions: s.transitions.filter((_, i) => i !== transIdx) }
-          : s
-      ))
+      setFormSteps((prev) =>
+        prev.map((s) => (s.id === stepId ? { ...s, transitions: s.transitions.filter((_, i) => i !== transIdx) } : s)),
+      )
     }
     setSelectedEdgeKey(null)
   }, [])
@@ -1249,11 +1685,13 @@ export function WorkflowsModal({ isOpen, onClose, initialEditId }: WorkflowsModa
       const sepIdx = edgeKey.lastIndexOf(':')
       const stepId = edgeKey.slice(0, sepIdx)
       const transIdx = parseInt(edgeKey.slice(sepIdx + 1))
-      setFormSteps(prev => prev.map(s =>
-        s.id === stepId
-          ? { ...s, transitions: s.transitions.map((t, i) => i === transIdx ? { ...t, when } : t) }
-          : s
-      ))
+      setFormSteps((prev) =>
+        prev.map((s) =>
+          s.id === stepId
+            ? { ...s, transitions: s.transitions.map((t, i) => (i === transIdx ? { ...t, when } : t)) }
+            : s,
+        ),
+      )
     }
   }, [])
 
@@ -1263,7 +1701,7 @@ export function WorkflowsModal({ isOpen, onClose, initialEditId }: WorkflowsModa
   const getSelectedEdgeInfo = () => {
     if (!selectedEdgeKey) return null
     if (selectedEdgeKey === 'start') {
-      const entryStepObj = formSteps.find(s => s.id === formEntryStep)
+      const entryStepObj = formSteps.find((s) => s.id === formEntryStep)
       return {
         type: 'start' as const,
         fromLabel: 'Start',
@@ -1274,12 +1712,12 @@ export function WorkflowsModal({ isOpen, onClose, initialEditId }: WorkflowsModa
     const sepIdx = selectedEdgeKey.lastIndexOf(':')
     const stepId = selectedEdgeKey.slice(0, sepIdx)
     const transIdx = parseInt(selectedEdgeKey.slice(sepIdx + 1))
-    const step = formSteps.find(s => s.id === stepId)
+    const step = formSteps.find((s) => s.id === stepId)
     if (!step) return null
     const transition = step.transitions[transIdx]
     if (!transition) return null
-    const toStep = formSteps.find(s => s.id === transition.goto)
-    const toLabel = transition.goto === '$done' ? 'Done' : (toStep ? resolveStepLabel(toStep) : transition.goto)
+    const toStep = formSteps.find((s) => s.id === transition.goto)
+    const toLabel = transition.goto === '$done' ? 'Done' : toStep ? resolveStepLabel(toStep) : transition.goto
     return {
       type: 'step' as const,
       fromLabel: resolveStepLabel(step),
@@ -1296,7 +1734,12 @@ export function WorkflowsModal({ isOpen, onClose, initialEditId }: WorkflowsModa
     const edgeInfo = getSelectedEdgeInfo()
 
     return (
-      <Modal isOpen={isOpen} onClose={handleCancelEdit} title={isReadOnly ? formName : (editingId ? 'Edit Workflow' : 'New Workflow')} size="full">
+      <Modal
+        isOpen={isOpen}
+        onClose={handleCancelEdit}
+        title={isReadOnly ? formName : editingId ? 'Edit Workflow' : 'New Workflow'}
+        size="full"
+      >
         {formError && (
           <div className="text-accent-error text-sm px-3 py-2 bg-accent-error/10 rounded mb-3">{formError}</div>
         )}
@@ -1305,7 +1748,13 @@ export function WorkflowsModal({ isOpen, onClose, initialEditId }: WorkflowsModa
         <div className="flex items-end gap-3 mb-3 pb-3 border-b border-border flex-wrap">
           <div className="min-w-[140px]">
             <label className={labelClass}>Name</label>
-            <input value={formName} onChange={e => handleNameChange(e.target.value)} placeholder="Workflow name" className={`${inputClass} ${isReadOnly ? 'opacity-50' : ''}`} readOnly={isReadOnly} />
+            <input
+              value={formName}
+              onChange={(e) => handleNameChange(e.target.value)}
+              placeholder="Workflow name"
+              className={`${inputClass} ${isReadOnly ? 'opacity-50' : ''}`}
+              readOnly={isReadOnly}
+            />
           </div>
           <div className="min-w-[100px]">
             <label className={labelClass}>ID</label>
@@ -1313,15 +1762,33 @@ export function WorkflowsModal({ isOpen, onClose, initialEditId }: WorkflowsModa
           </div>
           <div className="flex-1 min-w-[140px]">
             <label className={labelClass}>Description</label>
-            <input value={formDescription} onChange={e => !isReadOnly && setFormDescription(e.target.value)} readOnly={isReadOnly} placeholder="What does this workflow do?" className={`${inputClass} ${isReadOnly ? 'opacity-50' : ''}`} />
+            <input
+              value={formDescription}
+              onChange={(e) => !isReadOnly && setFormDescription(e.target.value)}
+              readOnly={isReadOnly}
+              placeholder="What does this workflow do?"
+              className={`${inputClass} ${isReadOnly ? 'opacity-50' : ''}`}
+            />
           </div>
           <div className="w-20">
             <label className={labelClass}>Max Iter.</label>
-            <input type="number" value={formMaxIterations} onChange={e => !isReadOnly && setFormMaxIterations(Number(e.target.value))} readOnly={isReadOnly} className={`${inputClass} font-mono ${isReadOnly ? 'opacity-50' : ''}`} />
+            <input
+              type="number"
+              value={formMaxIterations}
+              onChange={(e) => !isReadOnly && setFormMaxIterations(Number(e.target.value))}
+              readOnly={isReadOnly}
+              className={`${inputClass} font-mono ${isReadOnly ? 'opacity-50' : ''}`}
+            />
           </div>
           <div>
             <label className={labelClass}>Color</label>
-            <input type="color" value={formColor} onChange={e => !isReadOnly && setFormColor(e.target.value)} disabled={isReadOnly} className={`w-8 h-8 rounded border border-border bg-transparent ${isReadOnly ? 'opacity-50' : 'cursor-pointer'}`} />
+            <input
+              type="color"
+              value={formColor}
+              onChange={(e) => !isReadOnly && setFormColor(e.target.value)}
+              disabled={isReadOnly}
+              className={`w-8 h-8 rounded border border-border bg-transparent ${isReadOnly ? 'opacity-50' : 'cursor-pointer'}`}
+            />
           </div>
         </div>
 
@@ -1331,7 +1798,11 @@ export function WorkflowsModal({ isOpen, onClose, initialEditId }: WorkflowsModa
           <div className="flex-1 min-w-0 bg-bg-primary/50 border border-border rounded-lg flex flex-col overflow-hidden">
             <div className="flex items-center justify-between px-3 py-1.5 border-b border-border/50 shrink-0">
               <span className="text-[10px] text-text-muted uppercase tracking-wider font-medium">Flow</span>
-              {!isReadOnly && <button onClick={addStep} className="text-[11px] text-accent-primary hover:text-accent-primary/80">+ Add Step</button>}
+              {!isReadOnly && (
+                <button onClick={addStep} className="text-[11px] text-accent-primary hover:text-accent-primary/80">
+                  + Add Step
+                </button>
+              )}
             </div>
             <div className="flex-1 min-h-0 p-2 overflow-auto">
               <FlowDiagram
@@ -1343,17 +1814,20 @@ export function WorkflowsModal({ isOpen, onClose, initialEditId }: WorkflowsModa
                 agentTypes={agentTypes}
                 isReadOnly={isReadOnly}
                 onSelectNode={(id) => {
-                  if (id === null) { selectNode(null); return }
-                  const idx = formSteps.findIndex(s => s.id === id)
+                  if (id === null) {
+                    selectNode(null)
+                    return
+                  }
+                  const idx = formSteps.findIndex((s) => s.id === id)
                   selectNode(idx >= 0 ? String(idx) : null)
                 }}
                 onSelectEdge={selectEdge}
                 onRemoveStep={(id) => {
-                  const idx = formSteps.findIndex(s => s.id === id)
-                  setFormSteps(prev => prev.filter(s => s.id !== id))
+                  const idx = formSteps.findIndex((s) => s.id === id)
+                  setFormSteps((prev) => prev.filter((s) => s.id !== id))
                   if (selectedStepIndex === idx) selectNode(null)
                   if (formEntryStep === id) {
-                    const remaining = formSteps.filter(s => s.id !== id)
+                    const remaining = formSteps.filter((s) => s.id !== id)
                     setFormEntryStep(remaining[0]?.id ?? '')
                   }
                 }}
@@ -1365,7 +1839,10 @@ export function WorkflowsModal({ isOpen, onClose, initialEditId }: WorkflowsModa
               {formSteps.length === 0 && (
                 <div className="flex flex-col items-center justify-center py-8 text-text-muted">
                   <p className="text-xs mb-2">No steps yet</p>
-                  <button onClick={addStep} className="px-3 py-1.5 rounded bg-accent-primary/10 text-accent-primary text-xs hover:bg-accent-primary/20">
+                  <button
+                    onClick={addStep}
+                    className="px-3 py-1.5 rounded bg-accent-primary/10 text-accent-primary text-xs hover:bg-accent-primary/20"
+                  >
                     + Add your first step
                   </button>
                 </div>
@@ -1380,13 +1857,17 @@ export function WorkflowsModal({ isOpen, onClose, initialEditId }: WorkflowsModa
             </div>
             <div className="p-3 overflow-y-auto flex-1 min-h-0">
               {isReadOnly && (edgeInfo || selectedStep) ? (
-                <p className="text-text-muted text-xs text-center py-8">View only — click "Duplicate & Customize" to edit.</p>
+                <p className="text-text-muted text-xs text-center py-8">
+                  View only — click "Duplicate & Customize" to edit.
+                </p>
               ) : edgeInfo ? (
                 edgeInfo.type === 'start' ? (
                   /* Start edge / activation condition */
                   <div className="space-y-3 text-sm">
                     <div className="flex items-center gap-2">
-                      <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-blue-500/20 text-blue-300">Start</span>
+                      <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-blue-500/20 text-blue-300">
+                        Start
+                      </span>
                     </div>
                     {formEntryStep && (
                       <div className="flex items-center gap-1.5 text-xs text-text-secondary">
@@ -1399,39 +1880,65 @@ export function WorkflowsModal({ isOpen, onClose, initialEditId }: WorkflowsModa
                       <label className={labelClass}>Activation Condition</label>
                       <select
                         value={formStartCondition.type}
-                        onChange={e => setFormStartCondition(e.target.value === 'step_result' ? { type: 'step_result', result: 'success' } : { type: e.target.value })}
+                        onChange={(e) =>
+                          setFormStartCondition(
+                            e.target.value === 'step_result'
+                              ? { type: 'step_result', result: 'success' }
+                              : { type: e.target.value },
+                          )
+                        }
                         className={selectClass}
                       >
-                        {CONDITION_TYPES.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}
+                        {CONDITION_TYPES.map((c) => (
+                          <option key={c.value} value={c.value}>
+                            {c.label}
+                          </option>
+                        ))}
                       </select>
                     </div>
                     {formStartCondition.type === 'step_result' && (
                       <div>
                         <label className={labelClass}>Result</label>
-                        {formEntryStep && (() => {
-                          const entryStep = formSteps.find(s => s.id === formEntryStep)
-                          const stepAgent = entryStep && (entryStep.type === 'sub_agent' || entryStep.type === 'agent')
-                            ? agentTypes.find(a => a.id === (entryStep.type === 'sub_agent' ? entryStep.subAgentType : entryStep.toolMode))
-                            : undefined
-                          const hasResults = stepAgent?.results && stepAgent.results.length > 0
-                          const results = stepAgent?.results ?? []
-                          return hasResults ? (
-                            <select value={formStartCondition.result ?? results[0]} onChange={e => setFormStartCondition({ type: 'step_result', result: e.target.value })} className={selectClass}>
-                              {results.map(r => <option key={r} value={r}>{r}</option>)}
-                            </select>
-                          ) : (
-                            <input
-                              type="text"
-                              value={formStartCondition.result ?? 'success'}
-                              onChange={e => setFormStartCondition({ type: 'step_result', result: e.target.value })}
-                              placeholder="e.g. success, passed, failed"
-                              className={inputClass}
-                            />
-                          )
-                        })()}
+                        {formEntryStep &&
+                          (() => {
+                            const entryStep = formSteps.find((s) => s.id === formEntryStep)
+                            const stepAgent =
+                              entryStep && (entryStep.type === 'sub_agent' || entryStep.type === 'agent')
+                                ? agentTypes.find(
+                                    (a) =>
+                                      a.id ===
+                                      (entryStep.type === 'sub_agent' ? entryStep.subAgentType : entryStep.toolMode),
+                                  )
+                                : undefined
+                            const hasResults = stepAgent?.results && stepAgent.results.length > 0
+                            const results = stepAgent?.results ?? []
+                            return hasResults ? (
+                              <select
+                                value={formStartCondition.result ?? results[0]}
+                                onChange={(e) => setFormStartCondition({ type: 'step_result', result: e.target.value })}
+                                className={selectClass}
+                              >
+                                {results.map((r) => (
+                                  <option key={r} value={r}>
+                                    {r}
+                                  </option>
+                                ))}
+                              </select>
+                            ) : (
+                              <input
+                                type="text"
+                                value={formStartCondition.result ?? 'success'}
+                                onChange={(e) => setFormStartCondition({ type: 'step_result', result: e.target.value })}
+                                placeholder="e.g. success, passed, failed"
+                                className={inputClass}
+                              />
+                            )
+                          })()}
                       </div>
                     )}
-                    <p className="text-text-muted text-[10px]">Workflow only proceeds when this condition is met. Drag the target handle to change entry step.</p>
+                    <p className="text-text-muted text-[10px]">
+                      Workflow only proceeds when this condition is met. Drag the target handle to change entry step.
+                    </p>
                   </div>
                 ) : (
                   /* Step transition */
@@ -1439,7 +1946,7 @@ export function WorkflowsModal({ isOpen, onClose, initialEditId }: WorkflowsModa
                     fromLabel={edgeInfo.fromLabel}
                     toLabel={edgeInfo.toLabel}
                     condition={edgeInfo.condition}
-                    fromStep={edgeInfo.type === 'step' ? formSteps.find(s => s.id === edgeInfo.fromLabel) : undefined}
+                    fromStep={edgeInfo.type === 'step' ? formSteps.find((s) => s.id === edgeInfo.fromLabel) : undefined}
                     agentTypes={agentTypes}
                     onUpdateCondition={(when) => handleUpdateTransitionCondition(selectedEdgeKey!, when)}
                     onDelete={() => handleDeleteTransition(selectedEdgeKey!)}
@@ -1466,7 +1973,11 @@ export function WorkflowsModal({ isOpen, onClose, initialEditId }: WorkflowsModa
                   onSetEntry={() => setFormEntryStep(selectedStep.id)}
                 />
               ) : (
-                <p className="text-text-muted text-xs text-center py-8">Click a node or edge to edit.<br />Drag from a port to connect.</p>
+                <p className="text-text-muted text-xs text-center py-8">
+                  Click a node or edge to edit.
+                  <br />
+                  Drag from a port to connect.
+                </p>
               )}
             </div>
           </div>
@@ -1474,14 +1985,19 @@ export function WorkflowsModal({ isOpen, onClose, initialEditId }: WorkflowsModa
 
         {/* Footer */}
         <div className="flex justify-end gap-2 pt-3 mt-3 border-t border-border">
-          <Button variant="secondary" onClick={handleCancelEdit}>Close</Button>
+          <Button variant="secondary" onClick={handleCancelEdit}>
+            Close
+          </Button>
           {isReadOnly ? (
-            <Button variant="primary" onClick={() => {
-              setFormName(formName + ' (copy)')
-              setFormId(`${editingId}-copy-${Date.now()}`)
-              setEditingId(null)
-              setIsReadOnly(false)
-            }}>
+            <Button
+              variant="primary"
+              onClick={() => {
+                setFormName(formName + ' (copy)')
+                setFormId(`${editingId}-copy-${Date.now()}`)
+                setEditingId(null)
+                setIsReadOnly(false)
+              }}
+            >
               Duplicate & Customize
             </Button>
           ) : (
@@ -1510,7 +2026,9 @@ export function WorkflowsModal({ isOpen, onClose, initialEditId }: WorkflowsModa
           Workflows define the orchestrator's step sequence when running tasks.
         </p>
         <div className="flex items-center gap-2 flex-shrink-0 ml-3">
-          <Button variant="primary" size="sm" onClick={handleNew}>+ New</Button>
+          <Button variant="primary" size="sm" onClick={handleNew}>
+            + New
+          </Button>
         </div>
       </div>
 
@@ -1524,8 +2042,11 @@ export function WorkflowsModal({ isOpen, onClose, initialEditId }: WorkflowsModa
             <div>
               <h3 className="text-xs font-medium text-text-secondary mb-2 uppercase tracking-wide">Built-in</h3>
               <div className="space-y-2">
-                {defaults.map(workflow => (
-                  <div key={workflow.id} className="flex items-center justify-between p-3 rounded border border-border bg-bg-tertiary">
+                {defaults.map((workflow) => (
+                  <div
+                    key={workflow.id}
+                    className="flex items-center justify-between p-3 rounded border border-border bg-bg-tertiary"
+                  >
                     <div className="min-w-0 flex-1 mr-3">
                       <div className="flex items-center gap-2">
                         <span className="text-text-primary text-sm font-medium">{workflow.name}</span>
@@ -1553,8 +2074,11 @@ export function WorkflowsModal({ isOpen, onClose, initialEditId }: WorkflowsModa
             <div>
               <h3 className="text-xs font-medium text-text-secondary mb-2 uppercase tracking-wide">Custom</h3>
               <div className="space-y-2">
-                {userItems.map(workflow => (
-                  <div key={workflow.id} className="flex items-center justify-between p-3 rounded border border-border bg-bg-tertiary">
+                {userItems.map((workflow) => (
+                  <div
+                    key={workflow.id}
+                    className="flex items-center justify-between p-3 rounded border border-border bg-bg-tertiary"
+                  >
                     <div className="min-w-0 flex-1 mr-3">
                       <div className="flex items-center gap-2">
                         <span className="text-text-primary text-sm font-medium">{workflow.name}</span>

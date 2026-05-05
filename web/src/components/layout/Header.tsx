@@ -71,16 +71,22 @@ function InlineDropdown({ items, trigger, isActive = false }: InlineDropdownProp
       >
         {typeof trigger === 'string' ? (
           <span className="text-sm text-text-secondary font-medium">{trigger}</span>
-        ) : trigger}
-        <ChevronDownIcon className="w-3 h-3 text-text-muted flex-shrink-0 transition-transform" rotate={isOpen ? 180 : 0} />
+        ) : (
+          trigger
+        )}
+        <ChevronDownIcon
+          className="w-3 h-3 text-text-muted flex-shrink-0 transition-transform"
+          rotate={isOpen ? 180 : 0}
+        />
       </button>
 
       {isOpen && items.length > 0 && (
         <div className="absolute top-full left-0 mt-1 w-56 bg-bg-secondary border border-border rounded-lg shadow-lg overflow-hidden z-50">
           {items.map((item, index) => {
-            const linkChild = item.label && typeof item.label === 'object' && (item.label as React.ReactElement).type === Link
-              ? (item.label as React.ReactElement<{ href?: string; children?: ReactNode }>)
-              : null
+            const linkChild =
+              item.label && typeof item.label === 'object' && (item.label as React.ReactElement).type === Link
+                ? (item.label as React.ReactElement<{ href?: string; children?: ReactNode }>)
+                : null
 
             if (linkChild) {
               const href = linkChild.props.href || ''
@@ -129,11 +135,11 @@ function InlineDropdown({ items, trigger, isActive = false }: InlineDropdownProp
 }
 
 function ProjectDropdown({ projects, currentProject }: ProjectDropdownProps) {
-  const loadProject = useProjectStore(state => state.loadProject)
+  const loadProject = useProjectStore((state) => state.loadProject)
 
   const sortedProjects = [...projects].sort((a, b) => a.name.localeCompare(b.name))
 
-  const items: DropdownMenuItem[] = sortedProjects.map(proj => ({
+  const items: DropdownMenuItem[] = sortedProjects.map((proj) => ({
     label: proj.name,
     icon: proj.id === currentProject.id ? <CheckIcon /> : undefined,
     href: `/p/${proj.id}`,
@@ -172,7 +178,7 @@ function MobileNav({ currentProject, sessions, currentSession, projectIdFromUrl 
   }
 
   const projectSessions = sessions
-    .filter(s => s.projectId === currentProject.id)
+    .filter((s) => s.projectId === currentProject.id)
     .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime())
     .slice(0, 5)
 
@@ -185,7 +191,7 @@ function MobileNav({ currentProject, sessions, currentSession, projectIdFromUrl 
         </Link>
       ),
     },
-    ...projectSessions.map(session => ({
+    ...projectSessions.map((session) => ({
       label: (
         <Link href={`/p/${currentProject.id}/s/${session.id}`} className="flex items-center gap-2 truncate text-sm">
           <span>{session.title ?? session.id.slice(0, 8)}</span>
@@ -220,9 +226,9 @@ interface SessionDropdownProps {
 }
 
 function SessionDropdown({ sessions, currentProject, currentSession, isOpen, onOpenChange }: SessionDropdownProps) {
-  const loadSession = useSessionStore(state => state.loadSession)
+  const loadSession = useSessionStore((state) => state.loadSession)
 
-  const projectSessions = sessions.filter(session => session.projectId === currentProject.id).slice(0, 15)
+  const projectSessions = sessions.filter((session) => session.projectId === currentProject.id).slice(0, 15)
   const groupedSessions = groupSessionsByDate(projectSessions)
 
   const items: DropdownMenuItem[] = useMemo(() => {
@@ -309,22 +315,20 @@ export function Header({ onMenuClick, onCriteriaToggle }: HeaderProps) {
   const [location] = useLocation()
   const isProjectPage = location.startsWith('/p/')
   const isSessionPage = /^\/p\/[^/]+\/s\/[^/]+$/.test(location)
-  const session = useSessionStore(state => state.currentSession)
-  const sessions = useSessionStore(state => state.sessions)
-  const project = useProjectStore(state => state.currentProject)
-  const projects = useProjectStore(state => state.projects)
-  const startAutoRefresh = useConfigStore(state => state.startAutoRefresh)
-  const stopAutoRefresh = useConfigStore(state => state.stopAutoRefresh)
-  const setTerminalOpen = useTerminalStore(state => state.setOpen)
-  const terminalIsOpen = useTerminalStore(state => state.isOpen)
+  const session = useSessionStore((state) => state.currentSession)
+  const sessions = useSessionStore((state) => state.sessions)
+  const project = useProjectStore((state) => state.currentProject)
+  const projects = useProjectStore((state) => state.projects)
+  const startAutoRefresh = useConfigStore((state) => state.startAutoRefresh)
+  const stopAutoRefresh = useConfigStore((state) => state.stopAutoRefresh)
+  const setTerminalOpen = useTerminalStore((state) => state.setOpen)
+  const terminalIsOpen = useTerminalStore((state) => state.isOpen)
 
   useEffect(() => {
     const handler = () => setSessionDropdownOpen(true)
     window.addEventListener('open-session-dropdown', handler)
     return () => window.removeEventListener('open-session-dropdown', handler)
   }, [])
-
-  
 
   // Double Ctrl opens terminal
   const lastCtrlRef = useRef<number>(0)
@@ -367,7 +371,10 @@ export function Header({ onMenuClick, onCriteriaToggle }: HeaderProps) {
         )}
 
         {/* Desktop: OpenFox logo */}
-        <Link href="/" className="text-accent-primary font-semibold text-base hover:underline flex-shrink-0 hidden md:inline">
+        <Link
+          href="/"
+          className="text-accent-primary font-semibold text-base hover:underline flex-shrink-0 hidden md:inline"
+        >
           OpenFox
         </Link>
         {project && (
@@ -375,10 +382,7 @@ export function Header({ onMenuClick, onCriteriaToggle }: HeaderProps) {
             {/* Desktop: separate project and session dropdowns */}
             <span className="hidden md:inline text-text-muted flex-shrink-0">/</span>
             <span className="hidden md:inline">
-              <ProjectDropdown
-                projects={projects}
-                currentProject={project}
-              />
+              <ProjectDropdown projects={projects} currentProject={project} />
             </span>
 
             {/* Mobile: compact combined dropdown - replaces OpenFox link */}
@@ -388,7 +392,7 @@ export function Header({ onMenuClick, onCriteriaToggle }: HeaderProps) {
                 currentProject={project}
                 sessions={sessions}
                 currentSession={session}
-                projectIdFromUrl={isProjectPage ? (location.split('/')[2] || null) : null}
+                projectIdFromUrl={isProjectPage ? location.split('/')[2] || null : null}
               />
             </span>
             <span className="hidden md:inline text-text-muted flex-shrink-0">/</span>
@@ -401,8 +405,6 @@ export function Header({ onMenuClick, onCriteriaToggle }: HeaderProps) {
                 onOpenChange={setSessionDropdownOpen}
               />
             </span>
-
-            
           </>
         )}
       </div>
@@ -473,17 +475,10 @@ export function Header({ onMenuClick, onCriteriaToggle }: HeaderProps) {
       </div>
 
       {/* Settings Modal */}
-      <GlobalSettingsModal
-        isOpen={showSettings}
-        onClose={() => setShowSettings(false)}
-      />
+      <GlobalSettingsModal isOpen={showSettings} onClose={() => setShowSettings(false)} />
 
       {/* Terminal Drawer */}
-      <TerminalDrawer 
-        isOpen={terminalIsOpen} 
-        onClose={() => setTerminalOpen(false)} 
-      />
-
+      <TerminalDrawer isOpen={terminalIsOpen} onClose={() => setTerminalOpen(false)} />
     </header>
   )
 }

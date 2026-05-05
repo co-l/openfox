@@ -9,8 +9,8 @@ const SPINNER_CHARS = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴']
  * This is a presentational component that renders nothing visible.
  */
 export function PageTitle() {
-  const project = useProjectStore(state => state.currentProject)
-  const session = useSessionStore(state => state.currentSession)
+  const project = useProjectStore((state) => state.currentProject)
+  const session = useSessionStore((state) => state.currentSession)
   const isRunning = useIsRunning()
   const isDev = import.meta.env.DEV
   const spinnerIndexRef = useRef(0)
@@ -43,7 +43,7 @@ export function PageTitle() {
     const devPrefix = isDev ? 'dev- ' : ''
     const sessionTitle = session?.metadata?.title
     const spinnerPrefix = isRunning ? `${SPINNER_CHARS[spinnerIndexRef.current]} ` : ''
-    
+
     if (project && sessionTitle) {
       document.title = `${spinnerPrefix}${devPrefix}${project.name} - ${sessionTitle} | OpenFox`
     } else if (project) {

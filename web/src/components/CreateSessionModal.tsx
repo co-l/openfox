@@ -20,10 +20,10 @@ export function OpenProjectModal({ isOpen, onClose }: OpenProjectModalProps) {
   const [baseWorkdir, setBaseWorkdir] = useState<string | null>(null)
   const [showBrowser, setShowBrowser] = useState(false)
 
-  const projects = useProjectStore(state => state.projects)
-  const createProject = useProjectStore(state => state.createProject)
-  const listProjects = useProjectStore(state => state.listProjects)
-  const deleteProject = useProjectStore(state => state.deleteProject)
+  const projects = useProjectStore((state) => state.projects)
+  const createProject = useProjectStore((state) => state.createProject)
+  const listProjects = useProjectStore((state) => state.listProjects)
+  const deleteProject = useProjectStore((state) => state.deleteProject)
   const [projectToDelete, setProjectToDelete] = useState<{ id: string; name: string } | null>(null)
   const [creatingPath, setCreatingPath] = useState<string | null>(null)
 
@@ -43,8 +43,8 @@ export function OpenProjectModal({ isOpen, onClose }: OpenProjectModalProps) {
 
   useEffect(() => {
     authFetch('/api/config')
-      .then(res => res.json())
-      .then(data => {
+      .then((res) => res.json())
+      .then((data) => {
         if (data.workdir) setBaseWorkdir(data.workdir)
       })
   }, [])
@@ -81,7 +81,7 @@ export function OpenProjectModal({ isOpen, onClose }: OpenProjectModalProps) {
 
   useEffect(() => {
     if (creatingPath) {
-      const newProject = projects.find(p => p.workdir === creatingPath)
+      const newProject = projects.find((p) => p.workdir === creatingPath)
       if (newProject) {
         navigate(`/p/${newProject.id}`)
         onClose()
@@ -93,13 +93,19 @@ export function OpenProjectModal({ isOpen, onClose }: OpenProjectModalProps) {
   if (!isOpen) return null
 
   return (
-    <Modal isOpen={isOpen} onClose={onClose} title="Open Project" size="xl" footer={
-      <div className="flex justify-end gap-2">
-        <Button variant="secondary" onClick={onClose}>
-          Close
-        </Button>
-      </div>
-    }>
+    <Modal
+      isOpen={isOpen}
+      onClose={onClose}
+      title="Open Project"
+      size="xl"
+      footer={
+        <div className="flex justify-end gap-2">
+          <Button variant="secondary" onClick={onClose}>
+            Close
+          </Button>
+        </div>
+      }
+    >
       <div className="flex flex-col sm:flex-row flex-1 -m-4">
         <div className="w-full sm:w-1/2 border-b sm:border-b-0 sm:border-r border-border flex flex-col max-h-[40vh] sm:max-h-[50vh]">
           <div className="p-3 border-b border-border bg-bg-tertiary/30 shrink-0">
@@ -113,8 +119,11 @@ export function OpenProjectModal({ isOpen, onClose }: OpenProjectModalProps) {
               </div>
             ) : (
               <div className="divide-y divide-border">
-                {projects.map(project => (
-                  <div key={project.id} className="group flex items-center gap-3 p-3 hover:bg-bg-tertiary/50 transition-colors">
+                {projects.map((project) => (
+                  <div
+                    key={project.id}
+                    className="group flex items-center gap-3 p-3 hover:bg-bg-tertiary/50 transition-colors"
+                  >
                     <button
                       onClick={() => handleProjectClick(project.id)}
                       className="flex-1 flex items-center gap-3 text-left"
@@ -144,16 +153,18 @@ export function OpenProjectModal({ isOpen, onClose }: OpenProjectModalProps) {
             <Button variant="primary" onClick={() => setShowBrowser(true)}>
               Select existing project
             </Button>
-            <Button variant="secondary" onClick={() => setShowCreateModal(true)} data-testid="open-project-create-button">
+            <Button
+              variant="secondary"
+              onClick={() => setShowCreateModal(true)}
+              data-testid="open-project-create-button"
+            >
               Create new project
             </Button>
           </div>
         </div>
       </div>
 
-      {showCreateModal && (
-        <CreateProjectModal isOpen={showCreateModal} onClose={() => setShowCreateModal(false)} />
-      )}
+      {showCreateModal && <CreateProjectModal isOpen={showCreateModal} onClose={() => setShowCreateModal(false)} />}
       {projectToDelete && (
         <DeleteProjectConfirmationModal
           isOpen={true}
@@ -165,7 +176,10 @@ export function OpenProjectModal({ isOpen, onClose }: OpenProjectModalProps) {
       {showBrowser && (
         <DirectoryBrowser
           initialPath={baseWorkdir ?? undefined}
-          onSelect={(path) => { handleDirectorySelect(path); setShowBrowser(false) }}
+          onSelect={(path) => {
+            handleDirectorySelect(path)
+            setShowBrowser(false)
+          }}
           onClose={() => setShowBrowser(false)}
         />
       )}

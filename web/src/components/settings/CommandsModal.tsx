@@ -5,13 +5,8 @@ import { EditButton } from '../shared/IconButton'
 import { EyeIcon } from '../shared/icons'
 import { useCommandsStore, type CommandFull } from '../../stores/commands'
 import { useAgentsStore } from '../../stores/agents'
-import {
-  useConfirmDialog,
-  ConfirmButton,
-  DeleteIcon,
-  DuplicateIcon,
-  ErrorBanner,
-} from './CRUDModal'
+import { useConfirmDialog, ConfirmButton, DeleteIcon, DuplicateIcon, ErrorBanner } from './CRUDModal'
+import { ItemsHeader } from '../shared/ItemsHeader'
 import { CRUDListHeader } from './CRUDListHeader'
 import { CRUDListView } from './CRUDListView'
 import { NameIdFields } from './FormFields'
@@ -33,7 +28,10 @@ type CommandFormData = {
 }
 
 function toSlug(name: string): string {
-  return name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')
+  return name
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-|-$/g, '')
 }
 
 function ViewButton({ onClick }: { onClick: () => void }) {
@@ -50,38 +48,28 @@ function ViewButton({ onClick }: { onClick: () => void }) {
 }
 
 export function CommandsModal({ isOpen, onClose, initialEditId }: CommandsModalProps) {
-  const defaults = useCommandsStore(state => state.defaults)
-  const userItems = useCommandsStore(state => state.userItems)
-  const loading = useCommandsStore(state => state.loading)
-  const fetchCommands = useCommandsStore(state => state.fetchCommands)
-  const fetchCommand = useCommandsStore(state => state.fetchCommand)
-  const fetchDefaultContent = useCommandsStore(state => state.fetchDefaultContent)
-  const createCommand = useCommandsStore(state => state.createCommand)
-  const updateCommand = useCommandsStore(state => state.updateCommand)
-  const deleteCommandAction = useCommandsStore(state => state.deleteCommand)
+  const defaults = useCommandsStore((state) => state.defaults)
+  const userItems = useCommandsStore((state) => state.userItems)
+  const loading = useCommandsStore((state) => state.loading)
+  const fetchCommands = useCommandsStore((state) => state.fetchCommands)
+  const fetchCommand = useCommandsStore((state) => state.fetchCommand)
+  const fetchDefaultContent = useCommandsStore((state) => state.fetchDefaultContent)
+  const createCommand = useCommandsStore((state) => state.createCommand)
+  const updateCommand = useCommandsStore((state) => state.updateCommand)
+  const deleteCommandAction = useCommandsStore((state) => state.deleteCommand)
 
   const [viewingDefaultId, setViewingDefaultId] = useState<string | null>(null)
   const [defaultContent, setDefaultContent] = useState<string | null>(null)
 
-  const {
-    view,
-    editingId,
-    formError,
-    saving,
-    formData,
-    setView,
-    setEditingId,
-    setFormError,
-    setFormData,
-    setSaving,
-  } = useCRUDForm<CommandFormData>()
+  const { view, editingId, formError, saving, formData, setView, setEditingId, setFormError, setFormData, setSaving } =
+    useCRUDForm<CommandFormData>()
 
   const { requestDelete, clearConfirm, isConfirming } = useConfirmDialog()
   const clearConfirmCalled = useRef(false)
 
-  const agentDefaults = useAgentsStore(state => state.defaults)
-  const agentUserItems = useAgentsStore(state => state.userItems)
-  const fetchAgents = useAgentsStore(state => state.fetchAgents)
+  const agentDefaults = useAgentsStore((state) => state.defaults)
+  const agentUserItems = useAgentsStore((state) => state.userItems)
+  const fetchAgents = useAgentsStore((state) => state.fetchAgents)
   const allAgents = [...agentDefaults, ...agentUserItems]
   const topLevelAgents = allAgents.filter((a) => !a.subagent)
 
@@ -116,12 +104,12 @@ export function CommandsModal({ isOpen, onClose, initialEditId }: CommandsModalP
         clearConfirmCalled.current = true
       }
       if (initialEditIdRef.current) {
-        const isDefaultItem = defaults.some(d => d.id === initialEditIdRef.current)
+        const isDefaultItem = defaults.some((d) => d.id === initialEditIdRef.current)
         setViewRef.current('edit')
         setEditingIdRef.current(initialEditIdRef.current)
         setFormErrorRef.current('')
         if (isDefaultItem) {
-          fetchDefaultContentRef.current(initialEditIdRef.current).then(content => {
+          fetchDefaultContentRef.current(initialEditIdRef.current).then((content) => {
             if (!content) return
             setFormData({
               name: content.metadata.name + ' (copy)',
@@ -132,7 +120,7 @@ export function CommandsModal({ isOpen, onClose, initialEditId }: CommandsModalP
             })
           })
         } else {
-          fetchCommandRef.current(initialEditIdRef.current).then(command => {
+          fetchCommandRef.current(initialEditIdRef.current).then((command) => {
             if (!command) return
             setFormData({
               name: command.metadata.name,
@@ -159,7 +147,7 @@ export function CommandsModal({ isOpen, onClose, initialEditId }: CommandsModalP
   }
 
   const handleDuplicate = async (commandId: string) => {
-    const isDefault = defaults.some(d => d.id === commandId)
+    const isDefault = defaults.some((d) => d.id === commandId)
     if (isDefault) {
       const content = await fetchDefaultContent(commandId)
       if (content) {
@@ -232,9 +220,7 @@ export function CommandsModal({ isOpen, onClose, initialEditId }: CommandsModalP
       prompt: formData.prompt,
     }
 
-    const result = editingId
-      ? await updateCommand(editingId, command)
-      : await createCommand(command)
+    const result = editingId ? await updateCommand(editingId, command) : await createCommand(command)
 
     setSaving(false)
 
@@ -257,9 +243,9 @@ export function CommandsModal({ isOpen, onClose, initialEditId }: CommandsModalP
   }
 
   const handleNameChange = (name: string) => {
-    setFormData(prev => ({ ...prev, name }))
+    setFormData((prev) => ({ ...prev, name }))
     if (!editingId || formData.isDefault) {
-      setFormData(prev => ({ ...prev, id: toSlug(name) }))
+      setFormData((prev) => ({ ...prev, id: toSlug(name) }))
     }
   }
 
@@ -274,7 +260,7 @@ export function CommandsModal({ isOpen, onClose, initialEditId }: CommandsModalP
     setViewingDefaultId(null)
     setView('edit')
     setEditingId(viewingDefaultId)
-    fetchDefaultContent(viewingDefaultId).then(content => {
+    fetchDefaultContent(viewingDefaultId).then((content) => {
       if (!content) return
       setFormData({
         name: `${content.metadata.name} (copy)`,
@@ -287,9 +273,14 @@ export function CommandsModal({ isOpen, onClose, initialEditId }: CommandsModalP
   }
 
   if (viewingDefaultId) {
-    const defaultItem = defaults.find(d => d.id === viewingDefaultId)
+    const defaultItem = defaults.find((d) => d.id === viewingDefaultId)
     return (
-      <Modal isOpen={isOpen} onClose={handleViewClose} title={`Default: ${defaultItem?.name ?? viewingDefaultId}`} size="xl">
+      <Modal
+        isOpen={isOpen}
+        onClose={handleViewClose}
+        title={`Default: ${defaultItem?.name ?? viewingDefaultId}`}
+        size="xl"
+      >
         <div className="flex flex-col h-full">
           <div className="space-y-3 mb-3">
             <div className="flex items-center gap-2 text-xs text-text-muted">
@@ -321,7 +312,9 @@ export function CommandsModal({ isOpen, onClose, initialEditId }: CommandsModalP
           </div>
 
           <div className="flex justify-end gap-2 pt-3 mt-3 border-t border-border flex-shrink-0">
-            <Button variant="secondary" onClick={handleViewClose}>Close</Button>
+            <Button variant="secondary" onClick={handleViewClose}>
+              Close
+            </Button>
             <Button variant="primary" onClick={handleDuplicateFromView}>
               Duplicate & Customize
             </Button>
@@ -347,19 +340,23 @@ export function CommandsModal({ isOpen, onClose, initialEditId }: CommandsModalP
               idPlaceholder="my-command"
               readOnlyId={!!editingId && !formData.isDefault}
               onNameChange={handleNameChange}
-              onIdChange={id => setFormData(prev => ({ ...prev, id }))}
+              onIdChange={(id) => setFormData((prev) => ({ ...prev, id }))}
             />
 
             <div>
-              <label className="block text-xs text-text-secondary mb-1">Agent Mode <span className="text-text-muted">(optional)</span></label>
+              <label className="block text-xs text-text-secondary mb-1">
+                Agent Mode <span className="text-text-muted">(optional)</span>
+              </label>
               <select
                 value={formData.agentMode}
-                onChange={e => setFormData(prev => ({ ...prev, agentMode: e.target.value }))}
+                onChange={(e) => setFormData((prev) => ({ ...prev, agentMode: e.target.value }))}
                 className="w-full px-2 py-1.5 bg-bg-tertiary border border-border rounded text-sm focus:outline-none focus:ring-1 focus:ring-accent-primary"
               >
                 <option value="">None (keep current mode)</option>
                 {topLevelAgents.map((agent) => (
-                  <option key={agent.id} value={agent.id}>{agent.name}</option>
+                  <option key={agent.id} value={agent.id}>
+                    {agent.name}
+                  </option>
                 ))}
               </select>
             </div>
@@ -369,14 +366,16 @@ export function CommandsModal({ isOpen, onClose, initialEditId }: CommandsModalP
             <label className="block text-xs text-text-secondary mb-1">Message</label>
             <textarea
               value={formData.prompt}
-              onChange={e => setFormData(prev => ({ ...prev, prompt: e.target.value }))}
+              onChange={(e) => setFormData((prev) => ({ ...prev, prompt: e.target.value }))}
               placeholder="The message that will be sent when this command is triggered..."
               className="h-80 w-full px-3 py-2 bg-bg-tertiary border border-border rounded text-sm font-mono resize-y focus:outline-none focus:ring-1 focus:ring-accent-primary"
             />
           </div>
 
           <div className="flex justify-end gap-2 pt-3 mt-3 border-t border-border flex-shrink-0">
-            <Button variant="secondary" onClick={handleCancel}>Cancel</Button>
+            <Button variant="secondary" onClick={handleCancel}>
+              Cancel
+            </Button>
             <Button variant="primary" onClick={handleSave} disabled={saving || !formData.name || !formData.prompt}>
               {saving ? 'Saving...' : 'Save'}
             </Button>
@@ -403,7 +402,7 @@ export function CommandsModal({ isOpen, onClose, initialEditId }: CommandsModalP
           <div>
             <h3 className="text-xs font-medium text-text-secondary mb-2 uppercase tracking-wide">Built-in</h3>
             <div className="space-y-2">
-              {defaults.map(command => (
+              {defaults.map((command) => (
                 <div
                   key={command.id}
                   className="flex items-center justify-between p-3 rounded border border-border bg-bg-tertiary"
@@ -423,34 +422,31 @@ export function CommandsModal({ isOpen, onClose, initialEditId }: CommandsModalP
         )}
 
         {userItems.length > 0 && (
-          <div>
-            <h3 className="text-xs font-medium text-text-secondary mb-2 uppercase tracking-wide">Custom</h3>
-            <div className="space-y-2">
-              {userItems.map(command => (
-                <div
-                  key={command.id}
-                  className="flex items-center justify-between p-3 rounded border border-border bg-bg-tertiary"
-                >
-                  <div className="min-w-0 flex-1 mr-3">
-                    <div className="flex items-center gap-2">
-                      <span className="text-text-primary text-sm font-medium">{command.name}</span>
-                    </div>
-                  </div>
-
-                  <div className="flex items-center gap-1.5 flex-shrink-0">
-                    <EditButton onClick={() => handleEdit(command.id)} />
-                    <DuplicateIcon onClick={() => handleDuplicate(command.id)} />
-
-                    {isConfirming(command.id, 'delete') ? (
-                      <ConfirmButton onConfirm={() => handleDelete(command.id)} onCancel={clearConfirm} />
-                    ) : (
-                      <DeleteIcon onClick={() => requestDelete(command.id)} />
-                    )}
+          <ItemsHeader>
+            {userItems.map((command) => (
+              <div
+                key={command.id}
+                className="flex items-center justify-between p-3 rounded border border-border bg-bg-tertiary"
+              >
+                <div className="min-w-0 flex-1 mr-3">
+                  <div className="flex items-center gap-2">
+                    <span className="text-text-primary text-sm font-medium">{command.name}</span>
                   </div>
                 </div>
-              ))}
-            </div>
-          </div>
+
+                <div className="flex items-center gap-1.5 flex-shrink-0">
+                  <EditButton onClick={() => handleEdit(command.id)} />
+                  <DuplicateIcon onClick={() => handleDuplicate(command.id)} />
+
+                  {isConfirming(command.id, 'delete') ? (
+                    <ConfirmButton onConfirm={() => handleDelete(command.id)} onCancel={clearConfirm} />
+                  ) : (
+                    <DeleteIcon onClick={() => requestDelete(command.id)} />
+                  )}
+                </div>
+              </div>
+            ))}
+          </ItemsHeader>
         )}
       </CRUDListView>
     </Modal>

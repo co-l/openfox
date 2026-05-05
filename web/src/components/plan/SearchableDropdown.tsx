@@ -67,32 +67,35 @@ export function useSearchableMenu<T>({
     setSelectedIndex(0)
   }, [])
 
-  const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
-    const filtered = items.filter(item => filterFn(item, search))
-    switch (e.key) {
-      case 'ArrowDown':
-        e.preventDefault()
-        setSelectedIndex(i => Math.min(i + 1, filtered.length - 1))
-        break
-      case 'ArrowUp':
-        e.preventDefault()
-        setSelectedIndex(i => Math.max(i - 1, 0))
-        break
-      case 'Enter':
-        e.preventDefault()
-        break
-      case 'Escape':
-        e.preventDefault()
-        onClose()
-        break
-    }
-  }, [items, search, filterFn, onClose])
+  const handleKeyDown = useCallback(
+    (e: React.KeyboardEvent) => {
+      const filtered = items.filter((item) => filterFn(item, search))
+      switch (e.key) {
+        case 'ArrowDown':
+          e.preventDefault()
+          setSelectedIndex((i) => Math.min(i + 1, filtered.length - 1))
+          break
+        case 'ArrowUp':
+          e.preventDefault()
+          setSelectedIndex((i) => Math.max(i - 1, 0))
+          break
+        case 'Enter':
+          e.preventDefault()
+          break
+        case 'Escape':
+          e.preventDefault()
+          onClose()
+          break
+      }
+    },
+    [items, search, filterFn, onClose],
+  )
 
   const resetSelection = useCallback(() => {
     setSelectedIndex(0)
   }, [])
 
-  const filtered = items.filter(item => filterFn(item, search))
+  const filtered = items.filter((item) => filterFn(item, search))
 
   return {
     isOpen,
@@ -143,7 +146,7 @@ export function SearchInput({ value, onChange, onKeyDown, ref, placeholder }: Se
       <input
         ref={ref}
         value={value}
-        onChange={e => onChange(e.target.value)}
+        onChange={(e) => onChange(e.target.value)}
         onKeyDown={onKeyDown}
         placeholder={placeholder}
         className="w-full px-2 py-1 bg-bg-tertiary border border-border rounded text-sm focus:outline-none focus:ring-1 focus:ring-accent-primary"
@@ -167,11 +170,7 @@ interface EmptyMessageProps {
 }
 
 export function EmptyMessage({ hasItems, message }: EmptyMessageProps) {
-  return (
-    <div className="px-3 py-2 text-text-muted text-sm">
-      {hasItems ? 'No matches' : message}
-    </div>
-  )
+  return <div className="px-3 py-2 text-text-muted text-sm">{hasItems ? 'No matches' : message}</div>
 }
 
 interface ManageButtonProps {

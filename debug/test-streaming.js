@@ -12,12 +12,12 @@ const tools = [
       parameters: {
         type: 'object',
         properties: {
-          text: { type: 'string', description: 'Text to echo' }
+          text: { type: 'string', description: 'Text to echo' },
         },
-        required: ['text']
-      }
-    }
-  }
+        required: ['text'],
+      },
+    },
+  },
 ]
 
 const prompt = 'Say hello using the echo tool with 200 words'
@@ -30,9 +30,7 @@ async function main() {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       model: MODEL,
-      messages: [
-        { role: 'user', content: prompt }
-      ],
+      messages: [{ role: 'user', content: prompt }],
       tools,
       stream: true,
     }),
@@ -64,7 +62,6 @@ async function main() {
       }
 
       try {
-
         let parsed = JSON.parse(data)
         console.log(JSON.stringify(parsed.choices[0].delta))
       } catch (e) {

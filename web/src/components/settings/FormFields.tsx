@@ -29,13 +29,7 @@ export function NameIdFields({
 }: NameIdFieldsProps) {
   return (
     <div className="grid grid-cols-2 gap-3">
-      <FormField
-        label={nameLabel}
-        value={name}
-        onChange={onNameChange}
-        placeholder={namePlaceholder}
-        hint={nameHint}
-      />
+      <FormField label={nameLabel} value={name} onChange={onNameChange} placeholder={namePlaceholder} hint={nameHint} />
       <FormField
         label={idLabel}
         value={id}

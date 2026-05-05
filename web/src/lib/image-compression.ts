@@ -67,12 +67,9 @@ interface BrowserGlobals {
 /**
  * Compress an image file to meet size and dimension constraints.
  */
-export async function compressImage(
-  file: File,
-  options: CompressionOptions = {}
-): Promise<CompressionResult> {
+export async function compressImage(file: File, options: CompressionOptions = {}): Promise<CompressionResult> {
   const opts = { ...DEFAULT_OPTIONS, ...options }
-  
+
   // Validate file type
   if (!file.type.startsWith('image/')) {
     throw new Error('File is not an image')
@@ -89,10 +86,10 @@ export async function compressImage(
     const arrayBuffer = await file.arrayBuffer()
     const base64 = arrayBufferToBase64(arrayBuffer)
     const dataUrl = `data:${file.type};base64,${base64}`
-    
+
     // Get dimensions
     const img = await loadImage(dataUrl)
-    
+
     return {
       dataUrl,
       mimeType: file.type,
@@ -109,50 +106,47 @@ export async function compressImage(
 /**
  * Compress image to target size by adjusting quality and dimensions.
  */
-async function compressToTarget(
-  file: File,
-  opts: Required<CompressionOptions>
-): Promise<CompressionResult> {
+async function compressToTarget(file: File, opts: Required<CompressionOptions>): Promise<CompressionResult> {
   const dataUrl = await fileToDataUrl(file)
   const img = await loadImage(dataUrl)
-  
+
   // Calculate scaled dimensions
   const { width, height } = calculateScaledDimensions(img.width, img.height, opts.maxWidth, opts.maxHeight)
-  
+
   // Create canvas and draw resized image
   const canvas = createCanvas()
   canvas.width = width
   canvas.height = height
-  
+
   const ctx = canvas.getContext('2d')
   if (!ctx) {
     throw new Error('Failed to get canvas context')
   }
-  
+
   // Handle image smoothing for better quality
   ctx.imageSmoothingEnabled = true
   ctx.imageSmoothingQuality = 'high'
-  
+
   ctx.drawImage(img, 0, 0, width, height)
-  
+
   // Compress with quality adjustment
   let quality = opts.quality
   let compressedDataUrl: string
-  
+
   // Try to compress to target size
   do {
     compressedDataUrl = canvas.toDataURL(file.type.startsWith('image/gif') ? 'image/png' : file.type, quality)
     const size = dataUrlToSize(compressedDataUrl)
-    
+
     if (size <= opts.maxSizeBytes || quality <= 0.3) {
       break
     }
-    
+
     quality -= 0.1
   } while (true)
-  
+
   const finalSize = dataUrlToSize(compressedDataUrl)
-  
+
   return {
     dataUrl: compressedDataUrl,
     mimeType: file.type.startsWith('image/gif') ? 'image/png' : file.type,
@@ -169,24 +163,24 @@ function calculateScaledDimensions(
   width: number,
   height: number,
   maxWidth: number,
-  maxHeight: number
+  maxHeight: number,
 ): { width: number; height: number } {
   const ratio = width / height
-  
+
   if (width > height && width > maxWidth) {
     return {
       width: maxWidth,
       height: Math.round(maxWidth / ratio),
     }
   }
-  
+
   if (height > width && height > maxHeight) {
     return {
       width: Math.round(maxHeight * ratio),
       height: maxHeight,
     }
   }
-  
+
   return { width, height }
 }
 
@@ -283,11 +277,14 @@ export function isValidImageType(file: File): boolean {
 /**
  * Validate image file size.
  */
-export function validateImageSize(file: File, maxSizeBytes: number = 50 * 1024 * 1024): { valid: boolean; error?: string } {
+export function validateImageSize(
+  file: File,
+  maxSizeBytes: number = 50 * 1024 * 1024,
+): { valid: boolean; error?: string } {
   if (file.size > maxSizeBytes) {
-    return { 
-      valid: false, 
-      error: `Image file is too large (${formatFileSize(file.size)}). Maximum size is ${formatFileSize(maxSizeBytes)}.` 
+    return {
+      valid: false,
+      error: `Image file is too large (${formatFileSize(file.size)}). Maximum size is ${formatFileSize(maxSizeBytes)}.`,
     }
   }
   return { valid: true }

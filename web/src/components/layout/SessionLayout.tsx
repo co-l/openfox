@@ -10,24 +10,24 @@ interface SessionLayoutProps {
   messages: Message[]
 }
 
-export function SessionLayout({ children, criteriaSidebarOpen = true, onCriteriaSidebarToggle, messages }: SessionLayoutProps) {
-  const session = useSessionStore(state => state.currentSession)
+export function SessionLayout({
+  children,
+  criteriaSidebarOpen = true,
+  onCriteriaSidebarToggle,
+  messages,
+}: SessionLayoutProps) {
+  const session = useSessionStore((state) => state.currentSession)
 
   return (
     <div className="relative h-full overflow-hidden">
       {/* Backdrop - mobile only, when sidebar is open */}
       {criteriaSidebarOpen && (
-        <div
-          className="fixed md:hidden inset-0 bg-secondary/50 z-40"
-          onClick={onCriteriaSidebarToggle}
-        />
+        <div className="fixed md:hidden inset-0 bg-secondary/50 z-40" onClick={onCriteriaSidebarToggle} />
       )}
 
       {/* Main Content */}
       <div className="flex h-full">
-        <div className="flex-1 min-w-0 flex flex-col overflow-hidden bg-secondary">
-          {children}
-        </div>
+        <div className="flex-1 min-w-0 flex flex-col overflow-hidden bg-secondary">{children}</div>
 
         {/* Summary Sidebar - mobile: fixed overlay, desktop: flex item */}
         {criteriaSidebarOpen ? (
@@ -45,10 +45,7 @@ export function SessionLayout({ children, criteriaSidebarOpen = true, onCriteria
             p-4 overflow-y-auto bg-secondary
             transition-all duration-300 ease-in-out
             fixed right-0 top-[32px] h-[calc(100vh-32px)] z-50
-            ${criteriaSidebarOpen
-              ? 'w-[320px] translate-x-0 border-l border-border'
-              : 'w-[320px] translate-x-full'
-            }
+            ${criteriaSidebarOpen ? 'w-[320px] translate-x-0 border-l border-border' : 'w-[320px] translate-x-full'}
           `}
         >
           <SummaryDisplay summary={session?.summary ?? null} messages={messages} workdir={session?.workdir} />

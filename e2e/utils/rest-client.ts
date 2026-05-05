@@ -1,6 +1,6 @@
 /**
  * REST API client for E2E tests.
- * 
+ *
  * Provides helper functions for creating projects and sessions via REST API.
  */
 
@@ -36,44 +36,38 @@ export interface CreateSessionOptions {
 /**
  * Create a project via REST API
  */
-export async function createProject(
-  baseUrl: string,
-  options: CreateProjectOptions
-): Promise<Project> {
+export async function createProject(baseUrl: string, options: CreateProjectOptions): Promise<Project> {
   const response = await fetch(`${baseUrl}/api/projects`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(options),
   })
-  
+
   if (!response.ok) {
     const error = (await response.json().catch(() => ({}))) as { error?: string }
     throw new Error(error.error || `Failed to create project: ${response.status}`)
   }
-  
-  const data = await response.json() as { project: Project }
+
+  const data = (await response.json()) as { project: Project }
   return data.project
 }
 
 /**
  * Create a session via REST API
  */
-export async function createSession(
-  baseUrl: string,
-  options: CreateSessionOptions
-): Promise<Session> {
+export async function createSession(baseUrl: string, options: CreateSessionOptions): Promise<Session> {
   const response = await fetch(`${baseUrl}/api/sessions`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(options),
   })
-  
+
   if (!response.ok) {
     const error = (await response.json().catch(() => ({}))) as { error?: string }
     throw new Error(error.error || `Failed to create session: ${response.status}`)
   }
-  
-  const data = await response.json() as { session: Session }
+
+  const data = (await response.json()) as { session: Session }
   return data.session
 }
 
@@ -84,19 +78,19 @@ export async function sendMessage(
   baseUrl: string,
   sessionId: string,
   content: string,
-  attachments?: { path: string; type: string }[]
+  attachments?: { path: string; type: string }[],
 ): Promise<{ success: boolean; queueState: unknown[] }> {
   const response = await fetch(`${baseUrl}/api/sessions/${sessionId}/message`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ content, attachments }),
   })
-  
+
   if (!response.ok) {
     const error = (await response.json().catch(() => ({}))) as { error?: string }
     throw new Error(error.error || `Failed to send message: ${response.status}`)
   }
-  
+
   return response.json() as Promise<{ success: boolean; queueState: unknown[] }>
 }
 
@@ -105,13 +99,13 @@ export async function sendMessage(
  */
 export async function getProject(baseUrl: string, projectId: string): Promise<Project> {
   const response = await fetch(`${baseUrl}/api/projects/${projectId}`)
-  
+
   if (!response.ok) {
     const error = (await response.json().catch(() => ({}))) as { error?: string }
     throw new Error(error.error || `Failed to get project: ${response.status}`)
   }
-  
-  const data = await response.json() as { project: Project }
+
+  const data = (await response.json()) as { project: Project }
   return data.project
 }
 
@@ -120,12 +114,12 @@ export async function getProject(baseUrl: string, projectId: string): Promise<Pr
  */
 export async function listProjects(baseUrl: string): Promise<Project[]> {
   const response = await fetch(`${baseUrl}/api/projects`)
-  
+
   if (!response.ok) {
     throw new Error(`Failed to list projects: ${response.status}`)
   }
-  
-  const data = await response.json() as { projects?: Project[] }
+
+  const data = (await response.json()) as { projects?: Project[] }
   return data.projects ?? []
 }
 
@@ -134,12 +128,12 @@ export async function listProjects(baseUrl: string): Promise<Project[]> {
  */
 export async function listSessions(baseUrl: string, projectId: string): Promise<Session[]> {
   const response = await fetch(`${baseUrl}/api/projects/${projectId}/sessions`)
-  
+
   if (!response.ok) {
     throw new Error(`Failed to list sessions: ${response.status}`)
   }
-  
-  const data = await response.json() as { sessions?: Session[] }
+
+  const data = (await response.json()) as { sessions?: Session[] }
   return data.sessions ?? []
 }
 
@@ -148,23 +142,19 @@ export async function listSessions(baseUrl: string, projectId: string): Promise<
  */
 export async function getSetting(baseUrl: string, key: string): Promise<string | null> {
   const response = await fetch(`${baseUrl}/api/settings/${key}`)
-  
+
   if (!response.ok) {
     return null
   }
-  
-  const data = await response.json() as { value?: string }
+
+  const data = (await response.json()) as { value?: string }
   return data.value ?? null
 }
 
 /**
  * Set a setting via REST API
  */
-export async function setSetting(
-  baseUrl: string,
-  key: string,
-  value: string
-): Promise<string | null> {
+export async function setSetting(baseUrl: string, key: string, value: string): Promise<string | null> {
   const response = await fetch(`${baseUrl}/api/settings/${key}`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
@@ -175,7 +165,7 @@ export async function setSetting(
     return null
   }
 
-  const data = await response.json() as { value?: string }
+  const data = (await response.json()) as { value?: string }
   return data.value ?? null
 }
 
@@ -186,7 +176,7 @@ export async function setSessionMode(
   baseUrl: string,
   sessionId: string,
   mode: 'planner' | 'builder',
-  wsUrl?: string
+  wsUrl?: string,
 ): Promise<{ session: Session; messages: unknown[] }> {
   const response = await fetch(`${baseUrl}/api/sessions/${sessionId}/mode`, {
     method: 'PUT',
@@ -231,11 +221,7 @@ export async function setSessionMode(
 /**
  * Set session criteria via REST API
  */
-export async function setSessionCriteria(
-  baseUrl: string,
-  sessionId: string,
-  criteria: unknown[]
-): Promise<void> {
+export async function setSessionCriteria(baseUrl: string, sessionId: string, criteria: unknown[]): Promise<void> {
   const response = await fetch(`${baseUrl}/api/sessions/${sessionId}/criteria`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
@@ -251,10 +237,7 @@ export async function setSessionCriteria(
 /**
  * Stop session chat via REST API
  */
-export async function stopSessionChat(
-  baseUrl: string,
-  sessionId: string
-): Promise<{ success: boolean }> {
+export async function stopSessionChat(baseUrl: string, sessionId: string): Promise<{ success: boolean }> {
   const response = await fetch(`${baseUrl}/api/sessions/${sessionId}/stop`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -271,10 +254,7 @@ export async function stopSessionChat(
 /**
  * Continue session chat via REST API
  */
-export async function continueSessionChat(
-  baseUrl: string,
-  sessionId: string
-): Promise<{ accepted: boolean }> {
+export async function continueSessionChat(baseUrl: string, sessionId: string): Promise<{ accepted: boolean }> {
   const response = await fetch(`${baseUrl}/api/sessions/${sessionId}/continue`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -295,7 +275,7 @@ export async function answerPathConfirmation(
   baseUrl: string,
   sessionId: string,
   callId: string,
-  approved: boolean
+  approved: boolean,
 ): Promise<{ success: boolean }> {
   const response = await fetch(`${baseUrl}/api/sessions/${sessionId}/confirm-path`, {
     method: 'POST',

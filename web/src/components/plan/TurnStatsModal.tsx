@@ -1,23 +1,8 @@
 import { Modal } from '../shared/SelfContainedModal'
+import type { TurnStats } from '../../lib/types'
 
 interface TurnStatsModalProps {
-  stats: {
-    model: string
-    mode: string
-    totalTime: number
-    prefillTokens: number
-    generationTokens: number
-    llmCalls?: Array<{
-      temperature?: number
-      topP?: number
-      topK?: number
-      maxTokens?: number
-      promptTokens: number
-      completionTokens: number
-      ttft: number
-      completionTime: number
-    }>
-  }
+  stats: TurnStats
   onClose: () => void
 }
 
@@ -26,13 +11,23 @@ export function TurnStatsModal({ stats: s, onClose }: TurnStatsModalProps) {
     <Modal isOpen={true} onClose={onClose} title="Turn Stats" size="md">
       <div className="space-y-4">
         <div className="flex items-center gap-3">
-          <p className="text-xs text-text-muted">{s.model} · {s.mode}</p>
+          <p className="text-xs text-text-muted">
+            {s.model} · {s.mode}
+          </p>
         </div>
 
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
           <StatCard label="Total Time" value={`${s.totalTime.toFixed(1)}s`} />
-          <StatCard label="Prefill" value={s.prefillTokens >= 1000 ? `${(s.prefillTokens / 1000).toFixed(1)}k` : String(s.prefillTokens)} />
-          <StatCard label="Generated" value={s.generationTokens >= 1000 ? `${(s.generationTokens / 1000).toFixed(1)}k` : String(s.generationTokens)} />
+          <StatCard
+            label="Prefill"
+            value={s.prefillTokens >= 1000 ? `${(s.prefillTokens / 1000).toFixed(1)}k` : String(s.prefillTokens)}
+          />
+          <StatCard
+            label="Generated"
+            value={
+              s.generationTokens >= 1000 ? `${(s.generationTokens / 1000).toFixed(1)}k` : String(s.generationTokens)
+            }
+          />
           <StatCard label="LLM Calls" value={String(s.llmCalls?.length ?? 1)} />
         </div>
 
@@ -43,12 +38,16 @@ export function TurnStatsModal({ stats: s, onClose }: TurnStatsModalProps) {
               <div key={i} className="bg-bg-tertiary/30 rounded p-3 mb-2">
                 <div className="flex items-center justify-between mb-2">
                   <span className="text-xs text-text-muted">Call {i + 1}</span>
-                  <span className="text-xs text-text-muted">{call.ttft.toFixed(2)}s TTFT · {call.completionTime.toFixed(2)}s gen</span>
+                  <span className="text-xs text-text-muted">
+                    {call.ttft.toFixed(2)}s TTFT · {call.completionTime.toFixed(2)}s gen
+                  </span>
                 </div>
                 <div className="grid grid-cols-2 gap-2 text-xs">
                   <div>
                     <span className="text-text-muted">Tokens:</span>{' '}
-                    <span className="text-text-primary">{call.promptTokens} → {call.completionTokens}</span>
+                    <span className="text-text-primary">
+                      {call.promptTokens} → {call.completionTokens}
+                    </span>
                   </div>
                   <div className="flex flex-wrap gap-x-2 gap-y-1">
                     {call.temperature !== undefined && <Tag label="temp" value={call.temperature.toFixed(2)} />}

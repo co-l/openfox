@@ -9,24 +9,24 @@ export default defineConfig({
   test: {
     testTimeout: 15_000,
     hookTimeout: 10_000,
-    
+
     // Run tests in parallel with fork pool
     // Each test file gets its own in-process server on a dynamic port
     pool: 'forks',
     maxWorkers: 10, // Full parallelism - auth disabled in test mode
-    
+
     // No global setup - each test file manages its own server
     // globalSetup: './setup.ts',  // REMOVED - using in-process servers
-    
+
     // Include all test files (absolute path for running from project root)
     include: [`${__dirname}/*.test.ts`],
-    
+
     // No retries needed with deterministic mock
     retry: 0,
-    
+
     // Use tsx to resolve TypeScript imports with .js extensions
     execArgv: ['--import', 'tsx/esm'],
-    
+
     coverage: {
       provider: 'v8',
       reporter: ['text', 'text-summary'],

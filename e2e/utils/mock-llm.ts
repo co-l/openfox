@@ -1,6 +1,6 @@
 /**
  * Mock LLM Client for E2E Tests
- * 
+ *
  * Provides deterministic LLM responses for testing the system without
  * depending on real LLM inference. Use this to test:
  * - Tool execution workflows
@@ -8,7 +8,7 @@
  * - Criteria/plan/verifier workflows
  * - Error handling
  * - Concurrency
- * 
+ *
  * The mock allows you to specify expected tool calls for given prompts.
  */
 
@@ -71,7 +71,7 @@ export function createMockLLMClient(config: MockLLMConfig = {}): MockLLMClient {
   const defaultResponse = config.defaultResponse ?? 'I completed the task.'
   const defaultThinking = config.thinkingContent ?? ''
   const streamDelayMs = config.streamDelayMs ?? 0 // Default to 0 for fast tests
-  
+
   // Default rules - can be extended by tests
   const defaultRules: MockToolCallRule[] = [
     {
@@ -94,10 +94,12 @@ export function createMockLLMClient(config: MockLLMConfig = {}): MockLLMClient {
     },
     {
       promptMatch: /write.*file|create.*file/i,
-      toolCalls: [{ 
-        name: 'write_file', 
-        arguments: { path: 'src/newfile.ts', content: 'export const x = 1' } 
-      }],
+      toolCalls: [
+        {
+          name: 'write_file',
+          arguments: { path: 'src/newfile.ts', content: 'export const x = 1' },
+        },
+      ],
       response: 'I wrote the file.',
     },
     {
@@ -107,109 +109,127 @@ export function createMockLLMClient(config: MockLLMConfig = {}): MockLLMClient {
     },
     {
       promptMatch: /add.*criterion/i,
-      toolCalls: [{ 
-        name: 'criterion', 
-        arguments: { 
-          action: 'add',
-          description: 'Test criterion' 
-        } 
-      }],
+      toolCalls: [
+        {
+          name: 'criterion',
+          arguments: {
+            action: 'add',
+            description: 'Test criterion',
+          },
+        },
+      ],
       response: 'I added the criterion.',
     },
     {
       promptMatch: /Add criterion ID "emit-test"/i,
-      toolCalls: [{ 
-        name: 'criterion', 
-        arguments: { 
-          action: 'add',
-          id: 'emit-test',
-          description: 'Testing events' 
-        } 
-      }],
+      toolCalls: [
+        {
+          name: 'criterion',
+          arguments: {
+            action: 'add',
+            id: 'emit-test',
+            description: 'Testing events',
+          },
+        },
+      ],
       response: 'I added the criterion.',
     },
     {
       promptMatch: /Add criterion ID "get-test"/i,
-      toolCalls: [{ 
-        name: 'criterion', 
-        arguments: { 
-          action: 'add',
-          id: 'get-test',
-          description: 'For testing get' 
-        } 
-      }],
+      toolCalls: [
+        {
+          name: 'criterion',
+          arguments: {
+            action: 'add',
+            id: 'get-test',
+            description: 'For testing get',
+          },
+        },
+      ],
       response: 'I added the criterion.',
     },
     {
       promptMatch: /Add criterion ID "update-me"/i,
-      toolCalls: [{ 
-        name: 'criterion', 
-        arguments: { 
-          action: 'add',
-          id: 'update-me',
-          description: 'Original description' 
-        } 
-      }],
+      toolCalls: [
+        {
+          name: 'criterion',
+          arguments: {
+            action: 'add',
+            id: 'update-me',
+            description: 'Original description',
+          },
+        },
+      ],
       response: 'I added the criterion.',
     },
     {
       promptMatch: /Add criterion ID "remove-me"/i,
-      toolCalls: [{ 
-        name: 'criterion', 
-        arguments: { 
-          action: 'add',
-          id: 'remove-me',
-          description: 'Will be removed' 
-        } 
-      }],
+      toolCalls: [
+        {
+          name: 'criterion',
+          arguments: {
+            action: 'add',
+            id: 'remove-me',
+            description: 'Will be removed',
+          },
+        },
+      ],
       response: 'I added the criterion.',
     },
     {
       promptMatch: /Add criterion ID "persist-test"/i,
-      toolCalls: [{ 
-        name: 'criterion', 
-        arguments: { 
-          action: 'add',
-          id: 'persist-test',
-          description: 'Persistence test' 
-        } 
-      }],
+      toolCalls: [
+        {
+          name: 'criterion',
+          arguments: {
+            action: 'add',
+            id: 'persist-test',
+            description: 'Persistence test',
+          },
+        },
+      ],
       response: 'I added the criterion.',
     },
     {
       promptMatch: /Add criterion ID "file-created"/i,
-      toolCalls: [{ 
-        name: 'criterion', 
-        arguments: { 
-          action: 'add',
-          id: 'file-created',
-          description: 'A new file utils.ts exists' 
-        } 
-      }],
+      toolCalls: [
+        {
+          name: 'criterion',
+          arguments: {
+            action: 'add',
+            id: 'file-created',
+            description: 'A new file utils.ts exists',
+          },
+        },
+      ],
       response: 'I added the criterion.',
     },
     {
       promptMatch: /Add criterion ID "edit-direct"/i,
-      toolCalls: [{ 
-        name: 'criterion', 
-        arguments: { 
-          action: 'add',
-          id: 'edit-direct',
-          description: 'Initial' 
-        } 
-      }],
+      toolCalls: [
+        {
+          name: 'criterion',
+          arguments: {
+            action: 'add',
+            id: 'edit-direct',
+            description: 'Initial',
+          },
+        },
+      ],
       response: 'I added the criterion.',
     },
     {
       promptMatch: /Add criterion ID "trivial-pass"/i,
-      toolCalls: [{ 
-        name: 'criterion', 
-        arguments: { 
-          action: 'add',
-          id: 'trivial-pass',
-          description: 'Trivial pass criterion' 
-        } 
-      }],
+      toolCalls: [
+        {
+          name: 'criterion',
+          arguments: {
+            action: 'add',
+            id: 'trivial-pass',
+            description: 'Trivial pass criterion',
+          },
+        },
+      ],
       response: 'I added the criterion.',
     },
     {
@@ -326,7 +346,12 @@ export function createMockLLMClient(config: MockLLMConfig = {}): MockLLMClient {
     // Edit file with syntax error (for LSP diagnostics)
     {
       promptMatch: /write.*syntax.*error/i,
-      toolCalls: [{ name: 'write_file', arguments: { path: 'src/broken.ts', content: 'export const x: number = "not a number"' } }],
+      toolCalls: [
+        {
+          name: 'write_file',
+          arguments: { path: 'src/broken.ts', content: 'export const x: number = "not a number"' },
+        },
+      ],
       response: 'I wrote the file with an error.',
     },
     // Get criteria (for planner)
@@ -363,12 +388,12 @@ export function createMockLLMClient(config: MockLLMConfig = {}): MockLLMClient {
     {
       promptMatch: /launch.*runner|runner.*launch|start.*verification|verify.*implementation|call.*verifier/i,
       toolCalls: [
-        { 
-          name: 'call_sub_agent', 
-          arguments: { 
+        {
+          name: 'call_sub_agent',
+          arguments: {
             subAgentType: 'verifier',
-            prompt: 'Verify completed criteria against implementation' 
-          } 
+            prompt: 'Verify completed criteria against implementation',
+          },
         },
         { name: 'criterion', arguments: { action: 'pass', id: '0', reason: 'Verified' } },
       ],
@@ -395,84 +420,88 @@ export function createMockLLMClient(config: MockLLMConfig = {}): MockLLMClient {
     // Update criterion
     {
       promptMatch: /update.*criterion|update_criterion/i,
-      toolCalls: [{ 
-        name: 'criterion', 
-        arguments: { 
-          action: 'update',
-          id: '0', 
-          description: 'Updated description' 
-        } 
-      }],
+      toolCalls: [
+        {
+          name: 'criterion',
+          arguments: {
+            action: 'update',
+            id: '0',
+            description: 'Updated description',
+          },
+        },
+      ],
       response: 'I updated the criterion.',
     },
     // Remove criterion
     {
       promptMatch: /remove.*criterion|remove_criterion/i,
-      toolCalls: [{ 
-        name: 'criterion', 
-        arguments: { 
-          action: 'remove',
-          id: '0', 
-        } 
-      }],
+      toolCalls: [
+        {
+          name: 'criterion',
+          arguments: {
+            action: 'remove',
+            id: '0',
+          },
+        },
+      ],
       response: 'I removed the criterion.',
     },
   ]
-  
+
   let rules: MockToolCallRule[] = [...defaultRules]
-  
+
   function matchPrompt(prompt: string): MockToolCallRule | undefined {
-    return rules.find(rule => {
+    return rules.find((rule) => {
       if (rule.promptMatch instanceof RegExp) {
         return rule.promptMatch.test(prompt)
       }
       return prompt.toLowerCase().includes(rule.promptMatch.toLowerCase())
     })
   }
-  
+
   return {
     getModel() {
       return model
     },
-    
+
     setModel(newModel: string) {
       logger.debug('Mock LLM: switching model', { from: model, to: newModel })
     },
-    
+
     getProfile() {
       return profile
     },
-    
+
     getBackend() {
       return backend as Backend
     },
-    
+
     setBackend(newBackend: Backend) {
       logger.debug('Mock LLM: switching backend', { from: backend, to: newBackend })
     },
-    
+
     async complete(request: LLMCompletionRequest): Promise<LLMCompletionResponse> {
       // Extract user message content
-      const userMessage = request.messages.filter(m => m.role === 'user').pop()
+      const userMessage = request.messages.filter((m) => m.role === 'user').pop()
       const prompt = userMessage?.content ?? ''
-      
+
       logger.debug('Mock LLM complete', { prompt: prompt.slice(0, 100) })
-      
+
       // Check if abort signal was triggered
       if (request.signal?.aborted) {
         throw new Error('Aborted')
       }
-      
+
       // Match prompt to rule
       const rule = matchPrompt(prompt)
-      
+
       if (rule) {
         const toolCalls: ToolCall[] = rule.toolCalls.map((tc, idx) => ({
           id: tc.id ?? `mock-tc-${Date.now()}-${idx}`,
           name: tc.name,
           arguments: tc.arguments,
         }))
-        
+
         return {
           id: `mock-${Date.now()}`,
           content: rule.response ?? defaultResponse,
@@ -486,7 +515,7 @@ export function createMockLLMClient(config: MockLLMConfig = {}): MockLLMClient {
           },
         }
       }
-      
+
       // No rule matched - return default response
       return {
         id: `mock-${Date.now()}`,
@@ -501,42 +530,43 @@ export function createMockLLMClient(config: MockLLMConfig = {}): MockLLMClient {
         },
       }
     },
-    
+
     async *stream(request: LLMCompletionRequest): AsyncIterable<LLMStreamEvent> {
       // Extract user message content
-      const userMessage = request.messages.filter(m => m.role === 'user').pop()
+      const userMessage = request.messages.filter((m) => m.role === 'user').pop()
       const prompt = userMessage?.content ?? ''
-      
+
       logger.debug('Mock LLM stream', { prompt: prompt.slice(0, 100) })
-      
+
       // Check if abort signal was triggered
       if (request.signal?.aborted) {
         throw new Error('Aborted')
       }
-      
+
       // Match prompt to rule
       const rule = matchPrompt(prompt)
-      
-      const toolCalls: ToolCall[] = rule?.toolCalls.map((tc, idx) => ({
-        id: tc.id ?? `mock-tc-${Date.now()}-${idx}`,
-        name: tc.name,
-        arguments: tc.arguments,
-      })) ?? []
-      
+
+      const toolCalls: ToolCall[] =
+        rule?.toolCalls.map((tc, idx) => ({
+          id: tc.id ?? `mock-tc-${Date.now()}-${idx}`,
+          name: tc.name,
+          arguments: tc.arguments,
+        })) ?? []
+
       const responseContent = rule?.response ?? defaultResponse
       const thinking = rule?.thinking ?? defaultThinking
-      
+
       // Stream thinking first if present
       if (thinking) {
         const chunks = thinking.split(' ')
         for (const chunk of chunks) {
           yield { type: 'thinking_delta', content: chunk + ' ' }
           if (streamDelayMs > 0) {
-            await new Promise(resolve => setTimeout(resolve, streamDelayMs))
+            await new Promise((resolve) => setTimeout(resolve, streamDelayMs))
           }
         }
       }
-      
+
       // Stream tool calls
       for (let idx = 0; idx < toolCalls.length; idx++) {
         const tc = toolCalls[idx]!
@@ -548,18 +578,18 @@ export function createMockLLMClient(config: MockLLMConfig = {}): MockLLMClient {
           arguments: JSON.stringify(tc.arguments),
         }
       }
-      
+
       // Stream response content
       if (responseContent) {
         const chunks = responseContent.split(' ')
         for (const chunk of chunks) {
           yield { type: 'text_delta', content: chunk + ' ' }
           if (streamDelayMs > 0) {
-            await new Promise(resolve => setTimeout(resolve, streamDelayMs))
+            await new Promise((resolve) => setTimeout(resolve, streamDelayMs))
           }
         }
       }
-      
+
       // Yield final result
       yield {
         type: 'done',
@@ -577,21 +607,21 @@ export function createMockLLMClient(config: MockLLMConfig = {}): MockLLMClient {
         },
       }
     },
-    
+
     /**
      * Add or override tool call rules for specific tests
      */
     addRules(newRules: MockToolCallRule[]) {
       rules = [...rules, ...newRules]
     },
-    
+
     /**
      * Clear all rules and restore defaults
      */
     resetRules() {
       rules = [...defaultRules]
     },
-    
+
     /**
      * Set exact rules (replaces all rules)
      */

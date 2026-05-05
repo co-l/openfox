@@ -23,7 +23,5 @@ interface CRUDSectionHeaderProps {
 }
 
 export function CRUDSectionHeader({ title }: CRUDSectionHeaderProps) {
-  return (
-    <h3 className="text-xs font-medium text-text-secondary mb-2 uppercase tracking-wide">{title}</h3>
-  )
+  return <h3 className="text-xs font-medium text-text-secondary mb-2 uppercase tracking-wide">{title}</h3>
 }

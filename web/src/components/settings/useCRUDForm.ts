@@ -23,7 +23,7 @@ export interface UseCRUDFormOptions<T> {
 }
 
 export function useCRUDForm<T extends { [key: string]: unknown } = { [key: string]: string }>(
-  options: UseCRUDFormOptions<T> = {}
+  options: UseCRUDFormOptions<T> = {},
 ): CRUDFormState<T> {
   const { initialData = {} as T } = options
 
@@ -39,15 +39,18 @@ export function useCRUDForm<T extends { [key: string]: unknown } = { [key: strin
     setEditingId(null)
   }, [initialData])
 
-  const setView = useCallback((newView: ViewMode) => {
-    setViewState(newView)
-    if (newView === 'list') {
-      resetForm()
-    }
-  }, [resetForm])
+  const setView = useCallback(
+    (newView: ViewMode) => {
+      setViewState(newView)
+      if (newView === 'list') {
+        resetForm()
+      }
+    },
+    [resetForm],
+  )
 
   const setFormData = useCallback((data: T | ((prev: T) => T)) => {
-    setFormDataState(prev => typeof data === 'function' ? (data as (prev: T) => T)(prev) : data)
+    setFormDataState((prev) => (typeof data === 'function' ? (data as (prev: T) => T)(prev) : data))
   }, [])
 
   const startEditing = useCallback((id: string, initialData: Partial<T> = {}) => {

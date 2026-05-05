@@ -14,8 +14,8 @@ function formatContextWindow(context: number): string {
 
 export function ProviderSelector() {
   const [, navigate] = useLocation()
-  const currentSession = useSessionStore(state => state.currentSession)
-  const setSessionProvider = useSessionStore(state => state.setSessionProvider)
+  const currentSession = useSessionStore((state) => state.currentSession)
+  const setSessionProvider = useSessionStore((state) => state.setSessionProvider)
   const [isOpen, setIsOpen] = useState(false)
   const [expandedProviderIds, setExpandedProviderIds] = useState<string[]>([])
   interface ModelWithConfig {
@@ -27,17 +27,17 @@ export function ProviderSelector() {
   const dropdownRef = useRef<HTMLDivElement>(null)
   const [editingModel, setEditingModel] = useState<{ providerId: string; model: ModelWithConfig } | null>(null)
   const loadedProvidersRef = useRef<Set<string>>(new Set())
-  
-  const providers = useConfigStore(state => state.providers)
-  const activeProviderId = useConfigStore(state => state.activeProviderId)
-  const model = useConfigStore(state => state.model)
-  const backend = useConfigStore(state => state.backend)
-  const llmStatus = useConfigStore(state => state.llmStatus)
-  const activating = useConfigStore(state => state.activating)
-  const activateProvider = useConfigStore(state => state.activateProvider)
-  const refreshModel = useConfigStore(state => state.refreshModel)
-  const refreshProviderModels = useConfigStore(state => state.refreshProviderModels)
-  
+
+  const providers = useConfigStore((state) => state.providers)
+  const activeProviderId = useConfigStore((state) => state.activeProviderId)
+  const model = useConfigStore((state) => state.model)
+  const backend = useConfigStore((state) => state.backend)
+  const llmStatus = useConfigStore((state) => state.llmStatus)
+  const activating = useConfigStore((state) => state.activating)
+  const activateProvider = useConfigStore((state) => state.activateProvider)
+  const refreshModel = useConfigStore((state) => state.refreshModel)
+  const refreshProviderModels = useConfigStore((state) => state.refreshProviderModels)
+
   // Close dropdown when clicking outside
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
@@ -55,10 +55,10 @@ export function ProviderSelector() {
   // Auto-expand all providers when menu opens and load their models (once per session)
   useEffect(() => {
     if (isOpen) {
-      const allProviderIds = providers.map(p => p.id)
+      const allProviderIds = providers.map((p) => p.id)
       setExpandedProviderIds(allProviderIds)
       // Load models for all providers (only once per provider per session)
-      allProviderIds.forEach(providerId => {
+      allProviderIds.forEach((providerId) => {
         if (!loadedProvidersRef.current.has(providerId)) {
           loadedProvidersRef.current.add(providerId)
           loadProviderModels(providerId)
@@ -67,15 +67,13 @@ export function ProviderSelector() {
     }
   }, [isOpen, providers])
 
-  const activeProvider = providers.find(p => p.id === activeProviderId)
+  const activeProvider = providers.find((p) => p.id === activeProviderId)
   void activeProvider
   const isLlmOffline = llmStatus === 'disconnected'
-  
+
   // Short model name for display
-  const shortModelName = model
-    ? model.split('/').pop()?.replace(/-/g, ' ') ?? model
-    : 'detecting...'
-  
+  const shortModelName = model ? (model.split('/').pop()?.replace(/-/g, ' ') ?? model) : 'detecting...'
+
   const backendName = getBackendDisplayName(backend)
   void isLlmOffline
   void backendName
@@ -93,7 +91,7 @@ export function ProviderSelector() {
 
   const toggleProviderExpansion = (provider: Provider) => {
     if (expandedProviderIds.includes(provider.id)) {
-      setExpandedProviderIds(expandedProviderIds.filter(id => id !== provider.id))
+      setExpandedProviderIds(expandedProviderIds.filter((id) => id !== provider.id))
     } else {
       setExpandedProviderIds([...expandedProviderIds, provider.id])
       loadProviderModels(provider.id)
@@ -105,7 +103,7 @@ export function ProviderSelector() {
       toggleProviderExpansion(provider)
       return
     }
-    
+
     // Switch to different provider
     if (currentSession) {
       // Session-scoped: persist provider choice to session (no model specified)
@@ -134,11 +132,11 @@ export function ProviderSelector() {
     await refreshProviderModels(providerId)
     await loadProviderModels(providerId)
   }
-  
+
   const handleEditModel = (providerId: string, model: ModelWithConfig) => {
     setEditingModel({ providerId, model })
   }
-  
+
   const handleCloseEditModal = () => {
     setEditingModel(null)
   }
@@ -175,7 +173,7 @@ export function ProviderSelector() {
       setLoadingModels(null)
     }
   }
-  
+
   // If no providers configured, show simple model display
   if (providers.length === 0) {
     return (
@@ -186,21 +184,15 @@ export function ProviderSelector() {
         title={isLlmOffline ? 'LLM server is offline. Click to retry.' : (model ?? 'Click to refresh model')}
       >
         {isLlmOffline ? (
-          <span className="text-sm text-accent-error animate-pulse">
-            LLM offline
-          </span>
+          <span className="text-sm text-accent-error animate-pulse">LLM offline</span>
         ) : (
-          <span className="text-sm text-accent-primary">
-            {shortModelName}
-          </span>
+          <span className="text-sm text-accent-primary">{shortModelName}</span>
         )}
-        <span className="text-text-muted opacity-0 group-hover:opacity-100 transition-opacity">
-          ↻
-        </span>
+        <span className="text-text-muted opacity-0 group-hover:opacity-100 transition-opacity">↻</span>
       </button>
     )
   }
-  
+
   return (
     <div className="relative" ref={dropdownRef}>
       <button
@@ -210,33 +202,33 @@ export function ProviderSelector() {
         title="Click to switch provider or model"
       >
         {isLlmOffline ? (
-          <span className="text-sm text-accent-error animate-pulse">
-            offline
-          </span>
+          <span className="text-sm text-accent-error animate-pulse">offline</span>
         ) : (
-          <span className="text-sm text-accent-primary">
-            {shortModelName}
-          </span>
+          <span className="text-sm text-accent-primary">{shortModelName}</span>
         )}
         <ChevronDownIcon className={`w-3 h-3 text-text-muted transition-transform`} rotate={isOpen ? 180 : 0} />
       </button>
-      
+
       {/* Unified Provider + Model Dropdown */}
       {isOpen && (
         <div className="absolute bottom-full right-0 mb-1 w-72 bg-bg-secondary border border-border rounded-lg shadow-lg z-50 overflow-hidden max-h-[80vh] overflow-y-auto">
           <div className="py-1">
-            {providers.map(provider => (
+            {providers.map((provider) => (
               <div key={provider.id}>
-                <div className={`px-3 py-2 flex items-center justify-between ${
-                  provider.id === activeProviderId ? 'bg-bg-tertiary' : 'hover:bg-bg-tertiary'
-                } ${activating ? 'opacity-50 cursor-wait' : 'cursor-pointer'}`}>
-                  <div 
+                <div
+                  className={`px-3 py-2 flex items-center justify-between ${
+                    provider.id === activeProviderId ? 'bg-bg-tertiary' : 'hover:bg-bg-tertiary'
+                  } ${activating ? 'opacity-50 cursor-wait' : 'cursor-pointer'}`}
+                >
+                  <div
                     onClick={() => !activating && handleProviderClick(provider)}
                     className="flex flex-col min-w-0 flex-1 cursor-pointer"
                   >
-                    <span className={`text-sm font-medium truncate ${
-                      provider.id === activeProviderId ? 'text-accent-primary' : 'text-text-primary'
-                    }`}>
+                    <span
+                      className={`text-sm font-medium truncate ${
+                        provider.id === activeProviderId ? 'text-accent-primary' : 'text-text-primary'
+                      }`}
+                    >
                       {provider.name}
                     </span>
                     <span className="text-xs text-text-muted truncate">
@@ -260,9 +252,11 @@ export function ProviderSelector() {
                       className="p-0.5 hover:bg-bg-tertiary rounded transition-colors"
                       title="Refresh models"
                     >
-                      <ReloadIcon className={`w-4 h-4 ${loadingModels === provider.id ? 'animate-spin' : ''} ${
-                        provider.id === activeProviderId ? 'text-accent-primary' : 'text-text-muted'
-                      }`} />
+                      <ReloadIcon
+                        className={`w-4 h-4 ${loadingModels === provider.id ? 'animate-spin' : ''} ${
+                          provider.id === activeProviderId ? 'text-accent-primary' : 'text-text-muted'
+                        }`}
+                      />
                     </button>
                     <button
                       type="button"
@@ -273,22 +267,22 @@ export function ProviderSelector() {
                       className="p-0.5 hover:bg-bg-tertiary rounded transition-colors"
                       title="Show models"
                     >
-                      <ChevronDownIcon className={`w-4 h-4 transition-transform ${expandedProviderIds.includes(provider.id) ? 'rotate-180' : ''} ${
-                        provider.id === activeProviderId ? 'text-accent-primary' : 'text-text-muted'
-                      }`} />
+                      <ChevronDownIcon
+                        className={`w-4 h-4 transition-transform ${expandedProviderIds.includes(provider.id) ? 'rotate-180' : ''} ${
+                          provider.id === activeProviderId ? 'text-accent-primary' : 'text-text-muted'
+                        }`}
+                      />
                     </button>
                   </div>
                 </div>
-                
+
                 {/* Model submenu - shown for expanded provider */}
                 {expandedProviderIds.includes(provider.id) && (
                   <div className="bg-bg-primary border-t border-border max-h-40 overflow-y-auto">
                     {loadingModels === provider.id ? (
-                      <div className="px-4 py-2 text-xs text-text-muted">
-                        Loading models...
-                      </div>
+                      <div className="px-4 py-2 text-xs text-text-muted">Loading models...</div>
                     ) : provider.models?.length ? (
-                      provider.models.map(modelConfig => (
+                      provider.models.map((modelConfig) => (
                         <button
                           key={modelConfig.id}
                           type="button"
@@ -296,9 +290,7 @@ export function ProviderSelector() {
                           disabled={loadingModels === 'activating'}
                           className={`w-full px-4 py-1.5 text-left hover:bg-bg-tertiary transition-colors text-sm flex items-center justify-between group ${
                             loadingModels === 'activating' ? 'opacity-50 cursor-wait' : ''
-                          } ${
-                            model === modelConfig.id ? 'text-accent-primary' : 'text-text-secondary'
-                          }`}
+                          } ${model === modelConfig.id ? 'text-accent-primary' : 'text-text-secondary'}`}
                         >
                           <span className="truncate flex-1">
                             {modelConfig.id.split('/').pop()?.replace(/-/g, ' ') ?? modelConfig.id}
@@ -327,9 +319,7 @@ export function ProviderSelector() {
                         </button>
                       ))
                     ) : (
-                      <div className="px-4 py-2 text-xs text-text-muted">
-                        No models available
-                      </div>
+                      <div className="px-4 py-2 text-xs text-text-muted">No models available</div>
                     )}
                   </div>
                 )}
@@ -337,10 +327,7 @@ export function ProviderSelector() {
             ))}
           </div>
           <div className="border-t border-border px-3 py-2">
-            <button
-              onClick={() => navigate('/onboarding')}
-              className="text-xs text-accent-primary hover:underline"
-            >
+            <button onClick={() => navigate('/onboarding')} className="text-xs text-accent-primary hover:underline">
               Manage providers
             </button>
           </div>

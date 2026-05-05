@@ -36,13 +36,15 @@ vi.mock('../../stores/project', () => ({
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     },
-    projects: [{
-      id: 'project-1',
-      name: 'Test Project',
-      workdir: '/tmp/test',
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-    }],
+    projects: [
+      {
+        id: 'project-1',
+        name: 'Test Project',
+        workdir: '/tmp/test',
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      },
+    ],
     loading: false,
   }),
 }))

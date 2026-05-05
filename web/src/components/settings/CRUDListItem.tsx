@@ -1,11 +1,7 @@
 import type { ReactNode } from 'react'
 import { EditButton } from '../shared/IconButton'
 import { EyeIcon } from '../shared/icons'
-import {
-  ConfirmButton,
-  DeleteIcon,
-  DuplicateIcon,
-} from './CRUDModal'
+import { ConfirmButton, DeleteIcon, DuplicateIcon } from './CRUDModal'
 
 export interface CRUDListItemProps {
   isBuiltIn: boolean
@@ -28,9 +24,7 @@ export function CRUDListItem({
 }: CRUDListItemProps) {
   return (
     <div className="flex items-center justify-between p-3 rounded border border-border bg-bg-tertiary">
-      <div className="min-w-0 flex-1 mr-3">
-        {children}
-      </div>
+      <div className="min-w-0 flex-1 mr-3">{children}</div>
 
       <div className="flex items-center gap-1.5 flex-shrink-0">
         {isBuiltIn && onView && (
@@ -44,13 +38,17 @@ export function CRUDListItem({
         )}
         <DuplicateIcon onClick={onDuplicate} />
         {!isBuiltIn && onEdit && <EditButton onClick={onEdit} />}
-        {!isBuiltIn && (
-          isConfirmingDelete ? (
-            <ConfirmButton onConfirm={() => { onDelete?.() }} onCancel={() => {}} />
+        {!isBuiltIn &&
+          (isConfirmingDelete ? (
+            <ConfirmButton
+              onConfirm={() => {
+                onDelete?.()
+              }}
+              onCancel={() => {}}
+            />
           ) : (
             <DeleteIcon onClick={() => onDelete?.()} />
-          )
-        )}
+          ))}
       </div>
     </div>
   )
@@ -92,9 +90,7 @@ export function CRUDListItemSimple({
         <span className="text-text-primary text-sm font-medium">{name}</span>
         <span className="text-text-muted text-xs font-mono">{id}</span>
       </div>
-      {description && (
-        <p className="text-text-muted text-xs truncate">{description}</p>
-      )}
+      {description && <p className="text-text-muted text-xs truncate">{description}</p>}
     </CRUDListItem>
   )
 }

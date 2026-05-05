@@ -22,10 +22,10 @@ function formatTokens(n: number): string {
 }
 
 export const TaskCompletedCard = memo(function TaskCompletedCard({ data }: TaskCompletedCardProps) {
-  const workflowDefaults = useWorkflowsStore(state => state.defaults)
-  const workflowUserItems = useWorkflowsStore(state => state.userItems)
+  const workflowDefaults = useWorkflowsStore((state) => state.defaults)
+  const workflowUserItems = useWorkflowsStore((state) => state.userItems)
   const workflows = [...workflowDefaults, ...workflowUserItems]
-  const color = workflows.find(w => w.id === data.workflowId)?.color ?? data.workflowColor ?? '#8b949e'
+  const color = workflows.find((w) => w.id === data.workflowId)?.color ?? data.workflowColor ?? '#8b949e'
 
   return (
     <div
@@ -35,7 +35,9 @@ export const TaskCompletedCard = memo(function TaskCompletedCard({ data }: TaskC
       {/* Header */}
       <div className="flex items-center gap-2 mb-2">
         <TaskCheckIcon color={color} />
-        <span className="text-sm font-medium" style={{ color }}>{data.workflowName ?? 'Task Completed'}</span>
+        <span className="text-sm font-medium" style={{ color }}>
+          {data.workflowName ?? 'Task Completed'}
+        </span>
       </div>
 
       {/* Stats grid */}

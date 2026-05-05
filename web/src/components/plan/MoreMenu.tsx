@@ -25,15 +25,14 @@ function isConditionMet(workflow: WorkflowInfo, criteria: Criterion[]): boolean 
   if (!cond || cond.type === 'always') return true
   switch (cond.type) {
     case 'has_pending_criteria':
-      return criteria.some(c => c.status.type !== 'passed')
+      return criteria.some((c) => c.status.type !== 'passed')
     case 'all_criteria_passed':
-      return criteria.length === 0 || criteria.every(c => c.status.type === 'passed')
+      return criteria.length === 0 || criteria.every((c) => c.status.type === 'passed')
     case 'all_criteria_completed_or_passed':
-      return criteria.every(c => c.status.type === 'completed' || c.status.type === 'passed')
+      return criteria.every((c) => c.status.type === 'completed' || c.status.type === 'passed')
     case 'any_criteria_blocked':
-      return criteria.some(c =>
-        c.status.type === 'failed' &&
-        c.attempts.filter(a => a.status === 'failed').length >= 4
+      return criteria.some(
+        (c) => c.status.type === 'failed' && c.attempts.filter((a) => a.status === 'failed').length >= 4,
       )
     case 'step_result':
       return null
@@ -61,13 +60,13 @@ export function MoreMenu({
   const searchRef = useRef<HTMLInputElement>(null)
   const containerRef = useRef<HTMLDivElement>(null)
 
-  const commandDefaults = useCommandsStore(state => state.defaults)
-  const commandUserItems = useCommandsStore(state => state.userItems)
-  const fetchCommands = useCommandsStore(state => state.fetchCommands)
+  const commandDefaults = useCommandsStore((state) => state.defaults)
+  const commandUserItems = useCommandsStore((state) => state.userItems)
+  const fetchCommands = useCommandsStore((state) => state.fetchCommands)
 
-  const workflowDefaults = useWorkflowsStore(state => state.defaults)
-  const workflowUserItems = useWorkflowsStore(state => state.userItems)
-  const fetchWorkflows = useWorkflowsStore(state => state.fetchWorkflows)
+  const workflowDefaults = useWorkflowsStore((state) => state.defaults)
+  const workflowUserItems = useWorkflowsStore((state) => state.userItems)
+  const fetchWorkflows = useWorkflowsStore((state) => state.fetchWorkflows)
 
   const commands = [...commandDefaults, ...commandUserItems]
   const workflows = [...workflowDefaults, ...workflowUserItems]
@@ -102,9 +101,9 @@ export function MoreMenu({
     switch (e.key) {
       case 'ArrowDown':
         e.preventDefault()
-        setSelectedIndex(i => {
+        setSelectedIndex((i) => {
           const items = tab === 'commands' ? commands : workflows
-          const filtered = items.filter(item => {
+          const filtered = items.filter((item) => {
             const q = search.toLowerCase()
             if (tab === 'commands') return !q || item.name.toLowerCase().includes(q)
             return !q || item.name.toLowerCase().includes(q)
@@ -114,7 +113,7 @@ export function MoreMenu({
         break
       case 'ArrowUp':
         e.preventDefault()
-        setSelectedIndex(i => Math.max(i - 1, 0))
+        setSelectedIndex((i) => Math.max(i - 1, 0))
         break
       case 'Enter':
         e.preventDefault()
@@ -131,8 +130,8 @@ export function MoreMenu({
     setSelectedIndex(0)
   }
 
-  const filteredCommands = commands.filter(c => !search || c.name.toLowerCase().includes(search.toLowerCase()))
-  const filteredWorkflows = workflows.filter(w => !search || w.name.toLowerCase().includes(search.toLowerCase()))
+  const filteredCommands = commands.filter((c) => !search || c.name.toLowerCase().includes(search.toLowerCase()))
+  const filteredWorkflows = workflows.filter((w) => !search || w.name.toLowerCase().includes(search.toLowerCase()))
 
   const handleSelectCommand = async (commandId: string) => {
     const full = await useCommandsStore.getState().fetchCommand(commandId)
@@ -175,7 +174,11 @@ export function MoreMenu({
           <div className="flex border-b border-border">
             <button
               type="button"
-              onClick={() => { setTab('commands'); setSearch(''); setSelectedIndex(0) }}
+              onClick={() => {
+                setTab('commands')
+                setSearch('')
+                setSelectedIndex(0)
+              }}
               className={`flex-1 px-4 py-2 text-sm font-medium transition-colors ${
                 tab === 'commands'
                   ? 'text-accent-primary border-b-2 border-accent-primary'
@@ -186,7 +189,11 @@ export function MoreMenu({
             </button>
             <button
               type="button"
-              onClick={() => { setTab('workflows'); setSearch(''); setSelectedIndex(0) }}
+              onClick={() => {
+                setTab('workflows')
+                setSearch('')
+                setSelectedIndex(0)
+              }}
               className={`flex-1 px-4 py-2 text-sm font-medium transition-colors ${
                 tab === 'workflows'
                   ? 'text-accent-primary border-b-2 border-accent-primary'
@@ -213,7 +220,7 @@ export function MoreMenu({
               <input
                 ref={searchRef}
                 value={search}
-                onChange={e => handleSearchChange(e.target.value)}
+                onChange={(e) => handleSearchChange(e.target.value)}
                 onKeyDown={handleKeyDown}
                 placeholder={tab === 'commands' ? 'Search commands...' : 'Search workflows...'}
                 className="w-full px-2 py-1 bg-bg-tertiary border border-border rounded text-sm focus:outline-none focus:ring-1 focus:ring-accent-primary"
@@ -235,16 +242,12 @@ export function MoreMenu({
                       index === selectedIndex ? 'bg-accent-primary/20' : 'hover:bg-bg-tertiary'
                     }`}
                   >
-                    <button
-                      type="button"
-                      onClick={() => handleSelectCommand(command.id)}
-                      className="flex-1 text-left"
-                    >
+                    <button type="button" onClick={() => handleSelectCommand(command.id)} className="flex-1 text-left">
                       <div className="text-sm text-text-primary font-medium">{command.name}</div>
                     </button>
                     <EditButton
                       className="opacity-0 group-hover:opacity-100"
-                      onClick={e => handleEditCommand(command.id, e)}
+                      onClick={(e) => handleEditCommand(command.id, e)}
                     />
                   </div>
                 ))
@@ -282,7 +285,7 @@ export function MoreMenu({
                       </button>
                       <EditButton
                         className="opacity-0 group-hover:opacity-100"
-                        onClick={e => handleEditWorkflow(workflow.id, e)}
+                        onClick={(e) => handleEditWorkflow(workflow.id, e)}
                       />
                     </div>
                   )
@@ -292,7 +295,10 @@ export function MoreMenu({
               <div className="p-4 flex flex-col items-center gap-3">
                 <button
                   type="button"
-                  onClick={() => { onAttach(); setIsOpen(false) }}
+                  onClick={() => {
+                    onAttach()
+                    setIsOpen(false)
+                  }}
                   className="flex items-center gap-2 px-4 py-2 rounded bg-bg-tertiary hover:bg-accent-primary/20 text-text-primary transition-colors"
                 >
                   <AttachIcon className="w-4 h-4" />
@@ -307,7 +313,10 @@ export function MoreMenu({
             <div className="border-t border-border p-1">
               <button
                 type="button"
-                onClick={() => { setIsOpen(false); tab === 'commands' ? onOpenCommandsManager() : onOpenWorkflowsManager() }}
+                onClick={() => {
+                  setIsOpen(false)
+                  tab === 'commands' ? onOpenCommandsManager() : onOpenWorkflowsManager()
+                }}
                 className="w-full text-left px-3 py-1.5 rounded text-sm text-text-muted hover:text-text-primary hover:bg-bg-tertiary transition-colors"
               >
                 {tab === 'commands' ? 'Manage Commands...' : 'Manage Workflows...'}
@@ -318,7 +327,11 @@ export function MoreMenu({
       )}
 
       <CommandsModal isOpen={!!editCommandId} onClose={() => setEditCommandId(null)} initialEditId={editCommandId} />
-      <WorkflowsModal isOpen={!!editWorkflowId} onClose={() => setEditWorkflowId(null)} initialEditId={editWorkflowId} />
+      <WorkflowsModal
+        isOpen={!!editWorkflowId}
+        onClose={() => setEditWorkflowId(null)}
+        initialEditId={editWorkflowId}
+      />
     </div>
   )
 }

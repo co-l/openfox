@@ -10,10 +10,10 @@ interface WorkflowStartedData {
 }
 
 export const WorkflowStartedCard = memo(function WorkflowStartedCard({ data }: { data: WorkflowStartedData }) {
-  const workflowDefaults = useWorkflowsStore(state => state.defaults)
-  const workflowUserItems = useWorkflowsStore(state => state.userItems)
+  const workflowDefaults = useWorkflowsStore((state) => state.defaults)
+  const workflowUserItems = useWorkflowsStore((state) => state.userItems)
   const workflows = [...workflowDefaults, ...workflowUserItems]
-  const color = workflows.find(w => w.id === data.workflowId)?.color ?? data.workflowColor ?? '#6b7280'
+  const color = workflows.find((w) => w.id === data.workflowId)?.color ?? data.workflowColor ?? '#6b7280'
 
   return (
     <div
@@ -21,7 +21,9 @@ export const WorkflowStartedCard = memo(function WorkflowStartedCard({ data }: {
       style={{ borderColor: hexToRgba(color, 0.3), backgroundColor: hexToRgba(color, 0.08) }}
     >
       <PlayIcon className="w-3 h-3 shrink-0" color={color} />
-      <span className="text-sm font-medium" style={{ color }}>{data.workflowName}</span>
+      <span className="text-sm font-medium" style={{ color }}>
+        {data.workflowName}
+      </span>
       <span className="text-text-muted text-sm">started</span>
     </div>
   )

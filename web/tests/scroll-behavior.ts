@@ -38,7 +38,7 @@ async function getState(page: Page): Promise<ScrollState> {
       scrollHeight: scroller.scrollHeight,
       clientHeight: scroller.clientHeight,
       dist: Math.round(scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight),
-      atBottom: scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight < 75
+      atBottom: scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight < 75,
     }
   })
 }
@@ -106,7 +106,9 @@ async function runTests() {
     state = await getState(page)
     assert(state.dist < THRESHOLD, `dist=${state.dist} should be < ${THRESHOLD}`, state)
     passed++
-  } catch { failed++ }
+  } catch {
+    failed++
+  }
 
   // Test 2: Scroll up stays
   console.log('\nTest 2: Scroll up stays scrolled up')
@@ -117,7 +119,9 @@ async function runTests() {
     assert(state.dist > THRESHOLD, `dist=${state.dist} should be > ${THRESHOLD} (stayed scrolled up)`, state)
     assert(!state.atBottom, 'atBottom should be false')
     passed++
-  } catch { failed++ }
+  } catch {
+    failed++
+  }
 
   // Test 3: Scroll back to bottom re-pins
   console.log('\nTest 3: Scroll back to bottom re-pins')
@@ -127,7 +131,9 @@ async function runTests() {
     state = await getState(page)
     assert(state.dist < THRESHOLD, `dist=${state.dist} should be < ${THRESHOLD}`, state)
     passed++
-  } catch { failed++ }
+  } catch {
+    failed++
+  }
 
   // Test 4: Adding items while at bottom auto-scrolls
   console.log('\nTest 4: Add items while at bottom → auto-scrolls')
@@ -143,7 +149,9 @@ async function runTests() {
     state = await getState(page)
     assert(state.dist < THRESHOLD, `dist=${state.dist} should be < ${THRESHOLD} after adding items`, state)
     passed++
-  } catch { failed++ }
+  } catch {
+    failed++
+  }
 
   // Test 5: Adding items while scrolled up does NOT auto-scroll
   console.log('\nTest 5: Add items while scrolled up → no auto-scroll')
@@ -161,7 +169,9 @@ async function runTests() {
     assert(state.dist > beforeState.dist, `dist should grow (was ${beforeState.dist}, now ${state.dist})`, state)
     assert(state.dist > THRESHOLD, `dist=${state.dist} should be > ${THRESHOLD} (stayed scrolled up)`, state)
     passed++
-  } catch { failed++ }
+  } catch {
+    failed++
+  }
 
   // Reset to bottom for streaming tests
   await scrollToBottom(page)
@@ -194,10 +204,17 @@ async function runTests() {
     state = await getState(page)
     await stopStreaming(page)
     // Should still be scrolled up (dist should be large)
-    assert(state.dist > THRESHOLD, `dist=${state.dist} should be > ${THRESHOLD} (stayed scrolled up during streaming)`, state)
+    assert(
+      state.dist > THRESHOLD,
+      `dist=${state.dist} should be > ${THRESHOLD} (stayed scrolled up during streaming)`,
+      state,
+    )
     // scrollTop should be approximately the same (not yanked)
     const drift = Math.abs(state.scrollTop - beforeState.scrollTop)
-    assert(drift < 50, `scrollTop drift=${drift} should be < 50 (not yanked)`, { before: beforeState.scrollTop, after: state.scrollTop })
+    assert(drift < 50, `scrollTop drift=${drift} should be < 50 (not yanked)`, {
+      before: beforeState.scrollTop,
+      after: state.scrollTop,
+    })
     passed++
   } catch {
     await stopStreaming(page)
@@ -216,7 +233,9 @@ async function runTests() {
     state = await getState(page)
     assert(state.dist < THRESHOLD, `dist=${state.dist} should be < ${THRESHOLD} after sub-agent`, state)
     passed++
-  } catch { failed++ }
+  } catch {
+    failed++
+  }
 
   console.log(`\n${'='.repeat(40)}`)
   console.log(`Results: ${passed} passed, ${failed} failed out of ${passed + failed}`)
@@ -226,7 +245,7 @@ async function runTests() {
   process.exit(failed > 0 ? 1 : 0)
 }
 
-runTests().catch(err => {
+runTests().catch((err) => {
   console.error('Fatal error:', err)
   process.exit(1)
 })

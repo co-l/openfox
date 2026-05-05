@@ -8,8 +8,8 @@ interface DevServerConfigModalProps {
 }
 
 export function DevServerConfigModal({ isOpen, onClose }: DevServerConfigModalProps) {
-  const config = useDevServerStore(s => s.config)
-  const saveConfig = useDevServerStore(s => s.saveConfig)
+  const config = useDevServerStore((s) => s.config)
+  const saveConfig = useDevServerStore((s) => s.saveConfig)
 
   const [command, setCommand] = useState('')
   const [url, setUrl] = useState('')
@@ -43,7 +43,7 @@ export function DevServerConfigModal({ isOpen, onClose }: DevServerConfigModalPr
             className="input w-full"
             type="text"
             value={command}
-            onChange={e => setCommand(e.target.value)}
+            onChange={(e) => setCommand(e.target.value)}
             placeholder="npm run dev"
           />
         </div>
@@ -54,7 +54,7 @@ export function DevServerConfigModal({ isOpen, onClose }: DevServerConfigModalPr
             className="input w-full"
             type="text"
             value={url}
-            onChange={e => setUrl(e.target.value)}
+            onChange={(e) => setUrl(e.target.value)}
             placeholder="http://localhost:3000"
           />
         </div>
@@ -64,7 +64,7 @@ export function DevServerConfigModal({ isOpen, onClose }: DevServerConfigModalPr
             type="checkbox"
             id="hotReload"
             checked={hotReload}
-            onChange={e => setHotReload(e.target.checked)}
+            onChange={(e) => setHotReload(e.target.checked)}
             className="rounded border-border bg-bg-tertiary"
           />
           <label htmlFor="hotReload" className="text-xs text-text-secondary">
@@ -77,7 +77,7 @@ export function DevServerConfigModal({ isOpen, onClose }: DevServerConfigModalPr
             type="checkbox"
             id="disableInspect"
             checked={disableInspect}
-            onChange={e => setDisableInspect(e.target.checked)}
+            onChange={(e) => setDisableInspect(e.target.checked)}
             className="rounded border-border bg-bg-tertiary"
           />
           <label htmlFor="disableInspect" className="text-xs text-text-secondary">
@@ -89,11 +89,7 @@ export function DevServerConfigModal({ isOpen, onClose }: DevServerConfigModalPr
           <button className="btn btn-secondary" onClick={onClose}>
             Cancel
           </button>
-          <button
-            className="btn btn-primary"
-            onClick={handleSave}
-            disabled={saving || !command.trim() || !url.trim()}
-          >
+          <button className="btn btn-primary" onClick={handleSave} disabled={saving || !command.trim() || !url.trim()}>
             {saving ? 'Saving...' : 'Save'}
           </button>
         </div>

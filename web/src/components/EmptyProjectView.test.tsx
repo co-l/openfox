@@ -150,7 +150,7 @@ describe('EmptyProjectView', () => {
 
   it('does NOT redirect when currentSession is set but pendingSessionCreate is false', () => {
     vi.mocked(useLocation).mockReturnValue(['/p/project-1/', mockNavigate])
-    
+
     // Set pendingSessionCreate to false explicitly
     vi.mocked(useSessionStore).mockReturnValue({
       ...vi.mocked(useSessionStore()),

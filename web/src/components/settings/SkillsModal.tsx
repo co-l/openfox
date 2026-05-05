@@ -1,11 +1,8 @@
 import { useEffect } from 'react'
 import { Button } from '../shared/Button'
 import { useSkillsStore, type SkillFull } from '../../stores/skills'
-import {
-  useConfirmDialog,
-  FormField,
-  ErrorBanner,
-} from './CRUDModal'
+import { useConfirmDialog, FormField, ErrorBanner } from './CRUDModal'
+import { ItemsHeader } from '../shared/ItemsHeader'
 import { CRUDListHeader } from './CRUDListHeader'
 import { CRUDListItemSimple } from './CRUDListItem'
 import { CRUDListView } from './CRUDListView'
@@ -56,28 +53,18 @@ function SkillListItem({
 }
 
 export function SkillsContent({ isOpen }: { isOpen: boolean }) {
-  const defaults = useSkillsStore(state => state.defaults)
-  const userItems = useSkillsStore(state => state.userItems)
-  const loading = useSkillsStore(state => state.loading)
-  const fetchSkills = useSkillsStore(state => state.fetchSkills)
-  const fetchSkill = useSkillsStore(state => state.fetchSkill)
-  const fetchDefaultContent = useSkillsStore(state => state.fetchDefaultContent)
-  const createSkill = useSkillsStore(state => state.createSkill)
-  const updateSkill = useSkillsStore(state => state.updateSkill)
-  const deleteSkillAction = useSkillsStore(state => state.deleteSkill)
+  const defaults = useSkillsStore((state) => state.defaults)
+  const userItems = useSkillsStore((state) => state.userItems)
+  const loading = useSkillsStore((state) => state.loading)
+  const fetchSkills = useSkillsStore((state) => state.fetchSkills)
+  const fetchSkill = useSkillsStore((state) => state.fetchSkill)
+  const fetchDefaultContent = useSkillsStore((state) => state.fetchDefaultContent)
+  const createSkill = useSkillsStore((state) => state.createSkill)
+  const updateSkill = useSkillsStore((state) => state.updateSkill)
+  const deleteSkillAction = useSkillsStore((state) => state.deleteSkill)
 
-  const {
-    view,
-    editingId,
-    formError,
-    saving,
-    formData,
-    setView,
-    setEditingId,
-    setFormError,
-    setFormData,
-    setSaving,
-  } = useCRUDForm<SkillFormData>()
+  const { view, editingId, formError, saving, formData, setView, setEditingId, setFormError, setFormData, setSaving } =
+    useCRUDForm<SkillFormData>()
 
   const { clearConfirm } = useConfirmDialog()
 
@@ -102,7 +89,7 @@ export function SkillsContent({ isOpen }: { isOpen: boolean }) {
   }
 
   const handleView = async (skillId: string) => {
-    const isDefault = defaults.some(d => d.id === skillId)
+    const isDefault = defaults.some((d) => d.id === skillId)
     if (isDefault) {
       const content = await fetchDefaultContent(skillId)
       if (!content) return
@@ -121,7 +108,7 @@ export function SkillsContent({ isOpen }: { isOpen: boolean }) {
   }
 
   const handleDuplicate = async (skillId: string) => {
-    const isDefault = defaults.some(d => d.id === skillId)
+    const isDefault = defaults.some((d) => d.id === skillId)
     const content = isDefault ? await fetchDefaultContent(skillId) : await fetchSkill(skillId)
     if (!content) return
     const newId = `${skillId}-copy-${Date.now()}`
@@ -170,9 +157,7 @@ export function SkillsContent({ isOpen }: { isOpen: boolean }) {
       prompt: formData.prompt,
     }
 
-    const result = editingId
-      ? await updateSkill(editingId, skill)
-      : await createSkill(skill)
+    const result = editingId ? await updateSkill(editingId, skill) : await createSkill(skill)
 
     setSaving(false)
 
@@ -185,9 +170,15 @@ export function SkillsContent({ isOpen }: { isOpen: boolean }) {
   }
 
   const handleNameChange = (name: string) => {
-    setFormData(prev => ({ ...prev, name }))
+    setFormData((prev) => ({ ...prev, name }))
     if (!editingId) {
-      setFormData(prev => ({ ...prev, id: name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') }))
+      setFormData((prev) => ({
+        ...prev,
+        id: name
+          .toLowerCase()
+          .replace(/[^a-z0-9]+/g, '-')
+          .replace(/^-|-$/g, ''),
+      }))
     }
   }
 
@@ -198,9 +189,11 @@ export function SkillsContent({ isOpen }: { isOpen: boolean }) {
       <div className="flex flex-col h-full">
         <div className="flex justify-between items-center mb-3">
           <h2 className="text-lg font-semibold text-text-primary">
-            {isReadOnly ? formData.name : (editingId ? 'Edit Skill' : 'New Skill')}
+            {isReadOnly ? formData.name : editingId ? 'Edit Skill' : 'New Skill'}
           </h2>
-          <button onClick={() => setView('list')} className="text-text-muted hover:text-text-primary">Cancel</button>
+          <button onClick={() => setView('list')} className="text-text-muted hover:text-text-primary">
+            Cancel
+          </button>
         </div>
 
         {formError && <ErrorBanner message={formError} />}
@@ -222,14 +215,14 @@ export function SkillsContent({ isOpen }: { isOpen: boolean }) {
             <FormField
               label="Description"
               value={formData.description as string}
-              onChange={description => setFormData(prev => ({ ...prev, description }))}
+              onChange={(description) => setFormData((prev) => ({ ...prev, description }))}
               placeholder="What this skill does..."
               readOnly={isReadOnly}
             />
             <FormField
               label="Version"
               value={formData.version as string}
-              onChange={version => setFormData(prev => ({ ...prev, version }))}
+              onChange={(version) => setFormData((prev) => ({ ...prev, version }))}
               placeholder="1.0.0"
               readOnly={isReadOnly}
             />
@@ -240,7 +233,7 @@ export function SkillsContent({ isOpen }: { isOpen: boolean }) {
           <label className="block text-xs text-text-secondary mb-1">Prompt</label>
           <textarea
             value={formData.prompt}
-            onChange={e => setFormData(prev => ({ ...prev, prompt: e.target.value }))}
+            onChange={(e) => setFormData((prev) => ({ ...prev, prompt: e.target.value }))}
             readOnly={isReadOnly}
             placeholder="The system prompt for this skill..."
             className="h-80 w-full px-3 py-2 bg-bg-tertiary border border-border rounded text-sm font-mono resize-y focus:outline-none focus:ring-1 focus:ring-accent-primary"
@@ -250,12 +243,14 @@ export function SkillsContent({ isOpen }: { isOpen: boolean }) {
         <KvCacheWarning />
 
         <div className="flex justify-end gap-2 pt-3 border-t border-border flex-shrink-0">
-          <Button variant="secondary" onClick={() => setView('list')}>Cancel</Button>
+          <Button variant="secondary" onClick={() => setView('list')}>
+            Cancel
+          </Button>
           {isReadOnly ? (
             <Button
               variant="primary"
               onClick={() => {
-                setFormData(prev => ({
+                setFormData((prev) => ({
                   ...prev,
                   name: prev.name + ' (copy)',
                   id: `${editingId}-copy-${Date.now()}`,
@@ -267,7 +262,11 @@ export function SkillsContent({ isOpen }: { isOpen: boolean }) {
               Duplicate & Customize
             </Button>
           ) : (
-            <Button variant="primary" onClick={handleSave} disabled={saving || !formData.name || !formData.id || !formData.prompt}>
+            <Button
+              variant="primary"
+              onClick={handleSave}
+              disabled={saving || !formData.name || !formData.id || !formData.prompt}
+            >
               {saving ? 'Saving...' : 'Save'}
             </Button>
           )}
@@ -293,7 +292,7 @@ export function SkillsContent({ isOpen }: { isOpen: boolean }) {
           <div>
             <h3 className="text-xs font-medium text-text-secondary mb-2 uppercase tracking-wide">Built-in</h3>
             <div className="space-y-2">
-              {defaults.map(skill => (
+              {defaults.map((skill) => (
                 <SkillListItem
                   key={skill.id}
                   skill={skill}
@@ -308,11 +307,9 @@ export function SkillsContent({ isOpen }: { isOpen: boolean }) {
         )}
 
         {userItems.length > 0 && (
-          <div>
-            <h3 className="text-xs font-medium text-text-secondary mb-2 uppercase tracking-wide">Custom</h3>
-            <div className="space-y-2">
-              {userItems.map(skill => (
-                <SkillListItem
+          <ItemsHeader>
+            {userItems.map((skill) => (
+              <SkillListItem
                   key={skill.id}
                   skill={skill}
                   isBuiltIn={false}
@@ -322,9 +319,8 @@ export function SkillsContent({ isOpen }: { isOpen: boolean }) {
                   onDuplicate={() => handleDuplicate(skill.id)}
                   onDelete={() => handleDelete(skill.id)}
                 />
-              ))}
-            </div>
-          </div>
+            ))}
+          </ItemsHeader>
         )}
       </CRUDListView>
     </div>

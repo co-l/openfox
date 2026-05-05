@@ -23,7 +23,7 @@ describe('Model Context Update', () => {
     // Set up test provider in config
     const globalConfig = await loadGlobalConfig(testMode)
     const customContextWindow = 200000
-    
+
     const updatedConfig: GlobalConfig = {
       ...globalConfig,
       providers: [
@@ -42,14 +42,14 @@ describe('Model Context Update', () => {
           isActive: true,
           createdAt: new Date().toISOString(),
         },
-        ...(globalConfig.providers?.filter(p => p.id !== testProviderId) ?? []),
+        ...(globalConfig.providers?.filter((p) => p.id !== testProviderId) ?? []),
       ],
       defaultModelSelection: `${testProviderId}/${testModelId}`,
       activeProviderId: testProviderId,
     }
-    
+
     await saveGlobalConfig(testMode, updatedConfig)
-    
+
     // Create server config
     const config: Config = {
       providers: updatedConfig.providers,
@@ -71,7 +71,7 @@ describe('Model Context Update', () => {
       mode: testMode,
       workdir: process.cwd(),
     }
-    
+
     server = await createServerHandle(config)
     const { port } = await server.start(10998)
     serverUrl = `http://127.0.0.1:${port}`
@@ -115,9 +115,15 @@ describe('Model Context Update', () => {
       console.log('API error:', response.status, errorBody)
     }
     expect(response.ok).toBe(true)
-    const responseBody = await response.json() as { 
+    const responseBody = (await response.json()) as {
       success: boolean
-      contextState?: { currentTokens: number; maxTokens: number; compactionCount: number; dangerZone: boolean; canCompact: boolean } | null
+      contextState?: {
+        currentTokens: number
+        maxTokens: number
+        compactionCount: number
+        dangerZone: boolean
+        canCompact: boolean
+      } | null
     }
 
     // Verify API returns contextState for frontend to update session header immediately

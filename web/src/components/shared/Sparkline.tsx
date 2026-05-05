@@ -53,12 +53,15 @@ export function Sparkline({
     const sorted = [...data].sort((a, b) => a.x - b.x)
 
     const points: ChartPoint[] = sorted.map((point) => {
-      const cx = range.maxX === range.minX
-        ? chartWidth / 2
-        : horizontalPadding + ((point.x - range.minX) / (range.maxX - range.minX)) * (chartWidth - horizontalPadding * 2)
-      const cy = range.maxY === range.minY
-        ? height / 2
-        : verticalPadding + ((range.maxY - point.y) / (range.maxY - range.minY)) * (height - verticalPadding * 2)
+      const cx =
+        range.maxX === range.minX
+          ? chartWidth / 2
+          : horizontalPadding +
+            ((point.x - range.minX) / (range.maxX - range.minX)) * (chartWidth - horizontalPadding * 2)
+      const cy =
+        range.maxY === range.minY
+          ? height / 2
+          : verticalPadding + ((range.maxY - point.y) / (range.maxY - range.minY)) * (height - verticalPadding * 2)
 
       return {
         ...point,
@@ -76,9 +79,10 @@ export function Sparkline({
     const yTicks = [range.maxY, (range.maxY + range.minY) / 2, range.minY]
     const gridLines = yTicks.map((tick) => ({
       value: tick,
-      y: range.maxY === range.minY
-        ? height / 2
-        : verticalPadding + ((range.maxY - tick) / (range.maxY - range.minY)) * (height - verticalPadding * 2),
+      y:
+        range.maxY === range.minY
+          ? height / 2
+          : verticalPadding + ((range.maxY - tick) / (range.maxY - range.minY)) * (height - verticalPadding * 2),
     }))
 
     return {
@@ -101,9 +105,7 @@ export function Sparkline({
 
   return (
     <div className="font-mono text-xs">
-      {label && (
-        <div className="text-text-secondary mb-2">{label}</div>
-      )}
+      {label && <div className="text-text-secondary mb-2">{label}</div>}
 
       <div className="flex gap-3">
         {showAxes && (
@@ -187,9 +189,7 @@ export function Sparkline({
         </div>
       )}
 
-      {yLabel && showAxes && (
-        <div className="text-text-muted mt-1 text-center">{yLabel}</div>
-      )}
+      {yLabel && showAxes && <div className="text-text-muted mt-1 text-center">{yLabel}</div>}
     </div>
   )
 }
@@ -214,18 +214,8 @@ export function DualSparkline({
 
   return (
     <div className="space-y-5">
-      <Sparkline
-        data={ppData}
-        width={width}
-        label={prefillLabel}
-        xLabel={xLabel}
-      />
-      <Sparkline
-        data={tgData}
-        width={width}
-        label={generationLabel}
-        xLabel={xLabel}
-      />
+      <Sparkline data={ppData} width={width} label={prefillLabel} xLabel={xLabel} />
+      <Sparkline data={tgData} width={width} label={generationLabel} xLabel={xLabel} />
     </div>
   )
 }

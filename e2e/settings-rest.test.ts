@@ -1,6 +1,6 @@
 /**
  * Settings REST API E2E Tests
- * 
+ *
  * Tests settings get/set operations via REST API (not WebSocket).
  * Following TDD: these tests should FAIL initially before implementation.
  */
@@ -22,7 +22,7 @@ describe('Settings REST API', () => {
   describe('GET /api/settings/:key', () => {
     it('returns null for non-existent setting', async () => {
       const response = await fetch(`${server.url}/api/settings/nonexistent-key`)
-      
+
       expect(response.status).toBe(200)
       const data: any = await response.json()
       expect(data.key).toBe('nonexistent-key')
@@ -88,13 +88,13 @@ describe('Settings REST API', () => {
 
     it('handles complex string values', async () => {
       const complexValue = JSON.stringify({ nested: { key: 'value' }, array: [1, 2, 3] })
-      
+
       const response = await fetch(`${server.url}/api/settings/complex`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ value: complexValue }),
       })
-      
+
       expect(response.status).toBe(200)
       const data: any = await response.json()
       expect(data.value).toBe(complexValue)
@@ -109,7 +109,7 @@ describe('Settings REST API', () => {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ value: 'persisted-value' }),
       })
-      
+
       // Get it back in same "session" (in-memory DB)
       const response = await fetch(`${server.url}/api/settings/persist-test`)
       const payload: any = await response.json()

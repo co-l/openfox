@@ -21,23 +21,24 @@ export const IconButton = forwardRef<HTMLButtonElement, IconButtonProps>(
         </svg>
       </button>
     )
-  }
+  },
 )
 
 IconButton.displayName = 'IconButton'
 
-const EDIT_ICON = 'M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z'
+const EDIT_ICON =
+  'M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z'
 
-export const EditButton = forwardRef<HTMLButtonElement, Omit<IconButtonProps, 'icon'>>(
-  (props, ref) => <IconButton ref={ref} icon={EDIT_ICON} title="Edit" {...props} />
-)
+export const EditButton = forwardRef<HTMLButtonElement, Omit<IconButtonProps, 'icon'>>((props, ref) => (
+  <IconButton ref={ref} icon={EDIT_ICON} title="Edit" {...props} />
+))
 
 EditButton.displayName = 'EditButton'
 
 const CLOSE_ICON = 'M6 18L18 6M6 6l12 12'
 
-export const CloseButton = forwardRef<HTMLButtonElement, Omit<IconButtonProps, 'icon'>>(
-  (props, ref) => <IconButton ref={ref} icon={CLOSE_ICON} {...props} />
-)
+export const CloseButton = forwardRef<HTMLButtonElement, Omit<IconButtonProps, 'icon'>>((props, ref) => (
+  <IconButton ref={ref} icon={CLOSE_ICON} {...props} />
+))
 
 CloseButton.displayName = 'CloseButton'

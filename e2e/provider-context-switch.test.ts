@@ -5,7 +5,16 @@
  */
 
 import { describe, it, expect, beforeAll, afterAll, beforeEach, afterEach } from 'vitest'
-import { createTestClient, createTestProject, createTestServer, createProject, createSession, type TestClient, type TestProject, type TestServerHandle } from './utils/index.js'
+import {
+  createTestClient,
+  createTestProject,
+  createTestServer,
+  createProject,
+  createSession,
+  type TestClient,
+  type TestProject,
+  type TestServerHandle,
+} from './utils/index.js'
 
 describe('Provider Context Switch', () => {
   let server: TestServerHandle
@@ -52,14 +61,16 @@ describe('Provider Context Switch', () => {
     // context.state event is sent after session.setProvider
     // For this test, we'll just verify the mechanism works by checking
     // that context.state was sent during session creation
-    
+
     // The key assertion: context.state event should have been received
     const allEvents = client.allEvents()
-    const contextStateEvents = allEvents.filter(e => e.type === 'context.state')
+    const contextStateEvents = allEvents.filter((e) => e.type === 'context.state')
     expect(contextStateEvents.length).toBeGreaterThan(0)
-    
+
     // The last context.state event should have the correct maxTokens
-    const lastContextState = contextStateEvents[contextStateEvents.length - 1]!.payload as { context: { maxTokens: number } }
+    const lastContextState = contextStateEvents[contextStateEvents.length - 1]!.payload as {
+      context: { maxTokens: number }
+    }
     expect(lastContextState.context.maxTokens).toBe(initialMaxTokens)
   })
 
@@ -79,7 +90,7 @@ describe('Provider Context Switch', () => {
 
     // Verify maxTokens is a reasonable number (not 0 or undefined)
     expect(contextState!.maxTokens).toBeGreaterThan(0)
-    
+
     // Verify the maxTokens is consistent with what we'd expect
     // In mock mode, this should be the mock model's context window
     expect(contextState!.maxTokens).toBeGreaterThanOrEqual(100000)

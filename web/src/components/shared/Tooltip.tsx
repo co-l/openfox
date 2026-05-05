@@ -61,19 +61,20 @@ export function Tooltip({ content, children, position = 'top', delay = 200 }: To
       >
         {children}
       </span>
-      {visible && createPortal(
-        <div
-          className="fixed z-[9999] px-4 py-3 text-sm text-text-primary bg-bg-secondary border border-border rounded-lg shadow-xl max-w-sm break-words pointer-events-none"
-          style={{
-            top: positionStyles.top,
-            left: positionStyles.left,
-            transform: `translate(${positionStyles.tx}, ${positionStyles.ty})`,
-          }}
-        >
-          {content}
-        </div>,
-        document.body,
-      )}
+      {visible &&
+        createPortal(
+          <div
+            className="fixed z-[9999] px-4 py-3 text-sm text-text-primary bg-bg-secondary border border-border rounded-lg shadow-xl max-w-sm break-words pointer-events-none"
+            style={{
+              top: positionStyles.top,
+              left: positionStyles.left,
+              transform: `translate(${positionStyles.tx}, ${positionStyles.ty})`,
+            }}
+          >
+            {content}
+          </div>,
+          document.body,
+        )}
     </>
   )
 }

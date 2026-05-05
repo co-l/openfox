@@ -5,11 +5,11 @@ import { useAgentsStore, getAgentColor } from '../../stores/agents'
 import { AgentsModal } from '../settings/AgentsModal'
 
 export function AgentSelector() {
-  const currentMode = useSessionStore(state => state.currentSession?.mode)
-  const switchMode = useSessionStore(state => state.switchMode)
-  const defaults = useAgentsStore(state => state.defaults)
-  const userItems = useAgentsStore(state => state.userItems)
-  const fetchAgents = useAgentsStore(state => state.fetchAgents)
+  const currentMode = useSessionStore((state) => state.currentSession?.mode)
+  const switchMode = useSessionStore((state) => state.switchMode)
+  const defaults = useAgentsStore((state) => state.defaults)
+  const userItems = useAgentsStore((state) => state.userItems)
+  const fetchAgents = useAgentsStore((state) => state.fetchAgents)
   const agents = [...defaults, ...userItems]
   const [isOpen, setIsOpen] = useState(false)
   const [showManager, setShowManager] = useState(false)
@@ -33,8 +33,8 @@ export function AgentSelector() {
 
   if (!currentMode) return null
 
-  const topLevelAgents = agents.filter(a => !a.subagent)
-  const currentAgent = topLevelAgents.find(a => a.id === currentMode)
+  const topLevelAgents = agents.filter((a) => !a.subagent)
+  const currentAgent = topLevelAgents.find((a) => a.id === currentMode)
   const displayName = currentAgent?.name ?? currentMode
   const currentColor = getAgentColor(agents, currentMode)
 
@@ -62,9 +62,7 @@ export function AgentSelector() {
               <div
                 key={agent.id}
                 className={`flex items-center gap-2 px-3 py-2 text-sm transition-colors group ${
-                  isActive
-                    ? 'bg-bg-tertiary'
-                    : 'hover:bg-bg-tertiary cursor-pointer'
+                  isActive ? 'bg-bg-tertiary' : 'hover:bg-bg-tertiary cursor-pointer'
                 }`}
               >
                 <button
@@ -78,16 +76,13 @@ export function AgentSelector() {
                   <span className="font-medium truncate" style={{ color }}>
                     {agent.name}
                   </span>
-                  {isActive && (
-                    <CheckIcon className="w-3.5 h-3.5 text-text-muted shrink-0" />
-                  )}
+                  {isActive && <CheckIcon className="w-3.5 h-3.5 text-text-muted shrink-0" />}
                 </button>
                 {shortcut && (
                   <span className="shrink-0 px-1.5 py-0.5 text-[10px] bg-bg-tertiary text-text-muted rounded">
                     Ctrl+{index + 1}
                   </span>
                 )}
-                
               </div>
             )
           })}
@@ -108,7 +103,14 @@ export function AgentSelector() {
         </div>
       )}
 
-      <AgentsModal isOpen={showManager} onClose={() => { setShowManager(false); setEditId(null) }} initialEditId={editId} />
+      <AgentsModal
+        isOpen={showManager}
+        onClose={() => {
+          setShowManager(false)
+          setEditId(null)
+        }}
+        initialEditId={editId}
+      />
     </div>
   )
 }

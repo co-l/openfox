@@ -10,13 +10,13 @@ describe('Markdown', () => {
 2. Second item
 3. Third item
       `.trim()
-      
+
       const html = renderToString(<Markdown content={content} />)
-      
+
       // Verify the HTML contains the expected structure
       expect(html).toContain('<ol')
       expect(html).toContain('<li')
-      
+
       // The li elements should have the 'block' class (in HTML it's 'class' not 'className')
       expect(html).toContain('class="text-text-primary text-sm list-item"')
     })
@@ -27,12 +27,12 @@ describe('Markdown', () => {
 - Item two
 - Item three
       `.trim()
-      
+
       const html = renderToString(<Markdown content={content} />)
-      
+
       expect(html).toContain('<ul')
       expect(html).toContain('<li')
-      
+
       // The li elements should have the 'block' class
       expect(html).toContain('class="text-text-primary text-sm list-item"')
     })
@@ -42,9 +42,9 @@ describe('Markdown', () => {
 1. First
 2. Second
       `.trim()
-      
+
       const html = renderToString(<Markdown content={content} />)
-      
+
       // Check that the ol has the space-y-0.5 class for consistent spacing
       expect(html).toContain('class="list-decimal list-inside mb-1.5 space-y-0.5"')
     })
@@ -93,7 +93,8 @@ describe('Markdown', () => {
     it('applies inline style to paragraphs inside list items via container class', () => {
       // Loose lists (blank lines between items) cause ReactMarkdown to wrap content in <p> tags
       // The [&_li>p]:inline class prevents the marker from appearing on its own line
-      const content = '1. **verifier** - Verify criteria\n   - Use when: testing\n\n2. **reviewer** - Review code\n   - Use when: reviewing'
+      const content =
+        '1. **verifier** - Verify criteria\n   - Use when: testing\n\n2. **reviewer** - Review code\n   - Use when: reviewing'
       const html = renderToString(<Markdown content={content} />)
 
       // Verify the container has the inline fix class

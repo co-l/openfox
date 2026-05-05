@@ -1,10 +1,10 @@
 import { describe, expect, it } from 'vitest'
-import { 
-  buildHistoryFromMessages, 
-  formatTimestamp, 
-  extractUserMessages, 
+import {
+  buildHistoryFromMessages,
+  formatTimestamp,
+  extractUserMessages,
   buildFromSessions,
-  buildCombinedHistory
+  buildCombinedHistory,
 } from './usePromptHistory'
 
 import type { Message, SessionSummary } from '@shared/types'
@@ -38,8 +38,6 @@ describe('usePromptHistory helpers', () => {
     })
   })
 
-  
-
   describe('extractUserMessages', () => {
     it('filters only user messages', () => {
       const messages: Message[] = [
@@ -51,7 +49,7 @@ describe('usePromptHistory helpers', () => {
       ] as Message[]
 
       const result = extractUserMessages(messages)
-      
+
       expect(result).toHaveLength(2)
       expect(result[0]!.content).toBe('User 1')
       expect(result[1]!.content).toBe('User 2')
@@ -65,7 +63,7 @@ describe('usePromptHistory helpers', () => {
       ] as Message[]
 
       const result = extractUserMessages(messages)
-      
+
       expect(result[0]!.content).toBe('Newest')
       expect(result[1]!.content).toBe('Middle')
       expect(result[2]!.content).toBe('Oldest')
@@ -79,7 +77,7 @@ describe('usePromptHistory helpers', () => {
       ] as Message[]
 
       const result = buildHistoryFromMessages(messages, 10)
-      
+
       expect(result).toHaveLength(1)
       expect(result[0]!.id).toBe('1')
       expect(result[0]!.content).toBe('Test prompt')
@@ -96,7 +94,7 @@ describe('usePromptHistory helpers', () => {
       ] as Message[]
 
       const result = buildHistoryFromMessages(messages, 10)
-      
+
       expect(result[0]!.content).toBe('Oldest')
       expect(result[1]!.content).toBe('Middle')
       expect(result[2]!.content).toBe('Newest')
@@ -111,7 +109,7 @@ describe('usePromptHistory helpers', () => {
       })) as Message[]
 
       const result = buildHistoryFromMessages(messages, 10)
-      
+
       expect(result).toHaveLength(10)
       // Should have the 10 most recent (timestamps from 19:00 to 24:00)
       expect(result[0]!.content).toBe('Prompt 5') // oldest of the top 10
@@ -125,7 +123,7 @@ describe('usePromptHistory helpers', () => {
       ] as Message[]
 
       const result = buildHistoryFromMessages(messages, 10)
-      
+
       expect(result[0]!.trimmedContent.length).toBe(153)
       expect(result[0]!.trimmedContent).toContain('...')
     })
@@ -157,7 +155,7 @@ describe('usePromptHistory helpers', () => {
       ]
 
       const result = buildFromSessions(sessions)
-      
+
       expect(result).toHaveLength(4)
       // Should be sorted oldest to newest
       expect(result[0]!.content).toBe('Old prompt 1')
@@ -196,7 +194,7 @@ describe('usePromptHistory helpers', () => {
       ]
 
       const result = buildFromSessions(sessions)
-      
+
       expect(result).toHaveLength(10)
       // Should have the 10 most recent prompts (from session-2 and the newest from session-1)
       expect(result[0]!.content).toContain('Session') // oldest of top 10
@@ -220,14 +218,12 @@ describe('usePromptHistory helpers', () => {
           title: 'Session 2',
           createdAt: '2026-03-24T11:00:00Z',
           updatedAt: '2026-03-24T11:30:00Z',
-          recentUserPrompts: [
-            { id: 'p3', content: 'Prompt B', timestamp: '2026-03-24T11:10:00Z' },
-          ],
+          recentUserPrompts: [{ id: 'p3', content: 'Prompt B', timestamp: '2026-03-24T11:10:00Z' }],
         }),
       ]
 
       const result = buildFromSessions(sessions)
-      
+
       expect(result).toHaveLength(3)
       expect(result[0]!.content).toBe('Prompt A') // 10:15
       expect(result[1]!.content).toBe('Prompt C') // 10:25
@@ -309,18 +305,14 @@ describe('usePromptHistory helpers', () => {
           title: 'Current Session Title',
           createdAt: '2026-03-24T10:00:00Z',
           updatedAt: '2026-03-24T14:00:00Z',
-          recentUserPrompts: [
-            { id: 'skip1', content: 'Should be skipped', timestamp: '2026-03-24T11:00:00Z' },
-          ],
+          recentUserPrompts: [{ id: 'skip1', content: 'Should be skipped', timestamp: '2026-03-24T11:00:00Z' }],
         }),
         mockSession({
           id: 'other-session',
           title: 'Other Session',
           createdAt: '2026-03-23T10:00:00Z',
           updatedAt: '2026-03-23T12:00:00Z',
-          recentUserPrompts: [
-            { id: 'other1', content: 'Other prompt', timestamp: '2026-03-23T11:00:00Z' },
-          ],
+          recentUserPrompts: [{ id: 'other1', content: 'Other prompt', timestamp: '2026-03-23T11:00:00Z' }],
         }),
       ]
 
@@ -330,7 +322,7 @@ describe('usePromptHistory helpers', () => {
       expect(result[0]!.content).toBe('Other prompt')
       expect(result[1]!.content).toBe('Current prompt')
       // Should not have "Should be skipped"
-      expect(result.some(item => item.content === 'Should be skipped')).toBe(false)
+      expect(result.some((item) => item.content === 'Should be skipped')).toBe(false)
     })
   })
 })

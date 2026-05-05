@@ -15,9 +15,9 @@ function hexToRgb(hex: string): string {
 }
 
 function rgbToHex(rgb: string): string {
-  const parts = rgb.split(' ').map(p => parseInt(p, 10))
-  if (parts.length === 3 && parts.every(n => !isNaN(n))) {
-    return `#${parts.map(p => (p ?? 0).toString(16).padStart(2, '0')).join('')}`
+  const parts = rgb.split(' ').map((p) => parseInt(p, 10))
+  if (parts.length === 3 && parts.every((n) => !isNaN(n))) {
+    return `#${parts.map((p) => (p ?? 0).toString(16).padStart(2, '0')).join('')}`
   }
   return rgb
 }
@@ -33,7 +33,15 @@ interface ThemeEditorModalProps {
   onSave: (name: string, tokens: Record<string, string>) => void
 }
 
-function ThemeEditorModal({ isOpen, isNew, basePresetId, presetName: defaultName, initialTokens, onClose, onSave }: ThemeEditorModalProps) {
+function ThemeEditorModal({
+  isOpen,
+  isNew,
+  basePresetId,
+  presetName: defaultName,
+  initialTokens,
+  onClose,
+  onSave,
+}: ThemeEditorModalProps) {
   const [localTokens, setLocalTokens] = useState(initialTokens)
   const [name, setName] = useState(defaultName)
 
@@ -44,19 +52,22 @@ function ThemeEditorModal({ isOpen, isNew, basePresetId, presetName: defaultName
 
   const handleTokenChange = (key: string, value: string) => {
     const rgbValue = value.startsWith('#') ? hexToRgb(value) : value
-    setLocalTokens(prev => ({ ...prev, [key]: rgbValue }))
+    setLocalTokens((prev) => ({ ...prev, [key]: rgbValue }))
   }
 
   const handleSave = () => {
     onSave(name.trim() || 'Untitled', { ...localTokens })
   }
 
-  const groupedTokens = THEME_TOKENS.reduce((acc, token) => {
-    const cat = token.category
-    if (!acc[cat]) acc[cat] = []
-    acc[cat]!.push(token)
-    return acc
-  }, {} as Record<string, ThemeToken[]>)
+  const groupedTokens = THEME_TOKENS.reduce(
+    (acc, token) => {
+      const cat = token.category
+      if (!acc[cat]) acc[cat] = []
+      acc[cat]!.push(token)
+      return acc
+    },
+    {} as Record<string, ThemeToken[]>,
+  )
 
   const categoryLabels: Record<string, string> = {
     background: 'Backgrounds',
@@ -66,7 +77,7 @@ function ThemeEditorModal({ isOpen, isNew, basePresetId, presetName: defaultName
     border: 'Border',
   }
 
-  const basePreset = THEME_PRESETS.find(p => p.id === basePresetId)
+  const basePreset = THEME_PRESETS.find((p) => p.id === basePresetId)
 
   return (
     <Modal
@@ -113,16 +124,11 @@ function ThemeEditorModal({ isOpen, isNew, basePresetId, presetName: defaultName
 
         {Object.entries(groupedTokens).map(([category, tokens]) => (
           <div key={category} className="space-y-3">
-            <h4 className="text-xs font-medium text-text-muted uppercase">
-              {categoryLabels[category] ?? category}
-            </h4>
+            <h4 className="text-xs font-medium text-text-muted uppercase">{categoryLabels[category] ?? category}</h4>
             <div className="grid grid-cols-2 gap-3">
-              {tokens.map(token => (
+              {tokens.map((token) => (
                 <div key={token.key} className="flex flex-col gap-1">
-                  <label
-                    htmlFor={token.key}
-                    className="text-xs text-text-muted"
-                  >
+                  <label htmlFor={token.key} className="text-xs text-text-muted">
                     {token.label}
                   </label>
                   <div className="flex items-center gap-2">
@@ -161,14 +167,14 @@ interface ThemeEditorState {
 export function ThemeEditor() {
   const [editorState, setEditorState] = useState<ThemeEditorState | null>(null)
 
-  const currentPreset = useThemeStore(state => state.currentPreset)
-  const isCustom = useThemeStore(state => state.isCustom)
-  const basePreset = useThemeStore(state => state.basePreset)
-  const userPresets = useThemeStore(state => state.userPresets)
-  const applyPreset = useThemeStore(state => state.applyPreset)
-  const applyUserPreset = useThemeStore(state => state.applyUserPreset)
-  const deleteUserPreset = useThemeStore(state => state.deleteUserPreset)
-  const saveTheme = useThemeStore(state => state.saveTheme)
+  const currentPreset = useThemeStore((state) => state.currentPreset)
+  const isCustom = useThemeStore((state) => state.isCustom)
+  const basePreset = useThemeStore((state) => state.basePreset)
+  const userPresets = useThemeStore((state) => state.userPresets)
+  const applyPreset = useThemeStore((state) => state.applyPreset)
+  const applyUserPreset = useThemeStore((state) => state.applyUserPreset)
+  const deleteUserPreset = useThemeStore((state) => state.deleteUserPreset)
+  const saveTheme = useThemeStore((state) => state.saveTheme)
 
   const handlePresetSelect = (presetId: string) => {
     applyPreset(presetId)
@@ -180,7 +186,7 @@ export function ThemeEditor() {
   }
 
   const handleNewFromPreset = (presetId: string) => {
-    const preset = THEME_PRESETS.find(p => p.id === presetId)
+    const preset = THEME_PRESETS.find((p) => p.id === presetId)
     if (!preset) return
     setEditorState({
       type: 'new',
@@ -194,7 +200,7 @@ export function ThemeEditor() {
   const handleEditPreset = (index: number) => {
     const preset = userPresets[index]
     if (!preset) return
-    const base = THEME_PRESETS.find(p => p.id === preset.basePreset)
+    const base = THEME_PRESETS.find((p) => p.id === preset.basePreset)
     const tokens = base ? { ...base.tokens, ...preset.tokens } : preset.tokens
     setEditorState({
       type: 'edit',
@@ -252,7 +258,7 @@ export function ThemeEditor() {
       <h3 className="text-sm font-medium text-text-primary">Theme</h3>
 
       <div className="grid grid-cols-5 gap-2">
-        {THEME_PRESETS.map(preset => (
+        {THEME_PRESETS.map((preset) => (
           <div key={preset.id} className="relative group">
             <button
               type="button"
@@ -279,7 +285,10 @@ export function ThemeEditor() {
             </button>
             <button
               type="button"
-              onClick={(e) => { e.stopPropagation(); handleNewFromPreset(preset.id) }}
+              onClick={(e) => {
+                e.stopPropagation()
+                handleNewFromPreset(preset.id)
+              }}
               className="absolute top-1 right-1 w-6 h-6 rounded bg-bg-tertiary border border-border flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity z-10 hover:border-text-muted"
               title="Create custom theme based on this"
             >
@@ -294,7 +303,7 @@ export function ThemeEditor() {
           <h4 className="text-xs font-medium text-text-muted uppercase">My Themes</h4>
           <div className="grid grid-cols-5 gap-2">
             {userPresets.map((preset, index) => {
-              const base = THEME_PRESETS.find(p => p.id === preset.basePreset)
+              const base = THEME_PRESETS.find((p) => p.id === preset.basePreset)
               const tokens = base ? { ...base.tokens, ...preset.tokens } : preset.tokens
               return (
                 <div key={preset.id} className="relative group">
@@ -323,7 +332,10 @@ export function ThemeEditor() {
                   </button>
                   <button
                     type="button"
-                    onClick={(e) => { e.stopPropagation(); handleEditPreset(index) }}
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      handleEditPreset(index)
+                    }}
                     className="absolute top-1 right-1 w-6 h-6 rounded bg-bg-tertiary border border-border flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity z-10 hover:border-text-muted"
                     title="Edit"
                   >

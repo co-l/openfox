@@ -4,8 +4,8 @@ import { authFetch } from '../lib/api'
 
 function generateUUID(): string {
   return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
-    const r = Math.random() * 16 | 0
-    const v = c === 'x' ? r : (r & 0x3 | 0x8)
+    const r = (Math.random() * 16) | 0
+    const v = c === 'x' ? r : (r & 0x3) | 0x8
     return v.toString(16)
   })
 }
@@ -45,7 +45,7 @@ export const useTerminalStore = create<TerminalState>((set, get) => {
 
     setOpen: (open) => set({ isOpen: open }),
 
-    toggleOpen: () => set(state => ({ isOpen: !state.isOpen })),
+    toggleOpen: () => set((state) => ({ isOpen: !state.isOpen })),
 
     setWorkdir: (workdir) => set({ workdir }),
 
@@ -57,17 +57,19 @@ export const useTerminalStore = create<TerminalState>((set, get) => {
       try {
         const res = await authFetch(`/api/terminals?projectId=${encodeURIComponent(projectId)}`)
         if (res.ok) {
-          const serverSessions = await res.json() as TerminalSession[]
+          const serverSessions = (await res.json()) as TerminalSession[]
           set({ sessions: serverSessions })
-          
+
           const ws = (wsClient as any).ws
           if (ws && ws.readyState === WebSocket.OPEN) {
             for (const session of serverSessions) {
-              ws.send(JSON.stringify({
-                id: generateUUID(),
-                type: 'terminal.subscribe',
-                payload: { sessionId: session.id },
-              }))
+              ws.send(
+                JSON.stringify({
+                  id: generateUUID(),
+                  type: 'terminal.subscribe',
+                  payload: { sessionId: session.id },
+                }),
+              )
             }
           }
         }
@@ -84,18 +86,20 @@ export const useTerminalStore = create<TerminalState>((set, get) => {
           body: JSON.stringify({ workdir: workdir ?? get().workdir ?? undefined, projectId }),
         })
         if (res.ok) {
-          const session = await res.json() as TerminalSession
-          set(state => ({
+          const session = (await res.json()) as TerminalSession
+          set((state) => ({
             sessions: [...state.sessions, session],
           }))
-          
+
           const ws = (wsClient as any).ws
           if (ws && ws.readyState === WebSocket.OPEN) {
-            ws.send(JSON.stringify({
-              id: generateUUID(),
-              type: 'terminal.subscribe',
-              payload: { sessionId: session.id },
-            }))
+            ws.send(
+              JSON.stringify({
+                id: generateUUID(),
+                type: 'terminal.subscribe',
+                payload: { sessionId: session.id },
+              }),
+            )
           }
         }
       } catch (e) {
@@ -117,8 +121,8 @@ export const useTerminalStore = create<TerminalState>((set, get) => {
           method: 'DELETE',
         })
         if (res.ok) {
-          set(state => ({
-            sessions: state.sessions.filter(s => s.id !== sessionId),
+          set((state) => ({
+            sessions: state.sessions.filter((s) => s.id !== sessionId),
           }))
         }
       } catch (e) {
@@ -131,8 +135,8 @@ export const useTerminalStore = create<TerminalState>((set, get) => {
         case 'terminal.exit': {
           const { sessionId } = message.payload || {}
           if (sessionId) {
-            set(state => {
-              const newSessions = state.sessions.filter(s => s.id !== sessionId)
+            set((state) => {
+              const newSessions = state.sessions.filter((s) => s.id !== sessionId)
               if (newSessions.length === 0 && state.isOpen) {
                 return { sessions: [], isOpen: false }
               }

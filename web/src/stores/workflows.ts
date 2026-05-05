@@ -67,7 +67,9 @@ export const useWorkflowsStore = create<WorkflowsState>((set, get) => ({
       const res = await authFetch('/api/workflows/template-variables')
       const data = await res.json()
       set({ templateVariables: data.variables ?? [] })
-    } catch { /* ignore */ }
+    } catch {
+      /* ignore */
+    }
   },
 
   fetchWorkflows: async () => {
@@ -90,7 +92,7 @@ export const useWorkflowsStore = create<WorkflowsState>((set, get) => ({
     try {
       const res = await authFetch(`/api/workflows/${id}`)
       if (!res.ok) return null
-      return await res.json() as WorkflowFull
+      return (await res.json()) as WorkflowFull
     } catch {
       return null
     }
@@ -100,7 +102,7 @@ export const useWorkflowsStore = create<WorkflowsState>((set, get) => ({
     try {
       const res = await authFetch(`/api/workflows/defaults/${id}`)
       if (!res.ok) return null
-      return await res.json() as WorkflowFull
+      return (await res.json()) as WorkflowFull
     } catch {
       return null
     }
@@ -123,8 +125,8 @@ export const useWorkflowsStore = create<WorkflowsState>((set, get) => ({
       const res = await authFetch(`/api/workflows/${id}`, { method: 'DELETE' })
       const data = await res.json()
       if (res.ok) {
-        set(state => ({
-          userItems: state.userItems.filter(p => p.id !== id),
+        set((state) => ({
+          userItems: state.userItems.filter((p) => p.id !== id),
         }))
         return { success: true }
       }

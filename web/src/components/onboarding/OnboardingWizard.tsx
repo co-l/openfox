@@ -9,9 +9,7 @@ import { PlusLgIcon, PlusMdIcon, TrashIcon, ClipboardIcon } from '../shared/icon
 
 const COMMON_PORTS = [8000, 11434, 8080]
 
-const PRESETS = [
-  { name: 'OpenCode Go', url: 'https://opencode.ai/zen/go/v1', backend: 'opencode-go' as const },
-]
+const PRESETS = [{ name: 'OpenCode Go', url: 'https://opencode.ai/zen/go/v1', backend: 'opencode-go' as const }]
 
 interface ProviderInfo {
   id: string
@@ -24,20 +22,28 @@ interface ProviderInfo {
 
 function getBackendDisplayName(backend: Backend): string {
   switch (backend) {
-    case 'vllm': return 'vLLM'
-    case 'sglang': return 'SGLang'
-    case 'ollama': return 'Ollama'
-    case 'llamacpp': return 'llama.cpp'
-    case 'openai': return 'OpenAI'
-    case 'anthropic': return 'Anthropic'
-    case 'opencode-go': return 'OpenCode Go'
-    case 'auto': return 'Auto'
-    case 'unknown': return 'Unknown'
-    default: return backend
+    case 'vllm':
+      return 'vLLM'
+    case 'sglang':
+      return 'SGLang'
+    case 'ollama':
+      return 'Ollama'
+    case 'llamacpp':
+      return 'llama.cpp'
+    case 'openai':
+      return 'OpenAI'
+    case 'anthropic':
+      return 'Anthropic'
+    case 'opencode-go':
+      return 'OpenCode Go'
+    case 'auto':
+      return 'Auto'
+    case 'unknown':
+      return 'Unknown'
+    default:
+      return backend
   }
 }
-
-
 
 interface StepIndicatorProps {
   currentStep: number
@@ -54,7 +60,7 @@ function StepIndicator({ currentStep, totalSteps, labels, onStepClick }: StepInd
           const stepNum = i + 1
           const isCompleted = stepNum < currentStep
           const isCurrent = stepNum === currentStep
-          
+
           return (
             <div key={i} className="flex items-center">
               <button
@@ -112,8 +118,10 @@ function ConnectLLMStep({ onNext }: ConnectLLMStepProps) {
     try {
       const response = await authFetch('/api/providers')
       if (response.ok) {
-        const data = await response.json() as { providers: Array<{ id: string; name: string; url: string; backend: Backend; apiKey?: string }> }
-        const mapped = data.providers.map(p => ({
+        const data = (await response.json()) as {
+          providers: Array<{ id: string; name: string; url: string; backend: Backend; apiKey?: string }>
+        }
+        const mapped = data.providers.map((p) => ({
           id: p.id,
           name: p.name,
           url: p.url,
@@ -141,7 +149,12 @@ function ConnectLLMStep({ onNext }: ConnectLLMStepProps) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ url, skipBackendDetection }),
       })
-      const data = await response.json() as { success: boolean; backend?: Backend; model?: string | null; error?: string }
+      const data = (await response.json()) as {
+        success: boolean
+        backend?: Backend
+        model?: string | null
+        error?: string
+      }
 
       if (data.success) {
         if (!skipBackendDetection) {
@@ -167,7 +180,7 @@ function ConnectLLMStep({ onNext }: ConnectLLMStepProps) {
       name,
       url: customUrl,
       backend: testResult?.success ? customBackend : 'auto',
-      model: testResult?.success ? testResult.model ?? null : null,
+      model: testResult?.success ? (testResult.model ?? null) : null,
       apiKey: customApiKey || undefined,
     }
 
@@ -180,27 +193,27 @@ function ConnectLLMStep({ onNext }: ConnectLLMStepProps) {
 
   function removeProvider(id: string) {
     setRemoving(id)
-    const isExisting = existingProviders.some(p => p.id === id)
+    const isExisting = existingProviders.some((p) => p.id === id)
 
     if (isExisting) {
       authFetch(`/api/providers/${id}`, { method: 'DELETE' })
         .then(() => {
-          setProviders(providers.filter(p => p.id !== id))
-          setExistingProviders(existingProviders.filter(p => p.id !== id))
+          setProviders(providers.filter((p) => p.id !== id))
+          setExistingProviders(existingProviders.filter((p) => p.id !== id))
           setRemoving(null)
         })
         .catch(() => {
           setRemoving(null)
         })
     } else {
-      setProviders(providers.filter(p => p.id !== id))
+      setProviders(providers.filter((p) => p.id !== id))
       setRemoving(null)
     }
   }
 
   async function handleSubmit() {
     for (const provider of providers) {
-      if (provider.id.startsWith('temp-') || !existingProviders.some(e => e.id === provider.id)) {
+      if (provider.id.startsWith('temp-') || !existingProviders.some((e) => e.id === provider.id)) {
         const response = await authFetch('/api/providers', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -218,7 +231,7 @@ function ConnectLLMStep({ onNext }: ConnectLLMStepProps) {
       }
     }
 
-    const validProviders = providers.filter(p => !p.id.startsWith('temp-'))
+    const validProviders = providers.filter((p) => !p.id.startsWith('temp-'))
     onNext({ providers: validProviders })
   }
 
@@ -249,13 +262,13 @@ function ConnectLLMStep({ onNext }: ConnectLLMStepProps) {
                         onChange={(e) => setEditedName(e.target.value)}
                         onKeyDown={(e) => {
                           if (e.key === 'Enter') {
-                            setProviders(providers.map(p => p.id === provider.id ? { ...p, name: editedName } : p))
+                            setProviders(providers.map((p) => (p.id === provider.id ? { ...p, name: editedName } : p)))
                             setEditingProviderId(null)
                           }
                           if (e.key === 'Escape') setEditingProviderId(null)
                         }}
                         onBlur={() => {
-                          setProviders(providers.map(p => p.id === provider.id ? { ...p, name: editedName } : p))
+                          setProviders(providers.map((p) => (p.id === provider.id ? { ...p, name: editedName } : p)))
                           setEditingProviderId(null)
                         }}
                         className="px-2 py-0.5 bg-bg-primary border border-accent-primary rounded text-text-primary text-sm focus:outline-none"
@@ -275,9 +288,7 @@ function ConnectLLMStep({ onNext }: ConnectLLMStepProps) {
                     )}
                   </div>
                   <p className="text-text-muted text-sm mt-1">{provider.url}</p>
-                  {provider.model && (
-                    <p className="text-text-secondary text-xs mt-0.5">Model: {provider.model}</p>
-                  )}
+                  {provider.model && <p className="text-text-secondary text-xs mt-0.5">Model: {provider.model}</p>}
                 </div>
                 <button
                   onClick={() => removeProvider(provider.id)}
@@ -486,14 +497,14 @@ function ProjectsFolderStep({ onNext }: ProjectsFolderStepProps) {
 
   useEffect(() => {
     authFetch('/api/config')
-      .then(r => r.json())
-      .then(data => {
+      .then((r) => r.json())
+      .then((data) => {
         if (data.workdir) {
           setWorkdir(data.workdir)
         } else {
           fetch('/api/directories?path=' + encodeURIComponent('/home'))
-            .then(r => r.json())
-            .then(dirData => {
+            .then((r) => r.json())
+            .then((dirData) => {
               if (dirData.current) {
                 setWorkdir(dirData.current)
               }
@@ -503,8 +514,8 @@ function ProjectsFolderStep({ onNext }: ProjectsFolderStepProps) {
       })
       .catch(() => {
         fetch('/api/directories?path=' + encodeURIComponent('/home'))
-          .then(r => r.json())
-          .then(data => {
+          .then((r) => r.json())
+          .then((data) => {
             if (data.current) {
               setWorkdir(data.current)
             }
@@ -575,8 +586,8 @@ function VisionStep({ onNext }: VisionStepProps) {
 
   useEffect(() => {
     authFetch('/api/config')
-      .then(r => r.json())
-      .then(data => {
+      .then((r) => r.json())
+      .then((data) => {
         if (data.visionFallback) {
           setEnabled(data.visionFallback.enabled)
           setUrl(data.visionFallback.url)
@@ -609,7 +620,9 @@ function VisionStep({ onNext }: VisionStepProps) {
 
       <div className="space-y-6">
         <div className="bg-bg-secondary rounded-lg p-4 border border-border">
-          <p className="text-text-secondary text-sm mb-2">To enable vision support, you need an Ollama server with a vision model:</p>
+          <p className="text-text-secondary text-sm mb-2">
+            To enable vision support, you need an Ollama server with a vision model:
+          </p>
           <a
             href="https://ollama.com/download"
             target="_blank"
@@ -625,11 +638,7 @@ function VisionStep({ onNext }: VisionStepProps) {
               className="text-text-muted hover:text-text-primary transition-colors"
               title="Copy"
             >
-              {copied ? (
-                <CheckIcon className="w-4 h-4 text-accent-primary" />
-              ) : (
-                <ClipboardIcon className="w-4 h-4" />
-              )}
+              {copied ? <CheckIcon className="w-4 h-4 text-accent-primary" /> : <ClipboardIcon className="w-4 h-4" />}
             </button>
           </div>
         </div>
@@ -706,16 +715,18 @@ export function OnboardingWizard({ onComplete }: OnboardingWizardProps) {
   const [data, setData] = useState<Partial<OnboardingData>>({})
 
   async function handleLLMComplete(providerData: { providers: ProviderInfo[] }) {
-    setData(prev => ({ ...prev, providers: providerData.providers }))
+    setData((prev) => ({ ...prev, providers: providerData.providers }))
     setStep(2)
   }
 
   async function handleFolderComplete(folderData: { workdir: string }) {
-    setData(prev => ({ ...prev, ...folderData }))
+    setData((prev) => ({ ...prev, ...folderData }))
     setStep(3)
   }
 
-  async function handleVisionComplete(visionData: { visionFallback?: { enabled: boolean; url: string; model: string; timeout: number } }) {
+  async function handleVisionComplete(visionData: {
+    visionFallback?: { enabled: boolean; url: string; model: string; timeout: number }
+  }) {
     setSaving(true)
 
     try {

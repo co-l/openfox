@@ -1,6 +1,6 @@
 import { memo, useEffect, useRef } from 'react'
 import { Modal } from '../shared/Modal'
-import { ansiToReact } from '../../lib/ansiParser'
+import { LogRenderer } from '../shared/LogRenderer'
 
 interface LogViewerProps {
   title: string
@@ -20,17 +20,7 @@ export const LogViewer = memo(function LogViewer({ title, logs, onClose, preClas
 
   return (
     <Modal isOpen={true} onClose={onClose} title={title} size="full">
-      <pre ref={logRef} className={preClassName}>
-        {logs.length === 0 ? (
-          <span className="text-text-muted">No output yet</span>
-        ) : (
-          logs.map((chunk, i) => (
-            <span key={i} className={chunk.stream === 'stderr' ? 'text-accent-warning' : ''}>
-              {ansiToReact(chunk.content)}
-            </span>
-          ))
-        )}
-      </pre>
+      <LogRenderer logs={logs} preRef={logRef} preClassName={preClassName} />
     </Modal>
   )
 })

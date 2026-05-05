@@ -40,7 +40,7 @@ export const useCommandsStore = create<CommandsState>((set, get) => ({
     try {
       const res = await authFetch(`/api/commands/${commandId}`)
       if (!res.ok) return null
-      return await res.json() as CommandFull
+      return (await res.json()) as CommandFull
     } catch {
       return null
     }
@@ -50,7 +50,7 @@ export const useCommandsStore = create<CommandsState>((set, get) => ({
     try {
       const res = await authFetch(`/api/commands/defaults/${commandId}`)
       if (!res.ok) return null
-      return await res.json() as CommandFull
+      return (await res.json()) as CommandFull
     } catch {
       return null
     }
@@ -73,8 +73,8 @@ export const useCommandsStore = create<CommandsState>((set, get) => ({
       const res = await authFetch(`/api/commands/${commandId}`, { method: 'DELETE' })
       const data = await res.json()
       if (res.ok) {
-        set(state => ({
-          userItems: state.userItems.filter(c => c.id !== commandId),
+        set((state) => ({
+          userItems: state.userItems.filter((c) => c.id !== commandId),
         }))
         return { success: true }
       }

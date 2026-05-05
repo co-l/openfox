@@ -10,12 +10,12 @@ class MockImage {
   width: number
   height: number
   onload: (() => void) | null = null
-  
+
   constructor(width = 1200, height = 800) {
     this.width = width
     this.height = height
   }
-  
+
   set src(_value: string) {
     setTimeout(() => this.onload?.(), 0)
   }
@@ -26,15 +26,15 @@ class MockCanvas {
   width = 0
   height = 0
   ctx: MockCanvasContext
-  
+
   constructor() {
     this.ctx = new MockCanvasContext()
   }
-  
+
   getContext(_contextType: string) {
     return this.ctx
   }
-  
+
   toDataURL(_type?: string, _quality?: number) {
     return 'data:image/png;base64,MockBase64Data'
   }
@@ -43,8 +43,18 @@ class MockCanvas {
 class MockCanvasContext {
   imageSmoothingEnabled = false
   imageSmoothingQuality = 'high'
-  
-  drawImage(_img: HTMLImageElement, _sx: number, _sy: number, _sw: number, _sh: number, _dx: number, _dy: number, _dw: number, _dh: number): void
+
+  drawImage(
+    _img: HTMLImageElement,
+    _sx: number,
+    _sy: number,
+    _sw: number,
+    _sh: number,
+    _dx: number,
+    _dy: number,
+    _dw: number,
+    _dh: number,
+  ): void
   drawImage(_img: any, ..._args: any[]) {
     // Mock implementation
   }
@@ -55,7 +65,7 @@ class MockFileReader {
   result: string | null = null
   onload: ((e: Event) => void) | null = null
   onerror: ((e: Event) => void) | null = null
-  
+
   readAsDataURL(_file: File) {
     this.result = 'data:image/png;base64,MockBase64Data'
     setTimeout(() => this.onload?.(new Event('load')), 0)
@@ -79,7 +89,7 @@ describe('Image Compression', () => {
     it('should compress large images to max 1920px dimension', async () => {
       // Create a mock file
       const mockFile = new File(['mock image data'], 'test.png', { type: 'image/png' })
-      
+
       // @ts-ignore - using mock objects
       const result = await compressImage(mockFile, {
         maxWidth: 1920,
@@ -87,7 +97,7 @@ describe('Image Compression', () => {
         quality: 0.85,
         maxSizeBytes: 1048576,
       })
-      
+
       expect(result.dataUrl).toBeDefined()
       expect(result.mimeType).toBe('image/png')
       expect(result.size).toBeGreaterThan(0)
@@ -95,7 +105,7 @@ describe('Image Compression', () => {
 
     it('should maintain aspect ratio when scaling', async () => {
       const mockFile = new File(['mock'], 'test.jpg', { type: 'image/jpeg' })
-      
+
       // @ts-ignore
       const result = await compressImage(mockFile, {
         maxWidth: 1920,
@@ -103,7 +113,7 @@ describe('Image Compression', () => {
         quality: 0.85,
         maxSizeBytes: 1048576,
       })
-      
+
       expect(result.dataUrl).toBeDefined()
       expect(result.width).toBeGreaterThan(0)
       expect(result.height).toBeGreaterThan(0)
@@ -111,26 +121,26 @@ describe('Image Compression', () => {
 
     it('should reject non-image files', async () => {
       const pdfFile = new File(['pdf content'], 'test.pdf', { type: 'application/pdf' })
-      
+
       await expect(compressImage(pdfFile)).rejects.toThrow('File is not an image')
     })
 
     it('should reject unsupported image formats', async () => {
       const bmpFile = new File(['bmp data'], 'test.bmp', { type: 'image/bmp' })
-      
+
       await expect(compressImage(bmpFile)).rejects.toThrow('Unsupported image format')
     })
 
     it('should handle GIF files by converting to PNG', async () => {
       const gifFile = new File(['gif data'], 'test.gif', { type: 'image/gif' })
-      
+
       const result = await compressImage(gifFile, {
         maxWidth: 1920,
         maxHeight: 1920,
         quality: 0.85,
         maxSizeBytes: 1,
       })
-      
+
       expect(result.mimeType).toBe('image/png') // GIFs are converted to PNG
     })
 
@@ -139,7 +149,9 @@ describe('Image Compression', () => {
 
       const pngFile = new File(['png data'], 'test.png', { type: 'image/png' })
 
-      await expect(compressImage(pngFile, { maxSizeBytes: 1 })).rejects.toThrow('Image compression requires browser file APIs')
+      await expect(compressImage(pngFile, { maxSizeBytes: 1 })).rejects.toThrow(
+        'Image compression requires browser file APIs',
+      )
     })
   })
 
@@ -174,7 +186,7 @@ describe('Image Compression', () => {
     it('should validate small files as valid', () => {
       const smallFile = new File(['data'], 'test.png', { type: 'image/png' })
       const result = validateImageSize(smallFile, 1024) // 1KB limit
-      
+
       expect(result.valid).toBe(true)
     })
 
@@ -183,7 +195,7 @@ describe('Image Compression', () => {
       const largeData = 'x'.repeat(2048)
       const largeFile = new File([largeData], 'test.png', { type: 'image/png' })
       const result = validateImageSize(largeFile, 1024) // 1KB limit
-      
+
       expect(result.valid).toBe(false)
       expect(result.error).toBeDefined()
       expect(result.error).toContain('too large')
@@ -193,7 +205,7 @@ describe('Image Compression', () => {
       const largeData = 'x'.repeat(2048)
       const largeFile = new File([largeData], 'test.png', { type: 'image/png' })
       const result = validateImageSize(largeFile, 1024)
-      
+
       expect(result.error).toMatch(/Image file is too large/i)
     })
   })

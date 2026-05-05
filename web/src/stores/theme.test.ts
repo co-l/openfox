@@ -1,16 +1,10 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
-import {
-  THEME_TOKENS,
-  THEME_PRESETS,
-  migrateLegacyThemeSetting,
-  getPresetFromJson,
-  useThemeStore,
-} from './theme'
+import { THEME_TOKENS, THEME_PRESETS, migrateLegacyThemeSetting, getPresetFromJson, useThemeStore } from './theme'
 
 describe('Theme System', () => {
   describe('THEME_TOKENS', () => {
     it('has all required categories', () => {
-      const categories = new Set(THEME_TOKENS.map(t => t.category))
+      const categories = new Set(THEME_TOKENS.map((t) => t.category))
       expect(categories.has('background')).toBe(true)
       expect(categories.has('text')).toBe(true)
       expect(categories.has('accent')).toBe(true)
@@ -18,7 +12,7 @@ describe('Theme System', () => {
     })
 
     it('each token has a default value', () => {
-      THEME_TOKENS.forEach(token => {
+      THEME_TOKENS.forEach((token) => {
         expect(token.defaultValue).toBeTruthy()
         expect(token.defaultValue).toMatch(/^[\d ]+$/)
       })
@@ -27,7 +21,7 @@ describe('Theme System', () => {
 
   describe('THEME_PRESETS', () => {
     it('has required presets', () => {
-      const presetIds = THEME_PRESETS.map(p => p.id)
+      const presetIds = THEME_PRESETS.map((p) => p.id)
       expect(presetIds).toContain('dark')
       expect(presetIds).toContain('light')
       expect(presetIds).toContain('monokai')
@@ -36,8 +30,8 @@ describe('Theme System', () => {
     })
 
     it('each preset has all tokens', () => {
-      THEME_PRESETS.forEach(preset => {
-        THEME_TOKENS.forEach(token => {
+      THEME_PRESETS.forEach((preset) => {
+        THEME_TOKENS.forEach((token) => {
           expect(preset.tokens[token.key]).toBeTruthy()
         })
       })
@@ -180,7 +174,9 @@ describe('Theme System', () => {
       it('loads user presets from localStorage', () => {
         localStorage.setItem(
           'openfox:userPresets',
-          JSON.stringify([{ id: 'custom-1', name: 'Loaded', basePreset: 'dark', tokens: { 'color-accent-primary': '100 100 100' } }])
+          JSON.stringify([
+            { id: 'custom-1', name: 'Loaded', basePreset: 'dark', tokens: { 'color-accent-primary': '100 100 100' } },
+          ]),
         )
         useThemeStore.getState().loadUserPresets()
         const presets = useThemeStore.getState().userPresets
@@ -231,10 +227,7 @@ describe('Theme System', () => {
 
     describe('backwards compatibility', () => {
       it('loads legacy custom theme tokens (no basePreset)', () => {
-        localStorage.setItem(
-          'openfox:theme',
-          JSON.stringify({ tokens: { 'color-accent-primary': '999 0 0' } })
-        )
+        localStorage.setItem('openfox:theme', JSON.stringify({ tokens: { 'color-accent-primary': '999 0 0' } }))
         const saved = useThemeStore.getState().getSavedTheme()
         expect(saved).toBeTruthy()
         const parsed = JSON.parse(saved!)

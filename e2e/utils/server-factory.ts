@@ -1,6 +1,6 @@
 /**
  * In-process server factory for E2E tests.
- * 
+ *
  * Creates isolated server instances that can run in parallel.
  * Each test file gets its own server on a dynamic port.
  */
@@ -19,16 +19,16 @@ function createTestConfig(options: { maxContext?: number } = {}): Config {
   if (options.maxContext !== undefined) {
     process.env['OPENFOX_MAX_CONTEXT'] = String(options.maxContext)
   }
-  
+
   const config = loadConfig()
 
   if (options.maxContext !== undefined) {
     config.context.maxTokens = options.maxContext
   }
-  
+
   // Use test mode to isolate config from production
   config.mode = 'test'
-  
+
   return config
 }
 
@@ -43,15 +43,15 @@ export interface TestServerHandle extends ServerHandle {
 
 /**
  * Create and start an isolated test server.
- * 
+ *
  * Usage:
  * ```ts
  * let server: TestServerHandle
- * 
+ *
  * beforeAll(async () => {
  *   server = await createTestServer()
  * })
- * 
+ *
  * afterAll(async () => {
  *   await server.close()
  * })
@@ -60,18 +60,18 @@ export interface TestServerHandle extends ServerHandle {
 export async function createTestServer(options: { maxContext?: number } = {}): Promise<TestServerHandle> {
   // Set mock LLM env before importing server (it reads env at module load time)
   process.env['OPENFOX_MOCK_LLM'] = 'true'
-  
+
   // Dynamic import to ensure fresh module state and env vars are applied
   // Use src/ - tsx loader in vitest config will resolve TypeScript files
   const { createServerHandle } = await import('../../src/server/index.js')
-  
+
   const config = createTestConfig(options)
   const handle = await createServerHandle(config)
   const { port } = await handle.start(0) // Dynamic port
-  
+
   const url = `http://127.0.0.1:${port}`
   const wsUrl = `ws://127.0.0.1:${port}/ws`
-  
+
   return {
     ...handle,
     url,

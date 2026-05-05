@@ -37,24 +37,24 @@ The workflow editor shows a visual flow diagram with:
 
 ### Step Types
 
-| Type | Use Case | Options |
-|------|----------|---------|
-| **Agent** | Main task execution | Builder, Planner, Tester |
-| **Sub-Agent** | Specialized tasks | `code_reviewer`, `debugger`, `test_generator`, `verifier` |
-| **Shell** | Run commands | (none) |
+| Type          | Use Case            | Options                                                   |
+| ------------- | ------------------- | --------------------------------------------------------- |
+| **Agent**     | Main task execution | Builder, Planner, Tester                                  |
+| **Sub-Agent** | Specialized tasks   | `code_reviewer`, `debugger`, `test_generator`, `verifier` |
+| **Shell**     | Run commands        | (none)                                                    |
 
 ### Transition Conditions
 
 Click an edge to configure when the workflow moves to the next step:
 
-| Condition | Description |
-|-----------|-------------|
-| **All criteria passed** | Every criterion has `passed` status |
-| **All criteria completed or passed** | Criteria are either `completed` or `passed` |
-| **Any criteria blocked** | A criterion failed 4+ times (retry limit) |
-| **Has pending or failed criteria** | At least one criterion is not `passed` |
-| **Step result is...** | The previous step returned a specific result |
-| **Always (fallback)** | Unconditional transition (use as final fallback) |
+| Condition                            | Description                                      |
+| ------------------------------------ | ------------------------------------------------ |
+| **All criteria passed**              | Every criterion has `passed` status              |
+| **All criteria completed or passed** | Criteria are either `completed` or `passed`      |
+| **Any criteria blocked**             | A criterion failed 4+ times (retry limit)        |
+| **Has pending or failed criteria**   | At least one criterion is not `passed`           |
+| **Step result is...**                | The previous step returned a specific result     |
+| **Always (fallback)**                | Unconditional transition (use as final fallback) |
 
 ---
 
@@ -82,16 +82,12 @@ Start → Build → Test → (if passed) → Done
 
 1. **Build step** (Agent: Builder)
    - Prompt: `Build the project and return "success" or "failed"`
-   
-2. **Test step** (Agent: Tester)  
+2. **Test step** (Agent: Tester)
    - Prompt: `Run tests and report results`
-   
 3. **Transition: Test → Done**
    - Condition: `Step result is...` → `passed`
-   
 4. **Transition: Test → Fix**
    - Condition: `Step result is...` → `failed`
-   
 5. **Fix step** (Sub-Agent: debugger)
    - Prompt: `Analyze test failures and fix the code`
    - Transition back to Test with: `Always`
@@ -121,7 +117,7 @@ Start → Implement → Code Review → (if approved) → Generate Tests → Don
 2. Configure:
    - **Type**: Agent
    - **Agent Type**: Builder
-   - **Prompt**: 
+   - **Prompt**:
      ```
      Implement the requested feature. Focus on clean, working code.
      When done, use return_value with result "ready-for-review"
@@ -138,12 +134,13 @@ Start → Implement → Code Review → (if approved) → Generate Tests → Don
    - **Type**: Sub-Agent
    - **Agent Type**: code_reviewer
    - **Prompt**:
+
      ```
      Review the implemented code for:
      - Bugs and edge cases
-     - Code style and conventions  
+     - Code style and conventions
      - Performance issues
-     
+
      Use return_value with:
      - result "approved" if code is good
      - result "changes-needed" with specific feedback
@@ -164,19 +161,23 @@ Start → Implement → Code Review → (if approved) → Generate Tests → Don
 ### Step 5: Configure Transitions
 
 **Implement → Code Review:**
+
 - Click the edge between them
 - Condition: `Always`
 
 **Code Review → Generate Tests:**
+
 - Click the edge
 - Condition: `Step result is...` → `approved`
 
 **Code Review → Implement (loop back):**
+
 - Drag from Code Review's bottom port to Implement's top port
 - Click the new edge
 - Condition: `Step result is...` → `changes-needed`
 
 **Generate Tests → Done:**
+
 - Click the edge
 - Condition: `Always`
 
@@ -193,19 +194,19 @@ Start → Implement → Code Review → (if approved) → Generate Tests → Don
 
 Use these in prompts to inject dynamic context:
 
-| Variable | Description |
-|----------|-------------|
-| `{{workdir}}` | Project working directory |
-| `{{reason}}` | Why the step is being (re)entered |
-| `{{stepOutput}}` | Output from the previous step |
-| `{{stepOutput.stepId}}` | Output from a specific step |
-| `{{criteriaCount}}` | Total number of criteria |
-| `{{pendingCount}}` | Criteria still pending |
-| `{{summary}}` | Session summary |
-| `{{criteriaList}}` | Formatted list of all criteria |
-| `{{modifiedFiles}}` | Files changed in this session |
-| `{{verifierFindings}}` | (Deprecated) Use `{{stepOutput.verifier}}` |
-| `{{previousStepOutput}}` | (Deprecated) Use `{{stepOutput}}` |
+| Variable                 | Description                                |
+| ------------------------ | ------------------------------------------ |
+| `{{workdir}}`            | Project working directory                  |
+| `{{reason}}`             | Why the step is being (re)entered          |
+| `{{stepOutput}}`         | Output from the previous step              |
+| `{{stepOutput.stepId}}`  | Output from a specific step                |
+| `{{criteriaCount}}`      | Total number of criteria                   |
+| `{{pendingCount}}`       | Criteria still pending                     |
+| `{{summary}}`            | Session summary                            |
+| `{{criteriaList}}`       | Formatted list of all criteria             |
+| `{{modifiedFiles}}`      | Files changed in this session              |
+| `{{verifierFindings}}`   | (Deprecated) Use `{{stepOutput.verifier}}` |
+| `{{previousStepOutput}}` | (Deprecated) Use `{{stepOutput}}`          |
 
 ### Using Step Results in Templates
 
@@ -220,21 +221,27 @@ Address these specific concerns and return "ready-for-review" when done.
 ## Best Practices
 
 ### 1. Always Include a Fallback
+
 End workflow branches with an "Always" transition to prevent dead ends.
 
 ### 2. Use Descriptive Result Values
+
 Instead of generic "success"/"failed", use specific values:
+
 - `tests-passed`, `tests-failed`
 - `review-approved`, `changes-needed`
 - `build-success`, `build-error`
 
 ### 3. Limit Retry Loops
+
 Set reasonable max iterations and use "Any criteria blocked" conditions to escape infinite loops.
 
 ### 4. Document Your Workflows
+
 Add clear descriptions so teammates understand the workflow's purpose.
 
 ### 5. Test Incrementally
+
 Create simple workflows first, then add complexity as you validate each piece.
 
 ---
@@ -242,15 +249,19 @@ Create simple workflows first, then add complexity as you validate each piece.
 ## Troubleshooting
 
 ### "Runner blocked: No matching transition"
+
 The current step completed but no transition condition matched. Fix by:
+
 - Adding an "Always" fallback transition
 - Checking that step result values match your conditions exactly
 
 ### Step not executing
+
 - Verify the entry condition is met (green dot shows "Entry condition met")
 - Check that the previous step's transition leads to this step
 
 ### Workflow not appearing in dropdown
+
 - Save the workflow first
 - Refresh the dropdown by closing and reopening it
 
@@ -260,19 +271,19 @@ The current step completed but no transition condition matched. Fix by:
 
 ### Built-in Workflows
 
-| Workflow | Purpose |
-|----------|---------|
+| Workflow         | Purpose                                            |
+| ---------------- | -------------------------------------------------- |
 | `Build & Verify` | Standard loop: Builder implements, Verifier checks |
-| `Test` | Run tests and report results |
+| `Test`           | Run tests and report results                       |
 
 ### Sub-Agent Types
 
-| ID | Purpose |
-|----|---------|
-| `code_reviewer` | Review code quality |
-| `debugger` | Analyze and fix errors |
-| `test_generator` | Create test files |
-| `verifier` | Check acceptance criteria |
+| ID               | Purpose                   |
+| ---------------- | ------------------------- |
+| `code_reviewer`  | Review code quality       |
+| `debugger`       | Analyze and fix errors    |
+| `test_generator` | Create test files         |
+| `verifier`       | Check acceptance criteria |
 
 ### Result Return Format
 

@@ -9,7 +9,7 @@ describe('CreateProjectModal validation', () => {
   describe('validateProjectName', () => {
     it('should accept valid project names', () => {
       const validNames = ['my-project', 'my_project', 'my.project', 'Project123', 'test-123']
-      
+
       for (const name of validNames) {
         const result = validateProjectName(name)
         expect(result.valid).toBe(true)
@@ -30,7 +30,7 @@ describe('CreateProjectModal validation', () => {
 
     it('should reject project names with special characters', () => {
       const invalidNames = ['my@project', 'my#project', 'my$project']
-      
+
       for (const name of invalidNames) {
         const result = validateProjectName(name)
         expect(result.valid).toBe(false)
@@ -55,7 +55,7 @@ describe('CreateProjectModal validation', () => {
     it('should reject project names with path separators', () => {
       const result1 = validateProjectName('my/project')
       expect(result1.valid).toBe(false)
-      
+
       const result2 = validateProjectName('my\\project')
       expect(result2.valid).toBe(false)
     })
@@ -72,16 +72,16 @@ describe('CreateProjectModal payload parsing', () => {
         project: {
           id: 'proj-123',
           name: 'test-project',
-          workdir: '/home/user/test-project'
-        }
-      }
+          workdir: '/home/user/test-project',
+        },
+      },
     }
-    
+
     // Extract the project like the modal does
     const msg = mockMessage as unknown as { type: string; payload?: unknown }
     const payload = msg.payload as { project: { id: string } }
     const project = payload?.project
-    
+
     expect(project).toBeDefined()
     expect(project?.id).toBe('proj-123')
   })

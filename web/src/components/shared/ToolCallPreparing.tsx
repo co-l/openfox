@@ -37,7 +37,7 @@ function extractCommandFromArgs(args: string): string | null {
 
 export const ToolCallPreparing = memo(function ToolCallPreparing({ name, arguments: args }: ToolCallPreparingProps) {
   const description = getToolDescription(name)
-  
+
   let detailText = description + '...'
   if (name === 'run_command' && args) {
     const command = extractCommandFromArgs(args)
@@ -45,7 +45,7 @@ export const ToolCallPreparing = memo(function ToolCallPreparing({ name, argumen
       detailText = command
     }
   }
-  
+
   return (
     <div className="border border-border rounded overflow-hidden my-1 min-w-0 animate-pulse">
       <div className="flex items-center gap-1.5 p-2 bg-bg-tertiary">

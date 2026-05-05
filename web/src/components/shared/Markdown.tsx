@@ -19,10 +19,7 @@ const MARKDOWN_COMPONENTS = {
 
     if (isInline) {
       return (
-        <code
-          className="bg-bg-tertiary px-1 py-0.5 rounded text-accent-secondary font-mono text-xs"
-          {...props}
-        >
+        <code className="bg-bg-tertiary px-1 py-0.5 rounded text-accent-secondary font-mono text-xs" {...props}>
           {children}
         </code>
       )
@@ -46,11 +43,7 @@ const MARKDOWN_COMPONENTS = {
             className="opacity-0 group-hover:opacity-100 transition-opacity hover:text-text-primary p-0.5"
             title="Copy code"
           >
-            {copied ? (
-              <CheckIcon />
-            ) : (
-              <CopyIcon />
-            )}
+            {copied ? <CheckIcon /> : <CopyIcon />}
           </button>
         </div>
         <div className="overflow-x-auto">
@@ -58,10 +51,12 @@ const MARKDOWN_COMPONENTS = {
             style={oneDark}
             language={language}
             PreTag="div"
-            customStyle={{
-              margin: 0,
-              fontSize: '0.75rem',
-            } as React.CSSProperties}
+            customStyle={
+              {
+                margin: 0,
+                fontSize: '0.75rem',
+              } as React.CSSProperties
+            }
             codeTagProps={{
               style: {
                 whiteSpace: 'pre-wrap',
@@ -114,12 +109,7 @@ const MARKDOWN_COMPONENTS = {
 
   a({ href, children }: any) {
     return (
-      <a
-        href={href}
-        className="text-accent-primary hover:underline text-sm"
-        target="_blank"
-        rel="noopener noreferrer"
-      >
+      <a href={href} className="text-accent-primary hover:underline text-sm" target="_blank" rel="noopener noreferrer">
         {children}
       </a>
     )
@@ -142,11 +132,7 @@ const MARKDOWN_COMPONENTS = {
   },
 
   th({ children }: any) {
-    return (
-      <th className="border border-border bg-bg-tertiary px-2 py-1 text-left font-semibold text-sm">
-        {children}
-      </th>
-    )
+    return <th className="border border-border bg-bg-tertiary px-2 py-1 text-left font-semibold text-sm">{children}</th>
   },
 
   td({ children }: any) {
@@ -158,15 +144,7 @@ const MARKDOWN_COMPONENTS = {
   },
 
   input({ checked, ...props }: any) {
-    return (
-      <input
-        type="checkbox"
-        checked={checked}
-        disabled
-        className="mr-1.5 w-3.5 h-3.5"
-        {...props}
-      />
-    )
+    return <input type="checkbox" checked={checked} disabled className="mr-1.5 w-3.5 h-3.5" {...props} />
   },
 }
 
@@ -181,10 +159,7 @@ export const Markdown = memo(function Markdown({ content, className = '' }: Mark
 
   return (
     <div className={`markdown-content [&_li>p]:inline ${className}`}>
-      <ReactMarkdown
-        remarkPlugins={[remarkGfm]}
-        components={MARKDOWN_COMPONENTS}
-      >
+      <ReactMarkdown remarkPlugins={[remarkGfm]} components={MARKDOWN_COMPONENTS}>
         {processedContent}
       </ReactMarkdown>
     </div>
@@ -217,14 +192,14 @@ function fixUnclosedCodeBlocks(content: string): string {
   const codeBlockRegex = /```/g
   const matches = content.match(codeBlockRegex)
   const count = matches?.length ?? 0
-  
+
   // If odd number of ```, we have an unclosed code block
   if (count % 2 === 1) {
     // Check if the last ``` has a language specifier on the same line
     const lastIndex = content.lastIndexOf('```')
     const afterBackticks = content.slice(lastIndex + 3)
     const hasNewlineAfter = afterBackticks.includes('\n')
-    
+
     if (hasNewlineAfter) {
       // Code block is open with content, close it
       return content + '\n```'
@@ -233,6 +208,6 @@ function fixUnclosedCodeBlocks(content: string): string {
       return content + '\n```'
     }
   }
-  
+
   return content
 }

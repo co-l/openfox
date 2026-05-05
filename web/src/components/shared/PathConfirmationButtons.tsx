@@ -40,9 +40,9 @@ function getReasonMessage(reason: PendingPathConfirmation['reason']): {
 }
 
 export function PathConfirmationButtons({ confirmation }: PathConfirmationButtonsProps) {
-  const confirmPath = useSessionStore(state => state.confirmPath)
-  const currentSession = useSessionStore(state => state.currentSession)
-  const switchDangerLevel = useSessionStore(state => state.switchDangerLevel)
+  const confirmPath = useSessionStore((state) => state.confirmPath)
+  const currentSession = useSessionStore((state) => state.currentSession)
+  const switchDangerLevel = useSessionStore((state) => state.switchDangerLevel)
   const { title, description } = getReasonMessage(confirmation.reason)
 
   const isSensitive = confirmation.reason === 'sensitive_file' || confirmation.reason === 'both'
@@ -63,18 +63,13 @@ export function PathConfirmationButtons({ confirmation }: PathConfirmationButton
       <div className="flex items-center gap-2 mb-2">
         <WarningSmallIcon />
         <div className="flex-1 min-w-0">
-          <div className={`text-sm font-medium ${isSensitive ? 'text-red-400' : 'text-amber-400'}`}>
-            {title}
-          </div>
-          <div className="text-xs text-text-muted">
-            {description}
-          </div>
+          <div className={`text-sm font-medium ${isSensitive ? 'text-red-400' : 'text-amber-400'}`}>{title}</div>
+          <div className="text-xs text-text-muted">{description}</div>
         </div>
       </div>
 
       <div className="text-xs text-text-muted mb-2">
-        <span className="font-medium">{confirmation.tool}</span>
-        {' '}wants to access:
+        <span className="font-medium">{confirmation.tool}</span> wants to access:
       </div>
 
       <div className="bg-bg-primary rounded p-2 mb-3 max-h-24 overflow-y-auto">

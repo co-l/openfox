@@ -47,30 +47,27 @@ function SubAgentContextBar({ contextState }: { contextState: ContextState }) {
       <span className={getTextColor(percent, dangerZone)}>
         {formatTokens(currentTokens)}/{formatTokens(maxTokens)}
       </span>
-      <span className={getTextColor(percent, dangerZone)}>
-        ({percent}%)
-      </span>
+      <span className={getTextColor(percent, dangerZone)}>({percent}%)</span>
       <ProgressBar percent={percent} dangerZone={dangerZone} size="sm" />
-      {dangerZone && (
-        <span className="text-accent-error animate-pulse">Low!</span>
-      )}
-      {compactionCount > 0 && (
-        <span className="text-text-muted bg-bg-tertiary px-1 rounded">
-          {compactionCount}x
-        </span>
-      )}
+      {dangerZone && <span className="text-accent-error animate-pulse">Low!</span>}
+      {compactionCount > 0 && <span className="text-text-muted bg-bg-tertiary px-1 rounded">{compactionCount}x</span>}
     </div>
   )
 }
 
-export const SubAgentContainer = memo(function SubAgentContainer({ messages, subAgentType, subAgentId, isStreaming }: SubAgentContainerProps) {
+export const SubAgentContainer = memo(function SubAgentContainer({
+  messages,
+  subAgentType,
+  subAgentId,
+  isStreaming,
+}: SubAgentContainerProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const scrollRef = useRef<HTMLDivElement>(null)
   const [expanded, setExpanded] = useState(false)
-  const agentDefaults = useAgentsStore(state => state.defaults)
-  const agentUserItems = useAgentsStore(state => state.userItems)
+  const agentDefaults = useAgentsStore((state) => state.defaults)
+  const agentUserItems = useAgentsStore((state) => state.userItems)
   const agents = [...agentDefaults, ...agentUserItems]
-  const contextState = useSessionStore(state => state.subAgentContextStates[subAgentId])
+  const contextState = useSessionStore((state) => state.subAgentContextStates[subAgentId])
   const { showThinking, showVerboseToolOutput } = useDisplaySettings()
 
   const { isAutoScrollActive, setAutoScroll } = useAutoScroll(scrollRef, null)
@@ -92,19 +89,16 @@ export const SubAgentContainer = memo(function SubAgentContainer({ messages, sub
     }
   }, [expanded])
 
-  const agentInfo = agents.find(a => a.id === subAgentType)
+  const agentInfo = agents.find((a) => a.id === subAgentType)
   const label = agentInfo?.name ?? LABELS[subAgentType] ?? subAgentType
   const color = getAgentColor(agents, subAgentType)
   const hStyle = headerStyle(color)
 
-  const displayMessages = messages.filter(m => m.role !== 'tool')
+  const displayMessages = messages.filter((m) => m.role !== 'tool')
 
   return (
     <div ref={containerRef} className="feed-item border border-border rounded overflow-hidden bg-secondary">
-      <div
-        className="w-full flex items-center justify-between px-2 py-1 border-b relative"
-        style={hStyle}
-      >
+      <div className="w-full flex items-center justify-between px-2 py-1 border-b relative" style={hStyle}>
         <span className="text-xs font-medium">{label}</span>
         <div className="absolute left-1/2 -translate-x-1/2">
           {contextState && <SubAgentContextBar contextState={contextState} />}
@@ -115,7 +109,9 @@ export const SubAgentContainer = memo(function SubAgentContainer({ messages, sub
             className="text-sm text-text-muted hover:text-text-primary flex items-center gap-1.5"
             onClick={() => setAutoScroll(!isAutoScrollActive)}
           >
-            <span className={`w-1 h-1 rounded-full ${isAutoScrollActive ? 'bg-accent-success' : 'border border-text-muted'}`} />
+            <span
+              className={`w-1 h-1 rounded-full ${isAutoScrollActive ? 'bg-accent-success' : 'border border-text-muted'}`}
+            />
             live
           </button>
           <button
@@ -145,13 +141,7 @@ export const SubAgentContainer = memo(function SubAgentContainer({ messages, sub
             )
           }
 
-          return (
-            <ChatMessage
-              key={message.id}
-              message={message}
-              isLastAssistantMessage={false}
-            />
-          )
+          return <ChatMessage key={message.id} message={message} isLastAssistantMessage={false} />
         })}
       </div>
     </div>

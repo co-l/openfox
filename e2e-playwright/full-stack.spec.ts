@@ -4,7 +4,8 @@ import { mkdir, rm } from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 
-const TEST_PROMPT = 'this is just a test - add a "this is just a test criteria, validate it without doing anything" criteria (but do not validate it just yet, not in planning mode!)'
+const TEST_PROMPT =
+  'this is just a test - add a "this is just a test criteria, validate it without doing anything" criteria (but do not validate it just yet, not in planning mode!)'
 
 interface TestContext {
   serverUrl: string
@@ -23,15 +24,17 @@ async function setupTestEnvironment(): Promise<TestContext> {
   // Create a minimal config file in temp location for isolated testing
   const configJson = {
     workspace: { workdir },
-    providers: [{
-      id: 'e2e-provider',
-      name: 'E2E Provider',
-      url: 'http://192.168.1.223:8000',
-      backend: 'vllm' as const,
-      models: [],
-      isActive: true,
-      createdAt: new Date().toISOString(),
-    }],
+    providers: [
+      {
+        id: 'e2e-provider',
+        name: 'E2E Provider',
+        url: 'http://192.168.1.223:8000',
+        backend: 'vllm' as const,
+        models: [],
+        isActive: true,
+        createdAt: new Date().toISOString(),
+      },
+    ],
     activeProviderId: 'e2e-provider',
     defaultModelSelection: { providerId: 'e2e-provider' },
   }
@@ -82,7 +85,7 @@ async function setupTestEnvironment(): Promise<TestContext> {
     } catch {
       // Server not ready yet
     }
-    await new Promise(resolve => setTimeout(resolve, 1000))
+    await new Promise((resolve) => setTimeout(resolve, 1000))
   }
 
   if (!serverReady) {
@@ -93,7 +96,7 @@ async function setupTestEnvironment(): Promise<TestContext> {
   const cleanupFn = async () => {
     if (serverProcess) {
       serverProcess.kill('SIGTERM')
-      await new Promise(resolve => setTimeout(resolve, 1000))
+      await new Promise((resolve) => setTimeout(resolve, 1000))
     }
     try {
       await rm(workdir, { recursive: true, force: true })

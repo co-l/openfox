@@ -20,14 +20,12 @@ const statusConfig: Record<Criterion['status']['type'], StatusConfig> = {
   failed: { icon: '✗', color: 'text-accent-error', label: 'Failed' },
 }
 
-export const CriteriaProgressSummary = memo(function CriteriaProgressSummary({ criteria }: CriteriaProgressSummaryProps) {
+export const CriteriaProgressSummary = memo(function CriteriaProgressSummary({
+  criteria,
+}: CriteriaProgressSummaryProps) {
   // Handle empty criteria
   if (criteria.length === 0) {
-    return (
-      <div className="text-text-muted text-sm text-center py-2">
-        No criteria yet
-      </div>
-    )
+    return <div className="text-text-muted text-sm text-center py-2">No criteria yet</div>
   }
 
   // Count criteria by status
@@ -47,9 +45,7 @@ export const CriteriaProgressSummary = memo(function CriteriaProgressSummary({ c
   }
 
   // Only show statuses that have criteria
-  const statusesToShow = (Object.keys(counts) as Array<keyof typeof counts>).filter(
-    status => counts[status] > 0
-  )
+  const statusesToShow = (Object.keys(counts) as Array<keyof typeof counts>).filter((status) => counts[status] > 0)
 
   return (
     <div className="space-y-1">
@@ -61,7 +57,7 @@ export const CriteriaProgressSummary = memo(function CriteriaProgressSummary({ c
 
       {/* Status breakdown */}
       <div className="space-y-1">
-        {statusesToShow.map(status => {
+        {statusesToShow.map((status) => {
           const config = statusConfig[status]
           return (
             <div key={status} className="flex items-center gap-2 text-sm">

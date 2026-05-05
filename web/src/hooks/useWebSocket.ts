@@ -3,9 +3,9 @@ import { useSessionStore } from '../stores/session'
 import { useNotificationSettingsStore } from '../stores/notifications'
 
 export function useWebSocket() {
-  const connect = useSessionStore(state => state.connect)
-  const connectionStatus = useSessionStore(state => state.connectionStatus)
-  const loadNotificationSettings = useNotificationSettingsStore(state => state.load)
+  const connect = useSessionStore((state) => state.connect)
+  const connectionStatus = useSessionStore((state) => state.connectionStatus)
+  const loadNotificationSettings = useNotificationSettingsStore((state) => state.load)
 
   useEffect(() => {
     connect()

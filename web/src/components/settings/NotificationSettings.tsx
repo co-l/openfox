@@ -10,7 +10,12 @@ import {
 import { requestNotificationPermission } from '../../lib/sound'
 import { ChevronDownIcon } from '../shared/icons'
 
-function SoundPicker({ value, defaultUrl, disabled, onChange }: {
+function SoundPicker({
+  value,
+  defaultUrl,
+  disabled,
+  onChange,
+}: {
   value: string | null
   defaultUrl: string
   disabled?: boolean
@@ -46,14 +51,14 @@ const AGENT_COLUMNS = [
   { key: 'sub-agent', label: 'Sub-agent' },
 ] as const
 
-type ColumnKey = typeof AGENT_COLUMNS[number]['key']
+type ColumnKey = (typeof AGENT_COLUMNS)[number]['key']
 
 export function NotificationSettings() {
-  const settings = useNotificationSettingsStore(s => s.settings)
-  const update = useNotificationSettingsStore(s => s.update)
-  const updateEvent = useNotificationSettingsStore(s => s.updateEvent)
-  const updateAgentOverride = useNotificationSettingsStore(s => s.updateAgentOverride)
-  const load = useNotificationSettingsStore(s => s.load)
+  const settings = useNotificationSettingsStore((s) => s.settings)
+  const update = useNotificationSettingsStore((s) => s.update)
+  const updateEvent = useNotificationSettingsStore((s) => s.updateEvent)
+  const updateAgentOverride = useNotificationSettingsStore((s) => s.updateAgentOverride)
+  const load = useNotificationSettingsStore((s) => s.load)
 
   useEffect(() => {
     load()
@@ -66,7 +71,12 @@ export function NotificationSettings() {
     }
   }
 
-  const handleToggle = (column: ColumnKey, event: SoundEvent, field: 'soundEnabled' | 'browserNotification', value: boolean) => {
+  const handleToggle = (
+    column: ColumnKey,
+    event: SoundEvent,
+    field: 'soundEnabled' | 'browserNotification',
+    value: boolean,
+  ) => {
     if (column === 'general') {
       updateEvent(event, { [field]: value })
     } else {
@@ -104,11 +114,13 @@ export function NotificationSettings() {
             }
           }}
         />
-        {typeof Notification !== 'undefined' && Notification.permission === 'denied' && settings.browserNotificationEnabled && (
-          <p className="text-xs text-accent-error ml-6">
-            Browser notifications are blocked. Please enable them in your browser settings.
-          </p>
-        )}
+        {typeof Notification !== 'undefined' &&
+          Notification.permission === 'denied' &&
+          settings.browserNotificationEnabled && (
+            <p className="text-xs text-accent-error ml-6">
+              Browser notifications are blocked. Please enable them in your browser settings.
+            </p>
+          )}
       </div>
 
       <div className="space-y-3">
@@ -118,7 +130,7 @@ export function NotificationSettings() {
             <thead className="sticky top-0 bg-bg-tertiary">
               <tr className="border-b border-border">
                 <th className="text-left px-3 py-2 text-text-primary font-medium w-40">Event</th>
-                {AGENT_COLUMNS.map(col => (
+                {AGENT_COLUMNS.map((col) => (
                   <th key={col.key} className="text-center px-2 py-2 text-text-primary font-medium">
                     {col.label}
                   </th>
@@ -126,13 +138,17 @@ export function NotificationSettings() {
               </tr>
             </thead>
             <tbody>
-              {SOUND_EVENTS.map(event => (
+              {SOUND_EVENTS.map((event) => (
                 <tr key={event.key} className="border-b border-border last:border-b-0 hover:bg-bg-secondary/50">
                   <td className="px-3 py-2">
                     <div className="text-text-primary text-xs">{event.label}</div>
                   </td>
-                  {AGENT_COLUMNS.map(col => {
-                    const config = resolveEventConfig(settings, event.key, col.key === 'general' ? undefined : col.key as 'build' | 'sub-agent')
+                  {AGENT_COLUMNS.map((col) => {
+                    const config = resolveEventConfig(
+                      settings,
+                      event.key,
+                      col.key === 'general' ? undefined : (col.key as 'build' | 'sub-agent'),
+                    )
                     const defaultSound = DEFAULT_SOUNDS[event.key]
                     return (
                       <td key={col.key} className="px-2 py-2 align-top">
@@ -152,7 +168,9 @@ export function NotificationSettings() {
                               <input
                                 type="checkbox"
                                 checked={config.browserNotification}
-                                onChange={(e) => handleToggle(col.key, event.key, 'browserNotification', e.target.checked)}
+                                onChange={(e) =>
+                                  handleToggle(col.key, event.key, 'browserNotification', e.target.checked)
+                                }
                                 disabled={!settings.browserNotificationEnabled}
                                 className="rounded border-border"
                                 title="Browser"
@@ -181,7 +199,12 @@ export function NotificationSettings() {
   )
 }
 
-function Toggle({ label, description, checked, onChange }: {
+function Toggle({
+  label,
+  description,
+  checked,
+  onChange,
+}: {
   label: string
   description: string
   checked: boolean
@@ -194,7 +217,10 @@ function Toggle({ label, description, checked, onChange }: {
           className={`relative w-9 h-5 rounded-full transition-colors ${
             checked ? 'bg-accent-primary' : 'bg-bg-tertiary border border-border'
           }`}
-          onClick={(e) => { e.preventDefault(); onChange(!checked) }}
+          onClick={(e) => {
+            e.preventDefault()
+            onChange(!checked)
+          }}
         >
           <div
             className={`absolute top-0.5 w-4 h-4 rounded-full bg-white shadow transition-transform ${

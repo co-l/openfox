@@ -10,9 +10,7 @@ describe('Message filtering logic', () => {
       { id: '3', role: 'user', content: 'Another', timestamp: '2024-01-15T10:02:00Z' },
     ]
 
-    const userMessages = messages.filter(msg =>
-      msg.role === 'user'
-    )
+    const userMessages = messages.filter((msg) => msg.role === 'user')
 
     expect(userMessages).toHaveLength(2)
     expect(userMessages[0]?.content).toBe('Hello')
@@ -26,9 +24,7 @@ describe('Message filtering logic', () => {
       { id: '3', role: 'user', content: 'Another regular', timestamp: '2024-01-15T10:02:00Z' },
     ]
 
-    const filtered = messages.filter(msg =>
-      msg.role === 'user' && !msg.isSystemGenerated
-    )
+    const filtered = messages.filter((msg) => msg.role === 'user' && !msg.isSystemGenerated)
 
     expect(filtered).toHaveLength(2)
     expect(filtered[0]?.content).toBe('Regular message')
@@ -41,8 +37,8 @@ describe('Message filtering logic', () => {
       { id: '2', role: 'user', content: 'Auto prompt', timestamp: '2024-01-15T10:01:00Z', messageKind: 'auto-prompt' },
     ]
 
-    const filtered = messages.filter(msg =>
-      msg.role === 'user' && !msg.isSystemGenerated && msg.messageKind !== 'auto-prompt'
+    const filtered = messages.filter(
+      (msg) => msg.role === 'user' && !msg.isSystemGenerated && msg.messageKind !== 'auto-prompt',
     )
 
     expect(filtered).toHaveLength(1)
@@ -55,8 +51,12 @@ describe('Message filtering logic', () => {
       { id: '2', role: 'user', content: 'Command', timestamp: '2024-01-15T10:01:00Z', messageKind: 'command' },
     ]
 
-    const filtered = messages.filter(msg =>
-      msg.role === 'user' && !msg.isSystemGenerated && msg.messageKind !== 'auto-prompt' && msg.messageKind !== 'command'
+    const filtered = messages.filter(
+      (msg) =>
+        msg.role === 'user' &&
+        !msg.isSystemGenerated &&
+        msg.messageKind !== 'auto-prompt' &&
+        msg.messageKind !== 'command',
     )
 
     expect(filtered).toHaveLength(1)

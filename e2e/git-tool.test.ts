@@ -1,6 +1,6 @@
 /**
  * Git Tool E2E Tests
- * 
+ *
  * Tests the git inspection tool available in planner mode.
  * The git tool is read-only and blocks destructive commands.
  */
@@ -9,17 +9,17 @@ import { describe, it, expect, beforeAll, afterAll, beforeEach, afterEach } from
 import { execSync } from 'node:child_process'
 import { writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
-import { 
-  createTestClient, 
+import {
+  createTestClient,
   createTestProject,
   createTestServer,
   collectChatEvents,
   assertNoErrors,
   createProject,
   createSession,
-  type TestClient, 
+  type TestClient,
   type TestProject,
-  type TestServerHandle 
+  type TestServerHandle,
 } from './utils/index.js'
 
 describe('Git Tool', () => {
@@ -39,7 +39,7 @@ describe('Git Tool', () => {
     client = await createTestClient({ url: server.wsUrl })
     // Create a project with git initialized
     testDir = await createTestProject({ template: 'git-repo' })
-    
+
     const restProject = await createProject(server.url, { name: 'Git Tool Test', workdir: testDir.path })
     const restSession = await createSession(server.url, { projectId: restProject.id })
     await client.send('session.load', { sessionId: restSession.id })
@@ -53,22 +53,22 @@ describe('Git Tool', () => {
   describe('Basic Git Commands', () => {
     it('executes git status', async () => {
       // Use a prompt that explicitly asks for git status
-      await client.send('chat.send', { 
-        content: 'Use the git tool with command "git status"' 
+      await client.send('chat.send', {
+        content: 'Use the git tool with command "git status"',
       })
-      
+
       const events = await collectChatEvents(client)
       assertNoErrors(events)
-      
+
       const toolCalls = events.get('chat.tool_call')
-      const gitCall = toolCalls.find(e => (e.payload as { tool: string }).tool === 'git')
-      
+      const gitCall = toolCalls.find((e) => (e.payload as { tool: string }).tool === 'git')
+
       // The mock LLM should trigger a git tool call
       if (gitCall) {
         const toolResults = events.get('chat.tool_result')
-        const gitResult = toolResults.find(e => (e.payload as { tool: string }).tool === 'git')
+        const gitResult = toolResults.find((e) => (e.payload as { tool: string }).tool === 'git')
         expect(gitResult).toBeDefined()
-        
+
         const result = (gitResult!.payload as { result: { success: boolean; output?: string } }).result
         expect(result.success).toBe(true)
         // Git status should mention something about the working tree
@@ -80,16 +80,16 @@ describe('Git Tool', () => {
     })
 
     it('executes git log', async () => {
-      await client.send('chat.send', { 
-        content: 'Show me the git log with the last 5 commits.' 
+      await client.send('chat.send', {
+        content: 'Show me the git log with the last 5 commits.',
       })
-      
+
       const events = await collectChatEvents(client)
       assertNoErrors(events)
-      
+
       const toolResults = events.get('chat.tool_result')
-      const gitResult = toolResults.find(e => (e.payload as { tool: string }).tool === 'git')
-      
+      const gitResult = toolResults.find((e) => (e.payload as { tool: string }).tool === 'git')
+
       if (gitResult) {
         const result = (gitResult.payload as { result: { success: boolean; output?: string } }).result
         expect(result.success).toBe(true)
@@ -99,16 +99,16 @@ describe('Git Tool', () => {
     })
 
     it('executes git branch', async () => {
-      await client.send('chat.send', { 
-        content: 'List all git branches in the repository.' 
+      await client.send('chat.send', {
+        content: 'List all git branches in the repository.',
       })
-      
+
       const events = await collectChatEvents(client)
       assertNoErrors(events)
-      
+
       const toolResults = events.get('chat.tool_result')
-      const gitResult = toolResults.find(e => (e.payload as { tool: string }).tool === 'git')
-      
+      const gitResult = toolResults.find((e) => (e.payload as { tool: string }).tool === 'git')
+
       if (gitResult) {
         const result = (gitResult.payload as { result: { success: boolean; output?: string } }).result
         expect(result.success).toBe(true)
@@ -120,17 +120,17 @@ describe('Git Tool', () => {
     it('executes git diff on modified file', async () => {
       // Modify a file to create a diff
       await writeFile(join(testDir.path, 'README.md'), '# Modified\n\nNew content.')
-      
-      await client.send('chat.send', { 
-        content: 'Show me the git diff of the changes.' 
+
+      await client.send('chat.send', {
+        content: 'Show me the git diff of the changes.',
       })
-      
+
       const events = await collectChatEvents(client)
       assertNoErrors(events)
-      
+
       const toolResults = events.get('chat.tool_result')
-      const gitResult = toolResults.find(e => (e.payload as { tool: string }).tool === 'git')
-      
+      const gitResult = toolResults.find((e) => (e.payload as { tool: string }).tool === 'git')
+
       if (gitResult) {
         const result = (gitResult.payload as { result: { success: boolean; output?: string } }).result
         expect(result.success).toBe(true)
@@ -142,15 +142,15 @@ describe('Git Tool', () => {
 
   describe('Destructive Command Blocking', () => {
     it('blocks git reset --hard', async () => {
-      await client.send('chat.send', { 
-        content: 'Run git reset --hard HEAD to reset the repository.' 
+      await client.send('chat.send', {
+        content: 'Run git reset --hard HEAD to reset the repository.',
       })
-      
+
       const events = await collectChatEvents(client)
-      
+
       const toolResults = events.get('chat.tool_result')
-      const gitResult = toolResults.find(e => (e.payload as { tool: string }).tool === 'git')
-      
+      const gitResult = toolResults.find((e) => (e.payload as { tool: string }).tool === 'git')
+
       if (gitResult) {
         const result = (gitResult.payload as { result: { success: boolean; error?: string } }).result
         expect(result.success).toBe(false)
@@ -160,12 +160,12 @@ describe('Git Tool', () => {
 
     it('blocks git push --force', async () => {
       // Directly execute a git command that would be destructive
-      await client.send('chat.send', { 
-        content: 'Execute: git push --force origin main' 
+      await client.send('chat.send', {
+        content: 'Execute: git push --force origin main',
       })
-      
+
       const events = await collectChatEvents(client)
-      
+
       // The mock LLM might not trigger this exact command,
       // but we verify no errors and the system handles it gracefully
       assertNoErrors(events)
@@ -176,23 +176,23 @@ describe('Git Tool', () => {
     it('handles non-git directory gracefully', async () => {
       // Create a project without git
       const nonGitDir = await createTestProject({ template: 'typescript' })
-      
+
       try {
         const client2 = await createTestClient({ url: server.wsUrl })
         try {
           const restProject = await createProject(server.url, { name: 'Non-Git Test', workdir: nonGitDir.path })
           const restSession = await createSession(server.url, { projectId: restProject.id })
           await client2.send('session.load', { sessionId: restSession.id })
-          
-          await client2.send('chat.send', { 
-            content: 'Run git status to check the repository state.' 
+
+          await client2.send('chat.send', {
+            content: 'Run git status to check the repository state.',
           })
-          
+
           const events = await collectChatEvents(client2)
-          
+
           const toolResults = events.get('chat.tool_result')
-          const gitResult = toolResults.find(e => (e.payload as { tool: string }).tool === 'git')
-          
+          const gitResult = toolResults.find((e) => (e.payload as { tool: string }).tool === 'git')
+
           if (gitResult) {
             const result = (gitResult.payload as { result: { success: boolean; error?: string } }).result
             // Git should fail with "not a git repository"
@@ -216,12 +216,12 @@ describe('Git Tool', () => {
       execSync('git config user.name "Test"', { cwd: join(testDir.path, 'subproject') })
       await writeFile(join(testDir.path, 'subproject/file.txt'), 'content')
       execSync('git add . && git commit -m "Sub commit"', { cwd: join(testDir.path, 'subproject') })
-      
+
       // The git tool with cwd should work
-      await client.send('chat.send', { 
-        content: 'Run git status to see the current state.' 
+      await client.send('chat.send', {
+        content: 'Run git status to see the current state.',
       })
-      
+
       const events = await collectChatEvents(client)
       assertNoErrors(events)
     })

@@ -137,7 +137,7 @@ describe('resolveEventConfig', () => {
         complete: { soundEnabled: true, browserNotification: false, customSoundUrl: null },
       },
       agentOverrides: {
-        'build': {
+        build: {
           complete: { soundEnabled: false },
         },
       },
@@ -155,7 +155,7 @@ describe('resolveEventConfig', () => {
         complete: { soundEnabled: true, browserNotification: false, customSoundUrl: null },
       },
       agentOverrides: {
-        'build': {
+        build: {
           complete: { customSoundUrl: '/sounds/intervention.mp3' },
         },
       },

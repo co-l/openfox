@@ -3,7 +3,7 @@ import { authFetch } from '../lib/api'
 export const saveEntity = async (
   method: 'POST' | 'PUT',
   url: string,
-  entity: Record<string, unknown>
+  entity: Record<string, unknown>,
 ): Promise<{ success: boolean; error?: string }> => {
   try {
     const res = await authFetch(url, {

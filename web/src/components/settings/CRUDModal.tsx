@@ -13,7 +13,10 @@ export function useConfirmDialog() {
   const requestDelete = useCallback((id: string) => setConfirmState({ id, type: 'delete' }), [])
   const clearConfirm = useCallback(() => setConfirmState({ id: null, type: null }), [])
 
-  const isConfirming = useCallback((id: string, type: 'delete') => confirmState.id === id && confirmState.type === type, [confirmState.id, confirmState.type])
+  const isConfirming = useCallback(
+    (id: string, type: 'delete') => confirmState.id === id && confirmState.type === type,
+    [confirmState.id, confirmState.type],
+  )
 
   return { requestDelete, clearConfirm, isConfirming }
 }
@@ -93,7 +96,7 @@ export function FormField({ label, value, onChange, placeholder, readOnly, hint,
       </label>
       <input
         value={value}
-        onChange={e => onChange(e.target.value)}
+        onChange={(e) => onChange(e.target.value)}
         readOnly={readOnly}
         placeholder={placeholder}
         className={`w-full px-2 py-1.5 bg-bg-tertiary border border-border rounded text-sm focus:outline-none focus:ring-1 focus:ring-accent-primary ${
@@ -118,7 +121,7 @@ export function FormTextArea({ label, value, onChange, placeholder, className = 
       <label className="block text-xs text-text-secondary mb-1">{label}</label>
       <textarea
         value={value}
-        onChange={e => onChange(e.target.value)}
+        onChange={(e) => onChange(e.target.value)}
         placeholder={placeholder}
         className="w-full h-full px-3 py-2 bg-bg-tertiary border border-border rounded text-sm font-mono resize-none focus:outline-none focus:ring-1 focus:ring-accent-primary"
       />
@@ -136,7 +139,9 @@ interface ModalActionsProps {
 export function ModalActions({ onCancel, onSave, saving, saveDisabled }: ModalActionsProps) {
   return (
     <div className="flex justify-end gap-2 pt-2 border-t border-border">
-      <Button variant="secondary" onClick={onCancel}>Cancel</Button>
+      <Button variant="secondary" onClick={onCancel}>
+        Cancel
+      </Button>
       <Button variant="primary" onClick={onSave} disabled={saving || saveDisabled}>
         {saving ? 'Saving...' : 'Save'}
       </Button>
@@ -149,7 +154,5 @@ interface ErrorBannerProps {
 }
 
 export function ErrorBanner({ message }: ErrorBannerProps) {
-  return (
-    <div className="text-accent-error text-sm px-3 py-2 bg-accent-error/10 rounded">{message}</div>
-  )
+  return <div className="text-accent-error text-sm px-3 py-2 bg-accent-error/10 rounded">{message}</div>
 }

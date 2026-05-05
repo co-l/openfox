@@ -78,7 +78,9 @@ vi.mock('../../stores/project', () => ({
 
 vi.mock('../shared/Button', () => ({
   Button: ({ children, onClick, className }: { children: ReactNode; onClick?: () => void; className?: string }) => (
-    <button className={className} onClick={onClick}>{children}</button>
+    <button className={className} onClick={onClick}>
+      {children}
+    </button>
   ),
 }))
 
@@ -110,7 +112,7 @@ describe('Sidebar', () => {
   it('displays message count in session list', () => {
     sessionStoreStateRef.current = {
       ...sessionStoreState,
-      sessions: sessionStoreState.sessions.map(s => ({
+      sessions: sessionStoreState.sessions.map((s) => ({
         ...s,
         messageCount: 5,
       })),

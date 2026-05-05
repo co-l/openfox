@@ -1,6 +1,6 @@
 /**
  * REST + WebSocket Integration E2E Tests
- * 
+ *
  * Verifies that REST CRUD operations work alongside WebSocket real-time features.
  * Tests the mixed-mode architecture: REST for CRUD, WS for streaming/events.
  */
@@ -104,7 +104,7 @@ describe('REST + WebSocket Integration', () => {
       const loadRes = await fetch(`${server.url}/api/sessions/${sessionId}`)
       expect(loadRes.status).toBe(200)
       const loadData: any = await loadRes.json()
-      
+
       // Subscribe to session via WS for real-time events
       await client.send('session.load', { sessionId })
 
@@ -181,7 +181,7 @@ describe('REST + WebSocket Integration', () => {
         expect(providerData.session.providerId).toBe(providerId)
 
         // Verify WS still works for real-time features
-      await setSessionMode(server.url, sessionId, 'planner', server.wsUrl)
+        await setSessionMode(server.url, sessionId, 'planner', server.wsUrl)
         const modeEvent = await client.waitFor('mode.changed')
         expect(modeEvent.type).toBe('mode.changed')
       }

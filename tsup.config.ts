@@ -5,7 +5,7 @@ const pkg = JSON.parse(readFileSync('./package.json', 'utf-8'))
 
 export default defineConfig({
   define: {
-    "process.env.VERSION" : JSON.stringify(pkg.version)
+    'process.env.VERSION': JSON.stringify(pkg.version),
   },
   entry: {
     'cli/index': 'src/cli/index.ts',

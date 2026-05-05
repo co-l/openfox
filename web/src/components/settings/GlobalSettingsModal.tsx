@@ -2,11 +2,12 @@ import { useState, useEffect } from 'react'
 import { useLocation } from 'wouter'
 import { Modal } from '../shared/SelfContainedModal'
 import { Button } from '../shared/Button'
-import { useSettingsStore, SETTINGS_KEYS } from '../../stores/settings'
+import { SETTINGS_KEYS } from '../../stores/settings'
 import { NotificationSettings } from './NotificationSettings'
 import { SkillsContent } from './SkillsModal'
 import { KvCacheWarning } from '../shared/KvCacheWarning'
 import { ThemeEditor } from './ThemeEditor'
+import { useSettingsStoreState } from './useSettingsStore'
 
 interface GlobalSettingsModalProps {
   isOpen: boolean
@@ -28,26 +29,14 @@ export function GlobalSettingsModal({ isOpen, onClose }: GlobalSettingsModalProp
             active={activeTab === 'instructions'}
             onClick={() => setActiveTab('instructions')}
           />
-          <TabButton
-            label="Skills"
-            active={activeTab === 'skills'}
-            onClick={() => setActiveTab('skills')}
-          />
+          <TabButton label="Skills" active={activeTab === 'skills'} onClick={() => setActiveTab('skills')} />
           <TabButton
             label="Notifications"
             active={activeTab === 'notifications'}
             onClick={() => setActiveTab('notifications')}
           />
-          <TabButton
-            label="Display"
-            active={activeTab === 'display'}
-            onClick={() => setActiveTab('display')}
-          />
-          <TabButton
-            label="Advanced"
-            active={activeTab === 'advanced'}
-            onClick={() => setActiveTab('advanced')}
-          />
+          <TabButton label="Display" active={activeTab === 'display'} onClick={() => setActiveTab('display')} />
+          <TabButton label="Advanced" active={activeTab === 'advanced'} onClick={() => setActiveTab('advanced')} />
         </div>
 
         {/* Tab content */}
@@ -93,39 +82,56 @@ function ThemePicker() {
 }
 
 function DisplayTab() {
-  const settings = useSettingsStore(state => state.settings)
-  const loading = useSettingsStore(state => state.loading)
-  const getSetting = useSettingsStore(state => state.getSetting)
-  const setSetting = useSettingsStore(state => state.setSetting)
-
+  const { settings, loading, getSetting, setSetting } = useSettingsStoreState()
   const isLoading = loading[SETTINGS_KEYS.DISPLAY_SHOW_THINKING] ?? false
 
   const toggles = [
-    { key: SETTINGS_KEYS.DISPLAY_SHOW_THINKING, label: 'Show thinking blocks', description: 'Display AI reasoning content in the feed' },
-    { key: SETTINGS_KEYS.DISPLAY_SHOW_VERBOSE_TOOL_OUTPUT, label: 'Show expanded tool output', description: 'Always show full tool call details instead of compact view' },
-    { key: SETTINGS_KEYS.DISPLAY_SHOW_STATS, label: 'Show stats bar', description: 'Display model, tokens, and timing information' },
-    { key: SETTINGS_KEYS.DISPLAY_SHOW_AGENT_DEFINITIONS, label: 'Show agent definitions', description: 'Display agent definition injections in the feed' },
-    { key: SETTINGS_KEYS.DISPLAY_SHOW_WORKFLOW_BARS, label: 'Show workflow bars', description: 'Display workflow start and end markers' },
+    {
+      key: SETTINGS_KEYS.DISPLAY_SHOW_THINKING,
+      label: 'Show thinking blocks',
+      description: 'Display AI reasoning content in the feed',
+    },
+    {
+      key: SETTINGS_KEYS.DISPLAY_SHOW_VERBOSE_TOOL_OUTPUT,
+      label: 'Show expanded tool output',
+      description: 'Always show full tool call details instead of compact view',
+    },
+    {
+      key: SETTINGS_KEYS.DISPLAY_SHOW_STATS,
+      label: 'Show stats bar',
+      description: 'Display model, tokens, and timing information',
+    },
+    {
+      key: SETTINGS_KEYS.DISPLAY_SHOW_AGENT_DEFINITIONS,
+      label: 'Show agent definitions',
+      description: 'Display agent definition injections in the feed',
+    },
+    {
+      key: SETTINGS_KEYS.DISPLAY_SHOW_WORKFLOW_BARS,
+      label: 'Show workflow bars',
+      description: 'Display workflow start and end markers',
+    },
   ] as const
 
-  const localValues = Object.fromEntries(
-    toggles.map(t => [t.key, settings[t.key] ?? 'true'])
-  ) as Record<typeof toggles[number]['key'], string>
+  const localValues = Object.fromEntries(toggles.map((t) => [t.key, settings[t.key] ?? 'true'])) as Record<
+    (typeof toggles)[number]['key'],
+    string
+  >
   const [local, setLocal] = useState<Record<string, boolean>>(() =>
-    Object.fromEntries(toggles.map(t => [t.key, localValues[t.key] === 'true']))
+    Object.fromEntries(toggles.map((t) => [t.key, localValues[t.key] === 'true'])),
   )
 
   useEffect(() => {
-    toggles.forEach(t => getSetting(t.key))
+    toggles.forEach((t) => getSetting(t.key))
   }, [getSetting])
 
   useEffect(() => {
-    setLocal(Object.fromEntries(toggles.map(t => [t.key, localValues[t.key] === 'true'])))
+    setLocal(Object.fromEntries(toggles.map((t) => [t.key, localValues[t.key] === 'true'])))
   }, [JSON.stringify(localValues)])
 
   const handleToggle = async (key: string) => {
     const newValue = String(!local[key as keyof typeof local])
-    setLocal(prev => ({ ...prev, [key]: !prev[key as keyof typeof local] }))
+    setLocal((prev) => ({ ...prev, [key]: !prev[key as keyof typeof local] }))
     await setSetting(key, newValue)
   }
 
@@ -182,11 +188,7 @@ function TabButton({ label, active, onClick }: { label: string; active: boolean;
 }
 
 function InstructionsTab({ isOpen }: { isOpen: boolean }) {
-  const settings = useSettingsStore(state => state.settings)
-  const loading = useSettingsStore(state => state.loading)
-  const getSetting = useSettingsStore(state => state.getSetting)
-  const setSetting = useSettingsStore(state => state.setSetting)
-
+  const { settings, loading, getSetting, setSetting } = useSettingsStoreState()
   const globalInstructions = settings[SETTINGS_KEYS.GLOBAL_INSTRUCTIONS] ?? ''
   const isLoading = loading[SETTINGS_KEYS.GLOBAL_INSTRUCTIONS] ?? false
 
@@ -207,7 +209,7 @@ function InstructionsTab({ isOpen }: { isOpen: boolean }) {
 
   const handleSave = async () => {
     setSaving(true)
-    setSetting(SETTINGS_KEYS.GLOBAL_INSTRUCTIONS, localValue)
+    await setSetting(SETTINGS_KEYS.GLOBAL_INSTRUCTIONS, localValue)
     setSaving(false)
     setIsDirty(false)
   }
@@ -222,15 +224,16 @@ function InstructionsTab({ isOpen }: { isOpen: boolean }) {
   return (
     <div className="space-y-4">
       <div>
-        <label className="block text-sm font-medium text-text-primary mb-2">
-          Global Instructions
-        </label>
+        <label className="block text-sm font-medium text-text-primary mb-2">Global Instructions</label>
         <p className="text-sm text-text-muted mb-2">
           These instructions are injected into every prompt, regardless of project.
         </p>
         <textarea
           value={localValue}
-          onChange={(e) => { setLocalValue(e.target.value); setIsDirty(true) }}
+          onChange={(e) => {
+            setLocalValue(e.target.value)
+            setIsDirty(true)
+          }}
           placeholder="Enter global instructions that apply to all projects..."
           className="w-full min-h-80 px-3 py-2 bg-bg-tertiary border border-border rounded text-sm font-mono resize-y focus:outline-none focus:ring-1 focus:ring-accent-primary"
           disabled={isBusy}
@@ -243,11 +246,7 @@ function InstructionsTab({ isOpen }: { isOpen: boolean }) {
         <Button variant="secondary" onClick={handleDiscard} disabled={!isDirty}>
           Discard
         </Button>
-        <Button
-          variant="primary"
-          onClick={handleSave}
-          disabled={!isDirty || isBusy}
-        >
+        <Button variant="primary" onClick={handleSave} disabled={!isDirty || isBusy}>
           {saving ? 'Saving...' : 'Save'}
         </Button>
       </div>

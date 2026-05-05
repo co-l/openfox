@@ -3,7 +3,9 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 vi.stubGlobal('requestAnimationFrame', (cb: () => void) => setTimeout(cb, 0))
 vi.stubGlobal('cancelAnimationFrame', (id: number) => clearTimeout(id))
 
-const fetchMock = vi.fn(() => Promise.resolve({ ok: true, json: () => Promise.resolve({ success: true }), status: 200 }))
+const fetchMock = vi.fn(() =>
+  Promise.resolve({ ok: true, json: () => Promise.resolve({ success: true }), status: 200 }),
+)
 vi.stubGlobal('fetch', fetchMock)
 vi.stubGlobal('localStorage', {
   getItem: vi.fn(() => null),
@@ -105,14 +107,16 @@ describe('useSessionStore session isolation', () => {
     useSessionStore.setState((state) => ({
       ...state,
       currentSession: sessionOne,
-      messages: [{
-        id: 'session-1-assistant',
-        role: 'assistant',
-        content: 'still streaming',
-        timestamp: '2024-01-01T00:00:00.000Z',
-        tokenCount: 0,
-        isStreaming: true,
-      }],
+      messages: [
+        {
+          id: 'session-1-assistant',
+          role: 'assistant',
+          content: 'still streaming',
+          timestamp: '2024-01-01T00:00:00.000Z',
+          tokenCount: 0,
+          isStreaming: true,
+        },
+      ],
       currentTodos: [{ content: 'old todo', status: 'pending' }],
       contextState: { currentTokens: 99, maxTokens: 200000, compactionCount: 0, dangerZone: false, canCompact: false },
       pendingPathConfirmation: {
@@ -140,14 +144,16 @@ describe('useSessionStore session isolation', () => {
       sessionId: 'session-2',
       payload: {
         session: sessionTwo,
-        messages: [{
-          id: 'session-2-assistant',
-          role: 'assistant',
-          content: 'session two',
-          timestamp: '2024-01-01T00:00:00.000Z',
-          tokenCount: 0,
-          isStreaming: false,
-        }],
+        messages: [
+          {
+            id: 'session-2-assistant',
+            role: 'assistant',
+            content: 'session two',
+            timestamp: '2024-01-01T00:00:00.000Z',
+            tokenCount: 0,
+            isStreaming: false,
+          },
+        ],
       },
     })
     useSessionStore.getState().handleServerMessage({
@@ -191,14 +197,16 @@ describe('useSessionStore session isolation', () => {
     })
 
     expect(useSessionStore.getState().currentSession?.id).toBe('session-2')
-    expect(useSessionStore.getState().messages).toEqual([{ 
-      id: 'session-2-assistant',
-      role: 'assistant',
-      content: 'session two',
-      timestamp: '2024-01-01T00:00:00.000Z',
-      tokenCount: 0,
-      isStreaming: false,
-    }])
+    expect(useSessionStore.getState().messages).toEqual([
+      {
+        id: 'session-2-assistant',
+        role: 'assistant',
+        content: 'session two',
+        timestamp: '2024-01-01T00:00:00.000Z',
+        tokenCount: 0,
+        isStreaming: false,
+      },
+    ])
     expect(useSessionStore.getState().contextState).toEqual({
       currentTokens: 12,
       maxTokens: 200000,
@@ -348,7 +356,7 @@ describe('useSessionStore session isolation', () => {
       workdir: '/tmp/project-1',
       mode: 'planner',
       phase: 'build',
-      isRunning: true,  // Stale local state - session is actually done
+      isRunning: true, // Stale local state - session is actually done
       createdAt: 'a',
       updatedAt: 'b',
       criteriaCount: 0,
@@ -378,9 +386,9 @@ describe('useSessionStore session isolation', () => {
         workdir: '/tmp/project-1',
         mode: 'planner',
         phase: 'build',
-        isRunning: false,  // Server says session is done
+        isRunning: false, // Server says session is done
         createdAt: 'a',
-        updatedAt: 'c',  // newer timestamp
+        updatedAt: 'c', // newer timestamp
         criteriaCount: 0,
         criteriaCompleted: 0,
         messageCount: 10,
@@ -394,7 +402,7 @@ describe('useSessionStore session isolation', () => {
 
     // Bug: mergeSessionList used wrong priority: currentSessionOverride?.isRunning ?? existingSession?.isRunning ?? incomingSession.isRunning
     // This meant local isRunning:true would override server's isRunning:false
-    expect(useSessionStore.getState().sessions.find(s => s.id === 'session-stale')?.isRunning).toBe(false)
+    expect(useSessionStore.getState().sessions.find((s) => s.id === 'session-stale')?.isRunning).toBe(false)
   })
 
   it('session.list preserves real-time isRunning:false when server returns stale isRunning:true', async () => {
@@ -427,7 +435,7 @@ describe('useSessionStore session isolation', () => {
     })
 
     // Session should now show as not running
-    expect(useSessionStore.getState().sessions.find(s => s.id === 'session-1')?.isRunning).toBe(false)
+    expect(useSessionStore.getState().sessions.find((s) => s.id === 'session-1')?.isRunning).toBe(false)
 
     // Stale server list arrives after real-time update (race condition):
     // Server still has isRunning:true because request was sent before agent finished
@@ -441,7 +449,7 @@ describe('useSessionStore session isolation', () => {
             workdir: '/tmp/project-1',
             mode: 'planner',
             phase: 'build',
-            isRunning: true,  // Stale server data
+            isRunning: true, // Stale server data
             createdAt: 'a',
             updatedAt: 'b',
             criteriaCount: 0,
@@ -453,7 +461,7 @@ describe('useSessionStore session isolation', () => {
     })
 
     // Real-time update should be preserved — session must stay not-running
-    expect(useSessionStore.getState().sessions.find(s => s.id === 'session-1')?.isRunning).toBe(false)
+    expect(useSessionStore.getState().sessions.find((s) => s.id === 'session-1')?.isRunning).toBe(false)
   })
 
   it('marks background sessions unread and clears unread state when opened', async () => {
@@ -679,7 +687,7 @@ describe('useSessionStore session isolation', () => {
           workdir: '/tmp/project-1',
           mode: 'planner',
           phase: 'build',
-          isRunning: true,  // Local state says running
+          isRunning: true, // Local state says running
           createdAt: 'a',
           updatedAt: 'b',
           criteriaCount: 0,
@@ -699,7 +707,7 @@ describe('useSessionStore session isolation', () => {
             workdir: '/tmp/project-1',
             mode: 'planner',
             phase: 'plan',
-            isRunning: false,  // Server says not running
+            isRunning: false, // Server says not running
             createdAt: 'a',
             updatedAt: 'c',
             criteriaCount: 0,
@@ -710,11 +718,11 @@ describe('useSessionStore session isolation', () => {
       },
     })
 
-    const result = useSessionStore.getState().sessions.find(s => s.id === 'session-1')
+    const result = useSessionStore.getState().sessions.find((s) => s.id === 'session-1')
     // Server is source of truth for isRunning - not from local stale state
     expect(result?.isRunning).toBe(false)
     // Other fields merge correctly
-    expect(result?.phase).toBe('build')  // phase still uses existing override
+    expect(result?.phase).toBe('build') // phase still uses existing override
     expect(result?.messageCount).toBe(10)
   })
 
@@ -941,9 +949,7 @@ describe('useSessionStore session isolation', () => {
         criteriaCount: 0,
         criteriaCompleted: 0,
         messageCount: 12,
-        recentUserPrompts: [
-          { id: 'msg-3', content: 'Third prompt', timestamp: '2024-01-02T12:00:00.000Z' },
-        ],
+        recentUserPrompts: [{ id: 'msg-3', content: 'Third prompt', timestamp: '2024-01-02T12:00:00.000Z' }],
       },
     ]
 
@@ -977,12 +983,12 @@ describe('useSessionStore session isolation', () => {
     expect(result[1]!.recentUserPrompts).toEqual([
       { id: 'msg-3', content: 'Third prompt', timestamp: '2024-01-02T12:00:00.000Z' },
     ])
-    
+
     // Verify messageCount is preserved
     expect(result[0]!.messageCount).toBe(5)
     expect(result[1]!.messageCount).toBe(12)
   })
-  
+
   it('preserves messageCount from incoming sessions even when existing session has different count', async () => {
     const useSessionStore = await loadSessionStore()
 
@@ -1190,7 +1196,7 @@ describe('useSessionStore session isolation', () => {
       expect.objectContaining({
         method: 'POST',
         body: JSON.stringify({ callId: 'call-123', answer: 'My name is Conrad' }),
-      })
+      }),
     )
     expect(useSessionStore.getState().pendingQuestion).toBeNull()
   })
@@ -1261,7 +1267,7 @@ describe('useSessionStore session isolation', () => {
       expect.objectContaining({
         method: 'POST',
         body: JSON.stringify({ callId: 'call-456', answer: '' }),
-      })
+      }),
     )
     expect(useSessionStore.getState().pendingQuestion).toBeNull()
   })
@@ -1330,7 +1336,9 @@ describe('reconnect refreshes current session content', () => {
 
   it('handles queue.state with undefined messages gracefully', async () => {
     const useSessionStore = await loadSessionStore()
-    useSessionStore.setState({ queuedMessages: [{ queueId: '1', content: 'test', mode: 'asap' as const, queuedAt: '2024-01-01T00:00:00.000Z' }] })
+    useSessionStore.setState({
+      queuedMessages: [{ queueId: '1', content: 'test', mode: 'asap' as const, queuedAt: '2024-01-01T00:00:00.000Z' }],
+    })
     expect(useSessionStore.getState().queuedMessages).toHaveLength(1)
 
     useSessionStore.getState().handleServerMessage({

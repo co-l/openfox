@@ -8,7 +8,7 @@ import { WebSocket } from 'ws'
 const SERVER_URL = 'http://localhost:10469'
 const WS_URL = 'ws://localhost:10469/ws'
 const PROJECT_ID = '70cafde1-b5c2-4099-b61d-011730170bfd'
-const PROMPT = `write a 1000-word essay on cat vs dogs in /tmp/essay-${Math.round(Math.random()*10000)}.txt`
+const PROMPT = `write a 1000-word essay on cat vs dogs in /tmp/essay-${Math.round(Math.random() * 10000)}.txt`
 
 let sessionId = ''
 let ws
@@ -27,18 +27,19 @@ function logEvent(msg) {
 
   if (last_event !== type) {
     last_event = type
-    console.log('\n\n',new Date(),'- type=', type, "->")
+    console.log('\n\n', new Date(), '- type=', type, '->')
   }
 
   if (type === 'chat.thinking' || type === 'chat.delta') {
-    process.stdout.write(msg.payload.content.replace(/\n/g,''))
+    process.stdout.write(msg.payload.content.replace(/\n/g, ''))
     return
   }
 
-
   switch (type) {
     case 'session.state':
-      console.log(`\t\tsession ${payload.session?.id} (mode: ${payload.session?.mode}, running: ${payload.session?.isRunning})`)
+      console.log(
+        `\t\tsession ${payload.session?.id} (mode: ${payload.session?.mode}, running: ${payload.session?.isRunning})`,
+      )
       break
     case 'session.running':
       console.log(`\t\trunning: ${payload.isRunning}`)
@@ -80,9 +81,8 @@ async function waitForServer() {
     try {
       const res = await fetch(`${SERVER_URL}/api/health`)
       if (res.ok) return true
-    } catch {
-    }
-    await new Promise(r => setTimeout(r, 1000))
+    } catch {}
+    await new Promise((r) => setTimeout(r, 1000))
   }
   return false
 }
@@ -118,7 +118,7 @@ async function run() {
   console.log(`Session: ${sessionId}`)
 
   await switchToBuilder()
-  await new Promise(r => setTimeout(r, 500))
+  await new Promise((r) => setTimeout(r, 500))
 
   ws = new WebSocket(WS_URL)
 
@@ -140,11 +140,13 @@ async function run() {
 
       if (msg.type === 'session.state' && !msg.error && !msg.payload.session.isRunning) {
         console.log('\n→ Sending message...\n')
-        ws.send(JSON.stringify({
-          id: String(++messageId),
-          type: 'chat.send',
-          payload: { content: PROMPT },
-        }))
+        ws.send(
+          JSON.stringify({
+            id: String(++messageId),
+            type: 'chat.send',
+            payload: { content: PROMPT },
+          }),
+        )
       }
 
       if (msg.type === 'chat.done') {
@@ -158,7 +160,7 @@ async function run() {
   ws.on('error', (e) => console.log('WS error:', e.message))
 }
 
-run().catch(e => {
+run().catch((e) => {
   console.error('Error:', e)
   process.exit(1)
 })

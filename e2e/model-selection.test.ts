@@ -5,7 +5,16 @@
  */
 
 import { describe, it, expect, beforeAll, afterAll, beforeEach, afterEach } from 'vitest'
-import { createTestClient, createTestProject, createTestServer, createProject, createSession, type TestClient, type TestProject, type TestServerHandle } from './utils/index.js'
+import {
+  createTestClient,
+  createTestProject,
+  createTestServer,
+  createProject,
+  createSession,
+  type TestClient,
+  type TestProject,
+  type TestServerHandle,
+} from './utils/index.js'
 
 describe('Model Selection', () => {
   let server: TestServerHandle
@@ -38,7 +47,7 @@ describe('Model Selection', () => {
 
       // Get initial config
       const initialConfigResponse = await fetch(`${server.url}/api/config`)
-      const initialConfig = await initialConfigResponse.json() as {
+      const initialConfig = (await initialConfigResponse.json()) as {
         model: string
         llmUrl: string
       }
@@ -52,7 +61,7 @@ describe('Model Selection', () => {
       const refreshResponse = await fetch(`${server.url}/api/model/refresh`, {
         method: 'POST',
       })
-      const refreshResult = await refreshResponse.json() as { model: string; source: string }
+      const refreshResult = (await refreshResponse.json()) as { model: string; source: string }
 
       // The model should remain 'mock-model' (not be overwritten by auto-detection)
       expect(refreshResult.model).toBe('mock-model')
@@ -66,7 +75,7 @@ describe('Model Selection', () => {
 
       // Get initial config
       const initialConfigResponse = await fetch(`${server.url}/api/config`)
-      const initialConfig = await initialConfigResponse.json() as { model: string }
+      const initialConfig = (await initialConfigResponse.json()) as { model: string }
 
       // Initial model in mock mode
       expect(initialConfig.model).toBe('mock-model')
@@ -76,7 +85,7 @@ describe('Model Selection', () => {
         const refreshResponse = await fetch(`${server.url}/api/model/refresh`, {
           method: 'POST',
         })
-        const refreshResult = await refreshResponse.json() as { model: string }
+        const refreshResult = (await refreshResponse.json()) as { model: string }
 
         // Model should persist through all refreshes
         expect(refreshResult.model).toBe('mock-model')
@@ -88,7 +97,7 @@ describe('Model Selection', () => {
 
       // Get initial config
       const initialConfigResponse = await fetch(`${server.url}/api/config`)
-      const initialConfig = await initialConfigResponse.json() as {
+      const initialConfig = (await initialConfigResponse.json()) as {
         model: string
         providers: Array<{ id: string; model: string; isActive: boolean }>
       }
@@ -100,7 +109,7 @@ describe('Model Selection', () => {
       const refreshResponse = await fetch(`${server.url}/api/model/refresh`, {
         method: 'POST',
       })
-      const refreshResult = await refreshResponse.json() as { model: string; source: string }
+      const refreshResult = (await refreshResponse.json()) as { model: string; source: string }
 
       // Should return the model (in mock mode, it's 'mock-model')
       expect(refreshResult.model).toBe('mock-model')
@@ -118,7 +127,7 @@ describe('Model Selection', () => {
 
       // Verify config endpoint works
       const configResponse = await fetch(`${server.url}/api/config`)
-      const config = await configResponse.json() as { model: string }
+      const config = (await configResponse.json()) as { model: string }
 
       expect(config.model).toBe('mock-model')
     })

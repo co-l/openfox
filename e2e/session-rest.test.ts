@@ -1,6 +1,6 @@
 /**
  * Session Management REST API E2E Tests
- * 
+ *
  * Tests session CRUD operations via REST API (not WebSocket).
  * Following TDD: these tests should FAIL initially before implementation.
  */
@@ -41,7 +41,7 @@ describe('Session REST API', () => {
   describe('GET /api/sessions', () => {
     it('returns empty array when no sessions exist', async () => {
       const response = await fetch(`${server.url}/api/sessions`)
-      
+
       expect(response.status).toBe(200)
       const data: any = await response.json()
       expect(data.sessions).toEqual([])
@@ -60,7 +60,7 @@ describe('Session REST API', () => {
       const response = await fetch(`${server.url}/api/sessions?projectId=${projectId}`)
       expect(response.status).toBe(200)
       const data: any = await response.json()
-      
+
       expect(Array.isArray(data.sessions)).toBe(true)
       const found = data.sessions.find((s: any) => s.id === created.session.id)
       expect(found).toBeDefined()
@@ -78,7 +78,7 @@ describe('Session REST API', () => {
 
       expect(response.status).toBe(201)
       const data: any = await response.json()
-      
+
       expect(data.session).toBeDefined()
       expect(data.session.projectId).toBe(projectId)
       expect(data.session.metadata.title).toBe('My Session')
@@ -134,10 +134,10 @@ describe('Session REST API', () => {
 
       // Load it
       const response = await fetch(`${server.url}/api/sessions/${created.session.id}`)
-      
+
       expect(response.status).toBe(200)
       const data: any = await response.json()
-      
+
       expect(data.session.id).toBe(created.session.id)
       expect(data.session.metadata.title).toBe('Load Me')
       expect(Array.isArray(data.messages)).toBe(true)
@@ -147,7 +147,7 @@ describe('Session REST API', () => {
 
     it('returns 404 for non-existent session', async () => {
       const response = await fetch(`${server.url}/api/sessions/nonexistent-id`)
-      
+
       expect(response.status).toBe(404)
       const data: any = await response.json()
       expect(data.error).toBe('Session not found')

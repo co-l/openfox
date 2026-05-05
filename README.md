@@ -4,13 +4,13 @@
 
 Autonomous coding agent for local LLMs with contract-driven execution.
 
-*Session — Criteria tracking, tool calls, and streaming responses*
+_Session — Criteria tracking, tool calls, and streaming responses_
 ![Session](docs/screenshots/session.png)
 
-*Providers — Local LLM backend configuration*
+_Providers — Local LLM backend configuration_
 ![Providers](docs/screenshots/providers.png)
 
-*Workflows — Contract-driven execution pipeline*
+_Workflows — Contract-driven execution pipeline_
 ![Workflows](docs/screenshots/workflows.png)
 
 ## Quick Start
@@ -46,12 +46,12 @@ openfox provider remove   # Remove provider
 
 ## CLI Options
 
-| Option | Description | Default |
-|--------|-------------|---------|
-| `-p, --port <number>` | Specify server port | 10369 |
-| `--no-browser` | Don't open browser on start | Opens browser |
-| `-h, --help` | Show help message | - |
-| `-v, --version` | Show version number | - |
+| Option                | Description                 | Default       |
+| --------------------- | --------------------------- | ------------- |
+| `-p, --port <number>` | Specify server port         | 10369         |
+| `--no-browser`        | Don't open browser on start | Opens browser |
+| `-h, --help`          | Show help message           | -             |
+| `-v, --version`       | Show version number         | -             |
 
 ## Requirements
 
@@ -72,28 +72,28 @@ openfox provider remove   # Remove provider
 
 ## Screenshots
 
-*Homepage — Project overview and session history*
+_Homepage — Project overview and session history_
 ![Homepage](docs/screenshots/homepage.png)
 
-*Project Selected — Active session with context stats*
+_Project Selected — Active session with context stats_
 ![Project Selected](docs/screenshots/project-selected.png)
 
-*Stats — Prefill time, generation speed, token usage*
+_Stats — Prefill time, generation speed, token usage_
 ![Stats](docs/screenshots/stats.png)
 
-*Terminal — Integrated terminal for running commands*
+_Terminal — Integrated terminal for running commands_
 ![Terminal](docs/screenshots/terminal.png)
 
-*Notifications — Event log and system messages*
+_Notifications — Event log and system messages_
 ![Notifications](docs/screenshots/notifications.png)
 
-*Agents — Sub-agent management and execution*
+_Agents — Sub-agent management and execution_
 ![Agents](docs/screenshots/agents.png)
 
-*General Instructions — Global custom instructions*
+_General Instructions — Global custom instructions_
 ![General Instructions](docs/screenshots/general-instructions.png)
 
-*Vision Fallback — Image processing configuration*
+_Vision Fallback — Image processing configuration_
 ![Vision Fallback](docs/screenshots/vision-fallback.png)
 
 ## License

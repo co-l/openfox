@@ -1,6 +1,6 @@
 /**
  * Test project factory for E2E tests.
- * 
+ *
  * Creates temporary directories with sample project structures.
  */
 
@@ -37,30 +37,38 @@ export interface TestProject {
 
 const TEMPLATES = {
   empty: {},
-  
+
   typescript: {
-    'package.json': JSON.stringify({
-      name: 'test-project',
-      version: '1.0.0',
-      type: 'module',
-      scripts: {
-        build: 'tsc',
-        test: 'echo "No tests"',
+    'package.json': JSON.stringify(
+      {
+        name: 'test-project',
+        version: '1.0.0',
+        type: 'module',
+        scripts: {
+          build: 'tsc',
+          test: 'echo "No tests"',
+        },
+        devDependencies: {
+          typescript: '^5.0.0',
+        },
       },
-      devDependencies: {
-        typescript: '^5.0.0',
+      null,
+      2,
+    ),
+    'tsconfig.json': JSON.stringify(
+      {
+        compilerOptions: {
+          target: 'ES2022',
+          module: 'NodeNext',
+          moduleResolution: 'NodeNext',
+          strict: true,
+          outDir: 'dist',
+        },
+        include: ['src/**/*'],
       },
-    }, null, 2),
-    'tsconfig.json': JSON.stringify({
-      compilerOptions: {
-        target: 'ES2022',
-        module: 'NodeNext',
-        moduleResolution: 'NodeNext',
-        strict: true,
-        outDir: 'dist',
-      },
-      include: ['src/**/*'],
-    }, null, 2),
+      null,
+      2,
+    ),
     'src/index.ts': `// Main entry point
 export function hello(name: string): string {
   return \`Hello, \${name}!\`
@@ -76,24 +84,32 @@ export function subtract(a: number, b: number): number {
 }
 `,
   },
-  
+
   'simple-js': {
-    'package.json': JSON.stringify({
-      name: 'simple-project',
-      version: '1.0.0',
-      type: 'module',
-    }, null, 2),
+    'package.json': JSON.stringify(
+      {
+        name: 'simple-project',
+        version: '1.0.0',
+        type: 'module',
+      },
+      null,
+      2,
+    ),
     'index.js': `// Simple JS project
 console.log('Hello, world!')
 `,
   },
-  
+
   'with-agents-md': {
-    'package.json': JSON.stringify({
-      name: 'agents-project',
-      version: '1.0.0',
-      type: 'module',
-    }, null, 2),
+    'package.json': JSON.stringify(
+      {
+        name: 'agents-project',
+        version: '1.0.0',
+        type: 'module',
+      },
+      null,
+      2,
+    ),
     'AGENTS.md': `# Project Guidelines
 
 ## Code Style
@@ -110,13 +126,17 @@ export function greet(name) {
 }
 `,
   },
-  
+
   'git-repo': {
-    'package.json': JSON.stringify({
-      name: 'git-test-project',
-      version: '1.0.0',
-      type: 'module',
-    }, null, 2),
+    'package.json': JSON.stringify(
+      {
+        name: 'git-test-project',
+        version: '1.0.0',
+        type: 'module',
+      },
+      null,
+      2,
+    ),
     'README.md': `# Git Test Project
 
 This project is used for testing git tool functionality.
@@ -135,7 +155,7 @@ export function main(): void {
 
 /**
  * Create a temporary test project.
- * 
+ *
  * @example
  * const project = await createTestProject({ template: 'typescript' })
  * try {
@@ -146,22 +166,22 @@ export function main(): void {
  */
 export async function createTestProject(options: TestProjectOptions = {}): Promise<TestProject> {
   const { template = 'empty', files = {}, agentsMd, initGit } = options
-  
+
   // Create unique temp directory
   const projectPath = join(tmpdir(), `openfox-e2e-${Date.now()}-${Math.random().toString(36).slice(2)}`)
   await mkdir(projectPath, { recursive: true })
-  
+
   // Get template files
   const templateFiles = TEMPLATES[template]
-  
+
   // Merge template + custom files
   const allFiles: Record<string, string> = { ...templateFiles, ...files }
-  
+
   // Add AGENTS.md if specified
   if (agentsMd) {
     allFiles['AGENTS.md'] = agentsMd
   }
-  
+
   // Write all files
   for (const [filePath, content] of Object.entries(allFiles)) {
     const fullPath = join(projectPath, filePath)
@@ -169,7 +189,7 @@ export async function createTestProject(options: TestProjectOptions = {}): Promi
     await mkdir(dir, { recursive: true })
     await writeFile(fullPath, content)
   }
-  
+
   // Initialize git repository if requested or using git-repo template
   if (initGit || template === 'git-repo') {
     execSync('git init', { cwd: projectPath, stdio: 'ignore' })
@@ -178,7 +198,7 @@ export async function createTestProject(options: TestProjectOptions = {}): Promi
     execSync('git add -A', { cwd: projectPath, stdio: 'ignore' })
     execSync('git commit -m "Initial commit"', { cwd: projectPath, stdio: 'ignore' })
   }
-  
+
   return {
     path: projectPath,
     async cleanup() {
@@ -191,18 +211,13 @@ export async function createTestProject(options: TestProjectOptions = {}): Promi
  * Create multiple test projects.
  * Useful for testing project listing, etc.
  */
-export async function createTestProjects(
-  count: number,
-  options?: TestProjectOptions
-): Promise<TestProject[]> {
-  return Promise.all(
-    Array.from({ length: count }, () => createTestProject(options))
-  )
+export async function createTestProjects(count: number, options?: TestProjectOptions): Promise<TestProject[]> {
+  return Promise.all(Array.from({ length: count }, () => createTestProject(options)))
 }
 
 /**
  * Cleanup multiple test projects.
  */
 export async function cleanupProjects(projects: TestProject[]): Promise<void> {
-  await Promise.all(projects.map(p => p.cleanup()))
+  await Promise.all(projects.map((p) => p.cleanup()))
 }

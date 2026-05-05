@@ -16,9 +16,7 @@ export function RunningIndicator() {
           <span className={`w-1 h-1 rounded-full animate-bounce ${dotColor}`} style={{ animationDelay: '150ms' }} />
           <span className={`w-1 h-1 rounded-full animate-bounce ${dotColor}`} style={{ animationDelay: '300ms' }} />
         </span>
-        <span className="text-text-secondary">
-          {aborting ? 'Running... (abort in progress)' : 'Running'}
-        </span>
+        <span className="text-text-secondary">{aborting ? 'Running... (abort in progress)' : 'Running'}</span>
       </div>
       {!aborting && <span className="text-text-muted">esc to interrupt</span>}
     </div>

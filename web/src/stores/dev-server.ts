@@ -34,7 +34,7 @@ export const useDevServerStore = create<DevServerStore>()((set, get) => {
     if (logBuffer.length === 0) return
     const chunks = logBuffer
     logBuffer = []
-    set(state => ({
+    set((state) => ({
       logs: [...state.logs, ...chunks],
     }))
   }
@@ -88,7 +88,7 @@ export const useDevServerStore = create<DevServerStore>()((set, get) => {
       try {
         const res = await authFetch(`/api/dev-server/logs?workdir=${encodeURIComponent(workdir)}`)
         const data = await res.json()
-        const logs: LogChunk[] = (data.logs as { stream: 'stdout' | 'stderr'; content: string }[]).map(entry => ({
+        const logs: LogChunk[] = (data.logs as { stream: 'stdout' | 'stderr'; content: string }[]).map((entry) => ({
           stream: entry.stream,
           content: entry.content,
         }))
@@ -126,7 +126,9 @@ export const useDevServerStore = create<DevServerStore>()((set, get) => {
       const workdir = get().workdir
       if (!workdir) return
       try {
-        const res = await authFetch(`/api/dev-server/restart?workdir=${encodeURIComponent(workdir)}`, { method: 'POST' })
+        const res = await authFetch(`/api/dev-server/restart?workdir=${encodeURIComponent(workdir)}`, {
+          method: 'POST',
+        })
         const data: DevServerStatus = await res.json()
         set({ status: data, logs: [] })
       } catch {
@@ -166,12 +168,14 @@ export const useDevServerStore = create<DevServerStore>()((set, get) => {
         case 'devServer.state': {
           const payload = message.payload as DevServerStatePayload
           if (payload.workdir !== workdir) return
-          set(state => ({
-            status: state.status ? {
-              ...state.status,
-              state: payload.state as DevServerState,
-              errorMessage: payload.errorMessage,
-            } : state.status,
+          set((state) => ({
+            status: state.status
+              ? {
+                  ...state.status,
+                  state: payload.state as DevServerState,
+                  errorMessage: payload.errorMessage,
+                }
+              : state.status,
           }))
           break
         }

@@ -1,14 +1,8 @@
 import { describe, expect, it } from 'vitest'
 
 import config from './vitest.config.js'
-import {
-  DEFAULT_CHAT_TIMEOUT_MS,
-  DEFAULT_WAIT_TIMEOUT_MS,
-} from './utils/ws-client.js'
-import {
-  DEFAULT_COLLECTION_TIMEOUT_MS,
-  DEFAULT_PHASE_TIMEOUT_MS,
-} from './utils/event-collector.js'
+import { DEFAULT_CHAT_TIMEOUT_MS, DEFAULT_WAIT_TIMEOUT_MS } from './utils/ws-client.js'
+import { DEFAULT_COLLECTION_TIMEOUT_MS, DEFAULT_PHASE_TIMEOUT_MS } from './utils/event-collector.js'
 
 describe('E2E timeouts', () => {
   it('keeps the per-test timeout at 15 seconds', () => {

@@ -4,11 +4,7 @@ import { Button } from '../shared/Button'
 import { DropdownMenu } from '../shared/DropdownMenu'
 import { useAgentsStore, type AgentFull } from '../../stores/agents'
 import { authFetch } from '../../lib/api'
-import {
-  FormField,
-  ModalActions,
-  ErrorBanner,
-} from './CRUDModal'
+import { FormField, ModalActions, ErrorBanner } from './CRUDModal'
 import { CRUDListItem } from './CRUDListItem'
 import type { AgentInfo } from '../../stores/agents'
 
@@ -19,7 +15,10 @@ interface AgentsModalProps {
 }
 
 function toSlug(name: string): string {
-  return name.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '')
+  return name
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_|_$/g, '')
 }
 
 function AgentListItem({
@@ -49,18 +48,19 @@ function AgentListItem({
       onDelete={onDelete}
     >
       <div className="flex items-center gap-2">
-        <span className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: agent.color ?? '#6b7280' }} />
+        <span
+          className="w-2.5 h-2.5 rounded-full flex-shrink-0"
+          style={{ backgroundColor: agent.color ?? '#6b7280' }}
+        />
         <span className="text-text-primary text-sm font-medium">{agent.name}</span>
         <span className="text-text-muted text-xs font-mono">{agent.id}</span>
         {isBuiltIn && (
           <span className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-bg-primary text-text-muted">Built-in</span>
         )}
       </div>
-      {agent.description && (
-        <p className="text-text-secondary text-xs mt-0.5 truncate">{agent.description}</p>
-      )}
+      {agent.description && <p className="text-text-secondary text-xs mt-0.5 truncate">{agent.description}</p>}
       <div className="flex flex-wrap gap-1 mt-1">
-        {agent.allowedTools.slice(0, 5).map(tool => (
+        {agent.allowedTools.slice(0, 5).map((tool) => (
           <span key={tool} className="text-[10px] font-mono text-text-muted bg-bg-primary px-1 py-0.5 rounded">
             {tool}
           </span>
@@ -113,9 +113,7 @@ function AgentGroup({
         {subagents.length > 0 && (
           <div className="mt-3">
             <div className="text-xs text-text-muted uppercase tracking-wider mb-1.5">Sub-agents</div>
-            <div className="space-y-2">
-              {subagents.map(renderAgentItem)}
-            </div>
+            <div className="space-y-2">{subagents.map(renderAgentItem)}</div>
           </div>
         )}
       </div>
@@ -124,15 +122,15 @@ function AgentGroup({
 }
 
 export function AgentsModal({ isOpen, onClose, initialEditId }: AgentsModalProps) {
-  const defaults = useAgentsStore(state => state.defaults)
-  const userItems = useAgentsStore(state => state.userItems)
-  const loading = useAgentsStore(state => state.loading)
-  const fetchAgents = useAgentsStore(state => state.fetchAgents)
-  const fetchAgent = useAgentsStore(state => state.fetchAgent)
-  const fetchDefaultContent = useAgentsStore(state => state.fetchDefaultContent)
-  const createAgent = useAgentsStore(state => state.createAgent)
-  const updateAgent = useAgentsStore(state => state.updateAgent)
-  const deleteAgentAction = useAgentsStore(state => state.deleteAgent)
+  const defaults = useAgentsStore((state) => state.defaults)
+  const userItems = useAgentsStore((state) => state.userItems)
+  const loading = useAgentsStore((state) => state.loading)
+  const fetchAgents = useAgentsStore((state) => state.fetchAgents)
+  const fetchAgent = useAgentsStore((state) => state.fetchAgent)
+  const fetchDefaultContent = useAgentsStore((state) => state.fetchDefaultContent)
+  const createAgent = useAgentsStore((state) => state.createAgent)
+  const updateAgent = useAgentsStore((state) => state.updateAgent)
+  const deleteAgentAction = useAgentsStore((state) => state.deleteAgent)
 
   const [view, setView] = useState<'list' | 'edit'>('list')
   const [editingId, setEditingId] = useState<string | null>(null)
@@ -244,17 +242,20 @@ export function AgentsModal({ isOpen, onClose, initialEditId }: AgentsModalProps
   useEffect(() => {
     if (isOpen) {
       fetchAgents()
-      authFetch('/api/tools').then(r => r.json()).then(d => setAvailableTools(d.tools || [])).catch(() => setAvailableTools([]))
-      
+      authFetch('/api/tools')
+        .then((r) => r.json())
+        .then((d) => setAvailableTools(d.tools || []))
+        .catch(() => setAvailableTools([]))
+
       if (initialEditId) {
-        const isDefault = defaults.some(d => d.id === initialEditId)
+        const isDefault = defaults.some((d) => d.id === initialEditId)
         if (isDefault) {
-          fetchDefaultContent(initialEditId).then(content => {
+          fetchDefaultContent(initialEditId).then((content) => {
             if (!content) return
             applyDuplicateFromContent(content, initialEditId, true)
           })
         } else {
-          fetchAgent(initialEditId).then(agent => {
+          fetchAgent(initialEditId).then((agent) => {
             if (!agent) return
             populateFormFromAgent(agent)
             setEditingId(initialEditId)
@@ -271,7 +272,7 @@ export function AgentsModal({ isOpen, onClose, initialEditId }: AgentsModalProps
   }, [isOpen, fetchAgents, fetchAgent, fetchDefaultContent, initialEditId])
 
   const handleView = async (agentId: string) => {
-    const isDefault = defaults.some(d => d.id === agentId)
+    const isDefault = defaults.some((d) => d.id === agentId)
     if (isDefault) {
       const content = await fetchDefaultContent(agentId)
       if (!content) return
@@ -338,9 +339,7 @@ export function AgentsModal({ isOpen, onClose, initialEditId }: AgentsModalProps
       prompt: formPrompt,
     }
 
-    const result = editingId
-      ? await updateAgent(editingId, agent)
-      : await createAgent(agent)
+    const result = editingId ? await updateAgent(editingId, agent) : await createAgent(agent)
 
     setSaving(false)
 
@@ -368,25 +367,50 @@ export function AgentsModal({ isOpen, onClose, initialEditId }: AgentsModalProps
     }
   }
 
-  const defaultSubAgents = defaults.filter(a => a.subagent)
-  const defaultTopLevelAgents = defaults.filter(a => !a.subagent)
-  const userSubAgents = userItems.filter(a => a.subagent)
-  const userTopLevelAgents = userItems.filter(a => !a.subagent)
+  const defaultSubAgents = defaults.filter((a) => a.subagent)
+  const defaultTopLevelAgents = defaults.filter((a) => !a.subagent)
+  const userSubAgents = userItems.filter((a) => a.subagent)
+  const userTopLevelAgents = userItems.filter((a) => !a.subagent)
 
   if (view === 'edit') {
     return (
-      <Modal isOpen={isOpen} onClose={handleCancel} title={isReadOnly ? `${formName}` : (editingId ? 'Edit Agent' : 'New Agent')} size="xl">
+      <Modal
+        isOpen={isOpen}
+        onClose={handleCancel}
+        title={isReadOnly ? `${formName}` : editingId ? 'Edit Agent' : 'New Agent'}
+        size="xl"
+      >
         <div className="flex flex-col h-full">
           <div className="space-y-3">
             {formError && <ErrorBanner message={formError} />}
 
             <div className="grid grid-cols-2 gap-3">
-              <FormField label="Name" value={formName} onChange={handleNameChange} placeholder="My Agent" readOnly={isReadOnly} />
-              <FormField label="ID" value={formId} onChange={setFormId} readOnly={true} placeholder="my_agent" hint="(read-only)" mono />
+              <FormField
+                label="Name"
+                value={formName}
+                onChange={handleNameChange}
+                placeholder="My Agent"
+                readOnly={isReadOnly}
+              />
+              <FormField
+                label="ID"
+                value={formId}
+                onChange={setFormId}
+                readOnly={true}
+                placeholder="my_agent"
+                hint="(read-only)"
+                mono
+              />
             </div>
 
             <div className="grid grid-cols-2 gap-3">
-              <FormField label="Description" value={formDescription} onChange={setFormDescription} placeholder="What this agent does" readOnly={isReadOnly} />
+              <FormField
+                label="Description"
+                value={formDescription}
+                onChange={setFormDescription}
+                placeholder="What this agent does"
+                readOnly={isReadOnly}
+              />
               <div>
                 <label className="block text-xs text-text-secondary mb-1">Type</label>
                 <div className="flex items-center gap-3 h-[34px]">
@@ -415,7 +439,7 @@ export function AgentsModal({ isOpen, onClose, initialEditId }: AgentsModalProps
                     <input
                       type="color"
                       value={formColor}
-                      onChange={e => !isReadOnly && setFormColor(e.target.value)}
+                      onChange={(e) => !isReadOnly && setFormColor(e.target.value)}
                       disabled={isReadOnly}
                       className="w-6 h-6 rounded cursor-pointer border border-border bg-transparent"
                     />
@@ -427,7 +451,7 @@ export function AgentsModal({ isOpen, onClose, initialEditId }: AgentsModalProps
             <div>
               <label className="block text-xs text-text-secondary mb-1">Tools</label>
               <div className="flex flex-wrap gap-1.5 p-2 bg-bg-tertiary border border-border rounded max-h-32 overflow-y-auto">
-                {availableTools.map(tool => {
+                {availableTools.map((tool) => {
                   const isSelected = granularTools.has(tool.name)
                   const hasActions = tool.actions.length > 0
                   const selectedActions = granularTools.get(tool.name) || new Set()
@@ -436,14 +460,16 @@ export function AgentsModal({ isOpen, onClose, initialEditId }: AgentsModalProps
                     <button
                       key={tool.name}
                       className={`px-1.5 py-0.5 rounded text-xs font-mono transition-colors flex items-center gap-1 ${
-                        isSelected
-                          ? 'bg-accent-primary/25 text-accent-primary'
-                          : 'bg-bg-primary text-text-muted'
+                        isSelected ? 'bg-accent-primary/25 text-accent-primary' : 'bg-bg-primary text-text-muted'
                       }`}
                     >
                       <span>{tool.name}</span>
                       {hasActions && (
-                        <span className={`text-[10px] ${isSelected && selectedActions.size > 0 ? 'text-accent-primary' : 'text-text-muted'}`}>*</span>
+                        <span
+                          className={`text-[10px] ${isSelected && selectedActions.size > 0 ? 'text-accent-primary' : 'text-text-muted'}`}
+                        >
+                          *
+                        </span>
                       )}
                     </button>
                   )
@@ -482,9 +508,12 @@ export function AgentsModal({ isOpen, onClose, initialEditId }: AgentsModalProps
                       trigger={button}
                       minWidth="160px"
                       items={[
-                        ...tool.actions.map(action => ({
+                        ...tool.actions.map((action) => ({
                           label: (
-                            <label className="flex items-center gap-2 cursor-pointer" htmlFor={`${tool.name}-${action}`}>
+                            <label
+                              className="flex items-center gap-2 cursor-pointer"
+                              htmlFor={`${tool.name}-${action}`}
+                            >
                               <input
                                 type="checkbox"
                                 id={`${tool.name}-${action}`}
@@ -523,7 +552,7 @@ export function AgentsModal({ isOpen, onClose, initialEditId }: AgentsModalProps
             <label className="block text-xs text-text-secondary mb-1">Prompt</label>
             <textarea
               value={formPrompt}
-              onChange={e => !isReadOnly && setFormPrompt(e.target.value)}
+              onChange={(e) => !isReadOnly && setFormPrompt(e.target.value)}
               readOnly={isReadOnly}
               placeholder="Instructions for this agent..."
               className={`h-80 w-full px-3 py-2 bg-bg-tertiary border border-border rounded text-sm font-mono resize-y focus:outline-none focus:ring-1 focus:ring-accent-primary ${isReadOnly ? 'opacity-60' : ''}`}

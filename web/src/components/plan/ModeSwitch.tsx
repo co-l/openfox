@@ -7,8 +7,8 @@ const modes: { mode: SessionMode; label: string; activeClass: string }[] = [
 ]
 
 export function ModeSwitch() {
-  const currentMode = useSessionStore(state => state.currentSession?.mode)
-  const switchMode = useSessionStore(state => state.switchMode)
+  const currentMode = useSessionStore((state) => state.currentSession?.mode)
+  const switchMode = useSessionStore((state) => state.switchMode)
 
   if (!currentMode) return null
 
@@ -23,10 +23,7 @@ export function ModeSwitch() {
             onClick={() => !isActive && switchMode(mode)}
             className={`
               px-3 py-1.5 text-sm font-medium transition-colors
-              ${isActive
-                ? activeClass
-                : 'text-text-muted hover:text-text-primary hover:bg-bg-tertiary cursor-pointer'
-              }
+              ${isActive ? activeClass : 'text-text-muted hover:text-text-primary hover:bg-bg-tertiary cursor-pointer'}
               ${!isActive && 'border-l border-border first:border-l-0'}
             `}
           >

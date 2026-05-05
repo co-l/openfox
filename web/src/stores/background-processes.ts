@@ -48,26 +48,27 @@ export const useBackgroundProcessesStore = create<BackgroundProcessStore>()((set
 
     setProcesses: (processes) => set({ processes }),
 
-    addProcess: (process) => set((state) => ({
-      processes: [...state.processes, process],
-    })),
+    addProcess: (process) =>
+      set((state) => ({
+        processes: [...state.processes, process],
+      })),
 
-    updateProcess: (processId, updates) => set((state) => ({
-      processes: state.processes.map((p) =>
-        p.id === processId ? { ...p, ...updates } : p
-      ),
-    })),
+    updateProcess: (processId, updates) =>
+      set((state) => ({
+        processes: state.processes.map((p) => (p.id === processId ? { ...p, ...updates } : p)),
+      })),
 
-    removeProcess: (processId) => set((state) => ({
-      processes: state.processes.filter((p) => p.id !== processId),
-      logs: Object.fromEntries(
-        Object.entries(state.logs).filter(([key]) => key !== processId)
-      ),
-    })),
+    removeProcess: (processId) =>
+      set((state) => ({
+        processes: state.processes.filter((p) => p.id !== processId),
+        logs: Object.fromEntries(Object.entries(state.logs).filter(([key]) => key !== processId)),
+      })),
 
     stopProcess: async (processId, sessionId) => {
       try {
-        const res = await authFetch(`/api/sessions/${sessionId}/background-process/${processId}/stop`, { method: 'POST' })
+        const res = await authFetch(`/api/sessions/${sessionId}/background-process/${processId}/stop`, {
+          method: 'POST',
+        })
         if (res.ok) {
           get().removeProcess(processId)
         }
@@ -81,13 +82,15 @@ export const useBackgroundProcessesStore = create<BackgroundProcessStore>()((set
       scheduleLogFlush()
     },
 
-    setLogs: (processId, logs) => set((state) => ({
-      logs: { ...state.logs, [processId]: logs },
-    })),
+    setLogs: (processId, logs) =>
+      set((state) => ({
+        logs: { ...state.logs, [processId]: logs },
+      })),
 
-    clearLogs: (processId) => set((state) => ({
-      logs: { ...state.logs, [processId]: [] },
-    })),
+    clearLogs: (processId) =>
+      set((state) => ({
+        logs: { ...state.logs, [processId]: [] },
+      })),
 
     handleMessage: (type, payload) => {
       switch (type) {
@@ -99,19 +102,22 @@ export const useBackgroundProcessesStore = create<BackgroundProcessStore>()((set
             status: string
           }
           set((state) => ({
-            processes: [...state.processes, {
-              id: processId,
-              sessionId: '',
-              name,
-              command: '',
-              cwd: '',
-              pid,
-              status: status as BackgroundProcess['status'],
-              exitCode: null,
-              createdAt: Date.now(),
-              startedAt: Date.now(),
-              endedAt: null,
-            }],
+            processes: [
+              ...state.processes,
+              {
+                id: processId,
+                sessionId: '',
+                name,
+                command: '',
+                cwd: '',
+                pid,
+                status: status as BackgroundProcess['status'],
+                exitCode: null,
+                createdAt: Date.now(),
+                startedAt: Date.now(),
+                endedAt: null,
+              },
+            ],
           }))
           break
         }
@@ -126,9 +132,7 @@ export const useBackgroundProcessesStore = create<BackgroundProcessStore>()((set
           const processId = payload.processId as string
           const exitCode = payload.exitCode as number | null
           set((state) => ({
-            processes: state.processes.map((p) =>
-              p.id === processId ? { ...p, status: 'exited', exitCode } : p
-            ),
+            processes: state.processes.map((p) => (p.id === processId ? { ...p, status: 'exited', exitCode } : p)),
           }))
           break
         }

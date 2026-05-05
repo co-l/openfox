@@ -1300,10 +1300,17 @@ export const useSessionStore = create<SessionState>((set, get) => {
               if (existingIndex >= 0) {
                 // Update existing entry with new partial arguments
                 preparingToolCalls = existing.map((p, i) =>
-                  i === existingIndex ? { ...p, arguments: payload.arguments } : p
+                  i === existingIndex ? { ...p, arguments: payload.arguments } : p,
                 )
               } else {
-                preparingToolCalls = [...existing, { index: payload.index, name: payload.name, ...(payload.arguments ? { arguments: payload.arguments } : {}) }]
+                preparingToolCalls = [
+                  ...existing,
+                  {
+                    index: payload.index,
+                    name: payload.name,
+                    ...(payload.arguments ? { arguments: payload.arguments } : {}),
+                  },
+                ]
               }
               return {
                 streamingMessage: {
@@ -1323,12 +1330,16 @@ export const useSessionStore = create<SessionState>((set, get) => {
                         const existingIndex = existing.findIndex((p) => p.index === payload.index)
                         if (existingIndex >= 0) {
                           return existing.map((p, i) =>
-                            i === existingIndex ? { ...p, arguments: payload.arguments } : p
+                            i === existingIndex ? { ...p, arguments: payload.arguments } : p,
                           )
                         }
                         return [
                           ...existing,
-                          { index: payload.index, name: payload.name, ...(payload.arguments ? { arguments: payload.arguments } : {}) },
+                          {
+                            index: payload.index,
+                            name: payload.name,
+                            ...(payload.arguments ? { arguments: payload.arguments } : {}),
+                          },
                         ]
                       })(),
                     }

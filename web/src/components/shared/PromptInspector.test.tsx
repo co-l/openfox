@@ -4,9 +4,8 @@ import { describe, expect, it, vi } from 'vitest'
 import { PromptInspector } from './PromptInspector'
 
 vi.mock('./SelfContainedModal', () => ({
-  Modal: ({ isOpen, title, children }: { isOpen: boolean; title: string; children: ReactNode }) => (
-    isOpen ? <div data-title={title}>{children}</div> : null
-  ),
+  Modal: ({ isOpen, title, children }: { isOpen: boolean; title: string; children: ReactNode }) =>
+    isOpen ? <div data-title={title}>{children}</div> : null,
 }))
 
 describe('PromptInspector', () => {

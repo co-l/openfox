@@ -5,12 +5,18 @@ import { useSessionStore } from './session'
 
 type LlmStatus = 'connected' | 'disconnected' | 'unknown'
 
-type ContextState = { currentTokens: number; maxTokens: number; compactionCount: number; dangerZone: boolean; canCompact: boolean }
+type ContextState = {
+  currentTokens: number
+  maxTokens: number
+  compactionCount: number
+  dangerZone: boolean
+  canCompact: boolean
+}
 
 async function postModelUpdate(
   providerId: string,
   modelId: string,
-  body: Record<string, unknown>
+  body: Record<string, unknown>,
 ): Promise<{ success: boolean; model?: ModelConfig; contextState?: ContextState | null }> {
   const response = await authFetch(`/api/providers/${providerId}/models/${encodeURIComponent(modelId)}`, {
     method: 'POST',
@@ -18,16 +24,22 @@ async function postModelUpdate(
     body: JSON.stringify(body),
   })
   if (!response.ok) {
-    const errorData = await response.json() as { error?: string }
+    const errorData = (await response.json()) as { error?: string }
     throw new Error(errorData.error ?? 'Failed to update model')
   }
   return response.json()
 }
 
-function applyModelUpdate(providers: Provider[], providerId: string, modelId: string, update: Partial<ModelConfig>): Provider[] {
-  return providers.map(p => p.id === providerId
-    ? { ...p, models: p.models.map(m => m.id === modelId ? { ...m, ...update, source: 'user' as const } : m) }
-    : p,
+function applyModelUpdate(
+  providers: Provider[],
+  providerId: string,
+  modelId: string,
+  update: Partial<ModelConfig>,
+): Provider[] {
+  return providers.map((p) =>
+    p.id === providerId
+      ? { ...p, models: p.models.map((m) => (m.id === modelId ? { ...m, ...update, source: 'user' as const } : m)) }
+      : p,
   )
 }
 
@@ -79,7 +91,7 @@ interface ConfigState {
   activating: boolean
   error: string | null
   autoRefreshInterval: ReturnType<typeof setInterval> | null
-  
+
   // Actions
   fetchConfig: () => Promise<void>
   refreshModel: () => Promise<void>
@@ -88,7 +100,18 @@ interface ConfigState {
   startAutoRefresh: () => void
   stopAutoRefresh: () => void
   updateModelContext: (providerId: string, modelId: string, contextWindow: number) => Promise<boolean>
-  updateModelSettings: (providerId: string, modelId: string, settings: { contextWindow?: number; temperature?: number | null; topP?: number | null; topK?: number | null; maxTokens?: number | null; supportsVision?: boolean }) => Promise<boolean>
+  updateModelSettings: (
+    providerId: string,
+    modelId: string,
+    settings: {
+      contextWindow?: number
+      temperature?: number | null
+      topP?: number | null
+      topK?: number | null
+      maxTokens?: number | null
+      supportsVision?: boolean
+    },
+  ) => Promise<boolean>
   refreshProviderModels: (providerId: string) => Promise<boolean>
 
   // Selectors
@@ -100,15 +123,24 @@ const AUTO_REFRESH_INTERVAL_MS = 30_000
 
 function getBackendDisplayName(backend: Backend): string {
   switch (backend) {
-    case 'vllm': return 'vLLM'
-    case 'sglang': return 'SGLang'
-    case 'ollama': return 'Ollama'
-    case 'llamacpp': return 'llama.cpp'
-    case 'openai': return 'OpenAI'
-    case 'anthropic': return 'Anthropic'
-    case 'opencode-go': return 'OpenCode Go'
-    case 'auto': return 'Auto'
-    case 'unknown': return ''
+    case 'vllm':
+      return 'vLLM'
+    case 'sglang':
+      return 'SGLang'
+    case 'ollama':
+      return 'Ollama'
+    case 'llamacpp':
+      return 'llama.cpp'
+    case 'openai':
+      return 'OpenAI'
+    case 'anthropic':
+      return 'Anthropic'
+    case 'opencode-go':
+      return 'OpenCode Go'
+    case 'auto':
+      return 'Auto'
+    case 'unknown':
+      return ''
   }
 }
 
@@ -129,7 +161,7 @@ export const useConfigStore = create<ConfigState>((set, get) => ({
   activating: false,
   error: null,
   autoRefreshInterval: null,
-  
+
   fetchConfig: async () => {
     set({ loading: true, error: null })
     try {
@@ -137,7 +169,7 @@ export const useConfigStore = create<ConfigState>((set, get) => ({
       if (!response.ok) {
         throw new Error('Failed to fetch config')
       }
-      const data = await response.json() as { 
+      const data = (await response.json()) as {
         version: string
         model: string
         maxContext: number
@@ -167,20 +199,20 @@ export const useConfigStore = create<ConfigState>((set, get) => ({
       })
     }
   },
-  
+
   refreshModel: async () => {
     try {
       const response = await authFetch('/api/model/refresh', { method: 'POST' })
       if (!response.ok) {
         throw new Error('Failed to refresh model')
       }
-      const data = await response.json() as { 
+      const data = (await response.json()) as {
         model: string
         source: string
         llmStatus: LlmStatus
         backend: Backend
       }
-      
+
       // Check if current session has a provider/model override
       // If yes, preserve the session-specific model and don't overwrite it
       const sessionStore = useSessionStore.getState()
@@ -190,36 +222,36 @@ export const useConfigStore = create<ConfigState>((set, get) => ({
         set({ llmStatus: data.llmStatus, backend: data.backend })
         return
       }
-      
+
       set({ model: data.model, llmStatus: data.llmStatus, backend: data.backend })
     } catch (error) {
       console.error('Failed to refresh model:', error)
     }
   },
-  
+
   activateProvider: async (providerId: string) => {
     const { activeProviderId, providers } = get()
     if (providerId === activeProviderId) return true
-    
+
     set({ activating: true, error: null })
     try {
       const response = await authFetch(`/api/providers/${providerId}/activate`, { method: 'POST' })
       if (!response.ok) {
-        const errorData = await response.json() as { error?: string }
+        const errorData = (await response.json()) as { error?: string }
         throw new Error(errorData.error ?? 'Failed to activate provider')
       }
-      const data = await response.json() as {
+      const data = (await response.json()) as {
         success: boolean
         activeProviderId: string
         model: string
         backend: Backend
       }
-      
+
       set({
         activeProviderId: data.activeProviderId,
         model: data.model,
         backend: data.backend,
-        providers: providers.map(p => ({
+        providers: providers.map((p) => ({
           ...p,
           isActive: p.id === data.activeProviderId,
         })),
@@ -241,7 +273,7 @@ export const useConfigStore = create<ConfigState>((set, get) => ({
       activeProviderId: providerId,
       model,
       defaultModelSelection: `${providerId}/${model}`,
-      providers: providers.map(p => ({
+      providers: providers.map((p) => ({
         ...p,
         isActive: p.id === providerId,
       })),
@@ -262,12 +294,23 @@ export const useConfigStore = create<ConfigState>((set, get) => ({
     }
   },
 
-  updateModelSettings: async (providerId: string, modelId: string, settings: { contextWindow?: number; temperature?: number | null; topP?: number | null; topK?: number | null; maxTokens?: number | null; supportsVision?: boolean }) => {
+  updateModelSettings: async (
+    providerId: string,
+    modelId: string,
+    settings: {
+      contextWindow?: number
+      temperature?: number | null
+      topP?: number | null
+      topK?: number | null
+      maxTokens?: number | null
+      supportsVision?: boolean
+    },
+  ) => {
     set({ activating: true, error: null })
     try {
       const data = await postModelUpdate(providerId, modelId, settings)
       const { providers } = get()
-      const updated = { 
+      const updated = {
         ...(settings.contextWindow !== undefined && { contextWindow: settings.contextWindow }),
         ...buildModelParams({
           temperature: settings.temperature ?? undefined,
@@ -291,14 +334,14 @@ export const useConfigStore = create<ConfigState>((set, get) => ({
     try {
       const response = await authFetch(`/api/providers/${providerId}/refresh`, { method: 'POST' })
       if (!response.ok) {
-        const errorData = await response.json() as { error?: string }
+        const errorData = (await response.json()) as { error?: string }
         throw new Error(errorData.error ?? 'Failed to refresh models')
       }
-      const data = await response.json() as { models: ModelConfig[] }
-      
+      const data = (await response.json()) as { models: ModelConfig[] }
+
       const { providers } = get()
       set({
-        providers: providers.map(p => p.id === providerId ? { ...p, models: data.models } : p),
+        providers: providers.map((p) => (p.id === providerId ? { ...p, models: data.models } : p)),
         activating: false,
       })
       return true
@@ -314,14 +357,14 @@ export const useConfigStore = create<ConfigState>((set, get) => ({
   startAutoRefresh: () => {
     const { autoRefreshInterval, refreshModel } = get()
     if (autoRefreshInterval) return
-    
+
     const interval = setInterval(() => {
       refreshModel()
     }, AUTO_REFRESH_INTERVAL_MS)
-    
+
     set({ autoRefreshInterval: interval })
   },
-  
+
   stopAutoRefresh: () => {
     const { autoRefreshInterval } = get()
     if (autoRefreshInterval) {
@@ -329,17 +372,17 @@ export const useConfigStore = create<ConfigState>((set, get) => ({
       set({ autoRefreshInterval: null })
     }
   },
-  
+
   getActiveProvider: () => {
     const { providers, activeProviderId } = get()
-    return providers.find(p => p.id === activeProviderId)
+    return providers.find((p) => p.id === activeProviderId)
   },
-  
+
   getModelContext: (modelId: string) => {
     const { providers, activeProviderId } = get()
-    const activeProvider = providers.find(p => p.id === activeProviderId)
+    const activeProvider = providers.find((p) => p.id === activeProviderId)
     if (!activeProvider) return 200000
-    const model = activeProvider.models.find(m => m.id === modelId)
+    const model = activeProvider.models.find((m) => m.id === modelId)
     return model?.contextWindow ?? 200000
   },
 }))

@@ -39,29 +39,27 @@ function LoadingSpinner() {
   )
 }
 
-function ProjectView({ sidebarOpen, onSidebarToggle }: { sidebarOpen: boolean, onSidebarToggle: () => void }) {
+function ProjectView({ sidebarOpen, onSidebarToggle }: { sidebarOpen: boolean; onSidebarToggle: () => void }) {
   const [, params] = useRoute('/p/:projectId')
   const projectId = params?.projectId
 
-  const connectionStatus = useSessionStore(state => state.connectionStatus)
-  const listSessions = useSessionStore(state => state.listSessions)
-  const clearSession = useSessionStore(state => state.clearSession)
+  const connectionStatus = useSessionStore((state) => state.connectionStatus)
+  const clearSession = useSessionStore((state) => state.clearSession)
 
-  const currentProject = useProjectStore(state => state.currentProject)
-  const loadProject = useProjectStore(state => state.loadProject)
+  const currentProject = useProjectStore((state) => state.currentProject)
 
   const hasToken = hasStoredToken()
   const canLoad = connectionStatus === 'connected' || hasToken
 
   useEffect(() => {
+    if (canLoad && projectId && currentProject?.id !== projectId) {
+      useProjectStore.getState().loadProject(projectId)
+    }
     if (canLoad && projectId) {
-      if (currentProject?.id !== projectId) {
-        loadProject(projectId)
-      }
-      listSessions(projectId)
+      useSessionStore.getState().listSessions(projectId)
       clearSession()
     }
-  }, [canLoad, projectId, currentProject?.id, loadProject, listSessions, clearSession])
+  }, [canLoad, projectId, currentProject?.id, clearSession])
 
   if (!currentProject || currentProject.id !== projectId) {
     return <LoadingSpinner />
@@ -93,16 +91,16 @@ function ProjectSessionView({
   const sessionId = params?.sessionId
   const [, navigate] = useLocation()
 
-  const connectionStatus = useSessionStore(state => state.connectionStatus)
-  const session = useSessionStore(state => state.currentSession)
-  const loadSession = useSessionStore(state => state.loadSession)
-  const listSessions = useSessionStore(state => state.listSessions)
-  const pendingSessionCreate = useSessionStore(state => state.pendingSessionCreate)
-  const error = useSessionStore(state => state.error)
-  const clearError = useSessionStore(state => state.clearError)
+  const connectionStatus = useSessionStore((state) => state.connectionStatus)
+  const session = useSessionStore((state) => state.currentSession)
+  const loadSession = useSessionStore((state) => state.loadSession)
+  const listSessions = useSessionStore((state) => state.listSessions)
+  const pendingSessionCreate = useSessionStore((state) => state.pendingSessionCreate)
+  const error = useSessionStore((state) => state.error)
+  const clearError = useSessionStore((state) => state.clearError)
 
-  const currentProject = useProjectStore(state => state.currentProject)
-  const loadProject = useProjectStore(state => state.loadProject)
+  const currentProject = useProjectStore((state) => state.currentProject)
+  const loadProject = useProjectStore((state) => state.loadProject)
 
   const hasToken = hasStoredToken()
   const canLoad = connectionStatus === 'connected' || hasToken
@@ -111,16 +109,13 @@ function ProjectSessionView({
     if (canLoad && projectId && currentProject?.id !== projectId) {
       loadProject(projectId)
     }
-  }, [canLoad, projectId, currentProject?.id, loadProject])
-
-  useEffect(() => {
     if (canLoad && sessionId && session?.id !== sessionId) {
       loadSession(sessionId)
     }
     if (canLoad && projectId) {
       listSessions(projectId)
     }
-  }, [canLoad, sessionId, session?.id, loadSession, listSessions, pendingSessionCreate, projectId])
+  }, [canLoad, projectId, currentProject?.id, loadProject, sessionId, session?.id, loadSession, listSessions, pendingSessionCreate])
 
   useEffect(() => {
     if (error?.code === 'NOT_FOUND' && projectId) {
@@ -144,7 +139,7 @@ function ProjectSessionView({
 }
 
 function OnboardingPage() {
-  const fetchConfig = useConfigStore(state => state.fetchConfig)
+  const fetchConfig = useConfigStore((state) => state.fetchConfig)
 
   function handleComplete() {
     fetchConfig()
@@ -160,11 +155,11 @@ function OnboardingPage() {
 
 function App() {
   const { connectionStatus } = useWebSocket()
-  const fetchConfig = useConfigStore(state => state.fetchConfig)
-  const refreshProviderModels = useConfigStore(state => state.refreshProviderModels)
-  const loadDisplaySettings = useSettingsStore(state => state.getSetting)
-  const providers = useConfigStore(state => state.providers)
-  const activeProviderId = useConfigStore(state => state.activeProviderId)
+  const fetchConfig = useConfigStore((state) => state.fetchConfig)
+  const refreshProviderModels = useConfigStore((state) => state.refreshProviderModels)
+  const loadDisplaySettings = useSettingsStore((state) => state.getSetting)
+  const providers = useConfigStore((state) => state.providers)
+  const activeProviderId = useConfigStore((state) => state.activeProviderId)
   const [, navigate] = useLocation()
 
   const hasToken = hasStoredToken()
@@ -192,7 +187,7 @@ function App() {
     }
   }, [configFetched, activeProviderId, refreshProviderModels, fetchConfig])
 
-  const displaySettings = useSettingsStore(state => state.settings)
+  const displaySettings = useSettingsStore((state) => state.settings)
 
   useEffect(() => {
     if (configFetched && providers.length === 0) {
@@ -295,20 +290,15 @@ function App() {
     }
   }, [connectionStatus, fetchConfig, hasToken])
 
-  const showPasswordModal = useSessionStore(state => state.showPasswordModal)
-  const passwordModalRetry = useSessionStore(state => state.passwordModalRetry)
-  const submitPassword = useSessionStore(state => state.submitPassword)
-  const cancelPassword = useSessionStore(state => state.cancelPassword)
+  const showPasswordModal = useSessionStore((state) => state.showPasswordModal)
+  const passwordModalRetry = useSessionStore((state) => state.passwordModalRetry)
+  const submitPassword = useSessionStore((state) => state.submitPassword)
+  const cancelPassword = useSessionStore((state) => state.cancelPassword)
 
   if (connectionStatus !== 'connected' && !showPasswordModal && !hasToken) {
     return (
       <>
-        <PasswordModal
-          isOpen={true}
-          isRetry={passwordModalRetry}
-          onSubmit={submitPassword}
-          onCancel={cancelPassword}
-        />
+        <PasswordModal isOpen={true} isRetry={passwordModalRetry} onSubmit={submitPassword} onCancel={cancelPassword} />
         <div className="h-screen flex items-center justify-center">
           <SpinnerWithText text="Connecting to server..." />
         </div>
@@ -324,12 +314,12 @@ function App() {
         onSubmit={submitPassword}
         onCancel={cancelPassword}
       />
-      <div className="flex flex-col" style={{ height: isMobile ? `calc(${viewport.offsetTop}px + ${viewport.height}px)` : '100vh' }}>
+      <div
+        className="flex flex-col"
+        style={{ height: isMobile ? `calc(${viewport.offsetTop}px + ${viewport.height}px)` : '100vh' }}
+      >
         <PageTitle />
-        <Header
-          onMenuClick={handleLeftToggle}
-          onCriteriaToggle={handleRightToggle}
-        />
+        <Header onMenuClick={handleLeftToggle} onCriteriaToggle={handleRightToggle} />
 
         <div className="flex-1 flex overflow-hidden">
           <Switch>
@@ -348,10 +338,7 @@ function App() {
               <NewSessionHandler />
             </Route>
             <Route path="/p/:projectId">
-              <ProjectView
-                sidebarOpen={effectiveLeftOpen}
-                onSidebarToggle={handleLeftToggle}
-              />
+              <ProjectView sidebarOpen={effectiveLeftOpen} onSidebarToggle={handleLeftToggle} />
             </Route>
             <Route path="/">
               <HomePage />

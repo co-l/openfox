@@ -6,11 +6,7 @@ interface CRUDListHeaderProps {
   newLabel?: string
 }
 
-export function CRUDListHeader({
-  description,
-  onNew,
-  newLabel = '+ New',
-}: CRUDListHeaderProps) {
+export function CRUDListHeader({ description, onNew, newLabel = '+ New' }: CRUDListHeaderProps) {
   return (
     <div className="flex items-center justify-between mb-4">
       <p className="text-text-secondary text-sm">{description}</p>

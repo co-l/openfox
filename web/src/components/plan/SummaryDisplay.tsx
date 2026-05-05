@@ -21,8 +21,8 @@ export function SummaryDisplay({ summary, messages, workdir }: SummaryDisplayPro
   const [showStatsModal, setShowStatsModal] = useState(false)
   const stats = useSessionStats(messages)
   const { branch } = useCurrentBranch(workdir)
-  const version = useConfigStore(state => state.version)
-  const session = useSessionStore(state => state.currentSession)
+  const version = useConfigStore((state) => state.version)
+  const session = useSessionStore((state) => state.currentSession)
 
   return (
     <div className="flex flex-col h-full">
@@ -44,28 +44,22 @@ export function SummaryDisplay({ summary, messages, workdir }: SummaryDisplayPro
               <span>tg</span>
             </div>
           </button>
-          
+
           {/* Stats Modal */}
-          <StatsModal
-            isOpen={showStatsModal}
-            onClose={() => setShowStatsModal(false)}
-            stats={stats}
-          />
+          <StatsModal isOpen={showStatsModal} onClose={() => setShowStatsModal(false)} stats={stats} />
         </div>
       )}
-      
+
       {/* Summary section */}
       <div className="flex flex-col flex-1 overflow-y-auto">
         <div className="flex items-center justify-between mb-2">
           <h3 className="text-sm font-semibold text-text-primary">Summary</h3>
         </div>
-        
+
         {summary ? (
           <p className="text-sm text-text-primary leading-relaxed">{summary}</p>
         ) : (
-          <div className="text-text-muted text-sm text-center py-2">
-            No summary yet
-          </div>
+          <div className="text-text-muted text-sm text-center py-2">No summary yet</div>
         )}
 
         {/* Progress section */}
@@ -79,7 +73,9 @@ export function SummaryDisplay({ summary, messages, workdir }: SummaryDisplayPro
       {branch && (
         <div className="mt-4 flex items-center gap-2 text-sm">
           <BranchIcon />
-          <span className="truncate text-text-secondary" title={branch}>{branch}</span>
+          <span className="truncate text-text-secondary" title={branch}>
+            {branch}
+          </span>
         </div>
       )}
 

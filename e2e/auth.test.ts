@@ -2,7 +2,7 @@
  * Auth E2E Tests
  *
  * Tests token authentication for network mode.
- * 
+ *
  * NOTE: These tests are SKIPPED by default because they require auth to be
  * enabled, which conflicts with parallel test execution (tests don't wait for
  * auth.json to be created). To run these tests:
@@ -31,15 +31,15 @@ describe.skip('Auth', () => {
       publicKeyEncoding: { type: 'spki', format: 'pem' },
     })
 
-    const encryptedPassword = publicEncrypt(
-      { key: publicKey, padding: 1 },
-      Buffer.from('test123')
-    ).toString('base64')
+    const encryptedPassword = publicEncrypt({ key: publicKey, padding: 1 }, Buffer.from('test123')).toString('base64')
 
-    await writeFile(join(authDir, 'auth.json'), JSON.stringify({
-      strategy: 'network',
-      encryptedPassword,
-    }))
+    await writeFile(
+      join(authDir, 'auth.json'),
+      JSON.stringify({
+        strategy: 'network',
+        encryptedPassword,
+      }),
+    )
 
     await writeFile(join(authDir, 'auth.key'), privateKey, { mode: 0o600 })
 
@@ -79,7 +79,7 @@ describe.skip('Auth', () => {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ password: 'test123' }),
     })
-    const { token } = await loginRes.json() as { token: string }
+    const { token } = (await loginRes.json()) as { token: string }
     const ws = new WebSocket(`${server.wsUrl}?token=${encodeURIComponent(token)}`)
 
     await new Promise<void>((resolve, reject) => {
@@ -113,7 +113,7 @@ describe.skip('Auth', () => {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ password: 'test123' }),
     })
-    const { token } = await loginRes.json() as { token: string }
+    const { token } = (await loginRes.json()) as { token: string }
     const res = await fetch(`${server.url}/api/projects`, {
       headers: { 'x-session-token': token },
     })
@@ -136,7 +136,7 @@ describe.skip('Auth', () => {
       body: JSON.stringify({ password: 'test123' }),
     })
     expect(res.ok).toBe(true)
-    const data = await res.json() as { token: string }
+    const data = (await res.json()) as { token: string }
     expect(typeof data.token).toBe('string')
     expect(data.token.length).toBeGreaterThan(100)
   })

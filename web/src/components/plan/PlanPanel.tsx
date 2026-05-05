@@ -1,6 +1,8 @@
 import { useState, useRef, useEffect, useCallback, useMemo, memo } from 'react'
 import { useSessionStore, useIsRunning, useQueuedMessages } from '../../stores/session'
 
+import { type TurnStats } from '../../lib/types'
+
 // @ts-ignore
 import type { Message, ToolCall, Attachment } from '@shared/types.js'
 import { SessionLayout } from '../layout/SessionLayout'
@@ -36,14 +38,17 @@ import { MessageSearchModal } from './MessageSearchModal'
 
 import { groupMessages, type DisplayItem } from './groupMessages.js'
 import { usePromptHistory } from '../../hooks/usePromptHistory.js'
-import { useAutoScroll } from "@/hooks/useAutoScroll.ts"
+import { useAutoScroll } from '@/hooks/useAutoScroll.ts'
 
 interface PlanPanelProps {
   criteriaSidebarOpen?: boolean
   onCriteriaSidebarToggle?: () => void
 }
 
-export function PlanPanel({ criteriaSidebarOpen: externalCriteriaSidebarOpen, onCriteriaSidebarToggle }: PlanPanelProps = {}) {
+export function PlanPanel({
+  criteriaSidebarOpen: externalCriteriaSidebarOpen,
+  onCriteriaSidebarToggle,
+}: PlanPanelProps = {}) {
   const criteriaSidebarOpen = externalCriteriaSidebarOpen ?? true
   const [input, setInput] = useState('')
 
@@ -55,51 +60,44 @@ export function PlanPanel({ criteriaSidebarOpen: externalCriteriaSidebarOpen, on
   const [showQuickAction, setShowQuickAction] = useState(false)
   const [showMessageSearch, setShowMessageSearch] = useState(false)
   const [highlightedMessageId, setHighlightedMessageId] = useState<string | null>(null)
-  const [turnStatsModal, setTurnStatsModal] = useState<{ model: string; mode: string; totalTime: number; prefillTokens: number; generationTokens: number; llmCalls?: Array<{ temperature?: number; topP?: number; topK?: number; maxTokens?: number; promptTokens: number; completionTokens: number; ttft: number; completionTime: number }> } | null>(null)
+  const [turnStatsModal, setTurnStatsModal] = useState<TurnStats | null>(null)
   const scrollContainerRef = useRef<HTMLDivElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
-  const session = useSessionStore(state => state.currentSession)
-  const rawMessages = useSessionStore(state => state.messages)
-  const streamingMessage = useSessionStore(state => state.streamingMessage)
-  const sessions = useSessionStore(state => state.sessions)
-  const error = useSessionStore(state => state.error)
-  const pendingQuestion = useSessionStore(state => state.pendingQuestion)
+  const session = useSessionStore((state) => state.currentSession)
+  const rawMessages = useSessionStore((state) => state.messages)
+  const streamingMessage = useSessionStore((state) => state.streamingMessage)
+  const sessions = useSessionStore((state) => state.sessions)
+  const error = useSessionStore((state) => state.error)
+  const pendingQuestion = useSessionStore((state) => state.pendingQuestion)
   const isRunning = useIsRunning()
 
-  const sendMessage = useSessionStore(state => state.sendMessage)
-  const clearError = useSessionStore(state => state.clearError)
-  const acceptAndBuild = useSessionStore(state => state.acceptAndBuild)
-  const stopGeneration = useSessionStore(state => state.stopGeneration)
-  const launchRunner = useSessionStore(state => state.launchRunner)
-  const cancelQueued = useSessionStore(state => state.cancelQueued)
+  const sendMessage = useSessionStore((state) => state.sendMessage)
+  const clearError = useSessionStore((state) => state.clearError)
+  const acceptAndBuild = useSessionStore((state) => state.acceptAndBuild)
+  const stopGeneration = useSessionStore((state) => state.stopGeneration)
+  const launchRunner = useSessionStore((state) => state.launchRunner)
+  const cancelQueued = useSessionStore((state) => state.cancelQueued)
   const queuedMessages = useQueuedMessages()
-  const { showThinking, showVerboseToolOutput, showStats, showAgentDefinitions, showWorkflowBars } = useDisplaySettings()
+  const { showThinking, showVerboseToolOutput, showStats, showAgentDefinitions, showWorkflowBars } =
+    useDisplaySettings()
 
-  const workflowDefaults = useWorkflowsStore(state => state.defaults)
-  const workflowUserItems = useWorkflowsStore(state => state.userItems)
+  const workflowDefaults = useWorkflowsStore((state) => state.defaults)
+  const workflowUserItems = useWorkflowsStore((state) => state.userItems)
   const workflows = [...workflowDefaults, ...workflowUserItems]
-  const fetchWorkflows = useWorkflowsStore(state => state.fetchWorkflows)
+  const fetchWorkflows = useWorkflowsStore((state) => state.fetchWorkflows)
 
-  const agentDefaults = useAgentsStore(state => state.defaults)
-  const agentUserItems = useAgentsStore(state => state.userItems)
-  const topLevelAgents = [...agentDefaults, ...agentUserItems].filter(a => !a.subagent)
+  const agentDefaults = useAgentsStore((state) => state.defaults)
+  const agentUserItems = useAgentsStore((state) => state.userItems)
+  const topLevelAgents = [...agentDefaults, ...agentUserItems].filter((a) => !a.subagent)
   useEffect(() => {
     fetchWorkflows()
   }, [fetchWorkflows])
 
   // Prompt history navigation
-  const {
-    history,
-    selectedIndex,
-    showHistory,
-    openHistory,
-    closeHistory,
-    navigateUp,
-    navigateDown,
-    selectCurrent,
-  } = usePromptHistory(rawMessages, sessions, session?.id)
+  const { history, selectedIndex, showHistory, openHistory, closeHistory, navigateUp, navigateDown, selectCurrent } =
+    usePromptHistory(rawMessages, sessions, session?.id)
 
   // Listen for open-turn-stats event from stats bar
   const handleSelectSearchMessage = useCallback((messageId: string) => {
@@ -114,7 +112,7 @@ export function PlanPanel({ criteriaSidebarOpen: externalCriteriaSidebarOpen, on
 
   useEffect(() => {
     const handler = (e: Event) => {
-      const customEvent = e as CustomEvent<{ stats: { model: string; mode: string; totalTime: number; prefillTokens: number; generationTokens: number; llmCalls?: Array<{ temperature?: number; topP?: number; topK?: number; maxTokens?: number; promptTokens: number; completionTokens: number; ttft: number; completionTime: number }> } }>
+      const customEvent = e as CustomEvent<{ stats: TurnStats }>
       setTurnStatsModal(customEvent.detail.stats)
     }
     window.addEventListener('open-turn-stats', handler)
@@ -126,7 +124,7 @@ export function PlanPanel({ criteriaSidebarOpen: externalCriteriaSidebarOpen, on
   // so groupMessages() and promptContext skip recomputation for non-streaming items.
   const messages = useMemo(() => {
     if (!streamingMessage) return rawMessages
-    return rawMessages.map(m => m.id === streamingMessage.id ? streamingMessage : m)
+    return rawMessages.map((m) => (m.id === streamingMessage.id ? streamingMessage : m))
   }, [rawMessages, streamingMessage])
 
   // Ref to store previous displayItems for identity preservation
@@ -143,7 +141,7 @@ export function PlanPanel({ criteriaSidebarOpen: externalCriteriaSidebarOpen, on
   const promptContextByUserMessageId = useMemo(() => buildPromptContextByUserMessageId(rawMessages), [rawMessages])
 
   // TEMP: Auto-start test messages on page load
-/*  useEffect(() => {
+  /*  useEffect(() => {
     testInterval.current = setInterval(() => {
       setTestMessageCount(prev => prev + 1)
     }, 2000)
@@ -152,7 +150,7 @@ export function PlanPanel({ criteriaSidebarOpen: externalCriteriaSidebarOpen, on
     }
   }, [])*/
 
-  const {force_scroll_to_bottom, isAutoScrollActive, setAutoScroll} = useAutoScroll(scrollContainerRef, session)
+  const { force_scroll_to_bottom, isAutoScrollActive, setAutoScroll } = useAutoScroll(scrollContainerRef, session)
 
   // Auto-resize textarea based on content, up to 200px max
   const resizeTextarea = useCallback(() => {
@@ -234,8 +232,6 @@ export function PlanPanel({ criteriaSidebarOpen: externalCriteriaSidebarOpen, on
     return () => window.removeEventListener('keydown', handleKeyDown)
   }, [])
 
-  
-
   // Paste event listener for textarea
   useEffect(() => {
     const textarea = textareaRef.current
@@ -254,12 +250,9 @@ export function PlanPanel({ criteriaSidebarOpen: externalCriteriaSidebarOpen, on
           const file = item.getAsFile()
           if (!file) continue
 
-          await processImageFile(
-            file,
-            att => setAttachments(prev => [...prev, att]),
-            setErrorMessage,
-            { filename: 'pasted-image' }
-          )
+          await processImageFile(file, (att) => setAttachments((prev) => [...prev, att]), setErrorMessage, {
+            filename: 'pasted-image',
+          })
         }
       }
     }
@@ -351,11 +344,7 @@ export function PlanPanel({ criteriaSidebarOpen: externalCriteriaSidebarOpen, on
     setErrorMessage(null)
 
     for (const file of Array.from(files)) {
-      await processImageFile(
-        file,
-        att => setAttachments(prev => [...prev, att]),
-        setErrorMessage,
-      )
+      await processImageFile(file, (att) => setAttachments((prev) => [...prev, att]), setErrorMessage)
     }
 
     // Reset file input
@@ -387,17 +376,13 @@ export function PlanPanel({ criteriaSidebarOpen: externalCriteriaSidebarOpen, on
     if (!files || files.length === 0) return
 
     for (const file of Array.from(files)) {
-      await processImageFile(
-        file,
-        att => setAttachments(prev => [...prev, att]),
-        setErrorMessage,
-      )
+      await processImageFile(file, (att) => setAttachments((prev) => [...prev, att]), setErrorMessage)
     }
   }, [])
 
   // Handle remove attachment
   const handleRemoveAttachment = useCallback((id: string) => {
-    setAttachments(prev => prev.filter(att => att.id !== id))
+    setAttachments((prev) => prev.filter((att) => att.id !== id))
   }, [])
 
   // Handle attach button click
@@ -412,9 +397,7 @@ export function PlanPanel({ criteriaSidebarOpen: externalCriteriaSidebarOpen, on
 
   // Show "Start Building" when in planner with criteria and assistant has responded
   // Don't show if already done (all criteria verified)
-  const hasAssistantResponse = displayItems.some(item =>
-    item.type === 'message' && item.message.role === 'assistant',
-  )
+  const hasAssistantResponse = displayItems.some((item) => item.type === 'message' && item.message.role === 'assistant')
   const showStartBuilding = isPlanning && hasCriteria && !isRunning && hasAssistantResponse && !isDone
 
   const handleSelectWorkflow = (workflowId: string) => {
@@ -430,278 +413,270 @@ export function PlanPanel({ criteriaSidebarOpen: externalCriteriaSidebarOpen, on
 
   return (
     <>
-    <SessionLayout criteriaSidebarOpen={criteriaSidebarOpen} onCriteriaSidebarToggle={onCriteriaSidebarToggle} messages={messages}>
-      {pendingQuestion && (
-        <AskUserDialog question={pendingQuestion} />
-      )}
-      <SessionHeader />
+      <SessionLayout
+        criteriaSidebarOpen={criteriaSidebarOpen}
+        onCriteriaSidebarToggle={onCriteriaSidebarToggle}
+        messages={messages}
+      >
+        {pendingQuestion && <AskUserDialog question={pendingQuestion} />}
+        <SessionHeader />
 
-      {/* Turn Stats Modal */}
-      {turnStatsModal && (
-        <TurnStatsModal
-          stats={turnStatsModal}
-          onClose={() => setTurnStatsModal(null)}
-        />
-      )}
-      <ConnectionStatusBar />
-
-      <div ref={scrollContainerRef} data-testid="chat-scroll-container" className="flex-1 min-w-0 overflow-y-auto relative bg-primary">
-        <div className="pt-4">
-          {displayItems.map((item, index) => {
-            if (item.type === 'context-divider') {
-              return (
-                <div key={index} className="flex items-center gap-2 feed-item px-2 md:px-4">
-                  <div className="flex-1 border-t border-border" />
-                  <span className="text-[10px] text-text-muted font-medium px-2">
-                    Earlier context summarized
-                  </span>
-                  <div className="flex-1 border-t border-border" />
-                </div>
-              )
-            }
-
-            if (item.type === 'subagent') {
-              const groupIsStreaming = item.messages.some(m => m.isStreaming)
-              return (
-                <div key={index} className="px-2 md:px-4">
-                  <SubAgentContainer
-                    messages={item.messages}
-                    subAgentType={item.subAgentType}
-                    subAgentId={item.subAgentId}
-                    isStreaming={groupIsStreaming}
-                  />
-                </div>
-              )
-            }
-
-            if (item.type === 'criteria-batch') {
-              return (
-                <div key={index} className="feed-item px-2 md:px-4">
-                  <CriteriaGroupDisplay toolCalls={item.toolCalls} criteria={session?.criteria} />
-                </div>
-              )
-            }
-
-            const message = item.message
-            if (message.role === 'assistant') {
-              return (
-                <div key={index} className="px-2 md:px-4">
-                  <AssistantMessage
-                    message={message}
-                    showStats={showStats}
-                    showThinking={showThinking}
-                    showVerboseToolOutput={showVerboseToolOutput}
-                  />
-                </div>
-              )
-            }
-
-            // Filter based on display settings
-            const skipAutoPrompt = !showAgentDefinitions && message.messageKind === 'auto-prompt'
-            const skipWorkflow = !showWorkflowBars && (message.messageKind === 'workflow-started' || message.messageKind === 'task-completed')
-            if (skipAutoPrompt || skipWorkflow) {
-              return null
-            }
-
-            return (
-              <div key={index} className="px-2 md:px-4">
-                <div data-message-id={message.id} className={highlightedMessageId === message.id ? 'rounded animate-highlight-fade' : undefined}>
-                  <ChatMessage
-                    message={message}
-                    isLastAssistantMessage={false}
-                    promptContext={message.role === 'user' ? promptContextByUserMessageId[message.id] : undefined}
-                  />
-                </div>
-              </div>
-            )
-          })}
-        </div>
-        <div className="px-2 md:px-4 pb-4">
-          {error && (
-            <div className="feed-item bg-red-500/10 border border-red-500/50 rounded p-2">
-              <div className="flex items-start justify-between gap-2">
-                <div>
-                  <div className="text-red-400 text-sm font-medium">{error.code}</div>
-                  <div className="text-red-300 text-xs mt-0.5">{error.message}</div>
-                </div>
-                <CloseButton
-                  onClick={clearError}
-                  className="text-red-400 hover:text-red-300 p-0.5"
-                  size="sm"
-                />
-              </div>
-            </div>
-          )}
-
-          {showStartBuilding && (
-            <div className="flex justify-center gap-2 feed-item flex-wrap">
-              {workflows.map(w => {
-                const c = w.color ?? '#3b82f6'
-                const r = parseInt(c.slice(1, 3), 16), g = parseInt(c.slice(3, 5), 16), b = parseInt(c.slice(5, 7), 16)
-                const bg = `rgba(${r},${g},${b},0.12)`
-                const bgHover = `rgba(${r},${g},${b},0.22)`
-                const border = `rgba(${r},${g},${b},0.25)`
-                return (
-                  <button
-                    key={w.id}
-                    onClick={() => acceptAndBuild(w.id)}
-                    data-testid="workflow-run-button"
-                    className="px-4 py-1.5 rounded text-sm font-medium transition-colors"
-                    style={{ backgroundColor: bg, color: c, border: `1px solid ${border}` }}
-                    onMouseEnter={e => {
-                      e.currentTarget.style.backgroundColor = bgHover
-                    }}
-                    onMouseLeave={e => {
-                      e.currentTarget.style.backgroundColor = bg
-                    }}
-                  >
-                    ▶ {w.name}
-                  </button>
-                )
-              })}
-            </div>
-          )}
-
-          {isRunning && <RunningIndicator />}
-        </div>
-      </div>
-
-      <form onSubmit={handleSubmit}
-            className="relative p-2 md:p-4 bg-secondary">
-        <button
-          type="button"
-          className="absolute -top-8 right-12 md:right-16 text-sm text-text-muted hover:text-text-primary z-10 flex items-center gap-1.5"
-          onClick={() => setAutoScroll(!isAutoScrollActive)}
-        >
-          {isAutoScrollActive ? (
-            <span className="w-1.5 h-1.5 rounded-full bg-accent-success" />
-          ) : (
-            <ChevronDownIcon className="w-3 h-3 text-text-muted" />
-          )}
-          {isAutoScrollActive ? 'live' : 'scroll to bottom'}
-        </button>
-        <button
-          type="button"
-          onClick={() => setShowMessageSearch(true)}
-          className="absolute -top-8 right-2 md:right-4 text-sm text-text-muted hover:text-text-primary z-10 flex items-center p-0.5 rounded hover:bg-bg-tertiary transition-colors"
-          aria-label="Search messages"
-        >
-          <SearchIcon />
-        </button>
-        {/* Hidden file input */}
-        <input
-          ref={fileInputRef}
-          type="file"
-          accept=".png,.jpg,.jpeg,.gif"
-          onChange={handleFileSelect}
-          className="hidden"
-          multiple
-        />
-
-        {/* Error message */}
-        {errorMessage && (
-          <div className="mb-2 p-2 bg-red-500/10 border border-red-500/50 rounded text-red-300 text-sm">
-            {errorMessage}
-          </div>
-        )}
-
-        {/* Attachments preview area */}
-        {attachments.length > 0 && (
-          <div className="mb-3 flex flex-wrap gap-2">
-            {attachments.map((attachment) => (
-              <AttachmentPreview
-                key={attachment.id}
-                attachment={attachment}
-                onRemove={handleRemoveAttachment}
-              />
-            ))}
-          </div>
-        )}
-
-        {/* Prompt history list */}
-        {showHistory && (
-          <PromptHistoryList
-            history={history}
-            selectedIndex={selectedIndex}
-            onSelect={(content) => {
-              setInput(content)
-              closeHistory()
-            }}
-            onEscape={closeHistory}
-            onNavigate={(direction) => {
-              if (direction === 'up') {
-                navigateUp()
-              } else {
-                navigateDown()
-              }
-            }}
-          />
-        )}
-
-        {/* Queued messages display */}
-        {queuedMessages?.length > 0 && (
-          <div className="mb-2 flex flex-wrap gap-1.5">
-            {queuedMessages.map((qm) => (
-              <div
-                key={qm.queueId}
-                className={`inline-flex items-center gap-1.5 px-2 py-1 rounded text-xs ${
-                  qm.mode === 'asap'
-                    ? 'bg-amber-500/15 text-amber-300 border border-amber-500/30'
-                    : 'bg-blue-500/15 text-blue-300 border border-blue-500/30'
-                }`}
-              >
-                <span className="font-medium">{qm.mode === 'asap' ? 'ASAP' : 'Queue'}:</span>
-                <span className="truncate max-w-[200px]">{qm.content}</span>
-                <CloseButton
-                  onClick={() => cancelQueued(qm.queueId)}
-                  size="sm"
-                />
-              </div>
-            ))}
-          </div>
-        )}
+        {/* Turn Stats Modal */}
+        {turnStatsModal && <TurnStatsModal stats={turnStatsModal} onClose={() => setTurnStatsModal(null)} />}
+        <ConnectionStatusBar />
 
         <div
-          className={`flex items-end gap-3 p-3 rounded transition-colors ${
-            dragOver
-              ? 'bg-accent-primary/10'
-              : 'bg-primary'
-          }`}
-          onDragOver={handleDragOver}
-          onDragLeave={handleDragLeave}
-          onDrop={handleDrop}
+          ref={scrollContainerRef}
+          data-testid="chat-scroll-container"
+          className="flex-1 min-w-0 overflow-y-auto relative bg-primary"
         >
-          <textarea
-            id={CHAT_TEXTAREA_ID}
-            ref={textareaRef}
-            value={input}
-            onChange={(e) => {
-              setInput(e.target.value)
-              // Hide history when user starts typing
-              if (showHistory) {
-                closeHistory()
+          <div className="pt-4">
+            {displayItems.map((item, index) => {
+              if (item.type === 'context-divider') {
+                return (
+                  <div key={index} className="flex items-center gap-2 feed-item px-2 md:px-4">
+                    <div className="flex-1 border-t border-border" />
+                    <span className="text-[10px] text-text-muted font-medium px-2">Earlier context summarized</span>
+                    <div className="flex-1 border-t border-border" />
+                  </div>
+                )
               }
-            }}
-            onKeyDown={handleKeyDown}
-            placeholder="What would you like to build?"
-            data-testid="chat-input-textarea"
-            className="flex-1 bg-transparent text-sm placeholder:text-text-muted resize-none overflow-y-auto focus:outline-none"
-            style={{ minHeight: '24px', maxHeight: '200px' }}
-            spellCheck={false}
+
+              if (item.type === 'subagent') {
+                const groupIsStreaming = item.messages.some((m) => m.isStreaming)
+                return (
+                  <div key={index} className="px-2 md:px-4">
+                    <SubAgentContainer
+                      messages={item.messages}
+                      subAgentType={item.subAgentType}
+                      subAgentId={item.subAgentId}
+                      isStreaming={groupIsStreaming}
+                    />
+                  </div>
+                )
+              }
+
+              if (item.type === 'criteria-batch') {
+                return (
+                  <div key={index} className="feed-item px-2 md:px-4">
+                    <CriteriaGroupDisplay toolCalls={item.toolCalls} criteria={session?.criteria} />
+                  </div>
+                )
+              }
+
+              const message = item.message
+              if (message.role === 'assistant') {
+                return (
+                  <div key={index} className="px-2 md:px-4">
+                    <AssistantMessage
+                      message={message}
+                      showStats={showStats}
+                      showThinking={showThinking}
+                      showVerboseToolOutput={showVerboseToolOutput}
+                    />
+                  </div>
+                )
+              }
+
+              // Filter based on display settings
+              const skipAutoPrompt = !showAgentDefinitions && message.messageKind === 'auto-prompt'
+              const skipWorkflow =
+                !showWorkflowBars &&
+                (message.messageKind === 'workflow-started' || message.messageKind === 'task-completed')
+              if (skipAutoPrompt || skipWorkflow) {
+                return null
+              }
+
+              return (
+                <div key={index} className="px-2 md:px-4">
+                  <div
+                    data-message-id={message.id}
+                    className={highlightedMessageId === message.id ? 'rounded animate-highlight-fade' : undefined}
+                  >
+                    <ChatMessage
+                      message={message}
+                      isLastAssistantMessage={false}
+                      promptContext={message.role === 'user' ? promptContextByUserMessageId[message.id] : undefined}
+                    />
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+          <div className="px-2 md:px-4 pb-4">
+            {error && (
+              <div className="feed-item bg-red-500/10 border border-red-500/50 rounded p-2">
+                <div className="flex items-start justify-between gap-2">
+                  <div>
+                    <div className="text-red-400 text-sm font-medium">{error.code}</div>
+                    <div className="text-red-300 text-xs mt-0.5">{error.message}</div>
+                  </div>
+                  <CloseButton onClick={clearError} className="text-red-400 hover:text-red-300 p-0.5" size="sm" />
+                </div>
+              </div>
+            )}
+
+            {showStartBuilding && (
+              <div className="flex justify-center gap-2 feed-item flex-wrap">
+                {workflows.map((w) => {
+                  const c = w.color ?? '#3b82f6'
+                  const r = parseInt(c.slice(1, 3), 16),
+                    g = parseInt(c.slice(3, 5), 16),
+                    b = parseInt(c.slice(5, 7), 16)
+                  const bg = `rgba(${r},${g},${b},0.12)`
+                  const bgHover = `rgba(${r},${g},${b},0.22)`
+                  const border = `rgba(${r},${g},${b},0.25)`
+                  return (
+                    <button
+                      key={w.id}
+                      onClick={() => acceptAndBuild(w.id)}
+                      data-testid="workflow-run-button"
+                      className="px-4 py-1.5 rounded text-sm font-medium transition-colors"
+                      style={{ backgroundColor: bg, color: c, border: `1px solid ${border}` }}
+                      onMouseEnter={(e) => {
+                        e.currentTarget.style.backgroundColor = bgHover
+                      }}
+                      onMouseLeave={(e) => {
+                        e.currentTarget.style.backgroundColor = bg
+                      }}
+                    >
+                      ▶ {w.name}
+                    </button>
+                  )
+                })}
+              </div>
+            )}
+
+            {isRunning && <RunningIndicator />}
+          </div>
+        </div>
+
+        <form onSubmit={handleSubmit} className="relative p-2 md:p-4 bg-secondary">
+          <button
+            type="button"
+            className="absolute -top-8 right-12 md:right-16 text-sm text-text-muted hover:text-text-primary z-10 flex items-center gap-1.5"
+            onClick={() => setAutoScroll(!isAutoScrollActive)}
+          >
+            {isAutoScrollActive ? (
+              <span className="w-1.5 h-1.5 rounded-full bg-accent-success" />
+            ) : (
+              <ChevronDownIcon className="w-3 h-3 text-text-muted" />
+            )}
+            {isAutoScrollActive ? 'live' : 'scroll to bottom'}
+          </button>
+          <button
+            type="button"
+            onClick={() => setShowMessageSearch(true)}
+            className="absolute -top-8 right-2 md:right-4 text-sm text-text-muted hover:text-text-primary z-10 flex items-center p-0.5 rounded hover:bg-bg-tertiary transition-colors"
+            aria-label="Search messages"
+          >
+            <SearchIcon />
+          </button>
+          {/* Hidden file input */}
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept=".png,.jpg,.jpeg,.gif"
+            onChange={handleFileSelect}
+            className="hidden"
+            multiple
           />
-          <div className="flex items-center self-center gap-1.5">
-          {isRunning && (
-            <button
-              type="button"
-              onClick={() => stopGeneration()}
-              data-testid="chat-stop-button"
-              className="flex items-center gap-1 px-4 py-1.5 rounded bg-accent-error/20 text-sm text-accent-error font-medium hover:bg-accent-error/30 transition-colors whitespace-nowrap"
-            >
-              <StopIcon />
-              Abort
-            </button>
+
+          {/* Error message */}
+          {errorMessage && (
+            <div className="mb-2 p-2 bg-red-500/10 border border-red-500/50 rounded text-red-300 text-sm">
+              {errorMessage}
+            </div>
           )}
-                <div className="flex items-center">
+
+          {/* Attachments preview area */}
+          {attachments.length > 0 && (
+            <div className="mb-3 flex flex-wrap gap-2">
+              {attachments.map((attachment) => (
+                <AttachmentPreview key={attachment.id} attachment={attachment} onRemove={handleRemoveAttachment} />
+              ))}
+            </div>
+          )}
+
+          {/* Prompt history list */}
+          {showHistory && (
+            <PromptHistoryList
+              history={history}
+              selectedIndex={selectedIndex}
+              onSelect={(content) => {
+                setInput(content)
+                closeHistory()
+              }}
+              onEscape={closeHistory}
+              onNavigate={(direction) => {
+                if (direction === 'up') {
+                  navigateUp()
+                } else {
+                  navigateDown()
+                }
+              }}
+            />
+          )}
+
+          {/* Queued messages display */}
+          {queuedMessages?.length > 0 && (
+            <div className="mb-2 flex flex-wrap gap-1.5">
+              {queuedMessages.map((qm) => (
+                <div
+                  key={qm.queueId}
+                  className={`inline-flex items-center gap-1.5 px-2 py-1 rounded text-xs ${
+                    qm.mode === 'asap'
+                      ? 'bg-amber-500/15 text-amber-300 border border-amber-500/30'
+                      : 'bg-blue-500/15 text-blue-300 border border-blue-500/30'
+                  }`}
+                >
+                  <span className="font-medium">{qm.mode === 'asap' ? 'ASAP' : 'Queue'}:</span>
+                  <span className="truncate max-w-[200px]">{qm.content}</span>
+                  <CloseButton onClick={() => cancelQueued(qm.queueId)} size="sm" />
+                </div>
+              ))}
+            </div>
+          )}
+
+          <div
+            className={`flex items-end gap-3 p-3 rounded transition-colors ${
+              dragOver ? 'bg-accent-primary/10' : 'bg-primary'
+            }`}
+            onDragOver={handleDragOver}
+            onDragLeave={handleDragLeave}
+            onDrop={handleDrop}
+          >
+            <textarea
+              id={CHAT_TEXTAREA_ID}
+              ref={textareaRef}
+              value={input}
+              onChange={(e) => {
+                setInput(e.target.value)
+                // Hide history when user starts typing
+                if (showHistory) {
+                  closeHistory()
+                }
+              }}
+              onKeyDown={handleKeyDown}
+              placeholder="What would you like to build?"
+              data-testid="chat-input-textarea"
+              className="flex-1 bg-transparent text-sm placeholder:text-text-muted resize-none overflow-y-auto focus:outline-none"
+              style={{ minHeight: '24px', maxHeight: '200px' }}
+              spellCheck={false}
+            />
+            <div className="flex items-center self-center gap-1.5">
+              {isRunning && (
+                <button
+                  type="button"
+                  onClick={() => stopGeneration()}
+                  data-testid="chat-stop-button"
+                  className="flex items-center gap-1 px-4 py-1.5 rounded bg-accent-error/20 text-sm text-accent-error font-medium hover:bg-accent-error/30 transition-colors whitespace-nowrap"
+                >
+                  <StopIcon />
+                  Abort
+                </button>
+              )}
+              <div className="flex items-center">
                 <button
                   type="button"
                   onClick={() => {
@@ -713,7 +688,7 @@ export function PlanPanel({ criteriaSidebarOpen: externalCriteriaSidebarOpen, on
                     sendMessage(input, attachments)
                     clearInput()
                   }}
-                  disabled={(!input.trim() && attachments.length === 0)}
+                  disabled={!input.trim() && attachments.length === 0}
                   data-testid="chat-send-button"
                   className="px-4 py-1.5 rounded-l bg-accent-primary/20 text-sm text-accent-primary font-medium hover:bg-accent-primary/30 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
                 >
@@ -724,9 +699,8 @@ export function PlanPanel({ criteriaSidebarOpen: externalCriteriaSidebarOpen, on
                     if (agentMode && session?.mode !== agentMode) {
                       useSessionStore.getState().switchMode(agentMode)
                     }
-                    const combinedContent = textareaContent && textareaContent.trim()
-                      ? `${textareaContent.trim()}\n\n${content}`
-                      : content
+                    const combinedContent =
+                      textareaContent && textareaContent.trim() ? `${textareaContent.trim()}\n\n${content}` : content
                     scrollContainerRef.current?.scrollTo({
                       top: scrollContainerRef.current.scrollHeight,
                       behavior: 'smooth',
@@ -746,64 +720,64 @@ export function PlanPanel({ criteriaSidebarOpen: externalCriteriaSidebarOpen, on
                   criteria={session?.criteria ?? []}
                 />
               </div>
-                </div>
             </div>
-        <div className="mt-3 flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <AgentSelector />
-            <DangerLevelSelector />
           </div>
-          <ProviderSelector />
-        </div>
-      </form>
-      <CommandsModal isOpen={showCommandsModal} onClose={() => setShowCommandsModal(false)} />
-      <WorkflowsModal isOpen={showWorkflowsModal} onClose={() => setShowWorkflowsModal(false)} />
-      <QuickActionModal
-        isOpen={showQuickAction}
-        onClose={() => setShowQuickAction(false)}
-        onSearchMessages={() => setShowMessageSearch(true)}
-        isAutoScrollActive={isAutoScrollActive}
-        onToggleAutoScroll={setAutoScroll}
-        textareaContent={input}
-        onCloseComplete={focusChatTextarea}
-        onCloseCompleteAction={() => window.dispatchEvent(new CustomEvent('open-session-dropdown'))}
-        onSelectCommand={async (commandId, textareaContent) => {
-          const full = await useCommandsStore.getState().fetchCommand(commandId)
-          if (full) {
-            const combinedContent = textareaContent?.trim()
-              ? `${textareaContent.trim()}\n\n${full.prompt}`
-              : full.prompt
-            if (full.metadata.agentMode) {
-              useSessionStore.getState().switchMode(full.metadata.agentMode)
+          <div className="mt-3 flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <AgentSelector />
+              <DangerLevelSelector />
+            </div>
+            <ProviderSelector />
+          </div>
+        </form>
+        <CommandsModal isOpen={showCommandsModal} onClose={() => setShowCommandsModal(false)} />
+        <WorkflowsModal isOpen={showWorkflowsModal} onClose={() => setShowWorkflowsModal(false)} />
+        <QuickActionModal
+          isOpen={showQuickAction}
+          onClose={() => setShowQuickAction(false)}
+          onSearchMessages={() => setShowMessageSearch(true)}
+          isAutoScrollActive={isAutoScrollActive}
+          onToggleAutoScroll={setAutoScroll}
+          textareaContent={input}
+          onCloseComplete={focusChatTextarea}
+          onCloseCompleteAction={() => window.dispatchEvent(new CustomEvent('open-session-dropdown'))}
+          onSelectCommand={async (commandId, textareaContent) => {
+            const full = await useCommandsStore.getState().fetchCommand(commandId)
+            if (full) {
+              const combinedContent = textareaContent?.trim()
+                ? `${textareaContent.trim()}\n\n${full.prompt}`
+                : full.prompt
+              if (full.metadata.agentMode) {
+                useSessionStore.getState().switchMode(full.metadata.agentMode)
+              }
+              sendMessage(combinedContent, attachments?.length ? attachments : undefined, {
+                messageKind: 'command',
+                isSystemGenerated: true,
+              })
+              clearInput()
             }
-            sendMessage(combinedContent, attachments?.length ? attachments : undefined, {
-              messageKind: 'command',
-              isSystemGenerated: true,
-            })
+          }}
+          onSelectWorkflow={(workflowId) => {
+            const content = input.trim() || undefined
+            const atts = attachments.length > 0 ? attachments : undefined
+            if (session?.mode === 'planner') {
+              useSessionStore.getState().acceptAndBuild(workflowId, content, atts)
+            } else {
+              useSessionStore.getState().launchRunner(content, atts, workflowId)
+            }
             clearInput()
-          }
-        }}
-        onSelectWorkflow={(workflowId) => {
-          const content = input.trim() || undefined
-          const atts = attachments.length > 0 ? attachments : undefined
-          if (session?.mode === 'planner') {
-            useSessionStore.getState().acceptAndBuild(workflowId, content, atts)
-          } else {
-            useSessionStore.getState().launchRunner(content, atts, workflowId)
-          }
-          clearInput()
-        }}
-      />
-    </SessionLayout>
+          }}
+        />
+      </SessionLayout>
 
-    {showMessageSearch && (
-      <MessageSearchModal
-        isOpen={showMessageSearch}
-        onClose={() => setShowMessageSearch(false)}
-        messages={rawMessages}
-        onSelectMessage={handleSelectSearchMessage}
-      />
-    )}
+      {showMessageSearch && (
+        <MessageSearchModal
+          isOpen={showMessageSearch}
+          onClose={() => setShowMessageSearch(false)}
+          messages={rawMessages}
+          onSelectMessage={handleSelectSearchMessage}
+        />
+      )}
     </>
   )
 }

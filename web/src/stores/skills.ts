@@ -43,9 +43,9 @@ export const useSkillsStore = create<SkillsState>((set, get) => ({
     try {
       const res = await authFetch(`/api/skills/${skillId}/toggle`, { method: 'POST' })
       const data = await res.json()
-      set(state => ({
-        defaults: state.defaults.map(s => s.id === skillId ? { ...s, enabled: data.enabled } : s),
-        userItems: state.userItems.map(s => s.id === skillId ? { ...s, enabled: data.enabled } : s),
+      set((state) => ({
+        defaults: state.defaults.map((s) => (s.id === skillId ? { ...s, enabled: data.enabled } : s)),
+        userItems: state.userItems.map((s) => (s.id === skillId ? { ...s, enabled: data.enabled } : s)),
       }))
     } catch {
       // silently fail
@@ -56,7 +56,7 @@ export const useSkillsStore = create<SkillsState>((set, get) => ({
     try {
       const res = await authFetch(`/api/skills/${skillId}`)
       if (!res.ok) return null
-      return await res.json() as SkillFull
+      return (await res.json()) as SkillFull
     } catch {
       return null
     }
@@ -66,7 +66,7 @@ export const useSkillsStore = create<SkillsState>((set, get) => ({
     try {
       const res = await authFetch(`/api/skills/defaults/${skillId}`)
       if (!res.ok) return null
-      return await res.json() as SkillFull
+      return (await res.json()) as SkillFull
     } catch {
       return null
     }
@@ -89,8 +89,8 @@ export const useSkillsStore = create<SkillsState>((set, get) => ({
       const res = await authFetch(`/api/skills/${skillId}`, { method: 'DELETE' })
       const data = await res.json()
       if (res.ok) {
-        set(state => ({
-          userItems: state.userItems.filter(s => s.id !== skillId),
+        set((state) => ({
+          userItems: state.userItems.filter((s) => s.id !== skillId),
         }))
         return { success: true }
       }

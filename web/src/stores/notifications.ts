@@ -202,10 +202,7 @@ export const useNotificationSettingsStore = create<NotificationSettingsState>((s
 }))
 
 function persist(settings: NotificationSettings) {
-  useSettingsStore.getState().setSetting(
-    SETTINGS_KEYS.NOTIFICATION_SETTINGS,
-    JSON.stringify(settings),
-  )
+  useSettingsStore.getState().setSetting(SETTINGS_KEYS.NOTIFICATION_SETTINGS, JSON.stringify(settings))
 }
 
 function mergeWithDefaults(partial: Partial<NotificationSettings>): NotificationSettings {

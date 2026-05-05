@@ -1,6 +1,6 @@
 /**
  * Project Management REST API E2E Tests
- * 
+ *
  * Tests project CRUD operations via REST API (not WebSocket).
  * Following TDD: these tests should FAIL initially before implementation.
  */
@@ -14,9 +14,19 @@ describe('Project REST API', () => {
   beforeAll(async () => {
     // Clean up any leftover test directories
     const { rm } = await import('node:fs/promises')
-    const dirs = ['/tmp/test-project', '/tmp/my-project', '/tmp/p1', '/tmp/p2', '/tmp/load-me', '/tmp/original', '/tmp/instructions', '/tmp/clear', '/tmp/delete-me']
-    await Promise.all(dirs.map(d => rm(d, { recursive: true, force: true }).catch(() => {})))
-    
+    const dirs = [
+      '/tmp/test-project',
+      '/tmp/my-project',
+      '/tmp/p1',
+      '/tmp/p2',
+      '/tmp/load-me',
+      '/tmp/original',
+      '/tmp/instructions',
+      '/tmp/clear',
+      '/tmp/delete-me',
+    ]
+    await Promise.all(dirs.map((d) => rm(d, { recursive: true, force: true }).catch(() => {})))
+
     server = await createTestServer()
   })
 
@@ -27,7 +37,7 @@ describe('Project REST API', () => {
   describe('GET /api/projects', () => {
     it('returns empty array when no projects exist', async () => {
       const response = await fetch(`${server.url}/api/projects`)
-      
+
       expect(response.status).toBe(200)
       const data: any = await response.json()
       expect(data.projects).toEqual([])
@@ -47,7 +57,7 @@ describe('Project REST API', () => {
       const response = await fetch(`${server.url}/api/projects`)
       expect(response.status).toBe(200)
       const data: any = await response.json()
-      
+
       expect(Array.isArray(data.projects)).toBe(true)
       const found = data.projects.find((p: any) => p.id === created.project.id)
       expect(found).toBeDefined()
@@ -65,7 +75,7 @@ describe('Project REST API', () => {
 
       expect(response.status).toBe(201)
       const data: any = await response.json()
-      
+
       expect(data.project).toBeDefined()
       expect(data.project.name).toBe('My Project')
       expect(data.project.workdir).toBe('/tmp/my-project')
@@ -116,17 +126,17 @@ describe('Project REST API', () => {
 
       // Load it
       const response = await fetch(`${server.url}/api/projects/${created.project.id}`)
-      
+
       expect(response.status).toBe(200)
       const data: any = await response.json()
-      
+
       expect(data.project.id).toBe(created.project.id)
       expect(data.project.name).toBe('Load Me')
     })
 
     it('returns 404 for non-existent project', async () => {
       const response = await fetch(`${server.url}/api/projects/nonexistent-id`)
-      
+
       expect(response.status).toBe(404)
       const data: any = await response.json()
       expect(data.error).toBe('Project not found')
@@ -152,7 +162,7 @@ describe('Project REST API', () => {
 
       expect(response.status).toBe(200)
       const data: any = await response.json()
-      
+
       expect(data.project.name).toBe('Updated Name')
       expect(data.project.id).toBe(created.project.id)
     })

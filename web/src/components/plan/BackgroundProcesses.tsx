@@ -7,13 +7,13 @@ interface BackgroundProcessesProps {
 }
 
 export const BackgroundProcesses = memo(function BackgroundProcesses({ sessionId }: BackgroundProcessesProps) {
-  const processes = useBackgroundProcessesStore(s => s.processes)
-  const stopProcess = useBackgroundProcessesStore(s => s.stopProcess)
+  const processes = useBackgroundProcessesStore((s) => s.processes)
+  const stopProcess = useBackgroundProcessesStore((s) => s.stopProcess)
   const [expandedProcessId, setExpandedProcessId] = useState<string | null>(null)
   const [expandedLogs, setExpandedLogs] = useState<{ content: string; stream: 'stdout' | 'stderr' }[]>([])
 
-  const activeProcesses = processes.filter(p => p.status !== 'exited')
-  const runningCount = activeProcesses.filter(p => p.status === 'running').length
+  const activeProcesses = processes.filter((p) => p.status !== 'exited')
+  const runningCount = activeProcesses.filter((p) => p.status === 'running').length
 
   if (processes.length === 0) {
     return null
@@ -36,7 +36,7 @@ export const BackgroundProcesses = memo(function BackgroundProcesses({ sessionId
 
   const handleExpandLogs = (processId: string) => {
     const logs = useBackgroundProcessesStore.getState().logs[processId] ?? []
-    setExpandedLogs(logs.map(l => ({ content: l.content, stream: l.stream })))
+    setExpandedLogs(logs.map((l) => ({ content: l.content, stream: l.stream })))
     setExpandedProcessId(processId)
   }
 
@@ -57,7 +57,7 @@ export const BackgroundProcesses = memo(function BackgroundProcesses({ sessionId
       </div>
 
       <div className="space-y-2">
-        {activeProcesses.map(process => (
+        {activeProcesses.map((process) => (
           <div key={process.id} className="border border-border rounded p-2">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2 min-w-0 flex-1">
@@ -90,7 +90,7 @@ export const BackgroundProcesses = memo(function BackgroundProcesses({ sessionId
 
       {expandedProcessId && (
         <LogViewer
-          title={activeProcesses.find(p => p.id === expandedProcessId)?.name ?? ''}
+          title={activeProcesses.find((p) => p.id === expandedProcessId)?.name ?? ''}
           logs={expandedLogs}
           onClose={() => {
             setExpandedProcessId(null)

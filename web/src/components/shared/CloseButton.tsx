@@ -17,13 +17,14 @@ const sizeClasses = {
 const CLOSE_PATH = 'M6 18L18 6M6 6l12 12'
 
 export function CloseButton({ onClick, className = '', size = 'md', variant = 'default' }: CloseButtonProps) {
-  const baseClasses = variant === 'overlay'
-    ? 'bg-accent-error text-white rounded-full flex items-center justify-center hover:bg-accent-error/80 transition-colors'
-    : variant === 'sidebar'
-    ? 'flex-shrink-0 p-2.5 rounded hover:bg-bg-tertiary text-text-muted hover:text-text-primary transition-colors'
-    : variant === 'modal'
-    ? 'text-text-muted hover:text-text-primary transition-colors'
-    : 'hover:text-white transition-colors'
+  const baseClasses =
+    variant === 'overlay'
+      ? 'bg-accent-error text-white rounded-full flex items-center justify-center hover:bg-accent-error/80 transition-colors'
+      : variant === 'sidebar'
+        ? 'flex-shrink-0 p-2.5 rounded hover:bg-bg-tertiary text-text-muted hover:text-text-primary transition-colors'
+        : variant === 'modal'
+          ? 'text-text-muted hover:text-text-primary transition-colors'
+          : 'hover:text-white transition-colors'
 
   return (
     <IconButton

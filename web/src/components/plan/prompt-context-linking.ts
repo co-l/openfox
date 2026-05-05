@@ -11,10 +11,10 @@ export function buildPromptContextByUserMessageId(messages: Message[]): Record<s
     }
 
     if (
-      message.role === 'assistant'
-      && message.promptContext
-      && activeUserMessageId
-      && promptContextByUserMessageId[activeUserMessageId] === undefined
+      message.role === 'assistant' &&
+      message.promptContext &&
+      activeUserMessageId &&
+      promptContextByUserMessageId[activeUserMessageId] === undefined
     ) {
       promptContextByUserMessageId[activeUserMessageId] = message.promptContext
     }

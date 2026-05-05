@@ -6,9 +6,9 @@ describe('FilePreview component', () => {
     // Just verify the component exists and accepts the right props
     const props: React.ComponentProps<typeof FilePreview> = {
       content: 'test',
-      filePath: 'test.ts'
+      filePath: 'test.ts',
     }
-    
+
     expect(props.content).toBe('test')
     expect(props.filePath).toBe('test.ts')
   })
@@ -17,9 +17,9 @@ describe('FilePreview component', () => {
     // Verify maxLines is NOT in the props
     const props: React.ComponentProps<typeof FilePreview> = {
       content: 'test',
-      filePath: 'test.ts'
+      filePath: 'test.ts',
     }
-    
+
     // If maxLines was in the interface, this would compile
     // The test passes if we can create props without maxLines
     expect(props).toHaveProperty('content')

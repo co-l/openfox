@@ -65,21 +65,11 @@ export function AutoPromptCard({ message }: AutoPromptCardProps) {
         </div>
       )}
 
-      <Modal
-        isOpen={isModalOpen}
-        onClose={() => setIsModalOpen(false)}
-        title={`${metaName} Prompt`}
-        size="lg"
-      >
+      <Modal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} title={`${metaName} Prompt`} size="lg">
         <div className="space-y-4">
           <div className="flex items-center gap-2">
-            <span
-              className="w-3 h-3 rounded-full"
-              style={{ backgroundColor: metaColor }}
-            />
-            <span className="text-sm text-text-primary font-medium">
-              {metaName}
-            </span>
+            <span className="w-3 h-3 rounded-full" style={{ backgroundColor: metaColor }} />
+            <span className="text-sm text-text-primary font-medium">{metaName}</span>
             <span className="text-xs text-text-muted">({metaType})</span>
           </div>
 

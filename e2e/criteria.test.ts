@@ -1,12 +1,12 @@
 /**
  * Criteria System E2E Tests
- * 
+ *
  * Tests criterion CRUD operations and status transitions.
  */
 
 import { describe, it, expect, beforeAll, afterAll, beforeEach, afterEach } from 'vitest'
-import { 
-  createTestClient, 
+import {
+  createTestClient,
   createTestProject,
   createTestServer,
   collectChatEvents,
@@ -15,9 +15,9 @@ import {
   createSession,
   setSessionCriteria,
   setSessionMode,
-  type TestClient, 
+  type TestClient,
   type TestProject,
-  type TestServerHandle 
+  type TestServerHandle,
 } from './utils/index.js'
 import type { Criterion } from '@openfox/shared'
 
@@ -37,7 +37,7 @@ describe('Criteria System', () => {
   beforeEach(async () => {
     client = await createTestClient({ url: server.wsUrl })
     testDir = await createTestProject({ template: 'typescript' })
-    
+
     const restProject = await createProject(server.url, { name: 'Criteria Test', workdir: testDir.path })
     const restSession = await createSession(server.url, { projectId: restProject.id })
     await client.send('session.load', { sessionId: restSession.id })
@@ -51,16 +51,16 @@ describe('Criteria System', () => {
   describe('Planner Criteria Tools', () => {
     describe('add_criterion', () => {
       it('adds a criterion with auto-generated ID', async () => {
-        await client.send('chat.send', { 
-          content: 'Add a criterion using the criterion tool with action "add".' 
+        await client.send('chat.send', {
+          content: 'Add a criterion using the criterion tool with action "add".',
         })
-        
+
         const events = await collectChatEvents(client)
         assertNoErrors(events)
-        
+
         const session = client.getSession()!
         expect(session.criteria.length).toBe(1)
-        
+
         const criterion = session.criteria[0]!
         expect(criterion.id).toBe('0')
         expect(criterion.description).toBe('Test criterion')
@@ -69,16 +69,16 @@ describe('Criteria System', () => {
 
       it('adds multiple criteria with auto-incrementing IDs', async () => {
         // Add two criteria with separate prompts
-        await client.send('chat.send', { 
-          content: 'Add a criterion using the criterion tool with action "add".' 
+        await client.send('chat.send', {
+          content: 'Add a criterion using the criterion tool with action "add".',
         })
         await client.waitForChatDone()
-        
-        await client.send('chat.send', { 
-          content: 'Add another criterion using the criterion tool with action "add".' 
+
+        await client.send('chat.send', {
+          content: 'Add another criterion using the criterion tool with action "add".',
         })
         await client.waitForChatDone()
-        
+
         const session = client.getSession()!
         expect(session.criteria.length).toBe(2)
         expect(session.criteria[0]!.id).toBe('0')
@@ -86,13 +86,13 @@ describe('Criteria System', () => {
       })
 
       it('emits criteria.updated event', async () => {
-        await client.send('chat.send', { 
-          content: 'Add a criterion with description "Testing events". Use add_criterion.' 
+        await client.send('chat.send', {
+          content: 'Add a criterion with description "Testing events". Use add_criterion.',
         })
-        
+
         const events = await collectChatEvents(client)
         const criteriaEvents = events.get('criteria.updated')
-        
+
         expect(criteriaEvents.length).toBeGreaterThan(0)
       })
     })
@@ -100,34 +100,34 @@ describe('Criteria System', () => {
     describe('get_criteria', () => {
       it('returns current criteria list', async () => {
         // Add criteria first
-        await client.send('chat.send', { 
-          content: 'Add a criterion with description "For testing get".' 
+        await client.send('chat.send', {
+          content: 'Add a criterion with description "For testing get".',
         })
         await client.waitForChatDone()
-        
+
         // Ask to get criteria
-        await client.send('chat.send', { 
-          content: 'Show the current criteria.' 
+        await client.send('chat.send', {
+          content: 'Show the current criteria.',
         })
-        
+
         await client.waitForChatDone()
-        
+
         // Small delay to ensure all events are received (mock LLM is fast)
-        await new Promise(r => setTimeout(r, 100))
-        
+        await new Promise((r) => setTimeout(r, 100))
+
         // Check all events for criterion tool call with action "get"
         const allEvents = client.allEvents()
-        const toolCallEvents = allEvents.filter(e => e.type === 'chat.tool_call')
-        const getCriteriaCall = toolCallEvents.find(e => {
+        const toolCallEvents = allEvents.filter((e) => e.type === 'chat.tool_call')
+        const getCriteriaCall = toolCallEvents.find((e) => {
           const payload = e.payload as any
           return payload.tool === 'criterion' && payload.args?.action === 'get'
         })
         expect(getCriteriaCall).toBeDefined()
-        
+
         // Check for successful result
-        const resultEvent = allEvents.find(e => 
-          e.type === 'chat.tool_result' && 
-          (e.payload as any).callId === (getCriteriaCall!.payload as any).callId
+        const resultEvent = allEvents.find(
+          (e) =>
+            e.type === 'chat.tool_result' && (e.payload as any).callId === (getCriteriaCall!.payload as any).callId,
         )
         expect(resultEvent).toBeDefined()
         expect((resultEvent!.payload as any).result.success).toBe(true)
@@ -137,21 +137,21 @@ describe('Criteria System', () => {
     describe('update_criterion', () => {
       it('updates criterion description', async () => {
         // Add criterion
-        await client.send('chat.send', { 
-          content: 'Add a criterion with description "Original description".' 
+        await client.send('chat.send', {
+          content: 'Add a criterion with description "Original description".',
         })
         await client.waitForChatDone()
-        
+
         // Update it
-        await client.send('chat.send', { 
-          content: 'Use update_criterion to change the first criterion (ID "0") description to "Updated description".' 
+        await client.send('chat.send', {
+          content: 'Use update_criterion to change the first criterion (ID "0") description to "Updated description".',
         })
-        
+
         await client.waitForChatDone()
-        
+
         // Wait for criteria.updated event to be processed
-        await new Promise(r => setTimeout(r, 100))
-        
+        await new Promise((r) => setTimeout(r, 100))
+
         const session = client.getSession()!
         const criterion = session.criteria.find((c: { id: string }) => c.id === '0')
         expect(criterion?.description).toContain('Updated')
@@ -161,25 +161,25 @@ describe('Criteria System', () => {
     describe('remove_criterion', () => {
       it('removes a criterion by ID', async () => {
         // Add criterion
-        await client.send('chat.send', { 
-          content: 'Add a criterion with description "Will be removed".' 
+        await client.send('chat.send', {
+          content: 'Add a criterion with description "Will be removed".',
         })
         await client.waitForChatDone()
-        
+
         // Wait for criteria.updated event
-        await new Promise(r => setTimeout(r, 100))
+        await new Promise((r) => setTimeout(r, 100))
         expect(client.getSession()!.criteria.length).toBe(1)
-        
+
         // Remove it
-        await client.send('chat.send', { 
-          content: 'Use remove_criterion to remove the first criterion (ID "0").' 
+        await client.send('chat.send', {
+          content: 'Use remove_criterion to remove the first criterion (ID "0").',
         })
-        
+
         await client.waitForChatDone()
-        
+
         // Wait for criteria.updated event
-        await new Promise(r => setTimeout(r, 100))
-        
+        await new Promise((r) => setTimeout(r, 100))
+
         const session = client.getSession()!
         expect(session.criteria.length).toBe(0)
       })
@@ -189,37 +189,38 @@ describe('Criteria System', () => {
   describe('Builder Criteria Tools', () => {
     beforeEach(async () => {
       const sessionId = client.getSession()!.id
-      
+
       // Add criteria in planner mode
-      await client.send('chat.send', { 
-        content: 'Add a criterion with description "A new file utils.ts exists".' 
+      await client.send('chat.send', {
+        content: 'Add a criterion with description "A new file utils.ts exists".',
       })
       await client.waitForChatDone()
-      
+
       // Wait for criteria.updated event
-      await new Promise(r => setTimeout(r, 100))
-      
+      await new Promise((r) => setTimeout(r, 100))
+
       // Switch to builder
       await setSessionMode(server.url, sessionId, 'builder', server.wsUrl)
-      await new Promise(r => setTimeout(r, 50))
+      await new Promise((r) => setTimeout(r, 50))
     })
 
     describe('complete_criterion', () => {
       it('marks criterion as completed', async () => {
-        await client.send('chat.send', { 
-          content: 'Create the file src/utils.ts with any content, then call criterion with action "complete" for the first criterion (ID "0").' 
+        await client.send('chat.send', {
+          content:
+            'Create the file src/utils.ts with any content, then call criterion with action "complete" for the first criterion (ID "0").',
         })
-        
+
         const events = await collectChatEvents(client)
-        
+
         // Wait for all events to be processed
-        await new Promise(r => setTimeout(r, 100))
-        
+        await new Promise((r) => setTimeout(r, 100))
+
         // Check criteria.updated event
         const allEvents = client.allEvents()
-        const criteriaEvents = allEvents.filter(e => e.type === 'criteria.updated')
+        const criteriaEvents = allEvents.filter((e) => e.type === 'criteria.updated')
         expect(criteriaEvents.length).toBeGreaterThan(0)
-        
+
         const session = client.getSession()!
         const criterion = session.criteria[0]!
         expect(criterion.status.type).toBe('completed')
@@ -238,11 +239,11 @@ describe('Criteria System', () => {
   describe('Manual Criteria Edit', () => {
     it('allows direct criteria editing via criteria.edit', async () => {
       // Add initial criterion
-      await client.send('chat.send', { 
-        content: 'Add a criterion with description "Initial".' 
+      await client.send('chat.send', {
+        content: 'Add a criterion with description "Initial".',
       })
       await client.waitForChatDone()
-      
+
       // Edit directly via REST API
       const newCriteria: Criterion[] = [
         {
@@ -258,14 +259,14 @@ describe('Criteria System', () => {
           attempts: [],
         },
       ]
-      
+
       const session = client.getSession()!
       await setSessionCriteria(server.url, session.id, newCriteria)
-      
+
       // Reload to get updated criteria
       await client.send('session.load', { sessionId: session.id })
       await client.waitFor('session.state')
-      
+
       // Verify criteria were replaced
       const updatedSession = client.getSession()!
       expect(updatedSession.criteria.length).toBe(2)
@@ -284,18 +285,18 @@ describe('Criteria System', () => {
   describe('Criterion Persistence', () => {
     it('preserves criteria across session loads', async () => {
       // Add criteria
-      await client.send('chat.send', { 
-        content: 'Add a criterion with description "Should persist".' 
+      await client.send('chat.send', {
+        content: 'Add a criterion with description "Should persist".',
       })
       await client.waitForChatDone()
-      
+
       const sessionId = client.getSession()!.id
-      
+
       // Load in new client
       const client2 = await createTestClient({ url: server.wsUrl })
       try {
         await client2.send('session.load', { sessionId })
-        
+
         const session = client2.getSession()!
         expect(session.criteria.length).toBe(1)
         expect(session.criteria[0]!.id).toBe('0')

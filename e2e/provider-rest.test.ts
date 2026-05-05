@@ -1,6 +1,6 @@
 /**
  * Provider Configuration REST API E2E Tests
- * 
+ *
  * Tests session provider/model configuration via REST API.
  * Following TDD: these tests should FAIL initially before implementation.
  */
@@ -54,7 +54,7 @@ describe('Provider Configuration REST API', () => {
       const providersRes = await fetch(`${server.url}/api/providers`)
       const providersData: any = await providersRes.json()
       const providerId = providersData.providers?.[0]?.id ?? providersData.activeProviderId
-      
+
       if (!providerId) {
         // Skip test if no providers available (mock mode)
         console.log('No providers available, skipping test')
@@ -78,7 +78,7 @@ describe('Provider Configuration REST API', () => {
       const providersRes = await fetch(`${server.url}/api/providers`)
       const providersData: any = await providersRes.json()
       const providerId = providersData.providers?.[0]?.id ?? providersData.activeProviderId
-      
+
       if (!providerId) {
         // Skip test if no providers available (mock mode)
         console.log('No providers available, skipping test')
@@ -94,7 +94,7 @@ describe('Provider Configuration REST API', () => {
 
       expect(response.status).toBe(200)
       const data: any = await response.json()
-      
+
       // Context state should be included
       expect(data.contextState).toBeDefined()
       expect(data.contextState.maxTokens).toBeGreaterThan(0)

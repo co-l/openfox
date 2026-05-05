@@ -1,8 +1,8 @@
 import { useSessionStore } from '../../stores/session'
 
 export function DangerLevelSelector() {
-  const currentSession = useSessionStore(state => state.currentSession)
-  const switchDangerLevel = useSessionStore(state => state.switchDangerLevel)
+  const currentSession = useSessionStore((state) => state.currentSession)
+  const switchDangerLevel = useSessionStore((state) => state.switchDangerLevel)
 
   if (!currentSession) return null
 

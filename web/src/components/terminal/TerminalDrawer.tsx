@@ -17,12 +17,12 @@ function getGridClass(count: number): string {
 }
 
 export function TerminalDrawer({ isOpen, onClose }: TerminalDrawerProps) {
-  const createSession = useTerminalStore(state => state.createSession)
-  const killSession = useTerminalStore(state => state.killSession)
-  const sessions = useTerminalStore(state => state.sessions)
-  const setWorkdir = useTerminalStore(state => state.setWorkdir)
-  const fetchSessions = useTerminalStore(state => state.fetchSessions)
-  const currentProject = useProjectStore(state => state.currentProject)
+  const createSession = useTerminalStore((state) => state.createSession)
+  const killSession = useTerminalStore((state) => state.killSession)
+  const sessions = useTerminalStore((state) => state.sessions)
+  const setWorkdir = useTerminalStore((state) => state.setWorkdir)
+  const fetchSessions = useTerminalStore((state) => state.fetchSessions)
+  const currentProject = useProjectStore((state) => state.currentProject)
   const [isLoading, setIsLoading] = useState(true)
   const terminalRef = useRef<HTMLDivElement>(null)
   const justOpenedRef = useRef(false)
@@ -103,57 +103,55 @@ export function TerminalDrawer({ isOpen, onClose }: TerminalDrawerProps) {
           }
         }}
       >
-      <div className="flex items-center justify-between px-4 py-2 border-b border-border">
-        <h3 className="text-sm font-semibold text-text-primary">Terminal</h3>
-        <div className="flex items-center gap-2">
-          <button
-            onClick={() => createSession(undefined, currentProject?.id)}
-            className="p-2 rounded hover:bg-bg-tertiary text-text-muted hover:text-text-primary transition-colors"
-            title="New terminal"
-          >
-            <PlusSquareIcon />
-          </button>
-          <button
-            onClick={onClose}
-            className="p-2 rounded hover:bg-bg-tertiary text-text-muted hover:text-text-primary transition-colors"
-            title="Close (Esc)"
-          >
-            <XCloseIcon />
-          </button>
+        <div className="flex items-center justify-between px-4 py-2 border-b border-border">
+          <h3 className="text-sm font-semibold text-text-primary">Terminal</h3>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => createSession(undefined, currentProject?.id)}
+              className="p-2 rounded hover:bg-bg-tertiary text-text-muted hover:text-text-primary transition-colors"
+              title="New terminal"
+            >
+              <PlusSquareIcon />
+            </button>
+            <button
+              onClick={onClose}
+              className="p-2 rounded hover:bg-bg-tertiary text-text-muted hover:text-text-primary transition-colors"
+              title="Close (Esc)"
+            >
+              <XCloseIcon />
+            </button>
+          </div>
         </div>
-      </div>
 
-      <div className="flex-1 min-h-0 p-2 overflow-auto">
-        {isLoading ? (
-          <div className="flex items-center justify-center h-full text-text-muted">
-            Loading...
-          </div>
-        ) : sessions.length === 0 ? (
-          <div className="flex items-center justify-center h-full text-text-muted">
-            <div className="text-center">
-              <p className="mb-4">No terminal sessions</p>
-              <button
-                onClick={() => createSession(undefined, currentProject?.id)}
-                className="px-4 py-2 bg-accent-primary/25 text-text-primary rounded hover:bg-accent-primary/40 transition-colors"
-              >
-                Create Terminal
-              </button>
+        <div className="flex-1 min-h-0 p-2 overflow-auto">
+          {isLoading ? (
+            <div className="flex items-center justify-center h-full text-text-muted">Loading...</div>
+          ) : sessions.length === 0 ? (
+            <div className="flex items-center justify-center h-full text-text-muted">
+              <div className="text-center">
+                <p className="mb-4">No terminal sessions</p>
+                <button
+                  onClick={() => createSession(undefined, currentProject?.id)}
+                  className="px-4 py-2 bg-accent-primary/25 text-text-primary rounded hover:bg-accent-primary/40 transition-colors"
+                >
+                  Create Terminal
+                </button>
+              </div>
             </div>
-          </div>
-        ) : (
-          <div className={`grid ${getGridClass(sessions.length)} gap-2 h-full auto-rows-fr`}>
-            {sessions.map(session => (
-              <TerminalPane
-                key={session.id}
-                sessionId={session.id}
-                onClose={() => killSession(session.id)}
-                onEscape={handleClose}
-                autoFocus={sessions.length === 1}
-              />
-            ))}
-          </div>
-        )}
-      </div>
+          ) : (
+            <div className={`grid ${getGridClass(sessions.length)} gap-2 h-full auto-rows-fr`}>
+              {sessions.map((session) => (
+                <TerminalPane
+                  key={session.id}
+                  sessionId={session.id}
+                  onClose={() => killSession(session.id)}
+                  onEscape={handleClose}
+                  autoFocus={sessions.length === 1}
+                />
+              ))}
+            </div>
+          )}
+        </div>
       </div>
     </>
   )

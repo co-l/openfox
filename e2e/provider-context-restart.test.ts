@@ -11,12 +11,12 @@ describe('Provider Context Restart', () => {
   beforeAll(async () => {
     // Load and prepare config
     const globalConfig = await loadGlobalConfig(testMode)
-    
+
     // Ensure we have a test provider with a user-set context window
     const testProviderId = 'test-restart-provider'
     const testModelId = 'test-model-restart'
     const customContextWindow = 262144
-    
+
     const updatedConfig: GlobalConfig = {
       ...globalConfig,
       providers: [
@@ -35,14 +35,14 @@ describe('Provider Context Restart', () => {
           isActive: true,
           createdAt: new Date().toISOString(),
         },
-        ...(globalConfig.providers?.filter(p => p.id !== testProviderId) ?? []),
+        ...(globalConfig.providers?.filter((p) => p.id !== testProviderId) ?? []),
       ],
       defaultModelSelection: `${testProviderId}/${testModelId}`,
       activeProviderId: testProviderId,
     }
-    
+
     await saveGlobalConfig(testMode, updatedConfig)
-    
+
     // Create server config
     config = {
       providers: updatedConfig.providers,
@@ -74,36 +74,36 @@ describe('Provider Context Restart', () => {
     // Start server (simulates restart)
     serverHandle = await createServerHandle(config)
     await serverHandle.start(10999)
-    
+
     // Give it time to initialize
-    await new Promise(resolve => setTimeout(resolve, 1000))
-    
+    await new Promise((resolve) => setTimeout(resolve, 1000))
+
     // Get the provider manager and check the context window
     const providerManager = serverHandle.ctx.providerManager!
     const providers = providerManager.getProviders()
-    
-    const testProvider = providers.find(p => p.id === config.activeProviderId)
+
+    const testProvider = providers.find((p) => p.id === config.activeProviderId)
     expect(testProvider).toBeDefined()
-    
-    const testModel = testProvider?.models.find(m => m.id === config.llm.model || m.id.includes('test-model-restart'))
+
+    const testModel = testProvider?.models.find((m) => m.id === config.llm.model || m.id.includes('test-model-restart'))
     expect(testModel).toBeDefined()
-    
+
     // The key assertion: user-set context window should be preserved
     expect(testModel?.contextWindow).toBe(262144)
     expect(testModel?.source).toBe('user')
-    
+
     await serverHandle.close()
   })
 
   it('preserves user context when switching providers with fuzzy model ID match', async () => {
     const globalConfig = await loadGlobalConfig(testMode)
-    
+
     // Set up a provider with a model that has a different ID format (spaces vs dashes/colons)
     const testProviderId = 'test-fuzzy-provider'
     const userModelId = 'qwen3.5 cloud' // User sets with spaces
     const backendModelId = 'qwen3.5:cloud' // Backend returns with colons
     const customContextWindow = 300000
-    
+
     const configWithFuzzy: GlobalConfig = {
       ...globalConfig,
       providers: [
@@ -122,14 +122,14 @@ describe('Provider Context Restart', () => {
           isActive: true,
           createdAt: new Date().toISOString(),
         },
-        ...(globalConfig.providers?.filter(p => p.id !== testProviderId) ?? []),
+        ...(globalConfig.providers?.filter((p) => p.id !== testProviderId) ?? []),
       ],
       defaultModelSelection: `${testProviderId}/${userModelId}`,
       activeProviderId: testProviderId,
     }
-    
+
     await saveGlobalConfig(testMode, configWithFuzzy)
-    
+
     const fuzzyConfig: Config = {
       providers: configWithFuzzy.providers,
       defaultModelSelection: configWithFuzzy.defaultModelSelection,
@@ -150,28 +150,26 @@ describe('Provider Context Restart', () => {
       mode: testMode,
       workdir: process.cwd(),
     }
-    
+
     const fuzzyServer = await createServerHandle(fuzzyConfig)
     await fuzzyServer.start(10998)
-    
-    await new Promise(resolve => setTimeout(resolve, 1000))
-    
+
+    await new Promise((resolve) => setTimeout(resolve, 1000))
+
     const pm = fuzzyServer.ctx.providerManager!
     const providers = pm.getProviders()
-    const fuzzyProvider = providers.find(p => p.id === testProviderId)
-    
+    const fuzzyProvider = providers.find((p) => p.id === testProviderId)
+
     expect(fuzzyProvider).toBeDefined()
-    
+
     // After refresh/activation, the model ID should be updated to match backend format
     // but the context window should be preserved
-    const matchedModel = fuzzyProvider?.models.find(m => 
-      m.id === backendModelId || m.id === userModelId
-    )
-    
+    const matchedModel = fuzzyProvider?.models.find((m) => m.id === backendModelId || m.id === userModelId)
+
     expect(matchedModel).toBeDefined()
     expect(matchedModel?.contextWindow).toBe(customContextWindow)
     expect(matchedModel?.source).toBe('user')
-    
+
     await fuzzyServer.close()
   })
 })

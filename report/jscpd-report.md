@@ -1,4 +1,3 @@
-
 # Copy/paste detection report
 
 > Duplications detection: Found 51 exact clones with 620(2.87%) duplicated lines in 117 (3 formats) files.

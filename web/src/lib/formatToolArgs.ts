@@ -13,17 +13,17 @@ export function formatToolArgs(tool: string, args: Record<string, unknown>): str
     if (limit !== undefined) params.push(`limit=${limit}`)
     return params.length > 0 ? `${path} [${params.join(', ')}]` : path
   }
-  
+
   // Other file operations - show path
   if (tool === 'write_file' || tool === 'edit_file') {
     return String(args.path ?? '')
   }
-  
+
   // Command execution - show command
   if (tool === 'run_command' || tool === 'bash') {
     return String(args.command ?? '')
   }
-  
+
   // Return value - show truncated content preview
   if (tool === 'return_value') {
     const content = String(args.content ?? '')
@@ -40,9 +40,9 @@ export function formatToolArgs(tool: string, args: Record<string, unknown>): str
  * Includes structured metadata like counts and truncation status.
  */
 export function formatToolArgsWithMetadata(
-  tool: string, 
+  tool: string,
   args: Record<string, unknown>,
-  _metadata?: Record<string, unknown>
+  _metadata?: Record<string, unknown>,
 ): string {
   return formatToolArgs(tool, args)
 }

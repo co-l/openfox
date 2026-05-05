@@ -17,7 +17,7 @@ export function HomePage() {
   const listProjects = useProjectStore((state) => state.listProjects)
   const listSessions = useSessionStore((state) => state.listSessions)
 
-  const connectionStatus = useSessionStore(state => state.connectionStatus)
+  const connectionStatus = useSessionStore((state) => state.connectionStatus)
 
   useEffect(() => {
     if (connectionStatus === 'connected') {
@@ -129,9 +129,7 @@ export function HomePage() {
         })}
 
         {sortedProjects.length === 0 && !loading && (
-          <div className="text-center py-12 text-text-muted">
-            No projects yet. Open a project to get started.
-          </div>
+          <div className="text-center py-12 text-text-muted">No projects yet. Open a project to get started.</div>
         )}
 
         {loading && (
