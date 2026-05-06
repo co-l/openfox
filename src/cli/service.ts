@@ -52,6 +52,35 @@ async function createWrapperScript(): Promise<void> {
   const scriptContent = `#!/bin/bash
 source ~/.profile 2>/dev/null || true
 source ~/.bashrc 2>/dev/null || true
+
+if [ -z "$DISPLAY" ] || [ -z "$WAYLAND_DISPLAY" ]; then
+  for _ in 0 1 2 3 4; do
+    if [ -z "$DISPLAY" ]; then
+      xdisplay=$(
+        ps aux --no-headers 2>/dev/null \\
+          | grep -v grep \\
+          | grep "Xwayland" \\
+          | awk '{ for (i = 1; i <= NF; i++) if ($i ~ /^:[0-9]+$/) print $i }'
+      )
+      if [ -n "$xdisplay" ]; then
+        export DISPLAY="$xdisplay"
+        for f in "$HOME/.Xauthority" "\${XDG_RUNTIME_DIR}"/xauth_*; do
+          [ -f "$f" ] && export XAUTHORITY="$f" && break
+        done 2>/dev/null
+      fi
+    fi
+
+    if [ -z "$WAYLAND_DISPLAY" ]; then
+      socket="\${XDG_RUNTIME_DIR}/wayland-0"
+      [ -e "$socket" ] || socket="\${XDG_RUNTIME_DIR}/wayland-1"
+      [ -e "$socket" ] && export WAYLAND_DISPLAY="\${socket##*/}"
+    fi
+
+    [ -n "$DISPLAY" ] && [ -n "$WAYLAND_DISPLAY" ] && break
+    sleep 2
+  done
+fi
+
 exec openfox
 `
   await writeFile(scriptPath, scriptContent, { encoding: 'utf-8' })
@@ -67,6 +96,8 @@ async function createSystemdService(): Promise<void> {
   const servicePath = expandPath(SERVICE_PATH)
   const serviceContent = `[Unit]
 Description=OpenFox Agentic Coding Assistant
+After=graphical-session.target
+Wants=graphical-session.target
 
 [Service]
 Type=simple
@@ -75,7 +106,7 @@ Restart=always
 RestartSec=5
 
 [Install]
-WantedBy=default.target
+WantedBy=graphical-session.target
 `
   await writeFile(servicePath, serviceContent, 'utf-8')
   console.log(`Created: ${servicePath}`)
