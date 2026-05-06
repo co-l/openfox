@@ -228,6 +228,8 @@ export type TurnEvent =
         beforeTokens: number
         afterTokens: number // Should be ~0 for new window
         summary: string
+        subAgentId?: string // Present when compaction is for a sub-agent scope
+        subAgentType?: string // Present when compaction is for a sub-agent scope
       }
     }
   | {

@@ -8,15 +8,7 @@
  * - runTopLevelAgentLoop(): replaces duplicated planner/builder turns
  */
 
-import type {
-  Attachment,
-  InjectedFile,
-  PromptContext,
-  StatsIdentity,
-  ToolCall,
-  ToolMode,
-  ToolResult,
-} from '../../shared/types.js'
+import type { InjectedFile, PromptContext, StatsIdentity, ToolCall, ToolMode, ToolResult } from '../../shared/types.js'
 import type { ServerMessage } from '../../shared/protocol.js'
 import type { LLMClientWithModel } from '../llm/client.js'
 import type { LLMToolDefinition } from '../llm/types.js'
@@ -36,7 +28,7 @@ import {
   createChatDoneEvent,
   createFormatRetryEvent,
 } from './stream-pure.js'
-import { getEventStore, getContextMessages, getCurrentContextWindowId } from '../events/index.js'
+import { getEventStore, getCurrentContextWindowId } from '../events/index.js'
 import { maybeAutoCompactContext } from '../context/auto-compaction.js'
 import { getAllInstructions } from '../context/instructions.js'
 import { getEnabledSkillMetadata } from '../skills/registry.js'
@@ -45,6 +37,7 @@ import { getGlobalConfigDir } from '../../cli/paths.js'
 import { createQueueStateMessage, createChatVisionFallbackMessage } from '../ws/protocol.js'
 import type { DangerLevel } from '../../shared/types.js'
 import stripAnsi from 'strip-ansi'
+import { getConversationMessages } from './conversation-history.js'
 
 function emitPartialDoneEvents(
   sessionId: string,
@@ -257,36 +250,7 @@ export async function executeToolBatch(
 // ============================================================================
 
 const MAX_FORMAT_RETRIES = 10
-const FORMAT_CORRECTION_PROMPT = `IMPORTANT: You MUST use the JSON function calling API. Do NOT output XML tags like <tool_call>, <function=>, or <parameter=>. Your previous attempt was stopped because you used the wrong format. Use the proper tool_calls format.`
-
-function toRequestContextMessages(
-  messages: Array<{
-    role: 'user' | 'assistant' | 'tool'
-    content: string
-    thinkingContent?: string
-    toolCalls?: ToolCall[]
-    toolCallId?: string
-    attachments?: Attachment[]
-  }>,
-): RequestContextMessage[] {
-  return messages.map((message) => ({
-    role: message.role,
-    content: message.content,
-    source: 'history' as const,
-    ...(message.thinkingContent ? { thinkingContent: message.thinkingContent } : {}),
-    ...(message.toolCalls
-      ? {
-          toolCalls: message.toolCalls.map((toolCall) => ({
-            id: toolCall.id,
-            name: toolCall.name,
-            arguments: toolCall.arguments,
-          })),
-        }
-      : {}),
-    ...(message.toolCallId ? { toolCallId: message.toolCallId } : {}),
-    ...(message.attachments ? { attachments: message.attachments } : {}),
-  }))
-}
+const FORMAT_CORRECTION_PROMPT = `IMPORTANT: You MUST use the JSON function calling API. Do NOT output XML tags like <function=>, <parameter=>, or <invoke=>. Your previous attempt was stopped because you used the wrong format. Use the proper tool_calls format.`
 
 export async function runTopLevelAgentLoop(
   config: TopLevelLoopConfig,
@@ -329,7 +293,7 @@ export async function runTopLevelAgentLoop(
     const toolRegistry = config.getToolRegistry()
     const currentWindowMessageOptions = getCurrentWindowMessageOptions(sessionId)
 
-    const requestMessages = toRequestContextMessages(getContextMessages(sessionId))
+    const requestMessages = getConversationMessages({ type: 'toplevel', sessionId })
 
     if (formatRetryCount > 0) {
       const correctionMsgId = crypto.randomUUID()
@@ -342,7 +306,9 @@ export async function runTopLevelAgentLoop(
         }),
       )
       eventStore.append(sessionId, createFormatRetryEvent(formatRetryCount, MAX_FORMAT_RETRIES))
-      requestMessages.push({ role: 'user', content: FORMAT_CORRECTION_PROMPT, source: 'runtime' })
+      // Add correction directly so the LLM sees it this iteration.
+      // It's also emitted to the event store, so it appears in history on subsequent iterations.
+      requestMessages.push({ role: 'user', content: FORMAT_CORRECTION_PROMPT, source: 'history' })
     }
 
     const configDir = getGlobalConfigDir(getRuntimeConfig().mode ?? 'production')

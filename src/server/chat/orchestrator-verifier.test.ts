@@ -26,6 +26,10 @@ vi.mock('../events/index.js', () => ({
   getCurrentContextWindowId: getCurrentContextWindowIdMock,
 }))
 
+vi.mock('./conversation-history.js', () => ({
+  getConversationMessages: vi.fn(() => []),
+}))
+
 vi.mock('../context/instructions.js', () => ({
   getAllInstructions: getAllInstructionsMock,
   toInjectedFiles: (files: unknown[]) => files as unknown,

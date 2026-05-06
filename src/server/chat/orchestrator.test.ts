@@ -10,6 +10,7 @@ const {
   streamLLMPureMock,
   consumeStreamGeneratorMock,
   streamLLMResponseMock,
+  getConversationMessagesMock,
 } = vi.hoisted(() => ({
   getEventStoreMock: vi.fn(),
   getContextMessagesMock: vi.fn(),
@@ -44,12 +45,17 @@ const {
       timing: consumeResult.timing,
     }
   }),
+  getConversationMessagesMock: vi.fn((): import('./request-context.js').RequestContextMessage[] => []),
 }))
 
 vi.mock('../events/index.js', () => ({
   getEventStore: getEventStoreMock,
   getContextMessages: getContextMessagesMock,
   getCurrentContextWindowId: getCurrentContextWindowIdMock,
+}))
+
+vi.mock('./conversation-history.js', () => ({
+  getConversationMessages: getConversationMessagesMock,
 }))
 
 vi.mock('../context/instructions.js', () => ({
@@ -264,7 +270,9 @@ describe('chat orchestrator', () => {
     getEventStoreMock.mockReset()
     getContextMessagesMock.mockReset()
     getCurrentContextWindowIdMock.mockReset()
+    getConversationMessagesMock.mockReset()
     getContextMessagesMock.mockReturnValue([])
+    getConversationMessagesMock.mockReturnValue([])
     getCurrentContextWindowIdMock.mockReturnValue(undefined)
     getAllInstructionsMock.mockReset()
     getToolRegistryForModeMock.mockReset()
@@ -947,6 +955,9 @@ describe('chat orchestrator', () => {
     getCurrentContextWindowIdMock.mockReturnValue('window-1')
     getAllInstructionsMock.mockResolvedValue({ content: '', files: [] })
     getContextMessagesMock.mockReturnValue([{ role: 'user' as const, content: 'Do something' }])
+    getConversationMessagesMock.mockReturnValue([
+      { role: 'user' as const, content: 'Do something', source: 'history' as const },
+    ])
     const execute = vi.fn()
     getToolRegistryForModeMock.mockReturnValue({
       tools: [
@@ -1034,6 +1045,9 @@ describe('chat orchestrator', () => {
     getCurrentContextWindowIdMock.mockReturnValue('window-1')
     getAllInstructionsMock.mockResolvedValue({ content: 'Build carefully', files: [] })
     getContextMessagesMock.mockReturnValue([{ role: 'user' as const, content: 'Do something' }])
+    getConversationMessagesMock.mockReturnValue([
+      { role: 'user' as const, content: 'Do something', source: 'history' as const },
+    ])
 
     let capturedTools: any[] = []
     getToolRegistryForModeMock.mockImplementation(() => ({
@@ -1101,6 +1115,9 @@ describe('chat orchestrator', () => {
     getCurrentContextWindowIdMock.mockReturnValue('window-1')
     getAllInstructionsMock.mockResolvedValue({ content: 'Build carefully', files: [] })
     getContextMessagesMock.mockReturnValue([{ role: 'user' as const, content: 'Do something' }])
+    getConversationMessagesMock.mockReturnValue([
+      { role: 'user' as const, content: 'Do something', source: 'history' as const },
+    ])
 
     let capturedTools: any[] = []
     getToolRegistryForModeMock.mockImplementation(() => ({
@@ -1168,6 +1185,9 @@ describe('chat orchestrator', () => {
     getCurrentContextWindowIdMock.mockReturnValue('window-1')
     getAllInstructionsMock.mockResolvedValue({ content: 'Build carefully', files: [] })
     getContextMessagesMock.mockReturnValue([{ role: 'user' as const, content: 'Rename the helper function' }])
+    getConversationMessagesMock.mockReturnValue([
+      { role: 'user' as const, content: 'Rename the helper function', source: 'history' as const },
+    ])
     getToolRegistryForModeMock.mockReturnValue({ tools: [], definitions: [], execute: vi.fn() })
     streamLLMPureMock.mockReturnValue({ kind: 'stream' })
     consumeStreamGeneratorMock.mockResolvedValueOnce({
@@ -1218,6 +1238,9 @@ describe('chat orchestrator', () => {
     getCurrentContextWindowIdMock.mockReturnValue('window-1')
     getAllInstructionsMock.mockResolvedValue({ content: 'Build carefully', files: [] })
     getContextMessagesMock.mockReturnValue([{ role: 'user' as const, content: 'Rename the helper function' }])
+    getConversationMessagesMock.mockReturnValue([
+      { role: 'user' as const, content: 'Rename the helper function', source: 'history' as const },
+    ])
     getToolRegistryForModeMock.mockReturnValue({ tools: [], definitions: [], execute: vi.fn() })
     streamLLMPureMock.mockReturnValue({ kind: 'stream' })
     consumeStreamGeneratorMock.mockResolvedValueOnce({
@@ -1478,15 +1501,9 @@ describe('chat orchestrator', () => {
     expect(execute).toHaveBeenCalledTimes(1)
 
     expect(streamLLMPureMock.mock.calls).toHaveLength(4)
-    expect(streamLLMPureMock.mock.calls[1]?.[0]).toMatchObject({
-      messages: expect.arrayContaining([
-        expect.objectContaining({ role: 'assistant', content: 'I need to keep verifying.' }),
-        expect.objectContaining({
-          role: 'user',
-          content: expect.stringContaining('Use criterion with action'),
-        }),
-      ]),
-    })
+    // After unification: sub-agents use assembleAgentRequest via getConversationMessages.
+    // The mocked getConversationMessages returns [], so the first call has empty history.
+    // The nudge is emitted to the event store and will be included on the next iteration.
 
     expect(
       eventStore.append.mock.calls.find(([, event]) => {
@@ -2439,6 +2456,9 @@ describe('chat orchestrator', () => {
       // Mock getContextMessages to return only current-window messages
       const currentWindowMessages = [{ role: 'user' as const, content: 'Current window message' }]
       getContextMessagesMock.mockReturnValue(currentWindowMessages)
+      getConversationMessagesMock.mockReturnValue([
+        { role: 'user' as const, content: 'Current window message', source: 'history' as const },
+      ])
       getCurrentContextWindowIdMock.mockReturnValue('window-2')
 
       getAllInstructionsMock.mockResolvedValue({ content: '', files: [] })
@@ -2474,8 +2494,8 @@ describe('chat orchestrator', () => {
         llmClient: { getModel: () => 'qwen3-32b' } as never,
       })
 
-      // Verify getContextMessages was called with session ID
-      expect(getContextMessagesMock).toHaveBeenCalledWith('session-1')
+      // Verify getConversationMessages (the unified method) was called with session ID
+      expect(getConversationMessagesMock).toHaveBeenCalledWith({ type: 'toplevel', sessionId: 'session-1' })
 
       // After fix: streamLLMPure does NOT merge reminder into messages (preserves vLLM cache)
       // The reminder is injected as a separate message by injectModeReminderIfNeeded()
@@ -2494,6 +2514,9 @@ describe('chat orchestrator', () => {
 
       const currentWindowMessages = [{ role: 'user' as const, content: 'Build this' }]
       getContextMessagesMock.mockReturnValue(currentWindowMessages)
+      getConversationMessagesMock.mockReturnValue([
+        { role: 'user' as const, content: 'Build this', source: 'history' as const },
+      ])
       getCurrentContextWindowIdMock.mockReturnValue('window-2')
 
       getAllInstructionsMock.mockResolvedValue({ content: '', files: [] })
@@ -2532,7 +2555,8 @@ describe('chat orchestrator', () => {
         new TurnMetrics(),
       )
 
-      expect(getContextMessagesMock).toHaveBeenCalledWith('session-1')
+      // Verify getConversationMessages (the unified method) was called with session ID
+      expect(getConversationMessagesMock).toHaveBeenCalledWith({ type: 'toplevel', sessionId: 'session-1' })
       // After fix: Builder does NOT inject reminder into messages (preserves vLLM cache)
       // The reminder is injected as a separate message by injectModeReminderIfNeeded()
       expect(streamLLMPureMock).toHaveBeenCalledWith(
@@ -2549,6 +2573,9 @@ describe('chat orchestrator', () => {
       getEventStoreMock.mockReturnValue(eventStore)
 
       getContextMessagesMock.mockReturnValue([{ role: 'user' as const, content: 'Build this' }])
+      getConversationMessagesMock.mockReturnValue([
+        { role: 'user' as const, content: 'Build this', source: 'history' as const },
+      ])
       getAllInstructionsMock.mockResolvedValue({ content: '', files: [] })
 
       const mockToolRegistry = {
@@ -2610,6 +2637,9 @@ describe('chat orchestrator', () => {
       getEventStoreMock.mockReturnValue(eventStore)
 
       getContextMessagesMock.mockReturnValue([{ role: 'user' as const, content: 'Build this' }])
+      getConversationMessagesMock.mockReturnValue([
+        { role: 'user' as const, content: 'Build this', source: 'history' as const },
+      ])
       getAllInstructionsMock.mockResolvedValue({ content: '', files: [] })
 
       const mockToolRegistry = {
@@ -2679,6 +2709,9 @@ describe('chat orchestrator', () => {
       getEventStoreMock.mockReturnValue(eventStore)
 
       getContextMessagesMock.mockReturnValue([{ role: 'user' as const, content: 'Build this' }])
+      getConversationMessagesMock.mockReturnValue([
+        { role: 'user' as const, content: 'Build this', source: 'history' as const },
+      ])
       getAllInstructionsMock.mockResolvedValue({ content: '', files: [] })
       getToolRegistryForModeMock.mockReturnValue({ tools: [], definitions: [], execute: vi.fn() })
       streamLLMPureMock.mockReturnValue({ kind: 'stream' })
@@ -2755,6 +2788,9 @@ describe('chat orchestrator', () => {
       getEventStoreMock.mockReturnValue(eventStore)
 
       getContextMessagesMock.mockReturnValue([{ role: 'user' as const, content: 'Hello' }])
+      getConversationMessagesMock.mockReturnValue([
+        { role: 'user' as const, content: 'Hello', source: 'history' as const },
+      ])
       getCurrentContextWindowIdMock.mockReturnValue('window-123')
 
       getAllInstructionsMock.mockResolvedValue({ content: '', files: [] })

@@ -1291,9 +1291,20 @@ export const useSessionStore = create<SessionState>((set, get) => {
             break
           }
           const payload = message.payload as ChatToolPreparingPayload
+
+          // Skip if the message already has a full tool call with this name — stale preparing event
+          // This can happen when session.state replaces messages mid-stream.
+          const skipIfAlreadyHasToolCall = (toolCalls: unknown[] | undefined, name: string): boolean => {
+            if (!toolCalls) return false
+            return toolCalls.some((tc: unknown) => (tc as { name?: string }).name === name)
+          }
+
           set((state) => {
             const sm = state.streamingMessage
             if (sm && sm.id === payload.messageId) {
+              // Don't override existing full tool call with stale preparing indicator
+              if (skipIfAlreadyHasToolCall(sm.toolCalls, payload.name)) return state
+
               const existing = sm.preparingToolCalls ?? []
               const existingIndex = existing.findIndex((p) => p.index === payload.index)
               let preparingToolCalls: typeof existing
@@ -1321,30 +1332,31 @@ export const useSessionStore = create<SessionState>((set, get) => {
             }
             // Fallback: update in messages array if no streaming message
             return {
-              messages: state.messages.map((m) =>
-                m.id === payload.messageId
-                  ? {
-                      ...m,
-                      preparingToolCalls: (() => {
-                        const existing = m.preparingToolCalls ?? []
-                        const existingIndex = existing.findIndex((p) => p.index === payload.index)
-                        if (existingIndex >= 0) {
-                          return existing.map((p, i) =>
-                            i === existingIndex ? { ...p, arguments: payload.arguments } : p,
-                          )
-                        }
-                        return [
-                          ...existing,
-                          {
-                            index: payload.index,
-                            name: payload.name,
-                            ...(payload.arguments ? { arguments: payload.arguments } : {}),
-                          },
-                        ]
-                      })(),
+              messages: state.messages.map((m) => {
+                if (m.id !== payload.messageId) return m
+
+                // Don't override existing full tool call with stale preparing indicator
+                if (skipIfAlreadyHasToolCall(m.toolCalls, payload.name)) return m
+
+                return {
+                  ...m,
+                  preparingToolCalls: (() => {
+                    const existing = m.preparingToolCalls ?? []
+                    const existingIndex = existing.findIndex((p) => p.index === payload.index)
+                    if (existingIndex >= 0) {
+                      return existing.map((p, i) => (i === existingIndex ? { ...p, arguments: payload.arguments } : p))
                     }
-                  : m,
-              ),
+                    return [
+                      ...existing,
+                      {
+                        index: payload.index,
+                        name: payload.name,
+                        ...(payload.arguments ? { arguments: payload.arguments } : {}),
+                      },
+                    ]
+                  })(),
+                }
+              }),
             }
           })
           break

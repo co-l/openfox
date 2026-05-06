@@ -109,6 +109,7 @@ export function updateMessageDone(
     partial?: boolean
     promptContext?: unknown
     tokenCount?: number
+    preparingToolCalls?: unknown[]
   },
   data: Extract<TurnEvent, { type: 'message.done' }>['data'],
 ): void {
@@ -118,6 +119,9 @@ export function updateMessageDone(
   if (data.partial) msg.partial = true
   if (data.promptContext) msg.promptContext = data.promptContext
   if (data.tokenCount !== undefined) msg.tokenCount = data.tokenCount
+  if ('preparingToolCalls' in msg) {
+    msg.preparingToolCalls = []
+  }
 }
 
 export function applyEvents<

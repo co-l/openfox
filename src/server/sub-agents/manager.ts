@@ -2,8 +2,8 @@
  * Sub-Agent Manager
  *
  * Executes sub-agents with isolated context and restricted tool sets.
- * Uses the agent registry (.agent.md files) for agent definitions and
- * standalone context builders for fresh context assembly.
+ * Uses the event store as the single source of truth for conversation history.
+ * All messages are written to and read from the event store via getConversationMessages.
  */
 
 import type { Criterion, InjectedFile, StatsIdentity } from '../../shared/types.js'
@@ -21,11 +21,9 @@ import {
   createMessageStartEvent,
   createMessageDoneEvent,
   createChatDoneEvent,
-  toStreamMessages,
-  createAssistantMessage,
 } from '../chat/stream-pure.js'
 import { executeToolBatch } from '../chat/agent-loop.js'
-import type { RequestContextMessage } from '../chat/request-context.js'
+import { assembleAgentRequest } from '../chat/request-context.js'
 import { getAllInstructions, toInjectedFiles } from '../context/instructions.js'
 import { getEnabledSkillMetadata } from '../skills/registry.js'
 import { getRuntimeConfig } from '../runtime-config.js'
@@ -33,7 +31,7 @@ import { getGlobalConfigDir } from '../../cli/paths.js'
 import { getEventStore, getCurrentContextWindowId } from '../events/index.js'
 import { createChatMessageMessage, createChatMessageUpdatedMessage, createChatDoneMessage } from '../ws/protocol.js'
 import { logger } from '../utils/logger.js'
-import { resolveCompactionStatsIdentity, maybeAutoCompactContext } from '../context/auto-compaction.js'
+import { getConversationMessages } from '../chat/conversation-history.js'
 import { appendNudgeMessage, buildPromptContextForNudge } from '../context/nudge-helpers.js'
 
 // ============================================================================
@@ -141,9 +139,6 @@ export async function executeSubAgent(options: SubAgentExecutionOptions): Promis
   let session = sessionManager.requireSession(sessionId)
   const currentWindowMessageOptions = getCurrentWindowMessageOptions(sessionId)
 
-  // Build initial context messages — prompt arrives pre-resolved with template variables
-  const contextMessages: RequestContextMessage[] = [{ role: 'user', content: prompt, source: 'runtime' }]
-
   logger.debug('Sub-agent starting', { subAgentType, subAgentId, sessionId })
 
   // Emit context reset marker
@@ -160,13 +155,31 @@ export async function executeSubAgent(options: SubAgentExecutionOptions): Promis
   )
   eventStore.append(sessionId, { type: 'message.done', data: { messageId: resetMsgId } })
 
-  // Emit context messages as events for the UI feed
-  for (const msg of contextMessages) {
-    const msgId = crypto.randomUUID()
-    eventStore.append(
-      sessionId,
-      createMessageStartEvent(msgId, 'user', msg.content, {
-        ...(currentWindowMessageOptions ?? {}),
+  // Emit the prompt as a user message in the event store
+  const promptMsgId = crypto.randomUUID()
+  eventStore.append(
+    sessionId,
+    createMessageStartEvent(promptMsgId, 'user', prompt, {
+      ...(currentWindowMessageOptions ?? {}),
+      isSystemGenerated: true,
+      messageKind: 'auto-prompt',
+      subAgentId,
+      subAgentType,
+      metadata: {
+        type: 'subagent',
+        name: agentDef.metadata.name,
+        color: agentDef.metadata.color ?? '#6b7280',
+      },
+    }),
+  )
+  eventStore.append(sessionId, { type: 'message.done', data: { messageId: promptMsgId } })
+  if (onMessage) {
+    onMessage(
+      createChatMessageMessage({
+        id: promptMsgId,
+        role: 'user',
+        content: prompt,
+        timestamp: new Date().toISOString(),
         isSystemGenerated: true,
         messageKind: 'auto-prompt',
         subAgentId,
@@ -178,30 +191,10 @@ export async function executeSubAgent(options: SubAgentExecutionOptions): Promis
         },
       }),
     )
-    eventStore.append(sessionId, { type: 'message.done', data: { messageId: msgId } })
-    if (onMessage) {
-      onMessage(
-        createChatMessageMessage({
-          id: msgId,
-          role: 'user',
-          content: msg.content,
-          timestamp: new Date().toISOString(),
-          isSystemGenerated: true,
-          messageKind: 'auto-prompt',
-          subAgentId,
-          subAgentType,
-          metadata: {
-            type: 'subagent',
-            name: agentDef.metadata.name,
-            color: agentDef.metadata.color ?? '#6b7280',
-          },
-        }),
-      )
-    }
   }
 
   // Load instructions and skills for the sub-agent system prompt
-  const { files } = await getAllInstructions(session.workdir, session.projectId)
+  const { content: instructionContent, files } = await getAllInstructions(session.workdir, session.projectId)
   const injectedFiles: InjectedFile[] = toInjectedFiles(files)
 
   const configDir = getGlobalConfigDir(getRuntimeConfig().mode ?? 'production')
@@ -215,8 +208,7 @@ export async function executeSubAgent(options: SubAgentExecutionOptions): Promis
     llmClient.getModel(),
   )
 
-  // Build custom messages for isolated context
-  let customMessages: RequestContextMessage[] = [...contextMessages]
+  const subAgentScope = { type: 'subagent' as const, sessionId, subAgentId, subAgentType }
 
   let consecutiveEmptyStops = 0
   let finalContent: string
@@ -229,14 +221,8 @@ export async function executeSubAgent(options: SubAgentExecutionOptions): Promis
       throw new Error('Aborted')
     }
 
-    // Check if auto-compaction is needed for this subagent's context
-    await maybeAutoCompactContext({
-      sessionManager,
-      sessionId,
-      llmClient,
-      statsIdentity: resolveCompactionStatsIdentity(llmClient),
-      ...(signal ? { signal } : {}),
-    })
+    // Read conversation history from the event store — single source of truth
+    const requestMessages = getConversationMessages(subAgentScope)
 
     // Create assistant message
     const assistantMsgId = crypto.randomUUID()
@@ -254,16 +240,35 @@ export async function executeSubAgent(options: SubAgentExecutionOptions): Promis
       systemPrompt,
       injectedFiles,
       prompt,
-      customMessages,
+      requestMessages,
       toolRegistry.definitions,
     )
 
-    // Stream LLM response — append return_value instruction to all subagent prompts
+    // Assemble the request through the same pipeline as top-level agents
+    const assembledRequest = assembleAgentRequest({
+      agentDef,
+      subAgentDefs: [],
+      workdir: session.workdir,
+      messages: requestMessages,
+      injectedFiles,
+      promptTools: toolRegistry.definitions,
+      requestTools: toolRegistry.definitions,
+      toolChoice: 'auto',
+      disableThinking: true,
+      ...(instructionContent ? { customInstructions: instructionContent } : {}),
+      ...(skills.length > 0 ? { skills } : {}),
+      modelName: llmClient.getModel(),
+    })
+
+    // Append return_value instruction to system prompt (sub-agent specific)
+    const effectiveSystemPrompt = assembledRequest.systemPrompt + RETURN_VALUE_INSTRUCTION
+
+    // Stream LLM response
     const streamGen = streamLLMPure({
       messageId: assistantMsgId,
-      systemPrompt: systemPrompt + RETURN_VALUE_INSTRUCTION,
+      systemPrompt: effectiveSystemPrompt,
       llmClient,
-      messages: toStreamMessages(customMessages),
+      messages: assembledRequest.messages,
       tools: toolRegistry.definitions,
       toolChoice: 'auto',
       signal,
@@ -290,12 +295,8 @@ export async function executeSubAgent(options: SubAgentExecutionOptions): Promis
 
     // Track metrics
     turnMetrics.addLLMCall(result.timing, result.usage.promptTokens, result.usage.completionTokens, result.modelParams)
-    sessionManager.setCurrentContextSize(sessionId, result.usage.promptTokens, subAgentId)
 
     finalContent = result.content
-
-    // Add assistant response to custom context
-    customMessages.push(createAssistantMessage(result.content, result.thinkingContent, result.toolCalls))
 
     session = sessionManager.requireSession(sessionId)
 
@@ -319,7 +320,7 @@ export async function executeSubAgent(options: SubAgentExecutionOptions): Promis
               subAgentId,
               subAgentType,
             })
-            customMessages = [...customMessages, { role: 'user', content: nudgeContent, source: 'runtime' }]
+            // Nudge is in the event store; next iteration reads it from there
             continue
           }
 
@@ -353,7 +354,7 @@ export async function executeSubAgent(options: SubAgentExecutionOptions): Promis
           subAgentId,
           subAgentType,
         })
-        customMessages = [...customMessages, { role: 'user', content: RETURN_VALUE_NUDGE, source: 'runtime' }]
+        // Nudge is in the event store; next iteration reads it from there
         continue
       }
 
@@ -414,11 +415,9 @@ export async function executeSubAgent(options: SubAgentExecutionOptions): Promis
       break
     }
 
-    // Add tool results to custom context
-    customMessages = [...customMessages, ...batchResult.toolMessages]
+    // Tool results are in the event store (written by executeToolBatch);
+    // next iteration reads them from there via getConversationMessages
 
-    // Check criteria changes
-    // eslint-disable-next-line no-useless-assignment
     session = sessionManager.requireSession(sessionId)
 
     // Reset nudge counter when tools were called

@@ -1,16 +1,11 @@
 import type { InjectedFile, Provider, StatsIdentity } from '../../shared/types.js'
 import type { LLMClientWithModel } from '../llm/client.js'
 import type { SessionManager } from '../session/index.js'
-import { getEventStore, getContextMessages, getCurrentContextWindowId } from '../events/index.js'
+import { getEventStore, getCurrentContextWindowId } from '../events/index.js'
 import { getAllInstructions, toInjectedFiles } from './instructions.js'
 import { shouldCompact } from './compactor.js'
 import { COMPACTION_PROMPT } from '../chat/prompts.js'
-import {
-  assembleAgentRequest,
-  minimalMessagesToRequestContextMessages,
-  type MinimalMessage,
-  type RequestContextMessage,
-} from '../chat/request-context.js'
+import { assembleAgentRequest } from '../chat/request-context.js'
 import { TurnMetrics, createMessageStartEvent, createChatDoneEvent } from '../chat/stream-pure.js'
 import { consumeStreamWithToolLoop } from '../chat/stream-pure.js'
 import { loadAllAgentsDefault, findAgentById, getSubAgents } from '../agents/registry.js'
@@ -19,14 +14,11 @@ import { getEnabledSkillMetadata } from '../skills/registry.js'
 import { getGlobalConfigDir } from '../../cli/paths.js'
 import { getRuntimeConfig } from '../runtime-config.js'
 import { logger } from '../utils/logger.js'
+import { getConversationMessages } from '../chat/conversation-history.js'
 
 function getCurrentWindowMessageOptions(sessionId: string): { contextWindowId: string } | undefined {
   const contextWindowId = getCurrentContextWindowId(sessionId)
   return contextWindowId ? { contextWindowId } : undefined
-}
-
-function toRequestContextMessages(messages: MinimalMessage[]): RequestContextMessage[] {
-  return minimalMessagesToRequestContextMessages(messages, 'history')
 }
 
 interface ContextCompactionOptions {
@@ -100,7 +92,7 @@ async function performContextCompaction(
   const session = sessionManager.requireSession(sessionId)
   const { content: instructions, files } = await getAllInstructions(session.workdir, session.projectId)
   const injectedFiles: InjectedFile[] = toInjectedFiles(files)
-  const requestMessages = toRequestContextMessages(getContextMessages(sessionId))
+  const requestMessages = getConversationMessages({ type: 'toplevel', sessionId })
 
   const config = getRuntimeConfig()
   const allAgents = await loadAllAgentsDefault()

@@ -47,7 +47,9 @@ function cloneMessage(message: Message): Message {
         }
       : {}),
     ...(message.segments ? { segments: [...message.segments] } : {}),
-    ...(message.preparingToolCalls ? { preparingToolCalls: [...message.preparingToolCalls] } : {}),
+    ...(message.preparingToolCalls && message.preparingToolCalls.length > 0
+      ? { preparingToolCalls: [...message.preparingToolCalls] }
+      : {}),
   }
 }
 
@@ -68,6 +70,8 @@ export function spreadOptionalMessageFields(message: SnapshotMessage) {
     ...(message.isCompactionSummary !== undefined && { isCompactionSummary: message.isCompactionSummary }),
     ...(message.promptContext !== undefined && { promptContext: message.promptContext }),
     ...(message.attachments !== undefined && { attachments: message.attachments }),
+    ...(message.preparingToolCalls !== undefined &&
+      message.preparingToolCalls.length > 0 && { preparingToolCalls: message.preparingToolCalls }),
     ...(message.metadata !== undefined && { metadata: message.metadata }),
   }
 }
