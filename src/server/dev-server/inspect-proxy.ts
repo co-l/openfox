@@ -176,7 +176,6 @@ export function startInspectProxy(
         client.on('error', () => targetSocket!.destroy())
         targetSocket.write(clientHead)
         targetSocket.pipe(client)
-        client.pipe(targetSocket!)
         return
       }
 
