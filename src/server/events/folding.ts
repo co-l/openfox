@@ -275,68 +275,125 @@ export function buildContextMessagesFromStoredEvents(
         break
       }
       case 'message.thinking': {
-        const data = event.data as Extract<TurnEvent, { type: 'message.thinking' }>['data']
-        const msg = messageMap.get(data.messageId)
-        if (msg) {
-          msg.thinkingContent = (msg.thinkingContent ?? '') + data.content
-        }
+        handleMessageThinking(messageMap, event.data as Extract<TurnEvent, { type: 'message.thinking' }>['data'])
         break
       }
       case 'message.delta': {
-        const data = event.data as Extract<TurnEvent, { type: 'message.delta' }>['data']
-        const msg = messageMap.get(data.messageId)
-        if (msg) {
-          msg.content += data.content
-        }
+        handleMessageDelta(messageMap, event.data as Extract<TurnEvent, { type: 'message.delta' }>['data'])
         break
       }
       case 'tool.call': {
-        const data = event.data as Extract<TurnEvent, { type: 'tool.call' }>['data']
-        const msg = messageMap.get(data.messageId)
-        if (msg) {
-          if (!msg.toolCalls) msg.toolCalls = []
-          msg.toolCalls.push(data.toolCall)
-        }
+        handleToolCall(messageMap, event.data as Extract<TurnEvent, { type: 'tool.call' }>['data'])
         break
       }
       case 'tool.result': {
-        const data = event.data as Extract<TurnEvent, { type: 'tool.result' }>['data']
-        fulfilledToolCallIds.add(data.toolCallId)
-        if (messageMap.has(data.messageId)) {
-          const imageMeta = data.result.metadata as
-            | { mimeType?: string; dataUrl?: string; path?: string; size?: number }
-            | undefined
-          const msg: ContextMessage & { id: string } = {
-            id: `tool-${data.toolCallId}`,
-            role: 'tool',
-            content: stripAnsi(
-              data.result.success
-                ? (data.result.output ?? 'Success')
-                : data.result.output
-                  ? `${data.result.output}\n\nError: ${data.result.error}`
-                  : `Error: ${data.result.error}`,
-            ),
-            toolCallId: data.toolCallId,
-          }
-          if (imageMeta?.dataUrl && imageMeta?.mimeType?.startsWith('image/')) {
-            msg.attachments = [
-              {
-                id: crypto.randomUUID(),
-                filename: imageMeta.path ?? 'image',
-                mimeType: imageMeta.mimeType as Attachment['mimeType'],
-                size: imageMeta.size ?? 0,
-                data: imageMeta.dataUrl,
-              },
-            ]
-          }
-          messages.push(msg)
-        }
+        handleToolResult(
+          messages,
+          messageMap,
+          fulfilledToolCallIds,
+          event.data as Extract<TurnEvent, { type: 'tool.result' }>['data'],
+        )
         break
       }
     }
   }
 
-  // Strip orphaned toolCalls from assistant messages (no matching tool.result)
+  stripOrphanedToolCalls(messages, fulfilledToolCallIds)
+
+  return messages.map(({ id: _id, ...message }) => message)
+}
+
+// ============================================================================
+// Shared Event-Walking Helpers (used by folding.ts and conversation-history.ts)
+// ============================================================================
+
+export interface MessageWithId {
+  id: string
+  role: string
+  content: string
+  thinkingContent?: string
+  toolCalls?: Array<{ id: string; name: string; arguments: Record<string, unknown> }>
+  toolCallId?: string
+  attachments?: Attachment[]
+}
+
+export function handleMessageThinking(
+  messageMap: Map<string, MessageWithId>,
+  data: { messageId: string; content: string },
+): void {
+  const msg = messageMap.get(data.messageId)
+  if (msg) {
+    msg.thinkingContent = (msg.thinkingContent ?? '') + data.content
+  }
+}
+
+export function handleMessageDelta(
+  messageMap: Map<string, MessageWithId>,
+  data: { messageId: string; content: string },
+): void {
+  const msg = messageMap.get(data.messageId)
+  if (msg) {
+    msg.content += data.content
+  }
+}
+
+export function handleToolCall(
+  messageMap: Map<string, MessageWithId>,
+  data: { messageId: string; toolCall: { id: string; name: string; arguments: Record<string, unknown> } },
+): void {
+  const msg = messageMap.get(data.messageId)
+  if (msg) {
+    if (!msg.toolCalls) msg.toolCalls = []
+    msg.toolCalls.push(data.toolCall)
+  }
+}
+
+export function handleToolResult(
+  messages: MessageWithId[],
+  messageMap: Map<string, MessageWithId>,
+  fulfilled: Set<string>,
+  data: {
+    messageId: string
+    toolCallId: string
+    result: {
+      success: boolean
+      output?: string
+      error?: string
+      metadata?: { mimeType?: string; dataUrl?: string; path?: string; size?: number }
+    }
+  },
+): void {
+  fulfilled.add(data.toolCallId)
+  if (messageMap.has(data.messageId)) {
+    const imageMeta = data.result.metadata
+    const toolMsg: MessageWithId = {
+      id: `tool-${data.toolCallId}`,
+      role: 'tool',
+      content: stripAnsi(
+        data.result.success
+          ? (data.result.output ?? 'Success')
+          : data.result.output
+            ? `${data.result.output}\n\nError: ${data.result.error}`
+            : `Error: ${data.result.error}`,
+      ),
+      toolCallId: data.toolCallId,
+    }
+    if (imageMeta?.dataUrl && imageMeta?.mimeType?.startsWith('image/')) {
+      toolMsg.attachments = [
+        {
+          id: crypto.randomUUID(),
+          filename: imageMeta.path ?? 'image',
+          mimeType: imageMeta.mimeType as Attachment['mimeType'],
+          size: imageMeta.size ?? 0,
+          data: imageMeta.dataUrl,
+        },
+      ]
+    }
+    messages.push(toolMsg)
+  }
+}
+
+export function stripOrphanedToolCalls(messages: MessageWithId[], fulfilledToolCallIds: Set<string>): void {
   for (const msg of messages) {
     if (msg.role === 'assistant' && msg.toolCalls) {
       const fulfilled = msg.toolCalls.filter((tc) => fulfilledToolCallIds.has(tc.id))
@@ -347,8 +404,6 @@ export function buildContextMessagesFromStoredEvents(
       }
     }
   }
-
-  return messages.map(({ id: _id, ...message }) => message)
 }
 
 export function buildContextMessagesFromEventHistory(

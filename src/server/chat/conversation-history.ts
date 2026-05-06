@@ -12,12 +12,19 @@
 
 import type { StoredEvent, TurnEvent } from '../events/types.js'
 import type { ContextMessage } from '../events/folding.js'
+import {
+  handleMessageThinking,
+  handleMessageDelta,
+  handleToolCall,
+  handleToolResult,
+  stripOrphanedToolCalls,
+  type MessageWithId,
+} from '../events/folding.js'
 import type { RequestContextMessage } from './request-context.js'
 import { minimalMessagesToRequestContextMessages } from './request-context.js'
 import { buildContextMessagesFromEventHistory, foldContextState } from '../events/folding.js'
 import { getEventStore } from '../events/index.js'
 import type { Attachment } from '../../shared/types.js'
-import stripAnsi from 'strip-ansi'
 
 // ============================================================================
 // Types
@@ -42,14 +49,7 @@ export type ConversationScope = TopLevelScope | SubAgentScope
 // Context Message Building (scope-aware, unified)
 // ============================================================================
 
-interface InternalMessage {
-  id: string
-  role: 'user' | 'assistant' | 'tool'
-  content: string
-  thinkingContent?: string
-  toolCalls?: Array<{ id: string; name: string; arguments: Record<string, unknown> }>
-  toolCallId?: string
-  attachments?: Attachment[]
+interface InternalMessage extends MessageWithId {
   subAgentId?: string
   subAgentType?: string
   contextWindowId?: string
@@ -132,62 +132,23 @@ function buildSubAgentContextMessages(events: StoredEvent[], scope: SubAgentScop
         break
       }
       case 'message.thinking': {
-        const data = event.data as Extract<TurnEvent, { type: 'message.thinking' }>['data']
-        const msg = messageMap.get(data.messageId)
-        if (msg) {
-          msg.thinkingContent = (msg.thinkingContent ?? '') + data.content
-        }
+        const evt = event.data as Extract<TurnEvent, { type: 'message.thinking' }>['data']
+        handleMessageThinking(messageMap, evt)
         break
       }
       case 'message.delta': {
-        const data = event.data as Extract<TurnEvent, { type: 'message.delta' }>['data']
-        const msg = messageMap.get(data.messageId)
-        if (msg) {
-          msg.content += data.content
-        }
+        const evt = event.data as Extract<TurnEvent, { type: 'message.delta' }>['data']
+        handleMessageDelta(messageMap, evt)
         break
       }
       case 'tool.call': {
-        const data = event.data as Extract<TurnEvent, { type: 'tool.call' }>['data']
-        const msg = messageMap.get(data.messageId)
-        if (msg) {
-          if (!msg.toolCalls) msg.toolCalls = []
-          msg.toolCalls.push(data.toolCall)
-        }
+        const evt = event.data as Extract<TurnEvent, { type: 'tool.call' }>['data']
+        handleToolCall(messageMap, evt)
         break
       }
       case 'tool.result': {
-        const data = event.data as Extract<TurnEvent, { type: 'tool.result' }>['data']
-        fulfilledToolCallIds.add(data.toolCallId)
-        if (messageMap.has(data.messageId)) {
-          const imageMeta = data.result.metadata as
-            | { mimeType?: string; dataUrl?: string; path?: string; size?: number }
-            | undefined
-          const toolMsg: InternalMessage = {
-            id: `tool-${data.toolCallId}`,
-            role: 'tool',
-            content: stripAnsi(
-              data.result.success
-                ? (data.result.output ?? 'Success')
-                : data.result.output
-                  ? `${data.result.output}\n\nError: ${data.result.error}`
-                  : `Error: ${data.result.error}`,
-            ),
-            toolCallId: data.toolCallId,
-          }
-          if (imageMeta?.dataUrl && imageMeta?.mimeType?.startsWith('image/')) {
-            toolMsg.attachments = [
-              {
-                id: crypto.randomUUID(),
-                filename: imageMeta.path ?? 'image',
-                mimeType: imageMeta.mimeType as Attachment['mimeType'],
-                size: imageMeta.size ?? 0,
-                data: imageMeta.dataUrl,
-              },
-            ]
-          }
-          messages.push(toolMsg)
-        }
+        const evt = event.data as Extract<TurnEvent, { type: 'tool.result' }>['data']
+        handleToolResult(messages, messageMap, fulfilledToolCallIds, evt)
         break
       }
       case 'context.compacted': {
@@ -201,22 +162,12 @@ function buildSubAgentContextMessages(events: StoredEvent[], scope: SubAgentScop
     }
   }
 
-  // Strip orphaned toolCalls from assistant messages
-  for (const msg of messages) {
-    if (msg.role === 'assistant' && msg.toolCalls) {
-      const fulfilled = msg.toolCalls.filter((tc) => fulfilledToolCallIds.has(tc.id))
-      if (fulfilled.length === 0) {
-        delete msg.toolCalls
-      } else {
-        msg.toolCalls = fulfilled
-      }
-    }
-  }
+  stripOrphanedToolCalls(messages, fulfilledToolCallIds)
 
   return messages.map(
     ({ id: _id, subAgentId: _sa, subAgentType: _st, contextWindowId: _cw, isCompactionSummary: _ics, ...rest }) => {
       const ctx: ContextMessage = {
-        role: rest.role,
+        role: rest.role as 'user' | 'assistant',
         content: rest.content,
         ...(rest.thinkingContent ? { thinkingContent: rest.thinkingContent } : {}),
         ...(rest.toolCalls ? { toolCalls: rest.toolCalls } : {}),
