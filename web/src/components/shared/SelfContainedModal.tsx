@@ -55,7 +55,10 @@ export function Modal({
   useEffect(() => {
     if (!isOpen || !closeOnEscape) return
     const handler = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') close()
+      if (e.key === 'Escape') {
+        e.stopPropagation()
+        close()
+      }
     }
     document.addEventListener('keydown', handler)
     return () => document.removeEventListener('keydown', handler)
