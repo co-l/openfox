@@ -202,7 +202,8 @@ export function PlanPanel({
   // Escape key to stop generation
   useEffect(() => {
     const handleEscape = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && isRunning) {
+      const popupOpen = showQuickAction || showCommandsModal || showWorkflowsModal || showMessageSearch || turnStatsModal
+      if (e.key === 'Escape' && isRunning && !popupOpen) {
         stopGeneration()
       }
       if (e.key === 'ScrollLock') {
@@ -211,7 +212,7 @@ export function PlanPanel({
     }
     window.addEventListener('keydown', handleEscape)
     return () => window.removeEventListener('keydown', handleEscape)
-  }, [isRunning, stopGeneration, isAutoScrollActive])
+  }, [isRunning, stopGeneration, isAutoScrollActive, showQuickAction, showCommandsModal, showWorkflowsModal, showMessageSearch, turnStatsModal])
 
   // Double Shift opens quick action modal
   const lastShiftRef = useRef<number>(0)
