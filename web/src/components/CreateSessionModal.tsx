@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { useLocation } from 'wouter'
 import { useProjectStore } from '../stores/project'
 import { Modal } from './shared/Modal'
@@ -8,6 +8,7 @@ import { authFetch } from '../lib/api'
 import { DeleteProjectConfirmationModal } from './DeleteProjectConfirmationModal.js'
 import { CreateProjectModal } from './CreateProjectModal.js'
 import { DirectoryBrowser } from './shared/DirectoryBrowser.js'
+import { PermissionDeniedModal } from './PermissionDeniedModal.js'
 
 interface OpenProjectModalProps {
   isOpen: boolean
@@ -26,6 +27,7 @@ export function OpenProjectModal({ isOpen, onClose }: OpenProjectModalProps) {
   const deleteProject = useProjectStore((state) => state.deleteProject)
   const [projectToDelete, setProjectToDelete] = useState<{ id: string; name: string } | null>(null)
   const [creatingPath, setCreatingPath] = useState<string | null>(null)
+  const [permissionDeniedPath, setPermissionDeniedPath] = useState<string | null>(null)
 
   const truncateMiddle = (path: string, maxLen = 32) => {
     if (path.length <= maxLen) return path
@@ -72,12 +74,50 @@ export function OpenProjectModal({ isOpen, onClose }: OpenProjectModalProps) {
     }
   }
 
-  const handleDirectorySelect = (path: string) => {
+  const handleDirectorySelect = async (path: string): Promise<boolean> => {
     const basename = path.split('/').filter(Boolean).pop() ?? ''
-    createProject(basename, path)
+    const result = await createProject(basename, path)
     listProjects()
     setCreatingPath(path)
+    if (
+      result &&
+      typeof result === 'object' &&
+      'error' in result &&
+      result.error &&
+      typeof result.error === 'object' &&
+      'code' in result.error &&
+      result.error.code === 'EACCES'
+    ) {
+      setPermissionDeniedPath((result.error as { path?: string }).path || path)
+      return false
+    }
+    return true
   }
+
+  const handlePermissionDeniedClose = useCallback(() => {
+    setPermissionDeniedPath(null)
+  }, [])
+
+  const handleRetry = useCallback(async () => {
+    setPermissionDeniedPath(null)
+    if (creatingPath) {
+      const basename = creatingPath.split('/').filter(Boolean).pop() ?? ''
+      const result = await createProject(basename, creatingPath)
+      listProjects()
+      setCreatingPath(creatingPath)
+      if (
+        result &&
+        typeof result === 'object' &&
+        'error' in result &&
+        result.error &&
+        typeof result.error === 'object' &&
+        'code' in result.error &&
+        result.error.code === 'EACCES'
+      ) {
+        setPermissionDeniedPath((result.error as { path?: string }).path || creatingPath)
+      }
+    }
+  }, [creatingPath, createProject, listProjects])
 
   useEffect(() => {
     if (creatingPath) {
@@ -177,10 +217,19 @@ export function OpenProjectModal({ isOpen, onClose }: OpenProjectModalProps) {
         <DirectoryBrowser
           initialPath={baseWorkdir ?? undefined}
           onSelect={(path) => {
-            handleDirectorySelect(path)
-            setShowBrowser(false)
+            handleDirectorySelect(path).then((success) => {
+              if (success) setShowBrowser(false)
+            })
           }}
           onClose={() => setShowBrowser(false)}
+        />
+      )}
+      {permissionDeniedPath && (
+        <PermissionDeniedModal
+          isOpen={true}
+          onClose={handlePermissionDeniedClose}
+          path={permissionDeniedPath}
+          onRetry={handleRetry}
         />
       )}
     </Modal>

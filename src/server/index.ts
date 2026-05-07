@@ -217,8 +217,56 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
       return res.status(400).json({ error: 'name and workdir are required' })
     }
     const { createDirectoryWithGit } = await import('./utils/project-creator.js')
-    const project = await createDirectoryWithGit(name, workdir)
-    res.status(201).json({ project })
+    try {
+      const project = await createDirectoryWithGit(name, workdir)
+      res.status(201).json({ project })
+    } catch (err) {
+      const eaccError = err as Error & { code?: string; cause?: unknown }
+      return res.status(403).json({
+        error: eaccError.message || 'Unknown error',
+        code: eaccError.code || 'UNKNOWN',
+        path: workdir,
+      })
+    }
+  })
+
+  app.post('/api/projects/check-permissions', async (req, res) => {
+    const { path: targetPath } = req.body
+    if (!targetPath) {
+      return res.status(400).json({ error: 'path is required' })
+    }
+
+    const { checkPermissions } = await import('./utils/permissions.js')
+    const result = await checkPermissions(targetPath)
+
+    if (result.success) {
+      res.json(result)
+    } else {
+      const status = (result as { status?: number }).status ?? 500
+      res.status(status).json({ error: result.error })
+    }
+  })
+
+  app.post('/api/projects/fix-permissions', async (req, res) => {
+    const { path: targetPath, action } = req.body
+    if (!targetPath) {
+      return res.status(400).json({ error: 'path is required' })
+    }
+    if (!['group', 'ownership', 'join_group', 'join_group_and_group'].includes(action)) {
+      return res
+        .status(400)
+        .json({ error: 'action must be "group", "ownership", "join_group", or "join_group_and_group"' })
+    }
+
+    const { fixPermissions } = await import('./utils/permissions.js')
+    const result = await fixPermissions(targetPath, action)
+
+    if (result.success) {
+      res.json(result)
+    } else {
+      const status = (result as { status?: number }).status ?? 500
+      res.status(status).json(result)
+    }
   })
 
   app.get('/api/projects/:id', async (req, res) => {
