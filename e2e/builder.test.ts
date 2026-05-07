@@ -101,7 +101,7 @@ describe('Builder Mode', () => {
       const toolResults = events.get('chat.tool_result')
       const editResultEvent = toolResults.find((e) => {
         const payload = e.payload as any
-        return payload.toolCallId === editCall?.payload?.id
+        return payload.callId === editCall?.payload?.callId
       })
 
       const editResult = editResultEvent?.payload as any

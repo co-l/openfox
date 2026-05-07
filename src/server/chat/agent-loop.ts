@@ -153,6 +153,7 @@ export async function executeToolBatch(
     toolResult: ToolResult
     content: string
     index: number
+    event: ReturnType<typeof createToolResultEvent>
   }> => {
     if (ctx.signal?.aborted) {
       throw new Error('Aborted')
@@ -166,12 +167,13 @@ export async function executeToolBatch(
         truncated: false,
       }
       ctx.turnMetrics.addToolTime(toolResult.durationMs)
-      eventStore.append(ctx.sessionId, createToolResultEvent(assistantMsgId, toolCall.id, toolResult))
+      const event = createToolResultEvent(assistantMsgId, toolCall.id, toolResult)
       return {
         toolCall,
         toolResult,
         content: `Error: ${toolResult.error}`,
         index,
+        event,
       }
     }
 
@@ -230,7 +232,6 @@ export async function executeToolBatch(
     }
 
     ctx.turnMetrics.addToolTime(toolResult.durationMs)
-    eventStore.append(ctx.sessionId, createToolResultEvent(assistantMsgId, toolCall.id, toolResult))
 
     ctx.onToolExecuted?.(toolCall, toolResult)
 
@@ -252,13 +253,19 @@ export async function executeToolBatch(
       toolResult,
       content,
       index,
+      event: createToolResultEvent(assistantMsgId, toolCall.id, toolResult),
     }
   }
 
   const executionPromises = toolCalls.map((toolCall, index) => executeTool(toolCall, index))
   const results = await Promise.all(executionPromises)
 
+  // Sort results by original index to maintain call order
+  results.sort((a, b) => a.index - b.index)
+
+  // Emit events and build messages in order
   for (const result of results) {
+    eventStore.append(ctx.sessionId, result.event)
     toolMessages.push({
       role: 'tool',
       content: result.content,
