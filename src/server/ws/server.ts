@@ -52,25 +52,6 @@ function resolveStatsIdentity(
   }
 }
 
-function buildSessionState(
-  sessionManager: SessionManager,
-  sessionId: string,
-): {
-  session: ReturnType<SessionManager['getSession']>
-  messages: ReturnType<typeof buildMessagesFromStoredEvents>
-  pendingConfirmations: ReturnType<typeof foldPendingConfirmations>
-} {
-  const session = sessionManager.getSession(sessionId)
-  if (!session) {
-    return { session: null, messages: [], pendingConfirmations: [] }
-  }
-  const eventStore = getEventStore()
-  const events = eventStore.getEvents(sessionId)
-  const messages = events.length > 0 ? buildMessagesFromStoredEvents(events) : []
-  const pendingConfirmations = foldPendingConfirmations(events)
-  return { session, messages, pendingConfirmations }
-}
-
 function addUserMessageAndBroadcast(
   sessionManager: SessionManager,
   sessionId: string,
@@ -148,7 +129,41 @@ interface ClientConnection {
   ws: WebSocket
   activeSessionId: string | null // Currently viewing session
   globalSubscription: (() => void) | null // Global all-session subscription unsubscribe
+  sendQueue: Array<{ data: string; seq: number }> // FIFO queue for ordered sends
+  isSending: boolean // True while a send is in progress
+  lastSentSeq: number // Last sequence number sent
 }
+
+const MAX_SEND_QUEUE_SIZE = 1000 // Maximum messages to queue before dropping
+
+/**
+ * WebSocket Message Ordering Implementation
+ *
+ * This module implements ordered message delivery to prevent race conditions
+ * when multiple events are emitted in rapid succession.
+ *
+ * Key Design Decisions:
+ *
+ * 1. Per-Client Send Queue: Each WebSocket client has its own FIFO queue
+ *    that ensures messages are sent in strict order, preventing the
+ *    "garbled UI" issue where messages arrive out of order.
+ *
+ * 2. Single Event Source: Only EventStore global subscription is used.
+ *    SessionManager legacy events are NOT forwarded to prevent duplicates.
+ *    All session state changes go through EventStore (mode.changed,
+ *    phase.changed, running.changed, etc.).
+ *
+ * 3. Sequence Numbers: Messages include sequence numbers for ordering:
+ *    - EventStore events: Use storedEvent.seq (database sequence)
+ *    - Generated messages: Use client.lastSentSeq + 1
+ *    Sequence numbers may have gaps due to event deletion or multiple
+ *    sessions, but are always monotonically increasing per client.
+ *
+ * 4. Queue Size Limit: MAX_SEND_QUEUE_SIZE prevents memory leaks on
+ *    slow or disconnected clients. Messages are dropped if queue is full.
+ *
+ * @see https://github.com/conrad/openfox/issues/XXX
+ */
 
 export function createWebSocketServer(
   httpServer: Server,
@@ -239,6 +254,43 @@ export function createWebSocketServer(
     }
   }
 
+  // Ordered send queue implementation for FIFO message delivery
+  function enqueueSend(client: ClientConnection, data: string, seq: number): void {
+    // Drop message if queue is too large (prevents memory leak on slow clients)
+    if (client.sendQueue.length >= MAX_SEND_QUEUE_SIZE) {
+      logger.warn('WebSocket send queue full, dropping message', {
+        queueSize: client.sendQueue.length,
+        sessionId: client.activeSessionId,
+      })
+      return
+    }
+    client.sendQueue.push({ data, seq })
+    processSendQueue(client)
+  }
+
+  function processSendQueue(client: ClientConnection): void {
+    if (client.isSending || client.sendQueue.length === 0) {
+      return
+    }
+
+    client.isSending = true
+    const item = client.sendQueue.shift()!
+
+    if (client.ws.readyState === WebSocket.OPEN) {
+      client.ws.send(item.data, (err) => {
+        if (err) {
+          logger.debug('WebSocket send error', { error: err })
+        }
+        client.isSending = false
+        client.lastSentSeq = item.seq
+        processSendQueue(client)
+      })
+    } else {
+      client.isSending = false
+      processSendQueue(client)
+    }
+  }
+
   const llmForSession = (sessionId: string): LLMClientWithModel => getSessionLLMClient?.(sessionId) ?? getLLMClient()
 
   const statsForSession = (sessionId: string): StatsIdentity =>
@@ -311,60 +363,16 @@ export function createWebSocketServer(
       })
   }
 
-  // Subscribe to session events and broadcast to relevant clients
-  sessionManager.subscribe((event) => {
-    const sessionId = 'sessionId' in event ? event.sessionId : 'session' in event ? event.session.id : null
-
-    if (!sessionId) return
-
-    for (const [ws, client] of clients) {
-      if (ws.readyState !== WebSocket.OPEN) continue
-
-      // Broadcast session.state for session_created events to ALL clients
-      // This allows frontend to navigate to newly created sessions even before subscription
-      if (event.type === 'session_created') {
-        const session = sessionManager.getSession(sessionId)
-        if (session) {
-          const { messages, pendingConfirmations } = buildSessionState(sessionManager, sessionId)
-          ws.send(
-            serializeServerMessage({
-              ...createSessionStateMessage(session, messages, pendingConfirmations),
-              sessionId,
-            }),
-          )
-        }
-        continue
-      }
-
-      // For other events, only send to subscribed clients
-      if (isSubscribedToSession(client, sessionId)) {
-        // Broadcast session.state for session_updated events
-        if (event.type === 'session_updated') {
-          const { session, messages, pendingConfirmations } = buildSessionState(sessionManager, sessionId)
-          if (session) {
-            ws.send(
-              serializeServerMessage({
-                ...createSessionStateMessage(session, messages, pendingConfirmations),
-                sessionId,
-              }),
-            )
-          }
-        }
-
-        // Broadcast running state changes in real-time
-        if (event.type === 'running_changed') {
-          ws.send(serializeServerMessage({ ...createSessionRunningMessage(event.isRunning), sessionId }))
-        }
-      }
-    }
-  })
+  // Note: SessionManager subscription removed - EventStore global subscription (below)
+  // is the single source of truth for all session events including running.changed
 
   // Broadcast dev server events to all connected clients
   const broadcastAll = (msg: ServerMessage) => {
     const serialized = serializeServerMessage(msg)
-    for (const [clientWs] of clients) {
+    for (const [clientWs, client] of clients) {
       if (clientWs.readyState === WebSocket.OPEN) {
-        clientWs.send(serialized)
+        const seq = client.lastSentSeq + 1
+        enqueueSend(client, serialized, seq)
       }
     }
   }
@@ -398,7 +406,8 @@ export function createWebSocketServer(
     for (const [clientWs, client] of clients) {
       if (client.activeSessionId === sessionId) {
         if (clientWs.readyState === WebSocket.OPEN) {
-          clientWs.send(serializeServerMessage(msg))
+          const seq = client.lastSentSeq + 1
+          enqueueSend(client, serializeServerMessage(msg), seq)
         }
       }
     }
@@ -419,7 +428,14 @@ export function createWebSocketServer(
     }
 
     logger.debug('WebSocket client connected')
-    clients.set(ws, { ws, activeSessionId: null, globalSubscription: null })
+    clients.set(ws, {
+      ws,
+      activeSessionId: null,
+      globalSubscription: null,
+      sendQueue: [],
+      isSending: false,
+      lastSentSeq: 0,
+    })
 
     // Subscribe to ALL session events (global subscription)
     const eventStore = getEventStore()
@@ -433,7 +449,12 @@ export function createWebSocketServer(
           if (ws.readyState !== WebSocket.OPEN) break
           const serverMsg = storedEventToServerMessage(storedEvent)
           if (serverMsg) {
-            ws.send(serializeServerMessage({ ...serverMsg, seq: storedEvent.seq, sessionId: storedEvent.sessionId }))
+            const client = clients.get(ws)!
+            enqueueSend(
+              client,
+              serializeServerMessage({ ...serverMsg, seq: storedEvent.seq, sessionId: storedEvent.sessionId }),
+              storedEvent.seq,
+            )
           }
         }
       } catch (error) {
@@ -445,7 +466,13 @@ export function createWebSocketServer(
       const message = parseClientMessage(data.toString())
 
       if (!message) {
-        ws.send(serializeServerMessage(createErrorMessage('INVALID_MESSAGE', 'Invalid message format')))
+        const client = clients.get(ws)!
+        const seq = client.lastSentSeq + 1
+        enqueueSend(
+          client,
+          serializeServerMessage(createErrorMessage('INVALID_MESSAGE', 'Invalid message format')),
+          seq,
+        )
         return
       }
 
@@ -473,13 +500,18 @@ export function createWebSocketServer(
           statsForSession,
           startTurnWithCompletionChain,
           cleanupAfterTurn,
+          enqueueSend,
         )
       } catch (error) {
         logger.error('Error handling client message', { error, type: message.type })
-        ws.send(
+        const client = clients.get(ws)!
+        const seq = client.lastSentSeq + 1
+        enqueueSend(
+          client,
           serializeServerMessage(
             createErrorMessage('INTERNAL_ERROR', error instanceof Error ? error.message : 'Unknown error', message.id),
           ),
+          seq,
         )
       }
     })
@@ -493,6 +525,11 @@ export function createWebSocketServer(
       }
       // Unsubscribe from all terminal sessions
       unsubscribeAllFromTerminal(ws)
+      // Clear send queue
+      if (client) {
+        client.sendQueue = []
+        client.isSending = false
+      }
       clients.delete(ws)
     })
 
@@ -544,10 +581,12 @@ async function handleClientMessage(
     sendFn: (sessionId: string, msg: ServerMessage) => void,
     setRunningOnEarlyReturn: boolean,
   ) => void,
+  enqueueSendFn: (client: ClientConnection, data: string, seq: number) => void,
 ): Promise<void> {
   const send = (msg: ServerMessage) => {
     if (ws.readyState === WebSocket.OPEN) {
-      ws.send(serializeServerMessage(msg))
+      const seq = client.lastSentSeq + 1
+      enqueueSendFn(client, serializeServerMessage(msg), seq)
     }
   }
 
