@@ -8,148 +8,167 @@ import { CheckIcon, CopyIcon } from './icons'
 interface MarkdownProps {
   content: string
   className?: string
+  muted?: boolean
 }
 
-// Static components object — hoisted to module scope so ReactMarkdown
-// receives a referentially stable prop and skips internal reconciliation.
-const MARKDOWN_COMPONENTS = {
-  code({ className, children, ...props }: any) {
-    const match = /language-(\w+)/.exec(className || '')
-    const isInline = !match && !String(children).includes('\n')
+function createMarkdownComponents(muted: boolean) {
+  const headingColor = muted ? 'text-text-muted' : 'text-sky-400'
+  const strongColor = muted ? 'text-text-secondary' : 'text-amber-400'
 
-    if (isInline) {
+  return {
+    code({ className, children, ...props }: any) {
+      const match = /language-(\w+)/.exec(className || '')
+      const isInline = !match && !String(children).includes('\n')
+
+      if (isInline) {
+        const color = muted ? 'text-text-muted' : 'text-accent-secondary'
+        return (
+          <code className={`bg-bg-tertiary px-1 py-0.5 rounded ${color} font-mono text-xs`} {...props}>
+            {children}
+          </code>
+        )
+      }
+
+      const language = match?.[1] || 'text'
+      const codeString = String(children).replace(/\n$/, '')
+      const { copied, copy } = useCopyToClipboard()
+
       return (
-        <code className="bg-bg-tertiary px-1 py-0.5 rounded text-accent-secondary font-mono text-xs" {...props}>
-          {children}
-        </code>
+        <div className="relative group my-1.5 rounded overflow-hidden">
+          <div className="absolute bottom-0 right-0 flex items-center gap-2 px-2 py-1 text-xs text-text-muted/70 bg-bg-tertiary/60 rounded-tl rounded-tr z-10">
+            <span>{language}</span>
+            <button
+              type="button"
+              onClick={(e) => {
+                e.preventDefault()
+                e.stopPropagation()
+                copy(codeString)
+              }}
+              className="opacity-0 group-hover:opacity-100 transition-opacity hover:text-text-primary p-0.5"
+              title="Copy code"
+            >
+              {copied ? <CheckIcon /> : <CopyIcon />}
+            </button>
+          </div>
+          <div className="overflow-x-auto">
+            <SyntaxHighlighter
+              style={oneDark}
+              language={language}
+              PreTag="div"
+              customStyle={
+                {
+                  margin: 0,
+                  fontSize: '0.75rem',
+                } as React.CSSProperties
+              }
+              codeTagProps={{
+                style: {
+                  whiteSpace: 'pre-wrap',
+                  wordBreak: 'break-word',
+                },
+              }}
+            >
+              {codeString}
+            </SyntaxHighlighter>
+          </div>
+        </div>
       )
-    }
+    },
 
-    const language = match?.[1] || 'text'
-    const codeString = String(children).replace(/\n$/, '')
-    const { copied, copy } = useCopyToClipboard()
+    p({ children }: any) {
+      const color = muted ? 'text-text-muted' : 'text-text-primary'
+      return <p className={`${color} mb-1.5 last:mb-0 leading-tight`}>{children}</p>
+    },
 
-    return (
-      <div className="relative group my-1.5 rounded overflow-hidden">
-        <div className="absolute bottom-0 right-0 flex items-center gap-2 px-2 py-1 text-xs text-text-muted/70 bg-bg-tertiary/60 rounded-tl rounded-tr z-10">
-          <span>{language}</span>
-          <button
-            type="button"
-            onClick={(e) => {
-              e.preventDefault()
-              e.stopPropagation()
-              copy(codeString)
-            }}
-            className="opacity-0 group-hover:opacity-100 transition-opacity hover:text-text-primary p-0.5"
-            title="Copy code"
-          >
-            {copied ? <CheckIcon /> : <CopyIcon />}
-          </button>
+    ul({ children }: any) {
+      return <ul className="list-disc list-inside mb-1.5 space-y-0.5">{children}</ul>
+    },
+
+    ol({ children }: any) {
+      return <ol className="list-decimal list-inside mb-1.5 space-y-0.5">{children}</ol>
+    },
+
+    li({ children }: any) {
+      const color = muted ? 'text-text-muted' : 'text-text-primary'
+      return <li className={`${color} text-sm list-item`}>{children}</li>
+    },
+
+    h1({ children }: any) {
+      return <h1 className={`text-base font-bold mb-1.5 mt-2 first:mt-0 ${headingColor}`}>{children}</h1>
+    },
+
+    h2({ children }: any) {
+      return <h2 className={`text-sm font-bold mb-1.5 mt-2 first:mt-0 ${headingColor}`}>{children}</h2>
+    },
+
+    h3({ children }: any) {
+      return <h3 className={`text-sm font-bold mb-1.5 mt-1.5 first:mt-0 ${headingColor}`}>{children}</h3>
+    },
+
+    h4({ children }: any) {
+      return <h4 className={`text-sm font-bold mb-1.5 mt-1.5 first:mt-0 ${headingColor}`}>{children}</h4>
+    },
+
+    strong({ children }: any) {
+      return <strong className={`font-bold ${strongColor}`}>{children}</strong>
+    },
+
+    em({ children }: any) {
+      return <em className={muted ? 'italic text-text-secondary' : 'italic'}>{children}</em>
+    },
+
+    a({ href, children }: any) {
+      return (
+        <a
+          href={href}
+          className="text-accent-primary hover:underline text-sm"
+          target="_blank"
+          rel="noopener noreferrer"
+        >
+          {children}
+        </a>
+      )
+    },
+
+    blockquote({ children }: any) {
+      const color = muted ? 'text-text-muted' : 'text-text-secondary'
+      return (
+        <blockquote className={`border-l-2 border-accent-primary pl-2 my-1.5 ${color} italic text-sm`}>
+          {children}
+        </blockquote>
+      )
+    },
+
+    table({ children }: any) {
+      return (
+        <div className="overflow-x-auto my-1.5">
+          <table className="min-w-full border border-border">{children}</table>
         </div>
-        <div className="overflow-x-auto">
-          <SyntaxHighlighter
-            style={oneDark}
-            language={language}
-            PreTag="div"
-            customStyle={
-              {
-                margin: 0,
-                fontSize: '0.75rem',
-              } as React.CSSProperties
-            }
-            codeTagProps={{
-              style: {
-                whiteSpace: 'pre-wrap',
-                wordBreak: 'break-word',
-              },
-            }}
-          >
-            {codeString}
-          </SyntaxHighlighter>
-        </div>
-      </div>
-    )
-  },
+      )
+    },
 
-  p({ children }: any) {
-    return <p className="mb-1.5 last:mb-0 leading-tight">{children}</p>
-  },
+    th({ children }: any) {
+      return (
+        <th className="border border-border bg-bg-tertiary px-2 py-1 text-left font-semibold text-sm">{children}</th>
+      )
+    },
 
-  ul({ children }: any) {
-    return <ul className="list-disc list-inside mb-1.5 space-y-0.5">{children}</ul>
-  },
+    td({ children }: any) {
+      return <td className="border border-border px-2 py-1 text-sm">{children}</td>
+    },
 
-  ol({ children }: any) {
-    return <ol className="list-decimal list-inside mb-1.5 space-y-0.5">{children}</ol>
-  },
+    hr() {
+      return <hr className="border-border my-2" />
+    },
 
-  li({ children }: any) {
-    return <li className="text-text-primary text-sm list-item">{children}</li>
-  },
-
-  h1({ children }: any) {
-    return <h1 className="text-base font-bold mb-1.5 mt-2 first:mt-0 text-sky-400">{children}</h1>
-  },
-
-  h2({ children }: any) {
-    return <h2 className="text-sm font-bold mb-1.5 mt-2 first:mt-0 text-sky-400">{children}</h2>
-  },
-
-  h3({ children }: any) {
-    return <h3 className="text-sm font-bold mb-1.5 mt-1.5 first:mt-0 text-sky-400">{children}</h3>
-  },
-
-  h4({ children }: any) {
-    return <h4 className="text-sm font-bold mb-1.5 mt-1.5 first:mt-0 text-sky-400">{children}</h4>
-  },
-
-  strong({ children }: any) {
-    return <strong className="font-bold text-amber-400">{children}</strong>
-  },
-
-  a({ href, children }: any) {
-    return (
-      <a href={href} className="text-accent-primary hover:underline text-sm" target="_blank" rel="noopener noreferrer">
-        {children}
-      </a>
-    )
-  },
-
-  blockquote({ children }: any) {
-    return (
-      <blockquote className="border-l-2 border-accent-primary pl-2 my-1.5 text-text-secondary italic text-sm">
-        {children}
-      </blockquote>
-    )
-  },
-
-  table({ children }: any) {
-    return (
-      <div className="overflow-x-auto my-1.5">
-        <table className="min-w-full border border-border">{children}</table>
-      </div>
-    )
-  },
-
-  th({ children }: any) {
-    return <th className="border border-border bg-bg-tertiary px-2 py-1 text-left font-semibold text-sm">{children}</th>
-  },
-
-  td({ children }: any) {
-    return <td className="border border-border px-2 py-1 text-sm">{children}</td>
-  },
-
-  hr() {
-    return <hr className="border-border my-2" />
-  },
-
-  input({ checked, ...props }: any) {
-    return <input type="checkbox" checked={checked} disabled className="mr-1.5 w-3.5 h-3.5" {...props} />
-  },
+    input({ checked, ...props }: any) {
+      return <input type="checkbox" checked={checked} disabled className="mr-1.5 w-3.5 h-3.5" {...props} />
+    },
+  }
 }
 
 // Memoize to prevent re-renders during streaming from causing flicker
-export const Markdown = memo(function Markdown({ content, className = '' }: MarkdownProps) {
+export const Markdown = memo(function Markdown({ content, className = '', muted = false }: MarkdownProps) {
   // Preprocess markdown to fix common LLM formatting quirks
   const processedContent = useMemo(() => {
     let processed = preprocessMarkdown(content)
@@ -157,9 +176,11 @@ export const Markdown = memo(function Markdown({ content, className = '' }: Mark
     return processed
   }, [content])
 
+  const components = useMemo(() => createMarkdownComponents(muted), [muted])
+
   return (
     <div className={`markdown-content [&_li>p]:inline ${className}`}>
-      <ReactMarkdown remarkPlugins={[remarkGfm]} components={MARKDOWN_COMPONENTS}>
+      <ReactMarkdown remarkPlugins={[remarkGfm]} components={components}>
         {processedContent}
       </ReactMarkdown>
     </div>
