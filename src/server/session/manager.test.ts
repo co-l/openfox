@@ -417,5 +417,16 @@ describe('SessionManager', () => {
 
       expect(events.some((e) => e.type === 'queue_cancelled')).toBe(true)
     })
+
+    it('clears message queue when session is deleted to prevent memory leak', () => {
+      const session = manager.createSession(projectId)
+      manager.queueMessage(session.id, 'asap', 'hello')
+
+      expect(manager.hasQueuedMessages(session.id)).toBe(true)
+
+      manager.deleteSession(session.id)
+
+      expect(manager.hasQueuedMessages(session.id)).toBe(false)
+    })
   })
 })

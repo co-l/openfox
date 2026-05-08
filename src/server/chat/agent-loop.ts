@@ -145,6 +145,41 @@ export async function executeToolBatch(
     eventStore.append(ctx.sessionId, createToolCallEvent(assistantMsgId, toolCall))
   }
 
+  const handleToolExecutionError = async (
+    error: unknown,
+    sessionId: string,
+    startTime: number,
+  ): Promise<ToolResult> => {
+    if (error instanceof PathAccessDeniedError) {
+      return {
+        success: false,
+        error: `User denied access to ${error.paths.join(', ')}. If you need this file, explain why and ask for permission.`,
+        durationMs: Date.now() - startTime,
+        truncated: false,
+      }
+    } else if (error instanceof AskUserInterrupt) {
+      eventStore.append(sessionId, {
+        type: 'chat.ask_user',
+        data: { callId: error.callId, question: error.question },
+      })
+
+      const { awaitAnswer } = await import('../tools/ask.js')
+      const answerPromise = awaitAnswer(error.callId)
+      if (!answerPromise) {
+        throw new Error(`No pending question found for callId: ${error.callId}`)
+      }
+      const answer = await answerPromise
+      return {
+        success: true,
+        output: answer,
+        durationMs: Date.now() - startTime,
+        truncated: false,
+      }
+    } else {
+      throw error
+    }
+  }
+
   const executeTool = async (
     toolCall: ToolCall,
     index: number,
@@ -195,40 +230,12 @@ export async function executeToolBatch(
       toolContext.dangerLevel = ctx.dangerLevel
     }
 
+    const startTime = Date.now()
     let toolResult: ToolResult
     try {
       toolResult = await ctx.toolRegistry.execute(toolCall.name, toolCall.arguments, toolContext)
     } catch (error) {
-      if (error instanceof PathAccessDeniedError) {
-        toolResult = {
-          success: false,
-          error: `User denied access to ${error.paths.join(', ')}. If you need this file, explain why and ask for permission.`,
-          durationMs: 0,
-          truncated: false,
-        }
-      } else if (error instanceof AskUserInterrupt) {
-        // Emit chat.ask_user event so client can show the question
-        eventStore.append(ctx.sessionId, {
-          type: 'chat.ask_user',
-          data: { callId: error.callId, question: error.question },
-        })
-
-        // Wait for user to provide answer via ask.answer
-        const { awaitAnswer } = await import('../tools/ask.js')
-        const answerPromise = awaitAnswer(error.callId)
-        if (!answerPromise) {
-          throw new Error(`No pending question found for callId: ${error.callId}`)
-        }
-        const answer = await answerPromise
-        toolResult = {
-          success: true,
-          output: answer,
-          durationMs: 0,
-          truncated: false,
-        }
-      } else {
-        throw error
-      }
+      toolResult = await handleToolExecutionError(error, ctx.sessionId, startTime)
     }
 
     ctx.turnMetrics.addToolTime(toolResult.durationMs)

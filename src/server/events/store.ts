@@ -177,6 +177,16 @@ export class EventStore {
    * Append a single event to a session
    */
   append(sessionId: string, event: TurnEvent): StoredEvent {
+    if (!sessionId || typeof sessionId !== 'string') {
+      throw new Error('Invalid sessionId: must be a non-empty string')
+    }
+    if (!event || typeof event.type !== 'string' || !event.type) {
+      throw new Error('Invalid event: must have a type property')
+    }
+    if (!event.data || typeof event.data !== 'object') {
+      throw new Error('Invalid event: must have data object')
+    }
+
     const timestamp = Date.now()
     const seq = this.getNextSeq(sessionId)
     const payload = JSON.stringify(event.data)
@@ -377,7 +387,8 @@ export class EventStore {
     // Notify session-specific subscribers
     const sessionSubs = this.subscribers.get(sessionId)
     if (sessionSubs) {
-      for (const subscriber of sessionSubs) {
+      const subscribersCopy = Array.from(sessionSubs)
+      for (const subscriber of subscribersCopy) {
         if (!subscriber.closed) {
           subscriber.callback(event)
         }
@@ -385,7 +396,8 @@ export class EventStore {
     }
 
     // Notify global subscribers (receives ALL events)
-    for (const subscriber of this.globalSubscribers.values()) {
+    const globalSubscribersCopy = Array.from(this.globalSubscribers.values())
+    for (const subscriber of globalSubscribersCopy) {
       if (!subscriber.closed) {
         subscriber.callback(event)
       }

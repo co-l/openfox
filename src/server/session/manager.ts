@@ -193,6 +193,9 @@ export class SessionManager {
     const eventStore = getEventStore()
     eventStore.deleteSession(id)
 
+    // Clear message queue to prevent memory leak
+    this.messageQueues.delete(id)
+
     // Delete session from DB
     dbDeleteSession(id)
 

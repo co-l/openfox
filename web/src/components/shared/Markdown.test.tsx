@@ -105,4 +105,65 @@ describe('Markdown', () => {
       expect(html).toContain('reviewer')
     })
   })
+
+  describe('table rendering', () => {
+    it('renders tables with pipes at start of lines correctly', () => {
+      const content = `## Key Paths
+
+| Path | Purpose |
+|------|---------|
+| \`/home/conrad/Downloads/\` | Raw downloads |
+| \`/home/conrad/medias/\` | Organized media |`
+
+      const html = renderToString(<Markdown content={content} />)
+
+      expect(html).toContain('<table')
+      expect(html).toContain('<th')
+      expect(html).toContain('<td')
+      expect(html).toContain('Path')
+      expect(html).toContain('Purpose')
+      expect(html).toContain('/home/conrad/Downloads/')
+    })
+
+    it('handles tables with leading pipe on first line only', () => {
+      const content = `|
+| Path | Purpose |
+|------|---------|
+| /test | Test desc |`
+
+      const html = renderToString(<Markdown content={content} />)
+
+      expect(html).toContain('<table')
+      expect(html).toContain('Path')
+      expect(html).toContain('Purpose')
+    })
+
+    it('renders properly formatted tables', () => {
+      const content = `| Service | Port |
+|---------|------|
+| SSH | 22 |
+| HTTP | 80 |`
+
+      const html = renderToString(<Markdown content={content} />)
+
+      expect(html).toContain('<table')
+      expect(html).toContain('Service')
+      expect(html).toContain('Port')
+      expect(html).toContain('SSH')
+      expect(html).toContain('22')
+    })
+
+    it('handles tables with line numbers (read_file output)', () => {
+      const content = `15: | Path | Purpose |
+16: |------|---------|
+17: | /test | Test desc |`
+
+      const html = renderToString(<Markdown content={content} />)
+
+      expect(html).toContain('<table')
+      expect(html).toContain('Path')
+      expect(html).toContain('Purpose')
+      expect(html).toContain('/test')
+    })
+  })
 })

@@ -170,6 +170,8 @@ export const Markdown = memo(function Markdown({ content, className = '' }: Mark
  * Preprocess markdown to fix common LLM formatting issues:
  * - Unicode bullets (•) → markdown bullets (-)
  * - Numbered items with content on next line (1.\n**text**) → same line (1. **text**)
+ * - Table pipes on separate lines → join with previous line
+ * - Strip line numbers from read_file output (e.g., "15: | Path" → "| Path")
  */
 function preprocessMarkdown(content: string): string {
   // Convert Unicode bullets to markdown list markers
@@ -178,6 +180,13 @@ function preprocessMarkdown(content: string): string {
   // Fix numbered list items where content is on the next line
   // e.g., "1.\n**verifier**" → "1. **verifier**"
   processed = processed.replace(/^(\d+)\.\s*\n(?=\S)/gm, '$1. ')
+
+  // Fix table pipes at start of lines by removing pipe-only lines
+  // This handles broken table formatting where LLM puts | on its own line
+  processed = processed.replace(/^\|\s*$/gm, '')
+
+  // Strip line numbers added by read_file tool (format: "123: content")
+  processed = processed.replace(/^\d+:\s/gm, '')
 
   return processed
 }

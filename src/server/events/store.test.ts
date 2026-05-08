@@ -436,6 +436,44 @@ describe('EventStore', () => {
       expect(received2).toHaveLength(1)
     })
 
+    it('should handle unsubscribe during notification without race condition', async () => {
+      const { iterator: iter1, unsubscribe: unsub1 } = store.subscribe('session-1')
+      const { iterator: iter2, unsubscribe: unsub2 } = store.subscribe('session-1')
+      const received1: StoredEvent[] = []
+      const received2: StoredEvent[] = []
+
+      const collect1 = (async () => {
+        for await (const event of iter1) {
+          received1.push(event)
+          if (received1.length >= 1) break
+        }
+      })()
+
+      const collect2 = (async () => {
+        for await (const event of iter2) {
+          received2.push(event)
+          if (received2.length >= 1) break
+        }
+      })()
+
+      await new Promise((r) => setTimeout(r, 10))
+
+      store.append('session-1', {
+        type: 'message.start',
+        data: { messageId: 'msg-1', role: 'user', content: 'Hello' },
+      })
+
+      await new Promise((r) => setTimeout(r, 10))
+
+      unsub1()
+      unsub2()
+
+      await Promise.all([collect1, collect2])
+
+      expect(received1).toHaveLength(1)
+      expect(received2).toHaveLength(1)
+    })
+
     it('should replay events from a specific seq on subscribe', async () => {
       // Pre-populate events
       store.append('session-1', {
@@ -578,6 +616,24 @@ describe('EventStore', () => {
 
       const events = store.getEvents('session-1')
       expect(events[0]!.data).toEqual(complexData)
+    })
+
+    it('should validate sessionId is non-empty string', () => {
+      expect(() =>
+        store.append('', { type: 'message.start', data: { messageId: 'msg-1', role: 'user', content: 'Hello' } }),
+      ).toThrow('Invalid sessionId: must be a non-empty string')
+    })
+
+    it('should validate event has type property', () => {
+      expect(() =>
+        store.append('session-1', { type: '', data: { messageId: 'msg-1', role: 'user', content: 'Hello' } } as any),
+      ).toThrow('Invalid event: must have a type property')
+    })
+
+    it('should validate event has data object', () => {
+      expect(() => store.append('session-1', { type: 'message.start' } as any)).toThrow(
+        'Invalid event: must have data object',
+      )
     })
   })
 })

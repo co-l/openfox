@@ -3,6 +3,7 @@ import { CodeHighlight, getLanguageFromPath } from './CodeHighlight'
 export { getLanguageFromPath, wrappedCodeStyle, oneDarkTransparent } from './CodeHighlight'
 import type { EditContextRegion } from '@shared/types.js'
 import { ImageModal } from './ImageModal'
+import { Markdown } from './Markdown'
 
 interface DiffViewProps {
   oldString: string
@@ -276,7 +277,25 @@ export const ReadFileView = memo(function ReadFileView({
     return <div className="text-xs text-text-muted italic p-2">Empty file</div>
   }
 
-  // Strip line numbers prefix (format: "1: content") for syntax highlighting
+  // For markdown files, render as markdown instead of syntax-highlighted code
+  if (language === 'markdown') {
+    // Strip line numbers prefix (format: "1: content") for markdown rendering
+    const strippedContent = result
+      .split('\n')
+      .filter((l) => !l.startsWith('\n[') && !l.startsWith('['))
+      .map((l) => l.replace(/^\d+: /, ''))
+      .join('\n')
+
+    return (
+      <div
+        className={`rounded overflow-hidden border border-border ${heightExpanded ? '' : 'max-h-[45vh]'} overflow-y-auto p-2`}
+      >
+        <Markdown content={strippedContent} />
+      </div>
+    )
+  }
+
+  // For other file types, show with syntax highlighting and line numbers
   const lines = result.split('\n')
   const strippedContent = lines
     .filter((l) => !l.startsWith('\n[') && !l.startsWith('['))
