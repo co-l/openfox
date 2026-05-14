@@ -122,7 +122,7 @@ function mergeSessionIntoSummary(sessions: SessionSummary[], session: Session): 
         workdir: session.workdir,
         mode: session.mode,
         phase: session.phase,
-        isRunning: session.isRunning,
+        isRunning: session.isRunning && existingSession.isRunning !== false,
         messageCount: session.messages.length,
         criteriaCount: session.criteria.length,
         criteriaCompleted: session.criteria.filter((criterion) => criterion.status.type === 'passed').length,

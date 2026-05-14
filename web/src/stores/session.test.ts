@@ -658,6 +658,10 @@ describe('useSessionStore session isolation', () => {
       },
     })
 
+    // isRunning: false is preserved — session.running WebSocket event is the only
+    // authority to flip a stopped session back to running. session.state carries
+    // persisted state that may be stale (e.g. server crash), so it cannot overwrite
+    // a known-stopped session.
     expect(useSessionStore.getState().sessions).toEqual([
       {
         id: 'session-1',
@@ -665,7 +669,7 @@ describe('useSessionStore session isolation', () => {
         workdir: '/tmp/project-1',
         mode: 'builder',
         phase: 'build',
-        isRunning: true,
+        isRunning: false,
         createdAt: 'a',
         updatedAt: 'b',
         criteriaCount: 0,
