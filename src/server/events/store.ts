@@ -729,6 +729,11 @@ export function initEventStore(db: Database.Database): EventStore {
   // Reset stale running states from previous server runs.
   // Sessions cannot actually be running when server starts - any session
   // that shows as running was interrupted (crash, restart, etc.).
+  try {
+    db.prepare(`UPDATE sessions SET is_running = 0`).run()
+  } catch {
+    // Column may not exist in test fixtures without full schema
+  }
   resetStaleRunningSessions(eventStoreInstance, db)
 
   // Optimize storage: remove old snapshots and strip bloated promptContext data.

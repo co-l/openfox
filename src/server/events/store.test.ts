@@ -652,12 +652,13 @@ describe('initEventStore', () => {
       CREATE TABLE sessions (
         id TEXT PRIMARY KEY,
         project_id TEXT NOT NULL,
-        workdir TEXT NOT NULL
+        workdir TEXT NOT NULL,
+        is_running INTEGER NOT NULL DEFAULT 0
       )
     `)
 
     // Create a session
-    db.prepare(`INSERT INTO sessions (id, project_id, workdir) VALUES (?, ?, ?)`).run(
+    db.prepare(`INSERT INTO sessions (id, project_id, workdir, is_running) VALUES (?, ?, ?, 1)`).run(
       'session-1',
       'project-1',
       '/tmp/test',
@@ -696,11 +697,12 @@ describe('initEventStore', () => {
       CREATE TABLE sessions (
         id TEXT PRIMARY KEY,
         project_id TEXT NOT NULL,
-        workdir TEXT NOT NULL
+        workdir TEXT NOT NULL,
+        is_running INTEGER NOT NULL DEFAULT 0
       )
     `)
 
-    db.prepare(`INSERT INTO sessions (id, project_id, workdir) VALUES (?, ?, ?)`).run(
+    db.prepare(`INSERT INTO sessions (id, project_id, workdir, is_running) VALUES (?, ?, ?, 1)`).run(
       'session-1',
       'project-1',
       '/tmp/test',
@@ -731,11 +733,12 @@ describe('initEventStore', () => {
       CREATE TABLE sessions (
         id TEXT PRIMARY KEY,
         project_id TEXT NOT NULL,
-        workdir TEXT NOT NULL
+        workdir TEXT NOT NULL,
+        is_running INTEGER NOT NULL DEFAULT 0
       )
     `)
 
-    db.prepare(`INSERT INTO sessions (id, project_id, workdir) VALUES (?, ?, ?)`).run(
+    db.prepare(`INSERT INTO sessions (id, project_id, workdir, is_running) VALUES (?, ?, ?, 0)`).run(
       'session-1',
       'project-1',
       '/tmp/test',
@@ -754,6 +757,38 @@ describe('initEventStore', () => {
     // Should NOT have added any new events
     const eventsAfterRestart = restartedStore.getEvents('session-1')
     expect(eventsAfterRestart.length).toBe(eventsBeforeRestart.length)
+
+    db.close()
+  })
+
+  it('should clear is_running in DB on startup regardless of prior state', () => {
+    const db = new Database(':memory:')
+
+    db.exec(`
+      CREATE TABLE sessions (
+        id TEXT PRIMARY KEY,
+        project_id TEXT NOT NULL,
+        workdir TEXT NOT NULL,
+        is_running INTEGER NOT NULL DEFAULT 1
+      )
+    `)
+
+    // Insert session explicitly marked as running in DB
+    db.prepare(`INSERT INTO sessions (id, project_id, workdir, is_running) VALUES (?, ?, ?, 1)`).run(
+      'session-stale',
+      'project-1',
+      '/tmp/test',
+    )
+
+    // No running.changed events at all (crash happened mid-run, before first event)
+    // Init the event store (simulates server startup)
+    initEventStore(db)
+
+    // DB should have is_running cleared
+    const row = db.prepare(`SELECT is_running FROM sessions WHERE id = ?`).get('session-stale') as {
+      is_running: number
+    }
+    expect(row.is_running).toBe(0)
 
     db.close()
   })
