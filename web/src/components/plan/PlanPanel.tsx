@@ -15,6 +15,7 @@ import { AskUserDialog } from '../shared/AskUserDialog'
 import { ConnectionStatusBar } from '../shared/ConnectionStatusBar'
 import { AttachmentPreview } from '../shared/AttachmentPreview.js'
 import { PromptHistoryList } from '../shared/PromptHistory.js'
+import { RunningIndicator } from '../shared/RunningIndicator'
 import { Markdown } from '../shared/Markdown.js'
 import { CloseButton } from '../shared/CloseButton'
 import { SearchIcon, ChevronDownIcon, StopIcon } from '../shared/icons'
@@ -413,6 +414,11 @@ export function PlanPanel({
         />
 
         <form onSubmit={handleSubmit} className="relative p-2 md:p-4 bg-secondary">
+          {isRunning && (
+            <div className="absolute -top-8 left-2 md:left-4 z-10">
+              <RunningIndicator />
+            </div>
+          )}
           <button
             type="button"
             className="absolute -top-8 right-12 md:right-16 text-sm text-text-muted hover:text-text-primary z-10 flex items-center gap-1.5"

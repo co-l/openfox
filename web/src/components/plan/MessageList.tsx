@@ -6,7 +6,6 @@ import { ChatMessage } from './ChatMessage'
 import { AssistantMessage } from './AssistantMessage'
 import { SubAgentContainer } from './SubAgentContainer'
 import { CriteriaGroupDisplay } from '../shared/CriteriaGroupDisplay'
-import { RunningIndicator } from '../shared/RunningIndicator'
 import { CloseButton } from '../shared/CloseButton'
 import { buildPromptContextByUserMessageId } from './prompt-context-linking.js'
 import type { DisplayItem } from './groupMessages.js'
@@ -169,8 +168,6 @@ export const MessageList = memo(function MessageList({
             })}
           </div>
         )}
-
-        {isRunning && <RunningIndicator />}
       </div>
     </div>
   )
