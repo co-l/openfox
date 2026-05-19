@@ -12,6 +12,7 @@ export const SETTINGS_KEYS = {
   DISPLAY_SHOW_STATS: 'display.showStats',
   DISPLAY_SHOW_AGENT_DEFINITIONS: 'display.showAgentDefinitions',
   DISPLAY_SHOW_WORKFLOW_BARS: 'display.showWorkflowBars',
+  DISPLAY_SHOW_SYNTAX_HIGHLIGHTING: 'display.showSyntaxHighlighting',
   DISPLAY_THEME: 'display.theme',
   DISPLAY_USER_PRESETS: 'display.userPresets',
 } as const
@@ -22,6 +23,7 @@ export const SETTINGS_DEFAULTS: Record<string, string> = {
   [SETTINGS_KEYS.DISPLAY_SHOW_STATS]: 'true',
   [SETTINGS_KEYS.DISPLAY_SHOW_AGENT_DEFINITIONS]: 'true',
   [SETTINGS_KEYS.DISPLAY_SHOW_WORKFLOW_BARS]: 'true',
+  [SETTINGS_KEYS.DISPLAY_SHOW_SYNTAX_HIGHLIGHTING]: 'true',
   [SETTINGS_KEYS.DISPLAY_THEME]: JSON.stringify({ preset: 'dark' }),
 }
 

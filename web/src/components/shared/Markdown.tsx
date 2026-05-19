@@ -2,6 +2,7 @@ import { memo, useMemo } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { SyntaxHighlighter, oneDark } from '../../lib/syntax-highlighter'
+import { useDisplaySettings } from '../../stores/settings'
 import { useCopyToClipboard } from '../../hooks/useCopyToClipboard'
 import { CheckIcon, CopyIcon } from './icons'
 
@@ -11,7 +12,7 @@ interface MarkdownProps {
   muted?: boolean
 }
 
-function createMarkdownComponents(muted: boolean) {
+function createMarkdownComponents(muted: boolean, showSyntaxHighlighting: boolean) {
   const headingColor = muted ? 'text-text-muted' : 'text-sky-400'
   const strongColor = muted ? 'text-text-secondary' : 'text-amber-400'
 
@@ -32,6 +33,33 @@ function createMarkdownComponents(muted: boolean) {
       const language = match?.[1] || 'text'
       const codeString = String(children).replace(/\n$/, '')
       const { copied, copy } = useCopyToClipboard()
+
+      if (!showSyntaxHighlighting) {
+        return (
+          <div className="relative group my-1.5 rounded overflow-hidden">
+            <div className="absolute bottom-0 right-0 flex items-center gap-2 px-2 py-1 text-xs text-text-muted/70 bg-bg-tertiary/60 rounded-tl rounded-tr z-10">
+              <span>{language}</span>
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.preventDefault()
+                  e.stopPropagation()
+                  copy(codeString)
+                }}
+                className="opacity-0 group-hover:opacity-100 transition-opacity hover:text-text-primary p-0.5"
+                title="Copy code"
+              >
+                {copied ? <CheckIcon /> : <CopyIcon />}
+              </button>
+            </div>
+            <div className="overflow-x-auto">
+              <pre className="my-0 px-4 py-3 overflow-x-auto font-mono text-sm whitespace-pre-wrap break-word">
+                <code className="language-{language}">{codeString}</code>
+              </pre>
+            </div>
+          </div>
+        )
+      }
 
       return (
         <div className="relative group my-1.5 rounded overflow-hidden">
@@ -169,6 +197,8 @@ function createMarkdownComponents(muted: boolean) {
 
 // Memoize to prevent re-renders during streaming from causing flicker
 export const Markdown = memo(function Markdown({ content, className = '', muted = false }: MarkdownProps) {
+  const { showSyntaxHighlighting } = useDisplaySettings()
+
   // Preprocess markdown to fix common LLM formatting quirks
   const processedContent = useMemo(() => {
     let processed = preprocessMarkdown(content)
@@ -176,7 +206,10 @@ export const Markdown = memo(function Markdown({ content, className = '', muted 
     return processed
   }, [content])
 
-  const components = useMemo(() => createMarkdownComponents(muted), [muted])
+  const components = useMemo(
+    () => createMarkdownComponents(muted, showSyntaxHighlighting),
+    [muted, showSyntaxHighlighting],
+  )
 
   return (
     <div className={`markdown-content [&_li>p]:inline ${className}`}>
