@@ -81,7 +81,7 @@ export function SummaryDisplay({
           <CriteriaProgressSummary criteria={session?.criteria ?? []} />
         </div>
 
-        {/* Red square - fills available space with scrollable content */}
+        {/* History sidebar */}
         {displayItems && (
           <div className="min-h-[100px] min-h-0 mt-4 flex-1 flex flex-col">
             <div className="pb-2 flex-shrink-0">
