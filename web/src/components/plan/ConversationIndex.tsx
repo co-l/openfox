@@ -63,11 +63,6 @@ export function ConversationIndex({ displayItems, activeIndex, onNavigate }: Con
 
         // Skip if element or container has no valid dimensions
         if (elementRect.height === 0 || containerRect.height === 0) {
-          console.log('[ConversationIndex] Skipping scroll - invalid dimensions:', {
-            index,
-            elementHeight: elementRect.height,
-            containerHeight: containerRect.height,
-          })
           return
         }
 
@@ -84,16 +79,6 @@ export function ConversationIndex({ displayItems, activeIndex, onNavigate }: Con
         const maxScroll = container.scrollHeight - containerHeight
         const clampedScrollTop = Math.max(0, Math.min(targetScrollTop, maxScroll))
 
-        console.log('[ConversationIndex] scrollToIndex:', {
-          index,
-          behavior,
-          elementTopInContainer,
-          elementHeight,
-          containerHeight,
-          targetScrollTop,
-          maxScroll,
-          clampedScrollTop,
-        })
         container.scrollTo({ top: clampedScrollTop, behavior })
       }
     },

@@ -239,18 +239,6 @@ export function PlanPanel({
       const maxScroll = container.scrollHeight - container.clientHeight
       const isAtBottom = container.scrollTop >= maxScroll - 10
 
-      // Debug logging
-      console.log('[PlanPanel] handleScroll:', {
-        scrollTop: container.scrollTop,
-        scrollHeight: container.scrollHeight,
-        clientHeight: container.clientHeight,
-        isAtBottom,
-        closestIndex,
-        closestDistance,
-        lastRenderedIndex,
-        activeIndex,
-      })
-
       if (isAtBottom && lastRenderedIndex !== -1) {
         setActiveIndex(lastRenderedIndex)
         lastActiveIndexUpdateRef.current = now
