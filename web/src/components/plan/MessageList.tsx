@@ -55,7 +55,7 @@ export const MessageList = memo(function MessageList({
         {displayItems.map((item, index) => {
           if (item.type === 'context-divider') {
             return (
-              <div key={index} className="flex items-center gap-2 feed-item px-2 md:px-4">
+              <div key={index} data-item-index={index} className="flex items-center gap-2 feed-item px-2 md:px-4">
                 <div className="flex-1 border-t border-border" />
                 <span className="text-[10px] text-text-muted font-medium px-2">Earlier context summarized</span>
                 <div className="flex-1 border-t border-border" />
@@ -66,7 +66,7 @@ export const MessageList = memo(function MessageList({
           if (item.type === 'subagent') {
             const groupIsStreaming = item.messages.some((m) => m.isStreaming)
             return (
-              <div key={index} className="px-2 md:px-4">
+              <div key={index} data-item-index={index} className="px-2 md:px-4">
                 <SubAgentContainer
                   messages={item.messages}
                   subAgentType={item.subAgentType}
@@ -79,7 +79,7 @@ export const MessageList = memo(function MessageList({
 
           if (item.type === 'criteria-batch') {
             return (
-              <div key={index} className="feed-item px-2 md:px-4">
+              <div key={index} data-item-index={index} className="feed-item px-2 md:px-4">
                 <CriteriaGroupDisplay toolCalls={item.toolCalls} criteria={criteria} />
               </div>
             )
@@ -88,7 +88,7 @@ export const MessageList = memo(function MessageList({
           const message = item.message
           if (message.role === 'assistant') {
             return (
-              <div key={index} className="px-2 md:px-4">
+              <div key={index} data-item-index={index} className="px-2 md:px-4">
                 <AssistantMessage
                   message={message}
                   showStats={showStats}
@@ -108,7 +108,7 @@ export const MessageList = memo(function MessageList({
           }
 
           return (
-            <div key={index} className="px-2 md:px-4">
+            <div key={index} data-item-index={index} className="px-2 md:px-4">
               <div
                 data-message-id={message.id}
                 className={highlightedMessageId === message.id ? 'rounded animate-highlight-fade' : undefined}
