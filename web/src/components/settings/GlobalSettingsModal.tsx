@@ -153,6 +153,11 @@ function DisplayTab() {
       label: 'Show workflow bars',
       description: 'Display workflow start and end markers',
     },
+    {
+      key: SETTINGS_KEYS.DISPLAY_SHOW_SYNTAX_HIGHLIGHTING,
+      label: 'Show syntax highlighting',
+      description: 'Nicer formatting, but very slow - does not affect red/green diff coloring',
+    },
   ] as const
 
   const localValues = Object.fromEntries(toggles.map((t) => [t.key, settings[t.key] ?? 'true'])) as Record<

@@ -10,6 +10,7 @@ export const SETTINGS_KEYS = {
   DISPLAY_SHOW_STATS: 'display.showStats',
   DISPLAY_SHOW_AGENT_DEFINITIONS: 'display.showAgentDefinitions',
   DISPLAY_SHOW_WORKFLOW_BARS: 'display.showWorkflowBars',
+  DISPLAY_SHOW_SYNTAX_HIGHLIGHTING: 'display.showSyntaxHighlighting',
   DISPLAY_THEME: 'display.theme',
   DISPLAY_USER_PRESETS: 'display.userPresets',
   LLM_DISABLE_XML_PROTECTION: 'llm.disableXmlProtection',
@@ -42,6 +43,7 @@ export const DISPLAY_SETTINGS_KEYS = [
   SETTINGS_KEYS.DISPLAY_SHOW_STATS,
   SETTINGS_KEYS.DISPLAY_SHOW_AGENT_DEFINITIONS,
   SETTINGS_KEYS.DISPLAY_SHOW_WORKFLOW_BARS,
+  SETTINGS_KEYS.DISPLAY_SHOW_SYNTAX_HIGHLIGHTING,
 ] as const
 
 export function useDisplaySettings() {
@@ -54,6 +56,8 @@ export function useDisplaySettings() {
       useSettingsStore((state) => state.settings[SETTINGS_KEYS.DISPLAY_SHOW_AGENT_DEFINITIONS] ?? 'true') === 'true',
     showWorkflowBars:
       useSettingsStore((state) => state.settings[SETTINGS_KEYS.DISPLAY_SHOW_WORKFLOW_BARS] ?? 'true') === 'true',
+    showSyntaxHighlighting:
+      useSettingsStore((state) => state.settings[SETTINGS_KEYS.DISPLAY_SHOW_SYNTAX_HIGHLIGHTING] ?? 'true') === 'true',
   }
 }
 

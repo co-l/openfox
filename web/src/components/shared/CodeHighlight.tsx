@@ -1,5 +1,6 @@
 import { memo } from 'react'
 import { SyntaxHighlighter, oneDark } from '../../lib/syntax-highlighter'
+import { useDisplaySettings } from '../../stores/settings'
 
 // Custom oneDark theme with transparent backgrounds and word wrapping
 export const oneDarkTransparent: { [key: string]: React.CSSProperties } = {
@@ -122,8 +123,20 @@ interface CodeHighlightProps {
 }
 
 export const CodeHighlight = memo(function CodeHighlight({ code, language, variant }: CodeHighlightProps) {
+  const { showSyntaxHighlighting } = useDisplaySettings()
   const preTag = variant === 'inline' ? 'span' : variant === 'block-nowrap' ? 'div' : 'pre'
   const style = variant === 'inline' ? inlineCodeStyle : variant === 'block-nowrap' ? codeStyle : wrappedCodeStyle
+
+  if (!showSyntaxHighlighting) {
+    const Tag = preTag
+    return (
+      <Tag style={style} className="language-">
+        <code style={style} className="language-">
+          {code}
+        </code>
+      </Tag>
+    )
+  }
 
   return (
     <SyntaxHighlighter style={oneDarkTransparent} language={language} PreTag={preTag} customStyle={style}>
