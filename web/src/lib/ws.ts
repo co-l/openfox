@@ -62,6 +62,14 @@ class WebSocketClient {
       return this.connectingPromise
     }
 
+    this.lastCloseCode = 0
+    this.isReconnecting = false
+
+    if (this.connectingPromise && this.ws?.readyState === WebSocket.CONNECTING) {
+      console.warn('[WS CLIENT] Connection already in progress, returning existing promise')
+      return this.connectingPromise
+    }
+
     this.connectingPromise = new Promise((resolve, reject) => {
       try {
         const url = this.getUrl()

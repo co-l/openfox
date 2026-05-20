@@ -45,6 +45,7 @@ export interface Session {
   executionState: ExecutionState | null
   metadata: SessionMetadata
   dangerLevel?: DangerLevel // Controls path confirmation bypass
+  messageCount?: number // Cached message count for efficient sidebar display (optional, populated on load)
 }
 
 // ============================================================================

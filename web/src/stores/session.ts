@@ -54,6 +54,12 @@ let wsUnsubscribe: (() => void) | null = null
 // Track which messageIds have already triggered the new_message sound
 const triggeredNewMessageSound = new Set<string>()
 
+// Track which sessions are currently being loaded to prevent duplicate API calls
+const loadingSessionIds = new Set<string>()
+
+// Track which projects are currently being listed to prevent duplicate API calls
+const listingSessionsForProject = new Map<string, Promise<void>>()
+
 // --- Streaming update batching ---
 // Buffer high-frequency streaming events and flush once per animation frame
 // to reduce renders from 50+/sec to ~16/sec during fast streaming.
@@ -115,6 +121,8 @@ function removeUnreadSessionId(unreadSessionIds: string[], sessionId: string): s
 
 function mergeSessionIntoSummary(sessions: SessionSummary[], session: Session): SessionSummary[] {
   const existingSession = sessions.find((candidate) => candidate.id === session.id)
+  // Use messageCount from session if available (corrected from EventStore), otherwise calculate from messages
+  const messageCount = session.messageCount ?? session.messages.length
   const nextSummary: SessionSummary = existingSession
     ? {
         ...existingSession,
@@ -123,7 +131,7 @@ function mergeSessionIntoSummary(sessions: SessionSummary[], session: Session): 
         mode: session.mode,
         phase: session.phase,
         isRunning: session.isRunning && existingSession.isRunning !== false,
-        messageCount: session.messages.length,
+        messageCount,
         criteriaCount: session.criteria.length,
         criteriaCompleted: session.criteria.filter((criterion) => criterion.status.type === 'passed').length,
       }
@@ -138,7 +146,7 @@ function mergeSessionIntoSummary(sessions: SessionSummary[], session: Session): 
         updatedAt: '',
         criteriaCount: session.criteria.length,
         criteriaCompleted: session.criteria.filter((criterion) => criterion.status.type === 'passed').length,
-        messageCount: session.messages.length,
+        messageCount,
       }
 
   return existingSession
@@ -634,6 +642,13 @@ export const useSessionStore = create<SessionState>((set, get) => {
     },
 
     loadSession: async (sessionId) => {
+      // Prevent duplicate loads for the same session
+      if (loadingSessionIds.has(sessionId)) {
+        return
+      }
+
+      loadingSessionIds.add(sessionId)
+
       try {
         const currentSession = get().currentSession
 
@@ -665,12 +680,12 @@ export const useSessionStore = create<SessionState>((set, get) => {
         const data = await res.json()
         set({
           currentSession: data.session,
-          messages: data.messages ?? [],
+          messages: (data.messages as Message[] | undefined) ?? [],
           contextState: data.contextState,
-          queuedMessages: data.queueState ?? [],
+          queuedMessages: (data.queueState as QueuedMessage[] | undefined) ?? [],
         })
 
-        // Tell WS server which session is active (required for chat.send routing)
+        // Tell WS server which session is active for event routing (no data returned)
         wsClient.send('session.load', { sessionId })
 
         // Fetch background processes for this session
@@ -685,26 +700,43 @@ export const useSessionStore = create<SessionState>((set, get) => {
         }
       } catch {
         // ignore
+      } finally {
+        loadingSessionIds.delete(sessionId)
       }
     },
 
     listSessions: async (projectId?: string, limit = 20) => {
-      try {
-        const params = new URLSearchParams()
-        params.set('limit', String(limit))
-        if (projectId) {
-          params.set('projectId', projectId)
-        }
-        const res = await authFetch(`/api/sessions?${params.toString()}`)
-        const data = await res.json()
-        const incoming = (data.sessions ?? []) as SessionSummary[]
-        set((state) => ({
-          sessions: mergeSessionList(incoming, state.sessions, state.currentSession),
-          sessionsHasMore: projectId ? (data.hasMore ?? false) : true,
-        }))
-      } catch {
-        // ignore
+      const cacheKey = projectId ?? 'global'
+
+      // Prevent duplicate list calls for the same project
+      if (listingSessionsForProject.has(cacheKey)) {
+        console.warn('[STORE] listSessions skipped (already listing):', cacheKey)
+        return listingSessionsForProject.get(cacheKey)
       }
+
+      const listPromise = (async () => {
+        try {
+          const params = new URLSearchParams()
+          params.set('limit', String(limit))
+          if (projectId) {
+            params.set('projectId', projectId)
+          }
+          const res = await authFetch(`/api/sessions?${params.toString()}`)
+          const data = await res.json()
+          const incoming = (data.sessions ?? []) as SessionSummary[]
+          set((state) => ({
+            sessions: mergeSessionList(incoming, state.sessions, state.currentSession),
+            sessionsHasMore: projectId ? (data.hasMore ?? false) : true,
+          }))
+        } catch {
+          // ignore
+        } finally {
+          listingSessionsForProject.delete(cacheKey)
+        }
+      })()
+
+      listingSessionsForProject.set(cacheKey, listPromise)
+      return listPromise
     },
 
     loadMoreSessions: async (projectId) => {
@@ -1179,7 +1211,7 @@ export const useSessionStore = create<SessionState>((set, get) => {
           const activeSessionId = get().currentSession?.id
           const isBackgroundSession = eventSessionId && eventSessionId !== activeSessionId
 
-          // Always update sidebar running status
+          // Always update sidebar running status (for background sessions too)
           set((state) => ({
             sessions: state.sessions.map((s) => (s.id === eventSessionId ? { ...s, isRunning: payload.isRunning } : s)),
           }))
@@ -1209,8 +1241,24 @@ export const useSessionStore = create<SessionState>((set, get) => {
             if (state.messages.some((m) => m.id === payload.message.id)) {
               return state
             }
+
+            // Only count user messages
+            const isUserMessage = payload.message.role === 'user'
+
+            console.warn('[Message Count] chat.message received:', {
+              messageId: payload.message.id,
+              role: payload.message.role,
+              isUserMessage,
+              willCount: isUserMessage,
+              currentCount: state.sessions.find((s) => s.id === message.sessionId)?.messageCount,
+            })
+
             return {
               messages: [...state.messages, payload.message],
+              // Update session message count in sidebar (only for user messages)
+              sessions: state.sessions.map((s) =>
+                s.id === message.sessionId && isUserMessage ? { ...s, messageCount: s.messageCount + 1 } : s,
+              ),
               // Track streaming message if it's marked as streaming
               streamingMessageId: payload.message.isStreaming ? payload.message.id : state.streamingMessageId,
               // Initialize separate streaming message for independent updates

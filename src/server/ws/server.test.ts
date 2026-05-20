@@ -685,21 +685,17 @@ describe('createWebSocketServer', () => {
 
     harness.send({ id: 'sl-ok', type: 'session.load', payload: { sessionId: 'session-1' } })
     expect(await harness.nextMessage((message) => message.id === 'sl-ok')).toMatchObject({
-      type: 'session.state',
-      payload: { messages: [{ id: 'assistant-1', role: 'assistant', content: 'Hello' }] },
-    })
-    expect(await harness.nextMessage((message) => message.type === 'context.state')).toMatchObject({
-      type: 'context.state',
+      type: 'ack',
+      payload: { sessionId: 'session-1' },
     })
 
     // With pure event-sourcing, empty events = empty messages (no DB fallback)
     eventStore.getEvents.mockReturnValueOnce([])
     harness.send({ id: 'sl-db', type: 'session.load', payload: { sessionId: 'session-1' } })
     expect(await harness.nextMessage((message) => message.id === 'sl-db')).toMatchObject({
-      type: 'session.state',
-      payload: { messages: [] },
+      type: 'ack',
+      payload: { sessionId: 'session-1' },
     })
-    await harness.nextMessage((message) => message.type === 'context.state')
 
     harness.send({ id: 'slist-deprecated', type: 'session.list', payload: {} })
     expect(await harness.nextMessage((message) => message.id === 'slist-deprecated')).toMatchObject({
@@ -770,7 +766,6 @@ describe('createWebSocketServer', () => {
 
     harness.send({ id: 'sl-ok', type: 'session.load', payload: { sessionId: 'session-1' } })
     await harness.nextMessage((message) => message.id === 'sl-ok')
-    await harness.nextMessage((message) => message.type === 'context.state')
 
     harness.send({ id: 'chat-bad', type: 'chat.send', payload: {} })
     expect(await harness.nextMessage((message) => message.id === 'chat-bad')).toMatchObject({
@@ -861,7 +856,6 @@ describe('createWebSocketServer', () => {
 
     harness.send({ id: 'sl-ok', type: 'session.load', payload: { sessionId: 'session-1' } })
     await harness.nextMessage((message) => message.id === 'sl-ok')
-    await harness.nextMessage((message) => message.type === 'context.state')
 
     harness.send({ id: 'chat-ok', type: 'chat.send', payload: { content: 'Please continue' } })
     expect(await harness.nextMessage((message) => message.id === 'chat-ok')).toMatchObject({
@@ -1338,20 +1332,11 @@ describe('createWebSocketServer', () => {
 
     harness.send({ id: 'load-session-1', type: 'session.load', payload: { sessionId: 'session-1' } })
     await harness.nextMessage((message) => message.id === 'load-session-1')
-    await harness.nextMessage((message) => message.type === 'context.state' && message.sessionId === 'session-1')
 
     harness.send({ id: 'load-session-2', type: 'session.load', payload: { sessionId: 'session-2' } })
     expect(await harness.nextMessage((message) => message.id === 'load-session-2')).toMatchObject({
-      type: 'session.state',
-      sessionId: 'session-2',
-      payload: { session: { id: 'session-2' } },
-    })
-    expect(
-      await harness.nextMessage((message) => message.type === 'context.state' && message.sessionId === 'session-2'),
-    ).toMatchObject({
-      type: 'context.state',
-      sessionId: 'session-2',
-      payload: { context: { currentTokens: 22 } },
+      type: 'ack',
+      payload: { sessionId: 'session-2' },
     })
 
     harness.eventStore.append('session-1', {

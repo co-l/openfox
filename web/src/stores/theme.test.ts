@@ -1,6 +1,10 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import { THEME_TOKENS, THEME_PRESETS, migrateLegacyThemeSetting, getPresetFromJson, useThemeStore } from './theme'
 
+beforeEach(() => {
+  localStorage.clear()
+})
+
 describe('Theme System', () => {
   describe('THEME_TOKENS', () => {
     it('has all required categories', () => {

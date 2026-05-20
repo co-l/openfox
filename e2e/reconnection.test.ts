@@ -85,17 +85,16 @@ describe('Session Reconnection', () => {
       const client2 = await createTestClient({ url: server.wsUrl })
 
       try {
-        // Load the session
-        const response = await client2.send('session.load', { sessionId })
-
-        expect(response.type).toBe('session.state')
+        // Load the session (triggers REST fetch internally)
+        await client2.send('session.load', { sessionId })
 
         const session = client2.getSession()!
         expect(session.id).toBe(sessionId)
         expect(session.projectId).toBe(projectId)
 
-        // Should receive messages from previous interaction
-        const payload = response.payload as { session: SessionType; messages: MessageType[] }
+        // Wait for session.state event (triggered by REST fetch)
+        const stateEvent = await client2.waitFor('session.state', undefined, 5000)
+        const payload = stateEvent.payload as { session: SessionType; messages: MessageType[] }
         expect(payload.messages.length).toBeGreaterThan(0)
 
         // Should include the user message we sent
@@ -238,9 +237,12 @@ describe('Session Reconnection', () => {
       const client2 = await createTestClient({ url: server.wsUrl })
 
       try {
-        const response = await client2.send('session.load', { sessionId })
+        // Load session (triggers REST fetch internally)
+        await client2.send('session.load', { sessionId })
 
-        const payload = response.payload as { messages: MessageType[] }
+        // Wait for session.state event
+        const stateEvent = await client2.waitFor('session.state', undefined, 5000)
+        const payload = stateEvent.payload as { messages: MessageType[] }
 
         // Find assistant message with tool calls
         const assistantMessage = payload.messages.find(

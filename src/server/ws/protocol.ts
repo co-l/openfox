@@ -473,29 +473,9 @@ export function storedEventToServerMessage(event: StoredEvent): ServerMessage | 
     }
 
     case 'session.initialized': {
-      const data = event.data as Extract<TurnEvent, { type: 'session.initialized' }>['data']
-      // Build minimal session object from initialization data
-      const session: Session = {
-        id: (event as StoredEvent).sessionId,
-        projectId: data.projectId,
-        workdir: data.workdir,
-        mode: 'planner',
-        phase: 'plan',
-        isRunning: false,
-        criteria: [],
-        summary: data.title || 'Untitled Session',
-        metadata: {
-          totalTokensUsed: 0,
-          totalToolCalls: 0,
-          iterationCount: 0,
-        },
-        createdAt: new Date(event.timestamp).toISOString(),
-        updatedAt: new Date(event.timestamp).toISOString(),
-        messages: [],
-        contextWindows: [],
-        executionState: null,
-      }
-      return createSessionStateMessage(session, [], [])
+      // Skip - session data should be loaded via REST API, not broadcast via WebSocket
+      // This prevents duplicate potentially multi-MB session.state messages on connection
+      return null
     }
 
     case 'mode.changed': {
@@ -520,8 +500,8 @@ export function storedEventToServerMessage(event: StoredEvent): ServerMessage | 
     }
 
     case 'context.state': {
-      const data = event.data as ContextState & { subAgentId?: string }
-      return createContextStateMessage(data, data.subAgentId)
+      const data = event.data as Extract<TurnEvent, { type: 'context.state' }>['data']
+      return createContextStateMessage(data)
     }
 
     case 'session.name_generated': {
