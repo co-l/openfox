@@ -1,7 +1,8 @@
 import { WebSocketServer, WebSocket } from 'ws'
 import { spawn } from 'node:child_process'
 import type { Server } from 'node:http'
-import type { ServerMessage, GitDiffFile } from '../../shared/protocol.js'
+import type { ServerMessage } from '../../shared/protocol.js'
+import type { GitDiffFile } from '../../shared/protocol.js'
 import { createServerMessage } from '../../shared/protocol.js'
 import { handleTerminalMessage, unsubscribeAllFromTerminal } from './terminal.js'
 import type { Config } from '../config.js'
@@ -792,9 +793,10 @@ async function handleClientMessage(
       return
 
     // =========================================================================
-    // Session Load - Required for WS subscription mechanism
-    // Note: This is kept ONLY to set activeSessionId for event routing.
-    // For actual data loading, use REST API: GET /api/sessions/:id
+    // Session Load - Sets active session for event routing
+    // Note: Data loading is done via REST API: GET /api/sessions/:id
+    // This WebSocket message is ONLY to tell the server which session is active
+    // so it can route real-time events correctly.
     // =========================================================================
     case 'session.load': {
       if (!isSessionLoadPayload(message.payload)) {
@@ -808,40 +810,28 @@ async function handleClientMessage(
         return
       }
 
-      // Tab model: set active session and subscribe if not already subscribed
+      // Tab model: set active session for event routing
       client.activeSessionId = session.id
       client.activeWorkdir = session.workdir
-      if (session.workdir) moduleStartGitPolling(session.workdir)
-      ensureEventStoreSubscription(session.id)
 
-      // Fetch messages from EventStore
-      const eventStore = getEventStore()
-      const events = eventStore.getEvents(session.id)
-      const messages = buildMessagesFromStoredEvents(events)
-      const pendingConfirmations = foldPendingConfirmations(events)
-      logger.debug('Loaded messages from EventStore', {
-        sessionId: session.id,
-        eventCount: events.length,
-        messageCount: messages.length,
-        pendingConfirmationsCount: pendingConfirmations.length,
-      })
-
-      const initialGitStatus = (async () => {
-        if (!session.workdir) return undefined
+      // Send initial git status immediately
+      if (session.workdir) {
         const branch = await moduleGitBranch(session.workdir)
         const { files } = await moduleGitDiff(session.workdir)
-        return { branch, diff: { files } }
-      })()
-      const gitStatusPayload = await initialGitStatus
+        const msg = createGitStatusMessage(branch, files)
+        send(msg)
+        if (branch) moduleStartGitPolling(session.workdir)
+      }
 
-      sendForSession(
-        session.id,
-        createSessionStateMessage(session, messages, pendingConfirmations, gitStatusPayload, message.id),
-      )
+      ensureEventStoreSubscription(session.id)
 
-      // Send context state
+      // Send context.state immediately after session.load
       const contextState = sessionManager.getContextState(session.id)
-      sendForSession(session.id, createContextStateMessage(contextState))
+      send(createContextStateMessage(contextState))
+
+      // Acknowledge without sending full session data
+      // Frontend should use REST API to fetch session data
+      send({ type: 'ack', payload: { sessionId: session.id }, id: message.id })
       break
     }
 

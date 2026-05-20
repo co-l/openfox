@@ -10,6 +10,7 @@ export default defineConfig({
   test: {
     include: ['src/**/*.test.ts', 'web/src/**/*.test.ts', 'web/src/**/*.test.tsx'],
     exclude: ['e2e/**', 'node_modules/**'],
+    setupFiles: ['vitest-localstorage-mock'],
     env: {
       NODE_OPTIONS: '--localstorage-file=/tmp/openfox-test-localstorage.json',
     },

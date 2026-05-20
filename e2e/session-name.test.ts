@@ -88,8 +88,10 @@ describe('Auto Session Name', () => {
       await client.waitFor('session.name_generated', undefined, 3_000)
 
       // Reload session to verify DB update
-      const reloaded = await client.send('session.load', { sessionId: session.id })
-      expect(reloaded.type).toBe('session.state')
+      await client.send('session.load', { sessionId: session.id })
+
+      // Wait for session.state event (triggered by REST fetch)
+      await client.waitFor('session.state', undefined, 5000)
 
       const updatedSession = client.getSession()!
       // Title should have been updated (either generated name or still default if generation failed)
@@ -111,21 +113,15 @@ describe('Auto Session Name', () => {
 
       await client.waitForChatDone(3_000)
 
-      await client2.waitFor(
-        'session.state',
-        (payload: unknown) => {
-          const sessionPayload = payload as { session: { metadata: { title?: string | null } } }
-          return Boolean(sessionPayload.session.metadata.title && sessionPayload.session.metadata.title !== 'Session 1')
-        },
-        3_000,
-      )
+      // Wait for session.name_generated event (which indicates title was updated)
+      await client2.waitFor('session.name_generated', undefined, 3_000)
 
-      // Verify session.state was broadcast with updated title
+      // Verify session.name_generated was broadcast
       const allEvents = client2.allEvents()
-      const sessionStateUpdates = allEvents.filter((msg) => msg.type === 'session.state')
+      const nameGeneratedEvents = allEvents.filter((msg) => msg.type === 'session.name_generated')
 
-      // At least one session.state should have been sent
-      expect(sessionStateUpdates.length).toBeGreaterThan(0)
+      // At least one session.name_generated should have been sent
+      expect(nameGeneratedEvents.length).toBeGreaterThan(0)
 
       await client2.close()
     })

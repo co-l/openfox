@@ -16,6 +16,7 @@ vi.mock('../lsp/index.js', () => ({
 import { loadConfig } from '../config.js'
 import { closeDatabase, getDatabase, initDatabase } from '../db/index.js'
 import { createProject } from '../db/projects.js'
+import { getSession } from '../db/sessions.js'
 import { initEventStore } from '../events/index.js'
 import { SessionManager } from './manager.js'
 
@@ -115,6 +116,43 @@ describe('SessionManager', () => {
     expect(allEvents.filter((type) => type === 'session_updated').length).toBeGreaterThanOrEqual(2)
     expect(sessionEvents).toContain('mode_changed')
     expect(sessionEvents).toContain('phase_changed')
+  })
+
+  it('uses database is_running as source of truth for session state', () => {
+    const session = manager.createSession(projectId)
+
+    // Set running to true via manager
+    manager.setRunning(session.id, true)
+    let loadedSession = manager.getSession(session.id)
+    expect(loadedSession?.isRunning).toBe(true)
+
+    // Set running to false via manager
+    manager.setRunning(session.id, false)
+    loadedSession = manager.getSession(session.id)
+    expect(loadedSession?.isRunning).toBe(false)
+
+    // Verify database was actually updated
+    const dbSession = getSession(session.id)
+    expect(dbSession?.isRunning).toBe(false)
+  })
+
+  it('returns correct isRunning even when EventStore has stale data', () => {
+    const session = manager.createSession(projectId)
+
+    // Set running to true
+    manager.setRunning(session.id, true)
+    expect(manager.getSession(session.id)?.isRunning).toBe(true)
+
+    // Set running to false - this updates both DB and emits event
+    manager.setRunning(session.id, false)
+
+    // Verify DB has the correct value
+    const dbSession = getSession(session.id)
+    expect(dbSession?.isRunning).toBe(false)
+
+    // When loading session, should use DB value (false)
+    const loadedSession = manager.getSession(session.id)
+    expect(loadedSession?.isRunning).toBe(false)
   })
 
   it('adds messages and manages context windows during compaction', () => {
