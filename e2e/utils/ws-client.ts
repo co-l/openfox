@@ -412,6 +412,74 @@ export async function createTestClient(options: TestClientOptions = {}): Promise
         }).then(() => ({ type: 'ack', id: crypto.randomUUID(), payload: {} }) as ServerMessage)
       }
 
+      // Handle session.load by setting active session and fetching from REST
+      if (type === 'session.load') {
+        return (async () => {
+          const { sessionId } = payload as { sessionId: string }
+          const httpUrl = url.replace('/ws', '').replace('ws://', 'http://')
+
+          // First, send the session.load message to the server (this triggers context.state)
+          const wsResponse = await new Promise<ServerMessage>((resolve, reject) => {
+            const id = crypto.randomUUID()
+            const message: ClientMessage = { id, type, payload }
+
+            const timeout = setTimeout(() => {
+              pendingRequests.delete(id)
+              reject(new Error(`Timeout waiting for response to session.load`))
+            }, 5000)
+
+            pendingRequests.set(id, {
+              resolve: (msg) => {
+                clearTimeout(timeout)
+                resolve(msg)
+              },
+              reject: (err) => {
+                clearTimeout(timeout)
+                reject(err)
+              },
+            })
+
+            ws.send(JSON.stringify(message))
+          })
+
+          // Then fetch session data from REST API
+          const res = await fetch(`${httpUrl}/api/sessions/${sessionId}`, {
+            method: 'GET',
+          })
+          const data = await res.json()
+
+          // Handle error response from REST API
+          if (!res.ok || data.error) {
+            return wsResponse // Return the error from WS
+          }
+
+          if (data.session) {
+            currentSession = data.session
+            // Trigger session.state event for tests that wait for it
+            const sessionStateMsg: ServerMessage = {
+              id: crypto.randomUUID(),
+              type: 'session.state',
+              payload: {
+                session: data.session,
+                messages: data.messages || [],
+                pendingConfirmations: data.pendingConfirmations || [],
+              },
+            }
+            events.push(sessionStateMsg)
+            // Resolve any waiters waiting for session.state
+            for (let i = eventWaiters.length - 1; i >= 0; i--) {
+              const waiter = eventWaiters[i]!
+              if (waiter.type === 'session.state') {
+                eventWaiters.splice(i, 1)
+                waiter.resolve(sessionStateMsg)
+              }
+            }
+          }
+
+          return wsResponse
+        })()
+      }
+
       return new Promise((resolve, reject) => {
         const id = crypto.randomUUID()
         const message: ClientMessage<T> = { id, type, payload }

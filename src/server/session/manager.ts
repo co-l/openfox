@@ -977,12 +977,12 @@ export class SessionManager {
     const eventState = getSessionState(dbSession.id, maxTokens)
 
     if (!eventState) {
-      // No events yet - return defaults
+      // No events yet - return defaults from DB
       return {
         ...dbSession,
         mode: 'planner',
         phase: 'plan',
-        isRunning: false,
+        isRunning: dbSession.isRunning,
         messages: [],
         criteria: [],
         contextWindows: [],
@@ -1014,11 +1014,14 @@ export class SessionManager {
       return msg
     })
 
+    // Use database is_running as source of truth (more reliable than EventStore which may have missing events)
+    const isRunning = dbSession.isRunning
+
     return {
       ...dbSession,
       mode: eventState.mode,
       phase: eventState.phase,
-      isRunning: eventState.isRunning,
+      isRunning,
       messages,
       criteria: eventState.criteria,
       contextWindows: [], // Derived from events, not stored separately

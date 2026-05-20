@@ -46,7 +46,6 @@ function ProjectView({ sidebarOpen, onSidebarToggle }: { sidebarOpen: boolean; o
 
   const connectionStatus = useSessionStore((state) => state.connectionStatus)
   const clearSession = useSessionStore((state) => state.clearSession)
-
   const currentProject = useProjectStore((state) => state.currentProject)
 
   const hasToken = hasStoredToken()
@@ -94,39 +93,24 @@ function ProjectSessionView({
 
   const connectionStatus = useSessionStore((state) => state.connectionStatus)
   const session = useSessionStore((state) => state.currentSession)
-  const loadSession = useSessionStore((state) => state.loadSession)
-  const listSessions = useSessionStore((state) => state.listSessions)
-  const pendingSessionCreate = useSessionStore((state) => state.pendingSessionCreate)
   const error = useSessionStore((state) => state.error)
   const clearError = useSessionStore((state) => state.clearError)
-
   const currentProject = useProjectStore((state) => state.currentProject)
-  const loadProject = useProjectStore((state) => state.loadProject)
 
   const hasToken = hasStoredToken()
   const canLoad = connectionStatus === 'connected' || hasToken
 
   useEffect(() => {
     if (canLoad && projectId && currentProject?.id !== projectId) {
-      loadProject(projectId)
+      useProjectStore.getState().loadProject(projectId)
     }
     if (canLoad && sessionId && session?.id !== sessionId) {
-      loadSession(sessionId)
+      useSessionStore.getState().loadSession(sessionId)
     }
     if (canLoad && projectId) {
-      listSessions(projectId)
+      useSessionStore.getState().listSessions(projectId)
     }
-  }, [
-    canLoad,
-    projectId,
-    currentProject?.id,
-    loadProject,
-    sessionId,
-    session?.id,
-    loadSession,
-    listSessions,
-    pendingSessionCreate,
-  ])
+  }, [canLoad, projectId, currentProject?.id, sessionId, session?.id])
 
   useEffect(() => {
     if (error?.code === 'NOT_FOUND' && projectId) {
@@ -168,7 +152,6 @@ function App() {
   const { connectionStatus } = useWebSocket()
   const fetchConfig = useConfigStore((state) => state.fetchConfig)
   const refreshProviderModels = useConfigStore((state) => state.refreshProviderModels)
-  const loadDisplaySettings = useSettingsStore((state) => state.getSetting)
   const providers = useConfigStore((state) => state.providers)
   const activeProviderId = useConfigStore((state) => state.activeProviderId)
   const [, navigate] = useLocation()
@@ -181,14 +164,13 @@ function App() {
     if (connectionStatus === 'connected' || hasToken) {
       fetchConfig().then(() => {
         setConfigFetched(true)
-        for (const key of DISPLAY_SETTINGS_KEYS) {
-          loadDisplaySettings(key)
-        }
-        loadDisplaySettings(SETTINGS_KEYS.DISPLAY_THEME)
-        loadDisplaySettings(SETTINGS_KEYS.DISPLAY_USER_PRESETS)
+        // Batch load all display settings in a single API call
+        useSettingsStore
+          .getState()
+          .getSettings([...DISPLAY_SETTINGS_KEYS, SETTINGS_KEYS.DISPLAY_THEME, SETTINGS_KEYS.DISPLAY_USER_PRESETS])
       })
     }
-  }, [connectionStatus, hasToken, fetchConfig, loadDisplaySettings])
+  }, [connectionStatus, hasToken, fetchConfig])
 
   useEffect(() => {
     if (configFetched && activeProviderId) {

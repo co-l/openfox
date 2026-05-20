@@ -607,7 +607,7 @@ describe('ws/protocol', () => {
       })
       expect(converted[10]).toEqual({ type: 'session.running', payload: { isRunning: true } })
       expect(converted[11]).toEqual({ type: 'criteria.updated', payload: { criteria: [] } })
-      expect(converted[12]).toBeNull()
+      expect(converted[12]).toBeNull() // criterion.updated returns null
       expect(converted[13]).toEqual({
         type: 'context.state',
         payload: {

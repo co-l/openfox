@@ -22,6 +22,7 @@ interface SettingsState {
 
   // Actions
   getSetting: (key: string) => Promise<string | null>
+  getSettings: (keys: string[]) => Promise<void>
   setSetting: (key: string, value: string) => Promise<void>
 }
 
@@ -71,6 +72,23 @@ export const useSettingsStore = create<SettingsState>((set) => ({
     } catch {
       set(setLoading(key, false))
       return null
+    }
+  },
+
+  getSettings: async (keys: string[]) => {
+    if (keys.length === 0) return
+    try {
+      const res = await authFetch(`/api/settings?keys=${encodeURIComponent(keys.join(','))}`)
+      const data = await res.json()
+      // Update all settings at once
+      set({
+        settings: data,
+        loading: Object.fromEntries(keys.map((k) => [k, false])),
+      })
+    } catch {
+      set({
+        loading: Object.fromEntries(keys.map((k) => [k, false])),
+      })
     }
   },
 
