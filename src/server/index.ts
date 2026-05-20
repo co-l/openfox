@@ -690,6 +690,28 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
   })
 
   // Settings endpoints (REST)
+  // Batch endpoint: GET /api/settings?keys=key1,key2,key3
+  app.get('/api/settings', async (req, res) => {
+    const { getSetting, SETTINGS_DEFAULTS } = await import('./db/settings.js')
+    const keysParam = req.query['keys'] as string
+    if (!keysParam) {
+      return res.status(400).json({ error: 'keys query parameter is required' })
+    }
+    const keys = keysParam.split(',').map((k) => k.trim())
+    const result: Record<string, string> = {}
+    for (const key of keys) {
+      result[key] = getSetting(key) ?? SETTINGS_DEFAULTS[key] ?? ''
+    }
+    res.json(result)
+  })
+
+  app.get('/api/settings/:key', async (req, res) => {
+    const { getSetting, SETTINGS_DEFAULTS } = await import('./db/settings.js')
+    const key = req.params.key
+    const value = getSetting(key) ?? SETTINGS_DEFAULTS[key] ?? null
+    res.json({ key, value })
+  })
+
   app.get('/api/settings/:key', async (req, res) => {
     const { getSetting, SETTINGS_DEFAULTS } = await import('./db/settings.js')
     const key = req.params.key

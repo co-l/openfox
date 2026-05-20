@@ -7,8 +7,6 @@
 
 import type { Session, SessionSummary, SessionMode, SessionPhase } from '../../shared/types.js'
 import { getDatabase } from './index.js'
-import { getEventStore } from '../events/store.js'
-
 export type DangerLevel = 'normal' | 'dangerous'
 
 function getProjectDangerLevel(projectId: string): DangerLevel {
