@@ -32,6 +32,12 @@
   ::-webkit-scrollbar-thumb:hover {
     @apply bg-text-muted;
   }
+
+  /* Firefox scrollbars */
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: rgba(100, 116, 139, 0.3) transparent;
+  }
 }
 
 @layer components {
