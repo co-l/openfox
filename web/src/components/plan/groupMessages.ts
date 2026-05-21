@@ -6,7 +6,7 @@ export type { Message, ToolCall }
 export type DisplayItem =
   | { type: 'message'; message: Message }
   | { type: 'subagent'; subAgentId: string; subAgentType: string; messages: Message[] }
-  | { type: 'criteria-batch'; toolCalls: ToolCall[] }
+  | { type: 'criteria-batch'; toolCalls: ToolCall[]; timestamp: string }
   | { type: 'context-divider'; windowSequence: number }
 
 // Check if a message contains only criterion tool calls (no text content)
@@ -54,6 +54,7 @@ export function groupMessages(messages: Message[], previousItems: DisplayItem[] 
   }
 
   let criteriaBatchIndex = 0
+  let lastCriteriaMessageTimestamp: string | undefined
 
   const flushCriteriaBuffer = () => {
     if (criteriaBuffer.length > 0) {
@@ -68,7 +69,11 @@ export function groupMessages(messages: Message[], previousItems: DisplayItem[] 
       if (toolCallsMatch) {
         items.push(previousBatch)
       } else {
-        items.push({ type: 'criteria-batch', toolCalls: [...criteriaBuffer] })
+        items.push({
+          type: 'criteria-batch',
+          toolCalls: [...criteriaBuffer],
+          timestamp: lastCriteriaMessageTimestamp || new Date().toISOString(),
+        })
       }
       criteriaBatchIndex++
       criteriaBuffer = []
@@ -129,6 +134,8 @@ export function groupMessages(messages: Message[], previousItems: DisplayItem[] 
       for (const tc of msg.toolCalls!) {
         criteriaBuffer.push(tc)
       }
+      // Capture the message timestamp for the criteria batch
+      lastCriteriaMessageTimestamp = msg.timestamp
       continue
     }
 

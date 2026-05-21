@@ -134,6 +134,127 @@ export function PlanPanel({
 
   const { force_scroll_to_bottom, isAutoScrollActive, setAutoScroll } = useAutoScroll(scrollContainerRef, session)
 
+  // Track topmost visible display item for conversation index highlighting
+  const [activeIndex, setActiveIndex] = useState<number | undefined>(undefined)
+  const displayItemsRef = useRef(displayItems)
+  displayItemsRef.current = displayItems
+
+  // Scroll the main chat to a specific display item index
+  const scrollToIndex = useCallback(
+    (index: number) => {
+      if (index < 0 || index >= displayItems.length) return
+
+      const element = document.querySelector(`[data-item-index="${index}"]`)
+      if (!element) return
+
+      const container = scrollContainerRef.current
+      if (!container) return
+
+      setAutoScroll(false)
+
+      const elementTop = element.getBoundingClientRect().top + container.scrollTop
+      const targetPosition = elementTop - 80
+
+      // Record scroll position before scrolling
+      const startScrollTop = container.scrollTop
+
+      // Smooth scroll animation
+      container.scrollTo({
+        top: targetPosition,
+        behavior: 'smooth',
+      })
+
+      // Check after 100ms if scroll actually moved
+      setTimeout(() => {
+        const currentScrollTop = container.scrollTop
+        // If scroll didn't move (< 1px), item was unreachable - set highlight manually
+        if (Math.abs(currentScrollTop - startScrollTop) < 1) {
+          setActiveIndex(index)
+        }
+        // If scroll moved, let scroll handler update activeIndex naturally
+      }, 100)
+    },
+    [displayItems.length, scrollContainerRef, setAutoScroll],
+  )
+
+  // Debounce activeIndex updates to prevent rapid-fire updates during scroll
+  const lastActiveIndexUpdateRef = useRef<number>(0)
+  const activeIndexDebounceMs = 50 // Minimum time between activeIndex updates
+
+  useEffect(() => {
+    const container = scrollContainerRef.current
+    if (!container || displayItems.length === 0) return
+
+    const handleScroll = () => {
+      const now = Date.now()
+      // Skip if we just updated activeIndex
+      if (now - lastActiveIndexUpdateRef.current < activeIndexDebounceMs) {
+        return
+      }
+
+      const containerTop = container.scrollTop
+      const viewportTop = containerTop
+      const viewportBottom = containerTop + container.clientHeight
+
+      let closestIndex = -1
+      let closestDistance = Infinity
+      let lastRenderedIndex = -1
+
+      displayItemsRef.current.forEach((_, index) => {
+        const item = displayItemsRef.current[index]
+        if (!item) return
+
+        if (item.type === 'message' && item.message.role === 'assistant') {
+          if (!item.message.content?.trim() && !item.message.thinkingContent?.trim()) {
+            return
+          }
+        }
+
+        lastRenderedIndex = index
+
+        const element = document.querySelector(`[data-item-index="${index}"]`)
+        if (element) {
+          const rect = element.getBoundingClientRect()
+          const elementTop = rect.top + container.scrollTop - container.getBoundingClientRect().top
+          const elementHeight = element.clientHeight
+          const elementCenter = elementTop + elementHeight / 2
+
+          // Only consider elements that have their center at or slightly below viewport top (with 5px offset)
+          // Pick the first one that's visible (closest to viewport top from below)
+          if (elementCenter >= viewportTop - 5 && elementTop < viewportBottom) {
+            const distance = elementCenter - viewportTop
+            if (distance < closestDistance) {
+              closestDistance = distance
+              closestIndex = index
+            }
+          }
+        }
+      })
+
+      // Fallback: if no element found at or below viewport top, use last rendered
+      if (closestIndex === -1 && lastRenderedIndex !== -1) {
+        closestIndex = lastRenderedIndex
+      }
+
+      const maxScroll = container.scrollHeight - container.clientHeight
+      const isAtBottom = container.scrollTop >= maxScroll - 10
+
+      if (isAtBottom && lastRenderedIndex !== -1) {
+        setActiveIndex(lastRenderedIndex)
+        lastActiveIndexUpdateRef.current = now
+      } else if (closestIndex !== -1) {
+        setActiveIndex(closestIndex)
+        lastActiveIndexUpdateRef.current = now
+      }
+    }
+
+    container.addEventListener('scroll', handleScroll, { passive: true })
+
+    return () => {
+      container.removeEventListener('scroll', handleScroll)
+    }
+  }, [displayItems.length])
+
   const prevLenRef = useRef(0)
 
   const resizeTextarea = useCallback(() => {
@@ -407,6 +528,9 @@ export function PlanPanel({
         criteriaSidebarOpen={criteriaSidebarOpen}
         onCriteriaSidebarToggle={onCriteriaSidebarToggle}
         messages={messages}
+        displayItems={displayItems}
+        activeIndex={activeIndex}
+        onNavigate={scrollToIndex}
       >
         {pendingQuestion && <AskUserDialog question={pendingQuestion} />}
         <SessionHeader />

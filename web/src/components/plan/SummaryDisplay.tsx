@@ -11,15 +11,27 @@ import { BackgroundProcesses } from './BackgroundProcesses'
 import { BranchIcon, ReloadIcon } from '../shared/icons'
 import { AutoUpdateModal } from '../AutoUpdateModal'
 import { DiffViewer } from './DiffViewer'
+import { ConversationIndex } from './ConversationIndex'
 import type { Message } from '@shared/types.js'
+import type { DisplayItem } from './groupMessages'
 
 interface SummaryDisplayProps {
   summary: string | null
   messages: Message[]
   workdir?: string
+  displayItems?: DisplayItem[]
+  activeIndex?: number
+  onNavigate?: (index: number) => void
 }
 
-export function SummaryDisplay({ summary, messages, workdir }: SummaryDisplayProps) {
+export function SummaryDisplay({
+  summary,
+  messages,
+  workdir,
+  displayItems,
+  activeIndex,
+  onNavigate,
+}: SummaryDisplayProps) {
   const [showStatsModal, setShowStatsModal] = useState(false)
   const [checkingUpdate, setCheckingUpdate] = useState(false)
   const [updateAvailable, setUpdateAvailable] = useState(false)
@@ -103,6 +115,18 @@ export function SummaryDisplay({ summary, messages, workdir }: SummaryDisplayPro
           <h3 className="text-sm font-semibold text-text-primary mb-2">Progress</h3>
           <CriteriaProgressSummary criteria={session?.criteria ?? []} />
         </div>
+
+        {/* History sidebar */}
+        {displayItems && (
+          <div className="min-h-[100px] min-h-0 mt-4 flex-1 flex flex-col">
+            <div className="pb-2 flex-shrink-0">
+              <h3 className="text-sm font-semibold text-text-primary">History</h3>
+            </div>
+            <div className="flex-1 overflow-y-auto bg-transparent rounded">
+              <ConversationIndex displayItems={displayItems} activeIndex={activeIndex} onNavigate={onNavigate} />
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Git branch — above separator */}

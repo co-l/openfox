@@ -182,7 +182,7 @@ export const DevServerFooter = memo(function DevServerFooter({ workdir }: DevSer
   }
 
   return (
-    <div className="mt-2 pt-3 border-t border-border space-y-3">
+    <div>
       {/* Header row: [dot] Dev Server ... [settings] */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
@@ -210,85 +210,80 @@ export const DevServerFooter = memo(function DevServerFooter({ workdir }: DevSer
 
       {hasConfig ? (
         <>
-          {state === 'running' || state === 'warning' ? (
-            /* Stop + Open side by side */
-            <div className="flex gap-2">
+          <div className="mt-2">
+            {state === 'running' || state === 'warning' ? (
+              /* Stop + Open side by side */
+              <div className="flex gap-2">
+                <button
+                  onClick={handleAction}
+                  className="flex-1 flex items-center justify-center gap-1.5 rounded font-medium text-sm px-3 py-1.5 bg-bg-tertiary text-text-primary hover:bg-border transition-colors"
+                >
+                  <StopIcon />
+                  Stop
+                </button>
+                {status?.url && (
+                  <button
+                    onClick={() => openInspectWindow()}
+                    className="flex-1 flex items-center justify-center gap-1.5 rounded font-medium text-sm px-3 py-1.5 bg-accent-primary/25 text-text-primary hover:bg-accent-primary/40 transition-colors"
+                    title={status.url}
+                  >
+                    <OpenExternalIcon />
+                    Open
+                  </button>
+                )}
+              </div>
+            ) : (
+              /* Start button — full width */
               <button
                 onClick={handleAction}
-                className="flex-1 flex items-center justify-center gap-1.5 rounded font-medium text-sm px-3 py-1.5 bg-bg-tertiary text-text-primary hover:bg-border transition-colors"
+                className="w-full rounded font-medium text-sm px-3 py-1.5 bg-accent-primary/25 text-text-primary hover:bg-accent-primary/40 transition-colors"
               >
-                <StopIcon />
-                Stop
+                Start
               </button>
-              {status?.url && (
-                <button
-                  onClick={() => openInspectWindow()}
-                  className="flex-1 flex items-center justify-center gap-1.5 rounded font-medium text-sm px-3 py-1.5 bg-accent-primary/25 text-text-primary hover:bg-accent-primary/40 transition-colors"
-                  title={status.url}
-                >
-                  <OpenExternalIcon />
-                  Open
-                </button>
-              )}
-            </div>
-          ) : (
-            /* Start button — full width */
-            <button
-              onClick={handleAction}
-              className="w-full rounded font-medium text-sm px-3 py-1.5 bg-accent-primary/25 text-text-primary hover:bg-accent-primary/40 transition-colors"
-            >
-              Start
-            </button>
-          )}
+            )}
 
-          {/* Log panel — always visible when running */}
-          {isAlive && (
-            <div
-              ref={logContainerRef}
-              className="relative"
-              onMouseEnter={() => {
-                if (hideTimeoutRef.current) clearTimeout(hideTimeoutRef.current)
-                showTimeoutRef.current = setTimeout(() => {
-                  setIsHoveringLogs(true)
-                  setIsHidingLogs(false)
-                }, 500)
-              }}
-              onMouseLeave={() => {
-                if (showTimeoutRef.current) clearTimeout(showTimeoutRef.current)
-                setIsHidingLogs(true)
-                hideTimeoutRef.current = setTimeout(() => setIsHoveringLogs(false), 150)
-              }}
-            >
-              <LogRenderer
-                logs={logs}
-                preRef={logRef}
-                preClassName="text-sm bg-bg-primary p-2 rounded overflow-auto max-h-[200px] border border-border"
-              />
+            {/* Log panel — always visible when running */}
+            {isAlive && (
+              <div
+                ref={logContainerRef}
+                className="relative mt-2"
+                onMouseEnter={() => {
+                  if (hideTimeoutRef.current) clearTimeout(hideTimeoutRef.current)
+                  showTimeoutRef.current = setTimeout(() => {
+                    setIsHoveringLogs(true)
+                    setIsHidingLogs(false)
+                  }, 500)
+                }}
+                onMouseLeave={() => {
+                  if (showTimeoutRef.current) clearTimeout(showTimeoutRef.current)
+                  setIsHidingLogs(true)
+                  hideTimeoutRef.current = setTimeout(() => setIsHoveringLogs(false), 150)
+                }}
+              >
+                <LogRenderer
+                  logs={logs}
+                  preRef={logRef}
+                  preClassName="text-sm bg-bg-primary p-2 rounded overflow-auto max-h-[200px] border border-border"
+                />
 
-              {/* Hover expansion portal */}
-              {(isHoveringLogs || isHidingLogs) &&
-                logContainerRef.current &&
-                createPortal(
-                  <LogHoverExpand
-                    logs={logs}
-                    anchorRef={logContainerRef}
-                    isHiding={isHidingLogs}
-                    onExpand={() => setShowExpandModal(true)}
-                    onClose={() => setIsHoveringLogs(false)}
-                  />,
-                  document.body,
-                )}
-            </div>
-          )}
+                {/* Hover expansion portal */}
+                {(isHoveringLogs || isHidingLogs) &&
+                  logContainerRef.current &&
+                  createPortal(
+                    <LogHoverExpand
+                      logs={logs}
+                      anchorRef={logContainerRef}
+                      isHiding={isHidingLogs}
+                      onExpand={() => setShowExpandModal(true)}
+                      onClose={() => setIsHoveringLogs(false)}
+                    />,
+                    document.body,
+                  )}
+              </div>
+            )}
+          </div>
         </>
-      ) : (
-        <button
-          onClick={() => setShowConfigModal(true)}
-          className="w-full rounded font-medium text-sm px-3 py-1.5 bg-bg-tertiary text-text-muted hover:bg-border transition-colors"
-        >
-          Configure
-        </button>
-      )}
+      ) : null}
 
       <DevServerConfigModal isOpen={showConfigModal} onClose={() => setShowConfigModal(false)} />
 

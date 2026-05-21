@@ -2,12 +2,16 @@ import type { ReactNode } from 'react'
 import { useSessionStore } from '../../stores/session'
 import { SummaryDisplay } from '../plan/SummaryDisplay'
 import type { Message } from '@shared/types.js'
+import type { DisplayItem } from '../plan/groupMessages'
 
 interface SessionLayoutProps {
   children: ReactNode
   criteriaSidebarOpen?: boolean
   onCriteriaSidebarToggle?: () => void
   messages: Message[]
+  displayItems?: DisplayItem[]
+  activeIndex?: number
+  onNavigate?: (index: number) => void
 }
 
 export function SessionLayout({
@@ -15,6 +19,9 @@ export function SessionLayout({
   criteriaSidebarOpen = true,
   onCriteriaSidebarToggle,
   messages,
+  displayItems,
+  activeIndex,
+  onNavigate,
 }: SessionLayoutProps) {
   const session = useSessionStore((state) => state.currentSession)
 
@@ -32,7 +39,14 @@ export function SessionLayout({
         {/* Summary Sidebar - mobile: fixed overlay, desktop: flex item */}
         {criteriaSidebarOpen ? (
           <aside className="hidden md:block w-[320px] shrink-0 border-l border-border p-4 overflow-y-auto bg-secondary">
-            <SummaryDisplay summary={session?.summary ?? null} messages={messages} workdir={session?.workdir} />
+            <SummaryDisplay
+              summary={session?.summary ?? null}
+              messages={messages}
+              workdir={session?.workdir}
+              displayItems={displayItems}
+              activeIndex={activeIndex}
+              onNavigate={onNavigate}
+            />
           </aside>
         ) : (
           <aside className="hidden md:block w-0 shrink-0 overflow-hidden border-l-0" />
@@ -48,7 +62,14 @@ export function SessionLayout({
             ${criteriaSidebarOpen ? 'w-[320px] translate-x-0 border-l border-border' : 'w-[320px] translate-x-full'}
           `}
         >
-          <SummaryDisplay summary={session?.summary ?? null} messages={messages} workdir={session?.workdir} />
+          <SummaryDisplay
+            summary={session?.summary ?? null}
+            messages={messages}
+            workdir={session?.workdir}
+            displayItems={displayItems}
+            activeIndex={activeIndex}
+            onNavigate={onNavigate}
+          />
         </aside>
       </div>
     </div>
