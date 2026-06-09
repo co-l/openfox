@@ -4,18 +4,21 @@ import { useSessionStore } from '../stores/session'
 import { useProjectStore } from '../stores/project'
 import { Button } from './shared/Button'
 import { OpenProjectModal } from './CreateSessionModal'
+import { DeleteProjectConfirmationModal } from './DeleteProjectConfirmationModal'
 import { formatRelativeDate } from '../lib/format-date'
-import { FolderIcon } from './shared/icons'
+import { FolderIcon, TrashIcon } from './shared/icons'
 import { Spinner } from './shared/Spinner'
 
 export function HomePage() {
   const [showOpenModal, setShowOpenModal] = useState(false)
+  const [projectToDelete, setProjectToDelete] = useState<{ id: string; name: string } | null>(null)
 
   const sessions = useSessionStore((state) => state.sessions)
   const projects = useProjectStore((state) => state.projects)
   const loading = useProjectStore((state) => state.loading)
   const listProjects = useProjectStore((state) => state.listProjects)
   const listSessions = useSessionStore((state) => state.listSessions)
+  const deleteProject = useProjectStore((state) => state.deleteProject)
 
   const connectionStatus = useSessionStore((state) => state.connectionStatus)
 
@@ -91,6 +94,14 @@ export function HomePage() {
                   >
                     + New Session
                   </Link>
+                  <button
+                    type="button"
+                    onClick={() => setProjectToDelete({ id: project.id, name: project.name })}
+                    className="p-1.5 rounded text-text-muted hover:text-accent-error hover:bg-accent-error/10 transition-colors"
+                    title="Delete project"
+                  >
+                    <TrashIcon className="w-4 h-4" />
+                  </button>
                 </div>
                 <div className="divide-y divide-border">
                   {projectSessions.length > 0 ? (
@@ -140,6 +151,15 @@ export function HomePage() {
       </div>
 
       {showOpenModal && <OpenProjectModal isOpen={showOpenModal} onClose={() => setShowOpenModal(false)} />}
+
+      {projectToDelete && (
+        <DeleteProjectConfirmationModal
+          isOpen={true}
+          onClose={() => setProjectToDelete(null)}
+          projectName={projectToDelete.name}
+          onConfirm={() => deleteProject(projectToDelete.id)}
+        />
+      )}
     </div>
   )
 }
