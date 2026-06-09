@@ -631,7 +631,12 @@ export const useSessionStore = create<SessionState>((set, get) => {
         }
         const data = await res.json()
         // Tell WS server which session is active (required for chat.send routing)
-        wsClient.send('session.load', { sessionId: data.session.id })
+        // Best-effort: WS may not be connected yet (e.g. direct /new hit on cold load)
+        try {
+          wsClient.send('session.load', { sessionId: data.session.id })
+        } catch {
+          // WS will be notified when loadSession runs after navigation
+        }
         // DO NOT refresh session list here - wait for WS session.state to arrive
         // await get().listSessions()
         return data.session

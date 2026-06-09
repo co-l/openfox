@@ -1288,7 +1288,7 @@ describe('useSessionStore session isolation', () => {
 
     const result = await useSessionStore.getState().createSession('project-1')
 
-    expect(result).toBeNull()
+    expect(result).toBeUndefined()
     expect(fetchMock).toHaveBeenCalledWith(
       '/api/sessions',
       expect.objectContaining({
