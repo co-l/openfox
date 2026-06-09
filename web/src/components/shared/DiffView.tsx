@@ -29,7 +29,7 @@ const DiffSection = memo(function DiffSection({ type, children }: DiffSectionPro
 
   return (
     <div className={`border-l-[3px] ${bgClass}`}>
-      <div className={`min-w-0 py-1 ${lineClass}`}>
+      <div className={`min-w-0 py-3 ${lineClass}`}>
         <div className="shiki-compact shiki-transparent-bg">{children}</div>
       </div>
     </div>
@@ -175,7 +175,7 @@ const SectionView = memo(function SectionView({ section, language }: SectionView
   if (section.type === 'context') {
     return (
       <div>
-        <div className="min-w-0 py-1">
+        <div className="min-w-0 py-3">
           <div className="shiki-compact shiki-transparent-bg">
             <CodeHighlight
               code={content}

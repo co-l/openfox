@@ -83,8 +83,9 @@
     display: block;
     padding-left: 3.25rem;
     position: relative;
-    line-height: 0.9;
-    min-height: 0.9em;
+    line-height: 1.35;
+    margin-bottom: -0.65em;
+    min-height: 1.35em;
     counter-increment: shiki-line;
   }
 
