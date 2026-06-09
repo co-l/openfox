@@ -1,8 +1,9 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { Modal } from './shared/Modal'
 import { authFetch } from '../lib/api'
 
-type ModalState = 'ready' | 'updating' | 'reloading'
+type ModalState = 'ready' | 'updating' | 'reloading' | 'failed'
+type TimeoutPhase = 'waiting' | 'takingLonger' | 'failed'
 
 interface AutoUpdateModalProps {
   isOpen: boolean
@@ -12,8 +13,10 @@ interface AutoUpdateModalProps {
 
 export function AutoUpdateModal({ isOpen, onClose, versionInfo }: AutoUpdateModalProps) {
   const [state, setState] = useState<ModalState>('ready')
+  const [timeoutPhase, setTimeoutPhase] = useState<TimeoutPhase>('waiting')
   const [progressDots, setProgressDots] = useState('')
   const [modalVersionInfo, setModalVersionInfo] = useState(versionInfo)
+  const diedRef = useRef(false)
 
   useEffect(() => {
     if (!isOpen) return
@@ -37,6 +40,8 @@ export function AutoUpdateModal({ isOpen, onClose, versionInfo }: AutoUpdateModa
 
   const handleUpdate = useCallback(async () => {
     setState('updating')
+    setTimeoutPhase('waiting')
+    diedRef.current = false
 
     const isTestMode = modalVersionInfo?.current === '1.0.0' && modalVersionInfo?.latest === '1.1.0'
     await authFetch('/api/auto-update', { method: 'POST' })
@@ -51,14 +56,13 @@ export function AutoUpdateModal({ isOpen, onClose, versionInfo }: AutoUpdateModa
       return
     }
 
-    let died = false
     let alive = false
 
     const poll = setInterval(async () => {
       try {
         const res = await fetch('/api/health')
         if (res.ok) {
-          if (died) {
+          if (diedRef.current) {
             alive = true
             clearInterval(poll)
             setState('reloading')
@@ -68,32 +72,43 @@ export function AutoUpdateModal({ isOpen, onClose, versionInfo }: AutoUpdateModa
           }
         }
       } catch {
-        died = true
+        diedRef.current = true
       }
     }, 2000)
 
     setTimeout(() => {
       if (!alive) {
-        clearInterval(poll)
+        setTimeoutPhase('takingLonger')
       }
-    }, 300_000)
+    }, 60_000)
+
+    setTimeout(() => {
+      if (!alive) {
+        clearInterval(poll)
+        setState('failed')
+      }
+    }, 120_000)
   }, [modalVersionInfo?.current, modalVersionInfo?.latest])
 
   useEffect(() => {
     if (isOpen) {
       setState('ready')
+      setTimeoutPhase('waiting')
       setProgressDots('')
+      diedRef.current = false
     }
   }, [isOpen])
+
+  const canClose = state !== 'updating'
 
   return (
     <Modal
       isOpen={isOpen}
-      onClose={state === 'updating' ? undefined : onClose}
-      title="New OpenFox Version Available"
+      onClose={canClose ? onClose : undefined}
+      title={state === 'failed' ? 'Update Failed' : 'New OpenFox Version Available'}
       size="sm"
-      closeOnBackdropClick={state !== 'updating'}
-      showCloseButton={state !== 'updating'}
+      closeOnBackdropClick={canClose}
+      showCloseButton={canClose}
     >
       <div className="flex flex-col gap-4">
         {modalVersionInfo && (
@@ -114,7 +129,9 @@ export function AutoUpdateModal({ isOpen, onClose, versionInfo }: AutoUpdateModa
             <div className="h-1.5 bg-bg-tertiary rounded-full overflow-hidden">
               <div className="h-full bg-accent-primary animate-pulse w-full" />
             </div>
-            <p className="text-xs text-text-muted text-center">Updating{progressDots}</p>
+            <p className="text-xs text-text-muted text-center">
+              {timeoutPhase === 'takingLonger' ? 'Taking longer than expected\u2026' : `Updating${progressDots}`}
+            </p>
           </div>
         )}
 
@@ -126,6 +143,20 @@ export function AutoUpdateModal({ isOpen, onClose, versionInfo }: AutoUpdateModa
             <p className="text-xs text-text-muted text-center">Update complete, reloading{progressDots}</p>
           </div>
         )}
+
+        {state === 'failed' && (
+          <div className="flex flex-col gap-3 mt-2">
+            <div className="flex items-center gap-2 px-3 py-2 bg-accent-danger/10 border border-accent-danger/30 rounded text-xs">
+              <span>⚠️</span>
+              <p className="text-text-secondary">The update timed out. The server may need to be updated manually.</p>
+            </div>
+            <div className="bg-bg-tertiary rounded px-3 py-2 text-xs font-mono text-text-secondary">openfox update</div>
+            <p className="text-xs text-text-muted">
+              Run this command in your terminal to complete the update, then start the service with{' '}
+              <span className="font-mono text-text-secondary">openfox service start</span>.
+            </p>
+          </div>
+        )}
       </div>
 
       {state === 'ready' && (
@@ -134,6 +165,15 @@ export function AutoUpdateModal({ isOpen, onClose, versionInfo }: AutoUpdateModa
           className="w-full px-3 py-2 text-sm rounded bg-accent-primary hover:brightness-110 transition-all text-white font-medium"
         >
           Update OpenFox
+        </button>
+      )}
+
+      {state === 'failed' && (
+        <button
+          onClick={onClose}
+          className="w-full px-3 py-2 text-sm rounded bg-bg-tertiary hover:bg-bg-secondary transition-colors text-text-primary font-medium mt-2"
+        >
+          Close
         </button>
       )}
 

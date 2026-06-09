@@ -122,6 +122,7 @@ Type=simple
 ExecStart=${expandPath(RUN_SCRIPT_PATH)}
 Restart=always
 RestartSec=5
+KillMode=process
 
 [Install]
 WantedBy=graphical-session.target

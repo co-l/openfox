@@ -207,7 +207,7 @@ export async function runCli(options: { mode: Mode }): Promise<void> {
     case 'update': {
       const __filename = fileURLToPath(import.meta.url)
       const __dirname = dirname(__filename)
-      const updateScriptPath = join(__dirname, 'cli', 'update.sh')
+      const updateScriptPath = join(__dirname, 'update.sh')
       const result = spawnSync(updateScriptPath, [], { shell: true, stdio: 'inherit' })
       if (result.status !== 0) {
         process.exit(result.status ?? 1)
