@@ -24,6 +24,7 @@ import { loadAllAgentsDefault, getTopLevelAgents } from './agents/registry.js'
 import { createWorkflowRoutes } from './routes/workflows.js'
 import { createDevServerRoutes } from './routes/dev-server.js'
 import { createTerminalRoutes } from './routes/terminals.js'
+import { createDirectoryRoutes } from './routes/directories.js'
 import { createAutoUpdateRoutes } from './routes/auto-update.js'
 import { devServerManager } from './dev-server/manager.js'
 import { getGlobalConfigDir } from '../cli/paths.js'
@@ -1114,43 +1115,7 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
     await getCurrentBranch(req, res)
   })
 
-  // Directory browser endpoint
-  const DEFAULT_BASE_PATH = process.cwd()
-
-  app.get('/api/directories', async (req, res) => {
-    const path = (req.query['path'] as string) || DEFAULT_BASE_PATH
-
-    try {
-      const resolvedPath = resolve(path)
-
-      const entries = await import('node:fs/promises').then((m) => m.readdir(resolvedPath, { withFileTypes: true }))
-      const directories = entries
-        .filter((entry) => entry.isDirectory() && !entry.name.startsWith('.'))
-        .map((entry) => ({
-          name: entry.name,
-          path: join(resolvedPath, entry.name),
-        }))
-        .sort((a, b) => a.name.localeCompare(b.name))
-
-      const parent = dirname(resolvedPath)
-      const hasParent = parent !== resolvedPath
-
-      res.json({
-        current: resolvedPath,
-        parent: hasParent ? parent : null,
-        directories,
-        basename: basename(resolvedPath),
-      })
-    } catch {
-      res.status(400).json({
-        error: 'Cannot read directory',
-        current: DEFAULT_BASE_PATH,
-        parent: null,
-        directories: [],
-        basename: basename(DEFAULT_BASE_PATH),
-      })
-    }
-  })
+  app.use('/api/directories', createDirectoryRoutes())
 
   // Serve static web UI
   const webDir = resolve(__dirname, '../../web')
@@ -1432,8 +1397,4 @@ export async function createServer(config: Config): Promise<void> {
 
   process.on('SIGINT', shutdown)
   process.on('SIGTERM', shutdown)
-}
-
-function basename(path: string): string {
-  return path.split('/').pop() || path.split('\\').pop() || path
 }
