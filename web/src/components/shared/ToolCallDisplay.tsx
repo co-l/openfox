@@ -224,14 +224,16 @@ export const ToolCallDisplay = memo(function ToolCallDisplay({
             durationMs !== undefined && (
               <div className="text-[10px] text-text-muted flex items-center gap-2">
                 <span>Completed in {durationMs}ms</span>
-                {showEditorLink && tool === 'read_file' && String(args.path ?? '') && (
-                  <a
-                    href={`vscode://file/${String(args.path)}`}
-                    className="text-accent-primary hover:underline ml-auto"
-                  >
-                    Open in VSCode
-                  </a>
-                )}
+                {showEditorLink &&
+                  (tool === 'read_file' || tool === 'write_file' || tool === 'edit_file') &&
+                  String(args.path ?? '') && (
+                    <a
+                      href={`vscode://file/${String(args.path)}`}
+                      className="text-accent-primary hover:underline ml-auto"
+                    >
+                      Open in VSCode
+                    </a>
+                  )}
               </div>
             )}
 
