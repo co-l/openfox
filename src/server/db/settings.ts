@@ -14,6 +14,7 @@ export const SETTINGS_KEYS = {
   DISPLAY_SHOW_SYNTAX_HIGHLIGHTING: 'display.showSyntaxHighlighting',
   DISPLAY_THEME: 'display.theme',
   DISPLAY_USER_PRESETS: 'display.userPresets',
+  DISPLAY_FOLLOW_SYSTEM_THEME: 'display.followSystemTheme',
   LLM_DISABLE_XML_PROTECTION: 'llm.disableXmlProtection',
   KEYBINDINGS: 'keybindings',
 } as const
@@ -26,6 +27,7 @@ export const SETTINGS_DEFAULTS: Record<string, string> = {
   [SETTINGS_KEYS.DISPLAY_SHOW_WORKFLOW_BARS]: 'true',
   [SETTINGS_KEYS.DISPLAY_SHOW_SYNTAX_HIGHLIGHTING]: 'true',
   [SETTINGS_KEYS.DISPLAY_THEME]: JSON.stringify({ preset: 'dark' }),
+  [SETTINGS_KEYS.DISPLAY_FOLLOW_SYSTEM_THEME]: 'true',
   [SETTINGS_KEYS.LLM_DISABLE_XML_PROTECTION]: 'false',
   [SETTINGS_KEYS.KEYBINDINGS]: JSON.stringify({
     terminalToggle: { type: 'double-press', key: 'Control', threshold: 300 },

@@ -175,6 +175,8 @@ export function ThemeEditor() {
   const applyUserPreset = useThemeStore((state) => state.applyUserPreset)
   const deleteUserPreset = useThemeStore((state) => state.deleteUserPreset)
   const saveTheme = useThemeStore((state) => state.saveTheme)
+  const followSystemTheme = useThemeStore((state) => state.followSystemTheme)
+  const setFollowSystemTheme = useThemeStore((state) => state.setFollowSystemTheme)
 
   const handlePresetSelect = (presetId: string) => {
     applyPreset(presetId)
@@ -256,6 +258,25 @@ export function ThemeEditor() {
   return (
     <div className="space-y-4">
       <h3 className="text-sm font-medium text-text-primary">Theme</h3>
+
+      <label className="flex items-center gap-3 cursor-pointer">
+        <button
+          type="button"
+          role="switch"
+          aria-checked={followSystemTheme}
+          onClick={() => setFollowSystemTheme(!followSystemTheme)}
+          className={`relative w-10 h-5 rounded-full transition-colors ${
+            followSystemTheme ? 'bg-accent-primary' : 'bg-bg-tertiary border border-border'
+          }`}
+        >
+          <span
+            className={`absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white transition-transform ${
+              followSystemTheme ? 'translate-x-5' : 'translate-x-0'
+            }`}
+          />
+        </button>
+        <span className="text-sm text-text-secondary">Follow system theme</span>
+      </label>
 
       <div className="grid grid-cols-5 gap-2">
         {THEME_PRESETS.map((preset) => (

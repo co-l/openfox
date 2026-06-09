@@ -142,6 +142,7 @@ interface ThemeState {
   isCustom: boolean
   isCustomizing: boolean
   userPresets: UserThemePreset[]
+  followSystemTheme: boolean
 
   applySavedTheme: () => void
   applyPreset: (presetId: string) => void
@@ -162,6 +163,9 @@ interface ThemeState {
   deleteUserPreset: (index: number) => void
   loadUserPresets: () => void
   saveUserPresets: () => void
+
+  setFollowSystemTheme: (enabled: boolean) => void
+  initSystemThemeListener: () => () => void
 }
 
 function getUserPresets(): UserThemePreset[] {
@@ -181,6 +185,7 @@ export const useThemeStore = create<ThemeState>((set, get) => ({
   isCustom: false,
   isCustomizing: false,
   userPresets: getUserPresets(),
+  followSystemTheme: true,
 
   applySavedTheme: () => {
     const { getSavedTheme, applyPreset, applyTokens } = get()
@@ -300,6 +305,32 @@ export const useThemeStore = create<ThemeState>((set, get) => ({
     set({ isCustom: false, isCustomizing: false, basePreset: '' })
   },
 
+  setFollowSystemTheme: (enabled: boolean) => {
+    set({ followSystemTheme: enabled })
+    import('./settings').then(({ useSettingsStore, SETTINGS_KEYS }) => {
+      useSettingsStore.getState().setSetting(SETTINGS_KEYS.DISPLAY_FOLLOW_SYSTEM_THEME, String(enabled))
+    })
+  },
+
+  initSystemThemeListener: () => {
+    if (typeof window === 'undefined') return () => {}
+
+    const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)')
+
+    const applySystemTheme = (isDark: boolean) => {
+      const { followSystemTheme } = get()
+      if (!followSystemTheme) return
+      get().applyPreset(isDark ? 'dark' : 'light')
+      get().saveTheme(JSON.stringify({ preset: isDark ? 'dark' : 'light' }))
+    }
+
+    applySystemTheme(mediaQuery.matches)
+
+    const handler = (e: MediaQueryListEvent) => applySystemTheme(e.matches)
+    mediaQuery.addEventListener('change', handler)
+    return () => mediaQuery.removeEventListener('change', handler)
+  },
+
   reset: () => {
     set({
       currentPreset: 'dark',
@@ -308,6 +339,7 @@ export const useThemeStore = create<ThemeState>((set, get) => ({
       isCustom: false,
       isCustomizing: false,
       userPresets: [],
+      followSystemTheme: true,
     })
   },
 

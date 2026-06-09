@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest'
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { THEME_TOKENS, THEME_PRESETS, migrateLegacyThemeSetting, getPresetFromJson, useThemeStore } from './theme'
 
 beforeEach(() => {
@@ -226,6 +226,104 @@ describe('Theme System', () => {
         expect(state.isCustom).toBe(true)
         const saved = JSON.parse(localStorage.getItem('openfox:theme') ?? '{}')
         expect(saved.tokens['color-accent-primary']).toBe('255 0 0')
+      })
+    })
+
+    describe('followSystemTheme', () => {
+      it('defaults to true', () => {
+        expect(useThemeStore.getState().followSystemTheme).toBe(true)
+      })
+
+      it('setFollowSystemTheme toggles the state', () => {
+        useThemeStore.getState().setFollowSystemTheme(false)
+        expect(useThemeStore.getState().followSystemTheme).toBe(false)
+
+        useThemeStore.getState().setFollowSystemTheme(true)
+        expect(useThemeStore.getState().followSystemTheme).toBe(true)
+      })
+
+      it('switches to light preset when system prefers light and followSystemTheme is enabled', () => {
+        useThemeStore.getState().applyPreset('dark')
+        useThemeStore.getState().setFollowSystemTheme(true)
+
+        const listeners: Array<(e: { matches: boolean }) => void> = []
+        const mockMatchMedia = vi.fn().mockImplementation(() => ({
+          matches: false,
+          addEventListener: (_event: string, listener: (e: { matches: boolean }) => void) => {
+            listeners.push(listener)
+          },
+          removeEventListener: vi.fn(),
+        }))
+        vi.stubGlobal('window', { matchMedia: mockMatchMedia } as any)
+
+        useThemeStore.getState().initSystemThemeListener()
+
+        listeners.forEach((l) => l({ matches: false }))
+        expect(useThemeStore.getState().currentPreset).toBe('light')
+
+        vi.unstubAllGlobals()
+      })
+
+      it('switches to dark preset when system prefers dark and followSystemTheme is enabled', () => {
+        useThemeStore.getState().applyPreset('light')
+        useThemeStore.getState().setFollowSystemTheme(true)
+
+        const listeners: Array<(e: { matches: boolean }) => void> = []
+        const mockMatchMedia = vi.fn().mockImplementation(() => ({
+          matches: false,
+          addEventListener: (_event: string, listener: (e: { matches: boolean }) => void) => {
+            listeners.push(listener)
+          },
+          removeEventListener: vi.fn(),
+        }))
+        vi.stubGlobal('window', { matchMedia: mockMatchMedia } as any)
+
+        useThemeStore.getState().initSystemThemeListener()
+
+        listeners.forEach((l) => l({ matches: true }))
+        expect(useThemeStore.getState().currentPreset).toBe('dark')
+
+        vi.unstubAllGlobals()
+      })
+
+      it('does NOT switch theme when followSystemTheme is disabled', () => {
+        useThemeStore.getState().applyPreset('dark')
+        useThemeStore.getState().setFollowSystemTheme(false)
+
+        const listeners: Array<(e: { matches: boolean }) => void> = []
+        const mockMatchMedia = vi.fn().mockImplementation(() => ({
+          matches: false,
+          addEventListener: (_event: string, listener: (e: { matches: boolean }) => void) => {
+            listeners.push(listener)
+          },
+          removeEventListener: vi.fn(),
+        }))
+        vi.stubGlobal('window', { matchMedia: mockMatchMedia } as any)
+
+        useThemeStore.getState().initSystemThemeListener()
+
+        listeners.forEach((l) => l({ matches: false }))
+        expect(useThemeStore.getState().currentPreset).toBe('dark')
+
+        vi.unstubAllGlobals()
+      })
+
+      it('applies the system theme on initial load when followSystemTheme is enabled', () => {
+        useThemeStore.getState().applyPreset('dark')
+        useThemeStore.getState().setFollowSystemTheme(true)
+
+        const mockMatchMedia = vi.fn().mockImplementation(() => ({
+          matches: false,
+          addEventListener: vi.fn(),
+          removeEventListener: vi.fn(),
+        }))
+        vi.stubGlobal('window', { matchMedia: mockMatchMedia } as any)
+
+        useThemeStore.getState().initSystemThemeListener()
+
+        expect(useThemeStore.getState().currentPreset).toBe('light')
+
+        vi.unstubAllGlobals()
       })
     })
 

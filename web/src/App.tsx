@@ -184,9 +184,10 @@ function App() {
   }, [configFetched, providers.length])
 
   useEffect(() => {
-    const { applyPreset, applyTokens } = useThemeStore.getState()
+    const { applyPreset, applyTokens, setFollowSystemTheme, initSystemThemeListener } = useThemeStore.getState()
     const serverTheme = displaySettings[SETTINGS_KEYS.DISPLAY_THEME]
     const serverPresets = displaySettings[SETTINGS_KEYS.DISPLAY_USER_PRESETS]
+    const serverFollowSystem = displaySettings[SETTINGS_KEYS.DISPLAY_FOLLOW_SYSTEM_THEME]
 
     if (serverPresets) {
       localStorage.setItem('openfox:userPresets', serverPresets)
@@ -211,7 +212,18 @@ function App() {
     } else {
       applyPreset('dark')
     }
-  }, [displaySettings[SETTINGS_KEYS.DISPLAY_THEME], displaySettings[SETTINGS_KEYS.DISPLAY_USER_PRESETS]])
+
+    if (serverFollowSystem !== undefined) {
+      setFollowSystemTheme(serverFollowSystem === 'true')
+    }
+
+    const cleanup = initSystemThemeListener()
+    return () => cleanup()
+  }, [
+    displaySettings[SETTINGS_KEYS.DISPLAY_THEME],
+    displaySettings[SETTINGS_KEYS.DISPLAY_USER_PRESETS],
+    displaySettings[SETTINGS_KEYS.DISPLAY_FOLLOW_SYSTEM_THEME],
+  ])
 
   const getInitialLeftSidebar = () => {
     const saved = localStorage.getItem('openfox:leftSidebar')
