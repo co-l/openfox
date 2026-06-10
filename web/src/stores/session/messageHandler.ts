@@ -133,9 +133,11 @@ function updateSessionField(
   }))
 
   if (!isBackgroundSession) {
-    set((state) => ({
-      currentSession: state.currentSession ? updater(state.currentSession as any) as any : null,
-    }))
+    const cs = get().currentSession
+    if (cs) {
+      const updated = updater(cs as unknown as import('@shared/types.js').SessionSummary)
+      set(() => ({ currentSession: updated as unknown as import('@shared/types.js').Session }))
+    }
   }
 }
 

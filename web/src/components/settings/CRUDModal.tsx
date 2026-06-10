@@ -156,3 +156,33 @@ interface ErrorBannerProps {
 export function ErrorBanner({ message }: ErrorBannerProps) {
   return <div className="text-accent-error text-sm px-3 py-2 bg-accent-error/10 rounded">{message}</div>
 }
+
+interface CRUDListHeaderProps {
+  description: string
+  onNew: () => void
+  loading: boolean
+  hasItems: boolean
+  children: ReactNode
+}
+
+export function CRUDListHeader({ description, onNew, loading, hasItems, children }: CRUDListHeaderProps) {
+  return (
+    <>
+      <div className="flex items-center justify-between mb-4">
+        <p className="text-text-secondary text-sm">{description}</p>
+        <div className="flex items-center gap-2 flex-shrink-0 ml-3">
+          <Button variant="primary" size="sm" onClick={onNew}>
+            + New
+          </Button>
+        </div>
+      </div>
+      {loading && !hasItems ? (
+        <div className="text-text-muted text-sm">Loading...</div>
+      ) : !hasItems ? (
+        <div className="text-text-muted text-sm">No items defined.</div>
+      ) : (
+        children
+      )}
+    </>
+  )
+}

@@ -6,9 +6,9 @@ import { useWorkflowsStore, type WorkflowFull, type WorkflowStep } from '../../s
 import { ArrowRightIcon, EyeIcon } from '../shared/icons'
 import type { AgentInfo } from '../../stores/agents'
 import { authFetch } from '../../lib/api'
-import { ConfirmButton, DeleteIcon, DuplicateIcon, useConfirmDialog } from './CRUDModal'
+import { ConfirmButton, DeleteIcon, DuplicateIcon, useConfirmDialog, CRUDListHeader } from './CRUDModal'
 import { FlowDiagram } from './workflows/FlowDiagram'
-import { WorkflowListItem } from './workflows/WorkflowListItem'
+import { WorkflowListSection } from './workflows/WorkflowListItem'
 import { StepPanel } from './workflows/StepPanel'
 import { TransitionPanel } from './workflows/TransitionPanel'
 import { CONDITION_LABELS, CONDITION_TYPES, resolveAgent } from './workflows/layout'
@@ -92,7 +92,17 @@ export function WorkflowsModal({ isOpen, onClose, initialEditId }: WorkflowsModa
         if (isDefault) {
           fetchDefaultContent(initialEditId).then((workflow) => {
             if (!workflow) return
-            populateForm({ ...workflow, metadata: { ...workflow.metadata, name: workflow.metadata.name + ' (copy)', id: `${initialEditId}-copy-${Date.now()}` } }, { editingId: null, isReadOnly: false })
+            populateForm(
+              {
+                ...workflow,
+                metadata: {
+                  ...workflow.metadata,
+                  name: workflow.metadata.name + ' (copy)',
+                  id: `${initialEditId}-copy-${Date.now()}`,
+                },
+              },
+              { editingId: null, isReadOnly: false },
+            )
           })
         } else {
           fetchWorkflow(initialEditId).then((workflow) => {
@@ -108,7 +118,16 @@ export function WorkflowsModal({ isOpen, onClose, initialEditId }: WorkflowsModa
     }
   }, [isOpen, fetchWorkflows, fetchWorkflow, fetchDefaultContent, fetchTemplateVariables, initialEditId])
 
-  const populateForm = (workflow: { metadata: { name: string; id: string; description: string; version: string; color?: string }; entryStep: string; settings: { maxIterations: number }; steps: import('../../stores/workflows').WorkflowStep[]; startCondition?: { type: string; result?: string } }, extra?: Partial<{ editingId: string | null; isReadOnly: boolean; selectedNodeKey: null; selectedEdgeKey: null }>) => {
+  const populateForm = (
+    workflow: {
+      metadata: { name: string; id: string; description: string; version: string; color?: string }
+      entryStep: string
+      settings: { maxIterations: number }
+      steps: import('../../stores/workflows').WorkflowStep[]
+      startCondition?: { type: string; result?: string }
+    },
+    extra?: Partial<{ editingId: string | null; isReadOnly: boolean; selectedNodeKey: null; selectedEdgeKey: null }>,
+  ) => {
     setFormName(workflow.metadata.name)
     setFormId(workflow.metadata.id)
     setFormDescription(workflow.metadata.description)
@@ -193,18 +212,31 @@ export function WorkflowsModal({ isOpen, onClose, initialEditId }: WorkflowsModa
     if (!editingId) setFormId(toSlug(name))
   }
 
-  const handleView = async (workflowId: string) => {
+  const fetchWorkflowContent = async (workflowId: string) => {
     const isDefault = defaults.some((d) => d.id === workflowId)
-    const content = isDefault ? await fetchDefaultContent(workflowId) : await fetchWorkflow(workflowId)
+    return isDefault ? await fetchDefaultContent(workflowId) : await fetchWorkflow(workflowId)
+  }
+
+  const handleView = async (workflowId: string) => {
+    const content = await fetchWorkflowContent(workflowId)
     if (!content) return
     populateForm(content, { editingId: workflowId, isReadOnly: true })
   }
 
   const handleDuplicate = async (workflowId: string) => {
-    const isDefault = defaults.some((d) => d.id === workflowId)
-    const content = isDefault ? await fetchDefaultContent(workflowId) : await fetchWorkflow(workflowId)
+    const content = await fetchWorkflowContent(workflowId)
     if (!content) return
-    populateForm({ ...content, metadata: { ...content.metadata, name: content.metadata.name + ' (copy)', id: `${workflowId}-copy-${Date.now()}` } }, { editingId: null, isReadOnly: false })
+    populateForm(
+      {
+        ...content,
+        metadata: {
+          ...content.metadata,
+          name: content.metadata.name + ' (copy)',
+          id: `${workflowId}-copy-${Date.now()}`,
+        },
+      },
+      { editingId: null, isReadOnly: false },
+    )
   }
 
   const handleNew = () => {
@@ -294,34 +326,56 @@ export function WorkflowsModal({ isOpen, onClose, initialEditId }: WorkflowsModa
     [selectEdge],
   )
 
-  const handleReconnectTo = useCallback((edgeKey: string, newTarget: string) => {
-    if (edgeKey === 'start') {
-      setFormEntryStep(newTarget)
-    } else {
-      const sepIdx = edgeKey.lastIndexOf(':')
-      const stepId = edgeKey.slice(0, sepIdx)
-      const transIdx = parseInt(edgeKey.slice(sepIdx + 1))
-      setFormSteps((prev) =>
-        prev.map((s) =>
-          s.id === stepId
-            ? { ...s, transitions: s.transitions.map((t, i) => (i === transIdx ? { ...t, goto: newTarget } : t)) }
-            : s,
-        ),
-      )
-    }
-  }, [])
-
-  const handleReconnectFrom = useCallback((edgeKey: string, newSourceId: string) => {
+  const parseEdgeKey = (edgeKey: string): { stepId: string; transIdx: number } | null => {
+    if (edgeKey === 'start') return null
     const sepIdx = edgeKey.lastIndexOf(':')
     const stepId = edgeKey.slice(0, sepIdx)
     const transIdx = parseInt(edgeKey.slice(sepIdx + 1))
+    return { stepId, transIdx }
+  }
+
+  const updateTransition = useCallback(
+    (
+      edgeKey: string,
+      updater: (t: { when: { type: string; result?: string }; goto: string }) => {
+        when: { type: string; result?: string }
+        goto: string
+      },
+    ) => {
+      const parsed = parseEdgeKey(edgeKey)
+      if (!parsed) return
+      setFormSteps((prev) =>
+        prev.map((s) =>
+          s.id === parsed.stepId
+            ? { ...s, transitions: s.transitions.map((t, i) => (i === parsed.transIdx ? updater(t) : t)) }
+            : s,
+        ),
+      )
+    },
+    [],
+  )
+
+  const handleReconnectTo = useCallback(
+    (edgeKey: string, newTarget: string) => {
+      if (edgeKey === 'start') {
+        setFormEntryStep(newTarget)
+        return
+      }
+      updateTransition(edgeKey, (t) => ({ ...t, goto: newTarget }))
+    },
+    [updateTransition],
+  )
+
+  const handleReconnectFrom = useCallback((edgeKey: string, newSourceId: string) => {
+    const parsed = parseEdgeKey(edgeKey)
+    if (!parsed) return
     setFormSteps((prev) => {
-      const oldStep = prev.find((s) => s.id === stepId)
+      const oldStep = prev.find((s) => s.id === parsed.stepId)
       if (!oldStep) return prev
-      const trans = oldStep.transitions[transIdx]
+      const trans = oldStep.transitions[parsed.transIdx]
       if (!trans) return prev
       return prev.map((s) => {
-        if (s.id === stepId) return { ...s, transitions: s.transitions.filter((_, i) => i !== transIdx) }
+        if (s.id === parsed.stepId) return { ...s, transitions: s.transitions.filter((_, i) => i !== parsed.transIdx) }
         if (s.id === newSourceId) return { ...s, transitions: [...s.transitions, trans] }
         return s
       })
@@ -332,33 +386,29 @@ export function WorkflowsModal({ isOpen, onClose, initialEditId }: WorkflowsModa
   const handleDeleteTransition = useCallback((edgeKey: string) => {
     if (edgeKey === 'start') {
       setFormEntryStep('')
-    } else {
-      const sepIdx = edgeKey.lastIndexOf(':')
-      const stepId = edgeKey.slice(0, sepIdx)
-      const transIdx = parseInt(edgeKey.slice(sepIdx + 1))
-      setFormSteps((prev) =>
-        prev.map((s) => (s.id === stepId ? { ...s, transitions: s.transitions.filter((_, i) => i !== transIdx) } : s)),
-      )
+      setSelectedEdgeKey(null)
+      return
     }
+    const parsed = parseEdgeKey(edgeKey)
+    if (!parsed) return
+    setFormSteps((prev) =>
+      prev.map((s) =>
+        s.id === parsed.stepId ? { ...s, transitions: s.transitions.filter((_, i) => i !== parsed.transIdx) } : s,
+      ),
+    )
     setSelectedEdgeKey(null)
   }, [])
 
-  const handleUpdateTransitionCondition = useCallback((edgeKey: string, when: { type: string; result?: string }) => {
-    if (edgeKey === 'start') {
-      setFormStartCondition(when)
-    } else {
-      const sepIdx = edgeKey.lastIndexOf(':')
-      const stepId = edgeKey.slice(0, sepIdx)
-      const transIdx = parseInt(edgeKey.slice(sepIdx + 1))
-      setFormSteps((prev) =>
-        prev.map((s) =>
-          s.id === stepId
-            ? { ...s, transitions: s.transitions.map((t, i) => (i === transIdx ? { ...t, when } : t)) }
-            : s,
-        ),
-      )
-    }
-  }, [])
+  const handleUpdateTransitionCondition = useCallback(
+    (edgeKey: string, when: { type: string; result?: string }) => {
+      if (edgeKey === 'start') {
+        setFormStartCondition(when)
+        return
+      }
+      updateTransition(edgeKey, (t) => ({ ...t, when }))
+    },
+    [updateTransition],
+  )
 
   const resolveStepLabel = (step: WorkflowStep) => resolveAgent(step, agentTypes).name
 
@@ -670,83 +720,47 @@ export function WorkflowsModal({ isOpen, onClose, initialEditId }: WorkflowsModa
 
   return (
     <Modal isOpen={isOpen} onClose={onClose} title="Workflows" size="lg">
-      <div className="flex items-center justify-between mb-4">
-        <p className="text-text-secondary text-sm">
-          Workflows define multi-step agentic processes with branching transitions.
-        </p>
-        <div className="flex items-center gap-2 flex-shrink-0 ml-3">
-          <Button variant="primary" size="sm" onClick={handleNew}>
-            + New
-          </Button>
-        </div>
-      </div>
-
-      {loading && defaults.length === 0 && userItems.length === 0 ? (
-        <div className="text-text-muted text-sm">Loading workflows...</div>
-      ) : defaults.length === 0 && userItems.length === 0 ? (
-        <div className="text-text-muted text-sm">No workflows defined.</div>
-      ) : (
+      <CRUDListHeader
+        description="Workflows define multi-step agentic processes with branching transitions."
+        onNew={handleNew}
+        loading={loading}
+        hasItems={defaults.length > 0 || userItems.length > 0}
+      >
         <div className="space-y-4">
-          {defaults.length > 0 && (
-            <div>
-              <h3 className="text-xs font-medium text-text-secondary mb-2 uppercase tracking-wide">Built-in</h3>
-              <div className="space-y-2">
-                {defaults.map((wf) => (
-                  <WorkflowListItem
-                    key={wf.id}
-                    name={wf.name}
-                    id={wf.id}
-                    color={wf.color ?? '#3b82f6'}
-                    description={wf.description}
-                    isBuiltIn
-                    actions={
-                      <>
-                        <EditButton onClick={() => handleView(wf.id)}>
-                          <EyeIcon />
-                        </EditButton>
-                        <DuplicateIcon onClick={() => handleDuplicate(wf.id)} />
-                      </>
-                    }
-                  />
-                ))}
-              </div>
-            </div>
-          )}
-
-          {userItems.length > 0 && (
-            <div>
-              <h3 className="text-xs font-medium text-text-secondary mb-2 uppercase tracking-wide">Custom</h3>
-              <div className="space-y-2">
-                {userItems.map((wf) => (
-                  <WorkflowListItem
-                    key={wf.id}
-                    name={wf.name}
-                    id={wf.id}
-                    color={wf.color ?? '#3b82f6'}
-                    description={wf.description}
-                    actions={
-                      <>
-                        <EditButton onClick={() => handleView(wf.id)}>
-                          <EyeIcon />
-                        </EditButton>
-                        <EditButton onClick={() => handleEdit(wf.id)}>
-                          <span className="text-[10px]">Edit</span>
-                        </EditButton>
-                        <DuplicateIcon onClick={() => handleDuplicate(wf.id)} />
-                        {isConfirming(wf.id, 'delete') ? (
-                          <ConfirmButton onConfirm={() => handleDelete(wf.id)} onCancel={clearConfirm} />
-                        ) : (
-                          <DeleteIcon onClick={() => {}} />
-                        )}
-                      </>
-                    }
-                  />
-                ))}
-              </div>
-            </div>
-          )}
+          <WorkflowListSection
+            title="Built-in"
+            items={defaults}
+            renderActions={(wf) => (
+              <>
+                <EditButton onClick={() => handleView(wf.id)}>
+                  <EyeIcon />
+                </EditButton>
+                <DuplicateIcon onClick={() => handleDuplicate(wf.id)} />
+              </>
+            )}
+          />
+          <WorkflowListSection
+            title="Custom"
+            items={userItems}
+            renderActions={(wf) => (
+              <>
+                <EditButton onClick={() => handleView(wf.id)}>
+                  <EyeIcon />
+                </EditButton>
+                <EditButton onClick={() => handleEdit(wf.id)}>
+                  <span className="text-[10px]">Edit</span>
+                </EditButton>
+                <DuplicateIcon onClick={() => handleDuplicate(wf.id)} />
+                {isConfirming(wf.id, 'delete') ? (
+                  <ConfirmButton onConfirm={() => handleDelete(wf.id)} onCancel={clearConfirm} />
+                ) : (
+                  <DeleteIcon onClick={() => {}} />
+                )}
+              </>
+            )}
+          />
         </div>
-      )}
+      </CRUDListHeader>
     </Modal>
   )
 }

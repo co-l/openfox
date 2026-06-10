@@ -29,3 +29,30 @@ export function WorkflowListItem({ name, id, color, description, isBuiltIn, acti
     </div>
   )
 }
+
+interface WorkflowListSectionProps {
+  title: string
+  items: Array<{ id: string; name: string; color?: string; description?: string }>
+  renderActions: (item: { id: string }) => ReactNode
+}
+
+export function WorkflowListSection({ title, items, renderActions }: WorkflowListSectionProps) {
+  if (items.length === 0) return null
+  return (
+    <div>
+      <h3 className="text-xs font-medium text-text-secondary mb-2 uppercase tracking-wide">{title}</h3>
+      <div className="space-y-2">
+        {items.map((item) => (
+          <WorkflowListItem
+            key={item.id}
+            name={item.name}
+            id={item.id}
+            color={item.color ?? '#3b82f6'}
+            description={item.description}
+            actions={renderActions(item)}
+          />
+        ))}
+      </div>
+    </div>
+  )
+}

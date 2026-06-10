@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react'
 import { Modal } from '../shared/SelfContainedModal'
-import { Button } from '../shared/Button'
 import { useAgentsStore, type AgentFull } from '../../stores/agents'
 import { authFetch } from '../../lib/api'
+import { CRUDListHeader } from './CRUDModal'
 import { AgentGroup } from './agents/AgentListItem'
 import { AgentForm } from './agents/AgentForm'
 
@@ -255,22 +255,12 @@ export function AgentsModal({ isOpen, onClose, initialEditId }: AgentsModalProps
 
   return (
     <Modal isOpen={isOpen} onClose={onClose} title="Agents" size="lg">
-      <div className="flex items-center justify-between mb-4">
-        <p className="text-text-secondary text-sm">
-          Agents define behavior, tools, and prompts for top-level modes and sub-agents.
-        </p>
-        <div className="flex items-center gap-2 flex-shrink-0 ml-3">
-          <Button variant="primary" size="sm" onClick={handleNew}>
-            + New
-          </Button>
-        </div>
-      </div>
-
-      {loading && defaults.length === 0 && userItems.length === 0 ? (
-        <div className="text-text-muted text-sm">Loading agents...</div>
-      ) : defaults.length === 0 && userItems.length === 0 ? (
-        <div className="text-text-muted text-sm">No agents defined.</div>
-      ) : (
+      <CRUDListHeader
+        description="Agents define behavior, tools, and prompts for top-level modes and sub-agents."
+        onNew={handleNew}
+        loading={loading}
+        hasItems={defaults.length > 0 || userItems.length > 0}
+      >
         <div className="space-y-4">
           {defaults.length > 0 && (
             <AgentGroup
@@ -296,7 +286,7 @@ export function AgentsModal({ isOpen, onClose, initialEditId }: AgentsModalProps
             />
           )}
         </div>
-      )}
+      </CRUDListHeader>
     </Modal>
   )
 }
