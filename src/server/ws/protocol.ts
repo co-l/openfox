@@ -17,7 +17,6 @@ import type {
   ChatToolOutputPayload,
   ChatToolResultPayload,
   ChatTodoPayload,
-  ChatSummaryPayload,
   ChatProgressPayload,
   ChatFormatRetryPayload,
   ChatMessagePayload,
@@ -214,10 +213,6 @@ export function createChatToolOutputMessage(
 
 export function createChatTodoMessage(todos: Todo[]): ServerMessage<ChatTodoPayload> {
   return createServerMessage('chat.todo', { todos })
-}
-
-export function createChatSummaryMessage(summary: string): ServerMessage<ChatSummaryPayload> {
-  return createServerMessage('chat.summary', { summary })
 }
 
 export function createChatProgressMessage(

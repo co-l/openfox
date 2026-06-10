@@ -65,7 +65,7 @@ function runMigrations(db: Database.Database): void {
   `)
 
   // Create sessions table with project_id
-  // Note: mode, phase, isRunning, summary are persisted here for quick access
+  // Note: mode, phase, isRunning are persisted here for quick access
   // Full session state (messages, criteria, todos) is derived from events table
   db.exec(`
     CREATE TABLE IF NOT EXISTS sessions (
@@ -111,11 +111,6 @@ function runMigrations(db: Database.Database): void {
   if (!columnNames.includes('is_running')) {
     logger.info('Migrating sessions table: adding is_running column')
     db.exec(`ALTER TABLE sessions ADD COLUMN is_running INTEGER NOT NULL DEFAULT 0`)
-  }
-
-  if (!columnNames.includes('summary')) {
-    logger.info('Migrating sessions table: adding summary column')
-    db.exec(`ALTER TABLE sessions ADD COLUMN summary TEXT`)
   }
 
   // Note: The old 'phase' column was for the state machine (idle/planning/executing/etc.)

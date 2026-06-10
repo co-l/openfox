@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react'
 import { useSessionStore } from '../../stores/session'
-import { SummaryDisplay } from '../plan/SummaryDisplay'
+import { SessionSidebar } from '../plan/SessionSidebar'
 import type { Message } from '@shared/types.js'
 
 interface SessionLayoutProps {
@@ -29,10 +29,10 @@ export function SessionLayout({
       <div className="flex h-full">
         <div className="flex-1 min-w-0 flex flex-col overflow-hidden bg-secondary">{children}</div>
 
-        {/* Summary Sidebar - mobile: fixed overlay, desktop: flex item */}
+        {/* Session Sidebar - mobile: fixed overlay, desktop: flex item */}
         {criteriaSidebarOpen ? (
           <aside className="hidden md:block w-[320px] shrink-0 border-l border-border p-4 overflow-y-auto bg-secondary">
-            <SummaryDisplay summary={session?.summary ?? null} messages={messages} workdir={session?.workdir} />
+            <SessionSidebar messages={messages} workdir={session?.workdir} />
           </aside>
         ) : (
           <aside className="hidden md:block w-0 shrink-0 overflow-hidden border-l-0" />
@@ -48,7 +48,7 @@ export function SessionLayout({
             ${criteriaSidebarOpen ? 'w-[320px] translate-x-0 border-l border-border' : 'w-[320px] translate-x-full'}
           `}
         >
-          <SummaryDisplay summary={session?.summary ?? null} messages={messages} workdir={session?.workdir} />
+          <SessionSidebar messages={messages} workdir={session?.workdir} />
         </aside>
       </div>
     </div>

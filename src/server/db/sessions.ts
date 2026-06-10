@@ -51,7 +51,6 @@ export function createSession(
     mode: 'planner',
     phase: 'plan',
     isRunning: false,
-    summary: null,
     providerId: providerId ?? null,
     providerModel: providerModel ?? null,
     createdAt: now,
@@ -88,17 +87,7 @@ export function getSession(id: string): Session | null {
   // Note: messages, criteria, contextWindows, executionState are derived from EventStore
   // This function returns the DB row data only - caller should enrich with event data
   return {
-    id: row.id,
-    projectId: row.project_id,
-    workdir: row.workdir,
-    mode: (row.mode ?? 'planner') as SessionMode,
-    phase: (row.workflow_phase ?? 'plan') as SessionPhase,
-    isRunning: Boolean(row.is_running),
-    summary: row.summary ?? null,
-    providerId: row.provider_id ?? null,
-    providerModel: row.provider_model ?? null,
-    createdAt: row.created_at,
-    updatedAt: row.updated_at,
+    ...mapSessionBase(row),
     messages: [],
     criteria: [],
     contextWindows: [],
@@ -166,17 +155,6 @@ export function updateSessionRunning(id: string, isRunning: boolean): void {
     UPDATE sessions SET is_running = ?, updated_at = ? WHERE id = ?
   `,
   ).run(isRunning ? 1 : 0, now, id)
-}
-
-export function updateSessionSummary(id: string, summary: string): void {
-  const db = getDatabase()
-  const now = new Date().toISOString()
-
-  db.prepare(
-    `
-    UPDATE sessions SET summary = ?, updated_at = ? WHERE id = ?
-  `,
-  ).run(summary, now, id)
 }
 
 export function updateSessionMetadata(id: string, metadata: Partial<Session['metadata']>): void {
@@ -310,11 +288,21 @@ export function deleteSession(id: string): void {
   db.prepare('DELETE FROM sessions WHERE id = ?').run(id)
 }
 
-function mapSessionSummaryRow(row: SessionSummaryRow): SessionSummary {
+function mapSessionBase(row: SessionRow | SessionSummaryRow): {
+  id: string
+  projectId: string
+  workdir: string
+  mode: SessionMode
+  phase: SessionPhase
+  isRunning: boolean
+  providerId: string | null
+  providerModel: string | null
+  createdAt: string
+  updatedAt: string
+} {
   return {
     id: row.id,
     projectId: row.project_id,
-    ...(row.title ? { title: row.title } : {}),
     workdir: row.workdir,
     mode: (row.mode ?? 'planner') as SessionMode,
     phase: (row.workflow_phase ?? 'plan') as SessionPhase,
@@ -323,6 +311,13 @@ function mapSessionSummaryRow(row: SessionSummaryRow): SessionSummary {
     providerModel: row.provider_model ?? null,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
+  }
+}
+
+function mapSessionSummaryRow(row: SessionSummaryRow): SessionSummary {
+  return {
+    ...mapSessionBase(row),
+    ...(row.title ? { title: row.title } : {}),
     criteriaCount: 0,
     criteriaCompleted: 0,
     messageCount: row.message_count,

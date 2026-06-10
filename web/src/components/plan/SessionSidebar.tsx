@@ -13,13 +13,12 @@ import { AutoUpdateModal } from '../AutoUpdateModal'
 import { DiffViewer } from './DiffViewer'
 import type { Message } from '@shared/types.js'
 
-interface SummaryDisplayProps {
-  summary: string | null
+interface SessionSidebarProps {
   messages: Message[]
   workdir?: string
 }
 
-export function SummaryDisplay({ summary, messages, workdir }: SummaryDisplayProps) {
+export function SessionSidebar({ messages, workdir }: SessionSidebarProps) {
   const [showStatsModal, setShowStatsModal] = useState(false)
   const [checkingUpdate, setCheckingUpdate] = useState(false)
   const [updateAvailable, setUpdateAvailable] = useState(false)
@@ -81,24 +80,12 @@ export function SummaryDisplay({ summary, messages, workdir }: SummaryDisplayPro
             </div>
           </button>
 
-          {/* Stats Modal */}
           <StatsModal isOpen={showStatsModal} onClose={() => setShowStatsModal(false)} stats={stats} />
         </div>
       )}
 
-      {/* Summary section */}
+      {/* Progress section */}
       <div className="flex flex-col flex-1 overflow-y-auto">
-        <div className="flex items-center justify-between mb-2">
-          <h3 className="text-sm font-semibold text-text-primary">Summary</h3>
-        </div>
-
-        {summary ? (
-          <p className="text-sm text-text-primary leading-relaxed">{summary}</p>
-        ) : (
-          <div className="text-text-muted text-sm text-center py-2">No summary yet</div>
-        )}
-
-        {/* Progress section */}
         <div className="mt-4">
           <h3 className="text-sm font-semibold text-text-primary mb-2">Progress</h3>
           <CriteriaProgressSummary criteria={session?.criteria ?? []} />

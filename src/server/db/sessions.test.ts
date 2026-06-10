@@ -22,7 +22,6 @@ import {
   updateSessionMode,
   updateSessionPhase,
   updateSessionRunning,
-  updateSessionSummary,
   updateSessionMessageCount,
 } from './sessions.js'
 
@@ -61,7 +60,6 @@ describe('db sessions', () => {
       mode: 'planner',
       phase: 'plan',
       isRunning: false,
-      summary: null,
       messages: [],
       criteria: [],
       contextWindows: [],
@@ -136,13 +134,6 @@ describe('db sessions', () => {
 
     updateSessionRunning(session.id, false)
     expect(getSession(session.id)?.isRunning).toBe(false)
-  })
-
-  it('updates session summary', () => {
-    const session = createSession(projectAId, rootA)
-
-    updateSessionSummary(session.id, 'This is a summary')
-    expect(getSession(session.id)?.summary).toBe('This is a summary')
   })
 
   it('updates session metadata', () => {

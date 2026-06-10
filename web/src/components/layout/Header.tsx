@@ -487,7 +487,7 @@ export function Header({ onMenuClick, onCriteriaToggle }: HeaderProps) {
           <button
             onClick={onCriteriaToggle}
             className="p-2.5 rounded hover:bg-bg-tertiary text-text-muted hover:text-text-primary transition-colors"
-            title="Toggle summary sidebar"
+            title="Toggle sidebar"
           >
             <MenuIcon />
           </button>

@@ -1,4 +1,4 @@
-STAGED=$(git diff --cached --name-only)
+STAGED=$(git diff --cached --name-only --diff-filter=d)
 [ -n "$STAGED" ] && echo "$STAGED" | xargs npx prettier --write --ignore-unknown 1>/dev/null 2>&1
-echo "$STAGED" | xargs git add
+git add -u
 npm run typecheck && npm run lint && npm run duplicate && npm test

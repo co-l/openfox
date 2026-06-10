@@ -292,8 +292,6 @@ export function buildAgentReminder(agentDef: AgentDefinition): string {
 // Utility Prompts
 // ============================================================================
 
-export const SUMMARY_REQUEST_PROMPT = `Write a 2-3 sentence summary of what the user wants to accomplish. Focus on WHAT and WHY, not HOW. Output only the summary, no preamble.`
-
 export const BUILDER_KICKOFF_PROMPT = (criteriaCount: number) =>
   `Implement the task and make sure you fulfil the ${criteriaCount} criteria.`
 

@@ -123,7 +123,6 @@ describe('step_done executor integration', () => {
       previousStepOutput: '',
       criteriaCount: 2,
       pendingCount: 1,
-      summary: 'Test',
       criteriaList: '- c1 [PENDING]',
       modifiedFiles: '- src/index.ts',
       stepOutput: { content: 'Previous attempt failed' },

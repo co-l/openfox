@@ -23,7 +23,6 @@ import type {
   ChatToolOutputPayload,
   ChatToolResultPayload,
   ChatTodoPayload,
-  ChatSummaryPayload,
   ChatProgressPayload,
   ChatFormatRetryPayload,
   ChatMessagePayload,
@@ -1525,18 +1524,6 @@ export const useSessionStore = create<SessionState>((set, get) => {
           }
           const payload = message.payload as ChatTodoPayload
           set({ currentTodos: payload.todos })
-          break
-        }
-
-        case 'chat.summary': {
-          if (!isMessageForCurrentSession(message, get().currentSession?.id ?? null)) {
-            markBackgroundSessionUnread()
-            break
-          }
-          const payload = message.payload as ChatSummaryPayload
-          set((state) => ({
-            currentSession: state.currentSession ? { ...state.currentSession, summary: payload.summary } : null,
-          }))
           break
         }
 

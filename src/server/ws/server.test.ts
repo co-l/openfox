@@ -25,7 +25,6 @@ const {
   getEnabledSkillMetadataMock,
   getRuntimeConfigMock,
   getGlobalConfigDirMock,
-  generateSessionSummaryMock,
   createLLMClientMock,
 } = vi.hoisted(() => ({
   createProjectMock: vi.fn(),
@@ -49,7 +48,6 @@ const {
   getEnabledSkillMetadataMock: vi.fn(),
   getRuntimeConfigMock: vi.fn(),
   getGlobalConfigDirMock: vi.fn(),
-  generateSessionSummaryMock: vi.fn(),
   createLLMClientMock: vi.fn(),
 }))
 
@@ -83,11 +81,6 @@ vi.mock('../runtime-config.js', () => ({
 
 vi.mock('../../cli/paths.js', () => ({
   getGlobalConfigDir: getGlobalConfigDirMock,
-}))
-
-vi.mock('../session/summary-generator.js', () => ({
-  generateSessionSummary: generateSessionSummaryMock,
-  needsSummaryGeneration: vi.fn((summary: string | null) => summary === null || summary.trim() === ''),
 }))
 
 vi.mock('../tools/index.js', () => ({
@@ -364,7 +357,6 @@ function createSessionManager(overrides: Record<string, unknown> = {}) {
     phase: 'plan' as const,
     isRunning: false,
     criteria: [] as Array<Record<string, unknown>>,
-    summary: null,
     metadata: { totalTokensUsed: 0, totalToolCalls: 0, iterationCount: 0 },
   }
 
@@ -405,7 +397,6 @@ function createSessionManager(overrides: Record<string, unknown> = {}) {
     setMode: vi.fn((_sessionId, mode: 'planner' | 'builder') => ({ ...session, mode })),
     setPhase: vi.fn((_sessionId, phase: string) => ({ ...session, phase })),
     resetAllCriteriaAttempts: vi.fn(),
-    setSummary: vi.fn(),
     setCriteria: vi.fn(),
     compactContext: vi.fn(),
     updateMessageStats: vi.fn(),
@@ -571,8 +562,6 @@ describe('createWebSocketServer', () => {
     })
     getGlobalConfigDirMock.mockReset()
     getGlobalConfigDirMock.mockReturnValue('/tmp/config')
-    generateSessionSummaryMock.mockReset()
-    generateSessionSummaryMock.mockResolvedValue({ success: true, summary: 'Test summary' })
   })
 
   afterEach(async () => {
@@ -663,7 +652,6 @@ describe('createWebSocketServer', () => {
       phase: 'plan' as const,
       isRunning: false,
       criteria: [],
-      summary: null,
     }
     const sessionManager = createSessionManager({
       createSession: vi.fn(() => session),
@@ -721,7 +709,6 @@ describe('createWebSocketServer', () => {
       phase: 'blocked',
       isRunning: false,
       criteria: [{ id: 'tests-pass', description: 'Tests pass', status: { type: 'pending' }, attempts: [] }],
-      summary: null,
       metadata: { title: null },
     }
     const sessionManager = createSessionManager({
@@ -818,7 +805,6 @@ describe('createWebSocketServer', () => {
       phase: 'plan',
       isRunning: false,
       criteria: [],
-      summary: null,
       metadata: { title: null },
     }
     const sessionManager = createSessionManager({
@@ -874,7 +860,6 @@ describe('createWebSocketServer', () => {
       phase: 'blocked',
       isRunning: false,
       criteria: [{ id: 'tests-pass', description: 'Tests pass', status: { type: 'pending' }, attempts: [] }],
-      summary: 'Pre-generated summary', // Summary already exists from mode.switch
     }
     const sessionManager = createSessionManager({
       createSession: vi.fn(() => sessionState),
@@ -981,7 +966,6 @@ describe('createWebSocketServer', () => {
       phase: 'plan',
       isRunning: false,
       criteria: [],
-      summary: null,
     }
     const sessionManager = createSessionManager({
       createSession: vi.fn(() => sessionState),
@@ -1064,7 +1048,6 @@ describe('createWebSocketServer', () => {
       phase: 'build',
       isRunning: false,
       criteria: [],
-      summary: null,
     }
     const sessionManager = createSessionManager({
       createSession: vi.fn(() => sessionState),
@@ -1095,7 +1078,6 @@ describe('createWebSocketServer', () => {
       phase: 'build',
       isRunning: false,
       criteria: [{ id: 'tests-pass', description: 'Tests pass', status: { type: 'pending' }, attempts: [] }],
-      summary: 'Pre-generated summary', // Summary already exists from mode.switch
     }
     const sessionManager = createSessionManager({
       createSession: vi.fn(() => sessionState),
@@ -1118,7 +1100,7 @@ describe('createWebSocketServer', () => {
     await harness.close()
   })
 
-  it('generates summary when switching to builder mode for first time', async () => {
+  it('rejects mode.switch as unknown message type', async () => {
     const sessionState: any = {
       id: 'session-1',
       projectId: 'project-1',
@@ -1134,13 +1116,11 @@ describe('createWebSocketServer', () => {
           attempts: [],
         },
       ],
-      summary: null,
     }
     const sessionManager = createSessionManager({
       createSession: vi.fn(() => sessionState),
       getSession: vi.fn(() => sessionState),
       requireSession: vi.fn(() => structuredClone(sessionState)),
-      setSummary: vi.fn(),
     })
 
     const harness = await createHarness({ sessionManager })
@@ -1171,7 +1151,6 @@ describe('createWebSocketServer', () => {
       phase: 'build',
       isRunning: false,
       criteria: [{ id: 'tests-pass', description: 'Tests pass', status: { type: 'pending' }, attempts: [] }],
-      summary: null,
     }
     const sessionManager = createSessionManager({
       createSession: vi.fn(() => sessionState),
@@ -1236,7 +1215,6 @@ describe('createWebSocketServer', () => {
       phase: 'build',
       isRunning: false,
       criteria: [{ id: 'tests-pass', description: 'Tests pass', status: { type: 'pending' }, attempts: [] }],
-      summary: null,
     }
     const sessionManager = createSessionManager({
       createSession: vi.fn(() => sessionState),
@@ -1280,7 +1258,6 @@ describe('createWebSocketServer', () => {
       phase: 'plan',
       isRunning: false,
       criteria: [],
-      summary: null,
       metadata: { totalTokensUsed: 0, totalToolCalls: 0, iterationCount: 0 },
     }
     const sessionTwo: any = {
@@ -1291,7 +1268,6 @@ describe('createWebSocketServer', () => {
       phase: 'plan',
       isRunning: false,
       criteria: [],
-      summary: null,
       metadata: { totalTokensUsed: 0, totalToolCalls: 0, iterationCount: 0 },
     }
     const sessions = new Map<string, any>([
@@ -1412,7 +1388,6 @@ describe('createWebSocketServer', () => {
       phase: 'build' as const,
       isRunning: false,
       criteria: [{ id: 'tests-pass', description: 'Tests pass', status: { type: 'pending' }, attempts: [] }],
-      summary: 'test',
       providerId: 'deepseek-provider',
       providerModel: 'deepseek-chat',
       metadata: { totalTokensUsed: 0, totalToolCalls: 0, iterationCount: 0 },

@@ -235,33 +235,4 @@ describe('Mode Switching', () => {
       expect(session.phase).toBe('plan') // Phase doesn't auto-change on manual mode switch
     })
   })
-
-  describe('Summary Generation', () => {
-    it('does NOT generate summary for empty sessions when switching to builder', async () => {
-      const sessionId = client.getSession()!.id
-
-      // Fresh session with no messages - switch to builder mode
-      await setSessionMode(server.url, sessionId, 'builder', server.wsUrl)
-
-      // Wait for session state update
-      await client.waitFor('session.state')
-
-      // Give any potential async summary generation time to complete
-      await new Promise((resolve) => setTimeout(resolve, 100))
-
-      const session = client.getSession()!
-      // Summary should remain null/empty for sessions without conversation history
-      // OR should not be a generic placeholder
-      if (session.summary) {
-        expect(session.summary).not.toBe('I understand. Let me help you with that.')
-        expect(session.summary.length).toBeGreaterThan(20) // Should be a meaningful summary
-      } else {
-        expect(session.summary).toBeNull()
-      }
-    })
-
-    it.skip('does NOT generate summary for empty sessions when using mode.accept', async () => {
-      // mode.accept is removed
-    })
-  })
 })

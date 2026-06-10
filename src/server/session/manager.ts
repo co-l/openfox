@@ -24,7 +24,6 @@ import {
   listSessions as dbListSessions,
   listSessionsByProject as dbListSessionsByProject,
   deleteSession as dbDeleteSession,
-  updateSessionSummary,
   updateSessionMetadata,
   updateSessionProvider,
   updateSessionDangerLevel,
@@ -319,20 +318,6 @@ export class SessionManager {
     const updatedSession = this.requireSession(sessionId)
     this.emit({ type: 'session_updated', session: updatedSession })
     this.emit({ type: 'running_changed', sessionId, isRunning })
-
-    return updatedSession
-  }
-
-  /**
-   * Set session summary. Updates DB directly (metadata, not event).
-   */
-  setSummary(sessionId: string, summary: string): Session {
-    logger.debug('Setting session summary', { sessionId, summaryLength: summary.length })
-
-    updateSessionSummary(sessionId, summary)
-
-    const updatedSession = this.requireSession(sessionId)
-    this.emit({ type: 'session_updated', session: updatedSession })
 
     return updatedSession
   }

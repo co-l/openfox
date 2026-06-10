@@ -40,7 +40,6 @@ function makeTemplateContext(overrides: Partial<TemplateContext> = {}): Template
     previousStepOutput: 'exit 0',
     criteriaCount: 3,
     pendingCount: 2,
-    summary: 'Build a widget',
     criteriaList: '- c1 [PASSED]: do thing',
     modifiedFiles: '- src/index.ts',
     stepOutput: { content: 'Some findings', stdout: 'exit 0' },
@@ -285,14 +284,14 @@ describe('resolveTemplate', () => {
     const template =
       'Dir: {{workdir}}, Reason: {{reason}}, Findings: {{verifierFindings}}, ' +
       'Prev: {{previousStepOutput}}, Count: {{criteriaCount}}, Pending: {{pendingCount}}, ' +
-      'Summary: {{summary}}, List: {{criteriaList}}, Files: {{modifiedFiles}}'
+      'List: {{criteriaList}}, Files: {{modifiedFiles}}'
 
     const result = resolveTemplate(template, ctx)
 
     expect(result).toBe(
       'Dir: /tmp/project, Reason: 2 criteria remaining, Findings: Some findings, ' +
         'Prev: exit 0, Count: 3, Pending: 2, ' +
-        'Summary: Build a widget, List: - c1 [PASSED]: do thing, Files: - src/index.ts',
+        'List: - c1 [PASSED]: do thing, Files: - src/index.ts',
     )
   })
 

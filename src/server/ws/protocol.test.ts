@@ -7,7 +7,6 @@ import {
   createChatMessageUpdatedMessage,
   createChatPathConfirmationMessage,
   createChatProgressMessage,
-  createChatSummaryMessage,
   createChatTodoMessage,
   createChatToolOutputMessage,
   createChatToolPreparingMessage,
@@ -296,12 +295,11 @@ describe('ws/protocol', () => {
   })
 
   describe('other message builders', () => {
-    it('creates progress, summary, todo, mode, phase, criteria, context, and settings messages', () => {
+    it('creates progress, todo, mode, phase, criteria, context, and settings messages', () => {
       expect(createChatTodoMessage([{ content: 'Write tests', status: 'in_progress' }])).toEqual({
         type: 'chat.todo',
         payload: { todos: [{ content: 'Write tests', status: 'in_progress' }] },
       })
-      expect(createChatSummaryMessage('all good')).toEqual({ type: 'chat.summary', payload: { summary: 'all good' } })
       expect(createChatProgressMessage('starting')).toEqual({ type: 'chat.progress', payload: { message: 'starting' } })
       expect(createChatProgressMessage('summarizing', 'summary')).toEqual({
         type: 'chat.progress',

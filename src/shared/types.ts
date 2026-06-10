@@ -34,7 +34,6 @@ export interface Session {
   mode: SessionMode
   phase: SessionPhase // Current workflow phase
   isRunning: boolean // Is the agent actively working?
-  summary: string | null // Generated when switching to builder, used by verifier
   providerId?: string | null // Per-session provider override
   providerModel?: string | null // Per-session model override
   createdAt: string

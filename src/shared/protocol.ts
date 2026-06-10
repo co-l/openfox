@@ -84,7 +84,6 @@ export type ServerMessageType =
   | 'chat.tool_output' // Streaming tool output (stdout/stderr for run_command)
   | 'chat.tool_result' // Tool result
   | 'chat.todo' // Todo list update (displayed in chat)
-  | 'chat.summary' // Summary block (displayed in chat)
   | 'chat.progress' // Progress update (e.g., "Generating summary...")
   | 'chat.format_retry' // Model used wrong format (XML tools), retrying
   | 'chat.message' // Full message added (system-generated, etc.)
@@ -219,10 +218,6 @@ export interface ChatToolOutputPayload {
 
 export interface ChatTodoPayload {
   todos: Todo[]
-}
-
-export interface ChatSummaryPayload {
-  summary: string
 }
 
 export interface ChatProgressPayload {

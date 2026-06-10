@@ -87,7 +87,7 @@ describe('SessionManager', () => {
     expect(getLspManagerMock).toHaveBeenCalledWith(session.id, workdir)
   })
 
-  it('updates mode, phase, running state, and summary while emitting events', () => {
+  it('updates mode, phase, and running state while emitting events', () => {
     const session = manager.createSession(projectId, 'Custom Title')
     const allEvents: string[] = []
     const sessionEvents: string[] = []
@@ -108,7 +108,6 @@ describe('SessionManager', () => {
     expect(manager.setPhase(session.id, 'build').phase).toBe('build')
     expect(manager.setRunning(session.id, true).isRunning).toBe(true)
     expect(manager.setRunning(session.id, true).isRunning).toBe(true)
-    expect(manager.setSummary(session.id, 'Build summary').summary).toBe('Build summary')
 
     expect(allEvents).toContain('mode_changed')
     expect(allEvents).toContain('phase_changed')
