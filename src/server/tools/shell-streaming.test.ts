@@ -223,6 +223,76 @@ echo "line 3"
     expect(elapsed).toBeGreaterThanOrEqual(1000)
     expect(elapsed).toBeLessThan(5000)
   }, 7000)
+
+  describe('tail pipe handling', () => {
+    it('streams full output to user but returns only tailed output to agent', async () => {
+      const onProgress = vi.fn()
+      context.onProgress = onProgress
+
+      const scriptPath = join(tempDir, 'tenlines.sh')
+      await writeFile(
+        scriptPath,
+        `#!/bin/bash
+for i in a b c d e f g h i j; do echo "$i"; done
+`,
+      )
+
+      const result = await runCommandTool.execute({ command: `bash ${scriptPath} | tail -5` }, context)
+
+      const stdoutCalls = onProgress.mock.calls
+        .filter((call) => (call[0] as string).startsWith('[stdout]'))
+        .map((c) => c[0] as string)
+        .join('')
+
+      expect(stdoutCalls).toContain('a')
+      expect(stdoutCalls).toContain('j')
+
+      expect(result.output).toContain('h')
+      expect(result.output).toContain('j')
+      expect(result.output).not.toContain('a')
+      expect(result.output).not.toContain('g')
+    })
+
+    it('returns exit code from the original command, not tail', async () => {
+      const result = await runCommandTool.execute({ command: 'echo "hello" | tail -5' }, context)
+
+      expect(result.success).toBe(true)
+      expect(result.output).toContain('hello')
+    })
+
+    it('commands without tail work unchanged', async () => {
+      const onProgress = vi.fn()
+      context.onProgress = onProgress
+
+      const result = await runCommandTool.execute({ command: 'echo "hello world"' }, context)
+
+      expect(result.success).toBe(true)
+      expect(result.output).toContain('hello world')
+
+      const stdoutCalls = onProgress.mock.calls
+        .filter((call) => (call[0] as string).startsWith('[stdout]'))
+        .map((c) => c[0] as string)
+        .join('')
+      expect(stdoutCalls).toContain('hello world')
+    })
+
+    it('handles tail with more lines than output', async () => {
+      const result = await runCommandTool.execute({ command: 'echo "only one line" | tail -50' }, context)
+
+      expect(result.success).toBe(true)
+      expect(result.output).toContain('only one line')
+    })
+
+    it('does not strip tail when followed by &&', async () => {
+      const onProgress = vi.fn()
+      context.onProgress = onProgress
+
+      const result = await runCommandTool.execute({ command: 'echo "first" | tail -3 && echo "second"' }, context)
+
+      expect(result.output).toContain('first')
+      expect(result.output).toContain('second')
+    })
+  })
 })
 
 // Separate import for afterEach

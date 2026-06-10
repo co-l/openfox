@@ -4,6 +4,7 @@ import { createTool } from './tool-helpers.js'
 import { checkAborted, spawnShellProcess } from '../utils/shell.js'
 import { extractAbsolutePathsFromCommand, extractSensitivePathsFromCommand } from './path-security.js'
 import { terminateProcessTree } from '../utils/process-tree.js'
+import { stripTailPipe } from './shell-tail.js'
 
 interface RunCommandArgs {
   command: string
@@ -59,7 +60,10 @@ export const runCommandTool = createTool<RunCommandArgs>(
 
     await helpers.checkPathAccess(pathsToCheck, args.command)
 
-    const result = await executeCommand(args.command, workingDir, timeout, context.signal, context.onProgress)
+    const tailInfo = stripTailPipe(args.command)
+    const execCommand = tailInfo ? tailInfo.command : args.command
+
+    const result = await executeCommand(execCommand, workingDir, timeout, context.signal, context.onProgress)
 
     let output = ''
 
@@ -74,6 +78,12 @@ export const runCommandTool = createTool<RunCommandArgs>(
 
     output += `\n\n[Exit code: ${result.exitCode}]`
 
+    if (tailInfo) {
+      const lines = output.split('\n')
+      const tailed = lines.slice(-tailInfo.tailLines)
+      output = tailed.join('\n')
+    }
+
     let truncated = false
     if (output.length > OUTPUT_LIMITS.run_command.maxBytes) {
       output = output.slice(0, OUTPUT_LIMITS.run_command.maxBytes)
@@ -81,8 +91,8 @@ export const runCommandTool = createTool<RunCommandArgs>(
       truncated = true
     }
 
-    const lines = output.split('\n').length
-    if (lines > OUTPUT_LIMITS.run_command.maxLines) {
+    const linesCount = output.split('\n').length
+    if (linesCount > OUTPUT_LIMITS.run_command.maxLines) {
       const limitedLines = output.split('\n').slice(0, OUTPUT_LIMITS.run_command.maxLines)
       output = limitedLines.join('\n')
       output += '\n\n[Output truncated due to line limit]'
