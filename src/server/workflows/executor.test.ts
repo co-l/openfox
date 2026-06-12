@@ -3,6 +3,10 @@
  */
 
 import { describe, it, expect } from 'vitest'
+import { execSync } from 'node:child_process'
+import { mkdtempSync, writeFileSync, rmSync } from 'node:fs'
+import { join } from 'node:path'
+import { tmpdir } from 'node:os'
 import type { Criterion } from '../../shared/types.js'
 import type { TransitionCondition, Transition } from './types.js'
 import { TERMINAL_BLOCKED, TERMINAL_DONE } from './types.js'
@@ -369,28 +373,48 @@ describe('formatCriteriaList', () => {
 // ============================================================================
 
 describe('formatModifiedFiles', () => {
-  it('returns (none) when no files are modified', () => {
-    const session = { executionState: { modifiedFiles: [] } } as unknown as Session
-    expect(formatModifiedFiles(session)).toBe('(none)')
+  it('returns (none) outside a git repo', async () => {
+    const tmp = mkdtempSync(join(tmpdir(), 'openfox-test-'))
+    try {
+      const session = { workdir: tmp } as Session
+      expect(await formatModifiedFiles(session)).toBe('(none)')
+    } finally {
+      rmSync(tmp, { recursive: true, force: true })
+    }
   })
 
-  it('returns (none) when executionState is undefined', () => {
-    const session = {} as unknown as Session
-    expect(formatModifiedFiles(session)).toBe('(none)')
+  it('returns (none) when no files are modified', async () => {
+    const tmp = mkdtempSync(join(tmpdir(), 'openfox-test-'))
+    try {
+      execSync('git init', { cwd: tmp, stdio: 'pipe' })
+      execSync('git config user.email test@test.com', { cwd: tmp, stdio: 'pipe' })
+      execSync('git config user.name test', { cwd: tmp, stdio: 'pipe' })
+      writeFileSync(join(tmp, 'README.md'), '# hello')
+      execSync('git add . && git commit -m init', { cwd: tmp, stdio: 'pipe' })
+      const session = { workdir: tmp } as Session
+      expect(await formatModifiedFiles(session)).toBe('(none)')
+    } finally {
+      rmSync(tmp, { recursive: true, force: true })
+    }
   })
 
-  it('lists files with bullet points', () => {
-    const session = {
-      executionState: { modifiedFiles: ['src/index.ts', 'README.md', 'package.json'] },
-    } as unknown as Session
-    expect(formatModifiedFiles(session)).toBe('- src/index.ts\n- README.md\n- package.json')
-  })
-
-  it('handles a single file', () => {
-    const session = {
-      executionState: { modifiedFiles: ['file.txt'] },
-    } as unknown as Session
-    expect(formatModifiedFiles(session)).toBe('- file.txt')
+  it('lists modified and untracked files', async () => {
+    const tmp = mkdtempSync(join(tmpdir(), 'openfox-test-'))
+    try {
+      execSync('git init', { cwd: tmp, stdio: 'pipe' })
+      execSync('git config user.email test@test.com', { cwd: tmp, stdio: 'pipe' })
+      execSync('git config user.name test', { cwd: tmp, stdio: 'pipe' })
+      writeFileSync(join(tmp, 'existing.ts'), 'original')
+      execSync('git add . && git commit -m init', { cwd: tmp, stdio: 'pipe' })
+      writeFileSync(join(tmp, 'existing.ts'), 'modified')
+      writeFileSync(join(tmp, 'new.ts'), 'untracked')
+      const session = { workdir: tmp } as Session
+      const result = await formatModifiedFiles(session)
+      expect(result).toContain('existing.ts')
+      expect(result).toContain('new.ts')
+    } finally {
+      rmSync(tmp, { recursive: true, force: true })
+    }
   })
 })
 

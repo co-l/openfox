@@ -34,9 +34,27 @@
       "prompt": "## Task Summary\n{{summary}}\n\n## Criteria\n{{criteriaList}}\n\n## Modified Files\n{{modifiedFiles}}\n\nVerify each criterion marked [NEEDS VERIFICATION]. Read the code, run tests if applicable, then call pass_criterion or fail_criterion for each.",
       "transitions": [
         { "when": { "type": "any_criteria_blocked" }, "goto": "$blocked" },
-        { "when": { "type": "all_criteria_passed" }, "goto": "$done" },
+        { "when": { "type": "all_criteria_passed" }, "goto": "code_review" },
         { "when": { "type": "has_pending_criteria" }, "goto": "build" }
       ]
+    },
+    {
+      "id": "code_review",
+      "name": "Code Review",
+      "type": "sub_agent",
+      "phase": "verification",
+      "subAgentType": "code_reviewer",
+      "prompt": "## Modified Files\n{{modifiedFiles}}\n\nReview the changes. Focus on:\n1. **UX interaction** — does this feel good to use? Any rough edges, confusing behavior, or unnecessary friction?\n2. **Project bloat** — does this follow project conventions? Is it maintainable? Does it add unnecessary complexity?\n\nCall return_value with your findings.",
+      "transitions": [{ "when": { "type": "always" }, "goto": "finalize" }]
+    },
+    {
+      "id": "finalize",
+      "name": "Finalize",
+      "type": "agent",
+      "phase": "verification",
+      "toolMode": "builder",
+      "prompt": "## Code Review Findings\n{{stepOutput.content}}\n\nThe code reviewer has provided feedback above. Review it and make any final adjustments if needed. When you're satisfied, call step_done().",
+      "transitions": [{ "when": { "type": "always" }, "goto": "$done" }]
     }
   ],
   "startCondition": {

@@ -74,77 +74,77 @@ function hashContent(content: string): string {
 
 function moduleGitDiff(cwd: string): Promise<{ hash: string; files: GitDiffFile[] }> {
   return new Promise((resolve) => {
-    const proc = spawn('git', ['diff', '--stat', '--numstat', '--format=', 'HEAD'], {
+    const diffProc = spawn('git', ['diff', '--name-status', 'HEAD'], {
       cwd,
       stdio: ['ignore', 'pipe', 'pipe'],
     })
-    const statusProc = spawn('git', ['status', '--porcelain', '-uall'], {
+    const statusProc = spawn('git', ['status', '--porcelain'], {
       cwd,
       stdio: ['ignore', 'pipe', 'pipe'],
     })
     let diffStdout = ''
     let statusStdout = ''
-    proc.stdout.on('data', (data: Buffer) => {
-      diffStdout += data.toString()
-    })
-    statusProc.stdout.on('data', (data: Buffer) => {
-      statusStdout += data.toString()
-    })
-    let procExited = false
+    let diffExited = false
     let statusExited = false
     let diffCode: number | null = null
     let statusCode: number | null = null
 
     const processResults = () => {
-      if (diffCode !== 0 || statusCode !== 0) {
-        resolve({ hash: '', files: [] })
-        return
-      }
-      const hash = hashContent(diffStdout + statusStdout)
+      if (!diffExited || !statusExited) return
+
+      const raw = diffStdout + statusStdout
+      const hash = raw ? hashContent(raw) : ''
       const files: GitDiffFile[] = []
-      for (const line of diffStdout.split('\n')) {
-        if (!line) continue
-        const parts = line.split('\t')
-        if (parts.length < 3) continue
-        const statusChar = parts[1]?.[0]
-        const status = statusChar === 'A' ? 'added' : statusChar === 'd' ? 'deleted' : 'modified'
-        files.push({
-          path: parts[2] ?? parts[1] ?? parts[0] ?? '',
-          status,
-          additions: parseInt(parts[0] ?? '') || 0,
-          deletions: parseInt(parts[1] ?? '') || 0,
-        })
+
+      if (diffCode === 0) {
+        for (const line of diffStdout.split('\n')) {
+          if (!line.trim()) continue
+          const [statusChar, ...pathParts] = line.split('\t')
+          const path = pathParts.join('\t') || statusChar || ''
+          if (!path) continue
+          const status = statusChar === 'A' ? 'added' : statusChar === 'D' ? 'deleted' : 'modified'
+          files.push({ path, status, additions: 0, deletions: 0 })
+        }
       }
-      for (const line of statusStdout.split('\n')) {
-        if (!line) continue
-        if (!line.startsWith('?? ')) continue
-        const path = line.slice(3)
-        if (!path) continue
-        files.push({
-          path,
-          status: 'added',
-          additions: 0,
-          deletions: 0,
-        })
+
+      if (statusCode === 0) {
+        for (const line of statusStdout.split('\n')) {
+          if (!line.startsWith('?? ')) continue
+          const path = line.slice(3).trim()
+          if (!path) continue
+          files.push({ path, status: 'added', additions: 0, deletions: 0 })
+        }
       }
+
       resolve({ hash, files })
     }
 
-    proc.on('close', (code) => {
-      procExited = true
+    diffProc.stdout.on('data', (data: Buffer) => {
+      diffStdout += data.toString()
+    })
+    statusProc.stdout.on('data', (data: Buffer) => {
+      statusStdout += data.toString()
+    })
+
+    diffProc.on('close', (code) => {
+      diffExited = true
       diffCode = code
-      if (statusExited) processResults()
+      processResults()
     })
     statusProc.on('close', (code) => {
       statusExited = true
       statusCode = code
-      if (procExited) processResults()
+      processResults()
     })
-    proc.on('error', () => resolve({ hash: '', files: [] }))
+    diffProc.on('error', () => {
+      diffExited = true
+      diffCode = 1
+      processResults()
+    })
     statusProc.on('error', () => {
-      if (!procExited) {
-        resolve({ hash: '', files: [] })
-      }
+      statusExited = true
+      statusCode = 1
+      processResults()
     })
   })
 }

@@ -27,6 +27,7 @@ import { createVerifierNudgeConfig } from '../sub-agents/verifier-helpers.js'
 import { loadAllAgentsDefault, findAgentById } from '../agents/registry.js'
 import { getToolRegistryForAgent } from '../tools/index.js'
 import { computeSessionStats } from '../../shared/stats.js'
+import { formatGitDiffFiles } from '../git/diff.js'
 import { executeShellCommand } from './shell.js'
 import { logger } from '../utils/logger.js'
 
@@ -87,9 +88,8 @@ export function formatCriteriaList(criteria: Criterion[]): string {
     .join('\n')
 }
 
-export function formatModifiedFiles(session: Session): string {
-  const files = session.executionState?.modifiedFiles ?? []
-  return files.length > 0 ? files.map((f) => `- ${f}`).join('\n') : '(none)'
+export async function formatModifiedFiles(session: Session): Promise<string> {
+  return formatGitDiffFiles(session.workdir)
 }
 
 export function resolveTemplate(template: string, ctx: TemplateContext): string {
@@ -222,7 +222,7 @@ export async function executeWorkflow(
 
   let currentStepId = workflow.entryStep
   let lastStepOutput: Record<string, string> = {}
-  let isFirstBuilderEntry = true
+  const firstEntryForStep = new Set<string>()
 
   // Snapshot message count so we can compute workflow-scoped stats (not session-wide)
   const messagesBeforeWorkflow = sessionManager.requireSession(sessionId).messages.length
@@ -317,7 +317,7 @@ export async function executeWorkflow(
       criteriaCount: criteria.length,
       pendingCount: criteria.filter((c) => c.status.type !== 'passed').length,
       criteriaList: formatCriteriaList(criteria),
-      modifiedFiles: formatModifiedFiles(session),
+      modifiedFiles: await formatModifiedFiles(session),
       stepOutput: lastStepOutput,
     }
 
@@ -340,7 +340,7 @@ export async function executeWorkflow(
         let promptContent: string | null
         let nudgeContent: string | null
 
-        if (isFirstBuilderEntry && agentStep.prompt) {
+        if (!firstEntryForStep.has(step.id) && agentStep.prompt) {
           const resolvedPrompt = resolveTemplate(agentStep.prompt, templateCtx)
           promptContent = resolvedPrompt + STEP_DONE_PROMPT
           const promptMsgId = crypto.randomUUID()
@@ -368,7 +368,7 @@ export async function executeWorkflow(
               }),
             )
           }
-        } else if (!isFirstBuilderEntry) {
+        } else if (firstEntryForStep.has(step.id)) {
           // Build nudge: nudgePrompt first (if exists), then step_done nudge
           const parts: string[] = []
           if (agentStep.nudgePrompt) {
@@ -389,7 +389,7 @@ export async function executeWorkflow(
             llmClient,
             injectStepDone: true,
             ...(options.statsIdentity ? { statsIdentity: options.statsIdentity } : {}),
-            ...(isFirstBuilderEntry && !agentStep.prompt && options.injectBuilderKickoff === true
+            ...(!firstEntryForStep.has(step.id) && !agentStep.prompt && options.injectBuilderKickoff === true
               ? { injectBuilderKickoff: true }
               : {}),
             ...(signal ? { signal } : {}),
@@ -398,7 +398,7 @@ export async function executeWorkflow(
           turnMetrics,
         )
 
-        isFirstBuilderEntry = false
+        firstEntryForStep.add(step.id)
         const agentReturnValue = agentResult.returnValueResult ?? 'completed'
         const stepDoneCalled = agentResult.stepDoneCalled ?? false
         lastStepOutput = {
