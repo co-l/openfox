@@ -122,7 +122,8 @@ Type=simple
 ExecStart=${expandPath(RUN_SCRIPT_PATH)}
 Restart=always
 RestartSec=5
-KillMode=process
+KillMode=control-group
+Environment=OPENFOX_SERVICE=true
 
 [Install]
 WantedBy=graphical-session.target
@@ -238,8 +239,13 @@ async function serviceStop(): Promise<void> {
     return
   }
 
-  systemctl(['stop', SERVICE_NAME])
-  console.log('✓ Service stopped')
+  const { success: stopped } = systemctl(['stop', SERVICE_NAME])
+  if (stopped) {
+    console.log('✓ Service stopped')
+  } else {
+    console.error('✗ Failed to stop service')
+    process.exit(1)
+  }
 }
 
 async function serviceRestart(): Promise<void> {

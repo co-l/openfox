@@ -13,16 +13,21 @@ export function resetUpdateInProgress(): void {
   updateInProgress = false
 }
 
+function isRunningAsService(): boolean {
+  return process.env['OPENFOX_SERVICE'] === 'true'
+}
+
 export function createAutoUpdateRoutes(options: AutoUpdateRoutesOptions = {}): Router {
   const router = Router()
 
   router.get('/check', async (req, res) => {
     const isTest = req.query['test'] === '1'
+    const isService = isRunningAsService()
 
     const current = VERSION
 
     if (isTest) {
-      res.json({ current: '1.0.0', latest: '1.1.0', isUpdateAvailable: true })
+      res.json({ current: '1.0.0', latest: '1.1.0', isUpdateAvailable: true, isService })
       return
     }
 
@@ -50,9 +55,9 @@ export function createAutoUpdateRoutes(options: AutoUpdateRoutesOptions = {}): R
       })
 
       const isUpdateAvailable = current !== latest
-      res.json({ current, latest, isUpdateAvailable })
+      res.json({ current, latest, isUpdateAvailable, isService })
     } catch {
-      res.json({ current, latest: current, isUpdateAvailable: false })
+      res.json({ current, latest: current, isUpdateAvailable: false, isService })
     }
   })
 
@@ -72,7 +77,9 @@ export function createAutoUpdateRoutes(options: AutoUpdateRoutesOptions = {}): R
 
     try {
       let stderr = ''
-      const child = spawn('bash', ['-c', 'openfox update'], {
+      const isService = isRunningAsService()
+      const updateCmd = isService ? 'openfox update --service' : 'openfox update'
+      const child = spawn('bash', ['-c', updateCmd], {
         detached: true,
         stdio: ['ignore', 'ignore', 'pipe'],
       })
@@ -97,7 +104,7 @@ export function createAutoUpdateRoutes(options: AutoUpdateRoutesOptions = {}): R
         updateInProgress = false
       }, 30_000)
 
-      res.json({ success: true })
+      res.json({ success: true, isService })
     } catch (err) {
       updateInProgress = false
       res.status(500).json({ error: err instanceof Error ? err.message : 'Update failed to start' })

@@ -149,6 +149,7 @@ export async function runCli(options: { mode: Mode }): Promise<void> {
       'no-browser': { type: 'boolean' },
       help: { type: 'boolean', short: 'h' },
       version: { type: 'boolean', short: 'v' },
+      service: { type: 'boolean' },
     },
     allowPositionals: true,
     strict: true,
@@ -208,7 +209,8 @@ export async function runCli(options: { mode: Mode }): Promise<void> {
       const __filename = fileURLToPath(import.meta.url)
       const __dirname = dirname(__filename)
       const updateScriptPath = join(__dirname, 'cli', 'update.sh')
-      const result = spawnSync(updateScriptPath, [], { shell: true, stdio: 'inherit' })
+      const updateArgs = values['service'] ? ['--service'] : []
+      const result = spawnSync(updateScriptPath, updateArgs, { shell: true, stdio: 'inherit' })
       if (result.status !== 0) {
         process.exit(result.status ?? 1)
       }

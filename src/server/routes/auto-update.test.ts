@@ -29,19 +29,31 @@ describe('Auto Update Routes', () => {
     it('returns current version and latest', async () => {
       const res = await fetch(`${baseUrl}/api/auto-update/check`)
       expect(res.status).toBe(200)
-      const body = (await res.json()) as { current: string; latest: string; isUpdateAvailable: boolean }
+      const body = (await res.json()) as {
+        current: string
+        latest: string
+        isUpdateAvailable: boolean
+        isService: boolean
+      }
       expect(typeof body.current).toBe('string')
       expect(typeof body.latest).toBe('string')
       expect(typeof body.isUpdateAvailable).toBe('boolean')
+      expect(typeof body.isService).toBe('boolean')
     })
 
     it('returns mock versions when test=1', async () => {
       const res = await fetch(`${baseUrl}/api/auto-update/check?test=1`)
       expect(res.status).toBe(200)
-      const body = (await res.json()) as { current: string; latest: string; isUpdateAvailable: boolean }
+      const body = (await res.json()) as {
+        current: string
+        latest: string
+        isUpdateAvailable: boolean
+        isService: boolean
+      }
       expect(body.current).toBe('1.0.0')
       expect(body.latest).toBe('1.1.0')
       expect(body.isUpdateAvailable).toBe(true)
+      expect(typeof body.isService).toBe('boolean')
     })
 
     it('returns isUpdateAvailable false when current matches latest', async () => {
@@ -59,8 +71,9 @@ describe('Auto Update Routes', () => {
       const elapsed = Date.now() - start
 
       expect(res.status).toBe(200)
-      const body = (await res.json()) as { success: boolean }
+      const body = (await res.json()) as { success: boolean; isService: boolean }
       expect(body.success).toBe(true)
+      expect(typeof body.isService).toBe('boolean')
       expect(elapsed).toBeLessThan(2000)
     })
   })

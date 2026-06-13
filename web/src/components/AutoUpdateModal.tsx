@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useRef } from 'react'
 import { Modal } from './shared/Modal'
 import { authFetch } from '../lib/api'
 
-type ModalState = 'ready' | 'updating' | 'reloading' | 'failed'
+type ModalState = 'ready' | 'updating' | 'reloading' | 'complete' | 'failed'
 type TimeoutPhase = 'waiting' | 'takingLonger' | 'failed'
 
 interface AutoUpdateModalProps {
@@ -16,6 +16,7 @@ export function AutoUpdateModal({ isOpen, onClose, versionInfo }: AutoUpdateModa
   const [timeoutPhase, setTimeoutPhase] = useState<TimeoutPhase>('waiting')
   const [progressDots, setProgressDots] = useState('')
   const [modalVersionInfo, setModalVersionInfo] = useState(versionInfo)
+  const [isService, setIsService] = useState(false)
   const diedRef = useRef(false)
 
   useEffect(() => {
@@ -26,7 +27,10 @@ export function AutoUpdateModal({ isOpen, onClose, versionInfo }: AutoUpdateModa
     }
     fetch('/api/auto-update/check')
       .then((res) => res.json())
-      .then((data) => setModalVersionInfo({ current: data.current, latest: data.latest }))
+      .then((data) => {
+        setModalVersionInfo({ current: data.current, latest: data.latest })
+        setIsService(data.isService ?? false)
+      })
       .catch(() => {})
   }, [isOpen])
 
@@ -44,7 +48,8 @@ export function AutoUpdateModal({ isOpen, onClose, versionInfo }: AutoUpdateModa
     diedRef.current = false
 
     const isTestMode = modalVersionInfo?.current === '1.0.0' && modalVersionInfo?.latest === '1.1.0'
-    await authFetch('/api/auto-update', { method: 'POST' })
+    const res = await authFetch('/api/auto-update', { method: 'POST' })
+    const { isService: serviceMode } = await res.json()
 
     if (isTestMode) {
       setTimeout(() => {
@@ -53,6 +58,13 @@ export function AutoUpdateModal({ isOpen, onClose, versionInfo }: AutoUpdateModa
         localStorage.setItem('update_pending', 'true')
         setTimeout(() => window.location.reload(), 1000)
       }, 5_000)
+      return
+    }
+
+    if (!serviceMode) {
+      setTimeout(() => {
+        setState('complete')
+      }, 8_000)
       return
     }
 
@@ -105,7 +117,13 @@ export function AutoUpdateModal({ isOpen, onClose, versionInfo }: AutoUpdateModa
     <Modal
       isOpen={isOpen}
       onClose={canClose ? onClose : undefined}
-      title={state === 'failed' ? 'Update Failed' : 'New OpenFox Version Available'}
+      title={
+        state === 'failed'
+          ? 'Update Failed'
+          : state === 'complete'
+            ? 'Update Complete'
+            : 'New OpenFox Version Available'
+      }
       size="sm"
       closeOnBackdropClick={canClose}
       showCloseButton={canClose}
@@ -144,6 +162,14 @@ export function AutoUpdateModal({ isOpen, onClose, versionInfo }: AutoUpdateModa
           </div>
         )}
 
+        {state === 'complete' && (
+          <div className="flex flex-col gap-3 mt-2">
+            <div className="bg-bg-tertiary rounded px-3 py-2 text-xs text-text-secondary">
+              OpenFox has been updated to v{modalVersionInfo?.latest}. Please relaunch OpenFox to use the new version.
+            </div>
+          </div>
+        )}
+
         {state === 'failed' && (
           <div className="flex flex-col gap-3 mt-2">
             <div className="flex items-center gap-2 px-3 py-2 bg-accent-danger/10 border border-accent-danger/30 rounded text-xs">
@@ -168,7 +194,7 @@ export function AutoUpdateModal({ isOpen, onClose, versionInfo }: AutoUpdateModa
         </button>
       )}
 
-      {state === 'failed' && (
+      {(state === 'complete' || state === 'failed') && (
         <button
           onClick={onClose}
           className="w-full px-3 py-2 text-sm rounded bg-bg-tertiary hover:bg-bg-secondary transition-colors text-text-primary font-medium mt-2"
@@ -177,7 +203,7 @@ export function AutoUpdateModal({ isOpen, onClose, versionInfo }: AutoUpdateModa
         </button>
       )}
 
-      {state === 'ready' && (
+      {state === 'ready' && isService && (
         <div className="flex justify-center mt-2">
           <div className="flex items-center gap-2 px-3 py-2 bg-accent-warning/10 border border-accent-warning/30 rounded text-xs">
             <span>⚠️</span>
