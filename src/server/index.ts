@@ -1235,7 +1235,7 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
 
   // Production mode: serve static files from dist/web
   if (!isDev) {
-    const distWebDir = resolve(__dirname, 'web')
+    const distWebDir = config.mode === 'sea' ? resolve(__dirname, '../dist/web') : resolve(__dirname, '../web')
 
     // Serve static assets with proper caching
     app.use(

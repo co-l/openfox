@@ -60,7 +60,7 @@ fn main() {
     let port: u16 = std::env::var("OPENFOX_PORT")
         .ok()
         .and_then(|p| p.parse().ok())
-        .unwrap_or(10370);
+        .unwrap_or(11369);
 
     let mut child = match Command::new(&sea_path)
         .env("OPENFOX_PORT", port.to_string())
