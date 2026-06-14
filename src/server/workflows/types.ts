@@ -97,10 +97,6 @@ export interface Transition {
 }
 
 export type TransitionCondition =
-  | { type: 'all_criteria_passed' }
-  | { type: 'all_criteria_completed_or_passed' }
-  | { type: 'any_criteria_blocked' }
-  | { type: 'has_pending_criteria' }
   | { type: 'step_result'; result: string }
   | { type: 'metadata_all_match'; key: string; field: string; value: string }
   | { type: 'metadata_all_in'; key: string; field: string; values: string[] }

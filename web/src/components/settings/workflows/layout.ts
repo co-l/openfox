@@ -12,20 +12,16 @@ export const BACK_MARGIN = 50
 export const PORT_R = 4
 
 export const CONDITION_LABELS: Record<string, string> = {
-  all_criteria_passed: 'All passed',
-  all_criteria_completed_or_passed: 'All completed',
-  any_criteria_blocked: 'Blocked',
-  has_pending_criteria: 'Pending/Failed',
   step_result: 'Result',
-  always: 'Always',
+  metadata_all_match: 'Metadata match',
+  metadata_all_in: 'Metadata in',
+  always: 'otherwise',
 }
 
 export const CONDITION_TYPES = [
-  { value: 'all_criteria_passed', label: 'All criteria passed' },
-  { value: 'all_criteria_completed_or_passed', label: 'All criteria completed or passed' },
-  { value: 'any_criteria_blocked', label: 'Any criteria blocked (retry limit)' },
-  { value: 'has_pending_criteria', label: 'Has pending or failed criteria' },
   { value: 'step_result', label: 'Step result is...' },
+  { value: 'metadata_all_match', label: 'Metadata all match (key=value)' },
+  { value: 'metadata_all_in', label: 'Metadata all in list' },
   { value: 'always', label: 'Always (fallback)' },
 ] as const
 
@@ -171,7 +167,13 @@ export function computeLayout(
       const fp = posMap.get(step.id)!
       const tp = posMap.get(t.goto)!
       const condLabel =
-        t.when.type === 'step_result' ? `${t.when.result}` : (CONDITION_LABELS[t.when.type] ?? t.when.type)
+        t.when.type === 'step_result'
+          ? `${t.when.result}`
+          : t.when.type === 'metadata_all_match'
+            ? `${t.when.key ?? '?'}=${t.when.value ?? '?'}`
+            : t.when.type === 'metadata_all_in'
+              ? `${t.when.key ?? '?'} in [${t.when.values?.join(',') ?? '?'}]`
+              : (CONDITION_LABELS[t.when.type] ?? t.when.type)
       const isSelf = step.id === t.goto
       let dir: 'down' | 'back' | 'same'
       if (isSelf) dir = 'back'

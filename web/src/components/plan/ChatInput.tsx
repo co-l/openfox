@@ -1,6 +1,6 @@
 import { useRef, useEffect, useCallback } from 'react'
 import { useSessionStore, useIsRunning } from '../../stores/session'
-import type { Attachment, MetadataEntry } from '@shared/types.js'
+import type { Attachment } from '@shared/types.js'
 import type { PromptHistoryItem } from '../../hooks/usePromptHistory'
 import { AttachmentPreview } from '../shared/AttachmentPreview.js'
 import { PromptHistoryList } from '../shared/PromptHistory.js'
@@ -26,7 +26,6 @@ interface ChatInputProps {
   scrollContainerRef: React.RefObject<HTMLDivElement | null>
   sessionId: string | undefined
   sessionMode: string | undefined
-  criteria: MetadataEntry[]
   showHistory: boolean
   history: PromptHistoryItem[]
   selectedIndex: number
@@ -56,7 +55,6 @@ export function ChatInput({
   scrollContainerRef,
   sessionId,
   sessionMode,
-  criteria,
   showHistory,
   history,
   selectedIndex,
@@ -404,7 +402,6 @@ export function ChatInput({
               onAttach={handleAttachClick}
               textareaContent={input}
               attachments={attachments.length > 0 ? attachments : undefined}
-              criteria={criteria}
             />
           </div>
         </div>

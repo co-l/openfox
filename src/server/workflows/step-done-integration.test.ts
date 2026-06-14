@@ -104,11 +104,11 @@ describe('step_done executor integration', () => {
   it('transitions evaluate after step_done called with completed result', () => {
     const transitions: Transition[] = [
       { when: { type: 'step_result', result: 'completed' }, goto: 'verify' },
-      { when: { type: 'all_criteria_passed' }, goto: '$done' },
+      { when: { type: 'always' }, goto: '$done' },
     ]
 
     const outcome = { result: 'completed', output: { stepDoneCalled: 'true' } }
-    expect(evaluateTransitions(transitions, [], outcome)).toBe('verify')
+    expect(evaluateTransitions(transitions, outcome)).toBe('verify')
   })
 
   it('step_done nudge prompt template resolves correctly', () => {

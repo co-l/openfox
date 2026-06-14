@@ -252,7 +252,7 @@ export function FlowDiagram({
     const { path, labelX, labelY, labelAnchor } = computed
 
     const isSelected = selectedEdgeKey === e.edgeKey
-    const showLabel = e.label && !(e.from === '$start' && e.label === 'Always')
+    const showLabel = e.label && e.label !== 'otherwise'
 
     return (
       <g key={i}>

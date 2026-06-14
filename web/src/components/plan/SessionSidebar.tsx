@@ -5,7 +5,7 @@ import { useConfigStore } from '../../stores/config'
 import { useSessionStore } from '../../stores/session'
 import { formatTime, formatSpeed } from '../../lib/format-stats'
 import { StatsModal } from './StatsModal'
-import { MetadataEntries } from '../shared/MetadataEntries'
+import { MetadataEntries, MetadataSectionHeader } from '../shared/MetadataEntries'
 import { CriteriaEditor } from './CriteriaEditor'
 import { DevServerFooter } from './DevServerFooter'
 import { BackgroundProcesses } from './BackgroundProcesses'
@@ -13,45 +13,6 @@ import { BranchIcon, ReloadIcon } from '../shared/icons'
 import { AutoUpdateModal } from '../AutoUpdateModal'
 import { DiffViewer } from './DiffViewer'
 import type { Message } from '@shared/types.js'
-import type { MetadataEntry } from '@shared/types.js'
-
-const statusConfig: Record<string, { icon: string; color: string }> = {
-  pending: { icon: '○', color: 'text-text-muted' },
-  in_progress: { icon: '◌', color: 'text-accent-warning' },
-  completed: { icon: '◉', color: 'text-purple-400' },
-  failed: { icon: '✗', color: 'text-accent-error' },
-  passed: { icon: '✓', color: 'text-accent-success' },
-}
-
-const statusOrder = ['pending', 'in_progress', 'completed', 'failed', 'passed']
-
-function CriteriaHeader({ entries }: { entries: MetadataEntry[] }) {
-  const counts = entries.reduce<Record<string, number>>((acc, e) => {
-    acc[e.status] = (acc[e.status] ?? 0) + 1
-    return acc
-  }, {})
-
-  return (
-    <h3 className="text-sm font-semibold text-text-primary mb-2 flex items-center justify-between">
-      <span>Acceptance Criteria</span>
-      {Object.keys(counts).length > 0 && (
-        <span className="font-normal text-xs flex items-center gap-1.5">
-          {statusOrder.map((status) => {
-            const count = counts[status]
-            if (!count) return null
-            const cfg = statusConfig[status] ?? { icon: '○', color: 'text-text-muted' }
-            return (
-              <span key={status} className={`${cfg.color} flex items-center gap-0.5`}>
-                <span>{cfg.icon}</span>
-                <span>{count}</span>
-              </span>
-            )
-          })}
-        </span>
-      )}
-    </h3>
-  )
-}
 
 interface SessionSidebarProps {
   messages: Message[]
@@ -124,12 +85,17 @@ export function SessionSidebar({ messages, workdir }: SessionSidebarProps) {
         </div>
       )}
 
-      {/* Criteria section */}
+      {/* Metadata sections */}
       <div className="flex flex-col flex-1 overflow-y-auto">
         <div className="mt-4">
-          <CriteriaHeader entries={session?.metadataEntries?.['criteria'] ?? []} />
-          {session && <CriteriaEditor entries={session.metadataEntries?.['criteria'] ?? []} sessionId={session.id} />}
-          <MetadataEntries entries={session?.metadataEntries?.['review_findings'] ?? []} title="Review Findings" />
+          <MetadataSectionHeader entries={session?.metadataEntries?.['criteria'] ?? []} title="Acceptance Criteria" />
+          {session && <CriteriaEditor entries={session?.metadataEntries?.['criteria'] ?? []} sessionId={session.id} />}
+          {session && (session.metadataEntries?.['review_findings']?.length ?? 0) > 0 && (
+            <div className="mt-6">
+              <MetadataSectionHeader entries={session.metadataEntries!['review_findings']!} title="Review Findings" />
+              <MetadataEntries entries={session.metadataEntries!['review_findings']!} />
+            </div>
+          )}
         </div>
       </div>
 

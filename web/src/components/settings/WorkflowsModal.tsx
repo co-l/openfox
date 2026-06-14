@@ -1,11 +1,10 @@
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState, useCallback, useMemo } from 'react'
 import { Modal } from '../shared/SelfContainedModal'
 import { Button } from '../shared/Button'
 import { EditButton } from '../shared/IconButton'
-import { useWorkflowsStore, type WorkflowFull, type WorkflowStep } from '../../stores/workflows'
+import { useWorkflowsStore, type WorkflowFull, type WorkflowStep, type WorkflowCondition } from '../../stores/workflows'
+import { useAgentsStore } from '../../stores/agents'
 import { ArrowRightIcon, EyeIcon } from '../shared/icons'
-import type { AgentInfo } from '../../stores/agents'
-import { authFetch } from '../../lib/api'
 import { ConfirmButton, DeleteIcon, DuplicateIcon, useConfirmDialog, CRUDListHeader } from './CRUDModal'
 import { FlowDiagram } from './workflows/FlowDiagram'
 import { WorkflowListSection } from './workflows/WorkflowListItem'
@@ -53,7 +52,7 @@ export function WorkflowsModal({ isOpen, onClose, initialEditId }: WorkflowsModa
   const updateWorkflow = useWorkflowsStore((state) => state.updateWorkflow)
   const deleteWorkflowAction = useWorkflowsStore((state) => state.deleteWorkflow)
 
-  const { clearConfirm, isConfirming } = useConfirmDialog()
+  const { requestDelete, clearConfirm, isConfirming } = useConfirmDialog()
 
   const [view, setView] = useState<'list' | 'edit'>('list')
   const [editingId, setEditingId] = useState<string | null>(null)
@@ -70,10 +69,17 @@ export function WorkflowsModal({ isOpen, onClose, initialEditId }: WorkflowsModa
   const [formMaxIterations, setFormMaxIterations] = useState(50)
 
   const [formSteps, setFormSteps] = useState<WorkflowStep[]>(DEFAULT_STEPS)
-  const [formStartCondition, setFormStartCondition] = useState<{ type: string; result?: string }>({ type: 'always' })
+  const [formStartCondition, setFormStartCondition] = useState<WorkflowCondition>({ type: 'always' })
   const [formError, setFormError] = useState('')
   const [_saving, setSaving] = useState(false)
-  const [agentTypes, setAgentTypes] = useState<AgentInfo[]>([])
+  const agentDefaults = useAgentsStore((s) => s.defaults)
+  const agentUserItems = useAgentsStore((s) => s.userItems)
+  const agentProjectItems = useAgentsStore((s) => s.projectItems)
+  const agentTypes = useMemo(
+    () => [...agentDefaults, ...agentUserItems, ...agentProjectItems],
+    [agentDefaults, agentUserItems, agentProjectItems],
+  )
+  const fetchAgents = useAgentsStore((s) => s.fetchAgents)
 
   const [_confirmDeleteId] = useState<string | null>(null)
 
@@ -81,10 +87,7 @@ export function WorkflowsModal({ isOpen, onClose, initialEditId }: WorkflowsModa
     if (isOpen) {
       fetchWorkflows()
       fetchTemplateVariables()
-      authFetch('/api/agents')
-        .then((r) => r.json())
-        .then((d) => setAgentTypes(d.agents ?? []))
-        .catch(() => {})
+      fetchAgents()
       setSelectedNodeKey(null)
       setSelectedEdgeKey(null)
       if (initialEditId) {
@@ -124,7 +127,7 @@ export function WorkflowsModal({ isOpen, onClose, initialEditId }: WorkflowsModa
       entryStep: string
       settings: { maxIterations: number }
       steps: import('../../stores/workflows').WorkflowStep[]
-      startCondition?: { type: string; result?: string }
+      startCondition?: WorkflowCondition
     },
     extra?: Partial<{ editingId: string | null; isReadOnly: boolean; selectedNodeKey: null; selectedEdgeKey: null }>,
   ) => {
@@ -284,7 +287,11 @@ export function WorkflowsModal({ isOpen, onClose, initialEditId }: WorkflowsModa
   const startConditionLabel =
     formStartCondition.type === 'step_result'
       ? `${formStartCondition.result}`
-      : (CONDITION_LABELS[formStartCondition.type] ?? formStartCondition.type)
+      : formStartCondition.type === 'metadata_all_match'
+        ? `${formStartCondition.key ?? '?'}=${formStartCondition.value ?? '?'}`
+        : formStartCondition.type === 'metadata_all_in'
+          ? `${formStartCondition.key ?? '?'} in [${formStartCondition.values?.join(',') ?? '?'}]`
+          : (CONDITION_LABELS[formStartCondition.type] ?? formStartCondition.type)
 
   const addStep = () => {
     const newIndex = formSteps.length
@@ -337,8 +344,8 @@ export function WorkflowsModal({ isOpen, onClose, initialEditId }: WorkflowsModa
   const updateTransition = useCallback(
     (
       edgeKey: string,
-      updater: (t: { when: { type: string; result?: string }; goto: string }) => {
-        when: { type: string; result?: string }
+      updater: (t: { when: WorkflowCondition; goto: string }) => {
+        when: WorkflowCondition
         goto: string
       },
     ) => {
@@ -400,7 +407,7 @@ export function WorkflowsModal({ isOpen, onClose, initialEditId }: WorkflowsModa
   }, [])
 
   const handleUpdateTransitionCondition = useCallback(
-    (edgeKey: string, when: { type: string; result?: string }) => {
+    (edgeKey: string, when: WorkflowCondition) => {
       if (edgeKey === 'start') {
         setFormStartCondition(when)
         return
@@ -589,7 +596,11 @@ export function WorkflowsModal({ isOpen, onClose, initialEditId }: WorkflowsModa
                           setFormStartCondition(
                             e.target.value === 'step_result'
                               ? { type: 'step_result', result: 'success' }
-                              : { type: e.target.value },
+                              : e.target.value === 'metadata_all_match'
+                                ? { type: 'metadata_all_match', key: '', field: '', value: '' }
+                                : e.target.value === 'metadata_all_in'
+                                  ? { type: 'metadata_all_in', key: '', field: '', values: [] }
+                                  : { type: e.target.value },
                           )
                         }
                         className={selectClass}
@@ -641,20 +652,116 @@ export function WorkflowsModal({ isOpen, onClose, initialEditId }: WorkflowsModa
                           })()}
                       </div>
                     )}
+
+                    {(formStartCondition.type === 'metadata_all_match' ||
+                      formStartCondition.type === 'metadata_all_in') && (
+                      <>
+                        <div>
+                          <label className={labelClass}>Metadata Key</label>
+                          <input
+                            type="text"
+                            value={formStartCondition.key ?? ''}
+                            onChange={(e) => setFormStartCondition({ ...formStartCondition, key: e.target.value })}
+                            placeholder="e.g. criteria, todos, review_findings"
+                            className={inputClass}
+                          />
+                        </div>
+                        <div>
+                          <label className={labelClass}>Field</label>
+                          <input
+                            type="text"
+                            value={formStartCondition.field ?? ''}
+                            onChange={(e) => setFormStartCondition({ ...formStartCondition, field: e.target.value })}
+                            placeholder="e.g. status"
+                            className={inputClass}
+                          />
+                        </div>
+                        {formStartCondition.type === 'metadata_all_match' ? (
+                          <div>
+                            <label className={labelClass}>Value</label>
+                            <input
+                              type="text"
+                              value={formStartCondition.value ?? ''}
+                              onChange={(e) => setFormStartCondition({ ...formStartCondition, value: e.target.value })}
+                              placeholder="e.g. passed, resolved"
+                              className={inputClass}
+                            />
+                          </div>
+                        ) : (
+                          <div>
+                            <label className={labelClass}>Values (comma-separated)</label>
+                            <input
+                              type="text"
+                              value={formStartCondition.values?.join(', ') ?? ''}
+                              onChange={(e) =>
+                                setFormStartCondition({
+                                  ...formStartCondition,
+                                  values: e.target.value
+                                    .split(',')
+                                    .map((v) => v.trim())
+                                    .filter(Boolean),
+                                })
+                              }
+                              placeholder="e.g. resolved, dismissed"
+                              className={inputClass}
+                            />
+                          </div>
+                        )}
+                      </>
+                    )}
                     <p className="text-text-muted text-[10px]">
                       Workflow only proceeds when this condition is met. Drag the target handle to change entry step.
                     </p>
                   </div>
                 ) : (
-                  <TransitionPanel
-                    fromLabel={edgeInfo.fromLabel}
-                    toLabel={edgeInfo.toLabel}
-                    condition={edgeInfo.condition}
-                    fromStep={edgeInfo.type === 'step' ? formSteps.find((s) => s.id === edgeInfo.fromLabel) : undefined}
-                    agentTypes={agentTypes}
-                    onUpdateCondition={(when) => handleUpdateTransitionCondition(selectedEdgeKey!, when)}
-                    onDelete={() => handleDeleteTransition(selectedEdgeKey!)}
-                  />
+                  (() => {
+                    const parsed = parseEdgeKey(selectedEdgeKey!)
+                    const stepId = parsed?.stepId
+                    const transIdx = parsed?.transIdx ?? 0
+                    const step = stepId ? formSteps.find((s) => s.id === stepId) : undefined
+                    const totalTransitions = step?.transitions.length ?? 0
+                    return (
+                      <TransitionPanel
+                        fromLabel={edgeInfo.fromLabel}
+                        toLabel={edgeInfo.toLabel}
+                        condition={edgeInfo.condition}
+                        fromStep={
+                          edgeInfo.type === 'step' ? formSteps.find((s) => s.id === edgeInfo.fromLabel) : undefined
+                        }
+                        agentTypes={agentTypes}
+                        transitionIndex={transIdx}
+                        totalTransitions={totalTransitions}
+                        onUpdateCondition={(when) => handleUpdateTransitionCondition(selectedEdgeKey!, when)}
+                        onDelete={() => handleDeleteTransition(selectedEdgeKey!)}
+                        onMoveUp={() => {
+                          setFormSteps((prev) => {
+                            const s = prev.find((s) => s.id === stepId)
+                            if (!s || transIdx === 0) return prev
+                            const transitions = [...s.transitions]
+                            ;[transitions[transIdx - 1], transitions[transIdx]] = [
+                              transitions[transIdx]!,
+                              transitions[transIdx - 1]!,
+                            ]
+                            return prev.map((st) => (st.id === stepId ? { ...st, transitions } : st))
+                          })
+                          setSelectedEdgeKey(`${stepId}:${transIdx - 1}`)
+                        }}
+                        onMoveDown={() => {
+                          setFormSteps((prev) => {
+                            const s = prev.find((s) => s.id === stepId)
+                            if (!s || transIdx === s.transitions.length - 1) return prev
+                            const transitions = [...s.transitions]
+                            ;[transitions[transIdx], transitions[transIdx + 1]] = [
+                              transitions[transIdx + 1]!,
+                              transitions[transIdx]!,
+                            ]
+                            return prev.map((st) => (st.id === stepId ? { ...st, transitions } : st))
+                          })
+                          setSelectedEdgeKey(`${stepId}:${transIdx + 1}`)
+                        }}
+                      />
+                    )
+                  })()
                 )
               ) : selectedStep ? (
                 <StepPanel
@@ -754,7 +861,7 @@ export function WorkflowsModal({ isOpen, onClose, initialEditId }: WorkflowsModa
                 {isConfirming(wf.id, 'delete') ? (
                   <ConfirmButton onConfirm={() => handleDelete(wf.id)} onCancel={clearConfirm} />
                 ) : (
-                  <DeleteIcon onClick={() => {}} />
+                  <DeleteIcon onClick={() => requestDelete(wf.id)} />
                 )}
               </>
             )}

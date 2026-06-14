@@ -1,6 +1,7 @@
 import { memo } from 'react'
 import type { ToolCall, MetadataEntry } from '@shared/types.js'
 import { Markdown } from './Markdown'
+import { MetadataStatusIcon } from './MetadataStatusIcon'
 
 interface CriteriaGroupDisplayProps {
   toolCalls: ToolCall[]
@@ -38,7 +39,22 @@ export const CriteriaGroupDisplay = memo(function CriteriaGroupDisplay({
   const getAction = toolCalls.find((tc) => tc.arguments['action'] === 'get' && tc.result?.success && tc.result?.output)
 
   const isSessionMetadata = toolCalls.some((tc) => tc.name === 'session_metadata')
-  const headerTitle = isSessionMetadata ? 'Session Data' : 'Acceptance Criteria'
+
+  const metadataKeyLabels: Record<string, string> = {
+    criteria: 'Acceptance Criteria',
+    review_findings: 'Review Findings',
+    todos: 'Tasks',
+  }
+
+  const headerTitle = (() => {
+    if (!isSessionMetadata) return 'Acceptance Criteria'
+    const keys = new Set(toolCalls.map((tc) => tc.arguments['key'] as string | undefined).filter(Boolean))
+    if (keys.size === 1) {
+      const key = keys.values().next().value
+      return key ? (metadataKeyLabels[key] ?? key) : 'Session Data'
+    }
+    return 'Session Data'
+  })()
 
   return (
     <div className="my-1 rounded border border-border bg-secondary overflow-hidden">
@@ -95,9 +111,9 @@ interface SingleCriterionRowProps {
 
 function SingleCriterionRow({ tc, index, criteriaMap }: SingleCriterionRowProps) {
   const action = tc.arguments['action'] as CriterionAction | undefined
-  const config = action && actionConfig[action] ? actionConfig[action] : { icon: '○', color: 'text-text-muted' }
   const args = tc.arguments
 
+  const isSessionMetadata = tc.name === 'session_metadata'
   const isRemoved = action === 'remove'
   const criterionId = args['id'] as string | undefined
   const argDescription = args['description'] as string | undefined
@@ -112,7 +128,14 @@ function SingleCriterionRow({ tc, index, criteriaMap }: SingleCriterionRowProps)
 
   return (
     <div className={`flex items-start gap-2 px-2 py-1.5 ${index > 0 ? 'border-t border-border' : ''}`}>
-      <span className={`${config.color} text-sm leading-tight flex-shrink-0`}>{config.icon}</span>
+      {isSessionMetadata ? (
+        <MetadataStatusIcon status={args['status'] as string} className="text-sm leading-tight flex-shrink-0" />
+      ) : (
+        (() => {
+          const config = action && actionConfig[action] ? actionConfig[action] : { icon: '○', color: 'text-text-muted' }
+          return <span className={`${config.color} text-sm leading-tight flex-shrink-0`}>{config.icon}</span>
+        })()
+      )}
       <div className="flex-1 min-w-0">
         <div className={isRemoved ? 'line-through text-text-muted' : ''}>
           <Markdown content={displayText} />

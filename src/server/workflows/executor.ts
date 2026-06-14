@@ -6,9 +6,8 @@
  * state ($done or $blocked) is reached.
  */
 
-import type { Criterion, Session } from '../../shared/types.js'
+import type { Session } from '../../shared/types.js'
 import type { OrchestratorOptions, OrchestratorResult, NextAction } from '../runner/types.js'
-import { RUNNER_CONFIG } from '../runner/types.js'
 import type {
   WorkflowDefinition,
   WorkflowStep,
@@ -116,33 +115,10 @@ export interface StepOutcome {
 
 export function evaluateCondition(
   condition: TransitionCondition,
-  criteria: Criterion[],
   stepOutcome: StepOutcome | null,
   metadataEntries?: Record<string, import('../../shared/types.js').MetadataEntry[]>,
 ): boolean {
   switch (condition.type) {
-    case 'all_criteria_passed':
-      return criteria.length === 0 || criteria.every((c) => c.status.type === 'passed')
-
-    case 'all_criteria_completed_or_passed':
-      return criteria.every((c) => c.status.type === 'completed' || c.status.type === 'passed')
-
-    case 'any_criteria_blocked':
-      return (
-        criteria.some(
-          (c) =>
-            c.status.type === 'failed' &&
-            c.attempts.filter((a) => a.status === 'failed').length >= RUNNER_CONFIG.maxVerifyRetries,
-        ) ||
-        (metadataEntries?.['criteria']?.some((e) => e.status === 'failed') ?? false)
-      )
-
-    case 'has_pending_criteria':
-      return (
-        criteria.some((c) => c.status.type !== 'passed') ||
-        (metadataEntries?.['criteria']?.some((e) => e.status !== 'passed') ?? false)
-      )
-
     case 'step_result':
       if (!stepOutcome) return false
       return stepOutcome.result === condition.result
@@ -150,14 +126,14 @@ export function evaluateCondition(
     case 'metadata_all_match': {
       if (!metadataEntries) return false
       const entries = metadataEntries[condition.key]
-      if (!entries || entries.length === 0) return false
+      if (!entries || entries.length === 0) return true
       return entries.every((e) => e[condition.field] === condition.value)
     }
 
     case 'metadata_all_in': {
       if (!metadataEntries) return false
       const entries = metadataEntries[condition.key]
-      if (!entries || entries.length === 0) return false
+      if (!entries || entries.length === 0) return true
       return entries.every((e) => condition.values.includes(e[condition.field] as string))
     }
 
@@ -168,12 +144,11 @@ export function evaluateCondition(
 
 export function evaluateTransitions(
   transitions: Transition[],
-  criteria: Criterion[],
   stepOutcome: StepOutcome | null,
   metadataEntries?: Record<string, import('../../shared/types.js').MetadataEntry[]>,
 ): string {
   for (const transition of transitions) {
-    if (evaluateCondition(transition.when, criteria, stepOutcome, metadataEntries)) {
+    if (evaluateCondition(transition.when, stepOutcome, metadataEntries)) {
       return transition.goto
     }
   }
@@ -224,8 +199,9 @@ function getCurrentWindowMessageOptions(sessionId: string): { contextWindowId: s
   return contextWindowId ? { contextWindowId } : undefined
 }
 
-export function buildReason(criteria: Criterion[]): string {
-  const remaining = criteria.filter((c) => c.status.type !== 'passed')
+export function buildReason(metadataEntries?: Record<string, import('../../shared/types.js').MetadataEntry[]>): string {
+  const entries = metadataEntries?.['criteria'] ?? []
+  const remaining = entries.filter((e) => e.status !== 'passed')
   return `${remaining.length} criteria remaining`
 }
 
@@ -259,10 +235,8 @@ export async function executeWorkflow(
   // Evaluate start condition if present
   if (workflow.startCondition && workflow.startCondition.type !== 'always') {
     const session = sessionManager.requireSession(sessionId)
-    const criteria = session.criteria
     const conditionMet = evaluateCondition(
       workflow.startCondition as TransitionCondition,
-      criteria,
       null,
       session.metadataEntries,
     )
@@ -333,13 +307,12 @@ export async function executeWorkflow(
 
     const session = sessionManager.requireSession(sessionId)
     const currentWindowMessageOptions = getCurrentWindowMessageOptions(sessionId)
-    const criteria = session.criteria
 
     // Build template context
     const criteriaEntries = session.metadataEntries['criteria'] ?? []
     const templateCtx: TemplateContext = {
       workdir: session.workdir,
-      reason: buildReason(criteria),
+      reason: buildReason(session.metadataEntries),
       verifierFindings: lastStepOutput['content'] ?? '',
       previousStepOutput: lastStepOutput['stdout'] ?? '',
       criteriaCount: criteriaEntries.length,
@@ -571,12 +544,7 @@ export async function executeWorkflow(
 
     // Evaluate transitions
     const refreshedSession = sessionManager.requireSession(sessionId)
-    const nextStepId = evaluateTransitions(
-      step.transitions,
-      refreshedSession.criteria,
-      stepOutcome,
-      refreshedSession.metadataEntries,
-    )
+    const nextStepId = evaluateTransitions(step.transitions, stepOutcome, refreshedSession.metadataEntries)
 
     // Handle terminal states
     if (nextStepId === TERMINAL_DONE) {
@@ -627,20 +595,12 @@ export async function executeWorkflow(
     if (nextStepId === TERMINAL_BLOCKED) {
       sessionManager.setPhase(sessionId, 'blocked')
 
-      const blockedCriteria = refreshedSession.criteria
-        .filter(
-          (c) =>
-            c.status.type === 'failed' &&
-            c.attempts.filter((a) => a.status === 'failed').length >= RUNNER_CONFIG.maxVerifyRetries,
-        )
-        .map((c) => c.id)
-      const reason =
-        blockedCriteria.length > 0 ? `Retry limit reached for: ${blockedCriteria.join(', ')}` : 'No matching transition'
+      const reason = 'No matching transition'
 
       emitWorkflowMessage(eventStore, sessionId, `Runner blocked: ${reason}`, currentWindowMessageOptions, onMessage)
 
       logger.warn('Workflow executor blocked', { sessionId, iterations, reason })
-      const blockedAction: NextAction = { type: 'BLOCKED', reason, blockedCriteria }
+      const blockedAction: NextAction = { type: 'BLOCKED', reason, blockedCriteria: [] }
       return {
         finalAction: blockedAction,
         iterations,

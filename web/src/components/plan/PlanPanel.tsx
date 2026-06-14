@@ -186,7 +186,6 @@ export function PlanPanel({
           scrollContainerRef={scrollContainerRef}
           sessionId={session?.id}
           sessionMode={session?.mode}
-          criteria={session?.metadataEntries?.['criteria'] ?? []}
           showHistory={showHistory}
           history={history}
           selectedIndex={selectedIndex}

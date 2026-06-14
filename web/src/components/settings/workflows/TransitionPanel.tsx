@@ -1,6 +1,6 @@
-import type { WorkflowStep } from '../../../stores/workflows'
+import type { WorkflowStep, WorkflowCondition } from '../../../stores/workflows'
 import type { AgentInfo } from '../../../stores/agents'
-import { ArrowRightIcon } from '../../shared/icons'
+import { ArrowRightIcon, ChevronDownIcon } from '../../shared/icons'
 import { CONDITION_TYPES } from './layout'
 
 const inputClass =
@@ -15,16 +15,24 @@ export function TransitionPanel({
   condition,
   fromStep,
   agentTypes,
+  transitionIndex,
+  totalTransitions,
   onUpdateCondition,
   onDelete,
+  onMoveUp,
+  onMoveDown,
 }: {
   fromLabel: string
   toLabel: string
-  condition: { type: string; result?: string }
+  condition: WorkflowCondition
   fromStep?: WorkflowStep
   agentTypes: AgentInfo[]
-  onUpdateCondition: (when: { type: string; result?: string }) => void
+  transitionIndex: number
+  totalTransitions: number
+  onUpdateCondition: (when: WorkflowCondition) => void
   onDelete: () => void
+  onMoveUp: () => void
+  onMoveDown: () => void
 }) {
   const stepAgent =
     fromStep && (fromStep.type === 'sub_agent' || fromStep.type === 'agent')
@@ -35,7 +43,31 @@ export function TransitionPanel({
   return (
     <div className="space-y-3 text-sm">
       <div className="flex items-center justify-between">
-        <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-blue-500/15 text-blue-300">Transition</span>
+        <div className="flex items-center gap-1.5">
+          <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-blue-500/15 text-blue-300">
+            #{transitionIndex + 1}
+          </span>
+          {totalTransitions > 1 && (
+            <div className="flex items-center gap-0.5">
+              <button
+                onClick={onMoveUp}
+                disabled={transitionIndex === 0}
+                className="p-0.5 rounded text-text-muted hover:text-text-primary disabled:opacity-20 disabled:cursor-not-allowed"
+                title="Move up (higher priority)"
+              >
+                <ChevronDownIcon className="w-3 h-3" rotate={180} />
+              </button>
+              <button
+                onClick={onMoveDown}
+                disabled={transitionIndex === totalTransitions - 1}
+                className="p-0.5 rounded text-text-muted hover:text-text-primary disabled:opacity-20 disabled:cursor-not-allowed"
+                title="Move down (lower priority)"
+              >
+                <ChevronDownIcon className="w-3 h-3" />
+              </button>
+            </div>
+          )}
+        </div>
         <button onClick={onDelete} className="p-1 rounded text-text-muted hover:text-accent-error text-xs">
           Delete
         </button>
@@ -95,7 +127,65 @@ export function TransitionPanel({
         </div>
       )}
 
-      <p className="text-text-muted text-[10px]">Drag handles to reconnect. Press Delete to remove.</p>
+      {(condition.type === 'metadata_all_match' || condition.type === 'metadata_all_in') && (
+        <>
+          <div>
+            <label className={labelClass}>Metadata Key</label>
+            <input
+              type="text"
+              value={condition.key ?? ''}
+              onChange={(e) => onUpdateCondition({ ...condition, key: e.target.value })}
+              placeholder="e.g. criteria, todos, review_findings"
+              className={inputClass}
+            />
+          </div>
+          <div>
+            <label className={labelClass}>Field</label>
+            <input
+              type="text"
+              value={condition.field ?? ''}
+              onChange={(e) => onUpdateCondition({ ...condition, field: e.target.value })}
+              placeholder="e.g. status"
+              className={inputClass}
+            />
+          </div>
+          {condition.type === 'metadata_all_match' ? (
+            <div>
+              <label className={labelClass}>Value</label>
+              <input
+                type="text"
+                value={condition.value ?? ''}
+                onChange={(e) => onUpdateCondition({ ...condition, value: e.target.value })}
+                placeholder="e.g. passed, resolved"
+                className={inputClass}
+              />
+            </div>
+          ) : (
+            <div>
+              <label className={labelClass}>Values (comma-separated)</label>
+              <input
+                type="text"
+                value={condition.values?.join(', ') ?? ''}
+                onChange={(e) =>
+                  onUpdateCondition({
+                    ...condition,
+                    values: e.target.value
+                      .split(',')
+                      .map((v) => v.trim())
+                      .filter(Boolean),
+                  })
+                }
+                placeholder="e.g. resolved, dismissed"
+                className={inputClass}
+              />
+            </div>
+          )}
+        </>
+      )}
+
+      <p className="text-text-muted text-[10px]">
+        Drag handles to reconnect. Order determines evaluation priority. Press Delete to remove.
+      </p>
     </div>
   )
 }

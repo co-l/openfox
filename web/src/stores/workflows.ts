@@ -2,13 +2,22 @@ import { create } from 'zustand'
 import { authFetch } from '../lib/api'
 import { saveEntity, duplicateEntity } from './utils'
 
+export interface WorkflowCondition {
+  type: string
+  result?: string
+  key?: string
+  field?: string
+  value?: string
+  values?: string[]
+}
+
 export interface WorkflowInfo {
   id: string
   name: string
   description: string
   version: string
   color?: string
-  startCondition?: { type: string; result?: string }
+  startCondition?: WorkflowCondition
 }
 
 export interface WorkflowStep {
@@ -16,7 +25,7 @@ export interface WorkflowStep {
   name: string
   type: 'agent' | 'sub_agent' | 'shell'
   phase: string
-  transitions: Array<{ when: { type: string; result?: string }; goto: string }>
+  transitions: Array<{ when: WorkflowCondition; goto: string }>
   toolMode?: 'builder' | 'planner'
   subAgentType?: string
   prompt?: string
@@ -31,7 +40,7 @@ export interface WorkflowFull {
   entryStep: string
   settings: { maxIterations: number }
   steps: WorkflowStep[]
-  startCondition?: { type: string; result?: string }
+  startCondition?: WorkflowCondition
 }
 
 export interface TemplateVariable {

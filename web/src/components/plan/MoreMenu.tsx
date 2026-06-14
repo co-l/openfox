@@ -5,7 +5,7 @@ import { CommandsModal } from '../settings/CommandsModal'
 import { useWorkflowsStore, type WorkflowInfo } from '../../stores/workflows'
 import { WorkflowsModal } from '../settings/WorkflowsModal'
 import { EditButton } from '../shared/IconButton'
-import type { Attachment, MetadataEntry } from '@shared/types.js'
+import type { Attachment } from '@shared/types.js'
 
 interface MoreMenuProps {
   onSendCommand: (content: string, agentMode?: string, textareaContent?: string, attachments?: Attachment[]) => void
@@ -15,24 +15,17 @@ interface MoreMenuProps {
   onAttach: () => void
   textareaContent?: string
   attachments?: Attachment[]
-  criteria: MetadataEntry[]
 }
 
 type Tab = 'commands' | 'workflows' | 'attach'
 
-function isConditionMet(workflow: WorkflowInfo, criteria: MetadataEntry[]): boolean | null {
+function isConditionMet(workflow: WorkflowInfo): boolean | null {
   const cond = workflow.startCondition
   if (!cond || cond.type === 'always') return true
   switch (cond.type) {
-    case 'has_pending_criteria':
-      return criteria.some((c) => c.status !== 'passed')
-    case 'all_criteria_passed':
-      return criteria.length === 0 || criteria.every((c) => c.status === 'passed')
-    case 'all_criteria_completed_or_passed':
-      return criteria.every((c) => c.status === 'completed' || c.status === 'passed')
-    case 'any_criteria_blocked':
-      return criteria.some((c) => c.status === 'failed')
     case 'step_result':
+    case 'metadata_all_match':
+    case 'metadata_all_in':
       return null
     default:
       return null
@@ -47,7 +40,6 @@ export function MoreMenu({
   onAttach,
   textareaContent,
   attachments,
-  criteria,
 }: MoreMenuProps) {
   const [isOpen, setIsOpen] = useState(false)
   const [tab, setTab] = useState<Tab>('commands')
@@ -257,7 +249,7 @@ export function MoreMenu({
                 </div>
               ) : (
                 filteredWorkflows.map((workflow, index) => {
-                  const condMet = isConditionMet(workflow, criteria)
+                  const condMet = isConditionMet(workflow)
                   const color = workflow.color ?? '#3b82f6'
                   return (
                     <div

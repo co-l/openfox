@@ -201,7 +201,11 @@ describe('SubAgentManager', () => {
       'web_fetch',
     ])
 
-    expect(findAgentById('code_reviewer', agents)?.metadata.allowedTools).toEqual(['read_file', 'web_fetch'])
+    expect(findAgentById('code_reviewer', agents)?.metadata.allowedTools).toEqual([
+      'read_file',
+      'web_fetch',
+      'session_metadata:get,add,update,remove',
+    ])
 
     expect(findAgentById('explorer', agents)?.metadata.allowedTools).toEqual(['read_file', 'run_command', 'web_fetch'])
   })

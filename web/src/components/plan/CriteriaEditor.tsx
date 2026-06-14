@@ -3,6 +3,7 @@ import type { MetadataEntry } from '@shared/types.js'
 import { authFetch } from '../../lib/api'
 import { PlusIcon, XCloseIcon, TrashIcon, InfoIcon } from '../shared/icons'
 import { Modal } from '../shared/Modal'
+import { MetadataStatusIcon, decodeHtmlEntities } from '../shared/MetadataStatusIcon'
 import { useAgentsStore, getAgentColor } from '../../stores/agents'
 import { useWorkflowsStore } from '../../stores/workflows'
 
@@ -11,14 +12,6 @@ const statusCycle: Record<string, string> = {
   completed: 'passed',
   passed: 'failed',
   failed: 'pending',
-}
-
-const statusConfig: Record<string, { icon: string; color: string }> = {
-  pending: { icon: '○', color: 'text-text-muted' },
-  in_progress: { icon: '◌', color: 'text-accent-warning' },
-  completed: { icon: '◉', color: 'text-purple-400' },
-  passed: { icon: '✓', color: 'text-accent-success' },
-  failed: { icon: '✗', color: 'text-accent-error' },
 }
 
 interface CriteriaEditorProps {
@@ -179,7 +172,7 @@ export function CriteriaEditor({ entries, sessionId }: CriteriaEditorProps) {
           </div>
         )}
         {criteria.map((entry, idx) => {
-          const cfg = statusConfig[entry.status] ?? statusConfig.pending
+          const status = entry.status
           const isEditing = editingId === entry.id
           return (
             <div
@@ -188,10 +181,10 @@ export function CriteriaEditor({ entries, sessionId }: CriteriaEditorProps) {
             >
               <button
                 onClick={() => handleCycleStatus(entry.id)}
-                className={`${cfg!.color} text-xs leading-tight flex-shrink-0 cursor-pointer hover:opacity-70 transition-opacity`}
+                className="text-xs leading-tight flex-shrink-0 cursor-pointer hover:opacity-70 transition-opacity"
                 title={`Status: ${entry.status} (click to cycle)`}
               >
-                {cfg!.icon}
+                <MetadataStatusIcon status={status} />
               </button>
               <div className="flex-1 min-w-0">
                 {isEditing ? (
@@ -209,7 +202,7 @@ export function CriteriaEditor({ entries, sessionId }: CriteriaEditorProps) {
                     className="text-xs text-text-primary text-left hover:text-accent-primary transition-colors w-full truncate cursor-pointer"
                     title="Click to edit"
                   >
-                    [{entry.id}] {entry.description}
+                    [{entry.id}] {decodeHtmlEntities(entry.description)}
                   </button>
                 )}
               </div>

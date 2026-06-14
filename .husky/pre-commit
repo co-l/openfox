@@ -11,7 +11,7 @@ run_check() {
   name=$1
   shift
   "$@" > "$TMPDIR/$name.log" 2>&1
-  echo "$?" > "$TMPDIR/$name.exit" 2>/dev/null
+  echo "$?" > "$TMPDIR/$name.exit" 2>/dev/null || true
 }
 
 run_check "lint" npm run lint &
@@ -32,6 +32,9 @@ while [ "$remaining" -gt 0 ]; do
         echo "  $name ✓"
       else
         echo "  $name ✗"
+        echo
+        cat "$TMPDIR/$name.log"
+        echo
         any_failed=1
       fi
       remaining=$((remaining - 1))
@@ -39,24 +42,13 @@ while [ "$remaining" -gt 0 ]; do
   done
   if [ "$any_failed" -eq 1 ]; then
     kill $(jobs -p) 2>/dev/null
+    wait 2>/dev/null
     sleep 0.2
     break
   fi
   [ "$remaining" -gt 0 ] && sleep 0.2
 done
 
-echo
-
 if [ "$any_failed" -eq 1 ]; then
-  for name in lint typecheck duplicate test; do
-    if [ -f "$TMPDIR/$name.exit" ]; then
-      read -r exit_code < "$TMPDIR/$name.exit"
-      if [ "$exit_code" -ne 0 ]; then
-        echo "--- $name ---"
-        cat "$TMPDIR/$name.log"
-        echo
-      fi
-    fi
-  done
   exit 1
 fi

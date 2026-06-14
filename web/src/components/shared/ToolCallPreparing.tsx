@@ -16,12 +16,32 @@ const toolDescriptions: Record<string, string> = {
   grep: 'Searching content',
   ask_user: 'Asking user',
   criterion: 'Managing criterion',
-  session_metadata: 'Managing session data',
+  session_metadata: 'Managing',
   todo_write: 'Updating tasks',
 }
 
-function getToolDescription(name: string): string {
-  return toolDescriptions[name] ?? `Preparing ${name}`
+const metadataKeyLabels: Record<string, string> = {
+  criteria: 'criteria',
+  review_findings: 'review findings',
+  todos: 'tasks',
+}
+
+function getToolDescription(name: string, args?: string): string {
+  const base = toolDescriptions[name]
+  if (!base) return `Preparing ${name}`
+  if (name === 'session_metadata' && args) {
+    try {
+      const parsed = JSON.parse(args)
+      const key = parsed.key as string | undefined
+      if (key) {
+        const label = metadataKeyLabels[key] ?? key
+        return `${base} ${label}`
+      }
+    } catch {
+      // ignore parse errors
+    }
+  }
+  return base
 }
 
 function extractCommandFromArgs(args: string): string | null {
@@ -37,7 +57,7 @@ function extractCommandFromArgs(args: string): string | null {
 }
 
 export const ToolCallPreparing = memo(function ToolCallPreparing({ name, arguments: args }: ToolCallPreparingProps) {
-  const description = getToolDescription(name)
+  const description = getToolDescription(name, args)
 
   let detailText = description + '...'
   if (name === 'run_command' && args) {
