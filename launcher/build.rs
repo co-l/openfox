@@ -1,6 +1,11 @@
 use std::{env, fs, path::Path};
 
 fn main() {
+    // webview crate needs advapi32 on Windows for registry functions
+    if cfg!(target_os = "windows") {
+        println!("cargo:rustc-link-lib=advapi32");
+    }
+
     // Path to the SEA binary is passed via OPENFOX_SEA_PATH env var
     // or defaults to ../out/openfox-core
     let sea_path = env::var("OPENFOX_SEA_PATH")
