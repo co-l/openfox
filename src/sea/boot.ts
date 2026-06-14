@@ -79,8 +79,10 @@ function main(): void {
 
   const versionFile = join(appDir, '.version')
   const currentVersion = process.env['VERSION'] || '0'
+  const binaryMtime = statSync(process.execPath).mtimeMs.toString()
+  const cacheKey = `${currentVersion}|${binaryMtime}`
   const storedVersion = existsSync(versionFile) ? readFileSync(versionFile, 'utf-8').trim() : ''
-  const needsExtract = !existsSync(appDir) || storedVersion !== currentVersion
+  const needsExtract = !existsSync(appDir) || storedVersion !== cacheKey
 
   if (needsExtract) {
     if (existsSync(appDir)) {
@@ -88,7 +90,7 @@ function main(): void {
     }
     mkdirSync(appDir, { recursive: true })
     extractAssets(process.execPath, appDir)
-    writeFileSync(versionFile, currentVersion)
+    writeFileSync(versionFile, cacheKey)
   }
 
   const serverEntry = join(appDir, 'server', 'index.cjs')

@@ -31,15 +31,13 @@ fn sea_path() -> PathBuf {
 
 fn extract_sea() -> PathBuf {
     let path = sea_path();
-    if !path.exists() {
-        let parent = path.parent().unwrap();
-        std::fs::create_dir_all(parent).ok();
-        std::fs::write(&path, SEA_BINARY).expect("Failed to extract SEA binary");
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::PermissionsExt;
-            std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).ok();
-        }
+    let parent = path.parent().unwrap();
+    std::fs::create_dir_all(parent).ok();
+    std::fs::write(&path, SEA_BINARY).expect("Failed to extract SEA binary");
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).ok();
     }
     path
 }
