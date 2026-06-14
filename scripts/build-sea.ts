@@ -19,7 +19,7 @@ const DIST_WEB = join(ROOT, 'dist', 'web')
 const OUTPUT_DIR = join(ROOT, 'out')
 
 function run(cmd: string): void {
-  execSync(cmd, { cwd: ROOT, stdio: 'inherit' })
+  execSync(cmd, { cwd: ROOT, stdio: 'inherit', env: { ...process.env, FORCE_COLOR: '1' } })
 }
 
 async function main(): Promise<void> {
@@ -32,7 +32,11 @@ async function main(): Promise<void> {
 
   // Step 1: Build web frontend
   console.log('--- Step 1: Building web frontend ---')
-  run('npm run build:web')
+  execSync('npx vite build --outDir ../dist/web', {
+    cwd: join(ROOT, 'web'),
+    stdio: 'inherit',
+    env: { ...process.env, FORCE_COLOR: '1' },
+  })
 
   // Step 2: Build server bundle (single CJS file with all deps bundled)
   console.log('\n--- Step 2: Building server bundle ---')
@@ -90,7 +94,8 @@ async function main(): Promise<void> {
     const src = join(ROOT, 'node_modules', pkg)
     if (existsSync(src)) {
       const dest = join(addonsDir, pkg)
-      execSync(`mkdir -p "${dirname(dest)}" && tar -cf - -C "${dirname(src)}" "${pkg}" | tar -xf - -C "${addonsDir}"`)
+      mkdirSync(dirname(dest), { recursive: true })
+      execSync(`tar -cf - -C "${dirname(src)}" "${pkg}" | tar -xf - -C "${addonsDir}"`)
     }
   }
   execSync(`tar -cf "${join(assetsDir, 'addons.tar')}" -C "${addonsDir}" .`)
