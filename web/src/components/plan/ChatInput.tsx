@@ -40,6 +40,7 @@ interface ChatInputProps {
   onOpenCommandsModal: () => void
   onOpenWorkflowsModal: () => void
   onSelectWorkflow: (workflowId: string) => void
+  onSelectWorkflowWithSubGroup: (workflowId: string, subGroup: string) => void
   clearInput: () => void
 }
 
@@ -69,6 +70,7 @@ export function ChatInput({
   onOpenCommandsModal,
   onOpenWorkflowsModal,
   onSelectWorkflow,
+  onSelectWorkflowWithSubGroup,
   clearInput,
 }: ChatInputProps) {
   const textareaRef = useRef<HTMLTextAreaElement>(null)
@@ -397,6 +399,7 @@ export function ChatInput({
                 clearInput()
               }}
               onSelectWorkflow={onSelectWorkflow}
+              onSelectWorkflowWithSubGroup={onSelectWorkflowWithSubGroup}
               onOpenCommandsManager={onOpenCommandsModal}
               onOpenWorkflowsManager={onOpenWorkflowsModal}
               onAttach={handleAttachClick}

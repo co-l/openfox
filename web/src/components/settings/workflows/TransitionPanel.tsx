@@ -13,11 +13,13 @@ export function TransitionPanel({
   fromLabel,
   toLabel,
   condition,
+  subGroup,
   fromStep,
   agentTypes,
   transitionIndex,
   totalTransitions,
   onUpdateCondition,
+  onUpdateSubGroup,
   onDelete,
   onMoveUp,
   onMoveDown,
@@ -25,11 +27,13 @@ export function TransitionPanel({
   fromLabel: string
   toLabel: string
   condition: WorkflowCondition
+  subGroup?: string
   fromStep?: WorkflowStep
   agentTypes: AgentInfo[]
   transitionIndex: number
   totalTransitions: number
   onUpdateCondition: (when: WorkflowCondition) => void
+  onUpdateSubGroup: (subGroup: string | undefined) => void
   onDelete: () => void
   onMoveUp: () => void
   onMoveDown: () => void
@@ -182,6 +186,17 @@ export function TransitionPanel({
           )}
         </>
       )}
+
+      <div>
+        <label className={labelClass}>Sub-group</label>
+        <input
+          type="text"
+          value={subGroup ?? ''}
+          onChange={(e) => onUpdateSubGroup(e.target.value || undefined)}
+          placeholder="e.g. build, verify"
+          className={inputClass}
+        />
+      </div>
 
       <p className="text-text-muted text-[10px]">
         Drag handles to reconnect. Order determines evaluation priority. Press Delete to remove.

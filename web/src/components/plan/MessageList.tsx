@@ -1,4 +1,4 @@
-import { memo, useMemo, type RefObject } from 'react'
+import { memo, useMemo, useState, useRef, type RefObject } from 'react'
 import { useSessionStore, useIsRunning } from '../../stores/session'
 import { useWorkflowsStore } from '../../stores/workflows'
 import { useDisplaySettings } from '../../stores/settings'
@@ -8,6 +8,7 @@ import { SubAgentContainer } from './SubAgentContainer'
 import { CriteriaGroupDisplay } from '../shared/CriteriaGroupDisplay'
 import { CloseButton } from '../shared/CloseButton'
 import { buildPromptContextByUserMessageId } from './prompt-context-linking.js'
+import { useClickOutside } from '../../hooks/useClickOutside'
 import type { DisplayItem } from './groupMessages.js'
 import type { MetadataEntry } from '@shared/types.js'
 
@@ -152,21 +153,16 @@ export const MessageList = memo(function MessageList({
               const bgHover = `rgba(${r},${g},${b},0.22)`
               const border = `rgba(${r},${g},${b},0.25)`
               return (
-                <button
+                <WorkflowButton
                   key={w.id}
-                  onClick={() => acceptAndBuild(w.id)}
-                  data-testid="workflow-run-button"
-                  className="px-4 py-1.5 rounded text-sm font-medium transition-colors"
-                  style={{ backgroundColor: bg, color: c, border: `1px solid ${border}` }}
-                  onMouseEnter={(e) => {
-                    e.currentTarget.style.backgroundColor = bgHover
-                  }}
-                  onMouseLeave={(e) => {
-                    e.currentTarget.style.backgroundColor = bg
-                  }}
-                >
-                  ▶ {w.name}
-                </button>
+                  workflowName={w.name}
+                  color={c}
+                  bg={bg}
+                  bgHover={bgHover}
+                  border={border}
+                  subGroups={w.subGroups}
+                  onLaunch={(subGroup?: string) => acceptAndBuild(w.id, undefined, undefined, subGroup)}
+                />
               )
             })}
           </div>
@@ -175,3 +171,88 @@ export const MessageList = memo(function MessageList({
     </div>
   )
 })
+
+function WorkflowButton({
+  workflowName,
+  color,
+  bg,
+  bgHover,
+  border,
+  subGroups,
+  onLaunch,
+}: {
+  workflowName: string
+  color: string
+  bg: string
+  bgHover: string
+  border: string
+  subGroups?: string[]
+  onLaunch: (subGroup?: string) => void
+}) {
+  const [menuOpen, setMenuOpen] = useState(false)
+  const menuRef = useRef<HTMLDivElement>(null)
+
+  useClickOutside(menuRef, () => setMenuOpen(false), menuOpen)
+
+  return (
+    <div className="relative flex">
+      <button
+        onClick={() => onLaunch()}
+        data-testid="workflow-run-button"
+        className="px-4 py-1.5 rounded-l text-sm font-medium transition-colors"
+        style={{ backgroundColor: bg, color, border: `1px solid ${border}`, borderRight: 'none' }}
+        onMouseEnter={(e) => {
+          e.currentTarget.style.backgroundColor = bgHover
+        }}
+        onMouseLeave={(e) => {
+          e.currentTarget.style.backgroundColor = bg
+        }}
+      >
+        ▶ {workflowName}
+      </button>
+      {subGroups && subGroups.length > 0 && (
+        <div ref={menuRef} className="relative">
+          <button
+            onClick={() => setMenuOpen(!menuOpen)}
+            className="px-1.5 py-1.5 rounded-r text-sm font-medium transition-colors"
+            style={{ backgroundColor: bg, color, border: `1px solid ${border}` }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.backgroundColor = bgHover
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.backgroundColor = bg
+            }}
+          >
+            ⋮
+          </button>
+          {menuOpen && (
+            <div className="absolute top-full right-0 mt-1 w-40 bg-bg-secondary border border-border rounded-lg shadow-xl z-50 overflow-hidden">
+              <button
+                onClick={() => {
+                  onLaunch()
+                  setMenuOpen(false)
+                }}
+                className="w-full text-left px-3 py-2 text-sm text-text-primary hover:bg-bg-tertiary transition-colors"
+              >
+                Full workflow
+              </button>
+              <div className="border-t border-border/50" />
+              {subGroups.map((sg) => (
+                <button
+                  key={sg}
+                  onClick={() => {
+                    onLaunch(sg)
+                    setMenuOpen(false)
+                  }}
+                  className="w-full text-left px-3 py-2 text-sm text-text-primary hover:bg-bg-tertiary transition-colors"
+                >
+                  {sg}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}

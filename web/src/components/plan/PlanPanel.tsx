@@ -151,6 +151,17 @@ export function PlanPanel({
     clearInput()
   }
 
+  const handleSelectWorkflowWithSubGroup = (workflowId: string, subGroup: string) => {
+    const content = input.trim() ? input : undefined
+    const atts = attachments.length > 0 ? attachments : undefined
+    if (isPlanning) {
+      acceptAndBuild(workflowId, content, atts, subGroup)
+    } else if (isBuilding) {
+      launchRunner(content, atts, workflowId, subGroup)
+    }
+    clearInput()
+  }
+
   const clearInput = () => {
     setInput('')
     setAttachments([])
@@ -200,6 +211,7 @@ export function PlanPanel({
           onOpenCommandsModal={() => setShowCommandsModal(true)}
           onOpenWorkflowsModal={() => setShowWorkflowsModal(true)}
           onSelectWorkflow={handleSelectWorkflow}
+          onSelectWorkflowWithSubGroup={handleSelectWorkflowWithSubGroup}
           clearInput={clearInput}
         />
         <CommandsModal isOpen={showCommandsModal} onClose={() => setShowCommandsModal(false)} />

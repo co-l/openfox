@@ -249,6 +249,16 @@ export function StepPanel({
         </>
       )}
 
+      <div>
+        <label className={labelClass}>Sub-group</label>
+        <input
+          value={step.subGroup ?? ''}
+          onChange={(e) => onUpdate({ ...step, subGroup: e.target.value || undefined })}
+          placeholder="e.g. build, verify, review"
+          className={inputClass}
+        />
+      </div>
+
       <div className="pt-1 border-t border-border/50">
         <p className="text-text-muted text-[10px]">
           {transitionCount} outgoing transition{transitionCount !== 1 ? 's' : ''} — drag from the bottom port to

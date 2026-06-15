@@ -18,6 +18,7 @@ export interface WorkflowInfo {
   version: string
   color?: string
   startCondition?: WorkflowCondition
+  subGroups?: string[]
 }
 
 export interface WorkflowStep {
@@ -25,7 +26,7 @@ export interface WorkflowStep {
   name: string
   type: 'agent' | 'sub_agent' | 'shell'
   phase: string
-  transitions: Array<{ when: WorkflowCondition; goto: string }>
+  transitions: Array<{ when: WorkflowCondition; goto: string; subGroup?: string }>
   toolMode?: 'builder' | 'planner'
   subAgentType?: string
   prompt?: string
@@ -33,6 +34,7 @@ export interface WorkflowStep {
   command?: string
   timeout?: number
   successExitCodes?: number[]
+  subGroup?: string
 }
 
 export interface WorkflowFull {

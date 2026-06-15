@@ -417,6 +417,14 @@ export function WorkflowsModal({ isOpen, onClose, initialEditId }: WorkflowsModa
     [updateTransition],
   )
 
+  const handleUpdateTransitionSubGroup = useCallback(
+    (edgeKey: string, subGroup: string | undefined) => {
+      if (edgeKey === 'start') return
+      updateTransition(edgeKey, (t) => ({ ...t, subGroup: subGroup || undefined }))
+    },
+    [updateTransition],
+  )
+
   const resolveStepLabel = (step: WorkflowStep) => resolveAgent(step, agentTypes).name
 
   const getSelectedEdgeInfo = () => {
@@ -444,6 +452,7 @@ export function WorkflowsModal({ isOpen, onClose, initialEditId }: WorkflowsModa
       fromLabel: resolveStepLabel(step),
       toLabel,
       condition: transition.when,
+      subGroup: transition.subGroup,
     }
   }
 
@@ -725,6 +734,7 @@ export function WorkflowsModal({ isOpen, onClose, initialEditId }: WorkflowsModa
                         fromLabel={edgeInfo.fromLabel}
                         toLabel={edgeInfo.toLabel}
                         condition={edgeInfo.condition}
+                        subGroup={'subGroup' in edgeInfo ? edgeInfo.subGroup : undefined}
                         fromStep={
                           edgeInfo.type === 'step' ? formSteps.find((s) => s.id === edgeInfo.fromLabel) : undefined
                         }
@@ -732,6 +742,7 @@ export function WorkflowsModal({ isOpen, onClose, initialEditId }: WorkflowsModa
                         transitionIndex={transIdx}
                         totalTransitions={totalTransitions}
                         onUpdateCondition={(when) => handleUpdateTransitionCondition(selectedEdgeKey!, when)}
+                        onUpdateSubGroup={(sg) => handleUpdateTransitionSubGroup(selectedEdgeKey!, sg)}
                         onDelete={() => handleDeleteTransition(selectedEdgeKey!)}
                         onMoveUp={() => {
                           setFormSteps((prev) => {

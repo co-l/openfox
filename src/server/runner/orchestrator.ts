@@ -30,6 +30,10 @@ export async function runOrchestrator(options: OrchestratorOptions): Promise<Orc
     throw new Error(`Workflow "${workflowId}" not found`)
   }
 
-  logger.debug('Using workflow executor', { sessionId: options.sessionId, workflow: workflow.metadata.id })
-  return executeWorkflow(workflow, options)
+  logger.debug('Using workflow executor', {
+    sessionId: options.sessionId,
+    workflow: workflow.metadata.id,
+    subGroup: options.subGroup,
+  })
+  return executeWorkflow(workflow, options, options.subGroup)
 }

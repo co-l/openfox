@@ -212,21 +212,26 @@ export function buildReason(metadataEntries?: Record<string, import('../../share
 export async function executeWorkflow(
   workflow: WorkflowDefinition,
   options: OrchestratorOptions,
+  subGroup?: string,
 ): Promise<OrchestratorResult> {
   const { sessionManager, sessionId, llmClient, signal, onMessage } = options
   const eventStore = getEventStore()
   const startTime = performance.now()
   let iterations = 0
 
-  let currentStepId = workflow.entryStep
+  // Filter to sub-group if specified
+  const activeSteps = subGroup ? workflow.steps.filter((s) => s.subGroup === subGroup) : workflow.steps
+
+  let currentStepId = subGroup ? (activeSteps[0]?.id ?? workflow.entryStep) : workflow.entryStep
   let lastStepOutput: Record<string, string> = {}
   const firstEntryForStep = new Set<string>()
 
   // Snapshot message count so we can compute workflow-scoped stats (not session-wide)
   const messagesBeforeWorkflow = sessionManager.requireSession(sessionId).messages.length
 
+  const activeStepIds = new Set(activeSteps.map((s) => s.id))
   const stepsById = new Map<string, WorkflowStep>()
-  for (const step of workflow.steps) {
+  for (const step of activeSteps) {
     stepsById.set(step.id, step)
   }
 
@@ -544,7 +549,19 @@ export async function executeWorkflow(
 
     // Evaluate transitions
     const refreshedSession = sessionManager.requireSession(sessionId)
-    const nextStepId = evaluateTransitions(step.transitions, stepOutcome, refreshedSession.metadataEntries)
+    const effectiveTransitions = subGroup
+      ? step.transitions.filter((t) => !t.subGroup || t.subGroup === subGroup)
+      : step.transitions
+    const rawNextStepId = evaluateTransitions(effectiveTransitions, stepOutcome, refreshedSession.metadataEntries)
+
+    // When running a sub-group, treat transitions to steps outside the group as $done
+    const nextStepId =
+      subGroup &&
+      rawNextStepId !== TERMINAL_DONE &&
+      rawNextStepId !== TERMINAL_BLOCKED &&
+      !activeStepIds.has(rawNextStepId)
+        ? TERMINAL_DONE
+        : rawNextStepId
 
     // Handle terminal states
     if (nextStepId === TERMINAL_DONE) {

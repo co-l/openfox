@@ -34,6 +34,8 @@ export interface OrchestratorOptions {
   injectBuilderKickoff?: boolean
   /** Override the globally active workflow for this session */
   workflowId?: string
+  /** Run only steps with this sub-group label */
+  subGroup?: string
   /** User-provided message to inject after workflow-started marker */
   userMessage?: { content: string; attachments?: Attachment[] }
   /** For path confirmation dialogs (sent directly, not through EventStore) */

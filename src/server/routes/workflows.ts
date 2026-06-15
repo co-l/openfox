@@ -39,11 +39,14 @@ export function createWorkflowRoutes(configDir: string, config: Config, projectD
       if (!Array.isArray(steps) || steps.length === 0) return 'Missing required fields: metadata.id, steps'
       return null
     },
-    mapToResponse: (w) =>
-      ({
+    mapToResponse: (w) => {
+      const subGroups = [...new Set(w.steps.map((s) => s.subGroup).filter(Boolean))] as string[]
+      return {
         ...w.metadata,
         startCondition: w.startCondition,
-      }) as unknown as { [key: string]: unknown },
+        subGroups: subGroups.length > 0 ? subGroups : undefined,
+      } as unknown as { [key: string]: unknown }
+    },
     extraGetData: () => Promise.resolve({ activeWorkflowId: config.activeWorkflowId ?? 'default' }),
     extraRoutes: (router) => {
       router.get('/template-variables', (_req, res) => {

@@ -522,12 +522,13 @@ export const useSessionStore = create<SessionState>((set, get) => {
       }
     },
 
-    launchRunner: (content?, attachments?, workflowId?) => {
+    launchRunner: (content?, attachments?, workflowId?, subGroup?) => {
       set({ streamingMessageId: null })
       const payload: Record<string, unknown> = {}
       if (content?.trim()) payload.content = content
       if (attachments && attachments.length > 0) payload.attachments = attachments
       if (workflowId) payload.workflowId = workflowId
+      if (subGroup) payload.subGroup = subGroup
       wsClient.send('runner.launch', payload)
     },
 
@@ -577,12 +578,13 @@ export const useSessionStore = create<SessionState>((set, get) => {
       }
     },
 
-    acceptAndBuild: (workflowId?, content?, attachments?) => {
+    acceptAndBuild: (workflowId?, content?, attachments?, subGroup?) => {
       set({ streamingMessageId: null })
       const payload: Record<string, unknown> = {}
       if (workflowId) payload.workflowId = workflowId
       if (content?.trim()) payload.content = content
       if (attachments && attachments.length > 0) payload.attachments = attachments
+      if (subGroup) payload.subGroup = subGroup
 
       const sessionId = get().currentSession?.id
       if (sessionId) {

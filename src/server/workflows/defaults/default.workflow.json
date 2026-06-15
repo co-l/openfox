@@ -17,6 +17,7 @@
       "type": "agent",
       "phase": "build",
       "toolMode": "builder",
+      "subGroup": "build",
       "prompt": "Implement the task and make sure you fulfil the {{criteriaCount}} criteria. Mark each criterion as complete using session_metadata with action update and status completed.",
       "nudgePrompt": "Continue working on the acceptance criteria. {{reason}}.\n\n{{verifierFindings}}\nDon't forget to mark criteria as complete using session_metadata with action update and status completed",
       "transitions": [
@@ -38,6 +39,7 @@
       "type": "sub_agent",
       "phase": "verification",
       "subAgentType": "verifier",
+      "subGroup": "verify",
       "prompt": "## Criteria\n{{criteriaList}}\n\n## Modified Files\n{{modifiedFiles}}\n\nVerify each criterion marked [NEEDS VERIFICATION]. Read the code, run tests if applicable, then use session_metadata to update each criterion's status to passed or failed.",
       "transitions": [
         {
@@ -53,6 +55,7 @@
       "type": "sub_agent",
       "phase": "verification",
       "subAgentType": "code_reviewer",
+      "subGroup": "code review",
       "prompt": "## Modified Files\n{{modifiedFiles}}\n\nReview the changes. Focus on:\n1. **UX interaction** — does this feel good to use? Any rough edges, confusing behavior, or unnecessary friction?\n2. **Project bloat** — does this follow project conventions? Is it maintainable? Does it add unnecessary complexity?\n\nUse session_metadata to create review_findings entries for any issues you find (status: open). If re-reviewing existing findings, update their status to resolved or dismissed as appropriate. Then call return_value with your findings.",
       "transitions": [{ "when": { "type": "always" }, "goto": "finalize" }]
     },
@@ -62,6 +65,7 @@
       "type": "agent",
       "phase": "verification",
       "toolMode": "builder",
+      "subGroup": "code review",
       "prompt": "## Code Review Findings\n{{stepOutput.content}}\n\nThe code reviewer has provided feedback above. Review it and make any final adjustments if needed.\n\nFirst, use `session_metadata` with action `get` and key `review_findings` to see the existing findings and their IDs. Then use `session_metadata` with action `update` and the correct ID to resolve or dismiss each one:\n- If you fixed the issue, set status to **resolved**.\n- If the finding is not applicable, set status to **dismissed**.\n\nAll findings must be resolved or dismissed before you can finish. When you're satisfied, call step_done().",
       "nudgePrompt": "The step cannot complete because not all review findings have been resolved or dismissed. Use `session_metadata` with action `get` and key `review_findings` to check the current status of each finding by ID, then use `session_metadata` with action `update` to set each one to **resolved** or **dismissed**. Call step_done() once all findings are handled.",
       "transitions": [
@@ -83,6 +87,7 @@
       "type": "agent",
       "phase": "verification",
       "toolMode": "builder",
+      "subGroup": "summarize",
       "prompt": "Produce a concise summary of what was accomplished in this session. Include:\n- What was implemented or fixed\n- Key files modified\n- Any notable decisions or tradeoffs\n\nCall step_done() when done.",
       "transitions": [{ "when": { "type": "always" }, "goto": "$done" }]
     }

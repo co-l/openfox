@@ -5,11 +5,14 @@ import { CommandsModal } from '../settings/CommandsModal'
 import { useWorkflowsStore, type WorkflowInfo } from '../../stores/workflows'
 import { WorkflowsModal } from '../settings/WorkflowsModal'
 import { EditButton } from '../shared/IconButton'
+import { Portal } from '../shared/Portal'
+import { useClickOutside } from '../../hooks/useClickOutside'
 import type { Attachment } from '@shared/types.js'
 
 interface MoreMenuProps {
   onSendCommand: (content: string, agentMode?: string, textareaContent?: string, attachments?: Attachment[]) => void
   onSelectWorkflow: (workflowId: string) => void
+  onSelectWorkflowWithSubGroup: (workflowId: string, subGroup: string) => void
   onOpenCommandsManager: () => void
   onOpenWorkflowsManager: () => void
   onAttach: () => void
@@ -35,6 +38,7 @@ function isConditionMet(workflow: WorkflowInfo): boolean | null {
 export function MoreMenu({
   onSendCommand,
   onSelectWorkflow,
+  onSelectWorkflowWithSubGroup,
   onOpenCommandsManager,
   onOpenWorkflowsManager,
   onAttach,
@@ -160,7 +164,7 @@ export function MoreMenu({
       </button>
 
       {isOpen && (
-        <div className="absolute bottom-full right-0 mb-1 w-80 bg-bg-secondary border border-border rounded-lg shadow-xl z-50 overflow-hidden">
+        <div className="absolute bottom-full right-0 mb-1 w-80 bg-bg-secondary border border-border rounded-lg shadow-xl z-50">
           <div className="flex border-b border-border">
             <button
               type="button"
@@ -273,10 +277,21 @@ export function MoreMenu({
                           />
                         )}
                       </button>
-                      <EditButton
-                        className="opacity-0 group-hover:opacity-100"
-                        onClick={(e) => handleEditWorkflow(workflow.id, e)}
-                      />
+                      <div className="flex items-center gap-1">
+                        {workflow.subGroups && workflow.subGroups.length > 0 && (
+                          <WorkflowSubGroupMenu
+                            subGroups={workflow.subGroups}
+                            onSelect={(subGroup) => {
+                              setIsOpen(false)
+                              onSelectWorkflowWithSubGroup(workflow.id, subGroup)
+                            }}
+                          />
+                        )}
+                        <EditButton
+                          className="opacity-0 group-hover:opacity-100"
+                          onClick={(e) => handleEditWorkflow(workflow.id, e)}
+                        />
+                      </div>
                     </div>
                   )
                 })
@@ -324,5 +339,61 @@ export function MoreMenu({
         initialEditId={editWorkflowId}
       />
     </div>
+  )
+}
+
+function WorkflowSubGroupMenu({ subGroups, onSelect }: { subGroups: string[]; onSelect: (subGroup: string) => void }) {
+  const [menuOpen, setMenuOpen] = useState(false)
+  const [menuPos, setMenuPos] = useState({ top: 0, right: 0 })
+  const buttonRef = useRef<HTMLButtonElement>(null)
+  const menuRef = useRef<HTMLDivElement>(null)
+
+  useClickOutside(menuRef, () => setMenuOpen(false), menuOpen)
+
+  const toggle = (e: React.MouseEvent) => {
+    e.stopPropagation()
+    if (!menuOpen && buttonRef.current) {
+      const rect = buttonRef.current.getBoundingClientRect()
+      setMenuPos({ top: rect.bottom + 4, right: window.innerWidth - rect.right })
+    }
+    setMenuOpen(!menuOpen)
+  }
+
+  return (
+    <>
+      <button
+        ref={buttonRef}
+        type="button"
+        onClick={toggle}
+        className="p-1 rounded text-text-muted hover:text-text-primary transition-colors"
+        title="Sub-groups"
+      >
+        ⋮
+      </button>
+      {menuOpen && (
+        <Portal>
+          <div
+            ref={menuRef}
+            onMouseDown={(e) => e.stopPropagation()}
+            className="fixed w-40 bg-bg-secondary border border-border rounded-lg shadow-xl z-[100] overflow-hidden"
+            style={{ top: menuPos.top, right: menuPos.right }}
+          >
+            {subGroups.map((sg) => (
+              <button
+                key={sg}
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation()
+                  onSelect(sg)
+                }}
+                className="w-full text-left px-3 py-2 text-sm text-text-primary hover:bg-bg-tertiary transition-colors"
+              >
+                {sg}
+              </button>
+            ))}
+          </div>
+        </Portal>
+      )}
+    </>
   )
 }

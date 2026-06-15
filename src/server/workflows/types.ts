@@ -49,6 +49,8 @@ interface StepBase {
   phase: string
   /** Evaluated in order; first match wins */
   transitions: Transition[]
+  /** Optional sub-group label for running a subset of workflow steps */
+  subGroup?: string
 }
 
 /** Full LLM call + tool execution loop (like the current builder turn) */
@@ -94,6 +96,8 @@ export interface Transition {
   when: TransitionCondition
   /** Step ID, or "$done" / "$blocked" for terminal states */
   goto: string
+  /** Optional sub-group label — only used when running this sub-group */
+  subGroup?: string
 }
 
 export type TransitionCondition =

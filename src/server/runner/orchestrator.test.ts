@@ -105,7 +105,7 @@ describe('runOrchestrator', () => {
 
     const result = await runOrchestrator(mockOptions)
 
-    expect(executeWorkflow).toHaveBeenCalledWith(mockWorkflow, mockOptions)
+    expect(executeWorkflow).toHaveBeenCalledWith(mockWorkflow, mockOptions, undefined)
     expect(result.finalAction.type).toBe('DONE')
     expect(result.iterations).toBe(1)
   })

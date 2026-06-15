@@ -1090,7 +1090,7 @@ async function handleClientMessage(
 
       // Parse launch payload
       const launchPayload = message.payload as
-        | { content?: string; attachments?: unknown[]; workflowId?: string }
+        | { content?: string; attachments?: unknown[]; workflowId?: string; subGroup?: string }
         | undefined
       const launchAttachments = launchPayload?.attachments as Attachment[] | undefined
       const hasUserContent =
@@ -1127,6 +1127,7 @@ async function handleClientMessage(
         statsIdentity: statsForSession(sessionId),
         injectBuilderKickoff: !hasUserMessage,
         ...(launchPayload?.workflowId ? { workflowId: launchPayload.workflowId } : {}),
+        ...(launchPayload?.subGroup ? { subGroup: launchPayload.subGroup } : {}),
         ...(hasUserMessage
           ? {
               userMessage: {
