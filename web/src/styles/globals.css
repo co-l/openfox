@@ -17,6 +17,7 @@
     @apply bg-primary text-text-primary text-sm;
   }
 
+  /* Webkit scrollbars (Chrome, Safari, Edge) */
   ::-webkit-scrollbar {
     @apply w-1 h-1;
   }
@@ -33,10 +34,16 @@
     @apply bg-text-muted;
   }
 
-  /* Firefox scrollbars */
-  * {
-    scrollbar-width: thin;
-    scrollbar-color: rgba(100, 116, 139, 0.3) transparent;
+  /* Firefox scrollbars - hover behavior */
+  @supports (scrollbar-width: thin) {
+    /* Hidden by default, show on hover */
+    * {
+      scrollbar-width: thin;
+      scrollbar-color: transparent transparent;
+    }
+    *:hover {
+      scrollbar-color: rgb(var(--color-bg-tertiary) / 0.6) transparent;
+    }
   }
 }
 
