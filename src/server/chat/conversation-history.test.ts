@@ -257,6 +257,38 @@ describe('buildContextMessages', () => {
       const oldResult = buildContextMessagesFromEventHistory(events, 'window-1', { includeVerifier: false })
       expect(newResult).toEqual(oldResult)
     })
+
+    it('strips attachments when stripAttachments is true', () => {
+      const events: StoredEvent[] = [
+        makeEvent({
+          seq: nextSeq(),
+          type: 'session.initialized',
+          data: { projectId: 'p1', workdir: '/tmp', contextWindowId: 'window-1' },
+        }),
+        makeEvent({
+          seq: nextSeq(),
+          type: 'message.start',
+          data: {
+            messageId: 'm1',
+            role: 'user',
+            content: 'Hello with image',
+            contextWindowId: 'window-1',
+            attachments: [{ id: 'att-1', filename: 'img.png', mimeType: 'image/png', size: 1024, data: 'base64data' }],
+          },
+        }),
+        makeEvent({
+          seq: nextSeq(),
+          type: 'message.done',
+          data: { messageId: 'm1' },
+        }),
+      ]
+
+      const scope: TopLevelScope = { type: 'toplevel', sessionId: 'session-1' }
+      const result = buildContextMessages(events, scope, { stripAttachments: true })
+      expect(result).toHaveLength(1)
+      expect(result[0]!.content).toBe('Hello with image')
+      expect(result[0]!.attachments).toBeUndefined()
+    })
   })
 
   describe('subagent scope', () => {

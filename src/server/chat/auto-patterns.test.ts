@@ -3,9 +3,7 @@ import { matchAutoPatterns, type AutoPattern } from './auto-patterns.js'
 
 describe('matchAutoPatterns', () => {
   it('returns empty array when no patterns match', () => {
-    const patterns: AutoPattern[] = [
-      { match: /hello/, response: 'Hi there!' },
-    ]
+    const patterns: AutoPattern[] = [{ match: /hello/, response: 'Hi there!' }]
 
     const result = matchAutoPatterns('goodbye', undefined, patterns)
 
@@ -13,9 +11,7 @@ describe('matchAutoPatterns', () => {
   })
 
   it('returns match when pattern matches content', () => {
-    const patterns: AutoPattern[] = [
-      { match: /hello/, response: 'Hi there!' },
-    ]
+    const patterns: AutoPattern[] = [{ match: /hello/, response: 'Hi there!' }]
 
     const result = matchAutoPatterns('hello world', undefined, patterns)
 
@@ -24,9 +20,7 @@ describe('matchAutoPatterns', () => {
   })
 
   it('returns match when pattern matches thinking', () => {
-    const patterns: AutoPattern[] = [
-      { match: /think/, response: 'Stop thinking' },
-    ]
+    const patterns: AutoPattern[] = [{ match: /think/, response: 'Stop thinking' }]
 
     const result = matchAutoPatterns('content', 'I think therefore', patterns)
 
@@ -59,11 +53,38 @@ describe('matchAutoPatterns', () => {
   })
 
   it('returns empty for function matcher that returns false', () => {
-    const patterns: AutoPattern[] = [
-      { match: (content: string) => content.includes('xyz'), response: 'Nope' },
-    ]
+    const patterns: AutoPattern[] = [{ match: (content: string) => content.includes('xyz'), response: 'Nope' }]
 
     const result = matchAutoPatterns('hello', undefined, patterns)
+
+    expect(result).toEqual([])
+  })
+
+  it('supports context-based matchers', () => {
+    const patterns: AutoPattern[] = [
+      {
+        match: (_content: string, _thinking?: string, context?: { xmlFormatError?: boolean }) =>
+          context?.xmlFormatError === true,
+        response: 'Use JSON format',
+      },
+    ]
+
+    const result = matchAutoPatterns('some content', undefined, patterns, { xmlFormatError: true })
+
+    expect(result).toHaveLength(1)
+    expect(result[0]?.response).toBe('Use JSON format')
+  })
+
+  it('does not match context-based pattern when context is absent', () => {
+    const patterns: AutoPattern[] = [
+      {
+        match: (_content: string, _thinking?: string, context?: { xmlFormatError?: boolean }) =>
+          context?.xmlFormatError === true,
+        response: 'Use JSON format',
+      },
+    ]
+
+    const result = matchAutoPatterns('some content', undefined, patterns)
 
     expect(result).toEqual([])
   })

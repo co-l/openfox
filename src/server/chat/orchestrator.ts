@@ -39,6 +39,7 @@ import { getEnabledSkillMetadata } from '../skills/registry.js'
 import { getRuntimeConfig } from '../runtime-config.js'
 import { getGlobalConfigDir } from '../../cli/paths.js'
 import { logger } from '../utils/logger.js'
+import type { AutoPattern } from './auto-patterns.js'
 
 // Re-export for runner orchestrator
 export {
@@ -53,6 +54,16 @@ export {
 function getCurrentWindowMessageOptions(sessionId: string): { contextWindowId: string } | undefined {
   const contextWindowId = getCurrentContextWindowId(sessionId)
   return contextWindowId ? { contextWindowId } : undefined
+}
+
+function buildAutoPatterns(): AutoPattern[] {
+  const config = getRuntimeConfig()
+  const rawPatterns = config.agent?.autoPatterns ?? []
+  const patterns: AutoPattern[] = rawPatterns.map((rp) => ({
+    match: new RegExp(rp.pattern),
+    response: rp.response,
+  }))
+  return patterns
 }
 
 // ============================================================================
@@ -315,6 +326,7 @@ async function runGenericAgentTurn(
     {
       mode: agentId,
       append,
+      autoPatterns: buildAutoPatterns(),
       cachedSystemPrompt: cachedResult.systemPrompt,
       sessionManager: options.sessionManager,
       sessionId: options.sessionId,
@@ -373,6 +385,7 @@ export async function runBuilderTurn(
       {
         mode: 'builder',
         append,
+        autoPatterns: buildAutoPatterns(),
         sessionManager,
         sessionId,
         llmClient: options.llmClient,

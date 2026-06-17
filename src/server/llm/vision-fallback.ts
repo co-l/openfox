@@ -48,6 +48,20 @@ export async function ensureVisionFallbackConfigLoaded(): Promise<void> {
 
     const runtimeConfig = getRuntimeConfig()
     const mode = runtimeConfig.mode ?? 'production'
+
+    // Check runtime config for vision model first
+    if (runtimeConfig.llm?.visionModel) {
+      config = {
+        enabled: true,
+        url: runtimeConfig.llm.baseUrl,
+        model: runtimeConfig.llm.visionModel,
+        timeout: runtimeConfig.llm.timeout,
+      }
+      configLoaded = true
+      logger.debug('Vision fallback config loaded from runtime config', { config })
+      return
+    }
+
     const globalConfig = await loadGlobalConfig(mode)
 
     const fallback = getVisionFallback(globalConfig)

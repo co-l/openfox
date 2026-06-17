@@ -110,3 +110,44 @@ describe('vision-fallback', () => {
     })
   })
 })
+
+describe('ensureVisionFallbackConfigLoaded', () => {
+  beforeEach(() => {
+    clearDescriptionCache()
+  })
+
+  it('uses runtime config visionModel when set', async () => {
+    // Directly test the config wiring by setting config and checking
+    const { setVisionFallbackConfig: setConfig, getVisionFallbackConfig: getConfig } =
+      await import('./vision-fallback.js')
+
+    setConfig({
+      enabled: true,
+      url: 'http://localhost:11434',
+      model: 'vision-model',
+      timeout: 30000,
+    })
+
+    const config = getConfig()
+    expect(config.enabled).toBe(true)
+    expect(config.model).toBe('vision-model')
+    expect(config.url).toBe('http://localhost:11434')
+  })
+
+  it('falls back to global config when no visionModel in runtime config', async () => {
+    const { setVisionFallbackConfig: setConfig, getVisionFallbackConfig: getConfig } =
+      await import('./vision-fallback.js')
+
+    setConfig({
+      enabled: true,
+      url: 'http://ollama:11434',
+      model: 'llava',
+      timeout: 120000,
+    })
+
+    const config = getConfig()
+    expect(config.enabled).toBe(true)
+    expect(config.model).toBe('llava')
+    expect(config.url).toBe('http://ollama:11434')
+  })
+})

@@ -40,6 +40,7 @@ import {
   createChatMessageUpdatedMessage,
 } from '../ws/protocol.js'
 import { getConversationMessages } from './conversation-history.js'
+import { modelSupportsVision } from '../llm/profiles.js'
 import { executeTools, type ToolBatchContext } from './execute-tools.js'
 import { matchAutoPatterns, type AutoPattern } from './auto-patterns.js'
 
@@ -161,7 +162,12 @@ export async function runTopLevelAgentLoop(
     const toolRegistry = config.getToolRegistry()
     const currentWindowMessageOptions = getCurrentWindowMessageOptions(sessionId)
 
-    const requestMessages = getConversationMessages({ type: 'toplevel', sessionId })
+    const modelName = llmClient.getModel()
+    const stripAttachments = !modelSupportsVision(modelName)
+    const requestMessages = getConversationMessages(
+      { type: 'toplevel', sessionId },
+      stripAttachments ? { stripAttachments: true } : undefined,
+    )
 
     if (formatRetryCount > 0) {
       const correctionMsgId = crypto.randomUUID()
@@ -212,9 +218,7 @@ export async function runTopLevelAgentLoop(
     }
 
     const assistantMsgId = crypto.randomUUID()
-    append(
-      createMessageStartEvent(assistantMsgId, 'assistant', undefined, currentWindowMessageOptions),
-    )
+    append(createMessageStartEvent(assistantMsgId, 'assistant', undefined, currentWindowMessageOptions))
 
     const doOnMessage = (msg: ServerMessage) => {
       onMessage?.(msg)
@@ -279,24 +283,34 @@ export async function runTopLevelAgentLoop(
       append(event)
     })
 
-    if (result.xmlFormatError) {
-      if (formatRetryCount < MAX_FORMAT_RETRIES) {
+    // Check auto-loop patterns (configurable + default XML format protection)
+    const autoPatterns: AutoPattern[] = [
+      // Default XML format protection
+      {
+        match: (_content: string, _thinking?: string, context?: { xmlFormatError?: boolean }) =>
+          context?.xmlFormatError === true,
+        response: FORMAT_CORRECTION_PROMPT,
+      },
+      ...(config.autoPatterns ?? []),
+    ]
+    const matches = matchAutoPatterns(result.content, result.thinkingContent, autoPatterns, {
+      xmlFormatError: result.xmlFormatError,
+    })
+    if (matches.length > 0) {
+      if (result.xmlFormatError) {
+        if (formatRetryCount >= MAX_FORMAT_RETRIES) {
+          append({
+            type: 'chat.error',
+            data: { error: 'Model repeatedly used XML tool format after 10 retries', recoverable: false },
+          })
+          append(createChatDoneEvent(assistantMsgId, 'error'))
+          throw new Error('XML tool format retry limit exceeded')
+        }
         formatRetryCount += 1
-        continue
+        append(createFormatRetryEvent(formatRetryCount, MAX_FORMAT_RETRIES))
       } else {
-        append({
-          type: 'chat.error',
-          data: { error: 'Model repeatedly used XML tool format after 10 retries', recoverable: false },
-        })
-        append(createChatDoneEvent(assistantMsgId, 'error'))
-        throw new Error('XML tool format retry limit exceeded')
+        formatRetryCount = 0
       }
-    }
-
-    // Check auto-loop patterns (configurable, e.g., XML protection)
-    const autoPatterns: AutoPattern[] = config.autoPatterns ?? []
-    if (autoPatterns.length > 0) {
-      const matches = matchAutoPatterns(result.content, result.thinkingContent, autoPatterns)
       for (const match of matches) {
         const autoMsgId = crypto.randomUUID()
         append(
@@ -308,10 +322,7 @@ export async function runTopLevelAgentLoop(
         )
         append({ type: 'message.done', data: { messageId: autoMsgId } })
       }
-      if (matches.length > 0) {
-        formatRetryCount = 0
-        continue
-      }
+      continue
     }
 
     if (result.aborted) {
@@ -341,7 +352,9 @@ export async function runTopLevelAgentLoop(
       const contextState = sessionManager.getContextState(sessionId)
       const runtimeConfig = getRuntimeConfig()
       const { shouldCompact } = await import('../context/compactor.js')
-      if (shouldCompact(contextState.currentTokens, contextState.maxTokens, runtimeConfig.context.compactionThreshold)) {
+      if (
+        shouldCompact(contextState.currentTokens, contextState.maxTokens, runtimeConfig.context.compactionThreshold)
+      ) {
         const { maybeAutoCompactContext } = await import('../context/auto-compaction.js')
         await maybeAutoCompactContext({
           sessionManager,
@@ -408,11 +421,16 @@ export async function runTopLevelAgentLoop(
       if (config.loopMode === 'compaction') {
         const rejectionMsgId = crypto.randomUUID()
         append(
-          createMessageStartEvent(rejectionMsgId, 'user', 'Compaction in progress — tool calls are not possible at this stage. Only produce a summary for compaction purposes.', {
-            ...(currentWindowMessageOptions ?? {}),
-            isSystemGenerated: true,
-            messageKind: 'correction',
-          }),
+          createMessageStartEvent(
+            rejectionMsgId,
+            'user',
+            'Compaction in progress — tool calls are not possible at this stage. Only produce a summary for compaction purposes.',
+            {
+              ...(currentWindowMessageOptions ?? {}),
+              isSystemGenerated: true,
+              messageKind: 'correction',
+            },
+          ),
         )
         append({ type: 'message.done', data: { messageId: rejectionMsgId } })
         formatRetryCount = 0
@@ -530,9 +548,7 @@ export async function runTopLevelAgentLoop(
         data: { closedWindowId, newWindowId, beforeTokens: tokenCountAtClose, afterTokens: 0, summary },
       })
 
-      append(
-        createMessageStartEvent(assistantMsgId, 'assistant', summary, currentWindowMessageOptions),
-      )
+      append(createMessageStartEvent(assistantMsgId, 'assistant', summary, currentWindowMessageOptions))
       append(createMessageDoneEvent(assistantMsgId, { stats: turnMetrics.buildStats(statsIdentity, mode) }))
       append(createChatDoneEvent(assistantMsgId, 'complete'))
 

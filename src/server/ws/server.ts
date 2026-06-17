@@ -500,7 +500,7 @@ export function createWebSocketServer(
     }
 
     sessionManager.clearMessageQueue(sessionId)
-    sessionManager.setRunning(sessionId, false)
+    // runChatTurn in startTurnWithCompletionChain already sets isRunning=false in finally
     const contextState = sessionManager.getContextState(sessionId)
     sendFn(sessionId, createContextStateMessage(contextState))
   }

@@ -186,7 +186,6 @@ vi.mock('../chat/stream-pure.js', async (importOriginal) => {
     ...actual,
     streamLLMPure: streamLLMPureMock,
     consumeStreamGenerator: consumeStreamGeneratorMock,
-    consumeStreamWithToolLoop: consumeStreamGeneratorMock,
   }
 })
 
@@ -879,8 +878,12 @@ describe('createWebSocketServer', () => {
       }),
       setCurrentContextSize: vi.fn(),
       getContextState: vi.fn(() => ({
-        currentTokens: 10, maxTokens: 200000, compactionCount: 0,
-        dangerZone: false, canCompact: false, dynamicContextChanged: false,
+        currentTokens: 10,
+        maxTokens: 200000,
+        compactionCount: 0,
+        dangerZone: false,
+        canCompact: false,
+        dynamicContextChanged: false,
       })),
       getCurrentModelSettings: vi.fn(() => ({})),
       getDynamicContextChanged: vi.fn(() => false),
@@ -1242,8 +1245,10 @@ describe('createWebSocketServer', () => {
       getSession: vi.fn(() => sessionState),
       requireSession: vi.fn(() => structuredClone(sessionState)),
     })
-    runOrchestratorMock.mockImplementation(() => {
+    runOrchestratorMock.mockImplementation((options: any) => {
       resolveChatDone?.(chatDoneEvent)
+      // Simulate runChatTurn's finally block which sets isRunning=false
+      options.sessionManager?.setRunning?.('session-1', false)
       return Promise.reject(new Error('Aborted'))
     })
 

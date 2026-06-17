@@ -62,11 +62,29 @@ interface InternalMessage extends MessageWithId {
  * For toplevel scope: filters by current context window, excludes sub-agent messages.
  * For subagent scope: filters by subAgentId, handles compaction boundaries.
  */
-export function buildContextMessages(events: StoredEvent[], scope: ConversationScope): ContextMessage[] {
+export function buildContextMessages(
+  events: StoredEvent[],
+  scope: ConversationScope,
+  options?: { stripAttachments?: boolean },
+): ContextMessage[] {
+  let messages: ContextMessage[]
   if (scope.type === 'toplevel') {
-    return buildTopLevelContextMessages(events, scope)
+    messages = buildTopLevelContextMessages(events, scope)
+  } else {
+    messages = buildSubAgentContextMessages(events, scope)
   }
-  return buildSubAgentContextMessages(events, scope)
+
+  if (options?.stripAttachments) {
+    messages = messages.map((msg) => {
+      if (msg.attachments) {
+        const { attachments: _a, ...rest } = msg
+        return rest
+      }
+      return msg
+    })
+  }
+
+  return messages
 }
 
 // ============================================================================
@@ -191,11 +209,15 @@ function buildSubAgentContextMessages(events: StoredEvent[], scope: SubAgentScop
  * This is THE function to call whenever you need conversation history
  * for any LLM call - top-level agent, sub-agent, or compaction.
  */
-export function getConversationMessages(scope: ConversationScope): RequestContextMessage[] {
+export function getConversationMessages(
+  scope: ConversationScope,
+  options?: { stripAttachments?: boolean },
+): RequestContextMessage[] {
   const eventStore = getEventStore()
   const events = eventStore.getEvents(scope.sessionId)
   if (events.length === 0) return []
 
-  const contextMessages = buildContextMessages(events, scope)
+  const contextMessages = buildContextMessages(events, scope, options)
+
   return minimalMessagesToRequestContextMessages(contextMessages, 'history')
 }

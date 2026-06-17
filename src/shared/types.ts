@@ -551,6 +551,8 @@ export interface Config {
     apiKey?: string
     /** Disable thinking/reasoning globally (for e2e tests) */
     disableThinking?: boolean
+    /** Vision model for image description fallback when primary model lacks vision support */
+    visionModel?: string
   }
   context: {
     maxTokens: number
@@ -561,6 +563,8 @@ export interface Config {
     maxIterations: number
     maxConsecutiveFailures: number
     toolTimeout: number
+    /** Auto-loop patterns: when LLM response matches, auto-inject a response */
+    autoPatterns?: Array<{ pattern: string; response: string }>
   }
   server: {
     port: number

@@ -20,7 +20,6 @@ const {
   createToolProgressHandlerMock: vi.fn(() => undefined),
   streamLLMPureMock: vi.fn(),
   consumeStreamGeneratorMock: vi.fn(),
-  consumeStreamWithToolLoopMock: vi.fn(),
   streamLLMResponseMock: vi.fn(async (_options?: any) => {
     const consumeResult = await consumeStreamGeneratorMock()
     if (!consumeResult) {
@@ -106,7 +105,6 @@ vi.mock('./stream-pure.js', async (importOriginal) => {
     ...actual,
     streamLLMPure: streamLLMPureMock,
     consumeStreamGenerator: consumeStreamGeneratorMock,
-    consumeStreamWithToolLoop: consumeStreamGeneratorMock,
   }
 })
 
@@ -806,7 +804,8 @@ describe('chat orchestrator', () => {
 
     const appendMock = vi.fn()
     await runBuilderTurn(
-      { sessionManager: sessionManager as never,
+      {
+        sessionManager: sessionManager as never,
         sessionId: 'session-1',
         llmClient: { getModel: () => 'qwen3-32b' } as never,
         onMessage: vi.fn(),
@@ -884,7 +883,8 @@ describe('chat orchestrator', () => {
 
     const appendMock = vi.fn()
     await runBuilderTurn(
-      { sessionManager: deniedManager as never,
+      {
+        sessionManager: deniedManager as never,
         sessionId: 'session-1',
         llmClient: { getModel: () => 'qwen3-32b' } as never,
         onMessage: vi.fn(),
@@ -950,7 +950,8 @@ describe('chat orchestrator', () => {
 
     await expect(
       runBuilderTurn(
-        {   sessionManager: errorManager as never,
+        {
+          sessionManager: errorManager as never,
           sessionId: 'session-1',
           llmClient: { getModel: () => 'qwen3-32b' } as never,
           onMessage: vi.fn(),
@@ -1026,7 +1027,8 @@ describe('chat orchestrator', () => {
 
     const appendMock = vi.fn()
     await runBuilderTurn(
-      { sessionManager: sessionManager as never,
+      {
+        sessionManager: sessionManager as never,
         sessionId: 'session-1',
         llmClient: { getModel: () => 'qwen3-32b' } as never,
         onMessage: vi.fn(),
@@ -1110,7 +1112,8 @@ describe('chat orchestrator', () => {
 
     const appendMock = vi.fn()
     await runBuilderTurn(
-      { sessionManager: sessionManager as never,
+      {
+        sessionManager: sessionManager as never,
         sessionId: 'session-1',
         llmClient: { getModel: () => 'qwen3-32b' } as never,
         onMessage: vi.fn(),
@@ -1180,7 +1183,8 @@ describe('chat orchestrator', () => {
     })
 
     await runBuilderTurn(
-      { sessionManager: sessionManager as never,
+      {
+        sessionManager: sessionManager as never,
         sessionId: 'session-1',
         llmClient: { getModel: () => 'qwen3-32b' } as never,
         onMessage: vi.fn(),
@@ -1229,7 +1233,8 @@ describe('chat orchestrator', () => {
     })
 
     await runBuilderTurn(
-      { sessionManager: sessionManager as never,
+      {
+        sessionManager: sessionManager as never,
         sessionId: 'session-1',
         llmClient: { getModel: () => 'qwen3-32b' } as never,
       },
@@ -1282,7 +1287,8 @@ describe('chat orchestrator', () => {
     })
 
     await runBuilderTurn(
-      { sessionManager: sessionManager as never,
+      {
+        sessionManager: sessionManager as never,
         sessionId: 'session-1',
         llmClient: { getModel: () => 'qwen3-32b' } as never,
         injectBuilderKickoff: true,
@@ -2508,7 +2514,10 @@ describe('chat orchestrator', () => {
       })
 
       // Verify getConversationMessages (the unified method) was called with session ID
-      expect(getConversationMessagesMock).toHaveBeenCalledWith({ type: 'toplevel', sessionId: 'session-1' })
+      expect(getConversationMessagesMock).toHaveBeenCalledWith(
+        { type: 'toplevel', sessionId: 'session-1' },
+        expect.any(Object),
+      )
 
       // After fix: streamLLMPure does NOT merge reminder into messages (preserves vLLM cache)
       // The reminder is injected as a separate message by injectModeReminderIfNeeded()
@@ -2560,16 +2569,20 @@ describe('chat orchestrator', () => {
       })
 
       await runBuilderTurn(
-        {   sessionManager: sessionManager as never,
+        {
+          sessionManager: sessionManager as never,
           sessionId: 'session-1',
           llmClient: { getModel: () => 'qwen3-32b' } as never,
         },
         new TurnMetrics(),
-      vi.fn(),
-    )
+        vi.fn(),
+      )
 
       // Verify getConversationMessages (the unified method) was called with session ID
-      expect(getConversationMessagesMock).toHaveBeenCalledWith({ type: 'toplevel', sessionId: 'session-1' })
+      expect(getConversationMessagesMock).toHaveBeenCalledWith(
+        { type: 'toplevel', sessionId: 'session-1' },
+        expect.any(Object),
+      )
       // After fix: Builder does NOT inject reminder into messages (preserves vLLM cache)
       // The reminder is injected as a separate message by injectModeReminderIfNeeded()
       expect(streamLLMPureMock).toHaveBeenCalledWith(
@@ -2623,13 +2636,14 @@ describe('chat orchestrator', () => {
       })
 
       await runBuilderTurn(
-        {   sessionManager: sessionManager as never,
+        {
+          sessionManager: sessionManager as never,
           sessionId: 'session-1',
           llmClient: { getModel: () => 'qwen3-32b' } as never,
         },
         new TurnMetrics(),
-      vi.fn(),
-    )
+        vi.fn(),
+      )
 
       expect(getToolRegistryForModeMock).toHaveBeenCalled()
       expect(streamLLMPureMock).toHaveBeenCalledWith(
@@ -2699,14 +2713,15 @@ describe('chat orchestrator', () => {
       })
 
       await runBuilderTurn(
-        {   sessionManager: sessionManager as never,
+        {
+          sessionManager: sessionManager as never,
           sessionId: 'session-1',
           llmClient: { getModel: () => 'qwen3-32b' } as never,
           injectStepDone: true,
         },
         new TurnMetrics(),
-      vi.fn(),
-    )
+        vi.fn(),
+      )
 
       expect(streamLLMPureMock).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -2777,13 +2792,14 @@ describe('chat orchestrator', () => {
       }))
 
       await runBuilderTurn(
-        {   sessionManager: sessionManager as never,
+        {
+          sessionManager: sessionManager as never,
           sessionId: 'session-1',
           llmClient: { getModel: () => 'qwen3-32b' } as never,
         },
         new TurnMetrics(),
-      vi.fn(),
-    )
+        vi.fn(),
+      )
 
       // Compaction now emits context.compacted event instead of calling compactContext
       const compactEvents = eventStore.getEvents('session-1').filter((e: any) => e.type === 'context.compacted')

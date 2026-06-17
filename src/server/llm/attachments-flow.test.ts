@@ -2,11 +2,18 @@
  * Integration tests for full attachment flow from EventStore to LLM
  */
 
-import { describe, it, expect, beforeEach } from 'vitest'
+import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { buildContextMessagesFromStoredEvents } from '../events/folding.js'
-import { convertMessages } from './client-pure.js'
+import { convertMessages, convertMessagesWithFallback } from './client-pure.js'
 import type { StoredEvent } from '../events/types.js'
 import type { Attachment } from '../../shared/types.js'
+
+vi.mock('./vision-fallback.js', () => ({
+  describeImageFromDataUrl: vi.fn().mockResolvedValue('A test image description'),
+  ensureVisionFallbackConfigLoaded: vi.fn(),
+  isVisionFallbackEnabled: vi.fn().mockReturnValue(true),
+  clearDescriptionCache: vi.fn(),
+}))
 
 describe('Full Attachment Flow Integration', () => {
   let testAttachment: Attachment
@@ -194,5 +201,85 @@ describe('Full Attachment Flow Integration', () => {
       type: 'image_url',
       image_url: { url: 'data:image/png;base64,base64data' },
     })
+  })
+
+  it('calls vision fallback callbacks when model lacks vision and fallback is enabled', async () => {
+    const events: StoredEvent[] = [
+      {
+        seq: 1,
+        timestamp: Date.now(),
+        sessionId: 'test-session',
+        type: 'message.start',
+        data: {
+          messageId: 'msg-1',
+          role: 'user',
+          content: 'What is in this image?',
+          attachments: [testAttachment],
+          contextWindowId: 'window-1',
+        },
+      },
+      {
+        seq: 2,
+        timestamp: Date.now(),
+        sessionId: 'test-session',
+        type: 'message.done',
+        data: { messageId: 'msg-1' },
+      },
+    ]
+
+    const contextMessages = buildContextMessagesFromStoredEvents(events, 'window-1')
+
+    const onStart = vi.fn()
+    const onDone = vi.fn()
+
+    await convertMessagesWithFallback(contextMessages, {
+      modelSupportsVision: false,
+      visionFallbackEnabled: true,
+      onVisionFallbackStart: onStart,
+      onVisionFallbackDone: onDone,
+    })
+
+    expect(onStart).toHaveBeenCalledWith('test-1', 'test.png')
+    expect(onDone).toHaveBeenCalledWith('test-1', expect.any(String))
+  })
+
+  it('does not call vision fallback callbacks when model supports vision', async () => {
+    const events: StoredEvent[] = [
+      {
+        seq: 1,
+        timestamp: Date.now(),
+        sessionId: 'test-session',
+        type: 'message.start',
+        data: {
+          messageId: 'msg-1',
+          role: 'user',
+          content: 'What is in this image?',
+          attachments: [testAttachment],
+          contextWindowId: 'window-1',
+        },
+      },
+      {
+        seq: 2,
+        timestamp: Date.now(),
+        sessionId: 'test-session',
+        type: 'message.done',
+        data: { messageId: 'msg-1' },
+      },
+    ]
+
+    const contextMessages = buildContextMessagesFromStoredEvents(events, 'window-1')
+
+    const onStart = vi.fn()
+    const onDone = vi.fn()
+
+    await convertMessagesWithFallback(contextMessages, {
+      modelSupportsVision: true,
+      visionFallbackEnabled: true,
+      onVisionFallbackStart: onStart,
+      onVisionFallbackDone: onDone,
+    })
+
+    expect(onStart).not.toHaveBeenCalled()
+    expect(onDone).not.toHaveBeenCalled()
   })
 })
