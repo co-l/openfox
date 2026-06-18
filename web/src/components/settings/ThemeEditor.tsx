@@ -125,7 +125,7 @@ function ThemeEditorModal({
         {Object.entries(groupedTokens).map(([category, tokens]) => (
           <div key={category} className="space-y-3">
             <h4 className="text-xs font-medium text-text-muted uppercase">{categoryLabels[category] ?? category}</h4>
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               {tokens.map((token) => (
                 <div key={token.key} className="flex flex-col gap-1">
                   <label htmlFor={token.key} className="text-xs text-text-muted">
@@ -137,13 +137,13 @@ function ThemeEditorModal({
                       id={token.key}
                       value={rgbToHex(localTokens[token.key] ?? token.defaultValue)}
                       onChange={(e) => handleTokenChange(token.key, e.target.value)}
-                      className="w-8 h-8 rounded cursor-pointer border border-border bg-transparent"
+                      className="w-8 h-8 rounded cursor-pointer border border-border bg-transparent flex-shrink-0"
                     />
                     <input
                       type="text"
                       value={localTokens[token.key] ?? token.defaultValue}
                       onChange={(e) => handleTokenChange(token.key, e.target.value)}
-                      className="flex-1 px-2 py-1 bg-bg-tertiary border border-border rounded text-xs text-text-primary font-mono focus:outline-none focus:ring-1 focus:ring-accent-primary"
+                      className="flex-1 min-w-0 px-2 py-1 bg-bg-tertiary border border-border rounded text-xs text-text-primary font-mono focus:outline-none focus:ring-1 focus:ring-accent-primary"
                     />
                   </div>
                 </div>
@@ -170,17 +170,22 @@ export function ThemeEditor() {
   const currentPreset = useThemeStore((state) => state.currentPreset)
   const isCustom = useThemeStore((state) => state.isCustom)
   const basePreset = useThemeStore((state) => state.basePreset)
-  const userPresets = useThemeStore((state) => state.userPresets)
   const applyPreset = useThemeStore((state) => state.applyPreset)
   const applyUserPreset = useThemeStore((state) => state.applyUserPreset)
   const deleteUserPreset = useThemeStore((state) => state.deleteUserPreset)
   const saveTheme = useThemeStore((state) => state.saveTheme)
-  const followSystemTheme = useThemeStore((state) => state.followSystemTheme)
-  const setFollowSystemTheme = useThemeStore((state) => state.setFollowSystemTheme)
+  const userPresets = useThemeStore((state) => state.userPresets)
 
   const handlePresetSelect = (presetId: string) => {
-    applyPreset(presetId)
-    saveTheme(JSON.stringify({ preset: presetId })).catch(() => {})
+    if (presetId === 'system') {
+      // System is a virtual theme - save it as "system" but apply the actual preset
+      applyPreset(presetId)
+      saveTheme(JSON.stringify({ preset: 'system' })).catch(() => {})
+    } else {
+      // For non-system themes, clear the system theme state
+      saveTheme(JSON.stringify({ preset: presetId })).catch(() => {})
+      applyPreset(presetId)
+    }
   }
 
   const handleUserPresetSelect = (index: number) => {
@@ -253,70 +258,68 @@ export function ThemeEditor() {
     deleteUserPreset(index)
   }
 
-  const activePresetId = isCustom ? basePreset : currentPreset
+  // Show System as active when basePreset is 'system', otherwise use currentPreset
+  const activePresetId = basePreset === 'system' ? 'system' : isCustom ? basePreset : currentPreset
 
   return (
     <div className="space-y-4">
       <h3 className="text-sm font-medium text-text-primary">Theme</h3>
 
-      <label className="flex items-center gap-3 cursor-pointer">
-        <button
-          type="button"
-          role="switch"
-          aria-checked={followSystemTheme}
-          onClick={() => setFollowSystemTheme(!followSystemTheme)}
-          className={`relative w-10 h-5 rounded-full transition-colors ${
-            followSystemTheme ? 'bg-accent-primary' : 'bg-bg-tertiary border border-border'
-          }`}
-        >
-          <span
-            className={`absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white transition-transform ${
-              followSystemTheme ? 'translate-x-5' : 'translate-x-0'
-            }`}
-          />
-        </button>
-        <span className="text-sm text-text-secondary">Follow system theme</span>
-      </label>
-
-      <div className="grid grid-cols-5 gap-2">
-        {THEME_PRESETS.map((preset) => (
-          <div key={preset.id} className="relative group">
-            <button
-              type="button"
-              onClick={() => handlePresetSelect(preset.id)}
-              className={`w-full flex flex-col items-center gap-2 px-3 py-3 rounded-lg border transition-colors ${
-                activePresetId === preset.id && !isCustom
-                  ? 'border-accent-primary bg-bg-tertiary text-text-primary'
-                  : 'border-border bg-bg-secondary text-text-muted hover:border-text-muted'
-              }`}
-            >
-              <div
-                className="w-8 h-8 rounded border flex items-center justify-center"
-                style={{
-                  backgroundColor: rgbToHex(preset.tokens['color-bg-primary'] ?? '#000'),
-                  borderColor: rgbToHex(preset.tokens['color-border'] ?? '#000'),
-                }}
+      <div className="flex flex-wrap gap-2 pb-2">
+        {THEME_PRESETS.map((preset) => {
+          // Only one theme can be active at a time
+          const isActive = preset.id === activePresetId && !isCustom
+          return (
+            <div key={preset.id} className="relative group">
+              <button
+                type="button"
+                onClick={() => handlePresetSelect(preset.id)}
+                className={`flex flex-col items-center gap-2 px-3 py-3 rounded-lg border transition-colors min-w-[80px] ${
+                  isActive
+                    ? 'border-accent-primary bg-bg-tertiary text-text-primary'
+                    : 'border-border bg-bg-secondary text-text-muted hover:border-text-muted'
+                }`}
               >
                 <div
-                  className="w-3 h-3 rounded-full"
-                  style={{ backgroundColor: rgbToHex(preset.tokens['color-text-primary'] ?? '#fff') }}
-                />
-              </div>
-              <span className="text-xs">{preset.name}</span>
-            </button>
-            <button
-              type="button"
-              onClick={(e) => {
-                e.stopPropagation()
-                handleNewFromPreset(preset.id)
-              }}
-              className="absolute top-1 right-1 w-6 h-6 rounded bg-bg-tertiary border border-border flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity z-10 hover:border-text-muted"
-              title="Create custom theme based on this"
-            >
-              <span className="text-xs">✎</span>
-            </button>
-          </div>
-        ))}
+                  className="w-8 h-8 rounded border flex items-center justify-center"
+                  style={{
+                    backgroundColor:
+                      preset.id === 'system' ? 'transparent' : rgbToHex(preset.tokens['color-bg-primary'] ?? '#000'),
+                    borderColor: rgbToHex(preset.tokens['color-border'] ?? '#000'),
+                  }}
+                >
+                  {preset.id === 'system' ? (
+                    <div
+                      className="w-4 h-4 rounded-full"
+                      style={{
+                        background: 'linear-gradient(135deg, #000 50%, #fff 50%)',
+                      }}
+                    />
+                  ) : (
+                    <div
+                      className="w-3 h-3 rounded-full"
+                      style={{ backgroundColor: rgbToHex(preset.tokens['color-text-primary'] ?? '#fff') }}
+                    />
+                  )}
+                </div>
+                <span className="text-xs">{preset.name}</span>
+              </button>
+              {preset.id !== 'system' && (
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    handleNewFromPreset(preset.id)
+                  }}
+                  className="absolute top-1 right-1 w-6 h-6 rounded bg-bg-tertiary border border-border flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity z-10 hover:border-text-muted"
+                  title="Create custom theme based on this"
+                >
+                  <span className="text-xs">✎</span>
+                </button>
+              )}
+            </div>
+          )
+        })}
       </div>
 
       {userPresets.length > 0 && (

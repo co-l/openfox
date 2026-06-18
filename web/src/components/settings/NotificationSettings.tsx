@@ -211,8 +211,12 @@ function Toggle({
   onChange: (v: boolean) => void
 }) {
   return (
-    <label className="flex items-start gap-3 cursor-pointer group">
-      <div className="pt-0.5">
+    <label className="flex items-start justify-between gap-3 cursor-pointer group">
+      <div className="flex-1 min-w-0">
+        <div className="text-sm text-text-primary group-hover:text-accent-primary transition-colors">{label}</div>
+        <div className="text-xs text-text-muted mt-0.5">{description}</div>
+      </div>
+      <div className="flex-shrink-0 pt-0.5">
         <div
           className={`relative w-9 h-5 rounded-full transition-colors ${
             checked ? 'bg-accent-primary' : 'bg-bg-tertiary border border-border'
@@ -228,10 +232,6 @@ function Toggle({
             }`}
           />
         </div>
-      </div>
-      <div>
-        <div className="text-sm text-text-primary group-hover:text-accent-primary transition-colors">{label}</div>
-        <div className="text-xs text-text-muted">{description}</div>
       </div>
     </label>
   )

@@ -32,6 +32,13 @@ export interface ThemePreset {
 
 export const THEME_PRESETS: ThemePreset[] = [
   {
+    id: 'system',
+    name: 'System',
+    // System theme is virtual - it dynamically follows the OS preference
+    // and doesn't have its own tokens
+    tokens: {},
+  },
+  {
     id: 'dark',
     name: 'Dark',
     tokens: {
@@ -213,8 +220,24 @@ export const useThemeStore = create<ThemeState>((set, get) => ({
   applyPreset: (presetId: string) => {
     const preset = THEME_PRESETS.find((p) => p.id === presetId)
     if (preset) {
-      set({ currentPreset: presetId, basePreset: '', customTokens: {}, isCustom: false, isCustomizing: false })
-      get().applyTheme()
+      // System theme is virtual - set basePreset to 'system' to keep it selected in UI
+      // but apply the actual dark/light theme tokens
+      if (presetId === 'system') {
+        const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)')
+        const actualPreset = mediaQuery.matches ? 'dark' : 'light'
+        // Keep basePreset as 'system' for UI selection, use currentPreset for actual theme application
+        set({
+          basePreset: 'system',
+          currentPreset: actualPreset,
+          customTokens: {},
+          isCustom: false,
+          isCustomizing: false,
+        })
+        get().applyTheme()
+      } else {
+        set({ currentPreset: presetId, basePreset: '', customTokens: {}, isCustom: false, isCustomizing: false })
+        get().applyTheme()
+      }
     }
   },
 
@@ -323,8 +346,6 @@ export const useThemeStore = create<ThemeState>((set, get) => ({
       get().applyPreset(isDark ? 'dark' : 'light')
       get().saveTheme(JSON.stringify({ preset: isDark ? 'dark' : 'light' }))
     }
-
-    applySystemTheme(mediaQuery.matches)
 
     const handler = (e: MediaQueryListEvent) => applySystemTheme(e.matches)
     mediaQuery.addEventListener('change', handler)

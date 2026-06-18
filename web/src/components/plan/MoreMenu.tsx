@@ -164,7 +164,7 @@ export function MoreMenu({
       </button>
 
       {isOpen && (
-        <div className="absolute bottom-full right-0 mb-1 w-80 bg-bg-secondary border border-border rounded-lg shadow-xl z-50">
+        <div className="absolute bottom-full right-0 mb-1 w-80 max-w-[calc(100vw-2rem)] bg-bg-secondary border border-border rounded-lg shadow-xl z-50 overflow-hidden">
           <div className="flex border-b border-border">
             <button
               type="button"

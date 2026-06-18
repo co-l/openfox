@@ -77,15 +77,15 @@ export function DisplayTab() {
         <h3 className="text-sm font-medium text-text-primary mb-4">Feed Display</h3>
         <div className="space-y-4">
           {toggles.map(({ key, label, description }) => (
-            <label key={key} className="flex items-center justify-between cursor-pointer">
-              <div>
-                <div className="text-sm text-text-primary">{label}</div>
-                <div className="text-xs text-text-muted">{description}</div>
+            <label key={key} className="flex items-start justify-between gap-3 cursor-pointer">
+              <div className="flex-1 min-w-0">
+                <div className="text-sm text-text-primary font-medium">{label}</div>
+                <div className="text-xs text-text-muted mt-0.5">{description}</div>
               </div>
               <button
                 type="button"
                 onClick={() => handleToggle(key)}
-                className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+                className={`relative inline-flex h-6 w-11 flex-shrink-0 items-center rounded-full transition-colors ${
                   local[key] ? 'bg-accent-primary' : 'bg-bg-tertiary'
                 }`}
               >

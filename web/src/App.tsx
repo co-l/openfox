@@ -153,10 +153,15 @@ function App() {
     if (connectionStatus === 'connected' || hasToken) {
       fetchConfig().then(() => {
         setConfigFetched(true)
-        // Batch load all display settings in a single API call
+        // Batch load all display settings and keybindings in a single API call
         useSettingsStore
           .getState()
-          .getSettings([...DISPLAY_SETTINGS_KEYS, SETTINGS_KEYS.DISPLAY_THEME, SETTINGS_KEYS.DISPLAY_USER_PRESETS])
+          .getSettings([
+            ...DISPLAY_SETTINGS_KEYS,
+            SETTINGS_KEYS.DISPLAY_THEME,
+            SETTINGS_KEYS.DISPLAY_USER_PRESETS,
+            SETTINGS_KEYS.KEYBINDINGS,
+          ])
       })
     }
   }, [connectionStatus, hasToken, fetchConfig])
@@ -210,20 +215,20 @@ function App() {
         applyPreset('dark')
       }
     } else {
-      applyPreset('dark')
+      // Default to system theme if nothing saved
+      applyPreset('system')
     }
 
     if (serverFollowSystem !== undefined) {
-      setFollowSystemTheme(serverFollowSystem === 'true')
+      const currentFollowSystem = useThemeStore.getState().followSystemTheme
+      if (currentFollowSystem !== (serverFollowSystem === 'true')) {
+        setFollowSystemTheme(serverFollowSystem === 'true')
+      }
     }
 
     const cleanup = initSystemThemeListener()
     return () => cleanup()
-  }, [
-    displaySettings[SETTINGS_KEYS.DISPLAY_THEME],
-    displaySettings[SETTINGS_KEYS.DISPLAY_USER_PRESETS],
-    displaySettings[SETTINGS_KEYS.DISPLAY_FOLLOW_SYSTEM_THEME],
-  ])
+  }, [displaySettings[SETTINGS_KEYS.DISPLAY_THEME], displaySettings[SETTINGS_KEYS.DISPLAY_USER_PRESETS]])
 
   const getInitialLeftSidebar = () => {
     const saved = localStorage.getItem('openfox:leftSidebar')

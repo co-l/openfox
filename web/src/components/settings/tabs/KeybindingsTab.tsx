@@ -114,15 +114,11 @@ function KeybindingRow({
 }
 
 export function KeybindingsTab() {
-  const { settings, loading, getSetting, setSetting } = useSettingsStoreState()
+  const { settings, loading, setSetting } = useSettingsStoreState()
   const raw = settings[SETTINGS_KEYS.KEYBINDINGS]
   const isLoading = loading[SETTINGS_KEYS.KEYBINDINGS] ?? false
   const config = parseKeybindings(raw)
   const [recording, setRecording] = useState<string | null>(null)
-
-  useEffect(() => {
-    getSetting(SETTINGS_KEYS.KEYBINDINGS)
-  }, [getSetting])
 
   const actions: Array<{ id: string; label: string; binding: KeyBinding }> = [
     { id: 'terminalToggle', label: 'Toggle Terminal', binding: config.terminalToggle },

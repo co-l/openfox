@@ -13,8 +13,31 @@ interface MessageOptionsMenuProps {
 export function MessageOptionsMenu({ content, align = 'right', messageIndex, sessionId }: MessageOptionsMenuProps) {
   const [showMenu, setShowMenu] = useState(false)
   const [copied, setCopied] = useState(false)
+  const [menuPosition, setMenuPosition] = useState<'left' | 'right'>('left')
   const menuRef = useRef<HTMLDivElement>(null)
+  const buttonRef = useRef<HTMLButtonElement>(null)
   const loadSession = useSessionStore((s) => s.loadSession)
+
+  const isRightAligned = align === 'right'
+
+  const calculatePosition = (): 'left' | 'right' => {
+    if (!buttonRef.current) return 'left'
+    const buttonRect = buttonRef.current.getBoundingClientRect()
+    const spaceOnRight = window.innerWidth - buttonRect.right
+    const spaceOnLeft = buttonRect.left
+
+    // Get actual menu width from computed styles (min-w-36 = 144px, but can be wider based on content)
+    const menuElement = menuRef.current?.querySelector('[class*="absolute"]') as HTMLElement
+    const menuWidth = menuElement ? Math.max(menuElement.getBoundingClientRect().width, 144) : 144
+
+    const canFitOnRight = spaceOnRight >= menuWidth
+    const canFitOnLeft = spaceOnLeft >= menuWidth
+
+    if (canFitOnLeft && canFitOnRight) return 'left'
+    if (canFitOnLeft) return 'left'
+    if (canFitOnRight) return 'right'
+    return spaceOnLeft >= spaceOnRight ? 'left' : 'right'
+  }
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -60,8 +83,6 @@ export function MessageOptionsMenu({ content, align = 'right', messageIndex, ses
     loadSession(sessionId)
   }
 
-  const isRightAligned = align === 'right'
-
   return (
     <>
       <div className={`flex items-start gap-1.5 ${isRightAligned ? '' : 'order-first'}`}>
@@ -69,7 +90,13 @@ export function MessageOptionsMenu({ content, align = 'right', messageIndex, ses
 
         <div ref={menuRef} className="relative">
           <button
-            onClick={() => setShowMenu(!showMenu)}
+            ref={buttonRef}
+            onClick={() => {
+              if (!showMenu) {
+                setMenuPosition(calculatePosition())
+              }
+              setShowMenu(!showMenu)
+            }}
             className="p-1 rounded hover:bg-bg-tertiary text-text-muted hover:text-text-primary"
             title="Message options"
           >
@@ -78,7 +105,7 @@ export function MessageOptionsMenu({ content, align = 'right', messageIndex, ses
 
           {showMenu && (
             <div
-              className={`absolute top-full mt-1 bg-bg-secondary border border-border rounded shadow-xl z-50 py-1 min-w-36 ${isRightAligned ? 'right-0' : 'left-0'}`}
+              className={`absolute top-full mt-1 bg-bg-secondary border border-border rounded shadow-xl z-50 py-1 min-w-36 ${menuPosition === 'right' ? 'left-0' : 'right-0'}`}
             >
               <button
                 onClick={handleCopy}
