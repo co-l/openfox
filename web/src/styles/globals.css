@@ -36,12 +36,14 @@
 
   /* Firefox scrollbars - hover behavior */
   @supports (scrollbar-width: thin) {
-    /* Hidden by default, show on hover */
+    /* Thin + hidden by default, auto-width + visible on hover (Firefox widens auto scrollbars natively) */
     * {
       scrollbar-width: thin;
       scrollbar-color: transparent transparent;
     }
-    *:hover {
+    *:hover,
+    *:focus-within {
+      scrollbar-width: auto;
       scrollbar-color: rgb(var(--color-bg-tertiary) / 0.6) transparent;
     }
   }

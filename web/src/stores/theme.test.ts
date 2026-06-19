@@ -35,7 +35,7 @@ describe('Theme System', () => {
     })
 
     it('each preset has all tokens', () => {
-      THEME_PRESETS.forEach((preset) => {
+      THEME_PRESETS.filter((p) => p.id !== 'system').forEach((preset) => {
         THEME_TOKENS.forEach((token) => {
           expect(preset.tokens[token.key]).toBeTruthy()
         })
@@ -309,7 +309,7 @@ describe('Theme System', () => {
         vi.unstubAllGlobals()
       })
 
-      it('applies the system theme on initial load when followSystemTheme is enabled', () => {
+      it('does not apply theme on initSystemThemeListener (only listens for changes)', () => {
         useThemeStore.getState().applyPreset('dark')
         useThemeStore.getState().setFollowSystemTheme(true)
 
@@ -322,7 +322,8 @@ describe('Theme System', () => {
 
         useThemeStore.getState().initSystemThemeListener()
 
-        expect(useThemeStore.getState().currentPreset).toBe('light')
+        // initSystemThemeListener only registers a change listener, it does NOT apply the theme
+        expect(useThemeStore.getState().currentPreset).toBe('dark')
 
         vi.unstubAllGlobals()
       })

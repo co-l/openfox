@@ -150,6 +150,7 @@ interface ThemeState {
   isCustomizing: boolean
   userPresets: UserThemePreset[]
   followSystemTheme: boolean
+  isSystem: boolean
 
   applySavedTheme: () => void
   applyPreset: (presetId: string) => void
@@ -193,6 +194,7 @@ export const useThemeStore = create<ThemeState>((set, get) => ({
   isCustomizing: false,
   userPresets: getUserPresets(),
   followSystemTheme: true,
+  isSystem: false,
 
   applySavedTheme: () => {
     const { getSavedTheme, applyPreset, applyTokens } = get()
@@ -232,10 +234,18 @@ export const useThemeStore = create<ThemeState>((set, get) => ({
           customTokens: {},
           isCustom: false,
           isCustomizing: false,
+          isSystem: true,
         })
         get().applyTheme()
       } else {
-        set({ currentPreset: presetId, basePreset: '', customTokens: {}, isCustom: false, isCustomizing: false })
+        set({
+          currentPreset: presetId,
+          basePreset: '',
+          customTokens: {},
+          isCustom: false,
+          isCustomizing: false,
+          isSystem: false,
+        })
         get().applyTheme()
       }
     }

@@ -71,20 +71,13 @@ export function AdvancedTab({ onClose }: { onClose: () => void }) {
 
   return (
     <div className="space-y-6">
-      <div>
-        <label className="flex items-start justify-between gap-3 cursor-pointer">
-          <div className="flex-1 min-w-0">
-            <div className="text-sm font-medium text-text-primary">Dynamic System Prompt</div>
-            <div className="text-xs text-text-muted mt-0.5">
-              Rebuild the system prompt on every turn. When disabled, changes are applied on demand via the context
-              header for better cache performance.
-            </div>
-          </div>
-          <div className="flex-shrink-0">
-            <Toggle enabled={localToggles.dynamicPrompt} onClick={handleToggleDynamicSystemPrompt} />
-          </div>
-        </label>
-      </div>
+      <SettingsToggle
+        title="Dynamic System Prompt"
+        description="Rebuild the system prompt on every turn. When disabled, changes are applied on demand via the context header for better cache performance."
+        enabled={localToggles.dynamicPrompt}
+        onToggle={handleToggleDynamicSystemPrompt}
+        boldTitle
+      />
       <hr className="border-border" />
       <div>
         <h3 className="text-sm font-medium text-text-primary mb-3">Auto-Retry Patterns</h3>
@@ -97,17 +90,12 @@ export function AdvancedTab({ onClose }: { onClose: () => void }) {
       <hr className="border-border" />
       <div>
         <h3 className="text-sm font-medium text-text-primary mb-3">Integrations</h3>
-        <label className="flex items-start justify-between gap-3 cursor-pointer">
-          <div className="flex-1 min-w-0">
-            <div className="text-sm text-text-primary">Show "Open in VSCode" links</div>
-            <div className="text-xs text-text-muted mt-0.5">
-              Display a link on file reads to open the file directly in VS Code.
-            </div>
-          </div>
-          <div className="flex-shrink-0">
-            <Toggle enabled={localToggles.openInEditor} onClick={handleToggleOpenInEditor} />
-          </div>
-        </label>
+        <SettingsToggle
+          title='Show "Open in VSCode" links'
+          description="Display a link on file reads to open the file directly in VS Code."
+          enabled={localToggles.openInEditor}
+          onToggle={handleToggleOpenInEditor}
+        />
       </div>
       <hr className="border-border" />
       <div>
@@ -120,5 +108,31 @@ export function AdvancedTab({ onClose }: { onClose: () => void }) {
         </Button>
       </div>
     </div>
+  )
+}
+
+function SettingsToggle({
+  title,
+  description,
+  enabled,
+  onToggle,
+  boldTitle,
+}: {
+  title: string
+  description: string
+  enabled: boolean
+  onToggle: () => void
+  boldTitle?: boolean
+}) {
+  return (
+    <label className="flex items-start justify-between gap-3 cursor-pointer">
+      <div className="flex-1 min-w-0">
+        <div className={`text-sm ${boldTitle ? 'font-medium' : ''} text-text-primary`}>{title}</div>
+        <div className="text-xs text-text-muted mt-0.5">{description}</div>
+      </div>
+      <div className="flex-shrink-0">
+        <Toggle enabled={enabled} onClick={onToggle} />
+      </div>
+    </label>
   )
 }

@@ -26,9 +26,8 @@ export function MessageOptionsMenu({ content, align = 'right', messageIndex, ses
     const spaceOnRight = window.innerWidth - buttonRect.right
     const spaceOnLeft = buttonRect.left
 
-    // Get actual menu width from computed styles (min-w-36 = 144px, but can be wider based on content)
-    const menuElement = menuRef.current?.querySelector('[class*="absolute"]') as HTMLElement
-    const menuWidth = menuElement ? Math.max(menuElement.getBoundingClientRect().width, 144) : 144
+    // Menu contains at most "Copy" + optional "Replay" + dividers ≈ 160px
+    const menuWidth = 160
 
     const canFitOnRight = spaceOnRight >= menuWidth
     const canFitOnLeft = spaceOnLeft >= menuWidth

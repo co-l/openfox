@@ -170,6 +170,7 @@ export function ThemeEditor() {
   const currentPreset = useThemeStore((state) => state.currentPreset)
   const isCustom = useThemeStore((state) => state.isCustom)
   const basePreset = useThemeStore((state) => state.basePreset)
+  const isSystem = useThemeStore((state) => state.isSystem)
   const applyPreset = useThemeStore((state) => state.applyPreset)
   const applyUserPreset = useThemeStore((state) => state.applyUserPreset)
   const deleteUserPreset = useThemeStore((state) => state.deleteUserPreset)
@@ -182,9 +183,9 @@ export function ThemeEditor() {
       applyPreset(presetId)
       saveTheme(JSON.stringify({ preset: 'system' })).catch(() => {})
     } else {
-      // For non-system themes, clear the system theme state
-      saveTheme(JSON.stringify({ preset: presetId })).catch(() => {})
+      // For non-system themes, apply first for immediate UI feedback, then save
       applyPreset(presetId)
+      saveTheme(JSON.stringify({ preset: presetId })).catch(() => {})
     }
   }
 
@@ -258,8 +259,7 @@ export function ThemeEditor() {
     deleteUserPreset(index)
   }
 
-  // Show System as active when basePreset is 'system', otherwise use currentPreset
-  const activePresetId = basePreset === 'system' ? 'system' : isCustom ? basePreset : currentPreset
+  const activePresetId = isSystem ? 'system' : isCustom ? basePreset : currentPreset
 
   return (
     <div className="space-y-4">
