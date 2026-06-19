@@ -194,7 +194,6 @@ export interface FoldedSessionState {
   contextState: ContextState
   currentContextWindowId: string
   readFiles: ReadFileEntry[]
-  lastModeWithReminder?: SessionMode
   cachedSystemPrompt?: string
   dynamicContextHash?: string
   pendingConfirmations: PendingPathConfirmation[]
@@ -722,37 +721,15 @@ export function foldSessionState(
       ? { ...baseContextState, compactionCount: contextResult.compactionCount, maxTokens }
       : { ...baseContextState, maxTokens }
 
-  // Find last mode with reminder by scanning events to determine what was LAST active
-  // Priority: newer source wins (compare seq), snapshot field is fallback if no newer message
-  let messageReminderMode: { seq: number; mode: SessionMode } | undefined
-  let snapshotReminderMode: { seq: number; mode: SessionMode } | undefined
   let cachedSystemPrompt: string | undefined
   let dynamicContextHash: string | undefined
 
   for (let i = events.length - 1; i >= 0; i--) {
     const event = events[i]!
 
-    // Track latest message.start auto-prompt (use any to access seq at runtime)
-    if (event.type === 'message.start') {
-      const data = event.data as { role?: string; messageKind?: string; content?: string }
-      if (data.role === 'user' && data.messageKind === 'auto-prompt' && data.content?.includes('<system-reminder>')) {
-        if (data.content.includes('Plan Mode')) {
-          messageReminderMode = { seq: (event as unknown as { seq: number }).seq, mode: 'planner' }
-        } else if (data.content.includes('Build Mode')) {
-          messageReminderMode = { seq: (event as unknown as { seq: number }).seq, mode: 'builder' }
-        }
-      }
-    }
-
-    // Track latest snapshot's lastModeWithReminder, cachedSystemPrompt, dynamicContextHash fields
+    // Track latest snapshot's cachedSystemPrompt, dynamicContextHash fields
     if (event.type === 'turn.snapshot') {
       const snapshotData = event.data as SessionSnapshot
-      if (snapshotData.lastModeWithReminder) {
-        snapshotReminderMode = {
-          seq: (event as unknown as { seq: number }).seq,
-          mode: snapshotData.lastModeWithReminder,
-        }
-      }
       if (snapshotData.cachedSystemPrompt && !cachedSystemPrompt) {
         cachedSystemPrompt = snapshotData.cachedSystemPrompt
       }
@@ -764,17 +741,6 @@ export function foldSessionState(
         metadataEntries = snapshotData.metadataEntries
       }
     }
-  }
-
-  // Use whichever source has the higher seq (is more recent), or snapshot as fallback
-  let lastModeWithReminder: SessionMode | undefined
-  if (messageReminderMode && snapshotReminderMode) {
-    lastModeWithReminder =
-      messageReminderMode.seq > snapshotReminderMode.seq ? messageReminderMode.mode : snapshotReminderMode.mode
-  } else if (snapshotReminderMode) {
-    lastModeWithReminder = snapshotReminderMode.mode
-  } else if (messageReminderMode) {
-    lastModeWithReminder = messageReminderMode.mode
   }
 
   let sessionInit: FoldedSessionState['sessionInit']
@@ -889,7 +855,6 @@ export function foldSessionState(
     contextState,
     currentContextWindowId: contextResult.currentContextWindowId,
     readFiles: contextResult.readFiles,
-    ...(lastModeWithReminder !== undefined && { lastModeWithReminder }),
     ...(cachedSystemPrompt !== undefined && { cachedSystemPrompt }),
     ...(dynamicContextHash !== undefined && { dynamicContextHash }),
     pendingConfirmations,
@@ -927,7 +892,6 @@ export function buildSnapshot(
     currentContextWindowId: foldedState.currentContextWindowId,
     todos: foldedState.todos,
     readFiles: foldedState.readFiles,
-    ...(foldedState.lastModeWithReminder !== undefined && { lastModeWithReminder: foldedState.lastModeWithReminder }),
     ...(foldedState.cachedSystemPrompt !== undefined && { cachedSystemPrompt: foldedState.cachedSystemPrompt }),
     ...(foldedState.dynamicContextHash !== undefined && { dynamicContextHash: foldedState.dynamicContextHash }),
     snapshotSeq: latestSeq,
@@ -1011,7 +975,6 @@ export function buildSnapshotFromSessionState(input: {
     snapshotSeq: latestSeq,
     snapshotAt,
     ...(foldedState.sessionInit !== undefined && { sessionInit: foldedState.sessionInit }),
-    ...(foldedState.lastModeWithReminder !== undefined && { lastModeWithReminder: foldedState.lastModeWithReminder }),
     ...(input.cachedSystemPrompt !== undefined
       ? { cachedSystemPrompt: input.cachedSystemPrompt }
       : foldedState.cachedSystemPrompt !== undefined

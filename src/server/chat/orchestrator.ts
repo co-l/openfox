@@ -19,7 +19,7 @@ import { getEventStore, getCurrentContextWindowId, getCurrentWindowMessageOption
 import { buildSnapshotFromSessionState } from '../events/folding.js'
 import type { SessionManager } from '../session/index.js'
 import { getToolRegistryForAgent, PathAccessDeniedError } from '../tools/index.js'
-import { WORKFLOW_KICKOFF_PROMPT, buildAgentReminder } from './prompts.js'
+import { WORKFLOW_KICKOFF_PROMPT, buildAgentReminder, buildAgentSmallReminder } from './prompts.js'
 import {
   TurnMetrics,
   createMessageStartEvent,
@@ -236,62 +236,49 @@ export async function runChatTurn(options: OrchestratorOptions): Promise<void> {
 // ============================================================================
 
 /**
- * Check if a given context window already has a system reminder message.
- * Scans events for a message.start in the given window with messageKind 'auto-prompt'
- * and content containing '<system-reminder>'.
+ * Inject agent reminder at the start of a turn.
+ *
+ * Scans events from end to find the latest agent message in the current
+ * context window. If found with the same agent name → injects a small
+ * reminder ("Reminder: you are in 'X' mode."). Otherwise → injects the
+ * full agent definition (prompt + tool permissions).
+ *
+ * Always appends — never skips. Ground truth from events only, no
+ * in-memory state tracking.
  */
-function windowHasReminder(sessionId: string, windowId: string): boolean {
+function injectAgentReminder(sessionId: string, agentDef: AgentDefinition): void {
   const eventStore = getEventStore()
-  const events = eventStore.getEvents(sessionId)
-
-  return events.some((event) => {
-    if (event.type !== 'message.start') return false
-    const data = event.data as { contextWindowId?: string; messageKind?: string; content?: string }
-    return (
-      data.contextWindowId === windowId &&
-      data.messageKind === 'auto-prompt' &&
-      typeof data.content === 'string' &&
-      data.content.includes('<system-reminder>')
-    )
-  })
-}
-
-/**
- * Inject system reminder on mode switch or when current window lacks one.
- * Tracks last mode in session state to avoid re-injecting on subsequent turns
- * within the same context window. After compaction creates a new window,
- * the reminder is reinjected because the new window won't have one.
- */
-function injectModeReminderIfNeeded(
-  sessionManager: SessionManager,
-  sessionId: string,
-  agentId: string,
-  allAgents: AgentDefinition[],
-  _onMessage?: (msg: ServerMessage) => void,
-): void {
-  const eventStore = getEventStore()
-  const session = sessionManager.requireSession(sessionId)
-
-  // Resolve current window ID once — used by guard check and message options
   const currentWindowId = getCurrentContextWindowId(sessionId)
 
-  // Check if we already injected this mode's reminder
-  const lastModeReminder = session.executionState?.lastModeWithReminder
-
-  // Only skip if same mode AND current window already has a reminder.
-  // After compaction, the window changes so we must reinject even if mode is the same.
-  // If no window context exists (edge case), fall back to old behavior: skip.
-  if (lastModeReminder === agentId) {
-    if (!currentWindowId || windowHasReminder(sessionId, currentWindowId)) {
-      return
+  // Scan from end for latest agent message in current window.
+  // getAllEvents returns both real events and synthetic events reconstructed
+  // from the snapshot, so we always have the full history regardless of cleanup.
+  let latestAgentName: string | undefined
+  const events = eventStore.getAllEvents(sessionId)
+  for (let i = events.length - 1; i >= 0; i--) {
+    const event = events[i]!
+    if (event.type === 'message.start') {
+      const data = event.data as {
+        isSystemGenerated?: boolean
+        metadata?: { type?: string; name?: string }
+        contextWindowId?: string
+      }
+      if (
+        data.isSystemGenerated &&
+        data.metadata?.type === 'agent' &&
+        (data.contextWindowId === currentWindowId || (!currentWindowId && !data.contextWindowId))
+      ) {
+        latestAgentName = data.metadata.name
+        break
+      }
     }
   }
 
-  // Inject reminder for new mode
-  const agentDef = findAgentById(agentId, allAgents)
-  if (!agentDef) return
+  const currentAgentName = agentDef.metadata.name ?? agentDef.metadata.id
 
-  const reminderContent = buildAgentReminder(agentDef)
+  const isSmallReminder = latestAgentName === currentAgentName
+  const content = isSmallReminder ? buildAgentSmallReminder(currentAgentName) : buildAgentReminder(agentDef)
+
   const reminderMsgId = crypto.randomUUID()
   const currentWindowMessageOptions = currentWindowId ? { contextWindowId: currentWindowId } : undefined
 
@@ -300,25 +287,21 @@ function injectModeReminderIfNeeded(
     data: {
       messageId: reminderMsgId,
       role: 'user',
-      content: reminderContent,
+      content,
       ...(currentWindowMessageOptions ?? {}),
       isSystemGenerated: true,
       messageKind: 'auto-prompt',
       metadata: {
         type: 'agent',
-        name: agentDef.metadata.name ?? agentDef.metadata.id,
+        name: currentAgentName,
         color: agentDef.metadata.color ?? '#6b7280',
+        kind: isSmallReminder ? 'reminder' : 'definition',
       },
     },
   })
   eventStore.append(sessionId, {
     type: 'message.done',
     data: { messageId: reminderMsgId },
-  })
-
-  // Update execution state to track which mode we injected the reminder for
-  sessionManager.updateExecutionState(sessionId, {
-    lastModeWithReminder: agentId,
   })
 }
 
@@ -334,11 +317,10 @@ export async function runAgentTurn(
 ): Promise<{ returnValueContent?: string; returnValueResult?: string }> {
   const statsIdentity = resolveStatsIdentity(options)
   const allAgents = await loadAllAgentsDefault()
-
-  // Inject mode reminder only on mode switch
-  injectModeReminderIfNeeded(options.sessionManager, options.sessionId, agentId, allAgents, options.onMessage)
-
   const agentDef = findAgentById(agentId, allAgents) ?? findAgentById('planner', allAgents)!
+
+  // Inject agent reminder (full definition or small reminder based on latest agent message)
+  injectAgentReminder(options.sessionId, agentDef)
   const subAgentDefs = getSubAgents(allAgents)
 
   const { content: instructionContent } = await getAllInstructions(
@@ -388,8 +370,7 @@ export async function runAgentTurn(
       },
       getToolRegistry: () => getToolRegistryForAgent(agentDef),
       getConversationMessages: buildGetConversationMessages(options.sessionId, options.llmClient, append),
-      injectModeReminder: () =>
-        injectModeReminderIfNeeded(options.sessionManager, options.sessionId, agentId, allAgents, options.onMessage),
+      injectAgentReminder: () => injectAgentReminder(options.sessionId, agentDef),
       ...(callbacks?.injectKickoff ? { injectKickoff: callbacks.injectKickoff } : {}),
       ...(callbacks?.onToolExecuted ? { onToolExecuted: callbacks.onToolExecuted } : {}),
     },

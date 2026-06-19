@@ -1063,9 +1063,8 @@ export class SessionManager {
       metadataEntries: eventState.metadataEntries,
       contextWindows: [], // Derived from events, not stored separately
       executionState:
-        eventState.lastModeWithReminder || eventState.cachedSystemPrompt || hasCachedPrompt
+        eventState.cachedSystemPrompt || hasCachedPrompt
           ? ({
-              lastModeWithReminder: eventState.lastModeWithReminder,
               cachedSystemPrompt: cachedData?.systemPrompt ?? eventState.cachedSystemPrompt,
               dynamicContextHash: cachedData?.hash ?? eventState.dynamicContextHash,
             } as import('../../shared/types.js').ExecutionState)

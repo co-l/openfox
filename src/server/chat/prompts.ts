@@ -288,6 +288,10 @@ export function buildAgentReminder(agentDef: AgentDefinition): string {
   return `<system-reminder>\n${agentDef.prompt}${toolPermissions}\n</system-reminder>`
 }
 
+export function buildAgentSmallReminder(name: string): string {
+  return `<system-reminder>\nReminder: you are in '${name}' mode.\n</system-reminder>`
+}
+
 // ============================================================================
 // Utility Prompts
 // ============================================================================

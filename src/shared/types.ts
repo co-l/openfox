@@ -276,7 +276,7 @@ export interface Message {
   subAgentId?: string // If set, this message belongs to a sub-agent process
   subAgentType?: string // Sub-agent ID from agent registry
   attachments?: Attachment[] // Optional image attachments
-  metadata?: { type: string; name: string; color: string } // For auto-prompt messages
+  metadata?: { type: string; name: string; color: string; kind?: 'definition' | 'reminder' } // For auto-prompt messages
 }
 
 // ============================================================================
@@ -415,7 +415,6 @@ export interface ExecutionState {
   compactionCount: number
   startedAt: string
   lastActivityAt: string
-  lastModeWithReminder?: string // Track which mode last had a system reminder injected
   cachedSystemPrompt?: string // Cached system prompt for prefix cache stability
   dynamicContextHash?: string // Hash of dynamic inputs (instructions + skills) when cached
   dynamicContextChanged?: boolean // True if dynamic inputs changed since system prompt was cached

@@ -87,7 +87,7 @@ export interface TopLevelLoopConfig {
   injectKickoff?: (() => void | Promise<void>) | undefined
   /** Called after auto-compaction completes within the loop, before the next iteration.
    *  Reinjects the agent definition reminder into the new context window. */
-  injectModeReminder?: (() => void) | undefined
+  injectAgentReminder?: (() => void) | undefined
   /** When set, assistant messages are tagged with sub-agent metadata for scope isolation. */
   subAgentMetadata?: { subAgentId: string; subAgentType: string }
   /** When set and return_value tool is called, emit done events and break immediately. */
@@ -474,7 +474,7 @@ ${COMPACTION_PROMPT}`,
       append(createChatDoneEvent(assistantMsgId, 'complete'))
 
       // Reinject the agent reminder into the new window and continue normally
-      config.injectModeReminder?.()
+      config.injectAgentReminder?.()
       compacting = false
       continue
     }

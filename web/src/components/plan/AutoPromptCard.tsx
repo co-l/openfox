@@ -19,7 +19,7 @@ export function AutoPromptCard({ message }: AutoPromptCardProps) {
   const metaType = metadata?.type ?? 'agent'
 
   const typeLabels: Record<string, string> = {
-    agent: 'definition injected',
+    agent: metadata?.kind === 'reminder' ? 'reminder' : 'definition injected',
     workflow: 'instructions',
     compaction: 'prompt injected',
     subagent: 'instructions',

@@ -337,6 +337,93 @@ describe('EventStore', () => {
     })
   })
 
+  describe('getAllEvents', () => {
+    it('should return all events including synthetic from snapshot messages', () => {
+      // Events before snapshot
+      store.append('session-1', {
+        type: 'message.start',
+        data: {
+          messageId: 'msg-1',
+          role: 'user',
+          content: 'Hello',
+          isSystemGenerated: true,
+          messageKind: 'auto-prompt',
+          metadata: { type: 'agent', name: 'Planner', color: '#a855f7', kind: 'definition' },
+        },
+      })
+      store.append('session-1', { type: 'message.done', data: { messageId: 'msg-1' } })
+
+      // Snapshot with messages (simulates after cleanup)
+      store.append('session-1', {
+        type: 'turn.snapshot',
+        data: {
+          mode: 'planner',
+          phase: 'plan',
+          isRunning: false,
+          messages: [
+            {
+              id: 'msg-1',
+              role: 'user',
+              content: 'Hello',
+              timestamp: Date.now(),
+              isSystemGenerated: true,
+              messageKind: 'auto-prompt',
+              metadata: { type: 'agent', name: 'Planner', color: '#a855f7', kind: 'definition' },
+            },
+          ],
+          criteria: [],
+          metadataEntries: {},
+          contextState: {
+            currentTokens: 0,
+            maxTokens: 200000,
+            compactionCount: 0,
+            dangerZone: false,
+            canCompact: false,
+            dynamicContextChanged: false,
+          },
+          currentContextWindowId: 'window-1',
+          todos: [],
+          readFiles: [],
+          snapshotSeq: 2,
+          snapshotAt: Date.now(),
+        },
+      })
+
+      // Events after snapshot
+      store.append('session-1', {
+        type: 'message.start',
+        data: { messageId: 'msg-2', role: 'assistant', content: 'Hi!' },
+      })
+      store.append('session-1', { type: 'message.done', data: { messageId: 'msg-2' } })
+
+      const allEvents = store.getAllEvents('session-1')
+
+      // Should include synthetic events from snapshot + real events after
+      const startEvents = allEvents.filter((e) => e.type === 'message.start')
+      expect(startEvents.length).toBe(2) // msg-1 (synthetic) + msg-2 (real)
+
+      // Synthetic events have seq=0
+      const syntheticStarts = startEvents.filter((e) => e.seq === 0)
+      expect(syntheticStarts).toHaveLength(1)
+      const syntheticData = syntheticStarts[0]!.data as { messageId: string; metadata?: { kind?: string } }
+      expect(syntheticData.messageId).toBe('msg-1')
+      expect(syntheticData.metadata?.kind).toBe('definition')
+    })
+
+    it('should return all real events if no snapshot exists', () => {
+      store.append('session-1', {
+        type: 'message.start',
+        data: { messageId: 'msg-1', role: 'user', content: 'Hello' },
+      })
+      store.append('session-1', { type: 'message.done', data: { messageId: 'msg-1' } })
+
+      const allEvents = store.getAllEvents('session-1')
+      expect(allEvents).toHaveLength(2)
+      expect(allEvents[0]!.seq).toBe(1)
+      expect(allEvents[1]!.seq).toBe(2)
+    })
+  })
+
   // ============================================================================
   // Subscriptions (live streaming)
   // ============================================================================
@@ -649,9 +736,15 @@ describe('EventStore', () => {
 
   describe('tombstoneEvents', () => {
     it('should hide tombstoned events from getEvents', () => {
-      const e1 = store.append('session-1', { type: 'message.start', data: { messageId: 'msg-1', role: 'user', content: 'Hello' } })
+      const e1 = store.append('session-1', {
+        type: 'message.start',
+        data: { messageId: 'msg-1', role: 'user', content: 'Hello' },
+      })
       const e2 = store.append('session-1', { type: 'message.done', data: { messageId: 'msg-1' } })
-      const e3 = store.append('session-1', { type: 'message.start', data: { messageId: 'msg-2', role: 'user', content: 'World' } })
+      const e3 = store.append('session-1', {
+        type: 'message.start',
+        data: { messageId: 'msg-2', role: 'user', content: 'World' },
+      })
 
       store.tombstoneEvents('session-1', [e2.seq])
 
@@ -662,8 +755,14 @@ describe('EventStore', () => {
     })
 
     it('should not affect other sessions', () => {
-      const e1 = store.append('session-1', { type: 'message.start', data: { messageId: 'msg-1', role: 'user', content: 'Hello' } })
-      const e2 = store.append('session-2', { type: 'message.start', data: { messageId: 'msg-2', role: 'user', content: 'World' } })
+      const e1 = store.append('session-1', {
+        type: 'message.start',
+        data: { messageId: 'msg-1', role: 'user', content: 'Hello' },
+      })
+      const e2 = store.append('session-2', {
+        type: 'message.start',
+        data: { messageId: 'msg-2', role: 'user', content: 'World' },
+      })
 
       store.tombstoneEvents('session-1', [e1.seq])
 
@@ -682,7 +781,10 @@ describe('EventStore', () => {
     })
 
     it('should return the number of events tombstoned', () => {
-      const e1 = store.append('session-1', { type: 'message.start', data: { messageId: 'msg-1', role: 'user', content: 'Hello' } })
+      const e1 = store.append('session-1', {
+        type: 'message.start',
+        data: { messageId: 'msg-1', role: 'user', content: 'Hello' },
+      })
       store.append('session-1', { type: 'message.done', data: { messageId: 'msg-1' } })
 
       const count = store.tombstoneEvents('session-1', [e1.seq])
@@ -690,7 +792,10 @@ describe('EventStore', () => {
     })
 
     it('should not tombstone already tombstoned events', () => {
-      const e1 = store.append('session-1', { type: 'message.start', data: { messageId: 'msg-1', role: 'user', content: 'Hello' } })
+      const e1 = store.append('session-1', {
+        type: 'message.start',
+        data: { messageId: 'msg-1', role: 'user', content: 'Hello' },
+      })
 
       store.tombstoneEvents('session-1', [e1.seq])
       const count = store.tombstoneEvents('session-1', [e1.seq])

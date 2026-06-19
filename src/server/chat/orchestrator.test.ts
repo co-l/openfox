@@ -221,6 +221,7 @@ function createEventStore() {
       return stored
     }),
     getEvents: vi.fn((sessionId: string) => eventsBySession.get(sessionId) ?? []),
+    getAllEvents: vi.fn((sessionId: string) => eventsBySession.get(sessionId) ?? []),
     getLatestSeq: vi.fn((sessionId: string) => {
       const events = eventsBySession.get(sessionId) ?? []
       return events.at(-1)?.seq ?? null
@@ -1384,7 +1385,7 @@ describe('chat orchestrator', () => {
       )
 
       // After fix: streamLLMPure does NOT merge reminder into messages (preserves vLLM cache)
-      // The reminder is injected as a separate message by injectModeReminderIfNeeded()
+      // The reminder is injected as a separate message by injectAgentReminder()
       expect(streamLLMPureMock).toHaveBeenCalledWith(
         expect.objectContaining({
           messages: [expect.objectContaining({ role: 'user', content: 'Current window message' })],
@@ -1448,7 +1449,7 @@ describe('chat orchestrator', () => {
         expect.any(Object),
       )
       // After fix: Builder does NOT inject reminder into messages (preserves vLLM cache)
-      // The reminder is injected as a separate message by injectModeReminderIfNeeded()
+      // The reminder is injected as a separate message by injectAgentReminder()
       expect(streamLLMPureMock).toHaveBeenCalledWith(
         expect.objectContaining({
           messages: [expect.objectContaining({ role: 'user', content: 'Build this' })],

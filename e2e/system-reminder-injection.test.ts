@@ -108,4 +108,45 @@ describe('System Reminder Injection', () => {
       expect(builderDefinitions).toHaveLength(1)
     })
   })
+
+  describe('Agent reminder kind tracking', () => {
+    it('injects small reminder (kind=reminder) on second message in same mode', async () => {
+      client.clearEvents()
+
+      // First message in planner mode — should inject full definition (kind=definition)
+      await client.send('chat.send', { content: 'hi' })
+      await client.waitForChatDone()
+
+      // Second message in planner mode (same mode) — should inject small reminder (kind=reminder)
+      await client.send('chat.send', { content: 'hi again' })
+      await client.waitForChatDone()
+
+      const allEvents = client.allEvents()
+
+      // Collect all auto-prompt agent messages with their kind
+      const agentMessages = allEvents
+        .filter((event) => {
+          if (event.type !== 'chat.message') return false
+          const p = event.payload as {
+            message: { isSystemGenerated?: boolean; messageKind?: string; metadata?: { type?: string; kind?: string } }
+          }
+          return (
+            p.message.isSystemGenerated === true &&
+            p.message.messageKind === 'auto-prompt' &&
+            p.message.metadata?.type === 'agent'
+          )
+        })
+        .map((event) => {
+          const p = event.payload as { message: { metadata?: { kind?: string } } }
+          return p.message.metadata?.kind
+        })
+
+      // We sent 2 messages in the same mode.
+      // First should be 'definition', second should be 'reminder'.
+      // BUG: both are 'definition' — the scan doesn't find the first agent message.
+      expect(agentMessages).toHaveLength(2)
+      expect(agentMessages[0]).toBe('definition')
+      expect(agentMessages[1]).toBe('reminder')
+    })
+  })
 })

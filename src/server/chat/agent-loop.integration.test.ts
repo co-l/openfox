@@ -262,7 +262,7 @@ describe('agentLoop integration', () => {
 
   it('auto-compacts within the loop when threshold is exceeded, then continues normally', async () => {
     const append = vi.fn()
-    const injectModeReminder = vi.fn()
+    const injectAgentReminder = vi.fn()
 
     // First call: normal response. Second call: compaction summary. Third call: normal response after compaction.
     ;(consumeStreamGenerator as any)
@@ -275,7 +275,7 @@ describe('agentLoop integration', () => {
     ;(shouldCompact as any).mockReturnValueOnce(true)
 
     await runTopLevelAgentLoop(
-      makeConfig({ append, injectModeReminder, getConversationMessages: vi.fn().mockResolvedValue([]) }),
+      makeConfig({ append, injectAgentReminder, getConversationMessages: vi.fn().mockResolvedValue([]) }),
       turnMetrics,
     )
 
@@ -288,8 +288,8 @@ describe('agentLoop integration', () => {
       .filter((e: any) => e.type === 'context.compacted')
     expect(compactedEvents.length).toBe(1)
 
-    // Should have called injectModeReminder after compaction
-    expect(injectModeReminder).toHaveBeenCalledTimes(1)
+    // Should have called injectAgentReminder after compaction
+    expect(injectAgentReminder).toHaveBeenCalledTimes(1)
 
     // Should have appended the compaction prompt
     const promptEvents = append.mock.calls

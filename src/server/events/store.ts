@@ -382,6 +382,61 @@ export class EventStore {
     }
   }
 
+  /**
+   * Get ALL events for a session, including synthetic events reconstructed
+   * from the latest snapshot's messages. This provides a unified view of the
+   * full event history even after cleanupOldEvents has deleted raw events.
+   *
+   * Synthetic events have seq=0 and are reconstructed as message.start +
+   * message.done pairs from snapshot messages. Real events since the snapshot
+   * keep their original seq numbers.
+   */
+  getAllEvents(sessionId: string): StoredEvent[] {
+    const { snapshot, events } = this.getEventsSinceSnapshot(sessionId)
+
+    if (!snapshot) {
+      return events
+    }
+
+    // Reconstruct synthetic events from snapshot messages
+    const syntheticEvents: StoredEvent[] = []
+    for (const msg of snapshot.messages) {
+      syntheticEvents.push({
+        seq: 0,
+        timestamp: msg.timestamp,
+        sessionId,
+        type: 'message.start',
+        data: {
+          messageId: msg.id,
+          role: msg.role as 'user' | 'assistant' | 'system',
+          content: msg.content,
+          ...(msg.contextWindowId !== undefined && { contextWindowId: msg.contextWindowId }),
+          ...(msg.isSystemGenerated !== undefined && { isSystemGenerated: msg.isSystemGenerated }),
+          ...(msg.messageKind !== undefined && { messageKind: msg.messageKind }),
+          ...(msg.metadata !== undefined && { metadata: msg.metadata }),
+          ...(msg.subAgentId !== undefined && { subAgentId: msg.subAgentId }),
+          ...(msg.subAgentType !== undefined && { subAgentType: msg.subAgentType }),
+          ...(msg.isCompactionSummary !== undefined && { isCompactionSummary: msg.isCompactionSummary }),
+          ...(msg.attachments !== undefined && { attachments: msg.attachments }),
+        },
+      })
+      syntheticEvents.push({
+        seq: 0,
+        timestamp: msg.timestamp,
+        sessionId,
+        type: 'message.done',
+        data: { messageId: msg.id },
+      })
+    }
+
+    // Combine synthetic + real events, sorted by timestamp then seq
+    return [...syntheticEvents, ...events].sort((a, b) => {
+      const tsDiff = a.timestamp - b.timestamp
+      if (tsDiff !== 0) return tsDiff
+      return a.seq - b.seq
+    })
+  }
+
   private rowToStoredEvent(row: EventRow): StoredEvent {
     return {
       seq: row.seq,

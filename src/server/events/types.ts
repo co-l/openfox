@@ -73,7 +73,7 @@ export type TurnEvent =
         isCompactionSummary?: boolean // True if this is the summary message after compaction
         tokenCount?: number // Known upfront for user messages
         attachments?: Attachment[] // Optional image attachments
-        metadata?: { type: string; name: string; color: string } // For auto-prompt messages
+        metadata?: { type: string; name: string; color: string; kind?: 'definition' | 'reminder' } // For auto-prompt messages
       }
     }
   | {
@@ -391,7 +391,6 @@ export interface SessionSnapshot {
   currentContextWindowId: string
   todos: Todo[]
   readFiles?: ReadFileEntry[]
-  lastModeWithReminder?: SessionMode
   cachedSystemPrompt?: string
   dynamicContextHash?: string
   snapshotSeq: number
@@ -511,7 +510,7 @@ export interface SnapshotMessage {
   contextWindowId?: string
   isCompactionSummary?: boolean
   attachments?: Attachment[] // Optional image attachments
-  metadata?: { type: string; name: string; color: string } // For auto-prompt messages
+  metadata?: { type: string; name: string; color: string; kind?: 'definition' | 'reminder' } // For auto-prompt messages
 }
 
 export interface ToolCallWithResult extends ToolCall {

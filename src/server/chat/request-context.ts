@@ -154,7 +154,7 @@ export function assembleAgentRequest(input: AgentAssemblyInput): AssemblyResult 
     baseInput.modelName,
   )
 
-  // DO NOT inject runtime reminder here - it's handled by orchestrator.injectModeReminderIfNeeded()
-  // which only injects on mode switch to preserve vLLM cache
+  // DO NOT inject runtime reminder here - it's handled by orchestrator.injectAgentReminder()
+  // which scans events and injects full definition or small reminder as needed
   return buildAssemblyInput(systemPrompt, baseInput)
 }
