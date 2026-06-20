@@ -191,6 +191,20 @@ async function fetchOllamaModelsWithContext(baseUrl: string, _apiKey?: string): 
   }
 }
 
+export interface ModelSettingsUpdate {
+  contextWindow?: number
+  temperature?: number | null
+  topP?: number | null
+  topK?: number | null
+  maxTokens?: number | null
+  supportsVision?: boolean
+  thinkingEnabled?: boolean
+  thinkingLevel?: string
+  nonThinkingEnabled?: boolean
+  thinkingExtraKwargs?: string
+  nonThinkingExtraKwargs?: string
+}
+
 export interface ProviderManager {
   getProviders(): Provider[]
   getActiveProvider(): Provider | undefined
@@ -213,19 +227,22 @@ export interface ProviderManager {
   updateModelSettings(
     providerId: string,
     modelId: string,
-    settings: {
-      contextWindow?: number
-      temperature?: number | null
-      topP?: number | null
-      topK?: number | null
-      maxTokens?: number | null
-      supportsVision?: boolean
-    },
+    settings: ModelSettingsUpdate,
   ): Promise<{ success: boolean; error?: string; model?: ModelConfig }>
   refreshProviderModels(providerId: string): Promise<{ success: boolean; error?: string }>
   getModelSettings(
     modelId: string,
-  ): { temperature?: number; topP?: number; topK?: number; maxTokens?: number } | undefined
+    mode?: 'thinking' | 'non-thinking',
+  ):
+    | {
+        temperature?: number
+        topP?: number
+        topK?: number
+        maxTokens?: number
+        supportsVision?: boolean
+        chatTemplateKwargs?: Record<string, unknown>
+      }
+    | undefined
 }
 
 export function parseDefaultModelSelection(selection?: string): {
@@ -568,23 +585,7 @@ export function createProviderManager(config: Config): ProviderManager {
       return { success: true }
     },
 
-    async updateModelSettings(
-      providerId: string,
-      modelId: string,
-      settings: {
-        contextWindow?: number
-        temperature?: number | null
-        topP?: number | null
-        topK?: number | null
-        maxTokens?: number | null
-        supportsVision?: boolean
-        thinkingEnabled?: boolean
-        thinkingLevel?: string
-        nonThinkingEnabled?: boolean
-        thinkingExtraKwargs?: string
-        nonThinkingExtraKwargs?: string
-      },
-    ) {
+    async updateModelSettings(providerId: string, modelId: string, settings: ModelSettingsUpdate) {
       const provider = providers.find((p) => p.id === providerId)
       if (!provider) {
         return { success: false, error: 'Provider not found' }
@@ -667,11 +668,23 @@ export function createProviderManager(config: Config): ProviderManager {
       return { success: true, model: updatedModel }
     },
 
-    getModelSettings(modelId: string) {
+    getModelSettings(modelId: string, mode: 'thinking' | 'non-thinking' = 'thinking') {
       const provider = providers.find((p) => p.models.some((m) => m.id === modelId))
       const model = provider?.models.find((m) => m.id === modelId)
       if (!model) return undefined
-      const kwargs = model.thinkingEnabled ? model.thinkingExtraKwargs : model.nonThinkingExtraKwargs
+
+      // Select kwargs based on mode:
+      // - 'thinking' mode (default, used by main turns): thinking kwargs if thinkingEnabled, else non-thinking kwargs
+      // - 'non-thinking' mode (used by title generation): non-thinking kwargs if nonThinkingEnabled, else thinking kwargs
+      const kwargs =
+        mode === 'non-thinking'
+          ? model.nonThinkingEnabled
+            ? model.nonThinkingExtraKwargs
+            : model.thinkingExtraKwargs
+          : model.thinkingEnabled
+            ? model.thinkingExtraKwargs
+            : model.nonThinkingExtraKwargs
+
       return {
         ...(model.temperature !== undefined && { temperature: model.temperature }),
         ...(model.topP !== undefined && { topP: model.topP }),

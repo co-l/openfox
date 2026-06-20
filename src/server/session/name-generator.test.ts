@@ -191,6 +191,128 @@ describe('Session Name Generator', () => {
     })
   })
 
+  describe('thinking/non-thinking mode', () => {
+    function createMockClient(response: LLMCompletionResponse) {
+      return {
+        complete: vi.fn().mockResolvedValue(response),
+        getModel: vi.fn().mockReturnValue('test-model'),
+        setModel: vi.fn(),
+        getProfile: vi.fn(),
+        getBackend: vi.fn().mockReturnValue('unknown'),
+        setBackend: vi.fn(),
+      }
+    }
+
+    const defaultResponse: LLMCompletionResponse = {
+      id: 'test-id',
+      content: 'React setup',
+      finishReason: 'stop',
+      usage: { promptTokens: 10, completionTokens: 5, totalTokens: 15 },
+    }
+
+    it('should pass reasoningEffort: none when nonThinkingEnabled is true', async () => {
+      const mockClient = createMockClient(defaultResponse)
+
+      await generateSessionName({
+        userMessage: 'How do I set up React?',
+        llmClient: mockClient as any,
+        nonThinkingEnabled: true,
+      })
+
+      const callArgs = (mockClient.complete as any).mock.calls[0][0]
+      expect(callArgs.reasoningEffort).toBe('none')
+    })
+
+    it('should NOT pass reasoningEffort when nonThinkingEnabled is false', async () => {
+      const mockClient = createMockClient(defaultResponse)
+
+      await generateSessionName({
+        userMessage: 'How do I set up React?',
+        llmClient: mockClient as any,
+        nonThinkingEnabled: false,
+      })
+
+      const callArgs = (mockClient.complete as any).mock.calls[0][0]
+      expect(callArgs.reasoningEffort).toBeUndefined()
+    })
+
+    it('should pass reasoningEffort: none when nonThinkingEnabled is undefined (default)', async () => {
+      const mockClient = createMockClient(defaultResponse)
+
+      await generateSessionName({
+        userMessage: 'How do I set up React?',
+        llmClient: mockClient as any,
+      })
+
+      const callArgs = (mockClient.complete as any).mock.calls[0][0]
+      expect(callArgs.reasoningEffort).toBe('none')
+    })
+
+    it('should pass modelSettings to the LLM client', async () => {
+      const mockClient = createMockClient(defaultResponse)
+      const modelSettings = {
+        temperature: 0.7,
+        chatTemplateKwargs: { enable_thinking: false },
+      }
+
+      await generateSessionName({
+        userMessage: 'How do I set up React?',
+        llmClient: mockClient as any,
+        modelSettings,
+      })
+
+      const callArgs = (mockClient.complete as any).mock.calls[0][0]
+      expect(callArgs.modelSettings).toEqual(modelSettings)
+    })
+
+    it('should fall back to thinkingContent when content is empty', async () => {
+      const mockClient = createMockClient({
+        ...defaultResponse,
+        content: '',
+        thinkingContent: 'React project setup',
+      })
+
+      const result = await generateSessionName({
+        userMessage: 'How do I set up React?',
+        llmClient: mockClient as any,
+      })
+
+      expect(result.success).toBe(true)
+      expect(result.name).toBe('React project setup')
+    })
+
+    it('should fall back to thinkingContent when content is null-like', async () => {
+      const mockClient = createMockClient({
+        ...defaultResponse,
+        content: '',
+        thinkingContent: 'Fix auth bug',
+      })
+
+      const result = await generateSessionName({
+        userMessage: 'Fix the authentication bug',
+        llmClient: mockClient as any,
+      })
+
+      expect(result.success).toBe(true)
+      expect(result.name).toBe('Fix auth bug')
+    })
+
+    it('should return failure when both content and thinkingContent are empty', async () => {
+      const mockClient = createMockClient({
+        ...defaultResponse,
+        content: '',
+      })
+
+      const result = await generateSessionName({
+        userMessage: 'Test message',
+        llmClient: mockClient as any,
+      })
+
+      expect(result.success).toBe(false)
+      expect(result.error).toContain('too short')
+    })
+  })
+
   describe('SESSION_NAME_PROMPT', () => {
     it('should be ultra-lightweight with no project context', () => {
       // Verify the prompt is minimal and doesn't contain project-related keywords

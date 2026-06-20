@@ -46,6 +46,15 @@ export interface GenerateSessionNameOptions {
   userMessage: string
   llmClient: LLMClientWithModel
   signal?: AbortSignal
+  modelSettings?: {
+    temperature?: number
+    topP?: number
+    topK?: number
+    maxTokens?: number
+    supportsVision?: boolean
+    chatTemplateKwargs?: Record<string, unknown>
+  }
+  nonThinkingEnabled?: boolean
 }
 
 export interface GenerateSessionNameResult {
@@ -60,13 +69,11 @@ export interface GenerateSessionNameResult {
  * Disables thinking output for minimal latency.
  */
 export async function generateSessionName(options: GenerateSessionNameOptions): Promise<GenerateSessionNameResult> {
-  const { userMessage, llmClient, signal } = options
+  const { userMessage, llmClient, signal, modelSettings, nonThinkingEnabled } = options
 
   try {
     logger.debug('Generating session name', { messagePreview: userMessage.slice(0, 50) })
 
-    // Use non-thinking variant by disabling thinking
-    // This ensures only the name is returned, no reasoning
     const prompt = SESSION_NAME_PROMPT.replace('{message}', userMessage)
 
     const messages: LLMMessage[] = [
@@ -83,11 +90,16 @@ export async function generateSessionName(options: GenerateSessionNameOptions): 
       messages,
       tools: [],
       signal: composedSignal,
-      reasoningEffort: 'none',
+      // Default to non-thinking (reasoningEffort: 'none') when not explicitly configured
+      // to prevent thinking output in session names. Only skip when user explicitly
+      // set nonThinkingEnabled to false.
+      ...(nonThinkingEnabled !== false ? { reasoningEffort: 'none' as const } : {}),
+      ...(modelSettings ? { modelSettings } : {}),
     })
 
-    // Clean up the response: trim whitespace and ensure it's under 50 chars
-    let name = response.content.trim()
+    // Use content or fall back to thinkingContent for models that put
+    // output in the reasoning field regardless of thinking mode
+    let name = (response.content || response.thinkingContent || '').trim()
 
     // Truncate to 50 characters if needed
     if (name.length > 50) {

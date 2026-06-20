@@ -143,10 +143,24 @@ export class QueueProcessor {
       const currentSession = sessionManager.getSession(sessionId)
       if (currentSession && needsNameGenerationCheck(sessionId, currentSession.metadata.title, messageCount)) {
         const eventStore = getEventStore()
+        const currentModel = this.deps.providerManager.getCurrentModel()
+        const modelConfig = currentModel
+          ? this.deps.providerManager
+              .getProviders()
+              .flatMap((p) => p.models)
+              .find((m) => m.id === currentModel)
+          : undefined
+        const modelSettings = modelConfig
+          ? this.deps.providerManager.getModelSettings(currentModel!, 'non-thinking')
+          : undefined
         generateSessionName({
           userMessage: nextAsap.content,
           llmClient: this.deps.getLLMClient(),
           signal: controller.signal,
+          ...(modelSettings ? { modelSettings } : {}),
+          ...(modelConfig?.nonThinkingEnabled !== undefined
+            ? { nonThinkingEnabled: modelConfig.nonThinkingEnabled }
+            : {}),
         })
           .then((result) => {
             logger.debug('Session name generation result (queue)', {

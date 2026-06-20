@@ -422,4 +422,75 @@ describe('ProviderManager - Model Selection', () => {
       expect(context).toBe(config.context.maxTokens)
     })
   })
+
+  describe('getModelSettings', () => {
+    it('returns undefined for non-existent model', () => {
+      const settings = providerManager.getModelSettings('non-existent')
+      expect(settings).toBeUndefined()
+    })
+
+    it('returns model settings with default thinking mode', async () => {
+      await providerManager.updateModelSettings('provider-1', 'model-a', {
+        temperature: 0.5,
+        topP: 0.9,
+        maxTokens: 4096,
+        thinkingEnabled: true,
+        thinkingLevel: 'high',
+        thinkingExtraKwargs: '{"enable_thinking": true}',
+      })
+
+      const settings = providerManager.getModelSettings('model-a')
+      expect(settings).toBeDefined()
+      expect(settings?.temperature).toBe(0.5)
+      expect(settings?.topP).toBe(0.9)
+      expect(settings?.maxTokens).toBe(4096)
+      expect(settings?.chatTemplateKwargs).toEqual({ enable_thinking: true })
+    })
+
+    it('uses thinking kwargs in thinking mode when thinkingEnabled', async () => {
+      await providerManager.updateModelSettings('provider-1', 'model-a', {
+        thinkingEnabled: true,
+        thinkingExtraKwargs: '{"enable_thinking": true}',
+        nonThinkingEnabled: true,
+        nonThinkingExtraKwargs: '{"enable_thinking": false}',
+      })
+
+      const settings = providerManager.getModelSettings('model-a', 'thinking')
+      expect(settings?.chatTemplateKwargs).toEqual({ enable_thinking: true })
+    })
+
+    it('uses non-thinking kwargs in non-thinking mode when nonThinkingEnabled', async () => {
+      await providerManager.updateModelSettings('provider-1', 'model-a', {
+        thinkingEnabled: true,
+        thinkingExtraKwargs: '{"enable_thinking": true}',
+        nonThinkingEnabled: true,
+        nonThinkingExtraKwargs: '{"enable_thinking": false}',
+      })
+
+      const settings = providerManager.getModelSettings('model-a', 'non-thinking')
+      expect(settings?.chatTemplateKwargs).toEqual({ enable_thinking: false })
+    })
+
+    it('falls back to thinking kwargs in non-thinking mode when nonThinkingEnabled is false', async () => {
+      await providerManager.updateModelSettings('provider-1', 'model-a', {
+        thinkingEnabled: true,
+        thinkingExtraKwargs: '{"enable_thinking": true}',
+        nonThinkingEnabled: false,
+      })
+
+      const settings = providerManager.getModelSettings('model-a', 'non-thinking')
+      expect(settings?.chatTemplateKwargs).toEqual({ enable_thinking: true })
+    })
+
+    it('falls back to non-thinking kwargs in thinking mode when thinkingEnabled is false', async () => {
+      await providerManager.updateModelSettings('provider-1', 'model-a', {
+        thinkingEnabled: false,
+        nonThinkingEnabled: true,
+        nonThinkingExtraKwargs: '{"enable_thinking": false}',
+      })
+
+      const settings = providerManager.getModelSettings('model-a', 'thinking')
+      expect(settings?.chatTemplateKwargs).toEqual({ enable_thinking: false })
+    })
+  })
 })
