@@ -1,18 +1,19 @@
 import OpenAI from 'openai'
 import type { Config } from '../config.js'
-import type { LLMClient, LLMCompletionRequest, LLMCompletionResponse, LLMStreamEvent } from './types.js'
+import type {
+  LLMClient,
+  LLMCompletionRequest,
+  LLMCompletionResponse,
+  LLMStreamEvent,
+  ReasoningEffort,
+} from './types.js'
 import type { ToolCall } from '../../shared/types.js'
 import { logger } from '../utils/logger.js'
 import { LLMError } from '../utils/errors.js'
 import { getModelProfile, type ModelProfile } from './profiles.js'
 import { type Backend, getBackendCapabilities } from './backend.js'
 import { ensureVersionPrefix } from './url-utils.js'
-import {
-  buildNonStreamingCreateParams,
-  buildStreamingCreateParams,
-  extractThinking,
-  mapFinishReason,
-} from './client-pure.js'
+import { buildNonStreamingCreateParams, buildStreamingCreateParams, mapFinishReason } from './client-pure.js'
 
 export interface LLMClientWithModel extends LLMClient {
   getModel(): string
@@ -34,7 +35,7 @@ export function createLLMClient(config: Config, initialBackend: Backend = 'unkno
   let profile = getModelProfile(model)
   let backend = initialBackend
   let capabilities = getBackendCapabilities(backend)
-  const disableThinking = config.llm.disableThinking ?? false
+  const reasoningEffort = config.llm.reasoningEffort
   const idleTimeout = config.llm.idleTimeout ?? 30_000
 
   return {
@@ -63,7 +64,6 @@ export function createLLMClient(config: Config, initialBackend: Backend = 'unkno
         to: newModel,
         profile: newProfile.name,
         temperature: newProfile.temperature,
-        supportsReasoning: newProfile.supportsReasoning,
       })
       model = newModel
       profile = newProfile
@@ -74,18 +74,18 @@ export function createLLMClient(config: Config, initialBackend: Backend = 'unkno
         messageCount: request.messages.length,
         hasTools: !!request.tools?.length,
         profile: profile.name,
-        disableThinking,
+        reasoningEffort: request.reasoningEffort ?? reasoningEffort,
       })
 
       try {
-        const shouldDisableThinking = disableThinking || request.disableThinking === true
+        const resolvedEffort = (request.reasoningEffort ?? reasoningEffort) as ReasoningEffort | undefined
 
         const { params: createParams } = await buildNonStreamingCreateParams({
           model,
           request,
           profile,
           capabilities,
-          disableThinking: shouldDisableThinking,
+          ...(resolvedEffort ? { reasoningEffort: resolvedEffort } : {}),
         })
         const response = await openai.chat.completions.create(createParams, {
           signal: request.signal,
@@ -96,7 +96,6 @@ export function createLLMClient(config: Config, initialBackend: Backend = 'unkno
           throw new LLMError('No completion choice returned')
         }
 
-        // Handle reasoning output - different backends return it differently
         const message = choice.message as {
           content?: string | null
           reasoning_content?: string | null
@@ -104,33 +103,8 @@ export function createLLMClient(config: Config, initialBackend: Backend = 'unkno
           tool_calls?: Array<{ id: string; function: { name: string; arguments: string } }>
         }
 
-        let content = message.content ?? ''
-        let thinkingContent = ''
-
-        // Only process reasoning if model supports it
-        if (profile.supportsReasoning) {
-          if (capabilities.supportsReasoningField) {
-            // vLLM/SGLang: use reasoning_content field
-            thinkingContent = message.reasoning_content ?? message.reasoning ?? ''
-          } else {
-            // Ollama/llama.cpp: extract <think> tags from content
-            const extracted = extractThinking(content)
-            content = extracted.content
-            thinkingContent = extracted.thinkingContent ?? ''
-          }
-
-          // If model outputs reasoning as content (broken config), handle it
-          if (profile.reasoningAsContent && thinkingContent.trim()) {
-            content = thinkingContent
-            thinkingContent = ''
-          }
-        }
-
-        // Fallback: if content is empty but reasoning has content, use reasoning as content
-        if (!content.trim() && thinkingContent.trim()) {
-          content = thinkingContent
-          thinkingContent = ''
-        }
+        const content = message.content ?? ''
+        const thinkingContent = message.reasoning_content ?? message.reasoning ?? ''
 
         const toolCalls = message.tool_calls?.map((tc) => ({
           id: tc.id,
@@ -163,18 +137,18 @@ export function createLLMClient(config: Config, initialBackend: Backend = 'unkno
         messageCount: request.messages.length,
         hasTools: !!request.tools?.length,
         profile: profile.name,
-        disableThinking,
+        reasoningEffort: request.reasoningEffort ?? reasoningEffort,
         idleTimeout,
       })
 
       try {
-        const shouldDisableThinking = disableThinking || request.disableThinking === true
+        const resolvedEffort = (request.reasoningEffort ?? reasoningEffort) as ReasoningEffort | undefined
         const createParams = await buildStreamingCreateParams({
           model,
           request,
           profile,
           capabilities,
-          disableThinking: shouldDisableThinking,
+          ...(resolvedEffort ? { reasoningEffort: resolvedEffort } : {}),
         })
 
         const { params: streamingParams } = createParams
@@ -184,8 +158,6 @@ export function createLLMClient(config: Config, initialBackend: Backend = 'unkno
 
         let fullContent = ''
         let fullThinking = ''
-        let inThinking = false
-        let tagBuffer = '' // Buffer for parsing <think> tags across chunk boundaries
         const toolCalls: Map<number, { id: string; name: string; arguments: string }> = new Map()
         let finishReason: LLMCompletionResponse['finishReason'] = 'stop'
         let usage = { promptTokens: 0, completionTokens: 0, totalTokens: 0 }
@@ -247,91 +219,16 @@ export function createLLMClient(config: Config, initialBackend: Backend = 'unkno
             }
 
             // Handle reasoning/thinking delta
-            // vLLM/SGLang: reasoning comes as separate field
-            // Ollama/llama.cpp: reasoning is embedded as <think> tags in content
-            if (capabilities.supportsReasoningField) {
-              const reasoning = delta.reasoning_content ?? delta.reasoning
-              if (reasoning) {
-                // Only emit thinking if model supports reasoning
-                if (profile.supportsReasoning && !profile.reasoningAsContent) {
-                  fullThinking += reasoning
-                  yield { type: 'thinking_delta', content: reasoning }
-                } else {
-                  // Model doesn't support reasoning or outputs it as content
-                  fullContent += reasoning
-                  yield { type: 'text_delta', content: reasoning }
-                }
-              }
+            const reasoning = delta.reasoning_content ?? delta.reasoning
+            if (reasoning) {
+              fullThinking += reasoning
+              yield { type: 'thinking_delta', content: reasoning }
             }
 
             // Handle content delta
             if (delta.content) {
               fullContent += delta.content
-
-              // For backends without reasoning field (ollama/llama.cpp), parse <think> tags in real-time
-              if (!capabilities.supportsReasoningField && profile.supportsReasoning && !profile.reasoningAsContent) {
-                // Feed content through the think tag parser
-                tagBuffer += delta.content
-
-                while (tagBuffer.length > 0) {
-                  if (inThinking) {
-                    // Look for </think>
-                    const closeIdx = tagBuffer.indexOf('</think>')
-                    if (closeIdx !== -1) {
-                      // Emit thinking content before the close tag
-                      const thinkText = tagBuffer.slice(0, closeIdx)
-                      if (thinkText) {
-                        fullThinking += thinkText
-                        yield { type: 'thinking_delta', content: thinkText }
-                      }
-                      tagBuffer = tagBuffer.slice(closeIdx + '</think>'.length)
-                      inThinking = false
-                    } else if (tagBuffer.includes('</')) {
-                      // Might be a partial </think> tag - emit everything before it
-                      const partialIdx = tagBuffer.lastIndexOf('</')
-                      const before = tagBuffer.slice(0, partialIdx)
-                      if (before) {
-                        fullThinking += before
-                        yield { type: 'thinking_delta', content: before }
-                      }
-                      tagBuffer = tagBuffer.slice(partialIdx)
-                      break // wait for more data
-                    } else {
-                      // No close tag at all, emit all as thinking
-                      fullThinking += tagBuffer
-                      yield { type: 'thinking_delta', content: tagBuffer }
-                      tagBuffer = ''
-                    }
-                  } else {
-                    // Look for <think>
-                    const openIdx = tagBuffer.indexOf('<think>')
-                    if (openIdx !== -1) {
-                      // Emit text content before the open tag
-                      const textBefore = tagBuffer.slice(0, openIdx)
-                      if (textBefore) {
-                        yield { type: 'text_delta', content: textBefore }
-                      }
-                      tagBuffer = tagBuffer.slice(openIdx + '<think>'.length)
-                      inThinking = true
-                    } else if (tagBuffer.includes('<')) {
-                      // Might be a partial <think> tag - emit everything before it
-                      const partialIdx = tagBuffer.lastIndexOf('<')
-                      const before = tagBuffer.slice(0, partialIdx)
-                      if (before) {
-                        yield { type: 'text_delta', content: before }
-                      }
-                      tagBuffer = tagBuffer.slice(partialIdx)
-                      break // wait for more data
-                    } else {
-                      // No open tag at all, emit all as text
-                      yield { type: 'text_delta', content: tagBuffer }
-                      tagBuffer = ''
-                    }
-                  }
-                }
-              } else {
-                yield { type: 'text_delta', content: delta.content }
-              }
+              yield { type: 'text_delta', content: delta.content }
             }
 
             // Handle tool call deltas
@@ -366,30 +263,8 @@ export function createLLMClient(config: Config, initialBackend: Backend = 'unkno
           request.signal?.removeEventListener('abort', onAbort)
         }
 
-        // Flush any remaining tag buffer content
-        if (tagBuffer) {
-          if (inThinking) {
-            fullThinking += tagBuffer
-          }
-          tagBuffer = ''
-        }
-
-        // For backends without reasoning field, extract <think> tags from accumulated content
-        let finalContent = fullContent.trim()
-        let finalThinking = fullThinking.trim()
-
-        if (!capabilities.supportsReasoningField && profile.supportsReasoning) {
-          const extracted = extractThinking(finalContent)
-          finalContent = extracted.content
-          finalThinking = extracted.thinkingContent ?? ''
-        }
-
-        // If content is empty but we have thinking, use thinking as content
-        // (some models output everything as reasoning)
-        if (!finalContent && finalThinking) {
-          finalContent = finalThinking
-          finalThinking = ''
-        }
+        const finalContent = fullContent.trim()
+        const finalThinking = fullThinking.trim()
 
         // Parse tool calls
         const parsedToolCalls: ToolCall[] = []

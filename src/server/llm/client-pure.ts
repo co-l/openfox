@@ -4,7 +4,13 @@ import type {
   ChatCompletionTool,
   ChatCompletionToolChoiceOption,
 } from 'openai/resources/chat/completions'
-import type { LLMCompletionRequest, LLMCompletionResponse, LLMMessage, LLMToolDefinition } from './types.js'
+import type {
+  LLMCompletionRequest,
+  LLMCompletionResponse,
+  LLMMessage,
+  LLMToolDefinition,
+  ReasoningEffort,
+} from './types.js'
 import type { ModelProfile } from './profiles.js'
 import type { BackendCapabilities } from './backend.js'
 
@@ -47,10 +53,7 @@ function buildAttachmentContent(
 }
 
 type MinimalCapabilities = Pick<BackendCapabilities, 'supportsTopK' | 'supportsChatTemplateKwargs'>
-type MinimalProfile = Pick<
-  ModelProfile,
-  'temperature' | 'defaultMaxTokens' | 'topP' | 'topK' | 'supportsReasoning' | 'supportsVision'
->
+type MinimalProfile = Pick<ModelProfile, 'temperature' | 'defaultMaxTokens' | 'topP' | 'topK' | 'supportsVision'>
 
 function convertToolCalls(
   toolCalls: { id: string; name: string; arguments: Record<string, unknown> }[],
@@ -153,7 +156,7 @@ async function buildChatCompletionCreateParams(
   request: LLMCompletionRequest,
   profile: MinimalProfile,
   capabilities: MinimalCapabilities,
-  disableThinking: boolean,
+  reasoningEffort: ReasoningEffort | undefined,
   isStreaming: boolean,
 ): Promise<{
   params: OpenAI.ChatCompletionCreateParamsNonStreaming | OpenAI.ChatCompletionCreateParamsStreaming
@@ -184,10 +187,16 @@ async function buildChatCompletionCreateParams(
     ;(params as unknown as Record<string, unknown>)['top_k'] = topK
   }
 
-  const shouldDisableThinking = disableThinking || request.disableThinking
+  const resolvedEffort = reasoningEffort ?? request.reasoningEffort
 
-  if (capabilities.supportsChatTemplateKwargs && profile.supportsReasoning && shouldDisableThinking) {
-    ;(params as unknown as Record<string, unknown>)['chat_template_kwargs'] = { enable_thinking: false }
+  if (resolvedEffort) {
+    ;(params as unknown as Record<string, unknown>)['reasoning_effort'] = resolvedEffort
+
+    if (capabilities.supportsChatTemplateKwargs) {
+      ;(params as unknown as Record<string, unknown>)['chat_template_kwargs'] = {
+        enable_thinking: resolvedEffort !== 'none',
+      }
+    }
   }
 
   const modelParams = buildModelParams({ temperature, topP, topK, maxTokens })
@@ -203,17 +212,17 @@ async function buildCreateParamsFromInput<
     request: LLMCompletionRequest
     profile: MinimalProfile
     capabilities: MinimalCapabilities
-    disableThinking?: boolean
+    reasoningEffort?: ReasoningEffort
   },
   isStreaming: boolean,
 ): Promise<{ params: T; modelParams: ModelParams }> {
-  const { model, request, profile, capabilities, disableThinking } = input
+  const { model, request, profile, capabilities, reasoningEffort } = input
   return buildChatCompletionCreateParams(
     model,
     request,
     profile,
     capabilities,
-    !!disableThinking,
+    reasoningEffort,
     isStreaming,
   ) as Promise<{ params: T; modelParams: ModelParams }>
 }
@@ -221,9 +230,8 @@ async function buildCreateParamsFromInput<
 export const buildNonStreamingCreateParams = (input: Parameters<typeof buildCreateParamsFromInput>[0]) =>
   buildCreateParamsFromInput<OpenAI.ChatCompletionCreateParamsNonStreaming>(input, false)
 
-export const buildStreamingCreateParams = (
-  input: Parameters<typeof buildCreateParamsFromInput>[0] & { disableThinking: boolean },
-) => buildCreateParamsFromInput<OpenAI.ChatCompletionCreateParamsStreaming>(input, true)
+export const buildStreamingCreateParams = (input: Parameters<typeof buildCreateParamsFromInput>[0]) =>
+  buildCreateParamsFromInput<OpenAI.ChatCompletionCreateParamsStreaming>(input, true)
 
 export function mapFinishReason(reason: string | null): LLMCompletionResponse['finishReason'] {
   switch (reason) {
@@ -237,22 +245,5 @@ export function mapFinishReason(reason: string | null): LLMCompletionResponse['f
       return 'content_filter'
     default:
       return 'stop'
-  }
-}
-
-export function extractThinking(content: string): { content: string; thinkingContent: string | null } {
-  const thinkRegex = /<think>([\s\S]*?)<\/think>/g
-  let thinkingContent = ''
-  let cleanContent = content
-
-  let match: RegExpExecArray | null
-  while ((match = thinkRegex.exec(content)) !== null) {
-    thinkingContent += match[1]
-    cleanContent = cleanContent.replace(match[0], '')
-  }
-
-  return {
-    content: cleanContent.trim(),
-    thinkingContent: thinkingContent.trim() || null,
   }
 }

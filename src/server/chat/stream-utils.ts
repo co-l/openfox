@@ -1,23 +1,22 @@
-import type { LLMClient } from '../llm/types.js'
-import type { LLMCompletionRequest, LLMToolDefinition } from '../llm/types.js'
+import type { LLMClient, LLMCompletionRequest, LLMToolDefinition, ReasoningEffort } from '../llm/types.js'
 import { streamWithSegments } from '../llm/streaming.js'
 
 function buildStreamRequestObject(params: {
   messages: LLMCompletionRequest['messages']
   tools?: LLMToolDefinition[] | undefined
   toolChoice?: LLMCompletionRequest['toolChoice']
-  disableThinking?: boolean | undefined
+  reasoningEffort?: ReasoningEffort | undefined
   signal?: AbortSignal | undefined
   modelSettings?:
     | { temperature?: number; topP?: number; topK?: number; maxTokens?: number; supportsVision?: boolean }
     | undefined
 }): LLMCompletionRequest {
-  const { messages, tools, toolChoice, disableThinking, signal, modelSettings } = params
+  const { messages, tools, toolChoice, reasoningEffort, signal, modelSettings } = params
   return {
     messages,
     ...(tools && { tools }),
     ...(toolChoice && { toolChoice }),
-    disableThinking: disableThinking ?? false,
+    ...(reasoningEffort && { reasoningEffort }),
     ...(signal && { signal }),
     ...(modelSettings && { modelSettings }),
   }

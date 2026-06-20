@@ -194,7 +194,7 @@ export async function executeSubAgent(options: SubAgentExecutionOptions): Promis
           injectedFiles: input.injectedFiles,
           requestTools: input.promptTools,
           toolChoice: input.toolChoice,
-          disableThinking: true,
+
           ...(instructionContent ? { customInstructions: instructionContent } : {}),
           ...(skills.length > 0 ? { skills } : {}),
         }),

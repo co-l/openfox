@@ -139,14 +139,23 @@ const configSchema = z
   }))
 
 // Old config schema (for migration detection)
-const oldLlmSchema = z.object({
-  url: z.string().url().default('http://localhost:8000/v1'),
-  model: z.string().default('auto'),
-  backend: z.enum(['auto', 'vllm', 'sglang', 'ollama', 'llamacpp']).default('auto'),
-  maxContext: z.number().default(200000),
-  disableThinking: z.boolean().default(false),
-  apiKey: z.string().optional(),
-})
+const oldLlmSchema = z
+  .object({
+    url: z.string().url().default('http://localhost:8000/v1'),
+    model: z.string().default('auto'),
+    backend: z.enum(['auto', 'vllm', 'sglang', 'ollama', 'llamacpp']).default('auto'),
+    maxContext: z.number().default(200000),
+    // Deprecated: use reasoningEffort instead
+    disableThinking: z.boolean().optional(),
+    reasoningEffort: z.string().optional(),
+    apiKey: z.string().optional(),
+  })
+  .transform((data) => {
+    if (data.disableThinking && !data.reasoningEffort) {
+      return { ...data, reasoningEffort: 'none', disableThinking: undefined }
+    }
+    return { ...data, disableThinking: undefined }
+  })
 
 const oldConfigSchema = z.object({
   llm: oldLlmSchema,
@@ -547,12 +556,11 @@ export function mergeConfigs(...configs: Array<Partial<OldGlobalConfig>>): OldGl
       llm: {
         url: 'http://localhost:8000/v1',
         model: 'auto',
-        backend: 'auto' as const,
+        backend: 'auto' as 'auto' | 'vllm' | 'sglang' | 'ollama' | 'llamacpp',
         maxContext: 200000,
-        disableThinking: false,
       },
       server: { port: 10369, host: '127.0.0.1', openBrowser: true },
-      logging: { level: 'error' as const },
+      logging: { level: 'error' as 'error' | 'debug' | 'info' | 'warn' },
     },
   )
   return oldConfigSchema.parse(result)

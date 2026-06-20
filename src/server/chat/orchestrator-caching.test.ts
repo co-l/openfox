@@ -37,7 +37,6 @@ function makeAssembleRequest(sessionManager: SessionManager, instructionContent:
         injectedFiles: input.injectedFiles,
         requestTools: input.promptTools,
         toolChoice: input.toolChoice,
-        disableThinking: false,
       })
     }
     const result = assembleAgentRequest({

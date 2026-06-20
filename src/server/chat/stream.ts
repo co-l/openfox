@@ -11,7 +11,7 @@
 import type { ToolCall, MessageSegment, Attachment } from '../../shared/types.js'
 import type { ServerMessage } from '../../shared/protocol.js'
 import type { LLMClientWithModel } from '../llm/client.js'
-import type { LLMToolDefinition } from '../llm/types.js'
+import type { LLMToolDefinition, ReasoningEffort } from '../llm/types.js'
 import type { StreamTiming } from '../llm/streaming.js'
 import type { SessionManager } from '../session/index.js'
 import { buildStreamRequest } from './stream-utils.js'
@@ -49,8 +49,8 @@ export interface StreamOptions {
   subAgentId?: string
   /** Optional: sub-agent type to tag the created assistant message */
   subAgentType?: string
-  /** Optional: disable thinking/reasoning for this call (default: false) */
-  disableThinking?: boolean
+  /** Optional: reasoning effort level (none, low, medium, high, etc.) */
+  reasoningEffort?: ReasoningEffort
   /** Optional: reuse an existing message ID instead of creating a new one */
   existingMessageId?: string
 }
@@ -92,7 +92,7 @@ async function streamLLMResponseInternal(
     customMessages,
     subAgentId,
     subAgentType,
-    disableThinking,
+    reasoningEffort,
   } = options
 
   // Build messages - use custom messages if provided, otherwise session's current window
@@ -174,7 +174,7 @@ async function streamLLMResponseInternal(
     messages: llmMessages,
     tools,
     toolChoice,
-    disableThinking: disableThinking ?? false,
+    reasoningEffort,
     signal,
   })
 

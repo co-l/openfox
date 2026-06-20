@@ -355,7 +355,6 @@ export async function runAgentTurn(
             injectedFiles: input.injectedFiles,
             requestTools: input.promptTools,
             toolChoice: input.toolChoice,
-            disableThinking: false,
           })
         }
         const result = assembleAgentRequest({

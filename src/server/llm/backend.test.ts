@@ -119,35 +119,30 @@ describe('backend', () => {
   describe('getBackendCapabilities', () => {
     it('returns correct capabilities for vllm', () => {
       const caps = getBackendCapabilities('vllm')
-      expect(caps.supportsReasoningField).toBe(true)
       expect(caps.supportsChatTemplateKwargs).toBe(true)
       expect(caps.supportsTopK).toBe(true)
     })
 
     it('returns correct capabilities for sglang', () => {
       const caps = getBackendCapabilities('sglang')
-      expect(caps.supportsReasoningField).toBe(true)
       expect(caps.supportsChatTemplateKwargs).toBe(true)
       expect(caps.supportsTopK).toBe(true)
     })
 
     it('returns correct capabilities for ollama', () => {
       const caps = getBackendCapabilities('ollama')
-      expect(caps.supportsReasoningField).toBe(false)
       expect(caps.supportsChatTemplateKwargs).toBe(false)
       expect(caps.supportsTopK).toBe(false)
     })
 
     it('returns correct capabilities for llamacpp', () => {
       const caps = getBackendCapabilities('llamacpp')
-      expect(caps.supportsReasoningField).toBe(false)
       expect(caps.supportsChatTemplateKwargs).toBe(false)
       expect(caps.supportsTopK).toBe(true)
     })
 
     it('returns vllm-like capabilities for unknown', () => {
       const caps = getBackendCapabilities('unknown')
-      expect(caps.supportsReasoningField).toBe(true)
       expect(caps.supportsChatTemplateKwargs).toBe(true)
       expect(caps.supportsTopK).toBe(true)
     })

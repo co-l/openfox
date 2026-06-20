@@ -517,8 +517,8 @@ export interface Config {
     backend: LlmBackend | 'auto'
     /** API key for cloud providers */
     apiKey?: string
-    /** Disable thinking/reasoning globally (for e2e tests) */
-    disableThinking?: boolean
+    /** Reasoning effort level (none, low, medium, high, etc.) */
+    reasoningEffort?: string
     /** Vision model for image description fallback when primary model lacks vision support */
     visionModel?: string
   }

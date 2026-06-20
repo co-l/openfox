@@ -15,6 +15,8 @@ const envSchema = z.object({
   OPENFOX_WORKDIR: z.string().optional(),
   OPENFOX_DB_PATH: z.string().default('./openfox.db'),
   OPENFOX_LOG_LEVEL: z.enum(['debug', 'info', 'warn', 'error']).default('info'),
+  OPENFOX_REASONING_EFFORT: z.string().optional(),
+  // Deprecated: use OPENFOX_REASONING_EFFORT=none instead
   OPENFOX_DISABLE_THINKING: z.coerce.boolean().default(false),
   OPENFOX_DEV: z.coerce.boolean().default(false),
 })
@@ -35,7 +37,11 @@ export function loadConfig(): Config {
       timeout: 300_000, // 5 minutes (deprecated, kept for backward compatibility)
       idleTimeout: 300_000, // 5 minutes of inactivity
       backend: env.OPENFOX_BACKEND as LlmBackend | 'auto',
-      disableThinking: env.OPENFOX_DISABLE_THINKING,
+      ...(env.OPENFOX_REASONING_EFFORT
+        ? { reasoningEffort: env.OPENFOX_REASONING_EFFORT }
+        : env.OPENFOX_DISABLE_THINKING
+          ? { reasoningEffort: 'none' }
+          : {}),
     },
     context: {
       maxTokens: env.OPENFOX_MAX_CONTEXT,

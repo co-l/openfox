@@ -12,12 +12,6 @@ export interface ModelProfile {
   topP: number
   topK?: number
 
-  /** Whether the model outputs reasoning/thinking content */
-  supportsReasoning: boolean
-
-  /** Whether reasoning should be treated as regular content (for broken configs) */
-  reasoningAsContent: boolean
-
   /** Max tokens to generate if not specified */
   defaultMaxTokens: number
 
@@ -30,8 +24,6 @@ const DEFAULT_PROFILE: ModelProfile = {
   name: 'default',
   temperature: 0.7,
   topP: 0.9,
-  supportsReasoning: false,
-  reasoningAsContent: false,
   defaultMaxTokens: 4096,
   supportsVision: true,
 }
@@ -41,8 +33,6 @@ const MOCK_PROFILE: ModelProfile = {
   name: 'mock',
   temperature: 0.7,
   topP: 0.9,
-  supportsReasoning: false,
-  reasoningAsContent: false,
   defaultMaxTokens: 1024,
   supportsVision: false,
 }
@@ -58,8 +48,6 @@ const MODEL_PROFILES: Array<{ pattern: string; profile: ModelProfile }> = [
       name: 'Mistral',
       temperature: 0.7,
       topP: 0.9,
-      supportsReasoning: false,
-      reasoningAsContent: false,
       defaultMaxTokens: 16384,
       supportsVision: false,
     },
@@ -73,8 +61,6 @@ const MODEL_PROFILES: Array<{ pattern: string; profile: ModelProfile }> = [
       topP: 0.95,
       topK: 40,
       // "This model supports only non-thinking mode and does not generate <think></think> blocks"
-      supportsReasoning: false,
-      reasoningAsContent: false,
       defaultMaxTokens: 16384,
       supportsVision: false,
     },
@@ -85,8 +71,6 @@ const MODEL_PROFILES: Array<{ pattern: string; profile: ModelProfile }> = [
       name: 'Qwen3',
       temperature: 0.7,
       topP: 0.9,
-      supportsReasoning: true,
-      reasoningAsContent: false,
       defaultMaxTokens: 16384,
       supportsVision: false,
     },
@@ -97,8 +81,6 @@ const MODEL_PROFILES: Array<{ pattern: string; profile: ModelProfile }> = [
       name: 'Qwen3-VL',
       temperature: 0.7,
       topP: 0.9,
-      supportsReasoning: true,
-      reasoningAsContent: false,
       defaultMaxTokens: 16384,
       supportsVision: true,
     },
@@ -109,8 +91,6 @@ const MODEL_PROFILES: Array<{ pattern: string; profile: ModelProfile }> = [
       name: 'DeepSeek',
       temperature: 0.6,
       topP: 0.95,
-      supportsReasoning: true,
-      reasoningAsContent: false,
       defaultMaxTokens: 16384,
       supportsVision: false,
     },
@@ -122,8 +102,6 @@ const MODEL_PROFILES: Array<{ pattern: string; profile: ModelProfile }> = [
       temperature: 1,
       topP: 0.95,
       topK: 40,
-      supportsReasoning: true,
-      reasoningAsContent: false,
       defaultMaxTokens: 16384,
       supportsVision: false,
     },
@@ -135,8 +113,6 @@ const MODEL_PROFILES: Array<{ pattern: string; profile: ModelProfile }> = [
       temperature: 1,
       topP: 0.95,
       topK: 40,
-      supportsReasoning: true,
-      reasoningAsContent: false,
       defaultMaxTokens: 16384,
       supportsVision: false,
     },
@@ -148,8 +124,6 @@ const MODEL_PROFILES: Array<{ pattern: string; profile: ModelProfile }> = [
       temperature: 1,
       topP: 0.95,
       topK: 40,
-      supportsReasoning: true,
-      reasoningAsContent: false,
       defaultMaxTokens: 16384,
       supportsVision: false,
     },
@@ -161,8 +135,6 @@ const MODEL_PROFILES: Array<{ pattern: string; profile: ModelProfile }> = [
       temperature: 1,
       topP: 0.95,
       topK: 40,
-      supportsReasoning: true,
-      reasoningAsContent: false,
       defaultMaxTokens: 16384,
       supportsVision: true,
     },
@@ -173,8 +145,6 @@ const MODEL_PROFILES: Array<{ pattern: string; profile: ModelProfile }> = [
       name: 'LLaVA',
       temperature: 0.7,
       topP: 0.9,
-      supportsReasoning: false,
-      reasoningAsContent: false,
       defaultMaxTokens: 16384,
       supportsVision: true,
     },
@@ -185,8 +155,6 @@ const MODEL_PROFILES: Array<{ pattern: string; profile: ModelProfile }> = [
       name: 'Llama',
       temperature: 0.7,
       topP: 0.9,
-      supportsReasoning: false,
-      reasoningAsContent: false,
       defaultMaxTokens: 16384,
       supportsVision: false,
     },
@@ -197,8 +165,6 @@ const MODEL_PROFILES: Array<{ pattern: string; profile: ModelProfile }> = [
       name: 'Claude',
       temperature: 0.7,
       topP: 0.9,
-      supportsReasoning: true,
-      reasoningAsContent: false,
       defaultMaxTokens: 16384,
       supportsVision: false,
     },
@@ -209,8 +175,6 @@ const MODEL_PROFILES: Array<{ pattern: string; profile: ModelProfile }> = [
       name: 'Gemma 4',
       temperature: 0.7,
       topP: 0.9,
-      supportsReasoning: true,
-      reasoningAsContent: false,
       defaultMaxTokens: 16384,
       supportsVision: true,
     },
@@ -236,13 +200,6 @@ export function getModelProfile(modelName: string): ModelProfile {
   }
 
   return DEFAULT_PROFILE
-}
-
-/**
- * Check if a model supports reasoning/thinking output.
- */
-export function modelSupportsReasoning(modelName: string): boolean {
-  return getModelProfile(modelName).supportsReasoning
 }
 
 /**

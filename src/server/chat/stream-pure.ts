@@ -20,7 +20,7 @@ import type {
 } from '../../shared/types.js'
 import type { RequestContextMessage } from '../chat/request-context.js'
 import type { LLMClientWithModel } from '../llm/client.js'
-import type { LLMToolDefinition } from '../llm/types.js'
+import type { LLMToolDefinition, ReasoningEffort } from '../llm/types.js'
 import { buildModelParams } from '../llm/client-pure.js'
 import type { StreamTiming } from '../llm/streaming.js'
 import type { TurnEvent } from '../events/types.js'
@@ -51,7 +51,7 @@ export interface PureStreamOptions {
   tools?: LLMToolDefinition[]
   toolChoice?: 'auto' | 'none' | 'required'
   signal?: AbortSignal | undefined
-  disableThinking?: boolean
+  reasoningEffort?: ReasoningEffort
   /** User-configured model settings (temperature, topP, topK, maxTokens, supportsVision) */
   modelSettings?: ModelParams & { supportsVision?: boolean }
   /** Retry patterns to check mid-stream */
@@ -148,7 +148,7 @@ function createEmptyStreamResult(
  * - Return the final result with content, tool calls, usage stats
  */
 export async function* streamLLMPure(options: PureStreamOptions): AsyncGenerator<TurnEvent, PureStreamResult> {
-  const { messageId, systemPrompt, llmClient, messages, tools, toolChoice, signal, disableThinking, retryPatterns } =
+  const { messageId, systemPrompt, llmClient, messages, tools, toolChoice, signal, reasoningEffort, retryPatterns } =
     options
 
   // Build LLM messages
@@ -195,7 +195,7 @@ export async function* streamLLMPure(options: PureStreamOptions): AsyncGenerator
     messages: llmMessages,
     tools,
     toolChoice,
-    disableThinking: disableThinking ?? false,
+    reasoningEffort,
     signal: combinedSignal,
     modelSettings: options.modelSettings,
   })

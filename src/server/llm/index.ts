@@ -9,7 +9,7 @@ export {
   type LlmStatus,
   type LlmModel,
 } from './models.js'
-export { getModelProfile, modelSupportsReasoning, type ModelProfile } from './profiles.js'
+export { getModelProfile, type ModelProfile } from './profiles.js'
 export {
   streamWithSegments,
   SegmentBuilder,

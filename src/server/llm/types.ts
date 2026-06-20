@@ -19,6 +19,8 @@ export interface LLMToolDefinition {
   }
 }
 
+export type ReasoningEffort = 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max'
+
 export interface LLMCompletionRequest {
   messages: LLMMessage[]
   tools?: LLMToolDefinition[]
@@ -27,7 +29,7 @@ export interface LLMCompletionRequest {
   maxTokens?: number
   stream?: boolean
   signal?: AbortSignal
-  disableThinking?: boolean
+  reasoningEffort?: ReasoningEffort
   // User-configured model settings override
   modelSettings?: { temperature?: number; topP?: number; topK?: number; maxTokens?: number; supportsVision?: boolean }
 }

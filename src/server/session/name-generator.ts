@@ -83,7 +83,7 @@ export async function generateSessionName(options: GenerateSessionNameOptions): 
       messages,
       tools: [],
       signal: composedSignal,
-      disableThinking: true,
+      reasoningEffort: 'none',
     })
 
     // Clean up the response: trim whitespace and ensure it's under 50 chars

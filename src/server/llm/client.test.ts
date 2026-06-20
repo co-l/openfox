@@ -27,7 +27,6 @@ function createConfig(overrides: Partial<Record<string, unknown>> = {}) {
       baseUrl: 'http://localhost:8000',
       timeout: 12_000,
       model: 'qwen3-32b',
-      disableThinking: false,
       ...overrides,
     },
   } as never
@@ -103,14 +102,15 @@ describe('llm client', () => {
     })
   })
 
-  it('extracts think tags for backends without a reasoning field and falls back to reasoning content', async () => {
+  it('extracts reasoning_content field from response', async () => {
     openAiCreateMock.mockResolvedValueOnce({
       id: 'resp-2',
       choices: [
         {
           finish_reason: 'stop',
           message: {
-            content: '<think>hidden plan</think>',
+            content: 'Final answer',
+            reasoning_content: 'My reasoning process',
           },
         },
       ],
@@ -121,14 +121,15 @@ describe('llm client', () => {
       },
     })
 
-    const client = createLLMClient(createConfig(), 'ollama')
+    const client = createLLMClient(createConfig(), 'vllm')
     const response = await client.complete({
       messages: [{ role: 'user', content: 'hello' }],
     })
 
     expect(response).toEqual({
       id: 'resp-2',
-      content: 'hidden plan',
+      content: 'Final answer',
+      thinkingContent: 'My reasoning process',
       finishReason: 'stop',
       usage: { promptTokens: 4, completionTokens: 2, totalTokens: 6 },
     })
@@ -145,15 +146,15 @@ describe('llm client', () => {
     })
   })
 
-  it('updates model/backend getters and falls back to reasoning when content is empty', async () => {
+  it('updates model/backend getters and extracts reasoning from response', async () => {
     openAiCreateMock.mockResolvedValueOnce({
       id: 'resp-3',
       choices: [
         {
           finish_reason: 'stop',
           message: {
-            content: '',
-            reasoning_content: 'reasoning becomes content',
+            content: 'Final content',
+            reasoning_content: 'reasoning process',
           },
         },
       ],
@@ -171,7 +172,6 @@ describe('llm client', () => {
     client.setBackend('ollama')
     expect(client.getModel()).toBe('mistral-7b')
     expect(client.getBackend()).toBe('ollama')
-    expect(client.getProfile().supportsReasoning).toBe(false)
 
     client.setModel('qwen3-32b')
     client.setBackend('vllm')
@@ -179,7 +179,8 @@ describe('llm client', () => {
 
     expect(response).toEqual({
       id: 'resp-3',
-      content: 'reasoning becomes content',
+      content: 'Final content',
+      thinkingContent: 'reasoning process',
       finishReason: 'stop',
       usage: { promptTokens: 6, completionTokens: 2, totalTokens: 8 },
     })
@@ -239,7 +240,7 @@ describe('llm client', () => {
     for await (const event of client.stream({
       messages: [{ role: 'user', content: 'hello' }],
       tools: [{ type: 'function', function: { name: 'glob', description: 'Search', parameters: { type: 'object' } } }],
-      disableThinking: true,
+      reasoningEffort: 'none',
     })) {
       events.push(event as Record<string, unknown>)
     }
@@ -247,6 +248,7 @@ describe('llm client', () => {
     expect(openAiCreateMock).toHaveBeenCalledWith(
       expect.objectContaining({
         stream: true,
+        reasoning_effort: 'none',
         chat_template_kwargs: { enable_thinking: false },
       }),
       { signal: undefined },
@@ -269,55 +271,13 @@ describe('llm client', () => {
     ])
   })
 
-  it('streams content-only backends by emitting thinking_delta for think tags in real-time', async () => {
+  it('streams reasoning_content as thinking_delta', async () => {
     openAiCreateMock.mockResolvedValueOnce(
       (async function* () {
         yield createChunk({
           choices: [
             {
-              delta: { content: '<think>plan</think>done' },
-              finish_reason: 'stop',
-            },
-          ],
-          usage: {
-            prompt_tokens: 3,
-            completion_tokens: 1,
-            total_tokens: 4,
-          },
-        })
-      })(),
-    )
-
-    const client = createLLMClient(createConfig(), 'ollama')
-    const events = [] as Array<Record<string, unknown>>
-
-    for await (const event of client.stream({ messages: [{ role: 'user', content: 'hello' }] })) {
-      events.push(event as Record<string, unknown>)
-    }
-
-    expect(events).toEqual([
-      { type: 'thinking_delta', content: 'plan' },
-      { type: 'text_delta', content: 'done' },
-      {
-        type: 'done',
-        response: {
-          id: 'resp-1',
-          content: 'done',
-          thinkingContent: 'plan',
-          finishReason: 'stop',
-          usage: { promptTokens: 3, completionTokens: 1, totalTokens: 4 },
-        },
-      },
-    ])
-  })
-
-  it('streams content-only backends with think tags split across chunks', async () => {
-    openAiCreateMock.mockResolvedValueOnce(
-      (async function* () {
-        yield createChunk({
-          choices: [
-            {
-              delta: { content: '<think>first ' },
+              delta: { reasoning_content: 'step by step ' },
               finish_reason: null,
             },
           ],
@@ -325,7 +285,7 @@ describe('llm client', () => {
         yield createChunk({
           choices: [
             {
-              delta: { content: 'second</think>answer' },
+              delta: { content: 'final answer' },
               finish_reason: 'stop',
             },
           ],
@@ -338,7 +298,7 @@ describe('llm client', () => {
       })(),
     )
 
-    const client = createLLMClient(createConfig(), 'ollama')
+    const client = createLLMClient(createConfig(), 'vllm')
     const events = [] as Array<Record<string, unknown>>
 
     for await (const event of client.stream({ messages: [{ role: 'user', content: 'hello' }] })) {
@@ -346,15 +306,14 @@ describe('llm client', () => {
     }
 
     expect(events).toEqual([
-      { type: 'thinking_delta', content: 'first ' },
-      { type: 'thinking_delta', content: 'second' },
-      { type: 'text_delta', content: 'answer' },
+      { type: 'thinking_delta', content: 'step by step ' },
+      { type: 'text_delta', content: 'final answer' },
       {
         type: 'done',
         response: {
           id: 'resp-1',
-          content: 'answer',
-          thinkingContent: 'first second',
+          content: 'final answer',
+          thinkingContent: 'step by step',
           finishReason: 'stop',
           usage: { promptTokens: 3, completionTokens: 2, totalTokens: 5 },
         },
@@ -362,13 +321,13 @@ describe('llm client', () => {
     ])
   })
 
-  it('treats reasoning field as text for non-reasoning models and includes tool calls with parseError for invalid tool args', async () => {
+  it('treats reasoning field as thinking_delta and includes tool calls with parseError for invalid tool args', async () => {
     openAiCreateMock.mockResolvedValueOnce(
       (async function* () {
         yield createChunk({
           choices: [
             {
-              delta: { reasoning_content: 'reasoning as text ' },
+              delta: { reasoning_content: 'reasoning process ' },
               finish_reason: null,
             },
           ],
@@ -389,7 +348,7 @@ describe('llm client', () => {
       })(),
     )
 
-    const client = createLLMClient(createConfig({ disableThinking: true, model: 'mistral-7b' }), 'vllm')
+    const client = createLLMClient(createConfig({ model: 'mistral-7b' }), 'vllm')
     const events = [] as Array<Record<string, unknown>>
 
     for await (const event of client.stream({ messages: [{ role: 'user', content: 'hello' }] })) {
@@ -397,13 +356,14 @@ describe('llm client', () => {
     }
 
     expect(events).toEqual([
-      { type: 'text_delta', content: 'reasoning as text ' },
+      { type: 'thinking_delta', content: 'reasoning process ' },
       { type: 'tool_call_delta', index: 0, id: 'call-1', name: 'glob', arguments: '{bad-json' },
       {
         type: 'done',
         response: {
           id: 'resp-1',
-          content: 'reasoning as text',
+          content: '',
+          thinkingContent: 'reasoning process',
           finishReason: 'tool_calls',
           usage: { promptTokens: 9, completionTokens: 3, totalTokens: 12 },
           toolCalls: [

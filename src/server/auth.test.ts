@@ -26,7 +26,7 @@ describe('auth', () => {
     vi.clearAllMocks()
     const config: Config = {
       mode: 'test',
-      llm: { baseUrl: '', model: '', backend: 'auto', timeout: 300000, idleTimeout: 300000, disableThinking: false },
+      llm: { baseUrl: '', model: '', backend: 'auto', timeout: 300000, idleTimeout: 300000 },
       context: { maxTokens: 100000, compactionThreshold: 0.85, compactionTarget: 0.6 },
       agent: { maxIterations: 10, maxConsecutiveFailures: 3, toolTimeout: 120000 },
       server: { port: 0, host: '127.0.0.1' },
@@ -136,7 +136,7 @@ describe('auth', () => {
     it('caches config in non-test mode', async () => {
       const config: Config = {
         mode: 'production',
-        llm: { baseUrl: '', model: '', backend: 'auto', timeout: 300000, idleTimeout: 300000, disableThinking: false },
+        llm: { baseUrl: '', model: '', backend: 'auto', timeout: 300000, idleTimeout: 300000 },
         context: { maxTokens: 100000, compactionThreshold: 0.85, compactionTarget: 0.6 },
         agent: { maxIterations: 10, maxConsecutiveFailures: 3, toolTimeout: 120000 },
         server: { port: 0, host: '127.0.0.1' },
@@ -158,7 +158,7 @@ describe('auth', () => {
     it('does not cache config in test mode', async () => {
       const config: Config = {
         mode: 'test',
-        llm: { baseUrl: '', model: '', backend: 'auto', timeout: 300000, idleTimeout: 300000, disableThinking: false },
+        llm: { baseUrl: '', model: '', backend: 'auto', timeout: 300000, idleTimeout: 300000 },
         context: { maxTokens: 100000, compactionThreshold: 0.85, compactionTarget: 0.6 },
         agent: { maxIterations: 10, maxConsecutiveFailures: 3, toolTimeout: 120000 },
         server: { port: 0, host: '127.0.0.1' },

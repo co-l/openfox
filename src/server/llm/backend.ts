@@ -9,8 +9,6 @@ import { stripVersionPrefix, ensureVersionPrefix } from './url-utils.js'
 export type Backend = 'vllm' | 'sglang' | 'ollama' | 'llamacpp' | 'opencode-go' | 'unknown'
 
 export interface BackendCapabilities {
-  /** Whether the backend returns reasoning_content as a separate field (vLLM/SGLang) */
-  supportsReasoningField: boolean
   /** Whether chat_template_kwargs with enable_thinking works (vLLM/SGLang) */
   supportsChatTemplateKwargs: boolean
   /** Whether top_k parameter is supported in OpenAI-compatible mode */
@@ -19,33 +17,27 @@ export interface BackendCapabilities {
 
 const BACKEND_CAPABILITIES: Record<Backend, BackendCapabilities> = {
   vllm: {
-    supportsReasoningField: true,
     supportsChatTemplateKwargs: true,
     supportsTopK: true,
   },
   sglang: {
-    supportsReasoningField: true,
     supportsChatTemplateKwargs: true,
     supportsTopK: true,
   },
   ollama: {
-    supportsReasoningField: false,
     supportsChatTemplateKwargs: false,
     supportsTopK: false,
   },
   llamacpp: {
-    supportsReasoningField: false,
     supportsChatTemplateKwargs: false,
     supportsTopK: true,
   },
   'opencode-go': {
-    supportsReasoningField: false,
     supportsChatTemplateKwargs: false,
     supportsTopK: true,
   },
   unknown: {
     // Assume vLLM-like for unknown backends
-    supportsReasoningField: true,
     supportsChatTemplateKwargs: true,
     supportsTopK: true,
   },

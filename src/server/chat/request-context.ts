@@ -1,6 +1,6 @@
 import type { Attachment, InjectedFile } from '../../shared/types.js'
 import type { ContextMessage } from '../events/folding.js'
-import type { LLMToolDefinition } from '../llm/types.js'
+import type { LLMToolDefinition, ReasoningEffort } from '../llm/types.js'
 import type { SkillMetadata } from '../skills/types.js'
 import type { AgentDefinition } from '../agents/types.js'
 import { buildTopLevelSystemPrompt, buildSubAgentSystemPrompt } from './prompts.js'
@@ -69,7 +69,7 @@ export interface BaseAssemblyInput {
   promptTools: LLMToolDefinition[]
   requestTools?: LLMToolDefinition[]
   toolChoice?: 'auto' | 'none' | 'required' | { type: 'function'; function: { name: string } }
-  disableThinking?: boolean
+  reasoningEffort?: ReasoningEffort
   modelName?: string
 }
 
@@ -84,7 +84,6 @@ export function createAssemblyResult(input: {
   injectedFiles: InjectedFile[]
   requestTools: LLMToolDefinition[]
   toolChoice?: 'auto' | 'none' | 'required' | { type: 'function'; function: { name: string } }
-  disableThinking?: boolean
   customInstructions?: string
   skills?: SkillMetadata[]
 }): AssemblyResult {
@@ -132,7 +131,7 @@ function buildAssemblyInput(
     injectedFiles: baseInput.injectedFiles,
     requestTools: baseInput.requestTools ?? baseInput.promptTools,
     toolChoice: baseInput.toolChoice ?? 'auto',
-    disableThinking: baseInput.disableThinking ?? false,
+
     ...(baseInput.customInstructions ? { customInstructions: baseInput.customInstructions } : {}),
     ...(baseInput.skills && baseInput.skills.length > 0 ? { skills: baseInput.skills } : {}),
   })

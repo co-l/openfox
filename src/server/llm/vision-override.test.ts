@@ -51,7 +51,6 @@ describe('user vision override', () => {
       temperature: 0.7,
       defaultMaxTokens: 4096,
       topP: 0.9,
-      supportsReasoning: false,
       supportsVision: false,
     }
 
@@ -62,7 +61,6 @@ describe('user vision override', () => {
       },
       profile,
       capabilities: { supportsTopK: false, supportsChatTemplateKwargs: false },
-      disableThinking: false,
     })
 
     expect((result.params as any).messages).toEqual([
@@ -81,7 +79,6 @@ describe('user vision override', () => {
       temperature: 0.7,
       defaultMaxTokens: 4096,
       topP: 0.9,
-      supportsReasoning: false,
       supportsVision: false,
     }
 
@@ -93,7 +90,6 @@ describe('user vision override', () => {
       },
       profile,
       capabilities: { supportsTopK: false, supportsChatTemplateKwargs: false },
-      disableThinking: false,
     })
 
     expect((result.params as any).messages).toEqual([
@@ -112,7 +108,6 @@ describe('user vision override', () => {
       temperature: 0.7,
       defaultMaxTokens: 4096,
       topP: 0.9,
-      supportsReasoning: false,
       supportsVision: true,
     }
 
@@ -124,7 +119,6 @@ describe('user vision override', () => {
       },
       profile,
       capabilities: { supportsTopK: false, supportsChatTemplateKwargs: false },
-      disableThinking: false,
     })
 
     expect((result.params as any).messages).toEqual([
@@ -143,7 +137,6 @@ describe('user vision override', () => {
       temperature: 0.7,
       defaultMaxTokens: 4096,
       topP: 0.9,
-      supportsReasoning: false,
       supportsVision: false,
     }
 

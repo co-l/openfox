@@ -4,7 +4,6 @@ import {
   buildStreamingCreateParams,
   convertMessages,
   convertTools,
-  extractThinking,
   mapFinishReason,
 } from './client-pure.js'
 
@@ -72,21 +71,12 @@ describe('llm client pure helpers', () => {
     ).toEqual([{ type: 'function', function: { name: 'grep', description: 'Search', parameters: { type: 'object' } } }])
   })
 
-  it('maps finish reasons and extracts thinking tags', () => {
+  it('maps finish reasons', () => {
     expect(mapFinishReason('stop')).toBe('stop')
     expect(mapFinishReason('tool_calls')).toBe('tool_calls')
     expect(mapFinishReason('length')).toBe('length')
     expect(mapFinishReason('content_filter')).toBe('content_filter')
     expect(mapFinishReason('weird')).toBe('stop')
-
-    expect(extractThinking('before<think>plan</think>after<think>more</think>')).toEqual({
-      content: 'beforeafter',
-      thinkingContent: 'planmore',
-    })
-    expect(extractThinking('plain text')).toEqual({
-      content: 'plain text',
-      thinkingContent: null,
-    })
   })
 
   it('builds request params with backend capabilities and profile defaults', async () => {
@@ -99,14 +89,12 @@ describe('llm client pure helpers', () => {
         },
       ],
       toolChoice: 'auto' as const,
-      disableThinking: false,
     }
     const profile = {
       temperature: 0.2,
       defaultMaxTokens: 2000,
       topP: 0.9,
       topK: 40,
-      supportsReasoning: true,
       supportsVision: false,
     }
 
@@ -139,13 +127,14 @@ describe('llm client pure helpers', () => {
       },
     })
 
+    // Streaming with reasoningEffort: 'none' should set chat_template_kwargs
     expect(
       await buildStreamingCreateParams({
         model: 'test-model',
         request: baseRequest,
         profile,
         capabilities: { supportsTopK: true, supportsChatTemplateKwargs: true },
-        disableThinking: true,
+        reasoningEffort: 'none',
       }),
     ).toEqual({
       params: {
@@ -161,6 +150,7 @@ describe('llm client pure helpers', () => {
         top_k: 40,
         stream: true,
         stream_options: { include_usage: true },
+        reasoning_effort: 'none',
         chat_template_kwargs: { enable_thinking: false },
       },
       modelParams: {
@@ -171,11 +161,11 @@ describe('llm client pure helpers', () => {
       },
     })
 
-    // Non-streaming should respect request.disableThinking
+    // Non-streaming with reasoningEffort: 'none' should set both reasoning_effort and chat_template_kwargs
     expect(
       await buildNonStreamingCreateParams({
         model: 'test-model',
-        request: { ...baseRequest, disableThinking: true },
+        request: { ...baseRequest, reasoningEffort: 'none' },
         profile,
         capabilities: { supportsTopK: true, supportsChatTemplateKwargs: true },
       }),
@@ -192,6 +182,7 @@ describe('llm client pure helpers', () => {
         top_p: 0.9,
         top_k: 40,
         stream: false,
+        reasoning_effort: 'none',
         chat_template_kwargs: { enable_thinking: false },
       },
       modelParams: {
