@@ -171,6 +171,8 @@ export function ProviderSelector() {
         if (model.thinkingEnabled !== undefined) settings.thinkingEnabled = model.thinkingEnabled
         if (model.thinkingLevel !== undefined) settings.thinkingLevel = model.thinkingLevel
         if (model.nonThinkingEnabled !== undefined) settings.nonThinkingEnabled = model.nonThinkingEnabled
+        if (model.thinkingExtraKwargs !== undefined) settings.thinkingExtraKwargs = model.thinkingExtraKwargs
+        if (model.nonThinkingExtraKwargs !== undefined) settings.nonThinkingExtraKwargs = model.nonThinkingExtraKwargs
         if (Object.keys(settings).length > 0) {
           const modelRes = await authFetch(`/api/providers/${formData.id}/models/${encodeURIComponent(model.id)}`, {
             method: 'POST',

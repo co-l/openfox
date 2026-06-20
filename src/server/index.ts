@@ -866,7 +866,17 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
       if (models.length === 0) {
         return res.status(404).json({ error: `No models found at ${url}/v1/models`, url })
       }
-      res.json({ models: models.map((m) => ({ id: m.id, contextWindow: m.contextWindow })), url })
+      res.json({
+        models: models.map((m) => ({
+          id: m.id,
+          contextWindow: m.contextWindow,
+          defaultTemperature: m.defaultTemperature,
+          defaultTopP: m.defaultTopP,
+          defaultTopK: m.defaultTopK,
+          defaultMaxTokens: m.defaultMaxTokens,
+        })),
+        url,
+      })
     } catch (error) {
       res.status(400).json({
         error: `Failed to fetch models from ${url}: ${error instanceof Error ? error.message : 'Unknown error'}`,
@@ -936,6 +946,8 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
         thinkingEnabled?: boolean
         thinkingLevel?: string
         nonThinkingEnabled?: boolean
+        thinkingExtraKwargs?: string
+        nonThinkingExtraKwargs?: string
       }>
     }
 
@@ -1103,6 +1115,8 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
         thinkingEnabled?: boolean
         thinkingLevel?: string
         nonThinkingEnabled?: boolean
+        thinkingExtraKwargs?: string
+        nonThinkingExtraKwargs?: string
       }>
     }
     try {
@@ -1128,6 +1142,8 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
           ...(m.thinkingEnabled !== undefined ? { thinkingEnabled: m.thinkingEnabled } : {}),
           ...(m.thinkingLevel ? { thinkingLevel: m.thinkingLevel } : {}),
           ...(m.nonThinkingEnabled !== undefined ? { nonThinkingEnabled: m.nonThinkingEnabled } : {}),
+          ...(m.thinkingExtraKwargs ? { thinkingExtraKwargs: m.thinkingExtraKwargs } : {}),
+          ...(m.nonThinkingExtraKwargs ? { nonThinkingExtraKwargs: m.nonThinkingExtraKwargs } : {}),
         }))
       }
       const updatedConfig = updateProvider(globalConfig, id, updates)
@@ -1180,6 +1196,8 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
       thinkingEnabled?: boolean
       thinkingLevel?: string
       nonThinkingEnabled?: boolean
+      thinkingExtraKwargs?: string
+      nonThinkingExtraKwargs?: string
     }
 
     logger.info('API: POST /api/providers/:id/models/:modelId', {
@@ -1196,7 +1214,9 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
       body.maxTokens !== undefined ||
       body.thinkingEnabled !== undefined ||
       body.thinkingLevel !== undefined ||
-      body.nonThinkingEnabled !== undefined
+      body.nonThinkingEnabled !== undefined ||
+      body.thinkingExtraKwargs !== undefined ||
+      body.nonThinkingExtraKwargs !== undefined
 
     let result: { success: boolean; error?: string; model?: import('../shared/types.js').ModelConfig }
     if (hasFullSettings) {

@@ -24,6 +24,8 @@ type ModelSettings = {
   thinkingEnabled?: boolean
   thinkingLevel?: string
   nonThinkingEnabled?: boolean
+  thinkingExtraKwargs?: string
+  nonThinkingExtraKwargs?: string
 }
 
 function updateSessionContextState(contextState: ContextState | null | undefined) {
@@ -78,6 +80,8 @@ interface ModelConfig {
   thinkingEnabled?: boolean
   thinkingLevel?: string
   nonThinkingEnabled?: boolean
+  thinkingExtraKwargs?: string
+  nonThinkingExtraKwargs?: string
   defaultTemperature?: number
   defaultTopP?: number
   defaultTopK?: number
@@ -340,6 +344,10 @@ export const useConfigStore = create<ConfigState>((set, get) => ({
         ...(settings.thinkingEnabled !== undefined && { thinkingEnabled: settings.thinkingEnabled }),
         ...(settings.thinkingLevel !== undefined && { thinkingLevel: settings.thinkingLevel }),
         ...(settings.nonThinkingEnabled !== undefined && { nonThinkingEnabled: settings.nonThinkingEnabled }),
+        ...(settings.thinkingExtraKwargs !== undefined && { thinkingExtraKwargs: settings.thinkingExtraKwargs }),
+        ...(settings.nonThinkingExtraKwargs !== undefined && {
+          nonThinkingExtraKwargs: settings.nonThinkingExtraKwargs,
+        }),
       }
       set({ providers: applyModelUpdate(providers, providerId, modelId, updated), activating: false })
       updateSessionContextState(data.contextState)

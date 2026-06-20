@@ -490,6 +490,8 @@ export interface ModelConfig {
   thinkingEnabled?: boolean
   thinkingLevel?: string
   nonThinkingEnabled?: boolean
+  thinkingExtraKwargs?: string // JSON string for thinking mode kwargs
+  nonThinkingExtraKwargs?: string // JSON string for non-thinking mode kwargs
   // Profile defaults for transparency
   defaultTemperature?: number
   defaultTopP?: number

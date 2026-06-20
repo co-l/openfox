@@ -31,7 +31,14 @@ export interface LLMCompletionRequest {
   signal?: AbortSignal
   reasoningEffort?: ReasoningEffort
   // User-configured model settings override
-  modelSettings?: { temperature?: number; topP?: number; topK?: number; maxTokens?: number; supportsVision?: boolean }
+  modelSettings?: {
+    temperature?: number
+    topP?: number
+    topK?: number
+    maxTokens?: number
+    supportsVision?: boolean
+    chatTemplateKwargs?: Record<string, unknown>
+  }
 }
 
 export interface LLMCompletionResponse {

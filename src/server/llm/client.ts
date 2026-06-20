@@ -13,7 +13,12 @@ import { LLMError } from '../utils/errors.js'
 import { getModelProfile, type ModelProfile } from './profiles.js'
 import { type Backend, getBackendCapabilities } from './backend.js'
 import { ensureVersionPrefix } from './url-utils.js'
-import { buildNonStreamingCreateParams, buildStreamingCreateParams, mapFinishReason } from './client-pure.js'
+import {
+  buildNonStreamingCreateParams,
+  buildStreamingCreateParams,
+  mapFinishReason,
+  getThinking,
+} from './client-pure.js'
 
 export interface LLMClientWithModel extends LLMClient {
   getModel(): string
@@ -106,12 +111,7 @@ export function createLLMClient(config: Config, initialBackend: Backend = 'unkno
         }
 
         const content = message.content ?? ''
-        const thinkingContent = thinkingField
-          ? ((message as Record<string, string | null>)[thinkingField] ??
-            message.reasoning_content ??
-            message.reasoning ??
-            '')
-          : (message.reasoning_content ?? message.reasoning ?? '')
+        const thinkingContent = getThinking(message as Record<string, string | null>, thinkingField) ?? ''
 
         const toolCalls = message.tool_calls?.map((tc) => ({
           id: tc.id,
@@ -227,11 +227,7 @@ export function createLLMClient(config: Config, initialBackend: Backend = 'unkno
             }
 
             // Handle reasoning/thinking delta
-            const reasoning = thinkingField
-              ? ((delta as Record<string, string | null | undefined>)[thinkingField] ??
-                delta.reasoning_content ??
-                delta.reasoning)
-              : (delta.reasoning_content ?? delta.reasoning)
+            const reasoning = getThinking(delta as Record<string, string | null | undefined>, thinkingField)
             if (reasoning) {
               fullThinking += reasoning
               yield { type: 'thinking_delta', content: reasoning }

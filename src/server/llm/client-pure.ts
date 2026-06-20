@@ -68,6 +68,17 @@ function convertToolCalls(
   }))
 }
 
+export function getThinking(
+  msg: Record<string, string | null | undefined>,
+  override?: string,
+): string | null | undefined {
+  if (override) {
+    const val = msg[override]
+    if (val) return val
+  }
+  return msg['reasoning'] ?? msg['reasoning_content'] ?? msg['thinking']
+}
+
 function buildAssistantMessage(msg: LLMMessage, thinkingField?: string): Record<string, unknown> {
   const result: Record<string, unknown> = {
     role: 'assistant',
@@ -77,7 +88,7 @@ function buildAssistantMessage(msg: LLMMessage, thinkingField?: string): Record<
     result['tool_calls'] = convertToolCalls(msg.toolCalls)
   }
   if (msg.thinkingContent) {
-    result[thinkingField ?? 'reasoning_content'] = msg.thinkingContent
+    result[thinkingField ?? 'reasoning'] = msg.thinkingContent
   }
   return result
 }
@@ -197,7 +208,10 @@ async function buildChatCompletionCreateParams(
   if (resolvedEffort) {
     ;(params as unknown as Record<string, unknown>)['reasoning_effort'] = resolvedEffort
 
-    if (capabilities.supportsChatTemplateKwargs) {
+    const chatTemplateKwargs = request.modelSettings?.chatTemplateKwargs
+    if (chatTemplateKwargs) {
+      ;(params as unknown as Record<string, unknown>)['chat_template_kwargs'] = chatTemplateKwargs
+    } else if (capabilities.supportsChatTemplateKwargs) {
       ;(params as unknown as Record<string, unknown>)['chat_template_kwargs'] = {
         enable_thinking: resolvedEffort !== 'none',
       }

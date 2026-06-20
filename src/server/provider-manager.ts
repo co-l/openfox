@@ -243,6 +243,8 @@ export function parseDefaultModelSelection(selection?: string): {
 
 export function createProviderManager(config: Config): ProviderManager {
   let providers: Provider[] = [...(config.providers ?? [])]
+  // Enrich all models with profile defaults for display
+  providers = providers.map((p) => ({ ...p, models: p.models.map((m) => enrichWithProfileDefaults(m)) }))
   let defaultModelSelection: string | undefined = config.defaultModelSelection
   let llmClient = createLLMClient(config)
   const providerStatus = new Map<string, 'connected' | 'disconnected' | 'unknown'>()
@@ -579,6 +581,8 @@ export function createProviderManager(config: Config): ProviderManager {
         thinkingEnabled?: boolean
         thinkingLevel?: string
         nonThinkingEnabled?: boolean
+        thinkingExtraKwargs?: string
+        nonThinkingExtraKwargs?: string
       },
     ) {
       const provider = providers.find((p) => p.id === providerId)
@@ -639,6 +643,16 @@ export function createProviderManager(config: Config): ProviderManager {
           : existingModel?.nonThinkingEnabled !== undefined
             ? { nonThinkingEnabled: existingModel.nonThinkingEnabled }
             : {}),
+        ...(settings.thinkingExtraKwargs !== undefined
+          ? { thinkingExtraKwargs: settings.thinkingExtraKwargs }
+          : existingModel?.thinkingExtraKwargs !== undefined
+            ? { thinkingExtraKwargs: existingModel.thinkingExtraKwargs }
+            : {}),
+        ...(settings.nonThinkingExtraKwargs !== undefined
+          ? { nonThinkingExtraKwargs: settings.nonThinkingExtraKwargs }
+          : existingModel?.nonThinkingExtraKwargs !== undefined
+            ? { nonThinkingExtraKwargs: existingModel.nonThinkingExtraKwargs }
+            : {}),
       })
 
       if (existingModel) {
@@ -657,12 +671,14 @@ export function createProviderManager(config: Config): ProviderManager {
       const provider = providers.find((p) => p.models.some((m) => m.id === modelId))
       const model = provider?.models.find((m) => m.id === modelId)
       if (!model) return undefined
+      const kwargs = model.thinkingEnabled ? model.thinkingExtraKwargs : model.nonThinkingExtraKwargs
       return {
         ...(model.temperature !== undefined && { temperature: model.temperature }),
         ...(model.topP !== undefined && { topP: model.topP }),
         ...(model.topK !== undefined && { topK: model.topK }),
         ...(model.maxTokens !== undefined && { maxTokens: model.maxTokens }),
         ...(model.supportsVision !== undefined && { supportsVision: model.supportsVision }),
+        ...(kwargs ? { chatTemplateKwargs: JSON.parse(kwargs) as Record<string, unknown> } : {}),
       }
     },
 

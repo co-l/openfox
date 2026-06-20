@@ -23,6 +23,59 @@ function TestFieldRow({
   )
 }
 
+function ExtraKwargsBlock({
+  kwargs,
+  onChange,
+  mode,
+  modelId,
+  testResults,
+  thinkingField,
+  onSeeRaw,
+  onTest,
+}: {
+  kwargs: string
+  onChange: (v: string) => void
+  mode: 'thinking' | 'non-thinking'
+  modelId: string
+  testResults: Record<string, { loading: boolean; result?: string; message?: Record<string, unknown>; error?: string }>
+  thinkingField: string
+  onSeeRaw: (raw: string) => void
+  onTest: () => void
+}) {
+  const testKey = modelId + '-' + mode
+  return (
+    <>
+      <div>
+        <label className="text-xs text-text-secondary block mb-1">Extra kwargs</label>
+        <input
+          type="text"
+          value={kwargs}
+          onChange={(e) => onChange(e.target.value)}
+          className="w-full px-2 py-1 bg-bg-tertiary border border-border rounded text-xs text-text-primary font-mono"
+        />
+      </div>
+      <div className="flex gap-2 items-start">
+        <button
+          onClick={onTest}
+          disabled={testResults[testKey]?.loading}
+          className="px-2 py-1 bg-bg-tertiary border border-border rounded text-xs text-text-muted hover:text-text-secondary disabled:opacity-50"
+        >
+          {testResults[testKey]?.loading ? 'Testing...' : 'Test'}
+        </button>
+        {testResults[testKey]?.result && (
+          <TestResultBlock
+            testKey={testKey}
+            testResults={testResults}
+            thinkingField={thinkingField}
+            onSeeRaw={onSeeRaw}
+          />
+        )}
+        {testResults[testKey]?.error && <span className="text-xs text-red-500">{testResults[testKey]?.error}</span>}
+      </div>
+    </>
+  )
+}
+
 function TestResultBlock({
   testKey,
   testResults,
@@ -36,12 +89,25 @@ function TestResultBlock({
 }) {
   const result = testResults[testKey]
   if (!result?.result) return null
+
+  // Resolve the actual thinking field from the response
+  const msg = result.message
+  const resolvedField = thinkingField
+    ? thinkingField
+    : msg?.['reasoning']
+      ? 'reasoning'
+      : msg?.['reasoning_content']
+        ? 'reasoning_content'
+        : msg?.['thinking']
+          ? 'thinking'
+          : undefined
+
   return (
     <div className="flex-1 space-y-1">
       {result.message && (
         <>
           <TestFieldRow message={result.message} field="content" label="content" />
-          <TestFieldRow message={result.message} field={thinkingField} label={thinkingField} />
+          {resolvedField && <TestFieldRow message={result.message} field={resolvedField} label={resolvedField} />}
         </>
       )}
       <button onClick={() => onSeeRaw(result.result ?? '')} className="text-xs text-accent-primary hover:underline">
@@ -75,6 +141,16 @@ interface ModelConfig {
   thinkingEnabled?: boolean
   thinkingLevel?: string
   nonThinkingEnabled?: boolean
+  thinkingExtraKwargs?: string
+  nonThinkingExtraKwargs?: string
+  temperature?: number
+  topP?: number
+  topK?: number
+  maxTokens?: number
+  defaultTemperature?: number
+  defaultTopP?: number
+  defaultTopK?: number
+  defaultMaxTokens?: number
 }
 
 export interface ProviderFormData {
@@ -84,7 +160,7 @@ export interface ProviderFormData {
   backend: Backend
   apiKey?: string
   isLocal?: boolean
-  thinkingField: string
+  thinkingField?: string
   models: Array<{
     id: string
     contextWindow: number
@@ -92,6 +168,8 @@ export interface ProviderFormData {
     thinkingEnabled?: boolean
     thinkingLevel?: string
     nonThinkingEnabled?: boolean
+    thinkingExtraKwargs?: string
+    nonThinkingExtraKwargs?: string
   }>
 }
 
@@ -115,6 +193,12 @@ interface ProviderModalProps {
       thinkingEnabled?: boolean
       thinkingLevel?: string
       nonThinkingEnabled?: boolean
+      thinkingExtraKwargs?: string
+      nonThinkingExtraKwargs?: string
+      defaultTemperature?: number
+      defaultTopP?: number
+      defaultTopK?: number
+      defaultMaxTokens?: number
     }>
   }
   editModelId?: string
@@ -139,8 +223,10 @@ export function ProviderModal({
   const [models, setModels] = useState<ModelInfo[]>([])
   const [expandedModelId, setExpandedModelId] = useState<string | null>(null)
   const [showDefaults, setShowDefaults] = useState(false)
-  const [thinkingField, setThinkingField] = useState('reasoning_content')
+  const [thinkingField, setThinkingField] = useState('')
   const [modelConfigs, setModelConfigs] = useState<Record<string, ModelConfig>>({})
+  const [thinkKwargs, setThinkKwargs] = useState('{"enable_thinking": true}')
+  const [nonThinkKwargs, setNonThinkKwargs] = useState('{"enable_thinking": false}')
   const [testResults, setTestResults] = useState<
     Record<string, { loading: boolean; result?: string; message?: Record<string, unknown>; error?: string }>
   >({})
@@ -160,7 +246,7 @@ export function ProviderModal({
       setFormApiKey(editProvider?.apiKey ?? '')
       setFormIsLocal(editProvider?.isLocal ?? false)
       setFetchError(null)
-      setThinkingField(editProvider?.thinkingField ?? 'reasoning_content')
+      setThinkingField(editProvider?.thinkingField ?? '')
       setTestResults({})
       setRawModalData(null)
 
@@ -173,6 +259,12 @@ export function ProviderModal({
             thinkingEnabled: m.thinkingEnabled,
             thinkingLevel: m.thinkingLevel,
             nonThinkingEnabled: m.nonThinkingEnabled,
+            thinkingExtraKwargs: m.thinkingExtraKwargs,
+            nonThinkingExtraKwargs: m.nonThinkingExtraKwargs,
+            defaultTemperature: m.defaultTemperature,
+            defaultTopP: m.defaultTopP,
+            defaultTopK: m.defaultTopK,
+            defaultMaxTokens: m.defaultMaxTokens,
           }
         }
         setModelConfigs(configs)
@@ -206,7 +298,15 @@ export function ProviderModal({
           setExpandedModelId(data.models[0]?.id ?? null)
           const configs: Record<string, ModelConfig> = {}
           for (const m of data.models) {
-            configs[m.id] = { contextWindow: m.contextWindow, thinkingEnabled: true, thinkingLevel: 'max' }
+            configs[m.id] = {
+              contextWindow: m.contextWindow,
+              thinkingEnabled: true,
+              thinkingLevel: 'max',
+              defaultTemperature: (m as { defaultTemperature?: number }).defaultTemperature,
+              defaultTopP: (m as { defaultTopP?: number }).defaultTopP,
+              defaultTopK: (m as { defaultTopK?: number }).defaultTopK,
+              defaultMaxTokens: (m as { defaultMaxTokens?: number }).defaultMaxTokens,
+            }
           }
           setModelConfigs(configs)
         }
@@ -227,8 +327,22 @@ export function ProviderModal({
     const params: Record<string, unknown> = {}
     if (mode === 'thinking') {
       params['reasoning_effort'] = config?.thinkingLevel ?? 'low'
+      if (thinkKwargs) {
+        try {
+          params['chat_template_kwargs'] = JSON.parse(thinkKwargs) as Record<string, unknown>
+        } catch {
+          /* invalid JSON, skip */
+        }
+      }
     } else {
       params['reasoning_effort'] = 'none'
+      if (nonThinkKwargs) {
+        try {
+          params['chat_template_kwargs'] = JSON.parse(nonThinkKwargs) as Record<string, unknown>
+        } catch {
+          /* invalid JSON, skip */
+        }
+      }
     }
     try {
       const response = await authFetch('/api/providers/test-params', {
@@ -263,7 +377,7 @@ export function ProviderModal({
       backend: formBackend,
       apiKey: formApiKey || undefined,
       isLocal: formIsLocal || undefined,
-      thinkingField,
+      thinkingField: thinkingField || undefined,
       models: models.map((m) => ({
         id: m.id,
         contextWindow: modelConfigs[m.id]?.contextWindow ?? m.contextWindow,
@@ -271,6 +385,8 @@ export function ProviderModal({
         thinkingEnabled: modelConfigs[m.id]?.thinkingEnabled,
         thinkingLevel: modelConfigs[m.id]?.thinkingLevel,
         nonThinkingEnabled: modelConfigs[m.id]?.nonThinkingEnabled,
+        thinkingExtraKwargs: modelConfigs[m.id]?.thinkingExtraKwargs,
+        nonThinkingExtraKwargs: modelConfigs[m.id]?.nonThinkingExtraKwargs,
       })),
     })
     onClose()
@@ -390,7 +506,7 @@ export function ProviderModal({
         {formStep === 2 && (
           <div className="px-6 py-4 space-y-4">
             <div>
-              <div className="flex items-center gap-2">
+              <div className="flex items-end gap-2">
                 <div className="flex-1">
                   <label className="block text-sm text-text-secondary mb-1">Backend type</label>
                   <select
@@ -407,7 +523,7 @@ export function ProviderModal({
                 </div>
                 <button
                   onClick={() => setShowDefaults(true)}
-                  className="mt-5 p-2 bg-bg-primary border border-border rounded-lg hover:border-text-muted transition-colors"
+                  className="px-3 h-[38px] bg-bg-primary border border-border rounded-lg hover:border-text-muted transition-colors flex items-center justify-center"
                   title="Provider-level defaults"
                 >
                   <svg className="w-4 h-4 text-text-muted" viewBox="0 0 20 20" fill="currentColor">
@@ -518,35 +634,16 @@ export function ProviderModal({
                                     className="w-full px-2 py-1.5 bg-bg-tertiary border border-border rounded text-xs text-text-primary"
                                   />
                                 </div>
-                                <div>
-                                  <label className="text-xs text-text-secondary block mb-1">Extra kwargs</label>
-                                  <input
-                                    type="text"
-                                    defaultValue='{"enable_thinking": true}'
-                                    readOnly
-                                    className="w-full px-2 py-1 bg-bg-tertiary border border-border rounded text-xs text-text-secondary font-mono"
-                                  />
-                                </div>
-                                <div className="flex gap-2 items-start">
-                                  <button
-                                    onClick={() => testThinkingParams(model.id, 'thinking')}
-                                    disabled={testResults[model.id + '-thinking']?.loading}
-                                    className="px-2 py-1 bg-bg-tertiary border border-border rounded text-xs text-text-muted hover:text-text-secondary disabled:opacity-50"
-                                  >
-                                    {testResults[model.id + '-thinking']?.loading ? 'Testing...' : 'Test'}
-                                  </button>
-                                  <TestResultBlock
-                                    testKey={model.id + '-thinking'}
-                                    testResults={testResults}
-                                    thinkingField={thinkingField}
-                                    onSeeRaw={setRawModalData}
-                                  />
-                                  {testResults[model.id + '-thinking']?.error && (
-                                    <span className="text-xs text-red-500">
-                                      {testResults[model.id + '-thinking']?.error}
-                                    </span>
-                                  )}
-                                </div>
+                                <ExtraKwargsBlock
+                                  kwargs={thinkKwargs}
+                                  onChange={setThinkKwargs}
+                                  mode="thinking"
+                                  modelId={model.id}
+                                  testResults={testResults}
+                                  thinkingField={thinkingField}
+                                  onSeeRaw={setRawModalData}
+                                  onTest={() => testThinkingParams(model.id, 'thinking')}
+                                />
                               </div>
                             )}
 
@@ -561,37 +658,16 @@ export function ProviderModal({
                             </label>
                             {modelConfigs[model.id]?.nonThinkingEnabled && (
                               <div className="ml-6 space-y-2 pl-3 border-l-2 border-accent-warning/30">
-                                <div>
-                                  <label className="text-xs text-text-secondary block mb-1">Extra kwargs</label>
-                                  <input
-                                    type="text"
-                                    defaultValue='{"enable_thinking": false}'
-                                    readOnly
-                                    className="w-full px-2 py-1 bg-bg-tertiary border border-border rounded text-xs text-text-secondary font-mono"
-                                  />
-                                </div>
-                                <div className="flex gap-2 items-start">
-                                  <button
-                                    onClick={() => testThinkingParams(model.id, 'non-thinking')}
-                                    disabled={testResults[model.id + '-non-thinking']?.loading}
-                                    className="px-2 py-1 bg-bg-tertiary border border-border rounded text-xs text-text-muted hover:text-text-secondary disabled:opacity-50"
-                                  >
-                                    {testResults[model.id + '-non-thinking']?.loading ? 'Testing...' : 'Test'}
-                                  </button>
-                                  {testResults[model.id + '-non-thinking']?.result && (
-                                    <TestResultBlock
-                                      testKey={model.id + '-non-thinking'}
-                                      testResults={testResults}
-                                      thinkingField={thinkingField}
-                                      onSeeRaw={setRawModalData}
-                                    />
-                                  )}
-                                  {testResults[model.id + '-non-thinking']?.error && (
-                                    <span className="text-xs text-red-500">
-                                      {testResults[model.id + '-non-thinking']?.error}
-                                    </span>
-                                  )}
-                                </div>
+                                <ExtraKwargsBlock
+                                  kwargs={nonThinkKwargs}
+                                  onChange={setNonThinkKwargs}
+                                  mode="non-thinking"
+                                  modelId={model.id}
+                                  testResults={testResults}
+                                  thinkingField={thinkingField}
+                                  onSeeRaw={setRawModalData}
+                                  onTest={() => testThinkingParams(model.id, 'non-thinking')}
+                                />
                               </div>
                             )}
                           </div>
@@ -611,20 +687,42 @@ export function ProviderModal({
                                   <input
                                     type="number"
                                     step="0.1"
-                                    placeholder="(default)"
-                                    readOnly
-                                    className="w-full px-2 py-1 bg-bg-tertiary border border-border rounded text-xs text-text-secondary"
+                                    value={modelConfigs[model.id]?.temperature ?? ''}
+                                    onChange={(e) =>
+                                      updateModelConfig(model.id, {
+                                        temperature: e.target.value ? parseFloat(e.target.value) : undefined,
+                                      })
+                                    }
+                                    placeholder={
+                                      modelConfigs[model.id]?.defaultTemperature?.toString() ?? 'Using default'
+                                    }
+                                    className="w-full px-2 py-1 bg-bg-tertiary border border-border rounded text-xs text-text-primary text-text-secondary"
                                   />
+                                  {modelConfigs[model.id]?.defaultTemperature !== undefined && (
+                                    <p className="text-xs text-text-muted mt-0.5">
+                                      default: {modelConfigs[model.id]?.defaultTemperature}
+                                    </p>
+                                  )}
                                 </div>
                                 <div>
                                   <label className="text-xs text-text-secondary block mb-0.5">Top P</label>
                                   <input
                                     type="number"
                                     step="0.05"
-                                    placeholder="(default)"
-                                    readOnly
-                                    className="w-full px-2 py-1 bg-bg-tertiary border border-border rounded text-xs text-text-secondary"
+                                    value={modelConfigs[model.id]?.topP ?? ''}
+                                    onChange={(e) =>
+                                      updateModelConfig(model.id, {
+                                        topP: e.target.value ? parseFloat(e.target.value) : undefined,
+                                      })
+                                    }
+                                    placeholder={modelConfigs[model.id]?.defaultTopP?.toString() ?? 'Using default'}
+                                    className="w-full px-2 py-1 bg-bg-tertiary border border-border rounded text-xs text-text-primary"
                                   />
+                                  {modelConfigs[model.id]?.defaultTopP !== undefined && (
+                                    <p className="text-xs text-text-muted mt-0.5">
+                                      default: {modelConfigs[model.id]?.defaultTopP}
+                                    </p>
+                                  )}
                                 </div>
                               </div>
                               <div className="grid grid-cols-2 gap-2">
@@ -632,19 +730,41 @@ export function ProviderModal({
                                   <label className="text-xs text-text-secondary block mb-0.5">Top K</label>
                                   <input
                                     type="number"
-                                    placeholder="(default)"
-                                    readOnly
-                                    className="w-full px-2 py-1 bg-bg-tertiary border border-border rounded text-xs text-text-secondary"
+                                    value={modelConfigs[model.id]?.topK ?? ''}
+                                    onChange={(e) =>
+                                      updateModelConfig(model.id, {
+                                        topK: e.target.value ? parseInt(e.target.value) : undefined,
+                                      })
+                                    }
+                                    placeholder={modelConfigs[model.id]?.defaultTopK?.toString() ?? 'Using default'}
+                                    className="w-full px-2 py-1 bg-bg-tertiary border border-border rounded text-xs text-text-primary"
                                   />
+                                  {modelConfigs[model.id]?.defaultTopK !== undefined && (
+                                    <p className="text-xs text-text-muted mt-0.5">
+                                      default: {modelConfigs[model.id]?.defaultTopK}
+                                    </p>
+                                  )}
                                 </div>
                                 <div>
                                   <label className="text-xs text-text-secondary block mb-0.5">Max tokens</label>
                                   <input
                                     type="number"
-                                    placeholder="(default)"
-                                    readOnly
-                                    className="w-full px-2 py-1 bg-bg-tertiary border border-border rounded text-xs text-text-secondary"
+                                    value={modelConfigs[model.id]?.maxTokens ?? ''}
+                                    onChange={(e) =>
+                                      updateModelConfig(model.id, {
+                                        maxTokens: e.target.value ? parseInt(e.target.value) : undefined,
+                                      })
+                                    }
+                                    placeholder={
+                                      modelConfigs[model.id]?.defaultMaxTokens?.toString() ?? 'Using default'
+                                    }
+                                    className="w-full px-2 py-1 bg-bg-tertiary border border-border rounded text-xs text-text-primary"
                                   />
+                                  {modelConfigs[model.id]?.defaultMaxTokens !== undefined && (
+                                    <p className="text-xs text-text-muted mt-0.5">
+                                      default: {modelConfigs[model.id]?.defaultMaxTokens}
+                                    </p>
+                                  )}
                                 </div>
                               </div>
                             </div>
@@ -771,13 +891,20 @@ export function ProviderModal({
                 />
               </div>
               <div>
-                <label className="text-xs text-text-secondary block mb-1">Thinking response field</label>
+                <label className="text-xs text-text-secondary block mb-1">
+                  Thinking response field <span className="text-text-muted">(override)</span>
+                </label>
                 <input
                   type="text"
                   value={thinkingField}
                   onChange={(e) => setThinkingField(e.target.value)}
+                  placeholder="Leave blank for auto-detect"
                   className="w-full px-3 py-2 bg-bg-primary border border-border rounded text-sm text-text-primary font-mono"
                 />
+                <p className="text-xs text-text-muted mt-1">
+                  Field name the backend uses for reasoning/thinking content (e.g. reasoning, reasoning_content,
+                  thinking).
+                </p>
               </div>
             </div>
             <div className="flex justify-end px-6 py-4 border-t border-border">
