@@ -455,6 +455,7 @@ export function ProviderModal({
               <input
                 type="text"
                 value={formUrl}
+                data-testid="provider-modal-url"
                 onChange={(e) => {
                   setFormUrl(e.target.value)
                   setFetchError(null)
@@ -512,6 +513,7 @@ export function ProviderModal({
                   <select
                     value={formBackend}
                     onChange={(e) => setFormBackend(e.target.value as Backend)}
+                    data-testid="provider-modal-backend"
                     className="w-full px-4 py-2 bg-bg-primary border border-border rounded-lg text-text-primary focus:outline-none focus:border-accent-primary"
                   >
                     {BACKEND_OPTIONS.map((opt) => (
@@ -836,6 +838,7 @@ export function ProviderModal({
               <button
                 onClick={() => setFormStep((formStep + 1) as 2 | 3)}
                 disabled={formStep === 1 && !formUrl}
+                data-testid="provider-modal-next"
                 className="px-5 py-2 bg-accent-primary text-text-primary rounded-lg text-sm font-medium hover:bg-accent-primary/90 disabled:opacity-50 transition-colors"
               >
                 {formStep === 1 ? 'Next — Test & Configure' : 'Next — Review'}
@@ -843,6 +846,7 @@ export function ProviderModal({
             ) : (
               <button
                 onClick={handleSave}
+                data-testid="provider-modal-save"
                 className="px-5 py-2 bg-accent-primary text-text-primary rounded-lg text-sm font-medium hover:bg-accent-primary/90 transition-colors"
               >
                 Save Provider

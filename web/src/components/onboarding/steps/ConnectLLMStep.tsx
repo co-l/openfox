@@ -197,6 +197,7 @@ export function ConnectLLMStep({ onNext }: ConnectLLMStepProps) {
 
         <button
           onClick={openAddModal}
+          data-testid="onboarding-add-provider-button"
           className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-bg-secondary border border-dashed border-border rounded-lg text-text-secondary hover:text-text-primary hover:border-text-muted transition-colors"
         >
           <PlusLgIcon className="w-4 h-4" />
@@ -206,6 +207,7 @@ export function ConnectLLMStep({ onNext }: ConnectLLMStepProps) {
         <button
           onClick={handleSubmit}
           disabled={!hasProviders}
+          data-testid="onboarding-continue-button"
           className="w-full mt-6 px-6 py-3 bg-accent-primary text-text-primary rounded-lg font-medium hover:bg-accent-primary/90 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
         >
           Continue

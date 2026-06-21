@@ -22,21 +22,9 @@ async function setupTestEnvironment(): Promise<TestContext> {
   await mkdir(configDir, { recursive: true })
 
   // Create a minimal config file in temp location for isolated testing
+  // No pre-configured providers — simulates a fresh install; provider added via onboarding UI
   const configJson = {
     workspace: { workdir },
-    providers: [
-      {
-        id: 'e2e-provider',
-        name: 'E2E Provider',
-        url: 'http://192.168.1.223:8000',
-        backend: 'vllm' as const,
-        models: [],
-        isActive: true,
-        createdAt: new Date().toISOString(),
-      },
-    ],
-    activeProviderId: 'e2e-provider',
-    defaultModelSelection: { providerId: 'e2e-provider' },
   }
 
   const { writeFile, mkdir: mkd } = await import('node:fs/promises')
@@ -139,19 +127,22 @@ test.describe('Full-stack Build & Verify E2E', () => {
       // No password modal, proceed
     }
 
-    // Step 1: Add LLM provider
+    // Step 1: Add LLM provider via the ProviderModal wizard
     await page.getByTestId('onboarding-add-provider-button').click()
-    await page.getByTestId('onboarding-provider-url-input').fill('http://192.168.1.223:8000')
 
-    // Test connection and wait for result
-    await page.getByTestId('onboarding-test-connection-button').click()
-    await page.waitForTimeout(3000)
+    // Modal step 1: fill URL and proceed
+    await page.getByTestId('provider-modal-url').fill('http://192.168.1.223:8000')
+    await page.getByTestId('provider-modal-next').click()
 
-    // Add provider
-    await page.getByTestId('onboarding-add-provider-submit-button').click()
-    await page.waitForTimeout(500)
+    // Modal step 2: select backend and skip model config
+    await page.getByTestId('provider-modal-backend').selectOption('vllm')
+    await page.getByTestId('provider-modal-next').click()
 
-    // Continue to step 2
+    // Modal step 3: review and save
+    await page.getByTestId('provider-modal-save').click()
+
+    // Wait for provider to appear in list and continue
+    await page.getByTestId('onboarding-continue-button').waitFor({ state: 'visible', timeout: 15000 })
     await page.getByTestId('onboarding-continue-button').click()
     await page.waitForLoadState('networkidle')
 
@@ -162,14 +153,10 @@ test.describe('Full-stack Build & Verify E2E', () => {
 
     // Step 3: Skip vision
     await page.getByTestId('onboarding-skip-button').click()
-    await page.waitForTimeout(1000)
 
-    // After skip, the app does history.back() - if providers loaded, we go to home
-    // If still on onboarding, manually navigate to home
-    if (page.url().includes('/onboarding')) {
-      await page.goto(`${serverUrl}/`)
-      await page.waitForLoadState('networkidle')
-    }
+    // After onboarding completes, navigate to home
+    await page.goto(`${serverUrl}/`)
+    await page.waitForLoadState('networkidle')
 
     // Verify we're on the home page (not onboarding)
     expect(page.url()).toContain(serverUrl)

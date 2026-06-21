@@ -488,10 +488,11 @@ export function createProviderManager(config: Config): ProviderManager {
       }
 
       // If the active provider changed, recreate the LLM client with the new provider's config
+      // Only recreate if the provider has an apiKey — otherwise the existing env-based config is sufficient
       const newActiveProviderId = this.getActiveProviderId()
       if (newActiveProviderId && newActiveProviderId !== wasActiveProviderId) {
         const activeProvider = providers.find((p) => p.id === newActiveProviderId)
-        if (activeProvider) {
+        if (activeProvider && activeProvider.apiKey) {
           const providerConfig = createConfigForProvider(activeProvider, this.getCurrentModel() ?? 'auto')
           llmClient = createLLMClient(providerConfig)
           logger.info('setProviders: recreated LLM client for new active provider', {
