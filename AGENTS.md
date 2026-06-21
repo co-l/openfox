@@ -97,6 +97,14 @@ Precommit hooks take >40s, so always use a 120s timeout when committing:
 git commit -m "message"   # timeout: 120000ms
 ```
 
+### Release
+
+```bash
+npm run patch        # Bump patch version (HUSKY=0 npm version patch) — commits & tags
+npm publish 2>&1 | tail -10   # Build + e2e via prepublishOnly, then publish. timeout: 120000ms
+git push --tags      # Push the version commit and tag
+```
+
 ## Code Conventions
 
 ### TypeScript Configuration
