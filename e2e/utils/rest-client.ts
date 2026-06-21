@@ -237,7 +237,10 @@ export async function setSessionCriteria(baseUrl: string, sessionId: string, cri
 /**
  * Stop session chat via REST API
  */
-export async function stopSessionChat(baseUrl: string, sessionId: string): Promise<{ success: boolean }> {
+export async function stopSessionChat(
+  baseUrl: string,
+  sessionId: string,
+): Promise<{ success: boolean; queuedMessages?: Array<{ queueId: string; content: string; mode: string }> }> {
   const response = await fetch(`${baseUrl}/api/sessions/${sessionId}/stop`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -248,7 +251,10 @@ export async function stopSessionChat(baseUrl: string, sessionId: string): Promi
     throw new Error(error.error || `Failed to stop session: ${response.status}`)
   }
 
-  return response.json() as Promise<{ success: boolean }>
+  return response.json() as Promise<{
+    success: boolean
+    queuedMessages?: Array<{ queueId: string; content: string; mode: string }>
+  }>
 }
 
 /**

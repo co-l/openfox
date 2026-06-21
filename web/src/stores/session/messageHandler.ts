@@ -219,6 +219,9 @@ export function handleServerMessage(
       if (!payload.isRunning) {
         set({ abortInProgress: false, queuedMessages: [] })
       }
+      if (payload.isRunning) {
+        set({ restoredInput: null })
+      }
       break
     }
 

@@ -180,6 +180,59 @@ describe.skip('Runner/Orchestrator', () => {
       const session = client.getSession()!
       expect(session.isRunning).toBe(false)
     })
+
+    it('stops session when aborted with queued message', async () => {
+      const sessionId = client.getSession()!.id
+
+      // Clear events so we start fresh
+      client.clearEvents()
+
+      // Send a message to start a session turn (goes through QueueProcessor)
+      await fetch(`${server.url}/api/sessions/${sessionId}/message`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ content: 'Run a command: execute shell to list files.' }),
+      })
+
+      // Wait for session to be running
+      await client.waitFor('session.running', (payload: { isRunning: boolean }) => payload.isRunning === true, 3_000)
+
+      // Queue a second message while session is running
+      const distinctiveContent = 'SECOND_MESSAGE_' + Date.now()
+      const queueRes = await fetch(`${server.url}/api/sessions/${sessionId}/message`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ content: distinctiveContent }),
+      })
+      const queueData = (await queueRes.json()) as { success: boolean; queueState: Array<{ content: string }> }
+      expect(queueData.success).toBe(true)
+      expect(queueData.queueState.length).toBe(1)
+      expect(queueData.queueState[0]!.content).toBe(distinctiveContent)
+
+      // Abort and capture response
+      const stopResult = await stopSessionChat(server.url, sessionId)
+
+      // Abort response should include the queued message (not silently discarded)
+      expect(stopResult.queuedMessages).toBeDefined()
+      expect(stopResult.queuedMessages!.length).toBe(1)
+      expect(stopResult.queuedMessages![0]!.content).toBe(distinctiveContent)
+
+      // Wait for session to report not running
+      await client.waitFor('session.running', (payload: { isRunning: boolean }) => payload.isRunning === false, 3_000)
+
+      // Give it a moment to settle
+      await new Promise((resolve) => setTimeout(resolve, 1_000))
+
+      // Session should NOT be running
+      const session = client.getSession()!
+      expect(session.isRunning).toBe(false)
+
+      // Fetch messages from REST API to verify the queued message was NOT processed
+      const res = await fetch(`${server.url}/api/sessions/${sessionId}`)
+      const data = (await res.json()) as { messages: Array<{ content: string }> }
+      const processed = data.messages.some((m) => m.content === distinctiveContent)
+      expect(processed).toBe(false)
+    })
   })
 
   describe('Nudge Messages', () => {

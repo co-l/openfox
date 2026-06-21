@@ -134,6 +134,7 @@ export const useSessionStore = create<SessionState>((set, get) => {
     gitStatus: null,
     queuedMessages: [],
     abortInProgress: false,
+    restoredInput: null,
     error: null,
     sessionsHasMore: true,
     sessionsPaginationLoading: false,
@@ -304,6 +305,7 @@ export const useSessionStore = create<SessionState>((set, get) => {
             pendingPathConfirmations: [],
             queuedMessages: [],
             abortInProgress: false,
+            restoredInput: null,
             error: null,
             pendingSessionCreate: false as boolean | string,
           })
@@ -468,6 +470,7 @@ export const useSessionStore = create<SessionState>((set, get) => {
         streamingMessage: null,
         currentTodos: [],
         contextState: null,
+        restoredInput: null,
         pendingSessionCreate: false as boolean | string,
         unreadSessionIds: state.currentSession
           ? state.unreadSessionIds.filter((id) => id !== state.currentSession!.id)
@@ -504,7 +507,12 @@ export const useSessionStore = create<SessionState>((set, get) => {
       set({ abortInProgress: true })
 
       try {
-        await authFetch(`/api/sessions/${sessionId}/stop`, { method: 'POST' })
+        const res = await authFetch(`/api/sessions/${sessionId}/stop`, { method: 'POST' })
+        const data = (await res.json()) as { success: boolean; queuedMessages?: Array<{ content: string }> }
+        if (data.queuedMessages && data.queuedMessages.length > 0) {
+          const combined = data.queuedMessages.map((m) => m.content).join('\n')
+          set({ restoredInput: combined })
+        }
       } catch (error) {
         console.error('Error stopping generation:', error)
       }
@@ -733,6 +741,10 @@ export const useSessionStore = create<SessionState>((set, get) => {
 
     clearError: () => {
       set({ error: null })
+    },
+
+    clearRestoredInput: () => {
+      set({ restoredInput: null })
     },
 
     resetPendingSessionCreate: () => {

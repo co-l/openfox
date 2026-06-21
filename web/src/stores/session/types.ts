@@ -57,6 +57,7 @@ export interface SessionState {
   >
   queuedMessages: QueuedMessage[]
   abortInProgress: boolean
+  restoredInput: string | null
   error: { code: string; message: string } | null
   sessionsHasMore: boolean
   sessionsPaginationLoading: boolean
@@ -97,6 +98,7 @@ export interface SessionState {
   queueCompletion: (content: string, attachments?: Attachment[], messageKind?: string) => void
   cancelQueued: (queueId: string) => void
   clearError: () => void
+  clearRestoredInput: () => void
   resetPendingSessionCreate: () => void
   handleServerMessage: (message: ServerMessage) => void
 }

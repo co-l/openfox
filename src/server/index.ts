@@ -618,18 +618,22 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
     const { stopSessionExecution } = await import('./session/chat-handler.js')
     const { cancelQuestionsForSession, cancelPathConfirmationsForSession } = await import('./tools/index.js')
 
+    // Drain queued messages BEFORE stopping execution, so the QueueProcessor
+    // doesn't pick them up when running_changed fires from setRunning(false)
+    const queuedMessages = sessionManager.getQueueState(sessionId)
+    sessionManager.clearMessageQueue(sessionId)
+
     // Abort both plan mode (WS) and build mode (chat-handler) controllers + QueueProcessor
     stopSessionExecution(sessionId, sessionManager)
     abortSession(sessionId)
 
     cancelQuestionsForSession(sessionId, 'Session stopped by user')
     cancelPathConfirmationsForSession(sessionId, 'Session stopped by user')
-    sessionManager.clearMessageQueue(sessionId)
 
     const eventStore = (await import('./events/index.js')).getEventStore()
     eventStore.append(sessionId, { type: 'running.changed', data: { isRunning: false } })
 
-    res.json({ success: true })
+    res.json({ success: true, queuedMessages })
   })
 
   // Truncate session messages at a given index
@@ -1532,7 +1536,9 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
   queueProcessor.start()
 
   const abortSession = (sessionId: string) => {
-    const aborted = wssExports.abortSession(sessionId) || queueProcessor.abortSession(sessionId)
+    const wsAborted = wssExports.abortSession(sessionId)
+    const qpAborted = queueProcessor.abortSession(sessionId)
+    const aborted = wsAborted || qpAborted
     if (aborted) {
       sessionManager.setRunning(sessionId, false)
       wssExports.broadcastForSession(sessionId, { type: 'session.running', payload: { isRunning: false } })

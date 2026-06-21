@@ -82,6 +82,16 @@ export function ChatInput({
   const stopGeneration = useSessionStore((state) => state.stopGeneration)
   const cancelQueued = useSessionStore((state) => state.cancelQueued)
   const queuedMessages = useSessionStore((state) => state.queuedMessages)
+  const restoredInput = useSessionStore((state) => state.restoredInput)
+  const clearRestoredInput = useSessionStore((state) => state.clearRestoredInput)
+
+  useEffect(() => {
+    if (restoredInput !== null) {
+      setInput(restoredInput)
+      clearRestoredInput()
+      textareaRef.current?.focus()
+    }
+  }, [restoredInput, setInput, clearRestoredInput])
 
   const resizeTextarea = useCallback(() => {
     const textarea = textareaRef.current
