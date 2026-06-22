@@ -65,7 +65,7 @@ describe('Model Context Update', () => {
       },
       context: { maxTokens: customContextWindow, compactionThreshold: 0.8, compactionTarget: 0.5 },
       agent: { maxIterations: 50, maxConsecutiveFailures: 3, toolTimeout: 120000 },
-      server: { port: 10998, host: '127.0.0.1', openBrowser: false },
+      server: { port: 0, host: '127.0.0.1', openBrowser: false },
       database: { path: '' },
       logging: { level: 'error' },
       mode: testMode,
@@ -73,7 +73,7 @@ describe('Model Context Update', () => {
     }
 
     server = await createServerHandle(config)
-    const { port } = await server.start(10998)
+    const { port } = await server.start(0)
     serverUrl = `http://127.0.0.1:${port}`
   })
 

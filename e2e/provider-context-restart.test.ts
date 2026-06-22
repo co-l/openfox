@@ -58,7 +58,7 @@ describe('Provider Context Restart', () => {
       },
       context: { maxTokens: 200000, compactionThreshold: 0.8, compactionTarget: 0.5 },
       agent: { maxIterations: 50, maxConsecutiveFailures: 3, toolTimeout: 120000 },
-      server: { port: 10999, host: '127.0.0.1', openBrowser: false },
+      server: { port: 0, host: '127.0.0.1', openBrowser: false },
       database: { path: '' },
       logging: { level: 'error' },
       mode: testMode,
@@ -73,7 +73,7 @@ describe('Provider Context Restart', () => {
   it('preserves user-set context window after server restart', async () => {
     // Start server (simulates restart)
     serverHandle = await createServerHandle(config)
-    await serverHandle.start(10999)
+    await serverHandle.start(0)
 
     // Give it time to initialize
     await new Promise((resolve) => setTimeout(resolve, 1000))
@@ -144,7 +144,7 @@ describe('Provider Context Restart', () => {
       },
       context: { maxTokens: 200000, compactionThreshold: 0.8, compactionTarget: 0.5 },
       agent: { maxIterations: 50, maxConsecutiveFailures: 3, toolTimeout: 120000 },
-      server: { port: 10998, host: '127.0.0.1', openBrowser: false },
+      server: { port: 0, host: '127.0.0.1', openBrowser: false },
       database: { path: '' },
       logging: { level: 'error' },
       mode: testMode,
@@ -152,7 +152,7 @@ describe('Provider Context Restart', () => {
     }
 
     const fuzzyServer = await createServerHandle(fuzzyConfig)
-    await fuzzyServer.start(10998)
+    await fuzzyServer.start(0)
 
     await new Promise((resolve) => setTimeout(resolve, 1000))
 
