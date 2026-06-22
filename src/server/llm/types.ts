@@ -38,6 +38,7 @@ export interface LLMCompletionRequest {
     maxTokens?: number
     supportsVision?: boolean
     chatTemplateKwargs?: Record<string, unknown>
+    queryParams?: Record<string, unknown>
   }
 }
 

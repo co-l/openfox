@@ -196,6 +196,8 @@ export interface ModelSettingsUpdate {
   nonThinkingEnabled?: boolean
   thinkingExtraKwargs?: string
   nonThinkingExtraKwargs?: string
+  thinkingQueryParams?: string
+  nonThinkingQueryParams?: string
 }
 
 export interface ProviderManager {
@@ -647,6 +649,16 @@ export function createProviderManager(config: Config): ProviderManager {
           : existingModel?.nonThinkingExtraKwargs !== undefined
             ? { nonThinkingExtraKwargs: existingModel.nonThinkingExtraKwargs }
             : {}),
+        ...(settings.thinkingQueryParams !== undefined
+          ? { thinkingQueryParams: settings.thinkingQueryParams }
+          : existingModel?.thinkingQueryParams !== undefined
+            ? { thinkingQueryParams: existingModel.thinkingQueryParams }
+            : {}),
+        ...(settings.nonThinkingQueryParams !== undefined
+          ? { nonThinkingQueryParams: settings.nonThinkingQueryParams }
+          : existingModel?.nonThinkingQueryParams !== undefined
+            ? { nonThinkingQueryParams: existingModel.nonThinkingQueryParams }
+            : {}),
       })
 
       if (existingModel) {
@@ -685,6 +697,12 @@ export function createProviderManager(config: Config): ProviderManager {
         ...(model.maxTokens !== undefined && { maxTokens: model.maxTokens }),
         ...(model.supportsVision !== undefined && { supportsVision: model.supportsVision }),
         ...(kwargs ? { chatTemplateKwargs: JSON.parse(kwargs) as Record<string, unknown> } : {}),
+        ...(mode === 'thinking' && model.thinkingQueryParams
+          ? { queryParams: JSON.parse(model.thinkingQueryParams) as Record<string, unknown> }
+          : {}),
+        ...(mode === 'non-thinking' && model.nonThinkingQueryParams
+          ? { queryParams: JSON.parse(model.nonThinkingQueryParams) as Record<string, unknown> }
+          : {}),
       }
     },
 

@@ -140,6 +140,8 @@ interface ModelConfig {
   nonThinkingEnabled?: boolean
   thinkingExtraKwargs?: string
   nonThinkingExtraKwargs?: string
+  thinkingQueryParams?: string
+  nonThinkingQueryParams?: string
   temperature?: number
   topP?: number
   topK?: number
@@ -167,6 +169,8 @@ export interface ProviderFormData {
     nonThinkingEnabled?: boolean
     thinkingExtraKwargs?: string
     nonThinkingExtraKwargs?: string
+    thinkingQueryParams?: string
+    nonThinkingQueryParams?: string
   }>
 }
 
@@ -192,6 +196,8 @@ interface ProviderModalProps {
       nonThinkingEnabled?: boolean
       thinkingExtraKwargs?: string
       nonThinkingExtraKwargs?: string
+      thinkingQueryParams?: string
+      nonThinkingQueryParams?: string
       defaultTemperature?: number
       defaultTopP?: number
       defaultTopK?: number
@@ -266,6 +272,8 @@ export function ProviderModal({
             nonThinkingEnabled: m.nonThinkingEnabled,
             thinkingExtraKwargs: m.thinkingExtraKwargs,
             nonThinkingExtraKwargs: m.nonThinkingExtraKwargs,
+            thinkingQueryParams: m.thinkingQueryParams,
+            nonThinkingQueryParams: m.nonThinkingQueryParams,
             defaultTemperature: m.defaultTemperature,
             defaultTopP: m.defaultTopP,
             defaultTopK: m.defaultTopK,
@@ -330,6 +338,7 @@ export function ProviderModal({
     setTestResults((prev) => ({ ...prev, [key]: { loading: true } }))
     const config = modelConfigs[modelId]
     const params: Record<string, unknown> = {}
+    let queryParams: Record<string, unknown> | undefined
     if (mode === 'thinking') {
       params['reasoning_effort'] = config?.thinkingLevel ?? 'low'
       if (thinkKwargs) {
@@ -337,6 +346,13 @@ export function ProviderModal({
           params['chat_template_kwargs'] = JSON.parse(thinkKwargs) as Record<string, unknown>
         } catch {
           /* invalid JSON, skip */
+        }
+      }
+      if (config?.thinkingQueryParams) {
+        try {
+          queryParams = JSON.parse(config.thinkingQueryParams) as Record<string, unknown>
+        } catch {
+          /* skip */
         }
       }
     } else {
@@ -348,12 +364,19 @@ export function ProviderModal({
           /* invalid JSON, skip */
         }
       }
+      if (config?.nonThinkingQueryParams) {
+        try {
+          queryParams = JSON.parse(config.nonThinkingQueryParams) as Record<string, unknown>
+        } catch {
+          /* skip */
+        }
+      }
     }
     try {
       const response = await authFetch('/api/providers/test-params', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ url: formUrl, model: modelId, params, apiKey: formApiKey || undefined }),
+        body: JSON.stringify({ url: formUrl, model: modelId, params, queryParams, apiKey: formApiKey || undefined }),
       })
       const data = await response.json()
       if (response.ok) {
@@ -392,6 +415,8 @@ export function ProviderModal({
         nonThinkingEnabled: modelConfigs[m.id]?.nonThinkingEnabled,
         thinkingExtraKwargs: modelConfigs[m.id]?.thinkingExtraKwargs,
         nonThinkingExtraKwargs: modelConfigs[m.id]?.nonThinkingExtraKwargs,
+        thinkingQueryParams: modelConfigs[m.id]?.thinkingQueryParams,
+        nonThinkingQueryParams: modelConfigs[m.id]?.nonThinkingQueryParams,
       })),
     })
     onClose()
@@ -649,6 +674,19 @@ export function ProviderModal({
                                     className="w-full px-2 py-1.5 bg-bg-tertiary border border-border rounded text-xs text-text-primary"
                                   />
                                 </div>
+                                <div>
+                                  <label className="text-xs text-text-secondary block mb-1">
+                                    Query params <span className="text-text-muted">(optional JSON)</span>
+                                  </label>
+                                  <input
+                                    type="text"
+                                    value={modelConfigs[model.id]?.thinkingQueryParams ?? ''}
+                                    onChange={(e) =>
+                                      updateModelConfig(model.id, { thinkingQueryParams: e.target.value })
+                                    }
+                                    className="w-full px-2 py-1 bg-bg-tertiary border border-border rounded text-xs text-text-primary font-mono"
+                                  />
+                                </div>
                                 <ExtraKwargsBlock
                                   kwargs={thinkKwargs}
                                   onChange={setThinkKwargs}
@@ -673,6 +711,19 @@ export function ProviderModal({
                             </label>
                             {modelConfigs[model.id]?.nonThinkingEnabled && (
                               <div className="ml-6 space-y-2 pl-3 border-l-2 border-accent-warning/30">
+                                <div>
+                                  <label className="text-xs text-text-secondary block mb-1">
+                                    Query params <span className="text-text-muted">(optional JSON)</span>
+                                  </label>
+                                  <input
+                                    type="text"
+                                    value={modelConfigs[model.id]?.nonThinkingQueryParams ?? ''}
+                                    onChange={(e) =>
+                                      updateModelConfig(model.id, { nonThinkingQueryParams: e.target.value })
+                                    }
+                                    className="w-full px-2 py-1 bg-bg-tertiary border border-border rounded text-xs text-text-primary font-mono"
+                                  />
+                                </div>
                                 <ExtraKwargsBlock
                                   kwargs={nonThinkKwargs}
                                   onChange={setNonThinkKwargs}

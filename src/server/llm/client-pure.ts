@@ -205,7 +205,10 @@ async function buildChatCompletionCreateParams(
 
   const resolvedEffort = reasoningEffort ?? request.reasoningEffort
 
-  if (resolvedEffort) {
+  const queryParams = request.modelSettings?.queryParams as Record<string, unknown> | undefined
+  const hasQueryParams = queryParams && Object.keys(queryParams).length > 0
+
+  if (resolvedEffort && !hasQueryParams) {
     ;(params as unknown as Record<string, unknown>)['reasoning_effort'] = resolvedEffort
 
     const chatTemplateKwargs = request.modelSettings?.chatTemplateKwargs
@@ -216,6 +219,10 @@ async function buildChatCompletionCreateParams(
         enable_thinking: resolvedEffort !== 'none',
       }
     }
+  }
+
+  if (hasQueryParams) {
+    Object.assign(params as unknown as Record<string, unknown>, queryParams)
   }
 
   const modelParams = buildModelParams({ temperature, topP, topK, maxTokens })

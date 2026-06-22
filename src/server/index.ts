@@ -880,11 +880,12 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
 
   // Onboarding: test thinking params against a provider URL
   app.post('/api/providers/test-params', async (req, res) => {
-    const { url, model, params, apiKey } = req.body as {
+    const { url, model, params, apiKey, queryParams } = req.body as {
       url: string
       model: string
       params: Record<string, unknown>
       apiKey?: string
+      queryParams?: Record<string, unknown>
     }
     if (!url) return res.status(400).json({ error: 'url is required' })
     if (!model) return res.status(400).json({ error: 'model is required' })
@@ -892,11 +893,15 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
       const headers: Record<string, string> = { 'Content-Type': 'application/json' }
       if (apiKey) headers['Authorization'] = `Bearer ${apiKey}`
 
+      // When queryParams are provided for the mode, skip auto-generated params
+      // and let the user fully control the request body
+      const hasQueryParams = queryParams && Object.keys(queryParams).length > 0
       const body = {
         model,
         messages: [{ role: 'user', content: 'say hi in one word' }],
         max_tokens: 8000,
-        ...params,
+        ...(hasQueryParams ? {} : params),
+        ...(hasQueryParams ? queryParams : {}),
       }
 
       const response = await fetch(`${ensureVersionPrefix(url)}/chat/completions`, {
@@ -908,7 +913,7 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
 
       if (!response.ok) {
         const errorBody = await response.text()
-        return res.status(400).json({ error: `API error (${response.status}): ${errorBody.slice(0, 200)}` })
+        return res.status(400).json({ error: `API error (${response.status}): ${errorBody.slice(0, 2000)}` })
       }
 
       const data = (await response.json()) as { choices?: Array<{ message?: Record<string, unknown> }> }
