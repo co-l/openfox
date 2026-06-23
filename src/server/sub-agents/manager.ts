@@ -31,7 +31,9 @@ import { getConversationMessages, processEventsForConversation } from '../chat/c
 const RETURN_VALUE_INSTRUCTION = `
 
 ## RETURN VALUE
-As the very last thing you do, call \`return_value\` ONCE with a structured summary of your work. This is how your findings get passed back to the calling agent. Do not finish without calling return_value.`
+As the very last thing you do, call \`return_value\` ONCE with a structured summary of your work. This is how your findings get passed back to the calling agent. Do not finish without calling return_value.
+
+CRITICAL: Do NOT output your summary as text in the chat. Your summary must ONLY be provided via the \`return_value\` tool call. If you write the summary as text AND call return_value, you produce duplicate output — wasteful and incorrect.`
 
 // ============================================================================
 // Types
