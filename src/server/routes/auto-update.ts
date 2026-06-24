@@ -17,19 +17,24 @@ function isRunningAsService(): boolean {
   return process.env['OPENFOX_SERVICE'] === 'true'
 }
 
+const UPDATE_TIMEOUT = 120_000
+
+async function checkAuth(req: Request, opts: AutoUpdateRoutesOptions): Promise<boolean> {
+  if (opts.requireAuth) {
+    const authorized = await opts.requireAuth(req)
+    if (!authorized) {
+      return false
+    }
+  }
+  return true
+}
+
 export function createAutoUpdateRoutes(options: AutoUpdateRoutesOptions = {}): Router {
   const router = Router()
 
-  router.get('/check', async (req, res) => {
-    const isTest = req.query['test'] === '1'
+  router.get('/check', async (_req, res) => {
     const isService = isRunningAsService()
-
     const current = VERSION
-
-    if (isTest) {
-      res.json({ current: '1.0.0', latest: '1.1.0', isUpdateAvailable: true, isService })
-      return
-    }
 
     try {
       const latest = await new Promise<string>((resolve, reject) => {
@@ -62,12 +67,9 @@ export function createAutoUpdateRoutes(options: AutoUpdateRoutesOptions = {}): R
   })
 
   router.post('/', async (req, res) => {
-    if (options.requireAuth) {
-      const authorized = await options.requireAuth(req)
-      if (!authorized) {
-        res.status(401).json({ error: 'Unauthorized' })
-        return
-      }
+    if (!(await checkAuth(req, options))) {
+      res.status(401).json({ error: 'Unauthorized' })
+      return
     }
 
     if (updateInProgress) {
@@ -75,39 +77,64 @@ export function createAutoUpdateRoutes(options: AutoUpdateRoutesOptions = {}): R
       return
     }
 
+    updateInProgress = true
+
     try {
-      let stderr = ''
       const isService = isRunningAsService()
-      const updateCmd = isService ? 'openfox update --service' : 'openfox update'
-      const child = spawn('bash', ['-c', updateCmd], {
-        detached: true,
-        stdio: ['ignore', 'ignore', 'pipe'],
+      const child = spawn('bash', ['-c', 'openfox update'], {
+        stdio: ['ignore', 'pipe', 'pipe'],
       })
 
-      if (child.stderr) {
-        child.stderr.on('data', (data) => {
-          stderr += data.toString()
-        })
+      let stdout = ''
+      let stderr = ''
+      child.stdout?.on('data', (data) => {
+        stdout += data.toString()
+      })
+      child.stderr?.on('data', (data) => {
+        stderr += data.toString()
+      })
+
+      const timeout = setTimeout(() => {
+        child.kill()
+      }, UPDATE_TIMEOUT)
+
+      const exitCode = await new Promise<number>((resolve) => {
+        child.on('close', resolve)
+        child.on('error', () => resolve(1))
+      })
+
+      clearTimeout(timeout)
+
+      if (exitCode === 0) {
+        const versionMatch = stdout.match(/Updated: ([\d.]+)/)
+        const version = versionMatch?.[1] ?? VERSION
+        res.json({ success: true, version, isService })
+      } else {
+        const error = exitCode === null ? 'Update timed out' : stderr || stdout || 'Update failed'
+        res.json({ success: false, error, isService })
       }
-
-      child.unref()
-      updateInProgress = true
-
-      child.on('close', () => {
-        updateInProgress = false
-      })
-
-      setTimeout(() => {
-        if (stderr) {
-          console.error('[auto-update] subprocess error:', stderr)
-        }
-        updateInProgress = false
-      }, 30_000)
-
-      res.json({ success: true, isService })
     } catch (err) {
-      updateInProgress = false
       res.status(500).json({ error: err instanceof Error ? err.message : 'Update failed to start' })
+    } finally {
+      updateInProgress = false
+    }
+  })
+
+  router.post('/restart', async (req, res) => {
+    if (!(await checkAuth(req, options))) {
+      res.status(401).json({ error: 'Unauthorized' })
+      return
+    }
+
+    try {
+      const child = spawn('bash', ['-c', 'openfox service restart'], {
+        detached: true,
+        stdio: 'ignore',
+      })
+      child.unref()
+      res.json({ success: true })
+    } catch (err) {
+      res.status(500).json({ error: err instanceof Error ? err.message : 'Failed to trigger restart' })
     }
   })
 

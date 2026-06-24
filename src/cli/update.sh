@@ -13,11 +13,5 @@ echo "Updating OpenFox: $CURRENT_VERSION -> $LATEST_VERSION"
 npm cache clean --force
 npm update -g openfox
 NEW_VERSION=$(openfox --version)
-
-if [ "$1" = "--service" ]; then
-  echo "Restarting service..."
-  systemd-run --user --scope systemctl --user restart openfox
-else
-  echo "Updated: $NEW_VERSION"
-  echo "Please restart OpenFox to use the new version."
-fi
+echo "Updated: $NEW_VERSION"
+echo "Please restart OpenFox to use the new version."

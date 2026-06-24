@@ -4,55 +4,13 @@ STAGED=$(git diff --cached --name-only --diff-filter=d)
 [ -n "$STAGED" ] && echo "$STAGED" | xargs npx prettier --write --ignore-unknown 1>/dev/null 2>&1
 git add -u
 
-TIMEOUT=120
-TMPDIR=$(mktemp -d)
-trap 'rm -rf "$TMPDIR"' EXIT
+script_dir=$(dirname "$0")/..
+. "$script_dir/scripts/parallel-exit-on-failure.sh"
 
-FAILED="$TMPDIR/failed"
+echo "  Running checks..."
 
-run_check() {
-  name=$1
-  shift
-  (
-    logfile="$TMPDIR/$name.log"
-    exitfile="$TMPDIR/$name.exit"
-    if timeout "$TIMEOUT" "$@" > "$logfile" 2>&1; then
-      ec=0
-    else
-      ec=$?
-    fi
-    echo "$ec" > "$exitfile"
-    if [ "$ec" -eq 0 ]; then
-      echo "  $name ✓"
-    else
-      [ "$ec" -eq 124 ] && msg="timed out after ${TIMEOUT}s" || msg="exit code $ec"
-      echo "  $name ✗ ($msg)"
-      echo
-      cat "$logfile"
-      echo
-      touch "$FAILED"
-    fi
-  ) &
-}
-
-run_check "lint" npm run lint
-run_check "typecheck" npm run typecheck
-run_check "duplicate" npm run duplicate
-run_check "test" npm test
-
-while true; do
-  if [ -f "$FAILED" ]; then
-    kill $(jobs -p) 2>/dev/null
-    wait 2>/dev/null
-    exit 1
-  fi
-  all_done=true
-  for name in lint typecheck duplicate test; do
-    if [ ! -f "$TMPDIR/$name.exit" ]; then
-      all_done=false
-      break
-    fi
-  done
-  [ "$all_done" = true ] && break
-  sleep 0.3
-done
+parallel_exit_on_failure \
+  "lint"      "npm run lint" \
+  "typecheck" "npm run typecheck" \
+  "duplicate" "npm run duplicate" \
+  "test"      "npm test"

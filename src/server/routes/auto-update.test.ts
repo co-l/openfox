@@ -41,21 +41,6 @@ describe('Auto Update Routes', () => {
       expect(typeof body.isService).toBe('boolean')
     })
 
-    it('returns mock versions when test=1', async () => {
-      const res = await fetch(`${baseUrl}/api/auto-update/check?test=1`)
-      expect(res.status).toBe(200)
-      const body = (await res.json()) as {
-        current: string
-        latest: string
-        isUpdateAvailable: boolean
-        isService: boolean
-      }
-      expect(body.current).toBe('1.0.0')
-      expect(body.latest).toBe('1.1.0')
-      expect(body.isUpdateAvailable).toBe(true)
-      expect(typeof body.isService).toBe('boolean')
-    })
-
     it('returns isUpdateAvailable false when current matches latest', async () => {
       const res = await fetch(`${baseUrl}/api/auto-update/check`)
       expect(res.status).toBe(200)
@@ -65,16 +50,17 @@ describe('Auto Update Routes', () => {
   })
 
   describe('POST /api/auto-update (no auth required)', () => {
-    it('returns 200 immediately and does not block', async () => {
-      const start = Date.now()
+    it('returns a response with success or error and isService', async () => {
       const res = await fetch(`${baseUrl}/api/auto-update`, { method: 'POST' })
-      const elapsed = Date.now() - start
-
       expect(res.status).toBe(200)
-      const body = (await res.json()) as { success: boolean; isService: boolean }
-      expect(body.success).toBe(true)
+      const body = (await res.json()) as { success: boolean; isService: boolean; version?: string; error?: string }
+      expect(typeof body.success).toBe('boolean')
       expect(typeof body.isService).toBe('boolean')
-      expect(elapsed).toBeLessThan(2000)
+      if (body.success) {
+        expect(typeof body.version).toBe('string')
+      } else {
+        expect(typeof body.error).toBe('string')
+      }
     })
   })
 })
@@ -137,6 +123,13 @@ describe('Auto Update Routes (auth required)', () => {
         headers: { Authorization: validToken },
       })
       expect(res.status).toBe(200)
+    })
+  })
+
+  describe('POST /api/auto-update/restart', () => {
+    it('rejects request without authorization header', async () => {
+      const res = await fetch(`${baseUrl}/api/auto-update/restart`, { method: 'POST' })
+      expect(res.status).toBe(401)
     })
   })
 })

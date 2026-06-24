@@ -49,17 +49,6 @@ export function SessionSidebar({ messages, workdir }: SessionSidebarProps) {
     checkForUpdate()
   }, [checkForUpdate])
 
-  useEffect(() => {
-    const params = new URLSearchParams(window.location.search)
-    if (params.get('test-update') === '1') {
-      setUpdateAvailable(true)
-      setShowUpdateModal(true)
-      const url = new URL(window.location.href)
-      url.searchParams.delete('test-update')
-      window.history.replaceState({}, '', url.toString())
-    }
-  }, [])
-
   return (
     <div className="flex flex-col h-full">
       {/* AI Stats at the top */}
