@@ -140,7 +140,7 @@ export function AutoUpdateModal({ isOpen, onClose, versionInfo }: AutoUpdateModa
                 disabled={restarting}
                 className="w-full px-3 py-2 text-sm rounded bg-accent-primary hover:brightness-110 transition-all text-white font-medium disabled:opacity-50"
               >
-                {restarting ? 'Restarting in 10s\u2026' : 'Restart Service'}
+                {restarting ? 'Reloading in 10s\u2026' : 'Restart Service'}
               </button>
             )}
           </div>
@@ -159,22 +159,12 @@ export function AutoUpdateModal({ isOpen, onClose, versionInfo }: AutoUpdateModa
       </div>
 
       {state === 'ready' && (
-        <div className="flex flex-col gap-3">
-          {isService && (
-            <div className="flex items-center gap-2 px-3 py-2 bg-accent-warning/10 border border-accent-warning/30 rounded text-xs">
-              <span>⚠️</span>
-              <p className="text-text-secondary">
-                Server will restart to apply this update. Sessions in progress will be interrupted.
-              </p>
-            </div>
-          )}
-          <button
-            onClick={handleUpdate}
-            className="w-full px-3 py-2 text-sm rounded bg-accent-primary hover:brightness-110 transition-all text-white font-medium"
-          >
-            Update OpenFox
-          </button>
-        </div>
+        <button
+          onClick={handleUpdate}
+          className="w-full px-3 py-2 text-sm rounded bg-accent-primary hover:brightness-110 transition-all text-white font-medium"
+        >
+          Update OpenFox
+        </button>
       )}
 
       {(state === 'complete' || state === 'failed') && (
