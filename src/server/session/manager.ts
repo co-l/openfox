@@ -95,6 +95,7 @@ export class SessionManager {
     { systemPrompt: string; tools: import('../llm/types.js').LLMToolDefinition[]; hash: string }
   >()
   private dynamicContextChangedStore = new Map<string, boolean>()
+  private debugDumpStore = new Map<string, { cachedPrompt: string; cachedTools: string[]; liveTools: string[] }>()
 
   constructor(providerManager: import('../provider-manager.js').ProviderManager) {
     this.providerManager = providerManager
@@ -842,6 +843,14 @@ export class SessionManager {
     this.dynamicContextChangedStore.set(sessionId, changed)
   }
 
+  setDebugDump(sessionId: string, dump: { cachedPrompt: string; cachedTools: string[]; liveTools: string[] }): void {
+    this.debugDumpStore.set(sessionId, dump)
+  }
+
+  clearDebugDump(sessionId: string): void {
+    this.debugDumpStore.delete(sessionId)
+  }
+
   getDynamicContextChanged(sessionId: string): boolean {
     return this.dynamicContextChangedStore.get(sessionId) ?? false
   }
@@ -898,6 +907,7 @@ export class SessionManager {
 
     const state = getSessionState(sessionId, maxTokens)
     const dynamicContextChanged = this.getDynamicContextChanged(sessionId)
+    const debugDump = this.debugDumpStore.get(sessionId)
     if (!state) {
       return {
         currentTokens: 0,
@@ -906,9 +916,10 @@ export class SessionManager {
         dangerZone: false,
         canCompact: false,
         dynamicContextChanged,
+        ...(debugDump ? { debugDump } : {}),
       }
     }
-    return { ...state.contextState, dynamicContextChanged }
+    return { ...state.contextState, dynamicContextChanged, ...(debugDump ? { debugDump } : {}) }
   }
 
   // ============================================================================
@@ -1020,7 +1031,8 @@ export class SessionManager {
       })
     }
     if (!this.dynamicContextChangedStore.has(dbSession.id) && eventState.contextState.dynamicContextChanged) {
-      this.dynamicContextChangedStore.set(dbSession.id, true)
+      // Don't restore stale flag — the session load re-detection in ws/server.ts
+      // runs an async hash comparison that will determine the correct state.
     }
 
     return {

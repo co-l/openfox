@@ -723,6 +723,11 @@ export function handleServerMessage(
       break
     }
 
+    case 'mcp.servers.changed': {
+      window.dispatchEvent(new CustomEvent('mcp-servers-changed'))
+      break
+    }
+
     case 'git.status': {
       const payload = message.payload as { branch: string | null; diff: { files: GitDiffFile[] } }
       set({ gitStatus: { branch: payload.branch, diff: payload.diff } })

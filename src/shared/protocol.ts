@@ -126,6 +126,8 @@ export type ServerMessageType =
   | 'backgroundProcess.removed' // Process removed from list
   // Git status events
   | 'git.status' // Branch and diff info, pushed on interval or session load
+  // MCP server events
+  | 'mcp.servers.changed' // MCP server configuration was modified by agent
   // Other
   | 'lsp.diagnostics'
   | 'error'

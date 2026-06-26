@@ -15,6 +15,7 @@ import { webFetchTool } from './web-fetch.js'
 import { devServerTool } from './dev-server.js'
 import { stepDoneTool } from './step-done.js'
 import { backgroundProcessTool } from './background-process/index.js'
+import { mcpConfigTool } from './mcp-config.js'
 import { loadAllAgentsDefault, findAgentById } from '../agents/registry.js'
 import { logger } from '../utils/logger.js'
 
@@ -250,6 +251,7 @@ function getAllToolsMap(): Map<string, Tool> {
       devServerTool,
       stepDoneTool,
       backgroundProcessTool,
+      mcpConfigTool,
     ] as Tool[]
   ).map((t) => [t.name, t])
   const mcpEntries: [string, Tool][] = mcpToolsOverride.map((t) => [t.name, t])

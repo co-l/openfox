@@ -16,6 +16,9 @@ import { createMockLLMClient } from './llm/mock.js'
 import { createProviderManager, parseDefaultModelSelection } from './provider-manager.js'
 import { createToolRegistry, setMcpTools } from './tools/index.js'
 import { McpManager, createMcpTools } from './mcp/index.js'
+import { setMcpManagerForTools, setMcpConfigMode, setNotifyMcpServersChanged } from './tools/mcp-config.js'
+import { createServerMessage } from '../shared/protocol.js'
+import { createContextStateMessage } from './ws/protocol.js'
 import { createWebSocketServer } from './ws/index.js'
 import { SessionManager } from './session/manager.js'
 import { setRuntimeConfig } from './runtime-config.js'
@@ -129,6 +132,8 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
 
   // Initialize MCP manager and connect to configured servers
   const mcpManager = new McpManager()
+  setMcpManagerForTools(mcpManager)
+  setMcpConfigMode(config.mode ?? 'production')
   const mcpServers = (config.mcpServers ?? {}) as Record<string, import('./mcp/types.js').McpServerConfig>
   Promise.all(
     Object.entries(mcpServers).map(([name, serverConfig]) =>
@@ -136,12 +141,14 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
         logger.warn('Failed to connect MCP server on startup', { name, error: String(err) })
       }),
     ),
-  ).then(() => {
+  ).then(async () => {
     const mcpTools = createMcpTools(mcpManager)
     if (mcpTools.length > 0) {
       setMcpTools(mcpTools)
       logger.info('MCP tools registered', { count: mcpTools.length })
     }
+    const { signalMcpReady } = await import('./ws/server.js')
+    signalMcpReady()
   })
 
   const app = express()
@@ -1623,8 +1630,6 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
   const httpServer = createHttpServer(app)
 
   // Create WebSocket server attached to HTTP server
-  const { setMcpManagerForWs } = await import('./ws/server.js')
-  setMcpManagerForWs(mcpManager)
   const wssExports = createWebSocketServer(
     httpServer,
     config,
@@ -1634,6 +1639,13 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
     providerManager,
   )
   const wss = wssExports.wss
+
+  // Wire MCP config tool to broadcast changes to all connected UIs
+  setNotifyMcpServersChanged((sessionId: string) => {
+    wssExports.broadcastAll(createServerMessage('mcp.servers.changed', {}))
+    const state = sessionManager.getContextState(sessionId)
+    wssExports.broadcastForSession(sessionId, createContextStateMessage(state))
+  })
 
   // Wire up QueueProcessor - listens for queue events and starts turns
   const { QueueProcessor } = await import('./queue/processor.js')

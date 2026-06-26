@@ -21,9 +21,7 @@ import { runOrchestrator } from '../runner/index.js'
 import { appendCompactionPrompt } from '../context/compactor.js'
 import { getAllInstructions } from '../context/instructions.js'
 import { getEnabledSkillMetadata } from '../skills/registry.js'
-import { loadAllAgentsDefault, getSubAgents } from '../agents/registry.js'
-import { buildTopLevelSystemPrompt } from '../chat/prompts.js'
-import { computeDynamicContextHash } from '../chat/dynamic-context.js'
+import { computeDynamicContextHash, getToolFingerprint, applyDynamicContext } from '../chat/dynamic-context.js'
 import { getRuntimeConfig } from '../runtime-config.js'
 import { getGlobalConfigDir } from '../../cli/paths.js'
 import { provideAnswer } from '../tools/index.js'
@@ -31,11 +29,14 @@ import { logger } from '../utils/logger.js'
 import { devServerManager } from '../dev-server/manager.js'
 import { onProcessEvent } from '../tools/background-process/manager.js'
 
-// Module-level MCP manager accessor (set during server setup, read by WS handlers)
-let _mcpManager: { getToolDefinitions(): import('../llm/types.js').LLMToolDefinition[] } | undefined
+// Resolved once initial MCP connections settle — checkDynamic awaits this
+let resolveMcpReady: (() => void) | null = null
+const mcpReadyPromise = new Promise<void>((resolve) => {
+  resolveMcpReady = resolve
+})
 
-export function setMcpManagerForWs(mgr: typeof _mcpManager): void {
-  _mcpManager = mgr
+export function signalMcpReady(): void {
+  resolveMcpReady?.()
 }
 
 import { getAuthConfig, isValidToken } from '../auth.js'
@@ -733,6 +734,7 @@ export function createWebSocketServer(
     },
     close: (cb?: () => void) => wss.close(cb as (err?: Error) => void),
     broadcastForSession,
+    broadcastAll,
   }
 }
 
@@ -741,6 +743,7 @@ export interface WebSocketServerExports {
   abortSession: (sessionId: string) => boolean
   close: (cb?: () => void) => void
   broadcastForSession: (sessionId: string, msg: ServerMessage) => void
+  broadcastAll: (msg: ServerMessage) => void
 }
 
 async function handleClientMessage(
@@ -859,17 +862,20 @@ async function handleClientMessage(
       if (cachedHash) {
         ;(async () => {
           try {
+            await mcpReadyPromise
             const { content: instructionContent } = await getAllInstructions(session.workdir, session.projectId)
             const runtimeConfig = getRuntimeConfig()
             const configDir = getGlobalConfigDir(runtimeConfig.mode ?? 'production')
             const skills = await getEnabledSkillMetadata(configDir, runtimeConfig.workdir)
-            const dynamicInputs = JSON.stringify({
-              instructions: instructionContent,
-              skills: skills.map((s) => s.id).sort(),
-            })
-            const currentHash = createHash('sha256').update(dynamicInputs).digest('hex')
+            const { createToolRegistry } = await import('../tools/index.js')
+            const allTools = createToolRegistry().definitions
+            const toolFingerprint = getToolFingerprint(allTools)
+            const currentHash = computeDynamicContextHash(instructionContent, skills, toolFingerprint)
             if (currentHash !== cachedHash) {
               sessionManager.setDynamicContextChanged(session.id, true)
+              sendContextState()
+            } else if (sessionManager.getDynamicContextChanged(session.id)) {
+              sessionManager.setDynamicContextChanged(session.id, false)
               sendContextState()
             }
           } catch {
@@ -951,26 +957,26 @@ async function handleClientMessage(
 
       ;(async () => {
         try {
+          await mcpReadyPromise
           const { content: instructionContent } = await getAllInstructions(session.workdir, session.projectId)
           const runtimeConfig = getRuntimeConfig()
           const configDir = getGlobalConfigDir(runtimeConfig.mode ?? 'production')
           const skills = await getEnabledSkillMetadata(configDir, runtimeConfig.workdir)
 
-          const mcpTools = (
-            _mcpManager ? _mcpManager.getToolDefinitions() : []
-          ) as import('../llm/types.js').LLMToolDefinition[]
-          const toolFingerprint = mcpTools
-            .map(
-              (t: import('../llm/types.js').LLMToolDefinition) =>
-                `${t.function.name}:${JSON.stringify(t.function.parameters)}`,
-            )
-            .sort()
-            .join('|')
+          const { createToolRegistry } = await import('../tools/index.js')
+          const allTools = createToolRegistry().definitions
+          const toolFingerprint = getToolFingerprint(allTools)
           const currentHash = computeDynamicContextHash(instructionContent, skills, toolFingerprint)
           const cachedHash = sessionManager.getCachedPrompt(sessionId)?.hash
 
           if (cachedHash) {
             if (currentHash !== cachedHash) {
+              logger.debug('checkDynamic: hash mismatch', {
+                sessionId,
+                cachedHash,
+                currentHash,
+                toolCount: allTools.length,
+              })
               if (!sessionManager.getDynamicContextChanged(sessionId)) {
                 sessionManager.setDynamicContextChanged(sessionId, true)
                 const newContextState = sessionManager.getContextState(sessionId)
@@ -1009,34 +1015,7 @@ async function handleClientMessage(
 
       ;(async () => {
         try {
-          const { content: instructionContent } = await getAllInstructions(session.workdir, session.projectId)
-          const runtimeConfig = getRuntimeConfig()
-          const configDir = getGlobalConfigDir(runtimeConfig.mode ?? 'production')
-          const skills = await getEnabledSkillMetadata(configDir, runtimeConfig.workdir)
-
-          const mcpTools = (
-            _mcpManager ? _mcpManager.getToolDefinitions() : []
-          ) as import('../llm/types.js').LLMToolDefinition[]
-          const toolFingerprint = mcpTools
-            .map(
-              (t: import('../llm/types.js').LLMToolDefinition) =>
-                `${t.function.name}:${JSON.stringify(t.function.parameters)}`,
-            )
-            .sort()
-            .join('|')
-          const dynamicHash = computeDynamicContextHash(instructionContent, skills, toolFingerprint)
-
-          const allAgents = await loadAllAgentsDefault()
-          const subAgentDefs = getSubAgents(allAgents)
-          const systemPrompt = buildTopLevelSystemPrompt(
-            session.workdir,
-            instructionContent || undefined,
-            skills,
-            subAgentDefs,
-          )
-
-          sessionManager.setCachedPrompt(sessionId, systemPrompt, mcpTools, dynamicHash)
-          sessionManager.setDynamicContextChanged(sessionId, false)
+          await applyDynamicContext(sessionManager, sessionId)
 
           const newContextState = sessionManager.getContextState(sessionId)
           sendForSession(sessionId, createContextStateMessage(newContextState))

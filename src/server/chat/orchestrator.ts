@@ -18,7 +18,7 @@ import type { AgentDefinition } from '../agents/types.js'
 import { getEventStore, getCurrentContextWindowId, getCurrentWindowMessageOptions } from '../events/index.js'
 import { buildSnapshotFromSessionState } from '../events/folding.js'
 import type { SessionManager } from '../session/index.js'
-import { getToolRegistryForAgent, PathAccessDeniedError } from '../tools/index.js'
+import { getToolRegistryForAgent, createToolRegistry, PathAccessDeniedError } from '../tools/index.js'
 import { WORKFLOW_KICKOFF_PROMPT, buildAgentReminder, buildAgentSmallReminder } from './prompts.js'
 import {
   TurnMetrics,
@@ -30,7 +30,7 @@ import {
 } from './stream-pure.js'
 import { assembleAgentRequest, createAssemblyResult } from './request-context.js'
 import type { RequestContextMessage } from './request-context.js'
-import { computeDynamicContextHash } from './dynamic-context.js'
+import { computeDynamicContextHash, getToolFingerprint } from './dynamic-context.js'
 import { runTopLevelAgentLoop } from './agent-loop.js'
 import { loadAllAgentsDefault, findAgentById, getSubAgents } from '../agents/registry.js'
 import { getAllInstructions } from '../context/instructions.js'
@@ -347,20 +347,30 @@ export async function runAgentTurn(
       onMessage: options.onMessage,
       assembleRequest: (input) => {
         const cached = options.sessionManager.getCachedPrompt(options.sessionId)
-        const toolFingerprint = input.promptTools
-          .map((t) => `${t.function.name}:${JSON.stringify(t.function.parameters)}`)
-          .sort()
-          .join('|')
+        const liveTools = createToolRegistry().definitions
+        const toolFingerprint = getToolFingerprint(liveTools)
         if (cached) {
           const currentHash = computeDynamicContextHash(instructionContent ?? '', skills, toolFingerprint)
           if (cached.hash !== currentHash) {
+            logger.debug('assembleRequest: hash mismatch', {
+              sessionId: options.sessionId,
+              cachedHash: cached.hash,
+              currentHash,
+              cachedTools: cached.tools.map((t) => t.function.name),
+              liveTools: liveTools.map((t) => t.function.name),
+            })
             options.sessionManager.setDynamicContextChanged(options.sessionId, true)
+            options.sessionManager.setDebugDump(options.sessionId, {
+              cachedPrompt: cached.systemPrompt.slice(0, 5000),
+              cachedTools: cached.tools.map((t) => t.function.name),
+              liveTools: liveTools.map((t) => t.function.name),
+            })
           }
           return createAssemblyResult({
             systemPrompt: cached.systemPrompt,
             messages: input.messages,
             injectedFiles: input.injectedFiles,
-            requestTools: cached.tools.length > 0 ? cached.tools : input.promptTools,
+            requestTools: cached.tools.length > 0 ? cached.tools : liveTools,
             toolChoice: input.toolChoice,
           })
         }

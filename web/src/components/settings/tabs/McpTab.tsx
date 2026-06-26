@@ -64,6 +64,12 @@ export function McpTab() {
     loadServers()
   }, [loadServers])
 
+  useEffect(() => {
+    const handler = () => loadServers()
+    window.addEventListener('mcp-servers-changed', handler)
+    return () => window.removeEventListener('mcp-servers-changed', handler)
+  }, [loadServers])
+
   const toggleExpand = (name: string) => {
     setExpandedServers((prev) => {
       const next = new Set(prev)

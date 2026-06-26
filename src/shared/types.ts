@@ -431,6 +431,7 @@ export interface ContextState {
   dangerZone: boolean // True if approaching max (< 20K remaining)
   canCompact: boolean // True if there's enough context to compact
   dynamicContextChanged: boolean // True if dynamic inputs changed since system prompt was cached
+  debugDump?: { cachedPrompt: string; cachedTools: string[]; liveTools: string[] }
 }
 
 // ============================================================================
