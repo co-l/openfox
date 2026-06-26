@@ -64,6 +64,16 @@ const tsConfig = {
   rootPatterns: ['tsconfig.json'],
 }
 
+const sqlConfig = {
+  id: 'sql',
+  name: 'SQL',
+  extensions: ['.sql'],
+  serverCommand: 'sql-language-server',
+  serverArgs: ['up', '--method', 'stdio'],
+  rootPatterns: [],
+  installHint: 'npm install -g sql-language-server',
+}
+
 describe('LspManager', () => {
   beforeEach(() => {
     whichMock.mockReset()
@@ -164,6 +174,57 @@ describe('LspManager', () => {
     server.didChange.mockRejectedValueOnce(new Error('change failed'))
 
     await expect(freshManager.notifyFileChange('/tmp/project/file.ts', 'y')).resolves.toEqual([])
+  })
+
+  describe('getInstallHint', () => {
+    it('returns hint when server is unavailable and hint is configured', async () => {
+      detectLanguageMock.mockReturnValue(sqlConfig)
+      whichMock.mockResolvedValue(null)
+      const manager = new LspManager('/tmp/project', 'session-hint-1')
+
+      // Trigger server start so it gets marked unavailable
+      await manager.notifyFileChange('/tmp/project/query.sql', 'SELECT 1')
+
+      expect(manager.getInstallHint('/tmp/project/query.sql')).toBe('npm install -g sql-language-server')
+    })
+
+    it('returns null when no installHint is configured', async () => {
+      detectLanguageMock.mockReturnValue(tsConfig)
+      whichMock.mockResolvedValue(null)
+      const manager = new LspManager('/tmp/project', 'session-hint-2')
+
+      await manager.notifyFileChange('/tmp/project/file.ts', 'x')
+
+      expect(manager.getInstallHint('/tmp/project/file.ts')).toBeNull()
+    })
+
+    it('returns null when server is available', async () => {
+      detectLanguageMock.mockReturnValue(sqlConfig)
+      whichMock.mockResolvedValue('/usr/bin/sql-language-server')
+      const manager = new LspManager('/tmp/project', 'session-hint-3')
+
+      await manager.notifyFileChange('/tmp/project/query.sql', 'SELECT 1')
+
+      expect(manager.getInstallHint('/tmp/project/query.sql')).toBeNull()
+    })
+
+    it('returns null when no matching language config', async () => {
+      detectLanguageMock.mockReturnValue(null)
+      const manager = new LspManager('/tmp/project', 'session-hint-4')
+
+      expect(manager.getInstallHint('/tmp/project/file.unknown')).toBeNull()
+    })
+
+    it('returns hint only once per session (one-shot)', async () => {
+      detectLanguageMock.mockReturnValue(sqlConfig)
+      whichMock.mockResolvedValue(null)
+      const manager = new LspManager('/tmp/project', 'session-hint-5')
+
+      await manager.notifyFileChange('/tmp/project/query.sql', 'SELECT 1')
+
+      expect(manager.getInstallHint('/tmp/project/query.sql')).toBe('npm install -g sql-language-server')
+      expect(manager.getInstallHint('/tmp/project/query.sql')).toBeNull()
+    })
   })
 
   it('manages session-scoped registry lifecycle', async () => {

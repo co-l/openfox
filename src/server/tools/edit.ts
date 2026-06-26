@@ -1,7 +1,7 @@
 import { readFile, writeFile } from 'node:fs/promises'
 import type { Diagnostic, EditContextRegion } from '../../shared/types.js'
 import { createTool } from './tool-helpers.js'
-import { formatDiagnosticsForLLM } from './diagnostics.js'
+import { formatDiagnosticsForLLM, appendLspInstallHint } from './diagnostics.js'
 import { validateFileForWrite, computeFileHash } from './file-tracker.js'
 import { extractEditContext } from './edit-context.js'
 
@@ -174,6 +174,7 @@ export const editFileTool = createTool<EditFileArgs>(
       if (context.lspManager) {
         diagnostics = await context.lspManager.notifyFileChange(fullPath, newContent)
         output += formatDiagnosticsForLLM(diagnostics)
+        output = appendLspInstallHint(output, context.lspManager, fullPath)
       }
 
       const newHash = await computeFileHash(fullPath)

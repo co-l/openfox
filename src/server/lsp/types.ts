@@ -14,6 +14,8 @@ export interface LanguageConfig {
   initOptions?: Record<string, unknown>
   /** Map file extension to LSP languageId (e.g., '.tsx' -> 'typescriptreact') */
   languageIds?: Record<string, string>
+  /** Installation hint shown to users when the server is not found on PATH */
+  installHint?: string
 }
 
 // ============================================================================
@@ -59,6 +61,11 @@ export interface LspManagerInterface {
    * Check if LSP is available for a given file
    */
   isAvailableFor(path: string): boolean
+
+  /**
+   * Get installation hint for a file's language server, if it's not installed
+   */
+  getInstallHint(path: string): string | null
 
   /**
    * Shutdown all LSP servers

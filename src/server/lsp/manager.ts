@@ -19,6 +19,7 @@ export class LspManager implements LspManagerInterface {
   private servers = new Map<string, LspServer>() // language id -> server
   private unavailableServers = new Set<string>() // language ids we've tried and failed
   private serverPromises = new Map<string, Promise<LspServer | null>>() // pending server starts
+  private dismissedHints = new Set<string>() // hints already shown this session
 
   constructor(workdir: string, sessionId: string) {
     this.workdir = workdir
@@ -175,6 +176,25 @@ export class LspManager implements LspManagerInterface {
 
     // We have a server or can potentially start one
     return true
+  }
+
+  /**
+   * Get installation hint for a file's language server, if it's not installed.
+   * Returns the hint once per session; subsequent calls return null
+   * to avoid spamming the user on every edit.
+   */
+  getInstallHint(path: string): string | null {
+    const config = detectLanguage(path)
+    if (!config?.installHint) {
+      return null
+    }
+
+    if (this.unavailableServers.has(config.id) && !this.dismissedHints.has(config.id)) {
+      this.dismissedHints.add(config.id)
+      return config.installHint
+    }
+
+    return null
   }
 
   /**

@@ -80,7 +80,6 @@
     "react-syntax-highlighter": "^16.1.1",
     "remark-gfm": "^4.0.1",
     "shiki": "^4.2.0",
-    "sql-language-server": "^1.7.1",
     "strip-ansi": "^7.2.0",
     "turndown": "^7.2.2",
     "typescript": "^5.8.2",

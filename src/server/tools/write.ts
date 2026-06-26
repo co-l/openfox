@@ -2,7 +2,7 @@ import { writeFile, mkdir } from 'node:fs/promises'
 import { dirname } from 'node:path'
 import type { Diagnostic } from '../../shared/types.js'
 import { createTool } from './tool-helpers.js'
-import { formatDiagnosticsForLLM } from './diagnostics.js'
+import { formatDiagnosticsForLLM, appendLspInstallHint } from './diagnostics.js'
 import { validateFileForWrite, computeFileHash } from './file-tracker.js'
 
 interface WriteFileArgs {
@@ -62,6 +62,7 @@ export const writeFileTool = createTool<WriteFileArgs>(
     if (context.lspManager) {
       diagnostics = await context.lspManager.notifyFileChange(fullPath, args.content)
       output += formatDiagnosticsForLLM(diagnostics)
+      output = appendLspInstallHint(output, context.lspManager, fullPath)
     }
 
     // Update file hash after write so subsequent writes don't require re-reading

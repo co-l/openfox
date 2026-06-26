@@ -282,6 +282,7 @@ export const LANGUAGES: LanguageConfig[] = [
     serverCommand: 'sql-language-server',
     serverArgs: ['up', '--method', 'stdio'],
     rootPatterns: [],
+    installHint: 'npm install -g sql-language-server',
   },
 
   // GraphQL

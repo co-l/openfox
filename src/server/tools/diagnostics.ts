@@ -1,4 +1,5 @@
 import type { Diagnostic } from '../../shared/types.js'
+import type { LspManagerInterface } from '../lsp/types.js'
 
 /**
  * Format diagnostics for LLM consumption (plain text in output).
@@ -31,4 +32,21 @@ export function formatDiagnosticsForLLM(diagnostics: Diagnostic[]): string {
   }
 
   return output
+}
+
+/**
+ * Append LSP install hint to tool output if the language server is not installed.
+ * Returns the original output unchanged if the server is available or no hint is configured.
+ */
+export function appendLspInstallHint(
+  output: string,
+  lspManager: LspManagerInterface | undefined,
+  path: string,
+): string {
+  if (!lspManager) return output
+
+  const hint = lspManager.getInstallHint(path)
+  if (!hint) return output
+
+  return output + `\n\n⚠️ Language server not installed. To enable diagnostics: \`${hint}\``
 }
