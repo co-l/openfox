@@ -80,6 +80,11 @@ export const writeFileTool = createTool<WriteFileArgs>(
       context.sessionManager.updateFileHash(context.sessionId, fullPath, newHash)
     }
 
-    return helpers.success(output, false, diagnostics.length > 0 ? { diagnostics } : undefined)
+    // jscpd:ignore-start
+    return helpers.success(output, false, {
+      ...(diagnostics.length > 0 && { diagnostics }),
+      metadata: { path: fullPath },
+    })
+    // jscpd:ignore-end
   },
 )

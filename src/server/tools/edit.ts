@@ -189,6 +189,7 @@ export const editFileTool = createTool<EditFileArgs>(
       return helpers.success(output, false, {
         ...(diagnostics.length > 0 && { diagnostics }),
         ...(editContextRegions.length > 0 && { editContext: { regions: editContextRegions } }),
+        metadata: { path: fullPath },
       })
     })
   },

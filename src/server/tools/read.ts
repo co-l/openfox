@@ -254,6 +254,7 @@ export const readFileTool = createTool<ReadFileArgs>(
         encoding,
         confidence: Math.round(confidence * 100) / 100,
         lineCount: totalLines,
+        path: fullPath,
       },
     })
   },

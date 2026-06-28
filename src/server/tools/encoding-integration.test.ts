@@ -124,6 +124,8 @@ describe('encoding integration', () => {
       )
 
       expect(result.success).toBe(true)
+      expect(result.metadata).toBeDefined()
+      expect(result.metadata?.['path']).toBe(filePath)
       const content = await readFile(filePath, 'utf-8')
       expect(content).toBe('line1\nMODIFIED\nline3')
     })
@@ -201,6 +203,8 @@ describe('encoding integration', () => {
       const result = await writeFileTool.execute({ path: filePath, content: 'hello world' }, context)
 
       expect(result.success).toBe(true)
+      expect(result.metadata).toBeDefined()
+      expect(result.metadata?.['path']).toBe(filePath)
       const buf = await readFile(filePath)
       expect(buf.toString('utf-8')).toBe('hello world')
     })

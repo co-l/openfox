@@ -237,9 +237,9 @@ export const ToolCallDisplay = memo(function ToolCallDisplay({
                 <span>Completed in {durationMs}ms</span>
                 {showEditorLink &&
                   (tool === 'read_file' || tool === 'write_file' || tool === 'edit_file') &&
-                  String(args.path ?? '') && (
+                  String(metadata?.path ?? args.path ?? '') && (
                     <a
-                      href={`vscode://file/${String(args.path)}${editorLine ? `:${editorLine}` : ''}`}
+                      href={`vscode://file/${String(metadata?.path ?? args.path)}${editorLine ? `:${editorLine}` : ''}`}
                       className="text-accent-primary hover:underline ml-auto"
                     >
                       Open in VSCode

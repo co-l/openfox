@@ -232,6 +232,7 @@ describe('readFileTool - Image Support', () => {
       expect(result.output).not.toContain('1: line 1')
       expect(result.metadata).toBeDefined()
       expect(result.metadata?.['encoding']).toBe('utf-8')
+      expect(result.metadata?.['path']).toBe('/test/workdir/test.ts')
     })
 
     it('should handle text files with offset and limit parameters', async () => {
