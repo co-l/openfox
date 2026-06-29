@@ -25,12 +25,13 @@ async function setupTestEnvironment(): Promise<TestContext> {
   // No pre-configured providers — simulates a fresh install; provider added via onboarding UI
   const configJson = {
     workspace: { workdir },
+    server: { openBrowser: false },
   }
 
   const { writeFile, mkdir: mkd } = await import('node:fs/promises')
-  const devConfigDir = join(configDir, 'openfox-dev')
-  await mkd(devConfigDir, { recursive: true })
-  await writeFile(join(devConfigDir, 'config.json'), JSON.stringify(configJson, null, 2), 'utf-8')
+  const prodConfigDir = join(configDir, 'openfox')
+  await mkd(prodConfigDir, { recursive: true })
+  await writeFile(join(prodConfigDir, 'config.json'), JSON.stringify(configJson, null, 2), 'utf-8')
 
   const port = 10669 + (timestamp % 1000)
   const serverUrl = `http://localhost:${port}`
@@ -46,24 +47,32 @@ async function setupTestEnvironment(): Promise<TestContext> {
     OPENFOX_WORKDIR: workdir,
     OPENFOX_LLM_URL: 'http://192.168.1.223:8000',
     OPENFOX_BACKEND: 'vllm',
-    OPENFOX_DEV: 'true',
     OPENFOX_LOG_LEVEL: 'warn',
     OPENFOX_MOCK_LLM: 'false',
   }
 
-  // Start the dev server
-  const serverProcess = spawn('npm', ['run', 'dev'], {
+  // Start the built production server (tests the dist bundle, not tsx-transpiled source)
+  const serverProcess = spawn('node', ['dist/cli/index.js'], {
     cwd: process.cwd(),
     env: serverEnv,
     stdio: ['ignore', 'pipe', 'pipe'],
   })
 
-  // Wait for server to be ready
+  let stderr = ''
+  serverProcess.stderr!.on('data', (chunk: Buffer) => { stderr += chunk.toString() })
+
+  // Wait for server to be ready, but fail fast if process dies early
   const maxWait = 60000
   const startTime = Date.now()
   let serverReady = false
 
   while (Date.now() - startTime < maxWait) {
+    // Check if process crashed before health check
+    if (serverProcess.exitCode !== null) {
+      serverProcess.kill()
+      throw new Error(`Server exited early (code ${serverProcess.exitCode}): ${stderr.slice(0, 500)}`)
+    }
+
     try {
       const response = await fetch(`${serverUrl}/api/health`)
       if (response.ok) {
@@ -101,6 +110,7 @@ test.describe('Full-stack Build & Verify E2E', () => {
   let ctx: TestContext
 
   test.beforeAll(async () => {
+    test.setTimeout(120_000)
     ctx = await setupTestEnvironment()
   })
 
@@ -109,6 +119,7 @@ test.describe('Full-stack Build & Verify E2E', () => {
   })
 
   test('complete workflow: onboarding -> project -> session -> build&verify', async ({ page }) => {
+    test.setTimeout(180_000)
     const { serverUrl, workdir } = ctx
 
     // Navigate to onboarding
@@ -201,12 +212,11 @@ test.describe('Full-stack Build & Verify E2E', () => {
     // Click the workflow button to start Build & Verify
     await page.getByTestId('workflow-run-button').first().click()
 
-    // Wait for task.completed event - stats are displayed after Build & Verify completes
-    // The format varies but typically includes "Build & Verify" heading and stats
-    await page.waitForSelector('text=Build & Verify', { timeout: 120000 })
-    await page.waitForTimeout(2000)
+    // Wait for Build & Verify to complete — task completed card appears with stats
+    await page.waitForSelector('[data-testid="task-completed-card"]', { timeout: 120000 })
+    await page.waitForTimeout(1000)
 
-    // Verify stats are present by checking for key indicators
+    // Verify stats are present
     const pageContent = await page.content()
     const hasTime = /total time|Total time|\d+\.\d+s/i.test(pageContent)
     const hasToolCalls = /tool calls|Tool calls/i.test(pageContent) || /\d+\s*(tool calls?)/i.test(pageContent)

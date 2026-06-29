@@ -29,6 +29,7 @@ export const TaskCompletedCard = memo(function TaskCompletedCard({ data }: TaskC
 
   return (
     <div
+      data-testid="task-completed-card"
       className="feed-item rounded p-3 border"
       style={{ borderColor: hexToRgba(color, 0.3), backgroundColor: hexToRgba(color, 0.08) }}
     >
