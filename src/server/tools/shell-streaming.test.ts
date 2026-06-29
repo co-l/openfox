@@ -218,11 +218,48 @@ echo "line 3"
     const elapsed = Date.now() - startTime
 
     expect(result.success).toBe(false)
-    expect(result.error).toContain('timed out')
+    expect(result.output).toContain('[Process timed out after 2000ms]')
     // Should time out at ~2000ms (agent-requested), NOT at 500ms (agentTimeout)
     expect(elapsed).toBeGreaterThanOrEqual(1000)
     expect(elapsed).toBeLessThan(5000)
   }, 7000)
+
+  it('includes partial stdout/stderr when command times out', async () => {
+    const contextWithShortTimeout: ToolContext = {
+      sessionManager: mockSessionManager,
+      workdir: tempDir,
+      sessionId: 'test-session',
+    }
+
+    // Command outputs immediately, then sleeps past timeout
+    const result = await runCommandTool.execute(
+      { command: 'echo "before timeout" && sleep 10 && echo "after timeout"', timeout: 500 },
+      contextWithShortTimeout,
+    )
+
+    expect(result.success).toBe(false)
+    expect(result.output).toContain('before timeout')
+    expect(result.output).not.toContain('after timeout')
+    expect(result.output).toContain('[Exit code: 124]')
+    expect(result.output).toContain('[Process timed out after 500ms]')
+  }, 5000)
+
+  it('includes partial stderr when command times out', async () => {
+    const contextWithShortTimeout: ToolContext = {
+      sessionManager: mockSessionManager,
+      workdir: tempDir,
+      sessionId: 'test-session',
+    }
+
+    const result = await runCommandTool.execute(
+      { command: 'echo "error output" >&2 && sleep 10', timeout: 500 },
+      contextWithShortTimeout,
+    )
+
+    expect(result.success).toBe(false)
+    expect(result.output).toContain('error output')
+    expect(result.output).toContain('[Exit code: 124]')
+  }, 5000)
 
   describe('tail pipe handling', () => {
     it('streams full output to user but returns only tailed output to agent', async () => {

@@ -147,18 +147,17 @@ function executeCommand(
     const proc = spawnShellProcess(command, cwd, signal, true)
     let stdout = ''
     let stderr = ''
-    let killed = false
+    let timedOut = false
     let aborted = false
     let exited = false
 
     const timer = setTimeout(() => {
-      killed = true
+      timedOut = true
       void terminateProcessTree(proc, { exited: () => exited })
-      reject(new Error(`Command timed out after ${timeout}ms`))
     }, timeout)
 
     const onAbort = () => {
-      if (!killed && !aborted) {
+      if (!timedOut && !aborted) {
         aborted = true
         void terminateProcessTree(proc, { exited: () => exited })
       }
@@ -182,7 +181,15 @@ function executeCommand(
       clearTimeout(timer)
       signal?.removeEventListener('abort', onAbort)
 
-      if (killed) {
+      if (timedOut) {
+        let output = stdout.trim()
+        if (output) output += '\n\n'
+        output += `[Exit code: 124]\n[Process timed out after ${timeout}ms]`
+        resolve({
+          stdout: output,
+          stderr: stderr.trim(),
+          exitCode: 124,
+        })
         return
       }
 
