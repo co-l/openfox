@@ -616,22 +616,6 @@ export class PathAccessDeniedError extends Error {
   }
 }
 
-/**
- * @deprecated Use requestPathAccess() instead which handles the Promise flow internally.
- * Kept for backward compatibility during transition.
- */
-export class PathConfirmationInterrupt extends Error {
-  constructor(
-    public readonly callId: string,
-    public readonly paths: string[],
-    public readonly tool: string,
-    public readonly workdir: string,
-  ) {
-    super('Path confirmation required')
-    this.name = 'PathConfirmationInterrupt'
-  }
-}
-
 // ===========================================================================
 // Confirmation State Management
 // ===========================================================================

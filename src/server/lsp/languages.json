@@ -1,0 +1,403 @@
+[
+  {
+    "id": "typescript",
+    "name": "TypeScript",
+    "extensions": [".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs"],
+    "serverCommand": "typescript-language-server",
+    "serverArgs": ["--stdio"],
+    "rootPatterns": ["tsconfig.json", "jsconfig.json", "package.json"],
+    "languageIds": {
+      ".ts": "typescript",
+      ".tsx": "typescriptreact",
+      ".js": "javascript",
+      ".jsx": "javascriptreact",
+      ".mjs": "javascript",
+      ".cjs": "javascript"
+    }
+  },
+  {
+    "id": "python",
+    "name": "Python",
+    "extensions": [".py", ".pyi", ".pyw"],
+    "serverCommand": "pyright-langserver",
+    "serverArgs": ["--stdio"],
+    "rootPatterns": ["pyproject.toml", "setup.py", "requirements.txt", "Pipfile"]
+  },
+  {
+    "id": "rust",
+    "name": "Rust",
+    "extensions": [".rs"],
+    "serverCommand": "rust-analyzer",
+    "serverArgs": [],
+    "rootPatterns": ["Cargo.toml"]
+  },
+  {
+    "id": "go",
+    "name": "Go",
+    "extensions": [".go"],
+    "serverCommand": "gopls",
+    "serverArgs": ["serve"],
+    "rootPatterns": ["go.mod", "go.sum"]
+  },
+  {
+    "id": "cpp",
+    "name": "C/C++",
+    "extensions": [".c", ".cpp", ".cc", ".cxx", ".h", ".hpp", ".hxx", ".hh"],
+    "serverCommand": "clangd",
+    "serverArgs": ["--background-index"],
+    "rootPatterns": ["compile_commands.json", "CMakeLists.txt", ".clangd", "Makefile"]
+  },
+  {
+    "id": "zig",
+    "name": "Zig",
+    "extensions": [".zig"],
+    "serverCommand": "zls",
+    "serverArgs": [],
+    "rootPatterns": ["build.zig", "build.zig.zon"]
+  },
+  {
+    "id": "lua",
+    "name": "Lua",
+    "extensions": [".lua"],
+    "serverCommand": "lua-language-server",
+    "serverArgs": [],
+    "rootPatterns": [".luarc.json", ".luarc.jsonc", ".luacheckrc"]
+  },
+  {
+    "id": "ruby",
+    "name": "Ruby",
+    "extensions": [".rb", ".rake", ".gemspec"],
+    "serverCommand": "solargraph",
+    "serverArgs": ["stdio"],
+    "rootPatterns": ["Gemfile", ".ruby-version"]
+  },
+  {
+    "id": "elixir",
+    "name": "Elixir",
+    "extensions": [".ex", ".exs"],
+    "serverCommand": "elixir-ls",
+    "serverArgs": [],
+    "rootPatterns": ["mix.exs"]
+  },
+  {
+    "id": "haskell",
+    "name": "Haskell",
+    "extensions": [".hs", ".lhs"],
+    "serverCommand": "haskell-language-server-wrapper",
+    "serverArgs": ["--lsp"],
+    "rootPatterns": ["stack.yaml", "cabal.project", "*.cabal"]
+  },
+  {
+    "id": "ocaml",
+    "name": "OCaml",
+    "extensions": [".ml", ".mli"],
+    "serverCommand": "ocamllsp",
+    "serverArgs": [],
+    "rootPatterns": ["dune-project", "dune", "*.opam"]
+  },
+  {
+    "id": "scala",
+    "name": "Scala",
+    "extensions": [".scala", ".sc"],
+    "serverCommand": "metals",
+    "serverArgs": [],
+    "rootPatterns": ["build.sbt", "build.sc", ".metals"]
+  },
+  {
+    "id": "kotlin",
+    "name": "Kotlin",
+    "extensions": [".kt", ".kts"],
+    "serverCommand": "kotlin-language-server",
+    "serverArgs": [],
+    "rootPatterns": ["build.gradle.kts", "build.gradle", "settings.gradle.kts"]
+  },
+  {
+    "id": "java",
+    "name": "Java",
+    "extensions": [".java"],
+    "serverCommand": "jdtls",
+    "serverArgs": [],
+    "rootPatterns": ["pom.xml", "build.gradle", ".project"]
+  },
+  {
+    "id": "csharp",
+    "name": "C#",
+    "extensions": [".cs", ".csx"],
+    "serverCommand": "OmniSharp",
+    "serverArgs": ["-lsp"],
+    "rootPatterns": ["*.csproj", "*.sln"]
+  },
+  {
+    "id": "swift",
+    "name": "Swift",
+    "extensions": [".swift"],
+    "serverCommand": "sourcekit-lsp",
+    "serverArgs": [],
+    "rootPatterns": ["Package.swift", "*.xcodeproj", "*.xcworkspace"]
+  },
+  {
+    "id": "php",
+    "name": "PHP",
+    "extensions": [".php", ".phtml"],
+    "serverCommand": "phpactor",
+    "serverArgs": ["language-server"],
+    "rootPatterns": ["composer.json", "phpunit.xml"]
+  },
+  {
+    "id": "yaml",
+    "name": "YAML",
+    "extensions": [".yaml", ".yml"],
+    "serverCommand": "yaml-language-server",
+    "serverArgs": ["--stdio"],
+    "rootPatterns": []
+  },
+  {
+    "id": "json",
+    "name": "JSON",
+    "extensions": [".json", ".jsonc"],
+    "serverCommand": "vscode-json-language-server",
+    "serverArgs": ["--stdio"],
+    "rootPatterns": []
+  },
+  {
+    "id": "html",
+    "name": "HTML",
+    "extensions": [".html", ".htm", ".xhtml"],
+    "serverCommand": "vscode-html-language-server",
+    "serverArgs": ["--stdio"],
+    "rootPatterns": []
+  },
+  {
+    "id": "css",
+    "name": "CSS",
+    "extensions": [".css", ".scss", ".sass", ".less"],
+    "serverCommand": "vscode-css-language-server",
+    "serverArgs": ["--stdio"],
+    "rootPatterns": []
+  },
+  {
+    "id": "vue",
+    "name": "Vue",
+    "extensions": [".vue"],
+    "serverCommand": "vue-language-server",
+    "serverArgs": ["--stdio"],
+    "rootPatterns": ["vite.config.ts", "vite.config.js", "vue.config.js"]
+  },
+  {
+    "id": "svelte",
+    "name": "Svelte",
+    "extensions": [".svelte"],
+    "serverCommand": "svelteserver",
+    "serverArgs": ["--stdio"],
+    "rootPatterns": ["svelte.config.js", "svelte.config.ts"]
+  },
+  {
+    "id": "terraform",
+    "name": "Terraform",
+    "extensions": [".tf", ".tfvars"],
+    "serverCommand": "terraform-ls",
+    "serverArgs": ["serve"],
+    "rootPatterns": [".terraform", "main.tf"]
+  },
+  {
+    "id": "dockerfile",
+    "name": "Docker",
+    "extensions": [],
+    "serverCommand": "docker-langserver",
+    "serverArgs": ["--stdio"],
+    "rootPatterns": ["Dockerfile", "docker-compose.yml"]
+  },
+  {
+    "id": "bash",
+    "name": "Bash",
+    "extensions": [".sh", ".bash", ".zsh"],
+    "serverCommand": "bash-language-server",
+    "serverArgs": ["start"],
+    "rootPatterns": []
+  },
+  {
+    "id": "sql",
+    "name": "SQL",
+    "extensions": [".sql"],
+    "serverCommand": "sql-language-server",
+    "serverArgs": ["up", "--method", "stdio"],
+    "rootPatterns": [],
+    "installHint": "npm install -g sql-language-server"
+  },
+  {
+    "id": "graphql",
+    "name": "GraphQL",
+    "extensions": [".graphql", ".gql"],
+    "serverCommand": "graphql-lsp",
+    "serverArgs": ["server", "-m", "stream"],
+    "rootPatterns": [".graphqlrc", ".graphqlrc.yml", ".graphqlrc.json", "graphql.config.js"]
+  },
+  {
+    "id": "nix",
+    "name": "Nix",
+    "extensions": [".nix"],
+    "serverCommand": "nil",
+    "serverArgs": [],
+    "rootPatterns": ["flake.nix", "default.nix", "shell.nix"]
+  },
+  {
+    "id": "gleam",
+    "name": "Gleam",
+    "extensions": [".gleam"],
+    "serverCommand": "gleam",
+    "serverArgs": ["lsp"],
+    "rootPatterns": ["gleam.toml"]
+  },
+  {
+    "id": "elm",
+    "name": "Elm",
+    "extensions": [".elm"],
+    "serverCommand": "elm-language-server",
+    "serverArgs": [],
+    "rootPatterns": ["elm.json"]
+  },
+  {
+    "id": "dart",
+    "name": "Dart",
+    "extensions": [".dart"],
+    "serverCommand": "dart",
+    "serverArgs": ["language-server", "--protocol=lsp"],
+    "rootPatterns": ["pubspec.yaml"]
+  },
+  {
+    "id": "julia",
+    "name": "Julia",
+    "extensions": [".jl"],
+    "serverCommand": "julia",
+    "serverArgs": ["--startup-file=no", "--history-file=no", "-e", "using LanguageServer; runserver()"],
+    "rootPatterns": ["Project.toml"]
+  },
+  {
+    "id": "r",
+    "name": "R",
+    "extensions": [".r", ".R", ".rmd", ".Rmd"],
+    "serverCommand": "R",
+    "serverArgs": ["--slave", "-e", "languageserver::run()"],
+    "rootPatterns": ["DESCRIPTION", ".Rproj"]
+  },
+  {
+    "id": "clojure",
+    "name": "Clojure",
+    "extensions": [".clj", ".cljs", ".cljc", ".edn"],
+    "serverCommand": "clojure-lsp",
+    "serverArgs": [],
+    "rootPatterns": ["deps.edn", "project.clj", "shadow-cljs.edn"]
+  },
+  {
+    "id": "nim",
+    "name": "Nim",
+    "extensions": [".nim", ".nims"],
+    "serverCommand": "nimlsp",
+    "serverArgs": [],
+    "rootPatterns": ["*.nimble"]
+  },
+  {
+    "id": "vlang",
+    "name": "V",
+    "extensions": [".v", ".vv"],
+    "serverCommand": "vls",
+    "serverArgs": [],
+    "rootPatterns": ["v.mod"]
+  },
+  {
+    "id": "crystal",
+    "name": "Crystal",
+    "extensions": [".cr"],
+    "serverCommand": "crystalline",
+    "serverArgs": [],
+    "rootPatterns": ["shard.yml"]
+  },
+  {
+    "id": "d",
+    "name": "D",
+    "extensions": [".d"],
+    "serverCommand": "serve-d",
+    "serverArgs": [],
+    "rootPatterns": ["dub.json", "dub.sdl"]
+  },
+  {
+    "id": "erlang",
+    "name": "Erlang",
+    "extensions": [".erl", ".hrl"],
+    "serverCommand": "erlang_ls",
+    "serverArgs": [],
+    "rootPatterns": ["rebar.config", "erlang.mk"]
+  },
+  {
+    "id": "fsharp",
+    "name": "F#",
+    "extensions": [".fs", ".fsx", ".fsi"],
+    "serverCommand": "fsautocomplete",
+    "serverArgs": ["--adaptive-lsp-server-enabled"],
+    "rootPatterns": ["*.fsproj"]
+  },
+  {
+    "id": "fortran",
+    "name": "Fortran",
+    "extensions": [".f", ".f90", ".f95", ".f03", ".f08"],
+    "serverCommand": "fortls",
+    "serverArgs": [],
+    "rootPatterns": []
+  },
+  {
+    "id": "latex",
+    "name": "LaTeX",
+    "extensions": [".tex", ".bib"],
+    "serverCommand": "texlab",
+    "serverArgs": [],
+    "rootPatterns": ["*.tex"]
+  },
+  {
+    "id": "markdown",
+    "name": "Markdown",
+    "extensions": [".md", ".markdown"],
+    "serverCommand": "marksman",
+    "serverArgs": [],
+    "rootPatterns": []
+  },
+  {
+    "id": "toml",
+    "name": "TOML",
+    "extensions": [".toml"],
+    "serverCommand": "taplo",
+    "serverArgs": ["lsp", "stdio"],
+    "rootPatterns": []
+  },
+  {
+    "id": "protobuf",
+    "name": "Protocol Buffers",
+    "extensions": [".proto"],
+    "serverCommand": "bufls",
+    "serverArgs": ["serve"],
+    "rootPatterns": ["buf.yaml", "buf.gen.yaml"]
+  },
+  {
+    "id": "asm",
+    "name": "Assembly",
+    "extensions": [".asm", ".s", ".S"],
+    "serverCommand": "asm-lsp",
+    "serverArgs": [],
+    "rootPatterns": []
+  },
+  {
+    "id": "cmake",
+    "name": "CMake",
+    "extensions": [".cmake"],
+    "serverCommand": "cmake-language-server",
+    "serverArgs": [],
+    "rootPatterns": ["CMakeLists.txt"]
+  },
+  {
+    "id": "perl",
+    "name": "Perl",
+    "extensions": [".pl", ".pm"],
+    "serverCommand": "pls",
+    "serverArgs": [],
+    "rootPatterns": ["cpanfile", "Makefile.PL"]
+  }
+]

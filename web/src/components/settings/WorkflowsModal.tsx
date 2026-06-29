@@ -7,6 +7,7 @@ import { useAgentsStore } from '../../stores/agents'
 import { ArrowRightIcon, EyeIcon } from '../shared/icons'
 import { ConfirmButton, DeleteIcon, DuplicateIcon, useConfirmDialog, CRUDListHeader } from './CRUDModal'
 import { FlowDiagram } from './workflows/FlowDiagram'
+import { WorkflowFormFields } from './workflows/WorkflowFormFields'
 import { WorkflowListSection } from './workflows/WorkflowListItem'
 import { StepPanel } from './workflows/StepPanel'
 import { TransitionPanel } from './workflows/TransitionPanel'
@@ -470,52 +471,18 @@ export function WorkflowsModal({ isOpen, onClose, initialEditId }: WorkflowsModa
           <div className="text-accent-error text-sm px-3 py-2 bg-accent-error/10 rounded mb-3">{formError}</div>
         )}
 
-        <div className="flex items-end gap-3 mb-3 pb-3 border-b border-border flex-wrap">
-          <div className="min-w-[140px]">
-            <label className={labelClass}>Name</label>
-            <input
-              value={formName}
-              onChange={(e) => handleNameChange(e.target.value)}
-              placeholder="Workflow name"
-              className={`${inputClass} ${isReadOnly ? 'opacity-50' : ''}`}
-              readOnly={isReadOnly}
-            />
-          </div>
-          <div className="min-w-[100px]">
-            <label className={labelClass}>ID</label>
-            <input value={formId} readOnly className={`${inputClass} font-mono opacity-50`} />
-          </div>
-          <div className="flex-1 min-w-[140px]">
-            <label className={labelClass}>Description</label>
-            <input
-              value={formDescription}
-              onChange={(e) => !isReadOnly && setFormDescription(e.target.value)}
-              readOnly={isReadOnly}
-              placeholder="What does this workflow do?"
-              className={`${inputClass} ${isReadOnly ? 'opacity-50' : ''}`}
-            />
-          </div>
-          <div className="w-20">
-            <label className={labelClass}>Max Iter.</label>
-            <input
-              type="number"
-              value={formMaxIterations}
-              onChange={(e) => !isReadOnly && setFormMaxIterations(Number(e.target.value))}
-              readOnly={isReadOnly}
-              className={`${inputClass} font-mono ${isReadOnly ? 'opacity-50' : ''}`}
-            />
-          </div>
-          <div>
-            <label className={labelClass}>Color</label>
-            <input
-              type="color"
-              value={formColor}
-              onChange={(e) => !isReadOnly && setFormColor(e.target.value)}
-              disabled={isReadOnly}
-              className={`w-8 h-8 rounded border border-border bg-transparent ${isReadOnly ? 'opacity-50' : 'cursor-pointer'}`}
-            />
-          </div>
-        </div>
+        <WorkflowFormFields
+          formName={formName}
+          formId={formId}
+          formDescription={formDescription}
+          formMaxIterations={formMaxIterations}
+          formColor={formColor}
+          isReadOnly={isReadOnly}
+          onNameChange={handleNameChange}
+          onDescriptionChange={setFormDescription}
+          onMaxIterationsChange={setFormMaxIterations}
+          onColorChange={setFormColor}
+        />
 
         <div className="flex gap-3" style={{ height: 'calc(90vh - 220px)', minHeight: 300 }}>
           <div className="flex-1 min-w-0 bg-bg-primary/50 border border-border rounded-lg flex flex-col overflow-hidden">

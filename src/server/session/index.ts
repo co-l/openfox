@@ -1,1 +1,1 @@
-export { SessionManager, sessionManager, type SessionEvent } from './manager.js'
+export { SessionManager, type SessionEvent } from './manager.js'

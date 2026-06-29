@@ -9,7 +9,6 @@ import {
   addAllowedPath,
   addAllowedPaths,
   checkPathsAccess,
-  PathConfirmationInterrupt,
   PathAccessDeniedError,
   clearAllowedPaths,
   isPathAllowed,
@@ -601,33 +600,6 @@ describe('path-security', () => {
         // Note: To test session allowlist, we'd need to add to allowlist first
         // This is tested in the full flow integration tests
       })
-    })
-  })
-
-  // ===========================================================================
-  // PathConfirmationInterrupt
-  // ===========================================================================
-
-  describe('PathConfirmationInterrupt', () => {
-    it('creates interrupt with correct properties', () => {
-      const interrupt = new PathConfirmationInterrupt(
-        'call-123',
-        ['/etc/passwd', '/var/log'],
-        'run_command',
-        '/home/user/project',
-      )
-
-      expect(interrupt.callId).toBe('call-123')
-      expect(interrupt.paths).toEqual(['/etc/passwd', '/var/log'])
-      expect(interrupt.tool).toBe('run_command')
-      expect(interrupt.workdir).toBe('/home/user/project')
-      expect(interrupt.name).toBe('PathConfirmationInterrupt')
-      expect(interrupt.message).toBe('Path confirmation required')
-    })
-
-    it('is an instance of Error', () => {
-      const interrupt = new PathConfirmationInterrupt('id', [], 'tool', '/wd')
-      expect(interrupt).toBeInstanceOf(Error)
     })
   })
 

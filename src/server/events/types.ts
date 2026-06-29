@@ -23,6 +23,7 @@ import type {
   MessageSegment,
   ContextState,
   Attachment,
+  PreparingToolCall,
 } from '../../shared/types.js'
 
 // ============================================================================
@@ -412,7 +413,7 @@ export interface SessionSnapshot {
   taskStats?: TaskStats
   messageStats?: MessageStatsEntry[]
   pendingConfirmations?: PendingPathConfirmation[]
-  contextWindows?: ContextWindow[]
+  contextWindows?: CompactionRecord[]
 }
 
 /**
@@ -421,11 +422,6 @@ export interface SessionSnapshot {
 export interface ReadFileEntry {
   path: string
   tokenCount: number
-}
-
-export interface PreparingToolCall {
-  index: number
-  name: string
 }
 
 export interface FormatRetry {
@@ -478,7 +474,7 @@ export interface PendingPathConfirmation {
   reason: 'outside_workdir' | 'sensitive_file' | 'both' | 'dangerous_command' | 'git_no_verify'
 }
 
-export interface ContextWindow {
+export interface CompactionRecord {
   closedWindowId: string
   newWindowId: string
   beforeTokens: number

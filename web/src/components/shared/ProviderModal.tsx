@@ -2,137 +2,10 @@ import { useState, useEffect, useRef } from 'react'
 import { authFetch } from '../../lib/api'
 import type { Backend } from '../../stores/config'
 import type { ModelConfig as SharedModelConfig } from '@shared/types.js'
-import { ChevronDownIcon } from './icons'
+import { ChevronDownIcon, GearIcon } from './icons'
 import { getBackendDisplayName } from '../onboarding/types'
-
-function TestFieldRow({
-  message,
-  field,
-  label,
-}: {
-  message: Record<string, unknown> | null | undefined
-  field: string
-  label: string
-}) {
-  const value = message?.[field]
-  return (
-    <div className="flex items-center gap-2 text-xs">
-      <span className={value != null ? 'text-accent-success' : 'text-red-500'}>{value != null ? '✓' : '✗'}</span>
-      <span className="text-text-secondary">{label}:</span>
-      <span className="text-text-primary font-mono truncate max-w-[200px]">{JSON.stringify(value ?? 'undefined')}</span>
-    </div>
-  )
-}
-
-function ExtraKwargsBlock({
-  kwargs,
-  onChange,
-  mode,
-  modelId,
-  testResults,
-  thinkingField,
-  onSeeRaw,
-  onTest,
-}: {
-  kwargs: string
-  onChange: (v: string) => void
-  mode: 'thinking' | 'non-thinking'
-  modelId: string
-  testResults: Record<string, { loading: boolean; result?: string; message?: Record<string, unknown>; error?: string }>
-  thinkingField: string
-  onSeeRaw: (raw: string) => void
-  onTest: () => void
-}) {
-  const testKey = modelId + '-' + mode
-  return (
-    <>
-      <div>
-        <label className="text-xs text-text-secondary block mb-1">Extra kwargs</label>
-        <input
-          type="text"
-          value={kwargs}
-          onChange={(e) => onChange(e.target.value)}
-          className="w-full px-2 py-1 bg-bg-tertiary border border-border rounded text-xs text-text-primary font-mono"
-        />
-      </div>
-      <div className="flex gap-2 items-start">
-        <button
-          onClick={onTest}
-          disabled={testResults[testKey]?.loading}
-          className="px-2 py-1 bg-bg-tertiary border border-border rounded text-xs text-text-muted hover:text-text-secondary disabled:opacity-50"
-        >
-          {testResults[testKey]?.loading ? 'Testing...' : 'Test'}
-        </button>
-        {testResults[testKey]?.result && (
-          <TestResultBlock
-            testKey={testKey}
-            testResults={testResults}
-            thinkingField={thinkingField}
-            onSeeRaw={onSeeRaw}
-          />
-        )}
-        {testResults[testKey]?.error && <span className="text-xs text-red-500">{testResults[testKey]?.error}</span>}
-      </div>
-    </>
-  )
-}
-
-function TestResultBlock({
-  testKey,
-  testResults,
-  thinkingField,
-  onSeeRaw,
-}: {
-  testKey: string
-  testResults: Record<string, { result?: string; message?: Record<string, unknown>; error?: string; loading?: boolean }>
-  thinkingField: string
-  onSeeRaw: (raw: string) => void
-}) {
-  const result = testResults[testKey]
-  if (!result?.result) return null
-
-  // Resolve the actual thinking field from the response
-  const msg = result.message
-  const resolvedField = thinkingField
-    ? thinkingField
-    : msg?.['reasoning']
-      ? 'reasoning'
-      : msg?.['reasoning_content']
-        ? 'reasoning_content'
-        : msg?.['thinking']
-          ? 'thinking'
-          : undefined
-
-  return (
-    <div className="flex-1 space-y-1">
-      {result.message && (
-        <>
-          <TestFieldRow message={result.message} field="content" label="content" />
-          {resolvedField && <TestFieldRow message={result.message} field={resolvedField} label={resolvedField} />}
-        </>
-      )}
-      <button onClick={() => onSeeRaw(result.result ?? '')} className="text-xs text-accent-primary hover:underline">
-        See raw output
-      </button>
-    </div>
-  )
-}
-
-function QueryParamsInput({ value, onChange }: { value: string | undefined; onChange: (v: string) => void }) {
-  return (
-    <div>
-      <label className="text-xs text-text-secondary block mb-1">
-        Query params <span className="text-text-muted">(optional JSON)</span>
-      </label>
-      <input
-        type="text"
-        value={value ?? ''}
-        onChange={(e) => onChange(e.target.value)}
-        className="w-full px-2 py-1 bg-bg-tertiary border border-border rounded text-xs text-text-primary font-mono"
-      />
-    </div>
-  )
-}
+import { ExtraKwargsBlock } from './ExtraKwargsBlock'
+import { QueryParamsInput } from './QueryParamsInput'
 
 const COMMON_PORTS = [8000, 11434, 8080]
 
@@ -561,13 +434,7 @@ export function ProviderModal({
                   className="px-3 h-[38px] bg-bg-primary border border-border rounded-lg hover:border-text-muted transition-colors flex items-center justify-center"
                   title="Provider-level defaults"
                 >
-                  <svg className="w-4 h-4 text-text-muted" viewBox="0 0 20 20" fill="currentColor">
-                    <path
-                      fillRule="evenodd"
-                      d="M11.49 3.17c-.38-1.56-2.6-1.56-2.98 0a1.532 1.532 0 01-2.286.948c-1.372-.836-2.942.734-2.106 2.106.54.886.061 2.042-.947 2.287-1.561.379-1.561 2.6 0 2.978a1.532 1.532 0 01.947 2.287c-.836 1.372.734 2.942 2.106 2.106a1.532 1.532 0 012.287.947c.379 1.561 2.6 1.561 2.978 0a1.533 1.533 0 012.287-.947c1.372.836 2.942-.734 2.106-2.106a1.533 1.533 0 01.947-2.287c1.561-.379 1.561-2.6 0-2.978a1.532 1.532 0 01-.947-2.287c.836-1.372-.734-2.942-2.106-2.106a1.532 1.532 0 01-2.287-.947zM10 13a3 3 0 100-6 3 3 0 000 6z"
-                      clipRule="evenodd"
-                    />
-                  </svg>
+                  <GearIcon className="w-4 h-4 text-text-muted" />
                 </button>
               </div>
             </div>

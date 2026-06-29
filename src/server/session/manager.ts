@@ -1054,17 +1054,3 @@ export class SessionManager {
     }
   }
 }
-
-// Singleton for gradual migration
-// Note: This is deprecated - use the SessionManager from createServerHandle instead
-let _sessionManager: SessionManager | null = null
-export const sessionManager: SessionManager = null as any // eslint-disable-line @typescript-eslint/no-explicit-any
-export function getSessionManager(): SessionManager {
-  if (!_sessionManager) {
-    throw new Error('SessionManager not initialized. Use createServerHandle to get a SessionManager instance.')
-  }
-  return _sessionManager
-}
-export function setSessionManager(sm: SessionManager): void {
-  _sessionManager = sm
-}
