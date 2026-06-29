@@ -11,7 +11,7 @@ import { useCommandsStore } from '../stores/commands'
 import { useWorkflowsStore } from '../stores/workflows'
 import { useAgentsStore } from '../stores/agents'
 import { useSessionStore } from '../stores/session'
-import { fuzzyMatch, handleModalNavigation } from '../lib/modal-utils'
+import { dedupById, fuzzyMatch, handleModalNavigation } from '../lib/modal-utils'
 
 interface QuickActionModalProps {
   isOpen: boolean
@@ -93,11 +93,6 @@ export function QuickActionModal({
       closeCompleteAction.current = undefined
     }
   }, [isOpen, onCloseComplete])
-
-  const dedupById = <T extends { id: string }>(defaults: T[], userItems: T[]): T[] => {
-    const userIds = new Set(userItems.map((i) => i.id))
-    return [...defaults.filter((i) => !userIds.has(i.id)), ...userItems]
-  }
 
   const items: ActionItem[] = [
     {

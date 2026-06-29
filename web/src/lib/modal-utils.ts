@@ -1,5 +1,10 @@
 import type React from 'react'
 
+export function dedupById<T extends { id: string }>(defaults: T[], overrides: T[]): T[] {
+  const overrideIds = new Set(overrides.map((i) => i.id))
+  return [...defaults.filter((i) => !overrideIds.has(i.id)), ...overrides]
+}
+
 export function fuzzyMatch(text: string, query: string): boolean {
   if (!query) return true
   const queryParts = query.toLowerCase().split(/\s+/)

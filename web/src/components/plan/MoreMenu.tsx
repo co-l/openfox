@@ -4,6 +4,7 @@ import { useCommandsStore } from '../../stores/commands'
 import { CommandsModal } from '../settings/CommandsModal'
 import { useWorkflowsStore, type WorkflowInfo } from '../../stores/workflows'
 import { WorkflowsModal } from '../settings/WorkflowsModal'
+import { dedupById } from '../../lib/modal-utils'
 import { EditButton } from '../shared/IconButton'
 import { Portal } from '../shared/Portal'
 import { useClickOutside } from '../../hooks/useClickOutside'
@@ -56,14 +57,16 @@ export function MoreMenu({
 
   const commandDefaults = useCommandsStore((state) => state.defaults)
   const commandUserItems = useCommandsStore((state) => state.userItems)
+  const commandProjectItems = useCommandsStore((state) => state.projectItems)
   const fetchCommands = useCommandsStore((state) => state.fetchCommands)
 
   const workflowDefaults = useWorkflowsStore((state) => state.defaults)
   const workflowUserItems = useWorkflowsStore((state) => state.userItems)
+  const workflowProjectItems = useWorkflowsStore((state) => state.projectItems)
   const fetchWorkflows = useWorkflowsStore((state) => state.fetchWorkflows)
 
-  const commands = [...commandDefaults, ...commandUserItems]
-  const workflows = [...workflowDefaults, ...workflowUserItems]
+  const commands = dedupById(dedupById(commandDefaults, commandUserItems), commandProjectItems)
+  const workflows = dedupById(dedupById(workflowDefaults, workflowUserItems), workflowProjectItems)
 
   useEffect(() => {
     if (isOpen) {
