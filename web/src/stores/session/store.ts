@@ -318,9 +318,13 @@ export const useSessionStore = create<SessionState>((set, get) => {
         if (!res.ok) return
 
         const data = await res.json()
+        const loadedMessages = (data.messages as Message[] | undefined) ?? []
+        const streamingMsg = loadedMessages.find((m) => m.isStreaming) ?? null
         set({
           currentSession: data.session,
-          messages: (data.messages as Message[] | undefined) ?? [],
+          messages: loadedMessages,
+          streamingMessageId: streamingMsg?.id ?? null,
+          streamingMessage: streamingMsg,
           contextState: data.contextState,
           queuedMessages: (data.queueState as QueuedMessage[] | undefined) ?? [],
           pendingQuestions: (data.pendingQuestions ?? []) as PendingQuestionPayload[],

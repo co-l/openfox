@@ -1325,6 +1325,96 @@ describe('useSessionStore session isolation', () => {
     expect(useSessionStore.getState().pendingQuestions).toEqual([])
   })
 
+  it('restores streamingMessage from REST response on loadSession', async () => {
+    const useSessionStore = await loadSessionStore()
+
+    const streamingMsg: any = {
+      id: 'assistant-streaming',
+      role: 'assistant',
+      content: 'partial content so far',
+      timestamp: '2024-01-01T00:00:00.000Z',
+      tokenCount: 0,
+      isStreaming: true,
+    }
+
+    fetchMock.mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      json: () =>
+        Promise.resolve({
+          success: true,
+          session: {
+            id: 'session-1',
+            projectId: 'project-1',
+            workdir: '/tmp/project-1',
+            mode: 'planner',
+            phase: 'plan',
+            isRunning: true,
+            criteria: [],
+            summary: null,
+            messages: [streamingMsg],
+          },
+          messages: [streamingMsg],
+          contextState: {
+            currentTokens: 50,
+            maxTokens: 200000,
+            compactionCount: 0,
+            dangerZone: false,
+            canCompact: false,
+          },
+          queueState: [],
+          pendingQuestions: [],
+        }),
+    })
+
+    await useSessionStore.getState().loadSession('session-1')
+
+    const state = useSessionStore.getState()
+    expect(state.streamingMessageId).toBe('assistant-streaming')
+    expect(state.streamingMessage).toEqual(streamingMsg)
+    expect(state.messages).toEqual([streamingMsg])
+  })
+
+  it('sets streamingMessageId to null when REST response has no streaming message', async () => {
+    const useSessionStore = await loadSessionStore()
+
+    fetchMock.mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      json: () =>
+        Promise.resolve({
+          success: true,
+          session: {
+            id: 'session-2',
+            projectId: 'project-1',
+            workdir: '/tmp/project-1',
+            mode: 'planner',
+            phase: 'plan',
+            isRunning: false,
+            criteria: [],
+            summary: null,
+            messages: [],
+          },
+          messages: [],
+          contextState: {
+            currentTokens: 10,
+            maxTokens: 200000,
+            compactionCount: 0,
+            dangerZone: false,
+            canCompact: false,
+          },
+          queueState: [],
+          pendingQuestions: [],
+        }),
+    })
+
+    await useSessionStore.getState().loadSession('session-2')
+
+    const state = useSessionStore.getState()
+    expect(state.streamingMessageId).toBeNull()
+    expect(state.streamingMessage).toBeNull()
+  })
+
   it('prevents concurrent createSession calls when pendingSessionCreate is already true', async () => {
     const useSessionStore = await loadSessionStore()
 
