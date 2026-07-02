@@ -195,6 +195,19 @@ export async function isPathWithinSandbox(
 // ===========================================================================
 
 /**
+ * Check if a string looks like a regex pattern rather than a file path.
+ * Uses characters that are diagnostic of regex patterns while avoiding
+ * characters that commonly appear in legitimate filenames.
+ *
+ * Included: * ? + [ ] \  — core regex quantifiers, char classes, escaping
+ * Excluded: ( ) { } | ^ $ — can appear in real filenames (e.g.,
+ *   `file(1).txt`, `{braces}`, `pipe|sym`, `^caret`, `$variable`)
+ */
+function looksLikeRegex(str: string): boolean {
+  return /[*?+[\]\\]/.test(str)
+}
+
+/**
  * Extract absolute paths from a shell command (heuristic).
  * Handles: /absolute/paths, ~/tilde/paths, quoted paths.
  * Filters out safe paths (/dev/*) and URLs.
@@ -255,6 +268,11 @@ export function extractAbsolutePathsFromCommand(command: string): string[] {
       continue // Skip regex patterns
     }
 
+    // Check if it looks like a regex pattern with metacharacters
+    if (content.startsWith('/') && looksLikeRegex(content)) {
+      continue
+    }
+
     // Check for absolute path
     if (content.startsWith('/')) {
       const resolved = normalize(content)
@@ -285,8 +303,8 @@ export function extractAbsolutePathsFromCommand(command: string): string[] {
       continue
     }
 
-    // Skip if it looks like a regex (surrounded by /)
-    if (pathCandidate.endsWith('/') && pathCandidate.split('/').length <= 2) {
+    // Skip if it looks like a regex pattern with metacharacters
+    if (looksLikeRegex(pathCandidate)) {
       continue
     }
 

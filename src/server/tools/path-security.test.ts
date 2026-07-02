@@ -400,6 +400,62 @@ describe('path-security', () => {
         expect(paths).not.toContain('/pattern/')
       })
 
+      it('excludes complex regex patterns with metacharacters in grep (basic regex)', () => {
+        const paths = extractAbsolutePathsFromCommand(
+          'grep -n "/api/sessions.*message\\|sessions.*message" src/server/index.ts | head -10',
+        )
+        expect(paths).not.toContain('/api/sessions.*message\\|sessions.*message')
+        expect(paths).toHaveLength(0)
+      })
+
+      it('excludes complex regex patterns with metacharacters in grep (extended regex)', () => {
+        const paths = extractAbsolutePathsFromCommand(
+          "grep -E '/api/sessions.*message|sessions.*message' src/server/index.ts | head -10",
+        )
+        expect(paths).not.toContain('/api/sessions.*message|sessions.*message')
+        expect(paths).toHaveLength(0)
+      })
+
+      it('excludes regex patterns with metacharacters but no trailing slash', () => {
+        const paths = extractAbsolutePathsFromCommand("grep '/src/.*\\.ts$' file.txt")
+        expect(paths).not.toContain('/src/.*\\.ts$')
+      })
+
+      it('still extracts legitimate paths with dots, dashes, underscores', () => {
+        const paths = extractAbsolutePathsFromCommand('cat "/path/with-dash_underscore.ext"')
+        expect(paths).toContain('/path/with-dash_underscore.ext')
+      })
+
+      it('excludes regex character classes like [abc] in grep', () => {
+        const paths = extractAbsolutePathsFromCommand("grep '/[abc]' file.txt")
+        expect(paths).not.toContain('/[abc]')
+      })
+
+      it('excludes regex quantifier + in grep', () => {
+        const paths = extractAbsolutePathsFromCommand("grep '/foo+' file.txt")
+        expect(paths).not.toContain('/foo+')
+      })
+
+      it('still extracts paths containing braces {}', () => {
+        const paths = extractAbsolutePathsFromCommand("cat '/path/with{braces}/file.txt'")
+        expect(paths).toContain('/path/with{braces}/file.txt')
+      })
+
+      it('still extracts paths containing pipe |', () => {
+        const paths = extractAbsolutePathsFromCommand("cat '/path/with|pipe/file.txt'")
+        expect(paths).toContain('/path/with|pipe/file.txt')
+      })
+
+      it('still extracts paths containing caret ^', () => {
+        const paths = extractAbsolutePathsFromCommand("cat '/path/with^caret/file.txt'")
+        expect(paths).toContain('/path/with^caret/file.txt')
+      })
+
+      it('still extracts paths containing dollar $', () => {
+        const paths = extractAbsolutePathsFromCommand("cat '/path/$variable/file.txt'")
+        expect(paths).toContain('/path/$variable/file.txt')
+      })
+
       it('excludes flag values with =', () => {
         const paths = extractAbsolutePathsFromCommand('command --config=/path/to/config')
         // This is ambiguous - we DO want to catch this as it's a real path
