@@ -95,9 +95,8 @@ describe('ProviderModal - thinkingLevel persistence', () => {
     const savedData: ProviderFormData = onSaveMock.mock.calls[0]![0]!
     const savedModel = savedData.models.find((m) => m.id === modelId)
     expect(savedModel).toBeDefined()
-    // DESIRED BEHAVIOR: when thinkingEnabled is true and the input shows 'max'
-    // as default, the save payload should include thinkingLevel: 'max'
-    expect(savedModel?.thinkingLevel).toBe('max')
+    // No default thinkingLevel — auto-config or user sets it explicitly
+    expect(savedModel?.thinkingLevel).toBeUndefined()
   })
 
   it('includes all model fields in save payload', async () => {
@@ -117,8 +116,6 @@ describe('ProviderModal - thinkingLevel persistence', () => {
       'thinkingEnabled',
       'thinkingLevel',
       'nonThinkingEnabled',
-      'thinkingExtraKwargs',
-      'nonThinkingExtraKwargs',
       'thinkingQueryParams',
       'nonThinkingQueryParams',
       'temperature',

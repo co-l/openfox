@@ -11,7 +11,7 @@ import type { ServerHandle } from './context.js'
 import { initDatabase } from './db/index.js'
 import { initEventStore } from './events/index.js'
 import { detectModel, getLlmStatus, getBackendDisplayName } from './llm/index.js'
-import { ensureVersionPrefix, buildModelsUrl } from './llm/url-utils.js'
+import { buildModelsUrl } from './llm/url-utils.js'
 import { createMockLLMClient } from './llm/mock.js'
 import { createProviderManager, parseDefaultModelSelection } from './provider-manager.js'
 import { createToolRegistry, setMcpTools } from './tools/index.js'
@@ -937,49 +937,28 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
     }
   })
 
-  // Onboarding: test thinking params against a provider URL
-  app.post('/api/providers/test-params', async (req, res) => {
-    const { url, model, params, apiKey, queryParams } = req.body as {
+  // Auto-config: probe a provider's models to discover working thinking/non-thinking params and context windows
+  app.post('/api/providers/auto-config', async (req, res) => {
+    const { url, apiKey, backend, models } = req.body as {
       url: string
-      model: string
-      params: Record<string, unknown>
       apiKey?: string
-      queryParams?: Record<string, unknown>
+      backend: string
+      models: Array<{ id: string }>
     }
     if (!url) return res.status(400).json({ error: 'url is required' })
-    if (!model) return res.status(400).json({ error: 'model is required' })
+    if (!models?.length) return res.status(400).json({ error: 'models is required' })
+
     try {
-      const headers: Record<string, string> = { 'Content-Type': 'application/json' }
-      if (apiKey) headers['Authorization'] = `Bearer ${apiKey}`
-
-      // When queryParams are provided for the mode, skip auto-generated params
-      // and let the user fully control the request body
-      const hasQueryParams = queryParams && Object.keys(queryParams).length > 0
-      const body = {
-        model,
-        messages: [{ role: 'user', content: 'say hi in one word' }],
-        max_tokens: 8000,
-        ...(hasQueryParams ? {} : params),
-        ...(hasQueryParams ? queryParams : {}),
-      }
-
-      const response = await fetch(`${ensureVersionPrefix(url)}/chat/completions`, {
-        method: 'POST',
-        headers,
-        body: JSON.stringify(body),
-        signal: AbortSignal.timeout(15000),
+      const { autoConfig } = await import('./providers/auto-config.js')
+      const result = await autoConfig({
+        url,
+        ...(apiKey ? { apiKey } : {}),
+        backend: backend || 'unknown',
+        models,
       })
-
-      if (!response.ok) {
-        const errorBody = await response.text()
-        return res.status(400).json({ error: `API error (${response.status}): ${errorBody.slice(0, 2000)}` })
-      }
-
-      const data = (await response.json()) as { choices?: Array<{ message?: Record<string, unknown> }> }
-      const message = data.choices?.[0]?.message ?? {}
-      res.json({ success: true, message, raw: JSON.stringify(data, null, 2).slice(0, 2000) })
+      res.json(result)
     } catch (error) {
-      res.status(400).json({ error: error instanceof Error ? error.message : 'Request failed' })
+      res.status(500).json({ error: error instanceof Error ? error.message : 'Auto-config failed' })
     }
   })
 

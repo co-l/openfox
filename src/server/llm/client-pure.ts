@@ -209,22 +209,32 @@ async function buildChatCompletionCreateParams(
 
   const queryParams = request.modelSettings?.queryParams as Record<string, unknown> | undefined
   const hasQueryParams = queryParams && Object.keys(queryParams).length > 0
-
-  if (resolvedEffort && !hasQueryParams) {
-    ;(params as unknown as Record<string, unknown>)['reasoning_effort'] = resolvedEffort
-
-    const chatTemplateKwargs = request.modelSettings?.chatTemplateKwargs
-    if (chatTemplateKwargs) {
-      ;(params as unknown as Record<string, unknown>)['chat_template_kwargs'] = chatTemplateKwargs
-    } else if (capabilities.supportsChatTemplateKwargs) {
-      ;(params as unknown as Record<string, unknown>)['chat_template_kwargs'] = {
-        enable_thinking: resolvedEffort !== 'none',
-      }
-    }
-  }
+  const hasExplicitModelSettings = hasQueryParams || !!request.modelSettings?.chatTemplateKwargs
 
   if (hasQueryParams) {
+    // queryParams are the user's explicit config — merge into params
     Object.assign(params as unknown as Record<string, unknown>, queryParams)
+    // reasoning_effort from client config supersedes queryParams (user-set thinkingLevel wins)
+    if (resolvedEffort) {
+      ;(params as unknown as Record<string, unknown>)['reasoning_effort'] = resolvedEffort
+    }
+  } else if (hasExplicitModelSettings) {
+    // User provided explicit chatTemplateKwargs — use as-is, no reasoning_effort injected
+    const chatTemplateKwargs = request.modelSettings!.chatTemplateKwargs
+    if (chatTemplateKwargs) {
+      ;(params as unknown as Record<string, unknown>)['chat_template_kwargs'] = chatTemplateKwargs
+    }
+  } else {
+    // No explicit model settings — apply reasoning_effort from client config if set
+    if (resolvedEffort) {
+      ;(params as unknown as Record<string, unknown>)['reasoning_effort'] = resolvedEffort
+    }
+
+    if (resolvedEffort && capabilities.supportsChatTemplateKwargs) {
+      ;(params as unknown as Record<string, unknown>)['chat_template_kwargs'] = {
+        enable_thinking: true,
+      }
+    }
   }
 
   const modelParams = buildModelParams({ temperature, topP, topK, maxTokens })

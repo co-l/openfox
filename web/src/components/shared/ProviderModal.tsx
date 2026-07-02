@@ -4,10 +4,9 @@ import type { Backend } from '../../stores/config'
 import type { ModelConfig as SharedModelConfig } from '@shared/types.js'
 import { ChevronDownIcon, GearIcon } from './icons'
 import { getBackendDisplayName } from '../onboarding/types'
-import { ExtraKwargsBlock } from './ExtraKwargsBlock'
 import { QueryParamsInput } from './QueryParamsInput'
 
-const COMMON_PORTS = [8000, 11434, 8080]
+const COMMON_PORTS = [8080, 11434, 8000]
 
 const BACKEND_OPTIONS: { value: Backend; label: string }[] = [
   { value: 'llamacpp', label: 'llama.cpp' },
@@ -92,12 +91,10 @@ export function ProviderModal({
   const [showDefaults, setShowDefaults] = useState(false)
   const [thinkingField, setThinkingField] = useState('')
   const [modelConfigs, setModelConfigs] = useState<Record<string, ModelConfig>>({})
-  const [thinkKwargs, setThinkKwargs] = useState('{"enable_thinking": true}')
-  const [nonThinkKwargs, setNonThinkKwargs] = useState('{"enable_thinking": false}')
-  const [testResults, setTestResults] = useState<
-    Record<string, { loading: boolean; result?: string; message?: Record<string, unknown>; error?: string }>
-  >({})
-  const [rawModalData, setRawModalData] = useState<string | null>(null)
+  const [autoConfigState, setAutoConfigState] = useState<{
+    loading: boolean
+    progress: Record<string, 'pending' | 'probing' | 'done' | 'error'>
+  }>({ loading: false, progress: {} })
   const urlInputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
@@ -122,8 +119,6 @@ export function ProviderModal({
       setFormIsLocal(editProvider?.isLocal ?? false)
       setFetchError(null)
       setThinkingField(editProvider?.thinkingField ?? '')
-      setTestResults({})
-      setRawModalData(null)
 
       if (editProvider?.models?.length) {
         const configs: Record<string, ModelConfig> = {}
@@ -132,10 +127,8 @@ export function ProviderModal({
             contextWindow: m.contextWindow,
             supportsVision: m.supportsVision,
             thinkingEnabled: m.thinkingEnabled,
-            thinkingLevel: m.thinkingLevel ?? (m.thinkingEnabled ? 'max' : undefined),
+            thinkingLevel: m.thinkingLevel,
             nonThinkingEnabled: m.nonThinkingEnabled,
-            thinkingExtraKwargs: m.thinkingExtraKwargs,
-            nonThinkingExtraKwargs: m.nonThinkingExtraKwargs,
             thinkingQueryParams: m.thinkingQueryParams,
             nonThinkingQueryParams: m.nonThinkingQueryParams,
             defaultTemperature: m.defaultTemperature,
@@ -162,6 +155,19 @@ export function ProviderModal({
     }
   }, [formStep])
 
+  // Auto-run auto-config when backend type is selected and models are loaded
+  // Only for new providers — editing an existing provider should not trigger auto-config
+  const autoConfigRan = useRef(false)
+  useEffect(() => {
+    if (editProvider) return // never auto-config when editing
+    if (formBackend && models.length > 0 && !autoConfigRan.current && !autoConfigState.loading) {
+      autoConfigRan.current = true
+      for (const m of models) {
+        runAutoConfig(m.id)
+      }
+    }
+  }, [formBackend, models.length])
+
   async function fetchModels(url: string) {
     setFetchingModels(true)
     setFetchError(null)
@@ -180,7 +186,7 @@ export function ProviderModal({
             configs[m.id] = {
               contextWindow: m.contextWindow,
               thinkingEnabled: true,
-              thinkingLevel: 'max',
+              thinkingLevel: undefined,
               defaultTemperature: (m as { defaultTemperature?: number }).defaultTemperature,
               defaultTopP: (m as { defaultTopP?: number }).defaultTopP,
               defaultTopK: (m as { defaultTopK?: number }).defaultTopK,
@@ -199,66 +205,73 @@ export function ProviderModal({
     setFetchingModels(false)
   }
 
-  async function testThinkingParams(modelId: string, mode: 'thinking' | 'non-thinking') {
-    const key = modelId + '-' + mode
-    setTestResults((prev) => ({ ...prev, [key]: { loading: true } }))
-    const config = modelConfigs[modelId]
-    const params: Record<string, unknown> = {}
-    let queryParams: Record<string, unknown> | undefined
-    if (mode === 'thinking') {
-      params['reasoning_effort'] = config?.thinkingLevel ?? 'low'
-      if (thinkKwargs) {
-        try {
-          params['chat_template_kwargs'] = JSON.parse(thinkKwargs) as Record<string, unknown>
-        } catch {
-          /* invalid JSON, skip */
-        }
-      }
-      if (config?.thinkingQueryParams) {
-        try {
-          queryParams = JSON.parse(config.thinkingQueryParams) as Record<string, unknown>
-        } catch {
-          /* skip */
-        }
-      }
-    } else {
-      params['reasoning_effort'] = 'none'
-      if (nonThinkKwargs) {
-        try {
-          params['chat_template_kwargs'] = JSON.parse(nonThinkKwargs) as Record<string, unknown>
-        } catch {
-          /* invalid JSON, skip */
-        }
-      }
-      if (config?.nonThinkingQueryParams) {
-        try {
-          queryParams = JSON.parse(config.nonThinkingQueryParams) as Record<string, unknown>
-        } catch {
-          /* skip */
-        }
-      }
-    }
+  async function runAutoConfig(modelId: string) {
+    setAutoConfigState((prev) => ({
+      loading: true,
+      progress: { ...prev.progress, [modelId]: 'probing' },
+    }))
     try {
-      const response = await authFetch('/api/providers/test-params', {
+      const response = await authFetch('/api/providers/auto-config', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ url: formUrl, model: modelId, params, queryParams, apiKey: formApiKey || undefined }),
+        body: JSON.stringify({
+          url: formUrl,
+          apiKey: formApiKey || undefined,
+          backend: formBackend || 'unknown',
+          models: [{ id: modelId }],
+        }),
       })
-      const data = await response.json()
-      if (response.ok) {
-        setTestResults((prev) => ({
+      if (!response.ok) {
+        const data = await response.json()
+        throw new Error(data.error ?? 'Auto-config failed')
+      }
+      const data = (await response.json()) as {
+        models: Array<{
+          id: string
+          contextWindow: number
+          contextSource: 'backend' | 'hardcoded' | 'default'
+          supportsVision: boolean
+          thinkingConfig: Record<string, unknown> | null
+          nonThinkingConfig: Record<string, unknown> | null
+        }>
+      }
+      for (const m of data.models) {
+        const config: Partial<ModelConfig> = {}
+        // Only apply context/supportsvision when reliably detected
+        if (m.contextSource !== 'default') {
+          config.contextWindow = m.contextWindow
+          config.supportsVision = m.supportsVision
+        }
+        if (m.thinkingConfig) {
+          config.thinkingEnabled = true
+          config.thinkingQueryParams = JSON.stringify(m.thinkingConfig)
+        }
+        if (m.nonThinkingConfig) {
+          config.nonThinkingEnabled = true
+          config.nonThinkingQueryParams = JSON.stringify(m.nonThinkingConfig)
+        }
+        updateModelConfig(m.id, config)
+        setAutoConfigState((prev) => ({
           ...prev,
-          [key]: { loading: false, result: JSON.stringify(data, null, 2), message: data.message },
+          progress: { ...prev.progress, [m.id]: 'done' },
         }))
-      } else {
-        setTestResults((prev) => ({ ...prev, [key]: { loading: false, error: data.error ?? 'Test failed' } }))
       }
     } catch (error) {
-      setTestResults((prev) => ({
+      console.error('Auto-config error:', error)
+      setAutoConfigState((prev) => ({
         ...prev,
-        [key]: { loading: false, error: error instanceof Error ? error.message : 'Request failed' },
+        progress: { ...prev.progress, [modelId]: 'error' },
       }))
+    } finally {
+      setAutoConfigState((prev) => ({ ...prev, loading: false }))
     }
+  }
+
+  function resetStep2() {
+    setModels([])
+    setModelConfigs({})
+    setAutoConfigState({ loading: false, progress: {} })
+    autoConfigRan.current = false
   }
 
   function handleSave() {
@@ -279,8 +292,6 @@ export function ProviderModal({
         thinkingEnabled: modelConfigs[m.id]?.thinkingEnabled,
         thinkingLevel: modelConfigs[m.id]?.thinkingLevel,
         nonThinkingEnabled: modelConfigs[m.id]?.nonThinkingEnabled,
-        thinkingExtraKwargs: modelConfigs[m.id]?.thinkingExtraKwargs,
-        nonThinkingExtraKwargs: modelConfigs[m.id]?.nonThinkingExtraKwargs,
         thinkingQueryParams: modelConfigs[m.id]?.thinkingQueryParams,
         nonThinkingQueryParams: modelConfigs[m.id]?.nonThinkingQueryParams,
         temperature: modelConfigs[m.id]?.temperature,
@@ -326,27 +337,58 @@ export function ProviderModal({
         {formStep === 1 && (
           <div className="px-6 py-4 space-y-4">
             <div>
-              <label className="block text-sm text-text-secondary mb-2">Common URLs</label>
-              <div className="grid grid-cols-3 gap-2">
-                {COMMON_PORTS.map((port) => (
-                  <button
-                    key={port}
-                    type="button"
-                    onClick={() => {
-                      setFormName('')
-                      setFormUrl(`http://localhost:${port}`)
-                      setFormBackend('')
-                      setFetchError(null)
-                    }}
-                    className={`p-2 rounded border text-center text-sm transition-colors ${
-                      formUrl === `http://localhost:${port}`
-                        ? 'border-accent-primary bg-accent-primary/10 text-accent-primary'
-                        : 'border-border hover:border-text-muted text-text-secondary'
-                    }`}
-                  >
-                    localhost:{port}
-                  </button>
-                ))}
+              <label className="block text-sm text-text-secondary mb-2">Inference engine</label>
+              <div className="grid grid-cols-4 gap-2">
+                <button
+                  key="other"
+                  type="button"
+                  onClick={() => {
+                    setFormName('')
+                    setFormUrl('')
+                    setFormBackend('')
+                    setFormIsLocal(false)
+                    setFetchError(null)
+                  }}
+                  className={`p-2 rounded border text-center text-sm transition-colors ${
+                    !formUrl
+                      ? 'border-accent-primary bg-accent-primary/10 text-accent-primary'
+                      : 'border-border hover:border-text-muted text-text-secondary'
+                  }`}
+                >
+                  Other
+                </button>
+                {COMMON_PORTS.map((port) => {
+                  const backendMap: Record<number, string> = {
+                    8000: 'vllm',
+                    11434: 'ollama',
+                    8080: 'llamacpp',
+                  }
+                  const nameMap: Record<number, string> = {
+                    8000: 'vLLM',
+                    11434: 'Ollama',
+                    8080: 'llama.cpp',
+                  }
+                  return (
+                    <button
+                      key={port}
+                      type="button"
+                      onClick={() => {
+                        setFormName(nameMap[port] ?? '')
+                        setFormUrl(`http://localhost:${port}`)
+                        setFormBackend(backendMap[port] ?? '')
+                        setFormIsLocal(true)
+                        setFetchError(null)
+                      }}
+                      className={`p-2 rounded border text-center text-sm transition-colors ${
+                        formUrl === `http://localhost:${port}`
+                          ? 'border-accent-primary bg-accent-primary/10 text-accent-primary'
+                          : 'border-border hover:border-text-muted text-text-secondary'
+                      }`}
+                    >
+                      {nameMap[port] ?? `localhost:${port}`}
+                    </button>
+                  )
+                })}
               </div>
             </div>
 
@@ -453,18 +495,24 @@ export function ProviderModal({
                   <button onClick={() => fetchModels(formUrl)} className="text-xs text-accent-primary hover:underline">
                     Retry
                   </button>
-                  <button onClick={() => setFormStep(1)} className="text-xs text-accent-primary hover:underline">
+                  <button
+                    onClick={() => {
+                      resetStep2()
+                      setFormStep(1)
+                    }}
+                    className="text-xs text-accent-primary hover:underline"
+                  >
                     Edit URL
                   </button>
                 </div>
               </div>
             )}
 
-            {models.length > 0 && (
+            {models.length > 0 && formBackend && (
               <>
-                <div>
+                <div className="mb-3">
                   <h4 className="text-sm font-medium text-text-primary mb-1">Available Models</h4>
-                  <p className="text-xs text-text-muted mb-3">
+                  <p className="text-xs text-text-muted">
                     Configure each model&apos;s thinking behavior and parameters. Models without explicit config use
                     provider defaults.
                   </p>
@@ -480,7 +528,7 @@ export function ProviderModal({
                         <div className="flex items-center gap-3">
                           <span className="text-sm font-medium text-text-primary">{model.id.split('/').pop()}</span>
                           <span className="text-xs text-text-muted bg-bg-tertiary px-2 py-0.5 rounded">
-                            {model.contextWindow.toLocaleString()} ctx
+                            {(modelConfigs[model.id]?.contextWindow ?? model.contextWindow).toLocaleString()} ctx
                           </span>
                         </div>
                         <ChevronDownIcon
@@ -490,6 +538,22 @@ export function ProviderModal({
 
                       {expandedModelId === model.id && (
                         <div className="px-4 pb-4 border-t border-border pt-3 space-y-3">
+                          <div className="flex items-center gap-3">
+                            <button
+                              onClick={() => runAutoConfig(model.id)}
+                              disabled={autoConfigState.progress[model.id] === 'probing'}
+                              className="px-4 py-2 bg-accent-primary text-text-primary rounded-lg text-sm font-medium hover:bg-accent-primary/90 disabled:opacity-50 transition-colors"
+                            >
+                              {autoConfigState.progress[model.id] === 'probing' ? 'Probing...' : 'Auto-config'}
+                            </button>
+                            {autoConfigState.progress[model.id] === 'done' && (
+                              <span className="text-sm text-accent-success font-medium">Configured ✓</span>
+                            )}
+                            {autoConfigState.progress[model.id] === 'error' && (
+                              <span className="text-sm text-red-500 font-medium">Failed ✗</span>
+                            )}
+                          </div>
+
                           {/* Context window + Supports vision */}
                           <div className="flex gap-3 items-end">
                             <div>
@@ -516,83 +580,63 @@ export function ProviderModal({
                             </label>
                           </div>
 
-                          {/* Thinking modes */}
-                          <div className="space-y-2">
-                            <label className="flex items-center gap-2 cursor-pointer">
-                              <input
-                                type="checkbox"
-                                checked={modelConfigs[model.id]?.thinkingEnabled ?? false}
-                                onChange={(e) => updateModelConfig(model.id, { thinkingEnabled: e.target.checked })}
-                                className="w-4 h-4 rounded border-border bg-bg-tertiary accent-accent-primary"
-                              />
-                              <span className="text-xs font-medium text-text-primary">Thinking</span>
-                            </label>
-                            {modelConfigs[model.id]?.thinkingEnabled && (
-                              <div className="ml-6 space-y-2 pl-3 border-l-2 border-accent-primary/30">
-                                <div>
-                                  <label className="text-xs text-text-secondary block mb-1">Reasoning effort</label>
-                                  <input
-                                    type="text"
-                                    value={modelConfigs[model.id]?.thinkingLevel ?? 'max'}
-                                    onChange={(e) => updateModelConfig(model.id, { thinkingLevel: e.target.value })}
-                                    className="w-full px-2 py-1.5 bg-bg-tertiary border border-border rounded text-xs text-text-primary"
+                          {/* Thinking modes — collapsed by default, auto-config usually fills them */}
+                          <details className="group">
+                            <summary className="text-xs text-text-muted cursor-pointer hover:text-text-secondary list-none flex items-center gap-1 select-none">
+                              <ChevronDownIcon className="w-3 h-3 transition-transform group-open:rotate-180" />
+                              Advanced: thinking &amp; non-thinking params
+                            </summary>
+                            <div className="mt-3 space-y-2">
+                              <label className="flex items-center gap-2 cursor-pointer">
+                                <input
+                                  type="checkbox"
+                                  checked={modelConfigs[model.id]?.thinkingEnabled ?? false}
+                                  onChange={(e) => updateModelConfig(model.id, { thinkingEnabled: e.target.checked })}
+                                  className="w-4 h-4 rounded border-border bg-bg-tertiary accent-accent-primary"
+                                />
+                                <span className="text-xs font-medium text-text-primary">Thinking</span>
+                              </label>
+                              {modelConfigs[model.id]?.thinkingEnabled && (
+                                <div className="ml-6 space-y-2 pl-3 border-l-2 border-accent-primary/30">
+                                  <div>
+                                    <label className="text-xs text-text-secondary block mb-1">Reasoning effort</label>
+                                    <input
+                                      type="text"
+                                      value={modelConfigs[model.id]?.thinkingLevel ?? ''}
+                                      onChange={(e) => updateModelConfig(model.id, { thinkingLevel: e.target.value })}
+                                      className="w-full px-2 py-1.5 bg-bg-tertiary border border-border rounded text-xs text-text-primary"
+                                    />
+                                  </div>
+                                  <QueryParamsInput
+                                    value={modelConfigs[model.id]?.thinkingQueryParams}
+                                    onChange={(v) => updateModelConfig(model.id, { thinkingQueryParams: v })}
                                   />
                                 </div>
-                                <QueryParamsInput
-                                  value={modelConfigs[model.id]?.thinkingQueryParams}
-                                  onChange={(v) => updateModelConfig(model.id, { thinkingQueryParams: v })}
-                                />
-                                <ExtraKwargsBlock
-                                  kwargs={thinkKwargs}
-                                  onChange={setThinkKwargs}
-                                  mode="thinking"
-                                  modelId={model.id}
-                                  testResults={testResults}
-                                  thinkingField={thinkingField}
-                                  onSeeRaw={setRawModalData}
-                                  onTest={() => testThinkingParams(model.id, 'thinking')}
-                                />
-                              </div>
-                            )}
+                              )}
 
-                            <label className="flex items-center gap-2 cursor-pointer">
-                              <input
-                                type="checkbox"
-                                checked={modelConfigs[model.id]?.nonThinkingEnabled ?? false}
-                                onChange={(e) => updateModelConfig(model.id, { nonThinkingEnabled: e.target.checked })}
-                                className="w-4 h-4 rounded border-border bg-bg-tertiary accent-accent-primary"
-                              />
-                              <span className="text-xs font-medium text-text-primary">Non-thinking</span>
-                            </label>
-                            {modelConfigs[model.id]?.nonThinkingEnabled && (
-                              <div className="ml-6 space-y-2 pl-3 border-l-2 border-accent-warning/30">
-                                <QueryParamsInput
-                                  value={modelConfigs[model.id]?.nonThinkingQueryParams}
-                                  onChange={(v) => updateModelConfig(model.id, { nonThinkingQueryParams: v })}
+                              <label className="flex items-center gap-2 cursor-pointer">
+                                <input
+                                  type="checkbox"
+                                  checked={modelConfigs[model.id]?.nonThinkingEnabled ?? false}
+                                  onChange={(e) =>
+                                    updateModelConfig(model.id, { nonThinkingEnabled: e.target.checked })
+                                  }
+                                  className="w-4 h-4 rounded border-border bg-bg-tertiary accent-accent-primary"
                                 />
-                                <ExtraKwargsBlock
-                                  kwargs={nonThinkKwargs}
-                                  onChange={setNonThinkKwargs}
-                                  mode="non-thinking"
-                                  modelId={model.id}
-                                  testResults={testResults}
-                                  thinkingField={thinkingField}
-                                  onSeeRaw={setRawModalData}
-                                  onTest={() => testThinkingParams(model.id, 'non-thinking')}
-                                />
-                              </div>
-                            )}
-                          </div>
+                                <span className="text-xs font-medium text-text-primary">Non-thinking</span>
+                              </label>
+                              {modelConfigs[model.id]?.nonThinkingEnabled && (
+                                <div className="ml-6 space-y-2 pl-3 border-l-2 border-accent-warning/30">
+                                  <QueryParamsInput
+                                    value={modelConfigs[model.id]?.nonThinkingQueryParams}
+                                    onChange={(v) => updateModelConfig(model.id, { nonThinkingQueryParams: v })}
+                                  />
+                                </div>
+                              )}
+                            </div>
 
-                          {/* Advanced placeholder */}
-                          <div>
-                            <span
-                              className="text-xs text-accent-primary cursor-pointer hover:underline"
-                              onClick={() => document.getElementById(`adv-${model.id}`)?.classList.toggle('hidden')}
-                            >
-                              ▸ Advanced parameters
-                            </span>
-                            <div id={`adv-${model.id}`} className="hidden mt-2 space-y-2">
+                            <div className="border-t border-border pt-3 mt-3">
+                              <p className="text-xs text-text-muted mb-2">Sampling parameters</p>
                               <div className="grid grid-cols-2 gap-2">
                                 <div>
                                   <label className="text-xs text-text-secondary block mb-0.5">Temperature</label>
@@ -608,7 +652,7 @@ export function ProviderModal({
                                     placeholder={
                                       modelConfigs[model.id]?.defaultTemperature?.toString() ?? 'Using default'
                                     }
-                                    className="w-full px-2 py-1 bg-bg-tertiary border border-border rounded text-xs text-text-primary text-text-secondary"
+                                    className="w-full px-2 py-1 bg-bg-tertiary border border-border rounded text-xs text-text-primary"
                                   />
                                   {modelConfigs[model.id]?.defaultTemperature !== undefined && (
                                     <p className="text-xs text-text-muted mt-0.5">
@@ -637,7 +681,7 @@ export function ProviderModal({
                                   )}
                                 </div>
                               </div>
-                              <div className="grid grid-cols-2 gap-2">
+                              <div className="grid grid-cols-2 gap-2 mt-2">
                                 <div>
                                   <label className="text-xs text-text-secondary block mb-0.5">Top K</label>
                                   <input
@@ -680,7 +724,7 @@ export function ProviderModal({
                                 </div>
                               </div>
                             </div>
-                          </div>
+                          </details>
                         </div>
                       )}
                     </div>
@@ -711,7 +755,9 @@ export function ProviderModal({
                     {models.map((m) => (
                       <div key={m.id} className="text-xs text-text-muted flex items-center gap-2">
                         <span>• {m.id.split('/').pop()}</span>
-                        <span className="text-text-secondary">{m.contextWindow.toLocaleString()} ctx</span>
+                        <span className="text-text-secondary">
+                          {(modelConfigs[m.id]?.contextWindow ?? m.contextWindow).toLocaleString()} ctx
+                        </span>
                         {modelConfigs[m.id]?.thinkingEnabled && <span className="text-accent-success">thinking</span>}
                         {modelConfigs[m.id]?.nonThinkingEnabled && (
                           <span className="text-accent-warning">non-thinking</span>
@@ -730,7 +776,10 @@ export function ProviderModal({
           <div>
             {formStep > 1 && (
               <button
-                onClick={() => setFormStep((formStep - 1) as 1 | 2 | 3)}
+                onClick={() => {
+                  if (formStep === 2) resetStep2()
+                  setFormStep((formStep - 1) as 1 | 2 | 3)
+                }}
                 className="text-sm text-text-muted hover:text-text-secondary transition-colors"
               >
                 ← Back
@@ -747,7 +796,7 @@ export function ProviderModal({
             {formStep < 3 ? (
               <button
                 onClick={() => setFormStep((formStep + 1) as 2 | 3)}
-                disabled={formStep === 1 && !formUrl}
+                disabled={(formStep === 1 && !formUrl) || (formStep === 2 && autoConfigState.loading)}
                 data-testid="provider-modal-next"
                 className="px-5 py-2 bg-accent-primary text-text-primary rounded-lg text-sm font-medium hover:bg-accent-primary/90 disabled:opacity-50 transition-colors"
               >
@@ -790,7 +839,7 @@ export function ProviderModal({
                 <label className="text-xs text-text-secondary block mb-1">Non-thinking mode params</label>
                 <input
                   type="text"
-                  defaultValue='reasoning_effort: "none"'
+                  defaultValue='{"chat_template_kwargs":{"enable_thinking":false}}'
                   readOnly
                   className="w-full px-3 py-2 bg-bg-primary border border-border rounded text-sm text-text-secondary font-mono"
                 />
@@ -829,30 +878,6 @@ export function ProviderModal({
                 Done
               </button>
             </div>
-          </div>
-        </div>
-      )}
-
-      {rawModalData && (
-        <div
-          className="fixed inset-0 bg-black/60 flex items-center justify-center z-[70]"
-          onClick={(e) => {
-            if (e.target === e.currentTarget) setRawModalData(null)
-          }}
-        >
-          <div className="bg-bg-secondary border border-border rounded-xl w-[600px] max-h-[70vh] shadow-2xl flex flex-col">
-            <div className="flex items-center justify-between px-6 py-4 border-b border-border flex-shrink-0">
-              <h3 className="text-base font-semibold text-text-primary">Raw Response</h3>
-              <button
-                onClick={() => setRawModalData(null)}
-                className="text-text-muted hover:text-text-primary text-xl leading-none p-1"
-              >
-                &times;
-              </button>
-            </div>
-            <pre className="px-6 py-4 overflow-y-auto text-xs text-text-secondary font-mono whitespace-pre-wrap flex-1">
-              {rawModalData}
-            </pre>
           </div>
         </div>
       )}

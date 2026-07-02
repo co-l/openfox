@@ -1,5 +1,24 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach, beforeAll, afterAll } from 'vitest'
 import { QueueProcessor } from './processor.js'
+import { initDatabase, closeDatabase } from '../db/index.js'
+import type { Config } from '../config.js'
+
+function createTestConfig(): Config {
+  return {
+    llm: { baseUrl: 'http://localhost:8000', model: 'test-model' },
+    context: { maxTokens: 100000 },
+    database: { path: ':memory:' },
+    mode: 'test',
+  } as Config
+}
+
+beforeAll(() => {
+  initDatabase(createTestConfig())
+})
+
+afterAll(() => {
+  closeDatabase()
+})
 
 vi.mock('../events/store.js', () => ({
   getEventStore: vi.fn(() => ({
@@ -59,12 +78,20 @@ describe('QueueProcessor', () => {
 
     mockProviderManager = {
       getActiveProviderId: vi.fn(),
-      getCurrentModel: vi.fn(),
+      getCurrentModel: vi.fn(() => 'test-model'),
       activateProvider: vi.fn(),
+      getModelSettings: vi.fn(() => undefined),
+      getProviders: vi.fn(() => []),
     }
     mockGetLLMClient = vi.fn(() => ({
       getModel: () => 'test-model',
       getBackend: () => 'test',
+      complete: vi.fn().mockResolvedValue({
+        id: 'test',
+        content: 'Test name',
+        finishReason: 'stop',
+        usage: { promptTokens: 0, completionTokens: 0, totalTokens: 0 },
+      }),
     }))
     mockGetActiveProvider = vi.fn()
     mockBroadcastForSession = vi.fn()

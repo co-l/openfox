@@ -236,6 +236,7 @@ export interface ProviderManager {
         maxTokens?: number
         supportsVision?: boolean
         chatTemplateKwargs?: Record<string, unknown>
+        queryParams?: Record<string, unknown>
       }
     | undefined
 }
@@ -297,12 +298,12 @@ export function createProviderManager(config: Config): ProviderManager {
     }
   }
 
-  // If there's an active provider (from defaultModelSelection), recreate the
-  // initial client with the provider's apiKey instead of the bare config
+  // Initialize the LLM client with the active provider's config (URL, model, apiKey, etc.)
+  // so the global client points to the correct backend from the start.
   const { providerId: activeProviderId, model: activeModel } = parseDefaultModelSelection(defaultModelSelection)
   if (activeProviderId && activeModel) {
     const activeProvider = providers.find((p) => p.id === activeProviderId)
-    if (activeProvider && activeProvider.apiKey) {
+    if (activeProvider) {
       llmClient = createLLMClient(createConfigForProvider(activeProvider, activeModel))
     }
   }
@@ -483,17 +484,15 @@ export function createProviderManager(config: Config): ProviderManager {
       }
 
       // If the active provider changed, recreate the LLM client with the new provider's config
-      // Only recreate if the provider has an apiKey — otherwise the existing env-based config is sufficient
       const newActiveProviderId = this.getActiveProviderId()
       if (newActiveProviderId && newActiveProviderId !== wasActiveProviderId) {
         const activeProvider = providers.find((p) => p.id === newActiveProviderId)
-        if (activeProvider && activeProvider.apiKey) {
+        if (activeProvider) {
           const providerConfig = createConfigForProvider(activeProvider, this.getCurrentModel() ?? 'auto')
           llmClient = createLLMClient(providerConfig)
           logger.info('setProviders: recreated LLM client for new active provider', {
             providerId: newActiveProviderId,
             url: activeProvider.url,
-            hasApiKey: !!activeProvider.apiKey,
           })
         }
       }
@@ -678,32 +677,35 @@ export function createProviderManager(config: Config): ProviderManager {
       const model = provider?.models.find((m) => m.id === modelId)
       if (!model) return undefined
 
-      // Select kwargs based on mode:
-      // - 'thinking' mode (default, used by main turns): thinking kwargs if thinkingEnabled, else non-thinking kwargs
-      // - 'non-thinking' mode (used by title generation): non-thinking kwargs if nonThinkingEnabled, else thinking kwargs
-      const kwargs =
-        mode === 'non-thinking'
-          ? model.nonThinkingEnabled
-            ? model.nonThinkingExtraKwargs
-            : model.thinkingExtraKwargs
-          : model.thinkingEnabled
-            ? model.thinkingExtraKwargs
-            : model.nonThinkingExtraKwargs
+      const baseSettings: Record<string, unknown> = {}
+      if (model['temperature'] !== undefined) baseSettings['temperature'] = model['temperature']
+      if (model['topP'] !== undefined) baseSettings['topP'] = model['topP']
+      if (model['topK'] !== undefined) baseSettings['topK'] = model['topK']
+      if (model['maxTokens'] !== undefined) baseSettings['maxTokens'] = model['maxTokens']
+      if (model['supportsVision'] !== undefined) baseSettings['supportsVision'] = model['supportsVision']
 
-      return {
-        ...(model.temperature !== undefined && { temperature: model.temperature }),
-        ...(model.topP !== undefined && { topP: model.topP }),
-        ...(model.topK !== undefined && { topK: model.topK }),
-        ...(model.maxTokens !== undefined && { maxTokens: model.maxTokens }),
-        ...(model.supportsVision !== undefined && { supportsVision: model.supportsVision }),
-        ...(kwargs ? { chatTemplateKwargs: JSON.parse(kwargs) as Record<string, unknown> } : {}),
-        ...(mode === 'thinking' && model.thinkingQueryParams
-          ? { queryParams: JSON.parse(model.thinkingQueryParams) as Record<string, unknown> }
-          : {}),
-        ...(mode === 'non-thinking' && model.nonThinkingQueryParams
-          ? { queryParams: JSON.parse(model.nonThinkingQueryParams) as Record<string, unknown> }
-          : {}),
+      // User-configured queryParams take priority
+      const rawQueryParams = mode === 'thinking' ? model.thinkingQueryParams : model.nonThinkingQueryParams
+      if (rawQueryParams) {
+        return { ...baseSettings, queryParams: JSON.parse(rawQueryParams) as Record<string, unknown> }
       }
+
+      // Generate sensible defaults when mode is enabled
+      const modeEnabled = mode === 'thinking' ? model.thinkingEnabled : model.nonThinkingEnabled
+      if (modeEnabled) {
+        return {
+          ...baseSettings,
+          chatTemplateKwargs: mode === 'thinking' ? { enable_thinking: true } : { enable_thinking: false },
+        }
+      }
+
+      // Fall back to the other mode's queryParams
+      const fallbackRawQP = mode === 'thinking' ? model.nonThinkingQueryParams : model.thinkingQueryParams
+      if (fallbackRawQP) {
+        return { ...baseSettings, queryParams: JSON.parse(fallbackRawQP) as Record<string, unknown> }
+      }
+
+      return undefined
     },
 
     async refreshProviderModels(providerId: string) {

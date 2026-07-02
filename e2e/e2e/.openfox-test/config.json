@@ -1,6 +1,84 @@
 {
-  "providers": [],
+  "providers": [
+    {
+      "id": "test-context-update-provider",
+      "name": "Test Context Update Provider",
+      "url": "http://localhost:11434",
+      "backend": "ollama",
+      "models": [
+        {
+          "id": "test-context-update-model",
+          "contextWindow": 500000,
+          "source": "user"
+        }
+      ],
+      "isActive": true,
+      "createdAt": "2026-07-02T12:12:53.102Z"
+    },
+    {
+      "id": "test-fuzzy-provider",
+      "name": "Test Fuzzy Provider",
+      "url": "http://localhost:11434",
+      "backend": "ollama",
+      "models": [
+        {
+          "id": "qwen3.5 cloud",
+          "contextWindow": 300000,
+          "source": "user"
+        }
+      ],
+      "isActive": false,
+      "createdAt": "2026-07-02T12:12:48.004Z"
+    },
+    {
+      "id": "test-restart-provider",
+      "name": "Test Restart Provider",
+      "url": "http://localhost:11434",
+      "backend": "ollama",
+      "models": [
+        {
+          "id": "test-model-restart",
+          "contextWindow": 262144,
+          "source": "user"
+        }
+      ],
+      "isActive": false,
+      "createdAt": "2026-07-02T12:12:46.973Z"
+    },
+    {
+      "id": "07bd2601-b778-4bb7-919e-a108052a9a0e",
+      "name": "Test Config Reload Provider",
+      "url": "http://localhost:8000",
+      "backend": "vllm",
+      "models": [
+        {
+          "id": "test-model",
+          "contextWindow": 200000,
+          "source": "user"
+        }
+      ],
+      "isActive": false,
+      "createdAt": "2026-07-02T12:12:15.805Z"
+    },
+    {
+      "id": "7db8d05f-143d-428d-8d8b-6434398f0a52",
+      "name": "Test Config Reload Provider",
+      "url": "http://localhost:8000",
+      "backend": "vllm",
+      "models": [
+        {
+          "id": "test-model",
+          "contextWindow": 200000,
+          "source": "user"
+        }
+      ],
+      "isActive": false,
+      "createdAt": "2026-07-02T12:12:50.044Z"
+    }
+  ],
   "mcpServers": {},
+  "defaultModelSelection": "test-context-update-provider/test-context-update-model",
+  "activeProviderId": "test-context-update-provider",
   "server": {
     "port": 10369,
     "host": "127.0.0.1",

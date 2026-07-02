@@ -4,13 +4,8 @@ import type { SessionManager } from '../session/manager.js'
 import { logger } from '../utils/logger.js'
 import type { ServerMessage } from '../../shared/protocol.js'
 import { createSessionRunningMessage, createChatMessageMessage } from '../ws/protocol.js'
-import { finalizeTurnCompletion, getSessionMessageCount, buildRunChatTurnParams } from '../utils/session-utils.js'
-import {
-  needsNameGenerationCheck,
-  generateSessionName,
-  applyGeneratedSessionName,
-  type ApplyGeneratedSessionNameDeps,
-} from '../session/name-generator.js'
+import { finalizeTurnCompletion, buildRunChatTurnParams } from '../utils/session-utils.js'
+import { generateSessionNameForSession } from '../session/name-generator.js'
 import { getEventStore } from '../events/index.js'
 
 interface QueueProcessorDeps {
@@ -139,51 +134,18 @@ export class QueueProcessor {
         messageId: userMessage.id,
       })
 
-      const messageCount = this.getSessionMessageCount(sessionId)
-      const currentSession = sessionManager.getSession(sessionId)
-      if (currentSession && needsNameGenerationCheck(sessionId, currentSession.metadata.title, messageCount)) {
-        const eventStore = getEventStore()
-        const currentModel = this.deps.providerManager.getCurrentModel()
-        const modelConfig = currentModel
-          ? this.deps.providerManager
-              .getProviders()
-              .flatMap((p) => p.models)
-              .find((m) => m.id === currentModel)
-          : undefined
-        const modelSettings = modelConfig
-          ? this.deps.providerManager.getModelSettings(currentModel!, 'non-thinking')
-          : undefined
-        generateSessionName({
-          userMessage: nextAsap.content,
-          llmClient: this.deps.getLLMClient(),
-          signal: controller.signal,
-          ...(modelSettings ? { modelSettings } : {}),
-          ...(modelConfig?.nonThinkingEnabled !== undefined
-            ? { nonThinkingEnabled: modelConfig.nonThinkingEnabled }
-            : {}),
-        })
-          .then((result) => {
-            logger.debug('Session name generation result (queue)', {
-              sessionId,
-              success: result.success,
-              name: result.name,
-              error: result.error,
-            })
-            if (result.success && result.name) {
-              applyGeneratedSessionName(sessionId, result.name, {
-                sessionManager,
-                eventStore: eventStore as ApplyGeneratedSessionNameDeps['eventStore'],
-                broadcastForSession,
-              })
-            }
-          })
-          .catch((error) => {
-            logger.error('Session name generation failed (queue)', {
-              sessionId,
-              error: error instanceof Error ? error.message : String(error),
-            })
-          })
-      }
+      generateSessionNameForSession(
+        sessionId,
+        nextAsap.content,
+        {
+          sessionManager,
+          providerManager: this.deps.providerManager,
+          broadcastForSession,
+          eventStore: getEventStore(),
+          getLLMClient: this.deps.getLLMClient,
+        },
+        controller.signal,
+      )
     }
 
     this.runTurn(sessionId, controller)
@@ -271,9 +233,5 @@ export class QueueProcessor {
           })
         }
       })
-  }
-
-  private getSessionMessageCount(sessionId: string): number {
-    return getSessionMessageCount(sessionId)
   }
 }

@@ -19,7 +19,7 @@ export interface LLMToolDefinition {
   }
 }
 
-export type ReasoningEffort = 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max'
+export type ReasoningEffort = 'low' | 'medium' | 'high' | 'xhigh' | 'max'
 
 export interface LLMCompletionRequest {
   messages: LLMMessage[]
@@ -40,6 +40,8 @@ export interface LLMCompletionRequest {
     chatTemplateKwargs?: Record<string, unknown>
     queryParams?: Record<string, unknown>
   }
+  /** When true, include the raw API response body in the result */
+  returnRaw?: boolean
 }
 
 export interface LLMCompletionResponse {
@@ -54,6 +56,8 @@ export interface LLMCompletionResponse {
     completionTokens: number
     totalTokens: number
   }
+  /** Raw API response body, only set when returnRaw was requested */
+  raw?: string
 }
 
 export type LLMStreamEvent =

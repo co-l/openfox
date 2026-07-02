@@ -1,14 +1,15 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-const { httpClientCreateMock, httpClientCtorArgs } = vi.hoisted(() => ({
+const { httpClientCreateMock, httpClientCreateStreamMock, httpClientCtorArgs } = vi.hoisted(() => ({
   httpClientCreateMock: vi.fn(),
+  httpClientCreateStreamMock: vi.fn(),
   httpClientCtorArgs: [] as Array<Record<string, unknown>>,
 }))
 
 vi.mock('./http-client.js', () => ({
   OpenAIHttpClient: class MockOpenAIHttpClient {
     createChatCompletion = httpClientCreateMock
-    createChatCompletionStream = httpClientCreateMock
+    createChatCompletionStream = httpClientCreateStreamMock
 
     constructor(args: Record<string, unknown>) {
       httpClientCtorArgs.push(args)
@@ -41,6 +42,7 @@ describe('llm client', () => {
   beforeEach(() => {
     httpClientCtorArgs.length = 0
     httpClientCreateMock.mockReset()
+    httpClientCreateStreamMock.mockReset()
   })
 
   it('normalizes the base url and maps complete responses with reasoning and tool calls', async () => {
@@ -88,6 +90,7 @@ describe('llm client', () => {
         messages: [{ role: 'user', content: 'hello' }],
       }),
       { signal: undefined },
+      undefined,
     )
     expect(response).toEqual({
       id: 'resp-1',
@@ -195,7 +198,7 @@ describe('llm client', () => {
   })
 
   it('streams reasoning, text, and tool calls and emits a done event with parsed tool calls', async () => {
-    httpClientCreateMock.mockReturnValueOnce(
+    httpClientCreateStreamMock.mockReturnValueOnce(
       (async function* () {
         yield createChunk({
           choices: [
@@ -237,19 +240,21 @@ describe('llm client', () => {
     for await (const event of client.stream({
       messages: [{ role: 'user', content: 'hello' }],
       tools: [{ type: 'function', function: { name: 'glob', description: 'Search', parameters: { type: 'object' } } }],
-      reasoningEffort: 'none',
+      modelSettings: { chatTemplateKwargs: { enable_thinking: false } },
     })) {
       events.push(event as Record<string, unknown>)
     }
 
-    expect(httpClientCreateMock).toHaveBeenCalledWith(
+    expect(httpClientCreateStreamMock).toHaveBeenCalledWith(
       expect.objectContaining({
         stream: true,
-        reasoning_effort: 'none',
         chat_template_kwargs: { enable_thinking: false },
       }),
       { signal: undefined },
     )
+    // Should NOT have reasoning_effort in the params
+    const callArgs = httpClientCreateStreamMock.mock.calls[0]?.[0] as Record<string, unknown> | undefined
+    expect(callArgs).not.toHaveProperty('reasoning_effort')
     expect(events).toEqual([
       { type: 'thinking_delta', content: 'think ' },
       { type: 'text_delta', content: 'answer ' },
@@ -269,7 +274,7 @@ describe('llm client', () => {
   })
 
   it('streams reasoning_content as thinking_delta', async () => {
-    httpClientCreateMock.mockReturnValueOnce(
+    httpClientCreateStreamMock.mockReturnValueOnce(
       (async function* () {
         yield createChunk({
           choices: [
@@ -319,7 +324,7 @@ describe('llm client', () => {
   })
 
   it('treats reasoning field as thinking_delta and includes tool calls with parseError for invalid tool args', async () => {
-    httpClientCreateMock.mockReturnValueOnce(
+    httpClientCreateStreamMock.mockReturnValueOnce(
       (async function* () {
         yield createChunk({
           choices: [
@@ -378,7 +383,7 @@ describe('llm client', () => {
   })
 
   it('yields error events when streaming fails', async () => {
-    httpClientCreateMock.mockImplementationOnce(() => {
+    httpClientCreateStreamMock.mockImplementationOnce(() => {
       throw new Error('stream failed')
     })
 
@@ -393,7 +398,7 @@ describe('llm client', () => {
   })
 
   it('includes tool calls with parseError when JSON arguments are malformed', async () => {
-    httpClientCreateMock.mockReturnValueOnce(
+    httpClientCreateStreamMock.mockReturnValueOnce(
       (async function* () {
         yield createChunk({
           choices: [
@@ -475,7 +480,7 @@ describe('llm client', () => {
   it('triggers idle timeout when no chunks arrive for the configured duration', async () => {
     const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
 
-    httpClientCreateMock.mockReturnValueOnce(
+    httpClientCreateStreamMock.mockReturnValueOnce(
       (async function* () {
         yield createChunk({
           choices: [{ delta: { content: 'first chunk' }, finish_reason: null }],
@@ -507,7 +512,7 @@ describe('llm client', () => {
   })
 
   it('streams reasoning_content when reasoningEffort is set', async () => {
-    httpClientCreateMock.mockReturnValueOnce(
+    httpClientCreateStreamMock.mockReturnValueOnce(
       (async function* () {
         yield createChunk({
           choices: [{ delta: { reasoning_content: 'step by step ' }, finish_reason: null }],
@@ -530,7 +535,7 @@ describe('llm client', () => {
     }
 
     // Should use streaming (not non-streaming fallback)
-    const callArgs = httpClientCreateMock.mock.calls[0]?.[0] as Record<string, unknown> | undefined
+    const callArgs = httpClientCreateStreamMock.mock.calls[0]?.[0] as Record<string, unknown> | undefined
     expect(callArgs).toHaveProperty('stream', true)
     expect(callArgs).toHaveProperty('reasoning_effort', 'high')
     expect(callArgs).toHaveProperty('model', 'qwen3-32b')
@@ -554,7 +559,7 @@ describe('llm client', () => {
   it('allows active streams to continue beyond the idle timeout when chunks arrive frequently', async () => {
     const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
 
-    httpClientCreateMock.mockReturnValueOnce(
+    httpClientCreateStreamMock.mockReturnValueOnce(
       (async function* () {
         for (let i = 0; i < 10; i++) {
           yield createChunk({

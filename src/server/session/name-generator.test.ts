@@ -191,7 +191,7 @@ describe('Session Name Generator', () => {
     })
   })
 
-  describe('thinking/non-thinking mode', () => {
+  describe('model settings forwarding', () => {
     function createMockClient(response: LLMCompletionResponse) {
       return {
         complete: vi.fn().mockResolvedValue(response),
@@ -210,42 +210,16 @@ describe('Session Name Generator', () => {
       usage: { promptTokens: 10, completionTokens: 5, totalTokens: 15 },
     }
 
-    it('should pass reasoningEffort: none when nonThinkingEnabled is true', async () => {
+    it('should not pass reasoningEffort by default', async () => {
       const mockClient = createMockClient(defaultResponse)
 
       await generateSessionName({
         userMessage: 'How do I set up React?',
         llmClient: mockClient as any,
-        nonThinkingEnabled: true,
-      })
-
-      const callArgs = (mockClient.complete as any).mock.calls[0][0]
-      expect(callArgs.reasoningEffort).toBe('none')
-    })
-
-    it('should NOT pass reasoningEffort when nonThinkingEnabled is false', async () => {
-      const mockClient = createMockClient(defaultResponse)
-
-      await generateSessionName({
-        userMessage: 'How do I set up React?',
-        llmClient: mockClient as any,
-        nonThinkingEnabled: false,
       })
 
       const callArgs = (mockClient.complete as any).mock.calls[0][0]
       expect(callArgs.reasoningEffort).toBeUndefined()
-    })
-
-    it('should pass reasoningEffort: none when nonThinkingEnabled is undefined (default)', async () => {
-      const mockClient = createMockClient(defaultResponse)
-
-      await generateSessionName({
-        userMessage: 'How do I set up React?',
-        llmClient: mockClient as any,
-      })
-
-      const callArgs = (mockClient.complete as any).mock.calls[0][0]
-      expect(callArgs.reasoningEffort).toBe('none')
     })
 
     it('should pass modelSettings to the LLM client', async () => {
@@ -253,6 +227,22 @@ describe('Session Name Generator', () => {
       const modelSettings = {
         temperature: 0.7,
         chatTemplateKwargs: { enable_thinking: false },
+      }
+
+      await generateSessionName({
+        userMessage: 'How do I set up React?',
+        llmClient: mockClient as any,
+        modelSettings,
+      })
+
+      const callArgs = (mockClient.complete as any).mock.calls[0][0]
+      expect(callArgs.modelSettings).toEqual(modelSettings)
+    })
+
+    it('should pass queryParams in modelSettings', async () => {
+      const mockClient = createMockClient(defaultResponse)
+      const modelSettings = {
+        queryParams: { disable_thinking: true },
       }
 
       await generateSessionName({

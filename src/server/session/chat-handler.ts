@@ -2,19 +2,20 @@ import type { LLMClientWithModel } from '../llm/client.js'
 import type { StatsIdentity, Attachment } from '../../shared/types.js'
 import type { ServerMessage } from '../../shared/protocol.js'
 import type { SessionManager } from './index.js'
+import type { ProviderManager } from '../provider-manager.js'
 import { getEventStore } from '../events/index.js'
 import { runChatTurn } from '../chat/orchestrator.js'
 import { buildRunChatTurnParams } from '../utils/session-utils.js'
-import { generateSessionName, needsNameGenerationCheck, applyGeneratedSessionName } from './name-generator.js'
-import { logger } from '../utils/logger.js'
+import { generateSessionNameForSession } from './name-generator.js'
 
 import { createChatMessageMessage, createSessionRunningMessage, createPhaseChangedMessage } from '../ws/protocol.js'
-import { finalizeTurnCompletion, getSessionMessageCount } from '../utils/session-utils.js'
+import { finalizeTurnCompletion } from '../utils/session-utils.js'
 
 const activeAgents = new Map<string, AbortController>()
 
 export interface ChatHandlerDeps {
   sessionManager: SessionManager
+  providerManager: ProviderManager
   llmClient: LLMClientWithModel
   statsIdentity: StatsIdentity
   broadcastForSession: (sessionId: string, msg: ServerMessage) => void
@@ -30,7 +31,7 @@ export async function startChatSession(
     isSystemGenerated?: boolean
   },
 ): Promise<void> {
-  const { sessionManager, llmClient, broadcastForSession } = deps
+  const { sessionManager, broadcastForSession } = deps
 
   const session = sessionManager.getSession(sessionId)
   if (!session) {
@@ -74,37 +75,18 @@ export async function startChatSession(
 
     broadcastForSession(sessionId, createChatMessageMessage(userMessage))
 
-    // Generate session name if needed
-    const messageCount = getSessionMessageCount(sessionId)
-    const currentSession = sessionManager.getSession(sessionId)
-    if (currentSession && needsNameGenerationCheck(sessionId, currentSession.metadata.title, messageCount)) {
-      generateSessionName({
-        userMessage: content,
-        llmClient,
-        signal: controller.signal,
-      })
-        .then((result) => {
-          logger.debug('Session name generation result', {
-            sessionId,
-            success: result.success,
-            name: result.name,
-            error: result.error,
-          })
-          if (result.success && result.name) {
-            applyGeneratedSessionName(sessionId, result.name, {
-              sessionManager,
-              eventStore,
-              broadcastForSession,
-            })
-          }
-        })
-        .catch((error) => {
-          logger.error('Session name generation failed', {
-            sessionId,
-            error: error instanceof Error ? error.message : String(error),
-          })
-        })
-    }
+    // Generate session name if needed (fire-and-forget)
+    generateSessionNameForSession(
+      sessionId,
+      content,
+      {
+        sessionManager,
+        providerManager: deps.providerManager,
+        broadcastForSession,
+        eventStore,
+      },
+      controller.signal,
+    )
 
     // Start the chat turn
     startTurnWithCompletionChain(sessionId, controller, deps)

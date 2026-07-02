@@ -127,14 +127,53 @@ describe('llm client pure helpers', () => {
       },
     })
 
-    // Streaming with reasoningEffort: 'none' should set chat_template_kwargs
+    // When modelSettings.chatTemplateKwargs is provided, reasoning_effort from client config
+    // must NOT be injected — the user's explicit kwargs are the source of truth
+    expect(
+      await buildNonStreamingCreateParams({
+        model: 'test-model',
+        request: {
+          ...baseRequest,
+          modelSettings: { chatTemplateKwargs: { enable_thinking: false } },
+        },
+        profile,
+        capabilities: { supportsTopK: true, supportsChatTemplateKwargs: true },
+        reasoningEffort: 'high', // client config has reasoning_effort set
+      }),
+    ).toEqual({
+      params: {
+        model: 'test-model',
+        messages: [{ role: 'user', content: 'hello' }],
+        tools: [
+          { type: 'function', function: { name: 'glob', description: 'Search', parameters: { type: 'object' } } },
+        ],
+        tool_choice: 'auto',
+        temperature: 0.2,
+        max_tokens: 2000,
+        top_p: 0.9,
+        top_k: 40,
+        stream: false,
+        chat_template_kwargs: { enable_thinking: false },
+      },
+      modelParams: {
+        temperature: 0.2,
+        topP: 0.9,
+        topK: 40,
+        maxTokens: 2000,
+      },
+    })
+
+    // Non-thinking mode via modelSettings.chatTemplateKwargs should set chat_template_kwargs
+    // without reasoning_effort
     expect(
       await buildStreamingCreateParams({
         model: 'test-model',
-        request: baseRequest,
+        request: {
+          ...baseRequest,
+          modelSettings: { chatTemplateKwargs: { enable_thinking: false } },
+        },
         profile,
         capabilities: { supportsTopK: true, supportsChatTemplateKwargs: true },
-        reasoningEffort: 'none',
       }),
     ).toEqual({
       params: {
@@ -150,7 +189,6 @@ describe('llm client pure helpers', () => {
         top_k: 40,
         stream: true,
         stream_options: { include_usage: true },
-        reasoning_effort: 'none',
         chat_template_kwargs: { enable_thinking: false },
       },
       modelParams: {
@@ -161,11 +199,14 @@ describe('llm client pure helpers', () => {
       },
     })
 
-    // Non-streaming with reasoningEffort: 'none' should set both reasoning_effort and chat_template_kwargs
+    // Non-thinking mode via modelSettings.queryParams — queryParams are merged, not exclusive
     expect(
       await buildNonStreamingCreateParams({
         model: 'test-model',
-        request: { ...baseRequest, reasoningEffort: 'none' },
+        request: {
+          ...baseRequest,
+          modelSettings: { queryParams: { disable_thinking: true, skip_special_tokens: false } },
+        },
         profile,
         capabilities: { supportsTopK: true, supportsChatTemplateKwargs: true },
       }),
@@ -182,8 +223,43 @@ describe('llm client pure helpers', () => {
         top_p: 0.9,
         top_k: 40,
         stream: false,
-        reasoning_effort: 'none',
-        chat_template_kwargs: { enable_thinking: false },
+        disable_thinking: true,
+        skip_special_tokens: false,
+      },
+      modelParams: {
+        temperature: 0.2,
+        topP: 0.9,
+        topK: 40,
+        maxTokens: 2000,
+      },
+    })
+
+    // reasoning_effort from client config supersedes queryParams
+    expect(
+      await buildNonStreamingCreateParams({
+        model: 'test-model',
+        request: {
+          ...baseRequest,
+          modelSettings: { queryParams: { reasoning_effort: 'low' } },
+        },
+        profile,
+        capabilities: { supportsTopK: true, supportsChatTemplateKwargs: true },
+        reasoningEffort: 'max',
+      }),
+    ).toEqual({
+      params: {
+        model: 'test-model',
+        messages: [{ role: 'user', content: 'hello' }],
+        tools: [
+          { type: 'function', function: { name: 'glob', description: 'Search', parameters: { type: 'object' } } },
+        ],
+        tool_choice: 'auto',
+        temperature: 0.2,
+        max_tokens: 2000,
+        top_p: 0.9,
+        top_k: 40,
+        stream: false,
+        reasoning_effort: 'max',
       },
       modelParams: {
         temperature: 0.2,

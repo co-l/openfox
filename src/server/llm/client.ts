@@ -94,11 +94,15 @@ export function createLLMClient(config: Config, initialBackend: Backend = 'unkno
           ...(resolvedEffort ? { reasoningEffort: resolvedEffort } : {}),
           ...(thinkingField ? { thinkingField } : {}),
         })
-        const response = await httpClient.createChatCompletion(createParams, {
-          signal: request.signal,
-        })
+        const httpResponse = await httpClient.createChatCompletion(
+          createParams,
+          {
+            signal: request.signal,
+          },
+          request.returnRaw,
+        )
 
-        const choice = response.choices[0]
+        const choice = httpResponse.choices[0]
         if (!choice) {
           throw new LLMError('No completion choice returned')
         }
@@ -120,16 +124,17 @@ export function createLLMClient(config: Config, initialBackend: Backend = 'unkno
         }))
 
         return {
-          id: response.id,
+          id: httpResponse.id,
           content,
           ...(thinkingContent ? { thinkingContent } : {}),
           ...(toolCalls && toolCalls.length > 0 ? { toolCalls } : {}),
           finishReason: mapFinishReason(choice.finish_reason),
           usage: {
-            promptTokens: response.usage?.prompt_tokens ?? 0,
-            completionTokens: response.usage?.completion_tokens ?? 0,
-            totalTokens: response.usage?.total_tokens ?? 0,
+            promptTokens: httpResponse.usage?.prompt_tokens ?? 0,
+            completionTokens: httpResponse.usage?.completion_tokens ?? 0,
+            totalTokens: httpResponse.usage?.total_tokens ?? 0,
           },
+          ...(httpResponse.raw ? { raw: httpResponse.raw } : {}),
         }
       } catch (error: unknown) {
         logger.error('LLM complete error', { error: String(error) })

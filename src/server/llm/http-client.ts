@@ -40,10 +40,17 @@ export class OpenAIHttpClient {
       Authorization: `Bearer ${this.apiKey}`,
     }
 
+    const bodyStr = JSON.stringify(params)
+    logger.debug('HTTP request to LLM', {
+      url,
+      body: bodyStr.slice(0, 2000),
+      bodyKeys: Object.keys(params),
+    })
+
     const response = await fetch(url, {
       method: 'POST',
       headers,
-      body: JSON.stringify(params),
+      body: bodyStr,
       signal: options?.signal ?? null,
     })
 
@@ -58,11 +65,16 @@ export class OpenAIHttpClient {
   async createChatCompletion(
     params: ChatCompletionCreateParamsNonStreaming,
     options?: RequestOptions,
-  ): Promise<ChatCompletionResponse> {
+    returnRaw?: boolean,
+  ): Promise<ChatCompletionResponse & { raw?: string }> {
     const response = await this.fetchChatCompletion(params, options)
+    const rawText = await response.text()
     try {
-      const data = await response.json()
-      return data as ChatCompletionResponse
+      const data = JSON.parse(rawText) as ChatCompletionResponse
+      if (returnRaw) {
+        return { ...data, raw: rawText }
+      }
+      return data
     } catch (error) {
       throw new LLMError(`Failed to parse response: ${error instanceof Error ? error.message : 'Unknown error'}`)
     }
