@@ -439,13 +439,17 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
       return res.status(400).json({ error: 'providerId is required' })
     }
 
+    // Resolve model: use provided model, or first model from provider, or fallback
+    const provider = providerManager.getProviders().find((p) => p.id === providerId)
+    const resolvedModel = model ?? provider?.models?.[0]?.id ?? 'auto'
+
     // Set provider for session
-    sessionManager.setSessionProvider(sessionId, providerId, model ?? 'auto')
+    sessionManager.setSessionProvider(sessionId, providerId, resolvedModel)
 
     // Persist to global config as defaultModelSelection
     const { loadGlobalConfig, saveGlobalConfig, setDefaultModelSelection } = await import('../cli/config.js')
     const globalConfig = await loadGlobalConfig(config.mode ?? 'production')
-    const updatedConfig = setDefaultModelSelection(globalConfig, providerId, model ?? 'auto')
+    const updatedConfig = setDefaultModelSelection(globalConfig, providerId, resolvedModel)
     await saveGlobalConfig(config.mode ?? 'production', updatedConfig)
 
     // Update in-memory config so new sessions inherit the selection
@@ -1089,6 +1093,12 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
 
       const providerBackend = backend as ProviderBackend
 
+      const providerModels: ModelConfig[] = modelConfigs?.length
+        ? buildModelConfigs(modelConfigs as ModelConfigInput[])
+        : model
+          ? [{ id: model, contextWindow: 200000, source: 'user' as const }]
+          : []
+
       const configWithProvider = addProvider(globalConfig, {
         name,
         url,
@@ -1096,23 +1106,21 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
         apiKey,
         ...(isLocal !== undefined ? { isLocal } : {}),
         ...(thinkingField ? { thinkingField } : {}),
-        models: modelConfigs?.length
-          ? buildModelConfigs(modelConfigs as ModelConfigInput[])
-          : model
-            ? [{ id: model, contextWindow: 200000, source: 'user' as const }]
-            : [],
+        models: providerModels,
         isActive: true,
       })
 
+      const firstModelId = model ?? providerModels[0]?.id ?? 'auto'
       const finalConfig = setDefaultModelSelection(
         configWithProvider,
         configWithProvider.providers[configWithProvider.providers.length - 1]!.id,
-        model ?? 'auto',
+        firstModelId,
       )
 
       await saveGlobalConfig(config.mode ?? 'production', finalConfig)
 
       providerManager.setProviders(finalConfig.providers, finalConfig.defaultModelSelection ?? undefined)
+      config.defaultModelSelection = finalConfig.defaultModelSelection
 
       const newProvider = finalConfig.providers[finalConfig.providers.length - 1]
 
@@ -1176,6 +1184,7 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
     await saveGlobalConfig(config.mode ?? 'production', updatedConfig)
 
     providerManager.setProviders(updatedConfig.providers, updatedConfig.defaultModelSelection ?? undefined)
+    config.defaultModelSelection = updatedConfig.defaultModelSelection
 
     res.json({ success: true })
   })
@@ -1195,6 +1204,7 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
       const updatedConfig = updateProvider(globalConfig, id, updates)
       await saveGlobalConfig(config.mode ?? 'production', updatedConfig)
       providerManager.setProviders(updatedConfig.providers, updatedConfig.defaultModelSelection ?? undefined)
+      config.defaultModelSelection = updatedConfig.defaultModelSelection
       res.json({ success: true, provider: updatedConfig.providers.find((p) => p.id === id) })
     } catch (error) {
       res.status(500).json({ error: error instanceof Error ? error.message : 'Failed to update provider' })
@@ -1241,6 +1251,7 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
       const updatedConfig = updateProvider(globalConfig, id, updates)
       await saveGlobalConfig(config.mode ?? 'production', updatedConfig)
       providerManager.setProviders(updatedConfig.providers, updatedConfig.defaultModelSelection ?? undefined)
+      config.defaultModelSelection = updatedConfig.defaultModelSelection
       res.json({ success: true, provider: updatedConfig.providers.find((p) => p.id === id) })
     } catch (error) {
       res.status(500).json({ error: error instanceof Error ? error.message : 'Failed to update provider' })

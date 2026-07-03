@@ -213,11 +213,6 @@ test.describe('Full-stack Build & Verify E2E', () => {
     await page.waitForURL(/\/p\/[a-f0-9-]+\/s\/[a-f0-9-]+/)
     await page.waitForLoadState('networkidle')
 
-    // Select the model via the ProviderSelector dropdown
-    await page.getByTitle('Click to switch provider or model').click()
-    await page.getByRole('button', { name: /deepseek v4 flash/i }).click()
-    await page.waitForTimeout(500)
-
     // Type the prompt
     await page.getByTestId('chat-input-textarea').fill(TEST_PROMPT)
 

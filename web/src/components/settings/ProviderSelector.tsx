@@ -73,7 +73,7 @@ export function ProviderSelector() {
   const selectedModel = defaultModelSelection ? (defaultModelSelection.split('/').pop() ?? null) : null
   const shortModelName = selectedModel
     ? (selectedModel.split('/').pop()?.replace(/-/g, ' ') ?? selectedModel)
-    : 'detecting...'
+    : 'No model'
 
   // Check if a given provider/model pair is the currently selected one
   const isSelected = (providerId: string, modelId: string): boolean => {

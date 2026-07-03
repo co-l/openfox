@@ -203,19 +203,16 @@ export const useConfigStore = create<ConfigState>((set, get) => ({
 
   syncFromSession: (providerId: string, model: string) => {
     const { providers, defaultModelSelection } = get()
-    // When model is empty (provider-only switch), try to preserve the model from
-    // the current defaultModelSelection if it belongs to the target provider,
-    // or use the first available model from the target provider
+    // When model is empty (provider-only switch), preserve the current model
+    // if it belongs to the target provider, otherwise use the first available model
     let resolvedModel = model
     if (!resolvedModel) {
-      const currentSelection = defaultModelSelection ? defaultModelSelection.split('/') : []
-      const currentProvider = currentSelection[0]
-      const currentModel = currentSelection.slice(1).join('/') ?? ''
+      const currentProvider = defaultModelSelection?.split('/')[0]
+      const currentModel = defaultModelSelection?.split('/').slice(1).join('/')
       if (currentProvider === providerId && currentModel) {
         resolvedModel = currentModel
       } else {
-        const targetProvider = providers.find((p) => p.id === providerId)
-        resolvedModel = targetProvider?.models[0]?.id ?? ''
+        resolvedModel = providers.find((p) => p.id === providerId)?.models[0]?.id ?? ''
       }
     }
     set({

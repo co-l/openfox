@@ -218,33 +218,10 @@ export function migrateConfig(raw: unknown): { config: GlobalConfig; migrated: b
       console.warn('Migrating legacy maxContext to model-specific config')
     }
 
-    // If already has defaultModelSelection, just parse and return
-    if (obj.defaultModelSelection) {
-      return {
-        config: configSchema.parse({
-          ...obj,
-          providers,
-        }),
-        migrated: migrationOccurred,
-      }
-    }
-
-    // Migrate from activeProviderId + provider.model to defaultModelSelection
-    let defaultModelSelection: string | undefined
-    if (obj.activeProviderId) {
-      const activeProvider = obj.providers.find((p) => p.id === obj.activeProviderId)
-      if (activeProvider?.model) {
-        defaultModelSelection = `${obj.activeProviderId}/${activeProvider.model}`
-      } else {
-        defaultModelSelection = `${obj.activeProviderId}/auto`
-      }
-    }
-
     return {
       config: configSchema.parse({
         ...obj,
         providers,
-        defaultModelSelection,
       }),
       migrated: migrationOccurred,
     }
@@ -415,7 +392,9 @@ export function addProvider(config: Partial<GlobalConfig>, provider: Omit<Provid
       { ...newProvider, isActive: shouldActivate },
     ],
     mcpServers: config.mcpServers,
-    defaultModelSelection: shouldActivate ? `${newProvider.id}/auto` : config.defaultModelSelection,
+    defaultModelSelection: shouldActivate
+      ? `${newProvider.id}/${newProvider.models?.[0]?.id ?? 'auto'}`
+      : config.defaultModelSelection,
     activeProviderId: shouldActivate ? newProvider.id : config.activeProviderId,
     activeWorkflowId: config.activeWorkflowId,
     server: config.server ?? { port: 10369, host: '127.0.0.1', openBrowser: true },
@@ -453,8 +432,9 @@ export function removeProvider(config: Partial<GlobalConfig>, providerId: string
     const selectedProviderId =
       slashIndex === -1 ? config.defaultModelSelection : config.defaultModelSelection.substring(0, slashIndex)
     if (selectedProviderId === providerId) {
-      // Reset to first available provider with auto
-      newDefaultModelSelection = filtered.length > 0 ? `${filtered[0]!.id}/auto` : undefined
+      // Reset to first available provider with its first model
+      const firstModelId = filtered[0]?.models?.[0]?.id ?? 'auto'
+      newDefaultModelSelection = filtered.length > 0 ? `${filtered[0]!.id}/${firstModelId}` : undefined
     }
   }
 

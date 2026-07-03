@@ -1,5 +1,5 @@
 import type { Provider, Config, LlmBackend, ModelConfig } from '../shared/types.js'
-import { createLLMClient, detectModel, clearModelCache, getModelProfile, type LLMClientWithModel } from './llm/index.js'
+import { createLLMClient, clearModelCache, getModelProfile, type LLMClientWithModel } from './llm/index.js'
 import { logger } from './utils/logger.js'
 import { ensureVersionPrefix, stripVersionPrefix, buildModelsUrl } from './llm/url-utils.js'
 
@@ -247,7 +247,7 @@ export function parseDefaultModelSelection(selection?: string): {
 } {
   if (!selection) return { providerId: undefined, model: undefined }
   const slashIndex = selection.indexOf('/')
-  if (slashIndex === -1) return { providerId: selection, model: 'auto' }
+  if (slashIndex === -1) return { providerId: selection, model: undefined }
   return {
     providerId: selection.substring(0, slashIndex),
     model: selection.substring(slashIndex + 1),
@@ -342,8 +342,12 @@ export function createProviderManager(config: Config): ProviderManager {
         return { success: false, error: 'Provider not found' }
       }
 
-      const currentModel = parseDefaultModelSelection(defaultModelSelection).model ?? 'auto'
-      const targetModel = options?.model ?? currentModel
+      const currentModel = parseDefaultModelSelection(defaultModelSelection).model
+      let targetModel = options?.model ?? currentModel
+      // Safety net: resolve 'auto' or missing model to first available model
+      if (!targetModel || targetModel === 'auto') {
+        targetModel = provider.models?.[0]?.id ?? 'auto'
+      }
       const isModelSwitch =
         providerId === parseDefaultModelSelection(defaultModelSelection).providerId &&
         options?.model &&
@@ -399,14 +403,7 @@ export function createProviderManager(config: Config): ProviderManager {
 
         newClient.setBackend(provider.backend as LlmBackend)
 
-        if (targetModel === 'auto') {
-          const detected = await detectModel(provider.url)
-          if (detected) {
-            newClient.setModel(detected)
-          }
-        } else {
-          newClient.setModel(targetModel)
-        }
+        newClient.setModel(targetModel)
 
         providerStatus.set(providerId, 'connected')
       } catch (err) {
@@ -445,7 +442,8 @@ export function createProviderManager(config: Config): ProviderManager {
       if (providerData.isActive || providers.length === 0) {
         providers = providers.map((p) => ({ ...p, isActive: false }))
         provider.isActive = true
-        defaultModelSelection = `${id}/auto`
+        const firstModelId = provider.models?.[0]?.id ?? 'auto'
+        defaultModelSelection = `${id}/${firstModelId}`
       }
 
       providers.push(provider)
@@ -464,7 +462,8 @@ export function createProviderManager(config: Config): ProviderManager {
 
       if (wasActive && providers.length > 0) {
         providers[0]!.isActive = true
-        defaultModelSelection = `${providers[0]!.id}/auto`
+        const firstModelId = providers[0]?.models?.[0]?.id ?? 'auto'
+        defaultModelSelection = `${providers[0]!.id}/${firstModelId}`
       } else if (providers.length === 0) {
         defaultModelSelection = undefined
       }
@@ -483,13 +482,11 @@ export function createProviderManager(config: Config): ProviderManager {
         providerStatus.set(p.id, 'unknown')
       }
 
-      // If the active provider changed, recreate the LLM client with the new provider's config.
-      // Only recreate if the provider has an apiKey — otherwise the existing env-based config
-      // (with the model detected at startup) is sufficient and preserves the resolved model name.
+      // Recreate LLM client when active provider changes
       const newActiveProviderId = this.getActiveProviderId()
       if (newActiveProviderId && newActiveProviderId !== wasActiveProviderId) {
         const activeProvider = providers.find((p) => p.id === newActiveProviderId)
-        if (activeProvider && activeProvider.apiKey) {
+        if (activeProvider) {
           const providerConfig = createConfigForProvider(activeProvider, this.getCurrentModel() ?? 'auto')
           llmClient = createLLMClient(providerConfig)
           logger.info('setProviders: recreated LLM client for new active provider', {

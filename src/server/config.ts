@@ -8,7 +8,7 @@ const envSchema = z.object({
   OPENFOX_LLM_URL: z.string().url().optional(),
   OPENFOX_VLLM_URL: z.string().url().optional(),
   OPENFOX_BACKEND: backendSchema,
-  OPENFOX_MODEL_NAME: z.string().default('qwen3.5-122b-int4-autoround'),
+  OPENFOX_MODEL_NAME: z.string().default(''),
   OPENFOX_MAX_CONTEXT: z.coerce.number().default(200000),
   OPENFOX_PORT: z.coerce.number().default(10369),
   OPENFOX_HOST: z.string().optional(),

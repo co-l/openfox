@@ -32,7 +32,7 @@ export async function runServe(options: ServeOptions): Promise<void> {
 
   // Only use env values if they're not the defaults (meaning they were explicitly set)
   const isEnvBackendExplicit = envBackend !== 'unknown'
-  const isEnvModelExplicit = envModel !== 'qwen3.5-122b-int4-autoround' // default in config.ts
+  const isEnvModelExplicit = !!envModel // empty default means not explicitly set
   const isEnvUrlExplicit = envUrl !== 'http://localhost:8000/v1' // default in config.ts
 
   // Get provider values with fallbacks
