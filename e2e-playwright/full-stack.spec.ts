@@ -37,6 +37,8 @@ async function setupTestEnvironment(): Promise<TestContext> {
   const serverUrl = `http://localhost:${port}`
 
   // Spawn server with isolated config dir so we don't pick up user config with network auth
+  // No LLM env vars — simulates a real user discovering OpenFox with zero config.
+  // The provider URL is entered manually in the UI during onboarding.
   const serverEnv = {
     ...process.env,
     HOME: configDir,
@@ -45,9 +47,6 @@ async function setupTestEnvironment(): Promise<TestContext> {
     OPENFOX_PORT: String(port),
     OPENFOX_DB_PATH: ':memory:',
     OPENFOX_WORKDIR: workdir,
-    OPENFOX_LLM_URL: 'http://192.168.1.223:8000',
-    OPENFOX_MODEL_NAME: 'deepseek-v4-flash-dspark',
-    OPENFOX_BACKEND: 'vllm',
     OPENFOX_LOG_LEVEL: 'warn',
     OPENFOX_MOCK_LLM: 'false',
   }
