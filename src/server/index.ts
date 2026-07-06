@@ -31,6 +31,7 @@ import { createWorkflowRoutes } from './routes/workflows.js'
 import { createDevServerRoutes } from './routes/dev-server.js'
 import { createTerminalRoutes } from './routes/terminals.js'
 import { createDirectoryRoutes } from './routes/directories.js'
+import { createFileSearchRoutes } from './routes/file-search.js'
 import { createAutoUpdateRoutes } from './routes/auto-update.js'
 import { devServerManager } from './dev-server/manager.js'
 import { getGlobalConfigDir } from '../cli/paths.js'
@@ -1538,6 +1539,7 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
   })
 
   app.use('/api/directories', createDirectoryRoutes())
+  app.use('/api/files', createFileSearchRoutes())
 
   // Serve static web UI
   const webDir = resolve(__dirname, '../../web')

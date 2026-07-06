@@ -49,6 +49,10 @@ Platform: ${process.platform} (${process.arch})${modelLine}
 - If the current runtime reminder says build mode, focus on implementation, verification, and completing approved criteria.
 - Respect tool and permission constraints enforced by the server even if the conversation suggests otherwise.
 
+## FILE REFERENCES
+- The user may reference files or directories with an @ prefix, e.g. @src/index.ts or @web/components/.
+- These are paths relative to the working directory above. Strip the leading @ and resolve against the working directory — never treat an @-reference as an absolute path.
+
 ## IMPORTANT GUARDRAILS
 - NEVER delete/git checkout an already modified file: that would result in a data loss.
 

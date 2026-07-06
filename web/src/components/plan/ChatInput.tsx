@@ -15,6 +15,7 @@ import { QueuedMessages } from './QueuedMessages'
 import { AgentSelector } from './AgentSelector'
 import { DangerLevelSelector } from './DangerLevelSelector'
 import { ProviderSelector } from '../settings/ProviderSelector'
+import { AtMentionAutocomplete, type AtMentionAutocompleteHandle, type FileSuggestion } from '../shared/AtMentionAutocomplete'
 
 interface ChatInputProps {
   input: string
@@ -78,6 +79,8 @@ export function ChatInput({
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const prevLenRef = useRef(0)
+  const cursorPosRef = useRef(0)
+  const autocompleteRef = useRef<AtMentionAutocompleteHandle>(null)
 
   const isRunning = useIsRunning()
   const stopGeneration = useSessionStore((state) => state.stopGeneration)
@@ -85,6 +88,7 @@ export function ChatInput({
   const queuedMessages = useSessionStore((state) => state.queuedMessages)
   const restoredInput = useSessionStore((state) => state.restoredInput)
   const clearRestoredInput = useSessionStore((state) => state.clearRestoredInput)
+  const workdir = useSessionStore((state) => state.currentSession?.workdir)
 
   const { sendMessage } = useScrolledSend(setAutoScroll)
 
@@ -170,6 +174,9 @@ export function ChatInput({
   }
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (autocompleteRef.current?.handleKeyDown(e)) {
+      return
+    }
     if (showHistory) {
       switch (e.key) {
         case 'Enter': {
@@ -278,6 +285,38 @@ export function ChatInput({
     clearInput()
   }
 
+  const handleSelectFile = useCallback((suggestion: FileSuggestion, startIndex: number) => {
+    const isDirectory = suggestion.type === 'directory'
+    // Files get a trailing space (closes the popup); directories get a trailing
+    // slash so the query continues and the popup refetches the dir's contents.
+    const suffix = isDirectory ? '/' : ' '
+    const beforeCursor = input.slice(0, startIndex)
+    const afterCursor = input.slice(cursorPosRef.current)
+    const newText = `${beforeCursor}@${suggestion.path}${suffix}${afterCursor}`
+    setInput(newText)
+    const newCursorPos = startIndex + suggestion.path.length + 2
+    cursorPosRef.current = newCursorPos
+    if (textareaRef.current) {
+      textareaRef.current.selectionStart = newCursorPos
+      textareaRef.current.selectionEnd = newCursorPos
+      textareaRef.current.focus()
+    }
+  }, [input, setInput])
+
+  const handleInput = useCallback((e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    setInput(e.target.value)
+    if (showHistory) closeHistory()
+    cursorPosRef.current = e.target.selectionStart
+  }, [setInput, showHistory, closeHistory])
+
+  const handleSelect = useCallback((e: React.MouseEvent<HTMLTextAreaElement>) => {
+    cursorPosRef.current = (e.target as HTMLTextAreaElement).selectionStart
+  }, [])
+
+  const handleKeyUp = useCallback((e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    cursorPosRef.current = e.currentTarget.selectionStart
+  }, [])
+
   return (
     <form onSubmit={handleSubmit} className="relative p-2 md:p-4 bg-secondary">
       {isRunning && (
@@ -352,21 +391,23 @@ export function ChatInput({
         onDragLeave={handleDragLeave}
         onDrop={handleDrop}
       >
-        <textarea
-          id={CHAT_TEXTAREA_ID}
-          ref={textareaRef}
-          value={input}
-          onChange={(e) => {
-            setInput(e.target.value)
-            if (showHistory) closeHistory()
-          }}
-          onKeyDown={handleKeyDown}
-          placeholder="What would you like to build?"
-          data-testid="chat-input-textarea"
-          className="flex-1 bg-transparent text-sm placeholder:text-text-muted resize-none overflow-y-auto focus:outline-none"
-          style={{ minHeight: '24px', maxHeight: '200px' }}
-          spellCheck={false}
-        />
+        <div className="relative flex-1 min-w-0">
+          <textarea
+            id={CHAT_TEXTAREA_ID}
+            ref={textareaRef}
+            value={input}
+            onChange={handleInput}
+            onKeyDown={handleKeyDown}
+            onSelect={handleSelect}
+            onKeyUp={handleKeyUp}
+            placeholder="What would you like to build?"
+            data-testid="chat-input-textarea"
+            className="w-full bg-transparent text-sm placeholder:text-text-muted resize-none overflow-y-auto focus:outline-none"
+            style={{ minHeight: '24px', maxHeight: '200px' }}
+            spellCheck={false}
+            />
+          <AtMentionAutocomplete ref={autocompleteRef} text={input} cursorPos={cursorPosRef.current} workdir={workdir} onSelect={handleSelectFile} />
+        </div>
         <div className="flex items-center self-center gap-1.5">
           {isRunning && (
             <button
