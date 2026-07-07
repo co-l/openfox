@@ -226,6 +226,7 @@ export interface ProviderManager {
   ): Promise<{ success: boolean; error?: string; model?: ModelConfig }>
   refreshProviderModels(providerId: string): Promise<{ success: boolean; error?: string }>
   getModelSettings(
+    providerId: string,
     modelId: string,
     mode?: 'thinking' | 'non-thinking',
   ):
@@ -671,8 +672,8 @@ export function createProviderManager(config: Config): ProviderManager {
       return { success: true, model: updatedModel }
     },
 
-    getModelSettings(modelId: string, mode: 'thinking' | 'non-thinking' = 'thinking') {
-      const provider = providers.find((p) => p.models.some((m) => m.id === modelId))
+    getModelSettings(providerId: string, modelId: string, mode: 'thinking' | 'non-thinking' = 'thinking') {
+      const provider = providers.find((p) => p.id === providerId)
       const model = provider?.models.find((m) => m.id === modelId)
       if (!model) return undefined
 

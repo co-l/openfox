@@ -219,7 +219,7 @@ export interface GenerateSessionNameForSessionDeps {
 function resolveSessionProvider(
   session: Session,
   providerManager: ProviderManager,
-): { baseUrl: string; apiKey?: string; model: string } | undefined {
+): { providerId: string; baseUrl: string; apiKey?: string; model: string } | undefined {
   const providers = providerManager.getProviders()
   const effectiveModel = session.providerModel ?? providerManager.getCurrentModel()
   if (!effectiveModel) return undefined
@@ -232,6 +232,7 @@ function resolveSessionProvider(
   if (!provider) return undefined
 
   return {
+    providerId: provider.id,
     baseUrl: provider.url,
     ...(provider.apiKey ? { apiKey: provider.apiKey } : {}),
     model: effectiveModel,
@@ -259,9 +260,9 @@ export async function generateSessionNameForSession(
 
   const providerConfig = resolveSessionProvider(session, providerManager)
 
-  // Get non-thinking model settings for the session's model (if available)
+  // Get non-thinking model settings for the session's model on its provider
   const modelSettings = providerConfig
-    ? providerManager.getModelSettings(providerConfig.model, 'non-thinking')
+    ? providerManager.getModelSettings(providerConfig.providerId, providerConfig.model, 'non-thinking')
     : undefined
 
   const prompt = SESSION_NAME_PROMPT.replace('{message}', userMessage)

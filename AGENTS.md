@@ -100,7 +100,7 @@ git commit -m "message"   # timeout: 120000ms
 ### Release
 
 ```bash
-npm run patch        # Bump patch version (HUSKY=0 npm version patch) — commits & tags
+npm run patch        # Bump patch version — commits & tags
 npm publish 2>&1 | tail -10   # Build + e2e via prepublishOnly, then publish. timeout: 120000ms
 git push --follow-tags  # Push commit and tag
 ```

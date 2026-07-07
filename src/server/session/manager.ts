@@ -103,8 +103,9 @@ export class SessionManager {
     | { temperature?: number; topP?: number; topK?: number; maxTokens?: number; supportsVision?: boolean }
     | undefined {
     const model = this.providerManager.getCurrentModel()
-    if (!model) return undefined
-    return this.providerManager.getModelSettings(model)
+    const providerId = this.providerManager.getActiveProviderId()
+    if (!model || !providerId) return undefined
+    return this.providerManager.getModelSettings(providerId, model)
   }
 
   getCurrentModelContext(): number {

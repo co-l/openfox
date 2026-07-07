@@ -423,8 +423,13 @@ describe('ProviderManager - Model Selection', () => {
   })
 
   describe('getModelSettings', () => {
-    it('returns undefined for non-existent model', () => {
-      const settings = providerManager.getModelSettings('non-existent')
+    it('returns undefined for non-existent provider', () => {
+      const settings = providerManager.getModelSettings('non-existent', 'model-a')
+      expect(settings).toBeUndefined()
+    })
+
+    it('returns undefined for non-existent model on existing provider', () => {
+      const settings = providerManager.getModelSettings('provider-1', 'non-existent')
       expect(settings).toBeUndefined()
     })
 
@@ -438,7 +443,7 @@ describe('ProviderManager - Model Selection', () => {
         thinkingExtraKwargs: '{"enable_thinking": true}',
       })
 
-      const settings = providerManager.getModelSettings('model-a')
+      const settings = providerManager.getModelSettings('provider-1', 'model-a')
       expect(settings).toBeDefined()
       expect(settings?.temperature).toBe(0.5)
       expect(settings?.topP).toBe(0.9)
@@ -454,7 +459,7 @@ describe('ProviderManager - Model Selection', () => {
         nonThinkingExtraKwargs: '{"enable_thinking": false}',
       })
 
-      const settings = providerManager.getModelSettings('model-a', 'thinking')
+      const settings = providerManager.getModelSettings('provider-1', 'model-a', 'thinking')
       expect(settings?.chatTemplateKwargs).toEqual({ enable_thinking: true })
     })
 
@@ -466,7 +471,7 @@ describe('ProviderManager - Model Selection', () => {
         nonThinkingExtraKwargs: '{"enable_thinking": false}',
       })
 
-      const settings = providerManager.getModelSettings('model-a', 'non-thinking')
+      const settings = providerManager.getModelSettings('provider-1', 'model-a', 'non-thinking')
       expect(settings?.chatTemplateKwargs).toEqual({ enable_thinking: false })
     })
 
@@ -477,7 +482,7 @@ describe('ProviderManager - Model Selection', () => {
         nonThinkingEnabled: false,
       })
 
-      const settings = providerManager.getModelSettings('model-a', 'non-thinking')
+      const settings = providerManager.getModelSettings('provider-1', 'model-a', 'non-thinking')
       expect(settings?.queryParams).toEqual({ reasoning_effort: 'high' })
     })
 
@@ -488,8 +493,17 @@ describe('ProviderManager - Model Selection', () => {
         nonThinkingQueryParams: '{"reasoning_effort":"none"}',
       })
 
-      const settings = providerManager.getModelSettings('model-a', 'thinking')
+      const settings = providerManager.getModelSettings('provider-1', 'model-a', 'thinking')
       expect(settings?.queryParams).toEqual({ reasoning_effort: 'none' })
+    })
+
+    it('returns undefined when model exists on different provider', async () => {
+      await providerManager.updateModelSettings('provider-2', 'model-b', {
+        temperature: 0.3,
+      })
+
+      const settings = providerManager.getModelSettings('provider-1', 'model-b')
+      expect(settings).toBeUndefined()
     })
   })
 })
