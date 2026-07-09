@@ -45,7 +45,7 @@ describe('Read Tools', () => {
   })
 
   describe('read_file', () => {
-    it('reads file contents with line numbers', async () => {
+    it('reads file contents', async () => {
       await client.send('chat.send', {
         content: 'Read the file src/math.ts and show me its contents.',
       })
@@ -79,9 +79,9 @@ describe('Read Tools', () => {
 
       const toolCalls = response.toolCalls.filter((tc) => tc.tool === 'read_file')
       if (toolCalls.length > 0 && toolCalls[0]!.result?.success) {
-        const output = toolCalls[0]!.result!.output!
-        // Should not contain line 1
-        expect(output.startsWith('1|')).toBe(false)
+        const result = toolCalls[0]!.result!
+        // Should have metadata indicating offset was applied
+        expect(result.metadata?.['startLine']).toBeGreaterThan(1)
       }
     })
 

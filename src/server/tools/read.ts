@@ -141,7 +141,7 @@ export const readFileTool = createTool<ReadFileArgs>(
     function: {
       name: 'read_file',
       description:
-        'Read the contents of a file or list directory contents. For text files: returns line-numbered content. For images (PNG, JPEG, GIF, WebP, BMP, SVG): returns base64-encoded data with MIME type metadata. For directories: returns a tree-formatted listing of entries with file sizes.',
+        'Read the contents of a file or list directory contents. For text files: returns file content. For images (PNG, JPEG, GIF, WebP, BMP, SVG): returns base64-encoded data with MIME type metadata. For directories: returns a tree-formatted listing of entries with file sizes.',
       parameters: {
         type: 'object',
         properties: {
@@ -226,8 +226,8 @@ export const readFileTool = createTool<ReadFileArgs>(
     const endLine = Math.min(startLine + limit - 1, totalLines)
     const selectedLines = lines.slice(startLine - 1, endLine)
 
-    // Format with line numbers
-    const formatted = selectedLines.map((line, i) => `${startLine + i}|${line}`).join('\n')
+    // Join lines without prefix
+    const formatted = selectedLines.join('\n')
 
     // Check if truncated
     const truncated = endLine < totalLines
@@ -254,6 +254,8 @@ export const readFileTool = createTool<ReadFileArgs>(
         encoding,
         confidence: Math.round(confidence * 100) / 100,
         lineCount: totalLines,
+        startLine,
+        endLine,
         path: fullPath,
       },
     })

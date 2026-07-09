@@ -214,7 +214,7 @@ describe('readFileTool - Image Support', () => {
   })
 
   describe('text file compatibility', () => {
-    it('should still read text files with line numbers', async () => {
+    it('should still read text files without line number prefix', async () => {
       const textContent = 'line 1\nline 2\nline 3\nline 4\nline 5'
       const textBuffer = Buffer.from(textContent, 'utf-8')
 
@@ -227,12 +227,15 @@ describe('readFileTool - Image Support', () => {
       const result = await readFileTool.execute({ path: 'test.ts', offset: 2, limit: 2 }, mockContext)
 
       expect(result.success).toBe(true)
-      expect(result.output).toContain('2|line 2')
-      expect(result.output).toContain('3|line 3')
+      expect(result.output).toContain('line 2')
+      expect(result.output).toContain('line 3')
       expect(result.output).not.toContain('1|line 1')
+      expect(result.output).not.toMatch(/^\d+\|/) // No line number prefix
       expect(result.metadata).toBeDefined()
       expect(result.metadata?.['encoding']).toBe('utf-8')
       expect(result.metadata?.['path']).toBe('/test/workdir/test.ts')
+      expect(result.metadata?.['startLine']).toBe(2)
+      expect(result.metadata?.['endLine']).toBe(3)
     })
 
     it('should handle text files with offset and limit parameters', async () => {
@@ -251,8 +254,11 @@ describe('readFileTool - Image Support', () => {
       const result = await readFileTool.execute({ path: 'test.ts', offset: 10, limit: 5 }, mockContext)
 
       expect(result.success).toBe(true)
-      expect(result.output).toContain('10|line 10')
-      expect(result.output).toContain('14|line 14')
+      expect(result.output).toContain('line 10')
+      expect(result.output).toContain('line 14')
+      expect(result.output).not.toMatch(/^\d+\|/) // No line number prefix
+      expect(result.metadata?.['startLine']).toBe(10)
+      expect(result.metadata?.['endLine']).toBe(14)
     })
   })
 

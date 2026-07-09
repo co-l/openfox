@@ -108,7 +108,8 @@ describe('encoding integration', () => {
       expect(result.success).toBe(true)
       expect(result.metadata?.['encoding']).toBe('utf-8')
       // BOM should be stripped from output
-      expect(result.output).toContain('1|hello')
+      expect(result.output).toContain('hello')
+      expect(result.metadata?.['startLine']).toBe(1)
     })
   })
 
