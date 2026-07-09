@@ -313,7 +313,7 @@ export async function runProviderList(mode: Mode): Promise<void> {
     const marker = provider.isActive ? '▸' : ' '
     const name = provider.name.padEnd(18)
     const url = provider.url.padEnd(32)
-    const model = (provider.model || 'auto').padEnd(18)
+    const model = (provider.models?.[0]?.id || 'auto').padEnd(18)
     const backend = provider.backend
 
     console.log(`${marker} ${name} ${url} ${model} ${backend}`)
@@ -342,7 +342,7 @@ export async function runProviderUse(mode: Mode): Promise<void> {
     options: config.providers.map((p) => ({
       value: p.id,
       label: `${p.name}${p.isActive ? ' (current)' : ''}`,
-      hint: `${p.url} - ${p.model}`,
+      hint: `${p.url} - ${p.models?.[0]?.id ?? 'auto'}`,
     })),
     initialValue: activeProvider?.id,
   })

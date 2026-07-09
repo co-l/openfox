@@ -4,7 +4,7 @@ import { readFile, writeFile, mkdir, access } from 'node:fs/promises'
 import { dirname } from 'node:path'
 import type { Mode } from './main.js'
 import { getGlobalConfigPath } from './paths.js'
-import type { Provider, ProviderBackend, ModelConfig } from '../shared/types.js'
+import type { Provider, ModelConfig } from '../shared/types.js'
 
 export async function configFileExists(mode: Mode): Promise<boolean> {
   const configPath = getGlobalConfigPath(mode)
@@ -44,10 +44,6 @@ const providerSchema = z.object({
   isActive: z.boolean(),
   createdAt: z.string(),
   isLocal: z.boolean().optional(),
-  // Deprecated: model field kept for migration, will be removed after migration
-  model: z.string().optional(),
-  // Deprecated: maxContext kept for migration
-  maxContext: z.number().optional(),
 })
 
 const serverSchema = z.object({
@@ -136,32 +132,6 @@ const configSchema = z
     visionFallback: data.visionFallback ?? defaultVisionFallback,
   }))
 
-// Old config schema (for migration detection)
-const oldLlmSchema = z
-  .object({
-    url: z.string().url().default('http://localhost:8000/v1'),
-    model: z.string().default('auto'),
-    backend: z.enum(['vllm', 'sglang', 'ollama', 'llamacpp', 'unknown']).default('unknown'),
-    maxContext: z.number().default(200000),
-    // Deprecated: use reasoningEffort instead
-    disableThinking: z.boolean().optional(),
-    reasoningEffort: z.string().optional(),
-    apiKey: z.string().optional(),
-  })
-  .transform((data) => {
-    if (data.disableThinking && !data.reasoningEffort) {
-      return { ...data, reasoningEffort: 'none', disableThinking: undefined }
-    }
-    return { ...data, disableThinking: undefined }
-  })
-
-const oldConfigSchema = z.object({
-  llm: oldLlmSchema,
-  server: serverSchema.default({ port: 10369, host: '127.0.0.1', openBrowser: true }),
-  logging: loggingSchema.default({ level: 'error' as const }),
-  database: databaseSchema.default({ path: '' }),
-})
-
 // ============================================================================
 // Types
 // ============================================================================
@@ -171,137 +141,6 @@ export function getVisionFallback(config: GlobalConfig) {
 }
 
 export type GlobalConfig = z.infer<typeof configSchema>
-export type OldGlobalConfig = z.infer<typeof oldConfigSchema>
-
-// ============================================================================
-// Migration
-// ============================================================================
-
-/**
- * Migrate old config format (single llm object) to new format (providers array).
- * Also migrates provider.model to global defaultModelSelection.
- * If already in new format with defaultModelSelection, returns as-is.
- */
-export function migrateConfig(raw: unknown): { config: GlobalConfig; migrated: boolean } {
-  type RawProvider = {
-    id: string
-    name: string
-    url: string
-    model?: string
-    backend: string
-    apiKey?: string
-    maxContext?: number
-    isActive: boolean
-    createdAt: string
-    models?: Array<{ id: string; contextWindow: number; source: 'backend' | 'user' | 'default' }>
-  }
-  type RawConfig = {
-    providers: RawProvider[]
-    activeProviderId?: string
-    defaultModelSelection?: string
-    [key: string]: unknown
-  }
-
-  // Check if it's already the new format (has providers array)
-  if (typeof raw === 'object' && raw !== null && 'providers' in raw) {
-    const obj = raw as RawConfig
-
-    // Migrate legacy maxContext to models array
-    let migrationOccurred = false
-    const providers = obj.providers.map((p) => {
-      const { model, maxContext, models: existingModels, backend, ...rest } = p
-
-      // Normalize 'auto' backend to 'unknown' for backward compatibility
-      const normalizedBackend = backend === 'auto' ? 'unknown' : backend
-
-      // If provider has legacy maxContext but no existing models array, migrate to models array
-      let models: Array<{ id: string; contextWindow: number; source: 'backend' | 'user' | 'default' }> =
-        existingModels ?? []
-      if (maxContext !== undefined && (existingModels === undefined || existingModels.length === 0)) {
-        migrationOccurred = true
-        // Use the model field value if available, otherwise default to 'auto'
-        models = [
-          {
-            id: model ?? 'auto',
-            contextWindow: maxContext,
-            source: 'user' as const,
-          },
-        ]
-      }
-
-      return {
-        ...rest,
-        backend: normalizedBackend,
-        models,
-      }
-    })
-
-    if (migrationOccurred) {
-      console.warn('Migrating legacy maxContext to model-specific config')
-    }
-
-    return {
-      config: configSchema.parse({
-        ...obj,
-        providers,
-      }),
-      migrated: migrationOccurred,
-    }
-  }
-
-  // Check if it's the old format (has llm object)
-  if (typeof raw === 'object' && raw !== null && 'llm' in raw) {
-    // Normalize 'auto' backend to 'unknown' for backward compatibility
-    const rawObj = raw as Record<string, unknown>
-    const llm = rawObj['llm'] as Record<string, unknown> | undefined
-    if (llm && llm['backend'] === 'auto') {
-      llm['backend'] = 'unknown'
-    }
-
-    const oldConfig = oldConfigSchema.parse(raw)
-    const providerId = randomUUID()
-
-    // Migrate legacy maxContext to models array
-    const models: ModelConfig[] = [
-      {
-        id: oldConfig.llm.model || 'auto',
-        contextWindow: oldConfig.llm.maxContext,
-        source: 'user',
-      },
-    ]
-
-    const provider: Provider = {
-      id: providerId,
-      name: 'Default',
-      url: oldConfig.llm.url,
-      backend: oldConfig.llm.backend as ProviderBackend,
-      apiKey: oldConfig.llm.apiKey,
-      models,
-      isActive: true,
-      createdAt: new Date().toISOString(),
-    }
-
-    const model = oldConfig.llm.model || 'auto'
-
-    return {
-      config: configSchema.parse({
-        providers: [provider],
-        defaultModelSelection: `${providerId}/${model}`,
-        server: oldConfig.server,
-        logging: oldConfig.logging,
-        database: oldConfig.database,
-        workspace: { workdir: process.cwd() },
-      }),
-      migrated: true,
-    }
-  }
-
-  // Empty or minimal config - return defaults
-  return {
-    config: configSchema.parse(raw),
-    migrated: false,
-  }
-}
 
 // ============================================================================
 // Load / Save
@@ -313,11 +152,7 @@ export async function loadGlobalConfig(mode: Mode): Promise<GlobalConfig> {
   try {
     const content = await readFile(configPath, 'utf-8')
     const parsed = JSON.parse(content)
-    const { config, migrated } = migrateConfig(parsed)
-    if (migrated) {
-      await saveGlobalConfig(mode, config)
-    }
-    return config
+    return configSchema.parse(parsed)
   } catch {
     return configSchema.parse({})
   }
@@ -500,39 +335,4 @@ export function activateProvider(config: Partial<GlobalConfig>, providerId: stri
     llm: config.llm,
     visionFallback: config.visionFallback ?? defaultVisionFallback,
   }
-}
-
-// ============================================================================
-// Legacy mergeConfigs (for backwards compatibility during transition)
-// ============================================================================
-
-/**
- * @deprecated Use provider-based config instead
- */
-export function mergeConfigs(...configs: Array<Partial<OldGlobalConfig>>): OldGlobalConfig {
-  const result = configs.reduce(
-    (acc, curr) => {
-      if (curr.llm) {
-        acc.llm = { ...acc.llm, ...curr.llm }
-      }
-      if (curr.server) {
-        acc.server = { ...acc.server, ...curr.server }
-      }
-      if (curr.logging) {
-        acc.logging = { ...acc.logging, ...curr.logging }
-      }
-      return acc
-    },
-    {
-      llm: {
-        url: 'http://localhost:8000/v1',
-        model: 'auto',
-        backend: 'unknown' as 'vllm' | 'sglang' | 'ollama' | 'llamacpp' | 'unknown',
-        maxContext: 200000,
-      },
-      server: { port: 10369, host: '127.0.0.1', openBrowser: true },
-      logging: { level: 'error' as 'error' | 'debug' | 'info' | 'warn' },
-    },
-  )
-  return oldConfigSchema.parse(result)
 }

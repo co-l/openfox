@@ -11,20 +11,16 @@ vi.mock('./paths.js', () => ({
 }))
 
 describe('config', () => {
-  // Import after mocking
   let loadGlobalConfig: typeof import('./config.js').loadGlobalConfig
   let saveGlobalConfig: typeof import('./config.js').saveGlobalConfig
-  let migrateConfig: typeof import('./config.js').migrateConfig
   let getActiveProvider: typeof import('./config.js').getActiveProvider
   let getDefaultModel: typeof import('./config.js').getDefaultModel
 
   beforeEach(async () => {
-    // Clear module cache and re-import
     vi.resetModules()
     const configModule = await import('./config.js')
     loadGlobalConfig = configModule.loadGlobalConfig
     saveGlobalConfig = configModule.saveGlobalConfig
-    migrateConfig = configModule.migrateConfig
     getActiveProvider = configModule.getActiveProvider
     getDefaultModel = configModule.getDefaultModel
 
@@ -36,79 +32,28 @@ describe('config', () => {
     await rm(TEST_DIR, { recursive: true, force: true })
   })
 
-  describe('migrateConfig', () => {
-    it('converts old llm format to providers array', () => {
-      const oldConfig = {
-        llm: {
-          url: 'http://localhost:8000/v1',
-          model: 'qwen3-32b',
-          backend: 'vllm' as const,
-          maxContext: 200000,
-          reasoningEffort: undefined,
-        },
-        server: { port: 10369, host: '127.0.0.1', openBrowser: true },
-        logging: { level: 'info' as const },
-        database: { path: '' },
-        workspace: { workdir: process.cwd() },
-      }
+  describe('loadGlobalConfig', () => {
+    it('returns empty providers for fresh install', async () => {
+      const loaded = await loadGlobalConfig('production')
 
-      const result = migrateConfig(oldConfig)
-      const migrated = result.config
-
-      expect(migrated.providers).toHaveLength(1)
-      expect(migrated.providers[0]).toMatchObject({
-        name: 'Default',
-        url: 'http://localhost:8000/v1',
-        backend: 'vllm',
-        isActive: true,
-      })
-      expect(migrated.providers[0]?.models).toEqual([{ id: 'qwen3-32b', contextWindow: 200000, source: 'user' }])
-      expect(migrated.defaultModelSelection).toMatch(/^[a-f0-9-]+\/qwen3-32b$/)
-      // Old llm.url/model/backend should be removed (new llm key is for timeout config)
-      expect(migrated.llm).toBeUndefined()
-      expect(result.migrated).toBe(true)
+      expect(loaded.providers).toEqual([])
+      expect(loaded.activeProviderId).toBeUndefined()
     })
 
-    it('logs warning when migrating legacy maxContext', () => {
-      const oldConfig = {
+    it('loads config with providers array', async () => {
+      const config = {
         providers: [
           {
-            id: 'test-id',
+            id: 'test-123',
             name: 'Test Provider',
-            url: 'http://localhost:8000/v1',
-            backend: 'vllm' as const,
-            maxContext: 128000,
-            isActive: true,
-            createdAt: '2024-01-01T00:00:00Z',
-          },
-        ],
-        server: { port: 10369, host: '127.0.0.1', openBrowser: true },
-        logging: { level: 'info' as const },
-        database: { path: '' },
-        workspace: { workdir: process.cwd() },
-      }
-
-      const consoleWarnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
-      const result = migrateConfig(oldConfig)
-      expect(consoleWarnSpy).toHaveBeenCalledWith('Migrating legacy maxContext to model-specific config')
-      expect(result.migrated).toBe(true)
-      consoleWarnSpy.mockRestore()
-    })
-
-    it('preserves new providers format unchanged', () => {
-      const newConfig = {
-        providers: [
-          {
-            id: 'test-id',
-            name: 'My Provider',
             url: 'http://localhost:8000/v1',
             backend: 'vllm' as const,
             models: [],
             isActive: true,
-            createdAt: '2024-01-01T00:00:00Z',
+            createdAt: new Date().toISOString(),
           },
         ],
-        defaultModelSelection: 'test-id/qwen3-32b',
+        defaultModelSelection: 'test-123/test-model',
         server: { port: 10369, host: '127.0.0.1', openBrowser: true },
         logging: { level: 'info' as const },
         database: { path: '' },
@@ -120,84 +65,30 @@ describe('config', () => {
           timeout: 120,
           backend: 'ollama' as const,
         },
-        activeProviderId: undefined,
-        activeWorkflowId: undefined,
       }
 
-      const result = migrateConfig({
-        providers: newConfig.providers,
-        defaultModelSelection: newConfig.defaultModelSelection,
-        server: newConfig.server,
-        logging: newConfig.logging,
-        database: newConfig.database,
-        workspace: newConfig.workspace,
-      })
-
-      expect(result.config).toEqual(newConfig)
-      expect(result.migrated).toBe(false)
-    })
-
-    it('handles empty config with defaults', () => {
-      const result = migrateConfig({})
-
-      expect(result.config.providers).toEqual([])
-      expect(result.config.activeProviderId).toBeUndefined()
-      expect(result.config.server).toBeDefined()
-      expect(result.migrated).toBe(false)
-    })
-
-    it('preserves apiKey from old config if present', () => {
-      const oldConfig = {
-        llm: {
-          url: 'https://api.openai.com/v1',
-          model: 'gpt-4',
-          backend: 'vllm' as const,
-          apiKey: 'sk-test-key',
-          maxContext: 128000,
-          reasoningEffort: undefined,
-        },
-        server: { port: 10369, host: '127.0.0.1', openBrowser: true },
-        logging: { level: 'info' as const },
-        database: { path: '' },
-        workspace: { workdir: process.cwd() },
-      }
-
-      const result = migrateConfig(oldConfig)
-
-      expect(result.config.providers[0]?.apiKey).toBe('sk-test-key')
-    })
-  })
-
-  describe('loadGlobalConfig', () => {
-    it('migrates old config format on load', async () => {
-      const oldConfig = {
-        llm: {
-          url: 'http://localhost:8000/v1',
-          model: 'test-model',
-          backend: 'vllm',
-          maxContext: 200000,
-          reasoningEffort: undefined,
-        },
-        server: { port: 10369, host: '127.0.0.1', openBrowser: true },
-        logging: { level: 'info' },
-        database: { path: '' },
-        workspace: { workdir: process.cwd() },
-      }
-
-      await writeFile(join(TEST_DIR, 'production', 'config.json'), JSON.stringify(oldConfig))
-
+      await writeFile(join(TEST_DIR, 'production', 'config.json'), JSON.stringify(config))
       const loaded = await loadGlobalConfig('production')
 
       expect(loaded.providers).toHaveLength(1)
-      expect(loaded.defaultModelSelection).toMatch(/^[a-f0-9-]+\/test-model$/)
-      expect(loaded.activeProviderId).toBeUndefined()
+      expect(loaded.providers[0]?.name).toBe('Test Provider')
+      expect(loaded.defaultModelSelection).toBe('test-123/test-model')
     })
 
-    it('returns empty providers for fresh install', async () => {
+    it('preserves llm timeout config', async () => {
+      const config = {
+        providers: [],
+        server: { port: 10369, host: '127.0.0.1', openBrowser: true },
+        logging: { level: 'error' as const },
+        database: { path: '' },
+        workspace: { workdir: process.cwd() },
+        llm: { timeout: 600000, idleTimeout: 600000 },
+      }
+
+      await writeFile(join(TEST_DIR, 'production', 'config.json'), JSON.stringify(config))
       const loaded = await loadGlobalConfig('production')
 
-      expect(loaded.providers).toEqual([])
-      expect(loaded.activeProviderId).toBeUndefined()
+      expect(loaded.llm).toEqual({ timeout: 600000, idleTimeout: 600000 })
     })
   })
 
@@ -209,7 +100,6 @@ describe('config', () => {
             id: 'test-123',
             name: 'Test Provider',
             url: 'http://localhost:8000/v1',
-            model: 'test-model',
             backend: 'vllm' as const,
             models: [],
             isActive: true,
@@ -279,67 +169,6 @@ describe('config', () => {
         { id: 'model-y', contextWindow: 256000, source: 'user' },
       ])
     })
-
-    it('preserves existing models array when provider has both legacy maxContext and models', () => {
-      const configWithLegacyAndModels = {
-        providers: [
-          {
-            id: 'test-provider-456',
-            name: 'Test Provider',
-            url: 'http://localhost:8000/v1',
-            backend: 'vllm' as const,
-            maxContext: 200000,
-            models: [
-              { id: 'model-x', contextWindow: 128000, source: 'user' as const },
-              { id: 'model-y', contextWindow: 256000, source: 'user' as const },
-            ],
-            isActive: true,
-            createdAt: new Date().toISOString(),
-          },
-        ],
-        defaultModelSelection: 'test-provider-456/model-x',
-        server: { port: 10369, host: '127.0.0.1', openBrowser: true },
-        logging: { level: 'info' as const },
-        database: { path: '' },
-        workspace: { workdir: process.cwd() },
-      }
-
-      const result = migrateConfig(configWithLegacyAndModels)
-
-      expect(result.migrated).toBe(false)
-      expect(result.config.providers[0]?.models).toEqual([
-        { id: 'model-x', contextWindow: 128000, source: 'user' },
-        { id: 'model-y', contextWindow: 256000, source: 'user' },
-      ])
-    })
-
-    it('migrates legacy maxContext to models array when no models array exists', () => {
-      const configWithOnlyLegacyMaxContext = {
-        providers: [
-          {
-            id: 'test-provider-789',
-            name: 'Test Provider',
-            url: 'http://localhost:8000/v1',
-            backend: 'vllm' as const,
-            maxContext: 150000,
-            model: 'custom-model',
-            isActive: true,
-            createdAt: new Date().toISOString(),
-          },
-        ],
-        server: { port: 10369, host: '127.0.0.1', openBrowser: true },
-        logging: { level: 'info' as const },
-        database: { path: '' },
-        workspace: { workdir: process.cwd() },
-      }
-
-      const result = migrateConfig(configWithOnlyLegacyMaxContext)
-
-      expect(result.migrated).toBe(true)
-      expect(result.config.providers[0]?.models).toEqual([
-        { id: 'custom-model', contextWindow: 150000, source: 'user' },
-      ])
-    })
   })
 
   describe('server host configuration', () => {
@@ -396,7 +225,6 @@ describe('config', () => {
             id: 'test-123',
             name: 'Test Provider',
             url: 'http://localhost:8000/v1',
-            model: 'test-model',
             backend: 'vllm' as const,
             models: [],
             isActive: true,
@@ -419,7 +247,6 @@ describe('config', () => {
 
       await saveGlobalConfig('production', originalConfig)
 
-      // Simulate updating only logging level
       const updatedConfig = await loadGlobalConfig('production')
       updatedConfig.logging.level = 'error' as const
 
@@ -452,20 +279,21 @@ describe('config', () => {
         workspace: { workdir: process.cwd() },
       }
 
-      const result = migrateConfig(configWithSlashInModel)
-      expect(result.migrated).toBe(false)
-      expect(result.config.defaultModelSelection).toBe('test-provider/Intel/Qwen3.5-397B')
+      await writeFile(join(TEST_DIR, 'production', 'config.json'), JSON.stringify(configWithSlashInModel))
+      const loaded = await loadGlobalConfig('production')
 
-      const activeProvider = getActiveProvider(result.config)
+      expect(loaded.defaultModelSelection).toBe('test-provider/Intel/Qwen3.5-397B')
+
+      const activeProvider = getActiveProvider(loaded)
       expect(activeProvider?.id).toBe('test-provider')
 
-      const defaultModel = getDefaultModel(result.config)
+      const defaultModel = getDefaultModel(loaded)
       expect(defaultModel).toBe('Intel/Qwen3.5-397B')
     })
   })
 
   describe('mcpServers config', () => {
-    it('should parse valid mcpServers config', () => {
+    it('should parse valid mcpServers config', async () => {
       const raw = {
         providers: [],
         mcpServers: {
@@ -482,16 +310,19 @@ describe('config', () => {
           },
         },
       }
-      const { config } = migrateConfig(raw)
-      expect(config.mcpServers).toBeDefined()
-      expect(Object.keys(config.mcpServers!)).toEqual(['brave', 'filesystem'])
-      expect(config.mcpServers!['brave']!.command).toBe('npx')
-      expect(config.mcpServers!['brave']!.transport).toBe('stdio')
-      expect(config.mcpServers!['brave']!.env).toEqual({ BRAVE_API_KEY: 'test-key' })
-      expect(config.mcpServers!['filesystem']!.args).toEqual(['server.js', '/tmp'])
+
+      await writeFile(join(TEST_DIR, 'production', 'config.json'), JSON.stringify(raw))
+      const loaded = await loadGlobalConfig('production')
+
+      expect(loaded.mcpServers).toBeDefined()
+      expect(Object.keys(loaded.mcpServers!)).toEqual(['brave', 'filesystem'])
+      expect(loaded.mcpServers!['brave']!.command).toBe('npx')
+      expect(loaded.mcpServers!['brave']!.transport).toBe('stdio')
+      expect(loaded.mcpServers!['brave']!.env).toEqual({ BRAVE_API_KEY: 'test-key' })
+      expect(loaded.mcpServers!['filesystem']!.args).toEqual(['server.js', '/tmp'])
     })
 
-    it('should parse mcpServers with disabledTools', () => {
+    it('should parse mcpServers with disabledTools', async () => {
       const raw = {
         providers: [],
         mcpServers: {
@@ -502,14 +333,16 @@ describe('config', () => {
           },
         },
       }
-      const { config } = migrateConfig(raw)
-      expect(config.mcpServers!['test']!.disabledTools).toEqual(['tool_a', 'tool_b'])
+
+      await writeFile(join(TEST_DIR, 'production', 'config.json'), JSON.stringify(raw))
+      const loaded = await loadGlobalConfig('production')
+
+      expect(loaded.mcpServers!['test']!.disabledTools).toEqual(['tool_a', 'tool_b'])
     })
 
-    it('should handle missing mcpServers', () => {
-      const raw = { providers: [] }
-      const { config } = migrateConfig(raw)
-      expect(config.mcpServers).toBeUndefined()
+    it('should handle missing mcpServers', async () => {
+      const loaded = await loadGlobalConfig('production')
+      expect(loaded.mcpServers).toBeUndefined()
     })
 
     it('should preserve mcpServers through save and load cycle', async () => {
@@ -517,14 +350,14 @@ describe('config', () => {
         providers: [],
         mcpServers: {
           brave: {
-            transport: 'stdio',
+            transport: 'stdio' as const,
             command: 'npx',
             args: ['@brave/brave-search-mcp-server'],
           },
         },
       }
-      const { config } = migrateConfig(raw)
-      await saveGlobalConfig('test', config)
+
+      await saveGlobalConfig('test', raw)
       const loaded = await loadGlobalConfig('test')
       expect(loaded.mcpServers).toBeDefined()
       expect(loaded.mcpServers!['brave']!.command).toBe('npx')
