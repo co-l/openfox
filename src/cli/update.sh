@@ -10,8 +10,7 @@ if [ "$CURRENT_VERSION" = "$LATEST_VERSION" ]; then
 fi
 
 echo "Updating OpenFox: $CURRENT_VERSION -> $LATEST_VERSION"
-npm cache clean --force
-npm update -g openfox
+npm install -g openfox@latest
 NEW_VERSION=$(openfox --version)
 echo "Updated: $NEW_VERSION"
 echo "Please restart OpenFox to use the new version."
