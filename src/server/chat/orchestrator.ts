@@ -150,7 +150,13 @@ export async function runChatTurn(options: OrchestratorOptions): Promise<void> {
   sessionManager.setRunning(sessionId, true)
 
   // Create append closure — the only write path to EventStore from the loop
-  const append = (event: import('../events/types.js').TurnEvent) => eventStore.append(sessionId, event)
+  const append = (event: import('../events/types.js').TurnEvent) => {
+    try {
+      eventStore.append(sessionId, event)
+    } catch {
+      // Session may have been deleted (e.g. during abort) — skip
+    }
+  }
 
   // Track metrics across the turn
   const turnMetrics = new TurnMetrics()
@@ -203,8 +209,12 @@ export async function runChatTurn(options: OrchestratorOptions): Promise<void> {
     }
 
     if (error instanceof Error && error.message === 'Aborted') {
-      const snapshot = buildSnapshot(sessionManager, sessionId, turnMetrics.buildStats(statsIdentity, mode))
-      eventStore.append(sessionId, { type: 'turn.snapshot', data: snapshot })
+      try {
+        const snapshot = buildSnapshot(sessionManager, sessionId, turnMetrics.buildStats(statsIdentity, mode))
+        eventStore.append(sessionId, { type: 'turn.snapshot', data: snapshot })
+      } catch {
+        // Session may have been deleted during abort — skip cleanup
+      }
       return
     }
 
@@ -232,7 +242,11 @@ export async function runChatTurn(options: OrchestratorOptions): Promise<void> {
     )
     eventStore.append(sessionId, createChatDoneEvent(errorMsgId, 'error'))
   } finally {
-    eventStore.append(sessionId, { type: 'running.changed', data: { isRunning: false } })
+    try {
+      eventStore.append(sessionId, { type: 'running.changed', data: { isRunning: false } })
+    } catch {
+      // Session may have been deleted
+    }
   }
 }
 

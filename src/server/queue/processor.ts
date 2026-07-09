@@ -210,8 +210,7 @@ export class QueueProcessor {
         try {
           const session = sessionManager.getSession(sessionId)
           if (!session) {
-            sessionManager.setRunning(sessionId, false)
-            broadcastForSession(sessionId, createSessionRunningMessage(false))
+            // Session was deleted — nothing more to clean up
             return
           }
 

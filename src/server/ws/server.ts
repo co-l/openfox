@@ -543,7 +543,11 @@ export function createWebSocketServer(
         logger.error('Chat turn error', { error })
       })
       .finally(() => {
-        cleanupAfterTurn(sessionId, controller, broadcastForSession, false)
+        try {
+          cleanupAfterTurn(sessionId, controller, broadcastForSession, false)
+        } catch {
+          // Session may have been deleted during execution
+        }
       })
   }
 
@@ -935,11 +939,15 @@ async function handleClientMessage(
           )
         })
         .finally(() => {
-          // runChatTurn sets isRunning=true but its finally only appends to EventStore.
-          // We must update the DB and broadcast so the QueueProcessor can process
-          // subsequent messages.
-          sessionManager.setRunning(sessionId, false)
-          sendForSession(sessionId, createSessionRunningMessage(false))
+          try {
+            // runChatTurn sets isRunning=true but its finally only appends to EventStore.
+            // We must update the DB and broadcast so the QueueProcessor can process
+            // subsequent messages.
+            sessionManager.setRunning(sessionId, false)
+            sendForSession(sessionId, createSessionRunningMessage(false))
+          } catch {
+            // Session may have been deleted during execution
+          }
         })
 
       break
@@ -1144,10 +1152,14 @@ async function handleClientMessage(
           // Error events are handled inside runOrchestrator and appended to EventStore
         })
         .finally(() => {
-          // Runner orchestrator bypasses runChatTurn, so isRunning must be cleared here
-          sessionManager.setRunning(sessionId, false)
-          sendForSession(sessionId, createSessionRunningMessage(false))
-          cleanupAfterTurn(sessionId, controller, sendForSession, true)
+          try {
+            // Runner orchestrator bypasses runChatTurn, so isRunning must be cleared here
+            sessionManager.setRunning(sessionId, false)
+            sendForSession(sessionId, createSessionRunningMessage(false))
+            cleanupAfterTurn(sessionId, controller, sendForSession, true)
+          } catch {
+            // Session may have been deleted during execution
+          }
         })
 
       break

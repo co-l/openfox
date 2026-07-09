@@ -8,6 +8,8 @@
 import { describe, it, expect, beforeAll, afterAll, beforeEach, afterEach } from 'vitest'
 import { createTestServer, type TestServerHandle } from './utils/index.js'
 import { createTestProject, type TestProject } from './utils/index.js'
+import { createTestClient } from './utils/index.js'
+import { setTimeout as sleep } from 'node:timers/promises'
 
 describe('Session REST API', () => {
   let server: TestServerHandle
@@ -184,6 +186,63 @@ describe('Session REST API', () => {
       })
 
       expect(response.status).toBe(404)
+    })
+
+    it('cancels active agent execution when deleting a running session', async () => {
+      // Create session
+      const createRes = await fetch(`${server.url}/api/sessions`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ projectId, title: 'Delete While Running' }),
+      })
+      const created: any = await createRes.json()
+      const sessionId = created.session.id
+
+      // Connect WS client and load the session
+      const client = await createTestClient({ url: server.wsUrl })
+      await client.send('session.load', { sessionId })
+
+      // Send a message that triggers slow streaming (gives us time to delete mid-flight)
+      client.send('chat.send', { content: 'Write a very long and detailed explanation of TypeScript.' })
+
+      // Wait for session to be marked as running
+      await client.waitFor('session.running', (p: { isRunning: boolean }) => p.isRunning)
+
+      // Confirm the session is actually running via REST
+      const runningCheck: any = await (await fetch(`${server.url}/api/sessions/${sessionId}`)).json()
+      expect(runningCheck.session.isRunning).toBe(true)
+
+      // Wait for at least one chat.delta to confirm streaming has started
+      await client.waitFor('chat.delta')
+
+      // Record events before deletion
+      const eventsBeforeDelete = client.allEvents().length
+
+      // Delete the session while it's running
+      const deleteRes = await fetch(`${server.url}/api/sessions/${sessionId}`, {
+        method: 'DELETE',
+      })
+      expect(deleteRes.status).toBe(200)
+
+      // Wait to see if any events arrive after deletion
+      await sleep(1500)
+
+      // Collect events that arrived after deletion
+      const eventsAfterDelete = client.allEvents().slice(eventsBeforeDelete)
+
+      // Filter for chat events that indicate continued agent activity
+      const chatActivityEvents = eventsAfterDelete.filter((e) =>
+        ['chat.done', 'chat.tool_call', 'chat.tool_result', 'chat.delta', 'chat.thinking'].includes(e.type),
+      )
+
+      // There should be no chat activity after deletion
+      expect(chatActivityEvents.length).toBe(0)
+
+      // Verify session is gone
+      const getRes = await fetch(`${server.url}/api/sessions/${sessionId}`)
+      expect(getRes.status).toBe(404)
+
+      await client.close()
     })
   })
 
