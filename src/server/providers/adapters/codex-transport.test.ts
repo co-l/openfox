@@ -70,6 +70,35 @@ describe('CodexTransportAdapter', () => {
     )
   })
 
+  it('maps assistant history to output_text for the Responses API', async () => {
+    const request = vi.fn(async (_url: string, init: RequestInit) => {
+      const body = JSON.parse(init.body as string) as { input: Array<Record<string, unknown>> }
+      expect(body.input).toEqual([
+        { role: 'user', content: [{ type: 'input_text', text: 'First question' }] },
+        { role: 'assistant', content: [{ type: 'output_text', text: 'First answer' }] },
+        { role: 'user', content: [{ type: 'input_text', text: 'Follow-up' }] },
+      ])
+      return new Response(stream([{ type: 'response.completed', response: { id: 'resp-history' } }]), {
+        status: 200,
+      })
+    })
+    const transport = new CodexTransportAdapter(auth, {
+      endpoint: 'https://codex.test/responses',
+      fetch: request as typeof fetch,
+    })
+
+    await transport.complete(
+      {
+        messages: [
+          { role: 'user', content: 'First question' },
+          { role: 'assistant', content: 'First answer' },
+          { role: 'user', content: 'Follow-up' },
+        ],
+      },
+      { providerId: 'provider-1', credentialRef: 'credential-1', model: 'gpt-5.4' },
+    )
+  })
+
   it('maps function call deltas to tool calls', async () => {
     const request = vi.fn(
       async () =>

@@ -409,12 +409,12 @@ function toCodexInputItems(message: LLMMessage): Record<string, unknown>[] {
   if (message.role === 'tool') {
     return [{ type: 'function_call_output', call_id: message.toolCallId ?? '', output: message.content }]
   }
-  if (message.role === 'assistant' && message.toolCalls?.length) {
+  if (message.role === 'assistant') {
     const items: Record<string, unknown>[] = []
     if (message.content) {
       items.push({ role: 'assistant', content: [{ type: 'output_text', text: message.content }] })
     }
-    for (const call of message.toolCalls) {
+    for (const call of message.toolCalls ?? []) {
       items.push({
         type: 'function_call',
         call_id: call.id,
