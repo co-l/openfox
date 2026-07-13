@@ -35,6 +35,7 @@ export function ProviderSelector() {
     userCode: string
   } | null>(null)
   const [codeCopied, setCodeCopied] = useState(false)
+  const [devicePageOpened, setDevicePageOpened] = useState(false)
   const loadedProvidersRef = useRef<Set<string>>(new Set())
 
   const providers = useConfigStore((state) => state.providers)
@@ -171,6 +172,7 @@ export function ProviderSelector() {
     setAuthBusy(providerId)
     setAuthStates((current) => ({ ...current, [providerId]: 'pending' }))
     setCodeCopied(false)
+    setDevicePageOpened(false)
     try {
       const response = await authFetch(`/api/provider-auth/${providerId}/login`, { method: 'POST' })
       if (!response.ok) throw new Error('Unable to start ChatGPT sign-in')
@@ -193,11 +195,13 @@ export function ProviderSelector() {
   const openDeviceAuthorization = () => {
     if (!deviceChallenge) return
     window.open(deviceChallenge.url, '_blank', 'noopener,noreferrer')
+    setDevicePageOpened(true)
   }
 
   const closeDeviceChallenge = () => {
     setDeviceChallenge(null)
     setCodeCopied(false)
+    setDevicePageOpened(false)
   }
 
   const handleDisconnectAccount = async (event: React.MouseEvent, providerId: string) => {
@@ -589,12 +593,14 @@ export function ProviderSelector() {
                 onClick={openDeviceAuthorization}
                 className="flex-1 rounded-lg bg-accent-primary px-4 py-2 text-sm font-medium text-text-primary hover:bg-accent-primary/90"
               >
-                Open OpenAI
+                {devicePageOpened ? 'Reopen OpenAI' : 'Open OpenAI'}
               </button>
             </div>
 
             <p className="mt-4 text-center text-xs text-text-muted">
-              OpenFox stays open while you complete authorization in the other tab.
+              {devicePageOpened
+                ? 'If the browser blocked or closed the tab, use Reopen OpenAI.'
+                : 'OpenFox stays open while you complete authorization in the other tab.'}
             </p>
           </div>
         </div>
