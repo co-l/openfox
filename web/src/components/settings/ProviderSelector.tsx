@@ -27,14 +27,16 @@ export function ProviderSelector() {
   const dropdownRef = useRef<HTMLDivElement>(null)
   const [editingModel, setEditingModel] = useState<{ providerId: string; model: ModelWithConfig } | null>(null)
   const [showProviderModal, setShowProviderModal] = useState(false)
-  const [authStates, setAuthStates] = useState<Record<string, 'disconnected' | 'pending' | 'connected' | 'expired' | 'error'>>({})
+  const [authStates, setAuthStates] = useState<
+    Record<string, 'disconnected' | 'pending' | 'connected' | 'expired' | 'error'>
+  >({})
   const [authBusy, setAuthBusy] = useState<string | null>(null)
   const [deviceChallenge, setDeviceChallenge] = useState<{
     providerId: string
     url: string
     userCode: string
   } | null>(null)
-  const [codeCopied, setCodeCopied] = useState(false)
+  const [codeCopyCount, setCodeCopyCount] = useState(0)
   const [devicePageOpened, setDevicePageOpened] = useState(false)
   const loadedProvidersRef = useRef<Set<string>>(new Set())
 
@@ -94,7 +96,6 @@ export function ProviderSelector() {
     }
   }, [isOpen, providers])
 
-
   useEffect(() => {
     if (!deviceChallenge) return
 
@@ -105,7 +106,7 @@ export function ProviderSelector() {
 
       if (state === 'connected') {
         setDeviceChallenge(null)
-        setCodeCopied(false)
+        setCodeCopyCount(0)
         setDevicePageOpened(false)
         await fetchConfig()
         loadedProvidersRef.current.delete(deviceChallenge.providerId)
@@ -198,7 +199,7 @@ export function ProviderSelector() {
     event.stopPropagation()
     setAuthBusy(providerId)
     setAuthStates((current) => ({ ...current, [providerId]: 'pending' }))
-    setCodeCopied(false)
+    setCodeCopyCount(0)
     setDevicePageOpened(false)
     try {
       const response = await authFetch(`/api/provider-auth/${providerId}/login`, { method: 'POST' })
@@ -216,7 +217,7 @@ export function ProviderSelector() {
   const copyDeviceCode = async () => {
     if (!deviceChallenge) return
     await navigator.clipboard?.writeText(deviceChallenge.userCode)
-    setCodeCopied(true)
+    setCodeCopyCount((count) => count + 1)
   }
 
   const openDeviceAuthorization = () => {
@@ -227,7 +228,7 @@ export function ProviderSelector() {
 
   const closeDeviceChallenge = () => {
     setDeviceChallenge(null)
-    setCodeCopied(false)
+    setCodeCopyCount(0)
     setDevicePageOpened(false)
   }
 
@@ -413,8 +414,8 @@ export function ProviderSelector() {
                     </span>
                   </div>
                   <div className="flex items-center gap-2 flex-shrink-0">
-                    {provider.authAdapter === 'openai-account' && (
-                      authStates[provider.id] === 'connected' || provider.credentialRef ? (
+                    {provider.authAdapter === 'openai-account' &&
+                      (authStates[provider.id] === 'connected' || provider.credentialRef ? (
                         <button
                           type="button"
                           onClick={(event) => handleDisconnectAccount(event, provider.id)}
@@ -438,8 +439,7 @@ export function ProviderSelector() {
                               ? 'Retry'
                               : 'Connect'}
                         </button>
-                      )
-                    )}
+                      ))}
                     {provider.id === effectiveProviderId ? (
                       <span className="text-accent-success" title="Active provider">
                         <CheckIcon className="w-4 h-4" />
@@ -606,7 +606,11 @@ export function ProviderSelector() {
             </button>
 
             <div className="mt-3 text-center text-xs text-text-muted">
-              {codeCopied ? 'Copied to clipboard' : 'Click the code to copy it'}
+              {codeCopyCount === 0
+                ? 'Click the code to copy it'
+                : codeCopyCount === 1
+                  ? 'Copied to clipboard'
+                  : `Copied again (${codeCopyCount} times)`}
             </div>
 
             <div className="mt-6 flex gap-3">
@@ -615,7 +619,7 @@ export function ProviderSelector() {
                 onClick={copyDeviceCode}
                 className="flex-1 rounded-lg border border-border px-4 py-2 text-sm text-text-primary hover:bg-bg-tertiary"
               >
-                {codeCopied ? 'Copied' : 'Copy code'}
+                {codeCopyCount === 0 ? 'Copy code' : codeCopyCount === 1 ? 'Copied' : `Copied ${codeCopyCount} times`}
               </button>
               <button
                 type="button"
