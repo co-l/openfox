@@ -210,6 +210,7 @@ export interface ModelSettingsUpdate {
 
 export interface ProviderManager {
   getProviders(): Provider[]
+  createClient(providerId: string, model: string): LLMClientWithModel | undefined
   getActiveProvider(): Provider | undefined
   getActiveProviderId(): string | undefined
   getCurrentModel(): string | undefined
@@ -348,6 +349,11 @@ export function createProviderManager(config: Config, options: ProviderManagerOp
   }
 
   return {
+    createClient(providerId: string, model: string) {
+      const provider = providers.find((p) => p.id === providerId)
+      return provider ? createClientForProvider(provider, model) : undefined
+    },
+
     getProviders() {
       return providers.map((p) => ({
         ...p,

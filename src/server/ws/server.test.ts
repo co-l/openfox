@@ -1350,8 +1350,10 @@ describe('createWebSocketServer', () => {
       createdAt: '2024-01-01T00:00:00.000Z',
     }
 
+    const createClientMock = vi.fn(() => mockSessionClient)
     const providerManager = {
       getProviders: vi.fn(() => [provider]),
+      createClient: createClientMock,
       getActiveProvider: vi.fn(() => provider),
       getActiveProviderId: vi.fn(() => 'deepseek-provider'),
       getCurrentModel: vi.fn(() => 'deepseek-chat'),
@@ -1399,9 +1401,11 @@ describe('createWebSocketServer', () => {
     harness.send({ id: 'runner-launch', type: 'runner.launch', payload: {} })
     expect(await harness.nextMessage((message) => message.id === 'runner-launch')).toMatchObject({ type: 'ack' })
 
-    expect(createLLMClientMock).toHaveBeenCalled()
-    const configArg = createLLMClientMock.mock.calls[0]![0] as { llm: { apiKey?: string } }
-    expect(configArg.llm!.apiKey).toBe('sk-real-key-12345')
+    expect(createClientMock).toHaveBeenCalledWith('deepseek-provider', 'deepseek-chat')
+    expect(runOrchestratorMock).toHaveBeenCalledWith(
+      expect.objectContaining({ llmClient: mockSessionClient }),
+    )
+    expect(createLLMClientMock).not.toHaveBeenCalled()
 
     await harness.close()
   })
