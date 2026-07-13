@@ -2,6 +2,7 @@ import { Router } from 'express'
 import type { Config, Provider } from '../../shared/types.js'
 import type { ProviderManager } from '../provider-manager.js'
 import { OpenAIBrowserAuthAdapter } from '../providers/adapters/openai-browser-auth.js'
+import { fetchCodexModels } from '../providers/adapters/models-dev-catalog.js'
 
 export function createProviderAuthRoutes(
   config: Config,
@@ -9,6 +10,14 @@ export function createProviderAuthRoutes(
   openaiAuth: OpenAIBrowserAuthAdapter,
 ): Router {
   const router = Router()
+
+  router.get('/openai/models', async (_req, res) => {
+    try {
+      res.json({ models: await fetchCodexModels() })
+    } catch (error) {
+      res.status(502).json({ error: error instanceof Error ? error.message : 'Failed to fetch OpenAI models' })
+    }
+  })
 
   router.post('/:providerId/login', async (req, res) => {
     const providerId = req.params.providerId as string

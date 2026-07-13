@@ -27,6 +27,8 @@ export function ProviderSelector() {
   const dropdownRef = useRef<HTMLDivElement>(null)
   const [editingModel, setEditingModel] = useState<{ providerId: string; model: ModelWithConfig } | null>(null)
   const [showProviderModal, setShowProviderModal] = useState(false)
+  const [authStates, setAuthStates] = useState<Record<string, 'disconnected' | 'pending' | 'connected' | 'expired' | 'error'>>({})
+  const [authBusy, setAuthBusy] = useState<string | null>(null)
   const loadedProvidersRef = useRef<Set<string>>(new Set())
 
   const providers = useConfigStore((state) => state.providers)
@@ -37,6 +39,7 @@ export function ProviderSelector() {
   const refreshModel = useConfigStore((state) => state.refreshModel)
   const refreshProviderModels = useConfigStore((state) => state.refreshProviderModels)
   const setDefaultModel = useConfigStore((state) => state.setDefaultModel)
+  const fetchConfig = useConfigStore((state) => state.fetchConfig)
 
   // Derive effective provider and model: session override wins, else global default
   const sessionProviderId = currentSession?.providerId ?? null
@@ -72,6 +75,9 @@ export function ProviderSelector() {
     if (isOpen) {
       const allProviderIds = providers.map((p) => p.id)
       setExpandedProviderIds(allProviderIds)
+      providers
+        .filter((provider) => provider.authAdapter === 'openai-account')
+        .forEach((provider) => void refreshAuthStatus(provider.id))
       allProviderIds.forEach((providerId) => {
         if (!loadedProvidersRef.current.has(providerId)) {
           loadedProvidersRef.current.add(providerId)
@@ -144,6 +150,55 @@ export function ProviderSelector() {
     e.stopPropagation()
     loadedProvidersRef.current.delete(providerId)
     await loadProviderModels(providerId)
+  }
+
+  const refreshAuthStatus = async (providerId: string) => {
+    const response = await authFetch(`/api/provider-auth/${providerId}/status`)
+    if (!response.ok) return 'error' as const
+    const data = (await response.json()) as { state: 'disconnected' | 'pending' | 'connected' | 'expired' | 'error' }
+    setAuthStates((current) => ({ ...current, [providerId]: data.state }))
+    return data.state
+  }
+
+  const handleConnectAccount = async (event: React.MouseEvent, providerId: string) => {
+    event.stopPropagation()
+    setAuthBusy(providerId)
+    setAuthStates((current) => ({ ...current, [providerId]: 'pending' }))
+    try {
+      const response = await authFetch(`/api/provider-auth/${providerId}/login`, { method: 'POST' })
+      if (!response.ok) throw new Error('Unable to start ChatGPT sign-in')
+      const challenge = (await response.json()) as { url: string }
+      window.open(challenge.url, '_blank', 'noopener,noreferrer')
+
+      for (let attempt = 0; attempt < 90; attempt += 1) {
+        await new Promise((resolve) => setTimeout(resolve, 2000))
+        const state = await refreshAuthStatus(providerId)
+        if (state === 'connected') {
+          await fetchConfig()
+          await loadProviderModels(providerId)
+          return
+        }
+        if (state === 'error') return
+      }
+      setAuthStates((current) => ({ ...current, [providerId]: 'error' }))
+    } catch {
+      setAuthStates((current) => ({ ...current, [providerId]: 'error' }))
+    } finally {
+      setAuthBusy(null)
+    }
+  }
+
+  const handleDisconnectAccount = async (event: React.MouseEvent, providerId: string) => {
+    event.stopPropagation()
+    setAuthBusy(providerId)
+    try {
+      const response = await authFetch(`/api/provider-auth/${providerId}/logout`, { method: 'POST' })
+      if (!response.ok) throw new Error('Unable to disconnect ChatGPT account')
+      setAuthStates((current) => ({ ...current, [providerId]: 'disconnected' }))
+      await fetchConfig()
+    } finally {
+      setAuthBusy(null)
+    }
   }
 
   const handleEditModel = (providerId: string, model: ModelWithConfig) => {
@@ -313,6 +368,29 @@ export function ProviderSelector() {
                     </span>
                   </div>
                   <div className="flex items-center gap-2 flex-shrink-0">
+                    {provider.authAdapter === 'openai-account' && (
+                      authStates[provider.id] === 'connected' || provider.credentialRef ? (
+                        <button
+                          type="button"
+                          onClick={(event) => handleDisconnectAccount(event, provider.id)}
+                          disabled={authBusy === provider.id}
+                          className="text-[10px] px-1.5 py-0.5 rounded border border-accent-success/40 text-accent-success hover:bg-accent-success/10 disabled:opacity-50"
+                          title="Disconnect ChatGPT account"
+                        >
+                          Connected
+                        </button>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={(event) => handleConnectAccount(event, provider.id)}
+                          disabled={authBusy === provider.id}
+                          className="text-[10px] px-1.5 py-0.5 rounded border border-accent-primary/40 text-accent-primary hover:bg-accent-primary/10 disabled:opacity-50"
+                          title="Connect ChatGPT Plus or Pro account"
+                        >
+                          {authStates[provider.id] === 'pending' ? 'Waiting…' : 'Connect'}
+                        </button>
+                      )
+                    )}
                     {provider.id === effectiveProviderId ? (
                       <span className="text-accent-success" title="Active provider">
                         <CheckIcon className="w-4 h-4" />
@@ -453,6 +531,8 @@ export function ProviderSelector() {
             apiKey: editingProvider?.apiKey,
             isLocal: editingProvider?.isLocal,
             thinkingField: editingProvider?.thinkingField,
+            authAdapter: editingProvider?.authAdapter,
+            transportAdapter: editingProvider?.transportAdapter,
             models: editingProvider?.models,
           }}
           editModelId={editingModel.model.id}

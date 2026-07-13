@@ -40,6 +40,8 @@ export interface ProviderFormData {
   apiKey?: string
   isLocal?: boolean
   thinkingField?: string
+  authAdapter?: string
+  transportAdapter?: string
   models: Array<Omit<SharedModelConfig, 'source'>>
 }
 
@@ -56,6 +58,8 @@ interface ProviderModalProps {
     apiKey?: string
     isLocal?: boolean
     thinkingField?: string
+    authAdapter?: string
+    transportAdapter?: string
     models?: Array<Omit<SharedModelConfig, 'source'>>
   }
   editModelId?: string
@@ -320,6 +324,8 @@ export function ProviderModal({
   const [formBackend, setFormBackend] = useState<string>('unknown')
   const [formApiKey, setFormApiKey] = useState('')
   const [formIsLocal, setFormIsLocal] = useState(false)
+  const [formAuthAdapter, setFormAuthAdapter] = useState<string | undefined>()
+  const [formTransportAdapter, setFormTransportAdapter] = useState<string | undefined>()
   const [fetchingModels, setFetchingModels] = useState(false)
   const [fetchError, setFetchError] = useState<string | null>(null)
   const [models, setModels] = useState<ModelInfo[]>([])
@@ -365,6 +371,8 @@ export function ProviderModal({
       setFormBackend(editProvider?.backend ?? 'unknown')
       setFormApiKey(editProvider?.apiKey ?? '')
       setFormIsLocal(editProvider?.isLocal ?? false)
+      setFormAuthAdapter(editProvider?.authAdapter)
+      setFormTransportAdapter(editProvider?.transportAdapter)
       setFetchError(null)
       setThinkingField(editProvider?.thinkingField ?? '')
       setTestResults({})
@@ -420,7 +428,9 @@ export function ProviderModal({
     try {
       const params = new URLSearchParams({ url })
       if (formApiKey) params.set('apiKey', formApiKey)
-      const response = await authFetch(`/api/providers/models?${params.toString()}`)
+      const response = formTransportAdapter === 'openai-codex'
+        ? await authFetch('/api/provider-auth/openai/models')
+        : await authFetch(`/api/providers/models?${params.toString()}`)
       if (response.ok) {
         const data = (await response.json()) as { models: ModelInfo[]; url: string }
         if (data.models?.length) {
@@ -584,6 +594,8 @@ export function ProviderModal({
       apiKey: formApiKey || undefined,
       isLocal: formIsLocal || undefined,
       thinkingField: thinkingField || undefined,
+      authAdapter: formAuthAdapter,
+      transportAdapter: formTransportAdapter,
       models: models.map((m) => ({
         id: m.id,
         contextWindow: modelConfigs[m.id]?.contextWindow ?? m.contextWindow,
@@ -635,6 +647,28 @@ export function ProviderModal({
               <label className="block text-sm text-text-secondary mb-2">Inference engine</label>
               <div className="grid grid-cols-4 gap-2">
                 <button
+                  key="chatgpt"
+                  type="button"
+                  onClick={() => {
+                    setFormName('ChatGPT Plus / Pro')
+                    setFormUrl('https://chatgpt.com/backend-api/codex')
+                    setFormBackend('openai')
+                    setFormIsLocal(false)
+                    setFormApiKey('')
+                    setFormAuthAdapter('openai-account')
+                    setFormTransportAdapter('openai-codex')
+                    setFetchError(null)
+                    resetStep2()
+                  }}
+                  className={`p-2 rounded border text-center text-sm transition-colors ${
+                    formTransportAdapter === 'openai-codex'
+                      ? 'border-accent-primary bg-accent-primary/10 text-accent-primary'
+                      : 'border-border hover:border-text-muted text-text-secondary'
+                  }`}
+                >
+                  ChatGPT
+                </button>
+                <button
                   key="other"
                   type="button"
                   onClick={() => {
@@ -685,7 +719,7 @@ export function ProviderModal({
               </div>
             </div>
 
-            <div>
+            {formTransportAdapter !== 'openai-codex' && <div>
               <label className="block text-sm text-text-secondary mb-1">Provider URL</label>
               <input
                 ref={urlInputRef}
@@ -701,7 +735,7 @@ export function ProviderModal({
                 placeholder="http://localhost:8000"
                 className="w-full px-4 py-2 bg-bg-primary border border-border rounded-lg text-text-primary placeholder-text-muted focus:outline-none focus:border-accent-primary"
               />
-            </div>
+            </div>}
 
             <div>
               <label className="block text-sm text-text-secondary mb-1">Provider name</label>
@@ -715,7 +749,7 @@ export function ProviderModal({
               />
             </div>
 
-            <div>
+            {formTransportAdapter !== 'openai-codex' && <div>
               <label className="block text-sm text-text-secondary mb-1">
                 API key <span className="text-text-muted">(optional)</span>
               </label>
@@ -727,9 +761,9 @@ export function ProviderModal({
                 placeholder="sk-..."
                 className="w-full px-4 py-2 bg-bg-primary border border-border rounded-lg text-text-primary placeholder-text-muted focus:outline-none focus:border-accent-primary"
               />
-            </div>
+            </div>}
 
-            <label className="flex items-center gap-2 cursor-pointer">
+            {formTransportAdapter !== 'openai-codex' && <label className="flex items-center gap-2 cursor-pointer">
               <input
                 type="checkbox"
                 checked={formIsLocal}
@@ -737,7 +771,7 @@ export function ProviderModal({
                 className="w-4 h-4 rounded border-border bg-bg-primary accent-accent-primary"
               />
               <span className="text-sm text-text-secondary">This is a local provider</span>
-            </label>
+            </label>}
           </div>
         )}
 

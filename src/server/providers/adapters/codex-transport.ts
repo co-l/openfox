@@ -8,6 +8,7 @@ import type {
   LLMToolDefinition,
 } from '../../llm/types.js'
 import type { ProviderAuthAdapter, ProviderRequestContext, ProviderTransportAdapter } from './types.js'
+import { fetchCodexModels } from './models-dev-catalog.js'
 
 const CODEX_RESPONSES_URL = 'https://chatgpt.com/backend-api/codex/responses'
 
@@ -49,11 +50,15 @@ export class CodexTransportAdapter implements ProviderTransportAdapter {
   }
 
   async listModels(): Promise<ModelConfig[]> {
-    return [
-      { id: 'gpt-5.2-codex', contextWindow: 200000, source: 'default' },
-      { id: 'gpt-5.1-codex-max', contextWindow: 200000, source: 'default' },
-      { id: 'gpt-5.1-codex-mini', contextWindow: 200000, source: 'default' },
-    ]
+    try {
+      return await fetchCodexModels(this.request)
+    } catch {
+      return [
+        { id: 'gpt-5.4', contextWindow: 1050000, source: 'default' },
+        { id: 'gpt-5.3-codex', contextWindow: 400000, source: 'default' },
+        { id: 'gpt-5.3-codex-spark', contextWindow: 128000, source: 'default' },
+      ]
+    }
   }
 
   async complete(request: LLMCompletionRequest, context: ProviderRequestContext): Promise<LLMCompletionResponse> {

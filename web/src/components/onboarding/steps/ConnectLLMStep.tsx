@@ -71,6 +71,8 @@ export function ConnectLLMStep({ onNext }: ConnectLLMStepProps) {
       apiKey: formData.apiKey,
       isLocal: formData.isLocal,
       thinkingField: formData.thinkingField,
+      authAdapter: formData.authAdapter,
+      transportAdapter: formData.transportAdapter,
       models: formData.models,
     }
     try {
