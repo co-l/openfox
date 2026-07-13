@@ -4,6 +4,7 @@ import { OUTPUT_LIMITS } from './types.js'
 import { createTool } from './tool-helpers.js'
 import { computeFileHash } from './file-tracker.js'
 import { detectEncoding, decodeContent } from '../utils/encoding.js'
+import { fileTypeFromBuffer } from 'file-type'
 
 interface ReadFileArgs {
   path: string
@@ -11,77 +12,27 @@ interface ReadFileArgs {
   limit?: number
 }
 
-// Image file extensions and their MIME types
-const IMAGE_MIME_TYPES: Record<string, string> = {
-  '.png': 'image/png',
-  '.jpg': 'image/jpeg',
-  '.jpeg': 'image/jpeg',
-  '.gif': 'image/gif',
-  '.webp': 'image/webp',
-  '.bmp': 'image/bmp',
-  '.svg': 'image/svg+xml',
-}
-
-// Magic byte signatures for image formats
-const IMAGE_SIGNATURES: Array<{ mimeType: string; signature: Buffer; extension: string }> = [
-  {
-    mimeType: 'image/png',
-    signature: Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
-    extension: '.png',
-  },
-  { mimeType: 'image/jpeg', signature: Buffer.from([0xff, 0xd8, 0xff]), extension: '.jpg' },
-  { mimeType: 'image/gif', signature: Buffer.from([0x47, 0x49, 0x46, 0x38]), extension: '.gif' },
-  { mimeType: 'image/webp', signature: Buffer.from([]), extension: '.webp' }, // WebP handled specially
-  { mimeType: 'image/bmp', signature: Buffer.from([0x42, 0x4d]), extension: '.bmp' },
-]
-
 /**
- * Detect if a buffer is an image by checking magic byte signatures.
- * Falls back to extension-based detection if no signature matches.
+ * Detect if a buffer is an image using file-type library.
+ * For SVG files, falls back to content-based detection since file-type
+ * may identify them as generic XML.
  */
-function detectImageType(buffer: Buffer, filePath: string): string | null {
-  // First try magic byte detection
-  for (const { mimeType, signature } of IMAGE_SIGNATURES) {
-    if (mimeType === 'image/webp') {
-      // WebP signature check (bytes 0-3 = RIFF, 8-11 = WEBP)
-      if (
-        buffer.length >= 12 &&
-        buffer[0] === 0x52 &&
-        buffer[1] === 0x49 &&
-        buffer[2] === 0x46 &&
-        buffer[3] === 0x46 &&
-        buffer[8] === 0x57 &&
-        buffer[9] === 0x45 &&
-        buffer[10] === 0x42 &&
-        buffer[11] === 0x50
-      ) {
-        return mimeType
-      }
-    } else if (buffer.length >= signature.length) {
-      let matches = true
-      for (let i = 0; i < signature.length; i++) {
-        if (buffer[i] !== signature[i]) {
-          matches = false
-          break
-        }
-      }
-      if (matches) {
-        return mimeType
-      }
-    }
+async function detectImageType(buffer: Buffer, filePath: string): Promise<string | null> {
+  const fileType = await fileTypeFromBuffer(buffer)
+
+  // Only accept known image MIME types
+  const imageMimeTypes = ['image/png', 'image/jpeg', 'image/gif', 'image/webp', 'image/bmp', 'image/svg+xml']
+
+  if (fileType?.mime && imageMimeTypes.includes(fileType.mime)) {
+    return fileType.mime
   }
 
-  // Fall back to extension-based detection
+  // For .svg files, check if content is actually SVG (not just XML)
   const ext = extname(filePath).toLowerCase()
-  const mimeType = IMAGE_MIME_TYPES[ext]
-  if (mimeType) {
-    return mimeType
-  }
-
-  // Check for SVG text content
-  if (buffer.length > 0) {
-    const textStart = buffer.subarray(0, Math.min(100, buffer.length)).toString('utf-8')
-    if (textStart.includes('<svg')) {
+  if (ext === '.svg' && buffer.length > 0) {
+    const content = buffer.toString('utf-8')
+    const trimmedStart = content.trimStart()
+    if (trimmedStart.startsWith('<?xml') || trimmedStart.startsWith('<svg')) {
       return 'image/svg+xml'
     }
   }
@@ -191,7 +142,7 @@ export const readFileTool = createTool<ReadFileArgs>(
     const rawBuffer = await readFile(fullPath)
 
     // Detect if this is an image file
-    const mimeType = detectImageType(rawBuffer, args.path)
+    const mimeType = await detectImageType(rawBuffer, args.path)
 
     if (mimeType) {
       // Handle as image
