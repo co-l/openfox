@@ -318,11 +318,37 @@ export function createProviderManager(config: Config, options: ProviderManagerOp
     return undefined
   }
 
-  function createClientForProvider(provider: Provider, model: string): LLMClientWithModel {
+  function resolveProviderModel(provider: Provider, requestedModel?: string): string {
+    if (requestedModel && requestedModel !== 'auto') return requestedModel
+
+    const activeSelection = parseDefaultModelSelection(defaultModelSelection)
+    if (activeSelection.providerId === provider.id) {
+      const activeClientModel = llmClient.getModel()
+      if (
+        activeClientModel &&
+        activeClientModel !== 'auto' &&
+        provider.models.some((m) => m.id === activeClientModel)
+      ) {
+        return activeClientModel
+      }
+      if (
+        activeSelection.model &&
+        activeSelection.model !== 'auto' &&
+        provider.models.some((m) => m.id === activeSelection.model)
+      ) {
+        return activeSelection.model
+      }
+    }
+
+    return provider.models.find((m) => m.selected)?.id ?? provider.models[0]?.id ?? requestedModel ?? 'auto'
+  }
+
+  function createClientForProvider(provider: Provider, model?: string): LLMClientWithModel {
+    const resolvedModel = resolveProviderModel(provider, model)
     const transport = options.adapters?.getTransport(resolveTransportAdapter(provider))
     return transport
-      ? createTransportLLMClient(provider, model, transport)
-      : createLLMClient(createConfigForProvider(provider, model))
+      ? createTransportLLMClient(provider, resolvedModel, transport)
+      : createLLMClient(createConfigForProvider(provider, resolvedModel))
   }
 
   async function fetchProviderModels(provider: Provider): Promise<ModelConfig[]> {
@@ -388,11 +414,7 @@ export function createProviderManager(config: Config, options: ProviderManagerOp
       }
 
       const currentModel = parseDefaultModelSelection(defaultModelSelection).model
-      let targetModel = options?.model ?? currentModel
-      // Safety net: resolve 'auto' or missing model to first available model
-      if (!targetModel || targetModel === 'auto') {
-        targetModel = provider.models?.[0]?.id ?? 'auto'
-      }
+      const targetModel = resolveProviderModel(provider, options?.model ?? currentModel)
       const isModelSwitch =
         providerId === parseDefaultModelSelection(defaultModelSelection).providerId &&
         options?.model &&
@@ -535,7 +557,7 @@ export function createProviderManager(config: Config, options: ProviderManagerOp
       if (activeProviderId) {
         const activeProvider = providers.find((p) => p.id === activeProviderId)
         if (activeProvider) {
-          llmClient = createClientForProvider(activeProvider, this.getCurrentModel() ?? 'auto')
+          llmClient = createClientForProvider(activeProvider, this.getCurrentModel())
           logger.info('setProviders: recreated LLM client for active provider', {
             providerId: activeProviderId,
             url: activeProvider.url,

@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { createProviderManager } from './provider-manager.js'
+import { createLLMClient } from './llm/index.js'
 import type { Config, Provider } from '../shared/types.js'
 
 // Mock the LLM client
@@ -15,6 +16,8 @@ vi.mock('./llm/index.js', () => ({
   setLlmStatus: vi.fn(),
   getModelProfile: vi.fn(() => ({ reasoning: false })),
 }))
+
+const createLLMClientMock = vi.mocked(createLLMClient)
 
 // Mock fetch
 const mockFetch = vi.fn()
@@ -547,6 +550,92 @@ describe('ProviderManager - Model Selection', () => {
     })
   })
 
+  describe('automatic model resolution', () => {
+    it('resolves auto to the active concrete model for session clients', async () => {
+      const chatConfig: Config = {
+        ...config,
+        providers: [
+          {
+            id: 'chatgpt',
+            name: 'ChatGPT',
+            url: 'https://chatgpt.com/backend-api/codex',
+            backend: 'openai',
+            models: [
+              { id: 'gpt-5.4', contextWindow: 1050000, source: 'backend' },
+              { id: 'gpt-5.6-luna', contextWindow: 1050000, source: 'backend' },
+            ],
+            isActive: true,
+            createdAt: new Date().toISOString(),
+          },
+        ],
+        defaultModelSelection: 'chatgpt/gpt-5.6-luna',
+      }
+      const manager = createProviderManager(chatConfig)
+
+      manager.createClient('chatgpt', 'auto')
+
+      expect(createLLMClientMock).toHaveBeenLastCalledWith(
+        expect.objectContaining({ llm: expect.objectContaining({ model: 'gpt-5.6-luna' }) }),
+      )
+    })
+
+    it('resolves auto to the selected model before falling back to the first model', () => {
+      const chatConfig: Config = {
+        ...config,
+        providers: [
+          {
+            id: 'chatgpt',
+            name: 'ChatGPT',
+            url: 'https://chatgpt.com/backend-api/codex',
+            backend: 'openai',
+            models: [
+              { id: 'gpt-5.4', contextWindow: 1050000, source: 'backend' },
+              { id: 'gpt-5.6-luna', contextWindow: 1050000, source: 'backend', selected: true },
+            ],
+            isActive: false,
+            createdAt: new Date().toISOString(),
+          },
+        ],
+        defaultModelSelection: undefined,
+      }
+      const manager = createProviderManager(chatConfig)
+
+      manager.createClient('chatgpt', 'auto')
+
+      expect(createLLMClientMock).toHaveBeenLastCalledWith(
+        expect.objectContaining({ llm: expect.objectContaining({ model: 'gpt-5.6-luna' }) }),
+      )
+    })
+
+    it('resolves an active auto selection to the provider first model instead of sending auto', () => {
+      const chatConfig: Config = {
+        ...config,
+        providers: [
+          {
+            id: 'chatgpt',
+            name: 'ChatGPT',
+            url: 'https://chatgpt.com/backend-api/codex',
+            backend: 'openai',
+            models: [
+              { id: 'gpt-5.6-luna', contextWindow: 1050000, source: 'backend' },
+              { id: 'gpt-5.4', contextWindow: 1050000, source: 'backend' },
+            ],
+            isActive: true,
+            createdAt: new Date().toISOString(),
+          },
+        ],
+        defaultModelSelection: 'chatgpt/auto',
+      }
+      const manager = createProviderManager(chatConfig)
+
+      manager.createClient('chatgpt', 'auto')
+
+      expect(createLLMClientMock).toHaveBeenLastCalledWith(
+        expect.objectContaining({ llm: expect.objectContaining({ model: 'gpt-5.6-luna' }) }),
+      )
+    })
+  })
+
   describe('setProviders', () => {
     it('recreates the active transport client when credentialRef is added', () => {
       const transport = {
@@ -584,5 +673,4 @@ describe('ProviderManager - Model Selection', () => {
       expect(manager.getLLMClient()).not.toBe(before)
     })
   })
-
 })
