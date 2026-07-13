@@ -30,8 +30,8 @@ export function HomePage() {
   }, [connectionStatus, listProjects, listSessions])
 
   const sortedProjects = [...projects].sort((a, b) => {
-    const sessionsInA = sessions.filter((s) => s.workdir.startsWith(a.workdir))
-    const sessionsInB = sessions.filter((s) => s.workdir.startsWith(b.workdir))
+    const sessionsInA = sessions.filter((s) => s.projectId === a.id)
+    const sessionsInB = sessions.filter((s) => s.projectId === b.id)
     const lastSessionA =
       sessionsInA.length > 0
         ? new Date(
@@ -53,7 +53,7 @@ export function HomePage() {
     const project = projects.find((p) => p.id === projectId)
     if (!project) return []
     return sessions
-      .filter((s) => s.workdir.startsWith(project.workdir))
+      .filter((s) => s.projectId === projectId)
       .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime())
       .slice(0, 5)
   }
@@ -106,7 +106,7 @@ export function HomePage() {
                 <div className="divide-y divide-border">
                   {projectSessions.length > 0 ? (
                     projectSessions.map((session) => {
-                      const project = projects.find((p) => session.workdir.startsWith(p.workdir))
+                      const project = projects.find((p) => session.projectId === p.id)
                       const href = project ? `/p/${project.id}/s/${session.id}` : '#'
                       return (
                         <Link
