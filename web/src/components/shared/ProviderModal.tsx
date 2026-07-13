@@ -350,7 +350,8 @@ export function ProviderModal({
   const [chatGptAuthBusy, setChatGptAuthBusy] = useState(false)
   const [deviceChallenge, setDeviceChallenge] = useState<{ url: string; userCode: string } | null>(null)
   const [devicePageOpened, setDevicePageOpened] = useState(false)
-  const [codeCopyCount, setCodeCopyCount] = useState(0)
+  const [codeCopied, setCodeCopied] = useState(false)
+  const codeCopiedTimerRef = useRef<number | null>(null)
   const urlInputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
@@ -400,7 +401,7 @@ export function ProviderModal({
       setChatGptAuthState('disconnected')
       setDeviceChallenge(null)
       setDevicePageOpened(false)
-      setCodeCopyCount(0)
+      setCodeCopied(false)
 
       if (editProvider?.models?.length) {
         const configs: Record<string, ModelConfig> = {}
@@ -469,7 +470,7 @@ export function ProviderModal({
       if (cancelled || state !== 'connected') return
       setDeviceChallenge(null)
       setDevicePageOpened(false)
-      setCodeCopyCount(0)
+      setCodeCopied(false)
       await fetchModels(formUrl)
     }
 
@@ -540,7 +541,13 @@ export function ProviderModal({
   async function copyDeviceCode() {
     if (!deviceChallenge) return
     await navigator.clipboard?.writeText(deviceChallenge.userCode)
-    setCodeCopyCount((count) => count + 1)
+    if (codeCopiedTimerRef.current !== null) window.clearTimeout(codeCopiedTimerRef.current)
+    setCodeCopied(false)
+    requestAnimationFrame(() => setCodeCopied(true))
+    codeCopiedTimerRef.current = window.setTimeout(() => {
+      setCodeCopied(false)
+      codeCopiedTimerRef.current = null
+    }, 1500)
   }
 
   function openDeviceAuthorization() {
@@ -961,11 +968,7 @@ export function ProviderModal({
                         onClick={() => void copyDeviceCode()}
                         className="flex-1 rounded-lg border border-border px-3 py-2 text-sm text-text-primary"
                       >
-                        {codeCopyCount === 0
-                          ? 'Copy code'
-                          : codeCopyCount === 1
-                            ? 'Copied'
-                            : `Copied ${codeCopyCount} times`}
+                        {codeCopied ? 'Copied' : 'Copy code'}
                       </button>
                       <button
                         type="button"
