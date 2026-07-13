@@ -1,5 +1,6 @@
 import type { Provider, Config, LlmBackend, ModelConfig } from '../shared/types.js'
 import type { ProviderAdapterRegistry } from './providers/adapters/registry.js'
+import { createTransportLLMClient } from './providers/adapters/transport-client.js'
 import { createLLMClient, clearModelCache, getModelProfile, type LLMClientWithModel } from './llm/index.js'
 import { logger } from './utils/logger.js'
 import { ensureVersionPrefix, stripVersionPrefix, buildModelsUrl } from './llm/url-utils.js'
@@ -304,6 +305,13 @@ export function createProviderManager(config: Config, options: ProviderManagerOp
     }
   }
 
+  function createClientForProvider(provider: Provider, model: string): LLMClientWithModel {
+    const transport = options.adapters?.getTransport(provider.transportAdapter)
+    return transport
+      ? createTransportLLMClient(provider, model, transport)
+      : createLLMClient(createConfigForProvider(provider, model))
+  }
+
   async function fetchProviderModels(provider: Provider): Promise<ModelConfig[]> {
     const transport = options.adapters?.getTransport(provider.transportAdapter)
     if (transport) {
@@ -323,7 +331,7 @@ export function createProviderManager(config: Config, options: ProviderManagerOp
   if (activeProviderId && activeModel) {
     const activeProvider = providers.find((p) => p.id === activeProviderId)
     if (activeProvider) {
-      llmClient = createLLMClient(createConfigForProvider(activeProvider, activeModel))
+      llmClient = createClientForProvider(activeProvider, activeModel)
     }
   }
 
@@ -384,8 +392,7 @@ export function createProviderManager(config: Config, options: ProviderManagerOp
         model: targetModel,
       })
 
-      const providerConfig = createConfigForProvider(provider, targetModel)
-      const newClient = createLLMClient(providerConfig)
+      const newClient = createClientForProvider(provider, targetModel)
 
       try {
         const cacheUrl = stripVersionPrefix(provider.url)
@@ -506,8 +513,7 @@ export function createProviderManager(config: Config, options: ProviderManagerOp
       if (newActiveProviderId && newActiveProviderId !== wasActiveProviderId) {
         const activeProvider = providers.find((p) => p.id === newActiveProviderId)
         if (activeProvider) {
-          const providerConfig = createConfigForProvider(activeProvider, this.getCurrentModel() ?? 'auto')
-          llmClient = createLLMClient(providerConfig)
+          llmClient = createClientForProvider(activeProvider, this.getCurrentModel() ?? 'auto')
           logger.info('setProviders: recreated LLM client for new active provider', {
             providerId: newActiveProviderId,
             url: activeProvider.url,

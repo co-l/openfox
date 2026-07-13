@@ -37,6 +37,7 @@ import { createAutoUpdateRoutes } from './routes/auto-update.js'
 import { createProviderAuthRoutes } from './routes/provider-auth.js'
 import { FileProviderCredentialStore } from './providers/adapters/file-credential-store.js'
 import { OpenAIBrowserAuthAdapter } from './providers/adapters/openai-browser-auth.js'
+import { CodexTransportAdapter } from './providers/adapters/codex-transport.js'
 import { ProviderAdapterRegistry } from './providers/adapters/registry.js'
 import { devServerManager } from './dev-server/manager.js'
 import { getGlobalConfigDir } from '../cli/paths.js'
@@ -87,6 +88,7 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
   const openaiAuth = new OpenAIBrowserAuthAdapter(credentialStore)
   const providerAdapters = new ProviderAdapterRegistry()
   providerAdapters.registerAuth(openaiAuth)
+  providerAdapters.registerTransport(new CodexTransportAdapter(openaiAuth))
 
   // Create Provider Manager (handles LLM client lifecycle)
   const providerManager = createProviderManager(config, { adapters: providerAdapters })
@@ -1233,6 +1235,8 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
       isLocal,
       thinkingField,
       models: modelConfigs,
+      authAdapter,
+      transportAdapter,
     } = req.body as {
       name: string
       url: string
@@ -1242,6 +1246,8 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
       isLocal?: boolean
       thinkingField?: string
       models?: Record<string, unknown>[]
+      authAdapter?: string
+      transportAdapter?: string
     }
 
     if (!name || !url || !backend) {
@@ -1268,6 +1274,8 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
         apiKey,
         ...(isLocal !== undefined ? { isLocal } : {}),
         ...(thinkingField ? { thinkingField } : {}),
+        ...(authAdapter ? { authAdapter } : {}),
+        ...(transportAdapter ? { transportAdapter } : {}),
         models: providerModels,
         isActive: true,
       })
@@ -1389,6 +1397,8 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
       isLocal,
       thinkingField,
       models: modelConfigs,
+      authAdapter,
+      transportAdapter,
     } = req.body as {
       name?: string
       url?: string
@@ -1397,6 +1407,8 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
       isLocal?: boolean
       thinkingField?: string | null
       models?: Record<string, unknown>[]
+      authAdapter?: string | null
+      transportAdapter?: string | null
     }
     try {
       const { loadGlobalConfig, saveGlobalConfig, updateProvider } = await import('../cli/config.js')
@@ -1412,6 +1424,8 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
       if (apiKey !== undefined) updates['apiKey'] = apiKey || undefined
       if (isLocal !== undefined) updates['isLocal'] = isLocal
       if (thinkingField !== undefined) updates['thinkingField'] = thinkingField || undefined
+      if (authAdapter !== undefined) updates['authAdapter'] = authAdapter || undefined
+      if (transportAdapter !== undefined) updates['transportAdapter'] = transportAdapter || undefined
       if (modelConfigs !== undefined) {
         updates['models'] = buildModelConfigs(modelConfigs as ModelConfigInput[])
       }

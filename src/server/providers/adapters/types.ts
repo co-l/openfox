@@ -33,6 +33,7 @@ export interface ProviderRequestContext {
   providerId: string
   credentialRef?: string
   auth?: ProviderAccessContext
+  model?: string
 }
 
 export interface ProviderTransportAdapter {
