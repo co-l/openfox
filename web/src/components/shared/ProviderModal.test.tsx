@@ -93,6 +93,93 @@ describe('ProviderModal - thinkingLevel persistence', () => {
     expect(savedModel?.thinkingLevel).toBeUndefined()
   })
 
+  it('uses a constrained reasoning effort selector with medium as the ChatGPT default', async () => {
+    await new Promise<void>((resolve) => {
+      root.render(
+        <ProviderModal
+          isOpen={true}
+          onClose={vi.fn()}
+          onSave={onSaveMock as (provider: ProviderFormData) => void}
+          initialStep={2}
+          editProvider={{
+            id: 'chatgpt-provider',
+            name: 'ChatGPT Plus / Pro',
+            url: 'http://localhost:8000/v1',
+            backend: 'openai',
+            models: [
+              {
+                id: 'gpt-5.6-sol',
+                contextWindow: 1_050_000,
+                thinkingEnabled: true,
+                reasoningEfforts: ['none', 'low', 'medium', 'high', 'xhigh', 'max'],
+              },
+            ],
+          }}
+          editModelId="gpt-5.6-sol"
+        />,
+      )
+      setTimeout(resolve, 200)
+    })
+
+    const effortSelect = container.querySelector('select[aria-label="Reasoning effort"]') as HTMLSelectElement | null
+    expect(effortSelect).toBeTruthy()
+    expect(effortSelect?.value).toBe('medium')
+    expect(Array.from(effortSelect?.options ?? []).map((option) => option.value)).toEqual([
+      'none',
+      'low',
+      'medium',
+      'high',
+      'xhigh',
+      'max',
+    ])
+
+    const saveButton = container.querySelector('[data-testid="provider-modal-save"]') as HTMLButtonElement | null
+    saveButton?.click()
+
+    const savedData: ProviderFormData = onSaveMock.mock.calls[0]![0]!
+    expect(savedData.models.find((model) => model.id === 'gpt-5.6-sol')?.thinkingLevel).toBe('medium')
+  })
+
+  it('saves a ChatGPT reasoning effort selected from the catalog values', async () => {
+    await new Promise<void>((resolve) => {
+      root.render(
+        <ProviderModal
+          isOpen={true}
+          onClose={vi.fn()}
+          onSave={onSaveMock as (provider: ProviderFormData) => void}
+          initialStep={2}
+          editProvider={{
+            id: 'chatgpt-provider',
+            name: 'ChatGPT Plus / Pro',
+            url: 'http://localhost:8000/v1',
+            backend: 'openai',
+            models: [
+              {
+                id: 'gpt-5.6-sol',
+                contextWindow: 1_050_000,
+                thinkingEnabled: true,
+                reasoningEfforts: ['low', 'medium', 'high'],
+              },
+            ],
+          }}
+          editModelId="gpt-5.6-sol"
+        />,
+      )
+      setTimeout(resolve, 200)
+    })
+
+    const effortSelect = container.querySelector('select[aria-label="Reasoning effort"]') as HTMLSelectElement
+    const nativeSelectValueSetter = Object.getOwnPropertyDescriptor(window.HTMLSelectElement.prototype, 'value')?.set
+    nativeSelectValueSetter?.call(effortSelect, 'high')
+    effortSelect.dispatchEvent(new Event('change', { bubbles: true }))
+
+    const saveButton = container.querySelector('[data-testid="provider-modal-save"]') as HTMLButtonElement | null
+    saveButton?.click()
+
+    const savedData: ProviderFormData = onSaveMock.mock.calls[0]![0]!
+    expect(savedData.models.find((model) => model.id === 'gpt-5.6-sol')?.thinkingLevel).toBe('high')
+  })
+
   it('includes all model fields in save payload', async () => {
     const { modelId } = await renderAndSave(undefined)
 

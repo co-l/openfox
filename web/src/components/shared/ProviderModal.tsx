@@ -9,6 +9,11 @@ const COMMON_PORTS = [8080, 11434, 8000]
 
 type ModelInfo = Omit<SharedModelConfig, 'source'>
 
+function defaultReasoningEffort(efforts: string[] | undefined): string | undefined {
+  if (!efforts?.length) return undefined
+  return efforts.includes('medium') ? 'medium' : efforts[0]
+}
+
 interface ModelConfig {
   contextWindow: number
   supportsVision?: boolean
@@ -192,12 +197,28 @@ function ModelConfigPanel({
             <div className="ml-6 space-y-2 pl-3 border-l-2 border-accent-primary/30">
               <div>
                 <label className="text-xs text-text-secondary block mb-1">Reasoning effort</label>
-                <input
-                  type="text"
-                  value={modelConfigs[model.id]?.thinkingLevel ?? ''}
-                  onChange={(e) => onUpdateConfig(model.id, { thinkingLevel: e.target.value })}
-                  className="w-full px-2 py-1.5 bg-bg-tertiary border border-border rounded text-xs text-text-primary"
-                />
+                {model.reasoningEfforts?.length ? (
+                  <select
+                    aria-label="Reasoning effort"
+                    value={modelConfigs[model.id]?.thinkingLevel ?? defaultReasoningEffort(model.reasoningEfforts)}
+                    onChange={(e) => onUpdateConfig(model.id, { thinkingLevel: e.target.value })}
+                    className="w-full px-2 py-1.5 bg-bg-tertiary border border-border rounded text-xs text-text-primary"
+                  >
+                    {model.reasoningEfforts.map((effort) => (
+                      <option key={effort} value={effort}>
+                        {effort}
+                      </option>
+                    ))}
+                  </select>
+                ) : (
+                  <input
+                    type="text"
+                    aria-label="Reasoning effort"
+                    value={modelConfigs[model.id]?.thinkingLevel ?? ''}
+                    onChange={(e) => onUpdateConfig(model.id, { thinkingLevel: e.target.value })}
+                    className="w-full px-2 py-1.5 bg-bg-tertiary border border-border rounded text-xs text-text-primary"
+                  />
+                )}
               </div>
               <QueryParamsInput
                 value={modelConfigs[model.id]?.thinkingQueryParams}
@@ -408,7 +429,7 @@ export function ProviderModal({
             contextWindow: m.contextWindow,
             supportsVision: m.supportsVision,
             thinkingEnabled: m.thinkingEnabled,
-            thinkingLevel: m.thinkingLevel,
+            thinkingLevel: m.thinkingLevel ?? defaultReasoningEffort(m.reasoningEfforts),
             nonThinkingEnabled: m.nonThinkingEnabled,
             thinkingQueryParams: m.thinkingQueryParams,
             nonThinkingQueryParams: m.nonThinkingQueryParams,
@@ -574,7 +595,7 @@ export function ProviderModal({
             configs[m.id] = {
               contextWindow: m.contextWindow,
               thinkingEnabled: true,
-              thinkingLevel: undefined,
+              thinkingLevel: defaultReasoningEffort(m.reasoningEfforts),
               defaultTemperature: (m as { defaultTemperature?: number }).defaultTemperature,
               defaultTopP: (m as { defaultTopP?: number }).defaultTopP,
               defaultTopK: (m as { defaultTopK?: number }).defaultTopK,
