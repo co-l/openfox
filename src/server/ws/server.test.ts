@@ -1325,7 +1325,7 @@ describe('createWebSocketServer', () => {
     await harness.close()
   })
 
-  it('includes provider apiKey when creating per-session LLM client via runner.launch', async () => {
+  it('resolves and persists auto model for per-session runner execution and stats', async () => {
     const mockSessionClient = {
       getModel: () => 'deepseek-chat',
       getBackend: () => 'openai',
@@ -1351,9 +1351,11 @@ describe('createWebSocketServer', () => {
     }
 
     const createClientMock = vi.fn(() => mockSessionClient)
+    const resolveModelMock = vi.fn(() => 'deepseek-chat')
     const providerManager = {
       getProviders: vi.fn(() => [provider]),
       createClient: createClientMock,
+      resolveModel: resolveModelMock,
       getActiveProvider: vi.fn(() => provider),
       getActiveProviderId: vi.fn(() => 'deepseek-provider'),
       getCurrentModel: vi.fn(() => 'deepseek-chat'),
@@ -1381,13 +1383,19 @@ describe('createWebSocketServer', () => {
       isRunning: false,
       criteria: [{ id: 'tests-pass', description: 'Tests pass', status: { type: 'pending' }, attempts: [] }],
       providerId: 'deepseek-provider',
-      providerModel: 'deepseek-chat',
+      providerModel: 'auto',
       metadata: { totalTokensUsed: 0, totalToolCalls: 0, iterationCount: 0 },
     }
 
+    const setSessionProvider = vi.fn((_id: string, providerId: string | null, providerModel: string | null) => {
+      if (providerId) session.providerId = providerId
+      if (providerModel) session.providerModel = providerModel
+      return session
+    })
     const sessionManager = createSessionManager({
       getSession: vi.fn(() => session),
       requireSession: vi.fn(() => session),
+      setSessionProvider,
       setRunning: vi.fn((_id: string, isRunning: boolean) => {
         session.isRunning = isRunning
       }),
@@ -1401,9 +1409,14 @@ describe('createWebSocketServer', () => {
     harness.send({ id: 'runner-launch', type: 'runner.launch', payload: {} })
     expect(await harness.nextMessage((message) => message.id === 'runner-launch')).toMatchObject({ type: 'ack' })
 
+    expect(resolveModelMock).toHaveBeenCalledWith('deepseek-provider', 'auto')
     expect(createClientMock).toHaveBeenCalledWith('deepseek-provider', 'deepseek-chat')
+    expect(setSessionProvider).toHaveBeenCalledWith('session-apikey-test', 'deepseek-provider', 'deepseek-chat')
     expect(runOrchestratorMock).toHaveBeenCalledWith(
-      expect.objectContaining({ llmClient: mockSessionClient }),
+      expect.objectContaining({
+        llmClient: mockSessionClient,
+        statsIdentity: expect.objectContaining({ model: 'deepseek-chat' }),
+      }),
     )
     expect(createLLMClientMock).not.toHaveBeenCalled()
 

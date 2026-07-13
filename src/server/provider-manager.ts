@@ -211,6 +211,7 @@ export interface ModelSettingsUpdate {
 export interface ProviderManager {
   getProviders(): Provider[]
   createClient(providerId: string, model: string): LLMClientWithModel | undefined
+  resolveModel(providerId: string, model?: string): string | undefined
   getActiveProvider(): Provider | undefined
   getActiveProviderId(): string | undefined
   getCurrentModel(): string | undefined
@@ -380,6 +381,11 @@ export function createProviderManager(config: Config, options: ProviderManagerOp
       return provider ? createClientForProvider(provider, model) : undefined
     },
 
+    resolveModel(providerId: string, model?: string) {
+      const provider = providers.find((p) => p.id === providerId)
+      return provider ? resolveProviderModel(provider, model) : undefined
+    },
+
     getProviders() {
       return providers.map((p) => ({
         ...p,
@@ -420,7 +426,12 @@ export function createProviderManager(config: Config, options: ProviderManagerOp
         options?.model &&
         options.model !== currentModel
 
-      if (providerId === parseDefaultModelSelection(defaultModelSelection).providerId && !isModelSwitch) {
+      if (
+        providerId === parseDefaultModelSelection(defaultModelSelection).providerId &&
+        !isModelSwitch &&
+        llmClient.getModel() === targetModel
+      ) {
+        if (currentModel !== targetModel) defaultModelSelection = `${providerId}/${targetModel}`
         return { success: true }
       }
 

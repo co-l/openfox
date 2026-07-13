@@ -551,6 +551,27 @@ describe('ProviderManager - Model Selection', () => {
   })
 
   describe('automatic model resolution', () => {
+    it('exposes the same concrete resolution for all callers', () => {
+      const chatConfig: Config = {
+        ...config,
+        providers: [
+          {
+            id: 'chatgpt',
+            name: 'ChatGPT',
+            url: 'https://chatgpt.com/backend-api/codex',
+            backend: 'openai',
+            models: [{ id: 'gpt-5.6-luna', contextWindow: 1050000, source: 'backend', selected: true }],
+            isActive: true,
+            createdAt: new Date().toISOString(),
+          },
+        ],
+        defaultModelSelection: 'chatgpt/auto',
+      }
+      const manager = createProviderManager(chatConfig)
+
+      expect(manager.resolveModel('chatgpt', 'auto')).toBe('gpt-5.6-luna')
+    })
+
     it('resolves auto to the active concrete model for session clients', async () => {
       const chatConfig: Config = {
         ...config,

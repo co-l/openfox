@@ -349,7 +349,9 @@ export function createWebSocketServer(
       return getLLMClient()
     }
 
-    const cacheKey = `${session.providerId}:${session.providerModel}`
+    const resolvedModel = providerManager.resolveModel(session.providerId, session.providerModel)
+    const effectiveModel = resolvedModel ?? session.providerModel
+    const cacheKey = `${session.providerId}:${effectiveModel}`
     const cached = sessionLLMClients.get(sessionId)
     if (cached && cached.key === cacheKey) {
       return cached.client
@@ -370,7 +372,7 @@ export function createWebSocketServer(
 
     // Let ProviderManager create the session client so provider-specific
     // transports (for example ChatGPT Codex) and auth context are preserved.
-    const client = providerManager.createClient(session.providerId, session.providerModel)
+    const client = providerManager.createClient(session.providerId, effectiveModel)
     if (!client) {
       logger.warn('Could not create session provider client, falling back to global', {
         sessionId,
@@ -380,7 +382,11 @@ export function createWebSocketServer(
       return getLLMClient()
     }
 
-    sessionLLMClients.set(sessionId, { key: cacheKey, client })
+    const concreteModel = client.getModel()
+    if (session.providerModel !== concreteModel) {
+      sessionManager.setSessionProvider(sessionId, session.providerId, concreteModel)
+    }
+    sessionLLMClients.set(sessionId, { key: `${session.providerId}:${concreteModel}`, client })
     return client
   }
 
