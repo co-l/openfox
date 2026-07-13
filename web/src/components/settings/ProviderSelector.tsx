@@ -29,6 +29,12 @@ export function ProviderSelector() {
   const [showProviderModal, setShowProviderModal] = useState(false)
   const [authStates, setAuthStates] = useState<Record<string, 'disconnected' | 'pending' | 'connected' | 'expired' | 'error'>>({})
   const [authBusy, setAuthBusy] = useState<string | null>(null)
+  const [deviceChallenge, setDeviceChallenge] = useState<{
+    providerId: string
+    url: string
+    userCode: string
+  } | null>(null)
+  const [codeCopied, setCodeCopied] = useState(false)
   const loadedProvidersRef = useRef<Set<string>>(new Set())
 
   const providers = useConfigStore((state) => state.providers)
@@ -164,24 +170,34 @@ export function ProviderSelector() {
     event.stopPropagation()
     setAuthBusy(providerId)
     setAuthStates((current) => ({ ...current, [providerId]: 'pending' }))
+    setCodeCopied(false)
     try {
       const response = await authFetch(`/api/provider-auth/${providerId}/login`, { method: 'POST' })
       if (!response.ok) throw new Error('Unable to start ChatGPT sign-in')
-      const challenge = (await response.json()) as { url: string; userCode?: string; instructions?: string }
-      if (challenge.userCode) {
-        await navigator.clipboard?.writeText(challenge.userCode).catch(() => undefined)
-        window.alert(`OpenAI code: ${challenge.userCode}\n\nThe code has been copied. Paste it on the page that opens.`)
-      }
-
-      // Device authorization continues on the backend while this tab is on OpenAI.
-      // Release the button before navigating so a failed attempt is always retryable.
-      setAuthBusy(null)
-      window.location.assign(challenge.url)
+      const challenge = (await response.json()) as { url: string; userCode?: string }
+      if (!challenge.userCode) throw new Error('OpenAI did not return a device code')
+      setDeviceChallenge({ providerId, url: challenge.url, userCode: challenge.userCode })
     } catch {
       setAuthStates((current) => ({ ...current, [providerId]: 'error' }))
     } finally {
       setAuthBusy(null)
     }
+  }
+
+  const copyDeviceCode = async () => {
+    if (!deviceChallenge) return
+    await navigator.clipboard?.writeText(deviceChallenge.userCode)
+    setCodeCopied(true)
+  }
+
+  const openDeviceAuthorization = () => {
+    if (!deviceChallenge) return
+    window.open(deviceChallenge.url, '_blank', 'noopener,noreferrer')
+  }
+
+  const closeDeviceChallenge = () => {
+    setDeviceChallenge(null)
+    setCodeCopied(false)
   }
 
   const handleDisconnectAccount = async (event: React.MouseEvent, providerId: string) => {
@@ -517,6 +533,73 @@ export function ProviderSelector() {
           </div>
         </div>
       )}
+      {deviceChallenge && (
+        <div
+          className="fixed inset-0 z-[100] flex items-center justify-center bg-black/70 px-4"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="chatgpt-device-title"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget) closeDeviceChallenge()
+          }}
+        >
+          <div className="w-full max-w-md rounded-xl border border-border bg-bg-secondary p-6 shadow-2xl">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <h2 id="chatgpt-device-title" className="text-lg font-semibold text-text-primary">
+                  Connect ChatGPT
+                </h2>
+                <p className="mt-1 text-sm text-text-muted">
+                  Copy this code, then open OpenAI in a new tab and paste it there.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={closeDeviceChallenge}
+                className="rounded px-2 py-1 text-xl leading-none text-text-muted hover:bg-bg-tertiary hover:text-text-primary"
+                aria-label="Close"
+              >
+                ×
+              </button>
+            </div>
+
+            <button
+              type="button"
+              onClick={copyDeviceCode}
+              className="mt-6 w-full select-all rounded-lg border border-accent-primary/40 bg-bg-primary px-4 py-5 font-mono text-3xl font-semibold tracking-[0.2em] text-accent-primary hover:bg-bg-tertiary"
+              title="Copy code"
+            >
+              {deviceChallenge.userCode}
+            </button>
+
+            <div className="mt-3 text-center text-xs text-text-muted">
+              {codeCopied ? 'Copied to clipboard' : 'Click the code to copy it'}
+            </div>
+
+            <div className="mt-6 flex gap-3">
+              <button
+                type="button"
+                onClick={copyDeviceCode}
+                className="flex-1 rounded-lg border border-border px-4 py-2 text-sm text-text-primary hover:bg-bg-tertiary"
+              >
+                {codeCopied ? 'Copied' : 'Copy code'}
+              </button>
+              <button
+                type="button"
+                onClick={openDeviceAuthorization}
+                className="flex-1 rounded-lg bg-accent-primary px-4 py-2 text-sm font-medium text-text-primary hover:bg-accent-primary/90"
+              >
+                Open OpenAI
+              </button>
+            </div>
+
+            <p className="mt-4 text-center text-xs text-text-muted">
+              OpenFox stays open while you complete authorization in the other tab.
+            </p>
+          </div>
+        </div>
+      )}
+
       {editingModel && showProviderModal && (
         <ProviderModal
           isOpen={true}
