@@ -4,20 +4,28 @@ import { clearCodexModelsCache, fetchCodexModels } from './models-dev-catalog.js
 beforeEach(clearCodexModelsCache)
 
 describe('fetchCodexModels', () => {
-  it('filters the OpenAI catalog using OpenCode-compatible rules', async () => {
+  it('projects OpenAI base models and models.dev modes using OpenCode-compatible rules', async () => {
     const request = vi.fn(
       async () =>
         new Response(
           JSON.stringify({
             openai: {
               models: {
-                codex: {
-                  id: 'gpt-5.3-codex',
-                  limit: { context: 400000, output: 128000 },
+                sol: {
+                  id: 'gpt-5.6-sol',
+                  name: 'GPT-5.6 Sol',
+                  limit: { context: 1050000, output: 128000 },
                   modalities: { input: ['text', 'image'] },
+                  reasoning_options: [{ type: 'effort', values: ['none', 'low', 'medium', 'high', 'xhigh', 'max'] }],
+                  experimental: {
+                    modes: {
+                      fast: { provider: { body: { service_tier: 'priority' } } },
+                      pro: { provider: { body: { reasoning: { mode: 'pro' } } } },
+                    },
+                  },
                 },
-                allowed: { id: 'gpt-5.4', limit: { context: 1050000 } },
-                luna: { id: 'gpt-5.6-luna', limit: { context: 1050000 } },
+                terra: { id: 'gpt-5.6-terra', name: 'GPT-5.6 Terra', limit: { context: 1050000 } },
+                codex: { id: 'gpt-5.3-codex', name: 'GPT-5.3 Codex', limit: { context: 400000 } },
                 blocked: { id: 'gpt-5.5-pro', limit: { context: 1050000 } },
                 unrelated: { id: 'gpt-4.1', limit: { context: 1000000 } },
               },
@@ -29,9 +37,37 @@ describe('fetchCodexModels', () => {
 
     const models = await fetchCodexModels(request as typeof fetch)
 
-    expect(models.map((model) => model.id)).toEqual(['gpt-5.6-luna', 'gpt-5.4', 'gpt-5.3-codex'])
-    expect(models.find((model) => model.id === 'gpt-5.3-codex')).toEqual(
-      expect.objectContaining({ contextWindow: 400000, supportsVision: true, defaultMaxTokens: 128000 }),
+    expect(models.map((model) => model.id)).toEqual([
+      'gpt-5.6-terra',
+      'gpt-5.6-sol-pro',
+      'gpt-5.6-sol-fast',
+      'gpt-5.6-sol',
+      'gpt-5.3-codex',
+    ])
+    expect(models.find((model) => model.id === 'gpt-5.6-sol')).toEqual(
+      expect.objectContaining({
+        name: 'GPT-5.6 Sol',
+        apiModelId: 'gpt-5.6-sol',
+        contextWindow: 1050000,
+        supportsVision: true,
+        selected: true,
+        defaultMaxTokens: 128000,
+        reasoningEfforts: ['none', 'low', 'medium', 'high', 'xhigh', 'max'],
+      }),
+    )
+    expect(models.find((model) => model.id === 'gpt-5.6-sol-fast')).toEqual(
+      expect.objectContaining({
+        name: 'GPT-5.6 Sol Fast',
+        apiModelId: 'gpt-5.6-sol',
+        requestBody: { service_tier: 'priority' },
+      }),
+    )
+    expect(models.find((model) => model.id === 'gpt-5.6-sol-pro')).toEqual(
+      expect.objectContaining({
+        name: 'GPT-5.6 Sol Pro',
+        apiModelId: 'gpt-5.6-sol',
+        requestBody: { reasoning: { mode: 'pro' } },
+      }),
     )
   })
 

@@ -91,7 +91,7 @@ export class CodexTransportAdapter implements ProviderTransportAdapter {
       const access = await this.auth.getAccessContext(context.credentialRef)
       const model = context.model ?? 'gpt-5.2-codex'
       const sessionId = crypto.randomUUID()
-      const codexRequest = buildCodexRequest(request, model)
+      const codexRequest = buildCodexRequest(request, model, context.requestBody)
       const isResponsesLite = model === RESPONSES_LITE_MODEL
       const headers = {
         'Content-Type': 'application/json',
@@ -368,14 +368,20 @@ export class CodexTransportAdapter implements ProviderTransportAdapter {
   }
 }
 
-function buildCodexRequest(request: LLMCompletionRequest, model: string): Record<string, unknown> {
+function buildCodexRequest(
+  request: LLMCompletionRequest,
+  model: string,
+  catalogRequestBody?: Record<string, unknown>,
+): Record<string, unknown> {
   const instructions = request.messages
     .filter((message) => message.role === 'system')
     .map((message) => message.content)
     .join('\n\n')
   const input = request.messages.filter((message) => message.role !== 'system').flatMap(toCodexInputItems)
 
-  return {
+  const catalogReasoning = isRecord(catalogRequestBody?.['reasoning']) ? catalogRequestBody['reasoning'] : undefined
+  const requestBody: Record<string, unknown> = {
+    ...(catalogRequestBody ?? {}),
     model,
     stream: true,
     store: false,
@@ -383,9 +389,17 @@ function buildCodexRequest(request: LLMCompletionRequest, model: string): Record
     input,
     tools: request.tools?.map(toCodexTool) ?? [],
     tool_choice: request.toolChoice ?? 'auto',
-    ...(request.reasoningEffort && { reasoning: { effort: request.reasoningEffort } }),
     ...(request.maxTokens && { max_output_tokens: request.maxTokens }),
   }
+
+  if (catalogReasoning || request.reasoningEffort) {
+    requestBody['reasoning'] = {
+      ...(catalogReasoning ?? {}),
+      ...(request.reasoningEffort && { effort: request.reasoningEffort }),
+    }
+  }
+
+  return requestBody
 }
 
 function prepareResponsesLiteRequest(request: Record<string, unknown>, sessionId: string): Record<string, unknown> {

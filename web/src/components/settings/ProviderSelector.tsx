@@ -510,7 +510,9 @@ export function ProviderSelector() {
                               disabled={loadingModels === 'activating'}
                               className="flex-1 truncate text-left"
                             >
-                              {modelConfig.id.split('/').pop()?.replace(/-/g, ' ') ?? modelConfig.id}
+                              {modelConfig.name ??
+                                modelConfig.id.split('/').pop()?.replace(/-/g, ' ') ??
+                                modelConfig.id}
                             </button>
 
                             <div className="flex items-center gap-1.5 flex-shrink-0 ml-2">

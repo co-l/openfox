@@ -59,7 +59,7 @@ function mergeModelsWithUserOverrides(
   const updatedModels = backendModels.map((backendModel) => {
     const existingUserModel = normalizedUserIdMap.get(normalizeModelId(backendModel.id))
     if (existingUserModel) {
-      return enrichWithProfileDefaults({ ...existingUserModel, id: backendModel.id })
+      return enrichWithProfileDefaults({ ...backendModel, ...existingUserModel, id: backendModel.id })
     }
     return enrichWithProfileDefaults(backendModel)
   })

@@ -33,7 +33,12 @@ export interface ProviderRequestContext {
   providerId: string
   credentialRef?: string
   auth?: ProviderAccessContext
+  /** Model identifier sent to the provider. */
   model?: string
+  /** OpenFox catalog identifier used for display and statistics. */
+  catalogModel?: string
+  /** Catalog-defined top-level request fields for the selected model mode. */
+  requestBody?: Record<string, unknown>
 }
 
 export interface ProviderTransportAdapter {

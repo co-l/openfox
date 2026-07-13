@@ -7,10 +7,7 @@ import { QueryParamsInput } from './QueryParamsInput'
 
 const COMMON_PORTS = [8080, 11434, 8000]
 
-interface ModelInfo {
-  id: string
-  contextWindow: number
-}
+type ModelInfo = Omit<SharedModelConfig, 'source'>
 
 interface ModelConfig {
   contextWindow: number
@@ -428,7 +425,7 @@ export function ProviderModal({
         }
         setSelectedModelIds(selected)
         setModelConfigs(configs)
-        setModels(editProvider.models.map((m) => ({ id: m.id, contextWindow: m.contextWindow })))
+        setModels(editProvider.models)
         setExpandedModelId(editModelId ?? editProvider.models[0]?.id ?? null)
       } else {
         setModels([])
@@ -736,6 +733,10 @@ export function ProviderModal({
       transportAdapter: formTransportAdapter,
       models: models.map((m) => ({
         id: m.id,
+        name: m.name,
+        apiModelId: m.apiModelId,
+        requestBody: m.requestBody,
+        reasoningEfforts: m.reasoningEfforts,
         contextWindow: modelConfigs[m.id]?.contextWindow ?? m.contextWindow,
         selected: selectedModelIds.has(m.id) || undefined,
         supportsVision: modelConfigs[m.id]?.supportsVision,
@@ -1036,7 +1037,7 @@ export function ProviderModal({
                               >
                                 <div className="flex items-center gap-3">
                                   <span className="text-sm font-medium text-text-primary">
-                                    {model.id.split('/').pop()}
+                                    {model.name ?? model.id.split('/').pop()}
                                   </span>
                                   <span className="text-xs text-text-muted bg-bg-tertiary px-2 py-0.5 rounded">
                                     {(modelConfigs[model.id]?.contextWindow ?? model.contextWindow).toLocaleString()}{' '}
@@ -1213,7 +1214,7 @@ export function ProviderModal({
                                 className="w-4 h-4 rounded border-border accent-accent-primary pointer-events-none"
                               />
                               <span className="text-sm text-text-primary flex-1 truncate">
-                                {model.id.split('/').pop()}
+                                {model.name ?? model.id.split('/').pop()}
                               </span>
                               <span className="text-xs text-text-muted flex-shrink-0">
                                 {(modelConfigs[model.id]?.contextWindow ?? model.contextWindow).toLocaleString()} ctx

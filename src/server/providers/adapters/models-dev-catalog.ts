@@ -2,12 +2,25 @@ import type { ModelConfig } from '../../../shared/types.js'
 
 const MODELS_DEV_URL = 'https://models.dev/api.json'
 const CACHE_TTL_MS = 5 * 60_000
-const ALLOWED_GENERAL_MODELS = new Set(['gpt-5.5', 'gpt-5.4', 'gpt-5.4-mini', 'gpt-5.6-luna'])
 const DISALLOWED_MODELS = new Set(['gpt-5.5-pro'])
+
+interface ModelsDevMode {
+  provider?: {
+    body?: Record<string, unknown>
+  }
+}
+
+interface ModelsDevReasoningOption {
+  type?: string
+  values?: string[]
+}
 
 interface ModelsDevModel {
   id: string
+  name?: string
   status?: string
+  reasoning_options?: ModelsDevReasoningOption[]
+  experimental?: { modes?: Record<string, ModelsDevMode> }
   limit?: { context?: number; input?: number; output?: number }
   modalities?: { input?: string[]; output?: string[] }
 }
@@ -33,13 +46,7 @@ export async function fetchCodexModels(fetcher: typeof fetch = fetch): Promise<M
   const data = (await response.json()) as ModelsDevResponse
   const models = Object.values(data.openai?.models ?? {})
     .filter(isCodexCompatible)
-    .map((model) => ({
-      id: model.id,
-      contextWindow: model.limit?.context ?? 200000,
-      source: 'backend' as const,
-      supportsVision: model.modalities?.input?.includes('image') ?? false,
-      ...(model.limit?.output && { defaultMaxTokens: model.limit.output }),
-    }))
+    .flatMap(projectModelAndModes)
     .sort((a, b) => b.id.localeCompare(a.id, undefined, { numeric: true }))
 
   if (models.length === 0) throw new Error('models.dev returned no Codex-compatible OpenAI models')
@@ -51,8 +58,42 @@ export function clearCodexModelsCache(): void {
   cache = undefined
 }
 
+function projectModelAndModes(model: ModelsDevModel): ModelConfig[] {
+  const base = toModelConfig(model)
+  const modes = Object.entries(model.experimental?.modes ?? {}).map(([mode, config]) => ({
+    ...base,
+    id: `${model.id}-${mode}`,
+    name: `${model.name ?? model.id} ${capitalize(mode)}`,
+    apiModelId: model.id,
+    ...(config.provider?.body && { requestBody: structuredClone(config.provider.body) }),
+  }))
+  return [base, ...modes]
+}
+
+function toModelConfig(model: ModelsDevModel): ModelConfig {
+  const reasoningEfforts = model.reasoning_options
+    ?.filter((option) => option.type === 'effort')
+    .flatMap((option) => option.values ?? [])
+
+  return {
+    id: model.id,
+    name: model.name ?? model.id,
+    apiModelId: model.id,
+    contextWindow: model.limit?.context ?? 200000,
+    source: 'backend',
+    selected: true,
+    supportsVision: model.modalities?.input?.includes('image') ?? false,
+    ...(model.limit?.output && { defaultMaxTokens: model.limit.output }),
+    ...(reasoningEfforts?.length && { reasoningEfforts: [...new Set(reasoningEfforts)] }),
+  }
+}
+
+function capitalize(value: string): string {
+  return value.length > 0 ? value[0]!.toUpperCase() + value.slice(1) : value
+}
+
 function isCodexCompatible(model: ModelsDevModel): boolean {
   if (model.status === 'deprecated') return false
   if (DISALLOWED_MODELS.has(model.id)) return false
-  return model.id.includes('codex') || ALLOWED_GENERAL_MODELS.has(model.id)
+  return model.id.includes('codex') || model.id.startsWith('gpt-5')
 }

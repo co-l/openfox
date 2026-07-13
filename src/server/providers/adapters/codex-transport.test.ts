@@ -100,6 +100,44 @@ describe('CodexTransportAdapter', () => {
     )
   })
 
+  it('merges catalog Fast and Pro mode fields with OpenFox reasoning effort', async () => {
+    const bodies: Record<string, unknown>[] = []
+    const request = vi.fn(async (_url: string, init: RequestInit) => {
+      bodies.push(JSON.parse(init.body as string) as Record<string, unknown>)
+      return new Response(stream([{ type: 'response.completed', response: { id: 'resp-mode' } }]), { status: 200 })
+    })
+    const transport = new CodexTransportAdapter(auth, {
+      endpoint: 'https://codex.test/responses',
+      fetch: request as typeof fetch,
+    })
+
+    await transport.complete(
+      { messages: [{ role: 'user', content: 'Fast' }] },
+      {
+        providerId: 'provider-1',
+        credentialRef: 'credential-1',
+        model: 'gpt-5.6-sol',
+        catalogModel: 'gpt-5.6-sol-fast',
+        requestBody: { service_tier: 'priority' },
+      },
+    )
+    await transport.complete(
+      { messages: [{ role: 'user', content: 'Pro' }], reasoningEffort: 'high' },
+      {
+        providerId: 'provider-1',
+        credentialRef: 'credential-1',
+        model: 'gpt-5.6-sol',
+        catalogModel: 'gpt-5.6-sol-pro',
+        requestBody: { reasoning: { mode: 'pro' } },
+      },
+    )
+
+    expect(bodies[0]).toEqual(expect.objectContaining({ model: 'gpt-5.6-sol', service_tier: 'priority' }))
+    expect(bodies[1]).toEqual(
+      expect.objectContaining({ model: 'gpt-5.6-sol', reasoning: { mode: 'pro', effort: 'high' } }),
+    )
+  })
+
   it('maps function call deltas to tool calls', async () => {
     const request = vi.fn(
       async () =>

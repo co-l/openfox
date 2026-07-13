@@ -479,7 +479,15 @@ export type ProviderBackend = LlmBackend | 'openai' | 'anthropic'
 
 /** Model configuration with context window */
 export interface ModelConfig {
-  id: string // Model ID from backend (e.g., "qwen3.5-27b-int4-autoround")
+  id: string // Model ID exposed in OpenFox (may be a projected mode such as "gpt-5.6-sol-fast")
+  /** Human-readable model name from the provider catalog. */
+  name?: string
+  /** Actual model ID sent to the provider when `id` is a projected catalog mode. */
+  apiModelId?: string
+  /** Extra top-level request body fields attached to this catalog model/mode. */
+  requestBody?: Record<string, unknown>
+  /** Reasoning effort values advertised by the provider catalog. */
+  reasoningEfforts?: string[]
   contextWindow: number // Context window size in tokens
   source: 'backend' | 'user' | 'default' // Where the value came from
   selected?: boolean // User explicitly selected this model (for multi-model providers)

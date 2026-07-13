@@ -26,11 +26,16 @@ export function createTransportLLMClient(
   let profile = profileFor(model)
   void getBackendCapabilities(backend)
 
-  const context = () => ({
-    providerId: provider.id,
-    model,
-    ...(provider.credentialRef && { credentialRef: provider.credentialRef }),
-  })
+  const context = () => {
+    const configured = provider.models.find((item) => item.id === model)
+    return {
+      providerId: provider.id,
+      model: configured?.apiModelId ?? model,
+      catalogModel: model,
+      ...(configured?.requestBody && { requestBody: configured.requestBody }),
+      ...(provider.credentialRef && { credentialRef: provider.credentialRef }),
+    }
+  }
 
   return {
     getModel: () => model,

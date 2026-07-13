@@ -180,7 +180,14 @@ describe('ProviderModal - thinkingLevel persistence', () => {
             transportAdapter: 'openai-codex',
             models: [
               { id: 'gpt-5.4', contextWindow: 1050000, selected: true },
-              { id: 'gpt-5.3-codex', contextWindow: 400000 },
+              {
+                id: 'gpt-5.3-codex',
+                name: 'GPT-5.3 Codex',
+                apiModelId: 'gpt-5.3-codex',
+                requestBody: { service_tier: 'priority' },
+                reasoningEfforts: ['low', 'high'],
+                contextWindow: 400000,
+              },
             ],
           }}
         />,
@@ -189,7 +196,7 @@ describe('ProviderModal - thinkingLevel persistence', () => {
     })
 
     const availableRows = Array.from(container.querySelectorAll('[role="checkbox"]'))
-    const codexRow = availableRows.find((row) => row.textContent?.includes('gpt-5.3-codex')) as HTMLElement | undefined
+    const codexRow = availableRows.find((row) => row.textContent?.includes('GPT-5.3 Codex')) as HTMLElement | undefined
     expect(codexRow).toBeTruthy()
     codexRow?.click()
     await new Promise((resolve) => setTimeout(resolve, 50))
@@ -199,7 +206,14 @@ describe('ProviderModal - thinkingLevel persistence', () => {
 
     const savedData: ProviderFormData = onSaveMock.mock.calls[0]![0]!
     expect(savedData.models.find((model) => model.id === 'gpt-5.3-codex')).toEqual(
-      expect.objectContaining({ contextWindow: 400000, selected: true }),
+      expect.objectContaining({
+        name: 'GPT-5.3 Codex',
+        apiModelId: 'gpt-5.3-codex',
+        requestBody: { service_tier: 'priority' },
+        reasoningEfforts: ['low', 'high'],
+        contextWindow: 400000,
+        selected: true,
+      }),
     )
   })
 })
