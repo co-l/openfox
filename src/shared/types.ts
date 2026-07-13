@@ -511,6 +511,12 @@ export interface Provider {
   url: string // API endpoint (e.g., "http://localhost:8000/v1")
   backend: ProviderBackend
   apiKey?: string | undefined // Optional, for cloud providers
+  /** Registered auth adapter id. Credentials are stored separately. */
+  authAdapter?: string
+  /** Registered transport adapter id. Defaults to OpenAI-compatible HTTP. */
+  transportAdapter?: string
+  /** Opaque reference into the credential store. Never contains a token. */
+  credentialRef?: string
   models: ModelConfig[] // Available models with their context windows
   isActive: boolean // Currently selected provider
   createdAt: string // ISO timestamp

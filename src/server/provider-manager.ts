@@ -1,4 +1,5 @@
 import type { Provider, Config, LlmBackend, ModelConfig } from '../shared/types.js'
+import type { ProviderAdapterRegistry } from './providers/adapters/registry.js'
 import { createLLMClient, clearModelCache, getModelProfile, type LLMClientWithModel } from './llm/index.js'
 import { logger } from './utils/logger.js'
 import { ensureVersionPrefix, stripVersionPrefix, buildModelsUrl } from './llm/url-utils.js'
@@ -255,7 +256,11 @@ export function parseDefaultModelSelection(selection?: string): {
   }
 }
 
-export function createProviderManager(config: Config): ProviderManager {
+export interface ProviderManagerOptions {
+  adapters?: ProviderAdapterRegistry
+}
+
+export function createProviderManager(config: Config, options: ProviderManagerOptions = {}): ProviderManager {
   let providers: Provider[] = [...(config.providers ?? [])]
   // Enrich all models with profile defaults for display
   providers = providers.map((p) => ({ ...p, models: p.models.map((m) => enrichWithProfileDefaults(m)) }))
@@ -297,6 +302,19 @@ export function createProviderManager(config: Config): ProviderManager {
         ...(modelThinking.reasoningEffort && { reasoningEffort: modelThinking.reasoningEffort }),
       },
     }
+  }
+
+  async function fetchProviderModels(provider: Provider): Promise<ModelConfig[]> {
+    const transport = options.adapters?.getTransport(provider.transportAdapter)
+    if (transport) {
+      return transport.listModels({
+        providerId: provider.id,
+        ...(provider.credentialRef && { credentialRef: provider.credentialRef }),
+      })
+    }
+
+    const backend = provider.backend as 'ollama' | 'vllm' | 'sglang' | 'llamacpp' | 'unknown'
+    return fetchModelsWithContext(provider.url, provider.apiKey, backend)
   }
 
   // Initialize the LLM client with the active provider's config (URL, model, apiKey, etc.)
@@ -381,7 +399,7 @@ export function createProviderManager(config: Config): ProviderManager {
           url: provider.url,
           backend,
         })
-        const modelsWithContext = await fetchModelsWithContext(provider.url, provider.apiKey, backend)
+        const modelsWithContext = await fetchProviderModels(provider)
 
         const userModels = provider.models.filter((m) => m.source === 'user')
         logger.debug('activateProvider', {
@@ -514,8 +532,7 @@ export function createProviderManager(config: Config): ProviderManager {
       }
 
       // Fallback: fetch from backend if no stored models
-      const backend = provider.backend as 'ollama' | 'vllm' | 'sglang' | 'llamacpp' | 'unknown'
-      return fetchModelsWithContext(provider.url, provider.apiKey, backend)
+      return fetchProviderModels(provider)
     },
 
     async setDefaultModelSelection(providerId: string, model: string) {
@@ -721,7 +738,7 @@ export function createProviderManager(config: Config): ProviderManager {
         url: provider.url,
         backend,
       })
-      const modelsWithContext = await fetchModelsWithContext(provider.url, provider.apiKey, backend)
+      const modelsWithContext = await fetchProviderModels(provider)
 
       // Preserve user-set models even if backend fetch fails or returns empty
       const userModels = provider.models.filter((m) => m.source === 'user')
