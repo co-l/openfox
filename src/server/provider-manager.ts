@@ -305,15 +305,21 @@ export function createProviderManager(config: Config, options: ProviderManagerOp
     }
   }
 
+  function resolveTransportAdapter(provider: Provider): string | undefined {
+    if (provider.transportAdapter) return provider.transportAdapter
+    if (provider.url.includes('chatgpt.com/backend-api/codex')) return 'openai-codex'
+    return undefined
+  }
+
   function createClientForProvider(provider: Provider, model: string): LLMClientWithModel {
-    const transport = options.adapters?.getTransport(provider.transportAdapter)
+    const transport = options.adapters?.getTransport(resolveTransportAdapter(provider))
     return transport
       ? createTransportLLMClient(provider, model, transport)
       : createLLMClient(createConfigForProvider(provider, model))
   }
 
   async function fetchProviderModels(provider: Provider): Promise<ModelConfig[]> {
-    const transport = options.adapters?.getTransport(provider.transportAdapter)
+    const transport = options.adapters?.getTransport(resolveTransportAdapter(provider))
     if (transport) {
       return transport.listModels({
         providerId: provider.id,
