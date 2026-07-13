@@ -34,6 +34,10 @@ import { createTerminalRoutes } from './routes/terminals.js'
 import { createDirectoryRoutes } from './routes/directories.js'
 import { createFileSearchRoutes } from './routes/file-search.js'
 import { createAutoUpdateRoutes } from './routes/auto-update.js'
+import { createProviderAuthRoutes } from './routes/provider-auth.js'
+import { FileProviderCredentialStore } from './providers/adapters/file-credential-store.js'
+import { OpenAIBrowserAuthAdapter } from './providers/adapters/openai-browser-auth.js'
+import { ProviderAdapterRegistry } from './providers/adapters/registry.js'
 import { devServerManager } from './dev-server/manager.js'
 import { getGlobalConfigDir } from '../cli/paths.js'
 import { logger, setLogLevel } from './utils/logger.js'
@@ -75,8 +79,17 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
   // Get config directory for loading user items
   const configDir = getGlobalConfigDir(config.mode ?? 'production')
 
+  // Create provider auth and transport adapters.
+  const credentialStore = new FileProviderCredentialStore(
+    join(configDir, 'provider-credentials.json'),
+    join(configDir, 'provider-credentials.key'),
+  )
+  const openaiAuth = new OpenAIBrowserAuthAdapter(credentialStore)
+  const providerAdapters = new ProviderAdapterRegistry()
+  providerAdapters.registerAuth(openaiAuth)
+
   // Create Provider Manager (handles LLM client lifecycle)
-  const providerManager = createProviderManager(config)
+  const providerManager = createProviderManager(config, { adapters: providerAdapters })
 
   // Create SessionManager instance (not singleton!)
   const sessionManager = new SessionManager(providerManager)
@@ -184,7 +197,7 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
   // Auth middleware for all /api routes (except /api/health and /api/auth/login)
   const authMiddleware = async (req: express.Request, res: express.Response, next: express.NextFunction) => {
     const path = req.path
-    const publicPaths = ['/health', '/auth', '/auth/login', '/auto-update/check']
+    const publicPaths = ['/health', '/auth', '/auth/login', '/auto-update/check', '/provider-auth/openai/callback']
     if (publicPaths.includes(path)) {
       return next()
     }
@@ -1315,6 +1328,8 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
       })
     }
   })
+
+  app.use('/api/provider-auth', createProviderAuthRoutes(config, providerManager, openaiAuth))
 
   // Provider endpoints
   app.get('/api/providers', (_req, res) => {
