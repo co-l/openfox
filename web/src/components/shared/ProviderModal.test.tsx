@@ -159,4 +159,43 @@ describe('ProviderModal - thinkingLevel persistence', () => {
     expect(container.querySelector('[data-testid="provider-modal-save"]')).toBeTruthy()
     expect(container.querySelector('[data-testid="provider-modal-next"]')).toBeNull()
   })
+  it('prefills the catalog context window when a model is selected', async () => {
+    await new Promise<void>((resolve) => {
+      root.render(
+        <ProviderModal
+          isOpen={true}
+          onClose={vi.fn()}
+          onSave={onSaveMock as (provider: ProviderFormData) => void}
+          initialStep={2}
+          editProvider={{
+            id: 'provider-1',
+            name: 'ChatGPT',
+            url: 'https://chatgpt.com/backend-api/codex',
+            backend: 'openai',
+            transportAdapter: 'openai-codex',
+            models: [
+              { id: 'gpt-5.4', contextWindow: 1050000, selected: true },
+              { id: 'gpt-5.3-codex', contextWindow: 400000 },
+            ],
+          }}
+        />,
+      )
+      setTimeout(resolve, 200)
+    })
+
+    const availableRows = Array.from(container.querySelectorAll('[role="checkbox"]'))
+    const codexRow = availableRows.find((row) => row.textContent?.includes('gpt-5.3-codex')) as HTMLElement | undefined
+    expect(codexRow).toBeTruthy()
+    codexRow?.click()
+    await new Promise((resolve) => setTimeout(resolve, 50))
+
+    const saveButton = container.querySelector('[data-testid="provider-modal-save"]') as HTMLButtonElement | null
+    saveButton?.click()
+
+    const savedData: ProviderFormData = onSaveMock.mock.calls[0]![0]!
+    expect(savedData.models.find((model) => model.id === 'gpt-5.3-codex')).toEqual(
+      expect.objectContaining({ contextWindow: 400000, selected: true }),
+    )
+  })
+
 })

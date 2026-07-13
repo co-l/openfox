@@ -356,6 +356,17 @@ export function ProviderModal({
     setModelConfigs((prev) => ({ ...prev, [id]: { ...prev[id]!, ...partial } }))
   }
 
+  function selectModel(model: ModelInfo) {
+    setSelectedModelIds((current) => new Set(current).add(model.id))
+    setModelConfigs((current) => ({
+      ...current,
+      [model.id]: {
+        contextWindow: model.contextWindow,
+        ...current[model.id],
+      },
+    }))
+  }
+
   function filterModels(query: string): ModelInfo[] {
     if (!query.trim()) return models
     const terms = query.toLowerCase().split(/\s+/).filter(Boolean)
@@ -932,6 +943,16 @@ export function ProviderModal({
                             const visible = filterModels(searchQuery)
                             for (const m of visible) next.add(m.id)
                             setSelectedModelIds(next)
+                            setModelConfigs((current) => {
+                              const updated = { ...current }
+                              for (const model of visible) {
+                                updated[model.id] = {
+                                  contextWindow: model.contextWindow,
+                                  ...updated[model.id],
+                                }
+                              }
+                              return updated
+                            })
                             for (const m of visible) {
                               if (
                                 autoConfigState.progress[m.id] !== 'probing' &&
@@ -977,9 +998,7 @@ export function ProviderModal({
                                 next.delete(model.id)
                                 setSelectedModelIds(next)
                               } else {
-                                const next = new Set(selectedModelIds)
-                                next.add(model.id)
-                                setSelectedModelIds(next)
+                                selectModel(model)
                                 runAutoConfig(model.id)
                               }
                             }}
