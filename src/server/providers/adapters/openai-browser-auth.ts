@@ -36,6 +36,7 @@ export class OpenAIBrowserAuthAdapter implements ProviderAuthAdapter {
   private readonly clientId: string
   private readonly now: () => number
   private readonly tokens: OpenAIAccountTokenClient
+  private readonly request: typeof fetch
   private readonly callbackPort: number
   private callbackServer?: Server
 
@@ -47,7 +48,56 @@ export class OpenAIBrowserAuthAdapter implements ProviderAuthAdapter {
     this.clientId = options.clientId ?? OPENAI_ACCOUNT_CLIENT_ID
     this.now = options.now ?? Date.now
     this.tokens = new OpenAIAccountTokenClient(credentials, options)
+    this.request = options.fetch ?? fetch
     this.callbackPort = options.callbackPort ?? 1455
+  }
+
+  async beginDeviceLoginForProvider(providerId: string): Promise<{
+    challenge: ProviderLoginChallenge & { userCode: string }
+    completion: Promise<{ providerId: string; credentialRef: string }>
+  }> {
+    const response = await this.request(`${this.issuer}/api/accounts/deviceauth/usercode`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'User-Agent': 'openfox' },
+      body: JSON.stringify({ client_id: this.clientId }),
+    })
+    if (!response.ok) throw new Error(`OpenAI device authorization failed: ${response.status}`)
+    const device = (await response.json()) as { device_auth_id: string; user_code: string; interval?: string }
+    const intervalMs = Math.max(Number.parseInt(device.interval ?? '5', 10) || 5, 1) * 1000 + 3000
+
+    const completion = (async () => {
+      while (true) {
+        const tokenResponse = await this.request(`${this.issuer}/api/accounts/deviceauth/token`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'User-Agent': 'openfox' },
+          body: JSON.stringify({ device_auth_id: device.device_auth_id, user_code: device.user_code }),
+        })
+        if (tokenResponse.ok) {
+          const authorization = (await tokenResponse.json()) as { authorization_code: string; code_verifier: string }
+          const credential = await this.tokens.exchangeCode(
+            authorization.authorization_code,
+            `${this.issuer}/deviceauth/callback`,
+            authorization.code_verifier,
+          )
+          const credentialRef = await this.credentials.create(credential)
+          return { providerId, credentialRef }
+        }
+        if (tokenResponse.status !== 403 && tokenResponse.status !== 404) {
+          throw new Error(`OpenAI device authorization failed: ${tokenResponse.status}`)
+        }
+        await new Promise((resolve) => setTimeout(resolve, intervalMs))
+      }
+    })()
+
+    return {
+      challenge: {
+        url: `${this.issuer}/codex/device`,
+        instructions: `Enter code: ${device.user_code}`,
+        mode: 'browser',
+        userCode: device.user_code,
+      },
+      completion,
+    }
   }
 
   async beginLoginForProvider(providerId: string, redirectUri: string): Promise<ProviderLoginChallenge> {

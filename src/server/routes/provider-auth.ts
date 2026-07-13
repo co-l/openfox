@@ -27,9 +27,19 @@ export function createProviderAuthRoutes(
       return res.status(400).json({ error: 'Provider does not use OpenAI account auth' })
     }
 
-    const host = config.server.host === '127.0.0.1' ? 'localhost' : config.server.host
-    const redirectUri = `http://${host}:${config.server.port}/api/provider-auth/openai/callback`
-    const challenge = await openaiAuth.beginLoginForProvider(providerId, redirectUri)
+    const { challenge, completion } = await openaiAuth.beginDeviceLoginForProvider(providerId)
+    void completion
+      .then(async (result) => {
+        const { loadGlobalConfig, saveGlobalConfig, updateProvider } = await import('../../cli/config.js')
+        const globalConfig = await loadGlobalConfig(config.mode ?? 'production')
+        const updatedConfig = updateProvider(globalConfig, result.providerId, {
+          credentialRef: result.credentialRef,
+          authAdapter: openaiAuth.id,
+        })
+        await saveGlobalConfig(config.mode ?? 'production', updatedConfig)
+        providerManager.setProviders(updatedConfig.providers, updatedConfig.defaultModelSelection ?? undefined)
+      })
+      .catch(() => undefined)
     res.json(challenge)
   })
 

@@ -167,7 +167,11 @@ export function ProviderSelector() {
     try {
       const response = await authFetch(`/api/provider-auth/${providerId}/login`, { method: 'POST' })
       if (!response.ok) throw new Error('Unable to start ChatGPT sign-in')
-      const challenge = (await response.json()) as { url: string }
+      const challenge = (await response.json()) as { url: string; userCode?: string; instructions?: string }
+      if (challenge.userCode) {
+        await navigator.clipboard?.writeText(challenge.userCode).catch(() => undefined)
+        window.alert(`OpenAI code: ${challenge.userCode}\n\nThe code has been copied. Paste it on the page that opens.`)
+      }
       window.open(challenge.url, '_blank', 'noopener,noreferrer')
 
       for (let attempt = 0; attempt < 90; attempt += 1) {

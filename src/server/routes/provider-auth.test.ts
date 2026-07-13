@@ -54,9 +54,30 @@ describe('provider auth routes', () => {
   })
 
   async function start() {
+    const request = vi.fn(async (url: string | URL | Request) => {
+      const value = String(url)
+      if (value.endsWith('/api/accounts/deviceauth/usercode')) {
+        return new Response(JSON.stringify({ device_auth_id: 'device-1', user_code: 'ABCD-EFGH', interval: '1' }), {
+          status: 200,
+        })
+      }
+      if (value.endsWith('/api/accounts/deviceauth/token')) {
+        return new Response(JSON.stringify({ authorization_code: 'code-1', code_verifier: 'verifier-1' }), {
+          status: 200,
+        })
+      }
+      if (value.endsWith('/oauth/token')) {
+        return new Response(
+          JSON.stringify({ access_token: 'header.payload.signature', refresh_token: 'refresh-1', expires_in: 3600 }),
+          { status: 200 },
+        )
+      }
+      return new Response(null, { status: 404 })
+    })
     const auth = new OpenAIBrowserAuthAdapter(new MemoryProviderCredentialStore(), {
       issuer: 'https://issuer.test',
       clientId: 'client-1',
+      fetch: request as typeof fetch,
     })
     const app = express()
     app.use(express.json())
@@ -71,13 +92,12 @@ describe('provider auth routes', () => {
   it('returns a browser challenge for a configured provider', async () => {
     const baseUrl = await start()
     const response = await fetch(`${baseUrl}/api/provider-auth/provider-1/login`, { method: 'POST' })
-    const body = (await response.json()) as { url: string; mode: string }
+    const body = (await response.json()) as { url: string; mode: string; userCode: string }
 
     expect(response.status).toBe(200)
     expect(body.mode).toBe('browser')
-    expect(new URL(body.url).searchParams.get('redirect_uri')).toBe(
-      'http://localhost:1455/auth/callback',
-    )
+    expect(body.url).toBe('https://issuer.test/codex/device')
+    expect(body.userCode).toBe('ABCD-EFGH')
   })
 
   it('returns disconnected status before login', async () => {
