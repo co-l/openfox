@@ -96,4 +96,60 @@ describe('CodexTransportAdapter', () => {
     expect(response.finishReason).toBe('tool_calls')
     expect(response.toolCalls).toEqual([{ id: 'call-1', name: 'read', arguments: { path: 'a.txt' } }])
   })
+
+  it('uses the OpenCode Responses Lite protocol for gpt-5.6-luna', async () => {
+    const request = vi.fn(async (_url: string, init: RequestInit) => {
+      const headers = new Headers(init.headers)
+      const body = JSON.parse(init.body as string) as Record<string, unknown>
+      const input = body['input'] as Array<Record<string, unknown>>
+
+      expect(headers.get('x-openai-internal-codex-responses-lite')).toBe('true')
+      expect(headers.get('version')).toBe('0.144.0')
+      expect(headers.get('session-id')).toBeTruthy()
+      expect(headers.get('x-session-affinity')).toBe(headers.get('session-id'))
+      expect(body['model']).toBe('gpt-5.6-luna')
+      expect(body['tools']).toBeUndefined()
+      expect(body['instructions']).toBeUndefined()
+      expect(body['max_output_tokens']).toBeUndefined()
+      expect(body['parallel_tool_calls']).toBe(false)
+      expect(body['tool_choice']).toBe('auto')
+      expect(body['prompt_cache_key']).toBe(headers.get('session-id'))
+      expect(body['reasoning']).toEqual({ effort: 'high', context: 'all_turns' })
+      expect(input[0]).toEqual(expect.objectContaining({ type: 'additional_tools', role: 'developer' }))
+      expect(input[1]).toEqual({
+        type: 'message',
+        role: 'developer',
+        content: [{ type: 'input_text', text: 'System prompt' }],
+      })
+
+      return new Response(
+        stream([
+          { type: 'response.created', response: { id: 'resp-lite' } },
+          { type: 'response.output_text.delta', delta: 'Lite works' },
+        ]),
+        { status: 200 },
+      )
+    })
+    const transport = new CodexTransportAdapter(auth, { fetch: request as typeof fetch })
+
+    const response = await transport.complete(
+      {
+        messages: [
+          { role: 'system', content: 'System prompt' },
+          { role: 'user', content: 'Hello' },
+        ],
+        tools: [
+          {
+            type: 'function',
+            function: { name: 'read', description: 'Read a file', parameters: { type: 'object' } },
+          },
+        ],
+        reasoningEffort: 'high',
+        maxTokens: 4096,
+      },
+      { providerId: 'provider-1', credentialRef: 'credential-1', model: 'gpt-5.6-luna' },
+    )
+
+    expect(response.content).toBe('Lite works')
+  })
 })

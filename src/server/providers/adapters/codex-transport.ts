@@ -11,6 +11,9 @@ import type { ProviderAuthAdapter, ProviderRequestContext, ProviderTransportAdap
 import { fetchCodexModels } from './models-dev-catalog.js'
 
 const CODEX_RESPONSES_URL = 'https://chatgpt.com/backend-api/codex/responses'
+const RESPONSES_LITE_MODEL = 'gpt-5.6-luna'
+const CODEX_COMPATIBILITY_VERSION = '0.144.0'
+const RESPONSES_LITE_HEADER = 'x-openai-internal-codex-responses-lite'
 
 interface CodexSseEvent {
   type: string
@@ -79,14 +82,24 @@ export class CodexTransportAdapter implements ProviderTransportAdapter {
 
     try {
       const access = await this.auth.getAccessContext(context.credentialRef)
+      const model = context.model ?? 'gpt-5.2-codex'
+      const sessionId = crypto.randomUUID()
+      const codexRequest = buildCodexRequest(request, model)
+      const isResponsesLite = model === RESPONSES_LITE_MODEL
       const response = await this.request(this.endpoint, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           Accept: 'text/event-stream',
           ...access.headers,
+          ...(isResponsesLite && {
+            'session-id': sessionId,
+            'x-session-affinity': sessionId,
+            version: CODEX_COMPATIBILITY_VERSION,
+            [RESPONSES_LITE_HEADER]: 'true',
+          }),
         },
-        body: JSON.stringify(buildCodexRequest(request, context.model ?? 'gpt-5.2-codex')),
+        body: JSON.stringify(isResponsesLite ? prepareResponsesLiteRequest(codexRequest, sessionId) : codexRequest),
         ...(request.signal && { signal: request.signal }),
       })
       if (!response.ok) {
@@ -182,6 +195,57 @@ function buildCodexRequest(request: LLMCompletionRequest, model: string): Record
     ...(request.reasoningEffort && { reasoning: { effort: request.reasoningEffort } }),
     ...(request.maxTokens && { max_output_tokens: request.maxTokens }),
   }
+}
+
+function prepareResponsesLiteRequest(request: Record<string, unknown>, sessionId: string): Record<string, unknown> {
+  const input = Array.isArray(request['input']) ? structuredClone(request['input']) : []
+  const tools = Array.isArray(request['tools']) ? structuredClone(request['tools']) : []
+  const instructions = typeof request['instructions'] === 'string' ? request['instructions'] : ''
+
+  stripImageDetail(input)
+
+  const prepared: Record<string, unknown> = {
+    ...request,
+    input: [
+      { type: 'additional_tools', role: 'developer', tools },
+      ...(instructions
+        ? [
+            {
+              type: 'message',
+              role: 'developer',
+              content: [{ type: 'input_text', text: instructions }],
+            },
+          ]
+        : []),
+      ...input,
+    ],
+    tool_choice: 'auto',
+    parallel_tool_calls: false,
+    prompt_cache_key: sessionId,
+    reasoning: {
+      ...(isRecord(request['reasoning']) ? request['reasoning'] : {}),
+      context: 'all_turns',
+    },
+  }
+
+  delete prepared['tools']
+  delete prepared['instructions']
+  delete prepared['max_output_tokens']
+  return prepared
+}
+
+function stripImageDetail(value: unknown): void {
+  if (Array.isArray(value)) {
+    for (const item of value) stripImageDetail(item)
+    return
+  }
+  if (!isRecord(value)) return
+  if (value['type'] === 'input_image') delete value['detail']
+  for (const item of Object.values(value)) stripImageDetail(item)
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
 
 function toCodexInputItems(message: LLMMessage): Record<string, unknown>[] {

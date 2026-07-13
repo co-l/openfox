@@ -2,7 +2,7 @@ import type { ModelConfig } from '../../../shared/types.js'
 
 const MODELS_DEV_URL = 'https://models.dev/api.json'
 const CACHE_TTL_MS = 5 * 60_000
-const ALLOWED_GENERAL_MODELS = new Set(['gpt-5.5', 'gpt-5.4', 'gpt-5.4-mini'])
+const ALLOWED_GENERAL_MODELS = new Set(['gpt-5.5', 'gpt-5.4', 'gpt-5.4-mini', 'gpt-5.6-luna'])
 const DISALLOWED_MODELS = new Set(['gpt-5.5-pro'])
 
 interface ModelsDevModel {
