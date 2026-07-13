@@ -118,12 +118,27 @@ export function clearAllowedPaths(sessionId: string): void {
  * Falls back to normalize() if realpath fails (e.g., broken symlink, nonexistent).
  */
 async function safeRealpath(path: string): Promise<string> {
+  const absolutePath = normalize(resolve(path))
+
   try {
-    return await realpath(path)
+    return await realpath(absolutePath)
   } catch {
-    // For broken symlinks or nonexistent paths, resolve what we can
-    // and treat the target as the path to check
-    return normalize(resolve(path))
+    // For nonexistent paths, canonicalize the nearest existing ancestor so
+    // platform aliases such as macOS /tmp -> /private/tmp stay comparable.
+    const missingSegments: string[] = []
+    let current = absolutePath
+
+    while (true) {
+      try {
+        const canonicalParent = await realpath(current)
+        return normalize(join(canonicalParent, ...missingSegments.reverse()))
+      } catch {
+        const parent = resolve(current, '..')
+        if (parent === current) return absolutePath
+        missingSegments.push(basename(current))
+        current = parent
+      }
+    }
   }
 }
 
@@ -149,20 +164,18 @@ export async function isPathWithinSandbox(
   // pointing outside the workdir
   let resolvedPath: string
   try {
-    // Try to follow symlinks fully
+    // Try to follow symlinks fully.
     resolvedPath = normalize(await realpath(path))
   } catch {
-    // If realpath fails (broken symlink, nonexistent), try to resolve what we can
-    // For a broken symlink, we read where it points and check that
+    // For a broken symlink, resolve its target; otherwise canonicalize the
+    // nearest existing ancestor and append the missing path segments.
     try {
       const { readlink } = await import('node:fs/promises')
       const linkTarget = await readlink(path)
-      // Resolve the link target relative to the link's directory
       const linkDir = resolve(path, '..')
-      resolvedPath = normalize(resolve(linkDir, linkTarget))
+      resolvedPath = await safeRealpath(resolve(linkDir, linkTarget))
     } catch {
-      // Not a symlink or can't read - just normalize the path
-      resolvedPath = normalize(resolve(path))
+      resolvedPath = await safeRealpath(path)
     }
   }
 
@@ -174,16 +187,17 @@ export async function isPathWithinSandbox(
     return { allowed: true, resolvedPath }
   }
 
-  // Check if in allowed roots (/tmp, /var/tmp)
+  // Check if in allowed roots. Canonicalize roots too because macOS maps
+  // paths such as /tmp and /etc through /private symlinks.
   for (const root of ALLOWED_ROOTS) {
-    const normalizedRoot = normalize(root)
+    const normalizedRoot = normalize((await safeRealpath(root)).replace(/\/+$/, ''))
     if (resolvedPath === normalizedRoot || resolvedPath.startsWith(normalizedRoot + sep)) {
       return { allowed: true, resolvedPath }
     }
   }
 
   // Check if path was previously approved by user for this session
-  if (sessionId && isPathAllowed(sessionId, resolvedPath)) {
+  if (sessionId && (isPathAllowed(sessionId, path) || isPathAllowed(sessionId, resolvedPath))) {
     return { allowed: true, resolvedPath }
   }
 

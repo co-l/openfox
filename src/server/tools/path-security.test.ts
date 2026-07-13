@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
-import { mkdir, symlink, rm, writeFile } from 'node:fs/promises'
+import { mkdir, symlink, rm, writeFile, realpath } from 'node:fs/promises'
 import { join, normalize, resolve } from 'node:path'
 import { tmpdir, homedir } from 'node:os'
 import {
@@ -28,16 +28,27 @@ const TEST_DIR = join(tmpdir(), 'openfox-path-security-test')
 const WORKDIR = join(TEST_DIR, 'project', 'workdir') // Nested to allow sibling tests
 const OUTSIDE_DIR = join(TEST_DIR, 'project', 'outside') // Sibling of workdir but still in /tmp
 // For true outside-workdir tests, we use paths that aren't in /tmp
-const TRULY_OUTSIDE = '/var/lib' // This is outside both workdir AND /tmp
+const TRULY_OUTSIDE = '/var/lib' // This is outside both workdir AND the temp root
+
+let CANONICAL_TMP: string
+let CANONICAL_WORKDIR: string
+let CANONICAL_PASSWD: string
+let CANONICAL_VAR_LOG_SYSLOG: string
+let CANONICAL_ETC_ENV: string
 
 describe('path-security', () => {
   beforeEach(async () => {
+    CANONICAL_TMP = await realpath(tmpdir())
+    CANONICAL_PASSWD = await realpath('/etc/passwd')
+    CANONICAL_VAR_LOG_SYSLOG = join(await realpath('/var'), 'log', 'syslog')
+    CANONICAL_ETC_ENV = join(await realpath('/etc'), '.env')
     // Create test directories
     await mkdir(WORKDIR, { recursive: true })
     await mkdir(OUTSIDE_DIR, { recursive: true })
     await mkdir(join(WORKDIR, 'subdir'), { recursive: true })
     await writeFile(join(WORKDIR, 'file.txt'), 'test')
     await writeFile(join(OUTSIDE_DIR, 'secret.txt'), 'secret') // For symlink tests (in /tmp, so creatable)
+    CANONICAL_WORKDIR = await realpath(WORKDIR)
   })
 
   afterEach(async () => {
@@ -67,17 +78,17 @@ describe('path-security', () => {
       })
 
       it('allows path inside /tmp', async () => {
-        const result = await isPathWithinSandbox('/tmp/some-file.txt', WORKDIR)
+        const result = await isPathWithinSandbox(join(tmpdir(), 'some-file.txt'), WORKDIR)
         expect(result.allowed).toBe(true)
       })
 
       it('allows path exactly at /tmp', async () => {
-        const result = await isPathWithinSandbox('/tmp', WORKDIR)
+        const result = await isPathWithinSandbox(tmpdir(), WORKDIR)
         expect(result.allowed).toBe(true)
       })
 
       it('allows nested path in /tmp', async () => {
-        const result = await isPathWithinSandbox('/tmp/foo/bar/baz', WORKDIR)
+        const result = await isPathWithinSandbox(join(tmpdir(), 'foo', 'bar', 'baz'), WORKDIR)
         expect(result.allowed).toBe(true)
       })
 
@@ -123,7 +134,7 @@ describe('path-security', () => {
         addAllowedPath(sessionId, '/etc/passwd')
         const result = await isPathWithinSandbox('/etc/passwd', WORKDIR, sessionId)
         expect(result.allowed).toBe(true)
-        expect(result.resolvedPath).toBe('/etc/passwd')
+        expect(result.resolvedPath).toBe(CANONICAL_PASSWD)
       })
     })
 
@@ -133,7 +144,7 @@ describe('path-security', () => {
         // Just test with a known outside path
         const result = await isPathWithinSandbox('/etc/passwd', WORKDIR)
         expect(result.allowed).toBe(false)
-        expect(result.resolvedPath).toBe('/etc/passwd')
+        expect(result.resolvedPath).toBe(CANONICAL_PASSWD)
       })
 
       it('denies subdir/../../../../../etc resolved escape', async () => {
@@ -141,7 +152,7 @@ describe('path-security', () => {
         const maliciousPath = join(WORKDIR, 'subdir', '..', '..', '..', '..', '..', 'etc')
         const result = await isPathWithinSandbox(maliciousPath, WORKDIR)
         expect(result.allowed).toBe(false)
-        expect(result.resolvedPath).toBe('/etc')
+        expect(result.resolvedPath.startsWith(CANONICAL_TMP)).toBe(false)
       })
 
       it('allows . (current directory)', async () => {
@@ -170,7 +181,7 @@ describe('path-security', () => {
       it('denies /tmp/../etc via escape', async () => {
         const result = await isPathWithinSandbox('/tmp/../etc/passwd', WORKDIR)
         expect(result.allowed).toBe(false)
-        expect(result.resolvedPath).toBe('/etc/passwd')
+        expect(result.resolvedPath).toBe(CANONICAL_PASSWD)
       })
     })
 
@@ -190,7 +201,7 @@ describe('path-security', () => {
 
         const result = await isPathWithinSandbox(linkPath, WORKDIR)
         expect(result.allowed).toBe(false)
-        expect(result.resolvedPath).toBe('/etc/passwd')
+        expect(result.resolvedPath).toBe(CANONICAL_PASSWD)
       })
 
       it('allows symlink inside workdir pointing to /tmp', async () => {
@@ -216,7 +227,7 @@ describe('path-security', () => {
 
         const result = await isPathWithinSandbox(link1Path, WORKDIR)
         expect(result.allowed).toBe(false)
-        expect(result.resolvedPath).toBe('/etc/passwd')
+        expect(result.resolvedPath).toBe(CANONICAL_PASSWD)
       })
 
       it('handles broken symlinks gracefully', async () => {
@@ -556,7 +567,7 @@ describe('path-security', () => {
 
   describe('checkPathsAccess', () => {
     it('returns needsConfirmation: false for all allowed paths', async () => {
-      const paths = [join(WORKDIR, 'file.txt'), '/tmp/file.txt']
+      const paths = [join(WORKDIR, 'file.txt'), join(tmpdir(), 'file.txt')]
       const result = await checkPathsAccess(paths, WORKDIR)
       expect(result.needsConfirmation).toBe(false)
       expect(result.deniedPaths).toEqual([])
@@ -566,7 +577,7 @@ describe('path-security', () => {
       const paths = ['/etc/passwd']
       const result = await checkPathsAccess(paths, WORKDIR)
       expect(result.needsConfirmation).toBe(true)
-      expect(result.deniedPaths).toContain('/etc/passwd')
+      expect(result.deniedPaths).toContain(CANONICAL_PASSWD)
     })
 
     it('returns only denied paths when mix of allowed and denied', async () => {
@@ -574,8 +585,8 @@ describe('path-security', () => {
       const result = await checkPathsAccess(paths, WORKDIR)
       expect(result.needsConfirmation).toBe(true)
       expect(result.deniedPaths).toHaveLength(2)
-      expect(result.deniedPaths).toContain('/etc/passwd')
-      expect(result.deniedPaths).toContain('/var/log/syslog')
+      expect(result.deniedPaths).toContain(CANONICAL_PASSWD)
+      expect(result.deniedPaths).toContain(CANONICAL_VAR_LOG_SYSLOG)
     })
 
     it('handles empty paths array', async () => {
@@ -595,7 +606,7 @@ describe('path-security', () => {
         const paths = [join(WORKDIR, '.env')]
         const result = await checkPathsAccess(paths, WORKDIR)
         expect(result.needsConfirmation).toBe(true)
-        expect(result.sensitivePaths).toContain(join(WORKDIR, '.env'))
+        expect(result.sensitivePaths).toContain(join(CANONICAL_WORKDIR, '.env'))
         expect(result.deniedPaths).toEqual([])
       })
 
@@ -603,22 +614,22 @@ describe('path-security', () => {
         const paths = [join(WORKDIR, '.env.local')]
         const result = await checkPathsAccess(paths, WORKDIR)
         expect(result.needsConfirmation).toBe(true)
-        expect(result.sensitivePaths).toContain(join(WORKDIR, '.env.local'))
+        expect(result.sensitivePaths).toContain(join(CANONICAL_WORKDIR, '.env.local'))
       })
 
       it('detects credentials.json in workdir as sensitive', async () => {
         const paths = [join(WORKDIR, 'credentials.json')]
         const result = await checkPathsAccess(paths, WORKDIR)
         expect(result.needsConfirmation).toBe(true)
-        expect(result.sensitivePaths).toContain(join(WORKDIR, 'credentials.json'))
+        expect(result.sensitivePaths).toContain(join(CANONICAL_WORKDIR, 'credentials.json'))
       })
 
       it('detects sensitive file outside workdir in both arrays', async () => {
         const paths = ['/etc/.env']
         const result = await checkPathsAccess(paths, WORKDIR)
         expect(result.needsConfirmation).toBe(true)
-        expect(result.deniedPaths).toContain('/etc/.env')
-        expect(result.sensitivePaths).toContain('/etc/.env')
+        expect(result.deniedPaths).toContain(CANONICAL_ETC_ENV)
+        expect(result.sensitivePaths).toContain(CANONICAL_ETC_ENV)
       })
 
       it('does not flag .env.example as sensitive', async () => {
@@ -644,8 +655,8 @@ describe('path-security', () => {
         ]
         const result = await checkPathsAccess(paths, WORKDIR)
         expect(result.needsConfirmation).toBe(true)
-        expect(result.sensitivePaths).toEqual([join(WORKDIR, '.env')])
-        expect(result.deniedPaths).toEqual(['/etc/passwd'])
+        expect(result.sensitivePaths).toEqual([join(CANONICAL_WORKDIR, '.env')])
+        expect(result.deniedPaths).toEqual([CANONICAL_PASSWD])
       })
 
       it('includes sensitive file allowed by session in neither array', async () => {
@@ -766,7 +777,7 @@ describe('path-security', () => {
 
     it('requests path access, emits confirmation events, and resolves approval/denial', async () => {
       const onEvent = vi.fn()
-      const sensitivePath = join(WORKDIR, '.env')
+      const sensitivePath = join(CANONICAL_WORKDIR, '.env')
       const waitForPending = async (callId: string) => {
         for (let attempt = 0; attempt < 20; attempt++) {
           if (hasPendingPathConfirmation(callId)) {
@@ -815,12 +826,12 @@ describe('path-security', () => {
         name: 'PathAccessDeniedError',
         reason: 'both',
         tool: 'run_command',
-        paths: ['/etc/.env'],
+        paths: [CANONICAL_ETC_ENV],
       })
       expect(onEvent).toHaveBeenLastCalledWith(
         expect.objectContaining({
           type: 'chat.path_confirmation',
-          payload: expect.objectContaining({ reason: 'both', paths: ['/etc/.env'] }),
+          payload: expect.objectContaining({ reason: 'both', paths: [CANONICAL_ETC_ENV] }),
         }),
       )
       providePathConfirmation('call-both', false)
