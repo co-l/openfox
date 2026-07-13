@@ -63,7 +63,9 @@ export function ConnectLLMStep({ onNext }: ConnectLLMStepProps) {
   }
 
   async function handleSave(formData: ProviderFormData) {
-    const isNew = formData.id.startsWith('temp-')
+    const isTemporary = formData.id.startsWith('temp-')
+    const wasListed = providers.some((provider) => provider.id === formData.id)
+    const shouldAdvance = providers.length === 0 && editingProvider === null
     const body = {
       name: formData.name,
       url: formData.url,
@@ -75,33 +77,47 @@ export function ConnectLLMStep({ onNext }: ConnectLLMStepProps) {
       transportAdapter: formData.transportAdapter,
       models: formData.models,
     }
+
     try {
-      if (isNew) {
-        const res = await authFetch('/api/providers', {
+      let saved: ProviderInfo
+
+      if (isTemporary) {
+        const response = await authFetch('/api/providers', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(body),
         })
-        if (res.ok) {
-          const data = (await res.json()) as { provider: { id: string } }
-          const saved: ProviderInfo = { ...formData, id: data.provider.id, model: null }
-          setProviders((prev) => [...prev, saved])
-          setExistingProviders((prev) => [...prev, saved])
-        }
+        if (!response.ok) throw new Error('Failed to create provider')
+        const data = (await response.json()) as { provider: { id: string } }
+        saved = { ...formData, id: data.provider.id, model: null }
       } else {
-        await authFetch(`/api/providers/${formData.id}`, {
+        const response = await authFetch(`/api/providers/${formData.id}`, {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(body),
         })
-        setProviders((prev) => prev.map((p) => (p.id === formData.id ? { ...p, ...formData, model: null } : p)))
-        setExistingProviders((prev) => prev.map((p) => (p.id === formData.id ? { ...p, ...formData, model: null } : p)))
+        if (!response.ok) throw new Error('Failed to update provider')
+        saved = { ...formData, model: null }
+      }
+
+      const mergeSaved = (current: ProviderInfo[]) =>
+        current.some((provider) => provider.id === saved.id)
+          ? current.map((provider) => (provider.id === saved.id ? saved : provider))
+          : [...current, saved]
+
+      setProviders(mergeSaved)
+      setExistingProviders(mergeSaved)
+
+      // A ChatGPT connection creates a real provider ID before the final save.
+      // It was not previously present in local state, so proceed with the saved provider directly.
+      if (shouldAdvance && !wasListed) {
+        onNext({ providers: [saved] })
       }
     } catch {
-      // Save failed — provider stays in local state with temp ID, retry on Continue
-      if (isNew) {
+      // A temporary provider can remain visible locally and be retried later.
+      if (isTemporary) {
         const fallback: ProviderInfo = { ...formData, model: null }
-        setProviders((prev) => [...prev, fallback])
+        setProviders((current) => [...current, fallback])
       }
     }
   }
