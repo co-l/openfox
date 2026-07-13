@@ -16,6 +16,7 @@ describe('fetchCodexModels', () => {
                 modalities: { input: ['text', 'image'] },
               },
               allowed: { id: 'gpt-5.4', limit: { context: 1050000 } },
+              luna: { id: 'gpt-5.6-luna', limit: { context: 1050000 } },
               blocked: { id: 'gpt-5.5-pro', limit: { context: 1050000 } },
               unrelated: { id: 'gpt-4.1', limit: { context: 1000000 } },
             },

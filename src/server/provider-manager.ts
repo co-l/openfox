@@ -49,7 +49,11 @@ function enrichWithProfileDefaults(model: ModelConfig): ModelConfig {
   }
 }
 
-function mergeModelsWithUserOverrides(backendModels: ModelConfig[], userModels: ModelConfig[]): ModelConfig[] {
+function mergeModelsWithUserOverrides(
+  backendModels: ModelConfig[],
+  userModels: ModelConfig[],
+  preserveMissingUserModels = true,
+): ModelConfig[] {
   const normalizedUserIdMap = new Map(userModels.map((m) => [normalizeModelId(m.id), m]))
 
   const updatedModels = backendModels.map((backendModel) => {
@@ -60,10 +64,12 @@ function mergeModelsWithUserOverrides(backendModels: ModelConfig[], userModels: 
     return enrichWithProfileDefaults(backendModel)
   })
 
-  const normalizedBackendIds = new Set(backendModels.map((m) => normalizeModelId(m.id)))
-  for (const userModel of userModels) {
-    if (!normalizedBackendIds.has(normalizeModelId(userModel.id))) {
-      updatedModels.push(enrichWithProfileDefaults(userModel))
+  if (preserveMissingUserModels) {
+    const normalizedBackendIds = new Set(backendModels.map((m) => normalizeModelId(m.id)))
+    for (const userModel of userModels) {
+      if (!normalizedBackendIds.has(normalizeModelId(userModel.id))) {
+        updatedModels.push(enrichWithProfileDefaults(userModel))
+      }
     }
   }
 
@@ -422,7 +428,11 @@ export function createProviderManager(config: Config, options: ProviderManagerOp
         })
 
         if (modelsWithContext.length > 0) {
-          const updatedModels = mergeModelsWithUserOverrides(modelsWithContext, userModels)
+          const updatedModels = mergeModelsWithUserOverrides(
+            modelsWithContext,
+            userModels,
+            !resolveTransportAdapter(provider),
+          )
           providers = providers.map((p) => (p.id === providerId ? { ...p, models: updatedModels } : p))
         } else if (userModels.length > 0) {
           // Backend unavailable but we have user models - preserve them
@@ -778,7 +788,11 @@ export function createProviderManager(config: Config, options: ProviderManagerOp
 
       providerStatus.set(providerId, 'connected')
 
-      const updatedModels = mergeModelsWithUserOverrides(modelsWithContext, userModels)
+      const updatedModels = mergeModelsWithUserOverrides(
+        modelsWithContext,
+        userModels,
+        !resolveTransportAdapter(provider),
+      )
       providers = providers.map((p) => (p.id === providerId ? { ...p, models: updatedModels } : p))
 
       // Update defaultModelSelection if the model ID was changed due to fuzzy matching

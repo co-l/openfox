@@ -334,6 +334,46 @@ describe('ProviderManager - Model Selection', () => {
       ])
     })
 
+    it('drops stale user models for an authoritative transport catalog', async () => {
+      const transport = {
+        id: 'openai-codex',
+        listModels: vi.fn(async () => [
+          { id: 'gpt-5.4', contextWindow: 1050000, source: 'backend' as const },
+          { id: 'gpt-5.5', contextWindow: 1050000, source: 'backend' as const },
+        ]),
+        complete: vi.fn(),
+        stream: vi.fn(),
+      }
+      const adapters = { getTransport: vi.fn((id?: string) => (id === 'openai-codex' ? transport : undefined)) }
+      const chatConfig: Config = {
+        ...config,
+        providers: [
+          {
+            id: 'chatgpt',
+            name: 'ChatGPT',
+            url: 'https://chatgpt.com/backend-api/codex',
+            backend: 'openai',
+            transportAdapter: 'openai-codex',
+            models: [
+              { id: 'gpt-5.6-luna', contextWindow: 1050000, source: 'user' },
+              { id: 'gpt-5.4', contextWindow: 900000, source: 'user' },
+            ],
+            isActive: true,
+            createdAt: new Date().toISOString(),
+          },
+        ],
+        defaultModelSelection: 'chatgpt/gpt-5.4',
+      }
+      const manager = createProviderManager(chatConfig, { adapters: adapters as never })
+
+      const result = await manager.refreshProviderModels('chatgpt')
+
+      expect(result).toEqual({ success: true })
+      const models = manager.getProviders()[0]!.models
+      expect(models.map((model) => model.id)).toEqual(['gpt-5.4', 'gpt-5.5'])
+      expect(models[0]!.contextWindow).toBe(900000)
+    })
+
     it('preserves user overrides during refresh', async () => {
       await providerManager.updateModelContext('provider-1', 'model-a', 150000)
 
