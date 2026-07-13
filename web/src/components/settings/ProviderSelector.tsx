@@ -94,6 +94,33 @@ export function ProviderSelector() {
     }
   }, [isOpen, providers])
 
+
+  useEffect(() => {
+    if (!deviceChallenge) return
+
+    let cancelled = false
+    const checkConnection = async () => {
+      const state = await refreshAuthStatus(deviceChallenge.providerId)
+      if (cancelled) return
+
+      if (state === 'connected') {
+        setDeviceChallenge(null)
+        setCodeCopied(false)
+        setDevicePageOpened(false)
+        await fetchConfig()
+        loadedProvidersRef.current.delete(deviceChallenge.providerId)
+        await loadProviderModels(deviceChallenge.providerId)
+      }
+    }
+
+    void checkConnection()
+    const interval = window.setInterval(() => void checkConnection(), 2000)
+    return () => {
+      cancelled = true
+      window.clearInterval(interval)
+    }
+  }, [deviceChallenge])
+
   const activeProvider = providers.find((p) => p.id === effectiveProviderId)
   const isLlmOffline = activeProvider?.status === 'disconnected'
 
