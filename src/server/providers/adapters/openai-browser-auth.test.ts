@@ -52,4 +52,41 @@ describe('OpenAIBrowserAuthAdapter', () => {
     const adapter = new OpenAIBrowserAuthAdapter(new MemoryProviderCredentialStore())
     await expect(adapter.completeLogin('code', 'unknown')).rejects.toThrow('invalid or expired')
   })
+
+  it('reuses an active device challenge for the same provider', async () => {
+    let tokenPolls = 0
+    const request = vi.fn(async (url: string | URL | Request) => {
+      const value = String(url)
+      if (value.endsWith('/api/accounts/deviceauth/usercode')) {
+        return new Response(JSON.stringify({ device_auth_id: 'device-1', user_code: 'ABCD-EFGH', interval: '60' }))
+      }
+      if (value.endsWith('/api/accounts/deviceauth/token')) {
+        tokenPolls += 1
+        return new Response(null, { status: 403 })
+      }
+      return new Response(null, { status: 404 })
+    })
+    const adapter = new OpenAIBrowserAuthAdapter(new MemoryProviderCredentialStore(), {
+      issuer: 'https://issuer.test',
+      fetch: request as typeof fetch,
+    })
+
+    const first = await adapter.beginDeviceLoginForProvider('provider-1')
+    const second = await adapter.beginDeviceLoginForProvider('provider-1')
+
+    expect(second.challenge).toEqual(first.challenge)
+    expect(second.completion).toBe(first.completion)
+    expect(request.mock.calls.filter(([url]) => String(url).endsWith('/usercode'))).toHaveLength(1)
+    expect(tokenPolls).toBe(1)
+  })
+
+  it('includes retry-after details for device authorization rate limits', async () => {
+    const adapter = new OpenAIBrowserAuthAdapter(new MemoryProviderCredentialStore(), {
+      issuer: 'https://issuer.test',
+      fetch: vi.fn(async () => new Response(null, { status: 429, headers: { 'retry-after': '30' } })) as typeof fetch,
+    })
+
+    await expect(adapter.beginDeviceLoginForProvider('provider-1')).rejects.toThrow('retry after 30 seconds')
+  })
+
 })

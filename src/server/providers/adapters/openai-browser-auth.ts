@@ -13,6 +13,13 @@ import type {
   ProviderLoginChallenge,
 } from './types.js'
 
+
+interface PendingDeviceLogin {
+  challenge: ProviderLoginChallenge & { userCode: string }
+  completion: Promise<{ providerId: string; credentialRef: string }>
+  createdAt: number
+}
+
 interface PendingLogin {
   providerId: string
   verifier: string
@@ -32,6 +39,7 @@ export interface OpenAIBrowserAuthOptions {
 export class OpenAIBrowserAuthAdapter implements ProviderAuthAdapter {
   readonly id = 'openai-account'
   private readonly pending = new Map<string, PendingLogin>()
+  private readonly pendingDevice = new Map<string, PendingDeviceLogin>()
   private readonly issuer: string
   private readonly clientId: string
   private readonly now: () => number
@@ -56,48 +64,62 @@ export class OpenAIBrowserAuthAdapter implements ProviderAuthAdapter {
     challenge: ProviderLoginChallenge & { userCode: string }
     completion: Promise<{ providerId: string; credentialRef: string }>
   }> {
+    const existing = this.pendingDevice.get(providerId)
+    if (existing && this.now() - existing.createdAt < 10 * 60_000) {
+      return { challenge: existing.challenge, completion: existing.completion }
+    }
+    if (existing) this.pendingDevice.delete(providerId)
+
     const response = await this.request(`${this.issuer}/api/accounts/deviceauth/usercode`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'User-Agent': 'openfox' },
       body: JSON.stringify({ client_id: this.clientId }),
     })
-    if (!response.ok) throw new Error(`OpenAI device authorization failed: ${response.status}`)
+    if (!response.ok) {
+      const retryAfter = response.headers.get('retry-after')
+      const suffix = retryAfter ? `; retry after ${retryAfter} seconds` : ''
+      throw new Error(`OpenAI device authorization failed: ${response.status}${suffix}`)
+    }
+
     const device = (await response.json()) as { device_auth_id: string; user_code: string; interval?: string }
     const intervalMs = Math.max(Number.parseInt(device.interval ?? '5', 10) || 5, 1) * 1000 + 3000
+    const challenge = {
+      url: `${this.issuer}/codex/device`,
+      instructions: `Enter code: ${device.user_code}`,
+      mode: 'browser' as const,
+      userCode: device.user_code,
+    }
 
     const completion = (async () => {
-      while (true) {
-        const tokenResponse = await this.request(`${this.issuer}/api/accounts/deviceauth/token`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'User-Agent': 'openfox' },
-          body: JSON.stringify({ device_auth_id: device.device_auth_id, user_code: device.user_code }),
-        })
-        if (tokenResponse.ok) {
-          const authorization = (await tokenResponse.json()) as { authorization_code: string; code_verifier: string }
-          const credential = await this.tokens.exchangeCode(
-            authorization.authorization_code,
-            `${this.issuer}/deviceauth/callback`,
-            authorization.code_verifier,
-          )
-          const credentialRef = await this.credentials.create(credential)
-          return { providerId, credentialRef }
+      try {
+        while (true) {
+          const tokenResponse = await this.request(`${this.issuer}/api/accounts/deviceauth/token`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'User-Agent': 'openfox' },
+            body: JSON.stringify({ device_auth_id: device.device_auth_id, user_code: device.user_code }),
+          })
+          if (tokenResponse.ok) {
+            const authorization = (await tokenResponse.json()) as { authorization_code: string; code_verifier: string }
+            const credential = await this.tokens.exchangeCode(
+              authorization.authorization_code,
+              `${this.issuer}/deviceauth/callback`,
+              authorization.code_verifier,
+            )
+            const credentialRef = await this.credentials.create(credential)
+            return { providerId, credentialRef }
+          }
+          if (tokenResponse.status !== 403 && tokenResponse.status !== 404) {
+            throw new Error(`OpenAI device authorization failed: ${tokenResponse.status}`)
+          }
+          await new Promise((resolve) => setTimeout(resolve, intervalMs))
         }
-        if (tokenResponse.status !== 403 && tokenResponse.status !== 404) {
-          throw new Error(`OpenAI device authorization failed: ${tokenResponse.status}`)
-        }
-        await new Promise((resolve) => setTimeout(resolve, intervalMs))
+      } finally {
+        this.pendingDevice.delete(providerId)
       }
     })()
 
-    return {
-      challenge: {
-        url: `${this.issuer}/codex/device`,
-        instructions: `Enter code: ${device.user_code}`,
-        mode: 'browser',
-        userCode: device.user_code,
-      },
-      completion,
-    }
+    this.pendingDevice.set(providerId, { challenge, completion, createdAt: this.now() })
+    return { challenge, completion }
   }
 
   async beginLoginForProvider(providerId: string, redirectUri: string): Promise<ProviderLoginChallenge> {

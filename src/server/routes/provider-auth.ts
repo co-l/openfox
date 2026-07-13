@@ -27,7 +27,14 @@ export function createProviderAuthRoutes(
       return res.status(400).json({ error: 'Provider does not use OpenAI account auth' })
     }
 
-    const { challenge, completion } = await openaiAuth.beginDeviceLoginForProvider(providerId)
+    let login
+    try {
+      login = await openaiAuth.beginDeviceLoginForProvider(providerId)
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unable to start OpenAI device authorization'
+      return res.status(message.includes(': 429') ? 429 : 502).json({ error: message })
+    }
+    const { challenge, completion } = login
     void completion
       .then(async (result) => {
         const { loadGlobalConfig, saveGlobalConfig, updateProvider } = await import('../../cli/config.js')
