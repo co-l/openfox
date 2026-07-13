@@ -44,7 +44,11 @@ const providerSchema = z.object({
   isActive: z.boolean(),
   createdAt: z.string(),
   isLocal: z.boolean().optional(),
-})
+  thinkingField: z.string().optional(),
+  authAdapter: z.string().optional(),
+  transportAdapter: z.string().optional(),
+  credentialRef: z.string().optional(),
+}) as z.ZodType<Provider>
 
 const serverSchema = z.object({
   port: z.number().default(10369),

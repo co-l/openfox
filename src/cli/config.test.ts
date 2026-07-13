@@ -363,4 +363,39 @@ describe('config', () => {
       expect(loaded.mcpServers!['brave']!.command).toBe('npx')
     })
   })
+
+  it('preserves provider auth fields when loading config', async () => {
+    const configPath = join(TEST_DIR, 'production', 'config.json')
+    await mkdir(join(TEST_DIR, 'production'), { recursive: true })
+    await writeFile(
+      configPath,
+      JSON.stringify({
+        providers: [
+          {
+            id: 'chatgpt',
+            name: 'ChatGPT Plus / Pro',
+            url: 'https://chatgpt.com/backend-api/codex',
+            backend: 'openai',
+            models: [],
+            isActive: true,
+            createdAt: new Date().toISOString(),
+            authAdapter: 'openai-account',
+            transportAdapter: 'openai-codex',
+            credentialRef: 'credential-ref-1',
+          },
+        ],
+        defaultModelSelection: 'chatgpt/gpt-5.4',
+      }),
+    )
+
+    const loaded = await loadGlobalConfig('production')
+    expect(loaded.providers[0]).toEqual(
+      expect.objectContaining({
+        authAdapter: 'openai-account',
+        transportAdapter: 'openai-codex',
+        credentialRef: 'credential-ref-1',
+      }),
+    )
+  })
+
 })
