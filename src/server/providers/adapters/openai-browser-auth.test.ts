@@ -25,6 +25,7 @@ describe('OpenAIBrowserAuthAdapter', () => {
       clientId: 'client-1',
       fetch: request as typeof fetch,
       now: () => 1000,
+      callbackPort: 15455,
     })
 
     const challenge = await adapter.beginLoginForProvider('provider-1', 'http://localhost/callback')
@@ -32,6 +33,8 @@ describe('OpenAIBrowserAuthAdapter', () => {
     const result = await adapter.completeLogin('code-1', authUrl.searchParams.get('state')!)
 
     expect(authUrl.searchParams.get('code_challenge_method')).toBe('S256')
+    expect(authUrl.searchParams.get('redirect_uri')).toBe('http://localhost:15455/auth/callback')
+    expect(authUrl.searchParams.get('originator')).toBe('opencode')
     expect(result.providerId).toBe('provider-1')
     expect(await adapter.getStatus(result.credentialRef)).toEqual({
       state: 'connected',

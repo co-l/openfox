@@ -1,3 +1,4 @@
+import { createServer, type Server } from 'node:http'
 import type { ProviderCredentialStore } from './credential-store.js'
 import { createOAuthState, createPkcePair } from './oauth.js'
 import {
@@ -16,6 +17,7 @@ interface PendingLogin {
   providerId: string
   verifier: string
   redirectUri: string
+  appCallbackUri: string
   createdAt: number
 }
 
@@ -24,6 +26,7 @@ export interface OpenAIBrowserAuthOptions {
   clientId?: string
   now?: () => number
   fetch?: typeof fetch
+  callbackPort?: number
 }
 
 export class OpenAIBrowserAuthAdapter implements ProviderAuthAdapter {
@@ -33,6 +36,8 @@ export class OpenAIBrowserAuthAdapter implements ProviderAuthAdapter {
   private readonly clientId: string
   private readonly now: () => number
   private readonly tokens: OpenAIAccountTokenClient
+  private readonly callbackPort: number
+  private callbackServer?: Server
 
   constructor(
     private readonly credentials: ProviderCredentialStore,
@@ -42,25 +47,35 @@ export class OpenAIBrowserAuthAdapter implements ProviderAuthAdapter {
     this.clientId = options.clientId ?? OPENAI_ACCOUNT_CLIENT_ID
     this.now = options.now ?? Date.now
     this.tokens = new OpenAIAccountTokenClient(credentials, options)
+    this.callbackPort = options.callbackPort ?? 1455
   }
 
   async beginLoginForProvider(providerId: string, redirectUri: string): Promise<ProviderLoginChallenge> {
     this.removeExpiredPending()
     const state = createOAuthState()
     const pkce = await createPkcePair()
-    this.pending.set(state, { providerId, verifier: pkce.verifier, redirectUri, createdAt: this.now() })
+    const oauthRedirectUri = `http://localhost:${this.callbackPort}/auth/callback`
+    await this.ensureCallbackRelay()
+    this.pending.set(state, {
+      providerId,
+      verifier: pkce.verifier,
+      redirectUri: oauthRedirectUri,
+      appCallbackUri: redirectUri,
+      createdAt: this.now(),
+    })
 
     const url = new URL(`${this.issuer}/oauth/authorize`)
     url.search = new URLSearchParams({
       response_type: 'code',
       client_id: this.clientId,
-      redirect_uri: redirectUri,
+      redirect_uri: oauthRedirectUri,
       scope: 'openid profile email offline_access',
       code_challenge: pkce.challenge,
       code_challenge_method: 'S256',
       state,
       id_token_add_organizations: 'true',
       codex_cli_simplified_flow: 'true',
+      originator: 'opencode',
     }).toString()
 
     return { url: url.toString(), instructions: 'Complete sign-in in your browser.', mode: 'browser' }
@@ -109,6 +124,45 @@ export class OpenAIBrowserAuthAdapter implements ProviderAuthAdapter {
 
   async logout(credentialRef: string): Promise<void> {
     await this.credentials.delete(credentialRef)
+  }
+
+  private async ensureCallbackRelay(): Promise<void> {
+    if (this.callbackServer?.listening) return
+
+    this.callbackServer = createServer((request, response) => {
+      const incoming = new URL(request.url ?? '/', `http://localhost:${this.callbackPort}`)
+      if (incoming.pathname !== '/auth/callback') {
+        response.writeHead(404).end('Not found')
+        return
+      }
+
+      const state = incoming.searchParams.get('state')
+      const pending = state ? this.pending.get(state) : undefined
+      if (!pending) {
+        response.writeHead(400, { 'Content-Type': 'text/plain; charset=utf-8' }).end('Invalid or expired OAuth state')
+        return
+      }
+
+      const target = new URL(pending.appCallbackUri)
+      for (const [key, value] of incoming.searchParams) target.searchParams.set(key, value)
+      response.writeHead(302, { Location: target.toString(), 'Cache-Control': 'no-store' }).end()
+    })
+
+    await new Promise<void>((resolve, reject) => {
+      const server = this.callbackServer!
+      const onError = (error: Error) => {
+        server.off('listening', onListening)
+        reject(error)
+      }
+      const onListening = () => {
+        server.off('error', onError)
+        resolve()
+      }
+      server.once('error', onError)
+      server.once('listening', onListening)
+      server.listen(this.callbackPort, 'localhost')
+      server.unref()
+    })
   }
 
   private removeExpiredPending(): void {

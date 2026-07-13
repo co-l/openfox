@@ -76,7 +76,7 @@ describe('provider auth routes', () => {
     expect(response.status).toBe(200)
     expect(body.mode).toBe('browser')
     expect(new URL(body.url).searchParams.get('redirect_uri')).toBe(
-      'http://localhost:10369/api/provider-auth/openai/callback',
+      'http://localhost:1455/auth/callback',
     )
   })
 
