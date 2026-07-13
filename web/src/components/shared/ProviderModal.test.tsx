@@ -19,6 +19,7 @@ describe('ProviderModal - thinkingLevel persistence', () => {
   afterEach(() => {
     root.unmount()
     document.body.removeChild(container)
+    vi.unstubAllGlobals()
   })
 
   function makeEditProvider() {
@@ -160,6 +161,10 @@ describe('ProviderModal - thinkingLevel persistence', () => {
     expect(container.querySelector('[data-testid="provider-modal-next"]')).toBeNull()
   })
   it('prefills the catalog context window when a model is selected', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => new Response(JSON.stringify({ state: 'connected' }), { status: 200 })),
+    )
     await new Promise<void>((resolve) => {
       root.render(
         <ProviderModal
@@ -197,5 +202,4 @@ describe('ProviderModal - thinkingLevel persistence', () => {
       expect.objectContaining({ contextWindow: 400000, selected: true }),
     )
   })
-
 })

@@ -1132,31 +1132,62 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
 
   // Test params: probe a model with the exact same param-building pipeline as the agentic loop
   app.post('/api/providers/test-params', async (req, res) => {
-    const { url, model, apiKey, backend, thinkingField, mode, modelConfig } = req.body as {
-      url: string
-      model: string
-      apiKey?: string
-      backend?: string
-      thinkingField?: string
-      mode: 'thinking' | 'non-thinking'
-      modelConfig?: {
-        temperature?: number
-        topP?: number
-        topK?: number
-        maxTokens?: number
-        supportsVision?: boolean
-        thinkingEnabled?: boolean
-        thinkingLevel?: string
-        nonThinkingEnabled?: boolean
-        thinkingQueryParams?: string
-        nonThinkingQueryParams?: string
+    const { url, providerId, transportAdapter, model, apiKey, backend, thinkingField, mode, modelConfig } =
+      req.body as {
+        url: string
+        providerId?: string
+        transportAdapter?: string
+        model: string
+        apiKey?: string
+        backend?: string
+        thinkingField?: string
+        mode: 'thinking' | 'non-thinking'
+        modelConfig?: {
+          temperature?: number
+          topP?: number
+          topK?: number
+          maxTokens?: number
+          supportsVision?: boolean
+          thinkingEnabled?: boolean
+          thinkingLevel?: string
+          nonThinkingEnabled?: boolean
+          thinkingQueryParams?: string
+          nonThinkingQueryParams?: string
+        }
       }
-    }
     if (!url) return res.status(400).json({ error: 'url is required' })
     if (!model) return res.status(400).json({ error: 'model is required' })
     if (!mode) return res.status(400).json({ error: 'mode is required' })
 
     try {
+      if (transportAdapter === 'openai-codex' && providerId) {
+        const provider = providerManager.getProviders().find((item) => item.id === providerId)
+        if (!provider) return res.status(404).json({ error: 'Provider not found' })
+        const transport = providerAdapters.getTransport('openai-codex')
+        if (!transport) return res.status(500).json({ error: 'Codex transport is unavailable' })
+
+        const response = await transport.complete(
+          {
+            messages: [{ role: 'user', content: 'say hi in one word' }],
+            tools: [],
+            ...(mode === 'thinking'
+              ? {
+                  reasoningEffort: (modelConfig?.thinkingLevel ?? 'medium') as import('./llm/types.js').ReasoningEffort,
+                }
+              : {}),
+            ...(modelConfig?.maxTokens ? { maxTokens: modelConfig.maxTokens } : {}),
+            signal: AbortSignal.timeout(30_000),
+          },
+          {
+            providerId,
+            model,
+            ...(provider.credentialRef ? { credentialRef: provider.credentialRef } : {}),
+          },
+        )
+
+        return res.json({ success: true, message: { content: response.content }, raw: response })
+      }
+
       const { getModelProfile } = await import('./llm/profiles.js')
       const { getBackendCapabilities } = await import('./llm/backend.js')
       const { buildNonStreamingCreateParams } = await import('./llm/client-pure.js')
