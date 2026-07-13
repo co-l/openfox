@@ -820,7 +820,7 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
     res.json({ success: true })
   })
 
-  // Replay: truncate at messageIndex and re-queue that message
+  // Replay: truncate at the replayed message and re-queue it
   app.post('/api/sessions/:id/replay', async (req, res) => {
     const sessionId = req.params.id as string
     const session = sessionManager.getSession(sessionId)
@@ -828,18 +828,29 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
       return res.status(404).json({ error: 'Session not found' })
     }
 
-    const { messageIndex } = req.body
-    if (typeof messageIndex !== 'number' || messageIndex < 0) {
-      return res.status(400).json({ error: 'messageIndex must be a non-negative number' })
+    const { messageId } = req.body
+    if (typeof messageId !== 'string' || !messageId) {
+      return res.status(400).json({ error: 'messageId is required' })
     }
 
-    const msg = session.messages[messageIndex]
-    if (!msg) {
-      return res.status(400).json({ error: 'Message not found at this index' })
+    const { getEventStore } = await import('./events/index.js')
+    const { buildMessagesFromStoredEvents } = await import('./events/folding.js')
+    const eventStore = getEventStore()
+    const events = eventStore.getEvents(sessionId)
+    const messages = buildMessagesFromStoredEvents(events)
+
+    const msgIndex = messages.findIndex((m) => m.id === messageId)
+    if (msgIndex === -1) {
+      return res.status(400).json({ error: 'Message not found' })
+    }
+
+    const msg = messages[msgIndex]!
+    if (msg.role !== 'user' || msg.isSystemGenerated) {
+      return res.status(400).json({ error: 'Can only replay user messages' })
     }
 
     const { truncateSessionMessages } = await import('./events/index.js')
-    truncateSessionMessages(sessionId, messageIndex - 1)
+    truncateSessionMessages(sessionId, msgIndex - 1)
 
     sessionManager.queueMessage(sessionId, 'asap', msg.content, msg.attachments, msg.messageKind)
 

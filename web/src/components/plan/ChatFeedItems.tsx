@@ -87,7 +87,7 @@ export const ChatFeedItems = memo(function ChatFeedItems({
             >
               <ChatMessage
                 message={message}
-                messageIndex={index}
+                messageId={message.id}
                 sessionId={sessionId ?? undefined}
                 isLastAssistantMessage={false}
               />

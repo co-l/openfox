@@ -12,17 +12,17 @@ import { AutoPromptCard } from './AutoPromptCard'
 interface ChatMessageProps {
   message: Message
   isLastAssistantMessage?: boolean
-  messageIndex?: number
+  messageId?: string
   sessionId?: string
 }
 
 interface UserMessageProps {
   message: Message
-  messageIndex?: number
+  messageId?: string
   sessionId?: string
 }
 
-function UserMessage({ message, messageIndex, sessionId }: UserMessageProps) {
+function UserMessage({ message, messageId, sessionId }: UserMessageProps) {
   const isAutoPrompt = message.messageKind === 'auto-prompt'
   const isCommand = message.messageKind === 'command'
   const isSystemGenerated = message.isSystemGenerated
@@ -30,7 +30,7 @@ function UserMessage({ message, messageIndex, sessionId }: UserMessageProps) {
   return (
     <div className="flex justify-end items-start gap-1.5 feed-item">
       {!isSystemGenerated && (
-        <MessageOptionsMenu content={message.content} align="right" messageIndex={messageIndex} sessionId={sessionId} />
+        <MessageOptionsMenu content={message.content} align="right" messageId={messageId} sessionId={sessionId} />
       )}
 
       <div
@@ -73,7 +73,7 @@ function UserMessage({ message, messageIndex, sessionId }: UserMessageProps) {
 export const ChatMessage = memo(function ChatMessage({
   message,
   isLastAssistantMessage = false,
-  messageIndex,
+  messageId,
   sessionId,
 }: ChatMessageProps) {
   const isUser = message.role === 'user'
@@ -159,7 +159,7 @@ export const ChatMessage = memo(function ChatMessage({
 
   // User message
   if (isUser) {
-    return <UserMessage message={message} messageIndex={messageIndex} sessionId={sessionId} />
+    return <UserMessage message={message} messageId={messageId} sessionId={sessionId} />
   }
 
   return (

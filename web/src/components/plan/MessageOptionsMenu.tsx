@@ -6,11 +6,11 @@ import { useSessionStore } from '../../stores/session.js'
 interface MessageOptionsMenuProps {
   content: string
   align?: 'left' | 'right'
-  messageIndex?: number
+  messageId?: string
   sessionId?: string
 }
 
-export function MessageOptionsMenu({ content, align = 'right', messageIndex, sessionId }: MessageOptionsMenuProps) {
+export function MessageOptionsMenu({ content, align = 'right', messageId, sessionId }: MessageOptionsMenuProps) {
   const [showMenu, setShowMenu] = useState(false)
   const [copied, setCopied] = useState(false)
   const [menuPosition, setMenuPosition] = useState<'left' | 'right'>('left')
@@ -75,10 +75,10 @@ export function MessageOptionsMenu({ content, align = 'right', messageIndex, ses
   }
 
   const handleReplay = async () => {
-    if (!sessionId || messageIndex === undefined) return
+    if (!sessionId || !messageId) return
 
     setShowMenu(false)
-    await replayMessage(sessionId, messageIndex)
+    await replayMessage(sessionId, messageId)
     loadSession(sessionId)
   }
 
@@ -113,7 +113,7 @@ export function MessageOptionsMenu({ content, align = 'right', messageIndex, ses
                 <CopyIcon className="w-4 h-4" />
                 Copy
               </button>
-              {sessionId && messageIndex !== undefined && (
+              {sessionId && messageId && (
                 <>
                   <div className="border-t border-border my-1" />
                   <button
