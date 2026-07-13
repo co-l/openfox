@@ -97,40 +97,62 @@ describe('CodexTransportAdapter', () => {
     expect(response.toolCalls).toEqual([{ id: 'call-1', name: 'read', arguments: { path: 'a.txt' } }])
   })
 
-  it('uses the OpenCode Responses Lite protocol for gpt-5.6-luna', async () => {
-    const request = vi.fn(async (_url: string, init: RequestInit) => {
-      const headers = new Headers(init.headers)
-      const body = JSON.parse(init.body as string) as Record<string, unknown>
-      const input = body['input'] as Array<Record<string, unknown>>
-
-      expect(headers.get('x-openai-internal-codex-responses-lite')).toBe('true')
-      expect(headers.get('version')).toBe('0.144.0')
-      expect(headers.get('session-id')).toBeTruthy()
-      expect(headers.get('x-session-affinity')).toBe(headers.get('session-id'))
-      expect(body['model']).toBe('gpt-5.6-luna')
-      expect(body['tools']).toBeUndefined()
-      expect(body['instructions']).toBeUndefined()
-      expect(body['max_output_tokens']).toBeUndefined()
-      expect(body['parallel_tool_calls']).toBe(false)
-      expect(body['tool_choice']).toBe('auto')
-      expect(body['prompt_cache_key']).toBe(headers.get('session-id'))
-      expect(body['reasoning']).toEqual({ effort: 'high', context: 'all_turns' })
-      expect(input[0]).toEqual(expect.objectContaining({ type: 'additional_tools', role: 'developer' }))
-      expect(input[1]).toEqual({
-        type: 'message',
-        role: 'developer',
-        content: [{ type: 'input_text', text: 'System prompt' }],
-      })
-
-      return new Response(
-        stream([
-          { type: 'response.created', response: { id: 'resp-lite' } },
-          { type: 'response.output_text.delta', delta: 'Lite works' },
-        ]),
-        { status: 200 },
-      )
+  it('uses the OpenCode Responses Lite WebSocket protocol for gpt-5.6-luna', async () => {
+    class MockSocket extends EventTarget {
+      sent: string[] = []
+      url = 'wss://codex.test/responses'
+      private listeners = new Map<string, Set<(...args: never[]) => void>>()
+      on(name: string, listener: (...args: never[]) => void) {
+        const values = this.listeners.get(name) ?? new Set()
+        values.add(listener)
+        this.listeners.set(name, values)
+        return this
+      }
+      once(name: string, listener: (...args: never[]) => void) {
+        const wrapped = ((...args: never[]) => {
+          this.off(name, wrapped)
+          listener(...args)
+        }) as (...args: never[]) => void
+        return this.on(name, wrapped)
+      }
+      off(name: string, listener: (...args: never[]) => void) {
+        this.listeners.get(name)?.delete(listener)
+        return this
+      }
+      emit(name: string, ...args: unknown[]) {
+        for (const listener of this.listeners.get(name) ?? []) listener(...(args as never[]))
+      }
+      send(value: string, callback?: (error?: Error) => void) {
+        this.sent.push(value)
+        callback?.()
+        queueMicrotask(() => {
+          this.emit(
+            'message',
+            Buffer.from(JSON.stringify({ type: 'response.created', response: { id: 'resp-lite' } })),
+            false,
+          )
+          this.emit(
+            'message',
+            Buffer.from(JSON.stringify({ type: 'response.output_text.delta', delta: 'Lite works' })),
+            false,
+          )
+          this.emit('message', Buffer.from(JSON.stringify({ type: 'response.completed' })), false)
+        })
+      }
+      close() {}
+      terminate() {}
+    }
+    const socket = new MockSocket()
+    let connectionHeaders: Record<string, string> | undefined
+    const transport = new CodexTransportAdapter(auth, {
+      endpoint: 'https://codex.test/responses',
+      websocketFactory: ((url: string, options: { headers?: Record<string, string> }) => {
+        expect(url).toBe('wss://codex.test/responses')
+        connectionHeaders = options.headers
+        queueMicrotask(() => socket.emit('open'))
+        return socket
+      }) as never,
     })
-    const transport = new CodexTransportAdapter(auth, { fetch: request as typeof fetch })
 
     const response = await transport.complete(
       {
@@ -150,6 +172,21 @@ describe('CodexTransportAdapter', () => {
       { providerId: 'provider-1', credentialRef: 'credential-1', model: 'gpt-5.6-luna' },
     )
 
+    expect(connectionHeaders).toEqual(
+      expect.objectContaining({
+        'openai-beta': 'responses_websockets=2026-02-06',
+        'x-openai-internal-codex-responses-lite': 'true',
+        version: '0.144.0',
+      }),
+    )
+    const sent = JSON.parse(socket.sent[0]!) as Record<string, unknown>
+    expect(sent['type']).toBe('response.create')
+    expect(sent['model']).toBe('gpt-5.6-luna')
+    expect(sent['tools']).toBeUndefined()
+    expect(sent['instructions']).toBeUndefined()
+    expect(sent['client_metadata']).toEqual({
+      ws_request_header_x_openai_internal_codex_responses_lite: 'true',
+    })
     expect(response.content).toBe('Lite works')
   })
 })

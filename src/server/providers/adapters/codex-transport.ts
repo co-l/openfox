@@ -1,3 +1,4 @@
+import WebSocket from 'ws'
 import type { ToolCall } from '../../../shared/types.js'
 import type { ModelConfig } from '../../../shared/types.js'
 import type {
@@ -14,6 +15,8 @@ const CODEX_RESPONSES_URL = 'https://chatgpt.com/backend-api/codex/responses'
 const RESPONSES_LITE_MODEL = 'gpt-5.6-luna'
 const CODEX_COMPATIBILITY_VERSION = '0.144.0'
 const RESPONSES_LITE_HEADER = 'x-openai-internal-codex-responses-lite'
+const RESPONSES_WEBSOCKET_PROTOCOL = 'responses_websockets=2026-02-06'
+const RESPONSES_LITE_CLIENT_METADATA = 'ws_request_header_x_openai_internal_codex_responses_lite'
 
 interface CodexSseEvent {
   type: string
@@ -37,12 +40,14 @@ interface CodexSseEvent {
 export interface CodexTransportOptions {
   endpoint?: string
   fetch?: typeof fetch
+  websocketFactory?: (url: string, options: WebSocket.ClientOptions) => WebSocket
 }
 
 export class CodexTransportAdapter implements ProviderTransportAdapter {
   readonly id = 'openai-codex'
   private readonly endpoint: string
   private readonly request: typeof fetch
+  private readonly websocketFactory: (url: string, options: WebSocket.ClientOptions) => WebSocket
 
   constructor(
     private readonly auth: ProviderAuthAdapter,
@@ -50,6 +55,7 @@ export class CodexTransportAdapter implements ProviderTransportAdapter {
   ) {
     this.endpoint = options.endpoint ?? CODEX_RESPONSES_URL
     this.request = options.fetch ?? fetch
+    this.websocketFactory = options.websocketFactory ?? ((url, wsOptions) => new WebSocket(url, wsOptions))
   }
 
   async listModels(): Promise<ModelConfig[]> {
@@ -86,22 +92,26 @@ export class CodexTransportAdapter implements ProviderTransportAdapter {
       const sessionId = crypto.randomUUID()
       const codexRequest = buildCodexRequest(request, model)
       const isResponsesLite = model === RESPONSES_LITE_MODEL
-      const response = await this.request(this.endpoint, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Accept: 'text/event-stream',
-          ...access.headers,
-          ...(isResponsesLite && {
-            'session-id': sessionId,
-            'x-session-affinity': sessionId,
-            version: CODEX_COMPATIBILITY_VERSION,
-            [RESPONSES_LITE_HEADER]: 'true',
-          }),
-        },
-        body: JSON.stringify(isResponsesLite ? prepareResponsesLiteRequest(codexRequest, sessionId) : codexRequest),
-        ...(request.signal && { signal: request.signal }),
-      })
+      const headers = {
+        'Content-Type': 'application/json',
+        Accept: 'text/event-stream',
+        ...access.headers,
+        ...(isResponsesLite && {
+          'session-id': sessionId,
+          'x-session-affinity': sessionId,
+          version: CODEX_COMPATIBILITY_VERSION,
+          [RESPONSES_LITE_HEADER]: 'true',
+        }),
+      }
+      const preparedRequest = isResponsesLite ? prepareResponsesLiteRequest(codexRequest, sessionId) : codexRequest
+      const response = isResponsesLite
+        ? await this.requestResponsesLiteOverWebSocket(preparedRequest, headers, request.signal)
+        : await this.request(this.endpoint, {
+            method: 'POST',
+            headers,
+            body: JSON.stringify(preparedRequest),
+            ...(request.signal && { signal: request.signal }),
+          })
       if (!response.ok) {
         const detail = await response.text()
         throw new Error(`Codex HTTP ${response.status}: ${detail}`)
@@ -174,6 +184,153 @@ export class CodexTransportAdapter implements ProviderTransportAdapter {
     } catch (error) {
       yield { type: 'error', error: error instanceof Error ? error.message : String(error) }
     }
+  }
+
+  private requestResponsesLiteOverWebSocket(
+    body: Record<string, unknown>,
+    headers: Record<string, string>,
+    signal?: AbortSignal,
+  ): Promise<Response> {
+    const websocketUrl = this.endpoint.replace(/^https:/, 'wss:').replace(/^http:/, 'ws:')
+    const socket = this.websocketFactory(websocketUrl, {
+      headers: {
+        ...headers,
+        'openai-beta': RESPONSES_WEBSOCKET_PROTOCOL,
+      },
+    })
+    const encoder = new TextEncoder()
+
+    return new Promise<Response>((resolve, reject) => {
+      let opened = false
+      let settled = false
+
+      const cleanupBeforeOpen = () => {
+        socket.off('open', onOpen)
+        socket.off('error', onInitialError)
+        socket.off('close', onInitialClose)
+        signal?.removeEventListener('abort', onAbortBeforeOpen)
+      }
+      const onInitialError = (error: Error) => {
+        if (settled) return
+        settled = true
+        cleanupBeforeOpen()
+        reject(error)
+      }
+      const onInitialClose = (code: number, reason: Buffer) => {
+        if (opened || settled) return
+        settled = true
+        cleanupBeforeOpen()
+        reject(
+          new Error(`Codex WebSocket closed before open (${code}${reason.length ? `: ${reason.toString()}` : ''})`),
+        )
+      }
+      const onAbortBeforeOpen = () => {
+        if (settled) return
+        settled = true
+        cleanupBeforeOpen()
+        socket.terminate()
+        reject(new DOMException('Aborted', 'AbortError'))
+      }
+      const onOpen = () => {
+        opened = true
+        cleanupBeforeOpen()
+        const stream = new ReadableStream<Uint8Array>({
+          start(controller) {
+            let completed = false
+            const finish = () => {
+              if (completed) return
+              completed = true
+              cleanup()
+              controller.enqueue(encoder.encode('data: [DONE]\n\n'))
+              controller.close()
+              socket.close()
+            }
+            const fail = (error: Error) => {
+              if (completed) return
+              completed = true
+              cleanup()
+              controller.error(error)
+              socket.terminate()
+            }
+            const onMessage = (data: WebSocket.RawData, isBinary: boolean) => {
+              if (isBinary) {
+                fail(new Error('Unexpected binary Codex WebSocket frame'))
+                return
+              }
+              const text = data.toString()
+              let event: Record<string, unknown>
+              try {
+                event = JSON.parse(text) as Record<string, unknown>
+              } catch {
+                fail(new Error('Invalid Codex WebSocket event'))
+                return
+              }
+              if (event['type'] === 'error') {
+                const nested = isRecord(event['error']) ? event['error'] : undefined
+                const message = typeof nested?.['message'] === 'string' ? nested['message'] : text
+                fail(new Error(message))
+                return
+              }
+              controller.enqueue(encoder.encode(`data: ${text}\n\n`))
+              if (
+                event['type'] === 'response.completed' ||
+                event['type'] === 'response.done' ||
+                event['type'] === 'response.failed' ||
+                event['type'] === 'response.incomplete'
+              ) {
+                finish()
+              }
+            }
+            const onError = (error: Error) => fail(error)
+            const onClose = (code: number, reason: Buffer) => {
+              if (!completed)
+                fail(
+                  new Error(
+                    `Codex WebSocket closed before completion (${code}${reason.length ? `: ${reason.toString()}` : ''})`,
+                  ),
+                )
+            }
+            const onAbort = () => fail(new DOMException('Aborted', 'AbortError'))
+            const cleanup = () => {
+              socket.off('message', onMessage)
+              socket.off('error', onError)
+              socket.off('close', onClose)
+              signal?.removeEventListener('abort', onAbort)
+            }
+
+            socket.on('message', onMessage)
+            socket.once('error', onError)
+            socket.once('close', onClose)
+            signal?.addEventListener('abort', onAbort, { once: true })
+
+            const { stream: _stream, background: _background, ...payload } = body
+            socket.send(
+              JSON.stringify({
+                type: 'response.create',
+                ...payload,
+                client_metadata: {
+                  ...(isRecord(payload['client_metadata']) ? payload['client_metadata'] : {}),
+                  [RESPONSES_LITE_CLIENT_METADATA]: 'true',
+                },
+              }),
+              (error) => {
+                if (error) fail(error)
+              },
+            )
+          },
+          cancel() {
+            socket.terminate()
+          },
+        })
+        settled = true
+        resolve(new Response(stream, { status: 200, headers: { 'Content-Type': 'text/event-stream' } }))
+      }
+
+      socket.once('open', onOpen)
+      socket.once('error', onInitialError)
+      socket.once('close', onInitialClose)
+      signal?.addEventListener('abort', onAbortBeforeOpen, { once: true })
+    })
   }
 }
 
