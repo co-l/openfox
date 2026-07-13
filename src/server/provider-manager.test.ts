@@ -506,4 +506,43 @@ describe('ProviderManager - Model Selection', () => {
       expect(settings).toBeUndefined()
     })
   })
+
+  describe('setProviders', () => {
+    it('recreates the active transport client when credentialRef is added', () => {
+      const transport = {
+        id: 'openai-codex',
+        listModels: vi.fn(),
+        complete: vi.fn(),
+        stream: vi.fn(),
+      }
+      const adapters = { getTransport: vi.fn((id?: string) => (id === 'openai-codex' ? transport : undefined)) }
+      const chatConfig: Config = {
+        ...config,
+        providers: [
+          {
+            id: 'chatgpt',
+            name: 'ChatGPT',
+            url: 'https://chatgpt.com/backend-api/codex',
+            backend: 'openai',
+            authAdapter: 'openai-account',
+            transportAdapter: 'openai-codex',
+            models: [{ id: 'gpt-5.4', contextWindow: 1050000, source: 'backend' }],
+            isActive: true,
+            createdAt: new Date().toISOString(),
+          },
+        ],
+        defaultModelSelection: 'chatgpt/gpt-5.4',
+      }
+      const manager = createProviderManager(chatConfig, { adapters: adapters as never })
+      const before = manager.getLLMClient()
+
+      manager.setProviders(
+        [{ ...chatConfig.providers![0]!, credentialRef: 'credential-1' }],
+        chatConfig.defaultModelSelection,
+      )
+
+      expect(manager.getLLMClient()).not.toBe(before)
+    })
+  })
+
 })

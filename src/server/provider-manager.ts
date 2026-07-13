@@ -504,8 +504,6 @@ export function createProviderManager(config: Config, options: ProviderManagerOp
     },
 
     setProviders(newProviders, newDefaultModelSelection) {
-      const wasActiveProviderId = this.getActiveProviderId()
-
       providers = [...newProviders]
       defaultModelSelection = newDefaultModelSelection
 
@@ -514,15 +512,19 @@ export function createProviderManager(config: Config, options: ProviderManagerOp
         providerStatus.set(p.id, 'unknown')
       }
 
-      // Recreate LLM client when active provider changes
-      const newActiveProviderId = this.getActiveProviderId()
-      if (newActiveProviderId && newActiveProviderId !== wasActiveProviderId) {
-        const activeProvider = providers.find((p) => p.id === newActiveProviderId)
+      // Provider metadata can change without changing the active provider ID
+      // (for example, ChatGPT device auth adds credentialRef). Always rebuild
+      // the active client so it receives the latest auth and transport context.
+      const activeProviderId = this.getActiveProviderId()
+      if (activeProviderId) {
+        const activeProvider = providers.find((p) => p.id === activeProviderId)
         if (activeProvider) {
           llmClient = createClientForProvider(activeProvider, this.getCurrentModel() ?? 'auto')
-          logger.info('setProviders: recreated LLM client for new active provider', {
-            providerId: newActiveProviderId,
+          logger.info('setProviders: recreated LLM client for active provider', {
+            providerId: activeProviderId,
             url: activeProvider.url,
+            hasCredential: Boolean(activeProvider.credentialRef),
+            transportAdapter: resolveTransportAdapter(activeProvider),
           })
         }
       }
