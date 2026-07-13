@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
+import { Readable } from 'node:stream'
 import type { ProviderAuthAdapter } from './types.js'
 import { CodexTransportAdapter } from './codex-transport.js'
 
@@ -124,6 +125,66 @@ describe('CodexTransportAdapter', () => {
 
     expect(response.finishReason).toBe('tool_calls')
     expect(response.toolCalls).toEqual([{ id: 'call-1', name: 'read', arguments: { path: 'a.txt' } }])
+  })
+
+  it('retries transient Responses Lite WebSocket handshake failures', async () => {
+    class MockSocket {
+      private listeners = new Map<string, Set<(...args: never[]) => void>>()
+      on(name: string, listener: (...args: never[]) => void) {
+        const values = this.listeners.get(name) ?? new Set()
+        values.add(listener)
+        this.listeners.set(name, values)
+        return this
+      }
+      once(name: string, listener: (...args: never[]) => void) {
+        const wrapped = ((...args: never[]) => {
+          this.off(name, wrapped)
+          listener(...args)
+        }) as (...args: never[]) => void
+        return this.on(name, wrapped)
+      }
+      off(name: string, listener: (...args: never[]) => void) {
+        this.listeners.get(name)?.delete(listener)
+        return this
+      }
+      emit(name: string, ...args: unknown[]) {
+        for (const listener of this.listeners.get(name) ?? []) listener(...(args as never[]))
+      }
+      send(_value: string, callback?: (error?: Error) => void) {
+        callback?.()
+        queueMicrotask(() => this.emit('message', Buffer.from(JSON.stringify({ type: 'response.completed' })), false))
+      }
+      close() {}
+      terminate() {}
+    }
+
+    let attempts = 0
+    const transport = new CodexTransportAdapter(auth, {
+      endpoint: 'https://codex.test/responses',
+      websocketFactory: (() => {
+        attempts++
+        const socket = new MockSocket()
+        queueMicrotask(() => {
+          if (attempts < 3) {
+            const response = new Readable({ read() {} }) as Readable & { statusCode: number }
+            response.statusCode = 503
+            socket.emit('unexpected-response', {}, response)
+            response.push('temporarily unavailable')
+            response.push(null)
+          } else {
+            socket.emit('open')
+          }
+        })
+        return socket
+      }) as never,
+    })
+
+    await transport.complete(
+      { messages: [{ role: 'user', content: 'Hello' }] },
+      { providerId: 'provider-1', credentialRef: 'credential-1', model: 'gpt-5.6-luna' },
+    )
+
+    expect(attempts).toBe(3)
   })
 
   it('uses the OpenCode Responses Lite WebSocket protocol for gpt-5.6-luna', async () => {

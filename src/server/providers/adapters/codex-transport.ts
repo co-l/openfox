@@ -1,4 +1,5 @@
 import WebSocket from 'ws'
+import type { ClientRequest, IncomingMessage } from 'node:http'
 import type { ToolCall } from '../../../shared/types.js'
 import type { ModelConfig } from '../../../shared/types.js'
 import type {
@@ -105,7 +106,7 @@ export class CodexTransportAdapter implements ProviderTransportAdapter {
       }
       const preparedRequest = isResponsesLite ? prepareResponsesLiteRequest(codexRequest, sessionId) : codexRequest
       const response = isResponsesLite
-        ? await this.requestResponsesLiteOverWebSocket(preparedRequest, headers, request.signal)
+        ? await this.requestResponsesLiteWithRetry(preparedRequest, headers, request.signal)
         : await this.request(this.endpoint, {
             method: 'POST',
             headers,
@@ -186,6 +187,25 @@ export class CodexTransportAdapter implements ProviderTransportAdapter {
     }
   }
 
+  private async requestResponsesLiteWithRetry(
+    body: Record<string, unknown>,
+    headers: Record<string, string>,
+    signal?: AbortSignal,
+  ): Promise<Response> {
+    const maxAttempts = 3
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+      try {
+        return await this.requestResponsesLiteOverWebSocket(body, headers, signal)
+      } catch (error) {
+        const status = error instanceof CodexWebSocketHandshakeError ? error.status : undefined
+        const retryable = status === 502 || status === 503 || status === 504
+        if (!retryable || attempt === maxAttempts || signal?.aborted) throw error
+        await delay(250 * 2 ** (attempt - 1), signal)
+      }
+    }
+    throw new Error('Codex WebSocket retry loop completed unexpectedly')
+  }
+
   private requestResponsesLiteOverWebSocket(
     body: Record<string, unknown>,
     headers: Record<string, string>,
@@ -208,6 +228,7 @@ export class CodexTransportAdapter implements ProviderTransportAdapter {
         socket.off('open', onOpen)
         socket.off('error', onInitialError)
         socket.off('close', onInitialClose)
+        socket.off('unexpected-response', onUnexpectedResponse)
         signal?.removeEventListener('abort', onAbortBeforeOpen)
       }
       const onInitialError = (error: Error) => {
@@ -215,6 +236,18 @@ export class CodexTransportAdapter implements ProviderTransportAdapter {
         settled = true
         cleanupBeforeOpen()
         reject(error)
+      }
+      const onUnexpectedResponse = (_request: ClientRequest, response: IncomingMessage) => {
+        if (settled) return
+        settled = true
+        cleanupBeforeOpen()
+        const chunks: Buffer[] = []
+        response.on('data', (chunk: Buffer | string) => chunks.push(Buffer.from(chunk)))
+        response.on('end', () => {
+          const detail = Buffer.concat(chunks).toString('utf8').trim()
+          reject(new CodexWebSocketHandshakeError(response.statusCode ?? 0, detail))
+        })
+        response.on('error', (error: Error) => reject(error))
       }
       const onInitialClose = (code: number, reason: Buffer) => {
         if (opened || settled) return
@@ -329,6 +362,7 @@ export class CodexTransportAdapter implements ProviderTransportAdapter {
       socket.once('open', onOpen)
       socket.once('error', onInitialError)
       socket.once('close', onInitialClose)
+      socket.once('unexpected-response', onUnexpectedResponse)
       signal?.addEventListener('abort', onAbortBeforeOpen, { once: true })
     })
   }
@@ -476,5 +510,33 @@ function parseToolCalls(calls: Map<number, { id: string; name: string; arguments
         rawArguments: call.arguments,
       }
     }
+  })
+}
+
+class CodexWebSocketHandshakeError extends Error {
+  constructor(
+    readonly status: number,
+    readonly detail: string,
+  ) {
+    super(`Codex WebSocket handshake failed (${status})${detail ? `: ${detail}` : ''}`)
+    this.name = 'CodexWebSocketHandshakeError'
+  }
+}
+
+function delay(ms: number, signal?: AbortSignal): Promise<void> {
+  return new Promise((resolve, reject) => {
+    if (signal?.aborted) {
+      reject(new DOMException('Aborted', 'AbortError'))
+      return
+    }
+    const timer = setTimeout(resolve, ms)
+    signal?.addEventListener(
+      'abort',
+      () => {
+        clearTimeout(timer)
+        reject(new DOMException('Aborted', 'AbortError'))
+      },
+      { once: true },
+    )
   })
 }
