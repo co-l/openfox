@@ -855,7 +855,7 @@ export function ProviderModal({
                                   <span className="text-xs text-accent-success font-medium">Configured ✓</span>
                                 ) : autoConfigState.progress[model.id] === 'error' ? (
                                   <span className="text-xs text-red-500 font-medium">Failed ✗</span>
-                                ) : (
+                                ) : formTransportAdapter !== 'openai-codex' ? (
                                   <button
                                     onClick={(e) => {
                                       e.stopPropagation()
@@ -865,7 +865,7 @@ export function ProviderModal({
                                   >
                                     Auto-config
                                   </button>
-                                )}
+                                ) : null}
                                 {models.length > 1 && (
                                   <button
                                     onClick={(e) => {
@@ -953,12 +953,14 @@ export function ProviderModal({
                               }
                               return updated
                             })
-                            for (const m of visible) {
-                              if (
-                                autoConfigState.progress[m.id] !== 'probing' &&
-                                autoConfigState.progress[m.id] !== 'done'
-                              ) {
-                                runAutoConfig(m.id)
+                            if (formTransportAdapter !== 'openai-codex') {
+                              for (const m of visible) {
+                                if (
+                                  autoConfigState.progress[m.id] !== 'probing' &&
+                                  autoConfigState.progress[m.id] !== 'done'
+                                ) {
+                                  runAutoConfig(m.id)
+                                }
                               }
                             }
                           }}
@@ -999,7 +1001,7 @@ export function ProviderModal({
                                 setSelectedModelIds(next)
                               } else {
                                 selectModel(model)
-                                runAutoConfig(model.id)
+                                if (formTransportAdapter !== 'openai-codex') runAutoConfig(model.id)
                               }
                             }}
                             onKeyDown={(e) => {
