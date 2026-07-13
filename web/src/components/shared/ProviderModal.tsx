@@ -610,6 +610,10 @@ export function ProviderModal({
         topP: modelConfigs[m.id]?.topP,
         topK: modelConfigs[m.id]?.topK,
         maxTokens: modelConfigs[m.id]?.maxTokens,
+        defaultMaxTokens: modelConfigs[m.id]?.defaultMaxTokens,
+        defaultTemperature: modelConfigs[m.id]?.defaultTemperature,
+        defaultTopP: modelConfigs[m.id]?.defaultTopP,
+        defaultTopK: modelConfigs[m.id]?.defaultTopK,
       })),
     })
     onClose()

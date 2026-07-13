@@ -172,19 +172,11 @@ export function ProviderSelector() {
         await navigator.clipboard?.writeText(challenge.userCode).catch(() => undefined)
         window.alert(`OpenAI code: ${challenge.userCode}\n\nThe code has been copied. Paste it on the page that opens.`)
       }
-      window.open(challenge.url, '_blank', 'noopener,noreferrer')
 
-      for (let attempt = 0; attempt < 90; attempt += 1) {
-        await new Promise((resolve) => setTimeout(resolve, 2000))
-        const state = await refreshAuthStatus(providerId)
-        if (state === 'connected') {
-          await fetchConfig()
-          await loadProviderModels(providerId)
-          return
-        }
-        if (state === 'error') return
-      }
-      setAuthStates((current) => ({ ...current, [providerId]: 'error' }))
+      // Device authorization continues on the backend while this tab is on OpenAI.
+      // Release the button before navigating so a failed attempt is always retryable.
+      setAuthBusy(null)
+      window.location.assign(challenge.url)
     } catch {
       setAuthStates((current) => ({ ...current, [providerId]: 'error' }))
     } finally {
@@ -391,7 +383,11 @@ export function ProviderSelector() {
                           className="text-[10px] px-1.5 py-0.5 rounded border border-accent-primary/40 text-accent-primary hover:bg-accent-primary/10 disabled:opacity-50"
                           title="Connect ChatGPT Plus or Pro account"
                         >
-                          {authStates[provider.id] === 'pending' ? 'Waiting…' : 'Connect'}
+                          {authBusy === provider.id
+                            ? 'Starting…'
+                            : authStates[provider.id] === 'error' || authStates[provider.id] === 'expired'
+                              ? 'Retry'
+                              : 'Connect'}
                         </button>
                       )
                     )}

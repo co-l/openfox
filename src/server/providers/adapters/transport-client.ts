@@ -11,7 +11,19 @@ export function createTransportLLMClient(
 ): LLMClientWithModel {
   let model = modelId
   let backend = provider.backend as Backend
-  let profile = getModelProfile(model)
+  const profileFor = (id: string) => {
+    const base = getModelProfile(id)
+    const configured = provider.models.find((item) => item.id === id)
+    return {
+      ...base,
+      ...(configured?.defaultTemperature !== undefined && { temperature: configured.defaultTemperature }),
+      ...(configured?.defaultTopP !== undefined && { topP: configured.defaultTopP }),
+      ...(configured?.defaultTopK !== undefined && { topK: configured.defaultTopK }),
+      ...(configured?.defaultMaxTokens !== undefined && { defaultMaxTokens: configured.defaultMaxTokens }),
+      ...(configured?.supportsVision !== undefined && { supportsVision: configured.supportsVision }),
+    }
+  }
+  let profile = profileFor(model)
   void getBackendCapabilities(backend)
 
   const context = () => ({
@@ -24,7 +36,7 @@ export function createTransportLLMClient(
     getModel: () => model,
     setModel(next) {
       model = next
-      profile = getModelProfile(next)
+      profile = profileFor(next)
     },
     getProfile: () => profile,
     getBackend: () => backend,
