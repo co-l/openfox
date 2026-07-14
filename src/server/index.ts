@@ -1079,6 +1079,67 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
     }
   })
 
+  // Test search engine connection
+  app.post('/api/search/test', async (req, res) => {
+    const { engine, tavilyApiKey, searxngUrl, searxngApiKey } = req.body as {
+      engine?: string
+      tavilyApiKey?: string
+      searxngUrl?: string
+      searxngApiKey?: string
+    }
+
+    try {
+      if (engine === 'tavily') {
+        const key = tavilyApiKey || process.env['TAVILY_API_KEY']
+        if (!key) {
+          return res.status(400).json({ success: false, error: 'Tavily API key is required' })
+        }
+        const response = await fetch('https://api.tavily.com/search', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ api_key: key, query: 'test', max_results: 1 }),
+          signal: AbortSignal.timeout(10000),
+        })
+        if (!response.ok) {
+          const body = await response.text().catch(() => '')
+          return res.status(400).json({ success: false, error: `Tavily error (${response.status}): ${body}` })
+        }
+        return res.json({ success: true, message: 'Tavily connection OK' })
+      }
+
+      if (engine === 'searxng') {
+        const url = searxngUrl || process.env['SEARXNG_URL']
+        if (!url) {
+          return res.status(400).json({ success: false, error: 'SearXNG URL is required' })
+        }
+        const searchUrl = new URL(`${url.replace(/\/+$/, '')}/search`)
+        searchUrl.searchParams.set('format', 'json')
+        searchUrl.searchParams.set('q', 'test')
+        const apiKey = searxngApiKey || process.env['SEARXNG_API_KEY'] || undefined
+        const headers: Record<string, string> = {}
+        if (apiKey) headers['Authorization'] = `Bearer ${apiKey}`
+
+        const response = await fetch(searchUrl.toString(), {
+          headers,
+          signal: AbortSignal.timeout(10000),
+        })
+        if (!response.ok) {
+          const body = await response.text().catch(() => '')
+          return res.status(400).json({ success: false, error: `SearXNG error (${response.status}): ${body}` })
+        }
+        return res.json({ success: true, message: 'SearXNG connection OK' })
+      }
+
+      return res.status(400).json({ success: false, error: 'Invalid engine' })
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Connection failed'
+      if (error instanceof DOMException && error.name === 'AbortError') {
+        return res.status(400).json({ success: false, error: 'Connection timed out' })
+      }
+      return res.status(400).json({ success: false, error: message })
+    }
+  })
+
   // Onboarding: fetch models by URL (before provider is saved)
   app.get('/api/providers/models', async (req, res) => {
     const url = req.query['url'] as string | undefined
