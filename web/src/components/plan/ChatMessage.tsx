@@ -53,7 +53,7 @@ function UserMessage({ message, messageId, sessionId }: UserMessageProps) {
           </span>
         )}
         <div
-          className={`whitespace-pre-wrap text-sm ${
+          className={`whitespace-pre-wrap break-words text-sm ${
             isSystemGenerated
               ? `${isCommand ? 'text-teal-200' : isAutoPrompt ? 'text-slate-200' : 'text-amber-200 italic'}`
               : ''
@@ -100,7 +100,7 @@ export const ChatMessage = memo(function ChatMessage({
     return (
       <div className="feed-item bg-bg-tertiary/30 border-l-2 border-accent-primary rounded-r p-2">
         <div className="text-accent-primary text-xs mb-0.5">Tool: {message.toolName}</div>
-        <pre className="text-text-secondary text-xs whitespace-pre-wrap overflow-x-auto max-h-32">
+        <pre className="text-text-secondary text-xs whitespace-pre-wrap break-words overflow-x-auto max-h-32">
           {message.content.slice(0, 500)}
           {message.content.length > 500 && '...'}
         </pre>
@@ -150,7 +150,7 @@ export const ChatMessage = memo(function ChatMessage({
       <div className="flex justify-end feed-item">
         <div className="max-w-[75%] rounded p-2 bg-amber-500/10 border border-amber-500/30">
           <span className="text-[10px] block mb-0.5 text-amber-400">System</span>
-          <div className="whitespace-pre-wrap text-sm text-amber-200 italic">{message.content}</div>
+          <div className="whitespace-pre-wrap break-words text-sm text-amber-200 italic">{message.content}</div>
         </div>
       </div>
     )

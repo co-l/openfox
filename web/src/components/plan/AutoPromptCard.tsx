@@ -57,10 +57,10 @@ export function AutoPromptCard({ message }: AutoPromptCardProps) {
       {showContentDirectly && (
         <div className="flex justify-center feed-item mb-4">
           <div
-            className="max-w-[75%] rounded p-3 bg-bg-tertiary/50 text-text-secondary text-sm"
+            className="max-w-[75%] rounded p-3 bg-bg-tertiary/50 text-text-secondary text-sm overflow-x-auto"
             style={{ borderLeft: `3px solid ${metaColor}` }}
           >
-            <pre className="whitespace-pre-wrap font-mono text-xs">{message.content}</pre>
+            <pre className="whitespace-pre-wrap break-words font-mono text-xs">{message.content}</pre>
           </div>
         </div>
       )}
@@ -74,7 +74,7 @@ export function AutoPromptCard({ message }: AutoPromptCardProps) {
           </div>
 
           <div className="h-full min-h-96">
-            <pre className="text-sm text-text-secondary whitespace-pre-wrap bg-bg-tertiary rounded p-4 h-full min-h-96 overflow-auto font-mono">
+            <pre className="text-sm text-text-secondary whitespace-pre-wrap break-words bg-bg-tertiary rounded p-4 h-full min-h-96 overflow-auto font-mono">
               {message.content}
             </pre>
           </div>

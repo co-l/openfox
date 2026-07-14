@@ -212,7 +212,9 @@ export const ToolCallDisplay = memo(function ToolCallDisplay({
               <>
                 <div>
                   <div className="text-[10px] text-text-muted mb-0.5">Arguments:</div>
-                  <pre className="text-xs bg-bg-primary p-1.5 rounded overflow-x-auto">{formatToolArgsFull(args)}</pre>
+                  <pre className="text-xs bg-bg-primary p-1.5 rounded overflow-x-auto break-words">
+                    {formatToolArgsFull(args)}
+                  </pre>
                 </div>
 
                 {/* Show result for non-specialized operations */}
@@ -221,7 +223,7 @@ export const ToolCallDisplay = memo(function ToolCallDisplay({
                     <div className="text-[10px] text-text-muted mb-0.5">
                       Result{durationMs !== undefined && ` (${durationMs}ms)`}:
                     </div>
-                    <pre className="text-xs bg-bg-primary p-1.5 rounded overflow-x-auto max-h-32">
+                    <pre className="text-xs bg-bg-primary p-1.5 rounded overflow-x-auto max-h-32 break-words">
                       {result || 'No output'}
                     </pre>
                   </div>
@@ -252,7 +254,7 @@ export const ToolCallDisplay = memo(function ToolCallDisplay({
           {status === 'error' && error && tool !== 'run_command' && (
             <div>
               <div className="text-[10px] text-accent-error mb-0.5">Error:</div>
-              <pre className="text-xs bg-bg-primary p-1.5 rounded text-accent-error">{error}</pre>
+              <pre className="text-xs bg-bg-primary p-1.5 rounded text-accent-error break-words">{error}</pre>
             </div>
           )}
         </div>
