@@ -104,6 +104,8 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
   // For mock mode, we bypass the provider manager
   const getMockClient = useMock ? createMockLLMClient : null
   const getLLMClient = () => (getMockClient ? getMockClient() : providerManager.getLLMClient())
+  const getLLMClientForProvider = (providerId: string, model: string) =>
+    getMockClient ? getMockClient() : providerManager.createClient(providerId, model)
 
   if (useMock) {
     logger.info('Using MOCK LLM client - deterministic responses for testing')
@@ -1948,6 +1950,7 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
     sessionManager,
     providerManager,
     getLLMClient,
+    getLLMClientForProvider,
     getActiveProvider: () => providerManager.getActiveProvider(),
     broadcastForSession: wssExports.broadcastForSession,
   })

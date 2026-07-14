@@ -397,6 +397,23 @@ describe('llm client', () => {
     expect(events).toEqual([{ type: 'error', error: 'stream failed' }])
   })
 
+  it('surfaces error chunks that do not contain choices', async () => {
+    httpClientCreateStreamMock.mockReturnValueOnce(
+      (async function* () {
+        yield { error: { message: 'Invalid tool schema' } } as never
+      })(),
+    )
+
+    const client = createLLMClient(createConfig(), 'vllm')
+    const events = [] as Array<Record<string, unknown>>
+
+    for await (const event of client.stream({ messages: [{ role: 'user', content: 'hello' }] })) {
+      events.push(event as Record<string, unknown>)
+    }
+
+    expect(events).toEqual([{ type: 'error', error: 'Invalid tool schema' }])
+  })
+
   it('includes tool calls with parseError when JSON arguments are malformed', async () => {
     httpClientCreateStreamMock.mockReturnValueOnce(
       (async function* () {

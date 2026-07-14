@@ -12,6 +12,7 @@ interface QueueProcessorDeps {
   sessionManager: SessionManager
   providerManager: ProviderManager
   getLLMClient: () => LLMClientWithModel
+  getLLMClientForProvider?: (providerId: string, model: string) => LLMClientWithModel | undefined
   getActiveProvider: (() => import('../../shared/types.js').Provider | undefined) | undefined
   broadcastForSession: (sessionId: string, msg: ServerMessage) => void
 }
@@ -145,6 +146,7 @@ export class QueueProcessor {
           broadcastForSession,
           eventStore: getEventStore(),
           getLLMClient: this.deps.getLLMClient,
+          ...(this.deps.getLLMClientForProvider ? { getLLMClientForProvider: this.deps.getLLMClientForProvider } : {}),
         },
         controller.signal,
       )

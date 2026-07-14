@@ -208,6 +208,20 @@ export function createLLMClient(config: Config, initialBackend: Backend = 'unkno
             // Reset idle timer on each chunk
             lastChunkTime = Date.now()
 
+            if (!Array.isArray(chunk?.choices)) {
+              const streamError = (chunk as unknown as { error?: unknown })?.error
+              const errorMessage =
+                typeof streamError === 'string'
+                  ? streamError
+                  : streamError &&
+                      typeof streamError === 'object' &&
+                      'message' in streamError &&
+                      typeof streamError.message === 'string'
+                    ? streamError.message
+                    : 'Invalid LLM stream chunk: missing choices'
+              throw new LLMError(errorMessage)
+            }
+
             responseId = chunk.id
 
             if (chunk.usage) {

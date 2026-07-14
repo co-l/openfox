@@ -211,6 +211,7 @@ export interface GenerateSessionNameForSessionDeps {
    *  it's used instead of creating a new client via dynamic import. This ensures the
    *  mock LLM client is used in e2e tests (OPENFOX_MOCK_LLM=true). */
   getLLMClient?: () => LLMClientWithModel
+  getLLMClientForProvider?: (providerId: string, model: string) => LLMClientWithModel | undefined
 }
 
 /**
@@ -275,12 +276,15 @@ export async function generateSessionNameForSession(
 
   try {
     // Resolve the LLM client to use:
-    //   1. If getLLMClient factory is provided (e.g. from QueueProcessor), use it —
-    //      this ensures the mock LLM is used in e2e tests.
-    //   2. If the session has a specific provider config, create a dedicated client.
-    //   3. Otherwise fall back to getLLMClient (for sessions without explicit provider).
+    //   1. Use a provider-scoped factory when available.
+    //   2. Fall back to the injected client used by tests and legacy callers.
+    //   3. Otherwise create a dedicated HTTP client from the provider config.
     let client: LLMClientWithModel
-    if (deps.getLLMClient && providerConfig) {
+    if (providerConfig && deps.getLLMClientForProvider) {
+      const providerClient = deps.getLLMClientForProvider(providerConfig.providerId, providerConfig.model)
+      if (!providerClient) return
+      client = providerClient
+    } else if (deps.getLLMClient && providerConfig) {
       client = deps.getLLMClient()
       client.setModel(providerConfig.model)
     } else if (providerConfig) {

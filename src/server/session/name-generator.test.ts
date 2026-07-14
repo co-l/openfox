@@ -18,6 +18,10 @@ vi.mock('../runtime-config.js', () => ({
   getRuntimeConfig: vi.fn(),
 }))
 
+vi.mock('../utils/session-utils.js', () => ({
+  getSessionMessageCount: vi.fn(() => 1),
+}))
+
 describe('Session Name Generator', () => {
   beforeEach(() => {
     vi.clearAllMocks()
@@ -337,6 +341,57 @@ describe('Session Name Generator', () => {
 
       expect(broadcastForSession).not.toHaveBeenCalled()
       expect(eventStore.append).not.toHaveBeenCalled()
+    })
+
+    it('uses the session provider client instead of mutating the active provider client', async () => {
+      const { getRuntimeConfig } = await import('../runtime-config.js')
+      ;(getRuntimeConfig as any).mockReturnValue({ disableAutoSessionTitle: false })
+
+      const session = {
+        id: 'test-session',
+        providerId: 'lm-studio',
+        providerModel: 'google/gemma-4-12b-qat',
+        metadata: { title: 'Session 1' },
+      } as unknown as Session
+      const activeClient = {
+        complete: vi.fn(),
+        setModel: vi.fn(),
+      }
+      const sessionClient = {
+        complete: vi.fn().mockResolvedValue({
+          id: 'test-id',
+          content: '',
+          finishReason: 'stop',
+          usage: { promptTokens: 1, completionTokens: 1, totalTokens: 2 },
+        }),
+      }
+      const getLLMClientForProvider = vi.fn().mockReturnValue(sessionClient)
+      const sessionManager = { getSession: vi.fn().mockReturnValue(session) }
+      const providerManager = {
+        getProviders: vi.fn().mockReturnValue([
+          {
+            id: 'lm-studio',
+            url: 'http://localhost:1234/v1',
+            models: [{ id: 'google/gemma-4-12b-qat' }],
+          },
+        ]),
+        getCurrentModel: vi.fn().mockReturnValue('gpt-5.6'),
+        getModelSettings: vi.fn().mockReturnValue(undefined),
+      }
+
+      await generateSessionNameForSession('test-session', 'Hello world', {
+        sessionManager: sessionManager as any,
+        providerManager: providerManager as any,
+        broadcastForSession: vi.fn(),
+        eventStore: { getEvents: vi.fn().mockReturnValue([]), append: vi.fn() } as any,
+        getLLMClient: () => activeClient as any,
+        getLLMClientForProvider,
+      })
+
+      expect(getLLMClientForProvider).toHaveBeenCalledWith('lm-studio', 'google/gemma-4-12b-qat')
+      expect(sessionClient.complete).toHaveBeenCalledOnce()
+      expect(activeClient.setModel).not.toHaveBeenCalled()
+      expect(activeClient.complete).not.toHaveBeenCalled()
     })
   })
 
