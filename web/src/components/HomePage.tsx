@@ -15,13 +15,21 @@ function highlightMatches(text: string, query: string) {
   if (!query) return text
   const lowerText = text.toLowerCase()
   const lowerQuery = query.toLowerCase()
+
   const matched = new Array(text.length).fill(false)
 
-  let qi = 0
-  for (let i = 0; i < text.length && qi < lowerQuery.length; i++) {
-    if (lowerText[i] === lowerQuery[qi]) {
+  const exactIdx = lowerText.indexOf(lowerQuery)
+  if (exactIdx >= 0) {
+    for (let i = exactIdx; i < exactIdx + lowerQuery.length; i++) {
       matched[i] = true
-      qi++
+    }
+  } else {
+    let qi = 0
+    for (let i = 0; i < text.length && qi < lowerQuery.length; i++) {
+      if (lowerText[i] === lowerQuery[qi]) {
+        matched[i] = true
+        qi++
+      }
     }
   }
 
