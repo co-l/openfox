@@ -26,6 +26,8 @@ function UserMessage({ message, messageId, sessionId }: UserMessageProps) {
   const isAutoPrompt = message.messageKind === 'auto-prompt'
   const isCommand = message.messageKind === 'command'
   const isSystemGenerated = message.isSystemGenerated
+  const hasAttachments = message.attachments && message.attachments.length > 0
+  const hasContent = message.content.trim().length > 0
 
   return (
     <div className="flex justify-end items-start gap-1.5 feed-item">
@@ -62,6 +64,9 @@ function UserMessage({ message, messageId, sessionId }: UserMessageProps) {
         >
           {message.content}
         </div>
+        {hasAttachments && (
+          <div className="text-xs text-text-muted mt-1">{hasContent ? 'Image attached' : 'Image uploaded'}</div>
+        )}
         {message.attachments && message.attachments.length > 0 && (
           <MessageAttachments attachments={message.attachments} messageId={message.id} />
         )}

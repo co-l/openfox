@@ -125,8 +125,11 @@ export function getItemLabel(item: DisplayItem): string {
       if (msg.thinkingContent?.trim()) return msg.thinkingContent.slice(0, 200)
       return ''
     }
-    const preview = cleanContent.slice(0, 200)
-    return preview.length < cleanContent.length ? `${preview}...` : preview
+    const preview = cleanContent.slice(0, 180)
+    const hasAttachments = msg.attachments && msg.attachments.length > 0
+    const attachmentLabel = hasAttachments ? (cleanContent ? '[Image attached]' : '[Image uploaded]') : ''
+    const suffix = preview.length < cleanContent.length ? '...' : ''
+    return attachmentLabel ? `${preview}${suffix} ${attachmentLabel}` : `${preview}${suffix}`
   }
   if (item.type === 'subagent') return `Sub-agent: ${item.subAgentType}`
   return ''

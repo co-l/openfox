@@ -480,10 +480,23 @@ export const useSessionStore = create<SessionState>((set, get) => {
       if (!sessionId) return
 
       try {
+        const hasContent = content?.trim()
+        const hasAttachments = attachments && attachments.length > 0
+        const body: Record<string, unknown> = {}
+        if (hasContent) {
+          body.content = content
+        }
+        if (hasAttachments) {
+          body.attachments = attachments
+        }
+        if (opts?.messageKind) {
+          body.messageKind = opts.messageKind
+        }
+
         const res = await authFetch(`/api/sessions/${sessionId}/message`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ content, attachments, messageKind: opts?.messageKind }),
+          body: JSON.stringify(body),
         })
         const data = await res.json()
         if (data.queueState) {

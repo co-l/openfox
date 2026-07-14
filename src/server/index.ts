@@ -701,11 +701,13 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
     }
 
     const { content, attachments, messageKind } = req.body
-    if (!content?.trim()) {
-      return res.status(400).json({ error: 'content is required' })
+    const hasContent = content?.trim()
+    const hasAttachments = Array.isArray(attachments) && attachments.length > 0
+    if (!hasContent && !hasAttachments) {
+      return res.status(400).json({ error: 'content or attachments is required' })
     }
 
-    sessionManager.queueMessage(sessionId, 'asap', content, attachments, messageKind)
+    sessionManager.queueMessage(sessionId, 'asap', content ?? '', attachments, messageKind)
 
     res.json({ success: true, queueState: sessionManager.getQueueState(sessionId) })
   })
