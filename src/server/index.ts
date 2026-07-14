@@ -1083,11 +1083,16 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
   app.get('/api/providers/models', async (req, res) => {
     const url = req.query['url'] as string | undefined
     const apiKey = req.query['apiKey'] as string | undefined
+    const backend = req.query['backend'] as string | undefined
     if (!url) return res.status(400).json({ error: 'url is required' })
     try {
       const { fetchModelsWithContext } = await import('./provider-manager.js')
       const { getModelProfile } = await import('./llm/profiles.js')
-      const models = await fetchModelsWithContext(url, apiKey)
+      const models = await fetchModelsWithContext(
+        url,
+        apiKey,
+        backend as 'ollama' | 'vllm' | 'sglang' | 'llamacpp' | 'lmstudio' | 'unknown' | undefined,
+      )
       if (models.length === 0) {
         return res.status(404).json({ error: `No models found at ${buildModelsUrl(url)}`, url })
       }

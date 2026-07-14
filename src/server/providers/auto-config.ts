@@ -92,6 +92,10 @@ async function detectModelInfo(
       return await detectLlamacppInfo(baseUrl)
     }
 
+    if (backend === 'lmstudio') {
+      return await detectLmstudioInfo(baseUrl, modelId)
+    }
+
     // vLLM and others: try /v1/models
     return await detectVllmInfo(baseUrl, apiKey, modelId)
   } catch {
@@ -155,6 +159,35 @@ async function detectOllamaInfo(baseUrl: string, modelId: string): Promise<Model
     return { contextWindow: ctxLen, source: 'backend', supportsVision }
   }
   throw new Error('No context_length in model_info')
+}
+
+async function detectLmstudioInfo(baseUrl: string, modelId: string): Promise<ModelInfo> {
+  const base = baseUrl.replace(/\/+$/, '')
+  const nativeUrl = `${base.replace(/\/v\d+\/?$/, '')}/api/v1/models`
+  const response = await fetch(nativeUrl, { signal: AbortSignal.timeout(5000) })
+  if (!response.ok) throw new Error(`HTTP ${response.status}`)
+
+  const data = (await response.json()) as Array<{
+    key?: string
+    id?: string
+    max_context_length?: number
+    loaded_instances?: Array<{
+      config?: { context_length?: number }
+    }>
+    capabilities?: { vision?: boolean }
+  }>
+
+  const model = data.find((m) => (m.key ?? m.id) === modelId)
+  if (!model) throw new Error(`Model ${modelId} not found in LM Studio`)
+
+  const loadedContext = model.loaded_instances?.[0]?.config?.context_length
+  const ctxLen = loadedContext ?? model.max_context_length
+  const supportsVision = model.capabilities?.vision ?? false
+
+  if (ctxLen) {
+    return { contextWindow: ctxLen, source: 'backend', supportsVision }
+  }
+  throw new Error('No context_length in LM Studio response')
 }
 
 // ============================================================================
