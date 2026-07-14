@@ -158,7 +158,7 @@ describe('HomePage', () => {
       expect(screen.getByText('1 match')).toBeInTheDocument()
     })
 
-    expect(screen.getByRole('link', { name: /Session a l/ })).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: /Session alpha/ })).toBeInTheDocument()
     expect(screen.queryByRole('link', { name: /Session b/ })).not.toBeInTheDocument()
   })
 
@@ -266,5 +266,173 @@ describe('HomePage', () => {
     await vi.waitFor(() => {
       expect(screen.getByText('My session')).toBeInTheDocument()
     })
+  })
+
+  it('filters by project name', async () => {
+    sessionStore.sessions = [
+      { id: 's1', projectId: 'p1', title: 'Setup docs', updatedAt: '2024-06-15T10:00:00Z', messageCount: 1, createdAt: '2024-06-15T09:00:00Z' },
+      { id: 's2', projectId: 'p2', title: 'Analysis', updatedAt: '2024-06-16T10:00:00Z', messageCount: 1, createdAt: '2024-06-16T09:00:00Z' },
+    ]
+    const { HomePage } = await import('./HomePage')
+    render(<HomePage />)
+    const input = screen.getByPlaceholderText('Search sessions by title or keyword...')
+    await userEvent.type(input, 'beta')
+    await vi.waitFor(() => expect(screen.getByText('1 match')).toBeInTheDocument())
+    expect(screen.getByText('Project Beta')).toBeInTheDocument()
+    expect(screen.queryByText('Setup docs')).not.toBeInTheDocument()
+  })
+
+  it('filters by case-insensitive matching', async () => {
+    sessionStore.sessions = [
+      { id: 's1', projectId: 'p1', title: 'Deploy Pipeline', updatedAt: '2024-06-15T10:00:00Z', messageCount: 1, createdAt: '2024-06-15T09:00:00Z' },
+      { id: 's2', projectId: 'p1', title: 'Database migration', updatedAt: '2024-06-16T10:00:00Z', messageCount: 1, createdAt: '2024-06-16T09:00:00Z' },
+    ]
+    const { HomePage } = await import('./HomePage')
+    render(<HomePage />)
+    const input = screen.getByPlaceholderText('Search sessions by title or keyword...')
+    await userEvent.type(input, 'DEPLOY')
+    await vi.waitFor(() => expect(screen.getByText('1 match')).toBeInTheDocument())
+    expect(screen.getByRole('link', { name: /Deploy Pipeline/ })).toBeInTheDocument()
+  })
+
+  it('requires all space-separated query words to match', async () => {
+    sessionStore.sessions = [
+      { id: 's1', projectId: 'p1', title: 'Fix bug open frontend', updatedAt: '2024-06-15T10:00:00Z', messageCount: 1, createdAt: '2024-06-15T09:00:00Z' },
+      { id: 's2', projectId: 'p1', title: 'Open source bug tracker', updatedAt: '2024-06-16T10:00:00Z', messageCount: 1, createdAt: '2024-06-16T09:00:00Z' },
+    ]
+    const { HomePage } = await import('./HomePage')
+    render(<HomePage />)
+    const input = screen.getByPlaceholderText('Search sessions by title or keyword...')
+    await userEvent.type(input, 'bug open')
+    await vi.waitFor(() => expect(screen.getByText('2 matches')).toBeInTheDocument())
+    expect(screen.getByRole('link', { name: /Fix bug open/ })).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: /Open source bug/ })).toBeInTheDocument()
+  })
+
+  it('shows only projects with matching sessions', async () => {
+    sessionStore.sessions = [
+      { id: 's1', projectId: 'p1', title: 'Database setup', updatedAt: '2024-06-15T10:00:00Z', messageCount: 1, createdAt: '2024-06-15T09:00:00Z' },
+      { id: 's2', projectId: 'p2', title: 'Frontend', updatedAt: '2024-06-16T10:00:00Z', messageCount: 1, createdAt: '2024-06-16T09:00:00Z' },
+    ]
+    const { HomePage } = await import('./HomePage')
+    render(<HomePage />)
+    const input = screen.getByPlaceholderText('Search sessions by title or keyword...')
+    await userEvent.type(input, 'database')
+    await vi.waitFor(() => expect(screen.getByText('1 match')).toBeInTheDocument())
+    expect(screen.getByText('Project Alpha')).toBeInTheDocument()
+    expect(screen.queryByText('Project Beta')).not.toBeInTheDocument()
+  })
+
+  it('limits to 5 sessions per project when not searching', async () => {
+    const sessions = Array.from({ length: 7 }, (_, i) => ({
+      id: `s${i}`, projectId: 'p1', title: `Session ${i}`,
+      updatedAt: `2024-06-${String(15 - i).padStart(2, '0')}T10:00:00Z`,
+      messageCount: 1, createdAt: '2024-06-01',
+    }))
+    sessionStore.sessions = sessions
+    const { HomePage } = await import('./HomePage')
+    render(<HomePage />)
+    const visible = screen.getAllByRole('link').filter((l) => (l as HTMLAnchorElement).href?.includes('/s/'))
+    expect(visible.length).toBe(5)
+  })
+
+  it('shows all matching sessions when searching (no 5-session limit)', async () => {
+    const sessions = Array.from({ length: 7 }, (_, i) => ({
+      id: `s${i}`, projectId: 'p1', title: `Fix bug ${i}`,
+      updatedAt: `2024-06-${String(15 - i).padStart(2, '0')}T10:00:00Z`,
+      messageCount: 1, createdAt: '2024-06-01',
+    }))
+    sessionStore.sessions = sessions
+    const { HomePage } = await import('./HomePage')
+    render(<HomePage />)
+    const input = screen.getByPlaceholderText('Search sessions by title or keyword...')
+    await userEvent.type(input, 'fix')
+    await vi.waitFor(() => expect(screen.getByText('7 matches')).toBeInTheDocument())
+    const visible = screen.getAllByRole('link').filter((l) => (l as HTMLAnchorElement).href?.includes('/s/'))
+    expect(visible.length).toBe(7)
+  })
+
+  it('shows prompts badge when session matches by prompts only', async () => {
+    sessionStore.sessions = [{
+      id: 's1', projectId: 'p1', title: 'Session alpha',
+      recentUserPrompts: [{ id: 'p1', content: 'Please review the PR', timestamp: '2024-06-15T10:00:00Z' }],
+      updatedAt: '2024-06-15T10:00:00Z', messageCount: 1, createdAt: '2024-06-15T09:00:00Z',
+    }]
+    const { HomePage } = await import('./HomePage')
+    render(<HomePage />)
+    const input = screen.getByPlaceholderText('Search sessions by title or keyword...')
+    await userEvent.type(input, 'review')
+    await vi.waitFor(() => expect(screen.getByText('1 match')).toBeInTheDocument())
+    expect(screen.getByText('prompts')).toBeInTheDocument()
+  })
+
+  it('does not show prompts badge when session matches by title', async () => {
+    sessionStore.sessions = [{
+      id: 's1', projectId: 'p1', title: 'Review PR 123',
+      recentUserPrompts: [{ id: 'p1', content: 'Please check this', timestamp: '2024-06-15T10:00:00Z' }],
+      updatedAt: '2024-06-15T10:00:00Z', messageCount: 1, createdAt: '2024-06-15T09:00:00Z',
+    }]
+    const { HomePage } = await import('./HomePage')
+    render(<HomePage />)
+    const input = screen.getByPlaceholderText('Search sessions by title or keyword...')
+    await userEvent.type(input, 'review')
+    await vi.waitFor(() => expect(screen.getByText('1 match')).toBeInTheDocument())
+    expect(screen.queryByText('prompts')).not.toBeInTheDocument()
+  })
+
+  it('shows snippet with highlighted keyword in prompts match', async () => {
+    sessionStore.sessions = [{
+      id: 's1', projectId: 'p1', title: 'QA workflow',
+      recentUserPrompts: [{ id: 'p1', content: 'Run full code review on the project', timestamp: '2024-06-15T10:00:00Z' }],
+      updatedAt: '2024-06-15T10:00:00Z', messageCount: 1, createdAt: '2024-06-15T09:00:00Z',
+    }]
+    const { HomePage } = await import('./HomePage')
+    render(<HomePage />)
+    const input = screen.getByPlaceholderText('Search sessions by title or keyword...')
+    await userEvent.type(input, 'review')
+    await vi.waitFor(() => expect(screen.getByText('prompts')).toBeInTheDocument())
+    expect(screen.getByText(/Run full code/)).toBeInTheDocument()
+  })
+
+  it('ranks title matches above prompt matches', async () => {
+    sessionStore.sessions = [
+      {
+        id: 's1', projectId: 'p1', title: 'Error in checkout flow',
+        recentUserPrompts: [{ id: 'p1', content: 'Check error handling', timestamp: '2024-06-14T10:00:00Z' }],
+        updatedAt: '2024-06-14T10:00:00Z', messageCount: 1, createdAt: '2024-06-14T09:00:00Z',
+      },
+      {
+        id: 's2', projectId: 'p1', title: 'UI improvements',
+        recentUserPrompts: [{ id: 'p2', content: 'Fix the error in modal', timestamp: '2024-06-15T10:00:00Z' }],
+        updatedAt: '2024-06-15T10:00:00Z', messageCount: 1, createdAt: '2024-06-15T09:00:00Z',
+      },
+    ]
+    const { HomePage } = await import('./HomePage')
+    render(<HomePage />)
+    const input = screen.getByPlaceholderText('Search sessions by title or keyword...')
+    await userEvent.type(input, 'error')
+    await vi.waitFor(() => expect(screen.getByText('2 matches')).toBeInTheDocument())
+    const links = screen.getAllByRole('link').filter((l) => (l as HTMLAnchorElement).href?.includes('/s/'))
+    expect(links[0]?.textContent).toContain('Error in checkout')
+    expect(links[1]?.textContent).toContain('UI improvements')
+  })
+
+  it('clears search on Escape key', async () => {
+    sessionStore.sessions = [{ id: 's1', projectId: 'p1', title: 'My session', updatedAt: '2024-06-15T10:00:00Z', messageCount: 1, createdAt: '2024-06-15T09:00:00Z' }]
+    const { HomePage } = await import('./HomePage')
+    render(<HomePage />)
+    const input = screen.getByPlaceholderText('Search sessions by title or keyword...')
+    await userEvent.type(input, 'zzzzz')
+    await vi.waitFor(() => expect(screen.getByText(/No sessions matching/)).toBeInTheDocument())
+    await userEvent.keyboard('{Escape}')
+    expect(input).toHaveValue('')
+    expect(screen.getByText('My session')).toBeInTheDocument()
+  })
+
+  it('handles session without a title by falling back to id slice', async () => {
+    sessionStore.sessions = [{ id: 'abcdef123456', projectId: 'p1', updatedAt: '2024-06-15T10:00:00Z', messageCount: 1, createdAt: '2024-06-15T09:00:00Z' }]
+    const { HomePage } = await import('./HomePage')
+    render(<HomePage />)
+    expect(screen.getByText('abcdef12')).toBeInTheDocument()
   })
 })

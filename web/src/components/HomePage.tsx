@@ -95,23 +95,41 @@ export function HomePage() {
     return () => clearTimeout(t)
   }, [searchQuery])
 
-  const { matchCount, filteredSessionIds, relevanceScores } = useMemo(() => {
-    if (!debouncedQuery) return { matchCount: 0, filteredSessionIds: null as Set<string> | null, relevanceScores: null as Map<string, number> | null }
+  const { matchCount, filteredSessionIds, relevanceScores, matchTypes, promptSnippets } = useMemo(() => {
+    if (!debouncedQuery) return { matchCount: 0, filteredSessionIds: null as Set<string> | null, relevanceScores: null as Map<string, number> | null, matchTypes: null as Map<string, string> | null, promptSnippets: null as Map<string, string> | null }
     const projectById = new Map(projects.map((p) => [p.id, p]))
     const scores = new Map<string, number>()
+    const types = new Map<string, string>()
+    const snippets = new Map<string, string>()
     const matching = sessions.filter((s) => {
       const project = projectById.get(s.projectId)
       const projectName = project?.name ?? ''
       const title = s.title ?? ''
-      const prompts = s.recentUserPrompts?.map((p) => p.content).join(' ') ?? ''
+      const prompts = s.recentUserPrompts?.map((p) => p.content) ?? []
+      const promptsJoined = prompts.join(' ')
       let score = 0
-      if (fuzzyMatch(title, debouncedQuery)) score += 10
-      if (fuzzyMatch(prompts, debouncedQuery)) score += 3
-      if (fuzzyMatch(projectName, debouncedQuery)) score += 1
+      let type = ''
+      if (fuzzyMatch(title, debouncedQuery)) { score += 10; type = 'title' }
+      if (fuzzyMatch(promptsJoined, debouncedQuery)) {
+        score += 3; type = type === 'title' ? 'title' : 'prompts'
+        const matchedPrompt = prompts.find((p) => fuzzyMatch(p, debouncedQuery))
+        if (matchedPrompt) {
+          const idx = matchedPrompt.toLowerCase().indexOf(debouncedQuery.toLowerCase())
+          if (idx >= 0) {
+            const start = Math.max(0, idx - 30)
+            const end = Math.min(matchedPrompt.length, idx + debouncedQuery.length + 30)
+            snippets.set(s.id, (start > 0 ? '…' : '') + matchedPrompt.slice(start, end) + (end < matchedPrompt.length ? '…' : ''))
+          } else {
+            snippets.set(s.id, matchedPrompt.slice(0, 80) + (matchedPrompt.length > 80 ? '…' : ''))
+          }
+        }
+      }
+      if (fuzzyMatch(projectName, debouncedQuery)) { score += 1; type = type || 'project' }
       scores.set(s.id, score)
+      types.set(s.id, type)
       return score > 0
     })
-    return { matchCount: matching.length, filteredSessionIds: new Set(matching.map((s) => s.id)), relevanceScores: scores }
+    return { matchCount: matching.length, filteredSessionIds: new Set(matching.map((s) => s.id)), relevanceScores: scores, matchTypes: types, promptSnippets: snippets }
   }, [sessions, debouncedQuery, projects])
 
   const lastActivityByProject = useMemo(() => {
@@ -281,6 +299,7 @@ export function HomePage() {
                         const project = projects.find((p) => session.projectId === p.id)
                         const href = project ? `/p/${project.id}/s/${session.id}` : '#'
                         const displayTitle = session.title ?? session.id.slice(0, 8)
+                        const matchType = matchTypes?.get(session.id)
                         return (
                           <Link
                             key={session.id}
@@ -291,8 +310,20 @@ export function HomePage() {
                               <div className="flex items-center gap-3 flex-1 min-w-0">
                                 <div className="flex-1 min-w-0">
                                   <div className="text-sm text-text-muted truncate">
-                                    {isSearching ? highlightMatches(displayTitle, debouncedQuery) : displayTitle}
+                                    {isSearching && matchType === 'title' ? highlightMatches(displayTitle, debouncedQuery) : displayTitle}
                                   </div>
+                                  {isSearching && matchType && matchType !== 'title' && (
+                                    <div className="flex flex-wrap items-center gap-1.5 mt-1">
+                                      <span className="text-[10px] font-medium text-accent-primary border border-accent-primary/30 bg-accent-primary/8 rounded px-1 py-0.5 leading-none">
+                                        {matchType === 'prompts' ? 'prompts' : 'project'}
+                                      </span>
+                                      {matchType === 'prompts' && promptSnippets?.get(session.id) && (
+                                        <span className="text-[11px] text-text-muted truncate max-w-[250px]">
+                                          {highlightMatches(promptSnippets.get(session.id)!, debouncedQuery)}
+                                        </span>
+                                      )}
+                                    </div>
+                                  )}
                                 </div>
                               </div>
                               <div className="flex items-center gap-2 flex-shrink-0">
