@@ -87,25 +87,24 @@ export function HomePage() {
     return () => clearTimeout(t)
   }, [searchQuery])
 
-  const sessionSearchTextCache = useMemo(() => {
+  const { matchCount, filteredSessionIds, relevanceScores } = useMemo(() => {
+    if (!debouncedQuery) return { matchCount: 0, filteredSessionIds: null as Set<string> | null, relevanceScores: null as Map<string, number> | null }
     const projectById = new Map(projects.map((p) => [p.id, p]))
-    const cache = new Map<string, string>()
-    for (const s of sessions) {
-      const project = projectById.get(s.projectId)
-      const prompts = s.recentUserPrompts?.map((p) => p.content).join(' ') ?? ''
-      cache.set(s.id, `${s.title ?? ''} ${prompts} ${project?.name ?? ''}`)
-    }
-    return cache
-  }, [projects, sessions])
-
-  const { matchCount, filteredSessionIds } = useMemo(() => {
-    if (!debouncedQuery) return { matchCount: 0, filteredSessionIds: null as Set<string> | null }
+    const scores = new Map<string, number>()
     const matching = sessions.filter((s) => {
-      const text = sessionSearchTextCache.get(s.id) ?? ''
-      return fuzzyMatch(text, debouncedQuery)
+      const project = projectById.get(s.projectId)
+      const projectName = project?.name ?? ''
+      const title = s.title ?? ''
+      const prompts = s.recentUserPrompts?.map((p) => p.content).join(' ') ?? ''
+      let score = 0
+      if (fuzzyMatch(title, debouncedQuery)) score += 10
+      if (fuzzyMatch(prompts, debouncedQuery)) score += 3
+      if (fuzzyMatch(projectName, debouncedQuery)) score += 1
+      scores.set(s.id, score)
+      return score > 0
     })
-    return { matchCount: matching.length, filteredSessionIds: new Set(matching.map((s) => s.id)) }
-  }, [sessions, debouncedQuery, sessionSearchTextCache])
+    return { matchCount: matching.length, filteredSessionIds: new Set(matching.map((s) => s.id)), relevanceScores: scores }
+  }, [sessions, debouncedQuery, projects])
 
   const lastActivityByProject = useMemo(() => {
     const map = new Map<string, number>()
@@ -152,12 +151,18 @@ export function HomePage() {
     (projectId: string): SessionSummary[] => {
       const projectSessions = sessionsByProject.get(projectId)
       if (!projectSessions) return []
-      if (debouncedQuery && filteredSessionIds) {
-        return projectSessions.filter((s) => filteredSessionIds.has(s.id))
+      if (debouncedQuery && filteredSessionIds && relevanceScores) {
+        return projectSessions
+          .filter((s) => filteredSessionIds.has(s.id))
+          .sort((a, b) => {
+            const scoreDiff = (relevanceScores.get(b.id) ?? 0) - (relevanceScores.get(a.id) ?? 0)
+            if (scoreDiff !== 0) return scoreDiff
+            return new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
+          })
       }
       return projectSessions.slice(0, 5)
     },
-    [sessionsByProject, debouncedQuery, filteredSessionIds],
+    [sessionsByProject, debouncedQuery, filteredSessionIds, relevanceScores],
   )
 
   const handleOpenProject = () => {
