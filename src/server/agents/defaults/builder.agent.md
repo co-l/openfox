@@ -7,6 +7,7 @@ color: '#3b82f6'
 allowedTools:
   - read_file
   - web_fetch
+  - web_search
   - write_file
   - edit_file
   - run_command
