@@ -11,7 +11,7 @@ export const ThinkingBlock = memo(function ThinkingBlock({ content, variant = 'd
     return (
       <div className="text-text-muted text-sm italic feed-item">
         <span className="text-purple-400">thinking:</span>
-        <div className="ml-1.5 mt-0.5">
+        <div className="ml-1.5 mt-0.5 overflow-x-auto">
           <Markdown content={content} />
         </div>
       </div>
@@ -19,7 +19,7 @@ export const ThinkingBlock = memo(function ThinkingBlock({ content, variant = 'd
   }
 
   return (
-    <div className="text-text-muted text-sm italic bg-secondary rounded p-1.5 feed-item">
+    <div className="text-text-muted text-sm italic bg-secondary rounded p-1.5 feed-item overflow-x-auto">
       <Markdown content={content} muted />
     </div>
   )

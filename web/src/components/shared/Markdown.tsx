@@ -92,7 +92,7 @@ function createMarkdownComponents(muted: boolean, showSyntaxHighlighting: boolea
 
     p({ children }: { children?: React.ReactNode }) {
       const color = muted ? 'text-text-muted' : 'text-text-primary'
-      return <p className={`${color} mb-1.5 last:mb-0 leading-tight`}>{children}</p>
+      return <p className={`${color} mb-1.5 last:mb-0 leading-tight break-words`}>{children}</p>
     },
 
     ul({ children }: { children?: React.ReactNode }) {
