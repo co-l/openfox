@@ -53,6 +53,7 @@ describe('backend', () => {
         sglang: 'SGLang',
         ollama: 'Ollama',
         llamacpp: 'llama.cpp',
+        lmstudio: 'LM Studio',
         'opencode-go': 'OpenCode Go',
         openai: 'OpenAI',
         anthropic: 'Anthropic',

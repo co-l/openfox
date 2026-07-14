@@ -4,7 +4,16 @@ import type { ModelConfig } from '@shared/types.js'
 
 type LlmStatus = 'connected' | 'disconnected' | 'unknown'
 
-type Backend = 'vllm' | 'sglang' | 'ollama' | 'llamacpp' | 'openai' | 'anthropic' | 'opencode-go' | 'unknown'
+type Backend =
+  | 'vllm'
+  | 'sglang'
+  | 'ollama'
+  | 'llamacpp'
+  | 'lmstudio'
+  | 'openai'
+  | 'anthropic'
+  | 'opencode-go'
+  | 'unknown'
 type ProviderStatus = 'connected' | 'disconnected' | 'unknown'
 
 interface Provider {
@@ -66,6 +75,8 @@ function getBackendDisplayName(backend: Backend): string {
       return 'Ollama'
     case 'llamacpp':
       return 'llama.cpp'
+    case 'lmstudio':
+      return 'LM Studio'
     case 'openai':
       return 'OpenAI'
     case 'anthropic':
