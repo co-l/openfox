@@ -1,10 +1,12 @@
-import { createHighlighter } from 'shiki'
+import { createHighlighter, type Highlighter, bundledLanguages } from 'shiki'
 import type { ShikiTransformer } from 'shiki'
 import { useThemeStore } from '../stores/theme'
 
-let highlighterPromise: Promise<Awaited<ReturnType<typeof createHighlighter>>> | null = null
+let highlighter: Highlighter | null = null
+const loadedLanguages = new Set<string>()
+const loadingPromises = new Map<string, Promise<void>>()
 
-const langs: Array<string> = [
+const coreLangs: Array<string> = [
   'typescript',
   'javascript',
   'tsx',
@@ -51,10 +53,47 @@ export function lineNumbersTransformer(): ShikiTransformer {
 }
 
 export async function getHighlighter() {
-  if (!highlighterPromise) {
-    highlighterPromise = createHighlighter({ themes, langs })
+  if (!highlighter) {
+    highlighter = await createHighlighter({ themes, langs: coreLangs })
+    coreLangs.forEach((lang) => loadedLanguages.add(lang))
   }
-  return highlighterPromise
+  return highlighter
+}
+
+export async function loadLanguage(lang: string): Promise<void> {
+  if (loadedLanguages.has(lang)) return
+
+  // Return existing promise if language is already being loaded
+  if (loadingPromises.has(lang)) {
+    return loadingPromises.get(lang)!
+  }
+
+  const loadPromise = (async () => {
+    const h = await getHighlighter()
+
+    // Try to load from bundledLanguages first
+    const langDef = bundledLanguages[lang as keyof typeof bundledLanguages]
+    if (langDef) {
+      await h.loadLanguage(langDef)
+      loadedLanguages.add(lang)
+      return
+    }
+
+    // Fallback: try dynamic import with proper path resolution for Vite
+    try {
+      const langModule = await import(`shiki/langs/${lang}.mjs`)
+      if (langModule.default) {
+        await h.loadLanguage(langModule.default)
+        loadedLanguages.add(lang)
+      }
+    } catch (error) {
+      console.warn(`Failed to load language ${lang}:`, error)
+    }
+  })()
+
+  loadingPromises.set(lang, loadPromise)
+  await loadPromise
+  loadingPromises.delete(lang)
 }
 
 const highlightCache = new Map<string, string>()
@@ -65,6 +104,10 @@ function cacheKey(code: string, language: string, theme: string): string {
 }
 
 export async function highlightCode(code: string, language: string, theme = 'github-dark-default'): Promise<string> {
+  if (language !== 'text' && !loadedLanguages.has(language)) {
+    await loadLanguage(language)
+  }
+
   const key = cacheKey(code, language, theme)
   const cached = highlightCache.get(key)
   if (cached) return cached
@@ -87,8 +130,10 @@ export async function highlightCode(code: string, language: string, theme = 'git
 
 if (import.meta.hot) {
   import.meta.hot.dispose(() => {
-    highlighterPromise?.then((h) => h.dispose())
-    highlighterPromise = null
+    highlighter?.dispose()
+    highlighter = null
+    loadedLanguages.clear()
+    loadingPromises.clear()
   })
 }
 
