@@ -90,11 +90,7 @@ export function DirectoryBrowser({ onSelect, onClose, initialPath }: DirectoryBr
       e.preventDefault()
       if (focusedIndex >= 0 && visibleItems[focusedIndex]) {
         const item = visibleItems[focusedIndex]
-        if (item.type === 'parent') {
-          fetchDir(item.path)
-        } else {
-          onSelect(item.path)
-        }
+        fetchDir(item.path)
       }
     } else if (e.key === 'Escape') {
       setSearchQuery('')
@@ -186,11 +182,7 @@ export function DirectoryBrowser({ onSelect, onClose, initialPath }: DirectoryBr
                       itemsRef.current[index] = el
                     }}
                     onClick={() => {
-                      if (item.type === 'parent') {
-                        fetchDir(item.path)
-                      } else {
-                        onSelect(item.path)
-                      }
+                      fetchDir(item.path)
                     }}
                     className="flex-1 flex items-center gap-3 p-3 text-left min-w-0"
                   >

@@ -3,7 +3,7 @@
  */
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
-import { mkdtemp, rm, writeFile, mkdir } from 'node:fs/promises'
+import { mkdtemp, rm, writeFile, mkdir, realpath, readFile, symlink } from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import type { SkillDefinition } from './types.js'
@@ -24,6 +24,7 @@ vi.mock('../db/settings.js', () => {
 
 import {
   loadAllSkills,
+  loadAllSkillsWithDiagnostics,
   loadDefaultSkills,
   loadUserSkills,
   loadProjectSkills,
@@ -88,6 +89,23 @@ ${prompt}
   )
 }
 
+async function createPortableSkill(
+  rootDir: string,
+  id: string,
+  prompt: string,
+  frontmatter = `name: ${id}\ndescription: Portable ${id}`,
+): Promise<void> {
+  const packageDir = join(rootDir, 'skills', id)
+  await mkdir(packageDir, { recursive: true })
+  await writeFile(join(packageDir, 'SKILL.md'), `---\n${frontmatter}\n---\n\n${prompt}\n`)
+}
+
+async function createPortableInRoot(root: string, id: string, prompt: string): Promise<void> {
+  const packageDir = join(root, id)
+  await mkdir(packageDir, { recursive: true })
+  await writeFile(join(packageDir, 'SKILL.md'), `---\nname: ${id}\ndescription: Portable ${id}\n---\n\n${prompt}\n`)
+}
+
 describe('loadDefaultSkills', () => {
   it('should load bundled default skills', async () => {
     const defaults = await loadDefaultSkills()
@@ -110,6 +128,49 @@ describe('loadUserSkills', () => {
     expect(skills[0]!.metadata.id).toBe('test')
     expect(skills[0]!.metadata.name).toBe('Test Skill')
     expect(skills[0]!.prompt).toBe('Do the test.')
+  })
+
+  it('loads a portable SKILL.md using its name as canonical ID', async () => {
+    await createPortableSkill(tempDir, 'portable-test', 'Use scripts/run.sh.')
+
+    const skills = await loadUserSkills(tempDir)
+
+    expect(skills).toHaveLength(1)
+    expect(skills[0]).toMatchObject({
+      metadata: {
+        id: 'portable-test',
+        name: 'portable-test',
+        description: 'Portable portable-test',
+        version: '',
+      },
+      prompt: 'Use scripts/run.sh.',
+      legacy: false,
+      source: 'global-openfox',
+    })
+    expect(skills[0]!.entrypoint).toBe(join(tempDir, 'skills', 'portable-test', 'SKILL.md'))
+    expect(skills[0]!.directory).toBe(await realpath(join(tempDir, 'skills', 'portable-test')))
+  })
+
+  it('loads non-standard portable names with migration warnings', async () => {
+    await createPortableSkill(tempDir, 'folder-name', 'Do work.', 'name: Invalid_Name\ndescription: Lenient migration')
+
+    const skills = await loadUserSkills(tempDir)
+
+    expect(skills[0]!.metadata.id).toBe('Invalid_Name')
+    expect(skills[0]!.warnings).toEqual([
+      'Skill name must use 1-64 lowercase letters, numbers, and single hyphens',
+      'Skill name "Invalid_Name" does not match package directory "folder-name"',
+    ])
+  })
+
+  it('prefers a portable package over a same-ID legacy file in one root', async () => {
+    await createSkillFile(tempDir, 'same-id', 'Legacy Same', 'Legacy prompt.')
+    await createPortableSkill(tempDir, 'same-id', 'Portable prompt.')
+
+    const skills = await loadUserSkills(tempDir)
+
+    expect(skills.filter((skill) => skill.metadata.id === 'same-id')).toHaveLength(1)
+    expect(skills[0]).toMatchObject({ prompt: 'Portable prompt.', legacy: false })
   })
 
   it('should skip files without an id', async () => {
@@ -243,6 +304,63 @@ Custom prompt.
     expect(skills.some((s) => s.metadata.id === 'user-skill')).toBe(true)
     expect(skills.length).toBeGreaterThanOrEqual(defaults.length + 1)
   })
+
+  it('discovers all standard roots with deterministic precedence', async () => {
+    const homeDir = join(tempDir, 'home')
+    const configDir = join(tempDir, 'config')
+    const projectDir = join(tempDir, 'project')
+    const selectedDir = join(tempDir, 'selected skills')
+    await createPortableInRoot(join(homeDir, '.agents', 'skills'), 'shared', 'global shared')
+    await createPortableInRoot(join(configDir, 'skills'), 'shared', 'global openfox')
+    await createPortableInRoot(selectedDir, 'shared', 'selected')
+    await createPortableInRoot(join(projectDir, '.agents', 'skills'), 'shared', 'project shared')
+    await createPortableInRoot(join(projectDir, '.openfox', 'skills'), 'shared', 'project openfox')
+    mockStore.set('skills.directories', JSON.stringify([selectedDir]))
+
+    const skills = await loadAllSkills(configDir, projectDir, { homeDir })
+
+    expect(skills.find((skill) => skill.metadata.id === 'shared')).toMatchObject({
+      prompt: 'project openfox',
+      source: 'project-openfox',
+    })
+  })
+
+  it('reports duplicate precedence decisions', async () => {
+    const configDir = join(tempDir, 'config')
+    const selectedDir = join(tempDir, 'selected')
+    await createPortableInRoot(join(configDir, 'skills'), 'duplicate', 'global version')
+    await createPortableInRoot(selectedDir, 'duplicate', 'selected version')
+    mockStore.set('skills.directories', JSON.stringify([selectedDir]))
+
+    const result = await loadAllSkillsWithDiagnostics(configDir, undefined, { homeDir: join(tempDir, 'home') })
+
+    expect(result.skills.find((skill) => skill.metadata.id === 'duplicate')?.prompt).toBe('selected version')
+    expect(result.diagnostics).toContain('Skill "duplicate" from selected overrides global-openfox')
+  })
+
+  it('expands tilde in selected skill directories', async () => {
+    const homeDir = join(tempDir, 'home')
+    await createPortableInRoot(join(homeDir, 'Shared Skills'), 'tilde-skill', 'Found through tilde.')
+    mockStore.set('skills.directories', JSON.stringify(['~/Shared Skills']))
+
+    const skills = await loadAllSkills(join(tempDir, 'config'), undefined, { homeDir })
+
+    expect(skills.find((skill) => skill.metadata.id === 'tilde-skill')).toMatchObject({ source: 'selected' })
+  })
+
+  it('deduplicates a physical package reached through a directory symlink', async () => {
+    const homeDir = join(tempDir, 'home')
+    const globalRoot = join(homeDir, '.agents', 'skills')
+    const selectedLink = join(tempDir, 'selected-link')
+    await createPortableInRoot(globalRoot, 'linked-skill', 'Linked once.')
+    await symlink(globalRoot, selectedLink, 'dir')
+    mockStore.set('skills.directories', JSON.stringify([selectedLink]))
+
+    const result = await loadAllSkillsWithDiagnostics(join(tempDir, 'config'), undefined, { homeDir })
+
+    expect(result.skills.filter((skill) => skill.metadata.id === 'linked-skill')).toHaveLength(1)
+    expect(result.diagnostics).toContain('Skill "linked-skill" reached through multiple paths')
+  })
 })
 
 describe('isSkillEnabled / setSkillEnabled', () => {
@@ -297,6 +415,20 @@ describe('findSkillById', () => {
 })
 
 describe('CRUD', () => {
+  it('saves new user skills as portable packages', async () => {
+    await saveSkill(tempDir, {
+      metadata: { id: 'portable-new', name: 'Portable New', description: 'Test', version: '2.1.0' },
+      prompt: 'Portable instructions.',
+    })
+
+    const content = await readFile(join(tempDir, 'skills', 'portable-new', 'SKILL.md'), 'utf-8')
+    expect(content).toContain('name: portable-new')
+    expect(content).toContain('description: Test')
+    expect(content).toContain('version: 2.1.0')
+    expect(content).toContain('displayName: Portable New')
+    expect(content).toContain('Portable instructions.')
+  })
+
   it('should save and load a skill', async () => {
     const skill: SkillDefinition = {
       metadata: { id: 'my_skill', name: 'My Skill', description: 'Test', version: '1.0' },
@@ -313,12 +445,7 @@ describe('CRUD', () => {
   })
 
   it('should delete a skill and clean up settings', async () => {
-    const skill: SkillDefinition = {
-      metadata: { id: 'deleteme', name: 'Delete Me', description: 'Temp', version: '1' },
-      prompt: 'Temporary.',
-    }
-
-    await saveSkill(tempDir, skill)
+    await createSkillFile(tempDir, 'deleteme', 'Delete Me', 'Temporary.')
     setSkillEnabled('deleteme', false)
     expect(getSetting('skill.enabled.deleteme')).toBe('false')
 
@@ -366,12 +493,7 @@ describe('CRUD', () => {
   })
 
   it('should delete a project skill', async () => {
-    const skill: SkillDefinition = {
-      metadata: { id: 'proj_del', name: 'Delete Project', description: 'Temp', version: '1' },
-      prompt: 'Temporary.',
-    }
-
-    await saveSkillToProject(tempDir, skill)
+    await createProjectSkillFile(tempDir, 'proj_del', 'Delete Project', 'Temporary.')
     expect(await loadProjectSkills(tempDir)).toHaveLength(1)
 
     const result = await deleteProjectSkill(tempDir, 'proj_del')

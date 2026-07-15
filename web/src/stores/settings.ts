@@ -20,6 +20,7 @@ export const SETTINGS_KEYS = {
   CACHE_WARMING: 'cache.warming',
   KEYBINDINGS: 'keybindings',
   RETRY_PATTERNS: 'agent.retryPatterns',
+  SKILLS_DIRECTORIES: 'skills.directories',
 } as const
 
 interface SettingsState {
