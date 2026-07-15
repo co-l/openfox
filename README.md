@@ -81,6 +81,20 @@ openfox provider remove   # Remove provider
 - **LSP Integration**: Immediate feedback on code validity
 - **Real-Time Metrics**: Prefill time, generation speed, context usage
 
+## Plugins
+
+OpenFox supports provider plugins loaded from the `plugins` directory inside its configuration folder. Plugins can add authentication methods, transports, provider presets, and model discovery without adding provider-specific code to the OpenFox core.
+
+Default plugin directories:
+
+- macOS: `~/Library/Application Support/openfox/plugins`
+- Linux: `${XDG_CONFIG_HOME:-~/.config}/openfox/plugins`
+- Windows: `%APPDATA%\openfox\plugins`
+
+Restart OpenFox after installing or updating a plugin.
+
+To authenticate with a ChatGPT Plus or Pro account, you can install the [`openfox-chatgpt`](https://github.com/arthurlacoste/openfox-chatgpt) plugin.
+
 ## Screenshots
 
 _Homepage — Project overview and session history_

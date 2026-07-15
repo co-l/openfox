@@ -7,6 +7,20 @@ import { QueryParamsInput } from './QueryParamsInput'
 
 const COMMON_PORTS = [8080, 11434, 8000]
 
+interface ProviderPreset {
+  id: string
+  name: string
+  description: string
+  documentationUrl?: string
+  requiresAuth: boolean
+  authAdapter?: string
+  transportAdapter?: string
+  defaults: { name?: string; url: string; backend: string; models?: ModelInfo[] }
+  connectLabel?: string
+  disconnectLabel?: string
+  missingPluginMessage?: string
+}
+
 type ModelInfo = Omit<SharedModelConfig, 'source'>
 
 function defaultReasoningEffort(efforts: string[] | undefined): string | undefined {
@@ -45,6 +59,20 @@ export interface ProviderFormData {
   authAdapter?: string
   transportAdapter?: string
   models: Array<Omit<SharedModelConfig, 'source'>>
+}
+
+export function providerFormPayload(formData: ProviderFormData) {
+  return {
+    name: formData.name,
+    url: formData.url,
+    backend: formData.backend,
+    apiKey: formData.apiKey,
+    isLocal: formData.isLocal,
+    thinkingField: formData.thinkingField,
+    authAdapter: formData.authAdapter,
+    transportAdapter: formData.transportAdapter,
+    models: formData.models,
+  }
 }
 
 interface ProviderModalProps {
@@ -362,11 +390,17 @@ export function ProviderModal({
   const [selectedModelIds, setSelectedModelIds] = useState<Set<string>>(new Set())
   const [searchQuery, setSearchQuery] = useState('')
   const [draftProviderId, setDraftProviderId] = useState<string | null>(null)
-  const [chatGptAuthState, setChatGptAuthState] = useState<'disconnected' | 'pending' | 'connected' | 'error'>(
+  const [providerAuthState, setProviderAuthState] = useState<'disconnected' | 'pending' | 'connected' | 'error'>(
     'disconnected',
   )
-  const [chatGptAuthBusy, setChatGptAuthBusy] = useState(false)
-  const [deviceChallenge, setDeviceChallenge] = useState<{ url: string; userCode: string } | null>(null)
+  const [providerAuthBusy, setProviderAuthBusy] = useState(false)
+  const [deviceChallenge, setDeviceChallenge] = useState<{
+    verificationUrl: string
+    directUrl?: string
+    userCode?: string
+    instructions: string
+  } | null>(null)
+  const [providerPresets, setProviderPresets] = useState<ProviderPreset[]>([])
   const [devicePageOpened, setDevicePageOpened] = useState(false)
   const [codeCopied, setCodeCopied] = useState(false)
   const codeCopiedTimerRef = useRef<number | null>(null)
@@ -378,6 +412,16 @@ export function ProviderModal({
       requestAnimationFrame(() => urlInputRef.current?.focus())
     }
   }, [formStep, isOpen])
+
+  useEffect(() => {
+    if (!isOpen) return
+    void authFetch('/api/provider-presets')
+      .then(async (response) =>
+        response.ok ? ((await response.json()) as { presets: ProviderPreset[] }) : { presets: [] },
+      )
+      .then((data) => setProviderPresets(data.presets))
+      .catch(() => setProviderPresets([]))
+  }, [isOpen])
 
   function updateModelConfig(id: string, partial: Partial<ModelConfig>) {
     setModelConfigs((prev) => ({ ...prev, [id]: { ...prev[id]!, ...partial } }))
@@ -416,7 +460,7 @@ export function ProviderModal({
       setTestResults({})
       setRawModalData(null)
       setDraftProviderId(null)
-      setChatGptAuthState('disconnected')
+      setProviderAuthState('disconnected')
       setDeviceChallenge(null)
       setDevicePageOpened(false)
       setCodeCopied(false)
@@ -459,22 +503,22 @@ export function ProviderModal({
 
   // Auto-fetch models when entering step 2
   useEffect(() => {
-    const requiresChatGptConnection = formTransportAdapter === 'openai-codex'
+    const requiresAuthentication = Boolean(formAuthAdapter)
     if (
       formStep === 2 &&
       formUrl &&
       models.length === 0 &&
       !fetchingModels &&
       !fetchError &&
-      (!requiresChatGptConnection || chatGptAuthState === 'connected')
+      (!requiresAuthentication || providerAuthState === 'connected')
     ) {
       fetchModels(formUrl)
     }
-  }, [formStep, chatGptAuthState])
+  }, [formStep, providerAuthState])
 
   useEffect(() => {
-    if (!isOpen || formTransportAdapter !== 'openai-codex' || !editProvider?.id) return
-    void refreshChatGptAuthStatus(editProvider.id)
+    if (!isOpen || !formAuthAdapter || !editProvider?.id) return
+    void refreshProviderAuthStatus(editProvider.id)
   }, [isOpen, formTransportAdapter, editProvider?.id])
 
   useEffect(() => {
@@ -484,7 +528,7 @@ export function ProviderModal({
 
     let cancelled = false
     const checkConnection = async () => {
-      const state = await refreshChatGptAuthStatus(providerId)
+      const state = await refreshProviderAuthStatus(providerId)
       if (cancelled || state !== 'connected') return
       setDeviceChallenge(null)
       setDevicePageOpened(false)
@@ -500,7 +544,7 @@ export function ProviderModal({
     }
   }, [deviceChallenge, draftProviderId, editProvider?.id])
 
-  async function ensureDraftChatGptProvider(): Promise<string> {
+  async function ensureDraftProvider(): Promise<string> {
     if (editProvider?.id) return editProvider.id
     if (draftProviderId) return draftProviderId
 
@@ -508,7 +552,7 @@ export function ProviderModal({
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        name: formName || 'ChatGPT Plus / Pro',
+        name: formName || 'Provider',
         url: formUrl,
         backend: formBackend,
         authAdapter: formAuthAdapter,
@@ -517,13 +561,13 @@ export function ProviderModal({
         models: [],
       }),
     })
-    if (!response.ok) throw new Error('Unable to create ChatGPT provider')
+    if (!response.ok) throw new Error('Unable to create provider')
     const data = (await response.json()) as { provider: { id: string } }
     setDraftProviderId(data.provider.id)
     return data.provider.id
   }
 
-  async function refreshChatGptAuthStatus(providerId: string) {
+  async function refreshProviderAuthStatus(providerId: string) {
     const response = await authFetch(`/api/provider-auth/${providerId}/status`)
     if (!response.ok) return 'error' as const
     const data = (await response.json()) as { state: 'disconnected' | 'pending' | 'connected' | 'expired' | 'error' }
@@ -535,29 +579,33 @@ export function ProviderModal({
           : data.state === 'error'
             ? 'error'
             : 'disconnected'
-    setChatGptAuthState(state)
+    setProviderAuthState(state)
     return state
   }
 
-  async function connectChatGpt() {
-    setChatGptAuthBusy(true)
-    setChatGptAuthState('pending')
+  async function connectProvider() {
+    setProviderAuthBusy(true)
+    setProviderAuthState('pending')
     try {
-      const providerId = await ensureDraftChatGptProvider()
+      const providerId = await ensureDraftProvider()
       const response = await authFetch(`/api/provider-auth/${providerId}/login`, { method: 'POST' })
-      if (!response.ok) throw new Error('Unable to start ChatGPT sign-in')
-      const challenge = (await response.json()) as { url: string; userCode?: string }
-      if (!challenge.userCode) throw new Error('OpenAI did not return a device code')
-      setDeviceChallenge({ url: challenge.url, userCode: challenge.userCode })
+      if (!response.ok) throw new Error('Unable to start provider sign-in')
+      const challenge = (await response.json()) as {
+        verificationUrl: string
+        directUrl?: string
+        userCode?: string
+        instructions: string
+      }
+      setDeviceChallenge(challenge)
     } catch {
-      setChatGptAuthState('error')
+      setProviderAuthState('error')
     } finally {
-      setChatGptAuthBusy(false)
+      setProviderAuthBusy(false)
     }
   }
 
   async function copyDeviceCode() {
-    if (!deviceChallenge) return
+    if (!deviceChallenge?.userCode) return
     await navigator.clipboard?.writeText(deviceChallenge.userCode)
     if (codeCopiedTimerRef.current !== null) window.clearTimeout(codeCopiedTimerRef.current)
     setCodeCopied(false)
@@ -570,7 +618,7 @@ export function ProviderModal({
 
   function openDeviceAuthorization() {
     if (!deviceChallenge) return
-    window.open(deviceChallenge.url, '_blank', 'noopener,noreferrer')
+    window.open(deviceChallenge.directUrl ?? deviceChallenge.verificationUrl, '_blank', 'noopener,noreferrer')
     setDevicePageOpened(true)
   }
 
@@ -581,10 +629,9 @@ export function ProviderModal({
     try {
       const params = new URLSearchParams({ url })
       if (formApiKey) params.set('apiKey', formApiKey)
-      const response =
-        formTransportAdapter === 'openai-codex'
-          ? await authFetch('/api/provider-auth/openai/models')
-          : await authFetch(`/api/providers/models?${params.toString()}`)
+      const response = formTransportAdapter
+        ? await authFetch(`/api/providers/${await ensureDraftProvider()}/models`)
+        : await authFetch(`/api/providers/models?${params.toString()}`)
       if (response.ok) {
         const data = (await response.json()) as { models: ModelInfo[]; url: string }
         if (data.models?.length) {
@@ -810,28 +857,30 @@ export function ProviderModal({
             <div>
               <label className="block text-sm text-text-secondary mb-2">Inference engine</label>
               <div className="grid grid-cols-4 gap-2">
-                <button
-                  key="chatgpt"
-                  type="button"
-                  onClick={() => {
-                    setFormName('ChatGPT Plus / Pro')
-                    setFormUrl('https://chatgpt.com/backend-api/codex')
-                    setFormBackend('openai')
-                    setFormIsLocal(false)
-                    setFormApiKey('')
-                    setFormAuthAdapter('openai-account')
-                    setFormTransportAdapter('openai-codex')
-                    setFetchError(null)
-                    resetStep2()
-                  }}
-                  className={`p-2 rounded border text-center text-sm transition-colors ${
-                    formTransportAdapter === 'openai-codex'
-                      ? 'border-accent-primary bg-accent-primary/10 text-accent-primary'
-                      : 'border-border hover:border-text-muted text-text-secondary'
-                  }`}
-                >
-                  ChatGPT
-                </button>
+                {providerPresets.map((preset) => (
+                  <button
+                    key={preset.id}
+                    type="button"
+                    onClick={() => {
+                      setFormName(preset.defaults.name ?? preset.name)
+                      setFormUrl(preset.defaults.url)
+                      setFormBackend(preset.defaults.backend)
+                      setFormIsLocal(false)
+                      setFormApiKey('')
+                      setFormAuthAdapter(preset.authAdapter)
+                      setFormTransportAdapter(preset.transportAdapter)
+                      setFetchError(null)
+                      resetStep2()
+                    }}
+                    className={`p-2 rounded border text-center text-sm transition-colors ${
+                      formTransportAdapter && formTransportAdapter === preset.transportAdapter
+                        ? 'border-accent-primary bg-accent-primary/10 text-accent-primary'
+                        : 'border-border hover:border-text-muted text-text-secondary'
+                    }`}
+                  >
+                    {preset.name}
+                  </button>
+                ))}
                 <button
                   key="other"
                   type="button"
@@ -883,7 +932,7 @@ export function ProviderModal({
               </div>
             </div>
 
-            {formTransportAdapter !== 'openai-codex' && (
+            {!formAuthAdapter && (
               <div>
                 <label className="block text-sm text-text-secondary mb-1">Provider URL</label>
                 <input
@@ -915,7 +964,7 @@ export function ProviderModal({
               />
             </div>
 
-            {formTransportAdapter !== 'openai-codex' && (
+            {!formAuthAdapter && (
               <div>
                 <label className="block text-sm text-text-secondary mb-1">
                   API key <span className="text-text-muted">(optional)</span>
@@ -931,7 +980,7 @@ export function ProviderModal({
               </div>
             )}
 
-            {formTransportAdapter !== 'openai-codex' && (
+            {!formAuthAdapter && (
               <label className="flex items-center gap-2 cursor-pointer">
                 <input
                   type="checkbox"
@@ -948,27 +997,27 @@ export function ProviderModal({
         {/* Step 2: Test & Configure Models */}
         {formStep === 2 && (
           <div className="px-6 py-4 space-y-4">
-            {formTransportAdapter === 'openai-codex' && (
+            {Boolean(formAuthAdapter) && (
               <div className="rounded-lg border border-border bg-bg-primary p-4">
                 <div className="flex items-center justify-between gap-4">
                   <div>
-                    <h4 className="text-sm font-medium text-text-primary">Connect ChatGPT</h4>
+                    <h4 className="text-sm font-medium text-text-primary">Connect provider</h4>
                     <p className="mt-1 text-xs text-text-muted">
-                      Connect your Plus or Pro account before choosing available models.
+                      Connect this provider before choosing available models.
                     </p>
                   </div>
-                  {chatGptAuthState === 'connected' ? (
+                  {providerAuthState === 'connected' ? (
                     <span className="text-sm font-medium text-accent-success">Connected ✓</span>
                   ) : (
                     <button
                       type="button"
-                      onClick={() => void connectChatGpt()}
-                      disabled={chatGptAuthBusy || chatGptAuthState === 'pending'}
+                      onClick={() => void connectProvider()}
+                      disabled={providerAuthBusy || providerAuthState === 'pending'}
                       className="rounded-lg bg-accent-primary px-4 py-2 text-sm font-medium text-text-primary disabled:opacity-50"
                     >
-                      {chatGptAuthBusy || chatGptAuthState === 'pending'
+                      {providerAuthBusy || providerAuthState === 'pending'
                         ? 'Connecting...'
-                        : chatGptAuthState === 'error'
+                        : providerAuthState === 'error'
                           ? 'Retry'
                           : 'Connect'}
                     </button>
@@ -976,13 +1025,13 @@ export function ProviderModal({
                 </div>
                 {deviceChallenge && (
                   <div className="mt-4 border-t border-border pt-4">
-                    <p className="text-xs text-text-muted">Enter this code on the OpenAI authorization page:</p>
+                    <p className="text-xs text-text-muted">Use this code to complete authorization:</p>
                     <button
                       type="button"
                       onClick={() => void copyDeviceCode()}
                       className="mt-3 w-full rounded-lg border border-accent-primary/40 px-4 py-4 font-mono text-2xl font-semibold tracking-[0.2em] text-accent-primary"
                     >
-                      {deviceChallenge.userCode}
+                      {deviceChallenge.userCode ?? 'Continue'}
                     </button>
                     <div className="mt-3 flex gap-2">
                       <button
@@ -997,7 +1046,7 @@ export function ProviderModal({
                         onClick={openDeviceAuthorization}
                         className="flex-1 rounded-lg bg-accent-primary px-3 py-2 text-sm font-medium text-text-primary"
                       >
-                        {devicePageOpened ? 'Reopen OpenAI' : 'Open OpenAI'}
+                        {devicePageOpened ? 'Reopen authorization' : 'Open authorization'}
                       </button>
                     </div>
                   </div>
@@ -1031,237 +1080,231 @@ export function ProviderModal({
               </div>
             )}
 
-            {models.length > 0 &&
-              formBackend &&
-              (formTransportAdapter !== 'openai-codex' || chatGptAuthState === 'connected') && (
-                <>
-                  {/* Selected Models — full config panels */}
-                  {selectedModelIds.size > 0 && (
-                    <div className="mb-4">
-                      <h4 className="text-sm font-medium text-text-primary mb-1">
-                        Selected Models ({selectedModelIds.size})
-                      </h4>
-                      <p className="text-xs text-text-muted mb-2">
-                        Only selected models will appear in the model selector.
-                      </p>
-                      <div className="space-y-2">
-                        {models
-                          .filter((m) => selectedModelIds.has(m.id))
-                          .map((model) => (
+            {models.length > 0 && formBackend && (!formAuthAdapter || providerAuthState === 'connected') && (
+              <>
+                {/* Selected Models — full config panels */}
+                {selectedModelIds.size > 0 && (
+                  <div className="mb-4">
+                    <h4 className="text-sm font-medium text-text-primary mb-1">
+                      Selected Models ({selectedModelIds.size})
+                    </h4>
+                    <p className="text-xs text-text-muted mb-2">
+                      Only selected models will appear in the model selector.
+                    </p>
+                    <div className="space-y-2">
+                      {models
+                        .filter((m) => selectedModelIds.has(m.id))
+                        .map((model) => (
+                          <div key={model.id} className="bg-bg-primary border border-border rounded-lg overflow-hidden">
                             <div
-                              key={model.id}
-                              className="bg-bg-primary border border-border rounded-lg overflow-hidden"
+                              onClick={() => setExpandedModelId(expandedModelId === model.id ? null : model.id)}
+                              className="w-full flex items-center justify-between px-4 py-3 hover:bg-bg-tertiary transition-colors cursor-pointer"
                             >
-                              <div
-                                onClick={() => setExpandedModelId(expandedModelId === model.id ? null : model.id)}
-                                className="w-full flex items-center justify-between px-4 py-3 hover:bg-bg-tertiary transition-colors cursor-pointer"
-                              >
-                                <div className="flex items-center gap-3">
-                                  <span className="text-sm font-medium text-text-primary">
-                                    {model.name ?? model.id.split('/').pop()}
-                                  </span>
-                                  <span className="text-xs text-text-muted bg-bg-tertiary px-2 py-0.5 rounded">
-                                    {(modelConfigs[model.id]?.contextWindow ?? model.contextWindow).toLocaleString()}{' '}
-                                    ctx
-                                  </span>
-                                </div>
-                                <div className="flex items-center gap-2">
-                                  {autoConfigState.progress[model.id] === 'probing' ? (
-                                    <span className="w-3 h-3 border-2 border-accent-primary border-t-transparent rounded-full animate-spin" />
-                                  ) : autoConfigState.progress[model.id] === 'done' ? (
-                                    <span className="text-xs text-accent-success font-medium">Configured ✓</span>
-                                  ) : autoConfigState.progress[model.id] === 'error' ? (
-                                    <span className="text-xs text-red-500 font-medium">Failed ✗</span>
-                                  ) : formTransportAdapter !== 'openai-codex' ? (
-                                    <button
-                                      onClick={(e) => {
-                                        e.stopPropagation()
-                                        runAutoConfig(model.id)
-                                      }}
-                                      className="text-xs text-accent-primary hover:underline"
-                                    >
-                                      Auto-config
-                                    </button>
-                                  ) : null}
-                                  {models.length > 1 && (
-                                    <button
-                                      onClick={(e) => {
-                                        e.stopPropagation()
-                                        const next = new Set(selectedModelIds)
-                                        next.delete(model.id)
-                                        setSelectedModelIds(next)
-                                        if (expandedModelId === model.id) setExpandedModelId(null)
-                                      }}
-                                      className="text-xs text-red-500 hover:text-red-400 px-2 py-1 rounded hover:bg-red-500/10"
-                                    >
-                                      Remove
-                                    </button>
-                                  )}
-                                  <ChevronDownIcon
-                                    className={`w-4 h-4 text-text-muted transition-transform ${expandedModelId === model.id ? 'rotate-180' : ''}`}
-                                  />
-                                </div>
+                              <div className="flex items-center gap-3">
+                                <span className="text-sm font-medium text-text-primary">
+                                  {model.name ?? model.id.split('/').pop()}
+                                </span>
+                                <span className="text-xs text-text-muted bg-bg-tertiary px-2 py-0.5 rounded">
+                                  {(modelConfigs[model.id]?.contextWindow ?? model.contextWindow).toLocaleString()} ctx
+                                </span>
                               </div>
-
-                              {expandedModelId === model.id && (
-                                <ModelConfigPanel
-                                  model={model}
-                                  modelConfigs={modelConfigs}
-                                  autoConfigState={autoConfigState}
-                                  testResults={testResults}
-                                  onUpdateConfig={updateModelConfig}
-                                  onRunAutoConfig={runAutoConfig}
-                                  onTestParams={testParams}
-                                  onShowRaw={setRawModalData}
+                              <div className="flex items-center gap-2">
+                                {autoConfigState.progress[model.id] === 'probing' ? (
+                                  <span className="w-3 h-3 border-2 border-accent-primary border-t-transparent rounded-full animate-spin" />
+                                ) : autoConfigState.progress[model.id] === 'done' ? (
+                                  <span className="text-xs text-accent-success font-medium">Configured ✓</span>
+                                ) : autoConfigState.progress[model.id] === 'error' ? (
+                                  <span className="text-xs text-red-500 font-medium">Failed ✗</span>
+                                ) : !formAuthAdapter ? (
+                                  <button
+                                    onClick={(e) => {
+                                      e.stopPropagation()
+                                      runAutoConfig(model.id)
+                                    }}
+                                    className="text-xs text-accent-primary hover:underline"
+                                  >
+                                    Auto-config
+                                  </button>
+                                ) : null}
+                                {models.length > 1 && (
+                                  <button
+                                    onClick={(e) => {
+                                      e.stopPropagation()
+                                      const next = new Set(selectedModelIds)
+                                      next.delete(model.id)
+                                      setSelectedModelIds(next)
+                                      if (expandedModelId === model.id) setExpandedModelId(null)
+                                    }}
+                                    className="text-xs text-red-500 hover:text-red-400 px-2 py-1 rounded hover:bg-red-500/10"
+                                  >
+                                    Remove
+                                  </button>
+                                )}
+                                <ChevronDownIcon
+                                  className={`w-4 h-4 text-text-muted transition-transform ${expandedModelId === model.id ? 'rotate-180' : ''}`}
                                 />
-                              )}
+                              </div>
                             </div>
-                          ))}
-                      </div>
+
+                            {expandedModelId === model.id && (
+                              <ModelConfigPanel
+                                model={model}
+                                modelConfigs={modelConfigs}
+                                autoConfigState={autoConfigState}
+                                testResults={testResults}
+                                onUpdateConfig={updateModelConfig}
+                                onRunAutoConfig={runAutoConfig}
+                                onTestParams={testParams}
+                                onShowRaw={setRawModalData}
+                              />
+                            )}
+                          </div>
+                        ))}
                     </div>
-                  )}
+                  </div>
+                )}
 
-                  {/* Available Models — search + checkbox list (hidden when single model, already selected) */}
-                  {models.length > 1 && (
-                    <div>
-                      <h4 className="text-sm font-medium text-text-primary mb-1">Available Models</h4>
-                      {selectedModelIds.size === 0 && (
-                        <p className="text-xs text-text-muted mb-2">
-                          This provider has many models available. Select the ones you want to use below.
-                        </p>
+                {/* Available Models — search + checkbox list (hidden when single model, already selected) */}
+                {models.length > 1 && (
+                  <div>
+                    <h4 className="text-sm font-medium text-text-primary mb-1">Available Models</h4>
+                    {selectedModelIds.size === 0 && (
+                      <p className="text-xs text-text-muted mb-2">
+                        This provider has many models available. Select the ones you want to use below.
+                      </p>
+                    )}
+
+                    <div className="relative mb-2">
+                      <input
+                        type="text"
+                        value={searchQuery}
+                        onChange={(e) => setSearchQuery(e.target.value)}
+                        placeholder="Search models..."
+                        className="w-full px-4 py-2 bg-bg-primary border border-border rounded-lg text-sm text-text-primary placeholder-text-muted focus:outline-none focus:border-accent-primary"
+                      />
+                      {searchQuery && (
+                        <button
+                          onClick={() => setSearchQuery('')}
+                          className="absolute right-3 top-1/2 -translate-y-1/2 text-text-muted hover:text-text-primary text-sm"
+                        >
+                          &times;
+                        </button>
                       )}
+                    </div>
 
-                      <div className="relative mb-2">
-                        <input
-                          type="text"
-                          value={searchQuery}
-                          onChange={(e) => setSearchQuery(e.target.value)}
-                          placeholder="Search models..."
-                          className="w-full px-4 py-2 bg-bg-primary border border-border rounded-lg text-sm text-text-primary placeholder-text-muted focus:outline-none focus:border-accent-primary"
-                        />
-                        {searchQuery && (
-                          <button
-                            onClick={() => setSearchQuery('')}
-                            className="absolute right-3 top-1/2 -translate-y-1/2 text-text-muted hover:text-text-primary text-sm"
-                          >
-                            &times;
-                          </button>
-                        )}
-                      </div>
-
-                      <div className="flex items-center justify-between mb-2">
-                        <p className="text-xs text-text-muted">
-                          Showing {filterModels(searchQuery).length} of {models.length} models
-                        </p>
-                        <div className="flex gap-2">
-                          <button
-                            onClick={() => {
-                              const next = new Set(selectedModelIds)
-                              const visible = filterModels(searchQuery)
-                              for (const m of visible) next.add(m.id)
-                              setSelectedModelIds(next)
-                              setModelConfigs((current) => {
-                                const updated = { ...current }
-                                for (const model of visible) {
-                                  updated[model.id] = {
-                                    contextWindow: model.contextWindow,
-                                    ...updated[model.id],
-                                  }
-                                }
-                                return updated
-                              })
-                              if (formTransportAdapter !== 'openai-codex') {
-                                for (const m of visible) {
-                                  if (
-                                    autoConfigState.progress[m.id] !== 'probing' &&
-                                    autoConfigState.progress[m.id] !== 'done'
-                                  ) {
-                                    runAutoConfig(m.id)
-                                  }
+                    <div className="flex items-center justify-between mb-2">
+                      <p className="text-xs text-text-muted">
+                        Showing {filterModels(searchQuery).length} of {models.length} models
+                      </p>
+                      <div className="flex gap-2">
+                        <button
+                          onClick={() => {
+                            const next = new Set(selectedModelIds)
+                            const visible = filterModels(searchQuery)
+                            for (const m of visible) next.add(m.id)
+                            setSelectedModelIds(next)
+                            setModelConfigs((current) => {
+                              const updated = { ...current }
+                              for (const model of visible) {
+                                updated[model.id] = {
+                                  contextWindow: model.contextWindow,
+                                  ...updated[model.id],
                                 }
                               }
-                            }}
-                            className="text-xs text-accent-primary hover:underline"
-                          >
-                            Select all
-                          </button>
-                          <button
-                            onClick={() => {
-                              const next = new Set(selectedModelIds)
-                              const visible = filterModels(searchQuery)
-                              for (const m of visible) next.delete(m.id)
-                              setSelectedModelIds(next)
-                            }}
-                            className="text-xs text-text-muted hover:text-text-secondary"
-                          >
-                            Deselect all
-                          </button>
-                        </div>
-                      </div>
-
-                      <div className="space-y-1 max-h-48 overflow-y-auto border border-border rounded-lg bg-bg-primary">
-                        {filterModels(searchQuery).map((model) => {
-                          const isChecked = selectedModelIds.has(model.id)
-                          return (
-                            <div
-                              key={model.id}
-                              role="checkbox"
-                              aria-checked={isChecked}
-                              tabIndex={0}
-                              className={`flex items-center gap-3 px-4 py-2 hover:bg-bg-tertiary transition-colors cursor-pointer ${
-                                isChecked ? 'bg-accent-primary/5' : ''
-                              }`}
-                              onClick={() => {
-                                if (isChecked) {
-                                  const next = new Set(selectedModelIds)
-                                  next.delete(model.id)
-                                  setSelectedModelIds(next)
-                                } else {
-                                  selectModel(model)
-                                  if (formTransportAdapter !== 'openai-codex') runAutoConfig(model.id)
+                              return updated
+                            })
+                            if (!formAuthAdapter) {
+                              for (const m of visible) {
+                                if (
+                                  autoConfigState.progress[m.id] !== 'probing' &&
+                                  autoConfigState.progress[m.id] !== 'done'
+                                ) {
+                                  runAutoConfig(m.id)
                                 }
-                              }}
-                              onKeyDown={(e) => {
-                                if (e.key === 'Enter' || e.key === ' ') {
-                                  e.preventDefault()
-                                  e.currentTarget.click()
-                                }
-                              }}
-                            >
-                              <input
-                                type="checkbox"
-                                checked={isChecked}
-                                onChange={() => {}}
-                                className="w-4 h-4 rounded border-border accent-accent-primary pointer-events-none"
-                              />
-                              <span className="text-sm text-text-primary flex-1 truncate">
-                                {model.name ?? model.id.split('/').pop()}
-                              </span>
-                              <span className="text-xs text-text-muted flex-shrink-0">
-                                {(modelConfigs[model.id]?.contextWindow ?? model.contextWindow).toLocaleString()} ctx
-                              </span>
-                              {autoConfigState.progress[model.id] === 'probing' && (
-                                <span className="w-3 h-3 border-2 border-accent-primary border-t-transparent rounded-full animate-spin flex-shrink-0" />
-                              )}
-                              {autoConfigState.progress[model.id] === 'done' && (
-                                <span className="text-xs text-accent-success flex-shrink-0">✓</span>
-                              )}
-                              {autoConfigState.progress[model.id] === 'error' && (
-                                <span className="text-xs text-red-500 flex-shrink-0">✗</span>
-                              )}
-                            </div>
-                          )
-                        })}
-                        {filterModels(searchQuery).length === 0 && (
-                          <div className="px-4 py-6 text-center text-sm text-text-muted">
-                            No models match &ldquo;{searchQuery}&rdquo;
-                          </div>
-                        )}
+                              }
+                            }
+                          }}
+                          className="text-xs text-accent-primary hover:underline"
+                        >
+                          Select all
+                        </button>
+                        <button
+                          onClick={() => {
+                            const next = new Set(selectedModelIds)
+                            const visible = filterModels(searchQuery)
+                            for (const m of visible) next.delete(m.id)
+                            setSelectedModelIds(next)
+                          }}
+                          className="text-xs text-text-muted hover:text-text-secondary"
+                        >
+                          Deselect all
+                        </button>
                       </div>
                     </div>
-                  )}
-                </>
-              )}
+
+                    <div className="space-y-1 max-h-48 overflow-y-auto border border-border rounded-lg bg-bg-primary">
+                      {filterModels(searchQuery).map((model) => {
+                        const isChecked = selectedModelIds.has(model.id)
+                        return (
+                          <div
+                            key={model.id}
+                            role="checkbox"
+                            aria-checked={isChecked}
+                            tabIndex={0}
+                            className={`flex items-center gap-3 px-4 py-2 hover:bg-bg-tertiary transition-colors cursor-pointer ${
+                              isChecked ? 'bg-accent-primary/5' : ''
+                            }`}
+                            onClick={() => {
+                              if (isChecked) {
+                                const next = new Set(selectedModelIds)
+                                next.delete(model.id)
+                                setSelectedModelIds(next)
+                              } else {
+                                selectModel(model)
+                                if (!formAuthAdapter) runAutoConfig(model.id)
+                              }
+                            }}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter' || e.key === ' ') {
+                                e.preventDefault()
+                                e.currentTarget.click()
+                              }
+                            }}
+                          >
+                            <input
+                              type="checkbox"
+                              checked={isChecked}
+                              onChange={() => {}}
+                              className="w-4 h-4 rounded border-border accent-accent-primary pointer-events-none"
+                            />
+                            <span className="text-sm text-text-primary flex-1 truncate">
+                              {model.name ?? model.id.split('/').pop()}
+                            </span>
+                            <span className="text-xs text-text-muted flex-shrink-0">
+                              {(modelConfigs[model.id]?.contextWindow ?? model.contextWindow).toLocaleString()} ctx
+                            </span>
+                            {autoConfigState.progress[model.id] === 'probing' && (
+                              <span className="w-3 h-3 border-2 border-accent-primary border-t-transparent rounded-full animate-spin flex-shrink-0" />
+                            )}
+                            {autoConfigState.progress[model.id] === 'done' && (
+                              <span className="text-xs text-accent-success flex-shrink-0">✓</span>
+                            )}
+                            {autoConfigState.progress[model.id] === 'error' && (
+                              <span className="text-xs text-red-500 flex-shrink-0">✗</span>
+                            )}
+                          </div>
+                        )
+                      })}
+                      {filterModels(searchQuery).length === 0 && (
+                        <div className="px-4 py-6 text-center text-sm text-text-muted">
+                          No models match &ldquo;{searchQuery}&rdquo;
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </>
+            )}
           </div>
         )}
 

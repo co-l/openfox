@@ -371,7 +371,7 @@ export function createWebSocketServer(
     }
 
     // Let ProviderManager create the session client so provider-specific
-    // transports (for example ChatGPT Codex) and auth context are preserved.
+    // transports (for example External Provider custom) and auth context are preserved.
     const client = providerManager.createClient(session.providerId, effectiveModel)
     if (!client) {
       logger.warn('Could not create session provider client, falling back to global', {

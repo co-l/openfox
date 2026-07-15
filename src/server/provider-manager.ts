@@ -1,5 +1,5 @@
 import type { Provider, Config, LlmBackend, ModelConfig } from '../shared/types.js'
-import type { ProviderAdapterRegistry } from './providers/adapters/registry.js'
+import type { ProviderRegistry } from './providers/plugins/registry.js'
 import { createTransportLLMClient } from './providers/adapters/transport-client.js'
 import { createLLMClient, clearModelCache, getModelProfile, type LLMClientWithModel } from './llm/index.js'
 import { logger } from './utils/logger.js'
@@ -266,7 +266,7 @@ export function parseDefaultModelSelection(selection?: string): {
 }
 
 export interface ProviderManagerOptions {
-  adapters?: ProviderAdapterRegistry
+  adapters?: ProviderRegistry
 }
 
 export function createProviderManager(config: Config, options: ProviderManagerOptions = {}): ProviderManager {
@@ -315,7 +315,6 @@ export function createProviderManager(config: Config, options: ProviderManagerOp
 
   function resolveTransportAdapter(provider: Provider): string | undefined {
     if (provider.transportAdapter) return provider.transportAdapter
-    if (provider.url.includes('chatgpt.com/backend-api/codex')) return 'openai-codex'
     return undefined
   }
 
@@ -561,8 +560,7 @@ export function createProviderManager(config: Config, options: ProviderManagerOp
         providerStatus.set(p.id, 'unknown')
       }
 
-      // Provider metadata can change without changing the active provider ID
-      // (for example, ChatGPT device auth adds credentialRef). Always rebuild
+      // Provider metadata can change without changing the active provider ID. Always rebuild
       // the active client so it receives the latest auth and transport context.
       const activeProviderId = this.getActiveProviderId()
       if (activeProviderId) {

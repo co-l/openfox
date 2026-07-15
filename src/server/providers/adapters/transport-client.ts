@@ -2,7 +2,7 @@ import type { Provider } from '../../../shared/types.js'
 import { getBackendCapabilities, type Backend } from '../../llm/backend.js'
 import { getModelProfile } from '../../llm/profiles.js'
 import type { LLMClientWithModel } from '../../llm/client.js'
-import type { ProviderTransportAdapter } from './types.js'
+import type { ProviderTransportAdapter } from '../../../provider/index.js'
 
 export function createTransportLLMClient(
   provider: Provider,

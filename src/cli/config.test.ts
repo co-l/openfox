@@ -372,30 +372,49 @@ describe('config', () => {
       JSON.stringify({
         providers: [
           {
-            id: 'chatgpt',
-            name: 'ChatGPT Plus / Pro',
-            url: 'https://chatgpt.com/backend-api/codex',
+            id: 'external',
+            name: 'External Account Provider',
+            url: 'https://provider.example/v1',
             backend: 'openai',
             models: [],
             isActive: true,
             createdAt: new Date().toISOString(),
-            authAdapter: 'openai-account',
-            transportAdapter: 'openai-codex',
+            authAdapter: 'example-auth',
+            transportAdapter: 'example-transport',
             credentialRef: 'credential-ref-1',
           },
         ],
-        defaultModelSelection: 'chatgpt/gpt-5.4',
+        defaultModelSelection: 'external/gpt-5.4',
       }),
     )
 
     const loaded = await loadGlobalConfig('production')
     expect(loaded.providers[0]).toEqual(
       expect.objectContaining({
-        authAdapter: 'openai-account',
-        transportAdapter: 'openai-codex',
+        authAdapter: 'example-auth',
+        transportAdapter: 'example-transport',
         credentialRef: 'credential-ref-1',
       }),
     )
   })
 
+  it('accepts a concise preset-backed provider entry', async () => {
+    await writeFile(
+      join(TEST_DIR, 'production', 'config.json'),
+      JSON.stringify({ providers: [{ id: 'main', preset: 'example' }] }),
+    )
+
+    const loaded = await loadGlobalConfig('production')
+    expect(loaded.providers).toEqual([
+      expect.objectContaining({
+        id: 'main',
+        preset: 'example',
+        name: 'main',
+        url: '',
+        backend: 'unknown',
+        models: [],
+        isActive: false,
+      }),
+    ])
+  })
 })

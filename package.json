@@ -1,6 +1,6 @@
 {
   "name": "openfox",
-  "version": "2.0.55",
+  "version": "2.0.56",
   "description": "Local-LLM-first agentic coding assistant",
   "type": "module",
   "bin": {
@@ -15,6 +15,10 @@
     "./shared": {
       "types": "./dist/shared/index.d.ts",
       "import": "./dist/shared/index.js"
+    },
+    "./provider": {
+      "types": "./dist/provider/index.d.ts",
+      "import": "./dist/provider/index.js"
     }
   },
   "files": [

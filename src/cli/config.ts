@@ -34,21 +34,41 @@ const modelConfigSchema = z
   })
   .passthrough() as z.ZodType<ModelConfig>
 
-const providerSchema = z.object({
-  id: z.string(),
-  name: z.string(),
-  url: z.string(),
-  backend: backendSchema,
-  apiKey: z.string().optional(),
-  models: z.array(modelConfigSchema).default([]),
-  isActive: z.boolean(),
-  createdAt: z.string(),
-  isLocal: z.boolean().optional(),
-  thinkingField: z.string().optional(),
-  authAdapter: z.string().optional(),
-  transportAdapter: z.string().optional(),
-  credentialRef: z.string().optional(),
-}) as z.ZodType<Provider>
+const providerSchema = z
+  .object({
+    id: z.string(),
+    preset: z.string().optional(),
+    name: z.string().optional(),
+    url: z.string().optional(),
+    backend: backendSchema.optional(),
+    apiKey: z.string().optional(),
+    models: z.array(modelConfigSchema).optional(),
+    isActive: z.boolean().optional(),
+    createdAt: z.string().optional(),
+    isLocal: z.boolean().optional(),
+    thinkingField: z.string().optional(),
+    authAdapter: z.string().optional(),
+    transportAdapter: z.string().optional(),
+    credentialRef: z.string().optional(),
+  })
+  .transform(
+    (provider): Provider => ({
+      id: provider.id,
+      ...(provider.preset ? { preset: provider.preset } : {}),
+      name: provider.name ?? provider.id,
+      url: provider.url ?? '',
+      backend: provider.backend ?? 'unknown',
+      ...(provider.apiKey ? { apiKey: provider.apiKey } : {}),
+      models: provider.models ?? [],
+      isActive: provider.isActive ?? false,
+      createdAt: provider.createdAt ?? new Date().toISOString(),
+      ...(provider.isLocal !== undefined ? { isLocal: provider.isLocal } : {}),
+      ...(provider.thinkingField ? { thinkingField: provider.thinkingField } : {}),
+      ...(provider.authAdapter ? { authAdapter: provider.authAdapter } : {}),
+      ...(provider.transportAdapter ? { transportAdapter: provider.transportAdapter } : {}),
+      ...(provider.credentialRef ? { credentialRef: provider.credentialRef } : {}),
+    }),
+  )
 
 const serverSchema = z.object({
   port: z.number().default(10369),

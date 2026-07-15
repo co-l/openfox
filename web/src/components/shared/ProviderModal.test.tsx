@@ -93,7 +93,7 @@ describe('ProviderModal - thinkingLevel persistence', () => {
     expect(savedModel?.thinkingLevel).toBeUndefined()
   })
 
-  it('uses a constrained reasoning effort selector with medium as the ChatGPT default', async () => {
+  it('uses a constrained reasoning effort selector with medium as the provider default', async () => {
     await new Promise<void>((resolve) => {
       root.render(
         <ProviderModal
@@ -102,20 +102,20 @@ describe('ProviderModal - thinkingLevel persistence', () => {
           onSave={onSaveMock as (provider: ProviderFormData) => void}
           initialStep={2}
           editProvider={{
-            id: 'chatgpt-provider',
-            name: 'ChatGPT Plus / Pro',
+            id: 'external-provider',
+            name: 'External Account Provider',
             url: 'http://localhost:8000/v1',
             backend: 'openai',
             models: [
               {
-                id: 'gpt-5.6-sol',
+                id: 'reasoning-model',
                 contextWindow: 1_050_000,
                 thinkingEnabled: true,
                 reasoningEfforts: ['none', 'low', 'medium', 'high', 'xhigh', 'max'],
               },
             ],
           }}
-          editModelId="gpt-5.6-sol"
+          editModelId="reasoning-model"
         />,
       )
       setTimeout(resolve, 200)
@@ -137,10 +137,10 @@ describe('ProviderModal - thinkingLevel persistence', () => {
     saveButton?.click()
 
     const savedData: ProviderFormData = onSaveMock.mock.calls[0]![0]!
-    expect(savedData.models.find((model) => model.id === 'gpt-5.6-sol')?.thinkingLevel).toBe('medium')
+    expect(savedData.models.find((model) => model.id === 'reasoning-model')?.thinkingLevel).toBe('medium')
   })
 
-  it('saves a ChatGPT reasoning effort selected from the catalog values', async () => {
+  it('saves a provider reasoning effort selected from the catalog values', async () => {
     await new Promise<void>((resolve) => {
       root.render(
         <ProviderModal
@@ -149,20 +149,20 @@ describe('ProviderModal - thinkingLevel persistence', () => {
           onSave={onSaveMock as (provider: ProviderFormData) => void}
           initialStep={2}
           editProvider={{
-            id: 'chatgpt-provider',
-            name: 'ChatGPT Plus / Pro',
+            id: 'external-provider',
+            name: 'External Account Provider',
             url: 'http://localhost:8000/v1',
             backend: 'openai',
             models: [
               {
-                id: 'gpt-5.6-sol',
+                id: 'reasoning-model',
                 contextWindow: 1_050_000,
                 thinkingEnabled: true,
                 reasoningEfforts: ['low', 'medium', 'high'],
               },
             ],
           }}
-          editModelId="gpt-5.6-sol"
+          editModelId="reasoning-model"
         />,
       )
       setTimeout(resolve, 200)
@@ -177,7 +177,7 @@ describe('ProviderModal - thinkingLevel persistence', () => {
     saveButton?.click()
 
     const savedData: ProviderFormData = onSaveMock.mock.calls[0]![0]!
-    expect(savedData.models.find((model) => model.id === 'gpt-5.6-sol')?.thinkingLevel).toBe('high')
+    expect(savedData.models.find((model) => model.id === 'reasoning-model')?.thinkingLevel).toBe('high')
   })
 
   it('includes all model fields in save payload', async () => {
@@ -261,16 +261,16 @@ describe('ProviderModal - thinkingLevel persistence', () => {
           initialStep={2}
           editProvider={{
             id: 'provider-1',
-            name: 'ChatGPT',
-            url: 'https://chatgpt.com/backend-api/codex',
+            name: 'External Provider',
+            url: 'https://provider.example/v1',
             backend: 'openai',
-            transportAdapter: 'openai-codex',
+            transportAdapter: 'example-transport',
             models: [
-              { id: 'gpt-5.4', contextWindow: 1050000, selected: true },
+              { id: 'selected-model', contextWindow: 1050000, selected: true },
               {
-                id: 'gpt-5.3-codex',
-                name: 'GPT-5.3 Codex',
-                apiModelId: 'gpt-5.3-codex',
+                id: 'catalog-model',
+                name: 'Catalog model',
+                apiModelId: 'catalog-model',
                 requestBody: { service_tier: 'priority' },
                 reasoningEfforts: ['low', 'high'],
                 contextWindow: 400000,
@@ -283,19 +283,21 @@ describe('ProviderModal - thinkingLevel persistence', () => {
     })
 
     const availableRows = Array.from(container.querySelectorAll('[role="checkbox"]'))
-    const codexRow = availableRows.find((row) => row.textContent?.includes('GPT-5.3 Codex')) as HTMLElement | undefined
-    expect(codexRow).toBeTruthy()
-    codexRow?.click()
+    const catalogRow = availableRows.find((row) => row.textContent?.includes('Catalog model')) as
+      | HTMLElement
+      | undefined
+    expect(catalogRow).toBeTruthy()
+    catalogRow?.click()
     await new Promise((resolve) => setTimeout(resolve, 50))
 
     const saveButton = container.querySelector('[data-testid="provider-modal-save"]') as HTMLButtonElement | null
     saveButton?.click()
 
     const savedData: ProviderFormData = onSaveMock.mock.calls[0]![0]!
-    expect(savedData.models.find((model) => model.id === 'gpt-5.3-codex')).toEqual(
+    expect(savedData.models.find((model) => model.id === 'catalog-model')).toEqual(
       expect.objectContaining({
-        name: 'GPT-5.3 Codex',
-        apiModelId: 'gpt-5.3-codex',
+        name: 'Catalog model',
+        apiModelId: 'catalog-model',
         requestBody: { service_tier: 'priority' },
         reasoningEfforts: ['low', 'high'],
         contextWindow: 400000,

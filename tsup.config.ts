@@ -12,6 +12,7 @@ export default defineConfig({
     'cli/dev': 'src/cli/dev.ts',
     'server/index': 'src/server/index.ts',
     'shared/index': 'src/shared/index.ts',
+    'provider/index': 'src/provider/index.ts',
   },
   format: ['esm'],
   dts: true,

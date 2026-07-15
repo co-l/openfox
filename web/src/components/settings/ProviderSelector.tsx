@@ -2,7 +2,7 @@ import { useState, useRef, useEffect } from 'react'
 import { useLocation } from 'wouter'
 import { useConfigStore, getBackendDisplayName, type Provider } from '../../stores/config'
 import { useSessionStore } from '../../stores/session'
-import { ProviderModal, type ProviderFormData } from '../shared/ProviderModal'
+import { ProviderModal, providerFormPayload, type ProviderFormData } from '../shared/ProviderModal'
 import { authFetch } from '../../lib/api'
 import { ChevronDownIcon, ReloadIcon, CheckIcon, EditSmallIcon, StarIcon, StarFilledIcon } from '../shared/icons'
 
@@ -33,8 +33,10 @@ export function ProviderSelector() {
   const [authBusy, setAuthBusy] = useState<string | null>(null)
   const [deviceChallenge, setDeviceChallenge] = useState<{
     providerId: string
-    url: string
-    userCode: string
+    verificationUrl: string
+    directUrl?: string
+    userCode?: string
+    instructions: string
   } | null>(null)
   const [codeCopied, setCodeCopied] = useState(false)
   const codeCopiedTimerRef = useRef<number | null>(null)
@@ -86,7 +88,7 @@ export function ProviderSelector() {
       const allProviderIds = providers.map((p) => p.id)
       setExpandedProviderIds(allProviderIds)
       providers
-        .filter((provider) => provider.authAdapter === 'openai-account')
+        .filter((provider) => Boolean(provider.authAdapter))
         .forEach((provider) => void refreshAuthStatus(provider.id))
       allProviderIds.forEach((providerId) => {
         if (!loadedProvidersRef.current.has(providerId)) {
@@ -204,10 +206,14 @@ export function ProviderSelector() {
     setDevicePageOpened(false)
     try {
       const response = await authFetch(`/api/provider-auth/${providerId}/login`, { method: 'POST' })
-      if (!response.ok) throw new Error('Unable to start ChatGPT sign-in')
-      const challenge = (await response.json()) as { url: string; userCode?: string }
-      if (!challenge.userCode) throw new Error('OpenAI did not return a device code')
-      setDeviceChallenge({ providerId, url: challenge.url, userCode: challenge.userCode })
+      if (!response.ok) throw new Error('Unable to start provider sign-in')
+      const challenge = (await response.json()) as {
+        verificationUrl: string
+        directUrl?: string
+        userCode?: string
+        instructions: string
+      }
+      setDeviceChallenge({ providerId, ...challenge })
     } catch {
       setAuthStates((current) => ({ ...current, [providerId]: 'error' }))
     } finally {
@@ -216,7 +222,7 @@ export function ProviderSelector() {
   }
 
   const copyDeviceCode = async () => {
-    if (!deviceChallenge) return
+    if (!deviceChallenge?.userCode) return
     await navigator.clipboard?.writeText(deviceChallenge.userCode)
     if (codeCopiedTimerRef.current !== null) window.clearTimeout(codeCopiedTimerRef.current)
     setCodeCopied(false)
@@ -229,7 +235,7 @@ export function ProviderSelector() {
 
   const openDeviceAuthorization = () => {
     if (!deviceChallenge) return
-    window.open(deviceChallenge.url, '_blank', 'noopener,noreferrer')
+    window.open(deviceChallenge.directUrl ?? deviceChallenge.verificationUrl, '_blank', 'noopener,noreferrer')
     setDevicePageOpened(true)
   }
 
@@ -244,7 +250,7 @@ export function ProviderSelector() {
     setAuthBusy(providerId)
     try {
       const response = await authFetch(`/api/provider-auth/${providerId}/logout`, { method: 'POST' })
-      if (!response.ok) throw new Error('Unable to disconnect ChatGPT account')
+      if (!response.ok) throw new Error('Unable to disconnect provider account')
       setAuthStates((current) => ({ ...current, [providerId]: 'disconnected' }))
       await fetchConfig()
     } finally {
@@ -269,17 +275,7 @@ export function ProviderSelector() {
       const res = await authFetch(`/api/providers/${formData.id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          name: formData.name,
-          url: formData.url,
-          backend: formData.backend,
-          apiKey: formData.apiKey,
-          isLocal: formData.isLocal,
-          thinkingField: formData.thinkingField,
-          authAdapter: formData.authAdapter,
-          transportAdapter: formData.transportAdapter,
-          models: formData.models,
-        }),
+        body: JSON.stringify(providerFormPayload(formData)),
       })
       if (!res.ok) throw new Error('Failed to update provider')
       await useConfigStore.getState().fetchConfig()
@@ -421,14 +417,14 @@ export function ProviderSelector() {
                     </span>
                   </div>
                   <div className="flex items-center gap-2 flex-shrink-0">
-                    {provider.authAdapter === 'openai-account' &&
+                    {Boolean(provider.authAdapter) &&
                       (authStates[provider.id] === 'connected' || provider.credentialRef ? (
                         <button
                           type="button"
                           onClick={(event) => handleDisconnectAccount(event, provider.id)}
                           disabled={authBusy === provider.id}
                           className="text-[10px] px-1.5 py-0.5 rounded border border-accent-success/40 text-accent-success hover:bg-accent-success/10 disabled:opacity-50"
-                          title="Disconnect ChatGPT account"
+                          title="Disconnect provider account"
                         >
                           Connected
                         </button>
@@ -438,7 +434,7 @@ export function ProviderSelector() {
                           onClick={(event) => handleConnectAccount(event, provider.id)}
                           disabled={authBusy === provider.id}
                           className="text-[10px] px-1.5 py-0.5 rounded border border-accent-primary/40 text-accent-primary hover:bg-accent-primary/10 disabled:opacity-50"
-                          title="Connect ChatGPT Plus or Pro account"
+                          title="Connect provider account"
                         >
                           {authBusy === provider.id
                             ? 'Starting…'
@@ -580,7 +576,7 @@ export function ProviderSelector() {
           className="fixed inset-0 z-[100] flex items-center justify-center bg-black/70 px-4"
           role="dialog"
           aria-modal="true"
-          aria-labelledby="chatgpt-device-title"
+          aria-labelledby="provider-device-title"
           onMouseDown={(event) => {
             if (event.target === event.currentTarget) closeDeviceChallenge()
           }}
@@ -588,11 +584,11 @@ export function ProviderSelector() {
           <div className="w-full max-w-md rounded-xl border border-border bg-bg-secondary p-6 shadow-2xl">
             <div className="flex items-start justify-between gap-4">
               <div>
-                <h2 id="chatgpt-device-title" className="text-lg font-semibold text-text-primary">
-                  Connect ChatGPT
+                <h2 id="provider-device-title" className="text-lg font-semibold text-text-primary">
+                  Connect provider
                 </h2>
                 <p className="mt-1 text-sm text-text-muted">
-                  Copy this code, then open OpenAI in a new tab and paste it there.
+                  Follow the provider instructions to complete authorization.
                 </p>
               </div>
               <button
@@ -611,7 +607,7 @@ export function ProviderSelector() {
               className="mt-6 w-full select-all rounded-lg border border-accent-primary/40 bg-bg-primary px-4 py-5 font-mono text-3xl font-semibold tracking-[0.2em] text-accent-primary hover:bg-bg-tertiary"
               title="Copy code"
             >
-              {deviceChallenge.userCode}
+              {deviceChallenge.userCode ?? 'Continue'}
             </button>
 
             <div className="mt-3 text-center text-xs text-text-muted">
@@ -631,13 +627,13 @@ export function ProviderSelector() {
                 onClick={openDeviceAuthorization}
                 className="flex-1 rounded-lg bg-accent-primary px-4 py-2 text-sm font-medium text-text-primary hover:bg-accent-primary/90"
               >
-                {devicePageOpened ? 'Reopen OpenAI' : 'Open OpenAI'}
+                {devicePageOpened ? 'Reopen authorization' : 'Open authorization'}
               </button>
             </div>
 
             <p className="mt-4 text-center text-xs text-text-muted">
               {devicePageOpened
-                ? 'If the browser blocked or closed the tab, use Reopen OpenAI.'
+                ? 'If the browser blocked or closed the tab, reopen authorization.'
                 : 'OpenFox stays open while you complete authorization in the other tab.'}
             </p>
           </div>

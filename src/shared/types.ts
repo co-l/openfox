@@ -514,7 +514,9 @@ export interface ModelConfig {
 
 /** LLM provider configuration */
 export interface Provider {
-  id: string // UUID
+  id: string // Stable instance ID
+  /** Plugin preset used to hydrate omitted provider fields. */
+  preset?: string
   name: string // User-defined display name (e.g., "Local vLLM", "Anthropic Claude")
   url: string // API endpoint (e.g., "http://localhost:8000/v1")
   backend: ProviderBackend

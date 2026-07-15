@@ -339,7 +339,7 @@ describe('ProviderManager - Model Selection', () => {
 
     it('drops stale user models for an authoritative transport catalog', async () => {
       const transport = {
-        id: 'openai-codex',
+        id: 'example-transport',
         listModels: vi.fn(async () => [
           { id: 'gpt-5.4', contextWindow: 1050000, source: 'backend' as const },
           { id: 'gpt-5.5', contextWindow: 1050000, source: 'backend' as const },
@@ -347,29 +347,29 @@ describe('ProviderManager - Model Selection', () => {
         complete: vi.fn(),
         stream: vi.fn(),
       }
-      const adapters = { getTransport: vi.fn((id?: string) => (id === 'openai-codex' ? transport : undefined)) }
+      const adapters = { getTransport: vi.fn((id?: string) => (id === 'example-transport' ? transport : undefined)) }
       const chatConfig: Config = {
         ...config,
         providers: [
           {
-            id: 'chatgpt',
-            name: 'ChatGPT',
-            url: 'https://chatgpt.com/backend-api/codex',
+            id: 'external',
+            name: 'External Provider',
+            url: 'https://provider.example/v1',
             backend: 'openai',
-            transportAdapter: 'openai-codex',
+            transportAdapter: 'example-transport',
             models: [
-              { id: 'gpt-5.6-luna', contextWindow: 1050000, source: 'user' },
+              { id: 'model-large', contextWindow: 1050000, source: 'user' },
               { id: 'gpt-5.4', contextWindow: 900000, source: 'user' },
             ],
             isActive: true,
             createdAt: new Date().toISOString(),
           },
         ],
-        defaultModelSelection: 'chatgpt/gpt-5.4',
+        defaultModelSelection: 'external/gpt-5.4',
       }
       const manager = createProviderManager(chatConfig, { adapters: adapters as never })
 
-      const result = await manager.refreshProviderModels('chatgpt')
+      const result = await manager.refreshProviderModels('external')
 
       expect(result).toEqual({ success: true })
       const models = manager.getProviders()[0]!.models
@@ -556,20 +556,20 @@ describe('ProviderManager - Model Selection', () => {
         ...config,
         providers: [
           {
-            id: 'chatgpt',
-            name: 'ChatGPT',
-            url: 'https://chatgpt.com/backend-api/codex',
+            id: 'external',
+            name: 'External Provider',
+            url: 'https://provider.example/v1',
             backend: 'openai',
-            models: [{ id: 'gpt-5.6-luna', contextWindow: 1050000, source: 'backend', selected: true }],
+            models: [{ id: 'model-large', contextWindow: 1050000, source: 'backend', selected: true }],
             isActive: true,
             createdAt: new Date().toISOString(),
           },
         ],
-        defaultModelSelection: 'chatgpt/auto',
+        defaultModelSelection: 'external/auto',
       }
       const manager = createProviderManager(chatConfig)
 
-      expect(manager.resolveModel('chatgpt', 'auto')).toBe('gpt-5.6-luna')
+      expect(manager.resolveModel('external', 'auto')).toBe('model-large')
     })
 
     it('resolves auto to the active concrete model for session clients', async () => {
@@ -577,26 +577,23 @@ describe('ProviderManager - Model Selection', () => {
         ...config,
         providers: [
           {
-            id: 'chatgpt',
-            name: 'ChatGPT',
-            url: 'https://chatgpt.com/backend-api/codex',
+            id: 'external',
+            name: 'External Provider',
+            url: 'https://provider.example/v1',
             backend: 'openai',
-            models: [
-              { id: 'gpt-5.4', contextWindow: 1050000, source: 'backend' },
-              { id: 'gpt-5.6-luna', contextWindow: 1050000, source: 'backend' },
-            ],
+            models: [{ id: 'model-large', contextWindow: 1050000, source: 'backend' }],
             isActive: true,
             createdAt: new Date().toISOString(),
           },
         ],
-        defaultModelSelection: 'chatgpt/gpt-5.6-luna',
+        defaultModelSelection: 'external/model-large',
       }
       const manager = createProviderManager(chatConfig)
 
-      manager.createClient('chatgpt', 'auto')
+      manager.createClient('external', 'auto')
 
       expect(createLLMClientMock).toHaveBeenLastCalledWith(
-        expect.objectContaining({ llm: expect.objectContaining({ model: 'gpt-5.6-luna' }) }),
+        expect.objectContaining({ llm: expect.objectContaining({ model: 'model-large' }) }),
       )
     })
 
@@ -605,14 +602,11 @@ describe('ProviderManager - Model Selection', () => {
         ...config,
         providers: [
           {
-            id: 'chatgpt',
-            name: 'ChatGPT',
-            url: 'https://chatgpt.com/backend-api/codex',
+            id: 'external',
+            name: 'External Provider',
+            url: 'https://provider.example/v1',
             backend: 'openai',
-            models: [
-              { id: 'gpt-5.4', contextWindow: 1050000, source: 'backend' },
-              { id: 'gpt-5.6-luna', contextWindow: 1050000, source: 'backend', selected: true },
-            ],
+            models: [{ id: 'model-large', contextWindow: 1050000, source: 'backend', selected: true }],
             isActive: false,
             createdAt: new Date().toISOString(),
           },
@@ -621,10 +615,10 @@ describe('ProviderManager - Model Selection', () => {
       }
       const manager = createProviderManager(chatConfig)
 
-      manager.createClient('chatgpt', 'auto')
+      manager.createClient('external', 'auto')
 
       expect(createLLMClientMock).toHaveBeenLastCalledWith(
-        expect.objectContaining({ llm: expect.objectContaining({ model: 'gpt-5.6-luna' }) }),
+        expect.objectContaining({ llm: expect.objectContaining({ model: 'model-large' }) }),
       )
     })
 
@@ -633,26 +627,26 @@ describe('ProviderManager - Model Selection', () => {
         ...config,
         providers: [
           {
-            id: 'chatgpt',
-            name: 'ChatGPT',
-            url: 'https://chatgpt.com/backend-api/codex',
+            id: 'external',
+            name: 'External Provider',
+            url: 'https://provider.example/v1',
             backend: 'openai',
             models: [
-              { id: 'gpt-5.6-luna', contextWindow: 1050000, source: 'backend' },
+              { id: 'model-large', contextWindow: 1050000, source: 'backend' },
               { id: 'gpt-5.4', contextWindow: 1050000, source: 'backend' },
             ],
             isActive: true,
             createdAt: new Date().toISOString(),
           },
         ],
-        defaultModelSelection: 'chatgpt/auto',
+        defaultModelSelection: 'external/auto',
       }
       const manager = createProviderManager(chatConfig)
 
-      manager.createClient('chatgpt', 'auto')
+      manager.createClient('external', 'auto')
 
       expect(createLLMClientMock).toHaveBeenLastCalledWith(
-        expect.objectContaining({ llm: expect.objectContaining({ model: 'gpt-5.6-luna' }) }),
+        expect.objectContaining({ llm: expect.objectContaining({ model: 'model-large' }) }),
       )
     })
   })
@@ -660,28 +654,28 @@ describe('ProviderManager - Model Selection', () => {
   describe('setProviders', () => {
     it('recreates the active transport client when credentialRef is added', () => {
       const transport = {
-        id: 'openai-codex',
+        id: 'example-transport',
         listModels: vi.fn(),
         complete: vi.fn(),
         stream: vi.fn(),
       }
-      const adapters = { getTransport: vi.fn((id?: string) => (id === 'openai-codex' ? transport : undefined)) }
+      const adapters = { getTransport: vi.fn((id?: string) => (id === 'example-transport' ? transport : undefined)) }
       const chatConfig: Config = {
         ...config,
         providers: [
           {
-            id: 'chatgpt',
-            name: 'ChatGPT',
-            url: 'https://chatgpt.com/backend-api/codex',
+            id: 'external',
+            name: 'External Provider',
+            url: 'https://provider.example/v1',
             backend: 'openai',
-            authAdapter: 'openai-account',
-            transportAdapter: 'openai-codex',
-            models: [{ id: 'gpt-5.4', contextWindow: 1050000, source: 'backend' }],
+            authAdapter: 'example-auth',
+            transportAdapter: 'example-transport',
+            models: [{ id: 'model-large', contextWindow: 1050000, source: 'backend' }],
             isActive: true,
             createdAt: new Date().toISOString(),
           },
         ],
-        defaultModelSelection: 'chatgpt/gpt-5.4',
+        defaultModelSelection: 'external/model-large',
       }
       const manager = createProviderManager(chatConfig, { adapters: adapters as never })
       const before = manager.getLLMClient()

@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { authFetch } from '../../../lib/api'
 import { PlusLgIcon, TrashIcon } from '../../shared/icons'
-import { ProviderModal, type ProviderFormData } from '../../shared/ProviderModal'
+import { ProviderModal, providerFormPayload, type ProviderFormData } from '../../shared/ProviderModal'
 import { getBackendDisplayName, type ProviderInfo } from '../types'
 
 interface ConnectLLMStepProps {
@@ -66,17 +66,7 @@ export function ConnectLLMStep({ onNext }: ConnectLLMStepProps) {
     const isTemporary = formData.id.startsWith('temp-')
     const wasListed = providers.some((provider) => provider.id === formData.id)
     const shouldAdvance = providers.length === 0 && editingProvider === null
-    const body = {
-      name: formData.name,
-      url: formData.url,
-      backend: formData.backend,
-      apiKey: formData.apiKey,
-      isLocal: formData.isLocal,
-      thinkingField: formData.thinkingField,
-      authAdapter: formData.authAdapter,
-      transportAdapter: formData.transportAdapter,
-      models: formData.models,
-    }
+    const body = providerFormPayload(formData)
 
     try {
       let saved: ProviderInfo
@@ -108,7 +98,7 @@ export function ConnectLLMStep({ onNext }: ConnectLLMStepProps) {
       setProviders(mergeSaved)
       setExistingProviders(mergeSaved)
 
-      // A ChatGPT connection creates a real provider ID before the final save.
+      // An authenticated provider can create a real provider ID before the final save.
       // It was not previously present in local state, so proceed with the saved provider directly.
       if (shouldAdvance && !wasListed) {
         onNext({ providers: [saved] })

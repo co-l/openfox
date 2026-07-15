@@ -35,12 +35,9 @@ import { createDirectoryRoutes } from './routes/directories.js'
 import { createFileSearchRoutes } from './routes/file-search.js'
 import { createAutoUpdateRoutes } from './routes/auto-update.js'
 import { createProviderAuthRoutes } from './routes/provider-auth.js'
-import { FileProviderCredentialStore } from './providers/adapters/file-credential-store.js'
-import { OpenAIBrowserAuthAdapter } from './providers/adapters/openai-browser-auth.js'
-import { CodexTransportAdapter } from './providers/adapters/codex-transport.js'
-import { ProviderAdapterRegistry } from './providers/adapters/registry.js'
 import { devServerManager } from './dev-server/manager.js'
 import { getGlobalConfigDir } from '../cli/paths.js'
+import { ProviderRegistry, loadProviderPlugins } from './providers/plugins/index.js'
 import { logger, setLogLevel } from './utils/logger.js'
 import { VERSION } from '../constants.js'
 import {
@@ -80,15 +77,18 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
   // Get config directory for loading user items
   const configDir = getGlobalConfigDir(config.mode ?? 'production')
 
-  // Create provider auth and transport adapters.
-  const credentialStore = new FileProviderCredentialStore(
-    join(configDir, 'provider-credentials.json'),
-    join(configDir, 'provider-credentials.key'),
-  )
-  const openaiAuth = new OpenAIBrowserAuthAdapter(credentialStore)
-  const providerAdapters = new ProviderAdapterRegistry()
-  providerAdapters.registerAuth(openaiAuth)
-  providerAdapters.registerTransport(new CodexTransportAdapter(openaiAuth))
+  // Discover provider plugins before creating transport-aware clients.
+  const providerAdapters = new ProviderRegistry({
+    mode: config.mode === 'development' ? 'development' : 'production',
+    configDirectory: configDir,
+  })
+  const pluginDiagnostics = await loadProviderPlugins({ registry: providerAdapters, configDirectory: configDir })
+  for (const diagnostic of pluginDiagnostics) {
+    if (!diagnostic.loaded) logger.warn('Provider plugin failed to load', { ...diagnostic })
+  }
+
+  // Hydrate concise preset-backed provider entries after plugins are loaded.
+  config.providers = providerAdapters.resolveProviders(config.providers ?? [])
 
   // Create Provider Manager (handles LLM client lifecycle)
   const providerManager = createProviderManager(config, { adapters: providerAdapters })
@@ -201,7 +201,7 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
   // Auth middleware for all /api routes (except /api/health and /api/auth/login)
   const authMiddleware = async (req: express.Request, res: express.Response, next: express.NextFunction) => {
     const path = req.path
-    const publicPaths = ['/health', '/auth', '/auth/login', '/auto-update/check', '/provider-auth/openai/callback']
+    const publicPaths = ['/health', '/auth', '/auth/login', '/auto-update/check']
     if (publicPaths.includes(path)) {
       return next()
     }
@@ -1166,31 +1166,20 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
     if (!mode) return res.status(400).json({ error: 'mode is required' })
 
     try {
-      if (transportAdapter === 'openai-codex' && providerId) {
+      if (transportAdapter && providerId) {
         const provider = providerManager.getProviders().find((item) => item.id === providerId)
         if (!provider) return res.status(404).json({ error: 'Provider not found' })
-        const transport = providerAdapters.getTransport('openai-codex')
-        if (!transport) return res.status(500).json({ error: 'Codex transport is unavailable' })
-
-        const response = await transport.complete(
-          {
-            messages: [{ role: 'user', content: 'say hi in one word' }],
-            tools: [],
-            ...(mode === 'thinking'
-              ? {
-                  reasoningEffort: (modelConfig?.thinkingLevel ?? 'medium') as import('./llm/types.js').ReasoningEffort,
-                }
-              : {}),
-            ...(modelConfig?.maxTokens ? { maxTokens: modelConfig.maxTokens } : {}),
-            signal: AbortSignal.timeout(30_000),
-          },
-          {
-            providerId,
-            model,
-            ...(provider.credentialRef ? { credentialRef: provider.credentialRef } : {}),
-          },
-        )
-
+        const client = providerManager.createClient(providerId, model)
+        if (!client) return res.status(424).json({ error: `Missing provider transport plugin: ${transportAdapter}` })
+        const response = await client.complete({
+          messages: [{ role: 'user', content: 'say hi in one word' }],
+          tools: [],
+          ...(mode === 'thinking'
+            ? { reasoningEffort: (modelConfig?.thinkingLevel ?? 'medium') as import('./llm/types.js').ReasoningEffort }
+            : {}),
+          ...(modelConfig?.maxTokens ? { maxTokens: modelConfig.maxTokens } : {}),
+          signal: AbortSignal.timeout(30_000),
+        })
         return res.json({ success: true, message: { content: response.content }, raw: response })
       }
 
@@ -1374,7 +1363,15 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
     }
   })
 
-  app.use('/api/provider-auth', createProviderAuthRoutes(config, providerManager, openaiAuth))
+  app.get('/api/plugins', (_req, res) => res.json({ plugins: pluginDiagnostics }))
+  app.get('/api/provider-presets', (_req, res) => res.json({ presets: providerAdapters.getPresets() }))
+  app.get('/api/provider-adapters', (_req, res) =>
+    res.json({
+      authAdapters: providerAdapters.listAuthAdapters(),
+      transportAdapters: providerAdapters.listTransportAdapters(),
+    }),
+  )
+  app.use('/api/provider-auth', createProviderAuthRoutes(config, providerManager, providerAdapters))
 
   // Provider endpoints
   app.get('/api/providers', (_req, res) => {
