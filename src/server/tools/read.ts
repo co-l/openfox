@@ -5,6 +5,7 @@ import { createTool } from './tool-helpers.js'
 import { computeFileHash } from './file-tracker.js'
 import { detectEncoding, decodeContent } from '../utils/encoding.js'
 import { fileTypeFromBuffer } from 'file-type'
+import { isPdfBuffer, extractPdfText, processPdfContent, isPasswordError } from './pdf-utils.js'
 
 interface ReadFileArgs {
   path: string
@@ -12,22 +13,14 @@ interface ReadFileArgs {
   limit?: number
 }
 
-/**
- * Detect if a buffer is an image using file-type library.
- * For SVG files, falls back to content-based detection since file-type
- * may identify them as generic XML.
- */
 async function detectImageType(buffer: Buffer, filePath: string): Promise<string | null> {
   const fileType = await fileTypeFromBuffer(buffer)
-
-  // Only accept known image MIME types
   const imageMimeTypes = ['image/png', 'image/jpeg', 'image/gif', 'image/webp', 'image/bmp', 'image/svg+xml']
 
   if (fileType?.mime && imageMimeTypes.includes(fileType.mime)) {
     return fileType.mime
   }
 
-  // For .svg files, check if content is actually SVG (not just XML)
   const ext = extname(filePath).toLowerCase()
   if (ext === '.svg' && buffer.length > 0) {
     const content = buffer.toString('utf-8')
@@ -40,25 +33,16 @@ async function detectImageType(buffer: Buffer, filePath: string): Promise<string
   return null
 }
 
-/**
- * Format bytes into a human-readable string (B, KB, MB).
- */
 function formatSize(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
 }
 
-/**
- * List directory contents in a scannable tree format.
- */
 async function listDirectory(dirPath: string, relativePath: string): Promise<string> {
   const entries = await readdir(dirPath, { withFileTypes: true })
-
   const sorted = [...entries].sort((a, b) => {
-    if (a.isDirectory() !== b.isDirectory()) {
-      return a.isDirectory() ? -1 : 1
-    }
+    if (a.isDirectory() !== b.isDirectory()) return a.isDirectory() ? -1 : 1
     return a.name.localeCompare(b.name)
   })
 
@@ -68,7 +52,6 @@ async function listDirectory(dirPath: string, relativePath: string): Promise<str
     const isLast = i === sorted.length - 1
     const prefix = isLast ? '└── ' : '├── '
     const suffix = entry.isDirectory() ? '/' : ''
-
     let sizeStr = ''
     if (!entry.isDirectory()) {
       try {
@@ -78,10 +61,8 @@ async function listDirectory(dirPath: string, relativePath: string): Promise<str
         /* ignore */
       }
     }
-
     lines.push(`${prefix}${entry.name}${suffix}${sizeStr}`)
   }
-
   return lines.join('\n')
 }
 
@@ -92,7 +73,7 @@ export const readFileTool = createTool<ReadFileArgs>(
     function: {
       name: 'read_file',
       description:
-        'Read the contents of a file or list directory contents. For text files: returns file content. For images (PNG, JPEG, GIF, WebP, BMP, SVG): returns base64-encoded data with MIME type metadata. For directories: returns a tree-formatted listing of entries with file sizes.',
+        'Read the contents of a file or list directory contents. For text files: returns file content. For images (PNG, JPEG, GIF, WebP, BMP, SVG): returns base64-encoded data with MIME type metadata. For PDF files: extracts text content page by page. For directories: returns a tree-formatted listing of entries with file sizes.',
       parameters: {
         type: 'object',
         properties: {
@@ -116,89 +97,86 @@ export const readFileTool = createTool<ReadFileArgs>(
   async (args, context, helpers) => {
     const offset = args.offset ?? 1
     const limit = Math.min(args.limit ?? OUTPUT_LIMITS.read_file.maxLines, OUTPUT_LIMITS.read_file.maxLines)
-
     const fullPath = helpers.resolvePath(args.path)
     await helpers.checkPathAccess([fullPath])
 
-    // Check if path exists
+    let stats
     try {
-      const stats = await stat(fullPath)
-      if (stats.isDirectory()) {
-        const listing = await listDirectory(fullPath, args.path)
-        return helpers.success(listing)
-      }
-
-      // Check image size limit before reading
-      if (stats.size > OUTPUT_LIMITS.read_file.maxImageBytes) {
-        return helpers.error(
-          `File size (${stats.size} bytes) exceeds image size limit (2MB). Use shell command to process large files.`,
-        )
-      }
+      stats = await stat(fullPath)
     } catch {
       return helpers.error(`File not found: ${args.path}`)
     }
+    if (stats.isDirectory()) return helpers.success(await listDirectory(fullPath, args.path))
 
-    // Read file as binary first to detect type
+    const isPdfFile = extname(args.path).toLowerCase() === '.pdf'
+    const fileLimit = isPdfFile ? OUTPUT_LIMITS.read_file.maxPdfBytes : OUTPUT_LIMITS.read_file.maxFileBytes
+
+    if (stats.size > fileLimit) {
+      return helpers.error(
+        `File size (${stats.size} bytes) exceeds maximum file size (20MB). Use shell command to process large files.`,
+      )
+    }
+    if (!isPdfFile && stats.size > OUTPUT_LIMITS.read_file.maxImageBytes) {
+      return helpers.error(
+        `File size (${stats.size} bytes) exceeds image size limit (2MB). Use shell command to process large files.`,
+      )
+    }
+
     const rawBuffer = await readFile(fullPath)
-
-    // Detect if this is an image file
     const mimeType = await detectImageType(rawBuffer, args.path)
 
     if (mimeType) {
-      // Handle as image
       const base64Data = rawBuffer.toString('base64')
       const dataUrl = `data:${mimeType};base64,${base64Data}`
-
-      // Record file read with content hash for write validation
       const contentHash = await computeFileHash(fullPath)
-      if (contentHash) {
-        context.sessionManager.recordFileRead(context.sessionId, fullPath, contentHash)
-      }
-
+      if (contentHash) context.sessionManager.recordFileRead(context.sessionId, fullPath, contentHash)
       return helpers.success(`[Image: ${args.path} (${mimeType}, ${rawBuffer.length} bytes)]`, false, {
-        metadata: {
-          mimeType,
-          size: rawBuffer.length,
-          base64Data,
-          dataUrl,
-          path: fullPath,
-        },
+        metadata: { mimeType, size: rawBuffer.length, base64Data, dataUrl, path: fullPath },
       })
     }
 
-    // Handle as text file
+    if (isPdfBuffer(rawBuffer)) {
+      try {
+        const { text, pageCount, title, author } = await extractPdfText(rawBuffer)
+        const { output, truncated, isScanned } = processPdfContent(text, OUTPUT_LIMITS.read_file.maxBytes)
+        const contentHash = await computeFileHash(fullPath)
+        if (contentHash) context.sessionManager.recordFileRead(context.sessionId, fullPath, contentHash)
+
+        if (isScanned) {
+          return helpers.success(
+            `[PDF: ${args.path} — This PDF has no text layer (scanned or image-only). Use a shell command with OCR to extract text.]`,
+            false,
+            { metadata: { format: 'pdf', pageCount, title, author, path: fullPath } },
+          )
+        }
+
+        return helpers.success(output, truncated, {
+          metadata: { format: 'pdf', pageCount, title, author, path: fullPath },
+        })
+      } catch (err) {
+        if (isPasswordError(err))
+          return helpers.error('This PDF is password-protected. Unlock it with an external tool first.')
+        return helpers.error(`Failed to read PDF: ${err instanceof Error ? err.message : String(err)}`)
+      }
+    }
+
     const { encoding, confidence } = detectEncoding(rawBuffer)
     const content = decodeContent(rawBuffer, encoding)
     const lines = content.split('\n')
     const totalLines = lines.length
-
-    // Apply offset and limit
     const startLine = Math.max(1, offset)
     const endLine = Math.min(startLine + limit - 1, totalLines)
-    const selectedLines = lines.slice(startLine - 1, endLine)
-
-    // Join lines without prefix
-    const formatted = selectedLines.join('\n')
-
-    // Check if truncated
+    const formatted = lines.slice(startLine - 1, endLine).join('\n')
     const truncated = endLine < totalLines
     let output = formatted
-
-    if (truncated) {
+    if (truncated)
       output += `\n\n[Showing lines ${startLine}-${endLine} of ${totalLines} total. Use offset to read more.]`
-    }
-
-    // Check byte limit
     if (output.length > OUTPUT_LIMITS.read_file.maxBytes) {
-      output = output.slice(0, OUTPUT_LIMITS.read_file.maxBytes)
-      output += '\n\n[Output truncated due to size limit]'
+      output = output.slice(0, OUTPUT_LIMITS.read_file.maxBytes) + '\n\n[Output truncated due to size limit]'
     }
 
-    // Record file read with content hash for write validation
     const contentHash = await computeFileHash(fullPath)
-    if (contentHash) {
-      context.sessionManager.recordFileRead(context.sessionId, fullPath, contentHash)
-    }
+    if (contentHash) context.sessionManager.recordFileRead(context.sessionId, fullPath, contentHash)
 
     return helpers.success(output, truncated, {
       metadata: {
