@@ -5,6 +5,7 @@ import { createTool } from './tool-helpers.js'
 import { computeFileHash } from './file-tracker.js'
 import { detectEncoding, decodeContent } from '../utils/encoding.js'
 import { fileTypeFromBuffer } from 'file-type'
+import { isPdfBuffer, extractPdfText, processPdfContent, isPasswordError } from './pdf-utils.js'
 
 interface ReadFileArgs {
   path: string
@@ -92,7 +93,7 @@ export const readFileTool = createTool<ReadFileArgs>(
     function: {
       name: 'read_file',
       description:
-        'Read the contents of a file or list directory contents. For text files: returns file content. For images (PNG, JPEG, GIF, WebP, BMP, SVG): returns base64-encoded data with MIME type metadata. For directories: returns a tree-formatted listing of entries with file sizes.',
+        'Read the contents of a file or list directory contents. For text files: returns file content. For images (PNG, JPEG, GIF, WebP, BMP, SVG): returns base64-encoded data with MIME type metadata. For PDF files: extracts text content page by page. For directories: returns a tree-formatted listing of entries with file sizes.',
       parameters: {
         type: 'object',
         properties: {
@@ -126,6 +127,13 @@ export const readFileTool = createTool<ReadFileArgs>(
       if (stats.isDirectory()) {
         const listing = await listDirectory(fullPath, args.path)
         return helpers.success(listing)
+      }
+
+      // General file size safety cap (checked before type-specific limits)
+      if (stats.size > OUTPUT_LIMITS.read_file.maxFileBytes) {
+        return helpers.error(
+          `File size (${stats.size} bytes) exceeds maximum file size (20MB). Use shell command to process large files.`,
+        )
       }
 
       // Check image size limit before reading
@@ -164,6 +172,51 @@ export const readFileTool = createTool<ReadFileArgs>(
           path: fullPath,
         },
       })
+    }
+
+    // Detect if this is a PDF file
+    if (isPdfBuffer(rawBuffer)) {
+      try {
+        const { text, pageCount, title, author } = await extractPdfText(rawBuffer)
+        const { output, truncated, isScanned } = processPdfContent(text, OUTPUT_LIMITS.read_file.maxBytes)
+
+        // Record file read with content hash for write validation
+        const contentHash = await computeFileHash(fullPath)
+        if (contentHash) {
+          context.sessionManager.recordFileRead(context.sessionId, fullPath, contentHash)
+        }
+
+        if (isScanned) {
+          return helpers.success(
+            `[PDF: ${args.path} — This PDF has no text layer (scanned or image-only). Use a shell command with OCR to extract text.]`,
+            false,
+            {
+              metadata: {
+                format: 'pdf',
+                pageCount,
+                title,
+                author,
+                path: fullPath,
+              },
+            },
+          )
+        }
+
+        return helpers.success(output, truncated, {
+          metadata: {
+            format: 'pdf',
+            pageCount,
+            title,
+            author,
+            path: fullPath,
+          },
+        })
+      } catch (err) {
+        if (isPasswordError(err)) {
+          return helpers.error('This PDF is password-protected. Unlock it with an external tool first.')
+        }
+        return helpers.error(`Failed to read PDF: ${err instanceof Error ? err.message : String(err)}`)
+      }
     }
 
     // Handle as text file
