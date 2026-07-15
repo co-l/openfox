@@ -544,7 +544,7 @@ describe('tool registries', () => {
     expect(result.success).toBe(true)
   })
 
-  describe('sub-agent alias resolution', () => {
+  describe('sub-agent alias transformation', () => {
     const mockExplorerDef = {
       metadata: {
         id: 'explorer',
@@ -576,7 +576,7 @@ describe('tool registries', () => {
       )
     })
 
-    it('redirects unknown tool name matching sub-agent ID to call_sub_agent', async () => {
+    it('explicitly transforms sub-agent tool name to call_sub_agent', async () => {
       const allToolsRegistry = createToolRegistry()
       const context = { workdir: '/tmp/project', sessionId: 'session-1', sessionManager: {} as never }
 
@@ -608,6 +608,30 @@ describe('tool registries', () => {
       )
     })
 
+    it('strips redundant subAgentType from args, using tool name as authority', async () => {
+      const allToolsRegistry = createToolRegistry()
+      const context = { workdir: '/tmp/project', sessionId: 'session-1', sessionManager: {} as never }
+
+      await allToolsRegistry.execute('explorer', { subAgentType: 'explorer', prompt: 'find stuff' }, context)
+
+      expect(callSubAgentExecuteMock).toHaveBeenCalledWith(
+        { subAgentType: 'explorer', prompt: 'find stuff' },
+        expect.anything(),
+      )
+    })
+
+    it('uses tool name as subAgentType even when conflicting subAgentType is passed', async () => {
+      const allToolsRegistry = createToolRegistry()
+      const context = { workdir: '/tmp/project', sessionId: 'session-1', sessionManager: {} as never }
+
+      await allToolsRegistry.execute('explorer', { subAgentType: 'verifier', prompt: 'find stuff' }, context)
+
+      expect(callSubAgentExecuteMock).toHaveBeenCalledWith(
+        { subAgentType: 'explorer', prompt: 'find stuff' },
+        expect.anything(),
+      )
+    })
+
     it('works for any sub-agent ID, not just explorer', async () => {
       const allToolsRegistry = createToolRegistry()
       const context = { workdir: '/tmp/project', sessionId: 'session-1', sessionManager: {} as never }
@@ -632,7 +656,7 @@ describe('tool registries', () => {
       expect(callSubAgentExecuteMock).not.toHaveBeenCalled()
     })
 
-    it('does not redirect if call_sub_agent is not in the tool map', async () => {
+    it('does not transform if call_sub_agent is not in the tool map', async () => {
       const allToolsRegistry = createToolRegistry()
       const context = { workdir: '/tmp/project', sessionId: 'session-1', sessionManager: {} as never }
 

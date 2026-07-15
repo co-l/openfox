@@ -164,6 +164,45 @@ export function createRegistryFromTools(
     toolMap.set(tool.name, tool)
   }
 
+  /**
+   * Try to resolve a tool name as a sub-agent alias.
+   * If the name matches a registered sub-agent ID, transforms the call
+   * into a call_sub_agent invocation. This is an explicit dispatch stage,
+   * not a fallback — it handles models that call sub-agent names directly
+   * (e.g., "explorer") instead of using call_sub_agent(subAgentType: "explorer", ...).
+   */
+  async function trySubAgentAlias(
+    name: string,
+    args: Record<string, unknown>,
+    context: ToolContext,
+  ): Promise<ToolResult | null> {
+    if (!toolMap.has('call_sub_agent')) {
+      return null
+    }
+
+    try {
+      const agents = await loadAllAgentsDefault()
+      const agentDef = findAgentById(name, agents)
+      if (!agentDef?.metadata.subagent) {
+        return null
+      }
+
+      const prompt = extractSubAgentPrompt(args)
+      logger.info('Sub-agent alias transformation', {
+        from: name,
+        to: 'call_sub_agent',
+        subAgentType: name,
+      })
+      return callSubAgentTool.execute({ subAgentType: name, prompt }, context)
+    } catch (err) {
+      logger.warn('Sub-agent alias resolution failed', {
+        tool: name,
+        error: err instanceof Error ? err.message : String(err),
+      })
+      return null
+    }
+  }
+
   return {
     tools,
     definitions: tools.map((t) => t.definition),
@@ -171,118 +210,102 @@ export function createRegistryFromTools(
     async execute(name: string, args: Record<string, unknown>, context: ToolContext): Promise<ToolResult> {
       const tool = toolMap.get(name)
 
-      if (!tool) {
-        // Sub-agent alias: if the tool name matches a sub-agent ID and
-        // call_sub_agent is available, redirect transparently.
-        // This handles models that hallucinate direct tool names like "explorer"
-        // instead of using call_sub_agent(subAgentType: "explorer", ...).
-        if (toolMap.has('call_sub_agent')) {
-          try {
-            const agents = await loadAllAgentsDefault()
-            const agentDef = findAgentById(name, agents)
-            if (agentDef?.metadata.subagent) {
-              const prompt = extractSubAgentPrompt(args)
-              logger.warn('Sub-agent alias redirect', { from: name, to: 'call_sub_agent', subAgentType: name })
-              return callSubAgentTool.execute({ subAgentType: name, prompt }, context)
-            }
-          } catch (err) {
-            logger.warn('Sub-agent alias resolution failed', {
+      if (tool) {
+        // MCP tools are user-configured and always allowed for top-level agents
+        const isMcpTool = !getBuiltInToolNames().has(name)
+
+        // allowedTools === undefined → no restrictions (all tools allowed)
+        // allowedTools === [...] → only effective tools + MCP tools allowed
+        const hasRestrictions = allowedTools !== undefined
+
+        if (!isMcpTool && hasRestrictions) {
+          const effectiveTools = computeEffectiveTools(allowedTools!, isSubAgent ? 'sub-agent' : 'agent')
+          if (!effectiveTools.has(name)) {
+            logger.debug('Permission denied: tool not in allowed list', {
               tool: name,
-              error: err instanceof Error ? err.message : String(err),
+              allowedTools,
             })
+            return {
+              success: false,
+              error: createPermissionErrorMessage(name, allowedTools, agentId, isSubAgent),
+              durationMs: 0,
+              truncated: false,
+            }
           }
         }
-        return {
-          success: false,
-          error: `Unknown tool: ${name}. Available tools: ${tools.map((t) => t.name).join(', ')}`,
-          durationMs: 0,
-          truncated: false,
+
+        // Check granular action permission if applicable
+        if (toolPermissions) {
+          const action = args['action'] as string | undefined
+          if (action) {
+            const actionError = validateToolAction(name, action, toolPermissions)
+            if (actionError) {
+              logger.debug('Permission denied: action not allowed', {
+                tool: name,
+                action,
+                toolPermissions,
+              })
+              return {
+                success: false,
+                error: actionError,
+                durationMs: 0,
+                truncated: false,
+              }
+            }
+          }
         }
-      }
 
-      // MCP tools are user-configured and always allowed for top-level agents
-      const isMcpTool = !getBuiltInToolNames().has(name)
+        // Inject permittedActions into context for tools to use
+        const permittedActionsArray: Record<string, string[]> = {}
+        for (const [key, value] of Object.entries(toolPermissions || {})) {
+          permittedActionsArray[key] = [...value]
+        }
+        const contextWithPerms: ToolContext = {
+          ...context,
+          permittedActions: Object.keys(permittedActionsArray).length > 0 ? permittedActionsArray : undefined,
+        }
 
-      // allowedTools === undefined → no restrictions (all tools allowed)
-      // allowedTools === [...] → only effective tools + MCP tools allowed
-      const hasRestrictions = allowedTools !== undefined
+        logger.debug('Executing tool', { tool: name, args })
 
-      if (!isMcpTool && hasRestrictions) {
-        const effectiveTools = computeEffectiveTools(allowedTools!, isSubAgent ? 'sub-agent' : 'agent')
-        if (!effectiveTools.has(name)) {
-          logger.debug('Permission denied: tool not in allowed list', {
+        try {
+          const result = await tool.execute(args, contextWithPerms)
+
+          logger.debug('Tool completed', {
             tool: name,
-            allowedTools,
+            success: result.success,
+            durationMs: result.durationMs,
           })
+
+          return result
+        } catch (error) {
+          if (error instanceof AskUserInterrupt) {
+            throw error
+          }
+          if (error instanceof PathAccessDeniedError) {
+            throw error
+          }
+
+          logger.error('Tool execution error', { tool: name, error })
+
           return {
             success: false,
-            error: createPermissionErrorMessage(name, allowedTools, agentId, isSubAgent),
+            error: error instanceof Error ? error.message : 'Unknown error',
             durationMs: 0,
             truncated: false,
           }
         }
       }
 
-      // Check granular action permission if applicable
-      if (toolPermissions) {
-        // Extract action from args (for tools like criterion that have an 'action' param)
-        const action = args['action'] as string | undefined
-        if (action) {
-          const actionError = validateToolAction(name, action, toolPermissions)
-          if (actionError) {
-            logger.debug('Permission denied: action not allowed', {
-              tool: name,
-              action,
-              toolPermissions,
-            })
-            return {
-              success: false,
-              error: actionError,
-              durationMs: 0,
-              truncated: false,
-            }
-          }
-        }
-      }
+      // Stage 2: Explicit sub-agent alias transformation
+      const aliasResult = await trySubAgentAlias(name, args, context)
+      if (aliasResult) return aliasResult
 
-      // Inject permittedActions into context for tools to use (convert Sets to arrays)
-      const permittedActionsArray: Record<string, string[]> = {}
-      for (const [key, value] of Object.entries(toolPermissions || {})) {
-        permittedActionsArray[key] = [...value]
-      }
-      const contextWithPerms: ToolContext = {
-        ...context,
-        permittedActions: Object.keys(permittedActionsArray).length > 0 ? permittedActionsArray : undefined,
-      }
-
-      logger.debug('Executing tool', { tool: name, args })
-
-      try {
-        const result = await tool.execute(args, contextWithPerms)
-
-        logger.debug('Tool completed', {
-          tool: name,
-          success: result.success,
-          durationMs: result.durationMs,
-        })
-
-        return result
-      } catch (error) {
-        if (error instanceof AskUserInterrupt) {
-          throw error
-        }
-        if (error instanceof PathAccessDeniedError) {
-          throw error
-        }
-
-        logger.error('Tool execution error', { tool: name, error })
-
-        return {
-          success: false,
-          error: error instanceof Error ? error.message : 'Unknown error',
-          durationMs: 0,
-          truncated: false,
-        }
+      // Stage 3: Unknown tool
+      return {
+        success: false,
+        error: `Unknown tool: ${name}. Available tools: ${tools.map((t) => t.name).join(', ')}`,
+        durationMs: 0,
+        truncated: false,
       }
     },
   }
