@@ -159,7 +159,7 @@ function executeCommand(
     const onAbort = () => {
       if (!timedOut && !aborted) {
         aborted = true
-        void terminateProcessTree(proc, { exited: () => exited })
+        void terminateProcessTree(proc, { exited: () => exited, immediate: true })
       }
     }
     signal?.addEventListener('abort', onAbort)

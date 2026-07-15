@@ -21,13 +21,13 @@ export function Header({ onMenuClick, onCriteriaToggle }: HeaderProps) {
   const [showSettings, setShowSettings] = useState(false)
   const [sessionDropdownOpen, setSessionDropdownOpen] = useState(false)
   const [isFullscreen, setIsFullscreen] = useState(!!document.fullscreenElement)
+  const [location, setLocation] = useLocation()
 
   useEffect(() => {
     const onChange = () => setIsFullscreen(!!document.fullscreenElement)
     document.addEventListener('fullscreenchange', onChange)
     return () => document.removeEventListener('fullscreenchange', onChange)
   }, [])
-  const [location] = useLocation()
   const isProjectPage = location.startsWith('/p/')
   const isSessionPage = /^\/p\/[^/]+\/s\/[^/]+$/.test(location)
   const session = useSessionStore((state) => state.currentSession)
@@ -155,7 +155,7 @@ export function Header({ onMenuClick, onCriteriaToggle }: HeaderProps) {
         <button
           onClick={() => {
             localStorage.removeItem('openfox_token')
-            window.location.reload()
+            setLocation('/')
           }}
           className="p-2.5 rounded hover:bg-bg-tertiary text-text-muted hover:text-text-primary transition-colors"
           title="Logout"

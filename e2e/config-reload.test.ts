@@ -56,41 +56,38 @@ describe('Config reload after provider update', () => {
   })
 
   it('config-reflects-provider-activation: /api/config returns updated activeProviderId after activate', async () => {
-    // Get initial providers
-    const initialRes = await fetch(`${server.url}/api/providers`)
-    const initialData = (await initialRes.json()) as { providers: Array<{ id: string; isActive: boolean }> }
-
-    if (initialData.providers.length < 2) {
-      console.log('Need at least 2 providers to test activation, skipping')
-      return
-    }
-
-    // Find a non-active provider
-    const inactiveProvider = initialData.providers.find((p) => !p.isActive)
-    if (!inactiveProvider) {
-      console.log('No inactive provider found, skipping')
-      return
-    }
-
-    // Get initial config
+    // Get current active provider
     const initialConfigRes = await fetch(`${server.url}/api/config`)
     const initialConfig = (await initialConfigRes.json()) as { activeProviderId: string | null }
 
-    // Activate the inactive provider
-    const activateRes = await fetch(`${server.url}/api/providers/${inactiveProvider.id}/activate`, {
+    // Create a second provider to activate
+    const createRes = await fetch(`${server.url}/api/providers`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        name: 'Activation Test Provider',
+        url: 'http://localhost:8001',
+        backend: 'vllm',
+        model: 'activation-test-model',
+      }),
+    })
+    expect(createRes.status).toBe(201)
+    const createData = (await createRes.json()) as { success: boolean; provider: { id: string; name: string } }
+
+    // Activate the newly created provider
+    const activateRes = await fetch(`${server.url}/api/providers/${createData.provider.id}/activate`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({}),
     })
-
     expect(activateRes.status).toBe(200)
 
-    // Immediately fetch config again - should reflect the new active provider
+    // Fetch config again - should reflect the new active provider
     const updatedRes = await fetch(`${server.url}/api/config`)
     const updatedConfig = (await updatedRes.json()) as { activeProviderId: string | null }
 
-    // Active provider should have changed
-    expect(updatedConfig.activeProviderId).toBe(inactiveProvider.id)
+    // Active provider should have changed to the newly created one
+    expect(updatedConfig.activeProviderId).toBe(createData.provider.id)
     expect(updatedConfig.activeProviderId).not.toBe(initialConfig.activeProviderId)
   })
 })

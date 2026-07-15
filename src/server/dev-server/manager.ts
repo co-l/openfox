@@ -170,6 +170,7 @@ class DevServerManager {
       env: { ...process.env, FORCE_COLOR: '1' },
       stdio: ['ignore', 'pipe', 'pipe'],
       detached: true,
+      windowsHide: true,
     })
 
     instance.process = proc

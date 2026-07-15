@@ -57,14 +57,8 @@ vi.mock('../utils/logger.js', () => ({
   logger: { info: vi.fn(), error: vi.fn(), warn: vi.fn() },
 }))
 
-const mockApplyDynamicContext = vi.hoisted(() => vi.fn().mockResolvedValue(undefined))
-
-vi.mock('../chat/dynamic-context.js', () => ({
-  applyDynamicContext: mockApplyDynamicContext,
-}))
-
 function mockSessionManager() {
-  return {} as any
+  return { setDynamicContextChanged: vi.fn() } as any
 }
 
 describe('mcpConfigTool', () => {
@@ -219,6 +213,7 @@ describe('mcpConfigTool', () => {
       setMcpManagerForTools(mockManager)
 
       const { mcpConfigTool } = await import('./mcp-config.js')
+      const sm = mockSessionManager()
 
       const result = await mcpConfigTool.execute(
         {
@@ -229,12 +224,14 @@ describe('mcpConfigTool', () => {
           args: ['server.js'],
           env: { API_KEY: 'abc' },
         },
-        { workdir: '/tmp', sessionId: 's1', sessionManager: mockSessionManager() },
+        { workdir: '/tmp', sessionId: 's1', sessionManager: sm },
       )
 
       expect(result.success).toBe(true)
       expect(result.error).toBeUndefined()
       expect(result.output).toContain('new-server')
+      expect(result.output).toContain('Update system prompt')
+      expect(sm.setDynamicContextChanged).toHaveBeenCalledWith('s1', true)
       expect(mockManager.addServer).toHaveBeenCalledWith(
         'new-server',
         expect.objectContaining({
@@ -248,7 +245,6 @@ describe('mcpConfigTool', () => {
       expect(mockSaveGlobalConfig).toHaveBeenCalled()
       expect(mockCreateMcpTools).toHaveBeenCalled()
       expect(mockSetMcpTools).toHaveBeenCalled()
-      expect(mockApplyDynamicContext).toHaveBeenCalledWith(expect.any(Object), 's1')
     })
 
     it('should add an HTTP server with headers', async () => {
@@ -312,18 +308,20 @@ describe('mcpConfigTool', () => {
       setMcpManagerForTools(mockManager)
 
       const { mcpConfigTool } = await import('./mcp-config.js')
+      const sm = mockSessionManager()
 
       const result = await mcpConfigTool.execute(
         { action: 'remove', name: 'filesystem' },
-        { workdir: '/tmp', sessionId: 's1', sessionManager: mockSessionManager() },
+        { workdir: '/tmp', sessionId: 's1', sessionManager: sm },
       )
 
       expect(result.success).toBe(true)
       expect(result.error).toBeUndefined()
       expect(result.output).toContain('filesystem')
+      expect(result.output).toContain('Update system prompt')
+      expect(sm.setDynamicContextChanged).toHaveBeenCalledWith('s1', true)
       expect(mockManager.removeServer).toHaveBeenCalledWith('filesystem')
       expect(mockSaveGlobalConfig).toHaveBeenCalled()
-      expect(mockApplyDynamicContext).toHaveBeenCalledWith(expect.any(Object), 's1')
     })
 
     it('should require name', async () => {
@@ -346,19 +344,21 @@ describe('mcpConfigTool', () => {
       setMcpManagerForTools(mockManager)
 
       const { mcpConfigTool } = await import('./mcp-config.js')
+      const sm = mockSessionManager()
 
       const result = await mcpConfigTool.execute(
         { action: 'toggle-tool', name: 'filesystem', toolName: 'read_file', enabled: false },
-        { workdir: '/tmp', sessionId: 's1', sessionManager: mockSessionManager() },
+        { workdir: '/tmp', sessionId: 's1', sessionManager: sm },
       )
 
       expect(result.success).toBe(true)
       expect(result.error).toBeUndefined()
+      expect(result.output).toContain('Update system prompt')
+      expect(sm.setDynamicContextChanged).toHaveBeenCalledWith('s1', true)
       expect(mockSetToolEnabled).toHaveBeenCalledWith('filesystem', 'read_file', false)
       expect(mockSaveGlobalConfig).toHaveBeenCalled()
       expect(mockCreateMcpTools).toHaveBeenCalled()
       expect(mockSetMcpTools).toHaveBeenCalled()
-      expect(mockApplyDynamicContext).toHaveBeenCalledWith(expect.any(Object), 's1')
     })
 
     it('should require name, toolName, and enabled', async () => {

@@ -2,12 +2,15 @@
  * In-process server factory for E2E tests.
  *
  * Creates isolated server instances that can run in parallel.
- * Each test file gets its own server on a dynamic port.
+ * Each test file gets its own server on a dynamic port with its own config file.
  */
 
 import type { ServerHandle } from '../../src/server/context.js'
 import type { Config } from '../../src/shared/types.js'
 import { loadConfig } from '../../src/server/config.js'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { randomUUID } from 'node:crypto'
 
 // Create test config by modifying env vars before calling loadConfig
 function createTestConfig(options: { maxContext?: number } = {}): Config {
@@ -29,6 +32,9 @@ function createTestConfig(options: { maxContext?: number } = {}): Config {
   // Use test mode to isolate config from production
   config.mode = 'test'
 
+  // Give this server its own isolated config file so parallel tests don't clash
+  config.globalConfigPath = join(tmpdir(), `openfox-e2e-config-${randomUUID()}.json`)
+
   return config
 }
 
@@ -39,6 +45,8 @@ export interface TestServerHandle extends ServerHandle {
   wsUrl: string
   /** The dynamically assigned port */
   port: number
+  /** Path to the isolated global config file for this server */
+  globalConfigPath: string
 }
 
 /**
@@ -77,5 +85,6 @@ export async function createTestServer(options: { maxContext?: number } = {}): P
     url,
     wsUrl,
     port,
+    globalConfigPath: config.globalConfigPath!,
   }
 }

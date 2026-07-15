@@ -1,6 +1,7 @@
 import TurndownService from 'turndown'
-import { createTool } from './tool-helpers.js'
+import { createTool, buildSignal } from './tool-helpers.js'
 import { OUTPUT_LIMITS } from './types.js'
+import { isPdfBuffer, extractPdfText, processPdfContent, formatPdfErrorMessage } from './pdf-utils.js'
 
 const MAX_RESPONSE_SIZE = 5 * 1024 * 1024 // 5MB
 const DEFAULT_TIMEOUT_MS = 30_000
@@ -25,14 +26,6 @@ function buildAcceptHeader(format: string): string {
     default:
       return 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8'
   }
-}
-
-function buildSignal(timeoutMs: number, contextSignal?: AbortSignal): AbortSignal {
-  const timeoutSignal = AbortSignal.timeout(timeoutMs)
-  if (contextSignal) {
-    return AbortSignal.any([timeoutSignal, contextSignal])
-  }
-  return timeoutSignal
 }
 
 function convertHTMLToMarkdown(html: string): string {
@@ -69,7 +62,7 @@ export const webFetchTool = createTool<WebFetchArgs>(
     function: {
       name: 'web_fetch',
       description:
-        'Fetch content from a URL and return it as text, markdown, or HTML. Use this to retrieve and analyze web content such as documentation, API references, or web pages.',
+        'Fetch content from a URL and return it as text, markdown, or HTML. For PDF URLs, extracts text content page by page. Use this to retrieve and analyze web content such as documentation, API references, or web pages.',
       parameters: {
         type: 'object',
         properties: {
@@ -144,6 +137,45 @@ export const webFetchTool = createTool<WebFetchArgs>(
           contentType,
         },
       })
+    }
+
+    // Detect if this is a PDF
+    const rawBuffer = Buffer.from(arrayBuffer)
+    const isPdfResponse = mime === 'application/pdf' || isPdfBuffer(rawBuffer)
+
+    if (isPdfResponse) {
+      try {
+        const { text, pageCount, title, author } = await extractPdfText(rawBuffer)
+        const { output, truncated, isScanned } = processPdfContent(text, OUTPUT_LIMITS.web_fetch.maxBytes)
+
+        if (isScanned) {
+          return helpers.success(
+            '[PDF: This PDF has no text layer (scanned or image-only). Use an external tool with OCR to extract text.]',
+            false,
+            {
+              metadata: {
+                format: 'pdf',
+                pageCount,
+                title,
+                author,
+                url,
+              },
+            },
+          )
+        }
+
+        return helpers.success(output, truncated, {
+          metadata: {
+            format: 'pdf',
+            pageCount,
+            title,
+            author,
+            url,
+          },
+        })
+      } catch (err) {
+        return helpers.error(formatPdfErrorMessage(err))
+      }
     }
 
     const rawContent = new TextDecoder().decode(arrayBuffer)

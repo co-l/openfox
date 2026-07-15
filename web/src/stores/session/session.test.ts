@@ -1568,4 +1568,80 @@ describe('useSessionStore session isolation', () => {
     )
     expect(useSessionStore.getState().pendingQuestions).toEqual([])
   })
+
+  it('sendMessage builds correct request body for content-only, attachments-only, and both', async () => {
+    const useSessionStore = await loadSessionStore()
+    fetchMock.mockClear()
+
+    useSessionStore.setState({
+      currentSession: {
+        id: 'session-1',
+        projectId: 'project-1',
+        workdir: '/tmp/project-1',
+        mode: 'builder',
+        phase: 'build',
+        isRunning: true,
+        criteria: [],
+        summary: null,
+      } as any,
+    })
+
+    // Content only
+    await useSessionStore.getState().sendMessage('hello', undefined)
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      1,
+      '/api/sessions/session-1/message',
+      expect.objectContaining({
+        method: 'POST',
+        body: JSON.stringify({ content: 'hello' }),
+      }),
+    )
+
+    // Attachments only
+    const attachments = [
+      { id: 'att-1', filename: 'img.png', data: 'base64', mimeType: 'image/png' as const, size: 512 },
+    ]
+    await useSessionStore.getState().sendMessage('', attachments)
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      2,
+      '/api/sessions/session-1/message',
+      expect.objectContaining({
+        method: 'POST',
+        body: JSON.stringify({ attachments }),
+      }),
+    )
+
+    // Both
+    await useSessionStore.getState().sendMessage('look', attachments)
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      3,
+      '/api/sessions/session-1/message',
+      expect.objectContaining({
+        method: 'POST',
+        body: JSON.stringify({ content: 'look', attachments }),
+      }),
+    )
+
+    // Neither (empty body)
+    await useSessionStore.getState().sendMessage('', undefined)
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      4,
+      '/api/sessions/session-1/message',
+      expect.objectContaining({
+        method: 'POST',
+        body: JSON.stringify({}),
+      }),
+    )
+
+    // With messageKind
+    await useSessionStore.getState().sendMessage('hello', undefined, { messageKind: 'command' })
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      5,
+      '/api/sessions/session-1/message',
+      expect.objectContaining({
+        method: 'POST',
+        body: JSON.stringify({ content: 'hello', messageKind: 'command' }),
+      }),
+    )
+  })
 })

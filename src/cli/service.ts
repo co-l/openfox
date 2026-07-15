@@ -26,6 +26,7 @@ async function pathExists(path: string): Promise<boolean> {
 function systemctl(args: string[], silent = false): { success: boolean; output: string } {
   const result = spawnSync('systemctl', ['--user', ...args], {
     encoding: 'utf-8',
+    windowsHide: true,
   })
   if (!silent) {
     console.log(result.stdout || result.stderr || '')
@@ -35,7 +36,7 @@ function systemctl(args: string[], silent = false): { success: boolean; output: 
 
 function exec(command: string, args: string[] = []): Promise<void> {
   return new Promise((resolve, reject) => {
-    const child = spawn(command, args, { stdio: 'inherit' })
+    const child = spawn(command, args, { stdio: 'inherit', windowsHide: true })
     child.on('exit', (code) => {
       if (code === 0) resolve()
       else reject(new Error(`Command failed: ${command} ${args.join(' ')}`))
@@ -281,10 +282,11 @@ async function serviceLogs(args: string[]): Promise<void> {
   const follow = args.includes('-f') || args.includes('--follow')
 
   if (follow) {
-    spawn('journalctl', ['--user', '-u', SERVICE_NAME, '-f', '--no-pager'], { stdio: 'inherit' })
+    spawn('journalctl', ['--user', '-u', SERVICE_NAME, '-f', '--no-pager'], { stdio: 'inherit', windowsHide: true })
   } else {
     const result = spawnSync('journalctl', ['--user', '-u', SERVICE_NAME, '-n', '50', '--no-pager'], {
       encoding: 'utf-8',
+      windowsHide: true,
     })
     console.log(result.stdout || result.stderr || 'No logs')
   }

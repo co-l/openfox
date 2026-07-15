@@ -2,11 +2,14 @@
  * Sub-Agent Manager Tests
  */
 
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
+import { mkdtemp, rm, writeFile, mkdir } from 'node:fs/promises'
+import { join } from 'node:path'
+import { tmpdir } from 'node:os'
 import Database from 'better-sqlite3'
 import { EventStore, initEventStore } from '../events/store.js'
 import { loadDefaultAgents, findAgentById } from '../agents/registry.js'
-import { executeSubAgent } from './manager.js'
+import { executeSubAgent, loadGitIgnoreRules } from './manager.js'
 import type { SessionManager } from '../session/index.js'
 import type { LLMClientWithModel } from '../llm/client.js'
 import type { ToolRegistry } from '../tools/types.js'
@@ -230,5 +233,85 @@ describe('SubAgentManager', () => {
       'web_fetch',
       'trace_code',
     ])
+  })
+
+  describe('loadGitIgnoreRules', () => {
+    let tempDir: string
+
+    beforeEach(async () => {
+      tempDir = await mkdtemp(join(tmpdir(), 'openfox-gitignore-test-'))
+    })
+
+    afterEach(async () => {
+      await rm(tempDir, { recursive: true, force: true })
+    })
+
+    it('returns empty string when no .gitignore exists', async () => {
+      const result = await loadGitIgnoreRules(tempDir)
+      expect(result).toBe('')
+    })
+
+    it('reads .gitignore from workdir', async () => {
+      await writeFile(join(tempDir, '.gitignore'), 'node_modules/\ndist/\n')
+      const result = await loadGitIgnoreRules(tempDir)
+      expect(result).toContain('node_modules/')
+      expect(result).toContain('dist/')
+      expect(result).toContain('Repository Exclusion Rules')
+    })
+
+    it('walks up to parent directory when .gitignore not in workdir', async () => {
+      const subDir = join(tempDir, 'sub', 'deep')
+      await mkdir(subDir, { recursive: true })
+      // Put .gitignore in the parent (tempDir)
+      await writeFile(join(tempDir, '.gitignore'), 'build/\n')
+      // Should find it from deep subdirectory
+      const result = await loadGitIgnoreRules(subDir)
+      expect(result).toContain('build/')
+      expect(result).toContain('Repository Exclusion Rules')
+    })
+
+    it('returns empty string for empty .gitignore', async () => {
+      await writeFile(join(tempDir, '.gitignore'), '')
+      const result = await loadGitIgnoreRules(tempDir)
+      expect(result).toBe('')
+    })
+
+    it('returns empty string for whitespace-only .gitignore', async () => {
+      await writeFile(join(tempDir, '.gitignore'), '   \n\n  \n')
+      const result = await loadGitIgnoreRules(tempDir)
+      expect(result).toBe('')
+    })
+
+    it('handles nonexistent workdir gracefully', async () => {
+      const fakeDir = join(tempDir, 'nonexistent')
+      const result = await loadGitIgnoreRules(fakeDir)
+      expect(result).toBe('')
+    })
+
+    it('caps .gitignore at 100 lines to prevent prompt bloat', async () => {
+      const lines = Array.from({ length: 150 }, (_, i) => `pattern${i}/`)
+      await writeFile(join(tempDir, '.gitignore'), lines.join('\n'))
+      const result = await loadGitIgnoreRules(tempDir)
+      // Should contain first 100 patterns
+      expect(result).toContain('pattern0/')
+      expect(result).toContain('pattern99/')
+      // Should NOT contain pattern 100+
+      expect(result).not.toContain('pattern100/')
+      // Should have truncation marker
+      expect(result).toContain('truncated')
+    })
+
+    it('caps .gitignore at 4 KB to prevent prompt bloat', async () => {
+      // Create content well over 4 KB with a single long line
+      const longLine = 'x'.repeat(5000)
+      await writeFile(join(tempDir, '.gitignore'), longLine)
+      const result = await loadGitIgnoreRules(tempDir)
+      expect(result.length).toBeLessThanOrEqual(4500) // header + capped content
+    })
+
+    it('returns empty string for relative path', async () => {
+      const result = await loadGitIgnoreRules('relative/path')
+      expect(result).toBe('')
+    })
   })
 })

@@ -20,7 +20,17 @@ export async function configFileExists(mode: Mode): Promise<boolean> {
 // Schema Definitions
 // ============================================================================
 
-const backendSchema = z.enum(['vllm', 'sglang', 'ollama', 'llamacpp', 'openai', 'anthropic', 'opencode-go', 'unknown'])
+const backendSchema = z.enum([
+  'vllm',
+  'sglang',
+  'ollama',
+  'llamacpp',
+  'lmstudio',
+  'openai',
+  'anthropic',
+  'opencode-go',
+  'unknown',
+])
 
 const modelConfigSchema = z
   .object({
@@ -172,8 +182,8 @@ export type GlobalConfig = z.infer<typeof configSchema>
 // Load / Save
 // ============================================================================
 
-export async function loadGlobalConfig(mode: Mode): Promise<GlobalConfig> {
-  const configPath = getGlobalConfigPath(mode)
+export async function loadGlobalConfig(mode: Mode, configPathOverride?: string): Promise<GlobalConfig> {
+  const configPath = configPathOverride ?? getGlobalConfigPath(mode)
 
   try {
     const content = await readFile(configPath, 'utf-8')
@@ -188,8 +198,12 @@ export function getDefaultVisionFallback() {
   return { enabled: false, url: 'http://localhost:11434', model: 'qwen3.5:0.8b', timeout: 120 }
 }
 
-export async function saveGlobalConfig(mode: Mode, config: Partial<GlobalConfig>): Promise<void> {
-  const configPath = getGlobalConfigPath(mode)
+export async function saveGlobalConfig(
+  mode: Mode,
+  config: Partial<GlobalConfig>,
+  configPathOverride?: string,
+): Promise<void> {
+  const configPath = configPathOverride ?? getGlobalConfigPath(mode)
   const fullConfig: GlobalConfig = {
     providers: config.providers ?? [],
     mcpServers: config.mcpServers,

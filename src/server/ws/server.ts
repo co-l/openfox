@@ -54,6 +54,7 @@ function moduleGitBranch(cwd: string): Promise<string | null> {
     const proc = spawn('git', ['rev-parse', '--abbrev-ref', 'HEAD'], {
       cwd,
       stdio: ['ignore', 'pipe', 'ignore'],
+      windowsHide: true,
     })
     let stdout = ''
     proc.stdout.on('data', (data: Buffer) => {
@@ -79,10 +80,12 @@ function moduleGitDiff(cwd: string): Promise<{ hash: string; files: GitDiffFile[
     const diffProc = spawn('git', ['diff', '--name-status', 'HEAD'], {
       cwd,
       stdio: ['ignore', 'pipe', 'pipe'],
+      windowsHide: true,
     })
     const statusProc = spawn('git', ['status', '--porcelain'], {
       cwd,
       stdio: ['ignore', 'pipe', 'pipe'],
+      windowsHide: true,
     })
     let diffStdout = ''
     let statusStdout = ''

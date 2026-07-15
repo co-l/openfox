@@ -16,6 +16,7 @@ interface ModalProps {
   closeOnBackdropClick?: boolean
   closeOnEscape?: boolean
   showCloseButton?: boolean
+  scrollable?: boolean
 }
 
 const sizeClasses = {
@@ -40,6 +41,7 @@ export function Modal({
   closeOnBackdropClick = true,
   closeOnEscape = true,
   showCloseButton = true,
+  scrollable = true,
 }: ModalProps) {
   const [internalIsOpen, setInternalIsOpen] = useState(false)
   const isControlled = controlledIsOpen !== undefined
@@ -101,7 +103,10 @@ export function Modal({
                       </div>
                     </div>
                   )}
-                  <div className="p-4 overflow-y-auto flex-1 min-h-0" style={minHeight ? { minHeight } : undefined}>
+                  <div
+                    className={`p-4 flex-1 min-h-0${scrollable ? ' overflow-y-auto' : ' overflow-hidden flex flex-col'}`}
+                    style={minHeight ? { minHeight } : undefined}
+                  >
                     {children}
                   </div>
                   {footer && <div className="px-4 py-3 border-t border-border">{footer}</div>}

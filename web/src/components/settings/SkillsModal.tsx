@@ -1,13 +1,15 @@
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { Button } from '../shared/Button'
-import { useSkillsStore, type SkillFull } from '../../stores/skills'
+import { useSkillsStore, type SkillFull, type SkillInfo } from '../../stores/skills'
 import { useConfirmDialog, FormField, ErrorBanner } from './CRUDModal'
 import { ItemsHeader } from '../shared/ItemsHeader'
 import { CRUDListHeader } from './CRUDListHeader'
-import { CRUDListItemSimple } from './CRUDListItem'
 import { CRUDListView } from './CRUDListView'
 import { NameIdFields } from './FormFields'
 import { useCRUDForm } from './useCRUDForm'
+import { SkillLibraryPanel } from './SkillLibraryPanel'
+import { SkillListItem } from './SkillListItem'
+import { SkillDeleteModal } from './SkillDeleteModal'
 type SkillFormData = {
   name: string
   id: string
@@ -19,42 +21,13 @@ type SkillFormData = {
   [key: string]: unknown
 }
 
-function SkillListItem({
-  skill,
-  isBuiltIn,
-  isConfirmingDelete,
-  onView,
-  onEdit,
-  onDuplicate,
-  onDelete,
-}: {
-  skill: { id: string; name: string; description: string }
-  isBuiltIn: boolean
-  isConfirmingDelete: boolean
-  onView: () => void
-  onEdit?: () => void
-  onDuplicate: () => void
-  onDelete?: () => void
-}) {
-  return (
-    <CRUDListItemSimple
-      id={skill.id}
-      name={skill.name}
-      description={skill.description}
-      isBuiltIn={isBuiltIn}
-      isConfirmingDelete={isConfirmingDelete}
-      onView={onView}
-      onEdit={onEdit}
-      onDuplicate={onDuplicate}
-      onDelete={onDelete}
-    />
-  )
-}
-
 export function SkillsContent({ isOpen }: { isOpen: boolean }) {
   const defaults = useSkillsStore((state) => state.defaults)
   const userItems = useSkillsStore((state) => state.userItems)
   const projectItems = useSkillsStore((state) => state.projectItems)
+  const items = useSkillsStore((state) => state.items)
+  const selectedDirectory = useSkillsStore((state) => state.selectedDirectory)
+  const diagnostics = useSkillsStore((state) => state.diagnostics)
   const loading = useSkillsStore((state) => state.loading)
   const fetchSkills = useSkillsStore((state) => state.fetchSkills)
   const fetchSkill = useSkillsStore((state) => state.fetchSkill)
@@ -62,6 +35,13 @@ export function SkillsContent({ isOpen }: { isOpen: boolean }) {
   const createSkill = useSkillsStore((state) => state.createSkill)
   const updateSkill = useSkillsStore((state) => state.updateSkill)
   const deleteSkillAction = useSkillsStore((state) => state.deleteSkill)
+  const selectDirectory = useSkillsStore((state) => state.selectDirectory)
+  const removeDirectory = useSkillsStore((state) => state.removeDirectory)
+  const installSkill = useSkillsStore((state) => state.installSkill)
+  const toggleSkill = useSkillsStore((state) => state.toggleSkill)
+  const [pendingDelete, setPendingDelete] = useState<SkillInfo | null>(null)
+  const [deleting, setDeleting] = useState(false)
+  const [deleteError, setDeleteError] = useState('')
 
   const { view, editingId, formError, saving, formData, setView, setEditingId, setFormError, setFormData, setSaving } =
     useCRUDForm<SkillFormData>()
@@ -141,8 +121,18 @@ export function SkillsContent({ isOpen }: { isOpen: boolean }) {
     setView('edit')
   }
 
-  const handleDelete = async (skillId: string) => {
-    await deleteSkillAction(skillId)
+  const handleDelete = async () => {
+    if (!pendingDelete) return
+    setDeleting(true)
+    setDeleteError('')
+    const result = await deleteSkillAction(pendingDelete.id)
+    setDeleting(false)
+    if (!result.success) {
+      setDeleteError(result.error ?? 'Failed to delete skill.')
+      return
+    }
+    await fetchSkills()
+    setPendingDelete(null)
     clearConfirm()
   }
 
@@ -298,7 +288,7 @@ export function SkillsContent({ isOpen }: { isOpen: boolean }) {
     )
   }
 
-  function EditableSkillItems({ items }: { items: { id: string; name: string; description: string }[] }) {
+  function EditableSkillItems({ items }: { items: SkillInfo[] }) {
     return items.map((skill) => (
       <SkillListItem
         key={skill.id}
@@ -308,13 +298,41 @@ export function SkillsContent({ isOpen }: { isOpen: boolean }) {
         onView={() => handleView(skill.id)}
         onEdit={() => handleEdit(skill.id)}
         onDuplicate={() => handleDuplicate(skill.id)}
-        onDelete={() => handleDelete(skill.id)}
+        onDelete={() => {
+          setDeleteError('')
+          setPendingDelete(skill)
+        }}
+        onToggle={() => toggleSkill(skill.id)}
+        readOnly={skill.readOnly}
       />
     ))
   }
 
   return (
     <div>
+      <SkillDeleteModal
+        skill={pendingDelete}
+        deleting={deleting}
+        error={deleteError}
+        onClose={() => {
+          if (!deleting) setPendingDelete(null)
+        }}
+        onConfirm={handleDelete}
+      />
+      <SkillLibraryPanel
+        selectedDirectory={selectedDirectory}
+        onSelect={selectDirectory}
+        onRemove={removeDirectory}
+        onRefresh={fetchSkills}
+        onInstall={installSkill}
+      />
+      {diagnostics.length > 0 && (
+        <div className="mb-3 rounded border border-accent-warning/40 bg-accent-warning/10 p-2 text-xs text-text-secondary">
+          {diagnostics.map((diagnostic, index) => (
+            <p key={`${diagnostic}-${index}`}>{diagnostic}</p>
+          ))}
+        </div>
+      )}
       <CRUDListHeader
         description="Skills provide domain-specific knowledge that agents can load on demand."
         onNew={handleNew}
@@ -338,6 +356,7 @@ export function SkillsContent({ isOpen }: { isOpen: boolean }) {
                   isConfirmingDelete={false}
                   onView={() => handleView(skill.id)}
                   onDuplicate={() => handleDuplicate(skill.id)}
+                  onToggle={() => toggleSkill(skill.id)}
                 />
               ))}
             </div>
@@ -348,6 +367,17 @@ export function SkillsContent({ isOpen }: { isOpen: boolean }) {
           <ItemsHeader>
             <EditableSkillItems items={userItems} />
           </ItemsHeader>
+        )}
+
+        {items.some((skill) => ['global-shared', 'selected', 'project-shared'].includes(skill.source)) && (
+          <div className="mt-4">
+            <h3 className="text-xs font-medium text-text-secondary mb-2 uppercase tracking-wide">Shared</h3>
+            <div className="space-y-2">
+              <EditableSkillItems
+                items={items.filter((skill) => ['global-shared', 'selected', 'project-shared'].includes(skill.source))}
+              />
+            </div>
+          </div>
         )}
 
         {projectItems.length > 0 && (

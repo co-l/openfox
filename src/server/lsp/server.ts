@@ -221,6 +221,7 @@ export class LspServer {
           HOME: process.env['HOME'],
           PATH: process.env['PATH'],
         },
+        windowsHide: true,
       })
 
       if (!this.process.stdin || !this.process.stdout) {

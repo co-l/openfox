@@ -81,13 +81,22 @@ export function AdvancedTab({ onClose }: { onClose: () => void }) {
 
   return (
     <div className="space-y-6">
-      <SettingsToggle
-        title="Dynamic System Prompt"
-        description="Rebuild the system prompt on every turn. When disabled, changes are applied on demand via the context header for better cache performance."
-        enabled={localToggles.dynamicPrompt}
-        onToggle={handleToggleDynamicSystemPrompt}
-        boldTitle
-      />
+      <div>
+        <h3 className="text-sm font-medium text-text-primary mb-1">Onboarding</h3>
+        <p className="text-sm text-text-muted mb-4">Manage providers, workdir and vision fallback.</p>
+        <Button variant="secondary" onClick={handleLaunchOnboarding}>
+          Launch Onboarding
+        </Button>
+      </div>
+      <hr className="border-border" />
+      <div>
+        <SettingsToggle
+          title='Show "Open in VSCode" links'
+          description="Display a link on file reads to open the file directly in VS Code."
+          enabled={localToggles.openInEditor}
+          onToggle={handleToggleOpenInEditor}
+        />
+      </div>
       <hr className="border-border" />
       <SettingsToggle
         title="Speculative Cache Warming"
@@ -99,32 +108,20 @@ export function AdvancedTab({ onClose }: { onClose: () => void }) {
       <hr className="border-border" />
       <div>
         <h3 className="text-sm font-medium text-text-primary mb-3">Auto-Retry Patterns</h3>
-        <p className="text-xs text-text-muted mb-3">
+        <p className="text-sm text-text-muted mb-3">
           Define regex patterns that, when matched against LLM responses mid-stream, trigger an automatic retry with a
           "continue" prompt. The content that triggered the match is preserved in the chat feed.
         </p>
         <RetryPatternsEditor value={retryPatterns} onChange={handleRetryPatternsChange} />
       </div>
       <hr className="border-border" />
-      <div>
-        <h3 className="text-sm font-medium text-text-primary mb-3">Integrations</h3>
-        <SettingsToggle
-          title='Show "Open in VSCode" links'
-          description="Display a link on file reads to open the file directly in VS Code."
-          enabled={localToggles.openInEditor}
-          onToggle={handleToggleOpenInEditor}
-        />
-      </div>
-      <hr className="border-border" />
-      <div>
-        <h3 className="text-sm font-medium text-text-primary mb-1">Onboarding</h3>
-        <p className="text-sm text-text-muted mb-4">
-          Reset your OpenFox setup and go through the initial configuration again.
-        </p>
-        <Button variant="secondary" onClick={handleLaunchOnboarding}>
-          Launch Onboarding
-        </Button>
-      </div>
+      <SettingsToggle
+        title="Dynamic System Prompt"
+        description="Rebuild the system prompt on every turn. Recommended value: off."
+        enabled={localToggles.dynamicPrompt}
+        onToggle={handleToggleDynamicSystemPrompt}
+        boldTitle
+      />
     </div>
   )
 }
@@ -146,7 +143,7 @@ function SettingsToggle({
     <label className="flex items-start justify-between gap-3 cursor-pointer">
       <div className="flex-1 min-w-0">
         <div className={`text-sm ${boldTitle ? 'font-medium' : ''} text-text-primary`}>{title}</div>
-        <div className="text-xs text-text-muted mt-0.5">{description}</div>
+        <div className="text-sm text-text-muted mt-0.5">{description}</div>
       </div>
       <div className="flex-shrink-0">
         <Toggle enabled={enabled} onClick={onToggle} />

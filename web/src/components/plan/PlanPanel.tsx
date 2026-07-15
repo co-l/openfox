@@ -18,6 +18,7 @@ import { WorkflowsModal } from '../settings/WorkflowsModal'
 import { QuickActionModal } from '../QuickActionModal'
 import { MessageSearchModal } from './MessageSearchModal'
 import { ChatInput } from './ChatInput'
+import { shouldCaptureMessageSearchShortcut } from './message-search-shortcut'
 
 import { groupMessages, type DisplayItem } from './groupMessages.js'
 import { usePromptHistory } from '../../hooks/usePromptHistory.js'
@@ -75,7 +76,7 @@ export function PlanPanel({
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
-      if ((e.ctrlKey || e.metaKey) && e.key === 'f') {
+      if (shouldCaptureMessageSearchShortcut(e)) {
         e.preventDefault()
         setShowMessageSearch(true)
       }

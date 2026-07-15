@@ -17,7 +17,7 @@ type PwaConfig = {
 
 function execSyncSilent(cmd: string): string {
   try {
-    return execSync(cmd, { encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'] }) as string
+    return execSync(cmd, { encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true }) as string
   } catch {
     return ''
   }
@@ -25,7 +25,7 @@ function execSyncSilent(cmd: string): string {
 
 function execSyncOk(cmd: string): boolean {
   try {
-    execSync(cmd, { encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'] })
+    execSync(cmd, { encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true })
     return true
   } catch {
     return false
@@ -96,7 +96,7 @@ function getFirefoxPwaInstallHint(): string {
 
 function probeInstalledApp(manifestUrl: string): { appId: string; profileId: string } | null {
   try {
-    const out = execSync('firefoxpwa profile list', { encoding: 'utf-8' }) as string
+    const out = execSync('firefoxpwa profile list', { encoding: 'utf-8', windowsHide: true }) as string
     const lines = out.split('\n')
     let currentProfile = ''
     for (const line of lines) {
@@ -123,6 +123,7 @@ function isServerReachable(port: number): boolean {
     const result = execSync(`curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:${port}/manifest.webmanifest`, {
       encoding: 'utf-8',
       timeout: 5000,
+      windowsHide: true,
     }) as string
     return result.trim() === '200'
   } catch {
@@ -191,7 +192,7 @@ async function pwaInstall(mode: Mode): Promise<void> {
     if (install) {
       log.info('Running: firefoxpwa runtime install')
       try {
-        spawn('firefoxpwa', ['runtime', 'install'], { stdio: 'inherit' })
+        spawn('firefoxpwa', ['runtime', 'install'], { stdio: 'inherit', windowsHide: true })
       } catch {
         log.error('Failed to install runtime.')
         process.exit(1)
@@ -231,7 +232,7 @@ async function pwaInstall(mode: Mode): Promise<void> {
   let appId = ''
   let profileId = '00000000000000000000000000'
   try {
-    execSync(`firefoxpwa site install ${manifestUrl}`, { encoding: 'utf-8' })
+    execSync(`firefoxpwa site install ${manifestUrl}`, { encoding: 'utf-8', windowsHide: true })
     const detected = probeInstalledApp(manifestUrl)
     if (detected) {
       appId = detected.appId
@@ -279,7 +280,7 @@ async function pwaUninstall(mode: Mode): Promise<void> {
 
   log.info('Removing OpenFox PWA...')
   try {
-    execSync(`firefoxpwa site uninstall ${appId} --quiet`, { encoding: 'utf-8' })
+    execSync(`firefoxpwa site uninstall ${appId} --quiet`, { encoding: 'utf-8', windowsHide: true })
   } catch {
     log.error(`Failed to uninstall PWA (ID: ${appId}).`)
     process.exit(1)
@@ -313,7 +314,7 @@ async function pwaLaunch(mode: Mode): Promise<void> {
   }
 
   log.info('Launching OpenFox PWA...')
-  spawn('firefoxpwa', ['site', 'launch', appId], { stdio: 'inherit' })
+  spawn('firefoxpwa', ['site', 'launch', appId], { stdio: 'inherit', windowsHide: true })
 }
 
 async function pwaUpdate(mode: Mode): Promise<void> {
@@ -338,7 +339,7 @@ async function pwaUpdate(mode: Mode): Promise<void> {
   }
 
   try {
-    execSync(`firefoxpwa site update ${appId}`, { encoding: 'utf-8' })
+    execSync(`firefoxpwa site update ${appId}`, { encoding: 'utf-8', windowsHide: true })
   } catch {
     log.error('Failed to update PWA metadata.')
     process.exit(1)

@@ -18,6 +18,10 @@ Your role is to investigate and map out code structure, find relevant files, and
 Guidelines:
 
 - Use run_command with grep/glob to discover code
+- When using grep, ALWAYS exclude common non-source directories:
+  `--exclude-dir=node_modules --exclude-dir=.git --exclude-dir=dist --exclude-dir=.next --exclude-dir=build --exclude-dir=coverage`
+- Respect `.gitignore` exclusion patterns when searching
+- Prefer `rg` (ripgrep) if available — it respects `.gitignore` natively and is faster
 - Trace dependencies and imports to understand relationships
 - Identify patterns and conventions in the codebase
 - Report findings clearly with file paths and key observations

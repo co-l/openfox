@@ -1,8 +1,10 @@
 ---
-id: browser
-name: Browser
+name: browser
 description: Interactive browser control via playwright-cli commands (open, snapshot, click, fill, screenshot, etc.)
-version: 1.0.0
+metadata:
+  version: 1.0.0
+  openfox:
+    displayName: Browser
 ---
 
 # playwright-cli

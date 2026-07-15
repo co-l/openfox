@@ -9,6 +9,10 @@ import { createServerHandle } from '../src/server/index.js'
 import { createProject, createSession, createTestProject, type TestProject } from './utils/index.js'
 import { loadGlobalConfig, saveGlobalConfig, type GlobalConfig } from '../src/cli/config.js'
 import type { Config } from '../src/shared/types.js'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { randomUUID } from 'node:crypto'
+import { unlink } from 'node:fs/promises'
 
 describe('Model Context Update', () => {
   let server: Awaited<ReturnType<typeof createServerHandle>>
@@ -17,10 +21,14 @@ describe('Model Context Update', () => {
   const testProviderId = 'test-context-update-provider'
   const testModelId = 'test-context-update-model'
   let serverUrl: string
+  let configPath: string
 
   beforeAll(async () => {
-    // Set up test provider in config
-    const globalConfig = await loadGlobalConfig(testMode)
+    // Use isolated config file to avoid races with parallel tests
+    configPath = join(tmpdir(), `openfox-e2e-config-${randomUUID()}.json`)
+
+    // Set up test provider in isolated config
+    const globalConfig = await loadGlobalConfig(testMode, configPath)
     const customContextWindow = 200000
 
     const updatedConfig: GlobalConfig = {
@@ -47,13 +55,14 @@ describe('Model Context Update', () => {
       activeProviderId: testProviderId,
     }
 
-    await saveGlobalConfig(testMode, updatedConfig)
+    await saveGlobalConfig(testMode, updatedConfig, configPath)
 
     // Create server config
     const config: Config = {
       providers: updatedConfig.providers,
       defaultModelSelection: updatedConfig.defaultModelSelection,
       activeProviderId: updatedConfig.activeProviderId,
+      globalConfigPath: configPath,
       llm: {
         baseUrl: 'http://localhost:11434/v1',
         model: testModelId,
@@ -78,6 +87,8 @@ describe('Model Context Update', () => {
 
   afterAll(async () => {
     await server.close()
+    // Clean up isolated config file
+    await unlink(configPath).catch(() => {})
   })
 
   beforeEach(async () => {

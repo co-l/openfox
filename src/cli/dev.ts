@@ -21,7 +21,7 @@ if (currentHeap < MIN_HEAP_MB && !process.env['OPENFOX_HEAP_INCREASED']) {
   const result = spawnSync(
     process.execPath,
     ['--max-old-space-size=' + heapMB, ...process.execArgv, scriptPath, ...process.argv.slice(2)],
-    { stdio: 'inherit', env: env as Record<string, string> },
+    { stdio: 'inherit', env: env as Record<string, string>, windowsHide: true },
   )
   process.exit(result.status ?? 0)
 }

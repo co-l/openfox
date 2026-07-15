@@ -33,6 +33,7 @@ function getGitBranch(cwd: string): Promise<string | null> {
     const proc = spawn('git', ['rev-parse', '--abbrev-ref', 'HEAD'], {
       cwd,
       stdio: ['ignore', 'pipe', 'ignore'],
+      windowsHide: true,
     })
 
     let stdout = ''

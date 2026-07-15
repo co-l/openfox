@@ -58,7 +58,7 @@ export function DisplayTab() {
     {
       key: SETTINGS_KEYS.DISPLAY_SHOW_SYNTAX_HIGHLIGHTING,
       label: 'Show syntax highlighting',
-      description: 'Nicer formatting, but very slow - applies to code blocks, diffs, and file previews',
+      description: 'Nicer formatting, but costly - applies to code blocks, diffs, and file previews',
     },
   ] as const
 

@@ -1,6 +1,28 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
+import { EventEmitter } from 'node:events'
 import express from 'express'
 import { createAutoUpdateRoutes, resetUpdateInProgress } from './auto-update.js'
+
+function makeMockChild(opts: { stdout?: string; stderr?: string; exitCode?: number }) {
+  const child = new EventEmitter() as any
+  child.stdout = new EventEmitter() as any
+  child.stderr = new EventEmitter() as any
+  child.kill = vi.fn()
+  child.unref = vi.fn()
+  // Defer emissions so the handler can attach listeners
+  process.nextTick(() => {
+    if (opts.stdout) child.stdout.emit('data', Buffer.from(opts.stdout))
+    if (opts.stderr) child.stderr.emit('data', Buffer.from(opts.stderr))
+    child.emit('close', opts.exitCode ?? 0)
+  })
+  return child
+}
+
+const mockSpawn = vi.fn()
+
+vi.mock('node:child_process', () => ({
+  spawn: (...args: any[]) => mockSpawn(...args),
+}))
 
 describe('Auto Update Routes', () => {
   let app: express.Express
@@ -8,6 +30,15 @@ describe('Auto Update Routes', () => {
   let baseUrl: string
 
   beforeEach(async () => {
+    mockSpawn.mockReset()
+    // Default: npm view returns a version, openfox update succeeds
+    mockSpawn.mockImplementation((cmd: unknown, args: unknown) => {
+      if (cmd === 'npm' && Array.isArray(args) && args[0] === 'view') {
+        return makeMockChild({ stdout: '1.2.3\n' })
+      }
+      return makeMockChild({ stdout: 'Updated: 1.2.3\n' })
+    })
+
     app = express()
     app.use(express.json())
     app.use('/api/auto-update', createAutoUpdateRoutes())

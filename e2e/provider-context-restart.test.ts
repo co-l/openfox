@@ -2,15 +2,23 @@ import { describe, it, expect, beforeAll, afterAll } from 'vitest'
 import { createServerHandle } from '../src/server/index.js'
 import { loadGlobalConfig, saveGlobalConfig, type GlobalConfig } from '../src/cli/config.js'
 import type { Config } from '../src/shared/types.js'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { randomUUID } from 'node:crypto'
+import { unlink } from 'node:fs/promises'
 
 describe('Provider Context Restart', () => {
   const testMode = 'test'
   let config: Config
   let serverHandle: Awaited<ReturnType<typeof createServerHandle>>
+  let configPath: string
 
   beforeAll(async () => {
+    // Use isolated config file to avoid races with parallel tests
+    configPath = join(tmpdir(), `openfox-e2e-config-${randomUUID()}.json`)
+
     // Load and prepare config
-    const globalConfig = await loadGlobalConfig(testMode)
+    const globalConfig = await loadGlobalConfig(testMode, configPath)
 
     // Ensure we have a test provider with a user-set context window
     const testProviderId = 'test-restart-provider'
@@ -41,13 +49,14 @@ describe('Provider Context Restart', () => {
       activeProviderId: testProviderId,
     }
 
-    await saveGlobalConfig(testMode, updatedConfig)
+    await saveGlobalConfig(testMode, updatedConfig, configPath)
 
     // Create server config
     config = {
       providers: updatedConfig.providers,
       defaultModelSelection: updatedConfig.defaultModelSelection,
       activeProviderId: updatedConfig.activeProviderId,
+      globalConfigPath: configPath,
       llm: {
         baseUrl: 'http://localhost:11434/v1',
         model: testModelId,
@@ -68,6 +77,7 @@ describe('Provider Context Restart', () => {
 
   afterAll(async () => {
     await serverHandle?.close()
+    await unlink(configPath).catch(() => {})
   })
 
   it('preserves user-set context window after server restart', async () => {
@@ -96,7 +106,7 @@ describe('Provider Context Restart', () => {
   })
 
   it('preserves user context when switching providers with fuzzy model ID match', async () => {
-    const globalConfig = await loadGlobalConfig(testMode)
+    const globalConfig = await loadGlobalConfig(testMode, configPath)
 
     // Set up a provider with a model that has a different ID format (spaces vs dashes/colons)
     const testProviderId = 'test-fuzzy-provider'
@@ -128,7 +138,7 @@ describe('Provider Context Restart', () => {
       activeProviderId: testProviderId,
     }
 
-    await saveGlobalConfig(testMode, configWithFuzzy)
+    await saveGlobalConfig(testMode, configWithFuzzy, configPath)
 
     const fuzzyConfig: Config = {
       providers: configWithFuzzy.providers,

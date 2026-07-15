@@ -77,7 +77,7 @@ export async function createDirectoryWithGit(projectName: string, workdir: strin
 
   if (!(await directoryExists(join(fullPath, '.git')))) {
     try {
-      execSync('git init', { cwd: fullPath, stdio: 'pipe' })
+      execSync('git init', { cwd: fullPath, stdio: 'pipe', windowsHide: true })
     } catch (gitErr) {
       const errMsg = gitErr instanceof Error ? gitErr.message : 'Unknown'
       const exitCode = (gitErr as { status?: number }).status ?? (gitErr as { exitCode?: number }).exitCode
@@ -87,8 +87,8 @@ export async function createDirectoryWithGit(projectName: string, workdir: strin
       let sudoSuccess = false
       if (isPermission) {
         try {
-          const currentUser = execSync('id -un', { encoding: 'utf-8' }).trim()
-          execSync(`sudo -u ${currentUser} git init`, { cwd: fullPath, stdio: 'pipe' })
+          const currentUser = execSync('id -un', { encoding: 'utf-8', windowsHide: true }).trim()
+          execSync(`sudo -u ${currentUser} git init`, { cwd: fullPath, stdio: 'pipe', windowsHide: true })
           sudoSuccess = true
         } catch {
           // sudo also failed, fall through to error

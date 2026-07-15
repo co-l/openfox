@@ -6,7 +6,7 @@ const SIGKILL_TIMEOUT_MS = 200
 async function getDescendantPids(rootPid: number): Promise<number[]> {
   try {
     const { stdout } = await new Promise<{ stdout: string }>((resolve, reject) => {
-      execFile('ps', ['-eo', 'pid=,ppid='], { timeout: 5000 }, (err, stdout) => {
+      execFile('ps', ['-eo', 'pid=,ppid='], { timeout: 5000, windowsHide: true }, (err, stdout) => {
         if (err) reject(err)
         else resolve({ stdout })
       })
@@ -85,9 +85,21 @@ export async function killProcessTree(pid: number): Promise<void> {
  * Kill a ChildProcess and all its descendants.
  * Convenience wrapper around `killProcessTree`.
  */
-export async function terminateProcessTree(proc: ChildProcess, options?: { exited?: () => boolean }): Promise<void> {
+export async function terminateProcessTree(
+  proc: ChildProcess,
+  options?: { exited?: () => boolean; immediate?: boolean },
+): Promise<void> {
   const pid = proc.pid
   if (!pid || options?.exited?.()) {
+    return
+  }
+
+  if (options?.immediate) {
+    const allPids = await getDescendantPids(pid)
+    allPids.push(pid)
+    for (const p of allPids) {
+      killProcess(p, 'SIGKILL')
+    }
     return
   }
 

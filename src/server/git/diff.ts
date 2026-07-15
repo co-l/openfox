@@ -3,8 +3,16 @@ import type { GitDiffFile } from '../../shared/protocol.js'
 
 export function getGitDiffFiles(cwd: string): Promise<GitDiffFile[]> {
   return new Promise((resolve) => {
-    const diffProc = spawn('git', ['diff', '--name-status', 'HEAD'], { cwd, stdio: ['ignore', 'pipe', 'pipe'] })
-    const statusProc = spawn('git', ['status', '--porcelain'], { cwd, stdio: ['ignore', 'pipe', 'pipe'] })
+    const diffProc = spawn('git', ['diff', '--name-status', 'HEAD'], {
+      cwd,
+      stdio: ['ignore', 'pipe', 'pipe'],
+      windowsHide: true,
+    })
+    const statusProc = spawn('git', ['status', '--porcelain'], {
+      cwd,
+      stdio: ['ignore', 'pipe', 'pipe'],
+      windowsHide: true,
+    })
 
     let diffStdout = ''
     let statusStdout = ''

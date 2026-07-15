@@ -16,6 +16,7 @@ export function spawnShellProcess(
     cwd,
     env: { ...process.env, FORCE_COLOR: '0' },
     stdio: ['ignore', 'pipe', 'pipe'],
+    windowsHide: true,
     ...(detached ? { detached: true } : {}),
   })
 }

@@ -57,6 +57,19 @@ export type ToolHandler<TArgs> = (args: TArgs, context: ToolContext, helpers: To
  * )
  * ```
  */
+/**
+ * Compose a timeout signal with an optional context cancellation signal.
+ * If context provides a signal (e.g. user cancel), the returned signal
+ * triggers on whichever fires first.
+ */
+export function buildSignal(timeoutMs: number, contextSignal?: AbortSignal): AbortSignal {
+  const timeoutSignal = AbortSignal.timeout(timeoutMs)
+  if (contextSignal) {
+    return AbortSignal.any([timeoutSignal, contextSignal])
+  }
+  return timeoutSignal
+}
+
 export function validateAction(
   action: string | undefined,
   allowed: string[],

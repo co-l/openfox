@@ -188,12 +188,14 @@ export async function runTopLevelAgentLoop(
         ...(skills.length > 0 ? { skills } : {}),
       })
 
+      const modelSettings = sessionManager.getCurrentModelSettings(sessionId)
+
       await llmClient.complete({
         messages: [{ role: 'system', content: assembledRequest.systemPrompt }],
         tools: assembledRequest.tools,
         maxTokens: 1,
         temperature: 0,
-        skipClientReasoningEffort: true,
+        ...(modelSettings ? { modelSettings } : {}),
       })
 
       return {}
@@ -269,8 +271,8 @@ export async function runTopLevelAgentLoop(
 
     let modelSettings =
       currentMaxTokensOverride !== undefined
-        ? { ...sessionManager.getCurrentModelSettings(), maxTokens: currentMaxTokensOverride }
-        : sessionManager.getCurrentModelSettings()
+        ? { ...sessionManager.getCurrentModelSettings(sessionId), maxTokens: currentMaxTokensOverride }
+        : sessionManager.getCurrentModelSettings(sessionId)
 
     if (modelSettings) {
       const requestedMaxTokens = modelSettings.maxTokens ?? 16384

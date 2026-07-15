@@ -6,7 +6,7 @@ import { InstructionsTab } from './tabs/InstructionsTab'
 import { DisplayTab } from './tabs/DisplayTab'
 import { AdvancedTab } from './tabs/AdvancedTab'
 import { KeybindingsTab } from './tabs/KeybindingsTab'
-import { McpTab } from './tabs/McpTab'
+import { ToolsTab } from './tabs/ToolsTab'
 import { wsClient } from '../../lib/ws'
 
 interface GlobalSettingsModalProps {
@@ -14,7 +14,7 @@ interface GlobalSettingsModalProps {
   onClose: () => void
 }
 
-type Tab = 'instructions' | 'skills' | 'notifications' | 'display' | 'keybindings' | 'advanced' | 'mcp'
+type Tab = 'instructions' | 'skills' | 'notifications' | 'display' | 'keybindings' | 'advanced' | 'tools'
 
 export function GlobalSettingsModal({ isOpen, onClose }: GlobalSettingsModalProps) {
   const [activeTab, setActiveTab] = useState<Tab>('instructions')
@@ -30,7 +30,7 @@ export function GlobalSettingsModal({ isOpen, onClose }: GlobalSettingsModalProp
 
   return (
     <Modal isOpen={isOpen} onClose={handleClose} title="Settings" size="xl" minHeight="500px">
-      <div className="flex flex-col h-full">
+      <div data-global-settings className="flex flex-col h-full">
         {/* Tab bar - horizontally scrollable on mobile */}
         <div className="flex border-b border-border mb-4 -mt-1 overflow-x-auto scrollbar-hide">
           <TabButton
@@ -38,6 +38,7 @@ export function GlobalSettingsModal({ isOpen, onClose }: GlobalSettingsModalProp
             active={activeTab === 'instructions'}
             onClick={() => setActiveTab('instructions')}
           />
+          <TabButton label="Tools" active={activeTab === 'tools'} onClick={() => setActiveTab('tools')} />
           <TabButton label="Skills" active={activeTab === 'skills'} onClick={() => setActiveTab('skills')} />
           <TabButton
             label="Notifications"
@@ -50,7 +51,6 @@ export function GlobalSettingsModal({ isOpen, onClose }: GlobalSettingsModalProp
             active={activeTab === 'keybindings'}
             onClick={() => setActiveTab('keybindings')}
           />
-          <TabButton label="MCP" active={activeTab === 'mcp'} onClick={() => setActiveTab('mcp')} />
           <TabButton label="Advanced" active={activeTab === 'advanced'} onClick={() => setActiveTab('advanced')} />
         </div>
 
@@ -64,9 +64,9 @@ export function GlobalSettingsModal({ isOpen, onClose }: GlobalSettingsModalProp
         )}
         {activeTab === 'display' && <DisplayTab />}
         {activeTab === 'keybindings' && <KeybindingsTab />}
-        {activeTab === 'mcp' && (
+        {activeTab === 'tools' && (
           <div className="max-h-[60vh] overflow-y-auto">
-            <McpTab />
+            <ToolsTab />
           </div>
         )}
         {activeTab === 'advanced' && <AdvancedTab onClose={onClose} />}

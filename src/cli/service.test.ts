@@ -39,6 +39,7 @@ describe('service logs', () => {
 
     expect(mockSpawnSync).toHaveBeenCalledWith('journalctl', ['--user', '-u', 'openfox', '-n', '50', '--no-pager'], {
       encoding: 'utf-8',
+      windowsHide: true,
     })
     expect(mockSpawn).not.toHaveBeenCalled()
   })
@@ -48,6 +49,7 @@ describe('service logs', () => {
 
     expect(mockSpawn).toHaveBeenCalledWith('journalctl', ['--user', '-u', 'openfox', '-f', '--no-pager'], {
       stdio: 'inherit',
+      windowsHide: true,
     })
     expect(mockSpawnSync).not.toHaveBeenCalled()
   })
@@ -57,6 +59,7 @@ describe('service logs', () => {
 
     expect(mockSpawn).toHaveBeenCalledWith('journalctl', ['--user', '-u', 'openfox', '-f', '--no-pager'], {
       stdio: 'inherit',
+      windowsHide: true,
     })
     expect(mockSpawnSync).not.toHaveBeenCalled()
   })

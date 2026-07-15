@@ -9,9 +9,15 @@ import { createTool, type ToolHandler } from './tool-helpers.js'
 import { loadAllSkills, findSkillById, isSkillEnabled } from '../skills/registry.js'
 import { getRuntimeConfig } from '../runtime-config.js'
 import { getGlobalConfigDir } from '../../cli/paths.js'
+import type { SkillDefinition } from '../skills/types.js'
 
 interface LoadSkillArgs {
   skillId: string
+}
+
+export function formatSkillPrompt(skill: SkillDefinition): string {
+  if (skill.legacy !== false || !skill.directory) return skill.prompt
+  return `Skill package directory: ${skill.directory}\nResolve relative paths in these instructions from that directory.\n\n${skill.prompt}`
 }
 
 const handler: ToolHandler<LoadSkillArgs> = async (args, _context, helpers): Promise<ToolResult> => {
@@ -35,7 +41,7 @@ const handler: ToolHandler<LoadSkillArgs> = async (args, _context, helpers): Pro
     return helpers.error(`Skill "${skillId}" not found. Available skills: ${available}`)
   }
 
-  return helpers.success(skill.prompt)
+  return helpers.success(formatSkillPrompt(skill))
 }
 
 export const loadSkillTool = createTool<LoadSkillArgs>(

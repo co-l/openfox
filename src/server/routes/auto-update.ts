@@ -40,6 +40,7 @@ export function createAutoUpdateRoutes(options: AutoUpdateRoutesOptions = {}): R
       const latest = await new Promise<string>((resolve, reject) => {
         const child = spawn('npm', ['view', 'openfox', 'version'], {
           stdio: ['ignore', 'pipe', 'pipe'],
+          windowsHide: true,
         })
         let stdout = ''
         child.stdout?.on('data', (data) => {
@@ -83,6 +84,7 @@ export function createAutoUpdateRoutes(options: AutoUpdateRoutesOptions = {}): R
       const isService = isRunningAsService()
       const child = spawn('bash', ['-c', 'openfox update'], {
         stdio: ['ignore', 'pipe', 'pipe'],
+        windowsHide: true,
       })
 
       let stdout = ''
@@ -130,6 +132,7 @@ export function createAutoUpdateRoutes(options: AutoUpdateRoutesOptions = {}): R
       const child = spawn('bash', ['-c', 'openfox service restart'], {
         detached: true,
         stdio: 'ignore',
+        windowsHide: true,
       })
       child.unref()
       res.json({ success: true })

@@ -3,12 +3,17 @@ import express from 'express'
 import { createServer, type Server } from 'node:http'
 import type { SessionManager } from './session/manager.js'
 import type { LLMClientWithModel } from './llm/client.js'
+import type { ProviderManager } from './provider-manager.js'
 
 function mountWarmupRoute(
   app: express.Express,
   deps: {
     sessionManager: Pick<SessionManager, 'getSession' | 'isWarmedUp' | 'markWarmedUp'>
     getLLMClient: () => Pick<LLMClientWithModel, 'getBackend' | 'getModel'>
+    providerManager?: Pick<
+      ProviderManager,
+      'activateProvider' | 'getActiveProvider' | 'getActiveProviderId' | 'getCurrentModel'
+    >
     getSetting?: (key: string) => string | null
     logger?: { debug: (...args: unknown[]) => void }
   },
@@ -34,6 +39,16 @@ function mountWarmupRoute(
       return res.json({ success: false, reason: 'already_warmed' })
     }
 
+    // Activate session provider if configured
+    if (session.providerId && session.providerModel && deps.providerManager) {
+      const currentActiveProviderId = deps.providerManager.getActiveProviderId?.()
+      const currentModel = deps.providerManager.getCurrentModel?.()
+
+      if (currentActiveProviderId !== session.providerId || currentModel !== session.providerModel) {
+        await deps.providerManager.activateProvider(session.providerId, { model: session.providerModel })
+      }
+    }
+
     deps.sessionManager.markWarmedUp(sessionId)
     res.json({ success: true })
   })
@@ -54,12 +69,17 @@ describe('POST /api/sessions/:id/warmup', () => {
   let baseUrl: string
   let mockSessionManager: Pick<SessionManager, 'getSession' | 'isWarmedUp' | 'markWarmedUp'>
   let mockGetLLMClient: () => Pick<LLMClientWithModel, 'getBackend' | 'getModel'>
+  let mockProviderManager: Pick<
+    ProviderManager,
+    'activateProvider' | 'getActiveProvider' | 'getActiveProviderId' | 'getCurrentModel'
+  >
 
   async function startServer(getSettingFn?: (key: string) => string | null) {
     const app = express()
     mountWarmupRoute(app, {
       sessionManager: mockSessionManager,
       getLLMClient: mockGetLLMClient,
+      providerManager: mockProviderManager,
       ...(getSettingFn ? { getSetting: getSettingFn } : {}),
     })
     return new Promise<void>((resolve) => {
@@ -82,6 +102,12 @@ describe('POST /api/sessions/:id/warmup', () => {
       getBackend: vi.fn().mockReturnValue('test'),
       getModel: vi.fn().mockReturnValue('test-model'),
     })
+    mockProviderManager = {
+      activateProvider: vi.fn().mockResolvedValue({ success: true }),
+      getActiveProvider: vi.fn().mockReturnValue({ id: 'global-provider', name: 'Global', backend: 'test' }),
+      getActiveProviderId: vi.fn().mockReturnValue('global-provider'),
+      getCurrentModel: vi.fn().mockReturnValue('global-model'),
+    }
     await startServer()
   })
 
@@ -150,5 +176,60 @@ describe('POST /api/sessions/:id/warmup', () => {
     expect(status).toBe(200)
     expect(body).toEqual({ success: false, reason: 'disabled' })
     expect(mockSessionManager.markWarmedUp).not.toHaveBeenCalled()
+  })
+
+  it('activates session provider when session has providerId and providerModel', async () => {
+    await closeServer(server)
+    await startServer(() => 'true')
+    ;(mockSessionManager.getSession as any).mockReturnValue({
+      id: 'test-session',
+      messages: [],
+      providerId: 'session-provider',
+      providerModel: 'session-model',
+    })
+    ;(mockProviderManager.getActiveProviderId as any).mockReturnValue('global-provider')
+    ;(mockProviderManager.getCurrentModel as any).mockReturnValue('global-model')
+
+    const { status, body } = await fetchJson(`${baseUrl}/api/sessions/test-session/warmup`, { method: 'POST' })
+    expect(status).toBe(200)
+    expect(body).toEqual({ success: true })
+    expect(mockProviderManager.activateProvider).toHaveBeenCalledWith('session-provider', { model: 'session-model' })
+    expect(mockSessionManager.markWarmedUp).toHaveBeenCalledWith('test-session')
+  })
+
+  it('skips provider activation when session has no provider configured', async () => {
+    await closeServer(server)
+    await startServer(() => 'true')
+    ;(mockSessionManager.getSession as any).mockReturnValue({
+      id: 'test-session',
+      messages: [],
+      providerId: null,
+      providerModel: null,
+    })
+
+    const { status, body } = await fetchJson(`${baseUrl}/api/sessions/test-session/warmup`, { method: 'POST' })
+    expect(status).toBe(200)
+    expect(body).toEqual({ success: true })
+    expect(mockProviderManager.activateProvider).not.toHaveBeenCalled()
+    expect(mockSessionManager.markWarmedUp).toHaveBeenCalledWith('test-session')
+  })
+
+  it('skips provider activation when session provider is already active', async () => {
+    await closeServer(server)
+    await startServer(() => 'true')
+    ;(mockSessionManager.getSession as any).mockReturnValue({
+      id: 'test-session',
+      messages: [],
+      providerId: 'session-provider',
+      providerModel: 'session-model',
+    })
+    ;(mockProviderManager.getActiveProviderId as any).mockReturnValue('session-provider')
+    ;(mockProviderManager.getCurrentModel as any).mockReturnValue('session-model')
+
+    const { status, body } = await fetchJson(`${baseUrl}/api/sessions/test-session/warmup`, { method: 'POST' })
+    expect(status).toBe(200)
+    expect(body).toEqual({ success: true })
+    expect(mockProviderManager.activateProvider).not.toHaveBeenCalled()
+    expect(mockSessionManager.markWarmedUp).toHaveBeenCalledWith('test-session')
   })
 })

@@ -10,6 +10,14 @@ function sanitizeShellArg(arg: string): string {
   return arg
 }
 
+function addUserToGroup(groupName: string): void {
+  const currentUser = execSync('id -un', { encoding: 'utf-8', windowsHide: true }).trim()
+  execSync(`sudo usermod -aG ${sanitizeShellArg(groupName)} ${sanitizeShellArg(currentUser)}`, {
+    stdio: 'pipe',
+    windowsHide: true,
+  })
+}
+
 interface DirInfo {
   resolvedPath: string
   groupGid: number
@@ -33,7 +41,7 @@ async function getDirInfo(targetPath: string): Promise<DirInfo> {
   // Check if passwordless sudo is available
   let sudoAvailable: boolean
   try {
-    execSync('sudo -n true', { stdio: 'pipe' })
+    execSync('sudo -n true', { stdio: 'pipe', windowsHide: true })
     sudoAvailable = true
   } catch {
     sudoAvailable = false
@@ -44,14 +52,16 @@ async function getDirInfo(targetPath: string): Promise<DirInfo> {
   const groupGid = dirStat.gid
 
   // Get current user's groups
-  const currentUser = sanitizeShellArg(execSync('id -un', { encoding: 'utf-8' }).trim())
-  const groupsOutput = execSync(`id -Gn ${currentUser}`, { encoding: 'utf-8' }).trim()
+  const currentUser = sanitizeShellArg(execSync('id -un', { encoding: 'utf-8', windowsHide: true }).trim())
+  const groupsOutput = execSync(`id -Gn ${currentUser}`, { encoding: 'utf-8', windowsHide: true }).trim()
   const userGroups = groupsOutput.split(/\s+/)
 
   // Get the group name for the directory's gid
   let groupName: string | null = null
   try {
-    const rawGroupName = execSync(`getent group ${groupGid}`, { encoding: 'utf-8' }).split(':')[0]?.trim()
+    const rawGroupName = execSync(`getent group ${groupGid}`, { encoding: 'utf-8', windowsHide: true })
+      .split(':')[0]
+      ?.trim()
     groupName = rawGroupName ? sanitizeShellArg(rawGroupName) : null
   } catch {
     // ignore
@@ -98,7 +108,7 @@ export async function fixPermissions(targetPath: string, action: string) {
             'You are not in the group that owns this directory. Use "Join group & extend group permissions" instead.',
         }
       }
-      execSync(`sudo chmod g+w "${info.resolvedPath}"`, { stdio: 'pipe' })
+      execSync(`sudo chmod g+w "${info.resolvedPath}"`, { stdio: 'pipe', windowsHide: true })
       return { success: true, sudoAvailable: info.sudoAvailable, method: 'group' }
     }
 
@@ -106,10 +116,7 @@ export async function fixPermissions(targetPath: string, action: string) {
       if (!info.groupName) {
         return { success: false, sudoAvailable: info.sudoAvailable, error: 'Could not determine group name' }
       }
-      const currentUser = execSync('id -un', { encoding: 'utf-8' }).trim()
-      execSync(`sudo usermod -aG ${sanitizeShellArg(info.groupName)} ${sanitizeShellArg(currentUser)}`, {
-        stdio: 'pipe',
-      })
+      addUserToGroup(info.groupName)
       return { success: true, sudoAvailable: info.sudoAvailable, method: 'join_group' }
     }
 
@@ -117,19 +124,17 @@ export async function fixPermissions(targetPath: string, action: string) {
       if (!info.groupName) {
         return { success: false, sudoAvailable: info.sudoAvailable, error: 'Could not determine group name' }
       }
-      // chmod first (runs as root, doesn't need group membership)
-      execSync(`sudo chmod g+w "${info.resolvedPath}"`, { stdio: 'pipe' })
-      // Then add user to group for future sessions
-      const currentUser = execSync('id -un', { encoding: 'utf-8' }).trim()
-      execSync(`sudo usermod -aG ${sanitizeShellArg(info.groupName)} ${sanitizeShellArg(currentUser)}`, {
-        stdio: 'pipe',
-      })
+      execSync(`sudo chmod g+w "${info.resolvedPath}"`, { stdio: 'pipe', windowsHide: true })
+      addUserToGroup(info.groupName)
       return { success: true, sudoAvailable: info.sudoAvailable, method: 'join_group_and_group' }
     }
 
     // ownership action
-    const ownerUser = execSync('id -un', { encoding: 'utf-8' }).trim()
-    execSync(`sudo chown -R ${sanitizeShellArg(ownerUser)} "${info.resolvedPath}"`, { stdio: 'pipe' })
+    const ownerUser = execSync('id -un', { encoding: 'utf-8', windowsHide: true }).trim()
+    execSync(`sudo chown -R ${sanitizeShellArg(ownerUser)} "${info.resolvedPath}"`, {
+      stdio: 'pipe',
+      windowsHide: true,
+    })
     return { success: true, sudoAvailable: info.sudoAvailable, method: 'ownership' }
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Unknown error'

@@ -86,7 +86,7 @@ export async function fetchAvailableModelsFromBackend(baseUrl: string, apiKey?: 
 export async function fetchModelsWithContext(
   baseUrl: string,
   apiKey?: string,
-  backend?: 'ollama' | 'vllm' | 'sglang' | 'llamacpp' | 'unknown',
+  backend?: 'ollama' | 'vllm' | 'sglang' | 'llamacpp' | 'lmstudio' | 'unknown',
 ): Promise<ModelConfig[]> {
   logger.info('fetchModelsWithContext called', { baseUrl, apiKey: !!apiKey, backend })
 
@@ -94,6 +94,14 @@ export async function fetchModelsWithContext(
   if (backend === 'ollama') {
     logger.info('Fetching Ollama models via /api/tags and /api/show')
     return fetchOllamaModelsWithContext(baseUrl, apiKey)
+  }
+
+  // LM Studio has a native /api/v1/models endpoint with loaded context info
+  if (backend === 'lmstudio') {
+    logger.info('Fetching LM Studio models via /api/v1/models')
+    const lmStudioModels = await fetchLmStudioModelsWithContext(baseUrl, apiKey)
+    if (lmStudioModels.length > 0) return lmStudioModels
+    logger.info('LM Studio native endpoint unavailable, falling back to /v1/models')
   }
 
   // OpenCode Go has models at /zen/v1/models not /zen/go/v1/models
@@ -186,6 +194,78 @@ async function fetchOllamaModelsWithContext(baseUrl: string, _apiKey?: string): 
   } catch (error) {
     logger.info('Error fetching Ollama models', {
       url: baseUrl,
+      error: error instanceof Error ? error.message : String(error),
+    })
+    return []
+  }
+}
+
+/** Fetch LM Studio models with context windows via native /api/v1/models */
+async function fetchLmStudioModelsWithContext(baseUrl: string, _apiKey?: string): Promise<ModelConfig[]> {
+  const base = baseUrl.replace(/\/+$/, '')
+  // LM Studio native endpoint is at /api/v1/models (not under /v1/)
+  const nativeUrl = `${base.replace(/\/v\d+\/?$/, '')}/api/v1/models`
+
+  try {
+    logger.info('Fetching LM Studio native models', { url: nativeUrl })
+    const response = await fetch(nativeUrl, {
+      signal: AbortSignal.timeout(10000),
+    })
+
+    if (!response.ok) {
+      logger.info('LM Studio native endpoint returned error', { url: nativeUrl, status: response.status })
+      return []
+    }
+
+    const raw = (await response.json()) as Record<string, unknown>
+    // Handle bare array [...], { data: [...] }, or { models: [...] } formats
+    const rawArray = Array.isArray(raw)
+      ? raw
+      : Array.isArray((raw as { models?: unknown }).models)
+        ? (raw as { models: unknown[] }).models
+        : Array.isArray((raw as { data?: unknown }).data)
+          ? (raw as { data: unknown[] }).data
+          : []
+    const modelList = rawArray as Array<{
+      key?: string
+      id?: string
+      max_context_length?: number
+      loaded_instances?: Array<{
+        id?: string
+        config?: { context_length?: number }
+      }>
+    }>
+
+    if (modelList.length === 0) {
+      logger.info('LM Studio native endpoint returned no models', { url: nativeUrl })
+      return []
+    }
+
+    logger.info('LM Studio native models found', { count: modelList.length })
+
+    return modelList.map((model) => {
+      const modelId = model.key ?? model.id ?? ''
+      // Prefer loaded instance context, fall back to max context
+      const loadedContext = model.loaded_instances?.[0]?.config?.context_length
+      const maxContext = model.max_context_length
+      const contextWindow = loadedContext ?? maxContext ?? 200000
+
+      logger.info('LM Studio model detected', {
+        modelId,
+        loadedContext,
+        maxContext,
+        contextWindow,
+      })
+
+      return {
+        id: modelId,
+        contextWindow,
+        source: loadedContext || maxContext ? 'backend' : ('default' as const),
+      }
+    })
+  } catch (error) {
+    logger.info('Error fetching LM Studio native models', {
+      url: nativeUrl,
       error: error instanceof Error ? error.message : String(error),
     })
     return []
@@ -449,7 +529,7 @@ export function createProviderManager(config: Config, options: ProviderManagerOp
         clearModelCache(cacheUrl)
 
         // Refetch models from backend when switching providers
-        const backend = provider.backend as 'ollama' | 'vllm' | 'sglang' | 'llamacpp' | 'unknown'
+        const backend = provider.backend as 'ollama' | 'vllm' | 'sglang' | 'llamacpp' | 'lmstudio' | 'unknown'
         logger.info('activateProvider fetching models', {
           providerId,
           providerName: provider.name,
@@ -792,7 +872,7 @@ export function createProviderManager(config: Config, options: ProviderManagerOp
         return { success: false, error: 'Provider not found' }
       }
 
-      const backend = provider.backend as 'ollama' | 'vllm' | 'sglang' | 'llamacpp' | 'unknown'
+      const backend = provider.backend as 'ollama' | 'vllm' | 'sglang' | 'llamacpp' | 'lmstudio' | 'unknown'
       logger.info('refreshProviderModels fetching models', {
         providerId,
         providerName: provider.name,

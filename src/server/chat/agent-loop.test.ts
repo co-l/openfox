@@ -694,9 +694,12 @@ describe('maxTokens clamping', () => {
       expect.objectContaining({
         maxTokens: 1,
         temperature: 0,
-        skipClientReasoningEffort: true,
+        modelSettings: { maxTokens: 16384 },
       }),
     )
+    const callArgs = completeMock.mock.calls[0]?.[0]
+    expect(callArgs).toBeDefined()
+    expect(callArgs.skipClientReasoningEffort).toBeUndefined()
     expect(streamLLMPure).not.toHaveBeenCalled()
   })
 })

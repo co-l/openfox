@@ -5,7 +5,6 @@ import type { McpServerConfig } from '../mcp/types.js'
 import type { Mode } from '../../cli/main.js'
 import { loadGlobalConfig, saveGlobalConfig } from '../../cli/config.js'
 import { createMcpTools } from '../mcp/tool-adapter.js'
-import { applyDynamicContext } from '../chat/dynamic-context.js'
 
 interface McpConfigArgs {
   action: 'list' | 'add' | 'remove' | 'toggle-tool'
@@ -22,6 +21,7 @@ interface McpConfigArgs {
 
 let mcpManagerForTools: McpManager | null = null
 let mcpConfigMode: Mode = 'production'
+let mcpConfigPath: string | undefined
 let mcpNotifyChanged: ((sessionId: string) => void) | null = null
 
 export function setMcpManagerForTools(manager: McpManager): void {
@@ -30,6 +30,10 @@ export function setMcpManagerForTools(manager: McpManager): void {
 
 export function setMcpConfigMode(mode: Mode): void {
   mcpConfigMode = mode
+}
+
+export function setMcpConfigPath(path: string | undefined): void {
+  mcpConfigPath = path
 }
 
 export function setNotifyMcpServersChanged(fn: (sessionId: string) => void): void {
@@ -119,10 +123,17 @@ export const mcpConfigTool: Tool = createTool<McpConfigArgs>(
     async function persistAndRebuild(
       updater: (config: Record<string, McpServerConfig>) => Record<string, McpServerConfig>,
     ): Promise<void> {
-      const globalConfig = await loadGlobalConfig(mcpConfigMode)
+      const globalConfig = await loadGlobalConfig(mcpConfigMode, mcpConfigPath)
       const mcpServers = { ...((globalConfig.mcpServers ?? {}) as Record<string, McpServerConfig>) }
       const updated = updater(mcpServers)
-      await saveGlobalConfig(mcpConfigMode, { ...globalConfig, mcpServers: updated })
+      await saveGlobalConfig(mcpConfigMode, { ...globalConfig, mcpServers: updated }, mcpConfigPath)
+    }
+
+    const APPLY_PROMPT_MESSAGE = 'The user must click "Update system prompt" to apply changes.'
+
+    function notifyContextChanged(sessionId: string): void {
+      context.sessionManager.setDynamicContextChanged(sessionId, true)
+      mcpNotifyChanged?.(sessionId)
     }
 
     async function rebuildTools(): Promise<void> {
@@ -187,12 +198,11 @@ export const mcpConfigTool: Tool = createTool<McpConfigArgs>(
       })
       await mcpManagerForTools.addServer(args.name, serverCfg)
       await rebuildTools()
-      await applyDynamicContext(context.sessionManager, context.sessionId)
-      mcpNotifyChanged?.(context.sessionId)
+      notifyContextChanged(context.sessionId)
 
       const server = mcpManagerForTools.getServer(args.name)
       const toolCount = server?.tools.length ?? 0
-      return helpers.success(`Added MCP server "${args.name}" (${toolCount} tools discovered).`)
+      return helpers.success(`Added MCP server "${args.name}" (${toolCount} tools discovered). ${APPLY_PROMPT_MESSAGE}`)
     }
 
     if (args.action === 'remove') {
@@ -203,9 +213,8 @@ export const mcpConfigTool: Tool = createTool<McpConfigArgs>(
       })
       mcpManagerForTools.removeServer(args.name)
       await rebuildTools()
-      await applyDynamicContext(context.sessionManager, context.sessionId)
-      mcpNotifyChanged?.(context.sessionId)
-      return helpers.success(`Removed MCP server "${args.name}".`)
+      notifyContextChanged(context.sessionId)
+      return helpers.success(`Removed MCP server "${args.name}". ${APPLY_PROMPT_MESSAGE}`)
     }
 
     if (args.action === 'toggle-tool') {
@@ -235,11 +244,10 @@ export const mcpConfigTool: Tool = createTool<McpConfigArgs>(
 
       await mcpManagerForTools.setToolEnabled(args.name, args.toolName, args.enabled)
       await rebuildTools()
-      await applyDynamicContext(context.sessionManager, context.sessionId)
-      mcpNotifyChanged?.(context.sessionId)
+      notifyContextChanged(context.sessionId)
 
       return helpers.success(
-        `Tool "${args.toolName}" ${args.enabled ? 'enabled' : 'disabled'} on server "${args.name}".`,
+        `Tool "${args.toolName}" ${args.enabled ? 'enabled' : 'disabled'} on server "${args.name}". ${APPLY_PROMPT_MESSAGE}`,
       )
     }
 

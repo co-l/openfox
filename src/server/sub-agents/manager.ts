@@ -14,6 +14,8 @@ import type { LLMClientWithModel } from '../llm/client.js'
 import type { ToolRegistry } from '../tools/types.js'
 import type { ServerMessage } from '../../shared/protocol.js'
 import type { AgentDefinition } from '../agents/types.js'
+import { readFile, access } from 'node:fs/promises'
+import { join, dirname, isAbsolute } from 'node:path'
 import { loadAllAgentsDefault, findAgentById } from '../agents/registry.js'
 import { buildBasePrompt } from '../chat/prompts.js'
 import { TurnMetrics, createMessageStartEvent } from '../chat/stream-pure.js'
@@ -82,6 +84,47 @@ async function resolveAgentDef(agentId: string): Promise<AgentDefinition> {
 function getWindowOptions(sessionId: string): { contextWindowId: string } | undefined {
   const id = getCurrentContextWindowId(sessionId)
   return id ? { contextWindowId: id } : undefined
+}
+
+// ============================================================================
+// GitIgnore Loading
+// ============================================================================
+
+/**
+ * Walk up from workdir to find the nearest .gitignore and return its content
+ * formatted as exclusion rules for the system prompt.
+ *
+ * Caps content at 4 KB / 100 lines to prevent prompt bloat.
+ */
+export async function loadGitIgnoreRules(workdir: string): Promise<string> {
+  if (!isAbsolute(workdir)) return ''
+
+  let currentDir = workdir
+  while (true) {
+    const gitignorePath = join(currentDir, '.gitignore')
+    try {
+      await access(gitignorePath)
+      const content = await readFile(gitignorePath, 'utf-8')
+      const trimmed = content.trim()
+      if (!trimmed) return ''
+
+      // Cap at 100 lines or 4 KB to avoid prompt bloat
+      const lines = trimmed.split('\n')
+      const capped = lines.slice(0, 100)
+      if (capped.length < lines.length) capped.push('# ... truncated (too many patterns)')
+      const final = capped.join('\n').slice(0, 4096)
+
+      return `## Repository Exclusion Rules (.gitignore)\n\nThe following patterns from \`.gitignore\` should be excluded from file searches:\n\n${final}`
+    } catch {
+      // No .gitignore in this directory, continue walking up
+    }
+
+    const parentDir = dirname(currentDir)
+    if (parentDir === currentDir) break
+    currentDir = parentDir
+  }
+
+  return ''
 }
 
 // ============================================================================
@@ -169,10 +212,14 @@ export async function executeSubAgent(options: SubAgentExecutionOptions): Promis
   const configDir = getGlobalConfigDir(config.mode ?? 'production')
   const skills = await getEnabledSkillMetadata(configDir, config.workdir)
 
+  const hasRunCommand = agentDef.metadata.allowedTools?.includes('run_command') ?? false
+  const gitignoreSection = hasRunCommand ? await loadGitIgnoreRules(session.workdir) : ''
+
   const systemPrompt =
     buildBasePrompt(session.workdir, undefined, skills.length > 0 ? skills : undefined, llmClient.getModel()) +
     '\n\n' +
     agentDef.prompt +
+    (gitignoreSection ? '\n\n' + gitignoreSection : '') +
     RETURN_VALUE_INSTRUCTION
 
   // --- Delegate to the shared agent loop ---

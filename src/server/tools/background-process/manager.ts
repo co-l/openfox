@@ -52,6 +52,7 @@ export function startProcessCommand(processId: string, sessionId: string, comman
     env: { ...process.env, FORCE_COLOR: '1' },
     stdio: ['ignore', 'pipe', 'pipe'],
     detached: true,
+    windowsHide: true,
   })
 
   proc.pid = child.pid ?? null

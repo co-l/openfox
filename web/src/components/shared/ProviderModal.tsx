@@ -5,7 +5,7 @@ import type { ModelConfig as SharedModelConfig } from '@shared/types.js'
 import { ChevronDownIcon } from './icons'
 import { QueryParamsInput } from './QueryParamsInput'
 
-const COMMON_PORTS = [8080, 11434, 8000]
+const COMMON_PORTS = [8080, 11434, 8000, 1234]
 
 interface ProviderPreset {
   id: string
@@ -629,6 +629,7 @@ export function ProviderModal({
     try {
       const params = new URLSearchParams({ url })
       if (formApiKey) params.set('apiKey', formApiKey)
+      if (formBackend) params.set('backend', formBackend)
       const response = formTransportAdapter
         ? await authFetch(`/api/providers/${await ensureDraftProvider()}/models`)
         : await authFetch(`/api/providers/models?${params.toString()}`)
@@ -856,7 +857,7 @@ export function ProviderModal({
           <div className="px-6 py-4 space-y-4">
             <div>
               <label className="block text-sm text-text-secondary mb-2">Inference engine</label>
-              <div className="grid grid-cols-4 gap-2">
+              <div className="grid grid-cols-5 gap-2">
                 {providerPresets.map((preset) => (
                   <button
                     key={preset.id}
@@ -902,11 +903,13 @@ export function ProviderModal({
                     8000: 'vllm',
                     11434: 'ollama',
                     8080: 'llamacpp',
+                    1234: 'lmstudio',
                   }
                   const nameMap: Record<number, string> = {
                     8000: 'vLLM',
                     11434: 'Ollama',
                     8080: 'llama.cpp',
+                    1234: 'LM Studio',
                   }
                   return (
                     <button
