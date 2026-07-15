@@ -11,6 +11,7 @@ const {
   loadSkillExecuteMock,
   webFetchExecuteMock,
   callSubAgentExecuteMock,
+  webSearchExecuteMock,
 } = vi.hoisted(() => ({
   readExecuteMock: vi.fn(async () => ({ success: true, output: 'read', durationMs: 1, truncated: false })),
   writeExecuteMock: vi.fn(async () => ({ success: true, output: 'write', durationMs: 1, truncated: false })),
@@ -29,6 +30,12 @@ const {
   callSubAgentExecuteMock: vi.fn(async () => ({
     success: true,
     output: 'sub-agent result',
+    durationMs: 1,
+    truncated: false,
+  })),
+  webSearchExecuteMock: vi.fn(async () => ({
+    success: true,
+    output: '[1] Web Search Result\n    URL: https://example.com\n    Content snippet',
     durationMs: 1,
     truncated: false,
   })),
@@ -102,6 +109,28 @@ vi.mock('./web-fetch.js', () => ({
     name: 'web_fetch',
     definition: { type: 'function', function: { name: 'web_fetch', description: 'Web Fetch', parameters: {} } },
     execute: webFetchExecuteMock,
+  },
+}))
+
+vi.mock('./web-search.js', () => ({
+  webSearchTool: {
+    name: 'web_search',
+    definition: {
+      type: 'function',
+      function: {
+        name: 'web_search',
+        description: 'Web Search',
+        parameters: {
+          type: 'object',
+          properties: {
+            query: { type: 'string' },
+            max_results: { type: 'number' },
+          },
+          required: ['query'],
+        },
+      },
+    },
+    execute: webSearchExecuteMock,
   },
 }))
 
@@ -405,6 +434,38 @@ describe('tool registries', () => {
     const result = await registry.execute('write_file', { path: 'test.ts' }, context)
 
     expect(result).toMatchObject({ success: true, output: 'write' })
+  })
+
+  it('web_search is accessible when in allowedTools', async () => {
+    const defWithSearch: AgentDefinition = {
+      metadata: {
+        id: 'searcher',
+        name: 'Searcher',
+        description: 'Searches',
+        subagent: false,
+        allowedTools: ['read_file', 'web_search'],
+      },
+      prompt: 'Search mode.',
+    }
+
+    const registry = getToolRegistryForAgent(defWithSearch)
+    const context = { workdir: '/tmp/project', sessionId: 'session-1', sessionManager: {} as never }
+
+    const result = await registry.execute('web_search', { query: 'hello world' }, context)
+
+    expect(result).toMatchObject({ success: true, output: expect.stringContaining('Web Search Result') })
+  })
+
+  it('web_search is blocked when not in allowedTools', async () => {
+    const registry = getToolRegistryForAgent(builderDef)
+    const context = { workdir: '/tmp/project', sessionId: 'session-1', sessionManager: {} as never }
+
+    const result = await registry.execute('web_search', { query: 'test' }, context)
+
+    expect(result).toMatchObject({
+      success: false,
+      error: expect.stringContaining("Tool 'web_search' is not available"),
+    })
   })
 
   it('tool definitions are identical across planner and builder (vLLM cache preserved)', () => {

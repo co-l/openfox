@@ -31,4 +31,57 @@ describe('db settings', () => {
       [SETTINGS_KEYS.GLOBAL_INSTRUCTIONS]: 'Always test first',
     })
   })
+
+  describe('search engine settings', () => {
+    it('sets and gets SEARCH_ENGINE', () => {
+      setSetting(SETTINGS_KEYS.SEARCH_ENGINE, 'tavily')
+      expect(getSetting(SETTINGS_KEYS.SEARCH_ENGINE)).toBe('tavily')
+
+      setSetting(SETTINGS_KEYS.SEARCH_ENGINE, 'searxng')
+      expect(getSetting(SETTINGS_KEYS.SEARCH_ENGINE)).toBe('searxng')
+
+      setSetting(SETTINGS_KEYS.SEARCH_ENGINE, '')
+      expect(getSetting(SETTINGS_KEYS.SEARCH_ENGINE)).toBe('')
+    })
+
+    it('sets and gets SEARCH_TAVILY_API_KEY', () => {
+      setSetting(SETTINGS_KEYS.SEARCH_TAVILY_API_KEY, 'tvly-test-key-123')
+      expect(getSetting(SETTINGS_KEYS.SEARCH_TAVILY_API_KEY)).toBe('tvly-test-key-123')
+    })
+
+    it('sets and gets SEARCH_SEARXNG_URL', () => {
+      setSetting(SETTINGS_KEYS.SEARCH_SEARXNG_URL, 'http://localhost:4000')
+      expect(getSetting(SETTINGS_KEYS.SEARCH_SEARXNG_URL)).toBe('http://localhost:4000')
+    })
+
+    it('sets and gets SEARCH_SEARXNG_API_KEY', () => {
+      setSetting(SETTINGS_KEYS.SEARCH_SEARXNG_API_KEY, 'sx-secret')
+      expect(getSetting(SETTINGS_KEYS.SEARCH_SEARXNG_API_KEY)).toBe('sx-secret')
+    })
+
+    it('all four keys are independent', () => {
+      setSetting(SETTINGS_KEYS.SEARCH_ENGINE, 'tavily')
+      setSetting(SETTINGS_KEYS.SEARCH_TAVILY_API_KEY, 'tvly-key')
+      setSetting(SETTINGS_KEYS.SEARCH_SEARXNG_URL, 'http://searxng:4000')
+      setSetting(SETTINGS_KEYS.SEARCH_SEARXNG_API_KEY, 'sx-key')
+
+      expect(getSetting(SETTINGS_KEYS.SEARCH_ENGINE)).toBe('tavily')
+      expect(getSetting(SETTINGS_KEYS.SEARCH_TAVILY_API_KEY)).toBe('tvly-key')
+      expect(getSetting(SETTINGS_KEYS.SEARCH_SEARXNG_URL)).toBe('http://searxng:4000')
+      expect(getSetting(SETTINGS_KEYS.SEARCH_SEARXNG_API_KEY)).toBe('sx-key')
+    })
+
+    it('returns null for unset keys', () => {
+      expect(getSetting(SETTINGS_KEYS.SEARCH_ENGINE)).toBeNull()
+      expect(getSetting(SETTINGS_KEYS.SEARCH_TAVILY_API_KEY)).toBeNull()
+      expect(getSetting(SETTINGS_KEYS.SEARCH_SEARXNG_URL)).toBeNull()
+      expect(getSetting(SETTINGS_KEYS.SEARCH_SEARXNG_API_KEY)).toBeNull()
+    })
+
+    it('deletes search engine keys', () => {
+      setSetting(SETTINGS_KEYS.SEARCH_ENGINE, 'tavily')
+      deleteSetting(SETTINGS_KEYS.SEARCH_ENGINE)
+      expect(getSetting(SETTINGS_KEYS.SEARCH_ENGINE)).toBeNull()
+    })
+  })
 })

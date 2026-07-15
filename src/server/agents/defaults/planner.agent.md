@@ -7,6 +7,7 @@ color: '#a855f7'
 allowedTools:
   - read_file
   - web_fetch
+  - web_search
   - run_command
   - ask_user
   - session_metadata

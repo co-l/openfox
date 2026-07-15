@@ -21,6 +21,10 @@ export const SETTINGS_KEYS = {
   KEYBINDINGS: 'keybindings',
   RETRY_PATTERNS: 'agent.retryPatterns',
   SKILLS_DIRECTORIES: 'skills.directories',
+  SEARCH_ENGINE: 'search.engine',
+  SEARCH_TAVILY_API_KEY: 'search.tavilyApiKey',
+  SEARCH_SEARXNG_URL: 'search.searxngUrl',
+  SEARCH_SEARXNG_API_KEY: 'search.searxngApiKey',
 } as const
 
 interface SettingsState {
