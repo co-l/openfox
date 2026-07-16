@@ -1,3 +1,31 @@
+/** Last segment of a path, handling both / and \ separators. */
+export function pathBasename(path: string): string {
+  return path.split(/[\\/]/).filter(Boolean).pop() ?? ''
+}
+
+export interface Breadcrumb {
+  name: string
+  path: string
+}
+
+/**
+ * Breadcrumb trail for a native path (Unix or Windows).
+ * On Windows the drive crumb is 'X:\' — 'X:' alone would be drive-relative.
+ */
+export function pathBreadcrumbs(path: string): Breadcrumb[] {
+  const sep = path.includes('\\') ? '\\' : '/'
+  return path
+    .split(/[\\/]/)
+    .filter(Boolean)
+    .map((part, i, arr) => ({
+      name: part,
+      path:
+        sep === '/'
+          ? '/' + arr.slice(0, i + 1).join('/')
+          : arr.slice(0, i + 1).join('\\') + (i === 0 ? '\\' : ''),
+    }))
+}
+
 export function truncateMiddle(path: string, maxLen = 28): string {
   if (path.length <= maxLen) return path
   const parts = path.split('/').filter(Boolean)

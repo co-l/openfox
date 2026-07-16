@@ -4,7 +4,7 @@ import { useProjectStore } from '../stores/project'
 import { Modal } from './shared/Modal'
 import { Button } from './shared/Button'
 import { FolderIcon, TrashIcon } from './shared/icons'
-import { truncateMiddle } from '../lib/path'
+import { truncateMiddle, pathBasename } from '../lib/path'
 import { DeleteProjectConfirmationModal } from './DeleteProjectConfirmationModal.js'
 import { CreateProjectModal } from './CreateProjectModal.js'
 import { DirectoryBrowser } from './shared/DirectoryBrowser.js'
@@ -69,7 +69,7 @@ export function OpenProjectModal({ isOpen, onClose }: OpenProjectModalProps) {
   }
 
   async function handleProjectCreation(path: string): Promise<boolean> {
-    const basename = path.split('/').filter(Boolean).pop() ?? ''
+    const basename = pathBasename(path)
     const result = await createProject(basename, path)
     listProjects()
     if (isPermissionDenied(result)) {

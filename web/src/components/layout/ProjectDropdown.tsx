@@ -6,6 +6,7 @@ import { ChevronDownIcon, CheckIcon, StarIcon, StarFilledIcon, PlusMdIcon, Folde
 import { CreateProjectModal } from '../CreateProjectModal.js'
 import { DirectoryBrowser } from '../shared/DirectoryBrowser.js'
 import { useWorkdir } from '../../hooks/useWorkdir.js'
+import { pathBasename } from '../../lib/path'
 
 interface ProjectDropdownProps {
   projects: Array<{ id: string; name: string; workdir: string; isStarred?: boolean }>
@@ -24,7 +25,7 @@ export function ProjectDropdown({ projects, currentProject }: ProjectDropdownPro
 
   const handleDirectorySelect = useCallback(
     async (path: string): Promise<boolean> => {
-      const basename = path.split('/').filter(Boolean).pop() ?? ''
+      const basename = pathBasename(path)
       const project = await createProject(basename, path)
       if (project && 'id' in project) {
         await listProjects()

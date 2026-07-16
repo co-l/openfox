@@ -3,6 +3,7 @@ import { Modal } from './Modal'
 import { ArrowLeftIcon, ChevronDownIcon, FolderIcon, SearchIcon } from './icons'
 import { Spinner } from './Spinner'
 import { authFetch } from '../../lib/api'
+import { pathBreadcrumbs } from '../../lib/path'
 import { Input } from './Input'
 
 interface DirectoryEntry {
@@ -51,13 +52,7 @@ export function DirectoryBrowser({ onSelect, onClose, initialPath }: DirectoryBr
     fetchDir(initialPath)
   }, [initialPath, fetchDir])
 
-  const crumbs = (listing?.current ?? '')
-    .split('/')
-    .filter(Boolean)
-    .map((part, i, arr) => ({
-      name: part,
-      path: '/' + arr.slice(0, i + 1).join('/'),
-    }))
+  const crumbs = pathBreadcrumbs(listing?.current ?? '')
 
   const filteredDirs =
     listing?.directories.filter(
