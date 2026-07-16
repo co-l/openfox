@@ -31,6 +31,7 @@ export function createSession(
   title?: string,
   providerId?: string | null,
   providerModel?: string | null,
+  worktree?: string,
 ): Session {
   const db = getDatabase()
   const now = new Date().toISOString()
@@ -39,15 +40,27 @@ export function createSession(
 
   db.prepare(
     `
-    INSERT INTO sessions (id, project_id, workdir, phase, mode, workflow_phase, is_running, created_at, updated_at, title, provider_id, provider_model, danger_level)
-    VALUES (?, ?, ?, 'idle', 'planner', 'plan', 0, ?, ?, ?, ?, ?, ?)
+    INSERT INTO sessions (id, project_id, workdir, worktree, phase, mode, workflow_phase, is_running, created_at, updated_at, title, provider_id, provider_model, danger_level)
+    VALUES (?, ?, ?, ?, 'idle', 'planner', 'plan', 0, ?, ?, ?, ?, ?, ?)
   `,
-  ).run(id, projectId, workdir, now, now, title ?? null, providerId ?? null, providerModel ?? null, dangerLevel)
+  ).run(
+    id,
+    projectId,
+    workdir,
+    worktree ?? null,
+    now,
+    now,
+    title ?? null,
+    providerId ?? null,
+    providerModel ?? null,
+    dangerLevel,
+  )
 
   return {
     id,
     projectId,
     workdir,
+    ...(worktree ? { worktree } : {}),
     mode: 'planner',
     phase: 'plan',
     isRunning: false,
@@ -274,6 +287,7 @@ export function listSessions(): SessionSummary[] {
       s.id,
       s.project_id,
       s.workdir,
+      s.worktree,
       s.mode,
       s.workflow_phase,
       s.is_running,
@@ -306,6 +320,7 @@ export function listSessionsByProject(
       s.id,
       s.project_id,
       s.workdir,
+      s.worktree,
       s.mode,
       s.workflow_phase,
       s.is_running,
@@ -338,6 +353,7 @@ function mapSessionBase(row: SessionRow | SessionSummaryRow): {
   id: string
   projectId: string
   workdir: string
+  worktree?: string
   mode: SessionMode
   phase: SessionPhase
   isRunning: boolean
@@ -350,6 +366,7 @@ function mapSessionBase(row: SessionRow | SessionSummaryRow): {
     id: row.id,
     projectId: row.project_id,
     workdir: row.workdir,
+    ...(row.worktree ? { worktree: row.worktree } : {}),
     mode: (row.mode ?? 'planner') as SessionMode,
     phase: (row.workflow_phase ?? 'plan') as SessionPhase,
     isRunning: Boolean(row.is_running),
@@ -378,6 +395,7 @@ interface SessionRow {
   id: string
   project_id: string
   workdir: string
+  worktree: string | null
   phase: string
   mode: string
   workflow_phase: string
@@ -401,6 +419,7 @@ interface SessionSummaryRow {
   id: string
   project_id: string
   workdir: string
+  worktree: string | null
   mode: string
   workflow_phase: string
   is_running: number

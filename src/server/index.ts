@@ -4,6 +4,7 @@ import { createServer as createHttpServer } from 'node:http'
 import { fileURLToPath } from 'node:url'
 import { dirname, resolve, join } from 'node:path'
 import { readFile } from 'node:fs/promises'
+import { getGitBranch, listWorktrees, validateRef, ensureWorktree } from './git/worktree.js'
 import { createServer as createViteServer, type ViteDevServer } from 'vite'
 
 import type { Config, ModelConfig, ProviderBackend } from '../shared/types.js'
@@ -383,6 +384,49 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
     res.json({ project })
   })
 
+  // Git worktree endpoints (helpers imported from ./git/worktree.js)
+
+  /** Check if a directory is a git repo, return git info */
+  app.get('/api/projects/:id/git-info', async (req, res) => {
+    const { getProject } = await import('./db/projects.js')
+    const project = getProject(req.params.id)
+    if (!project) return res.status(404).json({ error: 'Project not found' })
+
+    const branch = await getGitBranch(project.workdir)
+    if (!branch) return res.json({ isGit: false, branch: null, worktrees: [] })
+
+    const worktrees = await listWorktrees(project.workdir)
+    res.json({ isGit: true, branch, worktrees })
+  })
+
+  /** List existing git worktrees */
+  app.get('/api/projects/:id/worktrees', async (req, res) => {
+    const { getProject } = await import('./db/projects.js')
+    const project = getProject(req.params.id)
+    if (!project) return res.status(404).json({ error: 'Project not found' })
+    const branch = await getGitBranch(project.workdir)
+    if (!branch) return res.status(400).json({ error: 'Project is not a git repository' })
+    const worktrees = await listWorktrees(project.workdir)
+    res.json({ worktrees })
+  })
+
+  /** Create a new git worktree */
+  app.post('/api/projects/:id/worktrees', async (req, res) => {
+    const { getProject } = await import('./db/projects.js')
+    const project = getProject(req.params.id)
+    if (!project) return res.status(404).json({ error: 'Project not found' })
+    const { name, branch } = req.body
+    if (!name || typeof name !== 'string') return res.status(400).json({ error: 'name is required' })
+    try {
+      await validateRef(project.workdir, name)
+    } catch {
+      return res.status(400).json({ error: `Invalid branch name: "${name}"` })
+    }
+    const startBranch = typeof branch === 'string' && branch ? branch : undefined
+    const result = await ensureWorktree(project.workdir, name, startBranch)
+    res.status(201).json({ worktree: { path: result.path, name, branch: name } })
+  })
+
   // Session endpoints (REST)
 
   app.get('/api/sessions', async (req, res) => {
@@ -412,7 +456,7 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
   })
 
   app.post('/api/sessions', async (req, res) => {
-    const { projectId, title } = req.body
+    const { projectId, title, worktree } = req.body
     if (!projectId) {
       return res.status(400).json({ error: 'projectId is required' })
     }
@@ -422,8 +466,24 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
       return res.status(404).json({ error: 'Project not found' })
     }
 
+    // Validate worktree name with git if provided
+    if (worktree && typeof worktree === 'string') {
+      try {
+        await validateRef(project.workdir, worktree)
+      } catch {
+        return res.status(400).json({ error: `Invalid branch name: "${worktree}"` })
+      }
+    }
+
     // Inherit provider/model from defaultModelSelection config
     const { providerId, model } = parseDefaultModelSelection(config.defaultModelSelection)
+
+    // If a worktree name is given, create it first
+    if (worktree && typeof worktree === 'string') {
+      const result = await ensureWorktree(project.workdir, worktree)
+      const session = sessionManager.createSession(projectId, title, providerId ?? null, model ?? null, result.path)
+      return res.status(201).json({ session })
+    }
 
     // maxTokens is no longer passed - it comes from providerManager.getCurrentModelContext() at query time
     const session = sessionManager.createSession(projectId, title, providerId ?? null, model ?? null)

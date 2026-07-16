@@ -31,6 +31,7 @@ export interface Session {
   id: string
   projectId: string
   workdir: string
+  worktree?: string // Optional git worktree path
   mode: SessionMode
   phase: SessionPhase // Current workflow phase
   isRunning: boolean // Is the agent actively working?
@@ -81,6 +82,7 @@ export interface SessionSummary {
   projectId: string
   title?: string
   workdir: string
+  worktree?: string // Optional git worktree path
   mode: SessionMode
   phase: SessionPhase // Current workflow phase
   isRunning: boolean

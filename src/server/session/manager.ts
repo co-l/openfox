@@ -135,7 +135,13 @@ export class SessionManager {
    * Create a new session. Emits session.initialized event.
    * Note: maxTokens is no longer stored in the session - it comes from the current model config
    */
-  createSession(projectId: string, title?: string, providerId?: string | null, providerModel?: string | null): Session {
+  createSession(
+    projectId: string,
+    title?: string,
+    providerId?: string | null,
+    providerModel?: string | null,
+    worktree?: string,
+  ): Session {
     const project = getProject(projectId)
     if (!project) {
       throw new Error(`Project not found: ${projectId}`)
@@ -148,15 +154,17 @@ export class SessionManager {
       sessionTitle = `Session ${existingSessions.sessions.length + 1}`
     }
 
-    logger.debug('Creating session', { projectId, workdir: project.workdir, title: sessionTitle })
+    const effectiveWorkdir = worktree ?? project.workdir
+
+    logger.debug('Creating session', { projectId, workdir: effectiveWorkdir, title: sessionTitle })
 
     // Create session in DB (minimal: id, projectId, workdir, title, timestamps)
-    const dbSession = dbCreateSession(projectId, project.workdir, sessionTitle, providerId, providerModel)
+    const dbSession = dbCreateSession(projectId, effectiveWorkdir, sessionTitle, providerId, providerModel, worktree)
 
     // Emit session.initialized event to EventStore
     // maxTokens is NOT stored here - it comes from providerManager.getCurrentModelContext() at query time
     const contextWindowId = crypto.randomUUID()
-    emitSessionInitialized(dbSession.id, projectId, project.workdir, contextWindowId, sessionTitle)
+    emitSessionInitialized(dbSession.id, projectId, effectiveWorkdir, contextWindowId, sessionTitle)
 
     // Build full session object
     const session = this.buildSessionFromDb(dbSession)

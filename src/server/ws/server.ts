@@ -837,15 +837,16 @@ async function handleClientMessage(
 
       // Tab model: set active session for event routing
       client.activeSessionId = session.id
-      client.activeWorkdir = session.workdir
+      const effectiveWorkdir = session.worktree ?? session.workdir
+      client.activeWorkdir = effectiveWorkdir
 
       // Send initial git status immediately
-      if (session.workdir) {
-        const branch = await moduleGitBranch(session.workdir)
-        const { files } = await moduleGitDiff(session.workdir)
+      if (effectiveWorkdir) {
+        const branch = await moduleGitBranch(effectiveWorkdir)
+        const { files } = await moduleGitDiff(effectiveWorkdir)
         const msg = createGitStatusMessage(branch, files)
         send(msg)
-        if (branch) moduleStartGitPolling(session.workdir)
+        if (branch) moduleStartGitPolling(effectiveWorkdir)
       }
 
       ensureEventStoreSubscription(session.id)
