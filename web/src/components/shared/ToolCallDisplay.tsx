@@ -269,15 +269,6 @@ export const ToolCallDisplay = memo(function ToolCallDisplay({
             </div>
           )}
 
-          {/* Specialized rendering for trace_code */}
-          {tool === 'trace_code' && status === 'success' && (
-            <div>
-              <div className="text-xs font-mono whitespace-pre-wrap bg-bg-primary p-2 rounded max-h-[60vh] overflow-y-auto break-words">
-                {result ?? ''}
-              </div>
-            </div>
-          )}
-
           {/* Specialized rendering for dev_server */}
           {tool === 'dev_server' && status === 'success' && result && (
             <DevServerView result={result} action={String(args.action ?? '')} />
@@ -316,7 +307,6 @@ export const ToolCallDisplay = memo(function ToolCallDisplay({
             tool !== 'web_search' &&
             tool !== 'load_skill' &&
             tool !== 'web_fetch' &&
-            tool !== 'trace_code' &&
             tool !== 'dev_server' &&
             tool !== 'worktree' &&
             tool !== 'background_process' &&

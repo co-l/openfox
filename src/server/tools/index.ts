@@ -16,7 +16,6 @@ import { devServerTool } from './dev-server.js'
 import { stepDoneTool } from './step-done.js'
 import { backgroundProcessTool } from './background-process/index.js'
 import { mcpConfigTool } from './mcp-config.js'
-import { traceCodeTool } from './trace-code.js'
 import { webSearchTool } from './web-search.js'
 import { worktreeTool } from './worktree.js'
 import { computeEffectiveTools } from './tool-policy.js'
@@ -56,7 +55,6 @@ function getBuiltInTools(): Tool[] {
       stepDoneTool,
       backgroundProcessTool,
       mcpConfigTool,
-      traceCodeTool,
       worktreeTool,
     ]
   }

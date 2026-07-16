@@ -17,7 +17,6 @@ allowedTools:
   - load_skill
   - dev_server
   - background_process
-  - trace_code
   - mcp_config
   - worktree
 ---

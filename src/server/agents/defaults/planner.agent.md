@@ -16,7 +16,6 @@ allowedTools:
   - background_process
   - mcp_config
   - dev_server
-  - trace_code
   - worktree
 ---
 

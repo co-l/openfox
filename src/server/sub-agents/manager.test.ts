@@ -223,14 +223,12 @@ describe('SubAgentManager', () => {
       'run_command',
       'web_fetch',
       'session_metadata',
-      'trace_code',
     ])
 
     expect(findAgentById('explorer', agents)?.metadata.allowedTools).toEqual([
       'read_file',
       'run_command',
       'web_fetch',
-      'trace_code',
     ])
   })
 

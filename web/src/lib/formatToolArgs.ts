@@ -68,11 +68,6 @@ export function formatToolArgs(tool: string, args: Record<string, unknown>): str
     return String(args.action ?? '')
   }
 
-  // Trace code - show symbol
-  if (tool === 'trace_code') {
-    return String(args.symbol ?? '')
-  }
-
   // Fallback: stringify with truncation
   const str = JSON.stringify(args)
   return str.length > 50 ? str.slice(0, 50) + '...' : str
