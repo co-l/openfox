@@ -279,7 +279,7 @@ export interface Message {
   subAgentId?: string // If set, this message belongs to a sub-agent process
   subAgentType?: string // Sub-agent ID from agent registry
   attachments?: Attachment[] // Optional image attachments
-  metadata?: { type: string; name: string; color: string; kind?: 'definition' | 'reminder' } // For auto-prompt messages
+  metadata?: { type: string; name: string; color: string; kind?: 'definition' | 'reminder'; branchName?: string } // For auto-prompt messages
 }
 
 // ============================================================================

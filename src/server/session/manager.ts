@@ -29,10 +29,12 @@ import {
   updateSessionDangerLevel,
   updateSessionRunning,
   updateSessionCachedPrompt,
+  updateSessionWorkdir,
   getSessionCachedPrompt,
   type DangerLevel,
 } from '../db/sessions.js'
 import { getProject } from '../db/projects.js'
+import { ensureWorktree } from '../git/worktree.js'
 import { SessionNotFoundError } from '../utils/errors.js'
 import { logger } from '../utils/logger.js'
 import { EventEmitter, type Unsubscribe } from '../utils/async.js'
@@ -419,6 +421,7 @@ export class SessionManager {
       attachments?: Attachment[] // Optional image attachments
       subAgentId?: string
       subAgentType?: string
+      metadata?: { type: string; name: string; color: string; kind?: 'definition' | 'reminder' }
     } = {}
     if (contextWindowId !== undefined) options.contextWindowId = contextWindowId
     if (message.isSystemGenerated !== undefined) options.isSystemGenerated = message.isSystemGenerated
@@ -427,6 +430,7 @@ export class SessionManager {
     if (message.attachments !== undefined) options.attachments = message.attachments
     if (message.subAgentId !== undefined) options.subAgentId = message.subAgentId
     if (message.subAgentType !== undefined) options.subAgentType = message.subAgentType
+    if (message.metadata !== undefined) options.metadata = message.metadata
 
     // Emit message events
     const messageId = emitUserMessage(sessionId, message.content, options)
@@ -444,6 +448,7 @@ export class SessionManager {
     if (message.attachments !== undefined) result.attachments = message.attachments
     if (message.subAgentId !== undefined) result.subAgentId = message.subAgentId
     if (message.subAgentType !== undefined) result.subAgentType = message.subAgentType
+    if (message.metadata !== undefined) result.metadata = message.metadata
 
     // Emit internal event for subscribers
     this.emit({ type: 'message_added', sessionId, message: result })
@@ -967,10 +972,127 @@ export class SessionManager {
 
   /**
    * Get the LSP manager for a session.
+   * Uses worktree path when active, otherwise the project workdir.
    */
   getLspManager(sessionId: string): LspManager {
     const session = this.requireSession(sessionId)
-    return getOrCreateLspManager(sessionId, session.workdir)
+    const effectiveWorkdir = session.worktree ?? session.workdir
+    return getOrCreateLspManager(sessionId, effectiveWorkdir)
+  }
+
+  // ============================================================================
+  // Worktree Lifecycle
+  // ============================================================================
+
+  /**
+   * Create a git worktree for an existing session and move the session into it.
+   * Keeps session.workdir as the project root (stable system prompt).
+   * Sets session.worktree to the worktree path for tool execution.
+   * Restarts LSP to pick up the new workdir.
+   * Injects a system reminder to inform the agent about the worktree.
+   */
+  async createSessionWorktree(sessionId: string, name: string): Promise<Session> {
+    const session = this.requireSession(sessionId)
+    const project = getProject(session.projectId)
+    if (!project) throw new Error(`Project not found: ${session.projectId}`)
+    if (session.worktree) throw new Error('Session already has a worktree')
+
+    const result = await ensureWorktree(project.workdir, name)
+    // Keep workdir as project root — only set worktree
+    updateSessionWorkdir(sessionId, project.workdir, result.path)
+
+    try {
+      await shutdownLspManager(sessionId)
+    } catch (err) {
+      logger.error('Error shutting down LSP for worktree switch', { sessionId, error: err })
+    }
+
+    // Inject system reminder so the agent knows it's in a worktree
+    const reminderContent = `<system-reminder>\nThis session is now operating in a git worktree at ${result.path}.\nAll file and git operations should use this directory.\n</system-reminder>`
+    this.addMessage(sessionId, {
+      role: 'user',
+      content: reminderContent,
+      isSystemGenerated: true,
+      messageKind: 'auto-prompt',
+      metadata: { type: 'worktree', name: 'Worktree', color: '#22c55e', kind: 'definition', branchName: name },
+    })
+
+    const updated = this.requireSession(sessionId)
+    this.emit({ type: 'session_updated', session: updated })
+    return updated
+  }
+
+  /**
+   * Attach session to an existing worktree by path.
+   * Sets session.worktree to the given path without creating a new worktree.
+   * Restarts LSP to pick up the new workdir.
+   */
+  async attachSessionWorktree(sessionId: string, wtPath: string): Promise<Session> {
+    const session = this.requireSession(sessionId)
+    if (session.worktree) throw new Error('Session already has a worktree')
+
+    updateSessionWorkdir(sessionId, session.workdir, wtPath)
+
+    try {
+      await shutdownLspManager(sessionId)
+    } catch (err) {
+      logger.error('Error shutting down LSP for worktree attach', { sessionId, error: err })
+    }
+
+    const branchName = wtPath.includes('/worktrees/') ? (wtPath.split('/worktrees/')[1] ?? wtPath) : wtPath
+    const reminderContent = `<system-reminder>\nThis session is now operating in a git worktree at ${wtPath}.\nAll file and git operations should use this directory.\n</system-reminder>`
+    this.addMessage(sessionId, {
+      role: 'user',
+      content: reminderContent,
+      isSystemGenerated: true,
+      messageKind: 'auto-prompt',
+      metadata: { type: 'worktree', name: 'Worktree', color: '#22c55e', kind: 'definition', branchName },
+    })
+
+    const updated = this.requireSession(sessionId)
+    this.emit({ type: 'session_updated', session: updated })
+    return updated
+  }
+
+  /**
+   * Close the worktree for a session and move it back to the project root.
+   * Clears session.worktree — session.workdir stays as project root.
+   * Restarts LSP to pick up the original workdir.
+   * Injects a system reminder to inform the agent the worktree is closed.
+   */
+  async closeSessionWorktree(sessionId: string): Promise<Session> {
+    const session = this.requireSession(sessionId)
+    if (!session.worktree) throw new Error('Session does not have a worktree')
+
+    const project = getProject(session.projectId)
+    if (!project) throw new Error(`Project not found: ${session.projectId}`)
+
+    const closedPath = session.worktree
+    const branchName = closedPath.includes('/worktrees/')
+      ? (closedPath.split('/worktrees/')[1] ?? closedPath)
+      : closedPath
+    // Just clear worktree — workdir was never changed from project root
+    updateSessionWorkdir(sessionId, project.workdir, null)
+
+    try {
+      await shutdownLspManager(sessionId)
+    } catch (err) {
+      logger.error('Error shutting down LSP for worktree close', { sessionId, error: err })
+    }
+
+    // Inject system reminder that worktree is closed
+    const reminderContent = `<system-reminder>\nThe worktree at ${closedPath} has been closed.\nOperating in the original project directory at ${project.workdir}.\n</system-reminder>`
+    this.addMessage(sessionId, {
+      role: 'user',
+      content: reminderContent,
+      isSystemGenerated: true,
+      messageKind: 'auto-prompt',
+      metadata: { type: 'worktree', name: 'Worktree', color: '#ef4444', kind: 'reminder', branchName },
+    })
+
+    const updated = this.requireSession(sessionId)
+    this.emit({ type: 'session_updated', session: updated })
+    return updated
   }
 
   // ============================================================================

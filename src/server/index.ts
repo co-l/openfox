@@ -4,7 +4,6 @@ import { createServer as createHttpServer } from 'node:http'
 import { fileURLToPath } from 'node:url'
 import { dirname, resolve, join } from 'node:path'
 import { readFile } from 'node:fs/promises'
-import { getGitBranch, listWorktrees, validateRef, ensureWorktree } from './git/worktree.js'
 import { createServer as createViteServer, type ViteDevServer } from 'vite'
 
 import type { Config, ModelConfig, ProviderBackend } from '../shared/types.js'
@@ -384,47 +383,60 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
     res.json({ project })
   })
 
-  // Git worktree endpoints (helpers imported from ./git/worktree.js)
+  // Branch management endpoints (project-scoped, repo operations)
 
-  /** Check if a directory is a git repo, return git info */
-  app.get('/api/projects/:id/git-info', async (req, res) => {
+  /** List local git branches */
+  app.get('/api/projects/:id/branches', async (req, res) => {
     const { getProject } = await import('./db/projects.js')
     const project = getProject(req.params.id)
     if (!project) return res.status(404).json({ error: 'Project not found' })
-
-    const branch = await getGitBranch(project.workdir)
-    if (!branch) return res.json({ isGit: false, branch: null, worktrees: [] })
-
-    const worktrees = await listWorktrees(project.workdir)
-    res.json({ isGit: true, branch, worktrees })
+    const { listBranches } = await import('./git/worktree.js')
+    const branches = await listBranches(project.workdir)
+    res.json({ branches })
   })
 
-  /** List existing git worktrees */
+  /** Switch to an existing branch */
+  app.post('/api/projects/:id/checkout', async (req, res) => {
+    const { getProject } = await import('./db/projects.js')
+    const project = getProject(req.params.id)
+    if (!project) return res.status(404).json({ error: 'Project not found' })
+    const { branch } = req.body
+    if (!branch || typeof branch !== 'string') return res.status(400).json({ error: 'branch is required' })
+    const { checkoutBranch } = await import('./git/worktree.js')
+    try {
+      await checkoutBranch(project.workdir, branch)
+      res.json({ branch })
+    } catch (err) {
+      res.status(400).json({ error: err instanceof Error ? err.message : 'Failed to checkout branch' })
+    }
+  })
+
+  /** Create and switch to a new branch */
+  app.post('/api/projects/:id/checkout-new', async (req, res) => {
+    const { getProject } = await import('./db/projects.js')
+    const project = getProject(req.params.id)
+    if (!project) return res.status(404).json({ error: 'Project not found' })
+    const { name } = req.body
+    if (!name || typeof name !== 'string') return res.status(400).json({ error: 'name is required' })
+    const { createBranch } = await import('./git/worktree.js')
+    try {
+      await createBranch(project.workdir, name)
+      res.json({ branch: name })
+    } catch (err) {
+      res.status(400).json({ error: err instanceof Error ? err.message : 'Failed to create branch' })
+    }
+  })
+
+  /** List existing git worktrees for a project (excluding the main repo) */
   app.get('/api/projects/:id/worktrees', async (req, res) => {
     const { getProject } = await import('./db/projects.js')
     const project = getProject(req.params.id)
     if (!project) return res.status(404).json({ error: 'Project not found' })
-    const branch = await getGitBranch(project.workdir)
-    if (!branch) return res.status(400).json({ error: 'Project is not a git repository' })
-    const worktrees = await listWorktrees(project.workdir)
+    const { listWorktrees } = await import('./git/worktree.js')
+    const all = await listWorktrees(project.workdir)
+    // Filter out the main worktree (the repo itself) — only show linked worktrees
+    const worktrees = all.filter((wt) => wt.path !== project.workdir)
     res.json({ worktrees })
-  })
-
-  /** Create a new git worktree */
-  app.post('/api/projects/:id/worktrees', async (req, res) => {
-    const { getProject } = await import('./db/projects.js')
-    const project = getProject(req.params.id)
-    if (!project) return res.status(404).json({ error: 'Project not found' })
-    const { name, branch } = req.body
-    if (!name || typeof name !== 'string') return res.status(400).json({ error: 'name is required' })
-    try {
-      await validateRef(project.workdir, name)
-    } catch {
-      return res.status(400).json({ error: `Invalid branch name: "${name}"` })
-    }
-    const startBranch = typeof branch === 'string' && branch ? branch : undefined
-    const result = await ensureWorktree(project.workdir, name, startBranch)
-    res.status(201).json({ worktree: { path: result.path, name, branch: name } })
   })
 
   // Session endpoints (REST)
@@ -456,7 +468,7 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
   })
 
   app.post('/api/sessions', async (req, res) => {
-    const { projectId, title, worktree } = req.body
+    const { projectId, title } = req.body
     if (!projectId) {
       return res.status(400).json({ error: 'projectId is required' })
     }
@@ -466,28 +478,57 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
       return res.status(404).json({ error: 'Project not found' })
     }
 
-    // Validate worktree name with git if provided
-    if (worktree && typeof worktree === 'string') {
-      try {
-        await validateRef(project.workdir, worktree)
-      } catch {
-        return res.status(400).json({ error: `Invalid branch name: "${worktree}"` })
-      }
-    }
-
     // Inherit provider/model from defaultModelSelection config
     const { providerId, model } = parseDefaultModelSelection(config.defaultModelSelection)
-
-    // If a worktree name is given, create it first
-    if (worktree && typeof worktree === 'string') {
-      const result = await ensureWorktree(project.workdir, worktree)
-      const session = sessionManager.createSession(projectId, title, providerId ?? null, model ?? null, result.path)
-      return res.status(201).json({ session })
-    }
 
     // maxTokens is no longer passed - it comes from providerManager.getCurrentModelContext() at query time
     const session = sessionManager.createSession(projectId, title, providerId ?? null, model ?? null)
     res.status(201).json({ session })
+  })
+
+  /** Create a git worktree for a session and move the session into it */
+  app.post('/api/sessions/:id/worktree', async (req, res) => {
+    const session = sessionManager.getSession(req.params.id)
+    if (!session) return res.status(404).json({ error: 'Session not found' })
+
+    const { name } = req.body
+    if (!name || typeof name !== 'string') return res.status(400).json({ error: 'name is required' })
+
+    try {
+      const updated = await sessionManager.createSessionWorktree(req.params.id, name)
+      res.json({ session: updated })
+    } catch (err) {
+      res.status(400).json({ error: err instanceof Error ? err.message : 'Failed to create worktree' })
+    }
+  })
+
+  /** Close the worktree for a session and move it back to the project root */
+  app.post('/api/sessions/:id/close-worktree', async (req, res) => {
+    const session = sessionManager.getSession(req.params.id)
+    if (!session) return res.status(404).json({ error: 'Session not found' })
+
+    try {
+      const updated = await sessionManager.closeSessionWorktree(req.params.id)
+      res.json({ session: updated })
+    } catch (err) {
+      res.status(400).json({ error: err instanceof Error ? err.message : 'Failed to close worktree' })
+    }
+  })
+
+  /** Attach session to an existing worktree by path */
+  app.post('/api/sessions/:id/attach-worktree', async (req, res) => {
+    const session = sessionManager.getSession(req.params.id)
+    if (!session) return res.status(404).json({ error: 'Session not found' })
+
+    const { path } = req.body
+    if (!path || typeof path !== 'string') return res.status(400).json({ error: 'path is required' })
+
+    try {
+      const updated = await sessionManager.attachSessionWorktree(req.params.id, path)
+      res.json({ session: updated })
+    } catch (err) {
+      res.status(400).json({ error: err instanceof Error ? err.message : 'Failed to attach worktree' })
+    }
   })
 
   app.get('/api/sessions/:id', async (req, res) => {

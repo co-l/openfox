@@ -23,6 +23,8 @@ export function AutoPromptCard({ message }: AutoPromptCardProps) {
     workflow: 'instructions',
     compaction: 'prompt injected',
     subagent: 'instructions',
+    worktree:
+      metadata?.kind === 'reminder' ? `${metadata?.branchName ?? ''} (closed)` : `${metadata?.branchName ?? ''} (open)`,
   }
   const label = typeLabels[metaType] ?? 'injected'
 

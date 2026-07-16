@@ -249,7 +249,7 @@ export const useSessionStore = create<SessionState>((set, get) => {
       set({ showPasswordModal: false, connectionStatus: 'disconnected' })
     },
 
-    createSession: async (projectId, title, worktree) => {
+    createSession: async (projectId, title) => {
       const state = get()
       if (state.pendingSessionCreate) {
         return null
@@ -260,12 +260,11 @@ export const useSessionStore = create<SessionState>((set, get) => {
         const res = await authFetch('/api/sessions', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ projectId, title, ...(worktree ? { worktree } : {}) }),
+          body: JSON.stringify({ projectId, title }),
         })
         if (!res.ok) {
           set({ pendingSessionCreate: false })
-          const errBody = await res.json().catch(() => ({ error: 'Request failed' }))
-          throw new Error(errBody.error || `Request failed (${res.status})`)
+          return null
         }
         const data = await res.json()
         try {
@@ -274,9 +273,9 @@ export const useSessionStore = create<SessionState>((set, get) => {
           /* empty */
         }
         return data.session
-      } catch (err) {
+      } catch {
         set({ pendingSessionCreate: false })
-        throw err
+        return null
       }
     },
 

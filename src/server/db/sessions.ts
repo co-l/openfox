@@ -344,6 +344,17 @@ export function listSessionsByProject(
   return { sessions, hasMore }
 }
 
+export function updateSessionWorkdir(id: string, workdir: string, worktree: string | null): void {
+  const db = getDatabase()
+  const now = new Date().toISOString()
+  db.prepare('UPDATE sessions SET workdir = ?, worktree = ?, updated_at = ? WHERE id = ?').run(
+    workdir,
+    worktree,
+    now,
+    id,
+  )
+}
+
 export function deleteSession(id: string): void {
   const db = getDatabase()
   db.prepare('DELETE FROM sessions WHERE id = ?').run(id)

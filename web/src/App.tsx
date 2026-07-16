@@ -21,6 +21,7 @@ import { Header } from './components/layout/Header'
 import { Sidebar } from './components/layout/Sidebar'
 import { PageTitle } from './components/layout/PageTitle'
 import { HomePage } from './components/HomePage'
+import { NewSessionHandler } from './components/NewSessionHandler'
 import { EmptyProjectView } from './components/EmptyProjectView'
 import { PlanPanel } from './components/plan/PlanPanel'
 import { ReadonlySessionView } from './components/plan/ReadonlySessionView'
@@ -350,16 +351,7 @@ function App() {
               />
             </Route>
             <Route path="/p/:projectId/new">
-              {(params: { projectId: string }) => {
-                const ProjectRedirect = () => {
-                  const [, navigate] = useLocation()
-                  useEffect(() => {
-                    navigate(`/p/${params.projectId}`, { replace: true })
-                  }, [])
-                  return null
-                }
-                return <ProjectRedirect />
-              }}
+              <NewSessionHandler />
             </Route>
             <Route path="/p/:projectId">
               <ProjectView sidebarOpen={effectiveLeftOpen} onSidebarToggle={handleLeftToggle} />

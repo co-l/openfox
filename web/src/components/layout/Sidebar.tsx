@@ -4,7 +4,6 @@ import { useSessionStore } from '../../stores/session'
 import { useProjectStore } from '../../stores/project'
 import type { SessionSummary } from '@shared/types.js'
 import { ProjectSettingsModal } from '../settings/ProjectSettingsModal'
-import { NewSessionModal } from '../NewSessionModal'
 import { DropdownMenu } from '../shared/DropdownMenu'
 import { CloseButton } from '../shared/CloseButton'
 import { EllipsisIcon, SpinIcon } from '../shared/icons'
@@ -19,7 +18,6 @@ interface SidebarProps {
 export function Sidebar({ projectId, isOpen = true, onClose }: SidebarProps) {
   const [, navigate] = useLocation()
   const [showSettings, setShowSettings] = useState(false)
-  const [showNewSession, setShowNewSession] = useState(false)
 
   const sessions = useSessionStore((state) => state.sessions)
   const currentSession = useSessionStore((state) => state.currentSession)
@@ -106,13 +104,13 @@ export function Sidebar({ projectId, isOpen = true, onClose }: SidebarProps) {
         `}
       >
         <div className="p-4 border-b border-border flex gap-2">
-          <button
-            onClick={() => setShowNewSession(true)}
+          <Link
+            href={`/p/${projectId}/new`}
             className="flex-1 block text-center rounded font-medium transition-colors bg-accent-primary/25 text-text-primary hover:bg-accent-primary/40 px-3 py-1.5 text-sm"
             data-testid="sidebar-new-session-button"
           >
             + New Session
-          </button>
+          </Link>
           <DropdownMenu
             items={[
               {
@@ -166,9 +164,6 @@ export function Sidebar({ projectId, isOpen = true, onClose }: SidebarProps) {
           )}
         </div>
       </aside>
-
-      {/* New Session Modal — outside sidebar to avoid clipping */}
-      <NewSessionModal isOpen={showNewSession} onClose={() => setShowNewSession(false)} />
     </>
   )
 }

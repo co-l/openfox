@@ -207,16 +207,18 @@ export async function executeSubAgent(options: SubAgentExecutionOptions): Promis
 
   // --- Load context for system prompt ---
 
-  const { content: instructionContent } = await getAllInstructions(session.workdir, session.projectId)
+  const effectiveWorkdir = session.worktree ?? session.workdir
+
+  const { content: instructionContent } = await getAllInstructions(effectiveWorkdir, session.projectId)
   const config = getRuntimeConfig()
   const configDir = getGlobalConfigDir(config.mode ?? 'production')
   const skills = await getEnabledSkillMetadata(configDir, config.workdir)
 
   const hasRunCommand = agentDef.metadata.allowedTools?.includes('run_command') ?? false
-  const gitignoreSection = hasRunCommand ? await loadGitIgnoreRules(session.workdir) : ''
+  const gitignoreSection = hasRunCommand ? await loadGitIgnoreRules(effectiveWorkdir) : ''
 
   const systemPrompt =
-    buildBasePrompt(session.workdir, undefined, skills.length > 0 ? skills : undefined, llmClient.getModel()) +
+    buildBasePrompt(effectiveWorkdir, undefined, skills.length > 0 ? skills : undefined, llmClient.getModel()) +
     '\n\n' +
     agentDef.prompt +
     (gitignoreSection ? '\n\n' + gitignoreSection : '') +
