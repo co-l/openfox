@@ -19,6 +19,7 @@ allowedTools:
   - background_process
   - trace_code
   - mcp_config
+  - worktree
 ---
 
 # Build Mode

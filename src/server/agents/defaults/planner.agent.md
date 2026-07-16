@@ -17,6 +17,7 @@ allowedTools:
   - mcp_config
   - dev_server
   - trace_code
+  - worktree
 ---
 
 # Plan Mode

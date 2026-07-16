@@ -5,6 +5,7 @@ import type { Server } from 'node:http'
 import type { ServerMessage } from '../../shared/protocol.js'
 import type { GitDiffFile } from '../../shared/protocol.js'
 import { createServerMessage } from '../../shared/protocol.js'
+import { createSessionStateMessage } from './protocol.js'
 import { handleTerminalMessage, unsubscribeAllFromTerminal } from './terminal.js'
 import type { Config } from '../config.js'
 import type { LLMClientWithModel } from '../llm/client.js'
@@ -22,6 +23,8 @@ import { provideAnswer } from '../tools/index.js'
 import { logger } from '../utils/logger.js'
 import { devServerManager } from '../dev-server/manager.js'
 import { onProcessEvent } from '../tools/background-process/manager.js'
+import { buildMessagesFromStoredEvents, foldPendingConfirmations } from '../events/folding.js'
+import { getPendingQuestionsForSession } from '../tools/index.js'
 
 // Resolved once initial MCP connections settle — checkDynamic awaits this
 let resolveMcpReady: (() => void) | null = null
@@ -578,6 +581,22 @@ export function createWebSocketServer(
         errorMessage,
       }),
     )
+  })
+
+  // Session update events — broadcast session.state to session-specific clients
+  sessionManager.subscribe((event) => {
+    if (event.type === 'session_updated') {
+      const updatedSession = event.session
+      const eventStore = getEventStore()
+      const events = eventStore.getEvents(updatedSession.id)
+      const messages = buildMessagesFromStoredEvents(events)
+      const pendingConfirmations = foldPendingConfirmations(events)
+      const pendingQuestions = getPendingQuestionsForSession(updatedSession.id)
+      broadcastForSession(
+        updatedSession.id,
+        createSessionStateMessage(updatedSession, messages, pendingConfirmations, pendingQuestions),
+      )
+    }
   })
 
   // Background process event listeners — broadcast to session-specific clients

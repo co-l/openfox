@@ -8,6 +8,7 @@ import { Markdown } from './Markdown'
 import { TruncatedIndicator } from './TruncatedIndicator'
 import { DevServerView } from './DevServerView'
 import { BackgroundProcessView } from './BackgroundProcessView'
+import { WorktreeView } from './WorktreeView'
 import { PathConfirmationButtons } from './PathConfirmationButtons'
 import { formatToolArgsFull, formatToolArgsWithMetadata } from '../../lib/formatToolArgs'
 import { useSessionStore, type PendingPathConfirmation } from '../../stores/session'
@@ -282,6 +283,11 @@ export const ToolCallDisplay = memo(function ToolCallDisplay({
             <DevServerView result={result} action={String(args.action ?? '')} />
           )}
 
+          {/* Specialized rendering for worktree */}
+          {tool === 'worktree' && status === 'success' && result && (
+            <WorktreeView result={result} action={String(args.action ?? '')} />
+          )}
+
           {/* Specialized rendering for background_process */}
           {tool === 'background_process' && status === 'success' && result && (
             <BackgroundProcessView result={result} action={String(args.action ?? '')} />
@@ -312,6 +318,7 @@ export const ToolCallDisplay = memo(function ToolCallDisplay({
             tool !== 'web_fetch' &&
             tool !== 'trace_code' &&
             tool !== 'dev_server' &&
+            tool !== 'worktree' &&
             tool !== 'background_process' &&
             tool !== 'mcp_config' &&
             tool !== 'step_done' && (
