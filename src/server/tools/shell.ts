@@ -1,6 +1,7 @@
 import { spawn } from 'node:child_process'
 import { resolve, isAbsolute } from 'node:path'
 import { access } from 'node:fs/promises'
+import stripAnsi from 'strip-ansi'
 import { OUTPUT_LIMITS } from './types.js'
 import { createTool } from './tool-helpers.js'
 import { checkAborted, spawnShellProcess } from '../utils/shell.js'
@@ -136,14 +137,18 @@ export const runCommandTool = createTool<RunCommandArgs>(
       output = tailed.join('\n')
     }
 
+    // Strip ANSI escape sequences before measuring limits so colored output
+    // (e.g. from npm test) doesn't consume the byte/line budget invisibly.
+    const visible = stripAnsi(output)
+
     let truncated = false
-    if (output.length > OUTPUT_LIMITS.run_command.maxBytes) {
+    if (visible.length > OUTPUT_LIMITS.run_command.maxBytes) {
       output = output.slice(0, OUTPUT_LIMITS.run_command.maxBytes)
       output += '\n\n[Output truncated due to size limit]'
       truncated = true
     }
 
-    const linesCount = output.split('\n').length
+    const linesCount = visible.split('\n').length
     if (linesCount > OUTPUT_LIMITS.run_command.maxLines) {
       const limitedLines = output.split('\n').slice(0, OUTPUT_LIMITS.run_command.maxLines)
       output = limitedLines.join('\n')
