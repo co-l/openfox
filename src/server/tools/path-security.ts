@@ -221,6 +221,16 @@ function looksLikeRegex(str: string): boolean {
   return /[*?+[\]\\]/.test(str)
 }
 
+/** Evaluated at call time so tests can stub process.platform. */
+const isWindows = () => process.platform === 'win32'
+
+/**
+ * Check if a string is a Windows drive-letter absolute path (C:\... or C:/...).
+ */
+function isWindowsAbsolutePath(str: string): boolean {
+  return /^[A-Za-z]:[\\/]/.test(str)
+}
+
 /**
  * Check if a string is a placeholder marker left by sanitization.
  * These are not real paths and should be skipped.
@@ -306,7 +316,12 @@ export function extractAbsolutePathsFromCommand(command: string): string[] {
     }
 
     // Check for absolute path
-    if (content.startsWith('/')) {
+    if (isWindowsAbsolutePath(content)) {
+      const resolved = normalize(content)
+      if (!isSafePath(resolved)) {
+        paths.push(resolved)
+      }
+    } else if (!isWindows() && content.startsWith('/')) {
       const resolved = normalize(content)
       if (!isSafePath(resolved)) {
         paths.push(resolved)
@@ -326,21 +341,37 @@ export function extractAbsolutePathsFromCommand(command: string): string[] {
   // Pattern 3: Unquoted absolute paths
   // Strategy: boundary + broad character class + predicate pipeline.
   // Each predicate is a small, named function with a single responsibility.
-  const absolutePattern = /(?:^|[\s=(])(\/[^\s"'|&;<>`()]+)/g
-  while ((match = absolutePattern.exec(sanitized)) !== null) {
-    const candidate = match[1]!
+  if (isWindows()) {
+    // On Windows (cmd.exe), "/token" is a command switch (dir /s, findstr /i),
+    // not a path. Only drive-letter paths (C:\... or C:/...) are absolute paths.
+    // looksLikeRegex is skipped: backslashes are separators here, and the
+    // drive-letter prefix is diagnostic enough.
+    const winAbsolutePattern = /(?:^|[\s=(])([A-Za-z]:[\\/][^\s"'|&;<>`()]+)/g
+    while ((match = winAbsolutePattern.exec(sanitized)) !== null) {
+      const candidate = match[1]!
+      if (isPlaceholderToken(candidate)) continue
+      const resolved = normalize(candidate)
+      if (!isSafePath(resolved)) {
+        paths.push(resolved)
+      }
+    }
+  } else {
+    const absolutePattern = /(?:^|[\s=(])(\/[^\s"'|&;<>`()]+)/g
+    while ((match = absolutePattern.exec(sanitized)) !== null) {
+      const candidate = match[1]!
 
-    // Skip placeholder markers left by sanitization
-    if (isPlaceholderToken(candidate)) continue
+      // Skip placeholder markers left by sanitization
+      if (isPlaceholderToken(candidate)) continue
 
-    // Skip if it looks like a regex pattern with metacharacters
-    if (looksLikeRegex(candidate)) continue
+      // Skip if it looks like a regex pattern with metacharacters
+      if (looksLikeRegex(candidate)) continue
 
-    const resolved = normalize(candidate)
-    // Skip root or empty (e.g. "//" comment lines normalize to "/")
-    if (resolved === '/' || resolved === '') continue
-    if (!isSafePath(resolved)) {
-      paths.push(resolved)
+      const resolved = normalize(candidate)
+      // Skip root or empty (e.g. "//" comment lines normalize to "/")
+      if (resolved === '/' || resolved === '') continue
+      if (!isSafePath(resolved)) {
+        paths.push(resolved)
+      }
     }
   }
 

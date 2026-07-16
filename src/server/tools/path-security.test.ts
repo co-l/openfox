@@ -36,8 +36,16 @@ let CANONICAL_PASSWD: string
 let CANONICAL_VAR_LOG_SYSLOG: string
 let CANONICAL_ETC_ENV: string
 
+const REAL_PLATFORM = process.platform
+
+/** Pin process.platform so platform-dependent extraction logic is deterministic. */
+function mockPlatform(platform: NodeJS.Platform): void {
+  Object.defineProperty(process, 'platform', { value: platform, configurable: true })
+}
+
 describe('path-security', () => {
   beforeEach(async () => {
+    mockPlatform('linux')
     CANONICAL_TMP = await realpath(tmpdir())
     CANONICAL_PASSWD = await realpath('/etc/passwd')
     CANONICAL_VAR_LOG_SYSLOG = join(await realpath('/var'), 'log', 'syslog')
@@ -52,6 +60,7 @@ describe('path-security', () => {
   })
 
   afterEach(async () => {
+    mockPlatform(REAL_PLATFORM)
     // Cleanup
     await rm(TEST_DIR, { recursive: true, force: true })
   })
@@ -1498,5 +1507,57 @@ describe('path-security', () => {
       expect(onEvent).not.toHaveBeenCalled()
       expect(hasPendingPathConfirmation('call-sub-cmd-normal')).toBe(false)
     })
+  })
+})
+
+// Standalone: no fs fixtures needed, so it runs on any host (the main suite's
+// fixtures assume Unix paths like /etc/passwd).
+describe('extractAbsolutePathsFromCommand on Windows (cmd.exe shell)', () => {
+  beforeEach(() => {
+    mockPlatform('win32')
+  })
+
+  afterEach(() => {
+    mockPlatform(REAL_PLATFORM)
+  })
+
+  it('treats /tokens as cmd switches, not paths', () => {
+    expect(extractAbsolutePathsFromCommand('dir /s /b')).toEqual([])
+    expect(extractAbsolutePathsFromCommand('findstr /i /n "error" log.txt')).toEqual([])
+  })
+
+  it('extracts drive-letter absolute paths (the pre-fix security gap)', () => {
+    const paths = extractAbsolutePathsFromCommand('type C:\\secrets\\creds.txt')
+    expect(paths).toEqual(['C:\\secrets\\creds.txt'])
+  })
+
+  it('extracts drive-letter paths written with forward slashes', () => {
+    const paths = extractAbsolutePathsFromCommand('type C:/secrets/creds.txt')
+    expect(paths).toHaveLength(1)
+    // normalize() separator conversion depends on the host platform
+    expect(paths[0]).toMatch(/^C:[\\/]secrets[\\/]creds\.txt$/)
+  })
+
+  it('extracts quoted drive-letter paths with spaces', () => {
+    const paths = extractAbsolutePathsFromCommand('type "C:\\path with spaces\\file.txt"')
+    expect(paths).toEqual(['C:\\path with spaces\\file.txt'])
+  })
+
+  it('extracts the path but not the switches in a mixed command', () => {
+    expect(extractAbsolutePathsFromCommand('dir /s C:\\projects')).toEqual(['C:\\projects'])
+  })
+
+  it('deduplicates and handles multiple drive paths', () => {
+    const paths = extractAbsolutePathsFromCommand('copy D:\\a.txt E:\\b.txt & type D:\\a.txt')
+    expect(paths).toEqual(['D:\\a.txt', 'E:\\b.txt'])
+  })
+
+  it('does not extract unix-style quoted strings', () => {
+    expect(extractAbsolutePathsFromCommand('echo "/etc/passwd"')).toEqual([])
+  })
+
+  it('still expands tilde paths', () => {
+    const paths = extractAbsolutePathsFromCommand('cat ~/file.txt')
+    expect(paths).toContain(join(homedir(), 'file.txt'))
   })
 })
