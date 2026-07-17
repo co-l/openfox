@@ -694,6 +694,42 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
     res.json({ success: true })
   })
 
+  app.put('/api/sessions/:id/metadata/:key', async (req, res) => {
+    const sessionId = req.params.id
+    const key = req.params.key
+    const session = sessionManager.getSession(sessionId)
+    if (!session) {
+      return res.status(404).json({ error: 'Session not found' })
+    }
+
+    const { entries } = req.body
+    if (!Array.isArray(entries)) {
+      return res.status(400).json({ error: 'entries is required and must be an array' })
+    }
+
+    for (let i = 0; i < entries.length; i++) {
+      const c = entries[i]
+      if (c === null || typeof c !== 'object' || Array.isArray(c)) {
+        return res.status(400).json({ error: `entries[${i}] must be an object` })
+      }
+      if (c.description !== undefined && typeof c.description !== 'string') {
+        return res.status(400).json({ error: `entries[${i}].description must be a string` })
+      }
+      if (c.status !== undefined && typeof c.status !== 'string') {
+        return res.status(400).json({ error: `entries[${i}].status must be a string` })
+      }
+    }
+
+    const mapped = entries.map((c: { id?: string; description?: string; status?: string; [key: string]: unknown }, i: number) => ({
+      ...c,
+      id: c.id != null ? String(c.id) : String(i),
+      description: c.description ?? '',
+      status: c.status ?? 'open',
+    }))
+    sessionManager.setMetadataEntries(sessionId, key, mapped)
+    res.json({ success: true })
+  })
+
   // Session mode (REST)
   app.put('/api/sessions/:id/mode', async (req, res) => {
     const { getEventStore } = await import('./events/index.js')

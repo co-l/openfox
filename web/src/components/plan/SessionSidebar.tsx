@@ -5,6 +5,7 @@ import { useConfigStore } from '../../stores/config'
 import { useSessionStore } from '../../stores/session'
 import { authFetch } from '../../lib/api'
 import { formatTime, formatSpeed } from '../../lib/format-stats'
+import { formatMetadataKeyLabel } from '../../lib/metadata-keys'
 import { StatsModal } from './StatsModal'
 import { MetadataEntries, MetadataSectionHeader } from '../shared/MetadataEntries'
 import { CriteriaEditor } from './CriteriaEditor'
@@ -84,25 +85,36 @@ export function SessionSidebar({ messages, workdir }: SessionSidebarProps) {
         <div className="mt-4">
           <MetadataSectionHeader entries={session?.metadataEntries?.['criteria'] ?? []} title="Acceptance Criteria" />
           {session && <CriteriaEditor entries={session?.metadataEntries?.['criteria'] ?? []} sessionId={session.id} />}
-          {session && (session.metadataEntries?.['review_findings']?.length ?? 0) > 0 && (
-            <div className="mt-6">
-              <MetadataSectionHeader entries={session.metadataEntries!['review_findings']!} title="Review Findings" />
-              <MetadataEntries
-                entries={session.metadataEntries!['review_findings']!}
-                onClearAll={async () => {
-                  try {
-                    await authFetch(`/api/sessions/${session.id}/review-findings`, {
-                      method: 'PUT',
-                      headers: { 'Content-Type': 'application/json' },
-                      body: JSON.stringify({ review_findings: [] }),
-                    })
-                  } catch (e) {
-                    console.error('Failed to clear review findings:', e)
-                  }
-                }}
-              />
-            </div>
-          )}
+          {session &&
+            (() => {
+              const knownOrder = ['review_findings', 'todos']
+              const all = session.metadataEntries ?? {}
+              const known = knownOrder.filter((k) => k in all)
+              const unknown = Object.keys(all)
+                .filter((k) => k !== 'criteria' && !knownOrder.includes(k))
+                .sort()
+              return [...known, ...unknown]
+                .filter((key) => (all[key]?.length ?? 0) > 0)
+                .map((key) => (
+                  <div key={key} className="mt-6">
+                    <MetadataSectionHeader entries={all[key]!} title={formatMetadataKeyLabel(key)} />
+                    <MetadataEntries
+                      entries={all[key]!}
+                      onClearAll={async () => {
+                        try {
+                          await authFetch(`/api/sessions/${session.id}/metadata/${key}`, {
+                            method: 'PUT',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ entries: [] }),
+                          })
+                        } catch (e) {
+                          console.error(`Failed to clear ${key}:`, e)
+                        }
+                      }}
+                    />
+                  </div>
+                ))
+            })()}
         </div>
       </div>
 

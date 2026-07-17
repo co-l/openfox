@@ -1,5 +1,6 @@
 import { memo } from 'react'
 import { ToolIcon } from './ToolIcon'
+import { formatMetadataKeyLabelLower } from '../../lib/metadata-keys'
 
 interface ToolCallPreparingProps {
   name: string
@@ -20,11 +21,6 @@ const toolDescriptions: Record<string, string> = {
   todo_write: 'Updating tasks',
 }
 
-const metadataKeyLabels: Record<string, string> = {
-  criteria: 'criteria',
-  review_findings: 'review findings',
-  todos: 'tasks',
-}
 
 function getToolDescription(name: string, args?: string): string {
   const base = toolDescriptions[name]
@@ -34,7 +30,7 @@ function getToolDescription(name: string, args?: string): string {
       const parsed = JSON.parse(args)
       const key = parsed.key as string | undefined
       if (key) {
-        const label = metadataKeyLabels[key] ?? key
+        const label = formatMetadataKeyLabelLower(key)
         return `${base} ${label}`
       }
     } catch {

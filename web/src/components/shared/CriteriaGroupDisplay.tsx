@@ -2,6 +2,7 @@ import { memo } from 'react'
 import type { ToolCall, MetadataEntry } from '@shared/types.js'
 import { Markdown } from './Markdown'
 import { MetadataStatusIcon } from './MetadataStatusIcon'
+import { formatMetadataKeyLabel } from '../../lib/metadata-keys'
 
 interface CriteriaGroupDisplayProps {
   toolCalls: ToolCall[]
@@ -40,18 +41,12 @@ export const CriteriaGroupDisplay = memo(function CriteriaGroupDisplay({
 
   const isSessionMetadata = toolCalls.some((tc) => tc.name === 'session_metadata')
 
-  const metadataKeyLabels: Record<string, string> = {
-    criteria: 'Acceptance Criteria',
-    review_findings: 'Review Findings',
-    todos: 'Tasks',
-  }
-
   const headerTitle = (() => {
     if (!isSessionMetadata) return 'Acceptance Criteria'
     const keys = new Set(toolCalls.map((tc) => tc.arguments['key'] as string | undefined).filter(Boolean))
     if (keys.size === 1) {
       const key = keys.values().next().value
-      return key ? (metadataKeyLabels[key] ?? key) : 'Session Data'
+      return key ? formatMetadataKeyLabel(key) : 'Session Data'
     }
     return 'Session Data'
   })()

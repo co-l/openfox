@@ -275,4 +275,130 @@ describe('Session REST API', () => {
       expect(listData.sessions).toEqual([])
     })
   })
+
+  describe('PUT /api/sessions/:id/metadata/:key', () => {
+    let sessionId: string
+
+    beforeEach(async () => {
+      const res = await fetch(`${server.url}/api/sessions`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ projectId, title: 'Metadata Test' }),
+      })
+      const data: any = await res.json()
+      sessionId = data.session.id
+    })
+
+    it('sets entries for an arbitrary key', async () => {
+      const res = await fetch(`${server.url}/api/sessions/${sessionId}/metadata/qa_findings`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          entries: [{ id: '0', description: 'Login button broken', status: 'open' }],
+        }),
+      })
+      expect(res.status).toBe(200)
+      const data: any = await res.json()
+      expect(data.success).toBe(true)
+
+      const getRes = await fetch(`${server.url}/api/sessions/${sessionId}`)
+      const sessionData: any = await getRes.json()
+      const entries = sessionData.session.metadataEntries?.['qa_findings'] ?? []
+      expect(entries).toHaveLength(1)
+      expect(entries[0].description).toBe('Login button broken')
+    })
+
+    it('clears entries when passed an empty array', async () => {
+      await fetch(`${server.url}/api/sessions/${sessionId}/metadata/qa_findings`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          entries: [{ id: '0', description: 'Some finding', status: 'open' }],
+        }),
+      })
+
+      const clearRes = await fetch(`${server.url}/api/sessions/${sessionId}/metadata/qa_findings`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ entries: [] }),
+      })
+      expect(clearRes.status).toBe(200)
+
+      const getRes = await fetch(`${server.url}/api/sessions/${sessionId}`)
+      const sessionData: any = await getRes.json()
+      const entries = sessionData.session.metadataEntries?.['qa_findings'] ?? []
+      expect(entries).toHaveLength(0)
+    })
+
+    it('preserves additional fields on entries', async () => {
+      const res = await fetch(`${server.url}/api/sessions/${sessionId}/metadata/qa_findings`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          entries: [{ id: '0', description: 'Bug', status: 'open', severity: 'high', file: 'src/foo.ts' }],
+        }),
+      })
+      expect(res.status).toBe(200)
+
+      const getRes = await fetch(`${server.url}/api/sessions/${sessionId}`)
+      const sessionData: any = await getRes.json()
+      const entry = sessionData.session.metadataEntries?.['qa_findings']?.[0]
+      expect(entry?.severity).toBe('high')
+      expect(entry?.file).toBe('src/foo.ts')
+    })
+
+    it('returns 404 for unknown session', async () => {
+      const res = await fetch(`${server.url}/api/sessions/nonexistent/metadata/qa_findings`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ entries: [] }),
+      })
+      expect(res.status).toBe(404)
+    })
+
+    it('returns 400 when entries is not an array', async () => {
+      const res = await fetch(`${server.url}/api/sessions/${sessionId}/metadata/qa_findings`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ entries: 'not-an-array' }),
+      })
+      expect(res.status).toBe(400)
+    })
+
+    it('returns 400 when an entry is null', async () => {
+      const res = await fetch(`${server.url}/api/sessions/${sessionId}/metadata/qa_findings`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ entries: [null] }),
+      })
+      expect(res.status).toBe(400)
+    })
+
+    it('returns 400 when an entry is a primitive', async () => {
+      const res = await fetch(`${server.url}/api/sessions/${sessionId}/metadata/qa_findings`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ entries: [42] }),
+      })
+      expect(res.status).toBe(400)
+    })
+
+    it('returns 400 when description is not a string', async () => {
+      const res = await fetch(`${server.url}/api/sessions/${sessionId}/metadata/qa_findings`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ entries: [{ description: 42, status: 'open' }] }),
+      })
+      expect(res.status).toBe(400)
+    })
+
+    it('returns 400 when status is not a string', async () => {
+      const res = await fetch(`${server.url}/api/sessions/${sessionId}/metadata/qa_findings`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ entries: [{ description: 'Bug', status: {} }] }),
+      })
+      expect(res.status).toBe(400)
+    })
+  })
 })
