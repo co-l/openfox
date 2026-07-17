@@ -263,9 +263,9 @@ export function extractAbsolutePathsFromCommand(command: string): string[] {
 
   // Strip sed substitution patterns to avoid false positives from regex replacements
   // Handles: s/pattern/replacement/flags and s|pattern|replacement|flags etc.
-  sanitized = sanitized.replace(/s\/[^/]*\/[^/]*\/[gip]*/g, ' __SED__ ')
-  sanitized = sanitized.replace(/s\|[^|]*\|[^|]*\|[gip]*/g, ' __SED__ ')
-  sanitized = sanitized.replace(/s:[^:]*:[^:]*:[gip]*/g, ' __SED__ ')
+  sanitized = sanitized.replace(/(?<!\w)s\/[^/]*\/[^/]*\/[gip]*/g, ' __SED__ ')
+  sanitized = sanitized.replace(/(?<!\w)s\|[^|]*\|[^|]*\|[gip]*/g, ' __SED__ ')
+  sanitized = sanitized.replace(/(?<!\w)s:[^:]*:[^:]*:[gip]*/g, ' __SED__ ')
 
   // Strip git commit -m/--message content to avoid treating commit message
   // text as file paths (e.g. "/api/auto-update" in a commit message).
