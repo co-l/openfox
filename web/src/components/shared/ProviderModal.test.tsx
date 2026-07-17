@@ -305,4 +305,71 @@ describe('ProviderModal - thinkingLevel persistence', () => {
       }),
     )
   })
+
+  it.each([
+    ['Ollama', 'ollama'],
+    ['Other', 'unknown'],
+  ])('clears preset adapters when switching to %s', async (engineName, expectedBackend) => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input)
+        if (url.includes('/api/provider-presets')) {
+          return new Response(
+            JSON.stringify({
+              presets: [
+                {
+                  id: 'account-provider',
+                  name: 'Account Provider',
+                  defaults: {
+                    name: 'Account Provider',
+                    url: 'https://provider.example/api',
+                    backend: 'openai',
+                  },
+                  authAdapter: 'account-auth',
+                  transportAdapter: 'custom-transport',
+                },
+              ],
+            }),
+            { status: 200 },
+          )
+        }
+        if (url.includes('/api/providers/models')) {
+          return new Response(JSON.stringify({ models: [], url: 'http://localhost:11434' }), { status: 200 })
+        }
+        return new Response(JSON.stringify({}), { status: 200 })
+      }),
+    )
+
+    await new Promise<void>((resolve) => {
+      root.render(
+        <ProviderModal isOpen={true} onClose={vi.fn()} onSave={onSaveMock as (provider: ProviderFormData) => void} />,
+      )
+      setTimeout(resolve, 100)
+    })
+
+    const buttonByText = (text: string) =>
+      Array.from(container.querySelectorAll('button')).find((button) => button.textContent?.trim() === text) as
+        | HTMLButtonElement
+        | undefined
+
+    buttonByText('Account Provider')?.click()
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    buttonByText(engineName)?.click()
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    const nextButton = container.querySelector('[data-testid="provider-modal-next"]') as HTMLButtonElement | null
+    expect(nextButton?.disabled).toBe(false)
+    nextButton?.click()
+    await new Promise((resolve) => setTimeout(resolve, 50))
+
+    const saveButton = container.querySelector('[data-testid="provider-modal-save"]') as HTMLButtonElement | null
+    saveButton?.click()
+
+    expect(onSaveMock).toHaveBeenCalledTimes(1)
+    const savedData: ProviderFormData = onSaveMock.mock.calls[0]![0]!
+    expect(savedData.backend).toBe(expectedBackend)
+    expect(savedData.authAdapter).toBeUndefined()
+    expect(savedData.transportAdapter).toBeUndefined()
+  })
 })
