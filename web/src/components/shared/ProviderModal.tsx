@@ -814,7 +814,7 @@ export function ProviderModal({
       url: formUrl,
       backend: (formBackend || 'unknown') as Backend,
       apiKey: formApiKey || undefined,
-      isLocal: formIsLocal || undefined,
+      isLocal: formIsLocal,
       thinkingField: thinkingField || undefined,
       authAdapter: formAuthAdapter,
       transportAdapter: formTransportAdapter,
