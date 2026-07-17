@@ -47,13 +47,14 @@ export async function processFile(
       }
 
       onAddAttachment(attachment)
-    } else if (isImageMime(file.type)) {
+    } else if (isImageMime(file.type) || isPdfType(file.type)) {
       if (file.size > MAX_FILE_SIZE) {
-        onError(`Image file too large (${formatFileSize(file.size)}). Maximum size is ${formatFileSize(MAX_FILE_SIZE)}.`)
+        const label = isImageMime(file.type) ? 'Image' : 'PDF'
+        onError(`${label} file too large (${formatFileSize(file.size)}). Maximum is ${formatFileSize(MAX_FILE_SIZE)}.`)
         return
       }
 
-      if (isCompressibleImage(file)) {
+      if (isImageMime(file.type) && isCompressibleImage(file)) {
         const compressed = await compressImage(file, {
           maxWidth: 1920,
           maxHeight: 1920,
@@ -83,25 +84,10 @@ export async function processFile(
 
         onAddAttachment(attachment)
       }
-    } else if (isPdfType(file.type)) {
-      if (file.size > MAX_FILE_SIZE) {
-        onError(`PDF file too large (${formatFileSize(file.size)}). Maximum is ${formatFileSize(MAX_FILE_SIZE)}.`)
-        return
-      }
-
-      const dataUrl = await readFileAsDataUrl(file)
-
-      const attachment: Attachment = {
-        id: generateUUID(),
-        filename: file.name || 'unnamed-file',
-        mimeType: file.type,
-        size: file.size,
-        data: dataUrl,
-      }
-
-      onAddAttachment(attachment)
     } else {
-      onError(`Unsupported file type: ${file.type}. Supported types: images (PNG, JPG, GIF, WebP, BMP, SVG), PDF, text files, JSON, XML, YAML, and other common text-based formats.`)
+      onError(
+        `Unsupported file type: ${file.type}. Supported types: images (PNG, JPG, GIF, WebP, BMP, SVG), PDF, text files, JSON, XML, YAML, and other common text-based formats.`,
+      )
     }
   } catch (err) {
     const errorMsg = err instanceof Error ? (err.message ?? 'Failed to process file') : 'Failed to process file'
