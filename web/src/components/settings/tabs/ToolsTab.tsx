@@ -80,8 +80,7 @@ function McpServerFormFields({ formData, onChange }: McpServerFormFieldsProps) {
             label="Arguments"
             value={formData.args}
             onChange={(v) => onChange({ ...formData, args: v })}
-            placeholder="one arg per line"
-          />
+            placeholder="space-separated args" />
           <div>
             <label className="block text-xs text-text-secondary mb-1">
               Environment variables <span className="text-text-muted">(KEY=VALUE, one per line)</span>
@@ -346,7 +345,7 @@ export function ToolsTab() {
 
       if (formData.transport === 'stdio') {
         body.command = formData.command
-        const args = formData.args ? formData.args.split('\n').filter(Boolean) : undefined
+        const args = formData.args ? formData.args.split(' ').filter(Boolean) : undefined
         if (args && args.length > 0) body.args = args
         const env = parseKeyValueLines(formData.env)
         if (Object.keys(env).length > 0) body.env = env
@@ -380,7 +379,7 @@ export function ToolsTab() {
       name: server.name,
       transport: server.config.transport as 'stdio' | 'http',
       command: server.config.command ?? '',
-      args: server.config.args?.join('\n') ?? '',
+      args: server.config.args?.join(' ') ?? '',
       env: server.config.env
         ? Object.entries(server.config.env)
             .map(([k, v]) => `${k}=${v}`)
@@ -413,7 +412,7 @@ export function ToolsTab() {
 
       if (formData.transport === 'stdio') {
         body.command = formData.command
-        body.args = formData.args ? formData.args.split('\n').filter(Boolean) : []
+        body.args = formData.args ? formData.args.split(' ').filter(Boolean) : []
         body.env = parseKeyValueLines(formData.env)
       } else {
         body.url = formData.url
