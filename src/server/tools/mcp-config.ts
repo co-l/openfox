@@ -223,18 +223,19 @@ export const mcpConfigTool: Tool = createTool<McpConfigArgs>(
         ...(args.headers !== undefined ? { headers: args.headers } : {}),
       }
 
-      const { serverCfg, error: updateError } = await applyMcpServerUpdate({
+      const { error: updateError } = await applyMcpServerUpdate({
         name: args.name,
         patch,
         existing,
         persistedCfg: mcpServers[args.name],
         mcpManager: mcpManagerForTools,
+        save: async (cfg) => {
+          mcpServers[args.name!] = cfg
+          await saveGlobalConfig(mcpConfigMode, { ...globalConfig, mcpServers }, mcpConfigPath)
+        },
       })
 
       if (updateError) return helpers.error(updateError)
-
-      mcpServers[args.name] = serverCfg
-      await saveGlobalConfig(mcpConfigMode, { ...globalConfig, mcpServers }, mcpConfigPath)
       await rebuildTools()
       notifyContextChanged(context.sessionId)
 

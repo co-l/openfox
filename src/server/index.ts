@@ -1892,20 +1892,21 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
         ...(headers !== undefined ? { headers: headers as Record<string, string> } : {}),
       }
 
-      const { serverCfg, error: updateError } = await applyMcpServerUpdate({
+      const { error: updateError } = await applyMcpServerUpdate({
         name,
         patch,
         existing,
         persistedCfg: mcpServers[name],
         mcpManager,
+        save: async (cfg) => {
+          mcpServers[name] = cfg
+          await saveGlobalConfig(config.mode ?? 'production', { ...globalConfig, mcpServers }, config.globalConfigPath)
+        },
       })
 
       if (updateError) {
         return res.status(400).json({ error: updateError })
       }
-
-      mcpServers[name] = serverCfg
-      await saveGlobalConfig(config.mode ?? 'production', { ...globalConfig, mcpServers }, config.globalConfigPath)
 
       await rebuildMcpTools()
       const sessions = sessionManager.listSessions()

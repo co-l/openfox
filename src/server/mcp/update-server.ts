@@ -16,11 +16,7 @@ export interface ApplyMcpServerUpdateOptions {
   existing: McpServerState
   persistedCfg: McpServerConfig | undefined
   mcpManager: McpManager
-}
-
-export interface ApplyMcpServerUpdateResult {
-  serverCfg: McpServerConfig
-  error?: string
+  save: (serverCfg: McpServerConfig) => Promise<void>
 }
 
 export function buildUpdatedServerConfig(
@@ -60,7 +56,7 @@ export function buildUpdatedServerConfig(
 }
 
 export async function applyMcpServerUpdate(options: ApplyMcpServerUpdateOptions): Promise<{ serverCfg: McpServerConfig; error?: string }> {
-  const { name, patch, existing, persistedCfg, mcpManager } = options
+  const { name, patch, existing, persistedCfg, mcpManager, save } = options
 
   const { serverCfg, error } = buildUpdatedServerConfig(patch, existing, persistedCfg)
   if (error) return { serverCfg: {} as McpServerConfig, error }
@@ -71,6 +67,14 @@ export async function applyMcpServerUpdate(options: ApplyMcpServerUpdateOptions)
   } catch (addError) {
     await mcpManager.addServer(name, existing.config)
     throw addError
+  }
+
+  try {
+    await save(serverCfg)
+  } catch (saveError) {
+    mcpManager.removeServer(name)
+    await mcpManager.addServer(name, existing.config)
+    throw saveError
   }
 
   return { serverCfg }

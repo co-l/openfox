@@ -18,7 +18,7 @@ function parseKeyValueLines(text: string): Record<string, string> {
     .forEach((line) => {
       const eqIdx = line.indexOf('=')
       if (eqIdx > 0) {
-        result[line.slice(0, eqIdx).trim()] = line.slice(eqIdx + 1)
+        result[line.slice(0, eqIdx).trim()] = line.slice(eqIdx + 1).trim()
       }
     })
   return result
@@ -289,6 +289,7 @@ export function ToolsTab() {
     headers: '',
   })
   const [formError, setFormError] = useState('')
+  const [mcpError, setMcpError] = useState('')
   const [saving, setSaving] = useState(false)
   const { requestDelete, clearConfirm, isConfirming } = useConfirmDialog()
 
@@ -440,17 +441,22 @@ export function ToolsTab() {
 
   const handleRemove = async (name: string) => {
     try {
-      await authFetch(`/api/mcp/servers/${encodeURIComponent(name)}`, { method: 'DELETE' })
+      const res = await authFetch(`/api/mcp/servers/${encodeURIComponent(name)}`, { method: 'DELETE' })
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}))
+        throw new Error((data as { error?: string }).error ?? 'Failed to remove server')
+      }
       clearConfirm()
+      setMcpError('')
       await loadServers()
-    } catch {
-      /* ignore */
+    } catch (err) {
+      setMcpError(err instanceof Error ? err.message : String(err))
     }
   }
 
   const handleToggleTool = async (serverName: string, toolName: string, enabled: boolean) => {
     try {
-      await authFetch(
+      const res = await authFetch(
         `/api/mcp/servers/${encodeURIComponent(serverName)}/tools/${encodeURIComponent(toolName)}`,
         {
           method: 'PUT',
@@ -458,9 +464,14 @@ export function ToolsTab() {
           body: JSON.stringify({ enabled }),
         },
       )
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}))
+        throw new Error((data as { error?: string }).error ?? 'Failed to toggle tool')
+      }
+      setMcpError('')
       await loadServers()
-    } catch {
-      /* ignore */
+    } catch (err) {
+      setMcpError(err instanceof Error ? err.message : String(err))
     }
   }
 
@@ -632,6 +643,7 @@ export function ToolsTab() {
         <p className="text-sm text-text-muted mb-3">
           MCP servers provide external tools that extend OpenFox's capabilities.
         </p>
+        {mcpError && <ErrorBanner message={mcpError} />}
 
         <CRUDListView
           loading={loading}
@@ -814,7 +826,7 @@ export function ToolsTab() {
 
         {editingServer !== null && (
           <Modal
-            isOpen={editingServer !== null}
+            isOpen
             onClose={() => {
               setEditingServer(null)
               setFormError('')
