@@ -1876,7 +1876,7 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
       return res.status(400).json({ error: 'headers must be a string/string object' })
     }
 
-    const resolvedTransport: 'stdio' | 'http' = rawTransport === 'http' ? 'http' : (existing.config.transport ?? 'stdio')
+    const resolvedTransport: 'stdio' | 'http' = rawTransport !== undefined ? (rawTransport as 'stdio' | 'http') : (existing.config.transport ?? 'stdio')
     const transportChanged = resolvedTransport !== existing.config.transport
 
     const mergedCommand = (command as string | undefined) ?? (transportChanged ? undefined : existing.config.command)
