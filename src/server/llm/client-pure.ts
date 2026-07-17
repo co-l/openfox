@@ -161,7 +161,7 @@ async function convertAttachment(
   if (attachment.description) {
     return {
       type: 'text',
-      text: attachment.description,
+      text: `[Image: ${attachment.filename || 'image'} - description: ${attachment.description}]`,
     }
   }
 

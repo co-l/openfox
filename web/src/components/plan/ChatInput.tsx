@@ -231,18 +231,26 @@ export function ChatInput({
     }
   }
 
+  async function processFiles(
+    files: FileList,
+    setAttachments: Dispatch<SetStateAction<Attachment[]>>,
+    setErrorMessage: (msg: string | null) => void,
+  ): Promise<void> {
+    const added: Attachment[] = []
+    for (const file of Array.from(files)) {
+      await processFile(file, (att) => added.push(att), setErrorMessage)
+    }
+    if (added.length > 0) {
+      setAttachments((prev) => [...prev, ...added])
+    }
+  }
+
   const handleFileSelect = useCallback(
     async (e: React.ChangeEvent<HTMLInputElement>) => {
       const files = e.target.files
       if (!files || files.length === 0) return
       setErrorMessage(null)
-      const added: Attachment[] = []
-      for (const file of Array.from(files)) {
-        await processFile(file, (att) => added.push(att), setErrorMessage)
-      }
-      if (added.length > 0) {
-        setAttachments((prev) => [...prev, ...added])
-      }
+      await processFiles(files, setAttachments, setErrorMessage)
       if (fileInputRef.current) {
         fileInputRef.current.value = ''
       }
@@ -277,13 +285,7 @@ export function ChatInput({
       setErrorMessage(null)
       const files = e.dataTransfer.files
       if (!files || files.length === 0) return
-      const added: Attachment[] = []
-      for (const file of Array.from(files)) {
-        await processFile(file, (att) => added.push(att), setErrorMessage)
-      }
-      if (added.length > 0) {
-        setAttachments((prev) => [...prev, ...added])
-      }
+      await processFiles(files, setAttachments, setErrorMessage)
     },
     [setAttachments, setDragOver, setErrorMessage],
   )
