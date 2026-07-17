@@ -1172,7 +1172,6 @@ async function handleClientMessage(
         sessionId,
         llmClient: llmForSession(sessionId),
         statsIdentity: statsForSession(sessionId),
-        injectWorkflowKickoff: !hasUserMessage,
         ...(launchPayload?.workflowId ? { workflowId: launchPayload.workflowId } : {}),
         ...(launchPayload?.subGroup ? { subGroup: launchPayload.subGroup } : {}),
         ...(hasUserMessage

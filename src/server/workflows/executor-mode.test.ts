@@ -37,7 +37,6 @@ vi.mock('../chat/orchestrator.js', () => ({
     },
   ),
   createMessageStartEvent: vi.fn(() => ({ type: 'message.start', data: {} })),
-  injectWorkflowKickoffIfNeeded: vi.fn(),
   TurnMetrics: class TurnMetrics {
     start = vi.fn()
     end = vi.fn()

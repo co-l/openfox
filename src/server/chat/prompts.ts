@@ -277,9 +277,6 @@ export function buildAgentSmallReminder(name: string): string {
 // Utility Prompts
 // ============================================================================
 
-export const WORKFLOW_KICKOFF_PROMPT = (criteriaCount: number) =>
-  `Implement the task and make sure you fulfil the ${criteriaCount} criteria.`
-
 export const VERIFIER_KICKOFF_PROMPT =
   'Verify each criterion marked [NEEDS VERIFICATION]. Read the code, run tests if applicable, then call criterion with action "pass" or "fail" for each.'
 

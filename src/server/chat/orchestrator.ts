@@ -19,7 +19,7 @@ import { getEventStore, getCurrentContextWindowId, getCurrentWindowMessageOption
 import { buildSnapshotFromSessionState } from '../events/folding.js'
 import type { SessionManager } from '../session/index.js'
 import { getToolRegistryForAgent, PathAccessDeniedError } from '../tools/index.js'
-import { WORKFLOW_KICKOFF_PROMPT, buildAgentReminder, buildAgentSmallReminder } from './prompts.js'
+import { buildAgentReminder, buildAgentSmallReminder } from './prompts.js'
 import {
   TurnMetrics,
   createMessageStartEvent,
@@ -408,41 +408,6 @@ export async function runAgentTurn(
 // ============================================================================
 // Shared Helpers
 // ============================================================================
-
-/**
- * Inject a workflow kickoff prompt if one hasn't been injected yet.
- * Used by both runChatTurn (workflow mode) and executeWorkflow (agent steps).
- */
-export function injectWorkflowKickoffIfNeeded(
-  sessionManager: SessionManager,
-  sessionId: string,
-  eventStore: ReturnType<typeof getEventStore>,
-): void {
-  const session = sessionManager.requireSession(sessionId)
-  const currentWindowMessageOptions = getCurrentContextWindowId(sessionId)
-    ? { contextWindowId: getCurrentContextWindowId(sessionId)! }
-    : undefined
-  const events = eventStore.getEvents(sessionId)
-  const hasKickoff = events.some((e) => {
-    if (e.type !== 'message.start') return false
-    const data = e.data as { messageKind?: string; content?: string }
-    return data.messageKind === 'auto-prompt' && data.content?.includes('fulfil the')
-  })
-  if (!hasKickoff) {
-    const kickoffMsgId = crypto.randomUUID()
-    const kickoffContent = WORKFLOW_KICKOFF_PROMPT(session.criteria.length)
-    eventStore.append(
-      sessionId,
-      createMessageStartEvent(kickoffMsgId, 'user', kickoffContent, {
-        ...(currentWindowMessageOptions ?? {}),
-        isSystemGenerated: true,
-        messageKind: 'auto-prompt',
-        metadata: { type: 'workflow', name: 'Workflow', color: '#f59e0b' },
-      }),
-    )
-    eventStore.append(sessionId, { type: 'message.done', data: { messageId: kickoffMsgId } })
-  }
-}
 
 /**
  * Build a snapshot of current session state.

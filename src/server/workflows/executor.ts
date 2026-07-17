@@ -20,12 +20,7 @@ import type {
 import { TERMINAL_DONE, TERMINAL_BLOCKED } from './types.js'
 import { getEventStore, getCurrentContextWindowId } from '../events/index.js'
 import { createChatMessageMessage } from '../ws/protocol.js'
-import {
-  runAgentTurn,
-  TurnMetrics,
-  createMessageStartEvent,
-  injectWorkflowKickoffIfNeeded,
-} from '../chat/orchestrator.js'
+import { runAgentTurn, TurnMetrics, createMessageStartEvent } from '../chat/orchestrator.js'
 import { executeSubAgent } from '../sub-agents/manager.js'
 import { loadAllAgentsDefault, findAgentById } from '../agents/registry.js'
 import { getToolRegistryForAgent } from '../tools/index.js'
@@ -197,6 +192,23 @@ function emitWorkflowMessage(
     )
   }
   return msgId
+}
+
+/** Generic fallback kickoff for agent steps without a prompt. */
+function injectGenericKickoff(sessionId: string): void {
+  const eventStore = getEventStore()
+  const windowOpts = getCurrentWindowMessageOptions(sessionId)
+  const msgId = crypto.randomUUID()
+  eventStore.append(
+    sessionId,
+    createMessageStartEvent(msgId, 'user', 'Proceed with the current step.', {
+      ...(windowOpts ?? {}),
+      isSystemGenerated: true,
+      messageKind: 'auto-prompt',
+      metadata: { type: 'workflow', name: 'Workflow', color: '#f59e0b' },
+    }),
+  )
+  eventStore.append(sessionId, { type: 'message.done', data: { messageId: msgId } })
 }
 
 function getCurrentWindowMessageOptions(sessionId: string): { contextWindowId: string } | undefined {
@@ -417,8 +429,8 @@ export async function executeWorkflow(
           agentStep.agentId ?? 'planner',
           append,
           {
-            ...(!firstEntryForStep.has(step.id) && !agentStep.prompt && options.injectWorkflowKickoff === true
-              ? { injectKickoff: () => injectWorkflowKickoffIfNeeded(sessionManager, sessionId, es) }
+            ...(!firstEntryForStep.has(step.id) && !agentStep.prompt
+              ? { injectKickoff: () => injectGenericKickoff(sessionId) }
               : {}),
             onToolExecuted: (toolCall: ToolCall, toolResult: ToolResult) => {
               // Also detected in execute-tools.ts (stepDoneCalled flag) to break
