@@ -43,7 +43,7 @@ describe('ProviderRegistry', () => {
     expect(value.getPresets()).toHaveLength(1)
   })
 
-  it('rejects duplicate IDs', () => {
+  it('overwrites on duplicate auth adapter', () => {
     const value = registry()
     const adapter = {
       id: 'auth',
@@ -56,7 +56,8 @@ describe('ProviderRegistry', () => {
       logout: async () => undefined,
     }
     value.registerAuth(adapter)
-    expect(() => value.registerAuth(adapter)).toThrow('already registered')
+    value.registerAuth(adapter)
+    expect(value.listAuthAdapters()).toHaveLength(1)
   })
 
   it('lists registered auth and transport adapters', () => {
@@ -118,7 +119,7 @@ describe('ProviderRegistry', () => {
     expect(value.getPresets()[0]!.id).toBe('preset-1')
   })
 
-  it('rejects duplicate preset IDs', () => {
+  it('overwrites on duplicate preset registration', () => {
     const value = registry()
     const preset = {
       id: 'dup',
@@ -128,7 +129,8 @@ describe('ProviderRegistry', () => {
       defaults: { url: 'https://example.test', backend: 'openai' },
     }
     value.registerPreset(preset)
-    expect(() => value.registerPreset(preset)).toThrow('already registered')
+    value.registerPreset(preset)
+    expect(value.getPresets()).toHaveLength(1)
   })
 
   it('rejects empty ID strings', () => {

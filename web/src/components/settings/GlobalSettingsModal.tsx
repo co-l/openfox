@@ -7,6 +7,7 @@ import { DisplayTab } from './tabs/DisplayTab'
 import { AdvancedTab } from './tabs/AdvancedTab'
 import { KeybindingsTab } from './tabs/KeybindingsTab'
 import { ToolsTab } from './tabs/ToolsTab'
+import { PluginsTab } from './tabs/PluginsTab'
 import { wsClient } from '../../lib/ws'
 
 interface GlobalSettingsModalProps {
@@ -14,7 +15,7 @@ interface GlobalSettingsModalProps {
   onClose: () => void
 }
 
-type Tab = 'instructions' | 'skills' | 'notifications' | 'display' | 'keybindings' | 'advanced' | 'tools'
+type Tab = 'instructions' | 'skills' | 'plugins' | 'notifications' | 'display' | 'keybindings' | 'advanced' | 'tools'
 
 export function GlobalSettingsModal({ isOpen, onClose }: GlobalSettingsModalProps) {
   const [activeTab, setActiveTab] = useState<Tab>('instructions')
@@ -40,6 +41,7 @@ export function GlobalSettingsModal({ isOpen, onClose }: GlobalSettingsModalProp
           />
           <TabButton label="Tools" active={activeTab === 'tools'} onClick={() => setActiveTab('tools')} />
           <TabButton label="Skills" active={activeTab === 'skills'} onClick={() => setActiveTab('skills')} />
+          <TabButton label="Plugins" active={activeTab === 'plugins'} onClick={() => setActiveTab('plugins')} />
           <TabButton
             label="Notifications"
             active={activeTab === 'notifications'}
@@ -57,6 +59,11 @@ export function GlobalSettingsModal({ isOpen, onClose }: GlobalSettingsModalProp
         {/* Tab content */}
         {activeTab === 'instructions' && <InstructionsTab isOpen={isOpen} />}
         {activeTab === 'skills' && <SkillsContent isOpen={isOpen} />}
+        {activeTab === 'plugins' && (
+          <div className="max-h-[60vh] overflow-y-auto">
+            <PluginsTab />
+          </div>
+        )}
         {activeTab === 'notifications' && (
           <div className="max-h-[60vh] overflow-y-auto">
             <NotificationSettings />
