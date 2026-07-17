@@ -6,6 +6,18 @@
 
 PRs target `develop`. Features accumulate via squash-merges. `main` stays aligned with the latest published version (see [RELEASE.md](RELEASE.md)).
 
+PRs can come from **same-repo branches** or **forks**. The workflow differs slightly — see below.
+
+## Detect PR origin
+
+Before starting, check whether the PR is from a fork:
+
+```bash
+gh pr view <N> --json headRepositoryOwner --jq '.headRepositoryOwner.login'
+# Output: "co-l"           → same-repo branch
+# Output: "JamesDAdams"    → fork
+```
+
 ## Simple Review (no changes needed)
 
 If the PR needs no fixes, squash-merge directly via the API:
@@ -20,7 +32,9 @@ git checkout develop && git pull origin develop --ff-only
 
 ## Review + Fix (PR needs changes)
 
-### Correct workflow (avoids worktree confusion)
+### Same-repo PRs
+
+Your fix commits become part of the squash-merge — push them to the PR branch first.
 
 ```bash
 # 1. Fetch the PR branch locally
@@ -39,7 +53,7 @@ git push origin HEAD:<remote-branch-name>
 # 5. Close the worktree
 worktree close
 
-# 6. Squash-merge via API
+# 6. Squash-merge via API (includes your fixes)
 gh api repos/co-l/openfox/pulls/<N>/merge -X PUT \
   -f merge_method=squash \
   -f commit_title="feat: description (#<N>)"
@@ -51,19 +65,82 @@ git checkout develop && git pull origin develop --ff-only
 git branch -D <branch-name>
 ```
 
-### Concrete example
+### Fork PRs
+
+You generally can't push to the fork's branch. Instead, **merge the PR as-is**, then cherry-pick your fixes onto develop.
 
 ```bash
-gh pr checkout 68
-worktree create feature/drag-n-drop-files
-# ... fix, commit, test ...
-git push origin HEAD:feature/drag-n-drop-files
+# 1. Fetch the PR branch locally
+gh pr checkout <N>
+
+# 2. Create a worktree FROM the existing PR branch
+worktree create <branch-name>
+
+# 3. Apply fixes inside the worktree
+#    ... make changes, run tests, commit ...
+#    Note the commit SHA (or tag it for easy reference)
+FIX_SHA=$(git rev-parse HEAD)
+
+# 4. Close the worktree
 worktree close
-gh api repos/co-l/openfox/pulls/68/merge -X PUT \
+
+# 5. Squash-merge the ORIGINAL PR (without your fixes)
+gh api repos/co-l/openfox/pulls/<N>/merge -X PUT \
   -f merge_method=squash \
-  -f commit_title="feat: support PDF, text, and SVG file attachments (#68)"
+  -f commit_title="feat: description (#<N>)"
+
+# 6. Update develop locally
 git checkout develop && git pull origin develop --ff-only
-git branch -D feature/drag-n-drop-files
+
+# 7. Cherry-pick your fixes onto develop
+git cherry-pick $FIX_SHA
+
+# 8. Push
+git push origin develop
+
+# 9. Clean up local branch
+git branch -D <branch-name>
+```
+
+#### Alternative: push directly to the fork
+
+If you have push access to the fork, add it as a remote and push there:
+
+```bash
+gh pr checkout <N>
+worktree create <branch-name>
+# ... fix, commit, test ...
+
+# Add fork as remote (one-time)
+gh repo fork --remote --remote-name fork
+
+# Push fixes to the fork's PR branch
+git push fork HEAD:<remote-branch-name>
+
+# Now squash-merge includes your fixes (continue with same-repo steps)
+worktree close
+gh api repos/co-l/openfox/pulls/<N>/merge -X PUT \
+  -f merge_method=squash \
+  -f commit_title="feat: description (#<N>)"
+git checkout develop && git pull origin develop --ff-only
+git branch -D <branch-name>
+```
+
+### Concrete example (fork)
+
+```bash
+gh pr checkout 78
+worktree create feat/add-plugins-page
+# ... fix, commit, test ...
+FIX_SHA=$(git rev-parse HEAD)
+worktree close
+gh api repos/co-l/openfox/pulls/78/merge -X PUT \
+  -f merge_method=squash \
+  -f commit_title="feat: add plugin management UI (#78)"
+git checkout develop && git pull origin develop --ff-only
+git cherry-pick $FIX_SHA
+git push origin develop
+git branch -D feat/add-plugins-page
 ```
 
 ## Common Pitfalls

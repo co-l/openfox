@@ -20,6 +20,23 @@ interface Logger {
 
 const execFileP = promisify(execFile)
 
+async function openFolder(
+  dir: string,
+  res: {
+    json: (data: unknown) => void
+    status: (code: number) => { json: (data: unknown) => void }
+  },
+): Promise<void> {
+  try {
+    await execFileP('mkdir', ['-p', dir], { timeout: 5000 })
+    const cmd = platform() === 'darwin' ? 'open' : platform() === 'win32' ? 'explorer' : 'xdg-open'
+    await execFileP(cmd, [dir], { timeout: 5000 })
+    res.json({ success: true })
+  } catch (err) {
+    res.status(500).json({ error: err instanceof Error ? err.message : 'Failed to open folder' })
+  }
+}
+
 export function createPluginRoutes(options: {
   config: Config
   providerAdapters: ProviderRegistry
@@ -188,27 +205,14 @@ export function createPluginRoutes(options: {
 
   router.get('/open-folder', async (_req, res) => {
     const pluginsDir = join(getGlobalConfigDir(config.mode ?? 'production'), 'plugins')
-    try {
-      await execFileP('mkdir', ['-p', pluginsDir], { timeout: 5000 })
-      const cmd = platform() === 'darwin' ? 'open' : platform() === 'win32' ? 'explorer' : 'xdg-open'
-      await execFileP(cmd, [pluginsDir], { timeout: 5000 })
-      res.json({ success: true })
-    } catch (err) {
-      res.status(500).json({ error: err instanceof Error ? err.message : 'Failed to open folder' })
-    }
+    await openFolder(pluginsDir, res)
   })
 
   router.get('/:name/open-folder', async (req, res) => {
     const name = req.params.name as string
     if (!/^[a-zA-Z0-9_-]+$/.test(name)) return res.status(400).json({ error: 'Invalid plugin name' })
     const targetDir = join(getGlobalConfigDir(config.mode ?? 'production'), 'plugins', name)
-    try {
-      const cmd = platform() === 'darwin' ? 'open' : platform() === 'win32' ? 'explorer' : 'xdg-open'
-      await execFileP(cmd, [targetDir], { timeout: 5000 })
-      res.json({ success: true })
-    } catch (err) {
-      res.status(500).json({ error: err instanceof Error ? err.message : 'Failed to open folder' })
-    }
+    await openFolder(targetDir, res)
   })
 
   router.delete('/:name', async (req, res) => {
