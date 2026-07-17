@@ -41,7 +41,7 @@ Your fix commits become part of the squash-merge — push them to the PR branch 
 gh pr checkout <N>
 
 # 2. Create a worktree FROM the existing PR branch
-#    (ensureWorktree detects the branch exists and skips -b)
+#    (use the `worktree create` tool — detects existing branch, skips -b)
 worktree create <branch-name>
 
 # 3. Apply fixes inside the worktree
@@ -69,6 +69,8 @@ git branch -D <branch-name>
 
 You generally can't push to the fork's branch. Instead, **merge the PR as-is**, then cherry-pick your fixes onto develop.
 
+Tag your fix commits so they're easy to reference after the worktree is closed:
+
 ```bash
 # 1. Fetch the PR branch locally
 gh pr checkout <N>
@@ -78,10 +80,10 @@ worktree create <branch-name>
 
 # 3. Apply fixes inside the worktree
 #    ... make changes, run tests, commit ...
-#    Note the commit SHA (or tag it for easy reference)
-FIX_SHA=$(git rev-parse HEAD)
+#    Tag the fix commit(s) for later cherry-pick
+git tag review-fix-<N>
 
-# 4. Close the worktree
+# 4. Close the worktree (use the `worktree close` tool)
 worktree close
 
 # 5. Squash-merge the ORIGINAL PR (without your fixes)
@@ -93,7 +95,10 @@ gh api repos/co-l/openfox/pulls/<N>/merge -X PUT \
 git checkout develop && git pull origin develop --ff-only
 
 # 7. Cherry-pick your fixes onto develop
-git cherry-pick $FIX_SHA
+#    Single fix:  git cherry-pick review-fix-<N>
+#    Multi-fix:   git cherry-pick review-fix-<N>^..review-fix-<N>
+git cherry-pick review-fix-<N>
+git tag -d review-fix-<N>
 
 # 8. Push
 git push origin develop
@@ -132,13 +137,14 @@ git branch -D <branch-name>
 gh pr checkout 78
 worktree create feat/add-plugins-page
 # ... fix, commit, test ...
-FIX_SHA=$(git rev-parse HEAD)
+git tag review-fix-78
 worktree close
 gh api repos/co-l/openfox/pulls/78/merge -X PUT \
   -f merge_method=squash \
   -f commit_title="feat: add plugin management UI (#78)"
 git checkout develop && git pull origin develop --ff-only
-git cherry-pick $FIX_SHA
+git cherry-pick review-fix-78
+git tag -d review-fix-78
 git push origin develop
 git branch -D feat/add-plugins-page
 ```
@@ -170,7 +176,7 @@ But first try to fix the issue — the project aims to keep the hook passing.
 
 ### Orphaned worktrees
 
-`worktree close` currently doesn't run `git worktree remove`. If you need to clean up manually:
+The `worktree close` tool doesn't run `git worktree remove`. If you need to clean up manually:
 
 ```bash
 git worktree remove <path>      # deregister
