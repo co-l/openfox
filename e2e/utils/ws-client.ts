@@ -83,9 +83,11 @@ export interface TestClient {
   answerPathConfirmation(callId: string, approved: boolean): Promise<void>
 }
 
-export const DEFAULT_WAIT_TIMEOUT_MS = 1_500
-export const DEFAULT_CHAT_TIMEOUT_MS = 1_500
-export const DEFAULT_CONSUME_TIMEOUT_MS = 1_500
+const CI_MULTIPLIER = process.env['CI'] === 'true' ? 10 : 1
+
+export const DEFAULT_WAIT_TIMEOUT_MS = 1_500 * CI_MULTIPLIER
+export const DEFAULT_CHAT_TIMEOUT_MS = 1_500 * CI_MULTIPLIER
+export const DEFAULT_CONSUME_TIMEOUT_MS = 1_500 * CI_MULTIPLIER
 
 // ============================================================================
 // Verbose Logging

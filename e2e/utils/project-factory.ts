@@ -198,7 +198,7 @@ export async function createTestProject(options: TestProjectOptions = {}): Promi
     delete cleanEnv['GIT_WORK_TREE']
     delete cleanEnv['GIT_PREFIX']
     const execOpts = { cwd: projectPath, stdio: 'ignore' as const, env: cleanEnv }
-    execSync('git init', execOpts)
+    execSync('git init --initial-branch=main', execOpts)
     execSync('git config user.email "test@example.com"', execOpts)
     execSync('git config user.name "Test User"', execOpts)
     execSync('git add -A', execOpts)

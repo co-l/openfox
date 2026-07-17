@@ -7,8 +7,10 @@
 import type { ServerMessage, ServerMessageType } from '@openfox/shared/protocol'
 import type { TestClient } from './ws-client.js'
 
-export const DEFAULT_COLLECTION_TIMEOUT_MS = 1_500
-export const DEFAULT_PHASE_TIMEOUT_MS = 1_500
+const CI_MULTIPLIER = process.env['CI'] === 'true' ? 10 : 1
+
+export const DEFAULT_COLLECTION_TIMEOUT_MS = 1_500 * CI_MULTIPLIER
+export const DEFAULT_PHASE_TIMEOUT_MS = 1_500 * CI_MULTIPLIER
 
 // ============================================================================
 // Types
