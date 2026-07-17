@@ -309,7 +309,7 @@ describe('llm client', () => {
         stream: true,
         chat_template_kwargs: { enable_thinking: false },
       }),
-      { signal: undefined },
+      { signal: expect.any(AbortSignal) },
     )
     // Should NOT have reasoning_effort in the params
     const callArgs = httpClientCreateStreamMock.mock.calls[0]?.[0] as Record<string, unknown> | undefined
@@ -453,7 +453,9 @@ describe('llm client', () => {
       events.push(event as Record<string, unknown>)
     }
 
-    expect(events).toEqual([{ type: 'error', error: 'stream failed' }])
+    expect(events).toEqual([
+      { type: 'error', error: 'stream failed', metadata: { kind: 'network', message: 'stream failed' } },
+    ])
   })
 
   it('surfaces error chunks that do not contain choices', async () => {
@@ -583,7 +585,11 @@ describe('llm client', () => {
     expect(events).toEqual([
       { type: 'text_delta', content: 'first chunk' },
       { type: 'text_delta', content: 'second chunk' },
-      { type: 'error', error: expect.stringContaining('idle timeout') },
+      {
+        type: 'error',
+        error: expect.stringContaining('idle timeout'),
+        metadata: { kind: 'timeout', message: expect.stringContaining('idle timeout') },
+      },
     ])
   })
 

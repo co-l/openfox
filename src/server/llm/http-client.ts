@@ -47,7 +47,19 @@ export class OpenAIHttpClient {
 
     if (!response.ok) {
       const errorText = await response.text()
-      throw new LLMError(`HTTP ${response.status}: ${errorText}`)
+      const retryAfter = response.headers.get('retry-after')
+      let retryAfterMs: number | undefined
+      if (retryAfter) {
+        const seconds = Number(retryAfter)
+        const parsed = Number.isFinite(seconds) ? seconds * 1000 : Date.parse(retryAfter) - Date.now()
+        if (Number.isFinite(parsed) && parsed >= 0) retryAfterMs = parsed
+      }
+      throw new LLMError(`HTTP ${response.status}: ${errorText}`, {
+        kind: response.status === 429 || response.status === 503 ? 'overload' : 'http',
+        status: response.status,
+        ...(retryAfterMs !== undefined ? { retryAfterMs } : {}),
+        message: errorText,
+      })
     }
 
     return response
@@ -117,6 +129,11 @@ export class OpenAIHttpClient {
           }
         }
       } finally {
+        try {
+          await reader.cancel()
+        } catch {
+          void 0
+        }
         reader.releaseLock()
       }
     }

@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react'
 import { Modal } from '../shared/SelfContainedModal'
-import { useAgentsStore, type AgentFull } from '../../stores/agents'
+import { useAgentsStore, type AgentFull, type AgentModelRef } from '../../stores/agents'
+import { useConfigStore } from '../../stores/config'
 import { authFetch } from '../../lib/api'
-import { CRUDListHeader } from './CRUDModal'
+import { CRUDListHeader, ErrorBanner } from './CRUDModal'
 import { AgentGroup } from './agents/AgentListItem'
 import { AgentForm } from './agents/AgentForm'
 
@@ -22,6 +23,7 @@ function toSlug(name: string): string {
 export function AgentsModal({ isOpen, onClose, initialEditId }: AgentsModalProps) {
   const defaults = useAgentsStore((state) => state.defaults)
   const userItems = useAgentsStore((state) => state.userItems)
+  const overrideIds = useAgentsStore((state) => state.overrideIds)
   const loading = useAgentsStore((state) => state.loading)
   const fetchAgents = useAgentsStore((state) => state.fetchAgents)
   const fetchAgent = useAgentsStore((state) => state.fetchAgent)
@@ -29,6 +31,8 @@ export function AgentsModal({ isOpen, onClose, initialEditId }: AgentsModalProps
   const createAgent = useAgentsStore((state) => state.createAgent)
   const updateAgent = useAgentsStore((state) => state.updateAgent)
   const deleteAgentAction = useAgentsStore((state) => state.deleteAgent)
+  const providers = useConfigStore((state) => state.providers)
+  const fetchConfig = useConfigStore((state) => state.fetchConfig)
 
   const [view, setView] = useState<'list' | 'edit'>('list')
   const [editingId, setEditingId] = useState<string | null>(null)
@@ -41,6 +45,7 @@ export function AgentsModal({ isOpen, onClose, initialEditId }: AgentsModalProps
   const [formTools, setFormTools] = useState<string[]>([])
   const [formColor, setFormColor] = useState('#6b7280')
   const [formPrompt, setFormPrompt] = useState('')
+  const [formModelCascade, setFormModelCascade] = useState<AgentModelRef[] | undefined>()
   const [formError, setFormError] = useState('')
   const [saving, setSaving] = useState(false)
 
@@ -57,6 +62,7 @@ export function AgentsModal({ isOpen, onClose, initialEditId }: AgentsModalProps
     setFormTools(agent.metadata.allowedTools)
     setFormColor(agent.metadata.color ?? '#6b7280')
     setFormPrompt(agent.prompt)
+    setFormModelCascade(agent.metadata.modelCascade ?? undefined)
     setFormError('')
   }
 
@@ -68,6 +74,7 @@ export function AgentsModal({ isOpen, onClose, initialEditId }: AgentsModalProps
     setFormTools(content.metadata.allowedTools)
     setFormColor(content.metadata.color ?? '#6b7280')
     setFormPrompt(content.prompt)
+    setFormModelCascade(content.metadata.modelCascade ?? undefined)
     setFormError('')
     if (setAsNew) {
       setEditingId(null)
@@ -86,6 +93,7 @@ export function AgentsModal({ isOpen, onClose, initialEditId }: AgentsModalProps
   useEffect(() => {
     if (isOpen) {
       fetchAgents()
+      fetchConfig()
       authFetch('/api/tools')
         .then((r) => r.json())
         .then((d) => {
@@ -100,13 +108,11 @@ export function AgentsModal({ isOpen, onClose, initialEditId }: AgentsModalProps
         })
 
       if (initialEditId) {
-        const isDefault = defaults.some((d) => d.id === initialEditId)
-        if (isDefault) {
-          fetchDefaultContent(initialEditId).then((content) => {
-            if (!content) return
-            applyDuplicateFromContent(content, initialEditId, true)
-          })
-        } else {
+        fetchDefaultContent(initialEditId).then((content) => {
+          if (content) {
+            applyViewFromContent(content, initialEditId)
+            return
+          }
           fetchAgent(initialEditId).then((agent) => {
             if (!agent) return
             populateFormFromAgent(agent)
@@ -114,7 +120,7 @@ export function AgentsModal({ isOpen, onClose, initialEditId }: AgentsModalProps
             setIsReadOnly(false)
             setView('edit')
           })
-        }
+        })
       } else {
         setView('list')
         setEditingId(null)
@@ -137,7 +143,8 @@ export function AgentsModal({ isOpen, onClose, initialEditId }: AgentsModalProps
   }
 
   const handleDuplicate = async (agentId: string) => {
-    const content = await fetchDefaultContent(agentId)
+    const isDefault = defaults.some((agent) => agent.id === agentId)
+    const content = isDefault ? await fetchDefaultContent(agentId) : await fetchAgent(agentId)
     if (!content) return
     applyDuplicateFromContent(content, agentId, true)
   }
@@ -151,6 +158,7 @@ export function AgentsModal({ isOpen, onClose, initialEditId }: AgentsModalProps
     setFormTools(['read_file'])
     setFormColor('#6b7280')
     setFormPrompt('')
+    setFormModelCascade(undefined)
     setFormError('')
     setIsReadOnly(false)
     setView('edit')
@@ -166,13 +174,18 @@ export function AgentsModal({ isOpen, onClose, initialEditId }: AgentsModalProps
   }
 
   const handleDelete = async (agentId: string) => {
-    await deleteAgentAction(agentId)
+    const result = await deleteAgentAction(agentId)
+    if (!result.success) setFormError(result.error ?? 'Failed to reset agent override.')
   }
 
   const handleSave = async () => {
     const id = editingId ?? formId
     if (!id || !formName || !formPrompt) {
       setFormError('Name and prompt are required.')
+      return
+    }
+    if (!editingId && defaults.some((agent) => agent.id === id)) {
+      setFormError('This ID belongs to a built-in agent. Choose a different name.')
       return
     }
 
@@ -187,6 +200,7 @@ export function AgentsModal({ isOpen, onClose, initialEditId }: AgentsModalProps
         subagent: formSubagent,
         allowedTools: formTools.filter((t) => !alwaysAllowedNames.has(t)),
         color: formColor,
+        modelCascade: formModelCascade?.length ? formModelCascade : null,
       },
       prompt: formPrompt,
     }
@@ -222,8 +236,9 @@ export function AgentsModal({ isOpen, onClose, initialEditId }: AgentsModalProps
 
   const defaultSubAgents = defaults.filter((a) => a.subagent)
   const defaultTopLevelAgents = defaults.filter((a) => !a.subagent)
-  const userSubAgents = userItems.filter((a) => a.subagent)
-  const userTopLevelAgents = userItems.filter((a) => !a.subagent)
+  const customItems = userItems.filter((agent) => !overrideIds.includes(agent.id))
+  const userSubAgents = customItems.filter((a) => a.subagent)
+  const userTopLevelAgents = customItems.filter((a) => !a.subagent)
 
   if (view === 'edit') {
     return (
@@ -245,6 +260,9 @@ export function AgentsModal({ isOpen, onClose, initialEditId }: AgentsModalProps
           saving={saving}
           isReadOnly={isReadOnly}
           availableTools={availableTools}
+          providers={providers}
+          modelCascade={formModelCascade}
+          onModelCascadeChange={setFormModelCascade}
           onNameChange={handleNameChange}
           onIdChange={setFormId}
           onDescriptionChange={setFormDescription}
@@ -279,6 +297,7 @@ export function AgentsModal({ isOpen, onClose, initialEditId }: AgentsModalProps
         hasItems={defaults.length > 0 || userItems.length > 0}
       >
         <div className="space-y-4">
+          {formError && <ErrorBanner message={formError} />}
           {defaults.length > 0 && (
             <AgentGroup
               title="Built-in"
@@ -288,6 +307,8 @@ export function AgentsModal({ isOpen, onClose, initialEditId }: AgentsModalProps
               alwaysAllowedNames={alwaysAllowedNames}
               onView={handleView}
               onDuplicate={handleDuplicate}
+              onDelete={handleDelete}
+              canDelete={(agentId) => overrideIds.includes(agentId)}
             />
           )}
 

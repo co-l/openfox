@@ -12,6 +12,8 @@ export interface CRUDListItemProps {
   onDelete?: () => void
   actions?: ReactNode
   children?: ReactNode
+  deleteLabel?: string
+  onCancelDelete?: () => void
 }
 
 export function CRUDListItem({
@@ -23,6 +25,8 @@ export function CRUDListItem({
   onDelete,
   actions,
   children,
+  deleteLabel,
+  onCancelDelete,
 }: CRUDListItemProps) {
   return (
     <div className="flex items-center justify-between p-3 rounded border border-border bg-bg-tertiary">
@@ -40,14 +44,14 @@ export function CRUDListItem({
         )}
         <DuplicateIcon onClick={onDuplicate} />
         {!isBuiltIn && onEdit && <EditButton onClick={onEdit} />}
-        {!isBuiltIn &&
-          onDelete &&
+        {onDelete &&
           (isConfirmingDelete ? (
             <ConfirmButton
               onConfirm={() => {
                 onDelete?.()
               }}
-              onCancel={() => {}}
+              onCancel={() => onCancelDelete?.()}
+              label={deleteLabel}
             />
           ) : (
             <DeleteIcon onClick={() => onDelete?.()} />

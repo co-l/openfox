@@ -3,6 +3,11 @@ import { authFetch } from '../lib/api'
 import { saveEntity, duplicateEntity } from './utils'
 import { fetchItems } from './fetch-items'
 
+export interface AgentModelRef {
+  providerId: string
+  model: string
+}
+
 export interface AgentInfo {
   id: string
   name: string
@@ -11,6 +16,7 @@ export interface AgentInfo {
   allowedTools: string[]
   color?: string
   results?: string[]
+  modelCascade?: AgentModelRef[]
 }
 
 export interface AgentFull {
@@ -22,6 +28,7 @@ export interface AgentFull {
     allowedTools: string[]
     color?: string
     results?: string[]
+    modelCascade?: AgentModelRef[] | null
   }
   prompt: string
 }
@@ -36,6 +43,7 @@ interface AgentsState {
   defaults: AgentInfo[]
   userItems: AgentInfo[]
   projectItems: AgentInfo[]
+  overrideIds: string[]
   loading: boolean
   fetchAgents: () => Promise<void>
   fetchAgent: (agentId: string) => Promise<AgentFull | null>
@@ -55,6 +63,7 @@ export const useAgentsStore = create<AgentsState>((set) => {
     defaults: [],
     userItems: [],
     projectItems: [],
+    overrideIds: [],
     loading: false,
 
     fetchAgents,
@@ -99,9 +108,7 @@ export const useAgentsStore = create<AgentsState>((set) => {
         const res = await authFetch(`/api/agents/${agentId}`, { method: 'DELETE' })
         const data = await res.json()
         if (res.ok) {
-          set((state) => ({
-            userItems: state.userItems.filter((a) => a.id !== agentId),
-          }))
+          await fetchAgents()
           return { success: true }
         }
         return { success: false, error: data.error ?? 'Failed to delete' }

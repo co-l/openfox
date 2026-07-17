@@ -10,7 +10,7 @@ export async function fetchItems(url: string, set: SetFn, hasProjectItems?: bool
     set({
       defaults: data.defaults ?? [],
       userItems: data.userItems ?? [],
-      ...(hasProjectItems ? { projectItems: data.projectItems ?? [] } : {}),
+      ...(hasProjectItems ? { projectItems: data.projectItems ?? [], overrideIds: data.overrideIds ?? [] } : {}),
       loading: false,
     } as Record<string, unknown>)
   } catch {

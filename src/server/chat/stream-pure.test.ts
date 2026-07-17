@@ -99,6 +99,45 @@ describe('stream-pure', () => {
     })
   })
 
+  it('turns cascade fallback attempts into persistent system messages', async () => {
+    const client = createMockClient([
+      {
+        type: 'model_cascade_fallback',
+        fallback: { providerId: 'a', providerName: 'Primary', model: 'first', error: 'busy' },
+      },
+      { type: 'done', response: { ...mockResponse, content: '', toolCalls: [] } },
+    ])
+    const gen = streamLLMPure({
+      messageId: 'msg-fallback',
+      systemPrompt: 'system',
+      llmClient: client,
+      messages: [],
+      messageContext: { contextWindowId: 'window-1', subAgentId: 'sub-1', subAgentType: 'explorer' },
+    })
+    const events: Array<{ type: string; data: unknown }> = []
+    await consumeStreamGenerator(gen, (event) => events.push(event))
+
+    expect(events).toHaveLength(2)
+    expect(events[0]).toMatchObject({
+      type: 'message.start',
+      data: {
+        role: 'system',
+        contextWindowId: 'window-1',
+        subAgentId: 'sub-1',
+        subAgentType: 'explorer',
+        isSystemGenerated: true,
+        messageKind: 'model-fallback',
+      },
+    })
+    expect(JSON.parse((events[0]!.data as { content: string }).content)).toEqual({
+      providerId: 'a',
+      providerName: 'Primary',
+      model: 'first',
+      error: 'busy',
+    })
+    expect(events[1]).toMatchObject({ type: 'message.done' })
+  })
+
   it('streams partial arguments for run_command', async () => {
     const client = createMockClient([
       { type: 'tool_call_delta', index: 0, name: 'run_command' },

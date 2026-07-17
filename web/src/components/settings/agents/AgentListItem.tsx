@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import type { AgentInfo } from '../../../stores/agents'
 import { CRUDListItem } from '../CRUDListItem'
 
@@ -10,6 +11,7 @@ export function AgentListItem({
   onEdit,
   onDuplicate,
   onDelete,
+  onCancelDelete,
 }: {
   agent: AgentInfo
   isBuiltIn: boolean
@@ -19,6 +21,7 @@ export function AgentListItem({
   onEdit?: () => void
   onDuplicate: () => void
   onDelete?: () => void
+  onCancelDelete?: () => void
 }) {
   const displayTools = agent.allowedTools.filter((t) => !alwaysAllowedNames?.has(t))
   return (
@@ -29,6 +32,8 @@ export function AgentListItem({
       onEdit={onEdit}
       onDuplicate={onDuplicate}
       onDelete={onDelete}
+      deleteLabel={isBuiltIn ? 'Reset' : 'Delete'}
+      onCancelDelete={onCancelDelete}
     >
       <div className="flex items-center gap-2">
         <span
@@ -66,6 +71,7 @@ export function AgentGroup({
   onDuplicate,
   onEdit,
   onDelete,
+  canDelete,
 }: {
   title: string
   agents: AgentInfo[]
@@ -76,19 +82,33 @@ export function AgentGroup({
   onDuplicate: (id: string) => void
   onEdit?: (id: string) => void
   onDelete?: (id: string) => void
+  canDelete?: (id: string) => boolean
 }) {
+  const [confirmingId, setConfirmingId] = useState<string | null>(null)
   if (agents.length === 0 && subagents.length === 0) return null
   const renderAgentItem = (agent: AgentInfo) => (
     <AgentListItem
       key={agent.id}
       agent={agent}
       isBuiltIn={isBuiltIn}
-      isConfirmingDelete={false}
+      isConfirmingDelete={confirmingId === agent.id}
       alwaysAllowedNames={alwaysAllowedNames}
       onView={() => onView(agent.id)}
-      onEdit={isBuiltIn ? undefined : () => onEdit?.(agent.id)}
+      onEdit={!isBuiltIn && onEdit ? () => onEdit(agent.id) : undefined}
       onDuplicate={() => onDuplicate(agent.id)}
-      onDelete={isBuiltIn ? undefined : () => onDelete?.(agent.id)}
+      onCancelDelete={() => setConfirmingId(null)}
+      onDelete={
+        onDelete && (canDelete?.(agent.id) ?? true)
+          ? () => {
+              if (confirmingId === agent.id) {
+                onDelete(agent.id)
+                setConfirmingId(null)
+              } else {
+                setConfirmingId(agent.id)
+              }
+            }
+          : undefined
+      }
     />
   )
   return (

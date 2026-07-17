@@ -27,7 +27,14 @@ export const SETTINGS_KEYS = {
   SEARCH_SEARXNG_API_KEY: 'search.searxngApiKey',
   TOOLS_USE_RTK: 'tools.useRtk',
   TOOLS_SHELL: 'tools.shell',
+  MODEL_CASCADE_OVERLOAD_COOLDOWN_MS: 'llm.modelCascadeOverloadCooldownMs',
+  MODEL_CASCADE_TRANSIENT_COOLDOWN_MS: 'llm.modelCascadeTransientCooldownMs',
 } as const
+
+export interface SettingSaveResult {
+  success: boolean
+  error?: string
+}
 
 interface SettingsState {
   // Cached settings values
@@ -37,7 +44,7 @@ interface SettingsState {
   // Actions
   getSetting: (key: string) => Promise<string | null>
   getSettings: (keys: string[]) => Promise<void>
-  setSetting: (key: string, value: string) => Promise<void>
+  setSetting: (key: string, value: string) => Promise<SettingSaveResult>
 }
 
 function setLoading(key: string, loading: boolean) {
@@ -124,9 +131,15 @@ export const useSettingsStore = create<SettingsState>((set) => ({
         body: JSON.stringify({ value }),
       })
       const data = await res.json()
-      set(setValue(key, data.value ?? ''))
+      if (!res.ok) {
+        set(setLoading(key, false))
+        return { success: false, error: data.error ?? 'Failed to save setting' }
+      }
+      set(setValue(key, data.value ?? value))
+      return { success: true }
     } catch {
       set(setLoading(key, false))
+      return { success: false, error: 'Network error' }
     }
   },
 }))

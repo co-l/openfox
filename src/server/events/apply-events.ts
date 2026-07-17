@@ -25,7 +25,14 @@ export interface MessageFragment {
   subAgentId?: string
   subAgentType?: string
   isSystemGenerated?: boolean
-  messageKind?: 'correction' | 'auto-prompt' | 'context-reset' | 'task-completed' | 'workflow-started' | 'command'
+  messageKind?:
+    | 'correction'
+    | 'auto-prompt'
+    | 'context-reset'
+    | 'task-completed'
+    | 'workflow-started'
+    | 'command'
+    | 'model-fallback'
   isCompactionSummary?: boolean
   attachments?: unknown[]
   metadata?: unknown

@@ -31,6 +31,39 @@ import {
 import type { StoredEvent } from '../events/types.js'
 
 describe('ws/protocol', () => {
+  it('transports model fallback messages through the standard message lifecycle', () => {
+    const content = JSON.stringify({ providerId: 'a', providerName: 'Primary', model: 'first', error: 'busy' })
+    const event: StoredEvent = {
+      seq: 1,
+      sessionId: 'session-1',
+      timestamp: Date.parse('2024-01-01T00:00:00.000Z'),
+      type: 'message.start',
+      data: {
+        messageId: 'fallback-1',
+        role: 'system',
+        content,
+        isSystemGenerated: true,
+        messageKind: 'model-fallback',
+      },
+    }
+
+    expect(storedEventToServerMessage(event)).toEqual({
+      type: 'chat.message',
+      payload: {
+        message: {
+          id: 'fallback-1',
+          role: 'system',
+          content,
+          timestamp: '2024-01-01T00:00:00.000Z',
+          tokenCount: 0,
+          isStreaming: false,
+          isSystemGenerated: true,
+          messageKind: 'model-fallback',
+        },
+      },
+    })
+  })
+
   describe('parseClientMessage', () => {
     it('parses a valid client message', () => {
       expect(

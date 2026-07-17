@@ -33,6 +33,7 @@ import type { RequestContextMessage } from './request-context.js'
 import { buildCachedPrompt, computeDynamicContextHash, getToolFingerprint } from './dynamic-context.js'
 import { runTopLevelAgentLoop } from './agent-loop.js'
 import { loadAllAgentsDefault, findAgentById } from '../agents/registry.js'
+import { resolveAgentLLMClient } from '../agents/model-cascade.js'
 import { getAllInstructions } from '../context/instructions.js'
 import { getEnabledSkillMetadata } from '../skills/registry.js'
 import { getRuntimeConfig } from '../runtime-config.js'
@@ -337,6 +338,7 @@ export async function runAgentTurn(
   const statsIdentity = resolveStatsIdentity(options)
   const allAgents = await loadAllAgentsDefault()
   const agentDef = findAgentById(agentId, allAgents) ?? findAgentById('planner', allAgents)!
+  const agentLLMClient = resolveAgentLLMClient(agentDef, options.llmClient)
 
   if (!options.warmup) {
     injectAgentReminder(options.sessionId, agentDef)
@@ -357,7 +359,7 @@ export async function runAgentTurn(
       ...(await buildRetryPatterns()),
       sessionManager: options.sessionManager,
       sessionId: options.sessionId,
-      llmClient: options.llmClient,
+      llmClient: agentLLMClient,
       statsIdentity,
       signal: options.signal,
       onMessage: options.onMessage,
@@ -394,7 +396,7 @@ export async function runAgentTurn(
         })
       },
       getToolRegistry: () => getToolRegistryForAgent(agentDef),
-      getConversationMessages: buildGetConversationMessages(options.sessionId, options.llmClient, append),
+      getConversationMessages: buildGetConversationMessages(options.sessionId, agentLLMClient, append),
       injectAgentReminder: () => injectAgentReminder(options.sessionId, agentDef),
       ...(options.initialCompacting ? { initialCompacting: true } : {}),
       ...(callbacks?.injectKickoff ? { injectKickoff: callbacks.injectKickoff } : {}),

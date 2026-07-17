@@ -111,6 +111,10 @@ export async function* streamWithSegments(
           }
           break
 
+        case 'model_cascade_fallback':
+          yield event
+          break
+
         case 'done':
           // Flush any remaining content
           flushThinking()
@@ -120,7 +124,7 @@ export async function* streamWithSegments(
           break
 
         case 'error':
-          yield { type: 'error', error: event.error }
+          yield { type: 'error', error: event.error, ...(event.metadata ? { metadata: event.metadata } : {}) }
           return null
       }
     }

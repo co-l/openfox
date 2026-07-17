@@ -25,6 +25,22 @@ const mockResponse: LLMCompletionResponse = {
 }
 
 describe('streamWithSegments', () => {
+  it('forwards model cascade fallback events without adding content', async () => {
+    const fallback = {
+      type: 'model_cascade_fallback' as const,
+      fallback: { providerId: 'a', providerName: 'Primary', model: 'first', error: 'busy' },
+    }
+    const client = createMockClient([
+      fallback,
+      { type: 'done', response: { ...mockResponse, finishReason: 'stop', toolCalls: [] } },
+    ])
+    const gen = streamWithSegments(client, { messages: [] })
+
+    expect(await gen.next()).toEqual({ done: false, value: fallback })
+    expect((await gen.next()).value).toMatchObject({ type: 'done' })
+    expect((await gen.next()).value).toMatchObject({ content: '', thinkingContent: '', segments: [] })
+  })
+
   it('forwards tool_call_delta events from LLM client', async () => {
     const client = createMockClient([
       { type: 'tool_call_delta', index: 0, id: 'call-1', name: 'read_file' },

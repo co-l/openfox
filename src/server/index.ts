@@ -1092,21 +1092,16 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
     res.json({ key, value })
   })
 
-  app.get('/api/settings/:key', async (req, res) => {
-    const { getSetting, SETTINGS_DEFAULTS } = await import('./db/settings.js')
-    const key = req.params.key
-    const value = getSetting(key) ?? SETTINGS_DEFAULTS[key] ?? null
-    res.json({ key, value })
-  })
-
   app.put('/api/settings/:key', async (req, res) => {
-    const { setSetting } = await import('./db/settings.js')
+    const { setSetting, validateSettingValue } = await import('./db/settings.js')
     const key = req.params.key
     const { value } = req.body
     if (value === undefined) {
       return res.status(400).json({ error: 'value is required' })
     }
-    setSetting(key, value)
+    const validationError = validateSettingValue(key, value)
+    if (validationError) return res.status(400).json({ error: validationError })
+    setSetting(key, String(value))
     res.json({ key, value })
   })
 
@@ -2050,7 +2045,10 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
   const projectDir = config.workdir
   app.use('/api/skills', createSkillRoutes(configDir, projectDir))
   app.use('/api/commands', createCommandRoutes(configDir, projectDir))
-  app.use('/api/agents', createAgentRoutes(configDir, projectDir))
+  app.use(
+    '/api/agents',
+    createAgentRoutes(configDir, projectDir, () => providerManager.getProviders()),
+  )
   app.use('/api/workflows', createWorkflowRoutes(configDir, config, projectDir))
   app.use('/api/dev-server', createDevServerRoutes())
   app.use('/api/workspace', createWorkspaceConfigRoutes())

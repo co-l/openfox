@@ -56,6 +56,14 @@ function parseAgentFile(raw: string, filename: string): AgentDefinition | undefi
     allowedTools: Array.isArray(meta['allowedTools']) ? meta['allowedTools'].map(String) : [],
     ...(typeof meta['color'] === 'string' ? { color: meta['color'] } : {}),
     ...(Array.isArray(meta['results']) ? { results: meta['results'].map(String) } : {}),
+    ...(Array.isArray(meta['modelCascade'])
+      ? {
+          modelCascade: meta['modelCascade']
+            .filter((entry): entry is Record<string, unknown> => !!entry && typeof entry === 'object')
+            .map((entry) => ({ providerId: String(entry['providerId'] ?? ''), model: String(entry['model'] ?? '') }))
+            .filter((entry) => entry.providerId && entry.model),
+        }
+      : {}),
   }
 
   return { metadata, prompt: content.trim() }
@@ -226,19 +234,17 @@ export async function saveAgent(configDir: string, agent: AgentDefinition): Prom
 }
 
 export async function deleteAgent(configDir: string, agentId: string): Promise<{ success: boolean; reason?: string }> {
-  const isDefault = await isDefaultAgent(agentId)
-  if (isDefault) {
-    return { success: false, reason: 'Cannot delete built-in defaults' }
-  }
   const agentsDir = getAgentsDir(configDir)
   const paths = getAgentFilePaths(agentsDir, agentId)
   for (const filePath of paths) {
-    try {
+    if (await pathExists(filePath)) {
       await unlink(filePath)
       return { success: true }
-    } catch {
-      continue
     }
+  }
+  const isDefault = await isDefaultAgent(agentId)
+  if (isDefault) {
+    return { success: false, reason: 'Cannot delete built-in defaults' }
   }
   return { success: false }
 }

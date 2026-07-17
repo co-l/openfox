@@ -70,7 +70,14 @@ export type TurnEvent =
         subAgentId?: string
         subAgentType?: string
         isSystemGenerated?: boolean
-        messageKind?: 'correction' | 'auto-prompt' | 'context-reset' | 'task-completed' | 'workflow-started' | 'command'
+        messageKind?:
+          | 'correction'
+          | 'auto-prompt'
+          | 'context-reset'
+          | 'task-completed'
+          | 'workflow-started'
+          | 'command'
+          | 'model-fallback'
         isCompactionSummary?: boolean // True if this is the summary message after compaction
         tokenCount?: number // Known upfront for user messages
         attachments?: Attachment[] // Optional image attachments
@@ -506,7 +513,14 @@ export interface SnapshotMessage {
   subAgentId?: string
   subAgentType?: string
   isSystemGenerated?: boolean
-  messageKind?: 'correction' | 'auto-prompt' | 'context-reset' | 'task-completed' | 'workflow-started' | 'command'
+  messageKind?:
+    | 'correction'
+    | 'auto-prompt'
+    | 'context-reset'
+    | 'task-completed'
+    | 'workflow-started'
+    | 'command'
+    | 'model-fallback'
   contextWindowId?: string
   isCompactionSummary?: boolean
   attachments?: Attachment[] // Optional image attachments

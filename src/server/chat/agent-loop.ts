@@ -266,15 +266,18 @@ export async function runTopLevelAgentLoop(
     const contextState = sessionManager.getContextState(sessionId)
     const previousContextTokens = contextState.currentTokens
 
-    const contextWindow = sessionManager.getCurrentModelContext()
+    const contextWindow = llmClient.getContextWindow?.() ?? sessionManager.getCurrentModelContext()
     const availableForOutput = Math.max(256, contextWindow - contextState.currentTokens)
 
+    const clientModelSettings = llmClient.getModelSettings?.()
+    const selectedModelSettings =
+      clientModelSettings === undefined ? sessionManager.getCurrentModelSettings() : (clientModelSettings ?? undefined)
     let modelSettings =
       currentMaxTokensOverride !== undefined
-        ? { ...sessionManager.getCurrentModelSettings(sessionId), maxTokens: currentMaxTokensOverride }
-        : sessionManager.getCurrentModelSettings(sessionId)
+        ? { ...selectedModelSettings, maxTokens: currentMaxTokensOverride }
+        : selectedModelSettings
 
-    if (modelSettings) {
+    if (modelSettings && clientModelSettings !== null) {
       const requestedMaxTokens = modelSettings.maxTokens ?? 16384
       modelSettings = { ...modelSettings, maxTokens: Math.min(requestedMaxTokens, availableForOutput) }
     }
@@ -288,12 +291,23 @@ export async function runTopLevelAgentLoop(
       toolChoice: 'auto',
       signal,
       ...(config.retryPatterns ? { retryPatterns: config.retryPatterns } : {}),
+      messageContext: {
+        ...(currentWindowMessageOptions ?? {}),
+        ...(config.subAgentMetadata
+          ? { subAgentId: config.subAgentMetadata.subAgentId, subAgentType: config.subAgentMetadata.subAgentType }
+          : {}),
+      },
       ...(modelSettings && { modelSettings }),
+      maxTokensLimit: availableForOutput,
     })
 
     const result = await consumeStreamGenerator(streamGen, (event) => {
       append(event)
     })
+    statsIdentity.model = llmClient.getModel()
+    statsIdentity.backend = llmClient.getBackend?.() ?? statsIdentity.backend
+    if (llmClient.getProviderId?.()) statsIdentity.providerId = llmClient.getProviderId()!
+    if (llmClient.getProviderName?.()) statsIdentity.providerName = llmClient.getProviderName()!
 
     // Check if a retry pattern matched mid-stream
     if (result.patternMatch) {
@@ -351,6 +365,7 @@ export async function runTopLevelAgentLoop(
       result.usage.completionTokens,
       previousContextTokens,
       result.modelParams,
+      { ...statsIdentity },
     )
     sessionManager.setCurrentContextSize(sessionId, result.usage.promptTokens, config.subAgentMetadata?.subAgentId)
 
@@ -374,7 +389,7 @@ export async function runTopLevelAgentLoop(
         truncationRetryCount += 1
         const currentMaxTokens = result.modelParams?.maxTokens ?? 16384
         const promptTokens = result.usage.promptTokens
-        const contextWindow = sessionManager.getCurrentModelContext()
+        const contextWindow = llmClient.getContextWindow?.() ?? sessionManager.getCurrentModelContext()
         const newMaxTokens = Math.min(Math.floor(currentMaxTokens * 1.5), contextWindow - promptTokens - 2048)
         currentMaxTokensOverride = newMaxTokens
         // Finalize the truncated assistant message so the frontend properly closes it

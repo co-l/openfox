@@ -40,6 +40,7 @@ export interface LLMCompletionRequest {
     chatTemplateKwargs?: Record<string, unknown>
     queryParams?: Record<string, unknown>
   }
+  maxTokensLimit?: number
   /** When true, include the raw API response body in the result */
   returnRaw?: boolean
   /** When true, the client-level reasoningEffort (from thinkingLevel) is NOT applied.
@@ -63,12 +64,27 @@ export interface LLMCompletionResponse {
   raw?: string
 }
 
+export interface LLMErrorMetadata {
+  kind: 'http' | 'network' | 'timeout' | 'overload' | 'abort' | 'invalid_response' | 'unavailable' | 'unknown'
+  status?: number
+  retryAfterMs?: number
+  message?: string
+}
+
+export interface ModelCascadeFallback {
+  providerId: string
+  providerName: string
+  model: string
+  error: string
+}
+
 export type LLMStreamEvent =
   | { type: 'text_delta'; content: string }
   | { type: 'thinking_delta'; content: string }
   | { type: 'tool_call_delta'; index: number; id?: string; name?: string; arguments?: string }
+  | { type: 'model_cascade_fallback'; fallback: ModelCascadeFallback }
   | { type: 'done'; response: LLMCompletionResponse }
-  | { type: 'error'; error: string }
+  | { type: 'error'; error: string; metadata?: LLMErrorMetadata }
 
 export type StreamEvent = LLMStreamEvent
 
