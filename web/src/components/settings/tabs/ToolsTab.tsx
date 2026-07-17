@@ -162,6 +162,19 @@ export function ToolsTab() {
       .catch(() => setRtkStatus('unavailable'))
   }, [])
 
+  // ── Shell selection (Windows only; empty list elsewhere) ──
+  const [shells, setShells] = useState<{ id: string; label: string; available: boolean }[]>([])
+
+  useEffect(() => {
+    getSetting(SETTINGS_KEYS.TOOLS_SHELL)
+    authFetch('/api/tools/shells')
+      .then((r) => r.json())
+      .then((data) => setShells(data.shells ?? []))
+      .catch(() => setShells([]))
+  }, [getSetting])
+
+  const currentShell = settings[SETTINGS_KEYS.TOOLS_SHELL] || 'cmd'
+
   // ── MCP state ──
   const [servers, setServers] = useState<McpServerState[]>([])
   const [loading, setLoading] = useState(true)
@@ -427,6 +440,44 @@ export function ToolsTab() {
           )}
         </div>
       </div>
+
+      {shells.length > 0 && (
+        <>
+          <hr className="border-border" />
+
+          {/* ── Shell Section (Windows) ── */}
+          <div>
+            <h3 className="text-sm font-medium text-text-primary mb-3">Shell</h3>
+            <p className="text-sm text-text-muted mb-3">
+              Shell used to run agent commands and integrated terminals. Git Bash gives the agent a Unix-like toolset
+              (grep, sed, ls…) and usually works better than cmd.exe.
+            </p>
+            <div className="flex gap-2">
+              {shells.map((shell) => (
+                <button
+                  key={shell.id}
+                  onClick={() => setSetting(SETTINGS_KEYS.TOOLS_SHELL, shell.id)}
+                  disabled={!shell.available}
+                  title={shell.available ? undefined : 'Not found on this machine'}
+                  className={`px-3 py-1.5 rounded text-sm border transition-colors ${
+                    currentShell === shell.id
+                      ? 'bg-accent-primary/10 border-accent-primary text-accent-primary'
+                      : shell.available
+                        ? 'border-border text-text-muted hover:text-text-primary'
+                        : 'border-border text-text-muted opacity-50 cursor-not-allowed'
+                  }`}
+                >
+                  {shell.label}
+                  {!shell.available && ' (not found)'}
+                </button>
+              ))}
+            </div>
+            <p className="text-xs text-text-muted mt-2">
+              Applies to new commands and newly opened terminals. Running terminals keep their current shell.
+            </p>
+          </div>
+        </>
+      )}
 
       <hr className="border-border" />
 

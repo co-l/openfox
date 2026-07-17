@@ -26,6 +26,7 @@ export const SETTINGS_KEYS = {
   SEARCH_SEARXNG_URL: 'search.searxngUrl',
   SEARCH_SEARXNG_API_KEY: 'search.searxngApiKey',
   TOOLS_USE_RTK: 'tools.useRtk',
+  TOOLS_SHELL: 'tools.shell',
 } as const
 
 interface SettingsState {
