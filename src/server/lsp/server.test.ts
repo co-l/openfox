@@ -40,6 +40,11 @@ function createProcessMock(withStdio = true) {
   proc.stdin = withStdio ? new EventEmitter() : null
   proc.stdout = withStdio ? new EventEmitter() : null
   proc.stderr = new EventEmitter()
+  // start() waits for 'spawn' before wiring JSON-RPC; emit it as soon as the
+  // listener registers (microtask, since tests run with fake timers)
+  proc.on('newListener', (event: string) => {
+    if (event === 'spawn') queueMicrotask(() => proc.emit('spawn'))
+  })
   return proc
 }
 

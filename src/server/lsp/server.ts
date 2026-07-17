@@ -212,8 +212,16 @@ export class LspServer {
     this.state = 'starting'
 
     try {
-      // Spawn the language server process using resolved command path
-      this.process = spawn(this.commandPath, this.config.serverArgs, {
+      // Spawn the language server process using resolved command path.
+      // Windows .cmd/.bat shims cannot be spawned directly (Node rejects them
+      // without a shell). With a shell, pass a single pre-quoted command line:
+      // args arrays alongside shell:true are deprecated (DEP0190), and quoting
+      // keeps cmd.exe happy when the path contains spaces.
+      const needsShell = process.platform === 'win32' && /\.(cmd|bat)$/i.test(this.commandPath)
+      const command = needsShell
+        ? [`"${this.commandPath}"`, ...this.config.serverArgs].join(' ')
+        : this.commandPath
+      this.process = spawn(command, needsShell ? [] : this.config.serverArgs, {
         cwd: this.workdir,
         stdio: ['pipe', 'pipe', 'pipe'],
         env: {
@@ -222,11 +230,30 @@ export class LspServer {
           PATH: process.env['PATH'],
         },
         windowsHide: true,
+        shell: needsShell,
+      })
+
+      // Wait for the process to actually spawn before wiring JSON-RPC onto its
+      // stdio. If spawn fails (e.g. ENOENT), sending initialize would leave an
+      // in-flight write on a destroyed stdin, and vscode-jsonrpc's sendRequest
+      // (async promise executor, connection.js) turns that write failure into
+      // an unhandled rejection that crashes the whole OpenFox process.
+      await new Promise<void>((resolve, reject) => {
+        this.process!.once('spawn', resolve)
+        this.process!.once('error', reject)
       })
 
       if (!this.process.stdin || !this.process.stdout) {
         throw new Error('Failed to get stdio streams from language server process')
       }
+
+      // A dying server can still emit late stream errors (e.g. write after its
+      // stdin got destroyed); without a listener those crash the process.
+      const onStreamError = (err: Error) => {
+        logger.debug('LSP stream error', { language: this.config.id, error: err.message })
+      }
+      this.process.stdin.on('error', onStreamError)
+      this.process.stdout.on('error', onStreamError)
 
       // Set up JSON-RPC connection
       this.connection = createMessageConnection(
