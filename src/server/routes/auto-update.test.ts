@@ -104,7 +104,7 @@ describe('Auto Update Routes', () => {
       await fetch(`${baseUrl}/api/auto-update/check`)
       mockSpawn.mockClear()
 
-      // Force refresh should call npm view again
+      // Force refresh should call git fetch again
       const res = await fetch(`${baseUrl}/api/auto-update/check?force=true`)
       expect(res.status).toBe(200)
       const body = (await res.json()) as { latest: string }
