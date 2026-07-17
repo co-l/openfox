@@ -1,5 +1,4 @@
 import { OUTPUT_LIMITS } from './types.js'
-// @ts-expect-error pdfjs-dist exports getDocument but TypeScript types can't resolve it for this legacy path
 import { getDocument } from 'pdfjs-dist/legacy/build/pdf.mjs'
 
 const PDF_HEADER = Buffer.from('%PDF')
@@ -68,8 +67,7 @@ export async function extractPdfText(buffer: Buffer): Promise<PdfResult> {
       const page = await doc.getPage(i)
       try {
         const content = await page.getTextContent()
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const pageText = content.items.map((item: any) => ('str' in item ? item.str : '')).join(' ')
+        const pageText = content.items.map((item) => ('str' in item ? item.str : '')).join(' ')
         pages.push(`[Page ${i}/${pageCount}]\n${pageText}`)
       } finally {
         page.cleanup()
