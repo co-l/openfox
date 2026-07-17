@@ -70,4 +70,51 @@ describe('createTransportLLMClient', () => {
       },
     )
   })
+
+  it('resolves attachments before passing messages to the transport', async () => {
+    const provider: Provider = {
+      id: 'copilot',
+      name: 'GitHub Copilot',
+      url: 'https://api.githubcopilot.com',
+      backend: 'openai',
+      credentialRef: 'cred',
+      models: [{ id: 'gpt-4o', contextWindow: 128000, source: 'backend' }],
+      isActive: true,
+      createdAt: new Date().toISOString(),
+    }
+
+    const capturedMessages: unknown[] = []
+    const mockStream = vi.fn(async function* (request: { messages: unknown[] }) {
+      capturedMessages.push(...request.messages)
+      yield { type: 'done', response: undefined } as never
+    })
+    const mockTransport: ProviderTransportAdapter = { ...transport, stream: mockStream }
+    const client = createTransportLLMClient(provider, 'gpt-4o', mockTransport)
+
+    for await (const _event of client.stream({
+      messages: [
+        {
+          role: 'user',
+          content: 'read this file',
+          attachments: [
+            {
+              id: 'f1',
+              filename: 'hello.ts',
+              mimeType: 'text/plain',
+              size: 20,
+              data: 'const x = 1',
+            },
+          ],
+        },
+      ],
+    })) {
+      // consume
+    }
+
+    expect(capturedMessages).toHaveLength(1)
+    const msg = capturedMessages[0] as { content: string; attachments?: unknown[] }
+    expect(msg.content).toContain('hello.ts')
+    expect(msg.content).toContain('const x = 1')
+    expect(msg.attachments).toEqual([])
+  })
 })

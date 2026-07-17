@@ -19,6 +19,8 @@ import type { BackendCapabilities } from './backend.js'
 import { extractPdfText } from '../tools/pdf-utils.js'
 import { TEXT_MIME_PREFIXES, TEXT_MIME_EXACT } from '../../shared/constants.js'
 
+export { resolveAttachmentsInMessages } from './resolve-attachments.js'
+
 export interface ModelParams {
   temperature?: number
   topP?: number
