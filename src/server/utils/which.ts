@@ -37,6 +37,31 @@ async function existsExecutable(path: string): Promise<boolean> {
 }
 
 /**
+ * Candidate filenames for a command in a directory.
+ * On Windows, the bare name in node_modules/.bin is a bash shim that
+ * spawn() cannot execute — try Windows-executable extensions first.
+ */
+function candidateNames(command: string): string[] {
+  if (process.platform !== 'win32') {
+    return [command]
+  }
+  return ['.cmd', '.exe', '.bat', ''].map((ext) => command + ext)
+}
+
+/**
+ * Find an executable candidate for a command inside a directory.
+ */
+async function findInDir(dir: string, command: string): Promise<string | null> {
+  for (const name of candidateNames(command)) {
+    const fullPath = join(dir, name)
+    if (await existsExecutable(fullPath)) {
+      return fullPath
+    }
+  }
+  return null
+}
+
+/**
  * Find the path to an executable command.
  * Search order:
  * 1. Bundled language servers in @openfox/server's node_modules/.bin
@@ -55,17 +80,17 @@ export async function which(command: string, workdir?: string): Promise<string |
 
   // 1. Check bundled node_modules/.bin first (language servers bundled with @openfox/server)
   for (const binDir of getBundledBinPaths()) {
-    const fullPath = join(binDir, command)
-    if (await existsExecutable(fullPath)) {
-      return fullPath
+    const found = await findInDir(binDir, command)
+    if (found) {
+      return found
     }
   }
 
   // 2. Check project-local node_modules/.bin (if workdir provided)
   if (workdir) {
-    const projectBin = join(workdir, 'node_modules', '.bin', command)
-    if (await existsExecutable(projectBin)) {
-      return projectBin
+    const found = await findInDir(join(workdir, 'node_modules', '.bin'), command)
+    if (found) {
+      return found
     }
   }
 
@@ -76,9 +101,9 @@ export async function which(command: string, workdir?: string): Promise<string |
   for (const dir of paths) {
     if (!dir) continue
 
-    const fullPath = join(dir, command)
-    if (await existsExecutable(fullPath)) {
-      return fullPath
+    const found = await findInDir(dir, command)
+    if (found) {
+      return found
     }
   }
 
