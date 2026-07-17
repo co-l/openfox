@@ -1,10 +1,10 @@
-import { spawn, type ChildProcess } from 'node:child_process'
+import { type ChildProcess } from 'node:child_process'
 import { readFile, writeFile, mkdir } from 'node:fs/promises'
 import { resolve, join } from 'node:path'
 import net from 'node:net'
 import { terminateProcessTree } from '../utils/process-tree.js'
 import { logger } from '../utils/logger.js'
-import { getPlatformShell } from '../utils/platform.js'
+import { spawnShell } from '../utils/shell.js'
 import { getRuntimeConfig } from '../runtime-config.js'
 import type { DevServerConfig, DevServerState, DevServerStatus } from '../../shared/dev-server.js'
 import { startInspectProxy } from './inspect-proxy.js'
@@ -265,13 +265,9 @@ class DevServerManager {
 
     const resolved = this.resolveWorkdir(workdir)
 
-    const shell = getPlatformShell()
-    const proc = spawn(shell.command, [...shell.args, resolvedCommand], {
+    const proc = spawnShell(resolvedCommand, {
       cwd: resolved,
-      env: { ...process.env, FORCE_COLOR: '1' },
-      stdio: ['ignore', 'pipe', 'pipe'],
       detached: true,
-      windowsHide: true,
     })
 
     instance.process = proc

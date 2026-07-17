@@ -28,6 +28,9 @@ class TerminalManager {
     return `term_${Date.now()}_${Math.random().toString(36).slice(2, 11)}`
   }
 
+  // Uses getPlatformShell() directly instead of spawnShell() because
+  // node-pty.spawn() has a different API than child_process.spawn().
+  // PTY requires the command and argv separately, not a shell -c invocation.
   private getShell(): string {
     return getPlatformShell().command
   }

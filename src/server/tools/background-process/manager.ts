@@ -1,7 +1,6 @@
-import { spawn } from 'node:child_process'
 import type { ServerMessage, BackgroundProcess } from '../../../shared/protocol.js'
 import * as store from './store.js'
-import { getPlatformShell } from '../../utils/platform.js'
+import { spawnShell } from '../../utils/shell.js'
 import { killProcessTree } from '../../utils/process-tree.js'
 
 type ProcessEventListener = (processId: string, msg: ServerMessage) => void
@@ -46,13 +45,9 @@ export function startProcessCommand(processId: string, sessionId: string, comman
   const proc = store.startProcess(processId, sessionId, 0)
   if (!proc) return null
 
-  const shell = getPlatformShell()
-  const child = spawn(shell.command, [...shell.args, command], {
+  const child = spawnShell(command, {
     cwd,
-    env: { ...process.env, FORCE_COLOR: '1' },
-    stdio: ['ignore', 'pipe', 'pipe'],
     detached: true,
-    windowsHide: true,
   })
 
   proc.pid = child.pid ?? null

@@ -45,15 +45,22 @@ describe('isWindowsPath', () => {
 
 describe('getPlatformShell (win32 shell setting)', () => {
   const realPlatform = process.platform
+  const realProgramFiles = process.env['ProgramFiles']
 
   beforeEach(() => {
     mockPlatform('win32')
     vi.mocked(getSetting).mockReturnValue(null)
     vi.mocked(existsSync).mockReturnValue(false)
+    process.env['ProgramFiles'] = 'C:\\Program Files'
   })
 
   afterEach(() => {
     mockPlatform(realPlatform)
+    if (realProgramFiles) {
+      process.env['ProgramFiles'] = realProgramFiles
+    } else {
+      delete process.env['ProgramFiles']
+    }
     vi.clearAllMocks()
   })
 
@@ -95,9 +102,19 @@ describe('getPlatformShell (win32 shell setting)', () => {
 
 describe('listAvailableShells', () => {
   const realPlatform = process.platform
+  const realProgramFiles = process.env['ProgramFiles']
+
+  beforeEach(() => {
+    process.env['ProgramFiles'] = 'C:\\Program Files'
+  })
 
   afterEach(() => {
     mockPlatform(realPlatform)
+    if (realProgramFiles) {
+      process.env['ProgramFiles'] = realProgramFiles
+    } else {
+      delete process.env['ProgramFiles']
+    }
     vi.clearAllMocks()
   })
 
