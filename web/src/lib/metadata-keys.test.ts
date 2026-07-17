@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { metadataKeyLabels, formatMetadataKeyLabel } from './metadata-keys'
+import { metadataKeyLabels, formatMetadataKeyLabel, formatMetadataKeyLabelLower } from './metadata-keys'
 
 describe('metadataKeyLabels', () => {
   it('contains known keys', () => {
@@ -16,10 +16,24 @@ describe('formatMetadataKeyLabel', () => {
     expect(formatMetadataKeyLabel('todos')).toBe('Tasks')
   })
 
-  it('formats unknown keys by capitalizing words', () => {
-    expect(formatMetadataKeyLabel('qa_findings')).toBe('QA Findings')
+  it('formats unknown keys by capitalizing first letter of each word', () => {
+    expect(formatMetadataKeyLabel('qa_findings')).toBe('Qa Findings')
     expect(formatMetadataKeyLabel('custom_key')).toBe('Custom Key')
     expect(formatMetadataKeyLabel('single')).toBe('Single')
-    expect(formatMetadataKeyLabel('ui_tests')).toBe('UI Tests')
+    expect(formatMetadataKeyLabel('ui_tests')).toBe('Ui Tests')
+  })
+})
+
+describe('formatMetadataKeyLabelLower', () => {
+  it('returns lowercase label for known keys', () => {
+    expect(formatMetadataKeyLabelLower('criteria')).toBe('criteria')
+    expect(formatMetadataKeyLabelLower('review_findings')).toBe('review findings')
+    expect(formatMetadataKeyLabelLower('todos')).toBe('tasks')
+  })
+
+  it('replaces underscores with spaces for unknown keys', () => {
+    expect(formatMetadataKeyLabelLower('qa_findings')).toBe('qa findings')
+    expect(formatMetadataKeyLabelLower('custom_key')).toBe('custom key')
+    expect(formatMetadataKeyLabelLower('single')).toBe('single')
   })
 })

@@ -1,6 +1,6 @@
 import { memo } from 'react'
 import { ToolIcon } from './ToolIcon'
-import { formatMetadataKeyLabel } from '../../lib/metadata-keys'
+import { formatMetadataKeyLabelLower } from '../../lib/metadata-keys'
 
 interface ToolCallPreparingProps {
   name: string
@@ -30,7 +30,7 @@ function getToolDescription(name: string, args?: string): string {
       const parsed = JSON.parse(args)
       const key = parsed.key as string | undefined
       if (key) {
-        const label = formatMetadataKeyLabel(key).toLowerCase()
+        const label = formatMetadataKeyLabelLower(key)
         return `${base} ${label}`
       }
     } catch {
