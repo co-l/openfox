@@ -94,6 +94,7 @@ Default plugin directories:
 Restart OpenFox after installing or updating a plugin.
 
 To authenticate with a ChatGPT Plus or Pro account, you can install the [`openfox-chatgpt`](https://github.com/arthurlacoste/openfox-chatgpt) plugin.
+To authenticate with a Github copilot account, you can install the [`openfox-github-copilot`](https://github.com/JamesDAdams/openfox-github-copilot) plugin.
 
 ## Screenshots
 
