@@ -1,19 +1,7 @@
 import type { LLMMessage } from './types.js'
 import type { Attachment } from '../../shared/types.js'
 import { extractPdfText } from '../tools/pdf-utils.js'
-
-const TEXT_MIME_EXACT = [
-  'text/plain',
-  'text/markdown',
-  'text/csv',
-  'text/html',
-  'text/xml',
-  'application/json',
-  'application/xml',
-  'application/javascript',
-  'application/typescript',
-]
-const TEXT_MIME_PREFIXES = ['text/']
+import { TEXT_MIME_EXACT, TEXT_MIME_PREFIXES } from '../../shared/constants.js'
 
 function decodeDataUrlToText(data: string): string {
   const match = data.match(/^data:.*?;base64,(.+)$/)
@@ -24,15 +12,15 @@ function decodeDataUrlToText(data: string): string {
 }
 
 export async function extractPdfFromDataUrl(data: string, filename: string): Promise<string> {
-  try {
-    const base64Match = data.match(/^data:.*?;base64,(.+)$/)
-    if (base64Match?.[1]) {
+  const base64Match = data.match(/^data:.*?;base64,(.+)$/)
+  if (base64Match?.[1]) {
+    try {
       const buffer = Buffer.from(base64Match[1], 'base64')
       const result = await extractPdfText(buffer)
       return `[PDF: ${filename}]\n${result.text}`
+    } catch {
+      return `[PDF: ${filename}] (could not extract text)`
     }
-  } catch {
-    // fall through
   }
   return `[PDF: ${filename}] (could not extract text)`
 }
