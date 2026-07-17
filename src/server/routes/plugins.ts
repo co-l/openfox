@@ -1,6 +1,7 @@
 import { Router } from 'express'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { dirname, resolve, join } from 'node:path'
+import { existsSync } from 'node:fs'
 import { readFile, readdir, rm, rename } from 'node:fs/promises'
 import { platform } from 'node:os'
 import { execFile } from 'node:child_process'
@@ -55,7 +56,10 @@ export function createPluginRoutes(options: {
         return res.json({ plugins: registryCache.data })
       }
       const moduleDir = dirname(fileURLToPath(import.meta.url))
-      const registryPath = resolve(moduleDir, '../../../plugins-registry.json')
+      let registryPath = resolve(moduleDir, '../plugins-registry.json')
+      if (!existsSync(registryPath)) {
+        registryPath = resolve(moduleDir, '../../../plugins-registry.json')
+      }
       const data = JSON.parse(await readFile(registryPath, 'utf8'))
       registryCache = { data, ts: now }
       res.json({ plugins: data })
