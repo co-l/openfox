@@ -5,9 +5,10 @@ import type { McpServerConfig } from '../mcp/types.js'
 import type { Mode } from '../../cli/main.js'
 import { loadGlobalConfig, saveGlobalConfig } from '../../cli/config.js'
 import { createMcpTools } from '../mcp/tool-adapter.js'
+import { applyMcpServerUpdate } from '../mcp/update-server.js'
 
 interface McpConfigArgs {
-  action: 'list' | 'add' | 'remove' | 'toggle-tool'
+  action: 'list' | 'add' | 'update' | 'remove' | 'toggle-tool'
   name?: string
   transport?: 'stdio' | 'http'
   command?: string
@@ -52,19 +53,19 @@ export const mcpConfigTool: Tool = createTool<McpConfigArgs>(
     function: {
       name: 'mcp_config',
       description:
-        'Configure MCP servers (Model Context Protocol). Actions: list (show all servers and tools), add (add a server), remove (delete a server), toggle-tool (enable/disable a tool). Use this when the user asks to add, remove, or configure MCP servers or tools.',
+        'Configure MCP servers (Model Context Protocol). Actions: list (show all servers and tools), add (add a server), update (modify an existing server — all fields are optional and merged with the current config, transport-incompatible fields are cleared on transport change), remove (delete a server), toggle-tool (enable/disable a tool). Use this when the user asks to add, remove, update, or configure MCP servers or tools.',
       parameters: {
         type: 'object',
         properties: {
           action: {
             type: 'string',
-            enum: ['list', 'add', 'remove', 'toggle-tool'],
+            enum: ['list', 'add', 'update', 'remove', 'toggle-tool'],
             description:
-              'Action: list (show servers), add (add new server), remove (delete a server), toggle-tool (enable/disable a tool)',
+              'Action: list (show servers), add (add new server), update (modify existing server), remove (delete a server), toggle-tool (enable/disable a tool)',
           },
           name: {
             type: 'string',
-            description: 'Server name (required for: add, remove, toggle-tool)',
+            description: 'Server name (required for: add, update, remove, toggle-tool)',
           },
           transport: {
             type: 'string',
@@ -110,7 +111,7 @@ export const mcpConfigTool: Tool = createTool<McpConfigArgs>(
   async (args, context, helpers) => {
     const actionError = validateActionWithPermission(
       args.action,
-      ['list', 'add', 'remove', 'toggle-tool'],
+      ['list', 'add', 'update', 'remove', 'toggle-tool'],
       'mcp_config',
       context.permittedActions,
     )
@@ -203,6 +204,44 @@ export const mcpConfigTool: Tool = createTool<McpConfigArgs>(
       const server = mcpManagerForTools.getServer(args.name)
       const toolCount = server?.tools.length ?? 0
       return helpers.success(`Added MCP server "${args.name}" (${toolCount} tools discovered). ${APPLY_PROMPT_MESSAGE}`)
+    }
+
+    if (args.action === 'update') {
+      if (!args.name) return helpers.error('Missing required field: name')
+      const existing = mcpManagerForTools.getServer(args.name)
+      if (!existing) return helpers.error(`MCP server "${args.name}" not found`)
+
+      const globalConfig = await loadGlobalConfig(mcpConfigMode, mcpConfigPath)
+      const mcpServers = { ...((globalConfig.mcpServers ?? {}) as Record<string, McpServerConfig>) }
+
+      const patch = {
+        ...(args.transport !== undefined ? { transport: args.transport } : {}),
+        ...(args.command !== undefined ? { command: args.command } : {}),
+        ...(args.args !== undefined ? { args: args.args } : {}),
+        ...(args.env !== undefined ? { env: args.env } : {}),
+        ...(args.url !== undefined ? { url: args.url } : {}),
+        ...(args.headers !== undefined ? { headers: args.headers } : {}),
+      }
+
+      const { error: updateError } = await applyMcpServerUpdate({
+        name: args.name,
+        patch,
+        existing,
+        persistedCfg: mcpServers[args.name],
+        mcpManager: mcpManagerForTools,
+        save: async (cfg) => {
+          mcpServers[args.name!] = cfg
+          await saveGlobalConfig(mcpConfigMode, { ...globalConfig, mcpServers }, mcpConfigPath)
+        },
+      })
+
+      if (updateError) return helpers.error(updateError)
+      await rebuildTools()
+      notifyContextChanged(context.sessionId)
+
+      const server = mcpManagerForTools.getServer(args.name)
+      const toolCount = server?.tools.length ?? 0
+      return helpers.success(`Updated MCP server "${args.name}" (${toolCount} tools discovered). ${APPLY_PROMPT_MESSAGE}`)
     }
 
     if (args.action === 'remove') {
