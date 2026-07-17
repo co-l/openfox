@@ -72,7 +72,9 @@ export class ProviderRegistry implements ProviderPluginRegistry {
 
   private register<T>(map: Map<string, T>, id: string, value: T, kind: string): void {
     if (!id.trim()) throw new Error(`Provider ${kind} id cannot be empty`)
-    if (map.has(id)) throw new Error(`Provider ${kind} already registered: ${id}`)
+    if (map.has(id)) {
+      map.delete(id)
+    }
     map.set(id, value)
   }
 }

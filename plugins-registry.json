@@ -1,0 +1,14 @@
+[
+  {
+    "name": "openfox-chatgpt",
+    "displayName": "ChatGPT",
+    "description": "Authenticate with a ChatGPT Plus or Pro account via browser-based OAuth.",
+    "githubUrl": "https://github.com/arthurlacoste/openfox-chatgpt"
+  },
+  {
+    "name": "openfox-github-copilot",
+    "displayName": "Github Copilot",
+    "description": "Authenticate with a Github copilot account via browser-based OAuth.",
+    "githubUrl": "https://github.com/JamesDAdams/openfox-github-copilot"
+  }
+]
