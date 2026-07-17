@@ -145,7 +145,9 @@ describe('createTransportLLMClient', () => {
         },
       ],
       modelSettings: { supportsVision: true },
-    })) {}
+    })) {
+      // consume stream
+    }
 
     const msg = capturedMessages[0] as { attachments?: unknown[] }
     expect(msg.attachments).toHaveLength(1)
