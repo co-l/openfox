@@ -1856,6 +1856,78 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
     }
   })
 
+  app.put('/api/mcp/servers/:name', async (req, res) => {
+    const { name } = req.params
+    const existing = mcpManager.getServer(name)
+    if (!existing) {
+      return res.status(404).json({ error: `MCP server '${name}' not found` })
+    }
+
+    const body = req.body as Record<string, unknown>
+    const { transport: rawTransport, command, args, env, url, headers } = body
+
+    if (rawTransport !== undefined && rawTransport !== 'stdio' && rawTransport !== 'http') {
+      return res.status(400).json({ error: `Invalid transport '${String(rawTransport)}'. Must be 'stdio' or 'http'.` })
+    }
+    if (command !== undefined && typeof command !== 'string') {
+      return res.status(400).json({ error: 'command must be a string' })
+    }
+    if (args !== undefined && (!Array.isArray(args) || args.some((a) => typeof a !== 'string'))) {
+      return res.status(400).json({ error: 'args must be an array of strings' })
+    }
+    if (env !== undefined && (typeof env !== 'object' || env === null || Array.isArray(env) || Object.values(env as object).some((v) => typeof v !== 'string'))) {
+      return res.status(400).json({ error: 'env must be a string/string object' })
+    }
+    if (url !== undefined && typeof url !== 'string') {
+      return res.status(400).json({ error: 'url must be a string' })
+    }
+    if (headers !== undefined && (typeof headers !== 'object' || headers === null || Array.isArray(headers) || Object.values(headers as object).some((v) => typeof v !== 'string'))) {
+      return res.status(400).json({ error: 'headers must be a string/string object' })
+    }
+
+    try {
+      const { loadGlobalConfig, saveGlobalConfig } = await import('../cli/config.js')
+      const { applyMcpServerUpdate } = await import('./mcp/update-server.js')
+
+      const globalConfig = await loadGlobalConfig(config.mode ?? 'production', config.globalConfigPath)
+      const mcpServers = { ...(globalConfig.mcpServers ?? {}) } as Record<string, import('./mcp/types.js').McpServerConfig>
+
+      const patch = {
+        ...(rawTransport !== undefined ? { transport: rawTransport as 'stdio' | 'http' } : {}),
+        ...(command !== undefined ? { command: command as string } : {}),
+        ...(args !== undefined ? { args: args as string[] } : {}),
+        ...(env !== undefined ? { env: env as Record<string, string> } : {}),
+        ...(url !== undefined ? { url: url as string } : {}),
+        ...(headers !== undefined ? { headers: headers as Record<string, string> } : {}),
+      }
+
+      const { error: updateError } = await applyMcpServerUpdate({
+        name,
+        patch,
+        existing,
+        persistedCfg: mcpServers[name],
+        mcpManager,
+        save: async (cfg) => {
+          mcpServers[name] = cfg
+          await saveGlobalConfig(config.mode ?? 'production', { ...globalConfig, mcpServers }, config.globalConfigPath)
+        },
+      })
+
+      if (updateError) {
+        return res.status(400).json({ error: updateError })
+      }
+
+      await rebuildMcpTools()
+      const sessions = sessionManager.listSessions()
+      for (const s of sessions) {
+        sessionManager.setDynamicContextChanged(s.id, true)
+      }
+      res.json({ server: mcpManager.getServer(name) })
+    } catch (error) {
+      res.status(400).json({ error: error instanceof Error ? error.message : String(error) })
+    }
+  })
+
   app.delete('/api/mcp/servers/:name', async (req, res) => {
     const { name } = req.params
     const server = mcpManager.getServer(name)
