@@ -134,6 +134,11 @@ WantedBy=graphical-session.target
 }
 
 export async function runServiceCommand(_mode: Mode, subcommand?: string, ...args: string[]): Promise<void> {
+  if (process.platform === 'win32') {
+    console.log('openfox service is not supported on Windows (it relies on systemd). Run `openfox` directly instead.')
+    process.exitCode = 1
+    return
+  }
   if (!subcommand) {
     printServiceHelp()
     return

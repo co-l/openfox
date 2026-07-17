@@ -88,6 +88,21 @@ describe('pwa', () => {
     })
   })
 
+  describe('isServerReachable', () => {
+    it('returns true for a live server and false for a closed port', async () => {
+      const { isServerReachable } = await import('./pwa.js')
+      const { createServer } = await import('node:http')
+
+      const server = createServer((_req, res) => res.end('ok'))
+      await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve))
+      const port = (server.address() as { port: number }).port
+
+      await expect(isServerReachable(port)).resolves.toBe(true)
+      server.close()
+      await expect(isServerReachable(59999)).resolves.toBe(false)
+    })
+  })
+
   describe('printPwaHelp', () => {
     it('prints help text to console', async () => {
       const { printPwaHelp } = await import('./pwa.js')

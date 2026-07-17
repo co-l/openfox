@@ -38,8 +38,12 @@ export function createAutoUpdateRoutes(options: AutoUpdateRoutesOptions = {}): R
 
     try {
       const latest = await new Promise<string>((resolve, reject) => {
-        const child = spawn('npm', ['view', 'openfox', 'version'], {
+        // On Windows npm is npm.cmd, not directly spawnable (CVE-2024-27980):
+        // go through the shell as a single string (fixed args, avoids DEP0190).
+        const win = process.platform === 'win32'
+        const child = spawn(win ? 'npm view openfox version' : 'npm', win ? [] : ['view', 'openfox', 'version'], {
           stdio: ['ignore', 'pipe', 'pipe'],
+          shell: win,
           windowsHide: true,
         })
         let stdout = ''
@@ -82,8 +86,11 @@ export function createAutoUpdateRoutes(options: AutoUpdateRoutesOptions = {}): R
 
     try {
       const isService = isRunningAsService()
-      const child = spawn('bash', ['-c', 'openfox update'], {
+      // Single command string through the shell: resolves openfox on PATH on
+      // every platform (was hardcoded `bash -c`, broken on Windows).
+      const child = spawn('openfox update', {
         stdio: ['ignore', 'pipe', 'pipe'],
+        shell: true,
         windowsHide: true,
       })
 
@@ -129,9 +136,10 @@ export function createAutoUpdateRoutes(options: AutoUpdateRoutesOptions = {}): R
     }
 
     try {
-      const child = spawn('bash', ['-c', 'openfox service restart'], {
+      const child = spawn('openfox service restart', {
         detached: true,
         stdio: 'ignore',
+        shell: true,
         windowsHide: true,
       })
       child.unref()

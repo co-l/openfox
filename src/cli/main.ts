@@ -1,7 +1,4 @@
 import { parseArgs } from 'node:util'
-import { spawnSync } from 'node:child_process'
-import { fileURLToPath } from 'node:url'
-import { dirname, join } from 'node:path'
 import { select, password, isCancel, cancel } from '@clack/prompts'
 import { generateKeyPairSync } from 'node:crypto'
 import { writeFile } from 'node:fs/promises'
@@ -24,7 +21,7 @@ Commands:
   provider remove  Remove a provider
   service          Manage the systemd service (install, start, stop, status, logs, uninstall)
   pwa              Manage the PWA installation (install, uninstall, launch, update, status)
-  update           Update OpenFox to the latest version (see update.sh)
+  update           Update OpenFox to the latest version
 
 Options:
   -p, --port <number>     Specify port (default: 10369 for prod, 10469 for dev)
@@ -216,12 +213,10 @@ export async function runCli(options: { mode: Mode }): Promise<void> {
       break
     }
     case 'update': {
-      const __filename = fileURLToPath(import.meta.url)
-      const __dirname = dirname(__filename)
-      const updateScriptPath = join(__dirname, 'cli', 'update.sh')
-      const result = spawnSync(updateScriptPath, [], { shell: true, stdio: 'inherit', windowsHide: true })
-      if (result.status !== 0) {
-        process.exit(result.status ?? 1)
+      const { runUpdate } = await import('./update.js')
+      const code = runUpdate()
+      if (code !== 0) {
+        process.exit(code)
       }
       break
     }
