@@ -50,7 +50,7 @@ describe('MCP Integration', () => {
   async function fetchMcpServers() {
     const res = await fetch(`${server.url}/api/mcp/servers`)
     const data = (await res.json()) as {
-      servers: Array<{ name: string; status: string; tools: Array<{ name: string; enabled: boolean }> }>
+      servers: Array<{ name: string; status: string; config: { command?: string; transport: string }; tools: Array<{ name: string; enabled: boolean }> }>
     }
     return data.servers
   }
@@ -70,6 +70,15 @@ describe('MCP Integration', () => {
 
   async function removeMcpServer(name: string) {
     await fetch(`${server.url}/api/mcp/servers/${encodeURIComponent(name)}`, { method: 'DELETE' })
+  }
+
+  async function updateMcpServer(name: string, body: Record<string, unknown>) {
+    const res = await fetch(`${server.url}/api/mcp/servers/${encodeURIComponent(name)}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    })
+    return res
   }
 
   async function fetchSessionState(sessionId: string) {
@@ -183,5 +192,68 @@ describe('MCP Integration', () => {
 
     // Cleanup
     await removeMcpServer('test-server')
+  })
+
+  it('updates an existing MCP server command and args', async () => {
+    const mockServerPath = join(__dirname, 'mock-mcp-server.ts')
+    await addMcpServer('test-server', 'npx', ['tsx', mockServerPath])
+    await sleep(1000)
+
+    const res = await updateMcpServer('test-server', {
+      command: 'npx',
+      args: ['tsx', mockServerPath],
+    })
+    expect(res.ok).toBe(true)
+
+    const servers = await fetchMcpServers()
+    const testServer = servers.find((s) => s.name === 'test-server')
+    expect(testServer).toBeDefined()
+    expect(testServer!.status).toBe('connected')
+    expect(testServer!.tools).toHaveLength(2)
+  })
+
+  it('returns 404 when updating a non-existent MCP server', async () => {
+    const res = await updateMcpServer('does-not-exist', { command: 'echo' })
+    expect(res.status).toBe(404)
+  })
+
+  it('returns 400 when updating with invalid transport', async () => {
+    const mockServerPath = join(__dirname, 'mock-mcp-server.ts')
+    await addMcpServer('test-server', 'npx', ['tsx', mockServerPath])
+    await sleep(500)
+
+    const res = await updateMcpServer('test-server', { transport: 'ftp' })
+    expect(res.status).toBe(400)
+  })
+
+  it('preserves existing fields when partial update is sent', async () => {
+    const mockServerPath = join(__dirname, 'mock-mcp-server.ts')
+    await addMcpServer('test-server', 'npx', ['tsx', mockServerPath])
+    await sleep(1000)
+
+    const res = await updateMcpServer('test-server', { args: ['tsx', mockServerPath] })
+    expect(res.ok).toBe(true)
+
+    const servers = await fetchMcpServers()
+    const testServer = servers.find((s) => s.name === 'test-server')
+    expect(testServer!.status).toBe('connected')
+    expect(testServer!.config.command).toBe('npx')
+  })
+
+  it('switches transport from stdio to stdio with explicit transport field', async () => {
+    const mockServerPath = join(__dirname, 'mock-mcp-server.ts')
+    await addMcpServer('test-server', 'npx', ['tsx', mockServerPath])
+    await sleep(1000)
+
+    const res = await updateMcpServer('test-server', {
+      transport: 'stdio',
+      command: 'npx',
+      args: ['tsx', mockServerPath],
+    })
+    expect(res.ok).toBe(true)
+
+    const servers = await fetchMcpServers()
+    const testServer = servers.find((s) => s.name === 'test-server')
+    expect(testServer!.status).toBe('connected')
   })
 })

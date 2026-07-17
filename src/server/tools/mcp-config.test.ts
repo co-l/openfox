@@ -401,4 +401,156 @@ describe('mcpConfigTool', () => {
       expect(result.error).toContain('reboot')
     })
   })
+
+  describe('action: update', () => {
+    it('should return error when server not found', async () => {
+      const manager = {
+        ...mockManager,
+        getServer: vi.fn().mockReturnValue(undefined),
+      } as unknown as McpManager
+      setMcpManagerForTools(manager)
+
+      const { mcpConfigTool } = await import('./mcp-config.js')
+
+      const result = await mcpConfigTool.execute(
+        { action: 'update', name: 'unknown' },
+        { workdir: '/tmp', sessionId: 's1', sessionManager: mockSessionManager() },
+      )
+
+      expect(result.success).toBe(false)
+      expect(result.error).toContain('unknown')
+    })
+
+    it('should require name', async () => {
+      setMcpManagerForTools(mockManager)
+
+      const { mcpConfigTool } = await import('./mcp-config.js')
+
+      const result = await mcpConfigTool.execute(
+        { action: 'update' },
+        { workdir: '/tmp', sessionId: 's1', sessionManager: mockSessionManager() },
+      )
+
+      expect(result.success).toBe(false)
+      expect(result.error).toContain('name')
+    })
+
+    it('should do a partial merge — keep existing command when not provided', async () => {
+      const manager = {
+        ...mockManager,
+        getServer: vi.fn().mockReturnValue({
+          name: 'filesystem',
+          config: { transport: 'stdio', command: 'npx', args: ['-y', '@fs/mcp'] },
+          status: 'connected',
+          tools: [],
+          estimatedTokens: 0,
+        }),
+        addServer: vi.fn().mockResolvedValue(undefined),
+        removeServer: vi.fn(),
+      } as unknown as McpManager
+      setMcpManagerForTools(manager)
+
+      const { mcpConfigTool } = await import('./mcp-config.js')
+
+      const result = await mcpConfigTool.execute(
+        { action: 'update', name: 'filesystem', args: ['-y', '@fs/mcp', '--extra'] },
+        { workdir: '/tmp', sessionId: 's1', sessionManager: mockSessionManager() },
+      )
+
+      expect(result.success).toBe(true)
+      expect(manager.addServer).toHaveBeenCalledWith(
+        'filesystem',
+        expect.objectContaining({ command: 'npx', args: ['-y', '@fs/mcp', '--extra'] }),
+      )
+    })
+
+    it('should clear stdio fields when transport changes to http', async () => {
+      const manager = {
+        ...mockManager,
+        getServer: vi.fn().mockReturnValue({
+          name: 'my-server',
+          config: { transport: 'stdio', command: 'npx', args: ['server.js'], env: { KEY: 'val' } },
+          status: 'connected',
+          tools: [],
+          estimatedTokens: 0,
+        }),
+        addServer: vi.fn().mockResolvedValue(undefined),
+        removeServer: vi.fn(),
+      } as unknown as McpManager
+      setMcpManagerForTools(manager)
+
+      const { mcpConfigTool } = await import('./mcp-config.js')
+
+      const result = await mcpConfigTool.execute(
+        { action: 'update', name: 'my-server', transport: 'http', url: 'https://example.com/mcp' },
+        { workdir: '/tmp', sessionId: 's1', sessionManager: mockSessionManager() },
+      )
+
+      expect(result.success).toBe(true)
+      expect(manager.addServer).toHaveBeenCalledWith(
+        'my-server',
+        expect.objectContaining({ transport: 'http', url: 'https://example.com/mcp' }),
+      )
+      const calledCfg = (manager.addServer as ReturnType<typeof vi.fn>).mock.calls[0]?.[1]
+      expect(calledCfg.command).toBeUndefined()
+      expect(calledCfg.args).toBeUndefined()
+      expect(calledCfg.env).toBeUndefined()
+    })
+
+    it('should normalize transportChanged when existing.config.transport is undefined', async () => {
+      const manager = {
+        ...mockManager,
+        getServer: vi.fn().mockReturnValue({
+          name: 'legacy-server',
+          config: { command: 'npx', args: ['server.js'] },
+          status: 'connected',
+          tools: [],
+          estimatedTokens: 0,
+        }),
+        addServer: vi.fn().mockResolvedValue(undefined),
+        removeServer: vi.fn(),
+      } as unknown as McpManager
+      setMcpManagerForTools(manager)
+
+      const { mcpConfigTool } = await import('./mcp-config.js')
+
+      const result = await mcpConfigTool.execute(
+        { action: 'update', name: 'legacy-server', args: ['server.js', '--port', '3000'] },
+        { workdir: '/tmp', sessionId: 's1', sessionManager: mockSessionManager() },
+      )
+
+      expect(result.success).toBe(true)
+      const calledCfg = (manager.addServer as ReturnType<typeof vi.fn>).mock.calls[0]?.[1]
+      expect(calledCfg.command).toBe('npx')
+      expect(calledCfg.args).toEqual(['server.js', '--port', '3000'])
+    })
+
+    it('should rollback to existing config when addServer throws', async () => {
+      const existingConfig = { transport: 'stdio' as const, command: 'npx', args: ['old.js'] }
+      const manager = {
+        ...mockManager,
+        getServer: vi.fn().mockReturnValue({
+          name: 'failing-server',
+          config: existingConfig,
+          status: 'connected',
+          tools: [],
+          estimatedTokens: 0,
+        }),
+        addServer: vi.fn().mockRejectedValue(new Error('connection failed')),
+        removeServer: vi.fn(),
+      } as unknown as McpManager
+      setMcpManagerForTools(manager)
+
+      const { mcpConfigTool } = await import('./mcp-config.js')
+
+      const result = await mcpConfigTool.execute(
+        { action: 'update', name: 'failing-server', args: ['new.js'] },
+        { workdir: '/tmp', sessionId: 's1', sessionManager: mockSessionManager() },
+      )
+
+      expect(result.success).toBe(false)
+      expect(manager.addServer).toHaveBeenCalledTimes(2)
+      expect(manager.addServer).toHaveBeenLastCalledWith('failing-server', existingConfig)
+    })
+  })
 })
