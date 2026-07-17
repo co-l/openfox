@@ -670,6 +670,39 @@ export function ToolsTab() {
                       {server.error}
                     </span>
                   )}
+                  {expandedServers.has(server.name) && (
+                    isConfirming(server.name, 'delete') ? (
+                      <>
+                        <button
+                          onClick={(e) => { e.stopPropagation(); handleRemove(server.name) }}
+                          className="px-2 py-1 rounded text-xs font-medium hover:opacity-90 transition-colors bg-accent-error/20 text-accent-error hover:bg-accent-error/30"
+                        >
+                          Delete
+                        </button>
+                        <button
+                          onClick={(e) => { e.stopPropagation(); clearConfirm() }}
+                          className="px-2 py-1 rounded text-xs text-text-muted hover:bg-bg-primary transition-colors"
+                        >
+                          Cancel
+                        </button>
+                      </>
+                    ) : (
+                      <>
+                        <button
+                          onClick={(e) => { e.stopPropagation(); handleEdit(server) }}
+                          className="px-2 py-1 rounded text-xs font-medium text-text-muted hover:text-text-primary hover:bg-bg-primary transition-colors"
+                        >
+                          Edit
+                        </button>
+                        <button
+                          onClick={(e) => { e.stopPropagation(); requestDelete(server.name) }}
+                          className="px-2 py-1 rounded text-xs font-medium text-accent-error/80 hover:text-accent-error hover:bg-accent-error/10 transition-colors"
+                        >
+                          Remove
+                        </button>
+                      </>
+                    )
+                  )}
                   <span className="text-xs text-text-muted">{expandedServers.has(server.name) ? '▲' : '▼'}</span>
                 </div>
               </div>
@@ -731,51 +764,6 @@ export function ToolsTab() {
                       ))}
                     </div>
                   )}
-                  <div className="pt-2 flex items-center justify-end gap-2">
-                    {isConfirming(server.name, 'delete') ? (
-                      <>
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation()
-                            handleRemove(server.name)
-                          }}
-                          className="px-2 py-1 rounded text-xs font-medium hover:opacity-90 transition-colors bg-accent-error/20 text-accent-error hover:bg-accent-error/30"
-                        >
-                          Delete
-                        </button>
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation()
-                            clearConfirm()
-                          }}
-                          className="px-2 py-1 rounded text-xs text-text-muted hover:bg-bg-primary transition-colors"
-                        >
-                          Cancel
-                        </button>
-                      </>
-                    ) : (
-                      <>
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation()
-                            handleEdit(server)
-                          }}
-                          className="px-2 py-1 rounded text-xs font-medium text-text-muted hover:text-text-primary hover:bg-bg-primary transition-colors"
-                        >
-                          Edit
-                        </button>
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation()
-                            requestDelete(server.name)
-                          }}
-                          className="px-2 py-1 rounded text-xs font-medium text-accent-error/80 hover:text-accent-error hover:bg-accent-error/10 transition-colors"
-                        >
-                          Remove server
-                        </button>
-                      </>
-                    )}
-                  </div>
                 </div>
               )}
             </div>
