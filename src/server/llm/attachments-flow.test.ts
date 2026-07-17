@@ -21,7 +21,7 @@ describe('Full Attachment Flow Integration', () => {
     }
   })
 
-  it('should preserve attachments through the entire flow from EventStore to LLM format', () => {
+  it('should preserve attachments through the entire flow from EventStore to LLM format', async () => {
     const events: StoredEvent[] = [
       {
         seq: 1,
@@ -51,7 +51,7 @@ describe('Full Attachment Flow Integration', () => {
     expect(contextMessages[0]?.attachments).toHaveLength(1)
     expect(contextMessages[0]?.attachments?.[0]).toEqual(testAttachment)
 
-    const llmMessages = convertMessages(contextMessages, true)
+    const llmMessages = await convertMessages(contextMessages, true)
 
     expect(llmMessages).toHaveLength(1)
     const llmMsg = llmMessages[0]
@@ -68,7 +68,7 @@ describe('Full Attachment Flow Integration', () => {
     })
   })
 
-  it('should handle multiple attachments through the full flow', () => {
+  it('should handle multiple attachments through the full flow', async () => {
     const attachments: Attachment[] = [
       {
         id: 'test-1',
@@ -110,7 +110,7 @@ describe('Full Attachment Flow Integration', () => {
     ]
 
     const contextMessages = buildContextMessagesFromStoredEvents(events, 'window-1')
-    const llmMessages = convertMessages(contextMessages, true)
+    const llmMessages = await convertMessages(contextMessages, true)
 
     expect(llmMessages).toHaveLength(1)
     const content = llmMessages[0]?.content as Array<{ type: string; text?: string; image_url?: { url: string } }>
@@ -126,7 +126,7 @@ describe('Full Attachment Flow Integration', () => {
     })
   })
 
-  it('should handle messages without attachments through the full flow', () => {
+  it('should handle messages without attachments through the full flow', async () => {
     const events: StoredEvent[] = [
       {
         seq: 1,
@@ -150,13 +150,13 @@ describe('Full Attachment Flow Integration', () => {
     ]
 
     const contextMessages = buildContextMessagesFromStoredEvents(events, 'window-1')
-    const llmMessages = convertMessages(contextMessages, true)
+    const llmMessages = await convertMessages(contextMessages, true)
 
     expect(llmMessages).toHaveLength(1)
     expect(llmMessages[0]?.content).toBe('Hello')
   })
 
-  it('should handle empty text with only attachments', () => {
+  it('should handle empty text with only attachments', async () => {
     const events: StoredEvent[] = [
       {
         seq: 1,
@@ -181,7 +181,7 @@ describe('Full Attachment Flow Integration', () => {
     ]
 
     const contextMessages = buildContextMessagesFromStoredEvents(events, 'window-1')
-    const llmMessages = convertMessages(contextMessages, true)
+    const llmMessages = await convertMessages(contextMessages, true)
 
     expect(llmMessages).toHaveLength(1)
     const content = llmMessages[0]?.content as Array<{ type: string; text?: string; image_url?: { url: string } }>
@@ -192,7 +192,7 @@ describe('Full Attachment Flow Integration', () => {
     })
   })
 
-  it('converts images to text placeholder when model lacks vision', () => {
+  it('converts images to text placeholder when model lacks vision', async () => {
     const events: StoredEvent[] = [
       {
         seq: 1,
@@ -217,7 +217,7 @@ describe('Full Attachment Flow Integration', () => {
     ]
 
     const contextMessages = buildContextMessagesFromStoredEvents(events, 'window-1')
-    const llmMessages = convertMessages(contextMessages, false)
+    const llmMessages = await convertMessages(contextMessages, false)
 
     expect(llmMessages).toHaveLength(1)
     const content = llmMessages[0]?.content as Array<{ type: string; text?: string }>

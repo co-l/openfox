@@ -12,7 +12,7 @@ import { describe, it, expect } from 'vitest'
 import { convertMessages } from './client-pure.js'
 
 describe('convertMessages - sub-agent tool result filtering', () => {
-  it('preserves tool results when assistant has empty content but non-empty toolCalls', () => {
+  it('preserves tool results when assistant has empty content but non-empty toolCalls', async () => {
     // Real sub-agent scenario:
     // 1. Sub-agent calls LLM
     // 2. LLM responds with tool_call for read_file (empty content, has toolCalls)
@@ -33,7 +33,7 @@ describe('convertMessages - sub-agent tool result filtering', () => {
       },
     ]
 
-    const result = convertMessages(messages, false)
+    const result = await convertMessages(messages, false)
 
     // The assistant with toolCalls should NOT be filtered (has non-empty toolCalls)
     // The tool result should be preserved
@@ -45,7 +45,7 @@ describe('convertMessages - sub-agent tool result filtering', () => {
     })
   })
 
-  it('handles mixed case with multiple assistants', () => {
+  it('handles mixed case with multiple assistants', async () => {
     // Real scenario: one assistant gets filtered, another doesn't
 
     const messages = [
@@ -57,7 +57,7 @@ describe('convertMessages - sub-agent tool result filtering', () => {
       { role: 'tool' as const, content: 'file content', toolCallId: 'call-1' },
     ]
 
-    const result = convertMessages(messages, false)
+    const result = await convertMessages(messages, false)
 
     // First assistant filtered, second preserved with its tool result
     expect(result).toHaveLength(2)
@@ -67,7 +67,7 @@ describe('convertMessages - sub-agent tool result filtering', () => {
     })
   })
 
-  it('preserves tool results when assistant has whitespace-only content but non-empty toolCalls', () => {
+  it('preserves tool results when assistant has whitespace-only content but non-empty toolCalls', async () => {
     const messages = [
       { role: 'user' as const, content: 'read package.json and tell me version' },
       { role: 'user' as const, content: '<system-reminder>Plan Mode</system-reminder>' },
@@ -83,7 +83,7 @@ describe('convertMessages - sub-agent tool result filtering', () => {
       },
     ]
 
-    const result = convertMessages(messages, false)
+    const result = await convertMessages(messages, false)
 
     const toolMessages = result.filter((m) => m.role === 'tool')
     expect(toolMessages).toHaveLength(1)
@@ -93,7 +93,7 @@ describe('convertMessages - sub-agent tool result filtering', () => {
     })
   })
 
-  it('preserves tool results when assistant has actual content and toolCalls', () => {
+  it('preserves tool results when assistant has actual content and toolCalls', async () => {
     // Edge case: assistant message has actual content AND tool calls
 
     const messages = [
@@ -109,7 +109,7 @@ describe('convertMessages - sub-agent tool result filtering', () => {
       },
     ]
 
-    const result = convertMessages(messages, false)
+    const result = await convertMessages(messages, false)
 
     // Both should be present
     expect(result).toHaveLength(2)

@@ -6,9 +6,18 @@ import { describe, it, expect } from 'vitest'
 import { convertMessages } from './client-pure.js'
 import type { LLMMessage } from './types.js'
 
+function makeSimplePdfBuffer(): Buffer {
+  const stream = 'BT /F1 12 Tf 100 700 Td (Hello World PDF test) Tj ET'
+  const len = Buffer.byteLength(stream, 'latin1')
+  return Buffer.from(
+    `%PDF-1.4\n1 0 obj<</Type/Catalog/Pages 2 0 R>>endobj\n2 0 obj<</Type/Pages/Kids[3 0 R]/Count 1>>endobj\n3 0 obj<</Type/Page/Parent 2 0 R/MediaBox[0 0 612 792]/Resources<</Font<</F1 4 0 R>>>>/Contents 5 0 R>>endobj\n4 0 obj<</Type/Font/Subtype/Type1/BaseFont/Helvetica>>endobj\n5 0 obj<</Length ${len}>>stream\n${stream}\nendstream\nxref\n0 6\n0000000000 65535 f \n0000000009 00000 n \n0000000061 00000 n \n0000000114 00000 n \n0000000268 00000 n \n0000000342 00000 n \ntrailer<</Size 6/Root 1 0 R>>\nstartxref\n428\n%%EOF`,
+    'latin1',
+  )
+}
+
 describe('LLM Message Conversion with Attachments', () => {
   describe('convertMessages', () => {
-    it('should handle user messages with attachments', () => {
+    it('should handle user messages with image attachments', async () => {
       const messages: LLMMessage[] = [
         {
           role: 'user',
@@ -25,7 +34,7 @@ describe('LLM Message Conversion with Attachments', () => {
         },
       ]
 
-      const result = convertMessages(messages, true)
+      const result = await convertMessages(messages, true)
 
       expect(result).toHaveLength(1)
       const msg = result[0]
@@ -41,7 +50,7 @@ describe('LLM Message Conversion with Attachments', () => {
       })
     })
 
-    it('should handle user messages with multiple attachments', () => {
+    it('should handle user messages with multiple image attachments', async () => {
       const messages: LLMMessage[] = [
         {
           role: 'user',
@@ -65,7 +74,7 @@ describe('LLM Message Conversion with Attachments', () => {
         },
       ]
 
-      const result = convertMessages(messages, true)
+      const result = await convertMessages(messages, true)
 
       expect(result).toHaveLength(1)
       const msg2 = result[0]
@@ -82,7 +91,7 @@ describe('LLM Message Conversion with Attachments', () => {
       })
     })
 
-    it('should handle user messages with only attachments (no text)', () => {
+    it('should handle user messages with only image attachments (no text)', async () => {
       const messages: LLMMessage[] = [
         {
           role: 'user',
@@ -99,7 +108,7 @@ describe('LLM Message Conversion with Attachments', () => {
         },
       ]
 
-      const result = convertMessages(messages, true)
+      const result = await convertMessages(messages, true)
 
       expect(result).toHaveLength(1)
       const msg3 = result[0]
@@ -111,7 +120,7 @@ describe('LLM Message Conversion with Attachments', () => {
       })
     })
 
-    it('should handle regular messages without attachments', () => {
+    it('should handle regular messages without attachments', async () => {
       const messages: LLMMessage[] = [
         {
           role: 'user',
@@ -119,7 +128,7 @@ describe('LLM Message Conversion with Attachments', () => {
         },
       ]
 
-      const result = convertMessages(messages, true)
+      const result = await convertMessages(messages, true)
 
       expect(result).toHaveLength(1)
       const msg4 = result[0]
@@ -127,7 +136,7 @@ describe('LLM Message Conversion with Attachments', () => {
       expect(msg4?.content).toBe('Hello, how are you?')
     })
 
-    it('should handle assistant messages with tool calls', () => {
+    it('should handle assistant messages with tool calls', async () => {
       const messages: LLMMessage[] = [
         {
           role: 'assistant',
@@ -142,7 +151,7 @@ describe('LLM Message Conversion with Attachments', () => {
         },
       ]
 
-      const result = convertMessages(messages, true)
+      const result = await convertMessages(messages, true)
 
       expect(result).toHaveLength(1)
       const msg5 = result[0]
@@ -150,7 +159,7 @@ describe('LLM Message Conversion with Attachments', () => {
       expect(msg5).toHaveProperty('tool_calls')
     })
 
-    it('should handle tool messages', () => {
+    it('should handle tool messages', async () => {
       const messages: LLMMessage[] = [
         {
           role: 'tool',
@@ -159,7 +168,7 @@ describe('LLM Message Conversion with Attachments', () => {
         },
       ]
 
-      const result = convertMessages(messages, true)
+      const result = await convertMessages(messages, true)
 
       expect(result).toHaveLength(1)
       const msg6 = result[0]
@@ -167,7 +176,7 @@ describe('LLM Message Conversion with Attachments', () => {
       expect((msg6 as any).tool_call_id).toBe('tool-1')
     })
 
-    it('should filter out empty assistant messages', () => {
+    it('should filter out empty assistant messages', async () => {
       const messages: LLMMessage[] = [
         {
           role: 'assistant',
@@ -180,11 +189,202 @@ describe('LLM Message Conversion with Attachments', () => {
         },
       ]
 
-      const result = convertMessages(messages, true)
+      const result = await convertMessages(messages, true)
 
       expect(result).toHaveLength(1)
       const msg7 = result[0]
       expect(msg7?.role).toBe('user')
+    })
+
+    it('should handle text file attachments as text content', async () => {
+      const messages: LLMMessage[] = [
+        {
+          role: 'user',
+          content: 'Read this file',
+          attachments: [
+            {
+              id: 'test-2',
+              filename: 'data.json',
+              mimeType: 'application/json',
+              size: 50,
+              data: '{"name":"test","value":42}',
+            },
+          ],
+        },
+      ]
+
+      const result = await convertMessages(messages, true)
+
+      expect(result).toHaveLength(1)
+      const msg = result[0]
+      const content = msg?.content as Array<{ type: string; text?: string }>
+      expect(content).toHaveLength(2)
+      expect(content[0]).toEqual({ type: 'text', text: 'Read this file' })
+      expect(content[1]?.type).toBe('text')
+      expect((content[1] as { text: string }).text).toContain('[File: data.json]')
+      expect((content[1] as { text: string }).text).toContain('{"name":"test","value":42}')
+    })
+
+    it('should handle text/plain file attachments', async () => {
+      const messages: LLMMessage[] = [
+        {
+          role: 'user',
+          content: '',
+          attachments: [
+            {
+              id: 'test-3',
+              filename: 'notes.txt',
+              mimeType: 'text/plain',
+              size: 100,
+              data: 'Hello, this is a text file.',
+            },
+          ],
+        },
+      ]
+
+      const result = await convertMessages(messages, true)
+
+      expect(result).toHaveLength(1)
+      const msg = result[0]
+      const content = msg?.content as Array<{ type: string; text?: string }>
+      expect(content).toHaveLength(1)
+      expect(content[0]?.type).toBe('text')
+      expect((content[0] as { text: string }).text).toContain('[File: notes.txt]')
+      expect((content[0] as { text: string }).text).toContain('Hello, this is a text file.')
+    })
+
+    it('should handle mixed image and text attachments', async () => {
+      const messages: LLMMessage[] = [
+        {
+          role: 'user',
+          content: 'Analyze this data and image',
+          attachments: [
+            {
+              id: 'test-4',
+              filename: 'data.csv',
+              mimeType: 'text/csv',
+              size: 50,
+              data: 'name,value\ntest,42',
+            },
+            {
+              id: 'test-5',
+              filename: 'chart.png',
+              mimeType: 'image/png',
+              size: 2000,
+              data: 'data:image/png;base64,chartdata',
+            },
+          ],
+        },
+      ]
+
+      const result = await convertMessages(messages, true)
+
+      expect(result).toHaveLength(1)
+      const msg = result[0]
+      const content = msg?.content as Array<{ type: string; text?: string; image_url?: { url: string } }>
+      expect(content).toHaveLength(3)
+      expect(content[0]).toEqual({ type: 'text', text: 'Analyze this data and image' })
+      expect(content[1]?.type).toBe('text')
+      expect((content[1] as { text: string }).text).toContain('[File: data.csv]')
+      expect((content[1] as { text: string }).text).toContain('name,value')
+      expect(content[2]).toEqual({
+        type: 'image_url',
+        image_url: { url: 'data:image/png;base64,chartdata' },
+      })
+    })
+
+    it('should handle XML attachments as text', async () => {
+      const messages: LLMMessage[] = [
+        {
+          role: 'user',
+          content: '',
+          attachments: [
+            {
+              id: 'test-6',
+              filename: 'config.xml',
+              mimeType: 'application/xml',
+              size: 100,
+              data: '<root><item>value</item></root>',
+            },
+          ],
+        },
+      ]
+
+      const result = await convertMessages(messages, true)
+
+      expect(result).toHaveLength(1)
+      const msg = result[0]
+      const content = msg?.content as Array<{ type: string; text?: string }>
+      expect(content).toHaveLength(1)
+      expect(content[0]?.type).toBe('text')
+      expect((content[0] as { text: string }).text).toContain('[File: config.xml]')
+      expect((content[0] as { text: string }).text).toContain('<root>')
+    })
+
+    it('should handle PDF attachments by extracting text', async () => {
+      const pdfBuffer = makeSimplePdfBuffer()
+      const base64 = pdfBuffer.toString('base64')
+      const dataUrl = `data:application/pdf;base64,${base64}`
+
+      const messages: LLMMessage[] = [
+        {
+          role: 'user',
+          content: 'What is in this PDF?',
+          attachments: [
+            {
+              id: 'test-7',
+              filename: 'doc.pdf',
+              mimeType: 'application/pdf',
+              size: pdfBuffer.length,
+              data: dataUrl,
+            },
+          ],
+        },
+      ]
+
+      const result = await convertMessages(messages, true)
+
+      expect(result).toHaveLength(1)
+      const msg = result[0]
+      const content = msg?.content as Array<{ type: string; text?: string }>
+      expect(content).toHaveLength(2)
+      expect(content[0]).toEqual({ type: 'text', text: 'What is in this PDF?' })
+      expect(content[1]?.type).toBe('text')
+      const pdfText = (content[1] as { text: string }).text
+      expect(pdfText).toContain('[PDF: doc.pdf]')
+      expect(pdfText).toContain('Hello World PDF test')
+    })
+
+    it('should handle PDF attachments as text when model lacks vision', async () => {
+      const pdfBuffer = makeSimplePdfBuffer()
+      const base64 = pdfBuffer.toString('base64')
+      const dataUrl = `data:application/pdf;base64,${base64}`
+
+      const messages: LLMMessage[] = [
+        {
+          role: 'user',
+          content: '',
+          attachments: [
+            {
+              id: 'test-8',
+              filename: 'report.pdf',
+              mimeType: 'application/pdf',
+              size: pdfBuffer.length,
+              data: dataUrl,
+            },
+          ],
+        },
+      ]
+
+      const result = await convertMessages(messages, false)
+
+      expect(result).toHaveLength(1)
+      const msg = result[0]
+      const content = msg?.content as Array<{ type: string; text?: string }>
+      expect(content).toHaveLength(1)
+      expect(content[0]?.type).toBe('text')
+      const pdfText = (content[0] as { text: string }).text
+      expect(pdfText).toContain('Hello World PDF test')
     })
   })
 })

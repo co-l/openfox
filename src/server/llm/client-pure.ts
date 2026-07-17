@@ -13,8 +13,11 @@ import type {
   LLMToolDefinition,
   ReasoningEffort,
 } from './types.js'
+import type { Attachment } from '../../shared/types.js'
 import type { ModelProfile } from './profiles.js'
 import type { BackendCapabilities } from './backend.js'
+import { extractPdfText } from '../tools/pdf-utils.js'
+import { TEXT_MIME_PREFIXES, TEXT_MIME_EXACT } from '../../shared/constants.js'
 
 export interface ModelParams {
   temperature?: number
@@ -58,17 +61,18 @@ export function buildModelParams(params: {
 
 type AttachmentContent = Array<{ type: 'text'; text: string } | { type: 'image_url'; image_url: { url: string } }>
 
-function buildAttachmentContent(
+async function buildAttachmentContent(
   msgContent: string | null | undefined,
-  attachments: { data: string; filename?: string }[],
+  attachments: Attachment[],
   modelSupportsVision: boolean,
-): AttachmentContent {
+): Promise<AttachmentContent> {
   const content: AttachmentContent = []
   if (msgContent?.trim()) {
     content.push({ type: 'text', text: msgContent })
   }
   for (const attachment of attachments) {
-    content.push(convertAttachmentSync(attachment, modelSupportsVision))
+    const converted = await convertAttachment(attachment, modelSupportsVision)
+    content.push(converted)
   }
   return content
 }
@@ -114,10 +118,39 @@ function buildAssistantMessage(msg: LLMMessage, thinkingField?: string): Record<
   return result
 }
 
-function convertAttachmentSync(
-  attachment: { data: string; filename?: string; description?: string },
+async function convertAttachment(
+  attachment: Attachment,
   modelSupportsVision: boolean,
-): { type: 'text'; text: string } | { type: 'image_url'; image_url: { url: string } } {
+): Promise<{ type: 'text'; text: string } | { type: 'image_url'; image_url: { url: string } }> {
+  const mimeType = attachment.mimeType
+
+  if (TEXT_MIME_EXACT.includes(mimeType) || TEXT_MIME_PREFIXES.some((p) => mimeType.startsWith(p))) {
+    return {
+      type: 'text',
+      text: `[File: ${attachment.filename || 'file'}]\n${attachment.data}`,
+    }
+  }
+
+  if (mimeType === 'application/pdf') {
+    try {
+      const base64Match = attachment.data.match(/^data:.*?;base64,(.+)$/)
+      if (base64Match?.[1]) {
+        const buffer = Buffer.from(base64Match[1], 'base64')
+        const result = await extractPdfText(buffer)
+        return {
+          type: 'text',
+          text: `[PDF: ${attachment.filename || 'document.pdf'}]\n${result.text}`,
+        }
+      }
+    } catch {
+      // fall through to error placeholder below
+    }
+    return {
+      type: 'text',
+      text: `[PDF: ${attachment.filename || 'document.pdf'}] (could not extract text)`,
+    }
+  }
+
   if (modelSupportsVision) {
     return {
       type: 'image_url',
@@ -125,11 +158,10 @@ function convertAttachmentSync(
     }
   }
 
-  // Use pre-computed description if available (from vision fallback)
   if (attachment.description) {
     return {
       type: 'text',
-      text: `[Image: ${attachment.filename || 'image'} - description: ${attachment.description}]`,
+      text: attachment.description,
     }
   }
 
@@ -139,49 +171,48 @@ function convertAttachmentSync(
   }
 }
 
-export function convertMessages(
+export async function convertMessages(
   messages: LLMMessage[],
   modelSupportsVision: boolean,
   thinkingField?: string,
-): ChatCompletionMessageParam[] {
+): Promise<ChatCompletionMessageParam[]> {
   const filtered = messages.filter((msg) => {
     return !(msg.role === 'assistant' && !msg.content?.trim() && (!msg.toolCalls || msg.toolCalls.length === 0))
   })
 
-  return filtered.map((msg): ChatCompletionMessageParam => {
+  const result: ChatCompletionMessageParam[] = []
+  for (const msg of filtered) {
     if (msg.role === 'tool') {
       if (msg.attachments && msg.attachments.length > 0) {
-        const content = buildAttachmentContent(msg.content, msg.attachments, modelSupportsVision)
-        return {
+        const content = await buildAttachmentContent(msg.content, msg.attachments, modelSupportsVision)
+        result.push({
           role: 'tool',
           content,
           tool_call_id: msg.toolCallId!,
-        } as ChatCompletionMessageParam
+        } as ChatCompletionMessageParam)
+      } else {
+        result.push({
+          role: 'tool',
+          content: msg.content,
+          tool_call_id: msg.toolCallId!,
+        })
       }
-      return {
-        role: 'tool',
-        content: msg.content,
-        tool_call_id: msg.toolCallId!,
-      }
-    }
-
-    if (msg.role === 'assistant') {
-      return buildAssistantMessage(msg, thinkingField) as unknown as ChatCompletionMessageParam
-    }
-
-    if (msg.role === 'user' && msg.attachments && msg.attachments.length > 0) {
-      const content = buildAttachmentContent(msg.content, msg.attachments, modelSupportsVision)
-      return {
+    } else if (msg.role === 'assistant') {
+      result.push(buildAssistantMessage(msg, thinkingField) as unknown as ChatCompletionMessageParam)
+    } else if (msg.role === 'user' && msg.attachments && msg.attachments.length > 0) {
+      const content = await buildAttachmentContent(msg.content, msg.attachments, modelSupportsVision)
+      result.push({
         role: 'user',
         content,
-      }
+      })
+    } else {
+      result.push({
+        role: msg.role as 'system' | 'user' | 'assistant',
+        content: msg.content,
+      })
     }
-
-    return {
-      role: msg.role as 'system' | 'user' | 'assistant',
-      content: msg.content,
-    }
-  })
+  }
+  return result
 }
 
 export function convertTools(tools: LLMToolDefinition[]): ChatCompletionTool[] {
@@ -209,7 +240,7 @@ async function buildChatCompletionCreateParams(
 }> {
   const userVisionOverride = request.modelSettings?.supportsVision
   const modelSupportsVision = userVisionOverride ?? profile.supportsVision ?? false
-  const convertedMessages = convertMessages(request.messages, modelSupportsVision, thinkingField)
+  const convertedMessages = await convertMessages(request.messages, modelSupportsVision, thinkingField)
 
   const temperature = request.modelSettings?.temperature ?? request.temperature ?? profile.temperature
   const maxTokens = request.modelSettings?.maxTokens ?? request.maxTokens ?? profile.defaultMaxTokens

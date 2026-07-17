@@ -247,9 +247,10 @@ export interface PreparingToolCall {
 export interface Attachment {
   id: string
   filename: string
-  mimeType: 'image/png' | 'image/jpeg' | 'image/gif' | 'image/webp' | 'image/bmp' | 'image/svg+xml'
+  /** MIME type of the file (e.g. image/png, application/pdf, text/plain, application/json, etc.) */
+  mimeType: string
   size: number
-  data: string // base64-encoded image data
+  data: string // Raw UTF-8 text for text-based types; data: URL (base64) for images and PDFs
   description?: string // Vision fallback description (for non-vision models)
 }
 

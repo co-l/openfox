@@ -310,7 +310,7 @@ export function MoreMenu({
                   className="flex items-center gap-2 px-4 py-2 rounded bg-bg-tertiary hover:bg-accent-primary/20 text-text-primary transition-colors"
                 >
                   <AttachIcon className="w-4 h-4" />
-                  <span className="text-sm font-medium">Attach image</span>
+                  <span className="text-sm font-medium">Attach file</span>
                 </button>
                 <span className="text-xs text-text-muted">or drag & drop into chat</span>
               </div>

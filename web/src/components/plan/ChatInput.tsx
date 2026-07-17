@@ -1,4 +1,4 @@
-import { useRef, useEffect, useCallback } from 'react'
+import { useRef, useEffect, useCallback, type Dispatch, type SetStateAction } from 'react'
 import { useSessionStore, useIsRunning } from '../../stores/session'
 import { authFetch } from '../../lib/api'
 import type { Attachment } from '@shared/types.js'
@@ -8,7 +8,8 @@ import { PromptHistoryList } from '../shared/PromptHistory.js'
 import { RunningIndicator } from '../shared/RunningIndicator'
 import { AutoScrollToggle } from '../shared/AutoScrollToggle'
 import { SearchIcon, StopIcon } from '../shared/icons'
-import { processImageFile } from '../../lib/image-processing.js'
+import { processFile } from '../../lib/file-processing.js'
+import { mimeTypeToExtension, isSupportedMimeType } from '../../lib/attachment-utils.js'
 import { CHAT_TEXTAREA_ID } from '../../lib/focusChatTextarea'
 import { useScrolledSend } from '../../hooks/useScrolledSend'
 import { MoreMenu } from './MoreMenu'
@@ -26,7 +27,7 @@ interface ChatInputProps {
   input: string
   setInput: (value: string) => void
   attachments: Attachment[]
-  setAttachments: (attachments: Attachment[]) => void
+  setAttachments: Dispatch<SetStateAction<Attachment[]>>
   dragOver: boolean
   setDragOver: (dragOver: boolean) => void
   errorMessage: string | null
@@ -157,21 +158,28 @@ export function ChatInput({
       if (document.activeElement !== textarea) return
       const items = e.clipboardData?.items
       if (!items) return
+      const added: Attachment[] = []
       for (const item of Array.from(items)) {
-        if (item.type.startsWith('image/')) {
+        let file = item.getAsFile()
+        if (!file) continue
+
+        if (isSupportedMimeType(file.type)) {
           e.preventDefault()
-          const file = item.getAsFile()
-          if (!file) continue
-          await processImageFile(file, (att) => setAttachments([...attachments, att]), setErrorMessage, {
-            filename: 'pasted-image',
-          })
+          if (!file.name) {
+            const ext = mimeTypeToExtension(file.type)
+            file = new File([file], `pasted-file.${ext}`, { type: file.type })
+          }
+          await processFile(file, (att) => added.push(att), setErrorMessage)
         }
+      }
+      if (added.length > 0) {
+        setAttachments((prev) => [...prev, ...added])
       }
     }
 
     textarea.addEventListener('paste', handlePaste)
     return () => textarea.removeEventListener('paste', handlePaste)
-  }, [attachments, setAttachments, setErrorMessage])
+  }, [setAttachments, setErrorMessage])
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
@@ -228,18 +236,23 @@ export function ChatInput({
       const files = e.target.files
       if (!files || files.length === 0) return
       setErrorMessage(null)
+      const added: Attachment[] = []
       for (const file of Array.from(files)) {
-        await processImageFile(file, (att) => setAttachments([...attachments, att]), setErrorMessage)
+        await processFile(file, (att) => added.push(att), setErrorMessage)
+      }
+      if (added.length > 0) {
+        setAttachments((prev) => [...prev, ...added])
       }
       if (fileInputRef.current) {
         fileInputRef.current.value = ''
       }
     },
-    [attachments, setAttachments, setErrorMessage],
+    [setAttachments, setErrorMessage],
   )
 
   const handleDragOver = useCallback(
     (e: React.DragEvent) => {
+      if (!e.dataTransfer.types?.includes('Files')) return
       e.preventDefault()
       e.stopPropagation()
       setDragOver(true)
@@ -264,11 +277,15 @@ export function ChatInput({
       setErrorMessage(null)
       const files = e.dataTransfer.files
       if (!files || files.length === 0) return
+      const added: Attachment[] = []
       for (const file of Array.from(files)) {
-        await processImageFile(file, (att) => setAttachments([...attachments, att]), setErrorMessage)
+        await processFile(file, (att) => added.push(att), setErrorMessage)
+      }
+      if (added.length > 0) {
+        setAttachments((prev) => [...prev, ...added])
       }
     },
-    [attachments, setAttachments, setDragOver, setErrorMessage],
+    [setAttachments, setDragOver, setErrorMessage],
   )
 
   const handleRemoveAttachment = useCallback(
@@ -365,7 +382,7 @@ export function ChatInput({
       <input
         ref={fileInputRef}
         type="file"
-        accept=".png,.jpg,.jpeg,.gif"
+        accept="image/*,text/*,.pdf,.json,.xml,.yaml,.yml,.js,.sh,.xhtml"
         onChange={handleFileSelect}
         className="hidden"
         multiple

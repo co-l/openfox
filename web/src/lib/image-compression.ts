@@ -3,6 +3,7 @@
  * Compresses images to max 1920px dimension with target ~1MB file size.
  */
 
+import { formatFileSize } from './attachment-utils.js'
 export interface CompressionResult {
   dataUrl: string
   mimeType: string
@@ -287,13 +288,4 @@ export function validateImageSize(
     }
   }
   return { valid: true }
-}
-
-/**
- * Format bytes to human-readable string.
- */
-function formatFileSize(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
 }

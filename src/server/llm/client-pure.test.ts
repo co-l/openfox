@@ -8,9 +8,9 @@ import {
 } from './client-pure.js'
 
 describe('llm client pure helpers', () => {
-  it('converts messages and filters empty assistant placeholders', () => {
+  it('converts messages and filters empty assistant placeholders', async () => {
     expect(
-      convertMessages(
+      await convertMessages(
         [
           { role: 'system', content: 'system' },
           { role: 'assistant', content: '', toolCalls: [] },
@@ -34,8 +34,8 @@ describe('llm client pure helpers', () => {
     ])
   })
 
-  it('passes reasoning through on assistant messages with thinkingContent', () => {
-    const result = convertMessages(
+  it('passes reasoning through on assistant messages with thinkingContent', async () => {
+    const result = await convertMessages(
       [
         {
           role: 'assistant',
