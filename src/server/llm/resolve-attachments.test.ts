@@ -136,6 +136,58 @@ describe('resolveAttachmentsInMessages', () => {
   })
 
 
+  it('produces placeholder for unknown mime type when vision is supported', async () => {
+    const messages: LLMMessage[] = [
+      {
+        role: 'user',
+        content: 'check this',
+        attachments: [
+          {
+            id: 'u1',
+            filename: 'audio.mp3',
+            mimeType: 'audio/mpeg',
+            size: 100,
+            data: 'data:audio/mpeg;base64,abc',
+          },
+        ],
+      },
+    ]
+    const result = await resolveAttachmentsInMessages(messages, true)
+    expect(result[0]?.content).toContain('audio.mp3')
+    expect(result[0]?.content).toContain('audio/mpeg')
+    expect(result[0]?.attachments).toEqual([])
+  })
+
+  it('preserves image attachments and produces placeholder for unknown type in mixed message', async () => {
+    const messages: LLMMessage[] = [
+      {
+        role: 'user',
+        content: 'mixed',
+        attachments: [
+          {
+            id: 'img1',
+            filename: 'photo.png',
+            mimeType: 'image/png',
+            size: 500,
+            data: 'data:image/png;base64,abc',
+          },
+          {
+            id: 'aud1',
+            filename: 'clip.mp3',
+            mimeType: 'audio/mpeg',
+            size: 100,
+            data: 'data:audio/mpeg;base64,abc',
+          },
+        ],
+      },
+    ]
+    const result = await resolveAttachmentsInMessages(messages, true)
+    expect(result[0]?.attachments).toHaveLength(1)
+    expect(result[0]?.attachments?.[0]?.filename).toBe('photo.png')
+    expect(result[0]?.content).toContain('clip.mp3')
+    expect(result[0]?.content).toContain('audio/mpeg')
+  })
+
   it('handles tool messages with attachments', async () => {
     const messages: LLMMessage[] = [
       {

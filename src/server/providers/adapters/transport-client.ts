@@ -50,11 +50,13 @@ export function createTransportLLMClient(
       backend = next
     },
     complete: async (request) => {
-      const resolved = { ...request, messages: await resolveAttachmentsInMessages(request.messages, profile.supportsVision ?? false) }
+      const supportsVision = request.modelSettings?.supportsVision ?? profile.supportsVision ?? false
+      const resolved = { ...request, messages: await resolveAttachmentsInMessages(request.messages, supportsVision) }
       return transport.complete(resolved, context())
     },
     stream: async function* (request) {
-      const resolved = { ...request, messages: await resolveAttachmentsInMessages(request.messages, profile.supportsVision ?? false) }
+      const supportsVision = request.modelSettings?.supportsVision ?? profile.supportsVision ?? false
+      const resolved = { ...request, messages: await resolveAttachmentsInMessages(request.messages, supportsVision) }
       yield* transport.stream(resolved, context())
     },
   }

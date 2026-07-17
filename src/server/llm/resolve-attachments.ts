@@ -23,6 +23,20 @@ function decodeDataUrlToText(data: string): string {
   return data
 }
 
+export async function extractPdfFromDataUrl(data: string, filename: string): Promise<string> {
+  try {
+    const base64Match = data.match(/^data:.*?;base64,(.+)$/)
+    if (base64Match?.[1]) {
+      const buffer = Buffer.from(base64Match[1], 'base64')
+      const result = await extractPdfText(buffer)
+      return `[PDF: ${filename}]\n${result.text}`
+    }
+  } catch {
+    // fall through
+  }
+  return `[PDF: ${filename}] (could not extract text)`
+}
+
 async function resolveAttachmentToText(attachment: Attachment, supportsVision: boolean): Promise<string> {
   const mimeType = attachment.mimeType
 
@@ -32,21 +46,11 @@ async function resolveAttachmentToText(attachment: Attachment, supportsVision: b
   }
 
   if (mimeType === 'application/pdf') {
-    try {
-      const base64Match = attachment.data.match(/^data:.*?;base64,(.+)$/)
-      if (base64Match?.[1]) {
-        const buffer = Buffer.from(base64Match[1], 'base64')
-        const result = await extractPdfText(buffer)
-        return `[PDF: ${attachment.filename || 'document.pdf'}]\n${result.text}`
-      }
-    } catch {
-      // fall through
-    }
-    return `[PDF: ${attachment.filename || 'document.pdf'}] (could not extract text)`
+    return extractPdfFromDataUrl(attachment.data, attachment.filename || 'document.pdf')
   }
 
   if (supportsVision) {
-    return ''
+    return `[File: ${attachment.filename || 'file'} (unsupported type: ${mimeType})]`
   }
 
   if (attachment.description) {
