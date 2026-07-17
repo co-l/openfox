@@ -95,6 +95,12 @@ export async function terminateProcessTree(
   }
 
   if (options?.immediate) {
+    // On Windows getDescendantPids relies on `ps` and returns [] — taskkill /f /t
+    // (via killProcessTree) is already immediate and kills the whole tree.
+    if (process.platform === 'win32') {
+      await killProcessTree(pid)
+      return
+    }
     const allPids = await getDescendantPids(pid)
     allPids.push(pid)
     for (const p of allPids) {

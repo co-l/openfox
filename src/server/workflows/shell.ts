@@ -3,6 +3,7 @@
  */
 
 import { checkAborted, spawnShellProcess } from '../utils/shell.js'
+import { terminateProcessTree } from '../utils/process-tree.js'
 
 export interface ShellResult {
   exitCode: number
@@ -34,14 +35,14 @@ export function executeShellCommand(
 
     const timer = setTimeout(() => {
       killed = true
-      proc.kill('SIGTERM')
+      void terminateProcessTree(proc)
       resolve({ exitCode: 1, stdout, stderr: stderr + '\nCommand timed out', success: false })
     }, timeout)
 
     const onAbort = () => {
       if (!killed) {
         killed = true
-        proc.kill('SIGTERM')
+        void terminateProcessTree(proc, { immediate: true })
         clearTimeout(timer)
         reject(new Error('Aborted'))
       }
