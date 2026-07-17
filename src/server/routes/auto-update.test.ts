@@ -36,8 +36,12 @@ describe('Auto Update Routes', () => {
       if (cmd === 'npm' && Array.isArray(args) && args[0] === 'view') {
         return makeMockChild({ stdout: '1.2.3\n' })
       }
-      // git describe --tags returns just the tag name
-      if (cmd === 'git' && Array.isArray(args) && args.includes('describe')) {
+      // git fetch returns nothing
+      if (cmd === 'git' && Array.isArray(args) && args[0] === 'fetch') {
+        return makeMockChild({ stdout: '' })
+      }
+      // git describe via bash -c returns just the tag name
+      if (cmd === 'bash' && Array.isArray(args) && args[0] === '-c' && args[1]?.includes('git describe')) {
         return makeMockChild({ stdout: '1.2.3\n' })
       }
       return makeMockChild({ stdout: 'Updated: 1.2.3\n' })
@@ -112,7 +116,7 @@ describe('Auto Update Routes', () => {
       const res = await fetch(`${baseUrl}/api/auto-update/check?force=true`)
       expect(res.status).toBe(200)
       const body = (await res.json()) as { latest: string }
-      expect(body.latest).toBe('Updated: 1.2.3')
+      expect(body.latest).toBe('1.2.3')
       // Should have called spawn for git fetch
       expect(mockSpawn).toHaveBeenCalled()
     })
