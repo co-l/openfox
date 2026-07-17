@@ -4,6 +4,8 @@ import { ChatMessage } from './ChatMessage'
 import { AssistantMessage } from './AssistantMessage'
 import { SubAgentContainer } from './SubAgentContainer'
 
+const ITEM_CONTAINMENT_STYLE = { contentVisibility: 'auto', containIntrinsicSize: 'auto 200px' } as const
+
 interface ChatFeedItemsProps {
   displayItems: DisplayItem[]
   highlightedMessageId?: string | null
@@ -47,7 +49,7 @@ export const ChatFeedItems = memo(function ChatFeedItems({
         if (item.type === 'subagent') {
           const groupIsStreaming = item.messages.some((m) => m.isStreaming)
           return (
-            <div key={itemKey(item)} data-item-index={index} className="px-2 md:px-4">
+            <div key={itemKey(item)} data-item-index={index} className="px-2 md:px-4" style={ITEM_CONTAINMENT_STYLE}>
               <SubAgentContainer
                 messages={item.messages}
                 subAgentType={item.subAgentType}
@@ -61,7 +63,7 @@ export const ChatFeedItems = memo(function ChatFeedItems({
         const message = item.message
         if (message.role === 'assistant') {
           return (
-            <div key={itemKey(item)} data-item-index={index} className="px-2 md:px-4">
+            <div key={itemKey(item)} data-item-index={index} className="px-2 md:px-4" style={ITEM_CONTAINMENT_STYLE}>
               <AssistantMessage
                 message={message}
                 showStats={showStats}
@@ -80,7 +82,7 @@ export const ChatFeedItems = memo(function ChatFeedItems({
         }
 
         return (
-          <div key={itemKey(item)} data-item-index={index} className="px-2 md:px-4">
+          <div key={itemKey(item)} data-item-index={index} className="px-2 md:px-4" style={ITEM_CONTAINMENT_STYLE}>
             <div
               data-message-id={message.id}
               className={highlightedMessageId === message.id ? 'rounded animate-highlight-fade' : undefined}

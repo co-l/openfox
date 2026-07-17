@@ -1,7 +1,11 @@
 import { RefObject, useEffect, useRef, useState } from 'react'
 import { Session } from '@shared/types.ts'
 
-export const useAutoScroll = (container_ref: RefObject<HTMLElement | null>, session: Session | null) => {
+export const useAutoScroll = (
+  container_ref: RefObject<HTMLElement | null>,
+  session: Session | null,
+  enabled = true,
+) => {
   const is_active = useRef(true)
   const startY = useRef<number | null>(null)
   const [isAutoScrollActive, setIsAutoScrollActive] = useState(true)
@@ -14,6 +18,8 @@ export const useAutoScroll = (container_ref: RefObject<HTMLElement | null>, sess
   }
 
   useEffect(() => {
+    if (!enabled) return
+
     const scroller = container_ref.current
     if (!scroller) return
 
@@ -84,7 +90,7 @@ export const useAutoScroll = (container_ref: RefObject<HTMLElement | null>, sess
       observer.disconnect()
       clearInterval(interval)
     }
-  }, [session?.id])
+  }, [session?.id, enabled])
 
   return {
     force_scroll_to_bottom: () => {

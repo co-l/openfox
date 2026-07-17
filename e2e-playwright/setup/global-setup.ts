@@ -5,7 +5,7 @@ import { join } from 'node:path'
 let testProjectDir: string
 
 export default async function globalSetup() {
-  console.log('[Global Setup] Setting up...')
+  console.warn('[Global Setup] Setting up...')
 
   // Create temporary directory for test project
   testProjectDir = join(tmpdir(), `openfox-test-${Date.now()}`)
@@ -23,24 +23,24 @@ export default async function globalSetup() {
     tempFile,
     JSON.stringify({
       projectId: '__to_be_created__',
-      serverUrl: 'http://localhost:10669',
+      serverUrl: process.env['OPENFOX_E2E_SERVER_URL'] ?? 'http://localhost:10669',
       workdir: testProjectDir,
     }),
   )
 
-  console.log('[Global Setup] Ready for tests')
+  console.warn('[Global Setup] Ready for tests')
 }
 
 export async function globalTeardown() {
-  console.log('[Global Teardown] Cleaning up...')
+  console.warn('[Global Teardown] Cleaning up...')
 
   // Clean up temporary directory
   try {
     await rm(testProjectDir, { recursive: true, force: true })
-    console.log(`[Global Teardown] Removed test directory: ${testProjectDir}`)
+    console.warn(`[Global Teardown] Removed test directory: ${testProjectDir}`)
   } catch (error) {
     console.error('[Global Teardown] Failed to remove test directory', error)
   }
 
-  console.log('[Global Teardown] Done')
+  console.warn('[Global Teardown] Done')
 }
