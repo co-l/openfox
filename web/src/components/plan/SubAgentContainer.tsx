@@ -70,7 +70,7 @@ export const SubAgentContainer = memo(function SubAgentContainer({
   const contextState = useSessionStore((state) => state.subAgentContextStates[subAgentId])
   const { showThinking, showVerboseToolOutput } = useDisplaySettings()
 
-  const { isAutoScrollActive, setAutoScroll } = useAutoScroll(scrollRef, null)
+  const { isAutoScrollActive, setAutoScroll } = useAutoScroll(scrollRef, null, expanded)
 
   const handleToggleExpand = useCallback(() => {
     const willExpand = !expanded
@@ -89,6 +89,7 @@ export const SubAgentContainer = memo(function SubAgentContainer({
   const hStyle = headerStyle(color)
 
   const displayMessages = messages.filter((m) => m.role !== 'tool')
+  const renderedMessages = expanded ? displayMessages : displayMessages.slice(-1)
 
   return (
     <div ref={containerRef} className="feed-item border border-border rounded overflow-hidden bg-secondary">
@@ -122,7 +123,7 @@ export const SubAgentContainer = memo(function SubAgentContainer({
         ref={scrollRef}
         className={`${expanded ? 'max-h-[calc(100vh-10rem)]' : 'max-h-80'} overflow-y-auto p-2 transition-[max-height] duration-200`}
       >
-        {displayMessages.map((message) => {
+        {renderedMessages.map((message) => {
           if (message.role === 'assistant') {
             return (
               <AssistantMessage
