@@ -85,15 +85,42 @@ export function CriteriaEditor({ entries, sessionId }: CriteriaEditorProps) {
     [sessionId],
   )
 
+  const addCriteria = useCallback(
+    (descriptions: string[]) => {
+      const cleaned = descriptions.map((description) => description.trim()).filter(Boolean)
+      if (cleaned.length === 0) return
+
+      const numericIds = criteria
+        .map((criterion) => Number(criterion.id))
+        .filter((id) => Number.isInteger(id) && id >= 0)
+      const firstId = Math.max(-1, ...numericIds) + 1
+      const added = cleaned.map((description, index) => ({
+        id: String(firstId + index),
+        description,
+        status: 'pending',
+      }))
+
+      syncToServer([...criteria, ...added])
+      setNewDescription('')
+      addInputRef.current?.focus()
+    },
+    [criteria, syncToServer],
+  )
+
   const handleAdd = useCallback(() => {
-    const desc = newDescription.trim()
-    if (!desc) return
-    const nextId = String(criteria.length)
-    const next = [...criteria, { id: nextId, description: desc, status: 'pending' }]
-    syncToServer(next)
-    setNewDescription('')
-    addInputRef.current?.focus()
-  }, [criteria, newDescription, syncToServer])
+    addCriteria([newDescription])
+  }, [addCriteria, newDescription])
+
+  const handleAddPaste = useCallback(
+    (e: React.ClipboardEvent<HTMLInputElement>) => {
+      const lines = e.clipboardData.getData('text/plain').split(/\r\n|\r|\n/)
+      if (lines.length < 2) return
+
+      e.preventDefault()
+      addCriteria(lines)
+    },
+    [addCriteria],
+  )
 
   const handleCancelAdd = useCallback(() => {
     setAdding(false)
@@ -228,6 +255,7 @@ export function CriteriaEditor({ entries, sessionId }: CriteriaEditorProps) {
               value={newDescription}
               onChange={(e) => setNewDescription(e.target.value)}
               onKeyDown={handleAddKeyDown}
+              onPaste={handleAddPaste}
               placeholder="New criterion..."
               className="flex-1 bg-bg-tertiary text-text-primary text-xs px-1.5 py-0.5 rounded border border-border focus:outline-none focus:border-accent-primary placeholder-text-muted"
             />
