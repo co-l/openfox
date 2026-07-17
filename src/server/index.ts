@@ -1102,6 +1102,12 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
     }
   })
 
+  // Shells available for the tools.shell setting (Windows only; empty elsewhere)
+  app.get('/api/tools/shells', async (_req, res) => {
+    const { listAvailableShells } = await import('./utils/platform.js')
+    res.json({ shells: listAvailableShells() })
+  })
+
   // Config endpoint
   app.get('/api/config', async (_req, res) => {
     const llmClient = getLLMClient()

@@ -1,6 +1,8 @@
+import { basename } from 'node:path'
 import type { SkillMetadata } from '../skills/types.js'
 import type { AgentDefinition } from '../agents/types.js'
 import { computeEffectiveTools } from '../tools/tool-policy.js'
+import { getPlatformShell } from '../utils/platform.js'
 
 // ============================================================================
 // Base Prompt (shared by all agents)
@@ -27,7 +29,8 @@ Today's date is ${new Date().toISOString().split('T')[0]!.replace(/-/g, '/')}
 
 ## ENVIRONMENT
 Working directory: ${workdir}
-Platform: ${process.platform} (${process.arch})${modelLine}
+Platform: ${process.platform} (${process.arch})
+Shell (run_command): ${basename(getPlatformShell().command)}${modelLine}
 
 ## CORE BEHAVIOR
 Help user complete tasks safely and efficiently.
