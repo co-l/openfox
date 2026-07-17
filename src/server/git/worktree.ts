@@ -149,13 +149,21 @@ export async function ensureWorktree(projectDir: string, name: string, startBran
   return { path: wtPath, name }
 }
 
-function parseGitignore(content: string): string[] {
-  return content
-    .split('\n')
-    .map((l) => l.trim())
-    .filter((l) => l && !l.startsWith('#') && !l.startsWith('!'))
-    .map((l) => l.replace(/\/$/, ''))
-    .filter((l) => !/[?*[\]]/.test(l))
+export async function getIgnoredDirectories(projectDir: string): Promise<string[]> {
+  const out = await captureStdout(projectDir, [
+    'ls-files',
+    '--others',
+    '--ignored',
+    '--exclude-standard',
+    '--directory',
+  ])
+  if (!out) return []
+  return out.trim().split('\n').filter(Boolean)
+}
+
+function resolveStrategy(relPath: string, config: WorktreeConfig): 'symlink' | 'copy' | 'skip' {
+  const basename = relPath.split('/').pop() ?? relPath
+  return config.overrides?.[relPath] ?? config.overrides?.[basename] ?? config.ignoredAssets
 }
 
 export async function syncIgnoredAssets(
@@ -163,14 +171,9 @@ export async function syncIgnoredAssets(
   worktreePath: string,
   config: WorktreeConfig,
 ): Promise<void> {
-  let gitignoreContent: string
-  try {
-    gitignoreContent = await readFile(resolve(projectDir, '.gitignore'), 'utf-8')
-  } catch {
-    return
-  }
+  const ignoredPaths = await getIgnoredDirectories(projectDir)
+  if (ignoredPaths.length === 0) return
 
-  const ignoredPaths = parseGitignore(gitignoreContent)
   const results: string[] = []
 
   for (const relPath of ignoredPaths) {
@@ -183,21 +186,21 @@ export async function syncIgnoredAssets(
       continue
     }
 
-    try {
-      await stat(targetPath)
-      continue
-    } catch {
-      // target doesn't exist — proceed
-    }
-
-    const strategy = config.overrides?.[relPath] ?? config.ignoredAssets
+    const strategy = resolveStrategy(relPath, config)
+    if (strategy === 'skip') continue
 
     try {
       if (strategy === 'symlink') {
+        try {
+          await stat(targetPath)
+          continue
+        } catch {
+          // target doesn't exist — proceed
+        }
         await symlink(sourcePath, targetPath)
         results.push(`symlink ${relPath}`)
       } else if (strategy === 'copy') {
-        await cp(sourcePath, targetPath, { recursive: true })
+        await cp(sourcePath, targetPath, { recursive: true, force: true })
         results.push(`copy ${relPath}`)
       }
     } catch (err) {

@@ -1,18 +1,44 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { syncIgnoredAssets } from './worktree.js'
+import { syncIgnoredAssets, getIgnoredDirectories } from './worktree.js'
+
+vi.mock('node:child_process', () => ({
+  spawn: vi.fn(),
+}))
 
 vi.mock('node:fs/promises', () => ({
-  readFile: vi.fn(),
+  stat: vi.fn(),
   symlink: vi.fn(),
   cp: vi.fn(),
-  stat: vi.fn(),
 }))
 
 vi.mock('../utils/logger.js', () => ({
   logger: { debug: vi.fn(), warn: vi.fn(), info: vi.fn(), error: vi.fn() },
 }))
 
-import { readFile, symlink, cp, stat } from 'node:fs/promises'
+import { spawn } from 'node:child_process'
+import { stat, symlink, cp } from 'node:fs/promises'
+
+type MockProc = {
+  stdout: { on: (event: string, cb: (d: Buffer) => void) => void }
+  stderr: { on: (event: string, cb: (d: Buffer) => void) => void }
+  on: (event: string, cb: (...args: unknown[]) => void) => void
+}
+
+function makeMockProc(stdout: string, exitCode = 0): MockProc {
+  return {
+    stdout: {
+      on: (event, cb) => {
+        if (event === 'data') setTimeout(() => cb(Buffer.from(stdout)), 0)
+      },
+    },
+    stderr: {
+      on: (_event: string, _cb: (d: Buffer) => void) => {},
+    },
+    on: (event, cb) => {
+      if (event === 'close') setTimeout(() => cb(exitCode), 0)
+    },
+  }
+}
 
 const PROJECT_DIR = '/tmp/project'
 const WORKTREE_PATH = '/tmp/project/worktrees/test-branch'
@@ -21,47 +47,75 @@ beforeEach(() => {
   vi.clearAllMocks()
 })
 
+describe('getIgnoredDirectories', () => {
+  it('returns directories from git ls-files output', async () => {
+    vi.mocked(spawn).mockReturnValue(makeMockProc('node_modules\nweb/node_modules\ne2e/node_modules\n') as any)
+    const result = await getIgnoredDirectories(PROJECT_DIR)
+    expect(result).toEqual(['node_modules', 'web/node_modules', 'e2e/node_modules'])
+    expect(spawn).toHaveBeenCalledWith(
+      'git',
+      ['ls-files', '--others', '--ignored', '--exclude-standard', '--directory'],
+      expect.objectContaining({ cwd: PROJECT_DIR }),
+    )
+  })
+
+  it('returns empty array when no ignored directories', async () => {
+    vi.mocked(spawn).mockReturnValue(makeMockProc('') as any)
+    const result = await getIgnoredDirectories(PROJECT_DIR)
+    expect(result).toEqual([])
+  })
+
+  it('returns empty array on git error', async () => {
+    vi.mocked(spawn).mockReturnValue(makeMockProc('', 1) as any)
+    const result = await getIgnoredDirectories(PROJECT_DIR)
+    expect(result).toEqual([])
+  })
+})
+
 describe('syncIgnoredAssets', () => {
-  it('does nothing when .gitignore is missing', async () => {
-    vi.mocked(readFile).mockRejectedValue({ code: 'ENOENT' })
-    await syncIgnoredAssets(PROJECT_DIR, WORKTREE_PATH, { ignoredAssets: 'symlink' })
+  it('does nothing when no ignored directories', async () => {
+    vi.mocked(spawn).mockReturnValue(makeMockProc('') as any)
+    await syncIgnoredAssets(PROJECT_DIR, WORKTREE_PATH, { ignoredAssets: 'copy' })
     expect(symlink).not.toHaveBeenCalled()
     expect(cp).not.toHaveBeenCalled()
   })
 
-  it('symlinks ignored paths with symlink strategy', async () => {
-    vi.mocked(readFile).mockResolvedValue('node_modules/\n.env\n')
+  it('copies all ignored directories with copy strategy', async () => {
+    vi.mocked(spawn).mockReturnValue(makeMockProc('node_modules\nweb/node_modules\n') as any)
     vi.mocked(stat)
       .mockResolvedValueOnce({} as any) // node_modules exists in source
-      .mockRejectedValueOnce({ code: 'ENOENT' }) // node_modules not in worktree
-      .mockResolvedValueOnce({} as any) // .env exists in source
-      .mockRejectedValueOnce({ code: 'ENOENT' }) // .env not in worktree
-    vi.mocked(symlink).mockResolvedValue(undefined)
-
-    await syncIgnoredAssets(PROJECT_DIR, WORKTREE_PATH, { ignoredAssets: 'symlink' })
-
-    expect(symlink).toHaveBeenCalledTimes(2)
-    expect(symlink).toHaveBeenCalledWith('/tmp/project/node_modules', '/tmp/project/worktrees/test-branch/node_modules')
-    expect(symlink).toHaveBeenCalledWith('/tmp/project/.env', '/tmp/project/worktrees/test-branch/.env')
-  })
-
-  it('copies ignored paths with copy strategy', async () => {
-    vi.mocked(readFile).mockResolvedValue('node_modules/\n')
-    vi.mocked(stat)
-      .mockResolvedValueOnce({} as any) // exists in source
-      .mockRejectedValueOnce({ code: 'ENOENT' }) // not in worktree
+      .mockResolvedValueOnce({} as any) // web/node_modules exists in source
     vi.mocked(cp).mockResolvedValue(undefined)
 
     await syncIgnoredAssets(PROJECT_DIR, WORKTREE_PATH, { ignoredAssets: 'copy' })
 
-    expect(cp).toHaveBeenCalledTimes(1)
+    expect(cp).toHaveBeenCalledTimes(2)
     expect(cp).toHaveBeenCalledWith('/tmp/project/node_modules', '/tmp/project/worktrees/test-branch/node_modules', {
       recursive: true,
+      force: true,
     })
+    expect(cp).toHaveBeenCalledWith(
+      '/tmp/project/web/node_modules',
+      '/tmp/project/worktrees/test-branch/web/node_modules',
+      { recursive: true, force: true },
+    )
   })
 
-  it('skips paths that already exist in worktree', async () => {
-    vi.mocked(readFile).mockResolvedValue('node_modules/\n')
+  it('symlinks ignored directories with symlink strategy', async () => {
+    vi.mocked(spawn).mockReturnValue(makeMockProc('node_modules\n') as any)
+    vi.mocked(stat)
+      .mockResolvedValueOnce({} as any) // exists in source
+      .mockRejectedValueOnce({ code: 'ENOENT' }) // not in worktree
+    vi.mocked(symlink).mockResolvedValue(undefined)
+
+    await syncIgnoredAssets(PROJECT_DIR, WORKTREE_PATH, { ignoredAssets: 'symlink' })
+
+    expect(symlink).toHaveBeenCalledTimes(1)
+    expect(symlink).toHaveBeenCalledWith('/tmp/project/node_modules', '/tmp/project/worktrees/test-branch/node_modules')
+  })
+
+  it('skips symlink target that already exists', async () => {
+    vi.mocked(spawn).mockReturnValue(makeMockProc('node_modules\n') as any)
     vi.mocked(stat)
       .mockResolvedValueOnce({} as any) // exists in source
       .mockResolvedValueOnce({} as any) // already exists in worktree
@@ -72,38 +126,90 @@ describe('syncIgnoredAssets', () => {
   })
 
   it('skips paths that do not exist in source', async () => {
-    vi.mocked(readFile).mockResolvedValue('node_modules/\n')
+    vi.mocked(spawn).mockReturnValue(makeMockProc('node_modules\n') as any)
     vi.mocked(stat).mockRejectedValue({ code: 'ENOENT' }) // doesn't exist in source
 
-    await syncIgnoredAssets(PROJECT_DIR, WORKTREE_PATH, { ignoredAssets: 'symlink' })
+    await syncIgnoredAssets(PROJECT_DIR, WORKTREE_PATH, { ignoredAssets: 'copy' })
 
-    expect(symlink).not.toHaveBeenCalled()
+    expect(cp).not.toHaveBeenCalled()
   })
 
-  it('respects per-path overrides', async () => {
-    vi.mocked(readFile).mockResolvedValue('node_modules/\n.vendor/\n')
+  it('matches override by exact path', async () => {
+    vi.mocked(spawn).mockReturnValue(makeMockProc('node_modules\nweb/node_modules\n') as any)
     vi.mocked(stat)
-      .mockResolvedValueOnce({} as any) // node_modules exists
-      .mockRejectedValueOnce({ code: 'ENOENT' }) // not in worktree
-      .mockResolvedValueOnce({} as any) // .vendor exists
-      .mockRejectedValueOnce({ code: 'ENOENT' }) // not in worktree
-    vi.mocked(symlink).mockResolvedValue(undefined)
+      .mockResolvedValueOnce({} as any) // node_modules source exists
+      .mockRejectedValueOnce({ code: 'ENOENT' }) // node_modules target doesn't exist
+      .mockResolvedValueOnce({} as any) // web/node_modules source exists
     vi.mocked(cp).mockResolvedValue(undefined)
+    vi.mocked(symlink).mockResolvedValue(undefined)
 
     await syncIgnoredAssets(PROJECT_DIR, WORKTREE_PATH, {
       ignoredAssets: 'symlink',
+      overrides: { 'web/node_modules': 'copy' },
+    })
+
+    // node_modules symlinked (global strategy), web/node_modules copied (override)
+    expect(symlink).toHaveBeenCalledTimes(1)
+    expect(cp).toHaveBeenCalledTimes(1)
+    expect(cp).toHaveBeenCalledWith(
+      '/tmp/project/web/node_modules',
+      '/tmp/project/worktrees/test-branch/web/node_modules',
+      { recursive: true, force: true },
+    )
+  })
+
+  it('matches override by basename', async () => {
+    vi.mocked(spawn).mockReturnValue(makeMockProc('node_modules\nweb/node_modules\ne2e/node_modules\n') as any)
+    vi.mocked(stat)
+      .mockResolvedValueOnce({} as any)
+      .mockResolvedValueOnce({} as any)
+      .mockResolvedValueOnce({} as any)
+    vi.mocked(cp).mockResolvedValue(undefined)
+
+    await syncIgnoredAssets(PROJECT_DIR, WORKTREE_PATH, {
+      ignoredAssets: 'skip',
       overrides: { node_modules: 'copy' },
     })
 
-    expect(cp).toHaveBeenCalledTimes(1) // node_modules copied
-    expect(symlink).toHaveBeenCalledTimes(1) // .vendor symlinked
+    // All node_modules dirs at any depth are copied via basename match
+    expect(cp).toHaveBeenCalledTimes(3)
+    expect(cp).toHaveBeenCalledWith('/tmp/project/node_modules', '/tmp/project/worktrees/test-branch/node_modules', {
+      recursive: true,
+      force: true,
+    })
+    expect(cp).toHaveBeenCalledWith(
+      '/tmp/project/web/node_modules',
+      '/tmp/project/worktrees/test-branch/web/node_modules',
+      { recursive: true, force: true },
+    )
+    expect(cp).toHaveBeenCalledWith(
+      '/tmp/project/e2e/node_modules',
+      '/tmp/project/worktrees/test-branch/e2e/node_modules',
+      { recursive: true, force: true },
+    )
+  })
+
+  it('exact path override takes precedence over basename', async () => {
+    vi.mocked(spawn).mockReturnValue(makeMockProc('node_modules\nweb/node_modules\n') as any)
+    vi.mocked(stat)
+      .mockResolvedValueOnce({} as any)
+      .mockResolvedValueOnce({} as any)
+    vi.mocked(cp).mockResolvedValue(undefined)
+    vi.mocked(symlink).mockResolvedValue(undefined)
+
+    await syncIgnoredAssets(PROJECT_DIR, WORKTREE_PATH, {
+      ignoredAssets: 'copy',
+      overrides: { 'web/node_modules': 'symlink' },
+    })
+
+    // node_modules copied (global), web/node_modules symlinked (exact override beats basename)
+    expect(cp).toHaveBeenCalledTimes(1)
+    expect(symlink).toHaveBeenCalledTimes(1)
   })
 
   it('handles skip strategy gracefully', async () => {
-    vi.mocked(readFile).mockResolvedValue('node_modules/\n')
-    vi.mocked(stat)
-      .mockResolvedValueOnce({} as any) // exists in source
-      .mockRejectedValueOnce({ code: 'ENOENT' }) // not in worktree
+    vi.mocked(spawn).mockReturnValue(makeMockProc('node_modules\n') as any)
+    vi.mocked(stat).mockResolvedValueOnce({} as any)
 
     await syncIgnoredAssets(PROJECT_DIR, WORKTREE_PATH, { ignoredAssets: 'skip' })
 
@@ -111,19 +217,15 @@ describe('syncIgnoredAssets', () => {
     expect(cp).not.toHaveBeenCalled()
   })
 
-  it('continues on symlink error and logs warning', async () => {
-    vi.mocked(readFile).mockResolvedValue('node_modules/\n.env\n')
+  it('continues on error and logs warning', async () => {
+    vi.mocked(spawn).mockReturnValue(makeMockProc('node_modules\n.env\n') as any)
     vi.mocked(stat)
-      .mockResolvedValueOnce({} as any) // node_modules exists
-      .mockRejectedValueOnce({ code: 'ENOENT' }) // not in worktree
-      .mockResolvedValueOnce({} as any) // .env exists
-      .mockRejectedValueOnce({ code: 'ENOENT' }) // not in worktree
-    vi.mocked(symlink)
-      .mockRejectedValueOnce(new Error('permission denied')) // first fails
-      .mockResolvedValueOnce(undefined) // second succeeds
+      .mockResolvedValueOnce({} as any)
+      .mockResolvedValueOnce({} as any)
+    vi.mocked(cp).mockRejectedValueOnce(new Error('permission denied')).mockResolvedValueOnce(undefined)
 
-    await syncIgnoredAssets(PROJECT_DIR, WORKTREE_PATH, { ignoredAssets: 'symlink' })
+    await syncIgnoredAssets(PROJECT_DIR, WORKTREE_PATH, { ignoredAssets: 'copy' })
 
-    expect(symlink).toHaveBeenCalledTimes(2)
+    expect(cp).toHaveBeenCalledTimes(2)
   })
 })
