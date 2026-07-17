@@ -104,22 +104,9 @@ Precommit hooks take >40s, so always use a 120s timeout when committing:
 git commit -m "message"   # timeout: 120000ms
 ```
 
-### Squash-Merge PRs from Forks
+### PR Review & Squash-Merge
 
-`gh pr merge` may fail with `GraphQL: Projects (classic) is being deprecated` even when the merge succeeds. Use the REST API directly instead:
-
-```bash
-# Change base to develop first (if targeting main)
-gh api repos/co-l/openfox/pulls/<N> -X PATCH -f base=develop
-
-# Squash-merge via API
-gh api repos/co-l/openfox/pulls/<N>/merge -X PUT \
-  -f merge_method=squash \
-  -f commit_title="feat: description (#<N>)"
-
-# Pull locally
-git checkout develop && git pull origin develop --ff-only
-```
+See [docs/PR-REVIEW.md](PR-REVIEW.md) for the full PR review workflow, including how to review, fix, and merge pull requests from forks.
 
 ### Release
 
