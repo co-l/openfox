@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect } from 'react'
+import { useState, useCallback } from 'react'
 import { useSessionStats } from '../../hooks/useSessionStats'
 import { useGitStatus } from '../../hooks/useGitStatus'
 import { useConfigStore } from '../../stores/config'
@@ -38,10 +38,10 @@ export function SessionSidebar({ messages, workdir }: SessionSidebarProps) {
 
   const workspaceName = session?.workspace ? (session.workspace.split('/').pop() ?? null) : null
 
-  const checkForUpdate = useCallback(async () => {
+  const checkForUpdate = useCallback(async (forceRefresh = false) => {
     setCheckingUpdate(true)
     try {
-      const res = await fetch('/api/auto-update/check')
+      const res = await fetch(`/api/auto-update/check${forceRefresh ? '?force=true' : ''}`)
       if (res.ok) {
         const data = (await res.json()) as { isUpdateAvailable: boolean; current: string; latest: string }
         setUpdateAvailable(data.isUpdateAvailable)
@@ -52,10 +52,6 @@ export function SessionSidebar({ messages, workdir }: SessionSidebarProps) {
       setCheckingUpdate(false)
     }
   }, [])
-
-  useEffect(() => {
-    checkForUpdate()
-  }, [checkForUpdate])
 
   return (
     <div className="flex flex-col h-full">
@@ -169,7 +165,7 @@ export function SessionSidebar({ messages, workdir }: SessionSidebarProps) {
             {' - '}
             <span className="font-mono">v{version}</span>
             <button
-              onClick={() => checkForUpdate()}
+              onClick={() => checkForUpdate(true)}
               disabled={checkingUpdate}
               className="p-0.5 rounded hover:bg-bg-tertiary text-text-muted hover:text-text-primary transition-colors disabled:opacity-50"
               title="Check for updates"

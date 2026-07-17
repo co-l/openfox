@@ -16,13 +16,11 @@ export function AutoUpdateModal({ isOpen, onClose, versionInfo }: AutoUpdateModa
   const [modalVersionInfo, setModalVersionInfo] = useState(versionInfo)
   const [updatedVersion, setUpdatedVersion] = useState<string | null>(null)
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
+  const isDev = import.meta.env.DEV
 
+  // Auto-fetch only once when modal opens and no versionInfo provided
   useEffect(() => {
-    if (!isOpen) return
-    if (versionInfo) {
-      setModalVersionInfo(versionInfo)
-      return
-    }
+    if (!isOpen || versionInfo) return
     fetch('/api/auto-update/check')
       .then((res) => res.json())
       .then((data) => {
@@ -81,19 +79,28 @@ export function AutoUpdateModal({ isOpen, onClose, versionInfo }: AutoUpdateModa
 
   const canClose = state !== 'updating' && state !== 'restarting'
 
+  const formatVersion = (version: string) => {
+    if (isDev) {
+      return version.replace(/-dev$/, '')
+    }
+    return version
+  }
+
   const title =
     state === 'failed'
       ? 'Update Failed'
       : state === 'complete' || state === 'restarting'
         ? 'Update Complete'
-        : 'New OpenFox Version Available'
+        : isDev
+          ? 'New OpenFox (dev) version available'
+          : 'New OpenFox version available'
 
   return (
     <Modal
       isOpen={isOpen}
       onClose={canClose ? onClose : undefined}
       title={title}
-      size="sm"
+      size="md"
       closeOnBackdropClick={canClose}
       showCloseButton={canClose}
     >
@@ -101,7 +108,7 @@ export function AutoUpdateModal({ isOpen, onClose, versionInfo }: AutoUpdateModa
         {modalVersionInfo && (
           <div className="flex justify-between text-sm">
             <span className="text-text-muted">Current version</span>
-            <span className="text-text-primary font-mono">{modalVersionInfo.current}</span>
+            <span className="text-text-primary font-mono">{formatVersion(modalVersionInfo.current)}</span>
           </div>
         )}
         {modalVersionInfo && (

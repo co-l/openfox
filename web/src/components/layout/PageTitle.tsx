@@ -2,7 +2,7 @@ import { useEffect, useRef } from 'react'
 import { useProjectStore } from '../../stores/project'
 import { useSessionStore, useIsRunning } from '../../stores/session'
 
-const SPINNER_CHARS = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴']
+const SPINNER_CHARS = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧']
 
 /**
  * PageTitle component - updates document.title reactively based on current project and session context.
@@ -18,6 +18,9 @@ export function PageTitle() {
 
   useEffect(() => {
     if (isRunning) {
+      if (!intervalRef.current) {
+        spinnerIndexRef.current = 0
+      }
       intervalRef.current = window.setInterval(() => {
         spinnerIndexRef.current = (spinnerIndexRef.current + 1) % SPINNER_CHARS.length
         updateTitle()
@@ -37,17 +40,17 @@ export function PageTitle() {
         intervalRef.current = null
       }
     }
-  }, [isRunning, project, session, isDev])
+  }, [isRunning, project, session])
 
   const updateTitle = () => {
-    const devPrefix = isDev ? 'dev- ' : ''
+    const devSuffix = isDev && project ? '-dev' : ''
     const sessionTitle = session?.metadata?.title
     const spinnerPrefix = isRunning ? `${SPINNER_CHARS[spinnerIndexRef.current]} ` : ''
 
     if (project && sessionTitle) {
-      document.title = `${spinnerPrefix}${devPrefix}${project.name} - ${sessionTitle} | OpenFox`
+      document.title = `${spinnerPrefix}${project.name} - ${sessionTitle} | OpenFox${devSuffix}`
     } else if (project) {
-      document.title = `${spinnerPrefix}${devPrefix}${project.name} | OpenFox`
+      document.title = `${spinnerPrefix}${project.name} | OpenFox${devSuffix}`
     } else {
       document.title = `${spinnerPrefix}OpenFox`
     }
