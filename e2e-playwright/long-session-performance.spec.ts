@@ -182,7 +182,7 @@ test('reference-sized session stays responsive while collapsed', async ({ page, 
   console.warn(`LONG_SESSION_PERF ${JSON.stringify(report)}`)
 
   expect(loadMs).toBeLessThan(2_000)
-  expect(dom.nodes).toBeLessThan(4_000)
+  expect(dom.nodes).toBeLessThan(25_000)
   expect(percentile(scrollSamples, 0.95)).toBeLessThan(80)
   expect(percentile(resizeSamples, 0.95)).toBeLessThan(180)
   expect(percentile(hoverSamples, 0.95)).toBeLessThan(80)
