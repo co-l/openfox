@@ -36,6 +36,10 @@ describe('Auto Update Routes', () => {
       if (cmd === 'npm' && Array.isArray(args) && args[0] === 'view') {
         return makeMockChild({ stdout: '1.2.3\n' })
       }
+      // git describe --tags returns just the tag name
+      if (cmd === 'git' && Array.isArray(args) && args.includes('describe')) {
+        return makeMockChild({ stdout: '1.2.3\n' })
+      }
       return makeMockChild({ stdout: 'Updated: 1.2.3\n' })
     })
 
