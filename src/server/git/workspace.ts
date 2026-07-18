@@ -77,6 +77,18 @@ export function listBranches(cwd: string): Promise<BranchInfo[]> {
   })
 }
 
+/**
+ * Count how many commits the workspace's current branch is behind the same
+ * branch on origin (the original repo). Returns 0 if up to date, null if the
+ * branch doesn't exist on origin or the comparison fails.
+ */
+export async function getCommitsBehind(cwd: string, branch: string): Promise<number | null> {
+  const out = await captureStdout(cwd, ['rev-list', '--count', 'HEAD..origin/' + branch, '--'])
+  if (out === null) return null
+  const count = parseInt(out.trim(), 10)
+  return Number.isNaN(count) ? null : count
+}
+
 export function validateRef(cwd: string, name: string): Promise<void> {
   return runGit(cwd, ['check-ref-format', `refs/heads/${name}`])
 }

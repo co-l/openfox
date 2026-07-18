@@ -37,6 +37,7 @@ import { getProject } from '../db/projects.js'
 import {
   ensureWorkspace,
   getGitBranch,
+  getCommitsBehind,
   workspaceExists,
   getWorkspacesDir,
   deleteWorkspace as deleteWorkspaceDir,
@@ -1036,9 +1037,19 @@ export class SessionManager {
     const effectiveWorkdir = target === 'original' ? project.workdir : resolve(getWorkspacesDir(project.name), target)
     const actualBranch = await getGitBranch(effectiveWorkdir)
 
+    // Check if the workspace is behind the original (staleness hint)
+    let stalenessHint = ''
+    if (target !== 'original' && actualBranch) {
+      const behind = await getCommitsBehind(effectiveWorkdir, actualBranch)
+      if (behind !== null && behind > 0) {
+        const plural = behind === 1 ? '' : 's'
+        stalenessHint = `\n(${behind} commit${plural} behind ${actualBranch} on main workspace — run \`git pull\` to sync)`
+      }
+    }
+
     // Inject system reminder — same format for every workspace, "original" included
     const wsLabel = target === 'original' ? 'original' : target
-    const reminderContent = `<system-reminder>\nThis session is now operating in workspace "${wsLabel}" on branch "${actualBranch ?? 'unknown'}" at ${effectiveWorkdir}.\nAll file and git operations should use this directory.\n</system-reminder>`
+    const reminderContent = `<system-reminder>\nThis session is now operating in workspace "${wsLabel}" on branch "${actualBranch ?? 'unknown'}" at ${effectiveWorkdir}.${stalenessHint}\nAll file and git operations should use this directory.\n</system-reminder>`
     this.addMessage(sessionId, {
       role: 'user',
       content: reminderContent,
