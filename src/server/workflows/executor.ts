@@ -87,7 +87,7 @@ export function formatCriteriaList(entries: import('../../shared/types.js').Meta
 }
 
 export async function formatModifiedFiles(session: Session): Promise<string> {
-  const effectiveWorkdir = session.worktree ?? session.workdir
+  const effectiveWorkdir = session.workspace ?? session.workdir
   return formatGitDiffFiles(effectiveWorkdir)
 }
 
@@ -333,7 +333,7 @@ export async function executeWorkflow(
     // Build template context
     const criteriaEntries = session.metadataEntries['criteria'] ?? []
     const templateCtx: TemplateContext = {
-      workdir: session.worktree ?? session.workdir,
+      workdir: session.workspace ?? session.workdir,
       reason: buildReason(session.metadataEntries),
       verifierFindings: lastStepOutput['content'] ?? '',
       previousStepOutput: lastStepOutput['stdout'] ?? '',
@@ -542,7 +542,7 @@ export async function executeWorkflow(
           )
         }
 
-        const result = await executeShellCommand(command, session.worktree ?? session.workdir, timeout, signal)
+        const result = await executeShellCommand(command, session.workspace ?? session.workdir, timeout, signal)
 
         const output = [result.stdout, result.stderr].filter(Boolean).join('\n').trim()
         lastStepOutput = { stdout: result.stdout ?? '', stderr: result.stderr ?? '', exitCode: String(result.exitCode) }

@@ -33,7 +33,7 @@ export function ToolIcon({ tool, className = 'w-4 h-4 text-text-muted flex-shrin
   }
 
   // Worktree/branch tool
-  if (tool === 'worktree') {
+  if (tool === 'workspace') {
     return (
       <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
         <path

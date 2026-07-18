@@ -31,7 +31,7 @@ export interface Session {
   id: string
   projectId: string
   workdir: string
-  worktree?: string // Optional git worktree path
+  workspace?: string // Optional workspace path
   mode: SessionMode
   phase: SessionPhase // Current workflow phase
   isRunning: boolean // Is the agent actively working?
@@ -82,7 +82,7 @@ export interface SessionSummary {
   projectId: string
   title?: string
   workdir: string
-  worktree?: string // Optional git worktree path
+  workspace?: string // Optional workspace path
   mode: SessionMode
   phase: SessionPhase // Current workflow phase
   isRunning: boolean
@@ -280,7 +280,14 @@ export interface Message {
   subAgentId?: string // If set, this message belongs to a sub-agent process
   subAgentType?: string // Sub-agent ID from agent registry
   attachments?: Attachment[] // Optional image attachments
-  metadata?: { type: string; name: string; color: string; kind?: 'definition' | 'reminder'; branchName?: string } // For auto-prompt messages
+  metadata?: {
+    type: string
+    name: string
+    color: string
+    kind?: 'definition' | 'reminder'
+    branchName?: string
+    workspaceName?: string
+  } // For auto-prompt messages
 }
 
 // ============================================================================

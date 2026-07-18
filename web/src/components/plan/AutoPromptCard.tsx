@@ -15,16 +15,15 @@ export function AutoPromptCard({ message }: AutoPromptCardProps) {
 
   const metadata = message.metadata
   const metaColor = metadata?.color ?? '#6b7280'
-  const metaName = metadata?.name ?? 'Agent'
   const metaType = metadata?.type ?? 'agent'
+  const metaName = metaType === 'workspace' ? 'Workspace' : (metadata?.name ?? 'Agent')
 
   const typeLabels: Record<string, string> = {
     agent: metadata?.kind === 'reminder' ? 'reminder' : 'definition injected',
     workflow: 'instructions',
     compaction: 'prompt injected',
     subagent: 'instructions',
-    worktree:
-      metadata?.kind === 'reminder' ? `${metadata?.branchName ?? ''} (closed)` : `${metadata?.branchName ?? ''} (open)`,
+    workspace: `${metadata?.workspaceName ?? ''} · ${metadata?.branchName ?? ''}`,
   }
   const label = typeLabels[metaType] ?? 'injected'
 

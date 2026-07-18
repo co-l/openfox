@@ -1,3 +1,4 @@
 {
+  "threshold": 0.1,
   "ignore": ["**/*.test.ts", "**/*.test.tsx", "**/*.test.js"]
 }

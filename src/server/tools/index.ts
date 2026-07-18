@@ -17,7 +17,7 @@ import { stepDoneTool } from './step-done.js'
 import { backgroundProcessTool } from './background-process/index.js'
 import { mcpConfigTool } from './mcp-config.js'
 import { webSearchTool } from './web-search.js'
-import { worktreeTool } from './worktree.js'
+import { workspaceTool } from './workspace.js'
 import { computeEffectiveTools } from './tool-policy.js'
 import { loadAllAgentsDefault, findAgentById } from '../agents/registry.js'
 import { logger } from '../utils/logger.js'
@@ -55,7 +55,7 @@ function getBuiltInTools(): Tool[] {
       stepDoneTool,
       backgroundProcessTool,
       mcpConfigTool,
-      worktreeTool,
+      workspaceTool,
     ]
   }
   return _builtInTools

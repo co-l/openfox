@@ -141,7 +141,7 @@ describe('substitutePort', () => {
   })
 })
 
-describe('loadConfig with worktree fallback', () => {
+describe('loadConfig with workspace fallback', () => {
   beforeEach(() => {
     vi.mocked(readFile).mockReset()
   })
@@ -157,12 +157,12 @@ describe('loadConfig with worktree fallback', () => {
     })
   })
 
-  it('falls back to project root when worktree path has no config', async () => {
+  it('falls back to project root when workspace path has no config', async () => {
     vi.mocked(readFile)
       .mockRejectedValueOnce(new Error('ENOENT'))
       .mockResolvedValueOnce(JSON.stringify({ command: 'npm run dev', url: 'http://localhost:5173' }))
 
-    const config = await devServerManager.loadConfig('/some/project/worktrees/my-feature')
+    const config = await devServerManager.loadConfig('/some/project/workspaces/my-feature')
     expect(config).toEqual({
       command: 'npm run dev',
       url: 'http://localhost:5173',
@@ -174,11 +174,11 @@ describe('loadConfig with worktree fallback', () => {
 
   it('returns null when neither path has config', async () => {
     vi.mocked(readFile).mockRejectedValue(new Error('ENOENT'))
-    const config = await devServerManager.loadConfig('/some/project/worktrees/my-feature')
+    const config = await devServerManager.loadConfig('/some/project/workspaces/my-feature')
     expect(config).toBeNull()
   })
 
-  it('works without fallback (non-worktree path)', async () => {
+  it('works without fallback (non-workspace path)', async () => {
     vi.mocked(readFile).mockRejectedValue(new Error('ENOENT'))
     const config = await devServerManager.loadConfig('/some/project')
     expect(config).toBeNull()

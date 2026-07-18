@@ -1,0 +1,3 @@
+{
+  "setup": ["npm install --prefer-offline"]
+}

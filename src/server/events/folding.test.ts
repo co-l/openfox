@@ -1897,12 +1897,12 @@ describe('event folding', () => {
       const toolCallId = 'call-wt-1'
       const toolResult = {
         success: true,
-        output: JSON.stringify({ worktree: '/path/wt', branch: 'hello', message: 'Worktree created' }),
+        output: JSON.stringify({ workspace: '/path/ws', branch: 'hello', message: 'Workspace created' }),
         durationMs: 100,
         truncated: false,
       }
 
-      // Simulates a worktree-creation turn: assistant calls worktree →
+      // Simulates a workspace-creation turn: assistant calls workspace →
       // tool handler injects system-reminder user message → tool result appended
       const baseEvents: StoredEvent[] = [
         {
@@ -1917,7 +1917,7 @@ describe('event folding', () => {
           type: 'tool.call',
           data: {
             messageId: assistantMsgId,
-            toolCall: { id: toolCallId, name: 'worktree', arguments: { action: 'create', name: 'hello' } },
+            toolCall: { id: toolCallId, name: 'workspace', arguments: { action: 'create', name: 'hello' } },
           },
         },
         {
@@ -1927,7 +1927,7 @@ describe('event folding', () => {
           data: {
             messageId: reminderMsgId,
             role: 'user',
-            content: '<system-reminder>\nThis session is now operating in a git worktree.\n</system-reminder>',
+            content: '<system-reminder>\nThis session is now operating in a workspace.\n</system-reminder>',
             isSystemGenerated: true,
             messageKind: 'auto-prompt',
             contextWindowId: 'window-1',
@@ -1967,7 +1967,7 @@ describe('event folding', () => {
               toolCalls: [
                 {
                   id: toolCallId,
-                  name: 'worktree',
+                  name: 'workspace',
                   arguments: { action: 'create', name: 'hello' },
                   result: toolResult,
                 },
@@ -1978,7 +1978,7 @@ describe('event folding', () => {
             {
               id: reminderMsgId,
               role: 'user',
-              content: '<system-reminder>\nThis session is now operating in a git worktree.\n</system-reminder>',
+              content: '<system-reminder>\nThis session is now operating in a workspace.\n</system-reminder>',
               isSystemGenerated: true,
               messageKind: 'auto-prompt',
               timestamp: baseEvent.timestamp,

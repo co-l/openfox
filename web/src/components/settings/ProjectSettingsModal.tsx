@@ -1,16 +1,10 @@
 import { useState, useEffect } from 'react'
 import type { Project, DangerLevel } from '@shared/types.js'
-import type { WorktreeAssetStrategy } from '@shared/worktree.js'
 import { Modal } from '../shared/SelfContainedModal'
 import { ModalFooter } from '../shared/ModalFooter'
 import { useProjectStore } from '../../stores/project'
-import { useWorktreeConfigStore } from '../../stores/worktree-config'
+import { useWorkspaceConfigStore } from '../../stores/workspace-config'
 import { wsClient } from '../../lib/ws'
-
-interface OverrideRow {
-  path: string
-  strategy: WorktreeAssetStrategy
-}
 
 interface ProjectSettingsModalProps {
   isOpen: boolean
@@ -20,10 +14,10 @@ interface ProjectSettingsModalProps {
 
 export function ProjectSettingsModal({ isOpen, onClose, project }: ProjectSettingsModalProps) {
   const updateProject = useProjectStore((state) => state.updateProject)
-  const wtConfig = useWorktreeConfigStore((s) => s.config)
-  const wtLoading = useWorktreeConfigStore((s) => s.loading)
-  const fetchWtConfig = useWorktreeConfigStore((s) => s.fetchConfig)
-  const saveWtConfig = useWorktreeConfigStore((s) => s.saveConfig)
+  const wsConfig = useWorkspaceConfigStore((s) => s.config)
+  const wsLoading = useWorkspaceConfigStore((s) => s.loading)
+  const fetchWsConfig = useWorkspaceConfigStore((s) => s.fetchConfig)
+  const saveWsConfig = useWorkspaceConfigStore((s) => s.saveConfig)
 
   const handleClose = () => {
     try {
@@ -41,11 +35,10 @@ export function ProjectSettingsModal({ isOpen, onClose, project }: ProjectSettin
   const [saving, setSaving] = useState(false)
   const [saveError, setSaveError] = useState<string | null>(null)
 
-  const [wtStrategy, setWtStrategy] = useState<WorktreeAssetStrategy>('skip')
-  const [wtOverrides, setWtOverrides] = useState<OverrideRow[]>([])
-  const [wtDirty, setWtDirty] = useState(false)
+  const [setupCmd, setSetupCmd] = useState('')
+  const [setupDirty, setSetupDirty] = useState(false)
 
-  const isDirty = instructionsDirty || dangerLevelDirty || wtDirty
+  const isDirty = instructionsDirty || dangerLevelDirty || setupDirty
 
   useEffect(() => {
     if (isOpen) {
@@ -53,20 +46,18 @@ export function ProjectSettingsModal({ isOpen, onClose, project }: ProjectSettin
       setDangerLevel(project.dangerLevel ?? '')
       setInstructionsDirty(false)
       setDangerLevelDirty(false)
-      setWtDirty(false)
-      fetchWtConfig(project.workdir)
+      setSetupDirty(false)
+      fetchWsConfig(project.workdir)
     }
-  }, [isOpen, project, fetchWtConfig])
+  }, [isOpen, project, fetchWsConfig])
 
   useEffect(() => {
-    if (wtConfig) {
-      setWtStrategy(wtConfig.ignoredAssets)
-      setWtOverrides(Object.entries(wtConfig.overrides ?? {}).map(([path, strategy]) => ({ path, strategy })))
+    if (wsConfig?.setup && wsConfig.setup.length > 0) {
+      setSetupCmd(wsConfig.setup.join(' && '))
     } else {
-      setWtStrategy('skip')
-      setWtOverrides([])
+      setSetupCmd('')
     }
-  }, [wtConfig])
+  }, [wsConfig])
 
   const handleInstructionsChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     setCustomInstructions(e.target.value)
@@ -78,30 +69,9 @@ export function ProjectSettingsModal({ isOpen, onClose, project }: ProjectSettin
     setDangerLevelDirty(true)
   }
 
-  const handleWtStrategyChange = (value: WorktreeAssetStrategy) => {
-    setWtStrategy(value)
-    setWtDirty(true)
-  }
-
-  const handleOverrideChange = (index: number, field: keyof OverrideRow, value: string) => {
-    setWtOverrides((prev) => {
-      const next = [...prev]
-      if (next[index]) {
-        next[index] = { ...next[index]!, [field]: value }
-      }
-      return next
-    })
-    setWtDirty(true)
-  }
-
-  const addOverride = () => {
-    setWtOverrides((prev) => [...prev, { path: '', strategy: 'symlink' }])
-    setWtDirty(true)
-  }
-
-  const removeOverride = (index: number) => {
-    setWtOverrides((prev) => prev.filter((_, i) => i !== index))
-    setWtDirty(true)
+  const handleSetupCmdChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setSetupCmd(e.target.value)
+    setSetupDirty(true)
   }
 
   const handleSave = async () => {
@@ -113,21 +83,18 @@ export function ProjectSettingsModal({ isOpen, onClose, project }: ProjectSettin
         customInstructions: customInstructions || null,
         dangerLevel: dangerLevelValue,
       })
-      if (wtDirty) {
-        const overrides: Record<string, WorktreeAssetStrategy> = {}
-        for (const row of wtOverrides) {
-          if (row.path.trim()) {
-            overrides[row.path.trim()] = row.strategy
-          }
-        }
-        await saveWtConfig(project.workdir, {
-          ignoredAssets: wtStrategy,
-          overrides: Object.keys(overrides).length > 0 ? overrides : undefined,
-        })
+      if (setupDirty) {
+        const setup = setupCmd.trim()
+          ? setupCmd
+              .split('&&')
+              .map((s) => s.trim())
+              .filter(Boolean)
+          : []
+        await saveWsConfig(project.workdir, { setup: setup.length > 0 ? setup : undefined })
       }
       setInstructionsDirty(false)
       setDangerLevelDirty(false)
-      setWtDirty(false)
+      setSetupDirty(false)
       handleClose()
     } catch (err) {
       setSaveError(err instanceof Error ? err.message : 'Failed to save settings')
@@ -141,7 +108,7 @@ export function ProjectSettingsModal({ isOpen, onClose, project }: ProjectSettin
     setDangerLevel(project.dangerLevel ?? '')
     setInstructionsDirty(false)
     setDangerLevelDirty(false)
-    setWtDirty(false)
+    setSetupDirty(false)
     handleClose()
   }
 
@@ -223,69 +190,24 @@ export function ProjectSettingsModal({ isOpen, onClose, project }: ProjectSettin
 
         <div>
           <label className="block text-sm font-medium text-text-primary mb-1 flex-shrink-0">
-            Worktree Asset Strategy
+            Workspace Setup Command
           </label>
           <p className="text-sm text-text-muted mb-3">
-            Controls how .gitignored files (e.g. node_modules) are handled when creating a worktree. Symlink is fast and
-            saves disk space. Copy works when tools don't follow symlinks.
+            Command(s) to run after creating a workspace (shared clone). Use{' '}
+            <code className="text-xs bg-bg-tertiary px-1 rounded">&amp;&amp;</code> to chain multiple commands. Example:{' '}
+            <code className="text-xs bg-bg-tertiary px-1 rounded">npm install --prefer-offline</code>
           </p>
 
-          {wtLoading && <div className="text-xs text-text-muted mb-2">Loading config...</div>}
+          {wsLoading && <div className="text-xs text-text-muted mb-2">Loading config...</div>}
 
-          <div className="flex items-center gap-1 px-1.5 py-1 rounded bg-bg-tertiary/50 w-fit mb-4">
-            {(['skip', 'symlink', 'copy'] as const).map((option) => (
-              <button
-                key={option}
-                type="button"
-                onClick={() => handleWtStrategyChange(option)}
-                className={`px-3 py-1 text-sm font-medium rounded transition-colors ${
-                  wtStrategy === option
-                    ? 'bg-bg-tertiary text-text-primary border border-border'
-                    : 'text-text-muted hover:text-text-primary hover:bg-bg-tertiary'
-                }`}
-              >
-                {option.charAt(0).toUpperCase() + option.slice(1)}
-              </button>
-            ))}
-          </div>
-
-          <label className="block text-xs font-medium text-text-secondary mb-1">Per-path overrides</label>
-          <div className="space-y-2">
-            {wtOverrides.map((override, index) => (
-              <div key={index} className={`flex items-center gap-2 ${!override.path.trim() ? 'opacity-50' : ''}`}>
-                <input
-                  type="text"
-                  value={override.path}
-                  onChange={(e) => handleOverrideChange(index, 'path', e.target.value)}
-                  placeholder="e.g. node_modules"
-                  className="input flex-1 text-sm"
-                />
-                <select
-                  value={override.strategy}
-                  onChange={(e) => handleOverrideChange(index, 'strategy', e.target.value)}
-                  className="input w-28 text-sm"
-                >
-                  <option value="symlink">Symlink</option>
-                  <option value="copy">Copy</option>
-                  <option value="skip">Skip</option>
-                </select>
-                <button
-                  type="button"
-                  onClick={() => removeOverride(index)}
-                  className="text-text-muted hover:text-red-400 text-sm px-1"
-                >
-                  ✕
-                </button>
-              </div>
-            ))}
-            <button
-              type="button"
-              onClick={addOverride}
-              className="text-xs text-accent-primary hover:text-accent-primary/80 transition-colors"
-            >
-              + Add override
-            </button>
-          </div>
+          <input
+            type="text"
+            value={setupCmd}
+            onChange={handleSetupCmdChange}
+            placeholder="npm install --prefer-offline"
+            className="w-full px-3 py-2 bg-bg-tertiary border border-border rounded text-sm font-mono focus:outline-none focus:ring-1 focus:ring-accent-primary"
+            disabled={saving}
+          />
         </div>
 
         {saveError && (

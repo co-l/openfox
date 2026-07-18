@@ -1,15 +1,15 @@
 /**
- * Git Worktree REST API E2E Tests
+ * Git Workspace REST API E2E Tests
  *
- * Tests session-scoped worktree endpoints.
- * Worktrees are created per-session, not per-project.
+ * Tests session-scoped workspace endpoints.
+ * Workspaces are created per-session, not per-project.
  */
 
 import { describe, it, expect, beforeAll, afterAll, beforeEach, afterEach } from 'vitest'
 import { createTestServer, type TestServerHandle } from './utils/index.js'
 import { createTestProject, type TestProject } from './utils/index.js'
 
-describe('Session Worktree REST API', () => {
+describe('Session Workspace REST API', () => {
   let server: TestServerHandle
   let testProject: TestProject
   let projectId: string
@@ -38,7 +38,7 @@ describe('Session Worktree REST API', () => {
     const sessionRes = await fetch(`${server.url}/api/sessions`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ projectId, title: 'Worktree Test Session' }),
+      body: JSON.stringify({ projectId, title: 'Workspace Test Session' }),
     })
     const sessionData: any = await sessionRes.json()
     sessionId = sessionData.session.id
@@ -48,73 +48,60 @@ describe('Session Worktree REST API', () => {
     await testProject.cleanup()
   })
 
-  it('session starts without worktree', async () => {
+  it('session starts without workspace', async () => {
     const res = await fetch(`${server.url}/api/sessions/${sessionId}`)
     expect(res.status).toBe(200)
     const data: any = await res.json()
-    expect(data.session.worktree).toBeUndefined()
+    expect(data.session.workspace).toBeUndefined()
   })
 
-  it('creates worktree for session', async () => {
-    const res = await fetch(`${server.url}/api/sessions/${sessionId}/worktree`, {
+  it('switches to a new workspace', async () => {
+    const res = await fetch(`${server.url}/api/sessions/${sessionId}/switch-workspace`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name: 'feature/test-worktree' }),
+      body: JSON.stringify({ target: 'test-workspace' }),
     })
     expect(res.status).toBe(200)
     const data: any = await res.json()
-    expect(data.session.worktree).toBeDefined()
-    expect(data.session.worktree).toContain('worktrees/feature-test-worktree')
-    // workdir stays as project root — only worktree changes
+    expect(data.session.workspace).toBeDefined()
+    expect(data.session.workspace).toContain('test-workspace')
     expect(data.session.workdir).toBe(testProject.path)
   })
 
-  it('closes worktree and returns session to project root', async () => {
-    // Create worktree first
-    await fetch(`${server.url}/api/sessions/${sessionId}/worktree`, {
+  it('switches to a new workspace with optional branch', async () => {
+    const res = await fetch(`${server.url}/api/sessions/${sessionId}/switch-workspace`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name: 'feature/to-close' }),
-    })
-
-    // Close worktree
-    const res = await fetch(`${server.url}/api/sessions/${sessionId}/close-worktree`, {
-      method: 'POST',
+      body: JSON.stringify({ target: 'branch-test', branch: 'main' }),
     })
     expect(res.status).toBe(200)
     const data: any = await res.json()
-    expect(data.session.worktree).toBeUndefined()
+    expect(data.session.workspace).toBeDefined()
+    expect(data.session.workspace).toContain('branch-test')
+  })
+
+  it('switches to original', async () => {
+    // Switch to a workspace first
+    await fetch(`${server.url}/api/sessions/${sessionId}/switch-workspace`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ target: 'to-switch-back' }),
+    })
+
+    // Switch back to original
+    const res = await fetch(`${server.url}/api/sessions/${sessionId}/switch-workspace`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ target: 'original' }),
+    })
+    expect(res.status).toBe(200)
+    const data: any = await res.json()
+    expect(data.session.workspace).toBeUndefined()
     expect(data.session.workdir).toBe(testProject.path)
   })
 
-  it('rejects creating worktree when session already has one', async () => {
-    await fetch(`${server.url}/api/sessions/${sessionId}/worktree`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name: 'feature/first' }),
-    })
-
-    const res = await fetch(`${server.url}/api/sessions/${sessionId}/worktree`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name: 'feature/second' }),
-    })
-    expect(res.status).toBe(400)
-    const data: any = await res.json()
-    expect(data.error).toMatch(/already has a worktree/i)
-  })
-
-  it('rejects closing worktree when session has none', async () => {
-    const res = await fetch(`${server.url}/api/sessions/${sessionId}/close-worktree`, {
-      method: 'POST',
-    })
-    expect(res.status).toBe(400)
-    const data: any = await res.json()
-    expect(data.error).toMatch(/does not have a worktree/i)
-  })
-
-  it('rejects missing name', async () => {
-    const res = await fetch(`${server.url}/api/sessions/${sessionId}/worktree`, {
+  it('rejects missing target', async () => {
+    const res = await fetch(`${server.url}/api/sessions/${sessionId}/switch-workspace`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({}),
@@ -122,19 +109,8 @@ describe('Session Worktree REST API', () => {
     expect(res.status).toBe(400)
   })
 
-  it('rejects invalid branch name', async () => {
-    const res = await fetch(`${server.url}/api/sessions/${sessionId}/worktree`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name: 'bad name with spaces' }),
-    })
-    expect(res.status).toBe(400)
-    const data: any = await res.json()
-    expect(data.error).toMatch(/failed/)
-  })
-
-  it('rejects worktree on non-existent session', async () => {
-    const res = await fetch(`${server.url}/api/sessions/nonexistent/worktree`, {
+  it('rejects workspace on non-existent session', async () => {
+    const res = await fetch(`${server.url}/api/sessions/nonexistent/workspace`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ name: 'feature/foo' }),
@@ -143,7 +119,7 @@ describe('Session Worktree REST API', () => {
   })
 })
 
-describe('Worktree Config REST API', () => {
+describe('Workspace Config REST API', () => {
   let server: TestServerHandle
   let testProject: TestProject
 
@@ -163,54 +139,50 @@ describe('Worktree Config REST API', () => {
     await testProject.cleanup()
   })
 
-  it('GET /api/worktree/config returns null when no config exists', async () => {
-    const res = await fetch(`${server.url}/api/worktree/config?workdir=${encodeURIComponent(testProject.path)}`)
+  it('GET /api/workspace/config returns null when no config exists', async () => {
+    const res = await fetch(`${server.url}/api/workspace/config?workdir=${encodeURIComponent(testProject.path)}`)
     expect(res.status).toBe(200)
     const data: any = await res.json()
     expect(data.config).toBeNull()
   })
 
-  it('POST /api/worktree/config saves and returns config', async () => {
-    const res = await fetch(`${server.url}/api/worktree/config?workdir=${encodeURIComponent(testProject.path)}`, {
+  it('POST /api/workspace/config saves and returns config', async () => {
+    const res = await fetch(`${server.url}/api/workspace/config?workdir=${encodeURIComponent(testProject.path)}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ ignoredAssets: 'copy', overrides: { node_modules: 'symlink' } }),
+      body: JSON.stringify({ setup: ['npm install --prefer-offline'] }),
     })
     expect(res.status).toBe(200)
     const data: any = await res.json()
-    expect(data.config.ignoredAssets).toBe('copy')
-    expect(data.config.overrides.node_modules).toBe('symlink')
+    expect(data.config.setup).toEqual(['npm install --prefer-offline'])
   })
 
-  it('GET /api/worktree/config reads back saved config', async () => {
-    // Save first
-    await fetch(`${server.url}/api/worktree/config?workdir=${encodeURIComponent(testProject.path)}`, {
+  it('GET /api/workspace/config reads back saved config', async () => {
+    await fetch(`${server.url}/api/workspace/config?workdir=${encodeURIComponent(testProject.path)}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ ignoredAssets: 'symlink' }),
+      body: JSON.stringify({ setup: ['npm install --prefer-offline'] }),
     })
-
-    // Read back
-    const res = await fetch(`${server.url}/api/worktree/config?workdir=${encodeURIComponent(testProject.path)}`)
+    const res = await fetch(`${server.url}/api/workspace/config?workdir=${encodeURIComponent(testProject.path)}`)
     expect(res.status).toBe(200)
     const data: any = await res.json()
-    expect(data.config.ignoredAssets).toBe('symlink')
+    expect(data.config.setup).toEqual(['npm install --prefer-offline'])
   })
 
-  it('rejects invalid strategy', async () => {
-    const res = await fetch(`${server.url}/api/worktree/config?workdir=${encodeURIComponent(testProject.path)}`, {
+  it('rejects non-array setup', async () => {
+    const res = await fetch(`${server.url}/api/workspace/config?workdir=${encodeURIComponent(testProject.path)}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ ignoredAssets: 'invalid' }),
+      body: JSON.stringify({ setup: 'not-an-array' }),
     })
     expect(res.status).toBe(400)
   })
 
   it('rejects missing workdir', async () => {
-    const res = await fetch(`${server.url}/api/worktree/config`, {
+    const res = await fetch(`${server.url}/api/workspace/config`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ ignoredAssets: 'symlink' }),
+      body: JSON.stringify({ setup: ['npm install --prefer-offline'] }),
     })
     expect(res.status).toBe(400)
   })

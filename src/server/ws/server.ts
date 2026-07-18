@@ -598,13 +598,13 @@ export function createWebSocketServer(
       const pendingConfirmations = foldPendingConfirmations(events)
       const pendingQuestions = getPendingQuestionsForSession(updatedSession.id)
 
-      // Update activeWorkdir when worktree changed so git polling picks up the right dir
-      const effectiveWorkdir = updatedSession.worktree ?? updatedSession.workdir
-      let worktreeChanged = false
+      // Update activeWorkdir when workspace changed so git polling picks up the right dir
+      const effectiveWorkdir = updatedSession.workspace ?? updatedSession.workdir
+      let workspaceChanged = false
 
       for (const [, client] of clients) {
         if (client.activeSessionId === updatedSession.id && client.activeWorkdir !== effectiveWorkdir) {
-          worktreeChanged = true
+          workspaceChanged = true
           const prevWorkdir = client.activeWorkdir
           client.activeWorkdir = effectiveWorkdir
           if (prevWorkdir) moduleStopGitPolling(prevWorkdir)
@@ -618,9 +618,9 @@ export function createWebSocketServer(
         createSessionStateMessage(updatedSession, messages, pendingConfirmations, pendingQuestions),
       )
 
-      // If worktree changed, fetch git status in background and push as git.status message
+      // If workspace changed, fetch git status in background and push as git.status message
       // This avoids blocking session.state broadcast on git IO
-      if (worktreeChanged && effectiveWorkdir) {
+      if (workspaceChanged && effectiveWorkdir) {
         ;(async () => {
           const branch = await moduleGitBranch(effectiveWorkdir)
           if (!branch) return
@@ -888,7 +888,7 @@ async function handleClientMessage(
 
       // Tab model: set active session for event routing
       client.activeSessionId = session.id
-      const effectiveWorkdir = session.worktree ?? session.workdir
+      const effectiveWorkdir = session.workspace ?? session.workdir
       client.activeWorkdir = effectiveWorkdir
 
       // Send initial git status immediately

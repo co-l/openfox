@@ -15,7 +15,7 @@ export const devServerTool = createTool<DevServerArgs>(
       name: 'dev_server',
       description:
         'Control the project dev server. Start, stop, restart, check status, or fetch logs with optional pagination. ' +
-        'Each workdir (project root or git worktree) gets its own independent dev server instance with auto-assigned ports. ' +
+        'Each workdir (project root or workspace) gets its own independent dev server instance with auto-assigned ports. ' +
         'The dev server is configured via .openfox/dev.json — searched in the current workdir first, falling back to the project root. ' +
         'Fields: command (string, required), url (string, required), hotReload (boolean, optional, default false), disableInspect (boolean, optional, default false). ' +
         'You can use ${PORT} in command and url — it will be replaced with an available port at runtime (auto-assigned if the configured port is taken).',

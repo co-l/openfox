@@ -175,7 +175,7 @@ class DevServerManager {
 
   /**
    * Load dev server config from workdir.
-   * If not found and the path looks like a git worktree (contains /worktrees/),
+   * If not found and the path looks like a workspace (contains /workspaces/),
    * falls back to the parent project root.
    */
   async loadConfig(workdir: string): Promise<DevServerConfig | null> {
@@ -199,10 +199,10 @@ class DevServerManager {
     const config = await tryLoad(workdir)
     if (config) return config
 
-    // Auto-detect worktree paths: <project>/worktrees/<name>
-    const wtIdx = workdir.indexOf('/worktrees/')
-    if (wtIdx !== -1) {
-      const projectRoot = workdir.slice(0, wtIdx)
+    // Auto-detect workspace paths: <global-data-dir>/workspaces/<project>/<name>
+    const wsIdx = workdir.indexOf('/workspaces/')
+    if (wsIdx !== -1) {
+      const projectRoot = workdir.slice(0, wsIdx)
       if (projectRoot !== workdir) {
         return tryLoad(projectRoot)
       }

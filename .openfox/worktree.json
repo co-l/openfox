@@ -1,7 +1,0 @@
-{
-  "ignoredAssets": "skip",
-  "overrides": {
-    "node_modules": "copy",
-    ".husky/_": "symlink"
-  }
-}

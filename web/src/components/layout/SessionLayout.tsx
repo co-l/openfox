@@ -32,7 +32,7 @@ export function SessionLayout({
         {/* Session Sidebar - mobile: fixed overlay, desktop: flex item */}
         {criteriaSidebarOpen ? (
           <aside className="hidden md:block w-[320px] shrink-0 border-l border-border p-4 overflow-y-auto bg-secondary">
-            <SessionSidebar messages={messages} workdir={session?.worktree ?? session?.workdir} />
+            <SessionSidebar messages={messages} workdir={session?.workspace ?? session?.workdir} />
           </aside>
         ) : (
           <aside className="hidden md:block w-0 shrink-0 overflow-hidden border-l-0" />
@@ -48,7 +48,7 @@ export function SessionLayout({
             ${criteriaSidebarOpen ? 'w-[320px] translate-x-0 border-l border-border' : 'w-[320px] translate-x-full'}
           `}
         >
-          <SessionSidebar messages={messages} workdir={session?.worktree ?? session?.workdir} />
+          <SessionSidebar messages={messages} workdir={session?.workspace ?? session?.workdir} />
         </aside>
       </div>
     </div>

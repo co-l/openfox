@@ -236,10 +236,14 @@ function runMigrations(db: Database.Database): void {
     db.exec(`ALTER TABLE sessions ADD COLUMN cached_hash TEXT`)
   }
 
-  // Migration: Add worktree column for git worktree support
-  if (!columnNames.includes('worktree')) {
-    logger.info('Migrating sessions table: adding worktree column')
-    db.exec(`ALTER TABLE sessions ADD COLUMN worktree TEXT`)
+  // Migration: Rename worktree → workspace
+  if (!columnNames.includes('workspace') && columnNames.includes('worktree')) {
+    logger.info('Migrating sessions table: renaming worktree to workspace')
+    db.exec(`ALTER TABLE sessions RENAME COLUMN worktree TO workspace`)
+  }
+  if (!columnNames.includes('workspace')) {
+    logger.info('Migrating sessions table: adding workspace column')
+    db.exec(`ALTER TABLE sessions ADD COLUMN workspace TEXT`)
   }
 
   logger.info('Database migrations completed')

@@ -31,7 +31,7 @@ export function createSession(
   title?: string,
   providerId?: string | null,
   providerModel?: string | null,
-  worktree?: string,
+  workspace?: string,
 ): Session {
   const db = getDatabase()
   const now = new Date().toISOString()
@@ -40,14 +40,14 @@ export function createSession(
 
   db.prepare(
     `
-    INSERT INTO sessions (id, project_id, workdir, worktree, phase, mode, workflow_phase, is_running, created_at, updated_at, title, provider_id, provider_model, danger_level)
+    INSERT INTO sessions (id, project_id, workdir, workspace, phase, mode, workflow_phase, is_running, created_at, updated_at, title, provider_id, provider_model, danger_level)
     VALUES (?, ?, ?, ?, 'idle', 'planner', 'plan', 0, ?, ?, ?, ?, ?, ?)
   `,
   ).run(
     id,
     projectId,
     workdir,
-    worktree ?? null,
+    workspace ?? null,
     now,
     now,
     title ?? null,
@@ -60,7 +60,7 @@ export function createSession(
     id,
     projectId,
     workdir,
-    ...(worktree ? { worktree } : {}),
+    ...(workspace ? { workspace } : {}),
     mode: 'planner',
     phase: 'plan',
     isRunning: false,
@@ -287,7 +287,7 @@ export function listSessions(): SessionSummary[] {
       s.id,
       s.project_id,
       s.workdir,
-      s.worktree,
+      s.workspace,
       s.mode,
       s.workflow_phase,
       s.is_running,
@@ -320,7 +320,7 @@ export function listSessionsByProject(
       s.id,
       s.project_id,
       s.workdir,
-      s.worktree,
+      s.workspace,
       s.mode,
       s.workflow_phase,
       s.is_running,
@@ -344,12 +344,12 @@ export function listSessionsByProject(
   return { sessions, hasMore }
 }
 
-export function updateSessionWorkdir(id: string, workdir: string, worktree: string | null): void {
+export function updateSessionWorkdir(id: string, workdir: string, workspace: string | null): void {
   const db = getDatabase()
   const now = new Date().toISOString()
-  db.prepare('UPDATE sessions SET workdir = ?, worktree = ?, updated_at = ? WHERE id = ?').run(
+  db.prepare('UPDATE sessions SET workdir = ?, workspace = ?, updated_at = ? WHERE id = ?').run(
     workdir,
-    worktree,
+    workspace,
     now,
     id,
   )
@@ -364,7 +364,7 @@ function mapSessionBase(row: SessionRow | SessionSummaryRow): {
   id: string
   projectId: string
   workdir: string
-  worktree?: string
+  workspace?: string
   mode: SessionMode
   phase: SessionPhase
   isRunning: boolean
@@ -377,7 +377,7 @@ function mapSessionBase(row: SessionRow | SessionSummaryRow): {
     id: row.id,
     projectId: row.project_id,
     workdir: row.workdir,
-    ...(row.worktree ? { worktree: row.worktree } : {}),
+    ...(row.workspace ? { workspace: row.workspace } : {}),
     mode: (row.mode ?? 'planner') as SessionMode,
     phase: (row.workflow_phase ?? 'plan') as SessionPhase,
     isRunning: Boolean(row.is_running),
@@ -406,7 +406,7 @@ interface SessionRow {
   id: string
   project_id: string
   workdir: string
-  worktree: string | null
+  workspace: string | null
   phase: string
   mode: string
   workflow_phase: string
@@ -430,7 +430,7 @@ interface SessionSummaryRow {
   id: string
   project_id: string
   workdir: string
-  worktree: string | null
+  workspace: string | null
   mode: string
   workflow_phase: string
   is_running: number

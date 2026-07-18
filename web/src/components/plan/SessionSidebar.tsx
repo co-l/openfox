@@ -11,10 +11,11 @@ import { MetadataEntries, MetadataSectionHeader } from '../shared/MetadataEntrie
 import { CriteriaEditor } from './CriteriaEditor'
 import { DevServerFooter } from './DevServerFooter'
 import { BackgroundProcesses } from './BackgroundProcesses'
-import { BranchIcon, ReloadIcon } from '../shared/icons'
+import { BranchIcon, FolderIcon, ReloadIcon } from '../shared/icons'
 import { AutoUpdateModal } from '../AutoUpdateModal'
 import { DiffViewer } from './DiffViewer'
 import { BranchModal } from './BranchModal'
+import { WorkspaceModal } from './WorkspaceModal'
 import type { Message } from '@shared/types.js'
 
 interface SessionSidebarProps {
@@ -28,13 +29,14 @@ export function SessionSidebar({ messages, workdir }: SessionSidebarProps) {
   const [updateAvailable, setUpdateAvailable] = useState(false)
   const [showUpdateModal, setShowUpdateModal] = useState(false)
   const [showBranchModal, setShowBranchModal] = useState(false)
+  const [showWorkspaceModal, setShowWorkspaceModal] = useState(false)
 
   const stats = useSessionStats(messages)
   const { branch } = useGitStatus()
   const version = useConfigStore((state) => state.version)
   const session = useSessionStore((state) => state.currentSession)
 
-  const hasWorktree = !!session?.worktree
+  const workspaceName = session?.workspace ? (session.workspace.split('/').pop() ?? null) : null
 
   const checkForUpdate = useCallback(async () => {
     setCheckingUpdate(true)
@@ -118,24 +120,30 @@ export function SessionSidebar({ messages, workdir }: SessionSidebarProps) {
         </div>
       </div>
 
-      {/* Git branch — above separator */}
-      {branch && (
-        <div className="mt-4">
-          <div className="flex items-center gap-2 text-sm">
-            <BranchIcon />
-            <span className="truncate text-text-secondary" title={branch}>
-              {branch}
-            </span>
-            {hasWorktree && <span className="text-xs text-accent-primary ml-1 font-medium">worktree</span>}
-            <button
-              onClick={() => setShowBranchModal(true)}
-              className="ml-auto px-2 py-0.5 text-xs rounded bg-bg-tertiary text-text-secondary hover:bg-bg-secondary transition-colors"
-            >
-              Edit
-            </button>
-          </div>
+      {/* Workspace & branch info — above separator */}
+      <div className="mt-4 space-y-1.5">
+        <div className="flex items-center gap-2 text-sm">
+          <FolderIcon className="w-4 h-4 text-text-muted flex-shrink-0" />
+          <span className="truncate text-text-secondary">{workspaceName ?? 'original'}</span>
+          <button
+            onClick={() => setShowWorkspaceModal(true)}
+            className="ml-auto px-2 py-0.5 text-xs rounded bg-bg-tertiary text-text-secondary hover:bg-bg-secondary transition-colors"
+          >
+            Edit
+          </button>
         </div>
-      )}
+        <div className="h-px bg-border" />
+        <div className="flex items-center gap-2 text-sm">
+          <BranchIcon />
+          <span className="truncate text-text-secondary">{branch ?? 'unknown'}</span>
+          <button
+            onClick={() => setShowBranchModal(true)}
+            className="ml-auto px-2 py-0.5 text-xs rounded bg-bg-tertiary text-text-secondary hover:bg-bg-secondary transition-colors"
+          >
+            Edit
+          </button>
+        </div>
+      </div>
 
       {/* Diff viewer — between branch and dev server */}
       <DiffViewer />
@@ -180,15 +188,22 @@ export function SessionSidebar({ messages, workdir }: SessionSidebarProps) {
       <AutoUpdateModal isOpen={showUpdateModal} onClose={() => setShowUpdateModal(false)} versionInfo={null} />
 
       {session && (
-        <BranchModal
-          isOpen={showBranchModal}
-          onClose={() => setShowBranchModal(false)}
-          projectId={session.projectId}
-          sessionId={session.id}
-          currentBranch={branch}
-          hasWorktree={hasWorktree}
-          worktreeBranch={branch}
-        />
+        <>
+          <WorkspaceModal
+            isOpen={showWorkspaceModal}
+            onClose={() => setShowWorkspaceModal(false)}
+            projectId={session.projectId}
+            sessionId={session.id}
+            currentWorkspace={workspaceName}
+            currentBranch={branch ?? null}
+          />
+          <BranchModal
+            isOpen={showBranchModal}
+            onClose={() => setShowBranchModal(false)}
+            projectId={session.projectId}
+            sessionId={session.id}
+          />
+        </>
       )}
     </div>
   )

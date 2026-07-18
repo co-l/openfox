@@ -35,7 +35,7 @@ import { createAgentRoutes } from './routes/agents.js'
 import { loadAllAgentsDefault, getTopLevelAgents } from './agents/registry.js'
 import { createWorkflowRoutes } from './routes/workflows.js'
 import { createDevServerRoutes } from './routes/dev-server.js'
-import { createWorktreeConfigRoutes } from './routes/worktree-config.js'
+import { createWorkspaceConfigRoutes } from './routes/workspace-config.js'
 import { createTerminalRoutes } from './routes/terminals.js'
 import { createDirectoryRoutes } from './routes/directories.js'
 import { createFileSearchRoutes } from './routes/file-search.js'
@@ -392,7 +392,7 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
     const { getProject } = await import('./db/projects.js')
     const project = getProject(req.params.id)
     if (!project) return res.status(404).json({ error: 'Project not found' })
-    const { listBranches } = await import('./git/worktree.js')
+    const { listBranches } = await import('./git/workspace.js')
     const branches = await listBranches(project.workdir)
     res.json({ branches })
   })
@@ -404,7 +404,7 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
     if (!project) return res.status(404).json({ error: 'Project not found' })
     const { branch } = req.body
     if (!branch || typeof branch !== 'string') return res.status(400).json({ error: 'branch is required' })
-    const { checkoutBranch } = await import('./git/worktree.js')
+    const { checkoutBranch } = await import('./git/workspace.js')
     try {
       await checkoutBranch(project.workdir, branch)
       res.json({ branch })
@@ -420,7 +420,7 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
     if (!project) return res.status(404).json({ error: 'Project not found' })
     const { name } = req.body
     if (!name || typeof name !== 'string') return res.status(400).json({ error: 'name is required' })
-    const { createBranch } = await import('./git/worktree.js')
+    const { createBranch } = await import('./git/workspace.js')
     try {
       await createBranch(project.workdir, name)
       res.json({ branch: name })
@@ -429,16 +429,16 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
     }
   })
 
-  /** List existing git worktrees for a project (excluding the main repo) */
-  app.get('/api/projects/:id/worktrees', async (req, res) => {
+  /** List existing workspaces for a project (excluding the main repo) */
+  app.get('/api/projects/:id/workspaces', async (req, res) => {
     const { getProject } = await import('./db/projects.js')
     const project = getProject(req.params.id)
     if (!project) return res.status(404).json({ error: 'Project not found' })
-    const { listWorktrees } = await import('./git/worktree.js')
-    const all = await listWorktrees(project.workdir)
-    // Filter out the main worktree (the repo itself) — only show linked worktrees
-    const worktrees = all.filter((wt) => wt.path !== project.workdir)
-    res.json({ worktrees })
+    const { listWorkspaces } = await import('./git/workspace.js')
+    const all = await listWorkspaces(project.name)
+    // Filter out the main workspace (the repo itself) — only show linked workspaces
+    const workspacesList = all.filter((ws) => ws.path !== project.workdir)
+    res.json({ workspaces: workspacesList })
   })
 
   // Session endpoints (REST)
@@ -488,48 +488,19 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
     res.status(201).json({ session })
   })
 
-  /** Create a git worktree for a session and move the session into it */
-  app.post('/api/sessions/:id/worktree', async (req, res) => {
+  /** Switch to a workspace — target is "original" or a workspace name */
+  app.post('/api/sessions/:id/switch-workspace', async (req, res) => {
     const session = sessionManager.getSession(req.params.id)
     if (!session) return res.status(404).json({ error: 'Session not found' })
 
-    const { name } = req.body
-    if (!name || typeof name !== 'string') return res.status(400).json({ error: 'name is required' })
+    const { target, branch } = req.body
+    if (!target || typeof target !== 'string') return res.status(400).json({ error: 'target is required' })
 
     try {
-      const updated = await sessionManager.createSessionWorktree(req.params.id, name)
+      const updated = await sessionManager.switchWorkspace(req.params.id, target, branch)
       res.json({ session: updated })
     } catch (err) {
-      res.status(400).json({ error: err instanceof Error ? err.message : 'Failed to create worktree' })
-    }
-  })
-
-  /** Close the worktree for a session and move it back to the project root */
-  app.post('/api/sessions/:id/close-worktree', async (req, res) => {
-    const session = sessionManager.getSession(req.params.id)
-    if (!session) return res.status(404).json({ error: 'Session not found' })
-
-    try {
-      const updated = await sessionManager.closeSessionWorktree(req.params.id)
-      res.json({ session: updated })
-    } catch (err) {
-      res.status(400).json({ error: err instanceof Error ? err.message : 'Failed to close worktree' })
-    }
-  })
-
-  /** Attach session to an existing worktree by path */
-  app.post('/api/sessions/:id/attach-worktree', async (req, res) => {
-    const session = sessionManager.getSession(req.params.id)
-    if (!session) return res.status(404).json({ error: 'Session not found' })
-
-    const { path } = req.body
-    if (!path || typeof path !== 'string') return res.status(400).json({ error: 'path is required' })
-
-    try {
-      const updated = await sessionManager.attachSessionWorktree(req.params.id, path)
-      res.json({ session: updated })
-    } catch (err) {
-      res.status(400).json({ error: err instanceof Error ? err.message : 'Failed to attach worktree' })
+      res.status(400).json({ error: err instanceof Error ? err.message : 'Failed to switch workspace' })
     }
   })
 
@@ -720,12 +691,14 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
       }
     }
 
-    const mapped = entries.map((c: { id?: string; description?: string; status?: string; [key: string]: unknown }, i: number) => ({
-      ...c,
-      id: c.id != null ? String(c.id) : String(i),
-      description: c.description ?? '',
-      status: c.status ?? 'open',
-    }))
+    const mapped = entries.map(
+      (c: { id?: string; description?: string; status?: string; [key: string]: unknown }, i: number) => ({
+        ...c,
+        id: c.id != null ? String(c.id) : String(i),
+        description: c.description ?? '',
+        status: c.status ?? 'open',
+      }),
+    )
     sessionManager.setMetadataEntries(sessionId, key, mapped)
     res.json({ success: true })
   })
@@ -1911,13 +1884,25 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
     if (args !== undefined && (!Array.isArray(args) || args.some((a) => typeof a !== 'string'))) {
       return res.status(400).json({ error: 'args must be an array of strings' })
     }
-    if (env !== undefined && (typeof env !== 'object' || env === null || Array.isArray(env) || Object.values(env as object).some((v) => typeof v !== 'string'))) {
+    if (
+      env !== undefined &&
+      (typeof env !== 'object' ||
+        env === null ||
+        Array.isArray(env) ||
+        Object.values(env as object).some((v) => typeof v !== 'string'))
+    ) {
       return res.status(400).json({ error: 'env must be a string/string object' })
     }
     if (url !== undefined && typeof url !== 'string') {
       return res.status(400).json({ error: 'url must be a string' })
     }
-    if (headers !== undefined && (typeof headers !== 'object' || headers === null || Array.isArray(headers) || Object.values(headers as object).some((v) => typeof v !== 'string'))) {
+    if (
+      headers !== undefined &&
+      (typeof headers !== 'object' ||
+        headers === null ||
+        Array.isArray(headers) ||
+        Object.values(headers as object).some((v) => typeof v !== 'string'))
+    ) {
       return res.status(400).json({ error: 'headers must be a string/string object' })
     }
 
@@ -1926,7 +1911,10 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
       const { applyMcpServerUpdate } = await import('./mcp/update-server.js')
 
       const globalConfig = await loadGlobalConfig(config.mode ?? 'production', config.globalConfigPath)
-      const mcpServers = { ...(globalConfig.mcpServers ?? {}) } as Record<string, import('./mcp/types.js').McpServerConfig>
+      const mcpServers = { ...(globalConfig.mcpServers ?? {}) } as Record<
+        string,
+        import('./mcp/types.js').McpServerConfig
+      >
 
       const patch = {
         ...(rawTransport !== undefined ? { transport: rawTransport as 'stdio' | 'http' } : {}),
@@ -2049,7 +2037,7 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
   app.use('/api/agents', createAgentRoutes(configDir, projectDir))
   app.use('/api/workflows', createWorkflowRoutes(configDir, config, projectDir))
   app.use('/api/dev-server', createDevServerRoutes())
-  app.use('/api/worktree', createWorktreeConfigRoutes())
+  app.use('/api/workspace', createWorkspaceConfigRoutes())
   app.use('/api/terminals', createTerminalRoutes())
   app.use(
     '/api/auto-update',
