@@ -48,3 +48,18 @@ jobs:
           cache: 'npm'
       - run: npm ci
       - run: npm test
+
+  ai-disclosure:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/github-script@v7
+        with:
+          script: |
+            const body = context.payload.pull_request.body || '';
+            const hasDisclosure = /AI Models?:?\s*\S/.test(body);
+            if (!hasDisclosure) {
+              core.setFailed(
+                '🦊 Hey! This PR is missing AI model disclosure. ' +
+                'Tell us what AI models you used — check the PR template for the section.'
+              );
+            }
