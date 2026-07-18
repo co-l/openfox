@@ -18,7 +18,7 @@ function captureStdout(cwd: string, args: string[]): Promise<string | null> {
   })
 }
 
-function runGit(cwd: string, args: string[]): Promise<void> {
+export function runGit(cwd: string, args: string[]): Promise<void> {
   return new Promise((resolvePromise, reject) => {
     const proc = spawn('git', args, { cwd, env: gitSpawnEnv(), stdio: ['ignore', 'pipe', 'pipe'] })
     let stderr = ''
