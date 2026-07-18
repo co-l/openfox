@@ -129,9 +129,7 @@ describe('listWorkspaces', () => {
 
 describe('ensureWorkspace', () => {
   it('creates workspace via shared clone', async () => {
-    vi.mocked(spawn)
-      .mockReturnValueOnce(makeMockProc('false\n') as any) // core.bare check
-      .mockReturnValueOnce(makeMockProc('') as any) // git clone
+    vi.mocked(spawn).mockReturnValueOnce(makeMockProc('') as any) // git clone --shared
     vi.mocked(mkdir).mockResolvedValue(undefined)
     vi.mocked(stat)
       .mockResolvedValueOnce(null as any) // wsPath doesn't exist → triggers clone
@@ -147,8 +145,7 @@ describe('ensureWorkspace', () => {
 
   it('checks out specific branch when requested', async () => {
     vi.mocked(spawn)
-      .mockReturnValueOnce(makeMockProc('false\n') as any) // core.bare check
-      .mockReturnValueOnce(makeMockProc('') as any) // git clone
+      .mockReturnValueOnce(makeMockProc('') as any) // git clone --shared
       .mockReturnValueOnce(makeMockProc('') as any) // git checkout (branch exists)
     vi.mocked(mkdir).mockResolvedValue(undefined)
     vi.mocked(stat)
@@ -158,13 +155,12 @@ describe('ensureWorkspace', () => {
 
     const result = await ensureWorkspace(CWD, 'my-experiment', PROJECT_NAME, 'develop')
     expect(result.name).toBe('my-experiment')
-    expect(spawn).toHaveBeenCalledTimes(3)
+    expect(spawn).toHaveBeenCalledTimes(2)
   })
 
   it('creates branch in workspace when requested branch does not exist', async () => {
     vi.mocked(spawn)
-      .mockReturnValueOnce(makeMockProc('false\n') as any) // core.bare check
-      .mockReturnValueOnce(makeMockProc('') as any) // git clone
+      .mockReturnValueOnce(makeMockProc('') as any) // git clone --shared
       .mockReturnValueOnce(makeMockProc('', 'fatal: not a git repository', 128) as any) // git checkout fails
       .mockReturnValueOnce(makeMockProc('main\n') as any) // getGitBranch (source)
       .mockReturnValueOnce(makeMockProc('') as any) // git checkout -b succeeds
@@ -178,22 +174,7 @@ describe('ensureWorkspace', () => {
     expect(result.name).toBe('my-experiment')
   })
 
-  it('fixes core.bare if set to true', async () => {
-    vi.mocked(spawn)
-      .mockReturnValueOnce(makeMockProc('true\n') as any) // core.bare check → true
-      .mockReturnValueOnce(makeMockProc('') as any) // git config core.bare false
-      .mockReturnValueOnce(makeMockProc('') as any) // git clone
-    vi.mocked(mkdir).mockResolvedValue(undefined)
-    vi.mocked(stat).mockResolvedValue({ isDirectory: () => true } as any)
-    vi.mocked(readFile).mockResolvedValue(JSON.stringify({}))
-
-    await ensureWorkspace(CWD, 'my-experiment', PROJECT_NAME)
-    // Second call should be the fix
-    expect(spawn).toHaveBeenNthCalledWith(2, 'git', ['config', 'core.bare', 'false'], expect.any(Object))
-  })
-
   it('reuses existing workspace directory', async () => {
-    vi.mocked(spawn).mockReturnValueOnce(makeMockProc('false\n') as any) // core.bare check
     vi.mocked(mkdir).mockResolvedValue(undefined)
     vi.mocked(stat)
       .mockResolvedValueOnce({ isDirectory: () => true } as any) // existing wsPath

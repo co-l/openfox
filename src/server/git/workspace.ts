@@ -135,12 +135,6 @@ export async function ensureWorkspace(
   projectName: string,
   branch?: string,
 ): Promise<WorkspaceResult> {
-  const bare = await captureStdout(projectDir, ['config', '--local', 'core.bare'])
-  if (bare?.trim() === 'true') {
-    logger.warn('Detected core.bare=true in repo config — fixing to false', { projectDir })
-    await runGit(projectDir, ['config', 'core.bare', 'false'])
-  }
-
   const workspacesDir = getWorkspacesDir(projectName)
   const wsPath = resolve(workspacesDir, name)
 
@@ -155,7 +149,7 @@ export async function ensureWorkspace(
     }
     logger.info('Workspace directory already exists, reusing', { path: wsPath })
   } else {
-    await runGit(projectDir, ['clone', projectDir, wsPath])
+    await runGit(projectDir, ['clone', '--shared', projectDir, wsPath])
   }
 
   const st = await statSafe(wsPath)
