@@ -16,7 +16,7 @@ allowedTools:
   - background_process
   - mcp_config
   - dev_server
-  - worktree
+  - workspace
 ---
 
 # Plan Mode

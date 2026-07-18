@@ -6,7 +6,7 @@ interface UpdateState {
   status: UpdateStatus
   current: string | null
   latest: string | null
-  check: () => Promise<void>
+  check: (force?: boolean) => Promise<void>
 }
 
 export const useUpdateStore = create<UpdateState>((set, get) => ({
@@ -14,11 +14,11 @@ export const useUpdateStore = create<UpdateState>((set, get) => ({
   current: null,
   latest: null,
 
-  check: async () => {
-    if (get().status === 'checking') return
+  check: async (force?: boolean) => {
+    if (!force && get().status === 'checking') return
     set({ status: 'checking' })
     try {
-      const res = await fetch('/api/auto-update/check')
+      const res = await fetch(`/api/auto-update/check${force ? '?force=true' : ''}`)
       if (!res.ok) throw new Error(`HTTP ${res.status}`)
       const data = (await res.json()) as { isUpdateAvailable: boolean; current: string; latest: string }
       set({

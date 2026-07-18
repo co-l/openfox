@@ -1,12 +1,12 @@
 # PR Review Workflow
 
-> How to review, fix, and merge pull requests in OpenFox.
+> How to review, fix, and merge pull requests in OpenFox — agent-assisted.
 
 ## Overview
 
-PRs target `develop`. Features accumulate via squash-merges. `main` stays aligned with the latest published version (see [RELEASE.md](RELEASE.md)).
+PRs target `develop`. Features accumulate via squash-merges. `main` stays aligned with the latest published version (see release process in [AGENTS.md](../AGENTS.md#release)).
 
-PRs can come from **same-repo branches** or **forks**. The workflow differs slightly — see below.
+PRs can come from **same-repo branches** or **forks**. The workflow handles both.
 
 ## Detect PR origin
 
@@ -18,180 +18,217 @@ gh pr view <N> --json headRepositoryOwner --jq '.headRepositoryOwner.login'
 # Output: "JamesDAdams"    → fork
 ```
 
-## Simple Review (no changes needed)
+## Agent-Assisted Workflow
 
-If the PR needs no fixes, squash-merge directly via the API:
+The agent drives the review. The user reviews code, confirms fixes, and does manual testing.
+
+### Phase 1 — Setup
+
+The agent creates an isolated workspace and pulls in the PR branch.
 
 ```bash
-gh api repos/co-l/openfox/pulls/<N>/merge -X PUT \
-  -f merge_method=squash \
-  -f commit_title="feat: description (#<N>)"
+# 1. Create/switch to a review workspace (auto-creates if new)
+workspace switch review-pr-<N>
 
-git checkout develop && git pull origin develop --ff-only
+# 2. Point origin to GitHub (workspaces use --shared clone, origin
+#    defaults to the local repo path — gh needs a GitHub remote)
+git remote set-url origin git@github.com:co-l/openfox.git
+
+# 3. Sync workspace with develop
+git fetch origin
+git reset --hard origin/develop
+
+# 4. Fetch the PR branch
+gh pr checkout <N>
 ```
 
-## Review + Fix (PR needs changes)
+### Phase 2 — Review
 
-### Same-repo PRs
+The agent examines the PR:
 
-Your fix commits become part of the squash-merge — push them to the PR branch first.
+- Read the diff: `git diff origin/develop...HEAD`
+- List changed files: `git diff --stat origin/develop...HEAD`
+- Run existing tests to check for regressions
+- Inspect code quality, error handling, edge cases
+- Report findings to the user with specific line references
+
+### Phase 3 — Fix
+
+The user approves the fix plan. The agent applies fixes in the workspace and commits.
 
 ```bash
-# 1. Fetch the PR branch locally
-gh pr checkout <N>
+# 4. Apply fixes (agent uses write_file / edit_file tools)
+#    NOTE: agent does NOT commit or push until user says so
+```
 
-# 2. Create a worktree FROM the existing PR branch
-#    (use the `worktree create` tool — detects existing branch, skips -b)
-worktree create <branch-name>
+### Phase 4 — User Tests
 
-# 3. Apply fixes inside the worktree
-#    ... make changes, run tests, commit ...
+The agent starts the dev server and hands off with a summary — no asking, just doing:
 
-# 4. Push fixes back to the PR branch
+```bash
+# Agent starts the dev server (no question — just do it)
+dev_server start   # → http://localhost:<port>
+```
+
+Handoff format:
+
+> **"PR #N is ready at http://localhost:<port>.**
+>
+> **Metrics:** Tests X → Y (+Z), Typecheck ✅, Lint ✅
+>
+> **What I fixed:**
+>
+> - _bullet list of specific changes_
+> - _why each matters_
+>
+> **What to test:**
+>
+> - _specific things to click/look for_
+> - _edge cases_"
+
+The user opens the link and kicks the tires. Loop back to Phase 3 if adjustments are needed.
+
+### Phase 5 — Merge
+
+When the user says **"Merge it"**, the agent:
+
+```bash
+# 6. Switch back to the review workspace
+workspace switch review-pr-<N>
+
+# 7. Push fixes to the PR branch
+#    Same-repo:
 git push origin HEAD:<remote-branch-name>
+#    Fork (maintainer_can_modify=true):
+git remote add fork-<N> git@github.com:<user>/openfox.git
+git push fork-<N> HEAD:<remote-branch-name>
+git remote remove fork-<N>
 
-# 5. Close the worktree
-worktree close
-
-# 6. Squash-merge via API (includes your fixes)
+# 8. Squash-merge via API
 gh api repos/co-l/openfox/pulls/<N>/merge -X PUT \
   -f merge_method=squash \
   -f commit_title="feat: description (#<N>)"
 
-# 7. Update develop locally
+# 9. Return to main project
+workspace switch original
+
+# 10. Update develop locally
 git checkout develop && git pull origin develop --ff-only
 
-# 8. Clean up local branch
-git branch -D <branch-name>
+# 11. Clean up the review workspace
+workspace delete review-pr-<N>
 ```
 
-### Fork PRs
-
-You generally can't push to the fork's branch. Instead, **merge the PR as-is**, then cherry-pick your fixes onto develop.
-
-Tag your fix commits so they're easy to reference after the worktree is closed:
+## Full Example (Fork PR)
 
 ```bash
-# 1. Fetch the PR branch locally
+# ── Setup ──
+workspace switch review-pr-103
+git remote set-url origin git@github.com:co-l/openfox.git
+git fetch origin && git reset --hard origin/develop
+gh pr checkout 103
+
+# ── Review ──
+git diff --stat origin/develop...HEAD
+npm run typecheck
+npm run test:unit
+
+# ── Fix (agent proposes → user approves) ──
+# agent applies fixes via edit_file
+git add -A && git commit -m "review: fix windows path handling in npm spawn"
+
+# ── Agent starts dev server and hands off ──
+dev_server start
+# "PR #103 ready at http://localhost:.... Metrics: Tests 2225→2232 (+7), Typecheck ✅, Lint ✅
+#  What I fixed: ... What to test: ..."
+# ── User tests, iterates if needed ──
+
+# ── Merge (user says "merge it") ──
+workspace switch review-pr-103
+git remote add fork-103 git@github.com:RenZan/openfox.git
+git push fork-103 HEAD:feature/manage-pdf-images
+git remote remove fork-103
+gh api repos/co-l/openfox/pulls/103/merge -X PUT \
+  -f merge_method=squash \
+  -f commit_title="feat: PDF embedded-image support (#103)"
+workspace switch original
+git checkout develop && git pull origin develop --ff-only
+workspace delete review-pr-103
+```
+
+## Fork PRs Without Push Access
+
+If the fork doesn't have `maintainer_can_modify=true`, you can't push to it directly.
+Instead, merge the PR as-is, then cherry-pick your fixes onto develop.
+
+```bash
+# 1. Fetch the PR branch
 gh pr checkout <N>
 
-# 2. Create a worktree FROM the existing PR branch
-worktree create <branch-name>
-
-# 3. Apply fixes inside the worktree
-#    ... make changes, run tests, commit ...
-#    Tag the fix commit(s) for later cherry-pick
+# 2. Apply fixes, commit, and tag
+# ... agent applies fixes ...
+git add -A && git commit -m "review: fix ..."
 git tag review-fix-<N>
 
-# 4. Close the worktree (use the `worktree close` tool)
-worktree close
-
-# 5. Squash-merge the ORIGINAL PR (without your fixes)
+# 3. Squash-merge the ORIGINAL PR (without your fixes)
 gh api repos/co-l/openfox/pulls/<N>/merge -X PUT \
   -f merge_method=squash \
   -f commit_title="feat: description (#<N>)"
 
-# 6. Update develop locally
+# 4. Update develop
 git checkout develop && git pull origin develop --ff-only
 
-# 7. Cherry-pick your fixes onto develop
-#    Single fix:  git cherry-pick review-fix-<N>
-#    Multi-fix:   git cherry-pick review-fix-<N>^..review-fix-<N>
+# 5. Cherry-pick your fixes
 git cherry-pick review-fix-<N>
 git tag -d review-fix-<N>
-
-# 8. Push
 git push origin develop
 
-# 9. Clean up local branch
-git branch -D <branch-name>
-```
-
-#### Alternative: push directly to the fork
-
-If you have push access to the fork, add it as a remote and push there:
-
-```bash
-gh pr checkout <N>
-worktree create <branch-name>
-# ... fix, commit, test ...
-
-# Add fork as remote (one-time)
-gh repo fork --remote --remote-name fork
-
-# Push fixes to the fork's PR branch
-git push fork HEAD:<remote-branch-name>
-
-# Now squash-merge includes your fixes (continue with same-repo steps)
-worktree close
-gh api repos/co-l/openfox/pulls/<N>/merge -X PUT \
-  -f merge_method=squash \
-  -f commit_title="feat: description (#<N>)"
-git checkout develop && git pull origin develop --ff-only
-git branch -D <branch-name>
-```
-
-### Concrete example (fork)
-
-```bash
-gh pr checkout 78
-worktree create feat/add-plugins-page
-# ... fix, commit, test ...
-git tag review-fix-78
-worktree close
-gh api repos/co-l/openfox/pulls/78/merge -X PUT \
-  -f merge_method=squash \
-  -f commit_title="feat: add plugin management UI (#78)"
-git checkout develop && git pull origin develop --ff-only
-git cherry-pick review-fix-78
-git tag -d review-fix-78
-git push origin develop
-git branch -D feat/add-plugins-page
+# 6. Clean up
+workspace switch original
+workspace delete review-pr-<N>
 ```
 
 ## Common Pitfalls
 
-### Don't create a worktree first, then switch branches inside it
-
-```bash
-# WRONG — creates worktree from develop, then switches to PR branch
-worktree create my-review       # branch created from develop
-gh pr checkout 68               # switches to different branch → confusion
-git add -A                      # stages cross-branch differences → disaster
-
-# RIGHT — fetch PR branch first, then create worktree from it
-gh pr checkout 68               # local branch from fork
-worktree create feature/...     # branch exists → worktree created on it
-```
-
 ### Pre-commit hook failures
 
-The pre-commit hook runs the full test suite. If tests fail due to pre-existing issues in the PR code (not your changes), you can skip the hook:
+The pre-commit hook runs the full test suite. If tests fail due to pre-existing issues in the PR code (not your changes), skip the hook:
 
 ```bash
-git commit --no-verify -m "fix: ..."
+git commit --no-verify -m "review: ..."
 ```
 
 But first try to fix the issue — the project aims to keep the hook passing.
 
-### Orphaned worktrees
+### `gh pr merge` GraphQL deprecation
 
-The `worktree close` tool doesn't run `git worktree remove`. If you need to clean up manually:
+`gh pr merge` may fail with `GraphQL: Projects (classic) is being deprecated` even when the merge succeeds. Use the REST API directly instead:
 
 ```bash
-git worktree remove <path>      # deregister
-rm -rf <path>                   # delete directory
+gh api repos/co-l/openfox/pulls/<N>/merge -X PUT \
+  -f merge_method=squash \
+  -f commit_title="feat: description (#<N>)"
+```
+
+### Orphaned workspaces
+
+If a workspace switch fails midway, clean up manually:
+
+```bash
+workspace delete <name>          # via tool
+# or manually:
+rm -rf ~/.local/share/openfox/workspaces/<project>/<name>
 ```
 
 ## Squash-Merge via API
 
-`gh pr merge` may fail with `GraphQL: Projects (classic) is being deprecated` even when the merge succeeds. Use the REST API directly:
+Always use the REST API for merging to avoid GraphQL deprecation errors:
 
 ```bash
 # Change base to develop first (if targeting main)
 gh api repos/co-l/openfox/pulls/<N> -X PATCH -f base=develop
 
-# Squash-merge via API
+# Squash-merge
 gh api repos/co-l/openfox/pulls/<N>/merge -X PUT \
   -f merge_method=squash \
   -f commit_title="feat: description (#<N>)"

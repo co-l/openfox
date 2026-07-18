@@ -18,7 +18,7 @@ allowedTools:
   - dev_server
   - background_process
   - mcp_config
-  - worktree
+  - workspace
 ---
 
 # Build Mode

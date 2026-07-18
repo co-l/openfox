@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { EventEmitter } from 'node:events'
 import express from 'express'
-import { createAutoUpdateRoutes, resetUpdateInProgress } from './auto-update.js'
+import { createAutoUpdateRoutes, resetUpdateInProgress, resetVersionCache } from './auto-update.js'
 
 function makeMockChild(opts: { stdout?: string; stderr?: string; exitCode?: number }) {
   const child = new EventEmitter() as any
@@ -36,6 +36,14 @@ describe('Auto Update Routes', () => {
       if (cmd === 'npm' && Array.isArray(args) && args[0] === 'view') {
         return makeMockChild({ stdout: '1.2.3\n' })
       }
+      // git fetch returns nothing
+      if (cmd === 'git' && Array.isArray(args) && args[0] === 'fetch') {
+        return makeMockChild({ stdout: '' })
+      }
+      // git describe via bash -c returns just the tag name
+      if (cmd === 'bash' && Array.isArray(args) && args[0] === '-c' && args[1]?.includes('git describe')) {
+        return makeMockChild({ stdout: '1.2.3\n' })
+      }
       return makeMockChild({ stdout: 'Updated: 1.2.3\n' })
     })
 
@@ -54,6 +62,7 @@ describe('Auto Update Routes', () => {
   afterEach(() => {
     server?.close()
     resetUpdateInProgress()
+    resetVersionCache()
   })
 
   describe('GET /api/auto-update/check', () => {
@@ -77,6 +86,39 @@ describe('Auto Update Routes', () => {
       expect(res.status).toBe(200)
       const body = (await res.json()) as { current: string; latest: string; isUpdateAvailable: boolean }
       expect(body.isUpdateAvailable).toBe(body.current !== body.latest)
+    })
+
+    it('returns cached result on subsequent requests', async () => {
+      // First request
+      const res1 = await fetch(`${baseUrl}/api/auto-update/check`)
+      expect(res1.status).toBe(200)
+      const body1 = (await res1.json()) as { latest: string }
+      const latestVersion = body1.latest
+
+      // Reset mock to ensure second call uses cache (doesn't call spawn again)
+      mockSpawn.mockClear()
+
+      // Second request should use cache
+      const res2 = await fetch(`${baseUrl}/api/auto-update/check`)
+      expect(res2.status).toBe(200)
+      const body2 = (await res2.json()) as { latest: string }
+      expect(body2.latest).toBe(latestVersion)
+      // Should not have called spawn again (cache hit)
+      expect(mockSpawn).not.toHaveBeenCalled()
+    })
+
+    it('bypasses cache with force=true parameter', async () => {
+      // First request to populate cache
+      await fetch(`${baseUrl}/api/auto-update/check`)
+      mockSpawn.mockClear()
+
+      // Force refresh should call git fetch again
+      const res = await fetch(`${baseUrl}/api/auto-update/check?force=true`)
+      expect(res.status).toBe(200)
+      const body = (await res.json()) as { latest: string }
+      expect(body.latest).toBe('1.2.3')
+      // Should have called spawn for git fetch
+      expect(mockSpawn).toHaveBeenCalled()
     })
   })
 

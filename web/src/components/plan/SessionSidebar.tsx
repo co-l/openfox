@@ -157,7 +157,7 @@ export function SessionSidebar({ messages, workdir }: SessionSidebarProps) {
             <button
               onClick={() => {
                 setManuallyChecked(true)
-                checkForUpdate()
+                checkForUpdate(true)
               }}
               disabled={updateStatus === 'checking'}
               className="p-0.5 rounded hover:bg-bg-tertiary text-text-muted hover:text-text-primary transition-colors disabled:opacity-50"
