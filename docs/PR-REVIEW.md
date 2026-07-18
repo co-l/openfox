@@ -40,6 +40,9 @@ git reset --hard origin/develop
 
 # 4. Fetch the PR branch
 gh pr checkout <N>
+
+# 5. Rebase PR branch onto latest develop (ensures review is against current code)
+git rebase origin/develop
 ```
 
 ### Phase 2 — Review
@@ -104,18 +107,21 @@ git remote add fork-<N> git@github.com:<user>/openfox.git
 git push fork-<N> HEAD:<remote-branch-name>
 git remote remove fork-<N>
 
-# 8. Squash-merge via API
+# 8. Ensure PR targets develop (not main)
+gh api repos/co-l/openfox/pulls/<N> -X PATCH -f base=develop
+
+# 9. Squash-merge via API
 gh api repos/co-l/openfox/pulls/<N>/merge -X PUT \
   -f merge_method=squash \
   -f commit_title="feat: description (#<N>)"
 
-# 9. Return to main project
+# 10. Return to main project
 workspace switch original
 
-# 10. Update develop locally
+# 11. Update develop locally
 git checkout develop && git pull origin develop --ff-only
 
-# 11. Clean up the review workspace
+# 12. Clean up the review workspace
 workspace delete review-pr-<N>
 ```
 
@@ -148,6 +154,7 @@ workspace switch review-pr-103
 git remote add fork-103 git@github.com:RenZan/openfox.git
 git push fork-103 HEAD:feature/manage-pdf-images
 git remote remove fork-103
+gh api repos/co-l/openfox/pulls/103 -X PATCH -f base=develop
 gh api repos/co-l/openfox/pulls/103/merge -X PUT \
   -f merge_method=squash \
   -f commit_title="feat: PDF embedded-image support (#103)"
@@ -217,14 +224,7 @@ rm -rf ~/.local/share/openfox/workspaces/<project>/<name>
 Always use the REST API for merging to avoid GraphQL deprecation errors:
 
 ```bash
-# Change base to develop first (if targeting main)
-gh api repos/co-l/openfox/pulls/<N> -X PATCH -f base=develop
-
-# Squash-merge
 gh api repos/co-l/openfox/pulls/<N>/merge -X PUT \
   -f merge_method=squash \
   -f commit_title="feat: description (#<N>)"
-
-# Pull locally
-git checkout develop && git pull origin develop --ff-only
 ```
