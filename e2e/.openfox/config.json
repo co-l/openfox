@@ -1,5 +1,0 @@
-{
-  "retentionDays": 30,
-  "maxSizeMB": 100,
-  "excludePatterns": []
-}

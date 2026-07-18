@@ -1,1 +1,0 @@
-export { ChevronDownIcon } from './icons'

@@ -1,1 +1,0 @@
-export { CheckIcon } from './icons'

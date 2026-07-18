@@ -1,1 +1,0 @@
-export { PlusIcon as PlusLgIcon, PlusIcon as PlusMdIcon } from './PlusIcon'
