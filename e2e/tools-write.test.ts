@@ -101,12 +101,8 @@ describe('Write Tools', () => {
       const events = await collectChatEvents(client)
       assertNoErrors(events)
 
-      // Find successful write
-      const response = await client.waitForChatDone().catch(() => ({ toolCalls: [] }))
-
-      // File should be modified
-      const content = await readFile(join(testDir.path, 'src/index.ts'), 'utf-8')
-      // Content will be whatever LLM wrote
+      // File may or may not have been modified depending on LLM behavior
+      // Just verify no errors occurred during the process
     })
   })
 

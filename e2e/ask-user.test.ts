@@ -89,32 +89,30 @@ describe('Ask User Tool', () => {
       })
 
       // Wait for chat.done with waiting_for_user reason
-      const doneEvent = await client
-        .waitFor('chat.done', (payload: { reason: string }) => {
-          return payload.reason === 'waiting_for_user'
-        })
-        .catch(() => null)
+      const doneEvent = await client.waitFor('chat.done', (payload: { reason: string }) => {
+        return payload.reason === 'waiting_for_user'
+      })
 
-      // If the mock correctly triggers ask_user, we should get waiting_for_user
-      // Otherwise we just verify no errors occurred
-      const events = await collectChatEvents(client).catch(
-        () => ({ all: client.allEvents(), get: () => [], hasEvent: () => false, findEvent: () => undefined }) as const,
-      )
+      expect(doneEvent).toBeDefined()
+      expect((doneEvent.payload as { reason: string }).reason).toBe('waiting_for_user')
 
-      // Check if ask_user was called
+      // Now answer the question so the agent can continue
+      const askUserEvent = await client.waitFor('chat.ask_user', (payload: { callId: string }) => {
+        return Boolean(payload.callId)
+      })
+      const callId = (askUserEvent.payload as { callId: string }).callId
+      await client.send('ask.answer', { callId, answer: 'Proceed' })
+
+      // Agent should complete after receiving answer
+      const finalDone = await client.waitFor('chat.done', (payload: { reason: string }) => {
+        return payload.reason === 'complete'
+      })
+      expect(finalDone).toBeDefined()
+
+      // Verify no errors occurred
       const allEvents = client.allEvents()
-      const askUserCalls = allEvents.filter(
-        (e) => e.type === 'chat.tool_call' && (e.payload as { tool: string }).tool === 'ask_user',
-      )
-
-      if (askUserCalls.length > 0) {
-        // If ask_user was called, verify the done reason
-        const lastDone = allEvents.filter((e) => e.type === 'chat.done').pop()
-        if (lastDone) {
-          const reason = (lastDone.payload as { reason: string }).reason
-          expect(['waiting_for_user', 'complete']).toContain(reason)
-        }
-      }
+      const errorEvents = allEvents.filter((e) => e.type === 'chat.error')
+      expect(errorEvents.length).toBe(0)
     })
 
     it('includes callId in ask_user tool call', async () => {
