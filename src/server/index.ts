@@ -568,7 +568,7 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
 
   app.get('/api/sessions/:id', async (req, res) => {
     const { getEventStore } = await import('./events/index.js')
-    const { buildMessagesFromStoredEvents } = await import('./events/folding.js')
+    const { buildMessagesFromStoredEvents, foldPendingConfirmations } = await import('./events/folding.js')
     const { getPendingQuestionsForSession } = await import('./tools/index.js')
 
     const session = sessionManager.getSession(req.params.id)
@@ -582,8 +582,9 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
     const contextState = sessionManager.getContextState(req.params.id)
     const queueState = sessionManager.getQueueState(req.params.id)
     const pendingQuestions = getPendingQuestionsForSession(req.params.id)
+    const pendingConfirmations = foldPendingConfirmations(events)
 
-    res.json({ session, messages, contextState, queueState, pendingQuestions })
+    res.json({ session, messages, contextState, queueState, pendingQuestions, pendingConfirmations })
   })
 
   app.delete('/api/sessions/:id', async (req, res) => {

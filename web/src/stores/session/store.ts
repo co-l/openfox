@@ -6,7 +6,7 @@ import { wsClient } from '../../lib/ws'
 import { useConfigStore } from '../config'
 import { useProjectStore } from '../project'
 import { useBackgroundProcessesStore } from '../background-processes'
-import type { SessionState } from './types'
+import type { SessionState, PendingPathConfirmation } from './types'
 import { getBuffer, setFlushFn, cancelStreamingFlush } from './streamingBuffer'
 import { handleServerMessage as handleMessage } from './messageHandler'
 
@@ -323,6 +323,7 @@ export const useSessionStore = create<SessionState>((set, get) => {
           messages: loadedMessages,
           contextState: data.contextState,
           queuedMessages: (data.queueState as QueuedMessage[] | undefined) ?? [],
+          pendingPathConfirmations: (data.pendingConfirmations ?? []) as PendingPathConfirmation[],
           pendingQuestions: (data.pendingQuestions ?? []) as PendingQuestionPayload[],
         })
 

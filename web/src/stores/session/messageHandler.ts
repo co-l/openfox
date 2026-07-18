@@ -98,6 +98,10 @@ function mergeSessionIntoSummary(
     : [nextSummary, ...sessions]
 }
 
+function dedupeByCallId<T extends { callId: string }>(list: T[], item: T): T[] {
+  return list.some((x) => x.callId === item.callId) ? list : [...list, item]
+}
+
 function mergeSessionList(
   incomingSessions: import('@shared/types.js').SessionSummary[],
   existingSessions: import('@shared/types.js').SessionSummary[],
@@ -557,7 +561,7 @@ export function handleServerMessage(
           set((state) => ({
             crossSessionConfirmations: {
               ...state.crossSessionConfirmations,
-              [eventSessionId]: [...(state.crossSessionConfirmations[eventSessionId] ?? []), newConfirmation],
+              [eventSessionId]: dedupeByCallId(state.crossSessionConfirmations[eventSessionId] ?? [], newConfirmation),
             },
             sessionsWithPendingConfirmations: state.sessionsWithPendingConfirmations.includes(eventSessionId)
               ? state.sessionsWithPendingConfirmations
@@ -568,7 +572,7 @@ export function handleServerMessage(
       }
 
       set((state) => ({
-        pendingPathConfirmations: [...state.pendingPathConfirmations, newConfirmation],
+        pendingPathConfirmations: dedupeByCallId(state.pendingPathConfirmations, newConfirmation),
       }))
       break
     }
@@ -587,7 +591,7 @@ export function handleServerMessage(
         set((state) => ({
           crossSessionConfirmations: {
             ...state.crossSessionConfirmations,
-            [pendingSessionId]: [...(state.crossSessionConfirmations[pendingSessionId] ?? []), conf],
+            [pendingSessionId]: dedupeByCallId(state.crossSessionConfirmations[pendingSessionId] ?? [], conf),
           },
           sessionsWithPendingConfirmations: state.sessionsWithPendingConfirmations.includes(pendingSessionId)
             ? state.sessionsWithPendingConfirmations
