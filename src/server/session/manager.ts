@@ -42,6 +42,7 @@ import {
   workspaceExists,
   getWorkspacesDir,
   deleteWorkspace as deleteWorkspaceDir,
+  validateWorkspaceName,
 } from '../git/workspace.js'
 import { resolve } from 'node:path'
 import { SessionNotFoundError } from '../utils/errors.js'
@@ -107,6 +108,8 @@ export class SessionManager {
   private dynamicContextChangedStore = new Map<string, boolean>()
   private debugDumpStore = new Map<string, { cachedPrompt: string; cachedTools: string[]; liveTools: string[] }>()
   private warmedUpSessions = new Set<string>()
+  private switchLocks = new Map<string, Promise<unknown>>()
+  private workspaceCreationLocks = new Map<string, Promise<void>>()
 
   constructor(providerManager: import('../provider-manager.js').ProviderManager) {
     this.providerManager = providerManager
@@ -989,105 +992,158 @@ export class SessionManager {
    * Switch to a workspace. Target can be "original" (project root) or a workspace name.
    * If the workspace doesn't exist yet, it's created first.
    * Emits a single type of event — switching is always "opening" a workspace.
+   * Switches are serialized per-session to prevent race conditions.
    */
   async switchWorkspace(sessionId: string, target: string, branch?: string): Promise<Session> {
-    const session = this.requireSession(sessionId)
-    const project = getProject(session.projectId)
-    if (!project) throw new Error(`Project not found: ${session.projectId}`)
+    // Validate workspace name for named targets
+    if (target !== 'original') {
+      validateWorkspaceName(target)
+    }
 
-    // If already in the target workspace, no-op
-    if (target === 'original' && !session.workspace) return session
-    if (target !== 'original' && session.workspace?.endsWith(`/${target}`)) return session
+    // Per-session switch serialization
+    const existingLock = this.switchLocks.get(sessionId)
+    if (existingLock) {
+      await existingLock
+    }
 
-    const previousPath = session.workspace
+    const lockPromise = (async () => {
+      const session = this.requireSession(sessionId)
+      const project = getProject(session.projectId)
+      if (!project) throw new Error(`Project not found: ${session.projectId}`)
 
-    // Stop previous workspace's dev server if any
-    if (previousPath) {
+      // If already in the target workspace, no-op
+      if (target === 'original' && !session.workspace) return session
+      if (target !== 'original' && session.workspace?.endsWith(`/${target}`)) return session
+
+      const previousPath = session.workspace
+
+      // Stop previous workspace's dev server if any
+      if (previousPath) {
+        try {
+          await devServerManager.stop(previousPath)
+        } catch (err) {
+          logger.error('Error stopping dev server for workspace switch', {
+            sessionId,
+            workspace: previousPath,
+            error: err,
+          })
+        }
+      }
+
+      if (target === 'original') {
+        updateSessionWorkdir(sessionId, project.workdir, null)
+      } else {
+        // Workspace creation lock per project+name to prevent concurrent clones
+        const createLockKey = `${project.name}:${target}`
+        const existingCreateLock = this.workspaceCreationLocks.get(createLockKey)
+        if (existingCreateLock) {
+          await existingCreateLock
+        }
+        const createLockPromise = (async () => {
+          const exists = await workspaceExists(project.name, target)
+          if (!exists) {
+            await ensureWorkspace(project.workdir, target, project.name, branch)
+          }
+        })()
+        this.workspaceCreationLocks.set(createLockKey, createLockPromise)
+        try {
+          await createLockPromise
+        } finally {
+          this.workspaceCreationLocks.delete(createLockKey)
+        }
+        const wsPath = resolve(getWorkspacesDir(project.name), target)
+        updateSessionWorkdir(sessionId, project.workdir, wsPath)
+      }
+
+      // Restart LSP to pick up the new workdir
       try {
-        await devServerManager.stop(previousPath)
+        await shutdownLspManager(sessionId)
       } catch (err) {
-        logger.error('Error stopping dev server for workspace switch', {
-          sessionId,
-          workspace: previousPath,
-          error: err,
-        })
+        logger.error('Error shutting down LSP for workspace switch', { sessionId, error: err })
       }
-    }
 
-    if (target === 'original') {
-      // Switch to original project root
-      updateSessionWorkdir(sessionId, project.workdir, null)
-    } else {
-      // Switch to a named workspace — create if needed
-      const exists = await workspaceExists(project.name, target)
-      if (!exists) {
-        await ensureWorkspace(project.workdir, target, project.name, branch)
+      // Read the actual branch we're now on
+      const effectiveWorkdir = target === 'original' ? project.workdir : resolve(getWorkspacesDir(project.name), target)
+      const actualBranch = await getGitBranch(effectiveWorkdir)
+
+      // Check if the workspace is behind the original (staleness hint)
+      let stalenessHint = ''
+      if (target !== 'original' && actualBranch) {
+        await runGit(effectiveWorkdir, ['fetch', 'origin', '--no-tags', '--quiet']).catch(() => {})
+        const behind = await getCommitsBehind(effectiveWorkdir, actualBranch)
+        if (behind !== null && behind > 0) {
+          const plural = behind === 1 ? '' : 's'
+          stalenessHint = `\n(${behind} commit${plural} behind ${actualBranch} on main workspace — run \`git pull\` to sync)`
+        }
       }
-      const wsPath = resolve(getWorkspacesDir(project.name), target)
-      updateSessionWorkdir(sessionId, project.workdir, wsPath)
-    }
 
-    // Restart LSP to pick up the new workdir
-    try {
-      await shutdownLspManager(sessionId)
-    } catch (err) {
-      logger.error('Error shutting down LSP for workspace switch', { sessionId, error: err })
-    }
+      const wsLabel = target === 'original' ? 'original' : target
+      const reminderContent = `<system-reminder>\nThis session is now operating in workspace "${wsLabel}" on branch "${actualBranch ?? 'unknown'}" at ${effectiveWorkdir}.${stalenessHint}\nAll file and git operations should use this directory.\n</system-reminder>`
+      this.addMessage(sessionId, {
+        role: 'user',
+        content: reminderContent,
+        isSystemGenerated: true,
+        messageKind: 'auto-prompt',
+        metadata: {
+          type: 'workspace',
+          name: 'Workspace',
+          color: '#22c55e',
+          kind: 'definition',
+          workspaceName: wsLabel,
+          ...(actualBranch ? { branchName: actualBranch } : {}),
+        },
+      })
 
-    // Read the actual branch we're now on
-    const effectiveWorkdir = target === 'original' ? project.workdir : resolve(getWorkspacesDir(project.name), target)
-    const actualBranch = await getGitBranch(effectiveWorkdir)
+      const updated = this.requireSession(sessionId)
+      this.emit({ type: 'session_updated', session: updated })
+      return updated
+    })()
 
-    // Check if the workspace is behind the original (staleness hint)
-    let stalenessHint = ''
-    if (target !== 'original' && actualBranch) {
-      // Lightweight fetch to update remote refs — objects are shared via --shared
-      await runGit(effectiveWorkdir, ['fetch', 'origin', '--no-tags', '--quiet']).catch(() => {})
-      const behind = await getCommitsBehind(effectiveWorkdir, actualBranch)
-      if (behind !== null && behind > 0) {
-        const plural = behind === 1 ? '' : 's'
-        stalenessHint = `\n(${behind} commit${plural} behind ${actualBranch} on main workspace — run \`git pull\` to sync)`
+    this.switchLocks.set(sessionId, lockPromise)
+    lockPromise.finally(() => {
+      if (this.switchLocks.get(sessionId) === lockPromise) {
+        this.switchLocks.delete(sessionId)
       }
-    }
-
-    // Inject system reminder — same format for every workspace, "original" included
-    const wsLabel = target === 'original' ? 'original' : target
-    const reminderContent = `<system-reminder>\nThis session is now operating in workspace "${wsLabel}" on branch "${actualBranch ?? 'unknown'}" at ${effectiveWorkdir}.${stalenessHint}\nAll file and git operations should use this directory.\n</system-reminder>`
-    this.addMessage(sessionId, {
-      role: 'user',
-      content: reminderContent,
-      isSystemGenerated: true,
-      messageKind: 'auto-prompt',
-      metadata: {
-        type: 'workspace',
-        name: 'Workspace',
-        color: '#22c55e',
-        kind: 'definition',
-        workspaceName: wsLabel,
-        ...(actualBranch ? { branchName: actualBranch } : {}),
-      },
     })
 
-    const updated = this.requireSession(sessionId)
-    this.emit({ type: 'session_updated', session: updated })
-    return updated
+    return lockPromise
   }
 
   /**
    * Delete a workspace by name. If the session is currently in that workspace,
    * switches to original first. Throws if target is "original".
+   * Refuses deletion if other sessions reference this workspace.
    */
   async deleteWorkspace(sessionId: string, target: string): Promise<Session> {
     if (target === 'original') throw new Error('Cannot delete the original workspace')
+    validateWorkspaceName(target)
 
     const session = this.requireSession(sessionId)
     const project = getProject(session.projectId)
     if (!project) throw new Error(`Project not found: ${session.projectId}`)
 
+    // Check if other sessions reference this workspace
+    const otherSessionsUsingIt = this.listSessions().filter(
+      (s) => s.id !== sessionId && s.workspace?.endsWith(`/${target}`),
+    )
+    if (otherSessionsUsingIt.length > 0) {
+      const otherIds = otherSessionsUsingIt.map((s) => s.id).join(', ')
+      throw new Error(
+        `Workspace "${target}" is in use by other session(s): ${otherIds}. Switch them to original first.`,
+      )
+    }
+
     // If currently in the workspace being deleted, switch to original first
     const currentWsName = session.workspace?.split('/').pop()
     if (currentWsName === target) {
       await this.switchWorkspace(sessionId, 'original')
+    }
+
+    const effectivePath = resolve(getWorkspacesDir(project.name), target)
+    try {
+      await devServerManager.stop(effectivePath)
+    } catch {
+      // ignore
     }
 
     await deleteWorkspaceDir(project.name, target)

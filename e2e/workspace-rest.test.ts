@@ -291,3 +291,241 @@ describe('Project Branch REST API', () => {
     expect(res.status).toBe(404)
   })
 })
+
+describe('Session Branch REST API', () => {
+  let server: TestServerHandle
+  let testProject: TestProject
+  let projectId: string
+  let sessionId: string
+
+  beforeAll(async () => {
+    server = await createTestServer()
+  })
+
+  afterAll(async () => {
+    await server.close()
+  })
+
+  beforeEach(async () => {
+    testProject = await createTestProject({ template: 'git-repo' })
+    const createRes = await fetch(`${server.url}/api/projects`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: 'Session Branch', workdir: testProject.path }),
+    })
+    const data: any = await createRes.json()
+    projectId = data.project.id
+    const sessionRes = await fetch(`${server.url}/api/sessions`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ projectId, title: 'Branch Test Session' }),
+    })
+    const sessionData: any = await sessionRes.json()
+    sessionId = sessionData.session.id
+  })
+
+  afterEach(async () => {
+    await testProject.cleanup()
+  })
+
+  it('GET /api/sessions/:id/branches lists branches for effective workdir', async () => {
+    const res = await fetch(`${server.url}/api/sessions/${sessionId}/branches`)
+    expect(res.status).toBe(200)
+    const data: any = await res.json()
+    expect(Array.isArray(data.branches)).toBe(true)
+    const main = data.branches.find((b: any) => b.name === 'main')
+    expect(main).toBeDefined()
+    expect(main.current).toBe(true)
+  })
+
+  it('POST /api/sessions/:id/checkout-new creates and switches branch in effective workdir', async () => {
+    const res = await fetch(`${server.url}/api/sessions/${sessionId}/checkout-new`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: 'feature/session-test' }),
+    })
+    expect(res.status).toBe(200)
+    const data: any = await res.json()
+    expect(data.branch).toBe('feature/session-test')
+
+    const branchesRes = await fetch(`${server.url}/api/sessions/${sessionId}/branches`)
+    const branchesData: any = await branchesRes.json()
+    const current = branchesData.branches.find((b: any) => b.current)
+    expect(current.name).toBe('feature/session-test')
+  })
+
+  it('POST /api/sessions/:id/checkout switches to existing branch', async () => {
+    await fetch(`${server.url}/api/sessions/${sessionId}/checkout-new`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: 'feature/session-switch' }),
+    })
+
+    const res = await fetch(`${server.url}/api/sessions/${sessionId}/checkout`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ branch: 'main' }),
+    })
+    expect(res.status).toBe(200)
+    const data: any = await res.json()
+    expect(data.branch).toBe('main')
+
+    const branchesRes = await fetch(`${server.url}/api/sessions/${sessionId}/branches`)
+    const branchesData: any = await branchesRes.json()
+    const current = branchesData.branches.find((b: any) => b.current)
+    expect(current.name).toBe('main')
+  })
+
+  it('returns 404 for non-existent session', async () => {
+    const res = await fetch(`${server.url}/api/sessions/nonexistent/branches`)
+    expect(res.status).toBe(404)
+  })
+
+  it('rejects invalid branch ref on checkout', async () => {
+    const res = await fetch(`${server.url}/api/sessions/${sessionId}/checkout`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ branch: '../escape' }),
+    })
+    expect(res.status).toBe(400)
+  })
+})
+
+describe('Workspace Validation REST API', () => {
+  let server: TestServerHandle
+  let testProject: TestProject
+  let projectId: string
+  let sessionId: string
+
+  beforeAll(async () => {
+    server = await createTestServer()
+  })
+
+  afterAll(async () => {
+    await server.close()
+  })
+
+  beforeEach(async () => {
+    testProject = await createTestProject({ template: 'git-repo' })
+    const createRes = await fetch(`${server.url}/api/projects`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: 'Validation Test', workdir: testProject.path }),
+    })
+    const data: any = await createRes.json()
+    projectId = data.project.id
+    const sessionRes = await fetch(`${server.url}/api/sessions`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ projectId, title: 'Validation Session' }),
+    })
+    const sessionData: any = await sessionRes.json()
+    sessionId = sessionData.session.id
+  })
+
+  afterEach(async () => {
+    await testProject.cleanup()
+  })
+
+  it('rejects workspace name with path separators', async () => {
+    const res = await fetch(`${server.url}/api/sessions/${sessionId}/switch-workspace`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ target: 'a/b' }),
+    })
+    expect(res.status).toBe(400)
+    const data: any = await res.json()
+    expect(data.error).toContain('path separator')
+  })
+
+  it('rejects workspace name with absolute path', async () => {
+    const res = await fetch(`${server.url}/api/sessions/${sessionId}/switch-workspace`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ target: '/tmp/evil' }),
+    })
+    expect(res.status).toBe(400)
+  })
+
+  it('rejects "." as workspace name', async () => {
+    const res = await fetch(`${server.url}/api/sessions/${sessionId}/switch-workspace`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ target: '.' }),
+    })
+    expect(res.status).toBe(400)
+  })
+
+  it('rejects ".." as workspace name', async () => {
+    const res = await fetch(`${server.url}/api/sessions/${sessionId}/switch-workspace`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ target: '..' }),
+    })
+    expect(res.status).toBe(400)
+  })
+
+  it('rejects workspace delete with path traversal', async () => {
+    const res = await fetch(`${server.url}/api/sessions/${sessionId}/delete-workspace`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ target: '../escape' }),
+    })
+    expect(res.status).toBe(400)
+  })
+
+  it('rejects delete of original workspace', async () => {
+    const res = await fetch(`${server.url}/api/sessions/${sessionId}/delete-workspace`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ target: 'original' }),
+    })
+    expect(res.status).toBe(400)
+  })
+
+  it('rejects delete of non-existent workspace', async () => {
+    const res = await fetch(`${server.url}/api/sessions/${sessionId}/delete-workspace`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ target: 'does-not-exist' }),
+    })
+    expect(res.status).toBe(400)
+  })
+
+  it('accepts valid workspace name with hyphens', async () => {
+    const res = await fetch(`${server.url}/api/sessions/${sessionId}/switch-workspace`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ target: 'my-workspace' }),
+    })
+    expect(res.status).toBe(200)
+  })
+
+  it('session-scoped checkout does not affect project-scoped branches', async () => {
+    const wsName = `isolation-${crypto.randomUUID().slice(0, 8)}`
+
+    const wsRes = await fetch(`${server.url}/api/sessions/${sessionId}/switch-workspace`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ target: wsName }),
+    })
+    expect(wsRes.status).toBe(200)
+
+    const branchRes = await fetch(`${server.url}/api/sessions/${sessionId}/checkout-new`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: 'workspace-only-branch' }),
+    })
+    expect(branchRes.status).toBe(200)
+
+    const sessionBranchesRes = await fetch(`${server.url}/api/sessions/${sessionId}/branches`)
+    const sessionBranchesData: any = await sessionBranchesRes.json()
+    const wsBranch = sessionBranchesData.branches.find((b: any) => b.name === 'workspace-only-branch')
+    expect(wsBranch).toBeDefined()
+
+    const projectBranchesRes = await fetch(`${server.url}/api/projects/${projectId}/branches`)
+    const projectBranchesData: any = await projectBranchesRes.json()
+    const projectBranch = projectBranchesData.branches.find((b: any) => b.name === 'workspace-only-branch')
+    expect(projectBranch).toBeUndefined()
+  })
+})

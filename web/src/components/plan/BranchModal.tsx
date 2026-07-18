@@ -9,7 +9,6 @@ import { CreateInputSection } from '../shared/CreateInputSection'
 interface BranchModalProps {
   isOpen: boolean
   onClose: () => void
-  projectId: string
   sessionId: string
 }
 
@@ -18,7 +17,7 @@ interface BranchInfo {
   current: boolean
 }
 
-export function BranchModal({ isOpen, onClose, projectId, sessionId }: BranchModalProps) {
+export function BranchModal({ isOpen, onClose, sessionId }: BranchModalProps) {
   const refreshSession = useSessionStore((s) => s.loadSession)
   const {
     busy,
@@ -38,7 +37,7 @@ export function BranchModal({ isOpen, onClose, projectId, sessionId }: BranchMod
   useEffect(() => {
     if (!isOpen) return
     resetState()
-    authFetch(`/api/projects/${projectId}/branches`)
+    authFetch(`/api/sessions/${sessionId}/branches`)
       .then((r) => r.json())
       .then((data: { branches: BranchInfo[] }) => {
         setBranches(data.branches)
@@ -48,14 +47,14 @@ export function BranchModal({ isOpen, onClose, projectId, sessionId }: BranchMod
         setBranches([])
         setLoading(false)
       })
-  }, [isOpen, projectId, resetState, setLoading])
+  }, [isOpen, sessionId, resetState, setLoading])
 
   const handleSwitch = useCallback(
     async (branchName: string) => {
       setError(null)
       setBusy(true)
       try {
-        const res = await authFetch(`/api/projects/${projectId}/checkout`, {
+        const res = await authFetch(`/api/sessions/${sessionId}/checkout`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ branch: branchName }),
@@ -73,14 +72,14 @@ export function BranchModal({ isOpen, onClose, projectId, sessionId }: BranchMod
         setBusy(false)
       }
     },
-    [projectId, sessionId, refreshSession, onClose, setError, setBusy],
+    [sessionId, refreshSession, onClose, setError, setBusy],
   )
 
   const handleCreate = useCallback(async () => {
     setError(null)
     setBusy(true)
     try {
-      const res = await authFetch(`/api/projects/${projectId}/checkout-new`, {
+      const res = await authFetch(`/api/sessions/${sessionId}/checkout-new`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ name: newName.trim() }),
@@ -97,7 +96,7 @@ export function BranchModal({ isOpen, onClose, projectId, sessionId }: BranchMod
       setError(e instanceof Error ? e.message : 'Failed to create branch')
       setBusy(false)
     }
-  }, [newName, projectId, sessionId, refreshSession, onClose, setError, setBusy])
+  }, [newName, sessionId, refreshSession, onClose, setError, setBusy])
 
   return (
     <ModalShell isOpen={isOpen} onClose={handleClose} title="Switch Branch" busy={busy} loading={loading}>

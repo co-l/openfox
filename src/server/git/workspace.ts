@@ -1,6 +1,6 @@
 import { spawn, execSync } from 'node:child_process'
 import { mkdir } from 'node:fs/promises'
-import { resolve, join } from 'node:path'
+import { resolve, join, isAbsolute } from 'node:path'
 import { homedir, platform } from 'node:os'
 import { logger } from '../utils/logger.js'
 import { gitSpawnEnv } from './env.js'
@@ -91,6 +91,14 @@ export async function getCommitsBehind(cwd: string, branch: string): Promise<num
 
 export function validateRef(cwd: string, name: string): Promise<void> {
   return runGit(cwd, ['check-ref-format', `refs/heads/${name}`])
+}
+
+export function validateWorkspaceName(name: string): void {
+  if (!name || typeof name !== 'string') throw new Error('Workspace name is required')
+  if (name.includes('/') || name.includes('\\')) throw new Error('Workspace name cannot contain path separators')
+  if (name === '.' || name === '..') throw new Error('Workspace name cannot be "." or ".."')
+  if (isAbsolute(name)) throw new Error('Workspace name cannot be an absolute path')
+  if (name.length > 255) throw new Error('Workspace name is too long')
 }
 
 export function checkoutBranch(cwd: string, name: string): Promise<void> {

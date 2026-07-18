@@ -191,36 +191,38 @@ export function WorkspaceModal({
                     </button>
                   </div>
                 ) : (
-                  <button
-                    onClick={() => {
-                      if (ws.name !== currentWorkspace) handleSwitch(ws.name)
-                    }}
-                    disabled={busy}
-                    className={`w-full text-left px-3 py-1.5 text-sm rounded transition-colors flex items-center gap-2 ${
-                      ws.name === currentWorkspace
-                        ? 'bg-accent-primary/10 text-accent-primary cursor-default'
-                        : 'hover:bg-bg-tertiary text-text-secondary'
-                    }`}
-                  >
-                    <FolderIcon className="w-4 h-4 shrink-0" />
-                    <span className="font-mono truncate">{ws.name}</span>
-                    <span className="text-xs text-text-muted ml-auto">{ws.branch ?? 'unknown'}</span>
-                    {ws.name === currentWorkspace && (
-                      <span className="text-[10px] text-accent-primary ml-1">(current)</span>
-                    )}
+                  <div className="relative">
+                    <button
+                      onClick={() => {
+                        if (!busy && ws.name !== currentWorkspace) handleSwitch(ws.name)
+                      }}
+                      disabled={busy || ws.name === currentWorkspace}
+                      className={`w-full text-left px-3 py-1.5 text-sm rounded transition-colors flex items-center gap-2 ${
+                        ws.name === currentWorkspace
+                          ? 'bg-accent-primary/10 text-accent-primary cursor-default'
+                          : 'hover:bg-bg-tertiary text-text-secondary'
+                      } ${busy ? 'opacity-70' : ''}`}
+                    >
+                      <FolderIcon className="w-4 h-4 shrink-0" />
+                      <span className="font-mono truncate">{ws.name}</span>
+                      <span className="text-xs text-text-muted ml-auto">{ws.branch ?? 'unknown'}</span>
+                      {ws.name === currentWorkspace && (
+                        <span className="text-[10px] text-accent-primary ml-1">(current)</span>
+                      )}
+                    </button>
                     {ws.name !== currentWorkspace && !busy && (
                       <button
                         onClick={(e) => {
                           e.stopPropagation()
                           setConfirmDelete(ws.name)
                         }}
-                        className="opacity-0 group-hover:opacity-100 text-xs text-text-muted hover:text-accent-error transition-opacity ml-1"
+                        className="absolute right-1 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 text-xs text-text-muted hover:text-accent-error transition-opacity px-1 py-0.5 rounded"
                         title="Delete workspace"
                       >
                         ✕
                       </button>
                     )}
-                  </button>
+                  </div>
                 )}
               </div>
             ))}

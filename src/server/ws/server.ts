@@ -607,7 +607,14 @@ export function createWebSocketServer(
           workspaceChanged = true
           const prevWorkdir = client.activeWorkdir
           client.activeWorkdir = effectiveWorkdir
-          if (prevWorkdir) moduleStopGitPolling(prevWorkdir)
+          if (prevWorkdir) {
+            const hasOtherClients = [...clients.values()].some(
+              (c) => c !== client && c.activeWorkdir === prevWorkdir,
+            )
+            if (!hasOtherClients) {
+              moduleStopGitPolling(prevWorkdir)
+            }
+          }
         }
       }
       if (effectiveWorkdir) moduleStartGitPolling(effectiveWorkdir)

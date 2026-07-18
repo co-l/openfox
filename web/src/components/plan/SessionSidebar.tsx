@@ -196,7 +196,6 @@ export function SessionSidebar({ messages, workdir }: SessionSidebarProps) {
           <BranchModal
             isOpen={showBranchModal}
             onClose={() => setShowBranchModal(false)}
-            projectId={session.projectId}
             sessionId={session.id}
           />
         </>

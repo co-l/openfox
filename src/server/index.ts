@@ -429,6 +429,52 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
     }
   })
 
+  // Session-scoped branch endpoints (operate on session's effective workdir)
+
+  /** List local git branches for the session's effective workdir */
+  app.get('/api/sessions/:id/branches', async (req, res) => {
+    const session = sessionManager.getSession(req.params.id)
+    if (!session) return res.status(404).json({ error: 'Session not found' })
+    const effectiveWorkdir = session.workspace ?? session.workdir
+    const { listBranches } = await import('./git/workspace.js')
+    const branches = await listBranches(effectiveWorkdir)
+    res.json({ branches })
+  })
+
+  /** Switch to an existing branch in the session's effective workdir */
+  app.post('/api/sessions/:id/checkout', async (req, res) => {
+    const session = sessionManager.getSession(req.params.id)
+    if (!session) return res.status(404).json({ error: 'Session not found' })
+    const { branch } = req.body
+    if (!branch || typeof branch !== 'string') return res.status(400).json({ error: 'branch is required' })
+    const effectiveWorkdir = session.workspace ?? session.workdir
+    const { checkoutBranch, validateRef } = await import('./git/workspace.js')
+    try {
+      await validateRef(effectiveWorkdir, branch)
+      await checkoutBranch(effectiveWorkdir, branch)
+      res.json({ branch })
+    } catch (err) {
+      res.status(400).json({ error: err instanceof Error ? err.message : 'Failed to checkout branch' })
+    }
+  })
+
+  /** Create and switch to a new branch in the session's effective workdir */
+  app.post('/api/sessions/:id/checkout-new', async (req, res) => {
+    const session = sessionManager.getSession(req.params.id)
+    if (!session) return res.status(404).json({ error: 'Session not found' })
+    const { name } = req.body
+    if (!name || typeof name !== 'string') return res.status(400).json({ error: 'name is required' })
+    const effectiveWorkdir = session.workspace ?? session.workdir
+    const { createBranch, validateRef } = await import('./git/workspace.js')
+    try {
+      await validateRef(effectiveWorkdir, name)
+      await createBranch(effectiveWorkdir, name)
+      res.json({ branch: name })
+    } catch (err) {
+      res.status(400).json({ error: err instanceof Error ? err.message : 'Failed to create branch' })
+    }
+  })
+
   /** List existing workspaces for a project (excluding the main repo) */
   app.get('/api/projects/:id/workspaces', async (req, res) => {
     const { getProject } = await import('./db/projects.js')

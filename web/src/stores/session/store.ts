@@ -304,6 +304,7 @@ export const useSessionStore = create<SessionState>((set, get) => {
             abortInProgress: false,
             restoredInput: null,
             error: null,
+            gitStatus: null,
             pendingSessionCreate: false as boolean | string,
           })
         } else {
