@@ -38,6 +38,7 @@ import {
   ensureWorkspace,
   getGitBranch,
   getCommitsBehind,
+  runGit,
   workspaceExists,
   getWorkspacesDir,
   deleteWorkspace as deleteWorkspaceDir,
@@ -1040,6 +1041,8 @@ export class SessionManager {
     // Check if the workspace is behind the original (staleness hint)
     let stalenessHint = ''
     if (target !== 'original' && actualBranch) {
+      // Lightweight fetch to update remote refs — objects are shared via --shared
+      await runGit(effectiveWorkdir, ['fetch', 'origin', '--no-tags', '--quiet']).catch(() => {})
       const behind = await getCommitsBehind(effectiveWorkdir, actualBranch)
       if (behind !== null && behind > 0) {
         const plural = behind === 1 ? '' : 's'
