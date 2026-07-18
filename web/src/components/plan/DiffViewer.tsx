@@ -1,4 +1,7 @@
 import { useGitStatus } from '../../hooks/useGitStatus'
+import { useSessionStore } from '../../stores/session'
+import { useSettingsStore, SETTINGS_KEYS } from '../../stores/settings'
+import { buildEditorUrl } from '../../lib/editor-link'
 import { truncateMiddle } from '../../lib/path'
 
 interface GitDiffFile {
@@ -10,9 +13,11 @@ interface GitDiffFile {
 
 interface DiffRowProps {
   file: GitDiffFile
+  showEditorLink: boolean
+  workdir: string | undefined
 }
 
-function DiffRow({ file }: DiffRowProps) {
+function DiffRow({ file, showEditorLink, workdir }: DiffRowProps) {
   const displayPath = truncateMiddle(file.path, 28)
 
   const textColor =
@@ -31,8 +36,10 @@ function DiffRow({ file }: DiffRowProps) {
           ? `+${file.additions}, -${file.deletions}`
           : ''
 
-  return (
-    <div className="flex items-center justify-between gap-1 py-0.5 text-xs min-w-0">
+  const href = showEditorLink && workdir ? buildEditorUrl(file.path, undefined, workdir) : undefined
+
+  const content = (
+    <>
       <span className={`truncate ${textColor}`} title={file.path}>
         {displayPath}
       </span>
@@ -43,12 +50,29 @@ function DiffRow({ file }: DiffRowProps) {
           {stats}
         </span>
       )}
-    </div>
+    </>
   )
+
+  if (href) {
+    return (
+      <a
+        href={href}
+        className="flex items-center justify-between gap-1 py-0.5 text-xs min-w-0 hover:bg-bg-tertiary rounded px-1 -mx-1 transition-colors no-underline"
+        title={`Open ${file.path} in VSCode`}
+      >
+        {content}
+      </a>
+    )
+  }
+
+  return <div className="flex items-center justify-between gap-1 py-0.5 text-xs min-w-0">{content}</div>
 }
 
 export function DiffViewer() {
   const { diff } = useGitStatus()
+  const showEditorLink = useSettingsStore((s) => s.settings[SETTINGS_KEYS.DISPLAY_SHOW_OPEN_IN_EDITOR]) === 'true'
+  const session = useSessionStore((state) => state.currentSession)
+  const workdir = session?.workspace ?? session?.workdir
 
   if (diff.loading) {
     return (
@@ -73,7 +97,7 @@ export function DiffViewer() {
     <div className="mt-3 max-h-[150px] overflow-y-auto">
       <div className="pr-1">
         {diff.files.map((file, i) => (
-          <DiffRow key={i} file={file} />
+          <DiffRow key={i} file={file} showEditorLink={showEditorLink} workdir={workdir} />
         ))}
       </div>
     </div>

@@ -33,6 +33,11 @@ interface Provider {
   credentialRef?: string
 }
 
+export interface PlatformInfo {
+  isWSL: boolean
+  wslDistro: string
+}
+
 interface ConfigState {
   // Version
   version: string | null
@@ -46,6 +51,8 @@ interface ConfigState {
   providers: Provider[]
   activeProviderId: string | null
   defaultModelSelection: string | null
+  // Platform info from server (WSL detection etc.)
+  platform: PlatformInfo | null
   // Loading/error state
   loading: boolean
   activating: boolean
@@ -104,6 +111,7 @@ export const useConfigStore = create<ConfigState>((set, get) => ({
   providers: [],
   activeProviderId: null,
   defaultModelSelection: null,
+  platform: null,
   loading: false,
   activating: false,
   error: null,
@@ -126,7 +134,15 @@ export const useConfigStore = create<ConfigState>((set, get) => ({
         providers: Provider[]
         activeProviderId: string | null
         defaultModelSelection: string | null
+        platform: unknown
       }
+      const platform: PlatformInfo | null =
+        data.platform && typeof data.platform === 'object'
+          ? {
+              isWSL: !!(data.platform as Record<string, unknown>).isWSL,
+              wslDistro: String((data.platform as Record<string, unknown>).wslDistro ?? ''),
+            }
+          : null
       set({
         version: data.version,
         model: data.model,
@@ -137,6 +153,7 @@ export const useConfigStore = create<ConfigState>((set, get) => ({
         providers: data.providers ?? [],
         activeProviderId: data.activeProviderId ?? null,
         defaultModelSelection: data.defaultModelSelection ?? null,
+        platform,
         loading: false,
       })
     } catch (error) {

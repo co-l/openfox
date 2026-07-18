@@ -1211,6 +1211,8 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
       // Global config not available, skip visionFallback
     }
 
+    const { detectWsl } = await import('./utils/wsl.js')
+
     res.json({
       version: VERSION,
       model: llmClient.getModel(),
@@ -1223,6 +1225,7 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
       activeProviderId: providerManager.getActiveProviderId(),
       defaultModelSelection: config.defaultModelSelection,
       visionFallback,
+      platform: detectWsl(),
     })
   })
 

@@ -13,6 +13,7 @@ import { PathConfirmationButtons } from './PathConfirmationButtons'
 import { formatToolArgsFull, formatToolArgsWithMetadata } from '../../lib/formatToolArgs'
 import { useSessionStore, type PendingPathConfirmation } from '../../stores/session'
 import { useSettingsStore, SETTINGS_KEYS } from '../../stores/settings'
+import { buildEditorUrl } from '../../lib/editor-link'
 
 type ToolStatus = 'pending' | 'success' | 'error' | 'interrupted'
 
@@ -355,7 +356,7 @@ export const ToolCallDisplay = memo(function ToolCallDisplay({
                   (tool === 'read_file' || tool === 'write_file' || tool === 'edit_file') &&
                   String(metadata?.path ?? args.path ?? '') && (
                     <a
-                      href={`vscode://file/${String(metadata?.path ?? args.path)}${editorLine ? `:${editorLine}` : ''}`}
+                      href={buildEditorUrl(String(metadata?.path ?? args.path), editorLine)}
                       className="text-accent-primary hover:underline ml-auto"
                     >
                       Open in VSCode

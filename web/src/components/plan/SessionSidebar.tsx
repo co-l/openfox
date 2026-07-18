@@ -2,9 +2,11 @@ import { useState } from 'react'
 import { useSessionStats } from '../../hooks/useSessionStats'
 import { useGitStatus } from '../../hooks/useGitStatus'
 import { useConfigStore } from '../../stores/config'
+import { useSettingsStore, SETTINGS_KEYS } from '../../stores/settings'
 import { useSessionStore } from '../../stores/session'
 import { useUpdateStore } from '../../stores/update'
 import { authFetch } from '../../lib/api'
+import { buildWorkspaceUrl } from '../../lib/editor-link'
 import { formatTime, formatSpeed } from '../../lib/format-stats'
 import { formatMetadataKeyLabel } from '../../lib/metadata-keys'
 import { StatsModal } from './StatsModal'
@@ -12,7 +14,7 @@ import { MetadataEntries, MetadataSectionHeader } from '../shared/MetadataEntrie
 import { CriteriaEditor } from './CriteriaEditor'
 import { DevServerFooter } from './DevServerFooter'
 import { BackgroundProcesses } from './BackgroundProcesses'
-import { BranchIcon, FolderIcon, ReloadIcon } from '../shared/icons'
+import { BranchIcon, FolderIcon, OpenExternalIcon, ReloadIcon } from '../shared/icons'
 import { AutoUpdateModal } from '../AutoUpdateModal'
 import { DiffViewer } from './DiffViewer'
 import { BranchModal } from './BranchModal'
@@ -36,6 +38,8 @@ export function SessionSidebar({ messages, workdir }: SessionSidebarProps) {
   const session = useSessionStore((state) => state.currentSession)
 
   const workspaceName = session?.workspace ? (session.workspace.split('/').pop() ?? null) : null
+
+  const showEditorLink = useSettingsStore((s) => s.settings[SETTINGS_KEYS.DISPLAY_SHOW_OPEN_IN_EDITOR]) === 'true'
 
   const updateStatus = useUpdateStore((state) => state.status)
   const checkForUpdate = useUpdateStore((state) => state.check)
@@ -131,6 +135,19 @@ export function SessionSidebar({ messages, workdir }: SessionSidebarProps) {
         </div>
       </div>
 
+      {/* Open workspace in VSCode */}
+      {showEditorLink && workdir && (
+        <div className="mt-2">
+          <a
+            href={buildWorkspaceUrl(workdir)}
+            className="flex items-center gap-1.5 text-xs text-accent-primary hover:underline"
+          >
+            <OpenExternalIcon className="w-3.5 h-3.5" />
+            Open workspace in VSCode
+          </a>
+        </div>
+      )}
+
       {/* Diff viewer — between branch and dev server */}
       <DiffViewer />
 
@@ -188,11 +205,7 @@ export function SessionSidebar({ messages, workdir }: SessionSidebarProps) {
             currentWorkspace={workspaceName}
             currentBranch={branch ?? null}
           />
-          <BranchModal
-            isOpen={showBranchModal}
-            onClose={() => setShowBranchModal(false)}
-            sessionId={session.id}
-          />
+          <BranchModal isOpen={showBranchModal} onClose={() => setShowBranchModal(false)} sessionId={session.id} />
         </>
       )}
     </div>
