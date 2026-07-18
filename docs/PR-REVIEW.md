@@ -190,15 +190,7 @@ workspace delete review-pr-<N>
 
 ## Common Pitfalls
 
-### Pre-commit hook failures
-
-The pre-commit hook runs the full test suite. If tests fail due to pre-existing issues in the PR code (not your changes), skip the hook:
-
-```bash
-git commit --no-verify -m "review: ..."
-```
-
-But first try to fix the issue — the project aims to keep the hook passing.
+### Orphaned workspaces
 
 ### `gh pr merge` GraphQL deprecation
 
