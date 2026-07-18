@@ -81,15 +81,15 @@ async function runNetworkSetup(mode: Mode): Promise<void> {
       publicKeyEncoding: { type: 'spki', format: 'pem' },
     })
 
-    const keyPath = getAuthKeyPath(mode)
-    await writeFile(keyPath, privateKey, { mode: 0o600 })
-
     const encryptedPassword = encryptPassword(passwordValue, publicKey)
 
     await saveAuthConfig(mode, {
       strategy: 'network',
       encryptedPassword,
     })
+
+    const keyPath = getAuthKeyPath(mode)
+    await writeFile(keyPath, privateKey, { mode: 0o600 })
   } else {
     await saveAuthConfig(mode, {
       strategy: isNetwork ? 'network' : 'local',
