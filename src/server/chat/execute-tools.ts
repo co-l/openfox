@@ -9,7 +9,7 @@ import type { StatsIdentity } from '../../shared/types.js'
 import type { ServerMessage } from '../../shared/protocol.js'
 import type { DangerLevel } from '../../shared/types.js'
 import { createToolProgressHandler } from './tool-streaming.js'
-import { createToolCallEvent, createToolResultEvent } from './stream-pure.js'
+import { createToolCallEvent, createToolResultEvent, createChatDoneEvent } from './stream-pure.js'
 import { PathAccessDeniedError, AskUserInterrupt } from '../tools/index.js'
 import stripAnsi from 'strip-ansi'
 
@@ -84,6 +84,9 @@ export async function executeTools(
         type: 'chat.ask_user',
         data: { callId: error.callId, question: error.question, type: error.type, options: error.options },
       })
+
+      // Signal to the client that the agent is waiting for user input
+      append(createChatDoneEvent(assistantMsgId, 'waiting_for_user'))
 
       const { awaitAnswer } = await import('../tools/ask.js')
       const answerPromise = awaitAnswer(error.callId)

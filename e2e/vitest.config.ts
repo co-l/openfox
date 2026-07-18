@@ -5,15 +5,17 @@ import { fileURLToPath } from 'node:url'
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const rootDir = resolve(__dirname, '..')
 
+const CI_MULTIPLIER = process.env['CI'] === 'true' ? 10 : 1
+
 export default defineConfig({
   test: {
-    testTimeout: 15_000,
-    hookTimeout: 10_000,
+    testTimeout: 15_000 * CI_MULTIPLIER,
+    hookTimeout: 10_000 * CI_MULTIPLIER,
 
     // Run tests in parallel with fork pool
     // Each test file gets its own in-process server on a dynamic port
     pool: 'forks',
-    maxWorkers: 12, // Each test has its own isolated config now — no file contention
+    maxWorkers: process.env['CI'] === 'true' ? 4 : 12, // CI runners have fewer cores
 
     // No global setup - each test file manages its own server
     // globalSetup: './setup.ts',  // REMOVED - using in-process servers
