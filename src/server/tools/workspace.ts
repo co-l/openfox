@@ -1,8 +1,8 @@
 import { createTool } from './tool-helpers.js'
-import { getGitBranch } from '../git/workspace.js'
+import { getGitBranch, listWorkspaces } from '../git/workspace.js'
 
 interface WorkspaceArgs {
-  action: 'switch' | 'status' | 'delete'
+  action: 'switch' | 'list' | 'delete'
   target?: string
   branch?: string
 }
@@ -20,14 +20,14 @@ export const workspaceTool = createTool<WorkspaceArgs>(
         'Setup commands (e.g. npm install) are configured via .openfox/workspace.json.\n\n' +
         'Actions:\n' +
         '- switch: Switch to a workspace (target: "original" or a name, optional branch for new workspaces)\n' +
-        '- status: Show current workspace state (name, path, branch)\n' +
+        '- list: List all workspaces with their current branch and active status\n' +
         '- delete: Delete a workspace by name (cannot delete "original")',
       parameters: {
         type: 'object',
         properties: {
           action: {
             type: 'string',
-            enum: ['switch', 'status', 'delete'],
+            enum: ['switch', 'list', 'delete'],
             description: 'The action to perform',
           },
           target: {
@@ -46,7 +46,7 @@ export const workspaceTool = createTool<WorkspaceArgs>(
   async (args, context, helpers) => {
     const { sessionId, sessionManager } = context
 
-    const validActions = ['switch', 'status', 'delete'] as const
+    const validActions = ['switch', 'list', 'delete'] as const
     if (!validActions.includes(args.action as (typeof validActions)[number])) {
       return helpers.error(`Invalid action: ${args.action}. Must be one of: ${validActions.join(', ')}`)
     }
@@ -77,25 +77,27 @@ export const workspaceTool = createTool<WorkspaceArgs>(
         )
       }
 
-      case 'status': {
+      case 'list': {
         const session = sessionManager.getSession(sessionId)
         if (!session) return helpers.error('Session not found')
 
-        const active = !!session.workspace
-        const wsName = active ? session.workspace!.split('/').pop() : 'original'
-        const branch = await getGitBranch(session.workspace ?? session.workdir)
-        return helpers.success(
-          JSON.stringify(
-            {
-              workspace: wsName,
-              path: session.workspace ?? session.workdir,
-              workdir: session.workdir,
-              branch,
-            },
-            null,
-            2,
-          ),
-        )
+        const project = sessionManager.getProject(session.projectId)
+        if (!project) return helpers.error('Project not found')
+
+        const currentBranch = await getGitBranch(session.workspace ?? session.workdir)
+        const named = await listWorkspaces(project.name)
+        const activeWsName = session.workspace?.split('/').pop() ?? null
+
+        const workspaces = [
+          { name: 'original', branch: currentBranch, active: !session.workspace },
+          ...named.map((ws) => ({
+            name: ws.name,
+            branch: ws.branch,
+            active: ws.name === activeWsName,
+          })),
+        ]
+
+        return helpers.success(JSON.stringify({ workspaces }, null, 2))
       }
 
       case 'delete': {
