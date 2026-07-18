@@ -5,6 +5,9 @@ import { Toggle } from '../../shared/Toggle'
 import { SETTINGS_KEYS } from '../../../stores/settings'
 import { useSettingsStoreState } from '../useSettingsStore'
 import { RetryPatternsEditor, type RetryPatternsValue } from '../RetryPatternsEditor'
+import { useConfigStore } from '../../../stores/config'
+import { useUpdateStore } from '../../../stores/update'
+import { AutoUpdateModal } from '../../AutoUpdateModal'
 
 export function AdvancedTab({ onClose }: { onClose: () => void }) {
   const [, navigate] = useLocation()
@@ -21,6 +24,14 @@ export function AdvancedTab({ onClose }: { onClose: () => void }) {
   })
 
   const [retryPatterns, setRetryPatterns] = useState<RetryPatternsValue>({ patterns: [], maxRetriesPerTurn: 10 })
+  const [showUpdateModal, setShowUpdateModal] = useState(false)
+  const version = useConfigStore((state) => state.version)
+  const updateStatus = useUpdateStore((state) => state.status)
+  const latestVersion = useUpdateStore((state) => state.latest)
+  const checkForUpdate = useUpdateStore((state) => state.check)
+  // "Up to date" only answers a manual check; the background check on app
+  // load may be hours old by the time this tab is opened.
+  const [manuallyChecked, setManuallyChecked] = useState(false)
 
   useEffect(() => {
     setLocalToggles({
@@ -122,6 +133,41 @@ export function AdvancedTab({ onClose }: { onClose: () => void }) {
         onToggle={handleToggleDynamicSystemPrompt}
         boldTitle
       />
+      <hr className="border-border" />
+      <div>
+        <h3 className="text-sm font-medium text-text-primary mb-1">Updates</h3>
+        <p className="text-sm text-text-muted mb-4">
+          {version ? (
+            <>
+              Current version: <span className="font-mono">v{version}</span>
+            </>
+          ) : (
+            'Check for a new OpenFox version.'
+          )}
+        </p>
+        <div className="flex items-center gap-3">
+          <Button
+            variant="secondary"
+            onClick={() => {
+              setManuallyChecked(true)
+              checkForUpdate()
+            }}
+            disabled={updateStatus === 'checking'}
+          >
+            {updateStatus === 'checking' ? 'Checking…' : 'Check for Updates'}
+          </Button>
+          {manuallyChecked && updateStatus === 'upToDate' && (
+            <span className="text-sm text-text-muted">Up to date</span>
+          )}
+          {updateStatus === 'error' && <span className="text-sm text-text-muted">Update check failed</span>}
+          {updateStatus === 'available' && (
+            <button onClick={() => setShowUpdateModal(true)} className="text-sm text-accent-primary hover:underline">
+              Update to v{latestVersion} →
+            </button>
+          )}
+        </div>
+      </div>
+      <AutoUpdateModal isOpen={showUpdateModal} onClose={() => setShowUpdateModal(false)} versionInfo={null} />
     </div>
   )
 }
