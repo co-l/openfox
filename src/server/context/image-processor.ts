@@ -137,17 +137,6 @@ async function describeAttachment(
   return describeImageDataUrl(att.data, att.id, messageId, options, descriptions, att.filename)
 }
 
-async function describeToolResultImage(
-  dataUrl: string,
-  filename: string | undefined,
-  toolCallId: string,
-  messageId: string,
-  options: ImageProcessorOptions,
-  descriptions: Map<string, string>,
-): Promise<string> {
-  return describeImageDataUrl(dataUrl, toolCallId, messageId, options, descriptions, filename)
-}
-
 async function describePdfAttachment(
   att: Attachment,
   messageId: string,
@@ -273,13 +262,13 @@ export async function processContextImages(
       const dataUrl = meta['dataUrl'] as string
       const path = meta['path'] as string | undefined
 
-      const description = await describeToolResultImage(
+      const description = await describeImageDataUrl(
         dataUrl,
-        path,
         data.toolCallId,
         data.messageId,
         options,
         descriptions,
+        path,
       )
 
       meta['description'] = description
@@ -330,13 +319,13 @@ export async function processContextImages(
             const dataUrl = meta['dataUrl'] as string
             const path = meta['path'] as string | undefined
 
-            const description = await describeToolResultImage(
+            const description = await describeImageDataUrl(
               dataUrl,
-              path,
               toolCall.id,
               message.id,
               options,
               descriptions,
+              path,
             )
 
             meta['description'] = description
