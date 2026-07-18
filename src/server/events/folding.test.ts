@@ -11,7 +11,7 @@ import {
   foldTurnEventsToSnapshotMessages,
   reorderToolMessages,
 } from './folding.js'
-import type { MessageWithId } from './fold-types.js'
+import type { ContextMessage, MessageWithId } from './fold-types.js'
 
 const baseEvent = {
   seq: 1,
@@ -1889,6 +1889,132 @@ describe('event folding', () => {
 
       // Tool message for call-2 should be present
       expect(messages.some((m) => m.role === 'tool' && m.toolCallId === 'call-2')).toBe(true)
+    })
+
+    it('produces stable message order with and without snapshots when tool result races with injected user message', () => {
+      const assistantMsgId = 'assistant-1'
+      const reminderMsgId = 'reminder-1'
+      const toolCallId = 'call-wt-1'
+      const toolResult = {
+        success: true,
+        output: JSON.stringify({ worktree: '/path/wt', branch: 'hello', message: 'Worktree created' }),
+        durationMs: 100,
+        truncated: false,
+      }
+
+      // Simulates a worktree-creation turn: assistant calls worktree →
+      // tool handler injects system-reminder user message → tool result appended
+      const baseEvents: StoredEvent[] = [
+        {
+          ...baseEvent,
+          seq: 1,
+          type: 'message.start',
+          data: { messageId: assistantMsgId, role: 'assistant', content: '', contextWindowId: 'window-1' },
+        },
+        {
+          ...baseEvent,
+          seq: 2,
+          type: 'tool.call',
+          data: {
+            messageId: assistantMsgId,
+            toolCall: { id: toolCallId, name: 'worktree', arguments: { action: 'create', name: 'hello' } },
+          },
+        },
+        {
+          ...baseEvent,
+          seq: 3,
+          type: 'message.start',
+          data: {
+            messageId: reminderMsgId,
+            role: 'user',
+            content: '<system-reminder>\nThis session is now operating in a git worktree.\n</system-reminder>',
+            isSystemGenerated: true,
+            messageKind: 'auto-prompt',
+            contextWindowId: 'window-1',
+          },
+        },
+        {
+          ...baseEvent,
+          seq: 4,
+          type: 'message.done',
+          data: { messageId: reminderMsgId },
+        },
+        {
+          ...baseEvent,
+          seq: 5,
+          type: 'tool.result',
+          data: { messageId: assistantMsgId, toolCallId, result: toolResult },
+        },
+      ]
+
+      // --- Non-snapshot path (fresh session, no prior compaction) ---
+      const messagesNoSnapshot = buildContextMessagesFromStoredEvents(baseEvents, 'window-1')
+
+      // --- Snapshot path (session with prior compaction) ---
+      const snapshotEvent: StoredEvent = {
+        ...baseEvent,
+        seq: 1,
+        type: 'turn.snapshot',
+        data: {
+          mode: 'builder',
+          phase: 'build',
+          isRunning: false,
+          messages: [
+            {
+              id: assistantMsgId,
+              role: 'assistant',
+              content: '',
+              toolCalls: [
+                {
+                  id: toolCallId,
+                  name: 'worktree',
+                  arguments: { action: 'create', name: 'hello' },
+                  result: toolResult,
+                },
+              ],
+              timestamp: baseEvent.timestamp,
+              contextWindowId: 'window-1',
+            },
+            {
+              id: reminderMsgId,
+              role: 'user',
+              content: '<system-reminder>\nThis session is now operating in a git worktree.\n</system-reminder>',
+              isSystemGenerated: true,
+              messageKind: 'auto-prompt',
+              timestamp: baseEvent.timestamp,
+              contextWindowId: 'window-1',
+            },
+          ],
+          criteria: [],
+          contextState: {
+            currentTokens: 50,
+            maxTokens: 200000,
+            compactionCount: 1,
+            dangerZone: false,
+            canCompact: false,
+            dynamicContextChanged: false,
+          },
+          currentContextWindowId: 'window-1',
+          todos: [],
+          readFiles: [],
+          snapshotSeq: 1,
+          snapshotAt: baseEvent.timestamp,
+        },
+      }
+      const messagesWithSnapshot = buildContextMessagesFromEventHistory([snapshotEvent], 'window-1')
+
+      // Extract the relative order of the two messages that flip
+      const relevantRoles = (msgs: ContextMessage[]) =>
+        msgs
+          .filter((m) => (m.role === 'user' && m.content.includes('system-reminder')) || m.role === 'tool')
+          .map((m) => m.role)
+
+      const orderNoSnapshot = relevantRoles(messagesNoSnapshot)
+      const orderWithSnapshot = relevantRoles(messagesWithSnapshot)
+
+      // Both paths must produce the same relative order
+      // Currently: no-snapshot = [user, tool], snapshot = [tool, user] — this assertion fails
+      expect(orderNoSnapshot).toEqual(orderWithSnapshot)
     })
   })
 })
