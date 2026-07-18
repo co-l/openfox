@@ -6,6 +6,7 @@ const mockSwitchWorkspace = vi.fn()
 const mockDeleteWorkspace = vi.fn()
 const mockGetSession = vi.fn()
 const mockGetProject = vi.fn()
+const mockResolveWorkspacesDir = vi.fn()
 
 vi.mock('../git/workspace.js', () => ({
   getGitBranch: (...args: unknown[]) => mockGetGitBranch(...args),
@@ -20,6 +21,7 @@ function makeContext(overrides: Record<string, unknown> = {}) {
     getProject: mockGetProject,
     switchWorkspace: mockSwitchWorkspace,
     deleteWorkspace: mockDeleteWorkspace,
+    resolveWorkspacesDir: mockResolveWorkspacesDir,
   }
   return {
     workdir: '/tmp/project',
@@ -83,6 +85,7 @@ describe('workspaceTool', () => {
       mockGetSession.mockReturnValue({ projectId: 'p1', workspace: null, workdir: '/tmp/project' })
       mockGetProject.mockReturnValue({ name: 'test-project' })
       mockGetGitBranch.mockResolvedValue('develop')
+      mockResolveWorkspacesDir.mockResolvedValue(undefined)
       mockListWorkspaces.mockResolvedValue([{ name: 'my-exp', branch: 'feat-x', path: '/ws/my-exp' }])
 
       const result = await workspaceTool.execute({ action: 'list' }, makeContext())
@@ -97,6 +100,7 @@ describe('workspaceTool', () => {
       mockGetSession.mockReturnValue({ projectId: 'p1', workspace: '/workspaces/test/my-exp', workdir: '/tmp/project' })
       mockGetProject.mockReturnValue({ name: 'test-project' })
       mockGetGitBranch.mockResolvedValue('feat-x')
+      mockResolveWorkspacesDir.mockResolvedValue(undefined)
       mockListWorkspaces.mockResolvedValue([
         { name: 'my-exp', branch: 'feat-x', path: '/ws/my-exp' },
         { name: 'other', branch: 'main', path: '/ws/other' },

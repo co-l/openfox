@@ -89,6 +89,9 @@ export async function runServe(options: ServeOptions): Promise<void> {
     // Workdir precedence: .env override → global config → process.cwd()
     // Normalize: remove trailing slash to prevent double slashes in paths
     workdir: (process.env['OPENFOX_WORKDIR'] ?? globalConfig.workspace?.workdir ?? process.cwd()).replace(/\/$/, ''),
+    ...(globalConfig.workspace?.workspacesDir !== undefined
+      ? { workspacesDir: globalConfig.workspace.workspacesDir }
+      : {}),
     ...((env.disableAutoSessionTitle ?? globalConfig.disableAutoSessionTitle) !== undefined
       ? { disableAutoSessionTitle: env.disableAutoSessionTitle ?? globalConfig.disableAutoSessionTitle }
       : {}),

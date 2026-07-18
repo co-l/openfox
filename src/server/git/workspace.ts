@@ -51,7 +51,10 @@ function getGlobalDataDir(): string {
   }
 }
 
-export function getWorkspacesDir(projectName: string): string {
+export function getWorkspacesDir(projectName: string, workspacesDir?: string): string {
+  if (workspacesDir) {
+    return join(workspacesDir, projectName)
+  }
   return join(getGlobalDataDir(), 'workspaces', projectName)
 }
 
@@ -115,8 +118,8 @@ export interface WorkspaceInfo {
   branch: string | null
 }
 
-export async function workspaceExists(projectName: string, name: string): Promise<boolean> {
-  const dir = getWorkspacesDir(projectName)
+export async function workspaceExists(projectName: string, name: string, workspacesDir?: string): Promise<boolean> {
+  const dir = getWorkspacesDir(projectName, workspacesDir)
   const wsPath = resolve(dir, name)
   const st = await statSafe(wsPath)
   if (!st?.isDirectory()) return false
@@ -125,8 +128,8 @@ export async function workspaceExists(projectName: string, name: string): Promis
   return gitSt?.isDirectory() ?? false
 }
 
-export async function listWorkspaces(projectName: string): Promise<WorkspaceInfo[]> {
-  const dir = getWorkspacesDir(projectName)
+export async function listWorkspaces(projectName: string, workspacesDir?: string): Promise<WorkspaceInfo[]> {
+  const dir = getWorkspacesDir(projectName, workspacesDir)
   try {
     const { readdir } = await import('node:fs/promises')
     const entries = await readdir(dir, { withFileTypes: true })
@@ -154,8 +157,9 @@ export async function ensureWorkspace(
   name: string,
   projectName: string,
   branch?: string,
+  workspacesDirOverride?: string,
 ): Promise<WorkspaceResult> {
-  const workspacesDir = getWorkspacesDir(projectName)
+  const workspacesDir = getWorkspacesDir(projectName, workspacesDirOverride)
   const wsPath = resolve(workspacesDir, name)
 
   await mkdir(workspacesDir, { recursive: true })
@@ -200,8 +204,8 @@ export async function ensureWorkspace(
   return { path: wsPath, name }
 }
 
-export async function deleteWorkspace(projectName: string, name: string): Promise<void> {
-  const dir = getWorkspacesDir(projectName)
+export async function deleteWorkspace(projectName: string, name: string, workspacesDir?: string): Promise<void> {
+  const dir = getWorkspacesDir(projectName, workspacesDir)
   const wsPath = resolve(dir, name)
   const st = await statSafe(wsPath)
   if (!st?.isDirectory()) {

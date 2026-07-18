@@ -160,6 +160,7 @@ describe('loadConfig with workspace fallback', () => {
   it('falls back to project root when workspace path has no config', async () => {
     vi.mocked(readFile)
       .mockRejectedValueOnce(new Error('ENOENT'))
+      .mockRejectedValueOnce(new Error('ENOENT'))
       .mockResolvedValueOnce(JSON.stringify({ command: 'npm run dev', url: 'http://localhost:5173' }))
 
     const config = await devServerManager.loadConfig('/some/project/workspaces/my-feature')
@@ -169,20 +170,21 @@ describe('loadConfig with workspace fallback', () => {
       hotReload: false,
       disableInspect: false,
     })
-    expect(readFile).toHaveBeenCalledTimes(2)
+    expect(readFile).toHaveBeenCalledTimes(3)
   })
 
   it('returns null when neither path has config', async () => {
     vi.mocked(readFile).mockRejectedValue(new Error('ENOENT'))
     const config = await devServerManager.loadConfig('/some/project/workspaces/my-feature')
     expect(config).toBeNull()
+    expect(readFile).toHaveBeenCalledTimes(4)
   })
 
   it('works without fallback (non-workspace path)', async () => {
     vi.mocked(readFile).mockRejectedValue(new Error('ENOENT'))
     const config = await devServerManager.loadConfig('/some/project')
     expect(config).toBeNull()
-    expect(readFile).toHaveBeenCalledTimes(1)
+    expect(readFile).toHaveBeenCalledTimes(2)
   })
 })
 

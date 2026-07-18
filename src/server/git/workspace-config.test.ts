@@ -40,6 +40,20 @@ describe('loadWorkspaceConfig', () => {
     const result = await loadWorkspaceConfig(WORKDIR)
     expect(result).toEqual({ setup: ['npm install --prefer-offline'] })
   })
+
+  it('parses config with only workspacesDir', async () => {
+    vi.mocked(readFile).mockResolvedValue(JSON.stringify({ workspacesDir: '/custom/workspaces' }))
+    const result = await loadWorkspaceConfig(WORKDIR)
+    expect(result).toEqual({ workspacesDir: '/custom/workspaces' })
+  })
+
+  it('parses config with both setup and workspacesDir', async () => {
+    vi.mocked(readFile).mockResolvedValue(
+      JSON.stringify({ setup: ['npm install'], workspacesDir: '/custom/workspaces' }),
+    )
+    const result = await loadWorkspaceConfig(WORKDIR)
+    expect(result).toEqual({ setup: ['npm install'], workspacesDir: '/custom/workspaces' })
+  })
 })
 
 describe('saveWorkspaceConfig', () => {

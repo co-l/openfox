@@ -101,7 +101,7 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
   const providerManager = createProviderManager(config, { adapters: providerAdapters })
 
   // Create SessionManager instance (not singleton!)
-  const sessionManager = new SessionManager(providerManager)
+  const sessionManager = new SessionManager(providerManager, config.workspacesDir)
 
   // Wire sessionManager to devServerManager for inspect proxy feedback
   devServerManager.setSessionManager(sessionManager)
@@ -481,7 +481,8 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
     const project = getProject(req.params.id)
     if (!project) return res.status(404).json({ error: 'Project not found' })
     const { listWorkspaces } = await import('./git/workspace.js')
-    const all = await listWorkspaces(project.name)
+    const workspacesRootDir = await sessionManager.resolveWorkspacesDir(project.workdir)
+    const all = await listWorkspaces(project.name, workspacesRootDir)
     // Filter out the main workspace (the repo itself) — only show linked workspaces
     const workspacesList = all.filter((ws) => ws.path !== project.workdir)
     res.json({ workspaces: workspacesList })

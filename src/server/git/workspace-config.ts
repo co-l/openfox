@@ -12,9 +12,14 @@ export async function loadWorkspaceConfig(workdir: string): Promise<WorkspaceCon
   try {
     const configPath = getConfigPath(workdir)
     const raw = await readFile(configPath, 'utf-8')
-    const parsed = JSON.parse(raw)
-    if (!parsed.setup) return null
-    return { setup: parsed.setup }
+    const parsed = JSON.parse(raw) as Partial<WorkspaceConfig>
+    const hasSetup = Array.isArray(parsed.setup)
+    const hasWorkspacesDir = typeof parsed.workspacesDir === 'string'
+    if (!hasSetup && !hasWorkspacesDir) return null
+    return {
+      ...(hasSetup ? { setup: parsed.setup! } : {}),
+      ...(hasWorkspacesDir ? { workspacesDir: parsed.workspacesDir! } : {}),
+    }
   } catch {
     return null
   }

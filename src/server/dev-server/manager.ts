@@ -199,13 +199,15 @@ class DevServerManager {
     const config = await tryLoad(workdir)
     if (config) return config
 
-    // Auto-detect workspace paths: <global-data-dir>/workspaces/<project>/<name>
-    const wsIdx = workdir.indexOf('/workspaces/')
-    if (wsIdx !== -1) {
-      const projectRoot = workdir.slice(0, wsIdx)
-      if (projectRoot !== workdir) {
-        return tryLoad(projectRoot)
-      }
+    // Walk up directories looking for .openfox/dev.json (max 10 levels)
+    const parts = workdir.replace(/\\/g, '/').split('/')
+    const maxDepth = Math.min(parts.length - 1, 10)
+    for (let i = parts.length - 1; i >= parts.length - maxDepth; i--) {
+      const candidate = parts.slice(0, i).join('/')
+      if (candidate === workdir) continue
+      if (!candidate) break
+      const parentConfig = await tryLoad(candidate)
+      if (parentConfig) return parentConfig
     }
 
     return null

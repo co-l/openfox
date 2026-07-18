@@ -601,6 +601,8 @@ export interface Config {
   disableAutoSessionTitle?: boolean
   /** Override path for the global config file (used for test isolation) */
   globalConfigPath?: string
+  /** Override directory for workspace storage */
+  workspacesDir?: string
   /** MCP server configurations */
   mcpServers?:
     | Record<

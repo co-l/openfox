@@ -96,6 +96,7 @@ const databaseSchema = z.object({
 
 const workspaceSchema = z.object({
   workdir: z.string().default(process.cwd()),
+  workspacesDir: z.string().optional(),
 })
 
 const visionFallbackSchema = z.object({

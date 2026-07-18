@@ -84,8 +84,9 @@ export const workspaceTool = createTool<WorkspaceArgs>(
         const project = sessionManager.getProject(session.projectId)
         if (!project) return helpers.error('Project not found')
 
+        const workspacesRootDir = await sessionManager.resolveWorkspacesDir(project.workdir)
         const currentBranch = await getGitBranch(session.workspace ?? session.workdir)
-        const named = await listWorkspaces(project.name)
+        const named = await listWorkspaces(project.name, workspacesRootDir)
         const activeWsName = session.workspace?.split('/').pop() ?? null
 
         const workspaces = [

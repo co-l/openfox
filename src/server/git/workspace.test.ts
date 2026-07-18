@@ -97,8 +97,20 @@ describe('listBranches', () => {
 })
 
 describe('getWorkspacesDir', () => {
-  it('returns path under global data dir', () => {
+  it('returns path under global data dir by default', () => {
     const dir = getWorkspacesDir(PROJECT_NAME)
+    expect(dir).toContain('workspaces')
+    expect(dir).toContain(PROJECT_NAME)
+  })
+
+  it('returns path under custom workspaces dir when provided', () => {
+    const dir = getWorkspacesDir(PROJECT_NAME, '/custom/ws')
+    expect(dir).toBe('/custom/ws/test-project')
+    expect(dir).not.toContain('.local')
+  })
+
+  it('uses default path when workspacesDir is undefined', () => {
+    const dir = getWorkspacesDir(PROJECT_NAME, undefined)
     expect(dir).toContain('workspaces')
     expect(dir).toContain(PROJECT_NAME)
   })

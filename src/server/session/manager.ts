@@ -44,6 +44,7 @@ import {
   deleteWorkspace as deleteWorkspaceDir,
   validateWorkspaceName,
 } from '../git/workspace.js'
+import { loadWorkspaceConfig } from '../git/workspace-config.js'
 import { resolve } from 'node:path'
 import { SessionNotFoundError } from '../utils/errors.js'
 import { logger } from '../utils/logger.js'
@@ -110,9 +111,11 @@ export class SessionManager {
   private warmedUpSessions = new Set<string>()
   private switchLocks = new Map<string, Promise<unknown>>()
   private workspaceCreationLocks = new Map<string, Promise<void>>()
+  private globalWorkspacesDir: string | undefined
 
-  constructor(providerManager: import('../provider-manager.js').ProviderManager) {
+  constructor(providerManager: import('../provider-manager.js').ProviderManager, globalWorkspacesDir?: string) {
     this.providerManager = providerManager
+    this.globalWorkspacesDir = globalWorkspacesDir
   }
 
   getCurrentModelSettings(
@@ -985,6 +988,22 @@ export class SessionManager {
   }
 
   // ============================================================================
+  // Workspace Directory Resolution
+  // ============================================================================
+
+  /**
+   * Resolve the effective workspaces root directory for a project.
+   * Priority: per-project config (.openfox/workspace.json) → global config → default
+   */
+  async resolveWorkspacesDir(projectWorkdir: string): Promise<string | undefined> {
+    const projectConfig = await loadWorkspaceConfig(projectWorkdir)
+    if (projectConfig?.workspacesDir) {
+      return projectConfig.workspacesDir
+    }
+    return this.globalWorkspacesDir
+  }
+
+  // ============================================================================
   // Workspace Lifecycle
   // ============================================================================
 
@@ -1010,6 +1029,9 @@ export class SessionManager {
       const session = this.requireSession(sessionId)
       const project = getProject(session.projectId)
       if (!project) throw new Error(`Project not found: ${session.projectId}`)
+
+      // Resolve workspaces dir
+      const workspacesRootDir = await this.resolveWorkspacesDir(project.workdir)
 
       // If already in the target workspace, no-op
       if (target === 'original' && !session.workspace) return session
@@ -1040,9 +1062,9 @@ export class SessionManager {
           await existingCreateLock
         }
         const createLockPromise = (async () => {
-          const exists = await workspaceExists(project.name, target)
+          const exists = await workspaceExists(project.name, target, workspacesRootDir)
           if (!exists) {
-            await ensureWorkspace(project.workdir, target, project.name, branch)
+            await ensureWorkspace(project.workdir, target, project.name, branch, workspacesRootDir)
           }
         })()
         this.workspaceCreationLocks.set(createLockKey, createLockPromise)
@@ -1051,7 +1073,7 @@ export class SessionManager {
         } finally {
           this.workspaceCreationLocks.delete(createLockKey)
         }
-        const wsPath = resolve(getWorkspacesDir(project.name), target)
+        const wsPath = resolve(getWorkspacesDir(project.name, workspacesRootDir), target)
         updateSessionWorkdir(sessionId, project.workdir, wsPath)
       }
 
@@ -1063,7 +1085,8 @@ export class SessionManager {
       }
 
       // Read the actual branch we're now on
-      const effectiveWorkdir = target === 'original' ? project.workdir : resolve(getWorkspacesDir(project.name), target)
+      const effectiveWorkdir =
+        target === 'original' ? project.workdir : resolve(getWorkspacesDir(project.name, workspacesRootDir), target)
       const actualBranch = await getGitBranch(effectiveWorkdir)
 
       // Check if the workspace is behind the original (staleness hint)
@@ -1122,6 +1145,9 @@ export class SessionManager {
     const project = getProject(session.projectId)
     if (!project) throw new Error(`Project not found: ${session.projectId}`)
 
+    // Resolve workspaces dir
+    const workspacesRootDir = await this.resolveWorkspacesDir(project.workdir)
+
     // Check if other sessions reference this workspace
     const otherSessionsUsingIt = this.listSessions().filter(
       (s) => s.id !== sessionId && s.workspace?.split('/').pop() === target,
@@ -1139,14 +1165,14 @@ export class SessionManager {
       await this.switchWorkspace(sessionId, 'original')
     }
 
-    const effectivePath = resolve(getWorkspacesDir(project.name), target)
+    const effectivePath = resolve(getWorkspacesDir(project.name, workspacesRootDir), target)
     try {
       await devServerManager.stop(effectivePath)
     } catch {
       // ignore
     }
 
-    await deleteWorkspaceDir(project.name, target)
+    await deleteWorkspaceDir(project.name, target, workspacesRootDir)
     const updated = this.requireSession(sessionId)
     this.emit({ type: 'session_updated', session: updated })
     return updated
