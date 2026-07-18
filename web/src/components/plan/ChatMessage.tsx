@@ -1,4 +1,4 @@
-import { memo } from 'react'
+import { memo, useCallback, useRef, useState } from 'react'
 import type { Message } from '@shared/types.js'
 import type { TaskCompletedPayload } from '@shared/protocol.js'
 import { Markdown } from '../shared/Markdown'
@@ -6,8 +6,11 @@ import { AssistantMessage } from './AssistantMessage'
 import { TaskCompletedCard } from './TaskCompletedCard'
 import { WorkflowStartedCard } from './WorkflowStartedCard'
 import { MessageAttachments } from '../shared/MessageAttachments.js'
-import { MessageOptionsMenu } from './MessageOptionsMenu'
 import { AutoPromptCard } from './AutoPromptCard'
+import { CheckIcon, CopyIcon, EditSmallIcon, ReloadIcon, XCloseIcon } from '../shared/icons'
+import { replayMessage } from '../../lib/api.js'
+import { useSessionStore } from '../../stores/session.js'
+import { copyToClipboard } from '../../lib/clipboard.js'
 
 interface ChatMessageProps {
   message: Message
@@ -26,10 +29,113 @@ function UserMessage({ message, messageId, sessionId }: UserMessageProps) {
   const isAutoPrompt = message.messageKind === 'auto-prompt'
   const isCommand = message.messageKind === 'command'
   const isSystemGenerated = message.isSystemGenerated
+  const loadSession = useSessionStore((s) => s.loadSession)
+  const [hovered, setHovered] = useState(false)
+  const [copied, setCopied] = useState(false)
+  const [editing, setEditing] = useState(false)
+  const [editContent, setEditContent] = useState(message.content)
+  const [pending, setPending] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const textareaRef = useRef<HTMLTextAreaElement>(null)
+
+  const autoResize = useCallback(() => {
+    const el = textareaRef.current
+    if (!el) return
+    el.style.height = 'auto'
+    el.style.height = `${el.scrollHeight}px`
+  }, [])
+
+  const handleCopy = async () => {
+    try {
+      await copyToClipboard(message.content)
+      setCopied(true)
+      window.setTimeout(() => setCopied(false), 1500)
+    } catch {
+      // ignore
+    }
+  }
+
+  const handleReplay = async () => {
+    if (!sessionId || !messageId || pending) return
+    setPending(true)
+    setError(null)
+    const ok = await replayMessage(sessionId, messageId)
+    setPending(false)
+    if (ok) {
+      loadSession(sessionId)
+    } else {
+      setError('Failed to replay')
+    }
+  }
+
+  const handleEditConfirm = async () => {
+    if (!sessionId || !messageId || !editContent.trim() || pending) return
+    setPending(true)
+    setError(null)
+    const ok = await replayMessage(sessionId, messageId, editContent)
+    setPending(false)
+    if (ok) {
+      loadSession(sessionId)
+      setEditing(false)
+    } else {
+      setError('Failed to send')
+    }
+  }
+
+  const handleEditCancel = () => {
+    setEditContent(message.content)
+    setEditing(false)
+    setError(null)
+  }
+
+  const actionsVisible = hovered && !editing && !pending
+  const actionsClass = `flex items-center gap-0.5 self-end transition-opacity focus-within:opacity-100 focus-within:pointer-events-auto ${actionsVisible ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'}`
+
   return (
-    <div className="flex justify-end items-start gap-1.5 feed-item">
+    <div
+      className="flex justify-end items-start gap-1.5 feed-item"
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+    >
       {!isSystemGenerated && (
-        <MessageOptionsMenu content={message.content} align="right" messageId={messageId} sessionId={sessionId} />
+        <div className={actionsClass}>
+          <button
+            onClick={() => {
+              void handleCopy()
+            }}
+            title="Copy"
+            disabled={pending}
+            className="p-1 rounded hover:bg-bg-tertiary text-text-muted hover:text-text-primary disabled:opacity-50"
+          >
+            {copied ? <CheckIcon className="w-3.5 h-3.5 text-accent-success" /> : <CopyIcon className="w-3.5 h-3.5" />}
+          </button>
+          {sessionId && messageId && (
+            <>
+              <button
+                onClick={() => {
+                  setError(null)
+                  setEditContent(message.content)
+                  setEditing(true)
+                }}
+                title="Edit & resend"
+                disabled={pending}
+                className="p-1 rounded hover:bg-bg-tertiary text-text-muted hover:text-text-primary disabled:opacity-50"
+              >
+                <EditSmallIcon className="w-3.5 h-3.5" />
+              </button>
+              <button
+                onClick={() => {
+                  void handleReplay()
+                }}
+                title="Replay"
+                disabled={pending}
+                className="p-1 rounded hover:bg-bg-tertiary text-text-muted hover:text-text-primary disabled:opacity-50"
+              >
+                <ReloadIcon className="w-3.5 h-3.5" />
+              </button>
+            </>
+          )}
+        </div>
       )}
 
       <div
@@ -52,17 +158,70 @@ function UserMessage({ message, messageId, sessionId }: UserMessageProps) {
             {isCommand ? 'Command' : isAutoPrompt ? 'Auto' : 'System'}
           </span>
         )}
-        <div
-          className={`whitespace-pre-wrap break-words text-sm ${
-            isSystemGenerated
-              ? `${isCommand ? 'text-teal-200' : isAutoPrompt ? 'text-slate-200' : 'text-amber-200 italic'}`
-              : ''
-          }`}
-        >
-          {message.content}
-        </div>
-        {message.attachments && message.attachments.length > 0 && (
-          <MessageAttachments attachments={message.attachments} messageId={message.id} />
+        {editing ? (
+          <div className="flex flex-col gap-1.5">
+            <textarea
+              ref={(el) => {
+                ;(textareaRef as React.MutableRefObject<HTMLTextAreaElement | null>).current = el
+                if (el) {
+                  el.style.height = 'auto'
+                  el.style.height = `${el.scrollHeight}px`
+                }
+              }}
+              className="w-full bg-bg-primary border border-border rounded p-1.5 text-sm text-text-primary resize-none focus:outline-none focus:border-accent-primary min-h-[60px] overflow-hidden disabled:opacity-50"
+              value={editContent}
+              onChange={(e) => {
+                setEditContent(e.target.value)
+                autoResize()
+              }}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && !e.shiftKey) {
+                  e.preventDefault()
+                  void handleEditConfirm()
+                }
+                if (e.key === 'Escape') handleEditCancel()
+              }}
+              disabled={pending}
+              autoFocus
+            />
+            {error && <p className="text-xs text-error">{error}</p>}
+            <div className="flex justify-end gap-1">
+              <button
+                onClick={handleEditCancel}
+                disabled={pending}
+                className="p-1 rounded hover:bg-bg-tertiary text-text-muted hover:text-text-primary disabled:opacity-50"
+                title="Cancel"
+              >
+                <XCloseIcon className="w-3.5 h-3.5" />
+              </button>
+              <button
+                onClick={() => {
+                  void handleEditConfirm()
+                }}
+                disabled={pending || !editContent.trim()}
+                className="p-1 rounded hover:bg-bg-tertiary text-accent-primary hover:text-accent-primary disabled:opacity-50"
+                title="Confirm (Ctrl+Enter)"
+              >
+                <CheckIcon className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          </div>
+        ) : (
+          <>
+            {error && <p className="text-xs text-error mb-1">{error}</p>}
+            <div
+              className={`whitespace-pre-wrap break-words text-sm ${
+                isSystemGenerated
+                  ? `${isCommand ? 'text-teal-200' : isAutoPrompt ? 'text-slate-200' : 'text-amber-200 italic'}`
+                  : ''
+              }`}
+            >
+              {message.content}
+            </div>
+            {message.attachments && message.attachments.length > 0 && (
+              <MessageAttachments attachments={message.attachments} messageId={message.id} />
+            )}
+          </>
         )}
       </div>
     </div>
@@ -80,7 +239,6 @@ export const ChatMessage = memo(function ChatMessage({
   const isSystem = message.role === 'system'
   const isTool = message.role === 'tool'
 
-  // Use unified AssistantMessage for assistant role
   if (isAssistant) {
     return <AssistantMessage message={message} showStats={isLastAssistantMessage} />
   }
@@ -108,7 +266,6 @@ export const ChatMessage = memo(function ChatMessage({
     )
   }
 
-  // Workflow started card
   if (message.messageKind === 'workflow-started') {
     try {
       const data = JSON.parse(message.content) as { workflowName: string; workflowId: string; workflowColor?: string }
@@ -118,7 +275,6 @@ export const ChatMessage = memo(function ChatMessage({
     }
   }
 
-  // Task completed card — rendered from marker message
   if (message.messageKind === 'task-completed') {
     try {
       const data = JSON.parse(message.content) as TaskCompletedPayload
@@ -128,7 +284,6 @@ export const ChatMessage = memo(function ChatMessage({
     }
   }
 
-  // Context reset separator (full-width divider for fresh context)
   if (message.messageKind === 'context-reset') {
     return (
       <div className="flex items-center gap-4 mb-6 text-text-muted text-xs uppercase tracking-wide">
@@ -139,12 +294,10 @@ export const ChatMessage = memo(function ChatMessage({
     )
   }
 
-  // Auto-prompt message - show compact card instead of full content
   if (message.messageKind === 'auto-prompt' && message.isSystemGenerated) {
     return <AutoPromptCard message={message} />
   }
 
-  // Correction message - show as plain system message
   if (message.messageKind === 'correction' && message.isSystemGenerated) {
     return (
       <div className="flex justify-end feed-item">
@@ -156,7 +309,6 @@ export const ChatMessage = memo(function ChatMessage({
     )
   }
 
-  // User message
   if (isUser) {
     return <UserMessage message={message} messageId={messageId} sessionId={sessionId} />
   }
