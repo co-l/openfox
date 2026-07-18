@@ -21,6 +21,7 @@ Commands:
   provider remove  Remove a provider
   service          Manage the systemd service (install, start, stop, status, logs, uninstall)
   pwa              Manage the PWA installation (install, uninstall, launch, update, status)
+  install          Install a persistent OpenFox launcher (use --check to inspect)
   update           Update OpenFox to the latest version
 
 Options:
@@ -154,6 +155,7 @@ export async function runCli(options: { mode: Mode }): Promise<void> {
       version: { type: 'boolean', short: 'v' },
       service: { type: 'boolean' },
       follow: { type: 'boolean', short: 'f' },
+      check: { type: 'boolean' },
     },
     allowPositionals: true,
     strict: true,
@@ -212,9 +214,17 @@ export async function runCli(options: { mode: Mode }): Promise<void> {
       }
       break
     }
+    case 'install': {
+      const { runInstall } = await import('./install.js')
+      const code = await runInstall({ check: values.check === true })
+      if (code !== 0) {
+        process.exit(code)
+      }
+      break
+    }
     case 'update': {
       const { runUpdate } = await import('./update.js')
-      const code = runUpdate()
+      const code = await runUpdate()
       if (code !== 0) {
         process.exit(code)
       }

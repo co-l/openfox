@@ -17,7 +17,7 @@ function npm(args: string[], inherit = false): { ok: boolean; stdout: string } {
   return { ok: result.status === 0, stdout: (result.stdout ?? '').trim() }
 }
 
-export function runUpdate(): number {
+export async function runUpdate(options: { refreshLauncher?: () => Promise<number> } = {}): Promise<number> {
   const view = npm(['view', 'openfox', 'version'])
   if (!view.ok) {
     console.error('Failed to check the latest version (npm view openfox version)')
@@ -33,6 +33,17 @@ export function runUpdate(): number {
   console.log(`Updating OpenFox: ${VERSION} -> ${latest}`)
   if (!npm(['install', '-g', 'openfox@latest'], true).ok) {
     return 1
+  }
+  const refreshLauncher =
+    options.refreshLauncher ??
+    (async () => {
+      const { runInstall } = await import('./install.js')
+      return runInstall({ quiet: true })
+    })
+  const installCode = await refreshLauncher()
+  if (installCode !== 0) {
+    console.error('OpenFox updated, but the persistent launcher could not be refreshed.')
+    return installCode
   }
   console.log(`Updated: ${latest}`)
   console.log('Please restart OpenFox to use the new version.')

@@ -37,7 +37,7 @@ describe('runUpdate', () => {
     mockSpawnSync.mockReturnValue(spawnResult(1))
     const { runUpdate } = await import('./update.js')
 
-    expect(runUpdate()).toBe(1)
+    expect(await runUpdate()).toBe(1)
     expect(mockSpawnSync).toHaveBeenCalledTimes(1)
   })
 
@@ -45,7 +45,7 @@ describe('runUpdate', () => {
     mockSpawnSync.mockReturnValue(spawnResult(0, '1.0.0\n'))
     const { runUpdate } = await import('./update.js')
 
-    expect(runUpdate()).toBe(0)
+    expect(await runUpdate()).toBe(0)
     expect(mockSpawnSync).toHaveBeenCalledTimes(1)
   })
 
@@ -53,24 +53,31 @@ describe('runUpdate', () => {
     mockSpawnSync.mockReturnValueOnce(spawnResult(0, '2.0.0\n')).mockReturnValueOnce(spawnResult(0))
     const { runUpdate } = await import('./update.js')
 
-    expect(runUpdate()).toBe(0)
+    expect(await runUpdate({ refreshLauncher: async () => 0 })).toBe(0)
     expect(mockSpawnSync).toHaveBeenCalledTimes(2)
     // The auto-update route parses this exact line from stdout
     expect(vi.mocked(console.log).mock.calls.flat().join('\n')).toContain('Updated: 2.0.0')
+  })
+
+  it('returns 1 when the persistent launcher refresh fails', async () => {
+    mockSpawnSync.mockReturnValueOnce(spawnResult(0, '2.0.0\n')).mockReturnValueOnce(spawnResult(0))
+    const { runUpdate } = await import('./update.js')
+
+    expect(await runUpdate({ refreshLauncher: async () => 1 })).toBe(1)
   })
 
   it('returns 1 when the install fails', async () => {
     mockSpawnSync.mockReturnValueOnce(spawnResult(0, '2.0.0\n')).mockReturnValueOnce(spawnResult(1))
     const { runUpdate } = await import('./update.js')
 
-    expect(runUpdate()).toBe(1)
+    expect(await runUpdate()).toBe(1)
   })
 
   it('spawns npm with an args array and no shell on non-Windows', async () => {
     setPlatform('linux')
     mockSpawnSync.mockReturnValue(spawnResult(0, '1.0.0\n'))
     const { runUpdate } = await import('./update.js')
-    runUpdate()
+    await runUpdate()
 
     const [cmd, args, opts] = mockSpawnSync.mock.calls[0]!
     expect(cmd).toBe('npm')
@@ -82,7 +89,7 @@ describe('runUpdate', () => {
     setPlatform('win32')
     mockSpawnSync.mockReturnValue(spawnResult(0, '1.0.0\n'))
     const { runUpdate } = await import('./update.js')
-    runUpdate()
+    await runUpdate()
 
     const [cmd, args, opts] = mockSpawnSync.mock.calls[0]!
     expect(cmd).toBe('npm view openfox version')
