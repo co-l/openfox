@@ -205,7 +205,9 @@ async function extractImageBlock(
       if (raw && typeof raw === 'object' && 'width' in raw && 'height' in raw && 'data' in raw) {
         imgData = raw as RawImageData
       }
-    } catch {}
+    } catch {
+      /* ignore extraction errors */
+    }
   } else if (Array.isArray(args) && args[0] && typeof args[0] === 'object' && 'width' in (args[0] as object)) {
     imgData = args[0] as RawImageData
   }
