@@ -111,6 +111,8 @@ export function encodeImageToDataUrl(imgData: RawImageData, maxDimension = 1024)
     let { width, height } = imgData
     const { data, kind } = imgData
 
+    if (width > 4096 || height > 4096) return null
+
     if (maxDimension > 0 && (width > maxDimension || height > maxDimension)) {
       const scale = maxDimension / Math.max(width, height)
       const newWidth = Math.round(width * scale)
@@ -178,7 +180,10 @@ async function extractPageBlocks(
   const imageOpIndices: number[] = []
   for (let i = 0; i < opList.fnArray.length; i++) {
     const op = opList.fnArray[i]
-    if (op === OPS.paintImageXObject || op === OPS.paintInlineImageXObject) {
+    if (op === OPS.paintImageXObject || op === OPS.paintInlineImageXObject ||
+        op === OPS.paintImageMaskXObject || op === OPS.paintImageMaskXObjectGroup ||
+        op === OPS.paintImageXObjectRepeat || op === OPS.paintImageMaskXObjectRepeat ||
+        op === OPS.paintInlineImageXObjectGroup || op === OPS.paintSolidColorImageMask) {
       imageOpIndices.push(i)
     }
   }

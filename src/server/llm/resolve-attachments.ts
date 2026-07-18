@@ -37,28 +37,35 @@ export async function extractPdfFromDataUrl(data: string, filename: string): Pro
 export async function extractPdfBlocksFromDataUrl(data: string, filename: string): Promise<ContentPart[]> {
   const cacheKey = contentHash(data)
   const cached = pdfBlockCache.get(cacheKey)
-  if (cached) return cached
+  if (cached) {
+    const result: ContentPart[] = [{ type: 'text', text: `[PDF: ${filename}]` }]
+    result.push(...cached)
+    return result
+  }
 
   const base64Match = data.match(/^data:.*?;base64,(.+)$/)
   if (!base64Match?.[1]) {
-    const fallback: ContentPart[] = [{ type: 'text', text: `[PDF: ${filename}] (could not extract content)` }]
-    cacheSet(pdfBlockCache, cacheKey, fallback)
-    return fallback
+    cacheSet(pdfBlockCache, cacheKey, [])
+    return [{ type: 'text', text: `[PDF: ${filename}] (could not extract content)` }]
   }
   try {
     const buffer = Buffer.from(base64Match[1], 'base64')
     const result = await extractPdfContent(buffer)
-    const parts: ContentPart[] = [{ type: 'text', text: `[PDF: ${filename}]` }]
+    const body: ContentPart[] = []
     for (const block of result.blocks) {
       if (block.type === 'text' && block.content) {
-        parts.push({ type: 'text', text: block.content })
+        body.push({ type: 'text', text: block.content })
       } else if (block.type === 'image' && block.dataUrl) {
-        parts.push({ type: 'image_url', image_url: { url: block.dataUrl } })
+        body.push({ type: 'image_url', image_url: { url: block.dataUrl } })
       }
     }
-    cacheSet(pdfBlockCache, cacheKey, parts)
+    cacheSet(pdfBlockCache, cacheKey, body)
+    const parts: ContentPart[] = [{ type: 'text', text: `[PDF: ${filename}]` }]
+    parts.push(...body)
     return parts
   } catch {
+    cacheSet(pdfBlockCache, cacheKey, [])
+    return [{ type: 'text', text: `[PDF: ${filename}] (could not extract content)` }]
     const fallback: ContentPart[] = [{ type: 'text', text: `[PDF: ${filename}] (could not extract content)` }]
     cacheSet(pdfBlockCache, cacheKey, fallback)
     return fallback
