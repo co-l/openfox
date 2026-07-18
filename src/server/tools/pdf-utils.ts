@@ -29,10 +29,6 @@ export interface ProcessedPdf {
   isScanned: boolean
 }
 
-// NOTE: This relies on pdfjs-dist error message text which is not a stable API.
-// A more robust approach would inspect the PDF's /Encrypt dictionary entry
-// directly before attempting extraction. If upgrading pdfjs-dist breaks this,
-// switch to checking `doc.catalog.get('Encrypt')` or similar.
 export function isPasswordError(err: unknown): boolean {
   const message = err instanceof Error ? err.message : String(err)
   return message.toLowerCase().includes('password') || message.toLowerCase().includes('encrypt')
@@ -70,13 +66,35 @@ const IMAGE_KIND_GRAYSCALE_1BPP = 1
 const IMAGE_KIND_RGB_24BPP = 2
 const IMAGE_KIND_RGBA_32BPP = 3
 
-export function encodeImageToDataUrl(imgData: RawImageData): string | null {
-  // pdfjs-dist decodes all image streams (including JPEG DCTDecode) to raw
-  // pixel data before exposing via page.objs, so we always re-encode to PNG.
-  // JPEG-native passthrough would require accessing the PDF's raw stream bytes,
-  // which is not exposed by pdfjs-dist's public API.
+export function encodeImageToDataUrl(imgData: RawImageData, maxDimension = 1024): string | null {
   try {
-    const { width, height, data, kind } = imgData
+    let { width, height, data, kind } = imgData
+
+    if (maxDimension > 0 && (width > maxDimension || height > maxDimension)) {
+      const scale = maxDimension / Math.max(width, height)
+      const newWidth = Math.round(width * scale)
+      const newHeight = Math.round(height * scale)
+      const scaled = new Uint8Array(newWidth * newHeight * 4)
+
+      for (let y = 0; y < newHeight; y++) {
+        for (let x = 0; x < newWidth; x++) {
+          const srcX = Math.floor(x / scale)
+          const srcY = Math.floor(y / scale)
+          const srcIdx = (srcY * width + srcX) * 4
+          const dstIdx = (y * newWidth + x) * 4
+          scaled[dstIdx] = data[srcIdx] ?? 0
+          scaled[dstIdx + 1] = data[srcIdx + 1] ?? 0
+          scaled[dstIdx + 2] = data[srcIdx + 2] ?? 0
+          scaled[dstIdx + 3] = data[srcIdx + 3] ?? 255
+        }
+      }
+
+      width = newWidth
+      height = newHeight
+      data = scaled
+      kind = IMAGE_KIND_RGBA_32BPP
+    }
+
     const png = new PNG({ width, height })
     const pixels = png.data
 
@@ -127,71 +145,35 @@ async function extractPageBlocks(
     (item): item is Extract<(typeof textContent.items)[number], { str: string }> => 'str' in item,
   )
 
-  // Build ordered sequence of text and image regions from the opList
-  const sequence: Array<'text' | 'image'> = []
+  const textStr = textItems
+    .map((t) => t.str)
+    .join(' ')
+    .trim()
+
   const imageOpIndices: number[] = []
   for (let i = 0; i < opList.fnArray.length; i++) {
     const op = opList.fnArray[i]
-    if (op === OPS.beginText) {
-      if (sequence.length === 0 || sequence[sequence.length - 1] !== 'text') {
-        sequence.push('text')
-      }
-    } else if (op === OPS.paintImageXObject || op === OPS.paintInlineImageXObject) {
+    if (op === OPS.paintImageXObject || op === OPS.paintInlineImageXObject) {
       imageOpIndices.push(i)
-      sequence.push('image')
-    }
-  }
-
-  // Distribute text items across text regions in sequence
-  const textRegionCount = sequence.filter((t) => t === 'text').length
-  const textItemGroups: string[][] = []
-  if (textRegionCount > 0) {
-    const baseSize = Math.floor(textItems.length / textRegionCount)
-    let remainder = textItems.length % textRegionCount
-    let cursor = 0
-    for (let i = 0; i < textRegionCount; i++) {
-      const extra = remainder > 0 ? 1 : 0
-      remainder--
-      const group = textItems.slice(cursor, cursor + baseSize + extra)
-      textItemGroups.push(group.map((t) => t.str))
-      cursor += baseSize + extra
     }
   }
 
   const blocks: PdfBlock[] = []
-  let textGroupIdx = 0
-  let imageOpIdx = 0
 
-  for (const type of sequence) {
-    if (type === 'text') {
-      const textStr = textItemGroups[textGroupIdx]?.join(' ').trim()
-      textGroupIdx++
-      if (textStr) {
-        blocks.push({ type: 'text', content: `[Page ${pageIndex}/${pageCount}]\n${textStr}` })
-      }
-    } else if (type === 'image') {
-      if (imageCounter.count >= maxImages) {
-        imageCounter.limitReached = true
-        continue
-      }
-
-      const opIdx = imageOpIndices[imageOpIdx]!
-      imageOpIdx++
-      const imgBlock = await extractImageBlock(page, opList, opIdx)
-      if (imgBlock) {
-        blocks.push(imgBlock)
-        imageCounter.count++
-      }
-    }
+  if (textStr) {
+    blocks.push({ type: 'text', content: `[Page ${pageIndex}/${pageCount}]\n${textStr}` })
   }
 
-  if (blocks.length === 0 && textItems.length > 0) {
-    const textStr = textItems
-      .map((t) => t.str)
-      .join(' ')
-      .trim()
-    if (textStr) {
-      blocks.push({ type: 'text', content: `[Page ${pageIndex}/${pageCount}]\n${textStr}` })
+  for (let imageOpIdx = 0; imageOpIdx < imageOpIndices.length; imageOpIdx++) {
+    if (imageCounter.count >= maxImages) {
+      imageCounter.limitReached = true
+      break
+    }
+    const opIdx = imageOpIndices[imageOpIdx]!
+    const imgBlock = await extractImageBlock(page, opList, opIdx)
+    if (imgBlock) {
+      blocks.push(imgBlock)
+      imageCounter.count++
     }
   }
 

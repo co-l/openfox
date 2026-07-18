@@ -154,7 +154,8 @@ async function describePdfAttachment(
   options: ImageProcessorOptions,
   descriptions: Map<string, string>,
 ): Promise<string> {
-  const cacheKey = contentHash(att.data)
+  const hasVision = !!options.visionModel
+  const cacheKey = `pdf:${hasVision}:${contentHash(att.data)}`
   if (descriptionCache.has(cacheKey)) {
     const cached = descriptionCache.get(cacheKey)!
     descriptions.set(att.id, cached)

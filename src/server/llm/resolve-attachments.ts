@@ -79,15 +79,15 @@ export async function resolveAttachmentsInMessages(
   messages: LLMMessage[],
   supportsVision: boolean,
 ): Promise<LLMMessage[]> {
+  const isVisionAttachment = (attachment: Attachment): boolean =>
+    attachment.mimeType.startsWith('image/') || attachment.mimeType === 'application/pdf'
+
   const result: LLMMessage[] = []
   for (const msg of messages) {
     if (!msg.attachments || msg.attachments.length === 0) {
       result.push(msg)
       continue
     }
-
-    const isVisionAttachment = (attachment: Attachment): boolean =>
-      attachment.mimeType.startsWith('image/') || attachment.mimeType === 'application/pdf'
 
     if (supportsVision && msg.attachments.every(isVisionAttachment)) {
       result.push(msg)

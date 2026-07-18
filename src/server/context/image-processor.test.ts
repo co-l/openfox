@@ -874,15 +874,6 @@ describe('processContextImages', () => {
     data: makePdfDataUrl('some image-pdf document'),
   }
 
-  const multiPagePdfAttachment: Attachment = {
-    id: 'pdf-multi-1',
-    filename: 'multipage.pdf',
-    mimeType: 'application/pdf',
-    size: 80,
-    data: makePdfDataUrl('multi-page content here'),
-  }
-  void multiPagePdfAttachment
-
   it('sets pdfContent on text-only PDF attachment without calling vision fallback', async () => {
     const { describeImageFromDataUrl } = await import('../llm/vision-fallback.js')
 

@@ -140,11 +140,12 @@ describe('pdf-utils', () => {
       expect(result.blocks[3]?.type).toBe('image')
     })
 
-    it('interleaves when images appear before text', async () => {
+    it('places text before images regardless of content stream order', async () => {
       const result = await extractPdfContent(makeImageBeforeTextPdf())
       expect(result.blocks.length).toBe(2)
-      expect(result.blocks[0]?.type).toBe('image')
-      expect(result.blocks[1]?.type).toBe('text')
+      expect(result.blocks[0]?.type).toBe('text')
+      expect(result.blocks[1]?.type).toBe('image')
+      expect(result.blocks[0]?.content).toContain('After image')
     })
 
     it('extracts images even from image-only page (scanned)', async () => {
