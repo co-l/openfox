@@ -292,6 +292,16 @@ export const useSessionStore = create<SessionState>((set, get) => {
         const currentSession = get().currentSession
 
         if (!currentSession || currentSession.id !== sessionId) {
+          const oldSessionId = currentSession?.id
+          const oldConfirmations = get().pendingPathConfirmations
+          const existingCross = get().crossSessionConfirmations
+          const crossCleanup = { ...existingCross }
+          if (oldSessionId && oldConfirmations.length > 0) {
+            crossCleanup[oldSessionId] = [
+              ...(crossCleanup[oldSessionId] ?? []),
+              ...oldConfirmations,
+            ]
+          }
           cancelStreamingFlush()
           set({
             currentSession: null,
@@ -308,6 +318,8 @@ export const useSessionStore = create<SessionState>((set, get) => {
             error: null,
             gitStatus: null,
             pendingSessionCreate: false as boolean | string,
+            crossSessionConfirmations: crossCleanup,
+            sessionsWithPendingConfirmations: Object.keys(crossCleanup),
           })
         } else {
           set({ unreadSessionIds: get().unreadSessionIds.filter((id) => id !== sessionId) })

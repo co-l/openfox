@@ -1940,4 +1940,27 @@ describe('cross-session path confirmations', () => {
     expect(state.crossSessionConfirmations['session-2']).toBeDefined()
     expect(state.sessionsWithPendingConfirmations).toEqual(['session-2'])
   })
+
+  it('preserves pending confirmations as cross-session when navigating away', async () => {
+    const useSessionStore = await loadSessionStore()
+
+    useSessionStore.setState((state) => ({
+      ...state,
+      currentSession: { id: 'session-1', projectId: 'project-1', workdir: '/tmp/project-1', mode: 'builder', phase: 'build', isRunning: true, criteria: [], summary: null } as any,
+      pendingPathConfirmations: [
+        { callId: 'call-git', tool: 'run_command', paths: ['--no-verify'], workdir: '/tmp/project-1', reason: 'git_no_verify' as const },
+      ],
+      crossSessionConfirmations: {},
+      sessionsWithPendingConfirmations: [],
+    }))
+
+    await useSessionStore.getState().loadSession('session-2')
+
+    const state = useSessionStore.getState()
+    expect(state.pendingPathConfirmations).toHaveLength(0)
+    expect(state.crossSessionConfirmations['session-1']).toBeDefined()
+    expect(state.crossSessionConfirmations['session-1']).toHaveLength(1)
+    expect(state.crossSessionConfirmations['session-1']![0]!.callId).toBe('call-git')
+    expect(state.sessionsWithPendingConfirmations).toContain('session-1')
+  })
 })
