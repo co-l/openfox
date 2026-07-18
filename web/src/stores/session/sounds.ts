@@ -34,6 +34,12 @@ export function handleGlobalSoundEffects(message: ServerMessage, state: SessionS
     return
   }
 
+  if (message.type === 'session.confirmation_pending') {
+    const agent = resolveAgentType(state, message.sessionId)
+    playWaitingForUser(agent)
+    return
+  }
+
   if (message.type === 'task.completed') {
     const agent = resolveAgentType(state, message.sessionId)
     playAchievement(agent)

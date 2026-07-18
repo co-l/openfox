@@ -9,7 +9,7 @@ import { CloseButton } from '../shared/CloseButton'
 import { ConfirmModal } from '../shared/ConfirmModal'
 import { Modal } from '../shared/Modal'
 import { ModalFooter } from '../shared/ModalFooter'
-import { EllipsisIcon, SpinIcon } from '../shared/icons'
+import { EllipsisIcon, SpinIcon, StopIcon } from '../shared/icons'
 import { groupSessionsByDate, formatDateHeader, formatTime } from '../../lib/format-date.js'
 
 interface SidebarProps {
@@ -312,14 +312,12 @@ function renderSessionGroups(
                 </div>
                 {/* Time displayed below the title as muted secondary text */}
                 <div className="flex items-center gap-2 mt-1">
-                  {isRunning ? (
+                  {hasPendingConfirmation ? (
+                    <span title="Awaiting path confirmation">
+                      <StopIcon className="w-3 h-3 text-red-400 flex-shrink-0" />
+                    </span>
+                  ) : isRunning ? (
                     <SpinIcon />
-                  ) : hasPendingConfirmation ? (
-                    <span
-                      aria-label="Pending confirmation"
-                      title="Path confirmation pending"
-                      className="w-2 h-2 rounded-full bg-blue-400 flex-shrink-0"
-                    />
                   ) : hasUnread && !isActive ? (
                     <span
                       aria-label="Unread activity"

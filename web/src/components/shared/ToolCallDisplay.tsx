@@ -103,7 +103,7 @@ export const ToolCallDisplay = memo(function ToolCallDisplay({
   // Check if there's a pending path confirmation matching this tool call
   const pendingPathConfirmations = useSessionStore((state) => state.pendingPathConfirmations)
   const pendingConfirmation: PendingPathConfirmation | null =
-    status === 'pending' && callId ? (pendingPathConfirmations.find((pc) => pc.callId === callId) ?? null) : null
+    callId ? (pendingPathConfirmations.find((pc) => pc.callId === callId) ?? null) : null
   // step_done is a simple completion signal — minimal inline pill, no collapsible, no args
   if (tool === 'step_done') {
     return (
