@@ -769,5 +769,65 @@ describe('ws/protocol', () => {
         payload: { messageId: 'm1', reason: 'complete' },
       })
     })
+
+    it('extracts subAgentId from context.state data to payload top level', () => {
+      const event: StoredEvent = {
+        ...baseEvent,
+        type: 'context.state',
+        data: {
+          currentTokens: 5000,
+          maxTokens: 16000,
+          dangerZone: false,
+          canCompact: true,
+          dynamicContextChanged: false,
+          compactionCount: 1,
+          subAgentId: 'sub-abc',
+        },
+      }
+      const result = storedEventToServerMessage(event)
+      expect(result).toEqual({
+        type: 'context.state',
+        payload: {
+          context: {
+            currentTokens: 5000,
+            maxTokens: 16000,
+            dangerZone: false,
+            canCompact: true,
+            dynamicContextChanged: false,
+            compactionCount: 1,
+          },
+          subAgentId: 'sub-abc',
+        },
+      })
+    })
+
+    it('omits subAgentId from context.state payload when not set', () => {
+      const event: StoredEvent = {
+        ...baseEvent,
+        type: 'context.state',
+        data: {
+          currentTokens: 3000,
+          maxTokens: 8000,
+          dangerZone: false,
+          canCompact: false,
+          dynamicContextChanged: false,
+          compactionCount: 0,
+        },
+      }
+      const result = storedEventToServerMessage(event)
+      expect(result).toEqual({
+        type: 'context.state',
+        payload: {
+          context: {
+            currentTokens: 3000,
+            maxTokens: 8000,
+            dangerZone: false,
+            canCompact: false,
+            dynamicContextChanged: false,
+            compactionCount: 0,
+          },
+        },
+      })
+    })
   })
 })

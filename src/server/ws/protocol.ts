@@ -528,7 +528,8 @@ export function storedEventToServerMessage(event: StoredEvent): ServerMessage | 
 
     case 'context.state': {
       const data = event.data as Extract<TurnEvent, { type: 'context.state' }>['data']
-      return createContextStateMessage(data)
+      const { subAgentId, ...context } = data
+      return createContextStateMessage(context, subAgentId)
     }
 
     case 'session.name_generated': {
