@@ -566,13 +566,11 @@ export function storedEventToServerMessage(event: StoredEvent): ServerMessage | 
       return createChatFormatRetryMessage(data.attempt, data.maxAttempts, data.pattern, data.field, data.matchedContent)
     }
 
-    case 'path.confirmation_pending': {
-      const data = event.data as Extract<TurnEvent, { type: 'path.confirmation_pending' }>['data']
-      return createChatPathConfirmationMessage(data.callId, data.tool, data.paths, data.workdir, data.reason)
-    }
-
+    case 'path.confirmation_pending':
     case 'path.confirmation_responded':
-      // Skip — resolved confirmations are folded by foldPendingConfirmations on state load
+      // Confirmations are handled via broadcastForSession onMessage callback
+      // (with project-scoped filtering) and folded into session.state on load.
+      // Avoid re-broadcasting to all clients via EventStore replay.
       return null
 
     case 'turn.snapshot':

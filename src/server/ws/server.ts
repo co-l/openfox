@@ -560,14 +560,30 @@ export function createWebSocketServer(
   }
 
   const broadcastForSession = (sessionId: string, msg: ServerMessage) => {
+    const session = sessionManager.getSession(sessionId)
+    const projectId = session?.projectId
     for (const [clientWs, client] of clients) {
-      if (isSubscribedToSession(client, sessionId) && clientWs.readyState === WebSocket.OPEN) {
-        clientWs.send(serializeServerMessage({ ...msg, sessionId }))
-      }
+      if (clientWs.readyState !== WebSocket.OPEN) continue
+      if (!isSubscribedToSession(client, sessionId)) continue
+      const seq = client.lastSentSeq + 1
+      enqueueSend(client, serializeServerMessage({ ...msg, sessionId }), seq)
     }
-    // Broadcast confirmations to all clients for cross-session notification
-    if (msg.type === 'chat.path_confirmation') {
-      broadcastAll({ type: 'session.confirmation_pending', sessionId, payload: msg.payload })
+    // Broadcast confirmations to non-subscribed clients within the same project
+    if (msg.type === 'chat.path_confirmation' && projectId) {
+      for (const [clientWs, client] of clients) {
+        if (clientWs.readyState !== WebSocket.OPEN) continue
+        if (isSubscribedToSession(client, sessionId)) continue
+        const clientProjectId = client.activeSessionId
+          ? sessionManager.getSession(client.activeSessionId)?.projectId
+          : undefined
+        if (clientProjectId !== projectId) continue
+        const seq = client.lastSentSeq + 1
+        enqueueSend(
+          client,
+          serializeServerMessage({ type: 'session.confirmation_pending', sessionId, payload: msg.payload }),
+          seq,
+        )
+      }
     }
   }
 

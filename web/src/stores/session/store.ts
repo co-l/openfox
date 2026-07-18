@@ -318,6 +318,8 @@ export const useSessionStore = create<SessionState>((set, get) => {
 
         const data = await res.json()
         const loadedMessages = (data.messages as Message[] | undefined) ?? []
+        const crossCleanup = { ...get().crossSessionConfirmations }
+        delete crossCleanup[sessionId]
         set({
           currentSession: data.session,
           messages: loadedMessages,
@@ -325,6 +327,8 @@ export const useSessionStore = create<SessionState>((set, get) => {
           queuedMessages: (data.queueState as QueuedMessage[] | undefined) ?? [],
           pendingPathConfirmations: (data.pendingConfirmations ?? []) as PendingPathConfirmation[],
           pendingQuestions: (data.pendingQuestions ?? []) as PendingQuestionPayload[],
+          crossSessionConfirmations: crossCleanup,
+          sessionsWithPendingConfirmations: Object.keys(crossCleanup),
         })
 
         wsClient.send('session.load', { sessionId })

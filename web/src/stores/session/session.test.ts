@@ -1857,4 +1857,87 @@ describe('cross-session path confirmations', () => {
     // Should be in cross-session tracking
     expect(state.crossSessionConfirmations['session-1']).toHaveLength(1)
   })
+
+  it('does not add cross-session entry when confirmation is for current session', async () => {
+    const useSessionStore = await loadSessionStore()
+
+    useSessionStore.setState((state) => ({
+      ...state,
+      currentSession: { id: 'session-1', projectId: 'project-1', workdir: '/tmp/project-1', mode: 'builder', phase: 'build', isRunning: true, criteria: [], summary: null } as any,
+    }))
+
+    useSessionStore.getState().handleServerMessage({
+      type: 'chat.path_confirmation',
+      sessionId: 'session-1',
+      payload: { callId: 'call-git', tool: 'run_command', paths: ['--no-verify'], workdir: '/tmp/project-1', reason: 'git_no_verify' },
+    })
+
+    const state = useSessionStore.getState()
+    expect(state.pendingPathConfirmations).toHaveLength(1)
+    expect(state.pendingPathConfirmations[0]!.callId).toBe('call-git')
+    expect(Object.keys(state.crossSessionConfirmations)).toHaveLength(0)
+    expect(state.sessionsWithPendingConfirmations).not.toContain('session-1')
+  })
+
+  it('deduplicates chat.path_confirmation with same callId via WS replay', async () => {
+    const useSessionStore = await loadSessionStore()
+
+    useSessionStore.setState((state) => ({
+      ...state,
+      currentSession: { id: 'session-1', projectId: 'project-1', workdir: '/tmp/project-1', mode: 'builder', phase: 'build', isRunning: true, criteria: [], summary: null } as any,
+    }))
+
+    useSessionStore.getState().handleServerMessage({
+      type: 'chat.path_confirmation',
+      sessionId: 'session-1',
+      payload: { callId: 'call-git', tool: 'run_command', paths: ['--no-verify'], workdir: '/tmp/project-1', reason: 'git_no_verify' },
+    })
+    useSessionStore.getState().handleServerMessage({
+      type: 'chat.path_confirmation',
+      sessionId: 'session-1',
+      payload: { callId: 'call-git', tool: 'run_command', paths: ['--no-verify'], workdir: '/tmp/project-1', reason: 'git_no_verify' },
+    })
+
+    const state = useSessionStore.getState()
+    expect(state.pendingPathConfirmations).toHaveLength(1)
+  })
+
+  it('deduplicates session.confirmation_pending with same callId', async () => {
+    const useSessionStore = await loadSessionStore()
+
+    useSessionStore.getState().handleServerMessage({
+      type: 'session.confirmation_pending',
+      sessionId: 'session-1',
+      payload: { callId: 'call-git', tool: 'run_command', paths: ['--no-verify'], workdir: '/tmp/project-1', reason: 'git_no_verify' },
+    })
+    useSessionStore.getState().handleServerMessage({
+      type: 'session.confirmation_pending',
+      sessionId: 'session-1',
+      payload: { callId: 'call-git', tool: 'run_command', paths: ['--no-verify'], workdir: '/tmp/project-1', reason: 'git_no_verify' },
+    })
+
+    const state = useSessionStore.getState()
+    expect(state.crossSessionConfirmations['session-1']).toHaveLength(1)
+  })
+
+  it('cleans cross-session state when loading session via REST', async () => {
+    const useSessionStore = await loadSessionStore()
+
+    useSessionStore.setState((state) => ({
+      ...state,
+      currentSession: null,
+      crossSessionConfirmations: {
+        'session-1': [{ callId: 'call-git', tool: 'run_command', paths: ['--no-verify'], workdir: '/tmp/project-1', reason: 'git_no_verify' as const }],
+        'session-2': [{ callId: 'call-other', tool: 'read_file', paths: ['/tmp/other.txt'], workdir: '/tmp/project-2', reason: 'outside_workdir' as const }],
+      },
+      sessionsWithPendingConfirmations: ['session-1', 'session-2'],
+    }))
+
+    await useSessionStore.getState().loadSession('session-1')
+
+    const state = useSessionStore.getState()
+    expect(state.crossSessionConfirmations['session-1']).toBeUndefined()
+    expect(state.crossSessionConfirmations['session-2']).toBeDefined()
+    expect(state.sessionsWithPendingConfirmations).toEqual(['session-2'])
+  })
 })
