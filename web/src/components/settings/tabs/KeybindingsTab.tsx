@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
-import { XCloseSmallIcon } from '../../shared/icons'
+import { XCloseSmallIcon, ReloadIcon } from '../../shared/icons'
 import { SETTINGS_KEYS } from '../../../stores/settings'
 import { useSettingsStoreState } from '../useSettingsStore'
 import {
@@ -10,21 +10,31 @@ import {
   type KeyBinding,
 } from '../../../lib/keybindings'
 
+function isDefaultBinding(binding: KeyBinding | null, defaultBinding: KeyBinding | null): boolean {
+  if (binding === null && defaultBinding === null) return true
+  if (binding === null || defaultBinding === null) return false
+  return JSON.stringify(binding) === JSON.stringify(defaultBinding)
+}
+
 function KeybindingRow({
   label,
   binding,
+  defaultBinding,
   isRecording,
   onStartRecording,
   onBindingRecorded,
   onClear,
+  onReset,
   onCancelRecording,
 }: {
   label: string
   binding: KeyBinding | null
+  defaultBinding: KeyBinding | null
   isRecording: boolean
   onStartRecording: () => void
   onBindingRecorded: (binding: KeyBinding) => void
   onClear: () => void
+  onReset: () => void
   onCancelRecording: () => void
 }) {
   const ref = useRef<HTMLDivElement>(null)
@@ -47,6 +57,14 @@ function KeybindingRow({
       }
 
       if (MODIFIERS.has(e.key)) {
+        const now = Date.now()
+        if (e.key === lastKeyRef.current && now - lastPressRef.current < 400) {
+          onBindingRecorded({ type: 'double-press', key: e.key, threshold: 300 })
+          return
+        }
+        lastPressRef.current = now
+        lastKeyRef.current = e.key
+
         if (e.ctrlKey && !pendingModifiers.includes('ctrl')) pendingModifiers.push('ctrl')
         if (e.metaKey && !pendingModifiers.includes('meta')) pendingModifiers.push('meta')
         if (e.altKey && !pendingModifiers.includes('alt')) pendingModifiers.push('alt')
@@ -122,6 +140,17 @@ function KeybindingRow({
                 <XCloseSmallIcon className="w-3.5 h-3.5" />
               </button>
             )}
+            {!isDefaultBinding(binding, defaultBinding) && (
+              <button
+                type="button"
+                onClick={onReset}
+                title="Reset to default"
+                aria-label={`Reset ${label} to default`}
+                className="p-1 text-text-muted rounded hover:text-accent-primary hover:bg-bg-tertiary transition-colors"
+              >
+                <ReloadIcon className="w-3.5 h-3.5" />
+              </button>
+            )}
           </>
         )}
       </div>
@@ -136,13 +165,24 @@ export function KeybindingsTab() {
   const config = parseKeybindings(raw)
   const [recording, setRecording] = useState<string | null>(null)
 
-  const actions: Array<{ id: string; label: string; binding: KeyBinding | null }> = [
-    { id: 'terminalToggle', label: 'Toggle Terminal', binding: config.terminalToggle },
-    { id: 'quickAction', label: 'Quick Action', binding: config.quickAction },
+  const actions: Array<{ id: string; label: string; binding: KeyBinding | null; defaultBinding: KeyBinding | null }> = [
+    {
+      id: 'terminalToggle',
+      label: 'Toggle Terminal',
+      binding: config.terminalToggle,
+      defaultBinding: DEFAULT_KEYBINDINGS.terminalToggle,
+    },
+    {
+      id: 'quickAction',
+      label: 'Quick Action',
+      binding: config.quickAction,
+      defaultBinding: DEFAULT_KEYBINDINGS.quickAction,
+    },
     ...config.agentSwitching.map((b, i) => ({
       id: `agentSwitching.${i}`,
       label: `Switch to Agent ${i + 1}`,
       binding: b,
+      defaultBinding: DEFAULT_KEYBINDINGS.agentSwitching[i] ?? null,
     })),
   ]
 
@@ -204,10 +244,12 @@ export function KeybindingsTab() {
               key={action.id}
               label={action.label}
               binding={action.binding}
+              defaultBinding={action.defaultBinding}
               isRecording={recording === action.id}
               onStartRecording={() => handleStartRecording(action.id)}
               onBindingRecorded={handleBindingRecorded}
               onClear={() => updateBinding(action.id, null)}
+              onReset={() => updateBinding(action.id, action.defaultBinding)}
               onCancelRecording={() => setRecording(null)}
             />
           ))}
