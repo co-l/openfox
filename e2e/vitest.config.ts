@@ -2,8 +2,10 @@ import { defineConfig } from 'vitest/config'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
-const __dirname = dirname(fileURLToPath(import.meta.url))
-const rootDir = resolve(__dirname, '..')
+// Globs require forward slashes; on Windows dirname/resolve produce backslashes,
+// which tinyglobby treats as escape characters (include matches nothing).
+const __dirname = dirname(fileURLToPath(import.meta.url)).replace(/\\/g, '/')
+const rootDir = resolve(__dirname, '..').replace(/\\/g, '/')
 
 const CI_MULTIPLIER = process.env['CI'] === 'true' ? 10 : 1
 
