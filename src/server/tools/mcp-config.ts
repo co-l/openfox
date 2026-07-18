@@ -241,9 +241,7 @@ export const mcpConfigTool: Tool = createTool<McpConfigArgs>(
 
       const server = mcpManagerForTools.getServer(args.name)
       const toolCount = server?.tools.length ?? 0
-      return helpers.success(
-        `Updated MCP server "${args.name}" (${toolCount} tools discovered). ${APPLY_PROMPT_MESSAGE}`,
-      )
+      return helpers.success(`Updated MCP server "${args.name}" (${toolCount} tools discovered). ${APPLY_PROMPT_MESSAGE}`)
     }
 
     if (args.action === 'remove') {

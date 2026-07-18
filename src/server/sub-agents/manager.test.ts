@@ -225,7 +225,11 @@ describe('SubAgentManager', () => {
       'session_metadata',
     ])
 
-    expect(findAgentById('explorer', agents)?.metadata.allowedTools).toEqual(['read_file', 'run_command', 'web_fetch'])
+    expect(findAgentById('explorer', agents)?.metadata.allowedTools).toEqual([
+      'read_file',
+      'run_command',
+      'web_fetch',
+    ])
   })
 
   describe('loadGitIgnoreRules', () => {
