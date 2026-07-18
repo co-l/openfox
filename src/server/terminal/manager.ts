@@ -2,6 +2,24 @@ import * as pty from 'node-pty'
 import os from 'node:os'
 import { logger } from '../utils/logger.js'
 import { getPlatformShell } from '../utils/platform.js'
+import { killProcessTree } from '../utils/process-tree.js'
+
+// On Windows, pty.kill() can leave the spawned cmd.exe alive under ConPTY —
+// follow up with a taskkill-based tree kill.
+async function killPty(ptyProcess: pty.IPty): Promise<void> {
+  if (process.platform === 'win32' && ptyProcess.pid) {
+    // Tree-kill first: pty.kill() alone terminates the shell but reparents its
+    // children (taskkill can no longer find them through the dead parent).
+    await killProcessTree(ptyProcess.pid)
+    try {
+      ptyProcess.kill()
+    } catch {
+      // Already gone
+    }
+    return
+  }
+  ptyProcess.kill()
+}
 
 export interface TerminalSession {
   id: string
@@ -119,7 +137,7 @@ class TerminalManager {
     if (!session) {
       return false
     }
-    session.pty.kill()
+    void killPty(session.pty)
     this.sessions.delete(sessionId)
     logger.info('Terminal session killed', { id: sessionId })
     return true
@@ -156,11 +174,10 @@ class TerminalManager {
     }
   }
 
-  killAll(): void {
-    for (const session of this.sessions.values()) {
-      session.pty.kill()
-    }
+  async killAll(): Promise<void> {
+    const kills = Array.from(this.sessions.values()).map((session) => killPty(session.pty))
     this.sessions.clear()
+    await Promise.all(kills)
     logger.info('All terminal sessions killed')
   }
 }

@@ -6,9 +6,23 @@ export default defineConfig({
     alias: {
       '@shared': path.resolve(import.meta.dirname, 'src/shared'),
     },
+    // Both the root and web/ trees can end up with their own React copy
+    // (e.g. on Windows dev installs); two copies break hooks in web tests.
+    dedupe: ['react', 'react-dom'],
   },
   test: {
+    // zustand is externalized by default; inline it so the react dedupe below
+    // also applies to its own react import (it would otherwise resolve
+    // web/node_modules/react natively and break hooks).
+    server: {
+      deps: {
+        inline: ['zustand'],
+      },
+    },
     include: ['src/**/*.test.ts', 'web/src/**/*.test.ts', 'web/src/**/*.test.tsx'],
+    // A few tests (init-llm, test-params) flake past the 5s default under
+    // full-suite load on slower machines.
+    testTimeout: 15_000,
     exclude: ['e2e/**', 'node_modules/**'],
     setupFiles: ['vitest-localstorage-mock', './web/src/test-setup.ts'],
     env: {

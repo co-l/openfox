@@ -2,8 +2,8 @@ import { describe, it, expect, afterEach } from 'vitest'
 import { terminalManager } from './manager.js'
 
 describe('TerminalManager', () => {
-  afterEach(() => {
-    terminalManager.killAll()
+  afterEach(async () => {
+    await terminalManager.killAll()
   })
 
   describe('create', () => {

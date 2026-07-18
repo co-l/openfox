@@ -1,5 +1,5 @@
 import { realpath } from 'node:fs/promises'
-import { resolve, normalize, join, basename, sep } from 'node:path'
+import { resolve, normalize, join, basename, sep, posix, win32 } from 'node:path'
 import { homedir, tmpdir } from 'node:os'
 import type { ServerMessage } from '../../shared/protocol.js'
 import { createChatPathConfirmationMessage } from '../ws/protocol.js'
@@ -232,6 +232,15 @@ function isWindowsAbsolutePath(str: string): boolean {
 }
 
 /**
+ * Normalize an extracted path according to its own shape, not the host
+ * platform: host normalize() would turn "/var/log" into "\var\log" on
+ * Windows, breaking comparisons and the SAFE_PATHS lookup.
+ */
+function normalizeExtracted(path: string): string {
+  return isWindowsAbsolutePath(path) ? win32.normalize(path) : posix.normalize(path)
+}
+
+/**
  * Check if a string is a placeholder marker left by sanitization.
  * These are not real paths and should be skipped.
  */
@@ -280,7 +289,7 @@ export function extractAbsolutePathsFromCommand(command: string): string[] {
   for (const match of fileUrlMatches) {
     const filePath = match[1]
     if (filePath && !isSafePath(filePath)) {
-      paths.push(normalize(filePath))
+      paths.push(normalizeExtracted(filePath))
     }
   }
   sanitized = sanitized.replace(/file:\/\/[^\s'"]+/g, ' __FILEURL__ ')
@@ -317,12 +326,12 @@ export function extractAbsolutePathsFromCommand(command: string): string[] {
 
     // Check for absolute path
     if (isWindowsAbsolutePath(content)) {
-      const resolved = normalize(content)
+      const resolved = normalizeExtracted(content)
       if (!isSafePath(resolved)) {
         paths.push(resolved)
       }
     } else if (!isWindows() && content.startsWith('/')) {
-      const resolved = normalize(content)
+      const resolved = normalizeExtracted(content)
       if (!isSafePath(resolved)) {
         paths.push(resolved)
       }
@@ -350,7 +359,7 @@ export function extractAbsolutePathsFromCommand(command: string): string[] {
     while ((match = winAbsolutePattern.exec(sanitized)) !== null) {
       const candidate = match[1]!
       if (isPlaceholderToken(candidate)) continue
-      const resolved = normalize(candidate)
+      const resolved = normalizeExtracted(candidate)
       if (!isSafePath(resolved)) {
         paths.push(resolved)
       }
@@ -366,7 +375,7 @@ export function extractAbsolutePathsFromCommand(command: string): string[] {
       // Skip if it looks like a regex pattern with metacharacters
       if (looksLikeRegex(candidate)) continue
 
-      const resolved = normalize(candidate)
+      const resolved = normalizeExtracted(candidate)
       // Skip root or empty (e.g. "//" comment lines normalize to "/")
       if (resolved === '/' || resolved === '') continue
       if (!isSafePath(resolved)) {
@@ -439,7 +448,8 @@ export function extractSensitivePathsFromCommand(command: string): string[] {
  * Check if a path is a "safe" device path that doesn't need confirmation
  */
 function isSafePath(path: string): boolean {
-  const normalized = normalize(path)
+  // SAFE_PATHS entries are Unix device paths — posix semantics regardless of host.
+  const normalized = posix.normalize(path)
   return SAFE_PATHS.has(normalized)
 }
 

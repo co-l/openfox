@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { join } from 'node:path'
 import { loadWorktreeConfig, saveWorktreeConfig } from './worktree-config.js'
 
 vi.mock('node:fs/promises', () => ({
@@ -58,7 +59,7 @@ describe('saveWorktreeConfig', () => {
 
     expect(mkdir).toHaveBeenCalledWith(expect.stringContaining('.openfox'), { recursive: true })
     expect(writeFile).toHaveBeenCalledWith(
-      expect.stringContaining('.openfox/worktree.json'),
+      expect.stringContaining(join('.openfox', 'worktree.json')),
       JSON.stringify({ ignoredAssets: 'copy', overrides: { node_modules: 'symlink' } }, null, 2) + '\n',
       'utf-8',
     )

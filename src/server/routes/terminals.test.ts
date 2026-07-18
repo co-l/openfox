@@ -21,9 +21,9 @@ describe('Terminal Routes', () => {
     })
   })
 
-  afterEach(() => {
+  afterEach(async () => {
     server?.close()
-    terminalManager.killAll()
+    await terminalManager.killAll()
   })
 
   async function json<T>(res: Response): Promise<T> {

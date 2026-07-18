@@ -4,9 +4,23 @@
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { mkdtemp, rm, writeFile, mkdir, realpath, readFile, symlink } from 'node:fs/promises'
+import { symlinkSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import type { SkillDefinition } from './types.js'
+
+/** Symlink creation needs a privilege/Developer Mode on Windows — probe once. */
+const CAN_SYMLINK = (() => {
+  if (process.platform !== 'win32') return true
+  const probe = join(tmpdir(), `skill-symlink-probe-${process.pid}`)
+  try {
+    symlinkSync('probe-target', probe, 'file')
+    rmSync(probe)
+    return true
+  } catch {
+    return false
+  }
+})()
 
 vi.mock('../db/settings.js', () => {
   const store = new Map<string, string>()
@@ -348,7 +362,7 @@ Custom prompt.
     expect(skills.find((skill) => skill.metadata.id === 'tilde-skill')).toMatchObject({ source: 'selected' })
   })
 
-  it('deduplicates a physical package reached through a directory symlink', async () => {
+  it.skipIf(!CAN_SYMLINK)('deduplicates a physical package reached through a directory symlink', async () => {
     const homeDir = join(tempDir, 'home')
     const globalRoot = join(homeDir, '.agents', 'skills')
     const selectedLink = join(tempDir, 'selected-link')
