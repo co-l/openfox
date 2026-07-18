@@ -1,7 +1,16 @@
 import type { LLMMessage } from './types.js'
 import type { Attachment } from '../../shared/types.js'
-import { extractPdfText } from '../tools/pdf-utils.js'
+import { extractPdfContent, extractPdfText } from '../tools/pdf-utils.js'
 import { TEXT_MIME_EXACT, TEXT_MIME_PREFIXES } from '../../shared/constants.js'
+import { contentHash, cacheSet } from '../utils/cache.js'
+
+export type ContentPart = { type: 'text'; text: string } | { type: 'image_url'; image_url: { url: string } }
+
+const pdfBlockCache = new Map<string, ContentPart[]>()
+
+export function clearPdfBlockCache(): void {
+  pdfBlockCache.clear()
+}
 
 function decodeDataUrlToText(data: string): string {
   const match = data.match(/^data:.*?;base64,(.+)$/)
@@ -25,6 +34,37 @@ export async function extractPdfFromDataUrl(data: string, filename: string): Pro
   return `[PDF: ${filename}] (could not extract text)`
 }
 
+export async function extractPdfBlocksFromDataUrl(data: string, filename: string): Promise<ContentPart[]> {
+  const cacheKey = contentHash(data)
+  const cached = pdfBlockCache.get(cacheKey)
+  if (cached) return cached
+
+  const base64Match = data.match(/^data:.*?;base64,(.+)$/)
+  if (!base64Match?.[1]) {
+    const fallback: ContentPart[] = [{ type: 'text', text: `[PDF: ${filename}] (could not extract content)` }]
+    cacheSet(pdfBlockCache, cacheKey, fallback)
+    return fallback
+  }
+  try {
+    const buffer = Buffer.from(base64Match[1], 'base64')
+    const result = await extractPdfContent(buffer)
+    const parts: ContentPart[] = [{ type: 'text', text: `[PDF: ${filename}]` }]
+    for (const block of result.blocks) {
+      if (block.type === 'text' && block.content) {
+        parts.push({ type: 'text', text: block.content })
+      } else if (block.type === 'image' && block.dataUrl) {
+        parts.push({ type: 'image_url', image_url: { url: block.dataUrl } })
+      }
+    }
+    cacheSet(pdfBlockCache, cacheKey, parts)
+    return parts
+  } catch {
+    const fallback: ContentPart[] = [{ type: 'text', text: `[PDF: ${filename}] (could not extract content)` }]
+    cacheSet(pdfBlockCache, cacheKey, fallback)
+    return fallback
+  }
+}
+
 async function resolveAttachmentToText(attachment: Attachment, supportsVision: boolean): Promise<string> {
   const mimeType = attachment.mimeType
 
@@ -34,6 +74,9 @@ async function resolveAttachmentToText(attachment: Attachment, supportsVision: b
   }
 
   if (mimeType === 'application/pdf') {
+    if (attachment.pdfContent) {
+      return attachment.pdfContent
+    }
     return extractPdfFromDataUrl(attachment.data, attachment.filename || 'document.pdf')
   }
 
@@ -48,6 +91,9 @@ async function resolveAttachmentToText(attachment: Attachment, supportsVision: b
   return `[Image: ${attachment.filename || 'image'}] (vision not supported, cannot describe)`
 }
 
+const isVisionAttachment = (attachment: Attachment): boolean =>
+  attachment.mimeType.startsWith('image/') || attachment.mimeType === 'application/pdf'
+
 export async function resolveAttachmentsInMessages(
   messages: LLMMessage[],
   supportsVision: boolean,
@@ -59,7 +105,7 @@ export async function resolveAttachmentsInMessages(
       continue
     }
 
-    if (supportsVision && msg.attachments.every((a) => a.mimeType.startsWith('image/'))) {
+    if (supportsVision && msg.attachments.every(isVisionAttachment)) {
       result.push(msg)
       continue
     }
@@ -69,7 +115,7 @@ export async function resolveAttachmentsInMessages(
     const remainingImageAttachments: Attachment[] = []
 
     for (const attachment of msg.attachments) {
-      if (supportsVision && attachment.mimeType.startsWith('image/')) {
+      if (supportsVision && isVisionAttachment(attachment)) {
         remainingImageAttachments.push(attachment)
         continue
       }

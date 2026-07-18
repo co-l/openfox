@@ -11,6 +11,53 @@ vi.mock('../llm/vision-fallback.js', () => ({
   VisionModelConfig: {},
 }))
 
+vi.mock('../tools/pdf-utils.js', () => {
+  const textOnlyResult = {
+    blocks: [{ type: 'text', content: '[Page 1/1]\nHello World' }],
+    pageCount: 1,
+    title: null,
+    author: null,
+    imageCount: 0,
+    imageLimitReached: false,
+  }
+
+  const imagePdfResult = {
+    blocks: [
+      { type: 'text', content: '[Page 1/1]\nSome text before' },
+      { type: 'image', dataUrl: 'data:image/png;base64,img1' },
+      { type: 'image', dataUrl: 'data:image/png;base64,img2' },
+      { type: 'text', content: '[Page 1/1]\nSome text after' },
+    ],
+    pageCount: 1,
+    title: null,
+    author: null,
+    imageCount: 2,
+    imageLimitReached: false,
+  }
+
+  const multiPageResult = {
+    blocks: [
+      { type: 'text', content: '[Page 1/2]\nPage 1 text' },
+      { type: 'image', dataUrl: 'data:image/png;base64,page1_img' },
+      { type: 'text', content: '[Page 2/2]\nPage 2 text' },
+    ],
+    pageCount: 2,
+    title: null,
+    author: null,
+    imageCount: 1,
+    imageLimitReached: false,
+  }
+
+  return {
+    extractPdfContent: vi.fn().mockImplementation((buffer: Buffer) => {
+      const dataStr = Buffer.isBuffer(buffer) ? buffer.toString('latin1') : String(buffer)
+      if (dataStr.includes('image-pdf')) return imagePdfResult
+      if (dataStr.includes('multi-page')) return multiPageResult
+      return textOnlyResult
+    }),
+  }
+})
+
 function makeEvent(
   overrides: Partial<StoredEvent> & { type: StoredEvent['type']; data: StoredEvent['data'] },
 ): StoredEvent {
@@ -804,5 +851,386 @@ describe('processContextImages', () => {
       type: 'vision_fallback.done',
       data: { messageId: 'msg-1', attachmentId: 'att-1', description: expect.any(String) },
     })
+  })
+
+  // PDF test helpers
+  function makePdfDataUrl(content: string): string {
+    return `data:application/pdf;base64,${Buffer.from(content).toString('base64')}`
+  }
+
+  const textOnlyPdfAttachment: Attachment = {
+    id: 'pdf-text-1',
+    filename: 'report.pdf',
+    mimeType: 'application/pdf',
+    size: 50,
+    data: makePdfDataUrl('text-pdf content'),
+  }
+
+  const imagePdfAttachment: Attachment = {
+    id: 'pdf-img-1',
+    filename: 'image_doc.pdf',
+    mimeType: 'application/pdf',
+    size: 100,
+    data: makePdfDataUrl('some image-pdf document'),
+  }
+
+  it('sets pdfContent on text-only PDF attachment without calling vision fallback', async () => {
+    const { describeImageFromDataUrl } = await import('../llm/vision-fallback.js')
+
+    const events: StoredEvent[] = [
+      makeEvent({
+        seq: 1,
+        type: 'message.start',
+        data: {
+          messageId: 'msg-pdf-1',
+          role: 'user',
+          content: 'Read this PDF',
+          attachments: [textOnlyPdfAttachment],
+          contextWindowId: 'window-1',
+        },
+      }),
+      makeEvent({ seq: 2, type: 'message.done', data: { messageId: 'msg-pdf-1' } }),
+    ]
+
+    const result = await processContextImages(events, {
+      modelSupportsVision: false,
+      visionModel: { baseUrl: 'http://localhost:11434', model: 'llava', timeout: 30000, backend: 'ollama' },
+    })
+
+    expect(describeImageFromDataUrl).not.toHaveBeenCalled()
+
+    const msgStart = result.events[0]!
+    expect(msgStart.type).toBe('message.start')
+    const data = msgStart.data as Extract<TurnEvent, { type: 'message.start' }>['data']
+    expect(data.attachments).toHaveLength(1)
+    const att = data.attachments![0]!
+    expect(att.pdfContent).toBeDefined()
+    expect(att.pdfContent).toContain('Hello World')
+    expect(att.data).toBe(textOnlyPdfAttachment.data)
+    expect(att.description).toBeUndefined()
+  })
+
+  it('describes embedded PDF images via vision fallback and sets pdfContent', async () => {
+    const { describeImageFromDataUrl } = await import('../llm/vision-fallback.js')
+
+    const events: StoredEvent[] = [
+      makeEvent({
+        seq: 1,
+        type: 'message.start',
+        data: {
+          messageId: 'msg-pdf-img-1',
+          role: 'user',
+          content: 'Describe this PDF',
+          attachments: [imagePdfAttachment],
+          contextWindowId: 'window-1',
+        },
+      }),
+      makeEvent({ seq: 2, type: 'message.done', data: { messageId: 'msg-pdf-img-1' } }),
+    ]
+
+    const result = await processContextImages(events, {
+      modelSupportsVision: false,
+      visionModel: { baseUrl: 'http://localhost:11434', model: 'llava', timeout: 30000, backend: 'ollama' },
+    })
+
+    // Each embedded image gets described individually
+    expect(describeImageFromDataUrl).toHaveBeenCalledTimes(2)
+    expect(describeImageFromDataUrl).toHaveBeenCalledWith(
+      'data:image/png;base64,img1',
+      expect.any(Object),
+      expect.any(Object),
+    )
+    expect(describeImageFromDataUrl).toHaveBeenCalledWith(
+      'data:image/png;base64,img2',
+      expect.any(Object),
+      expect.any(Object),
+    )
+
+    const msgStart = result.events[0]!
+    const data = msgStart.data as Extract<TurnEvent, { type: 'message.start' }>['data']
+    const att = data.attachments![0]!
+    expect(att.pdfContent).toBeDefined()
+    expect(att.pdfContent).toContain('[PDF: image_doc.pdf]')
+    expect(att.pdfContent).toContain('Some text before')
+    expect(att.pdfContent).toContain('Some text after')
+    expect(att.pdfContent).toContain('[Image: A screenshot showing a terminal with error messages]')
+    expect(att.pdfContent).toContain('[Image: A screenshot showing a terminal with error messages]')
+    // Original data preserved
+    expect(att.data).toBe(imagePdfAttachment.data)
+  })
+
+  it('preserves text/image ordering in pdfContent', async () => {
+    const events: StoredEvent[] = [
+      makeEvent({
+        seq: 1,
+        type: 'message.start',
+        data: {
+          messageId: 'msg-pdf-order',
+          role: 'user',
+          content: '',
+          attachments: [imagePdfAttachment],
+          contextWindowId: 'window-1',
+        },
+      }),
+      makeEvent({ seq: 2, type: 'message.done', data: { messageId: 'msg-pdf-order' } }),
+    ]
+
+    const result = await processContextImages(events, {
+      modelSupportsVision: false,
+      visionModel: { baseUrl: 'http://localhost:11434', model: 'llava', timeout: 30000, backend: 'ollama' },
+    })
+
+    const data = result.events[0]!.data as Extract<TurnEvent, { type: 'message.start' }>['data']
+    const pdfContent = data.attachments![0]!.pdfContent!
+    expect(pdfContent).toBeDefined()
+
+    const textBeforeIdx = pdfContent.indexOf('Some text before')
+    const img1Idx = pdfContent.indexOf('[Image:')
+    const textAfterIdx = pdfContent.indexOf('Some text after')
+
+    expect(textBeforeIdx).toBeLessThan(img1Idx)
+    // Last [Image: should be before the text after check, but there are 2 images
+    // so we check that text_before < image1 < text_after
+    expect(img1Idx).toBeLessThan(textAfterIdx)
+  })
+
+  it('reuses cached pdfContent on repeated processing', async () => {
+    const { describeImageFromDataUrl } = await import('../llm/vision-fallback.js')
+
+    const makeEventWithAtt = (seq: number, msgId: string, content: string, att: Attachment): StoredEvent =>
+      makeEvent({
+        seq,
+        type: 'message.start',
+        data: { messageId: msgId, role: 'user', content, attachments: [att], contextWindowId: 'window-1' },
+      })
+
+    const events1: StoredEvent[] = [
+      makeEventWithAtt(1, 'm1', 'first', imagePdfAttachment),
+      makeEvent({ seq: 2, type: 'message.done', data: { messageId: 'm1' } }),
+    ]
+
+    await processContextImages(events1, {
+      modelSupportsVision: false,
+      visionModel: { baseUrl: 'http://localhost:11434', model: 'llava', timeout: 30000, backend: 'ollama' },
+    })
+
+    expect(describeImageFromDataUrl).toHaveBeenCalledTimes(2)
+
+    const events2: StoredEvent[] = [
+      makeEventWithAtt(3, 'm2', 'again', imagePdfAttachment),
+      makeEvent({ seq: 4, type: 'message.done', data: { messageId: 'm2' } }),
+    ]
+
+    const result2 = await processContextImages(events2, {
+      modelSupportsVision: false,
+      visionModel: { baseUrl: 'http://localhost:11434', model: 'llava', timeout: 30000, backend: 'ollama' },
+    })
+
+    // No additional vision calls — cached
+    expect(describeImageFromDataUrl).toHaveBeenCalledTimes(2)
+
+    const data2 = result2.events[0]!.data as Extract<TurnEvent, { type: 'message.start' }>['data']
+    expect(data2.attachments![0]!.pdfContent).toBeDefined()
+  })
+
+  it('skips PDF with existing pdfContent (previously persisted)', async () => {
+    const { describeImageFromDataUrl } = await import('../llm/vision-fallback.js')
+
+    const attWithPdfContent: Attachment = {
+      ...imagePdfAttachment,
+      pdfContent: '[PDF: image_doc.pdf]\n\nAlready enriched content',
+    }
+
+    const events: StoredEvent[] = [
+      makeEvent({
+        seq: 1,
+        type: 'message.start',
+        data: {
+          messageId: 'm-persisted',
+          role: 'user',
+          content: '',
+          attachments: [attWithPdfContent],
+          contextWindowId: 'window-1',
+        },
+      }),
+      makeEvent({ seq: 2, type: 'message.done', data: { messageId: 'm-persisted' } }),
+    ]
+
+    const result = await processContextImages(events, {
+      modelSupportsVision: false,
+      visionModel: { baseUrl: 'http://localhost:11434', model: 'llava', timeout: 30000, backend: 'ollama' },
+    })
+
+    expect(describeImageFromDataUrl).not.toHaveBeenCalled()
+    const data = result.events[0]!.data as Extract<TurnEvent, { type: 'message.start' }>['data']
+    expect(data.attachments![0]!.pdfContent).toContain('Already enriched content')
+  })
+
+  it('handles PDF attachments in turn.snapshot events', async () => {
+    const { describeImageFromDataUrl } = await import('../llm/vision-fallback.js')
+
+    const snapshotMsg: SnapshotMessage = {
+      id: 'snap-msg-1',
+      role: 'user',
+      content: 'PDF in snapshot',
+      timestamp: Date.now(),
+      attachments: [imagePdfAttachment],
+      contextWindowId: 'window-1',
+    }
+
+    const events: StoredEvent[] = [
+      makeEvent({
+        seq: 1,
+        type: 'turn.snapshot',
+        data: {
+          mode: 'planner',
+          phase: 'plan',
+          isRunning: false,
+          messages: [snapshotMsg],
+          criteria: [],
+          metadataEntries: {},
+          contextState: {
+            currentTokens: 0,
+            maxTokens: 200000,
+            compactionCount: 0,
+            dangerZone: false,
+            canCompact: true,
+            dynamicContextChanged: false,
+          },
+          currentContextWindowId: 'window-1',
+          todos: [],
+          snapshotSeq: 1,
+          snapshotAt: Date.now(),
+        } satisfies SessionSnapshot,
+      }),
+    ]
+
+    const result = await processContextImages(events, {
+      modelSupportsVision: false,
+      visionModel: { baseUrl: 'http://localhost:11434', model: 'llava', timeout: 30000, backend: 'ollama' },
+    })
+
+    expect(describeImageFromDataUrl).toHaveBeenCalledTimes(2)
+    const snapshotEvent = result.events[0]!
+    expect(snapshotEvent.type).toBe('turn.snapshot')
+    const snapshotData = snapshotEvent.data as SessionSnapshot
+    const msg = snapshotData.messages[0]!
+    expect(msg.attachments![0]!.pdfContent).toBeDefined()
+    expect(msg.attachments![0]!.pdfContent).toContain('[PDF: image_doc.pdf]')
+    expect(msg.attachments![0]!.data).toBe(imagePdfAttachment.data)
+  })
+
+  it('emits vision_fallback events for each PDF embedded image', async () => {
+    const onEvent = vi.fn()
+
+    const events: StoredEvent[] = [
+      makeEvent({
+        seq: 1,
+        type: 'message.start',
+        data: {
+          messageId: 'msg-events',
+          role: 'user',
+          content: '',
+          attachments: [imagePdfAttachment],
+          contextWindowId: 'window-1',
+        },
+      }),
+      makeEvent({ seq: 2, type: 'message.done', data: { messageId: 'msg-events' } }),
+    ]
+
+    await processContextImages(events, {
+      modelSupportsVision: false,
+      visionModel: { baseUrl: 'http://localhost:11434', model: 'llava', timeout: 30000, backend: 'ollama' },
+      onEvent,
+    })
+
+    expect(onEvent).toHaveBeenCalledWith({
+      type: 'vision_fallback.start',
+      data: { messageId: 'msg-events', attachmentId: 'pdf-img-1/image-0' },
+    })
+    expect(onEvent).toHaveBeenCalledWith({
+      type: 'vision_fallback.done',
+      data: { messageId: 'msg-events', attachmentId: 'pdf-img-1/image-0', description: expect.any(String) },
+    })
+    expect(onEvent).toHaveBeenCalledWith({
+      type: 'vision_fallback.start',
+      data: { messageId: 'msg-events', attachmentId: 'pdf-img-1/image-1' },
+    })
+    expect(onEvent).toHaveBeenCalledWith({
+      type: 'vision_fallback.done',
+      data: { messageId: 'msg-events', attachmentId: 'pdf-img-1/image-1', description: expect.any(String) },
+    })
+  })
+
+  it('calls persistEvent when enriching PDF attachment', async () => {
+    const persistEvent = vi.fn()
+
+    const events: StoredEvent[] = [
+      makeEvent({
+        seq: 10,
+        type: 'message.start',
+        data: {
+          messageId: 'msg-persist',
+          role: 'user',
+          content: '',
+          attachments: [imagePdfAttachment],
+          contextWindowId: 'window-1',
+        },
+      }),
+      makeEvent({ seq: 11, type: 'message.done', data: { messageId: 'msg-persist' } }),
+    ]
+
+    await processContextImages(events, {
+      modelSupportsVision: false,
+      visionModel: { baseUrl: 'http://localhost:11434', model: 'llava', timeout: 30000, backend: 'ollama' },
+      persistEvent,
+    })
+
+    expect(persistEvent).toHaveBeenCalledTimes(1)
+    expect(persistEvent).toHaveBeenCalledWith(
+      'test-session',
+      10,
+      expect.objectContaining({
+        messageId: 'msg-persist',
+        attachments: [
+          expect.objectContaining({
+            id: 'pdf-img-1',
+            pdfContent: expect.any(String),
+          }),
+        ],
+      }),
+    )
+  })
+
+  it('does not call persistEvent when PDF already has pdfContent', async () => {
+    const persistEvent = vi.fn()
+
+    const attWithContent: Attachment = {
+      ...imagePdfAttachment,
+      pdfContent: 'Already enriched',
+    }
+
+    const events: StoredEvent[] = [
+      makeEvent({
+        seq: 12,
+        type: 'message.start',
+        data: {
+          messageId: 'msg-no-persist',
+          role: 'user',
+          content: '',
+          attachments: [attWithContent],
+          contextWindowId: 'window-1',
+        },
+      }),
+      makeEvent({ seq: 13, type: 'message.done', data: { messageId: 'msg-no-persist' } }),
+    ]
+
+    await processContextImages(events, {
+      modelSupportsVision: false,
+      visionModel: { baseUrl: 'http://localhost:11434', model: 'llava', timeout: 30000, backend: 'ollama' },
+      persistEvent,
+    })
+
+    expect(persistEvent).not.toHaveBeenCalled()
   })
 })

@@ -208,7 +208,7 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
 
   // Middleware
   app.use(cors())
-  app.use(express.json({ limit: '10mb' }))
+  app.use(express.json({ limit: '75mb' }))
 
   // Auth middleware for all /api routes (except /api/health and /api/auth/login)
   const authMiddleware = async (req: express.Request, res: express.Response, next: express.NextFunction) => {
