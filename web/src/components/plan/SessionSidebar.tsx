@@ -1,8 +1,9 @@
-import { useState, useCallback } from 'react'
+import { useState } from 'react'
 import { useSessionStats } from '../../hooks/useSessionStats'
 import { useGitStatus } from '../../hooks/useGitStatus'
 import { useConfigStore } from '../../stores/config'
 import { useSessionStore } from '../../stores/session'
+import { useUpdateStore } from '../../stores/update'
 import { authFetch } from '../../lib/api'
 import { formatTime, formatSpeed } from '../../lib/format-stats'
 import { formatMetadataKeyLabel } from '../../lib/metadata-keys'
@@ -25,8 +26,6 @@ interface SessionSidebarProps {
 
 export function SessionSidebar({ messages, workdir }: SessionSidebarProps) {
   const [showStatsModal, setShowStatsModal] = useState(false)
-  const [checkingUpdate, setCheckingUpdate] = useState(false)
-  const [updateAvailable, setUpdateAvailable] = useState(false)
   const [showUpdateModal, setShowUpdateModal] = useState(false)
   const [showBranchModal, setShowBranchModal] = useState(false)
   const [showWorkspaceModal, setShowWorkspaceModal] = useState(false)
@@ -38,20 +37,11 @@ export function SessionSidebar({ messages, workdir }: SessionSidebarProps) {
 
   const workspaceName = session?.workspace ? (session.workspace.split('/').pop() ?? null) : null
 
-  const checkForUpdate = useCallback(async (forceRefresh = false) => {
-    setCheckingUpdate(true)
-    try {
-      const res = await fetch(`/api/auto-update/check${forceRefresh ? '?force=true' : ''}`)
-      if (res.ok) {
-        const data = (await res.json()) as { isUpdateAvailable: boolean; current: string; latest: string }
-        setUpdateAvailable(data.isUpdateAvailable)
-      }
-    } catch {
-      // silently fail
-    } finally {
-      setCheckingUpdate(false)
-    }
-  }, [])
+  const updateStatus = useUpdateStore((state) => state.status)
+  const checkForUpdate = useUpdateStore((state) => state.check)
+  // "Up to date" is only meaningful as a response to a manual check; the
+  // background check on load should stay silent unless an update is available.
+  const [manuallyChecked, setManuallyChecked] = useState(false)
 
   return (
     <div className="flex flex-col h-full">
@@ -165,19 +155,24 @@ export function SessionSidebar({ messages, workdir }: SessionSidebarProps) {
             {' - '}
             <span className="font-mono">v{version}</span>
             <button
-              onClick={() => checkForUpdate(true)}
-              disabled={checkingUpdate}
+              onClick={() => {
+                setManuallyChecked(true)
+                checkForUpdate(true)
+              }}
+              disabled={updateStatus === 'checking'}
               className="p-0.5 rounded hover:bg-bg-tertiary text-text-muted hover:text-text-primary transition-colors disabled:opacity-50"
               title="Check for updates"
             >
-              <ReloadIcon className={`w-3 h-3 ${checkingUpdate ? 'animate-spin' : ''}`} />
+              <ReloadIcon className={`w-3 h-3 ${updateStatus === 'checking' ? 'animate-spin' : ''}`} />
             </button>
           </div>
-          {updateAvailable && (
+          {updateStatus === 'available' && (
             <button onClick={() => setShowUpdateModal(true)} className="text-accent-primary hover:underline mt-1">
               Update OpenFox →
             </button>
           )}
+          {manuallyChecked && updateStatus === 'upToDate' && <div className="mt-1">Up to date</div>}
+          {updateStatus === 'error' && <div className="mt-1">Update check failed</div>}
         </div>
       )}
 

@@ -77,12 +77,14 @@ Handoff format:
 > **Metrics:** Tests X → Y (+Z), Typecheck ✅, Lint ✅
 >
 > **What I fixed:**
-> - *bullet list of specific changes*
-> - *why each matters*
+>
+> - _bullet list of specific changes_
+> - _why each matters_
 >
 > **What to test:**
-> - *specific things to click/look for*
-> - *edge cases*"
+>
+> - _specific things to click/look for_
+> - _edge cases_"
 
 The user opens the link and kicks the tires. Loop back to Phase 3 if adjustments are needed.
 

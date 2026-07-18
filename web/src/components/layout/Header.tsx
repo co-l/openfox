@@ -5,6 +5,7 @@ import { useSessionStore } from '../../stores/session'
 import { useProjectStore } from '../../stores/project'
 import { useConfigStore } from '../../stores/config'
 import { useTerminalStore } from '../../stores/terminal'
+import { useUpdateStore } from '../../stores/update'
 import { useKeybindings, useBinding } from '../../hooks/useKeybindings'
 import { GlobalSettingsModal } from '../settings/GlobalSettingsModal'
 import { TerminalDrawer } from '../terminal/TerminalDrawer'
@@ -38,6 +39,14 @@ export function Header({ onMenuClick, onCriteriaToggle }: HeaderProps) {
   const stopAutoRefresh = useConfigStore((state) => state.stopAutoRefresh)
   const setTerminalOpen = useTerminalStore((state) => state.setOpen)
   const terminalIsOpen = useTerminalStore((state) => state.isOpen)
+  const updateAvailable = useUpdateStore((state) => state.status === 'available')
+  const checkForUpdate = useUpdateStore((state) => state.check)
+
+  useEffect(() => {
+    if (useUpdateStore.getState().status === 'idle') {
+      checkForUpdate()
+    }
+  }, [checkForUpdate])
 
   useEffect(() => {
     const handler = () => setSessionDropdownOpen(true)
@@ -146,10 +155,11 @@ export function Header({ onMenuClick, onCriteriaToggle }: HeaderProps) {
 
         <button
           onClick={() => setShowSettings(true)}
-          className="p-2.5 rounded hover:bg-bg-tertiary text-text-muted hover:text-text-primary transition-colors"
-          title="Settings"
+          className="relative p-2.5 rounded hover:bg-bg-tertiary text-text-muted hover:text-text-primary transition-colors"
+          title={updateAvailable ? 'Settings — update available' : 'Settings'}
         >
           <SettingsIcon />
+          {updateAvailable && <span className="absolute top-1 right-1 w-1.5 h-1.5 rounded-full bg-accent-primary" />}
         </button>
 
         <button
