@@ -118,14 +118,12 @@ function probeInstalledApp(manifestUrl: string): { appId: string; profileId: str
   return null
 }
 
-function isServerReachable(port: number): boolean {
+export async function isServerReachable(port: number): Promise<boolean> {
   try {
-    const result = execSync(`curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:${port}/manifest.webmanifest`, {
-      encoding: 'utf-8',
-      timeout: 5000,
-      windowsHide: true,
-    }) as string
-    return result.trim() === '200'
+    const res = await fetch(`http://127.0.0.1:${port}/manifest.webmanifest`, {
+      signal: AbortSignal.timeout(5000),
+    })
+    return res.ok
   } catch {
     return false
   }
@@ -204,7 +202,7 @@ async function pwaInstall(mode: Mode): Promise<void> {
   }
 
   const port = mode === 'development' ? 10469 : 10369
-  if (!isServerReachable(port)) {
+  if (!(await isServerReachable(port))) {
     log.error(`OpenFox server is not reachable on port ${port}.`)
     console.log(`\nStart OpenFox first:\n\n  openfox\n`)
     process.exit(1)
