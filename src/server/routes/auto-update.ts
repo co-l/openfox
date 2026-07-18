@@ -2,6 +2,7 @@ import { Router } from 'express'
 import type { Request } from 'express'
 import { spawn } from 'node:child_process'
 import { VERSION } from '../../constants.js'
+import { logger } from '../utils/logger.js'
 
 export interface AutoUpdateRoutesOptions {
   requireAuth?: (req: Request) => Promise<boolean>
@@ -50,34 +51,53 @@ function isDevMode(): boolean {
   return process.env['NODE_ENV'] === 'development'
 }
 
-async function getLatestDevelopVersion(): Promise<string> {
+async function getRemote(): Promise<string> {
   return new Promise<string>((resolve) => {
-    const fetchChild = spawn('git', ['fetch', 'upstream', 'develop', '--no-tags'], {
+    const child = spawn('git', ['remote'], {
+      stdio: ['ignore', 'pipe', 'pipe'],
+      windowsHide: true,
+    })
+    let output = ''
+    child.stdout?.on('data', (data) => {
+      output += data.toString()
+    })
+    child.on('close', () => {
+      const remotes = output
+        .trim()
+        .split('\n')
+        .map((r) => r.trim())
+        .filter(Boolean)
+      if (remotes.includes('upstream')) resolve('upstream')
+      else if (remotes.includes('origin')) resolve('origin')
+      else resolve('origin')
+    })
+    child.on('error', () => resolve('origin'))
+  })
+}
+
+async function getLatestDevelopVersion(): Promise<string> {
+  const remote = await getRemote()
+
+  return new Promise<string>((resolve) => {
+    const fetchChild = spawn('git', ['fetch', remote, 'develop', '--no-tags'], {
       stdio: ['ignore', 'pipe', 'pipe'],
       windowsHide: true,
     })
 
     fetchChild.on('error', (err) => {
-      console.error('[auto-update] Git fetch error:', err.message)
+      logger.error('[auto-update] Git fetch error', { error: err.message })
       resolve('unknown')
     })
 
     fetchChild.on('close', (code) => {
       if (code !== 0) {
-        console.warn('[auto-update] Git fetch failed, trying without fetch...')
+        logger.warn('[auto-update] Git fetch failed, trying local tags...')
       }
 
-      const tagChild = spawn(
-        'bash',
-        [
-          '-c',
-          'git describe --tags --abbrev=0 upstream/develop 2>/dev/null || git describe --tags --abbrev=0 develop 2>/dev/null || echo unknown',
-        ],
-        {
-          stdio: ['ignore', 'pipe', 'pipe'],
-          windowsHide: true,
-        },
-      )
+      const tagChild = spawn('git', ['describe', '--tags', '--abbrev=0', `${remote}/develop`], {
+        stdio: ['ignore', 'pipe', 'pipe'],
+        windowsHide: true,
+      })
 
       let tagOutput = ''
       tagChild.stdout?.on('data', (data) => {
@@ -88,13 +108,29 @@ async function getLatestDevelopVersion(): Promise<string> {
         if (tagCode === 0 && tagOutput.trim()) {
           resolve(tagOutput.trim())
         } else {
-          console.warn('[auto-update] No tags found on develop branch')
-          resolve('unknown')
+          // Fallback: try local develop branch
+          const fallbackChild = spawn('git', ['describe', '--tags', '--abbrev=0', 'develop'], {
+            stdio: ['ignore', 'pipe', 'pipe'],
+            windowsHide: true,
+          })
+          let fallbackOutput = ''
+          fallbackChild.stdout?.on('data', (data) => {
+            fallbackOutput += data.toString()
+          })
+          fallbackChild.on('close', (fallbackCode) => {
+            if (fallbackCode === 0 && fallbackOutput.trim()) {
+              resolve(fallbackOutput.trim())
+            } else {
+              logger.warn('[auto-update] No tags found on develop branch')
+              resolve('unknown')
+            }
+          })
+          fallbackChild.on('error', () => resolve('unknown'))
         }
       })
 
       tagChild.on('error', (err) => {
-        console.error('[auto-update] Git tag error:', err.message)
+        logger.error('[auto-update] Git tag error', { error: err.message })
         resolve('unknown')
       })
     })
@@ -157,7 +193,7 @@ export function createAutoUpdateRoutes(options: AutoUpdateRoutesOptions = {}): R
 
       res.json({ current, latest, isUpdateAvailable, isService })
     } catch (err) {
-      console.error('[auto-update] Error in version check:', err instanceof Error ? err.message : err)
+      logger.error('[auto-update] Error in version check', { error: err instanceof Error ? err.message : String(err) })
       res.json({ current, latest: current, isUpdateAvailable: false, isService })
     }
   })
