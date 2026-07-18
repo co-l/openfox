@@ -164,7 +164,7 @@ export function ConnectLLMStep({ onNext }: ConnectLLMStepProps) {
                 key={provider.id}
                 className="flex items-center justify-between bg-bg-secondary rounded-lg p-4 border border-border"
               >
-                <div className="flex-1">
+                <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2">
                     <span className="px-2 py-0.5 bg-accent-primary/25 text-accent-primary rounded text-xs font-medium">
                       {getBackendDisplayName(provider.backend)}
@@ -176,7 +176,7 @@ export function ConnectLLMStep({ onNext }: ConnectLLMStepProps) {
                       {provider.isLocal ? 'local' : 'api'}
                     </span>
                   </div>
-                  <p className="text-text-muted text-sm mt-1">{provider.url}</p>
+                  <p className="text-text-muted text-sm mt-1 truncate">{provider.url}</p>
                   {provider.model && <p className="text-text-secondary text-xs mt-0.5">Model: {provider.model}</p>}
                 </div>
                 <div className="flex items-center gap-1">
