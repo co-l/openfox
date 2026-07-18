@@ -34,7 +34,13 @@ import {
   type DangerLevel,
 } from '../db/sessions.js'
 import { getProject } from '../db/projects.js'
-import { ensureWorkspace, getGitBranch, workspaceExists, getWorkspacesDir } from '../git/workspace.js'
+import {
+  ensureWorkspace,
+  getGitBranch,
+  workspaceExists,
+  getWorkspacesDir,
+  deleteWorkspace as deleteWorkspaceDir,
+} from '../git/workspace.js'
 import { resolve } from 'node:path'
 import { SessionNotFoundError } from '../utils/errors.js'
 import { logger } from '../utils/logger.js'
@@ -1048,6 +1054,29 @@ export class SessionManager {
       },
     })
 
+    const updated = this.requireSession(sessionId)
+    this.emit({ type: 'session_updated', session: updated })
+    return updated
+  }
+
+  /**
+   * Delete a workspace by name. If the session is currently in that workspace,
+   * switches to original first. Throws if target is "original".
+   */
+  async deleteWorkspace(sessionId: string, target: string): Promise<Session> {
+    if (target === 'original') throw new Error('Cannot delete the original workspace')
+
+    const session = this.requireSession(sessionId)
+    const project = getProject(session.projectId)
+    if (!project) throw new Error(`Project not found: ${session.projectId}`)
+
+    // If currently in the workspace being deleted, switch to original first
+    const currentWsName = session.workspace?.split('/').pop()
+    if (currentWsName === target) {
+      await this.switchWorkspace(sessionId, 'original')
+    }
+
+    await deleteWorkspaceDir(project.name, target)
     const updated = this.requireSession(sessionId)
     this.emit({ type: 'session_updated', session: updated })
     return updated

@@ -504,6 +504,22 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
     }
   })
 
+  /** Delete a workspace */
+  app.post('/api/sessions/:id/delete-workspace', async (req, res) => {
+    const session = sessionManager.getSession(req.params.id)
+    if (!session) return res.status(404).json({ error: 'Session not found' })
+
+    const { target } = req.body
+    if (!target || typeof target !== 'string') return res.status(400).json({ error: 'target is required' })
+
+    try {
+      const updated = await sessionManager.deleteWorkspace(req.params.id, target)
+      res.json({ session: updated })
+    } catch (err) {
+      res.status(400).json({ error: err instanceof Error ? err.message : 'Failed to delete workspace' })
+    }
+  })
+
   app.get('/api/sessions/:id', async (req, res) => {
     const { getEventStore } = await import('./events/index.js')
     const { buildMessagesFromStoredEvents } = await import('./events/folding.js')

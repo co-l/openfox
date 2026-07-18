@@ -1,13 +1,11 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 
-const mockListBranches = vi.fn()
 const mockGetGitBranch = vi.fn()
 const mockSwitchWorkspace = vi.fn()
+const mockDeleteWorkspace = vi.fn()
 const mockGetSession = vi.fn()
-const mockGetProject = vi.fn()
 
 vi.mock('../git/workspace.js', () => ({
-  listBranches: (...args: unknown[]) => mockListBranches(...args),
   getGitBranch: (...args: unknown[]) => mockGetGitBranch(...args),
 }))
 
@@ -16,8 +14,8 @@ import { workspaceTool } from './workspace.js'
 function makeContext(overrides: Record<string, unknown> = {}) {
   const sessionManager = {
     getSession: mockGetSession,
-    getProject: mockGetProject,
     switchWorkspace: mockSwitchWorkspace,
+    deleteWorkspace: mockDeleteWorkspace,
   }
   return {
     workdir: '/tmp/project',
@@ -32,24 +30,6 @@ beforeEach(() => {
 })
 
 describe('workspaceTool', () => {
-  describe('list_branches', () => {
-    it('returns branch list', async () => {
-      mockGetSession.mockReturnValue({ projectId: 'p1' })
-      mockGetProject.mockReturnValue({ workdir: '/tmp/project' })
-      mockListBranches.mockResolvedValue([{ name: 'main', current: true }])
-
-      const result = await workspaceTool.execute({ action: 'list_branches' }, makeContext())
-      expect(result.success).toBe(true)
-      expect(result.output).toContain('main')
-    })
-
-    it('returns error when session not found', async () => {
-      mockGetSession.mockReturnValue(null)
-      const result = await workspaceTool.execute({ action: 'list_branches' }, makeContext())
-      expect(result.success).toBe(false)
-    })
-  })
-
   describe('switch', () => {
     it('switches to a named workspace', async () => {
       mockGetSession.mockReturnValue({ projectId: 'p1', workspace: null })
@@ -90,6 +70,27 @@ describe('workspaceTool', () => {
 
     it('returns error when target is missing', async () => {
       const result = await workspaceTool.execute({ action: 'switch' }, makeContext())
+      expect(result.success).toBe(false)
+    })
+  })
+
+  describe('delete', () => {
+    it('deletes a workspace', async () => {
+      mockDeleteWorkspace.mockResolvedValue({ workspace: null, workdir: '/tmp/project' })
+
+      const result = await workspaceTool.execute({ action: 'delete', target: 'feat-x' }, makeContext())
+      expect(result.success).toBe(true)
+      expect(result.output).toContain('feat-x')
+      expect(mockDeleteWorkspace).toHaveBeenCalledWith('session-1', 'feat-x')
+    })
+
+    it('returns error when target is missing', async () => {
+      const result = await workspaceTool.execute({ action: 'delete' }, makeContext())
+      expect(result.success).toBe(false)
+    })
+
+    it('returns error when target is original', async () => {
+      const result = await workspaceTool.execute({ action: 'delete', target: 'original' }, makeContext())
       expect(result.success).toBe(false)
     })
   })
