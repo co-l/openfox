@@ -16,8 +16,10 @@ import type {
 import type { Attachment } from '../../shared/types.js'
 import type { ModelProfile } from './profiles.js'
 import type { BackendCapabilities } from './backend.js'
-import { extractPdfText } from '../tools/pdf-utils.js'
 import { TEXT_MIME_PREFIXES, TEXT_MIME_EXACT } from '../../shared/constants.js'
+import { extractPdfFromDataUrl } from './resolve-attachments.js'
+
+export { resolveAttachmentsInMessages } from './resolve-attachments.js'
 
 export interface ModelParams {
   temperature?: number
@@ -132,23 +134,8 @@ async function convertAttachment(
   }
 
   if (mimeType === 'application/pdf') {
-    try {
-      const base64Match = attachment.data.match(/^data:.*?;base64,(.+)$/)
-      if (base64Match?.[1]) {
-        const buffer = Buffer.from(base64Match[1], 'base64')
-        const result = await extractPdfText(buffer)
-        return {
-          type: 'text',
-          text: `[PDF: ${attachment.filename || 'document.pdf'}]\n${result.text}`,
-        }
-      }
-    } catch {
-      // fall through to error placeholder below
-    }
-    return {
-      type: 'text',
-      text: `[PDF: ${attachment.filename || 'document.pdf'}] (could not extract text)`,
-    }
+    const text = await extractPdfFromDataUrl(attachment.data, attachment.filename || 'document.pdf')
+    return { type: 'text', text }
   }
 
   if (modelSupportsVision) {

@@ -3,6 +3,7 @@ import { getBackendCapabilities, type Backend } from '../../llm/backend.js'
 import { getModelProfile } from '../../llm/profiles.js'
 import type { LLMClientWithModel } from '../../llm/client.js'
 import type { ProviderTransportAdapter } from '../../../provider/index.js'
+import { resolveAttachmentsInMessages } from '../../llm/client-pure.js'
 
 export function createTransportLLMClient(
   provider: Provider,
@@ -48,7 +49,15 @@ export function createTransportLLMClient(
     setBackend(next) {
       backend = next
     },
-    complete: (request) => transport.complete(request, context()),
-    stream: (request) => transport.stream(request, context()),
+    complete: async (request) => {
+      const supportsVision = request.modelSettings?.supportsVision ?? profile.supportsVision ?? false
+      const resolved = { ...request, messages: await resolveAttachmentsInMessages(request.messages, supportsVision) }
+      return transport.complete(resolved, context())
+    },
+    stream: async function* (request) {
+      const supportsVision = request.modelSettings?.supportsVision ?? profile.supportsVision ?? false
+      const resolved = { ...request, messages: await resolveAttachmentsInMessages(request.messages, supportsVision) }
+      yield* transport.stream(resolved, context())
+    },
   }
 }
