@@ -66,9 +66,6 @@ export async function extractPdfBlocksFromDataUrl(data: string, filename: string
   } catch {
     cacheSet(pdfBlockCache, cacheKey, [])
     return [{ type: 'text', text: `[PDF: ${filename}] (could not extract content)` }]
-    const fallback: ContentPart[] = [{ type: 'text', text: `[PDF: ${filename}] (could not extract content)` }]
-    cacheSet(pdfBlockCache, cacheKey, fallback)
-    return fallback
   }
 }
 

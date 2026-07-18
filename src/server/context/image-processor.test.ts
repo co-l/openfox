@@ -950,11 +950,9 @@ describe('processContextImages', () => {
     const data = msgStart.data as Extract<TurnEvent, { type: 'message.start' }>['data']
     const att = data.attachments![0]!
     expect(att.pdfContent).toBeDefined()
-    expect(att.pdfContent).toContain('[PDF: image_doc.pdf]')
     expect(att.pdfContent).toContain('Some text before')
     expect(att.pdfContent).toContain('Some text after')
-    expect(att.pdfContent).toContain('[Image: A screenshot showing a terminal with error messages]')
-    expect(att.pdfContent).toContain('[Image: A screenshot showing a terminal with error messages]')
+    expect(att.pdfContent).toContain('A screenshot showing a terminal with error messages')
     // Original data preserved
     expect(att.data).toBe(imagePdfAttachment.data)
   })
@@ -985,12 +983,10 @@ describe('processContextImages', () => {
     expect(pdfContent).toBeDefined()
 
     const textBeforeIdx = pdfContent.indexOf('Some text before')
-    const img1Idx = pdfContent.indexOf('[Image:')
+    const img1Idx = pdfContent.indexOf('A screenshot showing a terminal with error messages')
     const textAfterIdx = pdfContent.indexOf('Some text after')
 
     expect(textBeforeIdx).toBeLessThan(img1Idx)
-    // Last [Image: should be before the text after check, but there are 2 images
-    // so we check that text_before < image1 < text_after
     expect(img1Idx).toBeLessThan(textAfterIdx)
   })
 

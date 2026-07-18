@@ -174,13 +174,9 @@ async function describePdfAttachment(
     if (block.type === 'text' && block.content) {
       body += '\n\n' + block.content
     } else if (block.type === 'image' && block.dataUrl) {
-      if (options.visionModel) {
-        const imgAttachmentId = `${att.id}/image-${imageIndex}`
-        const description = await describeImageDataUrl(block.dataUrl, imgAttachmentId, messageId, options, descriptions)
-        body += '\n\n[Image: ' + description + ']'
-      } else {
-        body += '\n\n[Image: ' + (att.filename || 'image') + ']'
-      }
+      const imgAttachmentId = `${att.id}/image-${imageIndex}`
+      const description = await describeImageDataUrl(block.dataUrl, imgAttachmentId, messageId, options, descriptions)
+      body += '\n\n' + description
       imageIndex++
     }
   }
