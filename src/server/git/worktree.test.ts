@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { join, resolve } from 'node:path'
 import {
   getGitBranch,
   listWorktrees,
@@ -200,13 +201,13 @@ describe('ensureWorktreesIgnored', () => {
   it('appends worktrees/ when missing', async () => {
     vi.mocked(readFile).mockResolvedValue('node_modules/\n')
     await ensureWorktreesIgnored(CWD)
-    expect(appendFile).toHaveBeenCalledWith('/tmp/project/.gitignore', 'worktrees/\n')
+    expect(appendFile).toHaveBeenCalledWith(resolve(CWD, '.gitignore'), 'worktrees/\n')
   })
 
   it('handles missing gitignore', async () => {
     vi.mocked(readFile).mockRejectedValue({ code: 'ENOENT' })
     await ensureWorktreesIgnored(CWD)
-    expect(appendFile).toHaveBeenCalledWith('/tmp/project/.gitignore', 'worktrees/\n')
+    expect(appendFile).toHaveBeenCalledWith(resolve(CWD, '.gitignore'), 'worktrees/\n')
   })
 })
 
@@ -223,7 +224,7 @@ describe('ensureWorktree', () => {
       .mockReturnValueOnce(makeMockProc('') as any) // addWorktree -b
 
     const result = await ensureWorktree(CWD, 'feature/test')
-    expect(result.path).toContain('worktrees/feature-test')
+    expect(result.path).toContain(join('worktrees', 'feature-test'))
     expect(result.name).toBe('feature/test')
     expect(mkdir).toHaveBeenCalledWith(expect.stringContaining('worktrees'), { recursive: true })
     expect(spawn).toHaveBeenNthCalledWith(1, 'git', ['check-ref-format', 'refs/heads/feature/test'], expect.any(Object))
@@ -250,7 +251,7 @@ describe('ensureWorktree', () => {
       .mockReturnValueOnce(makeMockProc('main\n') as any) // getGitBranch
 
     const result = await ensureWorktree(CWD, 'existing')
-    expect(result.path).toContain('worktrees/existing')
+    expect(result.path).toContain(join('worktrees', 'existing'))
     // Should not call addWorktree (git worktree add)
     expect(spawn).toHaveBeenCalledTimes(2) // validateRef + getGitBranch
     expect(spawn).toHaveBeenNthCalledWith(1, 'git', ['check-ref-format', 'refs/heads/existing'], expect.any(Object))
@@ -279,7 +280,7 @@ describe('ensureWorktree', () => {
       .mockReturnValueOnce(makeMockProc('') as any) // addWorktree without -b succeeds
 
     const result = await ensureWorktree(CWD, 'existing')
-    expect(result.path).toContain('worktrees/existing')
+    expect(result.path).toContain(join('worktrees', 'existing'))
     expect(spawn).toHaveBeenNthCalledWith(
       4,
       'git',

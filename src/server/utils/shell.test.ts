@@ -18,6 +18,16 @@ vi.mock('./platform.js', () => ({
 
 const { spawnShell, spawnShellProcess } = await import('./shell.js')
 
+function withPlatform(platform: NodeJS.Platform, fn: () => void): void {
+  const original = process.platform
+  Object.defineProperty(process, 'platform', { value: platform })
+  try {
+    fn()
+  } finally {
+    Object.defineProperty(process, 'platform', { value: original })
+  }
+}
+
 describe('spawnShell', () => {
   it('passes windowsHide: true and no FORCE_COLOR in spawn options', () => {
     spawnShell('echo hello', { cwd: '/tmp' })
@@ -37,10 +47,20 @@ describe('spawnShell', () => {
     expect(env['FORCE_COLOR']).toBe(process.env['FORCE_COLOR'])
   })
 
-  it('passes detached flag when set', () => {
-    spawnShell('echo hello', { cwd: '/tmp', detached: true })
+  it('passes detached flag when set (non-win32)', () => {
+    withPlatform('linux', () => {
+      spawnShell('echo hello', { cwd: '/tmp', detached: true })
+    })
 
     expect(spawn).toHaveBeenCalledWith('/bin/sh', ['-c', 'echo hello'], expect.objectContaining({ detached: true }))
+  })
+
+  it('ignores detached flag on win32 (visible console + MSYS pipe hangs)', () => {
+    withPlatform('win32', () => {
+      spawnShell('echo hello', { cwd: '/tmp', detached: true })
+    })
+
+    expect(spawn).toHaveBeenCalledWith('/bin/sh', ['-c', 'echo hello'], expect.not.objectContaining({ detached: true }))
   })
 
   it('does not set detached when not requested', () => {
@@ -52,7 +72,9 @@ describe('spawnShell', () => {
 
 describe('spawnShellProcess', () => {
   it('delegates to spawnShell with positional args', () => {
-    spawnShellProcess('echo hello', '/tmp', undefined, true)
+    withPlatform('linux', () => {
+      spawnShellProcess('echo hello', '/tmp', undefined, true)
+    })
 
     expect(spawn).toHaveBeenCalledWith(
       '/bin/sh',

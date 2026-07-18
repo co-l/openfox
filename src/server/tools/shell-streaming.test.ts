@@ -88,16 +88,16 @@ describe('shell tool streaming', () => {
     const startTime = Date.now()
 
     // Command that outputs, waits, then outputs again
-    await runCommandTool.execute({ command: 'echo "first" && sleep 0.1 && echo "second"', timeout: 5000 }, context)
+    await runCommandTool.execute({ command: 'echo "first" && sleep 1 && echo "second"', timeout: 5000 }, context)
 
     // Should have received progress before command completed
     expect(onProgress).toHaveBeenCalled()
 
     // The first progress call should have happened before the sleep completed
-    // (total time > 100ms due to sleep, first call should be < 100ms from start)
+    // (total time > 1s due to sleep, first call should be < 1s from start)
     if (progressTimes.length > 0) {
       const firstProgressTime = progressTimes[0]! - startTime
-      expect(firstProgressTime).toBeLessThan(100) // First output before sleep
+      expect(firstProgressTime).toBeLessThan(1000) // First output before sleep
     }
   })
 
@@ -156,7 +156,7 @@ echo "line 3"
 
     // Start command: echo immediately, then sleep
     const resultPromise = runCommandTool.execute(
-      { command: 'echo "partial output"; sleep 4; echo "never reached"' },
+      { command: 'echo "partial output" && sleep 4 && echo "never reached"' },
       contextWithSignal,
     )
 
@@ -189,7 +189,7 @@ echo "line 3"
     const started = Date.now()
     const resultPromise = runCommandTool.execute(
       {
-        command: `${process.execPath} -e "process.on('SIGINT', () => {}); process.stdout.write('ready\\n'); setInterval(() => {}, 1000)"`,
+        command: `"${process.execPath}" -e "process.on('SIGINT', () => {}); process.stdout.write('ready\\n'); setInterval(() => {}, 1000)"`,
       },
       contextWithSignal,
     )

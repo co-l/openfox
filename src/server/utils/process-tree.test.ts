@@ -12,10 +12,21 @@ function isAlive(pid: number): boolean {
   }
 }
 
-/** Collect all descendant PIDs via ps */
+/** Collect all descendant PIDs via ps (Unix) or CIM (Windows, where ps does not exist) */
 async function getDescendants(rootPid: number): Promise<number[]> {
+  const [cmd, args] =
+    process.platform === 'win32'
+      ? ([
+          'powershell.exe',
+          [
+            '-NoProfile',
+            '-Command',
+            'Get-CimInstance Win32_Process | ForEach-Object { "$($_.ProcessId) $($_.ParentProcessId)" }',
+          ],
+        ] as const)
+      : (['ps', ['-eo', 'pid=,ppid=']] as const)
   const { stdout } = await new Promise<{ stdout: string }>((resolve, reject) => {
-    execFile('ps', ['-eo', 'pid=,ppid='], { timeout: 5000 }, (err, stdout) => {
+    execFile(cmd, [...args], { timeout: 15000, windowsHide: true }, (err, stdout) => {
       if (err) reject(err)
       else resolve({ stdout })
     })
@@ -45,6 +56,17 @@ async function getDescendants(rootPid: number): Promise<number[]> {
   return descendants
 }
 
+// Node-based process tree: a parent that spawns two long-lived children which
+// inherit the parent's stdio (so pipe-holding scenarios are covered). node
+// instead of bash so the tree is visible to the host OS on Windows (a PATH
+// "bash" may be WSL, whose children live outside the host process table).
+const TREE_SCRIPT = [
+  "const { spawn } = require('child_process');",
+  "spawn(process.execPath, ['-e', 'setTimeout(() => {}, 100000)'], { stdio: 'inherit' });",
+  "spawn(process.execPath, ['-e', 'setTimeout(() => {}, 200000)'], { stdio: 'inherit' });",
+  'setInterval(() => {}, 1000);',
+].join('\n')
+
 describe('terminateProcessTree', () => {
   it('kills a simple sleep process', async () => {
     const proc = spawn('sleep', ['30'], { stdio: 'ignore', detached: true })
@@ -58,18 +80,7 @@ describe('terminateProcessTree', () => {
   })
 
   it('kills all descendants of a shell process', async () => {
-    // Spawn a shell that creates multiple child processes
-    const proc = spawn(
-      'bash',
-      [
-        '-c',
-        `sleep 100 &
-       sleep 200 &
-       # Stay alive in foreground
-       sleep 300`,
-      ],
-      { stdio: 'ignore', detached: true },
-    )
+    const proc = spawn(process.execPath, ['-e', TREE_SCRIPT], { stdio: 'ignore', detached: true })
 
     expect(proc.pid).toBeTruthy()
     await sleep(400)
@@ -133,7 +144,7 @@ describe('terminateProcessTree', () => {
   })
 
   it('kills process group with immediate mode', async () => {
-    const proc = spawn('bash', ['-c', 'sleep 200 & sleep 300'], {
+    const proc = spawn(process.execPath, ['-e', TREE_SCRIPT], {
       stdio: 'ignore',
       detached: true,
     })
@@ -157,7 +168,7 @@ describe('terminateProcessTree', () => {
     // Simulate the pasta scenario: shell spawns a foreground child that
     // holds stdout/stderr pipes open. Process group kill must take down
     // both shell and child so pipes close and the parent gets EOF.
-    const proc = spawn('bash', ['-c', 'sleep 200 & sleep 300'], {
+    const proc = spawn(process.execPath, ['-e', TREE_SCRIPT], {
       stdio: ['ignore', 'pipe', 'pipe'],
       detached: true,
     })

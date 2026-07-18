@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { mkdir, symlink, rm, writeFile, realpath } from 'node:fs/promises'
+import { symlinkSync, rmSync } from 'node:fs'
 import { join, normalize, resolve } from 'node:path'
 import { tmpdir, homedir } from 'node:os'
 import {
@@ -43,13 +44,40 @@ function mockPlatform(platform: NodeJS.Platform): void {
   Object.defineProperty(process, 'platform', { value: platform, configurable: true })
 }
 
+/**
+ * Canonicalize like the implementation's safeRealpath: realpath when the path
+ * exists, plain resolve otherwise. Lets Unix literals such as /etc/passwd act
+ * as "nonexistent path outside the sandbox" on Windows (e.g. D:\etc\passwd)
+ * instead of crashing the fixtures with ENOENT.
+ */
+async function canonicalOrResolved(path: string): Promise<string> {
+  try {
+    return await realpath(path)
+  } catch {
+    return normalize(resolve(path))
+  }
+}
+
+/** Symlink creation needs a privilege/Developer Mode on Windows — probe once. */
+const CAN_SYMLINK = (() => {
+  if (process.platform !== 'win32') return true
+  const probe = join(tmpdir(), `openfox-symlink-probe-${process.pid}`)
+  try {
+    symlinkSync('probe-target', probe, 'file')
+    rmSync(probe)
+    return true
+  } catch {
+    return false
+  }
+})()
+
 describe('path-security', () => {
   beforeEach(async () => {
     mockPlatform('linux')
     CANONICAL_TMP = await realpath(tmpdir())
-    CANONICAL_PASSWD = await realpath('/etc/passwd')
-    CANONICAL_VAR_LOG_SYSLOG = join(await realpath('/var'), 'log', 'syslog')
-    CANONICAL_ETC_ENV = join(await realpath('/etc'), '.env')
+    CANONICAL_PASSWD = await canonicalOrResolved('/etc/passwd')
+    CANONICAL_VAR_LOG_SYSLOG = join(await canonicalOrResolved('/var'), 'log', 'syslog')
+    CANONICAL_ETC_ENV = join(await canonicalOrResolved('/etc'), '.env')
     // Create test directories
     await mkdir(WORKDIR, { recursive: true })
     await mkdir(OUTSIDE_DIR, { recursive: true })
@@ -194,7 +222,7 @@ describe('path-security', () => {
       })
     })
 
-    describe('symlink resolution', () => {
+    describe.skipIf(!CAN_SYMLINK)('symlink resolution', () => {
       it('allows symlink inside workdir pointing to file inside workdir', async () => {
         const linkPath = join(WORKDIR, 'link-to-file')
         await symlink(join(WORKDIR, 'file.txt'), linkPath)
@@ -343,7 +371,7 @@ describe('path-security', () => {
       it('resolves ~/../../etc/passwd to escape home entirely', () => {
         const paths = extractAbsolutePathsFromCommand('cat ~/../../etc/passwd')
         // With home=/home/user: ~/../../etc = /home/user/../../etc = /etc
-        expect(paths).toContain('/etc/passwd')
+        expect(paths).toContain(normalize(resolve(home, '../../etc/passwd')))
       })
 
       it('handles ~ at start of command', () => {
@@ -720,6 +748,9 @@ describe('path-security', () => {
         const worktreeDir = join(TEST_DIR, 'worktrees', 'my-feature')
         await mkdir(worktreeDir, { recursive: true })
 
+        // Extraction must handle host-shaped paths here (worktreeDir is a real
+        // host path), so undo the global linux platform mock for this test.
+        mockPlatform(REAL_PLATFORM)
         const command = `cd ${worktreeDir} && npx vitest run src/server/providers/plugins/registry.test.ts 2>&1`
         const extractedPaths = extractAbsolutePathsFromCommand(command)
 
@@ -762,6 +793,7 @@ describe('path-security', () => {
         const worktreeDir = join(TEST_DIR, 'worktrees', 'trailing-slash')
         await mkdir(worktreeDir, { recursive: true })
 
+        mockPlatform(REAL_PLATFORM)
         const command = `cd ${worktreeDir}/ && npx vitest run test.ts`
         const extractedPaths = extractAbsolutePathsFromCommand(command)
 
@@ -771,7 +803,7 @@ describe('path-security', () => {
         expect(result.needsConfirmation).toBe(false)
       })
 
-      it('allows cd to worktree path when command uses resolved canonical path', async () => {
+      it.skipIf(!CAN_SYMLINK)('allows cd to worktree path when command uses resolved canonical path', async () => {
         // If workdir is stored as a realpath-resolved path and the command
         // uses the unresolved path (or vice versa), they should still match
         // because isPathWithinSandbox resolves both sides.

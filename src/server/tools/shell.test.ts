@@ -140,13 +140,14 @@ describe('runCommandTool truncation with ANSI codes', () => {
 
   it('does not count ANSI escape sequences toward byte limit', async () => {
     // Generate output where ANSI codes make raw string large but visible content is small.
-    // Each line: \033[31m\033[1m\033[4mX\033[0m (28 raw bytes, 1 visible char + \n)
-    // 1800 lines × 28 bytes = 50400 raw (> 50000 maxBytes), but only 3600 visible chars (< 50000)
-    // 1800 lines < 2000 maxLines — so only the byte limit is at risk.
+    // Each line: 9×\033[31m + X + \033[0m + \n = 51 raw bytes, 1 visible char + \n.
+    // 1100 lines × 51 bytes = 56100 raw (> 50000 maxBytes), but only 2200 visible chars (< 50000)
+    // 1100 lines < 2000 maxLines — so only the byte limit is at risk.
     // Without ANSI stripping, this would be truncated. With stripping, it passes.
+    // Uses node (not printf/brace expansion) so the command is portable to Windows shells.
     const result = await runCommandTool.execute(
       {
-        command: `printf '\\033[31m\\033[1m\\033[4mX\\033[0m\\n%.0s' {1..1800}`,
+        command: `node -e "process.stdout.write(('\\u001b[31m'.repeat(9) + 'X\\u001b[0m\\n').repeat(1100))"`,
         timeout: 10000,
       },
       context,
@@ -161,7 +162,7 @@ describe('runCommandTool truncation with ANSI codes', () => {
     // Generate enough visible content to truly exceed the limit
     const result = await runCommandTool.execute(
       {
-        command: `printf 'X%.0s' {1..51000}`,
+        command: `node -e "process.stdout.write('X'.repeat(51000))"`,
         timeout: 10000,
       },
       context,
@@ -179,7 +180,7 @@ describe('runCommandTool truncation with ANSI codes', () => {
     // verifies the output isn't corrupted by ANSI codes near the line limit.
     const result = await runCommandTool.execute(
       {
-        command: `printf '\\033[31mX\\033[0m\\n%.0s' {1..1900}`,
+        command: `node -e "process.stdout.write('\\u001b[31mX\\u001b[0m\\n'.repeat(1900))"`,
         timeout: 10000,
       },
       context,

@@ -3,6 +3,7 @@
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { resolve } from 'node:path'
 import { readFileTool } from './read.js'
 import { processPdfContent } from './pdf-utils.js'
 import type { ToolContext } from './types.js'
@@ -160,7 +161,7 @@ describe('readFileTool - Image Support', () => {
       expect(result.metadata?.['size']).toBe(mockPngBuffer.length)
       expect(result.metadata?.['base64Data']).toBeDefined()
       expect(result.metadata?.['dataUrl']).toMatch(/^data:image\/png;base64,/)
-      expect(result.metadata?.['path']).toBe('/test/workdir/test.png')
+      expect(result.metadata?.['path']).toBe(resolve('/test/workdir/test.png'))
     })
 
     it('should detect and read a JPEG image file', async () => {
@@ -314,7 +315,7 @@ describe('readFileTool - Image Support', () => {
       expect(result.output).not.toMatch(/^\d+\|/) // No line number prefix
       expect(result.metadata).toBeDefined()
       expect(result.metadata?.['encoding']).toBe('utf-8')
-      expect(result.metadata?.['path']).toBe('/test/workdir/test.ts')
+      expect(result.metadata?.['path']).toBe(resolve('/test/workdir/test.ts'))
       expect(result.metadata?.['startLine']).toBe(2)
       expect(result.metadata?.['endLine']).toBe(3)
     })
@@ -439,7 +440,7 @@ describe('readFileTool - Image Support', () => {
       expect(result.metadata).toBeDefined()
       expect(result.metadata?.['format']).toBe('pdf')
       expect(result.metadata?.['pageCount']).toBe(1)
-      expect(result.metadata?.['path']).toBe('/test/workdir/test.pdf')
+      expect(result.metadata?.['path']).toBe(resolve('/test/workdir/test.pdf'))
     })
 
     it('should return scanned PDF message when no text layer', async () => {

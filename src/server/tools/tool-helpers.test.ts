@@ -1,4 +1,5 @@
 import { describe, it, expect, vi } from 'vitest'
+import { resolve } from 'node:path'
 import { createTool } from './tool-helpers.js'
 import type { ToolContext } from './types.js'
 import { PathAccessDeniedError } from './path-security.js'
@@ -53,7 +54,7 @@ describe('createTool', () => {
 
     // Relative path
     await tool.execute({ path: 'src/file.ts' }, mockContext)
-    expect(resolvedPath).toBe('/test/workdir/src/file.ts')
+    expect(resolvedPath).toBe(resolve('/test/workdir', 'src/file.ts'))
 
     // Absolute path
     await tool.execute({ path: '/absolute/path.ts' }, mockContext)

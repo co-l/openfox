@@ -8,6 +8,19 @@ vi.mock('../utils/logger.js', () => ({
   logger: { debug: vi.fn(), warn: vi.fn(), info: vi.fn(), error: vi.fn() },
 }))
 
+/** Symlink creation needs a privilege/Developer Mode on Windows — probe once. */
+const CAN_SYMLINK = (() => {
+  if (process.platform !== 'win32') return true
+  const probe = join(tmpdir(), `wt-symlink-probe-${process.pid}`)
+  try {
+    symlinkSync('probe-target', probe, 'file')
+    rmSync(probe)
+    return true
+  } catch {
+    return false
+  }
+})()
+
 function createProjectStructure(root: string) {
   // Create a realistic project with .gitignore, node_modules, etc.
   mkdirSync(join(root, '.git'))
@@ -17,13 +30,16 @@ function createProjectStructure(root: string) {
   mkdirSync(join(root, 'node_modules', '.bin'), { recursive: true })
   mkdirSync(join(root, 'node_modules', 'some-package'), { recursive: true })
   writeFileSync(join(root, 'node_modules', 'some-package', 'index.js'), 'module.exports = 42')
-  symlinkSync('../some-package/index.js', join(root, 'node_modules', '.bin', 'some-package'))
 
   // Create web/node_modules
   mkdirSync(join(root, 'web', 'node_modules', '.bin'), { recursive: true })
   mkdirSync(join(root, 'web', 'node_modules', 'web-pkg'), { recursive: true })
   writeFileSync(join(root, 'web', 'node_modules', 'web-pkg', 'index.js'), 'module.exports = "web"')
-  symlinkSync('../web-pkg/index.js', join(root, 'web', 'node_modules', '.bin', 'web-pkg'))
+
+  if (CAN_SYMLINK) {
+    symlinkSync('../some-package/index.js', join(root, 'node_modules', '.bin', 'some-package'))
+    symlinkSync('../web-pkg/index.js', join(root, 'web', 'node_modules', '.bin', 'web-pkg'))
+  }
 }
 
 describe('getIgnoredDirectories', () => {
@@ -46,7 +62,7 @@ describe('getIgnoredDirectories', () => {
 })
 
 describe('syncIgnoredAssets', () => {
-  it('copies node_modules preserving symlinks', async () => {
+  it.skipIf(!CAN_SYMLINK)('copies node_modules preserving symlinks', async () => {
     const root = mkdtempSync(join(tmpdir(), 'wt-test-'))
     const worktreePath = join(root, 'worktrees', 'test-branch')
     try {
