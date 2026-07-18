@@ -104,8 +104,15 @@ export const ToolCallDisplay = memo(function ToolCallDisplay({
   const pendingPathConfirmations = useSessionStore((state) => state.pendingPathConfirmations)
   const pendingConfirmation: PendingPathConfirmation | null =
     status === 'pending' && callId ? (pendingPathConfirmations.find((pc) => pc.callId === callId) ?? null) : null
-
-  // Compact variant - single line, no expansion
+  // step_done is a simple completion signal — minimal inline pill, no collapsible, no args
+  if (tool === 'step_done') {
+    return (
+      <div className="flex items-center gap-1.5 text-xs bg-secondary rounded px-2 py-1.5">
+        <span className={`${config.color} ${config.animate ? 'animate-pulse' : ''}`}>{config.icon}</span>
+        <span className="font-mono text-accent-primary text-sm">{tool}</span>
+      </div>
+    )
+  }
   if (variant === 'compact') {
     return (
       <div className="flex items-center gap-1.5 text-xs bg-secondary rounded px-2 py-1.5">
