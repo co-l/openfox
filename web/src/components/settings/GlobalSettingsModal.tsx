@@ -8,6 +8,7 @@ import { AdvancedTab } from './tabs/AdvancedTab'
 import { KeybindingsTab } from './tabs/KeybindingsTab'
 import { ToolsTab } from './tabs/ToolsTab'
 import { PluginsTab } from './tabs/PluginsTab'
+import { useUpdateStore } from '../../stores/update'
 import { wsClient } from '../../lib/ws'
 
 interface GlobalSettingsModalProps {
@@ -19,6 +20,7 @@ type Tab = 'instructions' | 'skills' | 'plugins' | 'notifications' | 'display' |
 
 export function GlobalSettingsModal({ isOpen, onClose }: GlobalSettingsModalProps) {
   const [activeTab, setActiveTab] = useState<Tab>('instructions')
+  const updateAvailable = useUpdateStore((state) => state.status === 'available')
 
   const handleClose = () => {
     try {
@@ -53,7 +55,12 @@ export function GlobalSettingsModal({ isOpen, onClose }: GlobalSettingsModalProp
             active={activeTab === 'keybindings'}
             onClick={() => setActiveTab('keybindings')}
           />
-          <TabButton label="Advanced" active={activeTab === 'advanced'} onClick={() => setActiveTab('advanced')} />
+          <TabButton
+            label="Advanced"
+            active={activeTab === 'advanced'}
+            onClick={() => setActiveTab('advanced')}
+            showDot={updateAvailable}
+          />
         </div>
 
         {/* Tab content */}
@@ -82,17 +89,28 @@ export function GlobalSettingsModal({ isOpen, onClose }: GlobalSettingsModalProp
   )
 }
 
-function TabButton({ label, active, onClick }: { label: string; active: boolean; onClick: () => void }) {
+function TabButton({
+  label,
+  active,
+  onClick,
+  showDot,
+}: {
+  label: string
+  active: boolean
+  onClick: () => void
+  showDot?: boolean
+}) {
   return (
     <button
       onClick={onClick}
-      className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${
+      className={`relative px-4 py-2 text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${
         active
           ? 'border-accent-primary text-accent-primary'
           : 'border-transparent text-text-muted hover:text-text-secondary hover:border-border'
       }`}
     >
       {label}
+      {showDot && <span className="absolute top-1 right-1 w-1.5 h-1.5 rounded-full bg-accent-primary" />}
     </button>
   )
 }
