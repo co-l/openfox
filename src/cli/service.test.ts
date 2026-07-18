@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import type { spawnSync, spawn } from 'node:child_process'
 import { runServiceCommand } from './service.js'
 
@@ -18,11 +18,44 @@ vi.mock('node:child_process', () => ({
   spawn: (...args: Parameters<typeof spawn>) => mockSpawn(...args),
 }))
 
+const realPlatform = process.platform
+
+function setPlatform(platform: NodeJS.Platform): void {
+  Object.defineProperty(process, 'platform', { value: platform })
+}
+
+describe('service on Windows', () => {
+  afterEach(() => {
+    setPlatform(realPlatform)
+    process.exitCode = 0
+  })
+
+  it('prints a clear unsupported message and exits 1 without spawning anything', async () => {
+    setPlatform('win32')
+    const mockLog = vi.spyOn(console, 'log').mockImplementation(() => {})
+
+    await runServiceCommand('production', 'status')
+
+    expect(mockLog.mock.calls.flat().join('\n')).toContain('not supported on Windows')
+    expect(process.exitCode).toBe(1)
+    expect(mockSpawnSync).not.toHaveBeenCalled()
+    expect(mockSpawn).not.toHaveBeenCalled()
+    mockLog.mockRestore()
+  })
+})
+
 describe('service logs', () => {
   beforeEach(async () => {
     vi.clearAllMocks()
+    // The systemd path under test is Unix-only; pin the platform so the suite
+    // also runs on Windows dev machines (the win32 guard would short-circuit).
+    setPlatform('linux')
     const { access } = vi.mocked(await import('node:fs/promises'))
     access.mockResolvedValue(undefined)
+  })
+
+  afterEach(() => {
+    setPlatform(realPlatform)
   })
 
   it('uses spawnSync when no follow flag given', async () => {
