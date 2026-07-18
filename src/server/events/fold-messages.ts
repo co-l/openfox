@@ -268,7 +268,20 @@ export function handleToolResult(
         },
       ]
     }
-    messages.push(toolMsg)
+    // Insert tool message right after its parent assistant message,
+    // before any interleaved user messages (e.g. system-reminder injected
+    // during tool execution). This ensures stable ordering regardless of
+    // whether the context is assembled from raw events or a snapshot.
+    const parentIdx = messages.findIndex((m) => m.id === data.messageId)
+    if (parentIdx >= 0) {
+      let insertIdx = parentIdx + 1
+      while (insertIdx < messages.length && messages[insertIdx]!.role === 'tool' && messages[insertIdx]!.toolCallId) {
+        insertIdx++
+      }
+      messages.splice(insertIdx, 0, toolMsg)
+    } else {
+      messages.push(toolMsg)
+    }
   }
 }
 
