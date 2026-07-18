@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
+import { XCloseSmallIcon } from '../../shared/icons'
 import { SETTINGS_KEYS } from '../../../stores/settings'
 import { useSettingsStoreState } from '../useSettingsStore'
 import {
@@ -15,13 +16,15 @@ function KeybindingRow({
   isRecording,
   onStartRecording,
   onBindingRecorded,
+  onClear,
   onCancelRecording,
 }: {
   label: string
-  binding: KeyBinding
+  binding: KeyBinding | null
   isRecording: boolean
   onStartRecording: () => void
   onBindingRecorded: (binding: KeyBinding) => void
+  onClear: () => void
   onCancelRecording: () => void
 }) {
   const ref = useRef<HTMLDivElement>(null)
@@ -100,13 +103,26 @@ function KeybindingRow({
         {isRecording ? (
           <span className="text-xs text-accent-primary font-medium animate-pulse">Press shortcut...</span>
         ) : (
-          <button
-            type="button"
-            onClick={onStartRecording}
-            className="px-2 py-0.5 text-xs font-mono bg-bg-tertiary text-text-secondary rounded border border-border hover:border-accent-primary hover:text-accent-primary transition-colors"
-          >
-            {formatKeybinding(binding)}
-          </button>
+          <>
+            <button
+              type="button"
+              onClick={onStartRecording}
+              className="px-2 py-0.5 text-xs font-mono bg-bg-tertiary text-text-secondary rounded border border-border hover:border-accent-primary hover:text-accent-primary transition-colors"
+            >
+              {binding ? formatKeybinding(binding) : 'None'}
+            </button>
+            {binding && (
+              <button
+                type="button"
+                onClick={onClear}
+                title="Remove shortcut"
+                aria-label={`Remove shortcut for ${label}`}
+                className="p-1 text-text-muted rounded hover:text-accent-error hover:bg-bg-tertiary transition-colors"
+              >
+                <XCloseSmallIcon className="w-3.5 h-3.5" />
+              </button>
+            )}
+          </>
         )}
       </div>
     </div>
@@ -120,7 +136,7 @@ export function KeybindingsTab() {
   const config = parseKeybindings(raw)
   const [recording, setRecording] = useState<string | null>(null)
 
-  const actions: Array<{ id: string; label: string; binding: KeyBinding }> = [
+  const actions: Array<{ id: string; label: string; binding: KeyBinding | null }> = [
     { id: 'terminalToggle', label: 'Toggle Terminal', binding: config.terminalToggle },
     { id: 'quickAction', label: 'Quick Action', binding: config.quickAction },
     ...config.agentSwitching.map((b, i) => ({
@@ -134,25 +150,31 @@ export function KeybindingsTab() {
     setRecording(id)
   }
 
+  const updateBinding = useCallback(
+    (id: string, value: KeyBinding | null) => {
+      const updated = parseKeybindings(raw)
+
+      if (id.startsWith('agentSwitching.')) {
+        const index = parseInt(id.split('.')[1]!, 10)
+        updated.agentSwitching[index] = value
+      } else if (id === 'terminalToggle') {
+        updated.terminalToggle = value
+      } else if (id === 'quickAction') {
+        updated.quickAction = value
+      }
+
+      setSetting(SETTINGS_KEYS.KEYBINDINGS, JSON.stringify(updated))
+    },
+    [raw, setSetting],
+  )
+
   const handleBindingRecorded = useCallback(
     (newBinding: KeyBinding) => {
       if (!recording) return
-      const current = parseKeybindings(raw)
-      const updated = structuredClone(current)
-
-      if (recording.startsWith('agentSwitching.')) {
-        const index = parseInt(recording.split('.')[1]!, 10)
-        updated.agentSwitching[index] = newBinding
-      } else if (recording === 'terminalToggle') {
-        updated.terminalToggle = newBinding
-      } else if (recording === 'quickAction') {
-        updated.quickAction = newBinding
-      }
-
       setRecording(null)
-      setSetting(SETTINGS_KEYS.KEYBINDINGS, JSON.stringify(updated))
+      updateBinding(recording, newBinding)
     },
-    [recording, raw, setSetting],
+    [recording, updateBinding],
   )
 
   const handleReset = () => {
@@ -185,6 +207,7 @@ export function KeybindingsTab() {
               isRecording={recording === action.id}
               onStartRecording={() => handleStartRecording(action.id)}
               onBindingRecorded={handleBindingRecorded}
+              onClear={() => updateBinding(action.id, null)}
               onCancelRecording={() => setRecording(null)}
             />
           ))}

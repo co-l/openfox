@@ -12,10 +12,11 @@ export type ChordBinding = {
 
 export type KeyBinding = DoublePressBinding | ChordBinding
 
+// null = shortcut explicitly disabled by the user
 export interface KeybindingsConfig {
-  terminalToggle: KeyBinding
-  quickAction: KeyBinding
-  agentSwitching: KeyBinding[]
+  terminalToggle: KeyBinding | null
+  quickAction: KeyBinding | null
+  agentSwitching: (KeyBinding | null)[]
 }
 
 export const KEYBINDINGS_SETTING_KEY = 'keybindings'
@@ -35,10 +36,13 @@ export function parseKeybindings(json: string | undefined | null): KeybindingsCo
   if (!json) return structuredClone(DEFAULT_KEYBINDINGS)
   try {
     const parsed = JSON.parse(json) as Partial<KeybindingsConfig>
+    // explicit null = disabled shortcut, only undefined falls back to defaults
+    const orDefault = <K extends keyof KeybindingsConfig>(key: K): KeybindingsConfig[K] =>
+      parsed[key] === undefined ? structuredClone(DEFAULT_KEYBINDINGS[key]) : parsed[key]
     return {
-      terminalToggle: parsed.terminalToggle ?? structuredClone(DEFAULT_KEYBINDINGS.terminalToggle),
-      quickAction: parsed.quickAction ?? structuredClone(DEFAULT_KEYBINDINGS.quickAction),
-      agentSwitching: parsed.agentSwitching ?? structuredClone(DEFAULT_KEYBINDINGS.agentSwitching),
+      terminalToggle: orDefault('terminalToggle'),
+      quickAction: orDefault('quickAction'),
+      agentSwitching: orDefault('agentSwitching'),
     }
   } catch {
     return structuredClone(DEFAULT_KEYBINDINGS)

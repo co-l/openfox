@@ -108,13 +108,17 @@ export function useChordBinding(binding: ChordBinding | undefined, onActivate: (
   }, [binding])
 }
 
-export function useBinding(binding: KeyBinding | undefined, onActivate: () => void, options?: { capture?: boolean }) {
+export function useBinding(
+  binding: KeyBinding | null | undefined,
+  onActivate: () => void,
+  options?: { capture?: boolean },
+) {
   useDoublePressBinding(binding && isDoublePress(binding) ? binding : undefined, onActivate, options)
   useChordBinding(binding && isChord(binding) ? binding : undefined, onActivate)
 }
 
 export function useAgentSwitchingBindings(
-  bindings: KeyBinding[],
+  bindings: (KeyBinding | null)[],
   agents: Array<{ id: string }>,
   onSwitch: (agentId: string) => void,
 ) {
