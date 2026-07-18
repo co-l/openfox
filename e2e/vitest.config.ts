@@ -15,7 +15,7 @@ export default defineConfig({
     // Run tests in parallel with fork pool
     // Each test file gets its own in-process server on a dynamic port
     pool: 'forks',
-    maxWorkers: process.env['CI'] === 'true' ? 4 : 12, // CI runners have fewer cores
+    maxWorkers: process.env['CI'] === 'true' ? 1 : 12, // CI runners are resource-constrained
 
     // No global setup - each test file manages its own server
     // globalSetup: './setup.ts',  // REMOVED - using in-process servers
