@@ -40,13 +40,21 @@ async function checkRtkAvailability(): Promise<boolean> {
 }
 
 export function hasBackgroundAmpersand(command: string): boolean {
-  const trimmed = command.replace(/[;\s]+$/, '')
-  if (trimmed.endsWith('&')) {
-    const before = trimmed[trimmed.length - 2]
-    if (before === '&' || before === '|') return false
-    return true
-  }
-  return false
+  // Strip content inside quotes — & inside quotes is literal, not a background operator
+  let processed = command.replace(/'[^']*'/g, ' ').replace(/"[^"]*"/g, ' ')
+
+  // Strip escaped characters — \& is a literal ampersand
+  processed = processed.replace(/\\./g, '  ')
+
+  // Replace multi-character operators that contain & but aren't background operators
+  processed = processed.replace(/&&/g, '  ') // logical AND
+  processed = processed.replace(/\|&/g, '   ') // stderr pipe
+  processed = processed.replace(/&>/g, '  ') // redirect both stdout+stderr
+  processed = processed.replace(/>&\d/g, '   ') // fd redirect (e.g. 2>&1)
+  processed = processed.replace(/>&/g, '  ') // other >& redirect forms
+
+  // Any remaining & is a background operator
+  return processed.includes('&')
 }
 
 interface RunCommandArgs {
@@ -241,11 +249,46 @@ function executeCommand(
       onProgress?.(`[stderr] ${chunk}`)
     })
 
+    // The 'exit' event fires when the process terminates, regardless of
+    // whether stdio streams have closed.  This is critical for commands
+    // that use '&' to background processes: the shell may exit (or be
+    // killed) while a backgrounded child still holds the pipe write-ends
+    // open, which would prevent 'close' from ever firing.
+    //
+    // When we initiated the abort/timeout ourselves, resolve immediately
+    // on 'exit' instead of waiting for 'close'.
+    proc.on('exit', () => {
+      if (aborted) {
+        clearTimeout(timer)
+        signal?.removeEventListener('abort', onAbort)
+        let output = stdout.trim()
+        if (output) output += '\n\n'
+        output += '[interrupted by user]'
+        resolve({
+          stdout: output,
+          stderr: stderr.trim(),
+          exitCode: 130,
+        })
+      } else if (timedOut) {
+        clearTimeout(timer)
+        signal?.removeEventListener('abort', onAbort)
+        let output = stdout.trim()
+        if (output) output += '\n\n'
+        output += `[Exit code: 124]\n[Process timed out after ${timeout}ms]`
+        resolve({
+          stdout: output,
+          stderr: stderr.trim(),
+          exitCode: 124,
+        })
+      }
+    })
+
     proc.on('close', (code) => {
       exited = true
       clearTimeout(timer)
       signal?.removeEventListener('abort', onAbort)
 
+      // Promise may already be settled by 'exit' handler above — resolve is a no-op if so.
       if (timedOut) {
         let output = stdout.trim()
         if (output) output += '\n\n'

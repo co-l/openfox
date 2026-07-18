@@ -47,7 +47,7 @@ describe('hasBackgroundAmpersand', () => {
   })
 
   it('rejects & in the middle of a command', () => {
-    expect(hasBackgroundAmpersand('cmd & other_cmd')).toBe(false)
+    expect(hasBackgroundAmpersand('cmd & other_cmd')).toBe(true)
   })
 
   it('rejects normal command without &', () => {
@@ -66,20 +66,52 @@ describe('hasBackgroundAmpersand', () => {
     expect(hasBackgroundAmpersand('cmd |&')).toBe(false)
   })
 
+  it('allows & inside single quotes', () => {
+    expect(hasBackgroundAmpersand("echo 'foo & bar'")).toBe(false)
+  })
+
+  it('allows & inside double quotes', () => {
+    expect(hasBackgroundAmpersand('echo "foo & bar"')).toBe(false)
+  })
+
+  it('allows escaped ampersand', () => {
+    expect(hasBackgroundAmpersand('echo foo \\& bar')).toBe(false)
+  })
+
+  it('detects multiple background operators', () => {
+    expect(hasBackgroundAmpersand('cmd1 & cmd2 & cmd3')).toBe(true)
+  })
+
+  it('detects & in subshell', () => {
+    expect(hasBackgroundAmpersand('(cmd1 & cmd2)')).toBe(true)
+  })
+
+  it('detects & after heredoc delimiter', () => {
+    expect(hasBackgroundAmpersand('cat <<EOF &')).toBe(true)
+  })
+
+  it('allows & inside nested quotes', () => {
+    expect(hasBackgroundAmpersand('echo "foo \'&\' bar"')).toBe(false)
+  })
+
+  it('allows & in mixed quotes where outer are single', () => {
+    expect(hasBackgroundAmpersand('echo \'foo "&" bar\'')).toBe(false)
+  })
+
   it('detects & after compound command with &&', () => {
     expect(hasBackgroundAmpersand('cmd1 && cmd2 &')).toBe(true)
   })
 
   it('rejects & followed by redirect (cmd & 2>&1)', () => {
-    expect(hasBackgroundAmpersand('cmd & 2>&1')).toBe(false)
+    expect(hasBackgroundAmpersand('cmd & 2>&1')).toBe(true)
   })
 
   it('rejects mid-command & (cmd1 & cmd2)', () => {
-    expect(hasBackgroundAmpersand('cmd1 & cmd2')).toBe(false)
+    expect(hasBackgroundAmpersand('cmd1 & cmd2')).toBe(true)
   })
 
   it('rejects & before shell comment (cmd & # comment)', () => {
-    expect(hasBackgroundAmpersand('cmd & # comment')).toBe(false)
+    expect(hasBackgroundAmpersand('cmd & # comment')).toBe(true)
   })
 })
 
@@ -112,10 +144,13 @@ describe('runCommandTool truncation with ANSI codes', () => {
     // 1800 lines × 28 bytes = 50400 raw (> 50000 maxBytes), but only 3600 visible chars (< 50000)
     // 1800 lines < 2000 maxLines — so only the byte limit is at risk.
     // Without ANSI stripping, this would be truncated. With stripping, it passes.
-    const result = await runCommandTool.execute({
-      command: `printf '\\033[31m\\033[1m\\033[4mX\\033[0m\\n%.0s' {1..1800}`,
-      timeout: 10000,
-    }, context)
+    const result = await runCommandTool.execute(
+      {
+        command: `printf '\\033[31m\\033[1m\\033[4mX\\033[0m\\n%.0s' {1..1800}`,
+        timeout: 10000,
+      },
+      context,
+    )
 
     expect(result.success).toBe(true)
     expect(result.truncated).toBe(false)
@@ -124,10 +159,13 @@ describe('runCommandTool truncation with ANSI codes', () => {
 
   it('still truncates when stripped content exceeds byte limit', async () => {
     // Generate enough visible content to truly exceed the limit
-    const result = await runCommandTool.execute({
-      command: `printf 'X%.0s' {1..51000}`,
-      timeout: 10000,
-    }, context)
+    const result = await runCommandTool.execute(
+      {
+        command: `printf 'X%.0s' {1..51000}`,
+        timeout: 10000,
+      },
+      context,
+    )
 
     expect(result.success).toBe(true)
     expect(result.truncated).toBe(true)
@@ -139,10 +177,13 @@ describe('runCommandTool truncation with ANSI codes', () => {
     // Without ANSI stripping in line counting, lines are still 2100 > 2000 limit.
     // But ANSI codes don't affect line count (based on \n), so this mainly
     // verifies the output isn't corrupted by ANSI codes near the line limit.
-    const result = await runCommandTool.execute({
-      command: `printf '\\033[31mX\\033[0m\\n%.0s' {1..1900}`,
-      timeout: 10000,
-    }, context)
+    const result = await runCommandTool.execute(
+      {
+        command: `printf '\\033[31mX\\033[0m\\n%.0s' {1..1900}`,
+        timeout: 10000,
+      },
+      context,
+    )
 
     expect(result.success).toBe(true)
     expect(result.truncated).toBe(false)

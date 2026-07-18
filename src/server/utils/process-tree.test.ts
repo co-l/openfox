@@ -108,4 +108,79 @@ describe('terminateProcessTree', () => {
     const fakeProc = { pid: 999999999 } as any
     await expect(terminateProcessTree(fakeProc)).resolves.toBeUndefined()
   })
+
+  it('fires close event after killing process group', async () => {
+    // Spawn a shell with a foreground child that holds the pipe open
+    const proc = spawn('bash', ['-c', 'sleep 300'], {
+      stdio: ['ignore', 'pipe', 'pipe'],
+      detached: true,
+    })
+
+    expect(proc.pid).toBeTruthy()
+    expect(isAlive(proc.pid!)).toBe(true)
+
+    // Track close event
+    let closed = false
+    proc.on('close', () => {
+      closed = true
+    })
+
+    await terminateProcessTree(proc)
+    await sleep(300)
+
+    expect(closed).toBe(true)
+    expect(isAlive(proc.pid!)).toBe(false)
+  })
+
+  it('kills process group with immediate mode', async () => {
+    const proc = spawn('bash', ['-c', 'sleep 200 & sleep 300'], {
+      stdio: 'ignore',
+      detached: true,
+    })
+
+    expect(proc.pid).toBeTruthy()
+    await sleep(300)
+
+    const descendants = await getDescendants(proc.pid!)
+    expect(descendants.length).toBeGreaterThanOrEqual(1)
+
+    await terminateProcessTree(proc, { immediate: true })
+    await sleep(300)
+
+    expect(isAlive(proc.pid!)).toBe(false)
+    for (const pid of descendants) {
+      expect(isAlive(pid)).toBe(false)
+    }
+  }, 20000)
+
+  it('kills orphan-capable process group (child inheriting pipes)', async () => {
+    // Simulate the pasta scenario: shell spawns a foreground child that
+    // holds stdout/stderr pipes open. Process group kill must take down
+    // both shell and child so pipes close and the parent gets EOF.
+    const proc = spawn('bash', ['-c', 'sleep 200 & sleep 300'], {
+      stdio: ['ignore', 'pipe', 'pipe'],
+      detached: true,
+    })
+
+    expect(proc.pid).toBeTruthy()
+    await sleep(400)
+
+    // Confirm children are alive
+    const descendants = await getDescendants(proc.pid!)
+    expect(descendants.length).toBeGreaterThanOrEqual(1)
+
+    let closed = false
+    proc.on('close', () => {
+      closed = true
+    })
+
+    await terminateProcessTree(proc)
+    await sleep(300)
+
+    expect(closed).toBe(true)
+    expect(isAlive(proc.pid!)).toBe(false)
+    for (const pid of descendants) {
+      expect(isAlive(pid)).toBe(false)
+    }
+  }, 20000)
 })

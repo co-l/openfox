@@ -52,9 +52,21 @@ function killProcess(pid: number, signal: 'SIGTERM' | 'SIGKILL'): void {
 
 /**
  * Kill a process and all its descendants.
- * Uses `ps` to enumerate the process tree on Unix, `taskkill` on Windows.
+ *
+ * On Unix, uses process group signaling (SIGTERM → SIGKILL) as the primary
+ * mechanism.  Since `detached: true` makes the spawned process the leader of
+ * a new process group, `kill(-pid, …)` reaches the shell and every process
+ * it spawned — including backgrounded children that inherited the shell's
+ * stdio pipes.  This avoids the "zombie pipe" problem where a surviving
+ * child keeps pipe write-ends open, preventing the parent from ever
+ * receiving the `close` event.
+ *
+ * Falls back to individual PID enumeration via `ps` for edge cases where
+ * children created their own process groups (e.g. via `setsid`).
+ *
+ * On Windows, delegates to `taskkill /f /t`.
  */
-export async function killProcessTree(pid: number): Promise<void> {
+export async function killProcessTree(pid: number, immediate = false): Promise<void> {
   if (process.platform === 'win32') {
     await new Promise<void>((resolve) => {
       const killer = spawn('taskkill', ['/pid', String(pid), '/f', '/t'], {
@@ -67,17 +79,32 @@ export async function killProcessTree(pid: number): Promise<void> {
     return
   }
 
-  const allPids = await getDescendantPids(pid)
-  allPids.push(pid)
-
-  for (const p of allPids) {
-    killProcess(p, 'SIGTERM')
+  // Primary: kill by process group (negative PID = PGID).
+  // With detached: true the child is the process group leader,
+  // so this kills the shell and all its descendants atomically.
+  if (!immediate) {
+    try {
+      process.kill(-pid, 'SIGTERM')
+    } catch {
+      /* may already be gone */
+    }
+    await sleep(SIGKILL_TIMEOUT_MS)
   }
 
-  await sleep(SIGKILL_TIMEOUT_MS)
+  try {
+    process.kill(-pid, 'SIGKILL')
+  } catch {
+    /* may already be gone */
+  }
 
-  for (const p of allPids) {
-    killProcess(p, 'SIGKILL')
+  // Fallback: enumerate individual PIDs for any survivors
+  // (edge case: children that called setsid to create separate groups).
+  const survivors = await getDescendantPids(pid)
+  if (survivors.length > 0) {
+    survivors.push(pid)
+    for (const p of survivors) {
+      killProcess(p, 'SIGKILL')
+    }
   }
 }
 
@@ -94,14 +121,5 @@ export async function terminateProcessTree(
     return
   }
 
-  if (options?.immediate) {
-    const allPids = await getDescendantPids(pid)
-    allPids.push(pid)
-    for (const p of allPids) {
-      killProcess(p, 'SIGKILL')
-    }
-    return
-  }
-
-  await killProcessTree(pid)
+  await killProcessTree(pid, options?.immediate ?? false)
 }
