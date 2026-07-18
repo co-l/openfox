@@ -1,8 +1,8 @@
 import { createTool } from './tool-helpers.js'
-import { listBranches, getGitBranch } from '../git/workspace.js'
+import { getGitBranch } from '../git/workspace.js'
 
 interface WorkspaceArgs {
-  action: 'switch' | 'status' | 'list_branches'
+  action: 'switch' | 'status' | 'delete'
   target?: string
   branch?: string
 }
@@ -21,19 +21,18 @@ export const workspaceTool = createTool<WorkspaceArgs>(
         'Actions:\n' +
         '- switch: Switch to a workspace (target: "original" or a name, optional branch for new workspaces)\n' +
         '- status: Show current workspace state (name, path, branch)\n' +
-        '- list_branches: List local git branches for the current project',
+        '- delete: Delete a workspace by name (cannot delete "original")',
       parameters: {
         type: 'object',
         properties: {
           action: {
             type: 'string',
-            enum: ['switch', 'status', 'list_branches'],
+            enum: ['switch', 'status', 'delete'],
             description: 'The action to perform',
           },
           target: {
             type: 'string',
-            description:
-              '"original" to return to project root, or a workspace name to switch to (required for action=switch)',
+            description: 'For switch: "original" or a workspace name. For delete: the workspace name to delete.',
           },
           branch: {
             type: 'string',
@@ -47,23 +46,12 @@ export const workspaceTool = createTool<WorkspaceArgs>(
   async (args, context, helpers) => {
     const { sessionId, sessionManager } = context
 
-    const validActions = ['switch', 'status', 'list_branches'] as const
+    const validActions = ['switch', 'status', 'delete'] as const
     if (!validActions.includes(args.action as (typeof validActions)[number])) {
       return helpers.error(`Invalid action: ${args.action}. Must be one of: ${validActions.join(', ')}`)
     }
 
     switch (args.action) {
-      case 'list_branches': {
-        const session = sessionManager.getSession(sessionId)
-        if (!session) return helpers.error('Session not found')
-
-        const project = sessionManager.getProject(session.projectId)
-        if (!project) return helpers.error('Project not found')
-
-        const branches = await listBranches(project.workdir)
-        return helpers.success(JSON.stringify({ branches }, null, 2))
-      }
-
       case 'switch': {
         if (!args.target || typeof args.target !== 'string') {
           return helpers.error('Parameter "target" is required for action=switch ("original" or a workspace name)')
@@ -103,6 +91,27 @@ export const workspaceTool = createTool<WorkspaceArgs>(
               path: session.workspace ?? session.workdir,
               workdir: session.workdir,
               branch,
+            },
+            null,
+            2,
+          ),
+        )
+      }
+
+      case 'delete': {
+        if (!args.target || typeof args.target !== 'string') {
+          return helpers.error('Parameter "target" is required for action=delete (the workspace name)')
+        }
+        if (args.target === 'original') {
+          return helpers.error('Cannot delete the original workspace')
+        }
+
+        await sessionManager.deleteWorkspace(sessionId, args.target)
+        return helpers.success(
+          JSON.stringify(
+            {
+              workspace: args.target,
+              message: `Workspace "${args.target}" has been deleted`,
             },
             null,
             2,

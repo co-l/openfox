@@ -186,6 +186,18 @@ export async function ensureWorkspace(
   return { path: wsPath, name }
 }
 
+export async function deleteWorkspace(projectName: string, name: string): Promise<void> {
+  const dir = getWorkspacesDir(projectName)
+  const wsPath = resolve(dir, name)
+  const st = await statSafe(wsPath)
+  if (!st?.isDirectory()) {
+    throw new Error(`Workspace "${name}" does not exist`)
+  }
+  const { rm } = await import('node:fs/promises')
+  await rm(wsPath, { recursive: true, force: true })
+  logger.info('Deleted workspace', { projectName, name, path: wsPath })
+}
+
 async function statSafe(p: string): Promise<{ isDirectory: () => boolean } | null> {
   try {
     const { stat } = await import('node:fs/promises')
