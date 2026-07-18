@@ -32,12 +32,7 @@ describe('SubAgentRegistry (via agent registry)', () => {
     expect(codeReviewer?.metadata.name).toBe('Code Reviewer')
     expect(typeof codeReviewer?.metadata.description).toBe('string')
     expect(typeof codeReviewer?.prompt).toBe('string')
-    expect(codeReviewer?.metadata.allowedTools).toEqual([
-      'read_file',
-      'run_command',
-      'web_fetch',
-      'session_metadata',
-    ])
+    expect(codeReviewer?.metadata.allowedTools).toEqual(['read_file', 'run_command', 'web_fetch', 'session_metadata'])
     expect(codeReviewer?.metadata.subagent).toBe(true)
   })
 

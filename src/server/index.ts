@@ -204,7 +204,7 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
 
   // Middleware
   app.use(cors())
-  app.use(express.json({ limit: '10mb' }))
+  app.use(express.json({ limit: '75mb' }))
 
   // Auth middleware for all /api routes (except /api/health and /api/auth/login)
   const authMiddleware = async (req: express.Request, res: express.Response, next: express.NextFunction) => {
@@ -720,12 +720,14 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
       }
     }
 
-    const mapped = entries.map((c: { id?: string; description?: string; status?: string; [key: string]: unknown }, i: number) => ({
-      ...c,
-      id: c.id != null ? String(c.id) : String(i),
-      description: c.description ?? '',
-      status: c.status ?? 'open',
-    }))
+    const mapped = entries.map(
+      (c: { id?: string; description?: string; status?: string; [key: string]: unknown }, i: number) => ({
+        ...c,
+        id: c.id != null ? String(c.id) : String(i),
+        description: c.description ?? '',
+        status: c.status ?? 'open',
+      }),
+    )
     sessionManager.setMetadataEntries(sessionId, key, mapped)
     res.json({ success: true })
   })
@@ -1911,13 +1913,25 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
     if (args !== undefined && (!Array.isArray(args) || args.some((a) => typeof a !== 'string'))) {
       return res.status(400).json({ error: 'args must be an array of strings' })
     }
-    if (env !== undefined && (typeof env !== 'object' || env === null || Array.isArray(env) || Object.values(env as object).some((v) => typeof v !== 'string'))) {
+    if (
+      env !== undefined &&
+      (typeof env !== 'object' ||
+        env === null ||
+        Array.isArray(env) ||
+        Object.values(env as object).some((v) => typeof v !== 'string'))
+    ) {
       return res.status(400).json({ error: 'env must be a string/string object' })
     }
     if (url !== undefined && typeof url !== 'string') {
       return res.status(400).json({ error: 'url must be a string' })
     }
-    if (headers !== undefined && (typeof headers !== 'object' || headers === null || Array.isArray(headers) || Object.values(headers as object).some((v) => typeof v !== 'string'))) {
+    if (
+      headers !== undefined &&
+      (typeof headers !== 'object' ||
+        headers === null ||
+        Array.isArray(headers) ||
+        Object.values(headers as object).some((v) => typeof v !== 'string'))
+    ) {
       return res.status(400).json({ error: 'headers must be a string/string object' })
     }
 
@@ -1926,7 +1940,10 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
       const { applyMcpServerUpdate } = await import('./mcp/update-server.js')
 
       const globalConfig = await loadGlobalConfig(config.mode ?? 'production', config.globalConfigPath)
-      const mcpServers = { ...(globalConfig.mcpServers ?? {}) } as Record<string, import('./mcp/types.js').McpServerConfig>
+      const mcpServers = { ...(globalConfig.mcpServers ?? {}) } as Record<
+        string,
+        import('./mcp/types.js').McpServerConfig
+      >
 
       const patch = {
         ...(rawTransport !== undefined ? { transport: rawTransport as 'stdio' | 'http' } : {}),

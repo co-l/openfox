@@ -4,6 +4,8 @@ import { describeImageFromDataUrl } from '../llm/vision-fallback.js'
 import type { VisionBackend } from '../llm/vision-fallback.js'
 import { createHash } from 'node:crypto'
 import { getRuntimeConfig } from '../runtime-config.js'
+import { extractPdfContent } from '../tools/pdf-utils.js'
+import type { PdfBlock } from '../tools/pdf-utils.js'
 
 export async function loadVisionModelFromGlobalConfig(): Promise<
   { baseUrl: string; model: string; timeout: number; backend: VisionBackend } | undefined
@@ -61,6 +63,20 @@ function isImageAttachment(att: Attachment): boolean {
   return att.mimeType.startsWith('image/')
 }
 
+function isPdfAttachment(att: Attachment): boolean {
+  return att.mimeType === 'application/pdf'
+}
+
+function decodePdfDataUrl(data: string): Buffer | null {
+  const match = data.match(/^data:.*?;base64,(.+)$/)
+  if (!match?.[1]) return null
+  try {
+    return Buffer.from(match[1], 'base64')
+  } catch {
+    return null
+  }
+}
+
 function hasImageMetadata(result: { metadata?: Record<string, unknown> }): boolean {
   const meta = result.metadata
   if (!meta) return false
@@ -69,66 +85,25 @@ function hasImageMetadata(result: { metadata?: Record<string, unknown> }): boole
   return typeof dataUrl === 'string' && typeof mimeType === 'string' && (mimeType as string).startsWith('image/')
 }
 
-async function describeAttachment(
-  att: Attachment,
-  messageId: string,
-  options: ImageProcessorOptions,
-  descriptions: Map<string, string>,
-): Promise<string> {
-  const cacheKey = contentHash(att.data)
-  if (descriptionCache.has(cacheKey)) {
-    const cached = descriptionCache.get(cacheKey)!
-    descriptions.set(att.id, cached)
-    return cached
-  }
-
-  if (options.visionModel) {
-    const startData: { messageId: string; attachmentId: string; filename?: string } = {
-      messageId,
-      attachmentId: att.id,
-    }
-    if (att.filename !== undefined) {
-      startData.filename = att.filename
-    }
-    options.onEvent?.({ type: 'vision_fallback.start', data: startData })
-
-    const description = await describeImageFromDataUrl(att.data, options.visionModel, {
-      context: att.filename ? `File: ${att.filename}` : undefined,
-      signal: options.signal,
-    })
-
-    descriptionCache.set(cacheKey, description)
-    descriptions.set(att.id, description)
-
-    options.onEvent?.({ type: 'vision_fallback.done', data: { messageId, attachmentId: att.id, description } })
-
-    return description
-  }
-
-  const placeholder = `[Image: ${att.filename || 'image'}]`
-  descriptions.set(att.id, placeholder)
-  return placeholder
-}
-
-async function describeToolResultImage(
+async function describeImageDataUrl(
   dataUrl: string,
-  filename: string | undefined,
-  toolCallId: string,
+  attachmentId: string,
   messageId: string,
   options: ImageProcessorOptions,
   descriptions: Map<string, string>,
+  filename?: string,
 ): Promise<string> {
   const cacheKey = contentHash(dataUrl)
   if (descriptionCache.has(cacheKey)) {
     const cached = descriptionCache.get(cacheKey)!
-    descriptions.set(toolCallId, cached)
+    descriptions.set(attachmentId, cached)
     return cached
   }
 
   if (options.visionModel) {
     const startData: { messageId: string; attachmentId: string; filename?: string } = {
       messageId,
-      attachmentId: toolCallId,
+      attachmentId,
     }
     if (filename !== undefined) {
       startData.filename = filename
@@ -141,19 +116,90 @@ async function describeToolResultImage(
     })
 
     descriptionCache.set(cacheKey, description)
-    descriptions.set(toolCallId, description)
+    descriptions.set(attachmentId, description)
 
-    options.onEvent?.({
-      type: 'vision_fallback.done',
-      data: { messageId, attachmentId: toolCallId, description },
-    })
+    options.onEvent?.({ type: 'vision_fallback.done', data: { messageId, attachmentId, description } })
 
     return description
   }
 
-  const placeholder = `[Image: ${filename || 'image'}]`
-  descriptions.set(toolCallId, placeholder)
+  const placeholder = filename ? `[Image: ${filename}]` : '[Image]'
+  descriptions.set(attachmentId, placeholder)
   return placeholder
+}
+
+async function describeAttachment(
+  att: Attachment,
+  messageId: string,
+  options: ImageProcessorOptions,
+  descriptions: Map<string, string>,
+): Promise<string> {
+  return describeImageDataUrl(att.data, att.id, messageId, options, descriptions, att.filename)
+}
+
+async function describeToolResultImage(
+  dataUrl: string,
+  filename: string | undefined,
+  toolCallId: string,
+  messageId: string,
+  options: ImageProcessorOptions,
+  descriptions: Map<string, string>,
+): Promise<string> {
+  return describeImageDataUrl(dataUrl, toolCallId, messageId, options, descriptions, filename)
+}
+
+async function describePdfAttachment(
+  att: Attachment,
+  messageId: string,
+  options: ImageProcessorOptions,
+  descriptions: Map<string, string>,
+): Promise<string> {
+  const cacheKey = contentHash(att.data)
+  if (descriptionCache.has(cacheKey)) {
+    const cached = descriptionCache.get(cacheKey)!
+    descriptions.set(att.id, cached)
+    return cached
+  }
+
+  const buffer = decodePdfDataUrl(att.data)
+  if (!buffer) {
+    const fallback = `[PDF: ${att.filename || 'document.pdf'}] (could not decode)`
+    descriptionCache.set(cacheKey, fallback)
+    descriptions.set(att.id, fallback)
+    return fallback
+  }
+
+  let blocks: PdfBlock[]
+  try {
+    const result = await extractPdfContent(buffer)
+    blocks = result.blocks
+  } catch {
+    const errorText = `[PDF: ${att.filename || 'document.pdf'}] (could not extract content)`
+    descriptions.set(att.id, errorText)
+    return errorText
+  }
+
+  let output = `[PDF: ${att.filename || 'document.pdf'}]`
+
+  let imageIndex = 0
+  for (const block of blocks) {
+    if (block.type === 'text' && block.content) {
+      output += '\n\n' + block.content
+    } else if (block.type === 'image' && block.dataUrl) {
+      if (options.visionModel) {
+        const imgAttachmentId = `${att.id}/image-${imageIndex}`
+        const description = await describeImageDataUrl(block.dataUrl, imgAttachmentId, messageId, options, descriptions)
+        output += '\n\n[Image: ' + description + ']'
+      } else {
+        output += '\n\n[Image]'
+      }
+      imageIndex++
+    }
+  }
+
+  descriptionCache.set(cacheKey, output)
+  descriptions.set(att.id, output)
+  return output
 }
 
 /**
@@ -183,12 +229,10 @@ export async function processContextImages(
       const data = event.data as Extract<TurnEvent, { type: 'message.start' }>['data']
       if (!data.attachments || data.attachments.length === 0) continue
 
-      const imageAtts = data.attachments.filter(isImageAttachment)
-      if (imageAtts.length === 0) continue
-
       let enriched = false
+
+      const imageAtts = data.attachments.filter(isImageAttachment)
       for (const att of imageAtts) {
-        // Skip if already has a description (persisted from a previous run)
         if (att.description) {
           descriptions.set(att.id, att.description)
           continue
@@ -198,7 +242,17 @@ export async function processContextImages(
         enriched = true
       }
 
-      // Persist enriched attachments back to the store
+      const pdfAtts = data.attachments.filter(isPdfAttachment)
+      for (const att of pdfAtts) {
+        if (att.pdfContent) {
+          descriptions.set(att.id, att.pdfContent)
+          continue
+        }
+        const pdfContent = await describePdfAttachment(att, data.messageId, options, descriptions)
+        att.pdfContent = pdfContent
+        enriched = true
+      }
+
       if (enriched && options.persistEvent) {
         options.persistEvent(event.sessionId, event.seq, data)
       }
@@ -241,17 +295,24 @@ export async function processContextImages(
 
       for (const message of snapshot.messages) {
         if (message.role === 'user' && message.attachments && message.attachments.length > 0) {
-          const imageAtts = message.attachments.filter(isImageAttachment)
-          if (imageAtts.length === 0) continue
-
-          for (const att of imageAtts) {
-            if (att.description) {
-              descriptions.set(att.id, att.description)
-              continue
+          for (const att of message.attachments) {
+            if (isImageAttachment(att)) {
+              if (att.description) {
+                descriptions.set(att.id, att.description)
+                continue
+              }
+              const description = await describeAttachment(att, message.id, options, descriptions)
+              att.description = description
+              enriched = true
+            } else if (isPdfAttachment(att)) {
+              if (att.pdfContent) {
+                descriptions.set(att.id, att.pdfContent)
+                continue
+              }
+              const pdfContent = await describePdfAttachment(att, message.id, options, descriptions)
+              att.pdfContent = pdfContent
+              enriched = true
             }
-            const description = await describeAttachment(att, message.id, options, descriptions)
-            att.description = description
-            enriched = true
           }
         }
 

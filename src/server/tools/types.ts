@@ -43,6 +43,7 @@ export const OUTPUT_LIMITS = {
     maxBytes: 100_000,
     maxImageBytes: 2_097_152, // 2MB for images
     maxPdfPages: 50,
+    maxPdfImages: 20,
     maxFileBytes: 20_971_520, // 20MB general file safety limit
   },
   run_command: {

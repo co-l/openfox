@@ -252,6 +252,7 @@ export interface Attachment {
   size: number
   data: string // Raw UTF-8 text for text-based types; data: URL (base64) for images and PDFs
   description?: string // Vision fallback description (for non-vision models)
+  pdfContent?: string // Enriched PDF content (text + image descriptions) for non-vision models
 }
 
 export interface Message {

@@ -121,7 +121,10 @@ export function createLLMClient(config: Config, initialBackend: Backend = 'unkno
         const thinkingContent = getThinking(message as Record<string, string | null>, thinkingField) ?? ''
 
         const toolCalls = message.tool_calls?.map((tc) => {
-          const { arguments: args, parseError } = parseToolArguments(tc.function.arguments, { id: tc.id, name: tc.function.name })
+          const { arguments: args, parseError } = parseToolArguments(tc.function.arguments, {
+            id: tc.id,
+            name: tc.function.name,
+          })
           return { id: tc.id, name: tc.function.name, arguments: args, ...(parseError ? { parseError } : {}) }
         })
 

@@ -133,7 +133,13 @@ describe('createTransportLLMClient', () => {
     const capturedMessages: unknown[] = []
     const mockComplete = vi.fn(async (request: { messages: unknown[] }) => {
       capturedMessages.push(...request.messages)
-      return { id: 'r1', content: '', toolCalls: [], finishReason: 'stop' as const, usage: { promptTokens: 0, completionTokens: 0, totalTokens: 0 } }
+      return {
+        id: 'r1',
+        content: '',
+        toolCalls: [],
+        finishReason: 'stop' as const,
+        usage: { promptTokens: 0, completionTokens: 0, totalTokens: 0 },
+      }
     })
     const client = createTransportLLMClient(provider, 'gpt-4o', { ...transport, complete: mockComplete })
 
@@ -177,7 +183,9 @@ describe('createTransportLLMClient', () => {
         {
           role: 'user',
           content: 'look',
-          attachments: [{ id: 'i1', filename: 'photo.png', mimeType: 'image/png', size: 10, data: 'data:image/png;base64,abc' }],
+          attachments: [
+            { id: 'i1', filename: 'photo.png', mimeType: 'image/png', size: 10, data: 'data:image/png;base64,abc' },
+          ],
         },
       ],
       modelSettings: { supportsVision: true },
@@ -203,7 +211,13 @@ describe('createTransportLLMClient', () => {
     const capturedMessages: unknown[] = []
     const mockComplete = vi.fn(async (request: { messages: unknown[] }) => {
       capturedMessages.push(...request.messages)
-      return { id: 'r1', content: '', toolCalls: [], finishReason: 'stop' as const, usage: { promptTokens: 0, completionTokens: 0, totalTokens: 0 } }
+      return {
+        id: 'r1',
+        content: '',
+        toolCalls: [],
+        finishReason: 'stop' as const,
+        usage: { promptTokens: 0, completionTokens: 0, totalTokens: 0 },
+      }
     })
     const client = createTransportLLMClient(provider, 'gpt-4o', { ...transport, complete: mockComplete })
 
@@ -212,7 +226,9 @@ describe('createTransportLLMClient', () => {
         {
           role: 'user',
           content: 'look',
-          attachments: [{ id: 'i1', filename: 'photo.png', mimeType: 'image/png', size: 10, data: 'data:image/png;base64,abc' }],
+          attachments: [
+            { id: 'i1', filename: 'photo.png', mimeType: 'image/png', size: 10, data: 'data:image/png;base64,abc' },
+          ],
         },
       ],
       modelSettings: { supportsVision: true },

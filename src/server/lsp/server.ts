@@ -218,9 +218,7 @@ export class LspServer {
       // args arrays alongside shell:true are deprecated (DEP0190), and quoting
       // keeps cmd.exe happy when the path contains spaces.
       const needsShell = process.platform === 'win32' && /\.(cmd|bat)$/i.test(this.commandPath)
-      const command = needsShell
-        ? [`"${this.commandPath}"`, ...this.config.serverArgs].join(' ')
-        : this.commandPath
+      const command = needsShell ? [`"${this.commandPath}"`, ...this.config.serverArgs].join(' ') : this.commandPath
       this.process = spawn(command, needsShell ? [] : this.config.serverArgs, {
         cwd: this.workdir,
         stdio: ['pipe', 'pipe', 'pipe'],

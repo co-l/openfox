@@ -239,7 +239,15 @@ describe('llm client', () => {
   it('handles tool calls with empty arguments string in complete path', async () => {
     httpClientCreateMock.mockResolvedValueOnce({
       id: 'resp-1',
-      choices: [{ finish_reason: 'tool_calls', message: { content: null, tool_calls: [{ id: 'call-1', type: 'function', function: { name: 'step_done', arguments: '' } }] } }],
+      choices: [
+        {
+          finish_reason: 'tool_calls',
+          message: {
+            content: null,
+            tool_calls: [{ id: 'call-1', type: 'function', function: { name: 'step_done', arguments: '' } }],
+          },
+        },
+      ],
       usage: { prompt_tokens: 10, completion_tokens: 5, total_tokens: 15 },
     })
 

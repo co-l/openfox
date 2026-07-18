@@ -1,7 +1,9 @@
 import type { LLMMessage } from './types.js'
 import type { Attachment } from '../../shared/types.js'
-import { extractPdfText } from '../tools/pdf-utils.js'
+import { extractPdfContent, extractPdfText } from '../tools/pdf-utils.js'
 import { TEXT_MIME_EXACT, TEXT_MIME_PREFIXES } from '../../shared/constants.js'
+
+export type ContentPart = { type: 'text'; text: string } | { type: 'image_url'; image_url: { url: string } }
 
 function decodeDataUrlToText(data: string): string {
   const match = data.match(/^data:.*?;base64,(.+)$/)
@@ -25,6 +27,28 @@ export async function extractPdfFromDataUrl(data: string, filename: string): Pro
   return `[PDF: ${filename}] (could not extract text)`
 }
 
+export async function extractPdfBlocksFromDataUrl(data: string, filename: string): Promise<ContentPart[]> {
+  const base64Match = data.match(/^data:.*?;base64,(.+)$/)
+  if (!base64Match?.[1]) {
+    return [{ type: 'text', text: `[PDF: ${filename}] (could not extract content)` }]
+  }
+  try {
+    const buffer = Buffer.from(base64Match[1], 'base64')
+    const result = await extractPdfContent(buffer)
+    const parts: ContentPart[] = [{ type: 'text', text: `[PDF: ${filename}]` }]
+    for (const block of result.blocks) {
+      if (block.type === 'text' && block.content) {
+        parts.push({ type: 'text', text: block.content })
+      } else if (block.type === 'image' && block.dataUrl) {
+        parts.push({ type: 'image_url', image_url: { url: block.dataUrl } })
+      }
+    }
+    return parts
+  } catch {
+    return [{ type: 'text', text: `[PDF: ${filename}] (could not extract content)` }]
+  }
+}
+
 async function resolveAttachmentToText(attachment: Attachment, supportsVision: boolean): Promise<string> {
   const mimeType = attachment.mimeType
 
@@ -34,6 +58,9 @@ async function resolveAttachmentToText(attachment: Attachment, supportsVision: b
   }
 
   if (mimeType === 'application/pdf') {
+    if (attachment.pdfContent) {
+      return attachment.pdfContent
+    }
     return extractPdfFromDataUrl(attachment.data, attachment.filename || 'document.pdf')
   }
 
@@ -59,7 +86,10 @@ export async function resolveAttachmentsInMessages(
       continue
     }
 
-    if (supportsVision && msg.attachments.every((a) => a.mimeType.startsWith('image/'))) {
+    const isVisionAttachment = (attachment: Attachment): boolean =>
+      attachment.mimeType.startsWith('image/') || attachment.mimeType === 'application/pdf'
+
+    if (supportsVision && msg.attachments.every(isVisionAttachment)) {
       result.push(msg)
       continue
     }
@@ -69,7 +99,7 @@ export async function resolveAttachmentsInMessages(
     const remainingImageAttachments: Attachment[] = []
 
     for (const attachment of msg.attachments) {
-      if (supportsVision && attachment.mimeType.startsWith('image/')) {
+      if (supportsVision && isVisionAttachment(attachment)) {
         remainingImageAttachments.push(attachment)
         continue
       }

@@ -17,8 +17,9 @@ import type { Attachment } from '../../shared/types.js'
 import type { ModelProfile } from './profiles.js'
 import type { BackendCapabilities } from './backend.js'
 import { TEXT_MIME_PREFIXES, TEXT_MIME_EXACT } from '../../shared/constants.js'
-import { extractPdfFromDataUrl } from './resolve-attachments.js'
+import { extractPdfFromDataUrl, extractPdfBlocksFromDataUrl } from './resolve-attachments.js'
 
+import type { ContentPart } from './resolve-attachments.js'
 export { resolveAttachmentsInMessages } from './resolve-attachments.js'
 
 export interface ModelParams {
@@ -61,7 +62,7 @@ export function buildModelParams(params: {
   }
 }
 
-type AttachmentContent = Array<{ type: 'text'; text: string } | { type: 'image_url'; image_url: { url: string } }>
+type AttachmentContent = ContentPart[]
 
 async function buildAttachmentContent(
   msgContent: string | null | undefined,
@@ -73,8 +74,8 @@ async function buildAttachmentContent(
     content.push({ type: 'text', text: msgContent })
   }
   for (const attachment of attachments) {
-    const converted = await convertAttachment(attachment, modelSupportsVision)
-    content.push(converted)
+    const parts = await convertAttachment(attachment, modelSupportsVision)
+    content.push(...parts)
   }
   return content
 }
@@ -120,42 +121,35 @@ function buildAssistantMessage(msg: LLMMessage, thinkingField?: string): Record<
   return result
 }
 
-async function convertAttachment(
-  attachment: Attachment,
-  modelSupportsVision: boolean,
-): Promise<{ type: 'text'; text: string } | { type: 'image_url'; image_url: { url: string } }> {
+async function convertAttachment(attachment: Attachment, modelSupportsVision: boolean): Promise<AttachmentContent> {
   const mimeType = attachment.mimeType
 
   if (TEXT_MIME_EXACT.includes(mimeType) || TEXT_MIME_PREFIXES.some((p) => mimeType.startsWith(p))) {
-    return {
-      type: 'text',
-      text: `[File: ${attachment.filename || 'file'}]\n${attachment.data}`,
-    }
+    return [{ type: 'text', text: `[File: ${attachment.filename || 'file'}]\n${attachment.data}` }]
   }
 
   if (mimeType === 'application/pdf') {
+    if (modelSupportsVision) {
+      return extractPdfBlocksFromDataUrl(attachment.data, attachment.filename || 'document.pdf')
+    }
+    if (attachment.pdfContent) {
+      return [{ type: 'text', text: attachment.pdfContent }]
+    }
     const text = await extractPdfFromDataUrl(attachment.data, attachment.filename || 'document.pdf')
-    return { type: 'text', text }
+    return [{ type: 'text', text }]
   }
 
   if (modelSupportsVision) {
-    return {
-      type: 'image_url',
-      image_url: { url: attachment.data },
-    }
+    return [{ type: 'image_url', image_url: { url: attachment.data } }]
   }
 
   if (attachment.description) {
-    return {
-      type: 'text',
-      text: `[Image: ${attachment.filename || 'image'} - description: ${attachment.description}]`,
-    }
+    return [
+      { type: 'text', text: `[Image: ${attachment.filename || 'image'} - description: ${attachment.description}]` },
+    ]
   }
 
-  return {
-    type: 'text',
-    text: `[Image: ${attachment.filename || 'image'}] (vision not supported, cannot describe)`,
-  }
+  return [{ type: 'text', text: `[Image: ${attachment.filename || 'image'}] (vision not supported, cannot describe)` }]
 }
 
 export async function convertMessages(
