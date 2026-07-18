@@ -169,7 +169,8 @@ async function extractPageBlocks(
       imageCounter.limitReached = true
       break
     }
-    const opIdx = imageOpIndices[imageOpIdx]!
+    const opIdx = imageOpIndices[imageOpIdx]
+    if (opIdx === undefined) break
     const imgBlock = await extractImageBlock(page, opList, opIdx)
     if (imgBlock) {
       blocks.push(imgBlock)
@@ -205,7 +206,7 @@ async function extractImageBlock(
         imgData = raw as RawImageData
       }
     } catch {
-      // ignore
+      /* ignore extraction errors */
     }
   } else if (Array.isArray(args) && args[0] && typeof args[0] === 'object' && 'width' in (args[0] as object)) {
     imgData = args[0] as RawImageData
