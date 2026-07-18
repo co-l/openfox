@@ -35,6 +35,7 @@ export function Sidebar({ projectId, isOpen = true, onClose }: SidebarProps) {
   const sessionsHasMore = useSessionStore((state) => state.sessionsHasMore)
   const sessionsPaginationLoading = useSessionStore((state) => state.sessionsPaginationLoading)
   const sessionsWithPendingConfirmations = useSessionStore((state) => state.sessionsWithPendingConfirmations)
+  const pendingPathConfirmations = useSessionStore((state) => state.pendingPathConfirmations)
 
   const currentProject = useProjectStore((state) => state.currentProject)
 
@@ -228,6 +229,7 @@ export function Sidebar({ projectId, isOpen = true, onClose }: SidebarProps) {
                   handleRenameSession,
                   projectId,
                   sessionsWithPendingConfirmations,
+                  pendingPathConfirmations,
                 )}
               </div>
               {sessionsPaginationLoading && (
@@ -250,6 +252,7 @@ function renderSessionGroups(
   handleRenameSession: (sessionId: string, e?: React.MouseEvent) => void,
   projectId: string,
   sessionsWithPendingConfirmations: string[],
+  pendingPathConfirmations: { callId: string }[],
 ) {
   const groups = groupSessionsByDate(projectSessions)
 
@@ -269,7 +272,9 @@ function renderSessionGroups(
           const isActive = currentSession?.id === session.id
           const hasUnread = unreadSessionIds.includes(session.id)
           const isRunning = session.isRunning
-          const hasPendingConfirmation = sessionsWithPendingConfirmations.includes(session.id) && !isActive
+          const hasPendingConfirmation =
+            sessionsWithPendingConfirmations.includes(session.id) ||
+            (isActive && pendingPathConfirmations.length > 0)
           return (
             <div
               key={session.id}
