@@ -146,6 +146,8 @@ export async function executeSubAgent(options: SubAgentExecutionOptions): Promis
   } = options
 
   const agentDef = await resolveAgentDef(subAgentType)
+  const { resolveAgentLLMClient } = await import('../agents/model-cascade.js')
+  const agentLLMClient = resolveAgentLLMClient(agentDef, llmClient)
   const eventStore = getEventStore()
   const subAgentId = crypto.randomUUID()
   const session = sessionManager.requireSession(sessionId)
@@ -218,7 +220,7 @@ export async function executeSubAgent(options: SubAgentExecutionOptions): Promis
   const gitignoreSection = hasRunCommand ? await loadGitIgnoreRules(effectiveWorkdir) : ''
 
   const systemPrompt =
-    buildBasePrompt(effectiveWorkdir, undefined, skills.length > 0 ? skills : undefined, llmClient.getModel()) +
+    buildBasePrompt(session.workdir, undefined, skills.length > 0 ? skills : undefined, agentLLMClient.getModel()) +
     '\n\n' +
     agentDef.prompt +
     (gitignoreSection ? '\n\n' + gitignoreSection : '') +
@@ -234,8 +236,8 @@ export async function executeSubAgent(options: SubAgentExecutionOptions): Promis
       append: (event) => eventStore.append(sessionId, event),
       sessionManager,
       sessionId,
-      llmClient,
-      statsIdentity,
+      llmClient: agentLLMClient,
+      statsIdentity: { ...statsIdentity, model: agentLLMClient.getModel() },
       signal,
       onMessage,
       assembleRequest: async (input) =>

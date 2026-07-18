@@ -1,5 +1,5 @@
 import { memo } from 'react'
-import type { Message } from '@shared/types.js'
+import type { Message, ModelCascadeFallback } from '@shared/types.js'
 import type { TaskCompletedPayload } from '@shared/protocol.js'
 import { Markdown } from '../shared/Markdown'
 import { AssistantMessage } from './AssistantMessage'
@@ -8,6 +8,7 @@ import { WorkflowStartedCard } from './WorkflowStartedCard'
 import { MessageAttachments } from '../shared/MessageAttachments.js'
 import { MessageOptionsMenu } from './MessageOptionsMenu'
 import { AutoPromptCard } from './AutoPromptCard'
+import { ModelFallbackMessage } from './ModelFallbackMessage'
 
 interface ChatMessageProps {
   message: Message
@@ -20,6 +21,24 @@ interface UserMessageProps {
   message: Message
   messageId?: string
   sessionId?: string
+}
+
+function parseModelFallback(content: string): ModelCascadeFallback | null {
+  try {
+    const value = JSON.parse(content) as Partial<ModelCascadeFallback> | null
+    if (
+      value &&
+      typeof value.providerId === 'string' &&
+      typeof value.providerName === 'string' &&
+      typeof value.model === 'string' &&
+      typeof value.error === 'string'
+    ) {
+      return value as ModelCascadeFallback
+    }
+  } catch {
+    return null
+  }
+  return null
 }
 
 function UserMessage({ message, messageId, sessionId }: UserMessageProps) {
@@ -126,6 +145,16 @@ export const ChatMessage = memo(function ChatMessage({
     } catch {
       // Fall through to default rendering
     }
+  }
+
+  if (message.messageKind === 'model-fallback') {
+    const fallback = parseModelFallback(message.content)
+    if (fallback) return <ModelFallbackMessage {...fallback} />
+    return (
+      <div className="feed-item rounded border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-200">
+        Model fallback details unavailable
+      </div>
+    )
   }
 
   // Context reset separator (full-width divider for fresh context)

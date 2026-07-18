@@ -1,7 +1,15 @@
 import { beforeEach, describe, expect, it } from 'vitest'
 import { loadConfig } from '../config.js'
 import { closeDatabase, initDatabase } from './index.js'
-import { SETTINGS_KEYS, deleteSetting, getAllSettings, getSetting, setSetting } from './settings.js'
+import {
+  SETTINGS_DEFAULTS,
+  SETTINGS_KEYS,
+  deleteSetting,
+  getAllSettings,
+  getSetting,
+  setSetting,
+  validateSettingValue,
+} from './settings.js'
 
 describe('db settings', () => {
   beforeEach(() => {
@@ -9,6 +17,14 @@ describe('db settings', () => {
     const config = loadConfig()
     config.database.path = ':memory:'
     initDatabase(config)
+  })
+
+  it('defines and validates cascade cooldown settings', () => {
+    expect(SETTINGS_DEFAULTS[SETTINGS_KEYS.MODEL_CASCADE_OVERLOAD_COOLDOWN_MS]).toBe('1200000')
+    expect(SETTINGS_DEFAULTS[SETTINGS_KEYS.MODEL_CASCADE_TRANSIENT_COOLDOWN_MS]).toBe('120000')
+    expect(validateSettingValue(SETTINGS_KEYS.MODEL_CASCADE_OVERLOAD_COOLDOWN_MS, '60000')).toBeNull()
+    expect(validateSettingValue(SETTINGS_KEYS.MODEL_CASCADE_TRANSIENT_COOLDOWN_MS, '-1')).toContain('non-negative')
+    expect(validateSettingValue(SETTINGS_KEYS.MODEL_CASCADE_TRANSIENT_COOLDOWN_MS, 'invalid')).toContain('non-negative')
   })
 
   it('gets, sets, updates, deletes, and lists settings', () => {

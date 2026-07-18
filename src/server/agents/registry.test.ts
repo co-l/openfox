@@ -154,6 +154,10 @@ describe('CRUD', () => {
         description: 'Test agent',
         subagent: true,
         allowedTools: ['read_file'],
+        modelCascade: [
+          { providerId: 'primary', model: 'model/a' },
+          { providerId: 'fallback', model: 'model-b' },
+        ],
       },
       prompt: 'Do the thing.',
     }
@@ -164,6 +168,10 @@ describe('CRUD', () => {
 
     expect(loaded).toBeDefined()
     expect(loaded!.metadata.name).toBe('My Agent')
+    expect(loaded!.metadata.modelCascade).toEqual([
+      { providerId: 'primary', model: 'model/a' },
+      { providerId: 'fallback', model: 'model-b' },
+    ])
     expect(loaded!.prompt).toBe('Do the thing.')
   })
 
@@ -185,6 +193,19 @@ describe('CRUD', () => {
 
     const agents = await loadAllAgents(tempDir)
     expect(agents.find((a) => a.metadata.id === 'deleteme')).toBeUndefined()
+  })
+
+  it('should delete a user override of a built-in agent and reveal the default', async () => {
+    const defaults = await loadDefaultAgents()
+    const planner = defaults.find((agent) => agent.metadata.id === 'planner')!
+    await saveAgent(tempDir, { ...planner, metadata: { ...planner.metadata, name: 'Overridden Planner' } })
+    expect((await loadAllAgents(tempDir)).find((agent) => agent.metadata.id === 'planner')?.metadata.name).toBe(
+      'Overridden Planner',
+    )
+    expect((await deleteAgent(tempDir, 'planner')).success).toBe(true)
+    expect((await loadAllAgents(tempDir)).find((agent) => agent.metadata.id === 'planner')?.metadata.name).toBe(
+      'Planner',
+    )
   })
 
   it('should not delete built-in default agents', async () => {

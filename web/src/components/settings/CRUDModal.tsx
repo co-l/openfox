@@ -24,16 +24,17 @@ export function useConfirmDialog() {
 interface ConfirmButtonProps {
   onConfirm: () => void
   onCancel: () => void
+  label?: string
 }
 
-export function ConfirmButton({ onConfirm, onCancel }: ConfirmButtonProps) {
+export function ConfirmButton({ onConfirm, onCancel, label = 'Delete' }: ConfirmButtonProps) {
   return (
     <div className="flex items-center gap-1">
       <button
         onClick={onConfirm}
         className="px-1.5 py-0.5 rounded text-xs hover:opacity-90 transition-colors bg-accent-error/20 text-accent-error hover:bg-accent-error/30"
       >
-        Delete
+        {label}
       </button>
       <button
         onClick={onCancel}

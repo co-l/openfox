@@ -20,6 +20,34 @@ const baseEvent = {
 }
 
 describe('apply-events.ts new handlers', () => {
+  it('persists model fallback messages while excluding them from LLM context', () => {
+    const content = JSON.stringify({ providerId: 'a', providerName: 'Primary', model: 'first', error: 'busy' })
+    const events: StoredEvent[] = [
+      {
+        ...baseEvent,
+        type: 'message.start',
+        data: {
+          messageId: 'fallback-1',
+          role: 'system',
+          content,
+          contextWindowId: 'window-1',
+          isSystemGenerated: true,
+          messageKind: 'model-fallback',
+        },
+      },
+      { ...baseEvent, seq: 2, type: 'message.done', data: { messageId: 'fallback-1' } },
+    ]
+
+    expect(buildMessagesFromStoredEvents(events)[0]).toMatchObject({
+      id: 'fallback-1',
+      role: 'system',
+      content,
+      messageKind: 'model-fallback',
+      isStreaming: false,
+    })
+    expect(buildContextMessagesFromStoredEvents(events, 'window-1')).toEqual([])
+  })
+
   describe('tool.output events', () => {
     it('populates streamingOutput on tool calls', () => {
       const events: StoredEvent[] = [

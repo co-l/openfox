@@ -10,8 +10,9 @@ function buildStreamRequestObject(params: {
   modelSettings?:
     | { temperature?: number; topP?: number; topK?: number; maxTokens?: number; supportsVision?: boolean }
     | undefined
+  maxTokensLimit?: number | undefined
 }): LLMCompletionRequest {
-  const { messages, tools, toolChoice, reasoningEffort, signal, modelSettings } = params
+  const { messages, tools, toolChoice, reasoningEffort, signal, modelSettings, maxTokensLimit } = params
   return {
     messages,
     ...(tools && { tools }),
@@ -19,6 +20,7 @@ function buildStreamRequestObject(params: {
     ...(reasoningEffort && { reasoningEffort }),
     ...(signal && { signal }),
     ...(modelSettings && { modelSettings }),
+    ...(maxTokensLimit !== undefined && { maxTokensLimit }),
   }
 }
 

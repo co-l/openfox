@@ -28,6 +28,8 @@ export const SETTINGS_KEYS = {
   SEARCH_SEARXNG_API_KEY: 'search.searxngApiKey',
   TOOLS_USE_RTK: 'tools.useRtk',
   TOOLS_SHELL: 'tools.shell',
+  MODEL_CASCADE_OVERLOAD_COOLDOWN_MS: 'llm.modelCascadeOverloadCooldownMs',
+  MODEL_CASCADE_TRANSIENT_COOLDOWN_MS: 'llm.modelCascadeTransientCooldownMs',
 } as const
 
 export const SETTINGS_DEFAULTS: Record<string, string> = {
@@ -44,6 +46,8 @@ export const SETTINGS_DEFAULTS: Record<string, string> = {
   [SETTINGS_KEYS.LLM_DYNAMIC_SYSTEM_PROMPT]: 'false',
   [SETTINGS_KEYS.CACHE_WARMING]: 'false',
   [SETTINGS_KEYS.RETRY_PATTERNS]: JSON.stringify({ patterns: [], maxRetriesPerTurn: 10 }),
+  [SETTINGS_KEYS.MODEL_CASCADE_OVERLOAD_COOLDOWN_MS]: '1200000',
+  [SETTINGS_KEYS.MODEL_CASCADE_TRANSIENT_COOLDOWN_MS]: '120000',
   [SETTINGS_KEYS.KEYBINDINGS]: JSON.stringify({
     terminalToggle: { type: 'double-press', key: 'Control', threshold: 300 },
     quickAction: { type: 'double-press', key: 'Shift', threshold: 300 },
@@ -59,6 +63,17 @@ export const SETTINGS_DEFAULTS: Record<string, string> = {
 }
 
 export type SettingsKey = (typeof SETTINGS_KEYS)[keyof typeof SETTINGS_KEYS]
+
+export function validateSettingValue(key: string, value: unknown): string | null {
+  if (
+    key !== SETTINGS_KEYS.MODEL_CASCADE_OVERLOAD_COOLDOWN_MS &&
+    key !== SETTINGS_KEYS.MODEL_CASCADE_TRANSIENT_COOLDOWN_MS
+  ) {
+    return null
+  }
+  const duration = Number(value)
+  return Number.isFinite(duration) && duration >= 0 ? null : 'Cooldown must be non-negative'
+}
 
 interface SettingsRow {
   key: string

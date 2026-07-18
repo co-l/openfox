@@ -27,6 +27,10 @@ export interface LLMClientWithModel extends LLMClient {
   getProfile(): ModelProfile
   getBackend(): Backend
   setBackend(backend: Backend): void
+  getContextWindow?(): number
+  getModelSettings?(): LLMCompletionRequest['modelSettings'] | null
+  getProviderId?(): string
+  getProviderName?(): string
 }
 
 export function createLLMClient(config: Config, initialBackend: Backend = 'unknown'): LLMClientWithModel {
@@ -140,8 +144,10 @@ export function createLLMClient(config: Config, initialBackend: Backend = 'unkno
         }
       } catch (error: unknown) {
         logger.error('LLM complete error', { error: String(error) })
+        if (error instanceof LLMError) throw error
         throw new LLMError(error instanceof Error ? error.message : 'Unknown LLM error', {
-          originalError: error instanceof Error ? error : undefined,
+          kind: error instanceof DOMException && error.name === 'AbortError' ? 'abort' : 'network',
+          message: error instanceof Error ? error.message : 'Unknown LLM error',
         })
       }
     },
@@ -170,9 +176,11 @@ export function createLLMClient(config: Config, initialBackend: Backend = 'unkno
         })
 
         const { params: streamingParams } = createParams
-        const stream = httpClient.createChatCompletionStream(streamingParams, {
-          signal: request.signal,
-        })
+        const idleTimeoutController = new AbortController()
+        const streamSignal = request.signal
+          ? AbortSignal.any([request.signal, idleTimeoutController.signal])
+          : idleTimeoutController.signal
+        const stream = httpClient.createChatCompletionStream(streamingParams, { signal: streamSignal })
 
         let fullContent = ''
         let fullThinking = ''
@@ -183,7 +191,6 @@ export function createLLMClient(config: Config, initialBackend: Backend = 'unkno
 
         // Idle timeout tracking
         let lastChunkTime = Date.now()
-        const idleTimeoutController = new AbortController()
 
         // Start idle timeout timer
         const idleTimer = setInterval(() => {
@@ -333,9 +340,22 @@ export function createLLMClient(config: Config, initialBackend: Backend = 'unkno
         }
       } catch (error) {
         logger.error('LLM stream error', { error })
+        const metadata =
+          error instanceof LLMError && error.details && typeof error.details === 'object'
+            ? (error.details as import('./types.js').LLMErrorMetadata)
+            : {
+                kind: request.signal?.aborted
+                  ? ('abort' as const)
+                  : (error instanceof DOMException && error.name === 'AbortError') ||
+                      (error instanceof Error && error.message.includes('idle timeout'))
+                    ? ('timeout' as const)
+                    : ('network' as const),
+                message: error instanceof Error ? error.message : 'Unknown LLM error',
+              }
         yield {
           type: 'error',
           error: error instanceof Error ? error.message : 'Unknown LLM error',
+          metadata,
         }
       }
     },

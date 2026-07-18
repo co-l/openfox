@@ -1,8 +1,10 @@
 import { FormField, ModalActions, ErrorBanner } from '../CRUDModal'
 import { DropdownMenu } from '../../shared/DropdownMenu'
 import { parseAllowedTools, serializeTools } from './tools'
+import type { AgentModelRef } from '../../../stores/agents'
+import type { Provider } from '../../../stores/config'
 
-interface AgentFormProps {
+export interface AgentFormProps {
   formName: string
   formId: string
   formDescription: string
@@ -14,6 +16,9 @@ interface AgentFormProps {
   saving: boolean
   isReadOnly: boolean
   availableTools: { name: string; actions: string[]; topLevelOnly?: boolean }[]
+  providers: Provider[]
+  modelCascade?: AgentModelRef[]
+  onModelCascadeChange: (cascade: AgentModelRef[] | undefined) => void
   onNameChange: (name: string) => void
   onIdChange: (id: string) => void
   onDescriptionChange: (desc: string) => void
@@ -38,6 +43,9 @@ export function AgentForm({
   saving,
   isReadOnly,
   availableTools,
+  providers,
+  modelCascade,
+  onModelCascadeChange,
   onNameChange,
   onIdChange,
   onDescriptionChange,
@@ -146,6 +154,139 @@ export function AgentForm({
               </div>
             </div>
           </div>
+        </div>
+
+        <div>
+          <div className="flex items-center justify-between mb-1">
+            <div>
+              <label className="block text-xs text-text-secondary">Model cascade</label>
+              <span className="text-[11px] text-text-muted">
+                {modelCascade
+                  ? 'First available model is used; the session model is ignored.'
+                  : 'Inherits the session model.'}
+              </span>
+            </div>
+            <button
+              type="button"
+              disabled={isReadOnly}
+              onClick={() => {
+                if (modelCascade) onModelCascadeChange(undefined)
+                else {
+                  const provider = providers[0]
+                  const model = provider?.models.find((item) => item.selected)?.id ?? provider?.models[0]?.id
+                  if (provider && model) onModelCascadeChange([{ providerId: provider.id, model }])
+                }
+              }}
+              className="px-2 py-1 rounded text-xs bg-bg-tertiary text-text-secondary disabled:opacity-50"
+            >
+              {modelCascade ? 'Use session model' : 'Use custom cascade'}
+            </button>
+          </div>
+          {modelCascade && (
+            <div className="space-y-1.5 p-2 bg-bg-tertiary border border-border rounded">
+              {modelCascade.map((ref, index) => {
+                const provider = providers.find((item) => item.id === ref.providerId)
+                const models =
+                  provider?.models.filter(
+                    (item) => item.selected || !provider.models.some((entry) => entry.selected),
+                  ) ?? []
+                return (
+                  <div key={`${ref.providerId}-${ref.model}-${index}`} className="flex items-center gap-2">
+                    <span className="w-16 text-[11px] text-text-muted">
+                      {index === 0 ? 'Priority' : `Fallback ${index}`}
+                    </span>
+                    <select
+                      value={ref.providerId}
+                      disabled={isReadOnly}
+                      onChange={(event) => {
+                        const nextProvider = providers.find((item) => item.id === event.target.value)
+                        const nextModel =
+                          nextProvider?.models.find((item) => item.selected)?.id ?? nextProvider?.models[0]?.id ?? ''
+                        onModelCascadeChange(
+                          modelCascade.map((item, itemIndex) =>
+                            itemIndex === index ? { providerId: event.target.value, model: nextModel } : item,
+                          ),
+                        )
+                      }}
+                      className="flex-1 px-2 py-1 bg-bg-primary border border-border rounded text-xs"
+                    >
+                      {!provider && <option value={ref.providerId}>Missing provider: {ref.providerId}</option>}
+                      {providers.map((item) => (
+                        <option key={item.id} value={item.id}>
+                          {item.name}
+                        </option>
+                      ))}
+                    </select>
+                    <select
+                      value={ref.model}
+                      disabled={isReadOnly}
+                      onChange={(event) =>
+                        onModelCascadeChange(
+                          modelCascade.map((item, itemIndex) =>
+                            itemIndex === index ? { ...item, model: event.target.value } : item,
+                          ),
+                        )
+                      }
+                      className="flex-1 px-2 py-1 bg-bg-primary border border-border rounded text-xs"
+                    >
+                      {!models.some((item) => item.id === ref.model) && (
+                        <option value={ref.model}>Missing model: {ref.model}</option>
+                      )}
+                      {models.map((item) => (
+                        <option key={item.id} value={item.id}>
+                          {item.id}
+                        </option>
+                      ))}
+                    </select>
+                    <button
+                      type="button"
+                      disabled={isReadOnly || index === 0}
+                      onClick={() => {
+                        const next = [...modelCascade]
+                        ;[next[index - 1], next[index]] = [next[index]!, next[index - 1]!]
+                        onModelCascadeChange(next)
+                      }}
+                      className="px-1.5 text-xs disabled:opacity-30"
+                    >
+                      ↑
+                    </button>
+                    <button
+                      type="button"
+                      disabled={isReadOnly || index === modelCascade.length - 1}
+                      onClick={() => {
+                        const next = [...modelCascade]
+                        ;[next[index], next[index + 1]] = [next[index + 1]!, next[index]!]
+                        onModelCascadeChange(next)
+                      }}
+                      className="px-1.5 text-xs disabled:opacity-30"
+                    >
+                      ↓
+                    </button>
+                    <button
+                      type="button"
+                      disabled={isReadOnly || modelCascade.length === 1}
+                      onClick={() => onModelCascadeChange(modelCascade.filter((_, itemIndex) => itemIndex !== index))}
+                      className="px-1.5 text-xs text-error disabled:opacity-30"
+                    >
+                      ×
+                    </button>
+                  </div>
+                )
+              })}
+              <button
+                type="button"
+                disabled={isReadOnly || providers.length === 0}
+                onClick={() => {
+                  const provider = providers[0]
+                  const model = provider?.models.find((item) => item.selected)?.id ?? provider?.models[0]?.id
+                  if (provider && model) onModelCascadeChange([...modelCascade, { providerId: provider.id, model }])
+                }}
+                className="text-xs text-accent-primary disabled:opacity-50"
+              >
+                + Add fallback
+              </button>
+            </div>
+          )}
         </div>
 
         <div>

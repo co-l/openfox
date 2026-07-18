@@ -54,8 +54,14 @@ export interface PureStreamOptions {
   reasoningEffort?: ReasoningEffort
   /** User-configured model settings (temperature, topP, topK, maxTokens, supportsVision) */
   modelSettings?: ModelParams & { supportsVision?: boolean }
+  maxTokensLimit?: number
   /** Retry patterns to check mid-stream */
   retryPatterns?: RetryPatternConfig[]
+  messageContext?: {
+    contextWindowId?: string
+    subAgentId?: string
+    subAgentType?: string
+  }
 }
 
 export interface PureStreamResult {
@@ -198,6 +204,7 @@ export async function* streamLLMPure(options: PureStreamOptions): AsyncGenerator
     reasoningEffort,
     signal: combinedSignal,
     modelSettings: options.modelSettings,
+    maxTokensLimit: options.maxTokensLimit,
   })
 
   // Track tool call indices we've emitted preparing events for
@@ -214,6 +221,7 @@ export async function* streamLLMPure(options: PureStreamOptions): AsyncGenerator
   let accumulatedContent = ''
   let accumulatedThinking = ''
   let patternMatch: RetryPatternMatch | undefined
+  let streamError: string | undefined
 
   const activePatterns = retryPatterns?.filter((p) => p.active) ?? []
 
@@ -336,14 +344,22 @@ export async function* streamLLMPure(options: PureStreamOptions): AsyncGenerator
           break
         }
 
+        case 'model_cascade_fallback': {
+          const fallbackMessageId = crypto.randomUUID()
+          yield createMessageStartEvent(fallbackMessageId, 'system', JSON.stringify(value.fallback), {
+            ...options.messageContext,
+            isSystemGenerated: true,
+            messageKind: 'model-fallback',
+          })
+          yield createMessageDoneEvent(fallbackMessageId)
+          break
+        }
+
         case 'error':
           // Suppress chat.error when user-initiated abort caused the error —
           // the agent loop handles abort gracefully via signal check + emitPartialDoneEvents.
           if (signal?.aborted) break
-          yield {
-            type: 'chat.error',
-            data: { error: value.error, recoverable: true },
-          }
+          streamError = value.error
           break
       }
 
@@ -364,6 +380,8 @@ export async function* streamLLMPure(options: PureStreamOptions): AsyncGenerator
       throw error
     }
   }
+
+  if (streamError) throw new Error(streamError)
 
   // Pattern match took precedence over normal result
   if (patternMatch) {
@@ -421,7 +439,8 @@ export class TurnMetrics {
   private totalGenTime = 0 // seconds
   private totalToolTime = 0 // seconds
   private llmCalls: Array<
-    Omit<NonNullable<MessageStats['llmCalls']>[number], 'providerId' | 'providerName' | 'backend' | 'model'>
+    Omit<NonNullable<MessageStats['llmCalls']>[number], 'providerId' | 'providerName' | 'backend' | 'model'> &
+      Partial<StatsIdentity>
   > = []
   private modelParams: ModelParams = {}
 
@@ -438,6 +457,7 @@ export class TurnMetrics {
     completionTokens: number,
     previousContextTokens?: number,
     modelParams?: ModelParams,
+    identity?: StatsIdentity,
   ): void {
     const callIndex = this.llmCalls.length + 1
     this.totalPrefillTokens += promptTokens
@@ -456,6 +476,7 @@ export class TurnMetrics {
     this.llmCalls = [
       ...this.llmCalls,
       {
+        ...(identity ?? {}),
         callIndex,
         promptTokens,
         completionTokens,
@@ -497,10 +518,7 @@ export class TurnMetrics {
       totalGenTime: this.totalGenTime,
       totalToolTime: this.totalToolTime,
       totalTime: (performance.now() - this.startTime) / 1000,
-      llmCalls: this.llmCalls.map((call) => ({
-        ...identity,
-        ...call,
-      })),
+      llmCalls: this.llmCalls.map((call) => ({ ...identity, ...call })),
     })
   }
 }
@@ -521,7 +539,14 @@ export function createMessageStartEvent(
     subAgentId?: string
     subAgentType?: string
     isSystemGenerated?: boolean
-    messageKind?: 'correction' | 'auto-prompt' | 'context-reset' | 'task-completed' | 'workflow-started' | 'command'
+    messageKind?:
+      | 'correction'
+      | 'auto-prompt'
+      | 'context-reset'
+      | 'task-completed'
+      | 'workflow-started'
+      | 'command'
+      | 'model-fallback'
     metadata?: { type: string; name: string; color: string }
   },
 ): TurnEvent {

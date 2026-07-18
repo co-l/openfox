@@ -21,6 +21,9 @@ export function AdvancedTab({ onClose }: { onClose: () => void }) {
   })
 
   const [retryPatterns, setRetryPatterns] = useState<RetryPatternsValue>({ patterns: [], maxRetriesPerTurn: 10 })
+  const [overloadCooldown, setOverloadCooldown] = useState('20')
+  const [transientCooldown, setTransientCooldown] = useState('2')
+  const [cooldownError, setCooldownError] = useState('')
 
   useEffect(() => {
     setLocalToggles({
@@ -35,6 +38,8 @@ export function AdvancedTab({ onClose }: { onClose: () => void }) {
     getSetting(SETTINGS_KEYS.LLM_DYNAMIC_SYSTEM_PROMPT)
     getSetting(SETTINGS_KEYS.CACHE_WARMING)
     getSetting(SETTINGS_KEYS.RETRY_PATTERNS)
+    getSetting(SETTINGS_KEYS.MODEL_CASCADE_OVERLOAD_COOLDOWN_MS)
+    getSetting(SETTINGS_KEYS.MODEL_CASCADE_TRANSIENT_COOLDOWN_MS)
   }, [getSetting])
 
   useEffect(() => {
@@ -46,6 +51,14 @@ export function AdvancedTab({ onClose }: { onClose: () => void }) {
         // ignore parse errors
       }
     }
+    const rawOverload = settings[SETTINGS_KEYS.MODEL_CASCADE_OVERLOAD_COOLDOWN_MS]
+    const rawTransient = settings[SETTINGS_KEYS.MODEL_CASCADE_TRANSIENT_COOLDOWN_MS]
+    const overload = Number(rawOverload)
+    const transient = Number(rawTransient)
+    if (rawOverload?.trim() && Number.isFinite(overload) && overload >= 0)
+      setOverloadCooldown(String(overload / 60_000))
+    if (rawTransient?.trim() && Number.isFinite(transient) && transient >= 0)
+      setTransientCooldown(String(transient / 60_000))
   }, [settings])
 
   const handleRetryPatternsChange = useCallback(
@@ -72,6 +85,16 @@ export function AdvancedTab({ onClose }: { onClose: () => void }) {
     const newValue = !localToggles.cacheWarming
     setLocalToggles((prev) => ({ ...prev, cacheWarming: newValue }))
     setSetting(SETTINGS_KEYS.CACHE_WARMING, String(newValue))
+  }
+
+  const saveCooldown = async (key: string, value: string) => {
+    const minutes = Number(value)
+    if (!value.trim() || !Number.isFinite(minutes) || minutes < 0) {
+      setCooldownError('Enter a non-negative number of minutes.')
+      return
+    }
+    const result = await setSetting(key, String(minutes * 60_000))
+    setCooldownError(result.success ? '' : (result.error ?? 'Failed to save cooldown.'))
   }
 
   function handleLaunchOnboarding() {
@@ -122,6 +145,64 @@ export function AdvancedTab({ onClose }: { onClose: () => void }) {
         onToggle={handleToggleDynamicSystemPrompt}
         boldTitle
       />
+      <hr className="border-border" />
+      <div>
+        <h3 className="text-sm font-medium text-text-primary mb-1">Model Cascade Cooldowns</h3>
+        <p className="text-xs text-text-muted mb-3">
+          Unavailable models are skipped across all sessions until their cooldown expires.
+        </p>
+        <div className="grid grid-cols-2 gap-3">
+          <label className="text-xs text-text-secondary">
+            Quota / overload (minutes)
+            <input
+              type="number"
+              min="0"
+              step="1"
+              value={overloadCooldown}
+              onChange={(event) => setOverloadCooldown(event.target.value)}
+              onBlur={() => saveCooldown(SETTINGS_KEYS.MODEL_CASCADE_OVERLOAD_COOLDOWN_MS, overloadCooldown)}
+              className="mt-1 w-full px-2 py-1.5 bg-bg-tertiary border border-border rounded"
+            />
+          </label>
+          <label className="text-xs text-text-secondary">
+            Network / timeout / 5xx (minutes)
+            <input
+              type="number"
+              min="0"
+              step="0.5"
+              value={transientCooldown}
+              onChange={(event) => setTransientCooldown(event.target.value)}
+              onBlur={() => saveCooldown(SETTINGS_KEYS.MODEL_CASCADE_TRANSIENT_COOLDOWN_MS, transientCooldown)}
+              className="mt-1 w-full px-2 py-1.5 bg-bg-tertiary border border-border rounded"
+            />
+          </label>
+        </div>
+        {cooldownError && (
+          <p role="alert" className="mt-2 text-xs text-error">
+            {cooldownError}
+          </p>
+        )}
+      </div>
+      <hr className="border-border" />
+      <div>
+        <h3 className="text-sm font-medium text-text-primary mb-3">Integrations</h3>
+        <SettingsToggle
+          title='Show "Open in VSCode" links'
+          description="Display a link on file reads to open the file directly in VS Code."
+          enabled={localToggles.openInEditor}
+          onToggle={handleToggleOpenInEditor}
+        />
+      </div>
+      <hr className="border-border" />
+      <div>
+        <h3 className="text-sm font-medium text-text-primary mb-1">Onboarding</h3>
+        <p className="text-sm text-text-muted mb-4">
+          Reset your OpenFox setup and go through the initial configuration again.
+        </p>
+        <Button variant="secondary" onClick={handleLaunchOnboarding}>
+          Launch Onboarding
+        </Button>
+      </div>
     </div>
   )
 }

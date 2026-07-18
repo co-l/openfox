@@ -42,6 +42,18 @@ export async function isProjectItem(
   return pathExists(getProjectItemPath(projectDir, dirName, id, ext))
 }
 
+export function mergeMetadata<T extends Record<string, unknown>>(
+  existing: T,
+  update: Record<string, unknown> | undefined,
+  id: string,
+): Record<string, unknown> {
+  const merged = { ...existing, ...update, id }
+  for (const [key, value] of Object.entries(update ?? {})) {
+    if (value === null) delete merged[key]
+  }
+  return merged
+}
+
 export interface CrudRouteConfig<T> {
   dirName: string
   ext: string
@@ -58,6 +70,7 @@ export interface CrudRouteConfig<T> {
   isDefault: (id: string) => Promise<boolean>
   getDefaultIds?: () => Promise<string[]>
   validateCreate?: (body: Record<string, unknown>) => string | null
+  validateUpdate?: (body: Record<string, unknown>) => string | null
   mapToResponse: (item: T) => { [key: string]: unknown }
   extraGetData?: () => Promise<{ [key: string]: unknown }>
   extraRoutes?: (router: Router) => void
@@ -145,11 +158,14 @@ export function createCrudRoutes<T extends { metadata: { id: string; name: strin
       return res.status(404).json({ error: 'Not found' })
     }
     const body = req.body as Record<string, unknown>
+    const validationError = config.validateUpdate?.(body)
+    if (validationError) return res.status(400).json({ error: validationError })
     const meta = body['metadata'] as Record<string, unknown> | undefined
+    const mergedMetadata = mergeMetadata(existing.metadata as Record<string, unknown>, meta, id)
     const updated = {
       ...existing,
       ...body,
-      metadata: { ...existing.metadata, ...meta, id },
+      metadata: mergedMetadata,
     } as unknown as T
     const isProject = await isProjectItem(projectDir, config.dirName, id, config.ext)
     if (isProject) {
@@ -169,10 +185,6 @@ export function createCrudRoutes<T extends { metadata: { id: string; name: strin
         return res.status(500).json({ error: 'Failed to delete project item' })
       }
       return res.json({ success: true })
-    }
-    const isDefault = await config.isDefault(id)
-    if (isDefault) {
-      return res.status(403).json({ error: 'Cannot delete built-in defaults' })
     }
     const result = await config.delete(configDir, id)
     if (!result.success) {

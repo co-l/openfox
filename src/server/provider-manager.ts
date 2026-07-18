@@ -4,6 +4,7 @@ import { createTransportLLMClient } from './providers/adapters/transport-client.
 import { createLLMClient, clearModelCache, getModelProfile, type LLMClientWithModel } from './llm/index.js'
 import { logger } from './utils/logger.js'
 import { ensureVersionPrefix, stripVersionPrefix, buildModelsUrl } from './llm/url-utils.js'
+import { modelCooldownRegistry } from './llm/model-cascade.js'
 
 function normalizeModelId(s: string): string {
   return s.toLowerCase().replace(/[-_\s:.]+/g, '')
@@ -349,6 +350,12 @@ export interface ProviderManagerOptions {
   adapters?: ProviderRegistry
 }
 
+let runtimeModelClientFactory: ((providerId: string, model: string) => LLMClientWithModel | undefined) | undefined
+
+export function createRuntimeModelClient(providerId: string, model: string): LLMClientWithModel | undefined {
+  return runtimeModelClientFactory?.(providerId, model)
+}
+
 export function createProviderManager(config: Config, options: ProviderManagerOptions = {}): ProviderManager {
   let providers: Provider[] = [...(config.providers ?? [])]
   // Enrich all models with profile defaults for display
@@ -356,6 +363,43 @@ export function createProviderManager(config: Config, options: ProviderManagerOp
   let defaultModelSelection: string | undefined = config.defaultModelSelection
   let llmClient = createLLMClient(config)
   const providerStatus = new Map<string, 'connected' | 'disconnected' | 'unknown'>()
+  runtimeModelClientFactory = (providerId, model) => {
+    const provider = providers.find((item) => item.id === providerId)
+    if (!provider || !provider.models.some((item) => item.id === model)) return undefined
+    const client = createLLMClient(createConfigForProvider(provider, model))
+    client.setBackend(provider.backend as LlmBackend)
+    const modelConfig = provider.models.find((item) => item.id === model)
+    client.getContextWindow = () => modelConfig?.contextWindow ?? config.context.maxTokens
+    client.getModelSettings = () => {
+      const mode = modelConfig?.thinkingEnabled === false ? 'non-thinking' : 'thinking'
+      const extraKwargsRaw =
+        mode === 'thinking' ? modelConfig?.thinkingExtraKwargs : modelConfig?.nonThinkingExtraKwargs
+      const queryParamsRaw =
+        mode === 'thinking' ? modelConfig?.thinkingQueryParams : modelConfig?.nonThinkingQueryParams
+      const parse = (raw?: string) => {
+        if (!raw) return undefined
+        try {
+          return JSON.parse(raw) as Record<string, unknown>
+        } catch {
+          return undefined
+        }
+      }
+      const chatTemplateKwargs = parse(extraKwargsRaw)
+      const queryParams = parse(queryParamsRaw)
+      return {
+        ...(modelConfig?.temperature !== undefined ? { temperature: modelConfig.temperature } : {}),
+        ...(modelConfig?.topP !== undefined ? { topP: modelConfig.topP } : {}),
+        ...(modelConfig?.topK !== undefined ? { topK: modelConfig.topK } : {}),
+        ...(modelConfig?.maxTokens !== undefined ? { maxTokens: modelConfig.maxTokens } : {}),
+        ...(modelConfig?.supportsVision !== undefined ? { supportsVision: modelConfig.supportsVision } : {}),
+        ...(chatTemplateKwargs ? { chatTemplateKwargs } : {}),
+        ...(queryParams ? { queryParams } : {}),
+      }
+    }
+    client.getProviderId = () => providerId
+    client.getProviderName = () => provider.name
+    return client
+  }
 
   logger.debug('ProviderManager created', {
     providers: providers.map((p) => ({
@@ -619,6 +663,7 @@ export function createProviderManager(config: Config, options: ProviderManagerOp
       const wasActive = providers[index]?.isActive
       providers.splice(index, 1)
       providerStatus.delete(providerId)
+      modelCooldownRegistry.clearProvider(providerId)
 
       if (wasActive && providers.length > 0) {
         providers[0]!.isActive = true
@@ -632,6 +677,12 @@ export function createProviderManager(config: Config, options: ProviderManagerOp
     },
 
     setProviders(newProviders, newDefaultModelSelection) {
+      const wasActiveProviderId = this.getActiveProviderId()
+      for (const previous of providers) {
+        const next = newProviders.find((item) => item.id === previous.id)
+        if (!next || JSON.stringify(next) !== JSON.stringify(previous)) modelCooldownRegistry.clearProvider(previous.id)
+      }
+
       providers = [...newProviders]
       defaultModelSelection = newDefaultModelSelection
 
@@ -738,6 +789,7 @@ export function createProviderManager(config: Config, options: ProviderManagerOp
     },
 
     async updateModelSettings(providerId: string, modelId: string, settings: ModelSettingsUpdate) {
+      modelCooldownRegistry.clearProvider(providerId)
       const provider = providers.find((p) => p.id === providerId)
       if (!provider) {
         return { success: false, error: 'Provider not found' }
