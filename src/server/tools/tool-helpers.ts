@@ -67,6 +67,12 @@ export type ToolHandler<TArgs> = (args: TArgs, context: ToolContext, helpers: To
  * triggers on whichever fires first.
  */
 export function requestUserConfirmation(context: ToolContext, toolLabel: string, desc: string): Promise<boolean> {
+  // Sub-agent shortcut: skip confirmation dialogs since they don't render in the sub-agent bubble.
+  // In dangerous mode, auto-approve. In normal mode, deny (fail closed).
+  if (context.isSubAgent) {
+    if (context.dangerLevel === 'dangerous') return Promise.resolve(true)
+    return Promise.resolve(false)
+  }
   if (typeof context.onEvent !== 'function') return Promise.resolve(false)
   // Use a fresh UUID so two confirmations within the same tool call don't collide
   const callId = randomUUID()
