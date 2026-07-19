@@ -6,6 +6,7 @@ import type { SessionManager } from '../session/manager.js'
 import { requestPathAccess, PathAccessDeniedError, registerPathConfirmation } from './path-security.js'
 import { AskUserInterrupt } from './ask.js'
 import { createChatPathConfirmationMessage } from '../ws/protocol.js'
+import { getEventStore } from '../events/index.js'
 
 /**
  * Helper utilities provided to tool handlers by createTool.
@@ -74,6 +75,16 @@ export function requestUserConfirmation(
   ;(context.onEvent as (msg: unknown) => void)(
     createChatPathConfirmationMessage(callId, toolLabel, [desc], context.workdir, 'dangerous_command'),
   )
+  // Persist to EventStore so the confirmation survives navigation/reload
+  try {
+    const eventStore = getEventStore()
+    eventStore.append(context.sessionId, {
+      type: 'path.confirmation_pending',
+      data: { callId, tool: toolLabel, paths: [desc], workdir: context.workdir, reason: 'dangerous_command' },
+    })
+  } catch {
+    // Event store not available (tests, early init)
+  }
   return registerPathConfirmation(callId, [desc], context.sessionId, toolLabel, context.workdir, 'dangerous_command')
 }
 
