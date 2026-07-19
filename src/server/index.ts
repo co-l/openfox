@@ -419,6 +419,7 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
         const effectiveWorkdir = s.workspace ?? s.workdir
         if (effectiveWorkdir === project.workdir) {
           updateSessionBranch(s.id, branch)
+          sessionManager.emitBranchChange(s.id)
         }
       }
       res.json({ branch })
@@ -449,6 +450,7 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
         const effectiveWorkdir = s.workspace ?? s.workdir
         if (effectiveWorkdir === project.workdir) {
           updateSessionBranch(s.id, name)
+          sessionManager.emitBranchChange(s.id)
         }
       }
       res.json({ branch: name, sourceBranch: sourceBranch ?? null })
@@ -618,7 +620,7 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
 
     // maxTokens is no longer passed - it comes from providerManager.getCurrentModelContext() at query time
     const session = sessionManager.createSession(projectId, title, providerId ?? null, model ?? null)
-    wssExports.broadcastAll({
+    wssExports.broadcastForProject(projectId, session.id, {
       type: 'session.created',
       sessionId: session.id,
       payload: {

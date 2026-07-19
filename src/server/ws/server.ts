@@ -585,6 +585,18 @@ export function createWebSocketServer(
     }
   }
 
+  const broadcastForProject = (projectId: string, sessionId: string, msg: ServerMessage) => {
+    for (const [clientWs, client] of clients) {
+      if (clientWs.readyState !== WebSocket.OPEN) continue
+      const clientProjectId = client.activeSessionId
+        ? sessionManager.getSession(client.activeSessionId)?.projectId
+        : undefined
+      if (clientProjectId !== projectId) continue
+      const seq = client.lastSentSeq + 1
+      enqueueSend(client, serializeServerMessage({ ...msg, sessionId }), seq)
+    }
+  }
+
   // Global dev server event listeners — broadcast to all WS clients
   devServerManager.onOutput((workdir, chunk) => {
     broadcastAll(
@@ -810,6 +822,7 @@ export function createWebSocketServer(
     },
     close: (cb?: () => void) => wss.close(cb as (err?: Error) => void),
     broadcastForSession,
+    broadcastForProject,
     broadcastAll,
   }
 }
@@ -819,6 +832,7 @@ export interface WebSocketServerExports {
   abortSession: (sessionId: string) => boolean
   close: (cb?: () => void) => void
   broadcastForSession: (sessionId: string, msg: ServerMessage) => void
+  broadcastForProject: (projectId: string, sessionId: string, msg: ServerMessage) => void
   broadcastAll: (msg: ServerMessage) => void
 }
 
