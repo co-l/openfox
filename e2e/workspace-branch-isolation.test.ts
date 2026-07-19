@@ -1,5 +1,5 @@
 /**
- * PR #118 Feature Tests
+ * Workspace & Branch Isolation Tests
  *
  * Comprehensive E2E tests covering:
  * - Branch persistence and consistency checks
@@ -37,7 +37,7 @@ import {
 // 1. Branch Persistence & Consistency
 // ============================================================================
 
-describe('PR118 — Branch Persistence & Consistency', () => {
+describe('Branch Persistence & Consistency', () => {
   let server: TestServerHandle
   let testProject: TestProject
   let projectId: string
@@ -134,7 +134,7 @@ describe('PR118 — Branch Persistence & Consistency', () => {
 // 2. sourceBranch in checkout-new
 // ============================================================================
 
-describe('PR118 — sourceBranch in checkout-new', () => {
+describe('sourceBranch in checkout-new', () => {
   let server: TestServerHandle
   let testProject: TestProject
   let projectId: string
@@ -229,7 +229,7 @@ describe('PR118 — sourceBranch in checkout-new', () => {
 // 3. Shell Guards with User Confirmation
 // ============================================================================
 
-describe('PR118 — Shell Guards with User Confirmation', () => {
+describe('Shell Guards with User Confirmation', () => {
   let server: TestServerHandle
   let client: TestClient
   let testProject: TestProject
@@ -356,7 +356,7 @@ describe('PR118 — Shell Guards with User Confirmation', () => {
 // 4. Cross-Session Branch Sync
 // ============================================================================
 
-describe('PR118 — Cross-Session Branch Sync', () => {
+describe('Cross-Session Branch Sync', () => {
   let server: TestServerHandle
   let testProject: TestProject
   let projectId: string
@@ -473,7 +473,7 @@ describe('PR118 — Cross-Session Branch Sync', () => {
 // 5. Confirm-Path Session Binding
 // ============================================================================
 
-describe('PR118 — Confirm-Path Session Binding', () => {
+describe('Confirm-Path Session Binding', () => {
   let server: TestServerHandle
   let testProject: TestProject
 
@@ -558,7 +558,7 @@ describe('PR118 — Confirm-Path Session Binding', () => {
 // 6. Workspace Tool LLM Definition
 // ============================================================================
 
-describe('PR118 — Workspace Tool Definition', () => {
+describe('Workspace Tool Definition', () => {
   let server: TestServerHandle
   let testProject: TestProject
 
@@ -595,7 +595,7 @@ describe('PR118 — Workspace Tool Definition', () => {
 // 7. Branch Consistency Check
 // ============================================================================
 
-describe('PR118 — Branch Consistency Check', () => {
+describe('Branch Consistency Check', () => {
   let server: TestServerHandle
   let testProject: TestProject
   let projectId: string
@@ -648,7 +648,7 @@ describe('PR118 — Branch Consistency Check', () => {
 // 8. Confirm-Path Event Persistence (survives reload)
 // ============================================================================
 
-describe('PR118 — Confirmation Event Persistence', () => {
+describe('Confirmation Event Persistence', () => {
   let server: TestServerHandle
   let testProject: TestProject
 
@@ -692,7 +692,7 @@ describe('PR118 — Confirmation Event Persistence', () => {
 // 9. Default Branch Resolution
 // ============================================================================
 
-describe('PR118 — Default Branch Resolution', () => {
+describe('Default Branch Resolution', () => {
   let server: TestServerHandle
   let testProject: TestProject
 
@@ -728,7 +728,7 @@ describe('PR118 — Default Branch Resolution', () => {
 // Setup: init git repo template with 'main' branch
 // ============================================================================
 
-describe('PR118 — Unified Setup', () => {
+describe('Unified Setup', () => {
   let server: TestServerHandle
   let testProject: TestProject
   let projectId: string
