@@ -4,7 +4,7 @@
 
 ## Overview
 
-PRs target `develop`. Features accumulate via squash-merges. `main` stays aligned with the latest published version (see release process in [AGENTS.md](../AGENTS.md#release)).
+**All PRs must target `develop`.** The setup phase enforces this automatically. Features accumulate via squash-merges. `main` stays aligned with the latest published version (see release process in [AGENTS.md](../AGENTS.md#release)).
 
 PRs can come from **same-repo branches** or **forks**. The workflow handles both.
 
@@ -41,7 +41,15 @@ git reset --hard origin/develop
 # 4. Fetch the PR branch
 gh pr checkout <N>
 
-# 5. Rebase PR branch onto latest develop (ensures review is against current code)
+# 5. Verify PR targets develop (all PRs must target develop, not main)
+PR_BASE=$(gh pr view <N> --json baseRefName --jq '.baseRefName')
+if [ "$PR_BASE" != "develop" ]; then
+  echo "⚠️  PR #<N> targets '$PR_BASE' — retargeting to 'develop'"
+  gh api repos/co-l/openfox/pulls/<N> -X PATCH -f base=develop
+  git fetch origin
+fi
+
+# 6. Rebase PR branch onto latest develop (ensures review is against current code)
 git rebase origin/develop
 ```
 
@@ -107,7 +115,7 @@ git remote add fork-<N> git@github.com:<user>/openfox.git
 git push fork-<N> HEAD:<remote-branch-name>
 git remote remove fork-<N>
 
-# 8. Ensure PR targets develop (not main)
+# 8. Safety net — ensure PR targets develop (should already be develop from Phase 1)
 gh api repos/co-l/openfox/pulls/<N> -X PATCH -f base=develop
 
 # 9. Squash-merge via API
@@ -133,6 +141,14 @@ workspace switch review-pr-103
 git remote set-url origin git@github.com:co-l/openfox.git
 git fetch origin && git reset --hard origin/develop
 gh pr checkout 103
+
+# Verify PR targets develop
+PR_BASE=$(gh pr view 103 --json baseRefName --jq '.baseRefName')
+if [ "$PR_BASE" != "develop" ]; then
+  echo "⚠️  PR #103 targets '$PR_BASE' — retargeting to 'develop'"
+  gh api repos/co-l/openfox/pulls/103 -X PATCH -f base=develop
+  git fetch origin
+fi
 
 # ── Review ──
 git diff --stat origin/develop...HEAD
@@ -172,25 +188,33 @@ Instead, merge the PR as-is, then cherry-pick your fixes onto develop.
 # 1. Fetch the PR branch
 gh pr checkout <N>
 
-# 2. Apply fixes, commit, and tag
+# 2. Verify PR targets develop
+PR_BASE=$(gh pr view <N> --json baseRefName --jq '.baseRefName')
+if [ "$PR_BASE" != "develop" ]; then
+  echo "⚠️  PR #<N> targets '$PR_BASE' — retargeting to 'develop'"
+  gh api repos/co-l/openfox/pulls/<N> -X PATCH -f base=develop
+  git fetch origin
+fi
+
+# 3. Apply fixes, commit, and tag
 # ... agent applies fixes ...
 git add -A && git commit -m "review: fix ..."
 git tag review-fix-<N>
 
-# 3. Squash-merge the ORIGINAL PR (without your fixes)
+# 4. Squash-merge the ORIGINAL PR (without your fixes)
 gh api repos/co-l/openfox/pulls/<N>/merge -X PUT \
   -f merge_method=squash \
   -f commit_title="feat: description (#<N>)"
 
-# 4. Update develop
+# 5. Update develop
 git checkout develop && git pull origin develop --ff-only
 
-# 5. Cherry-pick your fixes
+# 6. Cherry-pick your fixes
 git cherry-pick review-fix-<N>
 git tag -d review-fix-<N>
 git push origin develop
 
-# 6. Clean up
+# 7. Clean up
 workspace switch original
 workspace delete review-pr-<N>
 ```
