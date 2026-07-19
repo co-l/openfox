@@ -148,6 +148,7 @@ describe('ensureWorkspace', () => {
   it('checks out specific branch when requested', async () => {
     vi.mocked(spawn)
       .mockReturnValueOnce(makeMockProc('') as any) // git clone --shared
+      .mockReturnValueOnce(makeMockProc('') as any) // validateRef (git check-ref-format)
       .mockReturnValueOnce(makeMockProc('') as any) // git checkout (branch exists)
     vi.mocked(mkdir).mockResolvedValue(undefined)
     vi.mocked(stat)
@@ -157,12 +158,13 @@ describe('ensureWorkspace', () => {
 
     const result = await ensureWorkspace(CWD, 'my-experiment', PROJECT_NAME, 'develop')
     expect(result.name).toBe('my-experiment')
-    expect(spawn).toHaveBeenCalledTimes(2)
+    expect(spawn).toHaveBeenCalledTimes(3)
   })
 
   it('uses getDefaultBranch as source when requested branch does not exist', async () => {
     vi.mocked(spawn)
       .mockReturnValueOnce(makeMockProc('') as any) // git clone --shared
+      .mockReturnValueOnce(makeMockProc('') as any) // validateRef (git check-ref-format)
       .mockReturnValueOnce(makeMockProc('', 'fatal: not a git repository', 128) as any) // git checkout fails
       .mockReturnValueOnce(makeMockProc('') as any) // git fetch origin --no-tags --quiet (getDefaultBranch)
       .mockReturnValueOnce(makeMockProc('refs/remotes/origin/main\n') as any) // git symbolic-ref origin/HEAD (getDefaultBranch)

@@ -39,6 +39,7 @@ import {
   ensureWorkspace,
   getDefaultBranch,
   resolveAndValidateSourceBranch,
+  validateRef,
   getGitBranch,
   getCommitsBehind,
   runGit,
@@ -1036,6 +1037,7 @@ export class SessionManager {
     const currentBranch = await getGitBranch(wsPath)
     if (currentBranch !== branch) {
       try {
+        await validateRef(wsPath, branch)
         await runGit(wsPath, ['checkout', branch]).catch(async () => {
           const sb = sourceBranch ?? (await getDefaultBranch(projectDir))
           const validated = sourceBranch ? await resolveAndValidateSourceBranch(wsPath, sourceBranch) : sb
