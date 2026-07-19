@@ -428,9 +428,14 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
     const { createBranch, resolveAndValidateSourceBranch, validateRef } = await import('./git/workspace.js')
     try {
       await validateRef(project.workdir, name)
-      const sb = sourceBranch ? await resolveAndValidateSourceBranch(project.workdir, sourceBranch) : undefined
-      await createBranch(project.workdir, name, sb)
-      res.json({ branch: name, sourceBranch: sb ?? null })
+      if (sourceBranch) {
+        await validateRef(project.workdir, sourceBranch)
+        const sb = await resolveAndValidateSourceBranch(project.workdir, sourceBranch)
+        await createBranch(project.workdir, name, sb)
+      } else {
+        await createBranch(project.workdir, name)
+      }
+      res.json({ branch: name, sourceBranch: sourceBranch ?? null })
     } catch (err) {
       res.status(400).json({ error: err instanceof Error ? err.message : 'Failed to create branch' })
     }
@@ -474,14 +479,21 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
     const { name, sourceBranch } = req.body
     if (!name || typeof name !== 'string') return res.status(400).json({ error: 'name is required' })
     const effectiveWorkdir = session.workspace ?? session.workdir
-    const { createBranch, resolveAndValidateSourceBranch, validateRef } = await import('./git/workspace.js')
+    const { validateRef } = await import('./git/workspace.js')
     const { updateSessionBranch } = await import('./db/sessions.js')
     try {
       await validateRef(effectiveWorkdir, name)
-      const sb = sourceBranch ? await resolveAndValidateSourceBranch(effectiveWorkdir, sourceBranch) : undefined
-      await createBranch(effectiveWorkdir, name, sb)
+      if (sourceBranch) {
+        await validateRef(effectiveWorkdir, sourceBranch)
+        const { resolveAndValidateSourceBranch, createBranch } = await import('./git/workspace.js')
+        const sb = await resolveAndValidateSourceBranch(effectiveWorkdir, sourceBranch)
+        await createBranch(effectiveWorkdir, name, sb)
+      } else {
+        const { createBranch } = await import('./git/workspace.js')
+        await createBranch(effectiveWorkdir, name)
+      }
       updateSessionBranch(req.params.id, name)
-      res.json({ branch: name, sourceBranch: sb ?? null })
+      res.json({ branch: name, sourceBranch: sourceBranch ?? null })
     } catch (err) {
       res.status(400).json({ error: err instanceof Error ? err.message : 'Failed to create branch' })
     }

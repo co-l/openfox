@@ -127,6 +127,9 @@ export async function getDefaultBranch(projectDir: string): Promise<string> {
  * Returns the local ref name that can be used as the source for git checkout -b.
  */
 export async function resolveAndValidateSourceBranch(cwd: string, sourceBranch: string): Promise<string> {
+  // Validate the source branch name format first
+  await validateRef(cwd, sourceBranch.replace(/^origin\//, ''))
+
   // fetch to ensure remote refs are up to date
   await runGit(cwd, ['fetch', 'origin', '--no-tags', '--quiet']).catch(() => {})
 

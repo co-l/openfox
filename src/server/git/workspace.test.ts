@@ -221,6 +221,7 @@ describe('getDefaultBranch', () => {
 describe('resolveAndValidateSourceBranch', () => {
   it('returns local branch name when it exists locally', async () => {
     vi.mocked(spawn)
+      .mockReturnValueOnce(makeMockProc('') as any) // git check-ref-format (validateRef)
       .mockReturnValueOnce(makeMockProc('') as any) // git fetch
       .mockReturnValueOnce(makeMockProc('abc123\n') as any) // git rev-parse local ref
     const result = await resolveAndValidateSourceBranch(CWD, 'main')
@@ -229,6 +230,7 @@ describe('resolveAndValidateSourceBranch', () => {
 
   it('creates tracking branch when branch exists on origin', async () => {
     vi.mocked(spawn)
+      .mockReturnValueOnce(makeMockProc('') as any) // git check-ref-format (validateRef)
       .mockReturnValueOnce(makeMockProc('') as any) // git fetch
       .mockReturnValueOnce(makeMockProc('', '', 1) as any) // git rev-parse local fails
       .mockReturnValueOnce(makeMockProc('abc123\n') as any) // git rev-parse remote ref succeeds
@@ -239,6 +241,7 @@ describe('resolveAndValidateSourceBranch', () => {
 
   it('throws when branch does not exist locally or on origin', async () => {
     vi.mocked(spawn)
+      .mockReturnValueOnce(makeMockProc('') as any) // git check-ref-format (validateRef)
       .mockReturnValueOnce(makeMockProc('') as any) // git fetch
       .mockReturnValueOnce(makeMockProc('', '', 1) as any) // git rev-parse local fails
       .mockReturnValueOnce(makeMockProc('', '', 1) as any) // git rev-parse remote fails
