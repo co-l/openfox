@@ -568,8 +568,8 @@ export function createWebSocketServer(
       const seq = client.lastSentSeq + 1
       enqueueSend(client, serializeServerMessage({ ...msg, sessionId }), seq)
     }
-    // Broadcast confirmations to non-subscribed clients within the same project
-    if (msg.type === 'chat.path_confirmation' && projectId) {
+    // Broadcast confirmations and their resolution to non-subscribed clients within the same project
+    if ((msg.type === 'chat.path_confirmation' || msg.type === 'session.confirmation_resolved') && projectId) {
       for (const [clientWs, client] of clients) {
         if (clientWs.readyState !== WebSocket.OPEN) continue
         if (isSubscribedToSession(client, sessionId)) continue
@@ -578,11 +578,9 @@ export function createWebSocketServer(
           : undefined
         if (clientProjectId !== projectId) continue
         const seq = client.lastSentSeq + 1
-        enqueueSend(
-          client,
-          serializeServerMessage({ type: 'session.confirmation_pending', sessionId, payload: msg.payload }),
-          seq,
-        )
+        const crossSessionType =
+          msg.type === 'chat.path_confirmation' ? 'session.confirmation_pending' : 'session.confirmation_resolved'
+        enqueueSend(client, serializeServerMessage({ type: crossSessionType, sessionId, payload: msg.payload }), seq)
       }
     }
   }

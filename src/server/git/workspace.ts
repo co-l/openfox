@@ -148,10 +148,8 @@ export async function resolveAndValidateSourceBranch(
   // check if it exists on workspace origin
   const remoteRef = await captureStdout(cwd, ['rev-parse', '--verify', '--quiet', 'refs/remotes/origin/' + branchName])
   if (remoteRef !== null) {
-    // create a local tracking branch from origin
-    await runGit(cwd, ['checkout', '-b', branchName, 'origin/' + branchName]).catch(async () => {
-      await runGit(cwd, ['branch', '--track', branchName, 'origin/' + branchName])
-    })
+    // create a local tracking branch from origin without switching cwd's checkout
+    await runGit(cwd, ['branch', '--track', branchName, 'origin/' + branchName])
     return branchName
   }
 

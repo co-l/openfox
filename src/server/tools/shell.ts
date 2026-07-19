@@ -13,9 +13,14 @@ import { getSetting, SETTINGS_KEYS } from '../db/settings.js'
 /**
  * Patterns that escape the effective workspace directory.
  * Handles optional quotes around paths to prevent bypass via quoting.
+ * Patterns match against a quote-stripped version of the command so that
+ * cd "$HOME" (stripped → cd   $HOME) is not accidentally missed.
  */
 const ESCAPE_PATTERNS = [
   /\bcd\s+['"]?(?:\.\.|\/|~)/,
+  /\bcd\s+\$/, // cd with variable expansion ($HOME, ${HOME})
+  /\bcd\s+\$\(/, // cd with command substitution $(...)
+  /\bcd\s+`/, // cd with backtick substitution
   /\bgit\s+-C\s+/,
   /GIT_DIR=/,
   /\bgit\s+--work-tree[\s=]/,
@@ -25,6 +30,8 @@ const ESCAPE_PATTERNS = [
 /**
  * Check if a command contains workspace escape patterns.
  * Strips quotes globally so patterns like cd "$PWD/.." are caught (becomes cd $PWD/..).
+ * Then checks individual segments against the original command for variable/substitution
+ * patterns that are masked by quoted strings.
  */
 export function detectEscapePattern(command: string): string | null {
   // Strip quotes to normalize paths before matching
@@ -36,12 +43,22 @@ export function detectEscapePattern(command: string): string | null {
     }
   }
   // Catch indirect escapes like cd sub && cd ../.. and cd "$PWD/.."
-  // Split by command separators and check each segment for cd with ..
+  // Also catch variable expansion and command substitution in cd arguments.
+  // Works on the original command (not quote-stripped) so $HOME inside quotes
+  // is still visible.
   const segments = command.split(/[;&|]|&&|\|\|/)
   for (const segment of segments) {
     const trimmed = segment.trim()
     // Check if this segment does a cd to a parent/absolute/tilde path
-    if (/^cd\s+.+\.\./.test(trimmed) || /^cd\s+['"]?\//.test(trimmed) || /^cd\s+['"]?~/.test(trimmed) || /^cd\s+['"]?\.\./.test(trimmed)) {
+    if (
+      /^cd\s+.+\.\./.test(trimmed) ||
+      /^cd\s+['"]?\//.test(trimmed) ||
+      /^cd\s+['"]?~/.test(trimmed) ||
+      /^cd\s+['"]?\.\./.test(trimmed) ||
+      /^cd\s+.*\$\(/.test(trimmed) || // cd with $(...) substitution
+      /^cd\s+.*`/.test(trimmed) || // cd with backtick substitution
+      /^cd\s+.*\$\{?[A-Za-z_]/.test(trimmed) // cd with variable expansion
+    ) {
       return trimmed
     }
   }

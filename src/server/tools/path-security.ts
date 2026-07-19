@@ -812,9 +812,10 @@ export function providePathConfirmation(
     // Event store might not be initialized in tests, continue without event
   }
 
-  if (approved) {
-    // Add real filesystem paths to the allowlist, but skip descriptions
-    // for non-path confirmations (dangerous_command, git_no_verify)
+  if (approved && alwaysAllow) {
+    // Add real filesystem paths to the allowlist only when alwaysAllow is true.
+    // One-time approvals (alwaysAllow=false or undefined) must not persist.
+    // Skip non-path confirmations (dangerous_command, git_no_verify).
     if (pending.reason !== 'dangerous_command' && pending.reason !== 'git_no_verify') {
       addAllowedPaths(pending.sessionId, pending.paths)
     }

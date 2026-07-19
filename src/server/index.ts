@@ -412,6 +412,15 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
     const { checkoutBranch } = await import('./git/workspace.js')
     try {
       await checkoutBranch(project.workdir, branch)
+      // Update all sessions using this project tree
+      const { updateSessionBranch } = await import('./db/sessions.js')
+      const allSessions = sessionManager.listSessions()
+      for (const s of allSessions) {
+        const effectiveWorkdir = s.workspace ?? s.workdir
+        if (effectiveWorkdir === project.workdir) {
+          updateSessionBranch(s.id, branch)
+        }
+      }
       res.json({ branch })
     } catch (err) {
       res.status(400).json({ error: err instanceof Error ? err.message : 'Failed to checkout branch' })
@@ -430,10 +439,18 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
       await validateRef(project.workdir, name)
       let sb: string | undefined
       if (sourceBranch) {
-        // resolveAndValidateSourceBranch handles its own validateRef internally
         sb = await resolveAndValidateSourceBranch(project.workdir, sourceBranch, project.workdir)
       }
       await createBranch(project.workdir, name, sb)
+      // Update all sessions using this project tree
+      const { updateSessionBranch } = await import('./db/sessions.js')
+      const allSessions = sessionManager.listSessions()
+      for (const s of allSessions) {
+        const effectiveWorkdir = s.workspace ?? s.workdir
+        if (effectiveWorkdir === project.workdir) {
+          updateSessionBranch(s.id, name)
+        }
+      }
       res.json({ branch: name, sourceBranch: sourceBranch ?? null })
     } catch (err) {
       res.status(400).json({ error: err instanceof Error ? err.message : 'Failed to create branch' })
@@ -475,6 +492,7 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
         for (const s of all) {
           if (s.id !== req.params.id && s.workspace === session.workspace) {
             updateSessionBranch(s.id, branch)
+            sessionManager.emitBranchChange(s.id)
           }
         }
       }
@@ -513,6 +531,7 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
         for (const s of all) {
           if (s.id !== req.params.id && s.workspace === session.workspace) {
             updateSessionBranch(s.id, name)
+            sessionManager.emitBranchChange(s.id)
           }
         }
       }
@@ -940,8 +959,11 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
     const sessionId = req.params.id
     const { callId, approved, alwaysAllow } = req.body
 
-    if (!callId || approved === undefined) {
-      return res.status(400).json({ error: 'callId and approved are required' })
+    if (!callId || typeof approved !== 'boolean') {
+      return res.status(400).json({ error: 'callId and approved (boolean) are required' })
+    }
+    if (alwaysAllow !== undefined && typeof alwaysAllow !== 'boolean') {
+      return res.status(400).json({ error: 'alwaysAllow must be a boolean if provided' })
     }
 
     const { providePathConfirmation, getConfirmationSessionId } = await import('./tools/index.js')

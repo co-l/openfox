@@ -238,6 +238,46 @@ describe('detectEscapePattern', () => {
     expect(detectEscapePattern('cd src && npm run test')).toBeNull()
     expect(detectEscapePattern('cat file.txt')).toBeNull()
   })
+
+  it('detects cd with unquoted variable expansion', () => {
+    expect(detectEscapePattern('cd $HOME')).toContain('cd')
+  })
+
+  it('detects cd with quoted variable expansion', () => {
+    expect(detectEscapePattern('cd "$HOME"')).toContain('cd')
+  })
+
+  it('detects cd with brace variable expansion', () => {
+    expect(detectEscapePattern('cd ${HOME}/sensitive')).toContain('cd')
+  })
+
+  it('detects cd with command substitution $(...)', () => {
+    expect(detectEscapePattern('cd "$(printf /tmp)"')).toContain('cd')
+  })
+
+  it('detects cd with unquoted command substitution', () => {
+    expect(detectEscapePattern('cd $(mktemp -d)')).toContain('cd')
+  })
+
+  it('detects cd with backtick command substitution', () => {
+    expect(detectEscapePattern('cd `dirname $0`')).toContain('cd')
+  })
+
+  it('detects cd with variable in piped command', () => {
+    expect(detectEscapePattern('cd "$SOME_DIR" && cat file.txt')).toContain('cd')
+  })
+
+  it('detects cd with variable in chained command', () => {
+    expect(detectEscapePattern('cd "$HOME"; ls')).toContain('cd')
+  })
+
+  it('still allows cd to literal relative subdirectory', () => {
+    expect(detectEscapePattern('cd src/components')).toBeNull()
+  })
+
+  it('still allows cd with dot-prefixed relative path', () => {
+    expect(detectEscapePattern('cd ./src')).toBeNull()
+  })
 })
 
 describe('detectGitMutation', () => {

@@ -365,6 +365,17 @@ export class SessionManager {
   }
 
   /**
+   * Emit session_updated for the given session.
+   * Used by REST handlers after updating sibling session branches.
+   */
+  emitBranchChange(sessionId: string): void {
+    const session = this.getSession(sessionId)
+    if (session) {
+      this.emit({ type: 'session_updated', session })
+    }
+  }
+
+  /**
    * Change session phase. Emits phase.changed event.
    */
   setPhase(sessionId: string, phase: SessionPhase): Session {
@@ -1166,6 +1177,8 @@ export class SessionManager {
         )
         for (const other of otherSessionsOnWorkspace) {
           updateSessionBranch(other.id, actualBranch)
+          const updated = this.getSession(other.id)
+          if (updated) this.emit({ type: 'session_updated', session: updated })
         }
       }
 
