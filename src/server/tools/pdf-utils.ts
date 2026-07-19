@@ -60,6 +60,7 @@ export interface RawImageData {
   height: number
   data: Uint8Array | Uint8ClampedArray
   kind: number
+  bitmap?: unknown
 }
 
 const IMAGE_KIND_GRAYSCALE_1BPP = 1
@@ -106,11 +107,34 @@ function toRgbaBuffer(data: Uint8Array | Uint8ClampedArray, width: number, heigh
   return rgba
 }
 
+// OffscreenCanvas and ImageBitmap are available in Node.js 20+ without DOM lib.
+/* eslint-disable @typescript-eslint/no-explicit-any */
+function extractBitmapToRawImageData(bitmap: any): RawImageData {
+  const canvas = new (globalThis as any).OffscreenCanvas(bitmap.width, bitmap.height)
+  const ctx = canvas.getContext('2d')!
+  ctx.drawImage(bitmap, 0, 0)
+  const imageData = ctx.getImageData(0, 0, bitmap.width, bitmap.height)
+  return {
+    width: bitmap.width,
+    height: bitmap.height,
+    data: new Uint8Array(imageData.data.buffer),
+    kind: IMAGE_KIND_RGBA_32BPP,
+  }
+}
+/* eslint-enable @typescript-eslint/no-explicit-any */
+
 export function encodeImageToDataUrl(imgData: RawImageData, maxDimension = 1024): string | null {
   try {
     let { width, height } = imgData
-    const { data, kind } = imgData
+    let { data, kind } = imgData
 
+    if (imgData.bitmap && !data) {
+      const converted = extractBitmapToRawImageData(imgData.bitmap)
+      data = converted.data
+      kind = converted.kind
+    }
+
+    if (!data) return null
     if (width * height * 4 > 20_971_520) return null
 
     if (maxDimension > 0 && (width > maxDimension || height > maxDimension)) {
@@ -180,10 +204,16 @@ async function extractPageBlocks(
   const imageOpIndices: number[] = []
   for (let i = 0; i < opList.fnArray.length; i++) {
     const op = opList.fnArray[i]
-    if (op === OPS.paintImageXObject || op === OPS.paintInlineImageXObject ||
-        op === OPS.paintImageMaskXObject || op === OPS.paintImageMaskXObjectGroup ||
-        op === OPS.paintImageXObjectRepeat || op === OPS.paintImageMaskXObjectRepeat ||
-        op === OPS.paintInlineImageXObjectGroup || op === OPS.paintSolidColorImageMask) {
+    if (
+      op === OPS.paintImageXObject ||
+      op === OPS.paintInlineImageXObject ||
+      op === OPS.paintImageMaskXObject ||
+      op === OPS.paintImageMaskXObjectGroup ||
+      op === OPS.paintImageXObjectRepeat ||
+      op === OPS.paintImageMaskXObjectRepeat ||
+      op === OPS.paintInlineImageXObjectGroup ||
+      op === OPS.paintSolidColorImageMask
+    ) {
       imageOpIndices.push(i)
     }
   }
@@ -214,9 +244,38 @@ async function extractPageBlocks(
 interface PdfObjects {
   get(objId: string): unknown
 }
+interface PdfObjectsAsync {
+  get(objId: string, callback: (data: unknown) => void): null
+}
 interface ExtractImagePage {
-  objs: PdfObjects
-  commonObjs: PdfObjects
+  objs: PdfObjects & Partial<PdfObjectsAsync>
+  commonObjs: PdfObjects & Partial<PdfObjectsAsync>
+}
+
+function isValidPixelData(data: unknown): data is Uint8Array | Uint8ClampedArray {
+  return data instanceof Uint8Array || data instanceof Uint8ClampedArray
+}
+
+const IMAGE_RESOLVE_TIMEOUT_MS = 5000
+
+async function getObjectWithFallback(objs: PdfObjects & Partial<PdfObjectsAsync>, objId: string): Promise<unknown> {
+  try {
+    return (objs as PdfObjects).get(objId)
+  } catch {
+    // Object not resolved yet — wait for it asynchronously
+  }
+  return new Promise<unknown>((resolve, reject) => {
+    const timeoutId = setTimeout(() => reject(new Error('timeout')), IMAGE_RESOLVE_TIMEOUT_MS)
+    try {
+      ;(objs as PdfObjectsAsync).get(objId, (data) => {
+        clearTimeout(timeoutId)
+        resolve(data)
+      })
+    } catch (e) {
+      clearTimeout(timeoutId)
+      reject(e)
+    }
+  })
 }
 
 async function extractImageBlock(
@@ -231,15 +290,26 @@ async function extractImageBlock(
 
   if (objId && typeof objId === 'string') {
     try {
-      const raw = objId.startsWith('g_') ? page.commonObjs.get(objId) : page.objs.get(objId)
-      if (raw && typeof raw === 'object' && 'width' in raw && 'height' in raw && 'data' in raw) {
-        imgData = raw as RawImageData
+      const store = objId.startsWith('g_') ? page.commonObjs : page.objs
+      const raw = await getObjectWithFallback(store, objId)
+      if (raw && typeof raw === 'object' && 'width' in raw && 'height' in raw) {
+        const r = raw as Record<string, unknown>
+        if (isValidPixelData(r['data'])) {
+          imgData = raw as RawImageData
+        } else if (r['bitmap'] && !r['data']) {
+          imgData = raw as RawImageData
+        }
       }
     } catch {
       /* ignore extraction errors */
     }
   } else if (Array.isArray(args) && args[0] && typeof args[0] === 'object' && 'width' in (args[0] as object)) {
-    imgData = args[0] as RawImageData
+    const inline = args[0] as Record<string, unknown>
+    if (isValidPixelData(inline['data'])) {
+      imgData = args[0] as RawImageData
+    } else if (inline['bitmap'] && !inline['data']) {
+      imgData = args[0] as RawImageData
+    }
   }
 
   if (imgData) {
