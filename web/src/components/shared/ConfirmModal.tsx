@@ -26,7 +26,7 @@ export function ConfirmModal({
   return (
     <Modal isOpen={isOpen} onClose={onClose} title={title} size="sm">
       <div className="space-y-4">
-        <p className="text-text-secondary">{message}</p>
+        <div className="text-text-secondary">{message}</div>
         <div className="flex justify-end gap-2">
           <Button variant="secondary" onClick={onClose} disabled={disabled}>
             Cancel
