@@ -35,7 +35,7 @@ export function CrossSessionConfirmationBanner({ projectId }: CrossSessionConfir
     >
       <InfoIcon className="w-4 h-4 text-amber-400 flex-shrink-0" />
       <span className="text-sm text-amber-300 flex-1 truncate">
-        {pendingCount} path confirmation{pendingCount > 1 ? 's' : ''} pending in session &quot;{title}&quot;
+        {pendingCount} confirmation{pendingCount > 1 ? 's' : ''} pending in session &quot;{title}&quot;
       </span>
       <span className="text-xs text-amber-400 font-medium flex-shrink-0">View session →</span>
     </div>
