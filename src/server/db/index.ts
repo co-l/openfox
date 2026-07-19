@@ -240,6 +240,10 @@ function runMigrations(db: Database.Database): void {
   if (!columnNames.includes('workspace') && columnNames.includes('worktree')) {
     logger.info('Migrating sessions table: renaming worktree to workspace')
     db.exec(`ALTER TABLE sessions RENAME COLUMN worktree TO workspace`)
+    // columnNames is a snapshot taken before any migration ran. Without this
+    // update the check below still sees the pre-rename state and tries to add
+    // a column that now exists, failing with "duplicate column name: workspace".
+    columnNames[columnNames.indexOf('worktree')] = 'workspace'
   } else if (!columnNames.includes('workspace')) {
     logger.info('Migrating sessions table: adding workspace column')
     db.exec(`ALTER TABLE sessions ADD COLUMN workspace TEXT`)
