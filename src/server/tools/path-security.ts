@@ -871,6 +871,16 @@ export function hasPendingPathConfirmation(callId: string): boolean {
 }
 
 /**
+ * Get the session ID associated with a pending confirmation.
+ *
+ * @param callId - The confirmation's unique ID
+ * @returns The session ID, or undefined if no pending confirmation with that callId
+ */
+export function getConfirmationSessionId(callId: string): string | undefined {
+  return pendingConfirmations.get(callId)?.sessionId
+}
+
+/**
  * Get all pending path confirmations grouped by session ID.
  * Returns a record mapping sessionId to arrays of pending confirmations.
  */

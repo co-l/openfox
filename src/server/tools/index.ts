@@ -389,5 +389,6 @@ export {
   requestPathAccess,
   cancelPathConfirmationsForSession,
   providePathConfirmation,
+  getConfirmationSessionId,
 } from './path-security.js'
 export { stepDoneTool } from './step-done.js'

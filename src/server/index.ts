@@ -468,6 +468,17 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
       await validateRef(effectiveWorkdir, branch)
       await checkoutBranch(effectiveWorkdir, branch)
       updateSessionBranch(req.params.id, branch)
+
+      // Sync branch to other sessions sharing this workspace
+      if (session.workspace) {
+        const all = sessionManager.listSessions()
+        for (const s of all) {
+          if (s.id !== req.params.id && s.workspace === session.workspace) {
+            updateSessionBranch(s.id, branch)
+          }
+        }
+      }
+
       res.json({ branch })
     } catch (err) {
       res.status(400).json({ error: err instanceof Error ? err.message : 'Failed to checkout branch' })
@@ -495,6 +506,17 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
         await createBranch(effectiveWorkdir, name)
       }
       updateSessionBranch(req.params.id, name)
+
+      // Sync branch to other sessions sharing this workspace
+      if (session.workspace) {
+        const all = sessionManager.listSessions()
+        for (const s of all) {
+          if (s.id !== req.params.id && s.workspace === session.workspace) {
+            updateSessionBranch(s.id, name)
+          }
+        }
+      }
+
       res.json({ branch: name, sourceBranch: sourceBranch ?? null })
     } catch (err) {
       res.status(400).json({ error: err instanceof Error ? err.message : 'Failed to create branch' })
@@ -922,16 +944,20 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
       return res.status(400).json({ error: 'callId and approved are required' })
     }
 
-    const { providePathConfirmation } = await import('./tools/index.js')
-    const result = providePathConfirmation(callId, approved, alwaysAllow)
+    const { providePathConfirmation, getConfirmationSessionId } = await import('./tools/index.js')
 
-    if (!result.found) {
+    // Check session binding BEFORE resolving — must match URL session
+    const pendingSessionId = getConfirmationSessionId(callId)
+    if (!pendingSessionId) {
       return res.status(404).json({ error: 'No pending path confirmation with that ID' })
     }
-
-    // Verify the confirmation belongs to this session, not another
-    if (result.sessionId !== sessionId) {
+    if (pendingSessionId !== sessionId) {
       return res.status(403).json({ error: 'Confirmation does not belong to this session' })
+    }
+
+    const result = providePathConfirmation(callId, approved, alwaysAllow)
+    if (!result.found) {
+      return res.status(404).json({ error: 'No pending path confirmation with that ID' })
     }
 
     // Broadcast updated session state so all clients see the confirmation removed
