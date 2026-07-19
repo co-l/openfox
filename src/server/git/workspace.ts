@@ -125,8 +125,9 @@ export async function getDefaultBranch(projectDir: string): Promise<string> {
  * Resolve and validate a source branch name for creating a new branch.
  * Ensures the branch exists locally or on the remote, creating a tracking ref if needed.
  * Returns the local ref name that can be used as the source for git checkout -b.
+ * @param projectDir - optional project root directory (for upstream remote resolution)
  */
-export async function resolveAndValidateSourceBranch(cwd: string, sourceBranch: string): Promise<string> {
+export async function resolveAndValidateSourceBranch(cwd: string, sourceBranch: string, projectDir?: string): Promise<string> {
   // Validate the source branch name format first
   await validateRef(cwd, sourceBranch.replace(/^origin\//, ''))
 
@@ -140,7 +141,7 @@ export async function resolveAndValidateSourceBranch(cwd: string, sourceBranch: 
   const localRef = await captureStdout(cwd, ['rev-parse', '--verify', '--quiet', 'refs/heads/' + branchName])
   if (localRef !== null) return branchName
 
-  // check if it exists on origin
+  // check if it exists on workspace origin
   const remoteRef = await captureStdout(cwd, ['rev-parse', '--verify', '--quiet', 'refs/remotes/origin/' + branchName])
   if (remoteRef !== null) {
     // create a local tracking branch from origin
@@ -148,6 +149,20 @@ export async function resolveAndValidateSourceBranch(cwd: string, sourceBranch: 
       await runGit(cwd, ['branch', '--track', branchName, 'origin/' + branchName])
     })
     return branchName
+  }
+
+  // check on the project's upstream origin (workspace origin is local with --shared clone)
+  if (projectDir) {
+    const remoteExists = await captureStdout(projectDir, ['ls-remote', '--heads', 'origin', branchName])
+    if (remoteExists !== null) {
+      // Fetch the branch from the project's origin into the workspace
+      await runGit(cwd, ['fetch', projectDir, branchName + ':' + branchName]).catch(async () => {
+        // fallback: fetch then create branch
+        await runGit(cwd, ['fetch', projectDir, branchName])
+        await runGit(cwd, ['branch', '--track', branchName, 'FETCH_HEAD'])
+      })
+      return branchName
+    }
   }
 
   throw new Error(`Source branch "${sourceBranch}" not found locally or on origin. Use a valid branch name like "main" or "origin/main".`)
@@ -243,7 +258,7 @@ export async function ensureWorkspace(
   if (branch) {
     await validateRef(wsPath, branch)
     await runGit(wsPath, ['checkout', branch]).catch(async () => {
-      const sb = sourceBranch ? await resolveAndValidateSourceBranch(wsPath, sourceBranch) : await getDefaultBranch(projectDir)
+      const sb = sourceBranch ? await resolveAndValidateSourceBranch(wsPath, sourceBranch, projectDir) : await getDefaultBranch(projectDir)
       await runGit(wsPath, ['checkout', '-b', branch, sb])
     })
   }

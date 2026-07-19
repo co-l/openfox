@@ -430,7 +430,7 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
       await validateRef(project.workdir, name)
       if (sourceBranch) {
         await validateRef(project.workdir, sourceBranch)
-        const sb = await resolveAndValidateSourceBranch(project.workdir, sourceBranch)
+        const sb = await resolveAndValidateSourceBranch(project.workdir, sourceBranch, project.workdir)
         await createBranch(project.workdir, name, sb)
       } else {
         await createBranch(project.workdir, name)
@@ -486,7 +486,7 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
       if (sourceBranch) {
         await validateRef(effectiveWorkdir, sourceBranch)
         const { resolveAndValidateSourceBranch, createBranch } = await import('./git/workspace.js')
-        const sb = await resolveAndValidateSourceBranch(effectiveWorkdir, sourceBranch)
+        const sb = await resolveAndValidateSourceBranch(effectiveWorkdir, sourceBranch, session.workdir)
         await createBranch(effectiveWorkdir, name, sb)
       } else {
         const { createBranch } = await import('./git/workspace.js')

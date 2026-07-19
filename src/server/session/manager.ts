@@ -1040,7 +1040,7 @@ export class SessionManager {
         await validateRef(wsPath, branch)
         await runGit(wsPath, ['checkout', branch]).catch(async () => {
           const sb = sourceBranch ?? (await getDefaultBranch(projectDir))
-          const validated = sourceBranch ? await resolveAndValidateSourceBranch(wsPath, sourceBranch) : sb
+          const validated = sourceBranch ? await resolveAndValidateSourceBranch(wsPath, sourceBranch, projectDir) : sb
           await runGit(wsPath, ['checkout', '-b', branch, validated])
         })
       } catch (err) {
