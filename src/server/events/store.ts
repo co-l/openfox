@@ -820,6 +820,7 @@ export function initEventStore(db: Database.Database): EventStore {
     // Column may not exist in test fixtures without full schema
   }
   resetStaleRunningSessions(eventStoreInstance, db)
+  rejectStaleConfirmations(eventStoreInstance, db)
 
   // Optimize storage: remove old snapshots.
   // Idempotent — fast no-op on already-optimized databases.
@@ -892,6 +893,53 @@ function resetStaleRunningSessions(eventStore: EventStore, db: Database.Database
 
   if (resetCount > 0) {
     logger.info('EventStore reset stale running sessions', { count: resetCount })
+  }
+}
+
+/**
+ * Reject any unresponded path confirmations that survived a server restart.
+ * The agent that created them is gone, so they can never be resolved.
+ */
+function rejectStaleConfirmations(eventStore: EventStore, db: Database.Database): void {
+  const sessions = db.prepare(`SELECT id FROM sessions`).all() as { id: string }[]
+
+  let rejectedCount = 0
+
+  for (const { id: sessionId } of sessions) {
+    // Find all path.confirmation_pending events without a matching path.confirmation_responded
+    // Using raw SQL aggregation since getEvents wouldn't be efficient for all sessions
+    const pendingRows = db
+      .prepare(
+        `
+      SELECT e1.seq, e1.payload FROM events e1
+      WHERE e1.session_id = ? 
+        AND e1.event_type = 'path.confirmation_pending'
+        AND NOT EXISTS (
+          SELECT 1 FROM events e2
+          WHERE e2.session_id = e1.session_id
+            AND e2.event_type = 'path.confirmation_responded'
+            AND json_extract(e2.payload, '$.callId') = json_extract(e1.payload, '$.callId')
+        )
+    `,
+      )
+      .all(sessionId) as Array<{ seq: number; payload: string }>
+
+    for (const row of pendingRows) {
+      try {
+        const data = JSON.parse(row.payload) as { callId: string }
+        eventStore.append(sessionId, {
+          type: 'path.confirmation_responded',
+          data: { callId: data.callId, approved: false, alwaysAllow: false },
+        })
+        rejectedCount++
+      } catch {
+        // Malformed payload — skip
+      }
+    }
+  }
+
+  if (rejectedCount > 0) {
+    logger.info('Rejected stale path confirmations from previous server run', { count: rejectedCount })
   }
 }
 

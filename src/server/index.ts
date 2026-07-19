@@ -428,13 +428,12 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
     const { createBranch, resolveAndValidateSourceBranch, validateRef } = await import('./git/workspace.js')
     try {
       await validateRef(project.workdir, name)
+      let sb: string | undefined
       if (sourceBranch) {
-        await validateRef(project.workdir, sourceBranch)
-        const sb = await resolveAndValidateSourceBranch(project.workdir, sourceBranch, project.workdir)
-        await createBranch(project.workdir, name, sb)
-      } else {
-        await createBranch(project.workdir, name)
+        // resolveAndValidateSourceBranch handles its own validateRef internally
+        sb = await resolveAndValidateSourceBranch(project.workdir, sourceBranch, project.workdir)
       }
+      await createBranch(project.workdir, name, sb)
       res.json({ branch: name, sourceBranch: sourceBranch ?? null })
     } catch (err) {
       res.status(400).json({ error: err instanceof Error ? err.message : 'Failed to create branch' })
@@ -487,8 +486,8 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
     try {
       await validateRef(effectiveWorkdir, name)
       if (sourceBranch) {
-        await validateRef(effectiveWorkdir, sourceBranch)
         const { resolveAndValidateSourceBranch, createBranch } = await import('./git/workspace.js')
+        // resolveAndValidateSourceBranch handles its own validateRef internally
         const sb = await resolveAndValidateSourceBranch(effectiveWorkdir, sourceBranch, session.workdir)
         await createBranch(effectiveWorkdir, name, sb)
       } else {
@@ -930,6 +929,11 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
       return res.status(404).json({ error: 'No pending path confirmation with that ID' })
     }
 
+    // Verify the confirmation belongs to this session, not another
+    if (result.sessionId !== sessionId) {
+      return res.status(403).json({ error: 'Confirmation does not belong to this session' })
+    }
+
     // Broadcast updated session state so all clients see the confirmation removed
     const { getEventStore } = await import('./events/index.js')
     const { buildMessagesFromStoredEvents, foldPendingConfirmations } = await import('./events/folding.js')
@@ -946,8 +950,8 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
       wssExports.broadcastForSession(sessionId, { ...stateMsg, sessionId })
     }
 
-    // Broadcast to all clients that the confirmation was resolved
-    wssExports.broadcastAll({
+    // Broadcast to session clients that the confirmation was resolved
+    wssExports.broadcastForSession(sessionId, {
       type: 'session.confirmation_resolved',
       sessionId,
       payload: { sessionId, callId },

@@ -813,11 +813,9 @@ export function providePathConfirmation(
   }
 
   if (approved) {
-    // Add paths to session's allowlist (always if approved, or only if alwaysAllow)
-    if (alwaysAllow) {
-      addAllowedPaths(pending.sessionId, pending.paths)
-    } else {
-      // For single approval, still add to allowlist for this session
+    // Add real filesystem paths to the allowlist, but skip descriptions
+    // for non-path confirmations (dangerous_command, git_no_verify)
+    if (pending.reason !== 'dangerous_command' && pending.reason !== 'git_no_verify') {
       addAllowedPaths(pending.sessionId, pending.paths)
     }
   }

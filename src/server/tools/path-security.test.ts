@@ -1476,6 +1476,42 @@ describe('path-security', () => {
     })
   })
 
+  describe('non-path confirmations do not pollute allowlist', () => {
+    it('does not add paths to allowlist for dangerous_command confirmations', () => {
+      const callId = 'cmd-confirm-1'
+
+      registerPathConfirmation(callId, ['rm -rf /'], 'session-cmd', 'run_command', WORKDIR, 'dangerous_command')
+
+      expect(hasPendingPathConfirmation(callId)).toBe(true)
+
+      const result = providePathConfirmation(callId, true, false)
+      expect(result.found).toBe(true)
+      expect(result.approved).toBe(true)
+
+      // The description text should NOT be in the allowlist
+      expect(isPathAllowed('session-cmd', 'rm -rf /')).toBe(false)
+    })
+
+    it('does not add paths to allowlist for git_no_verify confirmations', () => {
+      const callId = 'git-confirm-1'
+
+      registerPathConfirmation(
+        callId,
+        ['git --no-verify detected'],
+        'session-git',
+        'run_command',
+        WORKDIR,
+        'git_no_verify',
+      )
+
+      const result = providePathConfirmation(callId, true, false)
+      expect(result.found).toBe(true)
+      expect(result.approved).toBe(true)
+
+      expect(isPathAllowed('session-git', 'git --no-verify detected')).toBe(false)
+    })
+  })
+
   // ===========================================================================
   // Sub-agent path access (deny by default, allow in dangerous mode)
   // ===========================================================================

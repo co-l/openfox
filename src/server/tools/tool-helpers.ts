@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto'
 import { resolve, isAbsolute } from 'node:path'
 import type { ToolResult } from '../../shared/types.js'
 import type { Tool, ToolContext } from './types.js'
@@ -65,16 +66,10 @@ export type ToolHandler<TArgs> = (args: TArgs, context: ToolContext, helpers: To
  * If context provides a signal (e.g. user cancel), the returned signal
  * triggers on whichever fires first.
  */
-export function requestUserConfirmation(
-  context: ToolContext,
-  toolLabel: string,
-  desc: string,
-): Promise<boolean> {
+export function requestUserConfirmation(context: ToolContext, toolLabel: string, desc: string): Promise<boolean> {
   if (typeof context.onEvent !== 'function') return Promise.resolve(false)
-  const callId = context.toolCallId ?? crypto.randomUUID()
-  ;(context.onEvent as (msg: unknown) => void)(
-    createChatPathConfirmationMessage(callId, toolLabel, [desc], context.workdir, 'dangerous_command'),
-  )
+  // Use a fresh UUID so two confirmations within the same tool call don't collide
+  const callId = randomUUID()
   // Persist to EventStore so the confirmation survives navigation/reload
   try {
     const eventStore = getEventStore()
@@ -85,7 +80,19 @@ export function requestUserConfirmation(
   } catch {
     // Event store not available (tests, early init)
   }
-  return registerPathConfirmation(callId, [desc], context.sessionId, toolLabel, context.workdir, 'dangerous_command')
+  // Register the resolver BEFORE emitting to client (prevent race)
+  const promise = registerPathConfirmation(
+    callId,
+    [desc],
+    context.sessionId,
+    toolLabel,
+    context.workdir,
+    'dangerous_command',
+  )
+  ;(context.onEvent as (msg: unknown) => void)(
+    createChatPathConfirmationMessage(callId, toolLabel, [desc], context.workdir, 'dangerous_command'),
+  )
+  return promise
 }
 
 export function buildSignal(timeoutMs: number, contextSignal?: AbortSignal): AbortSignal {

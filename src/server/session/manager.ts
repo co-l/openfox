@@ -222,9 +222,23 @@ export class SessionManager {
 
     // Persist the current branch asynchronously — the session is valid without it,
     // and checkBranchConsistency will work once it's set.
-    getGitBranch(effectiveWorkdir).then((branch) => {
-      if (branch) updateSessionBranch(session.id, branch)
-    })
+    getGitBranch(effectiveWorkdir)
+      .then((branch) => {
+        if (branch) {
+          updateSessionBranch(session.id, branch)
+          // Emit a session update so clients see the branch on freshly created sessions
+          const updatedDb = dbGetSession(session.id)
+          if (updatedDb) {
+            this.emit({ type: 'session_updated', session: this.buildSessionFromDb(updatedDb) })
+          }
+        }
+      })
+      .catch((err) => {
+        logger.error('Failed to persist initial branch for session', {
+          sessionId: session.id,
+          error: err instanceof Error ? err.message : String(err),
+        })
+      })
 
     this.emit({ type: 'session_created', session })
 
@@ -1145,6 +1159,14 @@ export class SessionManager {
 
       if (actualBranch) {
         updateSessionBranch(sessionId, actualBranch)
+        // Sync the branch for all other sessions that share this workspace,
+        // so checkBranchConsistency works for them too
+        const otherSessionsOnWorkspace = this.listSessions().filter(
+          (s) => s.id !== sessionId && s.workspace === effectiveWorkdir,
+        )
+        for (const other of otherSessionsOnWorkspace) {
+          updateSessionBranch(other.id, actualBranch)
+        }
       }
 
       let stalenessHint = ''

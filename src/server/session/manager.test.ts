@@ -16,7 +16,7 @@ vi.mock('../lsp/index.js', () => ({
 const mockGetGitBranch = vi.fn()
 
 vi.mock('../git/workspace.js', async (importOriginal) => {
-  const actual = await importOriginal() as any
+  const actual = (await importOriginal()) as any
   return {
     ...actual,
     getGitBranch: (...args: any[]) => mockGetGitBranch(...args),
@@ -555,6 +555,27 @@ describe('SessionManager', () => {
 
       const reloaded = manager.getSession(session.id)
       expect(reloaded?.branch).toBe('develop')
+    })
+
+    it('syncs branch to other sessions sharing the same workspace path', async () => {
+      const s1 = manager.createSession(projectId)
+      const s2 = manager.createSession(projectId)
+      const { updateSessionWorkdir, updateSessionBranch, getSession } = await import('../db/sessions.js')
+      const sharedWs = '/workspaces/test/shared-ws'
+
+      // Both sessions reference the same workspace
+      updateSessionWorkdir(s1.id, '/tmp/project', sharedWs)
+      updateSessionWorkdir(s2.id, '/tmp/project', sharedWs)
+
+      // Simulate branch sync after a workspace switch changes the branch
+      updateSessionBranch(s1.id, 'feature-x')
+      const otherSessions = manager.listSessions().filter((s) => s.id !== s1.id && s.workspace === sharedWs)
+      for (const other of otherSessions) {
+        updateSessionBranch(other.id, 'feature-x')
+      }
+
+      expect(getSession(s1.id)?.branch).toBe('feature-x')
+      expect(getSession(s2.id)?.branch).toBe('feature-x')
     })
   })
 })

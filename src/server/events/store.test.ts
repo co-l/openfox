@@ -959,6 +959,78 @@ describe('initEventStore', () => {
 
     db.close()
   })
+
+  it('should reject stale path confirmations on startup', () => {
+    const db = new Database(':memory:')
+
+    db.exec(`
+      CREATE TABLE sessions (
+        id TEXT PRIMARY KEY,
+        project_id TEXT NOT NULL,
+        workdir TEXT NOT NULL,
+        is_running INTEGER NOT NULL DEFAULT 0
+      )
+    `)
+
+    db.prepare(`INSERT INTO sessions (id, project_id, workdir, is_running) VALUES (?, ?, ?, 0)`).run(
+      'session-1',
+      'project-1',
+      '/tmp/test',
+    )
+
+    const firstStore = new EventStore(db)
+
+    // Simulate: a pending confirmation that was never responded to (server crash)
+    firstStore.append('session-1', {
+      type: 'path.confirmation_pending',
+      data: {
+        callId: 'stale-call-1',
+        tool: 'run_command',
+        paths: ['some command'],
+        workdir: '/tmp/test',
+        reason: 'dangerous_command',
+      },
+    })
+    // This one was responded to — should be skipped
+    firstStore.append('session-1', {
+      type: 'path.confirmation_pending',
+      data: {
+        callId: 'resolved-call',
+        tool: 'run_command',
+        paths: ['other command'],
+        workdir: '/tmp/test',
+        reason: 'dangerous_command',
+      },
+    })
+    firstStore.append('session-1', {
+      type: 'path.confirmation_responded',
+      data: { callId: 'resolved-call', approved: true, alwaysAllow: false },
+    })
+
+    const eventsBefore = firstStore.getEvents('session-1')
+    const pendingBefore = eventsBefore.filter((e) => e.type === 'path.confirmation_pending')
+    const respondedBefore = eventsBefore.filter((e) => e.type === 'path.confirmation_responded')
+    expect(pendingBefore).toHaveLength(2)
+    expect(respondedBefore).toHaveLength(1)
+
+    // Restart — should reject the stale one
+    const restartedStore = initEventStore(db)
+
+    const eventsAfter = restartedStore.getEvents('session-1')
+    const pendingAfter = eventsAfter.filter((e) => e.type === 'path.confirmation_pending')
+    const respondedAfter = eventsAfter.filter((e) => e.type === 'path.confirmation_responded')
+
+    // Stale confirmation should now have a responded event
+    expect(pendingAfter).toHaveLength(2) // original pending events remain
+    expect(respondedAfter).toHaveLength(2) // one new responded event
+
+    // Verify the new responded event is for the stale callId with approved:false
+    const staleResponded = respondedAfter.find((e) => (e.data as { callId: string }).callId === 'stale-call-1')
+    expect(staleResponded).toBeDefined()
+    expect((staleResponded!.data as { approved: boolean }).approved).toBe(false)
+
+    db.close()
+  })
 })
 
 // ============================================================================
