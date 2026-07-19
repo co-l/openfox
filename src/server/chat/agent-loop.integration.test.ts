@@ -366,52 +366,77 @@ describe('agentLoop integration', () => {
     expect(chatDoneEvents.length).toBeGreaterThanOrEqual(1)
   })
 
-  it('continues loop after a failed tool call and allows recovery in next iteration', async () => {
+  it('sends tool-call assistant content as empty string to the next LLM call after a failed tool', async () => {
     const append = vi.fn()
-    const failedToolCall: ToolCall = {
+    const toolCall: ToolCall = {
       id: 'call-1',
-      name: 'edit_file',
-      arguments: { path: 'test.ts', old_string: 'foo', new_string: 'bar' },
+      name: 'run_command',
+      arguments: { command: 'echo hi' },
     }
-    const successfulToolCall: ToolCall = {
-      id: 'call-2',
-      name: 'edit_file',
-      arguments: { path: 'test.ts', old_string: 'foo', new_string: 'bar' },
-    }
+
+    // Stateful conversation: first iteration returns only the user prompt,
+    // second iteration includes the assistant tool-call msg + tool result
+    const getConversationMessagesMock = vi.fn()
+      .mockResolvedValueOnce([{ role: 'user' as const, content: 'Run a command', source: 'history' as const }])
+      .mockResolvedValueOnce([
+        { role: 'user' as const, content: 'Run a command', source: 'history' as const },
+        {
+          role: 'assistant' as const,
+          content: '',
+          toolCalls: [toolCall],
+          source: 'history' as const,
+        },
+        { role: 'tool' as const, content: 'Command failed: exit code 1', source: 'history' as const, toolCallId: 'call-1' },
+      ])
+
+    const assembleRequestMock = vi.fn().mockReturnValue({
+      systemPrompt: 'test-prompt',
+      messages: [],
+      tools: [],
+    })
 
     ;(consumeStreamGenerator as any)
-      .mockResolvedValueOnce(makeStreamResult({ toolCalls: [failedToolCall], finishReason: 'tool_calls' }))
-      .mockResolvedValueOnce(makeStreamResult({ toolCalls: [successfulToolCall], finishReason: 'tool_calls' }))
+      .mockResolvedValueOnce(makeStreamResult({ toolCalls: [toolCall], finishReason: 'tool_calls' }))
       .mockResolvedValueOnce(makeStreamResult({ content: 'Done', finishReason: 'stop' }))
+    ;(executeTools as any).mockResolvedValue({
+      toolMessages: [
+        { role: 'tool', content: 'Command failed: exit code 1', source: 'history', toolCallId: 'call-1' },
+      ],
+      stepDoneCalled: false,
+    })
 
-    // First execution: edit_file fails (old_string not found)
-    // Second execution: edit_file succeeds after model corrected the old_string
-    ;(executeTools as any)
-      .mockResolvedValueOnce({
-        toolMessages: [
-          { role: 'tool', content: 'Error: old_string not found in file.', source: 'history', toolCallId: 'call-1' },
-        ],
-        stepDoneCalled: false,
-      })
-      .mockResolvedValueOnce({
-        toolMessages: [
-          {
-            role: 'tool',
-            content: 'Successfully replaced 1 occurrence(s) in test.ts',
-            source: 'history',
-            toolCallId: 'call-2',
-          },
-        ],
-        stepDoneCalled: false,
-      })
+    await runTopLevelAgentLoop(
+      makeConfig({
+        append,
+        assembleRequest: assembleRequestMock,
+        getConversationMessages: getConversationMessagesMock,
+      }),
+      turnMetrics,
+    )
 
-    await runTopLevelAgentLoop(makeConfig({ append }), turnMetrics)
+    // Should have called streamLLM 2 times (failed tool → then final without tools)
+    expect(consumeStreamGenerator).toHaveBeenCalledTimes(2)
+    // executeTools called once (second LLM call returned no tools)
+    expect(executeTools).toHaveBeenCalledTimes(1)
 
-    // Should have called streamLLM 3 times (failed tool → successful tool → final)
-    expect(consumeStreamGenerator).toHaveBeenCalledTimes(3)
+    // assembleRequest was called for each LLM iteration
+    expect(assembleRequestMock).toHaveBeenCalledTimes(2)
 
-    // Failed tool result did not set stepDoneCalled, so loop continued
-    expect(executeTools).toHaveBeenCalledTimes(2)
+    // Verify the second LLM call receives the assistant message with content: ''
+    const secondCallArgs = assembleRequestMock.mock.calls[1]![0] as { messages: any[] }
+    const assistantMsg = secondCallArgs.messages.find(
+      (m: any) => m.role === 'assistant' && m.toolCalls?.length > 0,
+    )
+    expect(assistantMsg).toBeDefined()
+    expect(assistantMsg.content).toBe('')
+    expect(assistantMsg.toolCalls[0].name).toBe('run_command')
+    expect(assistantMsg.toolCalls[0].id).toBe('call-1')
+
+    // Tool result follows the assistant message
+    const toolMsg = secondCallArgs.messages.find((m: any) => m.role === 'tool')
+    expect(toolMsg).toBeDefined()
+    expect(toolMsg.content).toContain('failed')
+    expect(toolMsg.toolCallId).toBe('call-1')
 
     // Should emit chat.done at the end (normal completion)
     const chatDoneEvents = append.mock.calls
