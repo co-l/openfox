@@ -2,13 +2,14 @@ import { spawn } from 'node:child_process'
 import { resolve, isAbsolute } from 'node:path'
 import { access } from 'node:fs/promises'
 import stripAnsi from 'strip-ansi'
-import { OUTPUT_LIMITS } from './types.js'
+import { OUTPUT_LIMITS, type ToolContext } from './types.js'
 import { createTool } from './tool-helpers.js'
 import { checkAborted, spawnShellProcess } from '../utils/shell.js'
-import { extractAbsolutePathsFromCommand, extractSensitivePathsFromCommand } from './path-security.js'
+import { extractAbsolutePathsFromCommand, extractSensitivePathsFromCommand, registerPathConfirmation } from './path-security.js'
 import { terminateProcessTree } from '../utils/process-tree.js'
 import { stripTailPipe } from './shell-tail.js'
 import { getSetting, SETTINGS_KEYS } from '../db/settings.js'
+import { createChatPathConfirmationMessage } from '../ws/protocol.js'
 
 /**
  * Patterns that escape the effective workspace directory.
@@ -62,6 +63,18 @@ export function detectGitMutation(command: string): string | null {
   }
 
   return null
+}
+
+async function requestCommandConfirmation(
+  context: ToolContext,
+  desc: string,
+): Promise<boolean> {
+  if (typeof context.onEvent !== 'function') return false
+  const callId = context.toolCallId ?? crypto.randomUUID()
+  ;(context.onEvent as (msg: unknown) => void)(
+    createChatPathConfirmationMessage(callId, 'command', [desc], context.workdir, 'dangerous_command'),
+  )
+  return registerPathConfirmation(callId, [desc], context.sessionId, 'command', context.workdir, 'dangerous_command')
 }
 
 let rtkAvailable: boolean | undefined
@@ -157,17 +170,25 @@ export const runCommandTool = createTool<RunCommandArgs>(
     // Detect workspace escape patterns (cd ../.., git -C, GIT_DIR, etc.)
     const escapeMatch = detectEscapePattern(args.command)
     if (escapeMatch) {
-      return helpers.error(
-        `Command contains workspace escape pattern "${escapeMatch}". Use the workspace tool to switch workspaces directly rather than escaping the current workspace.`,
-      )
+      const desc = `Command "${args.command}" contains workspace escape pattern "${escapeMatch}". Allow this command?`
+      const approved = await requestCommandConfirmation(context, desc)
+      if (!approved) {
+        return helpers.error(
+          `User denied: command "${escapeMatch}" would escape the workspace. Use the workspace tool to switch workspaces directly.`,
+        )
+      }
     }
 
     // Detect Git mutations (checkout, switch, branch creation, etc.)
     const mutationMatch = detectGitMutation(args.command)
     if (mutationMatch) {
-      return helpers.error(
-        `Command "${mutationMatch}" modifies Git state, which is not allowed directly. Use the workspace tool to switch workspaces or branches. This ensures consistency across sessions and prevents cross-session branch conflicts.`,
-      )
+      const desc = `Command "${args.command}" modifies Git state (${mutationMatch}). Allow this Git operation?`
+      const approved = await requestCommandConfirmation(context, desc)
+      if (!approved) {
+        return helpers.error(
+          `User denied: "${mutationMatch}" modifies Git state. Use the workspace tool to switch workspaces or branches.`,
+        )
+      }
     }
 
     const workingDir = args.cwd ? helpers.resolvePath(args.cwd) : context.workdir
