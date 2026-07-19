@@ -84,6 +84,30 @@ export class McpManager {
       }
 
       if (!transport) throw new Error('Failed to create transport')
+
+      // Intercept onmessage to remove outputSchema from tool definitions.
+      // Some servers (like Stitch) include outputSchema with broken references (e.g. $defs/ScreenInstance),
+      // which causes AJV validation in the MCP SDK to crash and fail to load any tools.
+      let sdkOnMessage: ((message: any) => void) | undefined = undefined
+      Object.defineProperty(transport, 'onmessage', {
+        get() {
+          return sdkOnMessage
+        },
+        set(fn) {
+          sdkOnMessage = (message: any) => {
+            if (message && message.result && Array.isArray(message.result.tools)) {
+              for (const tool of message.result.tools) {
+                if (tool.outputSchema) {
+                  delete tool.outputSchema
+                }
+              }
+            }
+            fn?.(message)
+          }
+        },
+        configurable: true,
+      })
+
       await client.connect(transport)
 
       const { tools: mcpTools } = await client.listTools()
