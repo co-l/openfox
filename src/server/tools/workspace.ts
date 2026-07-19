@@ -1,26 +1,11 @@
-import { createTool } from './tool-helpers.js'
+import { createTool, requestUserConfirmation } from './tool-helpers.js'
 import { getGitBranch, listWorkspaces } from '../git/workspace.js'
-import { registerPathConfirmation } from './path-security.js'
-import { createChatPathConfirmationMessage } from '../ws/protocol.js'
 
 interface WorkspaceArgs {
   action: 'switch' | 'list' | 'delete'
   target?: string
   branch?: string
   sourceBranch?: string
-}
-
-async function requestUserApproval(
-  context: { onEvent?: unknown; toolCallId?: string; workdir: string },
-  sessionId: string,
-  desc: string,
-): Promise<boolean> {
-  if (typeof context.onEvent !== 'function') return false
-  const callId = context.toolCallId ?? crypto.randomUUID()
-  ;(context.onEvent as (msg: unknown) => void)(
-    createChatPathConfirmationMessage(callId, 'workspace', [desc], context.workdir, 'dangerous_command'),
-  )
-  return registerPathConfirmation(callId, [desc], sessionId, 'workspace', context.workdir, 'dangerous_command')
 }
 
 export const workspaceTool = createTool<WorkspaceArgs>(
@@ -96,7 +81,7 @@ export const workspaceTool = createTool<WorkspaceArgs>(
           ? `Change branch to "${args.branch}" on ${label}`
           : `Switch to ${label}${args.branch ? ` on branch "${args.branch}"` : ''}`
 
-        const approved = await requestUserApproval(context, sessionId, desc)
+        const approved = await requestUserConfirmation(context, 'workspace', desc)
         if (!approved) return helpers.error(`User denied: ${isBranchChange ? 'branch change' : `switch to ${label}`}`)
 
         const updated = await sessionManager.switchWorkspace(sessionId, args.target, args.branch, args.sourceBranch)
@@ -148,7 +133,7 @@ export const workspaceTool = createTool<WorkspaceArgs>(
         }
         if (args.target === 'original') return helpers.error('Cannot delete the original workspace')
 
-        const approved = await requestUserApproval(context, sessionId, `Delete workspace "${args.target}"`)
+        const approved = await requestUserConfirmation(context, 'workspace', `Delete workspace "${args.target}"`)
         if (!approved) return helpers.error(`User denied: delete workspace "${args.target}"`)
 
         await sessionManager.deleteWorkspace(sessionId, args.target)

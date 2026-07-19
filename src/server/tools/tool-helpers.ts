@@ -3,8 +3,9 @@ import type { ToolResult } from '../../shared/types.js'
 import type { Tool, ToolContext } from './types.js'
 import type { LLMToolDefinition } from '../llm/types.js'
 import type { SessionManager } from '../session/manager.js'
-import { requestPathAccess, PathAccessDeniedError } from './path-security.js'
+import { requestPathAccess, PathAccessDeniedError, registerPathConfirmation } from './path-security.js'
 import { AskUserInterrupt } from './ask.js'
+import { createChatPathConfirmationMessage } from '../ws/protocol.js'
 
 /**
  * Helper utilities provided to tool handlers by createTool.
@@ -63,6 +64,19 @@ export type ToolHandler<TArgs> = (args: TArgs, context: ToolContext, helpers: To
  * If context provides a signal (e.g. user cancel), the returned signal
  * triggers on whichever fires first.
  */
+export function requestUserConfirmation(
+  context: ToolContext,
+  toolLabel: string,
+  desc: string,
+): Promise<boolean> {
+  if (typeof context.onEvent !== 'function') return Promise.resolve(false)
+  const callId = context.toolCallId ?? crypto.randomUUID()
+  ;(context.onEvent as (msg: unknown) => void)(
+    createChatPathConfirmationMessage(callId, toolLabel, [desc], context.workdir, 'dangerous_command'),
+  )
+  return registerPathConfirmation(callId, [desc], context.sessionId, toolLabel, context.workdir, 'dangerous_command')
+}
+
 export function buildSignal(timeoutMs: number, contextSignal?: AbortSignal): AbortSignal {
   const timeoutSignal = AbortSignal.timeout(timeoutMs)
   if (contextSignal) {
