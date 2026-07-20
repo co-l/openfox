@@ -206,9 +206,10 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
 
   const app = express()
 
-  // Middleware
+  // Middleware: auth FIRST (checks headers only, no body needed),
+  // then body parser (only after auth passes).
+  // This prevents unauthenticated DoS via large payloads.
   app.use(cors())
-  app.use(express.json({ limit: '10mb' }))
 
   // Auth middleware for all /api routes (except /api/health and /api/auth/login)
   const authMiddleware = async (req: express.Request, res: express.Response, next: express.NextFunction) => {
@@ -228,8 +229,8 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
     next()
   }
 
-  // Apply auth middleware to all /api routes
   app.use('/api', authMiddleware)
+  app.use(express.json({ limit: '75mb' }))
 
   // Health check (public)
   app.get('/api/health', (_req, res) => {

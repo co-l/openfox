@@ -89,6 +89,60 @@ describe('resolveAttachmentsInMessages', () => {
     expect(result[0]?.attachments).toEqual([])
   })
 
+  it('keeps PDF attachments intact when vision is supported', async () => {
+    const pdfBuffer = makeSimplePdfBuffer()
+    const data = `data:application/pdf;base64,${pdfBuffer.toString('base64')}`
+    const messages: LLMMessage[] = [
+      {
+        role: 'user',
+        content: 'look at this pdf',
+        attachments: [
+          {
+            id: 'p2',
+            filename: 'vision.pdf',
+            mimeType: 'application/pdf',
+            size: pdfBuffer.length,
+            data,
+          },
+        ],
+      },
+    ]
+    const result = await resolveAttachmentsInMessages(messages, true)
+    expect(result[0]?.content).toBe('look at this pdf')
+    expect(result[0]?.attachments).toHaveLength(1)
+    expect(result[0]?.attachments?.[0]?.filename).toBe('vision.pdf')
+  })
+
+  it('keeps PDF and image attachments intact in a mixed vision message', async () => {
+    const pdfBuffer = makeSimplePdfBuffer()
+    const data = `data:application/pdf;base64,${pdfBuffer.toString('base64')}`
+    const messages: LLMMessage[] = [
+      {
+        role: 'user',
+        content: 'compare these',
+        attachments: [
+          {
+            id: 'p3',
+            filename: 'vision.pdf',
+            mimeType: 'application/pdf',
+            size: pdfBuffer.length,
+            data,
+          },
+          {
+            id: 'i3',
+            filename: 'photo.png',
+            mimeType: 'image/png',
+            size: 500,
+            data: 'data:image/png;base64,abc',
+          },
+        ],
+      },
+    ]
+    const result = await resolveAttachmentsInMessages(messages, true)
+    expect(result[0]?.content).toBe('compare these')
+    expect(result[0]?.attachments?.map((attachment) => attachment.filename)).toEqual(['vision.pdf', 'photo.png'])
+  })
+
   it('keeps image attachments intact when vision is supported', async () => {
     const messages: LLMMessage[] = [
       {
