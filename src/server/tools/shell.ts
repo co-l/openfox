@@ -141,7 +141,7 @@ export const runCommandTool = createTool<RunCommandArgs>(
     function: {
       name: 'run_command',
       description:
-        'Execute a shell command. Returns stdout, stderr, and exit code. Does NOT support trailing "&" for backgrounding — use background_process tool instead.',
+        'Execute a shell command. Returns stdout, stderr, and exit code. Does NOT support trailing "&" for backgrounding — use background_process tool instead.\nCommands run from your working directory automatically — do NOT prepend "cd /path/" to change to a directory you are already in. Doing so triggers unnecessary security confirmations.',
       parameters: {
         type: 'object',
         properties: {
