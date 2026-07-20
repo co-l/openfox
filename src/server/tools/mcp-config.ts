@@ -18,6 +18,7 @@ interface McpConfigArgs {
   headers?: Record<string, string>
   toolName?: string
   enabled?: boolean
+  timeout?: number
 }
 
 let mcpManagerForTools: McpManager | null = null
@@ -103,6 +104,10 @@ export const mcpConfigTool: Tool = createTool<McpConfigArgs>(
             type: 'boolean',
             description: 'Whether the tool should be enabled (required for: toggle-tool)',
           },
+          timeout: {
+            type: 'number',
+            description: 'Timeout in seconds for MCP tool calls (optional)',
+          },
         },
         required: ['action'],
       },
@@ -183,6 +188,9 @@ export const mcpConfigTool: Tool = createTool<McpConfigArgs>(
       } else if (!args.command) {
         return helpers.error('command is required for stdio transport')
       }
+      if (args.timeout !== undefined && (typeof args.timeout !== 'number' || args.timeout <= 0)) {
+        return helpers.error('timeout must be a positive number')
+      }
 
       const serverCfg: McpServerConfig = {
         transport: args.transport ?? 'stdio',
@@ -191,6 +199,7 @@ export const mcpConfigTool: Tool = createTool<McpConfigArgs>(
         ...(args.env && Object.keys(args.env).length > 0 ? { env: args.env } : {}),
         ...(args.url ? { url: args.url } : {}),
         ...(args.headers && Object.keys(args.headers).length > 0 ? { headers: args.headers } : {}),
+        ...(args.timeout !== undefined ? { timeout: args.timeout } : {}),
       }
 
       await persistAndRebuild((mcpServers) => {
@@ -221,6 +230,7 @@ export const mcpConfigTool: Tool = createTool<McpConfigArgs>(
         ...(args.env !== undefined ? { env: args.env } : {}),
         ...(args.url !== undefined ? { url: args.url } : {}),
         ...(args.headers !== undefined ? { headers: args.headers } : {}),
+        ...(args.timeout !== undefined ? { timeout: args.timeout } : {}),
       }
 
       const { error: updateError } = await applyMcpServerUpdate({

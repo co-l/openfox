@@ -228,6 +228,27 @@ describe('McpManager', () => {
       expect(result.success).toBe(false)
       expect(result.error).toContain('not found')
     })
+
+    it('should time out if the tool call takes longer than the configured timeout', async () => {
+      mockClientInstance.callTool.mockImplementation(
+        () =>
+          new Promise((resolve) =>
+            setTimeout(() => resolve({ content: [{ type: 'text', text: 'Late weather' }], isError: false }), 100),
+          ),
+      )
+      try {
+        await manager.addServer('timeout-server', { transport: 'stdio', command: 'node', timeout: 0.02 }) // 20ms timeout
+
+        const result = await manager.callTool('timeout-server', 'get_weather', {})
+        expect(result.success).toBe(false)
+        expect(result.error).toContain('timed out')
+      } finally {
+        mockClientInstance.callTool.mockImplementation(async () => ({
+          content: [{ type: 'text', text: 'Sunny, 72°F' }],
+          isError: false,
+        }))
+      }
+    })
   })
 
   describe('setToolEnabled', () => {
