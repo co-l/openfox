@@ -1897,7 +1897,7 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
   })
 
   app.post('/api/mcp/servers/test', async (req, res) => {
-    const { name, transport, command, args, env, url, headers } = req.body as {
+    const { name, transport, command, args, env, url, headers, timeout } = req.body as {
       name?: string
       transport?: string
       command?: string
@@ -1905,6 +1905,7 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
       env?: Record<string, string>
       url?: string
       headers?: Record<string, string>
+      timeout?: number
     }
     if (transport !== undefined && transport !== 'stdio' && transport !== 'http') {
       return res.status(400).json({ error: `Invalid transport '${transport}'. Must be 'stdio' or 'http'.` })
@@ -1914,6 +1915,9 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
     }
     if (transport === 'http' && !url) {
       return res.status(400).json({ error: 'url is required for http transport' })
+    }
+    if (timeout !== undefined && (typeof timeout !== 'number' || timeout <= 0)) {
+      return res.status(400).json({ error: 'timeout must be a positive number' })
     }
     try {
       const testManager = new McpManager()
@@ -1925,6 +1929,7 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
         ...(env && Object.keys(env).length > 0 ? { env } : {}),
         ...(url ? { url } : {}),
         ...(headers && Object.keys(headers).length > 0 ? { headers } : {}),
+        ...(timeout !== undefined ? { timeout } : {}),
       }
       await testManager.addServer(name ?? 'test', testConfig)
       const server = testManager.getServer(name ?? 'test')
@@ -1940,7 +1945,7 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
   })
 
   app.post('/api/mcp/servers', async (req, res) => {
-    const { name, transport, command, args, env, url, headers } = req.body as {
+    const { name, transport, command, args, env, url, headers, timeout } = req.body as {
       name?: string
       transport?: string
       command?: string
@@ -1948,12 +1953,16 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
       env?: Record<string, string>
       url?: string
       headers?: Record<string, string>
+      timeout?: number
     }
     if (!name) {
       return res.status(400).json({ error: 'name is required' })
     }
     if (transport !== undefined && transport !== 'stdio' && transport !== 'http') {
       return res.status(400).json({ error: `Invalid transport '${transport}'. Must be 'stdio' or 'http'.` })
+    }
+    if (timeout !== undefined && (typeof timeout !== 'number' || timeout <= 0)) {
+      return res.status(400).json({ error: 'timeout must be a positive number' })
     }
     try {
       const resolvedTransport: 'stdio' | 'http' = transport === 'http' ? 'http' : 'stdio'
@@ -1964,6 +1973,7 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
         ...(env && Object.keys(env).length > 0 ? { env } : {}),
         ...(url ? { url } : {}),
         ...(headers && Object.keys(headers).length > 0 ? { headers } : {}),
+        ...(timeout !== undefined ? { timeout } : {}),
       }
       await mcpManager.addServer(name, serverCfg)
       const server = mcpManager.getServer(name)
@@ -2005,7 +2015,7 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
     }
 
     const body = req.body as Record<string, unknown>
-    const { transport: rawTransport, command, args, env, url, headers } = body
+    const { transport: rawTransport, command, args, env, url, headers, timeout } = body
 
     if (rawTransport !== undefined && rawTransport !== 'stdio' && rawTransport !== 'http') {
       return res.status(400).json({ error: `Invalid transport '${String(rawTransport)}'. Must be 'stdio' or 'http'.` })
@@ -2037,6 +2047,9 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
     ) {
       return res.status(400).json({ error: 'headers must be a string/string object' })
     }
+    if (timeout !== undefined && (typeof timeout !== 'number' || timeout <= 0)) {
+      return res.status(400).json({ error: 'timeout must be a positive number' })
+    }
 
     try {
       const { loadGlobalConfig, saveGlobalConfig } = await import('../cli/config.js')
@@ -2055,6 +2068,7 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
         ...(env !== undefined ? { env: env as Record<string, string> } : {}),
         ...(url !== undefined ? { url: url as string } : {}),
         ...(headers !== undefined ? { headers: headers as Record<string, string> } : {}),
+        ...(timeout !== undefined ? { timeout: timeout as number } : {}),
       }
 
       const { error: updateError } = await applyMcpServerUpdate({

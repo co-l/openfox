@@ -225,7 +225,27 @@ export class McpManager {
 
     if (!entry.client) return { success: false, error: `MCP server '${serverName}' is not connected` }
     try {
-      const result = await entry.client.callTool({ name: toolName, arguments: args })
+      const timeout = entry.config.timeout
+      const requestOptions = timeout !== undefined && timeout > 0 ? { timeout: timeout * 1000 } : undefined
+      let result
+      if (timeout !== undefined && timeout > 0) {
+        let timer: NodeJS.Timeout | undefined
+        const timeoutPromise = new Promise<never>((_, reject) => {
+          timer = setTimeout(() => {
+            reject(new Error(`MCP tool call timed out after ${timeout} seconds`))
+          }, timeout * 1000)
+        })
+        try {
+          result = await Promise.race([
+            entry.client.callTool({ name: toolName, arguments: args }, undefined, requestOptions),
+            timeoutPromise,
+          ])
+        } finally {
+          if (timer) clearTimeout(timer)
+        }
+      } else {
+        result = await entry.client.callTool({ name: toolName, arguments: args })
+      }
       const content = result.content as Array<{ type: string; text?: string }>
       const textParts = content.filter((c) => c.type === 'text').map((c) => c.text)
       return { success: !result.isError, output: textParts.join('\n') }

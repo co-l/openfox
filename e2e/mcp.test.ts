@@ -50,7 +50,12 @@ describe('MCP Integration', () => {
   async function fetchMcpServers() {
     const res = await fetch(`${server.url}/api/mcp/servers`)
     const data = (await res.json()) as {
-      servers: Array<{ name: string; status: string; config: { command?: string; transport: string }; tools: Array<{ name: string; enabled: boolean }> }>
+      servers: Array<{
+        name: string
+        status: string
+        config: { command?: string; transport: string; timeout?: number }
+        tools: Array<{ name: string; enabled: boolean }>
+      }>
     }
     return data.servers
   }
@@ -104,9 +109,10 @@ describe('MCP Integration', () => {
     const testServer = servers.find((s) => s.name === 'test-server')
     expect(testServer).toBeDefined()
     expect(testServer!.status).toBe('connected')
-    expect(testServer!.tools).toHaveLength(2)
+    expect(testServer!.tools).toHaveLength(3)
     expect(testServer!.tools.map((t) => t.name)).toContain('greet')
     expect(testServer!.tools.map((t) => t.name)).toContain('add')
+    expect(testServer!.tools.map((t) => t.name)).toContain('slow')
 
     // Cleanup
     await removeMcpServer('test-server')
@@ -209,7 +215,7 @@ describe('MCP Integration', () => {
     const testServer = servers.find((s) => s.name === 'test-server')
     expect(testServer).toBeDefined()
     expect(testServer!.status).toBe('connected')
-    expect(testServer!.tools).toHaveLength(2)
+    expect(testServer!.tools).toHaveLength(3)
   })
 
   it('returns 404 when updating a non-existent MCP server', async () => {
@@ -255,5 +261,47 @@ describe('MCP Integration', () => {
     const servers = await fetchMcpServers()
     const testServer = servers.find((s) => s.name === 'test-server')
     expect(testServer!.status).toBe('connected')
+  })
+
+  it('stores and returns the configured timeout', async () => {
+    const mockServerPath = join(__dirname, 'mock-mcp-server.ts')
+    // Add with timeout via POST body
+    const res = await fetch(`${server.url}/api/mcp/servers`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: 'timeout-server', command: 'npx', args: ['tsx', mockServerPath], timeout: 30 }),
+    })
+    expect(res.ok).toBe(true)
+    await sleep(1000)
+
+    const servers = await fetchMcpServers()
+    const found = servers.find((s) => s.name === 'timeout-server')
+    expect(found).toBeDefined()
+    expect(found!.config.timeout).toBe(30)
+
+    // Update timeout
+    const updResp = await updateMcpServer('timeout-server', { timeout: 60 })
+    expect(updResp.ok).toBe(true)
+
+    const servers2 = await fetchMcpServers()
+    const found2 = servers2.find((s) => s.name === 'timeout-server')
+    expect(found2!.config.timeout).toBe(60)
+
+    // Cleanup
+    await removeMcpServer('timeout-server')
+  })
+
+  it('rejects timeout of zero', async () => {
+    const mockServerPath = join(__dirname, 'mock-mcp-server.ts')
+    await addMcpServer('zero-timeout', 'npx', ['tsx', mockServerPath])
+    await sleep(500)
+
+    const updResp = await updateMcpServer('zero-timeout', { timeout: 0 })
+    expect(updResp.status).toBe(400)
+    const data = (await updResp.json()) as { error?: string }
+    expect(data.error).toContain('positive')
+
+    // Cleanup
+    await removeMcpServer('zero-timeout')
   })
 })

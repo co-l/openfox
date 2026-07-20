@@ -16,6 +16,7 @@ export interface McpServerConfig {
   headers?: Record<string, string>
   disabledTools?: string[]
   cachedTools?: CachedToolInfo[]
+  timeout?: number
 }
 
 export interface McpServerState {
