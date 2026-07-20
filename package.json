@@ -1,6 +1,6 @@
 {
   "name": "openfox",
-  "version": "2.0.76",
+  "version": "2.0.77",
   "description": "Local-LLM-first agentic coding assistant",
   "type": "module",
   "bin": {
