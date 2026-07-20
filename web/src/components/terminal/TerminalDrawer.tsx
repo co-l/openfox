@@ -1,6 +1,7 @@
 import { useEffect, useState, useRef, useCallback } from 'react'
 import { useTerminalStore } from '../../stores/terminal'
 import { useProjectStore } from '../../stores/project'
+import { useSessionStore } from '../../stores/session/store'
 import { TerminalPane } from './TerminalPane'
 import { PlusSquareIcon, XCloseIcon } from '../shared/icons'
 import { focusChatTextarea } from '../../lib/focusChatTextarea'
@@ -23,6 +24,7 @@ export function TerminalDrawer({ isOpen, onClose }: TerminalDrawerProps) {
   const setWorkdir = useTerminalStore((state) => state.setWorkdir)
   const fetchSessions = useTerminalStore((state) => state.fetchSessions)
   const currentProject = useProjectStore((state) => state.currentProject)
+  const currentSession = useSessionStore((state) => state.currentSession)
   const [isLoading, setIsLoading] = useState(true)
   const terminalRef = useRef<HTMLDivElement>(null)
   const justOpenedRef = useRef(false)
@@ -33,10 +35,11 @@ export function TerminalDrawer({ isOpen, onClose }: TerminalDrawerProps) {
   }, [onClose])
 
   useEffect(() => {
-    if (currentProject?.workdir) {
-      setWorkdir(currentProject.workdir)
+    const workdir = currentSession?.workspace ?? currentProject?.workdir
+    if (workdir) {
+      setWorkdir(workdir)
     }
-  }, [currentProject?.workdir, setWorkdir])
+  }, [currentSession?.workspace, currentProject?.workdir, setWorkdir])
 
   useEffect(() => {
     if (isOpen) {
@@ -50,9 +53,9 @@ export function TerminalDrawer({ isOpen, onClose }: TerminalDrawerProps) {
   useEffect(() => {
     if (isOpen && sessions.length === 0 && !isLoading && !hasAutoCreatedForOpenCycleRef.current) {
       hasAutoCreatedForOpenCycleRef.current = true
-      createSession(undefined, currentProject?.id)
+      createSession(undefined, currentSession?.projectId ?? currentProject?.id)
     }
-  }, [isOpen, sessions.length, isLoading, createSession, currentProject?.id])
+  }, [isOpen, sessions.length, isLoading, createSession, currentSession?.projectId, currentProject?.id])
 
   useEffect(() => {
     if (isOpen) {
@@ -107,7 +110,7 @@ export function TerminalDrawer({ isOpen, onClose }: TerminalDrawerProps) {
           <h3 className="text-sm font-semibold text-text-primary">Terminal</h3>
           <div className="flex items-center gap-2">
             <button
-              onClick={() => createSession(undefined, currentProject?.id)}
+              onClick={() => createSession(undefined, currentSession?.projectId ?? currentProject?.id)}
               className="p-2 rounded hover:bg-bg-tertiary text-text-muted hover:text-text-primary transition-colors"
               title="New terminal"
             >
@@ -131,7 +134,7 @@ export function TerminalDrawer({ isOpen, onClose }: TerminalDrawerProps) {
               <div className="text-center">
                 <p className="mb-4">No terminal sessions</p>
                 <button
-                  onClick={() => createSession(undefined, currentProject?.id)}
+                  onClick={() => createSession(undefined, currentSession?.projectId ?? currentProject?.id)}
                   className="px-4 py-2 bg-accent-primary/25 text-text-primary rounded hover:bg-accent-primary/40 transition-colors"
                 >
                   Create Terminal
