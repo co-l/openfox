@@ -382,9 +382,9 @@ export function ToolsTab() {
     if (formData.transport === 'stdio' && !formData.command) return 'Command is required for stdio transport'
     if (formData.transport === 'http' && !formData.url) return 'URL is required for HTTP transport'
     if (formData.timeout) {
-      const parsed = parseInt(formData.timeout, 10)
-      if (isNaN(parsed) || parsed < 0) {
-        return 'Timeout must be a non-negative number'
+      const parsed = parseFloat(formData.timeout)
+      if (isNaN(parsed) || parsed <= 0) {
+        return 'Timeout must be a positive number'
       }
     }
     return null
@@ -403,8 +403,8 @@ export function ToolsTab() {
       body.headers = parseKeyValueLines(formData.headers)
     }
     if (formData.timeout) {
-      const parsed = parseInt(formData.timeout, 10)
-      if (!isNaN(parsed)) {
+      const parsed = parseFloat(formData.timeout)
+      if (!isNaN(parsed) && parsed > 0) {
         body.timeout = parsed
       }
     }
@@ -832,6 +832,9 @@ export function ToolsTab() {
                     </div>
                   )}
                   {server.config.url && <div className="text-xs text-text-muted font-mono">{server.config.url}</div>}
+                  {server.config.timeout !== undefined && (
+                    <div className="text-xs text-text-muted">Timeout: {server.config.timeout}s</div>
+                  )}
                   {server.tools.length === 0 ? (
                     <div className="text-xs text-text-muted">No tools available</div>
                   ) : (

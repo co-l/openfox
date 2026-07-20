@@ -188,6 +188,9 @@ export const mcpConfigTool: Tool = createTool<McpConfigArgs>(
       } else if (!args.command) {
         return helpers.error('command is required for stdio transport')
       }
+      if (args.timeout !== undefined && (typeof args.timeout !== 'number' || args.timeout <= 0)) {
+        return helpers.error('timeout must be a positive number')
+      }
 
       const serverCfg: McpServerConfig = {
         transport: args.transport ?? 'stdio',

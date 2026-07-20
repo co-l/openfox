@@ -1916,8 +1916,8 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
     if (transport === 'http' && !url) {
       return res.status(400).json({ error: 'url is required for http transport' })
     }
-    if (timeout !== undefined && (typeof timeout !== 'number' || timeout < 0)) {
-      return res.status(400).json({ error: 'timeout must be a non-negative number' })
+    if (timeout !== undefined && (typeof timeout !== 'number' || timeout <= 0)) {
+      return res.status(400).json({ error: 'timeout must be a positive number' })
     }
     try {
       const testManager = new McpManager()
@@ -1961,8 +1961,8 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
     if (transport !== undefined && transport !== 'stdio' && transport !== 'http') {
       return res.status(400).json({ error: `Invalid transport '${transport}'. Must be 'stdio' or 'http'.` })
     }
-    if (timeout !== undefined && (typeof timeout !== 'number' || timeout < 0)) {
-      return res.status(400).json({ error: 'timeout must be a non-negative number' })
+    if (timeout !== undefined && (typeof timeout !== 'number' || timeout <= 0)) {
+      return res.status(400).json({ error: 'timeout must be a positive number' })
     }
     try {
       const resolvedTransport: 'stdio' | 'http' = transport === 'http' ? 'http' : 'stdio'
@@ -2047,8 +2047,8 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
     ) {
       return res.status(400).json({ error: 'headers must be a string/string object' })
     }
-    if (timeout !== undefined && (typeof timeout !== 'number' || timeout < 0)) {
-      return res.status(400).json({ error: 'timeout must be a non-negative number' })
+    if (timeout !== undefined && (typeof timeout !== 'number' || timeout <= 0)) {
+      return res.status(400).json({ error: 'timeout must be a positive number' })
     }
 
     try {

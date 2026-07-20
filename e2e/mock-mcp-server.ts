@@ -23,6 +23,15 @@ const tools = [
       required: ['a', 'b'],
     },
   },
+  {
+    name: 'slow',
+    description: 'Responds after a delay (ms)',
+    inputSchema: {
+      type: 'object',
+      properties: { delay: { type: 'number', description: 'Delay in milliseconds' } },
+      required: ['delay'],
+    },
+  },
 ]
 
 let initialized = false
@@ -91,6 +100,18 @@ function handleMessage(raw: string) {
           isError: false,
         },
       })
+    } else if (params.name === 'slow') {
+      const delay = Number(params.arguments?.delay ?? 1000)
+      setTimeout(async () => {
+        sendMessage({
+          jsonrpc: '2.0',
+          id: msg.id,
+          result: {
+            content: [{ type: 'text', text: `Slept for ${delay}ms` }],
+            isError: false,
+          },
+        })
+      }, delay)
     } else {
       sendMessage({
         jsonrpc: '2.0',

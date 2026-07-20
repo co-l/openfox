@@ -38,6 +38,10 @@ export function buildUpdatedServerConfig(
     patch.headers !== undefined ? patch.headers : transportChanged ? undefined : existing.config.headers
   const mergedTimeout = patch.timeout !== undefined ? patch.timeout : existing.config.timeout
 
+  if (patch.timeout !== undefined && (typeof patch.timeout !== 'number' || patch.timeout <= 0)) {
+    return { serverCfg: {} as McpServerConfig, error: 'timeout must be a positive number' }
+  }
+
   if (resolvedTransport === 'http' && !mergedUrl) {
     return { serverCfg: {} as McpServerConfig, error: 'url is required for http transport' }
   }
