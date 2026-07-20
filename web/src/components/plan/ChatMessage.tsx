@@ -139,7 +139,7 @@ function UserMessage({ message, messageId, sessionId }: UserMessageProps) {
       )}
 
       <div
-        className={`max-w-[75%] rounded p-2 ${
+        className={`max-w-[75%] ${editing ? 'w-full' : ''} rounded p-2 ${
           isSystemGenerated
             ? isCommand
               ? 'bg-teal-500/10 border border-teal-500/30'
