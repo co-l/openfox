@@ -96,27 +96,16 @@ describe('GET /api/sessions/:id — snapshot-optimized loading', () => {
       getEventStore: () => ({
         getEvents: getEventsMock,
         getEventsSinceSnapshot: getEventsSinceSnapshotMock,
-        getLatestSnapshot: vi.fn(() => ({
-          seq: 3,
-          sessionId: 'session-1',
-          timestamp: Date.now(),
-          type: 'turn.snapshot',
-          data: {
-            mode: 'builder',
-            phase: 'build',
-            isRunning: false,
-            messages: [],
-            criteria: [],
-            metadataEntries: {},
-            contextState: {},
-            currentContextWindowId: 'win-1',
-            todos: [],
-            readFiles: [],
-            snapshotSeq: 1,
-            snapshotAt: Date.now(),
-          },
-        })),
       }),
+      combineEventsWithSnapshot: vi.fn(
+        (sessionId: string, snapshot: { snapshotAt: number } | undefined, events: unknown[]) => {
+          if (!snapshot) return events
+          return [
+            { seq: 0, timestamp: snapshot.snapshotAt, sessionId, type: 'turn.snapshot', data: snapshot },
+            ...events,
+          ]
+        },
+      ),
       getContextMessages: vi.fn(() => []),
       getCurrentContextWindowId: vi.fn(() => 'win-1'),
     }))
@@ -139,7 +128,7 @@ describe('GET /api/sessions/:id — snapshot-optimized loading', () => {
     app.use(express.json())
 
     app.get('/api/sessions/:id', async (req, res) => {
-      const { getEventStore } = await import('../events/index.js')
+      const { getEventStore, combineEventsWithSnapshot } = await import('../events/index.js')
       const { buildMessagesFromStoredEvents, foldPendingConfirmations } = await import('../events/folding.js')
       const { getPendingQuestionsForSession } = await import('../tools/index.js')
       const { getMaxVisibleItems } = await import('../db/settings.js')
@@ -150,7 +139,8 @@ describe('GET /api/sessions/:id — snapshot-optimized loading', () => {
       }
 
       const eventStore = getEventStore()
-      const { events } = eventStore.getEventsSinceSnapshot(req.params.id)
+      const { snapshot, events: eventsSinceSnapshot } = eventStore.getEventsSinceSnapshot(req.params.id)
+      const events = combineEventsWithSnapshot(req.params.id, snapshot, eventsSinceSnapshot)
       const maxVisibleItems = req.query['full'] === 'true' ? undefined : getMaxVisibleItems() || undefined
       const { messages, hiddenCount } = buildMessagesFromStoredEvents(events, maxVisibleItems)
       const contextState = null
