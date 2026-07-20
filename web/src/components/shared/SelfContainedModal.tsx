@@ -60,6 +60,8 @@ export function Modal({
     if (!isOpen || !closeOnEscape) return
     const handler = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
+        const active = document.activeElement
+        if (active && (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA')) return
         e.stopPropagation()
         close()
       }
@@ -92,6 +94,7 @@ export function Modal({
                   onClick={closeOnBackdropClick ? close : undefined}
                 />
                 <div
+                  role="dialog"
                   className={`relative w-full ${sizeClasses[size]} max-h-[90vh] bg-bg-secondary border border-border rounded shadow-xl flex flex-col`}
                 >
                   {(title || headerRight || showCloseButton) && (

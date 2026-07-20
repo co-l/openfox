@@ -11,6 +11,7 @@ import { formatTime, formatSpeed } from '../../lib/format-stats'
 import { formatMetadataKeyLabel } from '../../lib/metadata-keys'
 import { StatsModal } from './StatsModal'
 import { MetadataEntries, MetadataSectionHeader } from '../shared/MetadataEntries'
+import { MetadataModal } from '../shared/MetadataModal'
 import { CriteriaEditor } from './CriteriaEditor'
 import { DevServerFooter } from './DevServerFooter'
 import { BackgroundProcesses } from './BackgroundProcesses'
@@ -31,6 +32,7 @@ export function SessionSidebar({ messages, workdir }: SessionSidebarProps) {
   const [showUpdateModal, setShowUpdateModal] = useState(false)
   const [showBranchModal, setShowBranchModal] = useState(false)
   const [showWorkspaceModal, setShowWorkspaceModal] = useState(false)
+  const [activeMetadataKey, setActiveMetadataKey] = useState<string | null>(null)
 
   const stats = useSessionStats(messages)
   const { branch } = useGitStatus()
@@ -75,7 +77,12 @@ export function SessionSidebar({ messages, workdir }: SessionSidebarProps) {
       {/* Metadata sections */}
       <div className="flex flex-col flex-1 overflow-y-auto">
         <div className="mt-4">
-          <MetadataSectionHeader entries={session?.metadataEntries?.['criteria'] ?? []} title="Acceptance Criteria" />
+          <button
+            onClick={() => setActiveMetadataKey('criteria')}
+            className="w-full text-left cursor-pointer hover:bg-bg-tertiary rounded px-1 -mx-1 transition-colors"
+          >
+            <MetadataSectionHeader entries={session?.metadataEntries?.['criteria'] ?? []} title="Acceptance Criteria" />
+          </button>
           {session && <CriteriaEditor entries={session?.metadataEntries?.['criteria'] ?? []} sessionId={session.id} />}
           {session &&
             (() => {
@@ -89,7 +96,12 @@ export function SessionSidebar({ messages, workdir }: SessionSidebarProps) {
                 .filter((key) => (all[key]?.length ?? 0) > 0)
                 .map((key) => (
                   <div key={key} className="mt-6">
-                    <MetadataSectionHeader entries={all[key]!} title={formatMetadataKeyLabel(key)} />
+                    <button
+                      onClick={() => setActiveMetadataKey(key)}
+                      className="w-full text-left cursor-pointer hover:bg-bg-tertiary rounded px-1 -mx-1 transition-colors"
+                    >
+                      <MetadataSectionHeader entries={all[key]!} title={formatMetadataKeyLabel(key)} />
+                    </button>
                     <MetadataEntries
                       entries={all[key]!}
                       onClearAll={async () => {
@@ -196,6 +208,15 @@ export function SessionSidebar({ messages, workdir }: SessionSidebarProps) {
       )}
 
       <AutoUpdateModal isOpen={showUpdateModal} onClose={() => setShowUpdateModal(false)} versionInfo={null} />
+
+      <MetadataModal
+        isOpen={activeMetadataKey !== null}
+        onClose={() => setActiveMetadataKey(null)}
+        entries={session?.metadataEntries?.[activeMetadataKey ?? ''] ?? []}
+        sessionId={session?.id ?? ''}
+        metadataKey={activeMetadataKey ?? ''}
+        title={formatMetadataKeyLabel(activeMetadataKey ?? '')}
+      />
 
       {session && (
         <>
