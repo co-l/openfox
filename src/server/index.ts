@@ -682,7 +682,7 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
     const { getEventStore, combineEventsWithSnapshot } = await import('./events/index.js')
     const { buildMessagesFromStoredEvents, foldPendingConfirmations } = await import('./events/folding.js')
     const { getPendingQuestionsForSession } = await import('./tools/index.js')
-    const { applyMaxVisibleItems } = await import('./db/settings.js')
+    const { getMaxVisibleItems } = await import('./db/settings.js')
 
     const session = sessionManager.getSession(req.params.id)
     if (!session) {
@@ -693,17 +693,16 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
     const { snapshot, events: eventsSinceSnapshot } = eventStore.getEventsSinceSnapshot(req.params.id)
     const events = combineEventsWithSnapshot(req.params.id, snapshot, eventsSinceSnapshot)
 
-    const { messages } = buildMessagesFromStoredEvents(events)
+    const maxVisibleItems = getMaxVisibleItems()
+    const { messages, hiddenCount } = buildMessagesFromStoredEvents(events, maxVisibleItems || undefined)
     const contextState = sessionManager.getContextState(req.params.id)
     const queueState = sessionManager.getQueueState(req.params.id)
     const pendingQuestions = getPendingQuestionsForSession(req.params.id)
     const pendingConfirmations = foldPendingConfirmations(events)
 
-    const { truncated: truncatedMessages, hiddenCount } = applyMaxVisibleItems(messages)
-
     res.json({
       session,
-      messages: truncatedMessages,
+      messages,
       hiddenCount,
       contextState,
       queueState,
@@ -757,7 +756,7 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
   app.post('/api/sessions/:id/provider', async (req, res) => {
     const { getEventStore, combineEventsWithSnapshot: combineEv } = await import('./events/index.js')
     const { buildMessagesFromStoredEvents } = await import('./events/folding.js')
-    const { applyMaxVisibleItems } = await import('./db/settings.js')
+    const { getMaxVisibleItems } = await import('./db/settings.js')
 
     const sessionId = req.params.id
     const session = sessionManager.getSession(sessionId)
@@ -784,11 +783,11 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
     const eventStore = getEventStore()
     const { snapshot, events: eventsSinceSnapshot } = eventStore.getEventsSinceSnapshot(sessionId)
     const events = combineEv(sessionId, snapshot, eventsSinceSnapshot)
-    const { messages } = buildMessagesFromStoredEvents(events)
+    const maxVisibleItems = getMaxVisibleItems()
+    const { messages, hiddenCount } = buildMessagesFromStoredEvents(events, maxVisibleItems || undefined)
     const updatedSession = sessionManager.getSession(sessionId)
-    const { truncated: truncatedMessages, hiddenCount } = applyMaxVisibleItems(messages)
 
-    res.json({ session: updatedSession, messages: truncatedMessages, hiddenCount, contextState })
+    res.json({ session: updatedSession, messages, hiddenCount, contextState })
   })
 
   // Set global default model (persisted to config, used for new sessions)
@@ -908,7 +907,7 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
   app.put('/api/sessions/:id/mode', async (req, res) => {
     const { getEventStore, combineEventsWithSnapshot: combineEv } = await import('./events/index.js')
     const { buildMessagesFromStoredEvents } = await import('./events/folding.js')
-    const { applyMaxVisibleItems } = await import('./db/settings.js')
+    const { getMaxVisibleItems } = await import('./db/settings.js')
 
     const sessionId = req.params.id
     const session = sessionManager.getSession(sessionId)
@@ -931,11 +930,11 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
     const eventStore = getEventStore()
     const { snapshot, events: eventsSinceSnapshot } = eventStore.getEventsSinceSnapshot(sessionId)
     const events = combineEv(sessionId, snapshot, eventsSinceSnapshot)
-    const { messages } = buildMessagesFromStoredEvents(events)
+    const maxVisibleItems = getMaxVisibleItems()
+    const { messages, hiddenCount } = buildMessagesFromStoredEvents(events, maxVisibleItems || undefined)
     const updatedSession = sessionManager.getSession(sessionId)
-    const { truncated: truncatedMessages, hiddenCount } = applyMaxVisibleItems(messages)
 
-    res.json({ session: updatedSession, messages: truncatedMessages, hiddenCount })
+    res.json({ session: updatedSession, messages, hiddenCount })
   })
 
   // Danger level (REST)
@@ -1008,21 +1007,20 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
     const { buildMessagesFromStoredEvents, foldPendingConfirmations } = await import('./events/folding.js')
     const { createSessionStateMessage } = await import('./ws/protocol.js')
     const { getPendingQuestionsForSession } = await import('./tools/index.js')
-    const { applyMaxVisibleItems } = await import('./db/settings.js')
+    const { getMaxVisibleItems } = await import('./db/settings.js')
     const eventStore = getEventStore()
     const { snapshot, events: eventsSinceSnapshot } = eventStore.getEventsSinceSnapshot(sessionId)
     const events = combineEvents(sessionId, snapshot, eventsSinceSnapshot)
 
-    const { messages } = buildMessagesFromStoredEvents(events)
+    const maxVisibleItems = getMaxVisibleItems()
+    const { messages, hiddenCount } = buildMessagesFromStoredEvents(events, maxVisibleItems || undefined)
     const pendingConfirmations = foldPendingConfirmations(events)
     const pendingQuestions = getPendingQuestionsForSession(sessionId)
-
-    const { truncated: truncatedMessages, hiddenCount } = applyMaxVisibleItems(messages)
     const session = sessionManager.getSession(sessionId)
     if (session) {
       const stateMsg = createSessionStateMessage(
         session,
-        truncatedMessages,
+        messages,
         pendingConfirmations,
         pendingQuestions,
         undefined,

@@ -11,7 +11,7 @@ import type { Config } from '../config.js'
 import type { LLMClientWithModel } from '../llm/client.js'
 import type { SessionManager } from '../session/index.js'
 import { getEventStore, combineEventsWithSnapshot } from '../events/index.js'
-import { applyMaxVisibleItems } from '../db/settings.js'
+import { getMaxVisibleItems } from '../db/settings.js'
 
 import type { Message, Provider, ProviderBackend, StatsIdentity, Attachment } from '../../shared/types.js'
 import type { ProviderManager } from '../provider-manager.js'
@@ -627,11 +627,10 @@ export function createWebSocketServer(
       const { snapshot, events: eventsSinceSnapshot } = eventStore.getEventsSinceSnapshot(updatedSession.id)
       const events = combineEventsWithSnapshot(updatedSession.id, snapshot, eventsSinceSnapshot)
 
-      const { messages } = buildMessagesFromStoredEvents(events)
+      const maxVisible = getMaxVisibleItems()
+      const { messages, hiddenCount } = buildMessagesFromStoredEvents(events, maxVisible || undefined)
       const pendingConfirmations = foldPendingConfirmations(events)
       const pendingQuestions = getPendingQuestionsForSession(updatedSession.id)
-
-      const { truncated: truncatedMessages, hiddenCount } = applyMaxVisibleItems(messages)
 
       // Update activeWorkdir when workspace changed so git polling picks up the right dir
       const effectiveWorkdir = updatedSession.workspace ?? updatedSession.workdir
@@ -655,7 +654,7 @@ export function createWebSocketServer(
         updatedSession.id,
         createSessionStateMessage(
           updatedSession,
-          truncatedMessages,
+          messages,
           pendingConfirmations,
           pendingQuestions,
           undefined,
