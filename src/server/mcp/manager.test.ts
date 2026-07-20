@@ -32,7 +32,11 @@ vi.mock('@modelcontextprotocol/sdk/client/index.js', () => ({
   }),
 }))
 
-const mockTransportInstance = {
+const mockTransportInstance: {
+  start: ReturnType<typeof vi.fn>
+  close: ReturnType<typeof vi.fn>
+  onmessage?: ((message: unknown) => void) | undefined
+} = {
   start: vi.fn().mockResolvedValue(undefined),
   close: vi.fn().mockResolvedValue(undefined),
 }
@@ -43,7 +47,11 @@ vi.mock('@modelcontextprotocol/sdk/client/stdio.js', () => ({
   }),
 }))
 
-const mockHttpTransportInstance = {
+const mockHttpTransportInstance: {
+  start: ReturnType<typeof vi.fn>
+  close: ReturnType<typeof vi.fn>
+  onmessage?: ((message: unknown) => void) | undefined
+} = {
   start: vi.fn().mockResolvedValue(undefined),
   close: vi.fn().mockResolvedValue(undefined),
 }
@@ -128,6 +136,57 @@ describe('McpManager', () => {
       const server = manager.getServer('test')
       expect(server!.tools.find((t) => t.name === 'write_file')!.enabled).toBe(false)
       expect(server!.tools.find((t) => t.name === 'get_weather')!.enabled).toBe(true)
+    })
+
+    it('should strip outputSchema from tool list responses to prevent AJV validation failure on broken $ref', async () => {
+      await manager.addServer('test-server', {
+        transport: 'stdio',
+        command: 'node',
+      })
+
+      // The interceptor is now installed on mockTransportInstance via Object.defineProperty.
+      // Simulate the SDK setting onmessage — this triggers the setter, which wraps our handler.
+      const sdkHandler = vi.fn()
+      mockTransportInstance.onmessage = sdkHandler
+
+      // Retrieve the wrapped function (the getter returns the closure-wrapped version)
+      const wrappedHandler = mockTransportInstance.onmessage as (msg: unknown) => void
+
+      // Simulate a tools/list response with outputSchema containing broken $ref
+      const toolsListMessage = {
+        jsonrpc: '2.0',
+        id: 1,
+        result: {
+          tools: [
+            {
+              name: 'stitch_tool',
+              description: 'A tool with broken outputSchema',
+              inputSchema: { type: 'object' },
+              outputSchema: { type: 'object', $ref: '#/$defs/ScreenInstance' },
+            },
+            {
+              name: 'clean_tool',
+              description: 'A tool without outputSchema',
+              inputSchema: { type: 'object' },
+            },
+          ],
+        },
+      }
+
+      wrappedHandler(toolsListMessage)
+
+      // SDK handler should have been called
+      expect(sdkHandler).toHaveBeenCalledWith(toolsListMessage)
+
+      // outputSchema should be stripped from the tool that had it
+      expect((toolsListMessage.result.tools[0] as any).outputSchema).toBeUndefined()
+      // Tool without outputSchema is unaffected
+      expect((toolsListMessage.result.tools[1] as any).outputSchema).toBeUndefined()
+
+      // Non-tool-list messages pass through unchanged
+      const nonToolMessage = { jsonrpc: '2.0', id: 2, result: { serverInfo: { name: 'test' } } }
+      wrappedHandler(nonToolMessage)
+      expect(sdkHandler).toHaveBeenCalledWith(nonToolMessage)
     })
   })
 
