@@ -186,15 +186,16 @@ export function createAutoUpdateRoutes(options: AutoUpdateRoutesOptions = {}): R
       const latestVersion = latest.replace(/^v/, '')
       const isUpdateAvailable = currentVersion !== latestVersion
 
-      // Cache the result
+      // Cache the result (use latestVersion without 'v' prefix for consistency)
       const now = Date.now()
-      versionCache.data = { current, latest, isUpdateAvailable, isService }
+      versionCache.data = { current, latest: latestVersion, isUpdateAvailable, isService }
       versionCache.timestamp = now
 
-      res.json({ current, latest, isUpdateAvailable, isService })
+      res.json({ current, latest: latestVersion, isUpdateAvailable, isService })
     } catch (err) {
       logger.error('[auto-update] Error in version check', { error: err instanceof Error ? err.message : String(err) })
-      res.json({ current, latest: current, isUpdateAvailable: false, isService })
+      const currentVersion = isDev ? current.replace(/-dev$/, '') : current
+      res.json({ current, latest: currentVersion, isUpdateAvailable: false, isService })
     }
   })
 

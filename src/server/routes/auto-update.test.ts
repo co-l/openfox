@@ -40,8 +40,8 @@ describe('Auto Update Routes', () => {
       if (cmd === 'git' && Array.isArray(args) && args[0] === 'fetch') {
         return makeMockChild({ stdout: '' })
       }
-      // git describe via bash -c returns just the tag name
-      if (cmd === 'bash' && Array.isArray(args) && args[0] === '-c' && args[1]?.includes('git describe')) {
+      // git describe returns just the tag name
+      if (cmd === 'git' && Array.isArray(args) && args[0] === 'describe') {
         return makeMockChild({ stdout: '1.2.3\n' })
       }
       return makeMockChild({ stdout: 'Updated: 1.2.3\n' })
