@@ -159,7 +159,8 @@ describe('GET /api/sessions/:id — snapshot-optimized loading', () => {
       const pendingQuestions = getPendingQuestionsForSession(req.params.id)
       const pendingConfirmations = foldPendingConfirmations(events)
 
-      const { truncated: truncatedMessages, hiddenCount } = applyMaxVisibleItems(messages)
+      const { truncated: truncatedMessages, hiddenCount } =
+        req.query['full'] === 'true' ? { truncated: messages, hiddenCount: 0 } : applyMaxVisibleItems(messages)
 
       res.json({
         session,
@@ -203,5 +204,14 @@ describe('GET /api/sessions/:id — snapshot-optimized loading', () => {
 
     expect(data.messages).toBeDefined()
     expect(Array.isArray(data.messages)).toBe(true)
+  })
+
+  it('[AUTOMATED] returns all messages when ?full=true bypasses maxVisibleItems truncation', async () => {
+    const res = await fetch(`${baseUrl}/api/sessions/session-1?full=true`)
+    const data = (await res.json()) as { messages: unknown[]; hiddenCount: number }
+
+    expect(data.messages).toBeDefined()
+    expect(data.messages).toHaveLength(5)
+    expect(data.hiddenCount).toBe(0)
   })
 })

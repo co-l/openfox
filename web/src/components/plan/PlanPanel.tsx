@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect, useCallback, useMemo } from 'react'
 import { useSessionStore, useIsRunning } from '../../stores/session'
+import { useDisplaySettings } from '../../stores/settings'
 
 import { type TurnStats } from '../../lib/types'
 import type { Message } from '@shared/types.js'
@@ -54,13 +55,13 @@ export function PlanPanel({
 
   const session = useSessionStore((state) => state.currentSession)
   const storeMessages = useSessionStore((state) => state.messages)
-  const storeHiddenCount = useSessionStore((state) => state.hiddenCount)
   const sessions = useSessionStore((state) => state.sessions)
   const isRunning = useIsRunning()
   const stopGeneration = useSessionStore((state) => state.stopGeneration)
 
   const messages = propRawMessages ?? storeMessages
-  const hiddenCount = propHiddenCount ?? storeHiddenCount ?? 0
+
+  const { maxVisibleItems } = useDisplaySettings()
 
   const agentDefaults = useAgentsStore((state) => state.defaults)
   const agentUserItems = useAgentsStore((state) => state.userItems)
@@ -95,11 +96,19 @@ export function PlanPanel({
 
   const previousDisplayItemsRef = useRef<DisplayItem[]>([])
 
-  const { displayItems } = useMemo((): { displayItems: DisplayItem[] } => {
+  const { displayItems, hiddenCount: computedHiddenCount } = useMemo((): {
+    displayItems: DisplayItem[]
+    hiddenCount: number
+  } => {
     const items = groupMessages(messages, previousDisplayItemsRef.current)
     previousDisplayItemsRef.current = items
-    return { displayItems: items }
-  }, [messages])
+    if (maxVisibleItems > 0 && items.length > maxVisibleItems) {
+      return { displayItems: items.slice(-maxVisibleItems), hiddenCount: items.length - maxVisibleItems }
+    }
+    return { displayItems: items, hiddenCount: 0 }
+  }, [messages, maxVisibleItems])
+
+  const hiddenCount = propHiddenCount ?? computedHiddenCount
 
   const { isAutoScrollActive, setAutoScroll } = useAutoScroll(scrollContainerRef, session)
   const { sendMessage, launchWorkflow } = useScrolledSend(setAutoScroll)

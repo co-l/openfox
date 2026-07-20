@@ -39,7 +39,15 @@ const mockMessages: Message[] = Array.from({ length: 10 }, (_, i) => ({
 
 describe('WebSocket session.state truncation', () => {
   it('includes hiddenCount in session.state payload when provided', () => {
-    const message = createSessionStateMessage(mockSession, mockMessages.slice(-3), [], undefined, undefined, 7)
+    const message = createSessionStateMessage(
+      mockSession,
+      mockMessages.slice(-3),
+      [],
+      undefined,
+      undefined,
+      undefined,
+      7,
+    )
 
     expect(message.payload).toHaveProperty('hiddenCount')
     expect(message.payload.hiddenCount).toBe(7)
@@ -53,7 +61,7 @@ describe('WebSocket session.state truncation', () => {
 
   it('passes truncated messages and correct hiddenCount through to payload', () => {
     const truncatedMessages = mockMessages.slice(-3)
-    const message = createSessionStateMessage(mockSession, truncatedMessages, [], undefined, undefined, 7)
+    const message = createSessionStateMessage(mockSession, truncatedMessages, [], undefined, undefined, undefined, 7)
 
     expect(message.payload.messages).toHaveLength(3)
     expect(message.payload.messages[0]!.id).toBe('msg-8')
@@ -81,7 +89,15 @@ describe('WebSocket session.state truncation', () => {
       toolResult: { success: true, output: 'File content', durationMs: 5, truncated: false },
     }
 
-    const message = createSessionStateMessage(mockSession, [assistantMsg, toolMsg], [], undefined, undefined, 3)
+    const message = createSessionStateMessage(
+      mockSession,
+      [assistantMsg, toolMsg],
+      [],
+      undefined,
+      undefined,
+      undefined,
+      3,
+    )
 
     expect(message.payload.messages[0]!.toolCalls![0]).toHaveProperty('result')
     expect(message.payload.messages[0]!.toolCalls![0]!.result!.output).toBe('File content')

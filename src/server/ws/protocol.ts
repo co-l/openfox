@@ -120,8 +120,8 @@ export function createSessionStateMessage(
   pendingConfirmations: PendingPathConfirmationPayload[] = [],
   pendingQuestions?: PendingQuestionPayload[],
   gitStatus?: GitStatusPayload,
-  hiddenCount?: number,
   correlationId?: string,
+  hiddenCount?: number,
 ): ServerMessage<SessionStatePayload> {
   // Enrich messages so toolCalls have their results attached
   const enrichedMessages = enrichMessagesWithToolResults(messages)

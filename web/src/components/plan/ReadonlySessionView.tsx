@@ -22,7 +22,7 @@ export function ReadonlySessionView() {
     setLoading(true)
     setError(null)
     try {
-      const res = await authFetch(`/api/sessions/${sessionId}`)
+      const res = await authFetch(`/api/sessions/${sessionId}?full=true`)
       if (!res.ok) {
         setError(`Failed to load session (${res.status})`)
         setLoading(false)

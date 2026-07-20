@@ -658,6 +658,7 @@ export function createWebSocketServer(
           pendingConfirmations,
           pendingQuestions,
           undefined,
+          undefined,
           hiddenCount,
         ),
       )

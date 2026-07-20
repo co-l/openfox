@@ -693,8 +693,8 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
     const { snapshot, events: eventsSinceSnapshot } = eventStore.getEventsSinceSnapshot(req.params.id)
     const events = combineEventsWithSnapshot(req.params.id, snapshot, eventsSinceSnapshot)
 
-    const maxVisibleItems = getMaxVisibleItems()
-    const { messages, hiddenCount } = buildMessagesFromStoredEvents(events, maxVisibleItems || undefined)
+    const maxVisibleItems = req.query['full'] === 'true' ? undefined : getMaxVisibleItems() || undefined
+    const { messages, hiddenCount } = buildMessagesFromStoredEvents(events, maxVisibleItems)
     const contextState = sessionManager.getContextState(req.params.id)
     const queueState = sessionManager.getQueueState(req.params.id)
     const pendingQuestions = getPendingQuestionsForSession(req.params.id)
@@ -1023,6 +1023,7 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
         messages,
         pendingConfirmations,
         pendingQuestions,
+        undefined,
         undefined,
         hiddenCount,
       )

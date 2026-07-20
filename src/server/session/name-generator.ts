@@ -203,6 +203,7 @@ export function applyGeneratedSessionName(sessionId: string, name: string, deps:
         pendingConfirmations,
         pendingQuestions,
         undefined,
+        undefined,
         hiddenCount,
       ),
     )

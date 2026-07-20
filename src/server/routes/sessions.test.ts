@@ -118,7 +118,8 @@ describe('GET /api/sessions/:id — server-side truncation', () => {
       const pendingQuestions = getPendingQuestionsForSession(req.params.id)
       const pendingConfirmations = foldPendingConfirmations(events)
 
-      const { truncated: truncatedMessages, hiddenCount } = applyMaxVisibleItems(messages)
+      const { truncated: truncatedMessages, hiddenCount } =
+        req.query['full'] === 'true' ? { truncated: messages, hiddenCount: 0 } : applyMaxVisibleItems(messages)
 
       res.json({
         session,
@@ -207,6 +208,33 @@ describe('GET /api/sessions/:id — server-side truncation', () => {
     ;(getSessionMock as ReturnType<typeof vi.fn>).mockReturnValueOnce(undefined)
     const res = await fetch(`${baseUrl}/api/sessions/nonexistent`)
     expect(res.status).toBe(404)
+  })
+
+  it('[AUTOMATED] returns all messages when ?full=true bypasses maxVisibleItems', async () => {
+    const settings = (await import('../db/settings.js')) as unknown as {
+      __store: Map<string, string>
+      setSetting: (k: string, v: string) => void
+    }
+    settings.setSetting('display.maxVisibleItems', '3')
+
+    const res = await fetch(`${baseUrl}/api/sessions/session-1?full=true`)
+    const data = (await res.json()) as { messages: { id: string }[]; hiddenCount: number }
+
+    expect(data.messages).toHaveLength(10)
+    expect(data.hiddenCount).toBe(0)
+  })
+
+  it('[AUTOMATED] ?full=true returns hiddenCount 0 regardless of maxVisibleItems', async () => {
+    const settings = (await import('../db/settings.js')) as unknown as {
+      __store: Map<string, string>
+      setSetting: (k: string, v: string) => void
+    }
+    settings.setSetting('display.maxVisibleItems', '1')
+
+    const res = await fetch(`${baseUrl}/api/sessions/session-1?full=true`)
+    const data = (await res.json()) as { messages: { id: string }[]; hiddenCount: number }
+
+    expect(data.hiddenCount).toBe(0)
   })
 })
 
