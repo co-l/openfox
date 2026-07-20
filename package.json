@@ -180,5 +180,8 @@
     "minimatch": "10.2.5",
     "micromatch": "4.0.8",
     "@rollup/plugin-terser": "1.0.0"
+  },
+  "allowScripts": {
+    "better-sqlite3": true
   }
 }
