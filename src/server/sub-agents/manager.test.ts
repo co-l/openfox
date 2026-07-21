@@ -84,6 +84,7 @@ describe('SubAgentManager', () => {
       setDynamicContextChanged: vi.fn(),
       getCachedPrompt: vi.fn().mockReturnValue(undefined),
       setCachedPrompt: vi.fn(),
+      getModelCompactionThreshold: vi.fn().mockReturnValue(undefined),
       getLspManager: vi.fn().mockReturnValue(undefined),
       getEffectiveWorkdir: vi.fn().mockReturnValue('/test'),
       drainAsapMessages: vi.fn().mockReturnValue([]),

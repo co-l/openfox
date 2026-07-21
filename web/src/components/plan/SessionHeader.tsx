@@ -5,7 +5,6 @@ import { ProgressBar, LowTokenWarning } from '../shared/ProgressBar'
 import { formatTokens } from '../../lib/format-stats'
 import { wsClient } from '../../lib/ws'
 import { Modal } from '../shared/SelfContainedModal'
-import { ModelCompactionControl } from '../shared/ModelCompactionControl'
 
 function getTextColor(percent: number, dangerZone: boolean): string {
   if (dangerZone) return 'text-accent-error'
@@ -77,7 +76,7 @@ export function SessionHeader() {
               {menuOpen && (
                 <>
                   <div className="fixed inset-0 z-40" onClick={() => setMenuOpen(false)} />
-                  <div className="absolute right-0 top-full mt-1.5 z-50 bg-bg-secondary border border-border rounded-lg shadow-xl py-1 min-w-[320px]">
+                  <div className="absolute right-0 top-full mt-1.5 z-50 bg-bg-secondary border border-border rounded-lg shadow-xl py-1 min-w-[160px]">
                     <button
                       onClick={() => {
                         if (!isRunning) compactContext()
@@ -89,14 +88,6 @@ export function SessionHeader() {
                     >
                       <span className={dangerZone ? 'text-accent-error' : ''}>Compact</span>
                     </button>
-                    {currentSession.providerId && currentSession.providerModel && (
-                      <ModelCompactionControl
-                        providerId={currentSession.providerId}
-                        modelId={currentSession.providerModel}
-                        maxTokens={maxTokens}
-                        compact
-                      />
-                    )}
                     {dynamicContextChanged && (
                       <button
                         onClick={() => {

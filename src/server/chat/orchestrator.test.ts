@@ -254,6 +254,7 @@ function createSessionManager(state: Record<string, any>) {
     updateExecutionState: vi.fn((_: string, updates: Record<string, unknown>) => {
       state['current'].executionState = { ...(state['current'].executionState ?? {}), ...updates }
     }),
+    getModelCompactionThreshold: vi.fn(() => undefined),
   }
 }
 
@@ -1722,7 +1723,9 @@ describe('chat orchestrator', () => {
       },
     })
     // Override checkBranchConsistency to return a warning
-    sessionManager.checkBranchConsistency = vi.fn().mockResolvedValue('Branch mismatch: session expects "feature-x" but workspace is on "main"')
+    sessionManager.checkBranchConsistency = vi
+      .fn()
+      .mockResolvedValue('Branch mismatch: session expects "feature-x" but workspace is on "main"')
     sessionManager.addMessage = addMessageMock
 
     await runChatTurn({

@@ -1362,7 +1362,8 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
     const activeProvider = providerManager.getActiveProvider()
 
     let visionFallback:
-      { enabled: boolean; url: string; model: string; timeout: number; backend: VisionBackend } | undefined
+      | { enabled: boolean; url: string; model: string; timeout: number; backend: VisionBackend }
+      | undefined
     let globalWorkdir: string | undefined
     try {
       const { loadGlobalConfig, getVisionFallback } = await import('../cli/config.js')
@@ -1942,35 +1943,6 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
     } catch (error) {
       res.status(500).json({ error: error instanceof Error ? error.message : 'Failed to update provider' })
     }
-  })
-
-  app.post('/api/config/model-compaction', async (req, res) => {
-    const { providerId, modelId, threshold } = req.body as {
-      providerId?: string
-      modelId?: string
-      threshold?: number | null
-    }
-    if (!providerId || !modelId) return res.status(400).json({ error: 'providerId and modelId are required' })
-    if (threshold !== null && (typeof threshold !== 'number' || threshold < 0 || threshold > 0.95)) {
-      return res.status(400).json({ error: 'threshold must be null or a number between 0 and 0.95' })
-    }
-
-    const { loadGlobalConfig, saveGlobalConfig, updateProvider } = await import('../cli/config.js')
-    const globalConfig = await loadGlobalConfig(config.mode ?? 'production', config.globalConfigPath)
-    const provider = globalConfig.providers.find((item) => item.id === providerId)
-    if (!provider) return res.status(404).json({ error: 'Provider not found' })
-    const model = provider.models.find((item) => item.id === modelId)
-    if (!model) return res.status(404).json({ error: 'Model not found' })
-
-    const models = provider.models.map((item) => {
-      if (item.id !== modelId) return item
-      const { compactionThreshold: _current, ...rest } = item
-      return threshold === null ? rest : { ...rest, compactionThreshold: threshold }
-    })
-    const updatedConfig = updateProvider(globalConfig, providerId, { models })
-    await saveGlobalConfig(config.mode ?? 'production', updatedConfig, config.globalConfigPath)
-    providerManager.setProviders(updatedConfig.providers, updatedConfig.defaultModelSelection ?? undefined)
-    res.json({ success: true, threshold })
   })
 
   app.get('/api/providers/:id/models', async (req, res) => {

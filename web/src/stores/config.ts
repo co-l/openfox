@@ -5,7 +5,15 @@ import type { ModelConfig } from '@shared/types.js'
 type LlmStatus = 'connected' | 'disconnected' | 'unknown'
 
 type Backend =
-  'vllm' | 'sglang' | 'ollama' | 'llamacpp' | 'lmstudio' | 'openai' | 'anthropic' | 'opencode-go' | 'unknown'
+  | 'vllm'
+  | 'sglang'
+  | 'ollama'
+  | 'llamacpp'
+  | 'lmstudio'
+  | 'openai'
+  | 'anthropic'
+  | 'opencode-go'
+  | 'unknown'
 type ProviderStatus = 'connected' | 'disconnected' | 'unknown'
 
 interface Provider {
@@ -56,7 +64,6 @@ interface ConfigState {
   refreshModel: () => Promise<void>
   activateProvider: (providerId: string) => Promise<boolean>
   setDefaultModel: (providerId: string, model: string) => Promise<boolean>
-  setModelCompactionThreshold: (providerId: string, modelId: string, threshold: number | null) => Promise<boolean>
   startAutoRefresh: () => void
   stopAutoRefresh: () => void
   refreshProviderModels: (providerId: string) => Promise<boolean>
@@ -233,34 +240,6 @@ export const useConfigStore = create<ConfigState>((set, get) => ({
           isActive: p.id === providerId,
         })),
       })
-      return true
-    } catch {
-      return false
-    }
-  },
-
-  setModelCompactionThreshold: async (providerId, modelId, threshold) => {
-    try {
-      const response = await authFetch('/api/config/model-compaction', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ providerId, modelId, threshold }),
-      })
-      if (!response.ok) return false
-      set((state) => ({
-        providers: state.providers.map((provider) =>
-          provider.id === providerId
-            ? {
-                ...provider,
-                models: provider.models.map((model) => {
-                  if (model.id !== modelId) return model
-                  const { compactionThreshold: _current, ...rest } = model
-                  return threshold === null ? rest : { ...rest, compactionThreshold: threshold }
-                }),
-              }
-            : provider,
-        ),
-      }))
       return true
     } catch {
       return false

@@ -6,10 +6,8 @@ import { SETTINGS_KEYS } from '../../../stores/settings'
 import { useSettingsStoreState } from '../useSettingsStore'
 import { RetryPatternsEditor, type RetryPatternsValue } from '../RetryPatternsEditor'
 import { useConfigStore } from '../../../stores/config'
-import { useSessionStore } from '../../../stores/session'
 import { useUpdateStore } from '../../../stores/update'
 import { AutoUpdateModal } from '../../AutoUpdateModal'
-import { ModelCompactionControl } from '../../shared/ModelCompactionControl'
 
 export function AdvancedTab({ onClose }: { onClose: () => void }) {
   const [, navigate] = useLocation()
@@ -28,10 +26,6 @@ export function AdvancedTab({ onClose }: { onClose: () => void }) {
   const [retryPatterns, setRetryPatterns] = useState<RetryPatternsValue>({ patterns: [], maxRetriesPerTurn: 10 })
   const [showUpdateModal, setShowUpdateModal] = useState(false)
   const version = useConfigStore((state) => state.version)
-  const defaultModelSelection = useConfigStore((state) => state.defaultModelSelection)
-  const providers = useConfigStore((state) => state.providers)
-  const currentSession = useSessionStore((state) => state.currentSession)
-  const contextState = useSessionStore((state) => state.contextState)
   const updateStatus = useUpdateStore((state) => state.status)
   const latestVersion = useUpdateStore((state) => state.latest)
   const checkForUpdate = useUpdateStore((state) => state.check)
@@ -39,15 +33,6 @@ export function AdvancedTab({ onClose }: { onClose: () => void }) {
   // "Up to date" only answers a manual check; the background check on app
   // load may be hours old by the time this tab is opened.
   const [manuallyChecked, setManuallyChecked] = useState(false)
-  const sessionProviderId = currentSession?.providerId ?? undefined
-  const sessionModelId = currentSession?.providerModel ?? undefined
-  const defaultSlash = defaultModelSelection?.indexOf('/') ?? -1
-  const providerId = sessionProviderId ?? (defaultSlash > 0 ? defaultModelSelection!.slice(0, defaultSlash) : undefined)
-  const modelId = sessionModelId ?? (defaultSlash > 0 ? defaultModelSelection!.slice(defaultSlash + 1) : undefined)
-  const selectedModel = providers
-    .find((provider) => provider.id === providerId)
-    ?.models.find((model) => model.id === modelId)
-  const modelContext = contextState?.maxTokens ?? selectedModel?.contextWindow
 
   useEffect(() => {
     setLocalToggles({
@@ -172,12 +157,6 @@ export function AdvancedTab({ onClose }: { onClose: () => void }) {
         onToggle={handleToggleCacheWarming}
         boldTitle
       />
-      {providerId && modelId && modelContext && (
-        <>
-          <hr className="border-border" />
-          <ModelCompactionControl providerId={providerId} modelId={modelId} maxTokens={modelContext} />
-        </>
-      )}
       <hr className="border-border" />
       <div>
         <h3 className="text-sm font-medium text-text-primary mb-3">Auto-Retry Patterns</h3>

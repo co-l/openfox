@@ -4,8 +4,8 @@ import { shouldCompact } from './compactor.js'
 describe('LLMExecutor compaction logic', () => {
   describe('shouldCompact threshold checks', () => {
     const testCases = [
-      { tokens: 180_001, max: 200_000, threshold: 0.9, expected: true },
-      { tokens: 180_000, max: 200_000, threshold: 0.9, expected: false },
+      { tokens: 170_001, max: 200_000, threshold: 0.9, expected: true },
+      { tokens: 170_000, max: 200_000, threshold: 0.9, expected: false },
       { tokens: 160_001, max: 200_000, threshold: 0.8, expected: true },
       { tokens: 160_000, max: 200_000, threshold: 0.8, expected: false },
       { tokens: 50_000, max: 128_000, threshold: 0.7, expected: false },

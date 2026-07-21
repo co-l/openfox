@@ -4,6 +4,7 @@ import type { Backend } from '../../stores/config'
 import type { ModelConfig as SharedModelConfig } from '@shared/types.js'
 import { ChevronDownIcon } from './icons'
 import { QueryParamsInput } from './QueryParamsInput'
+import { formatTokens } from '../../lib/format-stats'
 
 const COMMON_PORTS = [8080, 11434, 8000, 1234]
 
@@ -46,6 +47,7 @@ interface ModelConfig {
   defaultTopP?: number
   defaultTopK?: number
   defaultMaxTokens?: number
+  compactionThreshold?: number
 }
 
 export interface ProviderFormData {
@@ -351,7 +353,80 @@ function ModelConfigPanel({
             </div>
           </div>
         </div>
+        <div className="pt-3 border-t border-border">
+          <AutoCompactionField
+            value={modelConfigs[model.id]?.compactionThreshold}
+            maxTokens={modelConfigs[model.id]?.contextWindow ?? model.contextWindow}
+            onChange={(threshold) => onUpdateConfig(model.id, { compactionThreshold: threshold })}
+          />
+        </div>
       </details>
+    </div>
+  )
+}
+
+function AutoCompactionField({
+  value,
+  maxTokens,
+  onChange,
+}: {
+  value: number | undefined
+  maxTokens: number
+  onChange: (threshold: number | undefined) => void
+}) {
+  const MIN_TOKENS = 15_000
+  const DEFAULT_THRESHOLD = 0.85
+
+  const maxPercent = Math.min(95, Math.floor(((maxTokens - 5_000) / maxTokens) * 100))
+  const minPercent = Math.min(maxPercent, Math.ceil((MIN_TOKENS / maxTokens) * 100))
+  const effectiveThreshold = Math.min(value ?? DEFAULT_THRESHOLD, maxPercent / 100)
+  const [percent, setPercent] = useState(Math.round(effectiveThreshold * 100))
+
+  useEffect(() => {
+    const clamped = Math.min(value ?? DEFAULT_THRESHOLD, maxPercent / 100)
+    setPercent(Math.round(clamped * 100))
+  }, [value, maxPercent])
+
+  const thresholdTokens = Math.floor(maxTokens * (percent / 100))
+
+  return (
+    <div>
+      <div className="flex items-center justify-between gap-3 mb-1">
+        <label className="text-xs text-text-secondary">Auto-compaction threshold</label>
+        <div className="flex items-center gap-2">
+          <span className="font-mono text-xs text-text-primary">
+            {percent}% · {formatTokens(thresholdTokens)}
+          </span>
+          <button
+            type="button"
+            onClick={() => {
+              onChange(undefined)
+              setPercent(Math.round(DEFAULT_THRESHOLD * 100))
+            }}
+            disabled={value === undefined}
+            className="text-xs text-accent-primary hover:underline disabled:text-text-muted disabled:no-underline"
+          >
+            Default
+          </button>
+        </div>
+      </div>
+      <input
+        aria-label="Auto-compaction threshold"
+        type="range"
+        min={minPercent}
+        max={maxPercent}
+        step="1"
+        value={percent}
+        onChange={(e) => setPercent(Number(e.target.value))}
+        onMouseUp={() => onChange(percent / 100)}
+        onTouchEnd={() => onChange(percent / 100)}
+        onBlur={() => onChange(percent / 100)}
+        onKeyUp={() => onChange(percent / 100)}
+        className="w-full"
+      />
+      <p className="text-[10px] text-text-muted mt-0.5">
+        Minimum {formatTokens(MIN_TOKENS)} tokens · maximum {maxPercent}% · default 85%
+      </p>
     </div>
   )
 }
@@ -842,6 +917,7 @@ export function ProviderModal({
         defaultTemperature: modelConfigs[m.id]?.defaultTemperature,
         defaultTopP: modelConfigs[m.id]?.defaultTopP,
         defaultTopK: modelConfigs[m.id]?.defaultTopK,
+        compactionThreshold: modelConfigs[m.id]?.compactionThreshold,
       })),
     })
     draftProviderSaved.current = true
