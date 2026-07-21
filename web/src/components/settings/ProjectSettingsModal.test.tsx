@@ -212,13 +212,13 @@ describe('ProjectSettingsModal — rootDir validation (Criterion 0 & 1)', () => 
     const saveBtn = screen.getByTestId('save-btn')
     await user.click(saveBtn)
 
-    expect(screen.getByText(/n'existe pas/i)).toBeTruthy()
-    expect(screen.getByText(/Voulez-vous le créer/i)).toBeTruthy()
-    expect(screen.getByText('Créer')).toBeTruthy()
-    expect(screen.getByText('Annuler')).toBeTruthy()
+    expect(screen.getByText(/does not exist/i)).toBeTruthy()
+    expect(screen.getByText(/Would you like to create/i)).toBeTruthy()
+    expect(screen.getByText('Create')).toBeTruthy()
+    expect(screen.getAllByText('Cancel')[0]).toBeTruthy()
   })
 
-  it('creates directory and saves after user clicks Créer', async () => {
+  it('creates directory and saves after user clicks Create', async () => {
     mockAuthFetch.mockImplementation(async (url: string, opts?: RequestInit) => {
       if (url.includes('/api/workspace/config/validate')) {
         const body = JSON.parse((opts?.body as string) ?? '{}')
@@ -242,7 +242,7 @@ describe('ProjectSettingsModal — rootDir validation (Criterion 0 & 1)', () => 
     const saveBtn = screen.getByTestId('save-btn')
     await user.click(saveBtn)
 
-    const createBtn = screen.getByText('Créer')
+    const createBtn = screen.getByText('Create')
     await user.click(createBtn)
 
     expect(mockAuthFetch).toHaveBeenCalledWith(
@@ -255,7 +255,7 @@ describe('ProjectSettingsModal — rootDir validation (Criterion 0 & 1)', () => 
     expect(mockSaveConfig).toHaveBeenCalled()
   })
 
-  it('does not save when user clicks Annuler on directory confirmation', async () => {
+  it('does not save when user clicks Cancel on directory confirmation', async () => {
     mockAuthFetch.mockImplementation(async (url: string) => {
       if (url.includes('/api/workspace/config/validate')) {
         return { ok: true, json: () => Promise.resolve({ exists: false, workspaces: [], resolvedPath: '/new/path' }) }
@@ -275,7 +275,7 @@ describe('ProjectSettingsModal — rootDir validation (Criterion 0 & 1)', () => 
     const saveBtn = screen.getByTestId('save-btn')
     await user.click(saveBtn)
 
-    const cancelBtn = screen.getByText('Annuler')
+    const cancelBtn = screen.getAllByText('Cancel')[0]!
     await user.click(cancelBtn)
 
     expect(mockSaveConfig).not.toHaveBeenCalled()
@@ -309,8 +309,7 @@ describe('ProjectSettingsModal — rootDir validation (Criterion 0 & 1)', () => 
     const saveBtn = screen.getByTestId('save-btn')
     await user.click(saveBtn)
 
-    expect(screen.getByText(/workspaces existants/i)).toBeTruthy()
-    expect(screen.getByText(/ne seront pas migrés/i)).toBeTruthy()
+    expect(screen.getByText(/will not be migrated/i)).toBeTruthy()
     expect(screen.getByText(/fix-bug/)).toBeTruthy()
     expect(screen.getByText(/add-feature/)).toBeTruthy()
   })
@@ -343,7 +342,7 @@ describe('ProjectSettingsModal — rootDir validation (Criterion 0 & 1)', () => 
     const saveBtn = screen.getByTestId('save-btn')
     await user.click(saveBtn)
 
-    const confirmBtn = screen.getByText(/Confirmer le changement/i)
+    const confirmBtn = screen.getByText(/Confirm change/i)
     expect(confirmBtn).toBeTruthy()
 
     await user.click(confirmBtn)
@@ -379,7 +378,7 @@ describe('ProjectSettingsModal — rootDir validation (Criterion 0 & 1)', () => 
     const saveBtn = screen.getByTestId('save-btn')
     await user.click(saveBtn)
 
-    const cancelBtn = screen.getByText('Annuler')
+    const cancelBtn = screen.getAllByText('Cancel')[0]!
     await user.click(cancelBtn)
 
     expect(mockSaveConfig).not.toHaveBeenCalled()

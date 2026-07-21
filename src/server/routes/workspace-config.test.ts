@@ -136,7 +136,7 @@ describe('POST /api/workspace/config/validate', () => {
 
     expect(res.status).toBe(400)
     const body = (await res.json()) as { error: string }
-    expect(body.error).toMatch(/system-critical/i)
+    expect(body.error).toMatch(/Use a subdirectory instead/i)
   })
 
   it('returns 400 for virtual filesystem prefix', async () => {
@@ -148,14 +148,20 @@ describe('POST /api/workspace/config/validate', () => {
 
     expect(res.status).toBe(400)
     const body = (await res.json()) as { error: string }
-    expect(body.error).toMatch(/system-critical/i)
+    expect(body.error).toMatch(/Cannot use paths under/i)
   })
 
   it('returns 400 for non-writable existing directory', async () => {
+    const restrictedPath = join(testDir, 'restricted')
+    await mkdir(restrictedPath, { recursive: true })
+    // Remove write permissions to simulate non-writable directory
+    const { chmod } = await import('node:fs/promises')
+    await chmod(restrictedPath, 0o444)
+
     const res = await fetch(`${baseUrl}/api/workspace/config/validate`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ rootDir: '/etc/ssl', workdir: testDir }),
+      body: JSON.stringify({ rootDir: restrictedPath, workdir: testDir }),
     })
 
     expect(res.status).toBe(400)
@@ -350,7 +356,7 @@ describe('POST /api/workspace/config (existing endpoint)', () => {
     })
     expect(res.status).toBe(400)
     const body = (await res.json()) as { error: string }
-    expect(body.error).toMatch(/system-critical/i)
+    expect(body.error).toMatch(/Use a subdirectory instead/i)
   })
 
   it('rejects dangerous path with virtual fs prefix', async () => {
@@ -361,14 +367,19 @@ describe('POST /api/workspace/config (existing endpoint)', () => {
     })
     expect(res.status).toBe(400)
     const body = (await res.json()) as { error: string }
-    expect(body.error).toMatch(/system-critical/i)
+    expect(body.error).toMatch(/Cannot use paths under/i)
   })
 
   it('rejects non-writable existing directory', async () => {
+    const restrictedPath = join(testDir, 'restricted-save')
+    await mkdir(restrictedPath, { recursive: true })
+    const { chmod } = await import('node:fs/promises')
+    await chmod(restrictedPath, 0o444)
+
     const res = await fetch(`${baseUrl}/api/workspace/config?workdir=${encodeURIComponent(testDir)}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ rootDir: '/etc/ssl', setup: ['npm install'] }),
+      body: JSON.stringify({ rootDir: restrictedPath, setup: ['npm install'] }),
     })
     expect(res.status).toBe(400)
     const body = (await res.json()) as { error: string }

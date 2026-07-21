@@ -33,11 +33,11 @@ export function runGit(cwd: string, args: string[]): Promise<void> {
   })
 }
 
-function getServerMode(): 'development' | 'production' {
+export function getServerMode(): 'development' | 'production' {
   return process.env['OPENFOX_DEV'] === 'true' ? 'development' : 'production'
 }
 
-function getGlobalDataDir(): string {
+export function getGlobalDataDir(): string {
   const mode = getServerMode()
   const suffix = mode === 'development' ? '-dev' : ''
   const home = homedir()

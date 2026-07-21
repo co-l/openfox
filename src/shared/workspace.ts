@@ -3,13 +3,13 @@ export interface WorkspaceConfig {
   rootDir?: string
 }
 
-export const DANGEROUS_WORKSPACE_PATHS = [
+/**
+ * Paths that are blocked as exact workspace root directories.
+ * Using these exact paths would be problematic, but subdirectories are fine.
+ */
+export const BLOCKED_EXACT_PATHS = [
   '/',
   '/etc',
-  '/dev',
-  '/proc',
-  '/sys',
-  '/boot',
   '/bin',
   '/sbin',
   '/lib',
@@ -23,21 +23,35 @@ export const DANGEROUS_WORKSPACE_PATHS = [
   '/home',
   '/mnt',
   '/media',
-  '/lost+found',
 ] as const
 
-export const DANGEROUS_PATH_PREFIXES = ['/proc/', '/sys/', '/dev/', '/boot/', '/lost+found/'] as const
+/**
+ * Paths that are blocked entirely — no subdirectory under these can be used
+ * as a workspace root. These are virtual filesystems or special FS areas
+ * where creating workspace data is meaningless or dangerous.
+ */
+export const BLOCKED_VIRTUAL_FS_PREFIXES = ['/proc/', '/sys/', '/dev/', '/boot/', '/etc/', '/lost+found/'] as const
+
+export type RootDirBlockReason = 'exact' | 'virtual_fs'
+
+export function getRootDirBlockReason(
+  path: string,
+  exactPaths: readonly string[] = BLOCKED_EXACT_PATHS,
+  virtualFsPrefixes: readonly string[] = BLOCKED_VIRTUAL_FS_PREFIXES,
+): RootDirBlockReason | null {
+  if (!path) return null
+  const normalized = path.replace(/\/+$/, '') || '/'
+  if (exactPaths.includes(normalized)) return 'exact'
+  for (const prefix of virtualFsPrefixes) {
+    if (normalized.startsWith(prefix)) return 'virtual_fs'
+  }
+  return null
+}
 
 export function isValidRootDir(
   path: string,
-  dangerousPaths: readonly string[] = DANGEROUS_WORKSPACE_PATHS,
-  dangerousPrefixes: readonly string[] = DANGEROUS_PATH_PREFIXES,
+  exactPaths: readonly string[] = BLOCKED_EXACT_PATHS,
+  virtualFsPrefixes: readonly string[] = BLOCKED_VIRTUAL_FS_PREFIXES,
 ): boolean {
-  if (!path) return false
-  const normalized = path.replace(/\/+$/, '') || '/'
-  if (dangerousPaths.includes(normalized)) return false
-  for (const prefix of dangerousPrefixes) {
-    if (normalized.startsWith(prefix)) return false
-  }
-  return true
+  return getRootDirBlockReason(path, exactPaths, virtualFsPrefixes) === null
 }

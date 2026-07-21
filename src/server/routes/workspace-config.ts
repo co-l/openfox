@@ -2,22 +2,11 @@ import { Router } from 'express'
 import { stat, mkdir, readdir, access } from 'node:fs/promises'
 import { constants } from 'node:fs'
 import { resolve, isAbsolute, join } from 'node:path'
-import { homedir } from 'node:os'
 import { loadWorkspaceConfig, saveWorkspaceConfig } from '../git/workspace-config.js'
+import { getGlobalDataDir } from '../git/workspace.js'
+import { logger } from '../utils/logger.js'
 import type { WorkspaceConfig } from '../../shared/workspace.js'
-import { isValidRootDir } from '../../shared/workspace.js'
-
-function getServerMode(): 'development' | 'production' {
-  return process.env['OPENFOX_DEV'] === 'true' ? 'development' : 'production'
-}
-
-function getDefaultGlobalDir(projectName: string): string {
-  const mode = getServerMode()
-  const suffix = mode === 'development' ? '-dev' : ''
-  const home = homedir()
-  const dataDir = process.env['XDG_DATA_HOME'] ?? join(home, '.local', 'share')
-  return join(dataDir, `openfox${suffix}`, 'workspaces', projectName)
-}
+import { getRootDirBlockReason } from '../../shared/workspace.js'
 
 async function isWritable(path: string): Promise<boolean> {
   try {
@@ -62,8 +51,10 @@ async function findOrphanedWorkspaces(dir: string): Promise<{ name: string }[]> 
         }
       }
     }
-  } catch {
-    // Directory doesn't exist or not readable
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException)?.code !== 'ENOENT') {
+      logger.error('Error scanning for orphaned workspaces', { dir, error: String(err) })
+    }
   }
   return results
 }
@@ -96,8 +87,15 @@ export function createWorkspaceConfigRoutes(): Router {
       const trimmed = rootDir.trim()
       if (trimmed) {
         const resolvedPath = resolveRootDir(trimmed, workdir)
-        if (!isValidRootDir(resolvedPath)) {
-          return res.status(400).json({ error: 'Invalid workspace root directory: cannot use system-critical paths' })
+        const displayPath = resolvedPath.replace(/\/+$/, '') || '/'
+        const blockReason = getRootDirBlockReason(resolvedPath)
+        if (blockReason === 'exact') {
+          return res
+            .status(400)
+            .json({ error: `Cannot use "${displayPath}" directly as workspace root. Use a subdirectory instead.` })
+        }
+        if (blockReason === 'virtual_fs') {
+          return res.status(400).json({ error: `Cannot use paths under "${displayPath}" for workspaces.` })
         }
         const dirExists = await checkDirExists(resolvedPath)
         if (dirExists) {
@@ -125,9 +123,19 @@ export function createWorkspaceConfigRoutes(): Router {
     }
 
     const resolvedPath = resolveRootDir(rootDir, workdir)
+    const displayPath = resolvedPath.replace(/\/+$/, '') || '/'
 
-    if (!isValidRootDir(resolvedPath)) {
-      return res.status(400).json({ error: 'Invalid workspace root directory: cannot use system-critical paths' })
+    const blockReason = getRootDirBlockReason(resolvedPath)
+    if (blockReason === 'exact') {
+      const suggestion = typeof projectName === 'string' ? `${displayPath}/${projectName}` : undefined
+      return res.status(400).json({
+        error: suggestion
+          ? `Cannot use "${displayPath}" directly as workspace root. Use a subdirectory like "${suggestion}" instead.`
+          : `Cannot use "${displayPath}" directly as workspace root. Use a subdirectory instead.`,
+      })
+    }
+    if (blockReason === 'virtual_fs') {
+      return res.status(400).json({ error: `Cannot use paths under "${displayPath}" for workspaces.` })
     }
 
     let dirExists = await checkDirExists(resolvedPath)
@@ -152,7 +160,7 @@ export function createWorkspaceConfigRoutes(): Router {
         const orphans = await findOrphanedWorkspaces(previousRootDir)
         workspaces.push(...orphans)
       } else if (!previousRootDir && projectName && typeof projectName === 'string') {
-        const defaultDir = getDefaultGlobalDir(projectName)
+        const defaultDir = join(getGlobalDataDir(), 'workspaces', projectName)
         if (defaultDir !== resolvedPath) {
           const orphans = await findOrphanedWorkspaces(defaultDir)
           workspaces.push(...orphans)

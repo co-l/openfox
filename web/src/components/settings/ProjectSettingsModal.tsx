@@ -6,7 +6,7 @@ import { useProjectStore } from '../../stores/project'
 import { useWorkspaceConfigStore } from '../../stores/workspace-config'
 import { wsClient } from '../../lib/ws'
 import { authFetch } from '../../lib/api'
-import { isValidRootDir } from '@shared/workspace.js'
+import { getRootDirBlockReason } from '@shared/workspace.js'
 
 interface ProjectSettingsModalProps {
   isOpen: boolean
@@ -128,9 +128,19 @@ export function ProjectSettingsModal({ isOpen, onClose, project }: ProjectSettin
     const trimmedRootDir = rootDir.trim()
     const prevRootDir = wsConfig?.rootDir ?? ''
 
-    if (trimmedRootDir && !isValidRootDir(trimmedRootDir)) {
-      setSaveError('Invalid workspace root directory: cannot use system-critical paths')
-      return
+    if (trimmedRootDir) {
+      const blockReason = getRootDirBlockReason(trimmedRootDir)
+      if (blockReason === 'exact') {
+        const displayPath = trimmedRootDir.replace(/\/+$/, '') || '/'
+        setSaveError(
+          `Cannot use "${displayPath}" directly as workspace root. Use a subdirectory like "${displayPath}/${project.name}" instead.`,
+        )
+        return
+      }
+      if (blockReason === 'virtual_fs') {
+        setSaveError(`Cannot use paths under "${trimmedRootDir}" for workspaces.`)
+        return
+      }
     }
 
     if (!rootDirDirty || !trimmedRootDir || trimmedRootDir === prevRootDir) {
@@ -384,7 +394,7 @@ export function ProjectSettingsModal({ isOpen, onClose, project }: ProjectSettin
         <Modal
           isOpen={showCreateDirModal}
           onClose={() => setShowCreateDirModal(false)}
-          title="Dossier introuvable"
+          title="Directory not found"
           size="md"
           footer={
             <div className="flex justify-end gap-2">
@@ -393,22 +403,22 @@ export function ProjectSettingsModal({ isOpen, onClose, project }: ProjectSettin
                 onClick={() => setShowCreateDirModal(false)}
                 className="px-4 py-2 text-sm font-medium rounded bg-bg-tertiary text-text-primary hover:bg-border transition-colors"
               >
-                Annuler
+                Cancel
               </button>
               <button
                 type="button"
                 onClick={handleCreateDirectory}
                 className="px-4 py-2 text-sm font-medium rounded bg-accent-primary text-white hover:opacity-90 transition-colors"
               >
-                Créer
+                Create
               </button>
             </div>
           }
         >
           <p className="text-sm text-text-primary">
-            Le dossier <code className="text-xs bg-bg-tertiary px-1 rounded">{resolvedPath}</code> n&apos;existe pas.
+            The directory <code className="text-xs bg-bg-tertiary px-1 rounded">{resolvedPath}</code> does not exist.
           </p>
-          <p className="text-sm text-text-muted mt-2">Voulez-vous le créer ?</p>
+          <p className="text-sm text-text-muted mt-2">Would you like to create it?</p>
         </Modal>
       )}
 
@@ -416,7 +426,7 @@ export function ProjectSettingsModal({ isOpen, onClose, project }: ProjectSettin
         <Modal
           isOpen={showMigrationWarning}
           onClose={() => setShowMigrationWarning(false)}
-          title="Workspaces orphelins"
+          title="Orphaned workspaces"
           size="md"
           footer={
             <div className="flex justify-end gap-2">
@@ -425,20 +435,20 @@ export function ProjectSettingsModal({ isOpen, onClose, project }: ProjectSettin
                 onClick={() => setShowMigrationWarning(false)}
                 className="px-4 py-2 text-sm font-medium rounded bg-bg-tertiary text-text-primary hover:bg-border transition-colors"
               >
-                Annuler
+                Cancel
               </button>
               <button
                 type="button"
                 onClick={handleConfirmMigration}
                 className="px-4 py-2 text-sm font-medium rounded bg-red-500 text-white hover:opacity-90 transition-colors"
               >
-                Confirmer le changement
+                Confirm change
               </button>
             </div>
           }
         >
           <p className="text-sm text-text-primary">
-            {pendingWorkspaces.length} workspace(s) existant(s) ne seront pas migrés et deviendront inutilisables :
+            {pendingWorkspaces.length} existing workspace(s) will not be migrated and will become inaccessible:
           </p>
           <ul className="mt-2 space-y-1">
             {pendingWorkspaces.map((ws) => (
@@ -448,8 +458,7 @@ export function ProjectSettingsModal({ isOpen, onClose, project }: ProjectSettin
             ))}
           </ul>
           <p className="text-sm text-text-muted mt-3">
-            Les workspaces existants resteront dans l&apos;ancien emplacement mais ne seront plus accessibles depuis ce
-            projet.
+            Existing workspaces will remain in the old location but will no longer be accessible from this project.
           </p>
         </Modal>
       )}
