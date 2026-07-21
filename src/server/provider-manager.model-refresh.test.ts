@@ -21,7 +21,6 @@ const mockConfig: Config = {
   context: {
     maxTokens: 200000,
     compactionThreshold: 0.85,
-    compactionTarget: 0.6,
   },
   agent: {
     maxIterations: 10,

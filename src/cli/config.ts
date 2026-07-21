@@ -61,24 +61,22 @@ const providerSchema = z
     transportAdapter: z.string().optional(),
     credentialRef: z.string().optional(),
   })
-  .transform(
-    (provider): Provider => ({
-      id: provider.id,
-      ...(provider.preset ? { preset: provider.preset } : {}),
-      name: provider.name ?? provider.id,
-      url: provider.url ?? '',
-      backend: provider.backend ?? 'unknown',
-      ...(provider.apiKey ? { apiKey: provider.apiKey } : {}),
-      models: provider.models ?? [],
-      isActive: provider.isActive ?? false,
-      createdAt: provider.createdAt ?? new Date().toISOString(),
-      ...(provider.isLocal !== undefined ? { isLocal: provider.isLocal } : {}),
-      ...(provider.thinkingField ? { thinkingField: provider.thinkingField } : {}),
-      ...(provider.authAdapter ? { authAdapter: provider.authAdapter } : {}),
-      ...(provider.transportAdapter ? { transportAdapter: provider.transportAdapter } : {}),
-      ...(provider.credentialRef ? { credentialRef: provider.credentialRef } : {}),
-    }),
-  )
+  .transform((provider): Provider => ({
+    id: provider.id,
+    ...(provider.preset ? { preset: provider.preset } : {}),
+    name: provider.name ?? provider.id,
+    url: provider.url ?? '',
+    backend: provider.backend ?? 'unknown',
+    ...(provider.apiKey ? { apiKey: provider.apiKey } : {}),
+    models: provider.models ?? [],
+    isActive: provider.isActive ?? false,
+    createdAt: provider.createdAt ?? new Date().toISOString(),
+    ...(provider.isLocal !== undefined ? { isLocal: provider.isLocal } : {}),
+    ...(provider.thinkingField ? { thinkingField: provider.thinkingField } : {}),
+    ...(provider.authAdapter ? { authAdapter: provider.authAdapter } : {}),
+    ...(provider.transportAdapter ? { transportAdapter: provider.transportAdapter } : {}),
+    ...(provider.credentialRef ? { credentialRef: provider.credentialRef } : {}),
+  }))
 
 const serverSchema = z.object({
   port: z.number().default(10369),
@@ -125,6 +123,10 @@ const mcpServerSchema = z.object({
   timeout: z.number().positive().optional(),
 })
 
+const contextSchema = z.object({
+  compactionThreshold: z.number().min(0).max(1).default(0.85),
+})
+
 const llmConfigSchema = z.object({
   timeout: z.number().optional(),
   idleTimeout: z.number().optional(),
@@ -151,6 +153,7 @@ const configSchema = z
     database: databaseSchema.default({ path: '' }),
     workspace: workspaceSchema.default(() => ({ workdir: process.cwd() })),
     llm: llmConfigSchema.optional(),
+    context: contextSchema.default({ compactionThreshold: 0.85 }),
     visionFallback: visionFallbackSchema.optional(),
     disableAutoSessionTitle: z.boolean().optional(),
   })
@@ -165,6 +168,7 @@ const configSchema = z
     database: data.database ?? { path: '' },
     workspace: data.workspace ?? { workdir: process.cwd() },
     llm: data.llm,
+    context: data.context ?? { compactionThreshold: 0.85 },
     visionFallback: data.visionFallback ?? defaultVisionFallback,
     ...(data.disableAutoSessionTitle !== undefined ? { disableAutoSessionTitle: data.disableAutoSessionTitle } : {}),
   }))
@@ -216,6 +220,7 @@ export async function saveGlobalConfig(
     database: config.database ?? { path: '' },
     workspace: config.workspace ?? { workdir: process.cwd() },
     llm: config.llm,
+    context: config.context ?? { compactionThreshold: 0.85 },
     visionFallback: config.visionFallback ?? defaultVisionFallback,
     ...(config.disableAutoSessionTitle !== undefined
       ? { disableAutoSessionTitle: config.disableAutoSessionTitle }
@@ -265,6 +270,7 @@ export function setDefaultModelSelection(
     database: config.database ?? { path: '' },
     workspace: config.workspace ?? { workdir: process.cwd() },
     llm: config.llm,
+    context: config.context ?? { compactionThreshold: 0.85 },
     visionFallback: config.visionFallback ?? defaultVisionFallback,
   }
 }
@@ -296,6 +302,7 @@ export function addProvider(config: Partial<GlobalConfig>, provider: Omit<Provid
     database: config.database ?? { path: '' },
     workspace: config.workspace ?? { workdir: process.cwd() },
     llm: config.llm,
+    context: config.context ?? { compactionThreshold: 0.85 },
     visionFallback: config.visionFallback ?? defaultVisionFallback,
   }
 }
@@ -345,6 +352,7 @@ export function removeProvider(config: Partial<GlobalConfig>, providerId: string
     database: config.database ?? { path: '' },
     workspace: config.workspace ?? { workdir: process.cwd() },
     llm: config.llm,
+    context: config.context ?? { compactionThreshold: 0.85 },
     visionFallback: config.visionFallback ?? defaultVisionFallback,
   }
 }
@@ -354,7 +362,7 @@ export function activateProvider(config: Partial<GlobalConfig>, providerId: stri
   if (!provider) {
     return {
       providers: config.providers ?? [],
-      mcpServers: config.mcpServers,
+      mcpServers: config.mcpServers ?? {},
       defaultModelSelection: config.defaultModelSelection,
       activeProviderId: config.activeProviderId,
       activeWorkflowId: config.activeWorkflowId,
@@ -363,7 +371,11 @@ export function activateProvider(config: Partial<GlobalConfig>, providerId: stri
       database: config.database ?? { path: '' },
       workspace: config.workspace ?? { workdir: process.cwd() },
       llm: config.llm,
+      context: config.context ?? { compactionThreshold: 0.85 },
       visionFallback: config.visionFallback ?? defaultVisionFallback,
+      ...(config.disableAutoSessionTitle !== undefined
+        ? { disableAutoSessionTitle: config.disableAutoSessionTitle }
+        : {}),
     }
   }
 
@@ -378,6 +390,7 @@ export function activateProvider(config: Partial<GlobalConfig>, providerId: stri
     database: config.database ?? { path: '' },
     workspace: config.workspace ?? { workdir: process.cwd() },
     llm: config.llm,
+    context: config.context ?? { compactionThreshold: 0.85 },
     visionFallback: config.visionFallback ?? defaultVisionFallback,
   }
 }

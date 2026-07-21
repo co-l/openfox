@@ -10,6 +10,7 @@ const envSchema = z.object({
   OPENFOX_BACKEND: backendSchema,
   OPENFOX_MODEL_NAME: z.string().default(''),
   OPENFOX_MAX_CONTEXT: z.coerce.number().default(200000),
+  OPENFOX_COMPACTION_THRESHOLD: z.coerce.number().min(0).max(1).default(0.85),
   OPENFOX_PORT: z.coerce.number().default(10369),
   OPENFOX_HOST: z.string().optional(),
   OPENFOX_WORKDIR: z.string().optional(),
@@ -48,8 +49,7 @@ export function loadConfig(): Config {
     },
     context: {
       maxTokens: env.OPENFOX_MAX_CONTEXT,
-      compactionThreshold: 0.85,
-      compactionTarget: 0.6,
+      compactionThreshold: env.OPENFOX_COMPACTION_THRESHOLD,
     },
     agent: {
       maxIterations: 10,

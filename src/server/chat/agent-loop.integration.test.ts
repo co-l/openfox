@@ -27,6 +27,8 @@ vi.mock('./execute-tools.js', () => ({
 }))
 
 vi.mock('../context/compactor.js', () => ({
+  estimateCompactionFloor: vi.fn().mockReturnValue({ totalTokens: 100, segments: [] }),
+  estimateTextTokens: vi.fn((value: string) => Math.ceil(value.length / 4)),
   shouldCompact: vi.fn().mockReturnValue(false),
   appendCompactionPrompt: vi.fn((_sessionId: string, append: (event: any) => void) => {
     append({
@@ -90,6 +92,7 @@ vi.mock('../events/index.js', () => ({
 import { runTopLevelAgentLoop } from './agent-loop.js'
 import { consumeStreamGenerator } from './stream-pure.js'
 import { executeTools } from './execute-tools.js'
+import { shouldCompact } from '../context/compactor.js'
 
 function createMockSessionManager(overrides?: Record<string, any>): SessionManager {
   return {
@@ -162,6 +165,7 @@ describe('agentLoop integration', () => {
 
   beforeEach(() => {
     vi.clearAllMocks()
+    ;(shouldCompact as any).mockReturnValue(false)
     turnMetrics = {
       addToolTime: vi.fn(),
       addLLMCall: vi.fn(),
@@ -327,9 +331,10 @@ describe('agentLoop integration', () => {
       .mockResolvedValueOnce(makeStreamResult({ content: 'Compacted summary', finishReason: 'stop' }))
       .mockResolvedValueOnce(makeStreamResult({ content: 'Final response after compaction', finishReason: 'stop' }))
 
-    // Trigger compaction after first LLM call, then return false thereafter
+    // Keep reporting the threshold as exceeded. The post-compaction guard must
+    // still prevent the freshly-created summary from being compacted again.
     const { shouldCompact } = await import('../context/compactor.js')
-    ;(shouldCompact as any).mockReturnValueOnce(true)
+    ;(shouldCompact as any).mockReturnValue(true)
 
     await runTopLevelAgentLoop(
       makeConfig({ append, injectAgentReminder, getConversationMessages: vi.fn().mockResolvedValue([]) }),

@@ -51,7 +51,7 @@ describe('ProviderManager - Integration', () => {
         idleTimeout: 30000,
         backend: 'vllm',
       },
-      context: { maxTokens: 4096, compactionThreshold: 10000, compactionTarget: 8000 },
+      context: { maxTokens: 4096, compactionThreshold: 10000, },
       agent: { maxIterations: 100, maxConsecutiveFailures: 5, toolTimeout: 30000 },
       workdir: process.cwd(),
     }

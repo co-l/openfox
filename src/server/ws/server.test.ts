@@ -552,7 +552,6 @@ describe('createWebSocketServer', () => {
       context: {
         maxTokens: 200000,
         compactionThreshold: 0.8,
-        compactionTarget: 0.5,
       },
       agent: {
         maxIterations: 10,

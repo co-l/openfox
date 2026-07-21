@@ -932,11 +932,20 @@ async function handleClientMessage(
       send({ type: 'ack', payload: { sessionId: session.id }, id: message.id })
 
       // Send context.state
-      const sendContextState = () => {
+      const sendContextState = async () => {
         const contextState = sessionManager.getContextState(session.id)
-        send(createContextStateMessage(contextState))
+        const { computeSessionCompactionFloor } = await import('../chat/dynamic-context.js')
+        const compactionFloor = await computeSessionCompactionFloor(sessionManager, session.id)
+        send(
+          createContextStateMessage({
+            ...contextState,
+            minimumCompactionTokens: compactionFloor.totalTokens,
+            compactionFloorSegments: compactionFloor.segments,
+          }),
+        )
       }
-      sendContextState()
+      await mcpReadyPromise
+      await sendContextState()
 
       // Re-detect dynamic context changes on load (survives server restart)
       const cachedHash = sessionManager.getCachedPrompt(session.id)?.hash
@@ -947,10 +956,10 @@ async function handleClientMessage(
             const currentHash = await computeSessionHash(sessionManager, session.id)
             if (currentHash !== cachedHash) {
               sessionManager.setDynamicContextChanged(session.id, true)
-              sendContextState()
+              await sendContextState()
             } else if (sessionManager.getDynamicContextChanged(session.id)) {
               sessionManager.setDynamicContextChanged(session.id, false)
-              sendContextState()
+              await sendContextState()
             }
           } catch {
             // Non-critical — banner just won't appear on reload
@@ -1143,8 +1152,7 @@ async function handleClientMessage(
       // If running, queue for later processing instead of rejecting
       if (session.isRunning) {
         const launchPayload = message.payload as
-          | { workflowId?: string; content?: string; attachments?: unknown[] }
-          | undefined
+          { workflowId?: string; content?: string; attachments?: unknown[] } | undefined
         const content = launchPayload?.content ?? ''
         const attachments = launchPayload?.attachments as Attachment[] | undefined
         const workflowId = launchPayload?.workflowId
@@ -1189,8 +1197,7 @@ async function handleClientMessage(
 
       // Parse launch payload
       const launchPayload = message.payload as
-        | { content?: string; attachments?: unknown[]; workflowId?: string; subGroup?: string }
-        | undefined
+        { content?: string; attachments?: unknown[]; workflowId?: string; subGroup?: string } | undefined
       const launchAttachments = launchPayload?.attachments as Attachment[] | undefined
       const hasUserContent =
         launchPayload?.content && typeof launchPayload.content === 'string' && launchPayload.content.trim()

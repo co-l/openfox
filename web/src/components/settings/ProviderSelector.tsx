@@ -289,6 +289,10 @@ export function ProviderSelector() {
       })
       if (!res.ok) throw new Error('Failed to update provider')
       await useConfigStore.getState().fetchConfig()
+      const session = useSessionStore.getState().currentSession
+      if (session?.providerId && session.providerModel) {
+        await useSessionStore.getState().setSessionProvider(session.providerId, session.providerModel)
+      }
     } catch {
       // Silently fail
     }
@@ -304,7 +308,7 @@ export function ProviderSelector() {
         currentSession: state.currentSession ? { ...state.currentSession, providerId, providerModel: newModel } : null,
       }))
       // Session-scoped: persist model choice to session only
-      setSessionProvider(providerId, newModel)
+      await setSessionProvider(providerId, newModel)
       setExpandedProviderIds([])
       setIsOpen(false)
       return

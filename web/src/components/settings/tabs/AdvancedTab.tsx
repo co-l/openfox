@@ -6,8 +6,17 @@ import { SETTINGS_KEYS } from '../../../stores/settings'
 import { useSettingsStoreState } from '../useSettingsStore'
 import { RetryPatternsEditor, type RetryPatternsValue } from '../RetryPatternsEditor'
 import { useConfigStore } from '../../../stores/config'
+import { useSessionStore } from '../../../stores/session'
 import { useUpdateStore } from '../../../stores/update'
 import { AutoUpdateModal } from '../../AutoUpdateModal'
+import { formatTokens } from '../../../lib/format-stats'
+import { CompactionFloorBar } from '../../shared/CompactionFloorBar'
+import { AutoCompactionSlider } from '../../shared/AutoCompactionSlider'
+import {
+  getCompactionTokenThreshold,
+  getMinimumCompactionPercent,
+  normalizeCompactionPercent,
+} from '../../../lib/compaction'
 
 export function AdvancedTab({ onClose }: { onClose: () => void }) {
   const [, navigate] = useLocation()
@@ -26,13 +35,26 @@ export function AdvancedTab({ onClose }: { onClose: () => void }) {
   const [retryPatterns, setRetryPatterns] = useState<RetryPatternsValue>({ patterns: [], maxRetriesPerTurn: 10 })
   const [showUpdateModal, setShowUpdateModal] = useState(false)
   const version = useConfigStore((state) => state.version)
+  const autoCompactionThreshold = useConfigStore((state) => state.autoCompactionThreshold)
+  const [compactionPercent, setCompactionPercent] = useState(Math.round(autoCompactionThreshold * 100))
+  const setAutoCompactionThreshold = useConfigStore((state) => state.setAutoCompactionThreshold)
+  const autoCompactionThresholdLocked = useConfigStore((state) => state.autoCompactionThresholdLocked)
+  const contextState = useSessionStore((state) => state.contextState)
   const updateStatus = useUpdateStore((state) => state.status)
   const latestVersion = useUpdateStore((state) => state.latest)
   const checkForUpdate = useUpdateStore((state) => state.check)
   const versionInfo = version && latestVersion ? { current: version, latest: latestVersion } : null
+  const maxContext = contextState?.maxTokens ?? useConfigStore.getState().maxContext
+  const minimumCompactionTokens = contextState?.minimumCompactionTokens ?? 0
+  const minimumCompactionPercent = getMinimumCompactionPercent(maxContext, minimumCompactionTokens)
+  const compactionThresholdTokens = getCompactionTokenThreshold(maxContext, compactionPercent)
   // "Up to date" only answers a manual check; the background check on app
   // load may be hours old by the time this tab is opened.
   const [manuallyChecked, setManuallyChecked] = useState(false)
+
+  useEffect(() => {
+    setCompactionPercent(Math.round(autoCompactionThreshold * 100))
+  }, [autoCompactionThreshold])
 
   useEffect(() => {
     setLocalToggles({
@@ -59,6 +81,13 @@ export function AdvancedTab({ onClose }: { onClose: () => void }) {
       }
     }
   }, [settings])
+
+  useEffect(() => {
+    const normalized = normalizeCompactionPercent(compactionPercent, minimumCompactionPercent)
+    if (normalized !== compactionPercent) {
+      setCompactionPercent(normalized)
+    }
+  }, [compactionPercent, minimumCompactionPercent, setAutoCompactionThreshold])
 
   const handleRetryPatternsChange = useCallback(
     (value: RetryPatternsValue) => {
@@ -157,6 +186,31 @@ export function AdvancedTab({ onClose }: { onClose: () => void }) {
         onToggle={handleToggleCacheWarming}
         boldTitle
       />
+      <hr className="border-border" />
+      <div>
+        <div className="flex items-center justify-between gap-4 mb-2">
+          <div>
+            <h3 className="text-sm font-medium text-text-primary">Auto-Compaction</h3>
+            <p className="text-sm text-text-muted mt-0.5">Compact context at this usage level. Set to 0% to disable.</p>
+          </div>
+          <span className="text-sm font-mono text-text-primary min-w-28 text-right">
+            {compactionPercent}% · {formatTokens(compactionThresholdTokens)}
+          </span>
+        </div>
+        <AutoCompactionSlider
+          percent={compactionPercent}
+          minimumPercent={minimumCompactionPercent}
+          minimumTokens={minimumCompactionTokens}
+          locked={autoCompactionThresholdLocked}
+          onChange={(value) => setCompactionPercent(normalizeCompactionPercent(value, minimumCompactionPercent))}
+          onCommit={() => setAutoCompactionThreshold(compactionPercent / 100)}
+        />
+        <CompactionFloorBar
+          segments={contextState?.compactionFloorSegments ?? []}
+          maxTokens={maxContext}
+          currentTokens={contextState?.currentTokens ?? 0}
+        />
+      </div>
       <hr className="border-border" />
       <div>
         <h3 className="text-sm font-medium text-text-primary mb-3">Auto-Retry Patterns</h3>

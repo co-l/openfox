@@ -164,6 +164,7 @@ export async function runTopLevelAgentLoop(
   let currentMaxTokensOverride: number | undefined
   let lastPatternMatch: { pattern: string; field: string; matchedContent: string } | undefined
   let compacting = config.initialCompacting ?? false
+  let autoCompactionPerformedThisRun = false
   let returnValueNudgeCount = 0
 
   for (;;) {
@@ -253,6 +254,12 @@ export async function runTopLevelAgentLoop(
       ...(instructionContent ? { customInstructions: instructionContent } : {}),
       ...(skills.length > 0 ? { skills } : {}),
     })
+
+    const compactionFloor = sessionManager.getCachedPrompt(sessionId)?.compactionFloor ?? {
+      totalTokens: 0,
+      segments: [],
+    }
+    const minimumCompactionTokens = compactionFloor.totalTokens
 
     const assistantMsgId = crypto.randomUUID()
     append(
@@ -359,19 +366,31 @@ export async function runTopLevelAgentLoop(
       previousContextTokens,
       result.modelParams,
     )
-    sessionManager.setCurrentContextSize(sessionId, result.usage.promptTokens, config.subAgentMetadata?.subAgentId)
+    sessionManager.setCurrentContextSize(
+      sessionId,
+      result.usage.promptTokens,
+      config.subAgentMetadata?.subAgentId,
+      minimumCompactionTokens,
+      compactionFloor.segments,
+    )
 
     // Check compaction threshold with fresh promptTokens from LLM.
     // When exceeded, append compaction prompt and let the next iteration
     // handle summarization — same agent, same loop, no nested call.
-    if (!compacting) {
+    if (!compacting && !autoCompactionPerformedThisRun) {
       const contextState = sessionManager.getContextState(sessionId)
       const { shouldCompact, appendCompactionPrompt } = await import('../context/compactor.js')
       if (
-        shouldCompact(contextState.currentTokens, contextState.maxTokens, runtimeConfig.context.compactionThreshold)
+        shouldCompact(
+          contextState.currentTokens,
+          contextState.maxTokens,
+          runtimeConfig.context.compactionThreshold,
+          minimumCompactionTokens,
+        )
       ) {
         appendCompactionPrompt(sessionId, append)
         compacting = true
+        autoCompactionPerformedThisRun = true
         continue
       }
     }
@@ -566,6 +585,15 @@ ${COMPACTION_PROMPT}`,
       // Reinject the agent reminder into the new window
       config.injectAgentReminder?.()
       compacting = false
+
+      const { estimateTextTokens } = await import('../context/compactor.js')
+      sessionManager.setCurrentContextSize(
+        sessionId,
+        minimumCompactionTokens + estimateTextTokens(summary),
+        config.subAgentMetadata?.subAgentId,
+        minimumCompactionTokens,
+        compactionFloor.segments,
+      )
 
       // Manual compaction (initialCompacting) is a one-shot operation — break after done.
       // Auto-compaction continues the loop for subsequent user messages.

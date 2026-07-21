@@ -266,6 +266,10 @@ export function setMcpTools(tools: Tool[]): void {
   mcpToolsOverride = tools
 }
 
+export function getMcpToolNames(): Set<string> {
+  return new Set(mcpToolsOverride.map((tool) => tool.name))
+}
+
 function getAllToolsMap(): Map<string, Tool> {
   const builtInEntries: [string, Tool][] = getBuiltInTools().map((t) => [t.name, t])
   const mcpEntries: [string, Tool][] = mcpToolsOverride.map((t) => [t.name, t])

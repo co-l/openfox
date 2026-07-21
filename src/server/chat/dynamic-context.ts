@@ -5,7 +5,7 @@ import type { SessionManager } from '../session/manager.js'
 import type { AgentDefinition } from '../agents/types.js'
 import { getAllInstructions } from '../context/instructions.js'
 import { getEnabledSkillMetadata } from '../skills/registry.js'
-import { buildTopLevelSystemPrompt } from './prompts.js'
+import { buildTopLevelPromptParts, joinTopLevelPromptParts } from './prompts.js'
 import { loadAllAgentsDefault, getSubAgents, findAgentById } from '../agents/registry.js'
 import { getRuntimeConfig } from '../runtime-config.js'
 import { getGlobalConfigDir } from '../../cli/paths.js'
@@ -59,7 +59,12 @@ export async function buildCachedPrompt(
   sessionManager: SessionManager,
   sessionId: string,
   agentDef: AgentDefinition,
-): Promise<{ systemPrompt: string; tools: LLMToolDefinition[]; hash: string }> {
+): Promise<{
+  systemPrompt: string
+  tools: LLMToolDefinition[]
+  hash: string
+  compactionFloor: { totalTokens: number; segments: import('../../shared/types.js').CompactionFloorSegment[] }
+}> {
   const { instructionContent, skills } = await loadSessionContext(sessionManager, sessionId)
 
   const { getToolRegistryForAgent } = await import('../tools/index.js')
@@ -69,11 +74,28 @@ export async function buildCachedPrompt(
   const allAgents = await loadAllAgentsDefault()
   const subAgentDefs = getSubAgents(allAgents)
   const session = sessionManager.requireSession(sessionId)
-  const systemPrompt = buildTopLevelSystemPrompt(session.workdir, instructionContent || undefined, skills, subAgentDefs)
+  const promptParts = buildTopLevelPromptParts(session.workdir, instructionContent || undefined, skills, subAgentDefs)
+  const systemPrompt = joinTopLevelPromptParts(promptParts)
+  const { estimateCompactionFloor } = await import('../context/compactor.js')
+  const { getMcpToolNames } = await import('../tools/index.js')
+  const compactionFloor = estimateCompactionFloor({ promptParts, tools, mcpToolNames: getMcpToolNames() })
 
   const hash = computeDynamicContextHash(instructionContent, skills, toolFingerprint)
 
-  return { systemPrompt, tools, hash }
+  return { systemPrompt, tools, hash, compactionFloor }
+}
+
+export async function computeSessionCompactionFloor(
+  sessionManager: SessionManager,
+  sessionId: string,
+): Promise<{ totalTokens: number; segments: import('../../shared/types.js').CompactionFloorSegment[] }> {
+  const cached = sessionManager.getCachedPrompt(sessionId)
+  if (cached?.compactionFloor) return cached.compactionFloor
+
+  const agentDef = await resolveAgentDef(sessionManager, sessionId)
+  const result = await buildCachedPrompt(sessionManager, sessionId, agentDef)
+  sessionManager.setCachedPrompt(sessionId, result.systemPrompt, result.tools, result.hash, result.compactionFloor)
+  return result.compactionFloor
 }
 
 /**
@@ -95,9 +117,9 @@ export async function applyDynamicContext(sessionManager: SessionManager, sessio
   const session = sessionManager.requireSession(sessionId)
   const allAgents = await loadAllAgentsDefault()
   const agentDef = findAgentById(session.mode, allAgents) ?? findAgentById('planner', allAgents)!
-  const { systemPrompt, tools, hash } = await buildCachedPrompt(sessionManager, sessionId, agentDef)
+  const { systemPrompt, tools, hash, compactionFloor } = await buildCachedPrompt(sessionManager, sessionId, agentDef)
 
-  sessionManager.setCachedPrompt(sessionId, systemPrompt, tools, hash)
+  sessionManager.setCachedPrompt(sessionId, systemPrompt, tools, hash, compactionFloor)
   sessionManager.setDynamicContextChanged(sessionId, false)
   sessionManager.clearDebugDump(sessionId)
   logger.debug('applyDynamicContext done', { sessionId, hash, toolCount: tools.length })

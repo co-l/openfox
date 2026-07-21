@@ -384,7 +384,13 @@ export async function runAgentTurn(
           })
         }
         const result = await buildCachedPrompt(options.sessionManager, options.sessionId, agentDef)
-        options.sessionManager.setCachedPrompt(options.sessionId, result.systemPrompt, result.tools, result.hash)
+        options.sessionManager.setCachedPrompt(
+          options.sessionId,
+          result.systemPrompt,
+          result.tools,
+          result.hash,
+          result.compactionFloor,
+        )
         return createAssemblyResult({
           systemPrompt: result.systemPrompt,
           messages: input.messages,

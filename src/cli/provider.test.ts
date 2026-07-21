@@ -311,7 +311,9 @@ describe('provider commands', () => {
 
       const updated = activateProvider(config, 'non-existent')
 
-      expect(updated).toEqual(config)
+      expect(updated).toMatchObject(config)
+      expect(updated.context).toEqual({ compactionThreshold: 0.85 })
+      expect(updated.mcpServers).toEqual({})
     })
   })
 

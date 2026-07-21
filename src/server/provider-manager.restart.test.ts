@@ -17,7 +17,7 @@ describe('Provider Manager - Context Persistence', () => {
       timeout: 120000,
       idleTimeout: 300000,
     },
-    context: { maxTokens: 200000, compactionThreshold: 0.8, compactionTarget: 0.5 },
+    context: { maxTokens: 200000, compactionThreshold: 0.8, },
     agent: { maxIterations: 50, maxConsecutiveFailures: 3, toolTimeout: 120000 },
     server: { port: 10999, host: '127.0.0.1', openBrowser: false },
     database: { path: '' },

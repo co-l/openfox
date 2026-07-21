@@ -627,7 +627,14 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
     const eventStore = getEventStore()
     const events = eventStore.getEvents(req.params.id)
     const messages = buildMessagesFromStoredEvents(events)
-    const contextState = sessionManager.getContextState(req.params.id)
+    const baseContextState = sessionManager.getContextState(req.params.id)
+    const { computeSessionCompactionFloor } = await import('./chat/dynamic-context.js')
+    const compactionFloor = await computeSessionCompactionFloor(sessionManager, req.params.id)
+    const contextState = {
+      ...baseContextState,
+      minimumCompactionTokens: compactionFloor.totalTokens,
+      compactionFloorSegments: compactionFloor.segments,
+    }
     const queueState = sessionManager.getQueueState(req.params.id)
     const pendingQuestions = getPendingQuestionsForSession(req.params.id)
     const pendingConfirmations = foldPendingConfirmations(events)
@@ -699,8 +706,14 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
     // Set provider for session only — does NOT touch global defaultModelSelection
     sessionManager.setSessionProvider(sessionId, providerId, resolvedModel)
 
-    // Get updated context state
-    const contextState = sessionManager.getContextState(sessionId)
+    const baseContextState = sessionManager.getContextState(sessionId)
+    const { computeSessionCompactionFloor } = await import('./chat/dynamic-context.js')
+    const compactionFloor = await computeSessionCompactionFloor(sessionManager, sessionId)
+    const contextState = {
+      ...baseContextState,
+      minimumCompactionTokens: compactionFloor.totalTokens,
+      compactionFloorSegments: compactionFloor.segments,
+    }
 
     // Get updated session with messages
     const eventStore = getEventStore()
@@ -739,7 +752,11 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
     // Update in-memory config
     config.defaultModelSelection = updatedConfig.defaultModelSelection
 
-    res.json({ success: true, defaultModelSelection: config.defaultModelSelection })
+    res.json({
+      success: true,
+      defaultModelSelection: config.defaultModelSelection,
+      maxContext: providerManager.getCurrentModelContext(),
+    })
   })
 
   // Session criteria (REST)
@@ -1256,8 +1273,7 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
     const activeProvider = providerManager.getActiveProvider()
 
     let visionFallback:
-      | { enabled: boolean; url: string; model: string; timeout: number; backend: VisionBackend }
-      | undefined
+      { enabled: boolean; url: string; model: string; timeout: number; backend: VisionBackend } | undefined
     let globalWorkdir: string | undefined
     try {
       const { loadGlobalConfig, getVisionFallback } = await import('../cli/config.js')
@@ -1290,7 +1306,31 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
       defaultModelSelection: config.defaultModelSelection,
       visionFallback,
       platform: platformInfo,
+      autoCompactionThreshold: config.context.compactionThreshold,
+      autoCompactionThresholdLocked: process.env['OPENFOX_COMPACTION_THRESHOLD'] !== undefined,
     })
+  })
+
+  app.post('/api/config/compaction', async (req, res) => {
+    if (process.env['OPENFOX_COMPACTION_THRESHOLD'] !== undefined) {
+      return res.status(409).json({ error: 'Auto-compaction threshold is controlled by OPENFOX_COMPACTION_THRESHOLD' })
+    }
+
+    const threshold = req.body?.threshold
+    if (typeof threshold !== 'number' || !Number.isFinite(threshold) || threshold < 0 || threshold > 1) {
+      return res.status(400).json({ error: 'threshold must be a number between 0 and 1' })
+    }
+
+    const { loadGlobalConfig, saveGlobalConfig } = await import('../cli/config.js')
+    const globalConfig = await loadGlobalConfig(config.mode ?? 'production', config.globalConfigPath)
+    await saveGlobalConfig(
+      config.mode ?? 'production',
+      { ...globalConfig, context: { compactionThreshold: threshold } },
+      config.globalConfigPath,
+    )
+    config.context.compactionThreshold = threshold
+
+    return res.json({ success: true, threshold })
   })
 
   // Model refresh endpoint
@@ -1321,6 +1361,7 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
       source: 'cached',
       llmStatus: getLlmStatus(),
       backend: llmClient.getBackend(),
+      maxContext: providerManager.getCurrentModelContext(),
     })
   })
 

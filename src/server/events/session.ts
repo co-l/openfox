@@ -546,6 +546,8 @@ export function emitContextState(
   canCompact: boolean,
   subAgentId?: string,
   dynamicContextChanged?: boolean,
+  minimumCompactionTokens?: number,
+  compactionFloorSegments?: import('../../shared/types.js').CompactionFloorSegment[],
 ): void {
   const eventStore = getEventStore()
   eventStore.append(sessionId, {
@@ -558,6 +560,8 @@ export function emitContextState(
       canCompact,
       dynamicContextChanged: dynamicContextChanged ?? false,
       ...(subAgentId !== undefined && { subAgentId }),
+      ...(minimumCompactionTokens !== undefined && { minimumCompactionTokens }),
+      ...(compactionFloorSegments !== undefined && { compactionFloorSegments }),
     },
   })
 }

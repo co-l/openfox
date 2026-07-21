@@ -60,6 +60,12 @@ describe('AdvancedTab', () => {
     expect(container.textContent).toContain('Auto-Retry Patterns')
   })
 
+  it('renders auto-compaction as a percentage', () => {
+    const { container } = render(<AdvancedTab onClose={vi.fn()} />)
+    expect(container.textContent).toContain('Auto-Compaction')
+    expect(container.textContent).toContain('85%')
+  })
+
   it('renders the Open in VSCode toggle', () => {
     const { container } = render(<AdvancedTab onClose={vi.fn()} />)
     expect(container.textContent).toContain('Open in VSCode')

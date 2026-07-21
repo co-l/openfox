@@ -134,6 +134,7 @@ _Vision Fallback — Image processing configuration_
 | `OPENFOX_BACKEND`                    | `unknown`                  | Backend type: `vllm`, `sglang`, `ollama`, `llamacpp`, `unknown` |
 | `OPENFOX_MODEL_NAME`                 | `''`                       | Override default model name                                     |
 | `OPENFOX_MAX_CONTEXT`                | `200000`                   | Max context window in tokens                                    |
+| `OPENFOX_COMPACTION_THRESHOLD`       | `0.85`                     | Context ratio that triggers auto-compaction; `0` disables it    |
 | `OPENFOX_LLM_TIMEOUT`                | `300000`                   | LLM request timeout in ms                                       |
 | `OPENFOX_LLM_IDLE_TIMEOUT`           | `300000`                   | LLM stream idle timeout in ms                                   |
 | `OPENFOX_PORT`                       | `10369`                    | Server listen port                                              |

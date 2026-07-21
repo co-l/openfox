@@ -13,14 +13,14 @@ import { getPlatformShell } from '../utils/platform.js'
  * Contains: environment, core behavior, tone, guardrails, skills.
  * Does NOT contain: agent-specific instructions, sub-agents list.
  */
-export function buildBasePrompt(
-  workdir: string,
-  customInstructions?: string,
-  skills?: SkillMetadata[],
-  modelName?: string,
-): string {
-  const instructionsSection = customInstructions ? `\n\n## CUSTOM INSTRUCTIONS\n\n${customInstructions}` : ''
+export interface TopLevelPromptParts {
+  system: string
+  instructions: string
+  skills: string
+  subagents: string
+}
 
+function buildCorePrompt(workdir: string, modelName?: string): string {
   const modelLine = modelName ? `\nModel: ${modelName}` : ''
 
   return `You are OpenFox, an agentic assistant.
@@ -114,10 +114,36 @@ NEVER commit changes unless user explicitly asks you to. VERY IMPORTANT only com
 # Tool usage policy
 When doing file search, prefer to use the call_sub_agent tool with the "explorer" in order to reduce context usage, except if this would take less than 3 calls to get the information.
 You have the capability to call multiple tools in a single response. When multiple independent pieces of information are requested, batch your tool calls together for optimal performance.
-
-${instructionsSection}
-${buildSkillsSection(skills)}
 `
+}
+
+export function buildTopLevelPromptParts(
+  workdir: string,
+  customInstructions?: string,
+  skills?: SkillMetadata[],
+  subAgentDefs?: AgentDefinition[],
+  modelName?: string,
+): TopLevelPromptParts {
+  return {
+    system: buildCorePrompt(workdir, modelName),
+    instructions: customInstructions ? `\n\n## CUSTOM INSTRUCTIONS\n\n${customInstructions}\n` : '',
+    skills: buildSkillsSection(skills),
+    subagents: subAgentDefs ? buildSubAgentsSection(subAgentDefs) : '',
+  }
+}
+
+export function joinTopLevelPromptParts(parts: TopLevelPromptParts): string {
+  return parts.system + parts.instructions + parts.skills + parts.subagents
+}
+
+export function buildBasePrompt(
+  workdir: string,
+  customInstructions?: string,
+  skills?: SkillMetadata[],
+  modelName?: string,
+): string {
+  const parts = buildTopLevelPromptParts(workdir, customInstructions, skills, undefined, modelName)
+  return parts.system + parts.instructions + parts.skills
 }
 
 // ============================================================================
@@ -183,9 +209,7 @@ export function buildTopLevelSystemPrompt(
   subAgentDefs?: AgentDefinition[],
   modelName?: string,
 ): string {
-  const base = buildBasePrompt(workdir, customInstructions, skills, modelName)
-  const subAgents = subAgentDefs ? buildSubAgentsSection(subAgentDefs) : ''
-  return base + subAgents
+  return joinTopLevelPromptParts(buildTopLevelPromptParts(workdir, customInstructions, skills, subAgentDefs, modelName))
 }
 
 /**

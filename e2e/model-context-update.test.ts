@@ -71,7 +71,7 @@ describe('Model Context Update', () => {
         idleTimeout: 300000,
         disableThinking: false,
       },
-      context: { maxTokens: customContextWindow, compactionThreshold: 0.8, compactionTarget: 0.5 },
+      context: { maxTokens: customContextWindow, compactionThreshold: 0.8, },
       agent: { maxIterations: 50, maxConsecutiveFailures: 3, toolTimeout: 120000 },
       server: { port: 0, host: '127.0.0.1', openBrowser: false },
       database: { path: '' },

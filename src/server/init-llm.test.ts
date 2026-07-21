@@ -32,7 +32,7 @@ function testConfig(overrides?: { defaultModelSelection?: string; providers?: Pr
       idleTimeout: 300000,
       backend: 'vllm' as LlmBackend,
     },
-    context: { maxTokens: 200000, compactionThreshold: 0.85, compactionTarget: 0.6 },
+    context: { maxTokens: 200000, compactionThreshold: 0.85, },
     agent: { maxIterations: 10, maxConsecutiveFailures: 3, toolTimeout: 300000 },
     server: { port: 0, host: '127.0.0.1' },
     database: { path: ':memory:' },

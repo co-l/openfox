@@ -5,6 +5,14 @@ import { ProgressBar, LowTokenWarning } from '../shared/ProgressBar'
 import { formatTokens } from '../../lib/format-stats'
 import { wsClient } from '../../lib/ws'
 import { Modal } from '../shared/SelfContainedModal'
+import { useConfigStore } from '../../stores/config'
+import { CompactionFloorBar } from '../shared/CompactionFloorBar'
+import { AutoCompactionSlider } from '../shared/AutoCompactionSlider'
+import {
+  getCompactionTokenThreshold,
+  getMinimumCompactionPercent,
+  normalizeCompactionPercent,
+} from '../../lib/compaction'
 
 function getTextColor(percent: number, dangerZone: boolean): string {
   if (dangerZone) return 'text-accent-error'
@@ -17,11 +25,19 @@ export function SessionHeader() {
   const contextState = useSessionStore((state) => state.contextState)
   const currentSession = useSessionStore((state) => state.currentSession)
   const compactContext = useSessionStore((state) => state.compactContext)
+  const autoCompactionThreshold = useConfigStore((state) => state.autoCompactionThreshold)
+  const setAutoCompactionThreshold = useConfigStore((state) => state.setAutoCompactionThreshold)
+  const autoCompactionThresholdLocked = useConfigStore((state) => state.autoCompactionThresholdLocked)
 
   const [menuOpen, setMenuOpen] = useState(false)
   const [bannerDismissed, setBannerDismissed] = useState(false)
   const [showApplyModal, setShowApplyModal] = useState(false)
+  const [compactionPercent, setCompactionPercent] = useState(Math.round(autoCompactionThreshold * 100))
   const prevDynamicChanged = useRef(false)
+
+  useEffect(() => {
+    setCompactionPercent(Math.round(autoCompactionThreshold * 100))
+  }, [autoCompactionThreshold])
 
   useEffect(() => {
     if (contextState?.dynamicContextChanged && !prevDynamicChanged.current) {
@@ -30,13 +46,29 @@ export function SessionHeader() {
     prevDynamicChanged.current = contextState?.dynamicContextChanged ?? false
   }, [contextState?.dynamicContextChanged])
 
+  const minimumCompactionTokens = contextState?.minimumCompactionTokens ?? 0
+  const contextMaxTokens = contextState?.maxTokens ?? 0
+  const minimumCompactionPercent = getMinimumCompactionPercent(contextMaxTokens, minimumCompactionTokens)
+
+  useEffect(() => {
+    const normalized = normalizeCompactionPercent(compactionPercent, minimumCompactionPercent)
+    if (normalized !== compactionPercent) {
+      setCompactionPercent(normalized)
+    }
+  }, [compactionPercent, minimumCompactionPercent, setAutoCompactionThreshold])
+
   if (!contextState || !currentSession) {
     return null
   }
 
   const { currentTokens, maxTokens, compactionCount, dangerZone, dynamicContextChanged } = contextState
   const percent = Math.round((currentTokens / maxTokens) * 100)
+  const compactionThresholdTokens = getCompactionTokenThreshold(maxTokens, compactionPercent)
   const isRunning = currentSession.isRunning
+
+  const handleCompactionPercentChange = (value: number) => {
+    setCompactionPercent(normalizeCompactionPercent(value, minimumCompactionPercent))
+  }
 
   const handleApplyDynamic = () => {
     wsClient.send('context.applyDynamic', {})
@@ -76,7 +108,7 @@ export function SessionHeader() {
               {menuOpen && (
                 <>
                   <div className="fixed inset-0 z-40" onClick={() => setMenuOpen(false)} />
-                  <div className="absolute right-0 top-full mt-1.5 z-50 bg-bg-secondary border border-border rounded-lg shadow-xl py-1 min-w-[160px]">
+                  <div className="absolute right-0 top-full mt-1.5 z-50 bg-bg-secondary border border-border rounded-lg shadow-xl py-1 min-w-[320px]">
                     <button
                       onClick={() => {
                         if (!isRunning) compactContext()
@@ -88,6 +120,30 @@ export function SessionHeader() {
                     >
                       <span className={dangerZone ? 'text-accent-error' : ''}>Compact</span>
                     </button>
+                    <div className="border-t border-border px-3 py-2">
+                      <div className="flex items-center justify-between gap-3 mb-1.5">
+                        <span className="text-xs text-text-muted">Auto-compact</span>
+                        <span className="text-xs font-mono text-text-primary">
+                          {compactionPercent}% · {formatTokens(compactionThresholdTokens)}
+                        </span>
+                      </div>
+                      <AutoCompactionSlider
+                        percent={compactionPercent}
+                        minimumPercent={minimumCompactionPercent}
+                        minimumTokens={minimumCompactionTokens}
+                        locked={autoCompactionThresholdLocked}
+                        compact
+                        onChange={handleCompactionPercentChange}
+                        onCommit={() => setAutoCompactionThreshold(compactionPercent / 100)}
+                      />
+                      <CompactionFloorBar
+                        segments={contextState.compactionFloorSegments ?? []}
+                        maxTokens={maxTokens}
+                        currentTokens={currentTokens}
+                        compact
+                        showDetails
+                      />
+                    </div>
                     {dynamicContextChanged && (
                       <button
                         onClick={() => {

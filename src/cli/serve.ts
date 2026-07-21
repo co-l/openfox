@@ -36,6 +36,7 @@ export async function runServe(options: ServeOptions): Promise<void> {
   const isEnvUrlExplicit = envUrl !== 'http://localhost:8000/v1' // default in config.ts
   const isEnvTimeoutExplicit = env.llm.timeout !== 300_000
   const isEnvIdleTimeoutExplicit = env.llm.idleTimeout !== 300_000
+  const isEnvCompactionThresholdExplicit = process.env['OPENFOX_COMPACTION_THRESHOLD'] !== undefined
 
   // Get provider values with fallbacks
   const providerUrl = activeProvider?.url ?? envUrl
@@ -53,6 +54,12 @@ export async function runServe(options: ServeOptions): Promise<void> {
       idleTimeout: isEnvIdleTimeoutExplicit
         ? env.llm.idleTimeout
         : (globalConfig.llm?.idleTimeout ?? env.llm.idleTimeout),
+    },
+    context: {
+      ...env.context,
+      compactionThreshold: isEnvCompactionThresholdExplicit
+        ? env.context.compactionThreshold
+        : globalConfig.context.compactionThreshold,
     },
     server: {
       ...env.server,

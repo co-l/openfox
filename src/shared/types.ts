@@ -104,9 +104,7 @@ export type MessageRole = 'user' | 'assistant' | 'system' | 'tool'
 
 // Segment types for preserving streaming order
 export type MessageSegment =
-  | { type: 'text'; content: string }
-  | { type: 'thinking'; content: string }
-  | { type: 'tool_call'; toolCallId: string }
+  { type: 'text'; content: string } | { type: 'thinking'; content: string } | { type: 'tool_call'; toolCallId: string }
 
 export interface MessageStats {
   providerId: string
@@ -435,6 +433,12 @@ export interface ExecutionState {
 // Context State (for UI display)
 // ============================================================================
 
+export interface CompactionFloorSegment {
+  key: 'system' | 'instructions' | 'skills' | 'subagents' | 'tools' | 'mcp'
+  label: string
+  tokens: number
+}
+
 export interface ContextState {
   currentTokens: number // Current context window usage
   maxTokens: number // Maximum context window size
@@ -442,6 +446,8 @@ export interface ContextState {
   dangerZone: boolean // True if approaching max (< 20K remaining)
   canCompact: boolean // True if there's enough context to compact
   dynamicContextChanged: boolean // True if dynamic inputs changed since system prompt was cached
+  minimumCompactionTokens?: number // Estimated non-compacting system prompt and tool definitions
+  compactionFloorSegments?: CompactionFloorSegment[]
   debugDump?: { cachedPrompt: string; cachedTools: string[]; liveTools: string[] }
 }
 
@@ -566,7 +572,6 @@ export interface Config {
   context: {
     maxTokens: number
     compactionThreshold: number
-    compactionTarget: number
   }
   agent: {
     maxIterations: number

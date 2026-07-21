@@ -27,7 +27,7 @@ describe('auth', () => {
     const config: Config = {
       mode: 'test',
       llm: { baseUrl: '', model: '', backend: 'unknown', timeout: 300000, idleTimeout: 300000 },
-      context: { maxTokens: 100000, compactionThreshold: 0.85, compactionTarget: 0.6 },
+      context: { maxTokens: 100000, compactionThreshold: 0.85, },
       agent: { maxIterations: 10, maxConsecutiveFailures: 3, toolTimeout: 120000 },
       server: { port: 0, host: '127.0.0.1' },
       database: { path: ':memory:' },
@@ -137,7 +137,7 @@ describe('auth', () => {
       const config: Config = {
         mode: 'production',
         llm: { baseUrl: '', model: '', backend: 'unknown', timeout: 300000, idleTimeout: 300000 },
-        context: { maxTokens: 100000, compactionThreshold: 0.85, compactionTarget: 0.6 },
+        context: { maxTokens: 100000, compactionThreshold: 0.85, },
         agent: { maxIterations: 10, maxConsecutiveFailures: 3, toolTimeout: 120000 },
         server: { port: 0, host: '127.0.0.1' },
         database: { path: ':memory:' },
@@ -159,7 +159,7 @@ describe('auth', () => {
       const config: Config = {
         mode: 'test',
         llm: { baseUrl: '', model: '', backend: 'unknown', timeout: 300000, idleTimeout: 300000 },
-        context: { maxTokens: 100000, compactionThreshold: 0.85, compactionTarget: 0.6 },
+        context: { maxTokens: 100000, compactionThreshold: 0.85, },
         agent: { maxIterations: 10, maxConsecutiveFailures: 3, toolTimeout: 120000 },
         server: { port: 0, host: '127.0.0.1' },
         database: { path: ':memory:' },

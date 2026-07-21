@@ -5,15 +5,7 @@ import type { ModelConfig } from '@shared/types.js'
 type LlmStatus = 'connected' | 'disconnected' | 'unknown'
 
 type Backend =
-  | 'vllm'
-  | 'sglang'
-  | 'ollama'
-  | 'llamacpp'
-  | 'lmstudio'
-  | 'openai'
-  | 'anthropic'
-  | 'opencode-go'
-  | 'unknown'
+  'vllm' | 'sglang' | 'ollama' | 'llamacpp' | 'lmstudio' | 'openai' | 'anthropic' | 'opencode-go' | 'unknown'
 type ProviderStatus = 'connected' | 'disconnected' | 'unknown'
 
 interface Provider {
@@ -53,6 +45,8 @@ interface ConfigState {
   defaultModelSelection: string | null
   // Platform info from server (WSL detection etc.)
   platform: PlatformInfo | null
+  autoCompactionThreshold: number
+  autoCompactionThresholdLocked: boolean
   // Loading/error state
   loading: boolean
   activating: boolean
@@ -64,6 +58,7 @@ interface ConfigState {
   refreshModel: () => Promise<void>
   activateProvider: (providerId: string) => Promise<boolean>
   setDefaultModel: (providerId: string, model: string) => Promise<boolean>
+  setAutoCompactionThreshold: (threshold: number) => Promise<boolean>
   startAutoRefresh: () => void
   stopAutoRefresh: () => void
   refreshProviderModels: (providerId: string) => Promise<boolean>
@@ -112,6 +107,8 @@ export const useConfigStore = create<ConfigState>((set, get) => ({
   activeProviderId: null,
   defaultModelSelection: null,
   platform: null,
+  autoCompactionThreshold: 0.85,
+  autoCompactionThresholdLocked: false,
   loading: false,
   activating: false,
   error: null,
@@ -135,6 +132,8 @@ export const useConfigStore = create<ConfigState>((set, get) => ({
         activeProviderId: string | null
         defaultModelSelection: string | null
         platform: unknown
+        autoCompactionThreshold: number
+        autoCompactionThresholdLocked: boolean
       }
       const platform: PlatformInfo | null =
         data.platform && typeof data.platform === 'object'
@@ -154,6 +153,8 @@ export const useConfigStore = create<ConfigState>((set, get) => ({
         activeProviderId: data.activeProviderId ?? null,
         defaultModelSelection: data.defaultModelSelection ?? null,
         platform,
+        autoCompactionThreshold: data.autoCompactionThreshold ?? 0.85,
+        autoCompactionThresholdLocked: data.autoCompactionThresholdLocked ?? false,
         loading: false,
       })
     } catch (error) {
@@ -175,6 +176,7 @@ export const useConfigStore = create<ConfigState>((set, get) => ({
         source: string
         llmStatus: LlmStatus
         backend: Backend
+        maxContext: number
       }
       set({ model: data.model, llmStatus: data.llmStatus, backend: data.backend })
     } catch (error) {
@@ -198,12 +200,14 @@ export const useConfigStore = create<ConfigState>((set, get) => ({
         activeProviderId: string
         model: string
         backend: Backend
+        maxContext: number
       }
 
       set({
         activeProviderId: data.activeProviderId,
         model: data.model,
         backend: data.backend,
+        maxContext: data.maxContext,
         providers: providers.map((p) => ({
           ...p,
           isActive: p.id === data.activeProviderId,
@@ -229,17 +233,38 @@ export const useConfigStore = create<ConfigState>((set, get) => ({
         body: JSON.stringify({ providerId, model }),
       })
       if (!response.ok) return false
-      const data = (await response.json()) as { success: boolean; defaultModelSelection: string }
+      const data = (await response.json()) as {
+        success: boolean
+        defaultModelSelection: string
+        maxContext: number
+      }
 
       set({
         activeProviderId: providerId,
         model,
         defaultModelSelection: data.defaultModelSelection,
+        maxContext: data.maxContext,
         providers: providers.map((p) => ({
           ...p,
           isActive: p.id === providerId,
         })),
       })
+      return true
+    } catch {
+      return false
+    }
+  },
+
+  setAutoCompactionThreshold: async (threshold: number) => {
+    if (get().autoCompactionThresholdLocked) return false
+    try {
+      const response = await authFetch('/api/config/compaction', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ threshold }),
+      })
+      if (!response.ok) return false
+      set({ autoCompactionThreshold: threshold })
       return true
     } catch {
       return false

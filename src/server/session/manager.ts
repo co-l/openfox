@@ -108,6 +108,10 @@ export class SessionManager {
   private dynamicContextChangedStore = new Map<string, boolean>()
   private debugDumpStore = new Map<string, { cachedPrompt: string; cachedTools: string[]; liveTools: string[] }>()
   private warmedUpSessions = new Set<string>()
+  private compactionFloorStore = new Map<
+    string,
+    { totalTokens: number; segments: import('../../shared/types.js').CompactionFloorSegment[] }
+  >()
   private switchLocks = new Map<string, Promise<unknown>>()
   private workspaceCreationLocks = new Map<string, Promise<void>>()
 
@@ -569,7 +573,13 @@ export class SessionManager {
    * Emits a context.state event with the real promptTokens from the LLM.
    * maxTokens comes from providerManager.getCurrentModelContext() - the currently selected model's limit.
    */
-  setCurrentContextSize(sessionId: string, promptTokens: number, subAgentId?: string): void {
+  setCurrentContextSize(
+    sessionId: string,
+    promptTokens: number,
+    subAgentId?: string,
+    minimumCompactionTokens?: number,
+    compactionFloorSegments?: import('../../shared/types.js').CompactionFloorSegment[],
+  ): void {
     const state = getSessionState(sessionId, this.providerManager.getCurrentModelContext())
     const maxTokens = this.providerManager.getCurrentModelContext()
     const compactionCount = state?.contextState.compactionCount ?? 0
@@ -584,9 +594,18 @@ export class SessionManager {
       canCompact(promptTokens, maxTokens),
       subAgentId,
       dynamicContextChanged,
+      minimumCompactionTokens,
+      compactionFloorSegments,
     )
 
-    logger.debug('Context state updated', { sessionId, promptTokens, maxTokens, subAgentId })
+    logger.debug('Context state updated', {
+      sessionId,
+      promptTokens,
+      maxTokens,
+      subAgentId,
+      minimumCompactionTokens,
+      compactionFloorSegments,
+    })
   }
 
   // ============================================================================
@@ -875,16 +894,25 @@ export class SessionManager {
     systemPrompt: string,
     tools: import('../llm/types.js').LLMToolDefinition[],
     hash: string,
+    compactionFloor?: { totalTokens: number; segments: import('../../shared/types.js').CompactionFloorSegment[] },
   ): void {
     updateSessionCachedPrompt(sessionId, systemPrompt, tools, hash)
+    if (compactionFloor) this.compactionFloorStore.set(sessionId, compactionFloor)
     this.resetWarmup(sessionId)
   }
 
-  getCachedPrompt(
-    sessionId: string,
-  ): { systemPrompt: string; tools: import('../llm/types.js').LLMToolDefinition[]; hash: string } | undefined {
+  getCachedPrompt(sessionId: string):
+    | {
+        systemPrompt: string
+        tools: import('../llm/types.js').LLMToolDefinition[]
+        hash: string
+        compactionFloor?: { totalTokens: number; segments: import('../../shared/types.js').CompactionFloorSegment[] }
+      }
+    | undefined {
     const result = getSessionCachedPrompt(sessionId)
-    return result ?? undefined
+    if (!result) return undefined
+    const compactionFloor = this.compactionFloorStore.get(sessionId)
+    return { ...result, ...(compactionFloor ? { compactionFloor } : {}) }
   }
 
   setDynamicContextChanged(sessionId: string, changed: boolean): void {

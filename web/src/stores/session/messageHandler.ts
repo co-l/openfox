@@ -714,7 +714,18 @@ export function handleServerMessage(
         }
       } else {
         if (isCurrentSession) {
-          set({ contextState: payload.context })
+          set((state) => ({
+            contextState: state.contextState
+              ? {
+                  ...state.contextState,
+                  ...payload.context,
+                  minimumCompactionTokens:
+                    payload.context.minimumCompactionTokens ?? state.contextState.minimumCompactionTokens,
+                  compactionFloorSegments:
+                    payload.context.compactionFloorSegments ?? state.contextState.compactionFloorSegments,
+                }
+              : payload.context,
+          }))
         } else {
           markBackgroundSessionUnread()
         }
