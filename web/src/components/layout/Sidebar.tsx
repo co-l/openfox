@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, useCallback } from 'react'
+import { useEffect, useRef, useState, useCallback, useMemo } from 'react'
 import { useLocation, Link } from 'wouter'
 import { useSessionStore } from '../../stores/session'
 import type { PendingPathConfirmation } from '../../stores/session/types'
@@ -10,8 +10,9 @@ import { CloseButton } from '../shared/CloseButton'
 import { ConfirmModal } from '../shared/ConfirmModal'
 import { Modal } from '../shared/Modal'
 import { ModalFooter } from '../shared/ModalFooter'
-import { EllipsisIcon, SpinIcon, StopIcon } from '../shared/icons'
+import { EllipsisIcon, SpinIcon, StopIcon, SearchIcon, XCloseIcon } from '../shared/icons'
 import { groupSessionsByDate, formatDateHeader, formatTime } from '../../lib/format-date.js'
+import { fuzzyMatch, highlightMatches } from '../../lib/modal-utils.js'
 
 interface SidebarProps {
   projectId: string
@@ -40,6 +41,15 @@ export function Sidebar({ projectId, isOpen = true, onClose }: SidebarProps) {
 
   const currentProject = useProjectStore((state) => state.currentProject)
 
+  const [searchQuery, setSearchQuery] = useState('')
+  const [debouncedQuery, setDebouncedQuery] = useState('')
+  const searchRef = useRef<HTMLInputElement>(null)
+
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedQuery(searchQuery), 150)
+    return () => clearTimeout(t)
+  }, [searchQuery])
+
   const loadMoreRef = useRef<HTMLDivElement>(null)
 
   const handleLoadMore = useCallback(() => {
@@ -67,6 +77,18 @@ export function Sidebar({ projectId, isOpen = true, onClose }: SidebarProps) {
 
   // Filter sessions to those belonging to the current project by ID
   const projectSessions = sessions.filter((session) => session.projectId === currentProject?.id)
+
+  const filteredSessions = useMemo(() => {
+    if (!searchQuery) return projectSessions
+    return projectSessions.filter((s) => {
+      const title = s.title ?? ''
+      const promptsJoined = (s.recentUserPrompts?.map((p) => p.content) ?? []).join(' ')
+      return fuzzyMatch(title, searchQuery) || fuzzyMatch(promptsJoined, searchQuery)
+    })
+  }, [projectSessions, searchQuery])
+
+  const isSearching = debouncedQuery.length > 0
+  const hasNoResults = isSearching && filteredSessions.length === 0
 
   const handleDeleteSession = (sessionId: string, e?: React.MouseEvent) => {
     e?.stopPropagation()
@@ -106,6 +128,20 @@ export function Sidebar({ projectId, isOpen = true, onClose }: SidebarProps) {
     deleteAllSessions(projectId)
     navigate(`/p/${projectId}`)
     setShowDeleteAll(false)
+  }
+
+  const handleClearSearch = () => {
+    setSearchQuery('')
+    setDebouncedQuery('')
+    searchRef.current?.focus()
+  }
+
+  const handleSearchKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Escape') {
+      setSearchQuery('')
+      setDebouncedQuery('')
+      searchRef.current?.blur()
+    }
   }
 
   return (
@@ -155,6 +191,37 @@ export function Sidebar({ projectId, isOpen = true, onClose }: SidebarProps) {
           />
           {/* Mobile close button */}
           {onClose && <CloseButton onClick={onClose} className="md:hidden" variant="sidebar" size="md" />}
+        </div>
+
+        {/* Search bar */}
+        <div className="px-4 py-2 border-b border-border">
+          <div className="relative flex items-center">
+            <SearchIcon className="absolute left-2.5 w-3.5 h-3.5 text-text-muted pointer-events-none" />
+            <input
+              ref={searchRef}
+              type="text"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              onKeyDown={handleSearchKeyDown}
+              placeholder="Search sessions..."
+              className="w-full bg-bg-tertiary border border-border rounded pl-8 pr-8 py-1.5 text-xs text-text-primary placeholder-text-muted focus:outline-none focus:ring-1 focus:ring-accent-primary/50 focus:border-accent-primary transition-colors"
+            />
+            {searchQuery && (
+              <button
+                type="button"
+                onClick={handleClearSearch}
+                className="absolute right-1.5 p-0.5 rounded text-text-muted hover:text-text-primary hover:bg-bg-tertiary transition-colors"
+                aria-label="Clear search"
+              >
+                <XCloseIcon className="w-3.5 h-3.5" />
+              </button>
+            )}
+          </div>
+          {isSearching && !hasNoResults && (
+            <div className="mt-1 text-xs text-text-muted px-1">
+              {filteredSessions.length} {filteredSessions.length === 1 ? 'match' : 'matches'}
+            </div>
+          )}
         </div>
 
         {/* Project Settings Modal */}
@@ -217,13 +284,15 @@ export function Sidebar({ projectId, isOpen = true, onClose }: SidebarProps) {
         </Modal>
 
         <div className="flex-1 overflow-y-auto scrollbar-stable">
-          {projectSessions.length === 0 ? (
-            <div className="p-4 text-center text-text-muted text-xs">No sessions</div>
+          {filteredSessions.length === 0 ? (
+            <div className="p-4 text-center text-text-muted text-xs">
+              {isSearching ? 'No matching sessions' : 'No sessions'}
+            </div>
           ) : (
             <>
               <div className="divide-y divide-border">
                 {renderSessionGroups(
-                  projectSessions,
+                  filteredSessions,
                   currentSession,
                   unreadSessionIds,
                   handleDeleteSession,
@@ -231,6 +300,7 @@ export function Sidebar({ projectId, isOpen = true, onClose }: SidebarProps) {
                   projectId,
                   sessionsWithPendingConfirmations,
                   pendingPathConfirmations,
+                  debouncedQuery,
                 )}
               </div>
               {sessionsPaginationLoading && (
@@ -254,6 +324,7 @@ function renderSessionGroups(
   projectId: string,
   sessionsWithPendingConfirmations: string[],
   pendingPathConfirmations: PendingPathConfirmation[],
+  searchQuery: string,
 ) {
   const groups = groupSessionsByDate(projectSessions)
 
@@ -290,7 +361,9 @@ function renderSessionGroups(
                   <span
                     className={`font-medium truncate text-sm ${isActive ? 'text-accent-primary' : 'text-text-primary'}`}
                   >
-                    {session.title ?? session.id.slice(0, 6)}
+                    {searchQuery
+                      ? highlightMatches(session.title ?? session.id.slice(0, 6), searchQuery)
+                      : (session.title ?? session.id.slice(0, 6))}
                   </span>
                   <DropdownMenu
                     items={[

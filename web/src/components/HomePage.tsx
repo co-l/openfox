@@ -8,64 +8,8 @@ import { DeleteProjectConfirmationModal } from './DeleteProjectConfirmationModal
 import { formatRelativeDate } from '../lib/format-date'
 import { SearchIcon, XCloseIcon, FolderIcon, TrashIcon } from './shared/icons'
 import { Spinner } from './shared/Spinner'
-import { fuzzyMatch } from '../lib/modal-utils'
+import { fuzzyMatch, highlightMatches } from '../lib/modal-utils'
 import type { SessionSummary } from '@shared/types.js'
-
-function highlightMatches(text: string, query: string) {
-  if (!query) return text
-  const lowerText = text.toLowerCase()
-  const lowerQuery = query.toLowerCase()
-
-  const matched = new Array(text.length).fill(false)
-
-  const exactIdx = lowerText.indexOf(lowerQuery)
-  if (exactIdx >= 0) {
-    for (let i = exactIdx; i < exactIdx + lowerQuery.length; i++) {
-      matched[i] = true
-    }
-  } else {
-    let qi = 0
-    for (let i = 0; i < text.length && qi < lowerQuery.length; i++) {
-      if (lowerText[i] === lowerQuery[qi]) {
-        matched[i] = true
-        qi++
-      }
-    }
-  }
-
-  const parts: React.ReactNode[] = []
-  let current = ''
-  let currentMatch: boolean = matched[0] ?? false
-
-  for (let i = 0; i < text.length; i++) {
-    if (matched[i] === currentMatch) {
-      current += text[i]!
-    } else {
-      parts.push(
-        currentMatch ? (
-          <span key={parts.length} className="font-semibold text-accent-primary">
-            {current}
-          </span>
-        ) : (
-          current
-        ),
-      )
-      current = text[i]!
-      currentMatch = matched[i] as boolean
-    }
-  }
-  parts.push(
-    currentMatch ? (
-      <span key={parts.length} className="font-semibold text-accent-primary">
-        {current}
-      </span>
-    ) : (
-      current
-    ),
-  )
-
-  return <>{parts}</>
-}
 
 export function HomePage() {
   const [showOpenModal, setShowOpenModal] = useState(false)
