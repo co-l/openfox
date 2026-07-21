@@ -146,6 +146,17 @@ export class SessionManager {
     return this.providerManager.getCurrentModelContext()
   }
 
+  getModelCompactionThreshold(sessionId: string): number | undefined {
+    const session = this.getSession(sessionId)
+    const providerId = session?.providerId ?? this.providerManager.getActiveProviderId()
+    const modelId = session?.providerModel ?? this.providerManager.getCurrentModel()
+    if (!providerId || !modelId) return undefined
+    return this.providerManager
+      .getProviders()
+      .find((provider) => provider.id === providerId)
+      ?.models.find((model) => model.id === modelId)?.compactionThreshold
+  }
+
   /**
    * Get the effective working directory for a session.
    * Uses workspace path when active, otherwise the project workdir.

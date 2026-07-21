@@ -110,6 +110,7 @@ function createMockSessionManager(overrides?: Record<string, any>): SessionManag
     }),
     getCurrentModelSettings: vi.fn().mockReturnValue({}),
     getCurrentModelContext: vi.fn().mockReturnValue(200000),
+    getModelCompactionThreshold: vi.fn().mockReturnValue(undefined),
     setCurrentContextSize: vi.fn(),
     getDynamicContextChanged: vi.fn().mockReturnValue(false),
     setDynamicContextChanged: vi.fn(),

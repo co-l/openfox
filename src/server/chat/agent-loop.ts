@@ -368,7 +368,11 @@ export async function runTopLevelAgentLoop(
       const contextState = sessionManager.getContextState(sessionId)
       const { shouldCompact, appendCompactionPrompt } = await import('../context/compactor.js')
       if (
-        shouldCompact(contextState.currentTokens, contextState.maxTokens, runtimeConfig.context.compactionThreshold)
+        shouldCompact(
+          contextState.currentTokens,
+          contextState.maxTokens,
+          sessionManager.getModelCompactionThreshold(sessionId) ?? runtimeConfig.context.compactionThreshold,
+        )
       ) {
         appendCompactionPrompt(sessionId, append)
         compacting = true

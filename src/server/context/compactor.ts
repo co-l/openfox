@@ -38,10 +38,3 @@ export function appendCompactionPrompt(
 export function shouldCompact(currentTokens: number, maxTokens: number, threshold: number): boolean {
   return currentTokens > maxTokens * threshold
 }
-
-/**
- * Calculate the target token count for compaction.
- */
-export function getCompactionTarget(maxTokens: number, targetRatio: number): number {
-  return Math.floor(maxTokens * targetRatio)
-}

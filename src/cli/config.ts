@@ -41,6 +41,7 @@ const modelConfigSchema = z
     topP: z.number().optional(),
     topK: z.number().optional(),
     maxTokens: z.number().optional(),
+    compactionThreshold: z.number().min(0).max(0.95).optional(),
   })
   .passthrough() as z.ZodType<ModelConfig>
 
@@ -61,24 +62,22 @@ const providerSchema = z
     transportAdapter: z.string().optional(),
     credentialRef: z.string().optional(),
   })
-  .transform(
-    (provider): Provider => ({
-      id: provider.id,
-      ...(provider.preset ? { preset: provider.preset } : {}),
-      name: provider.name ?? provider.id,
-      url: provider.url ?? '',
-      backend: provider.backend ?? 'unknown',
-      ...(provider.apiKey ? { apiKey: provider.apiKey } : {}),
-      models: provider.models ?? [],
-      isActive: provider.isActive ?? false,
-      createdAt: provider.createdAt ?? new Date().toISOString(),
-      ...(provider.isLocal !== undefined ? { isLocal: provider.isLocal } : {}),
-      ...(provider.thinkingField ? { thinkingField: provider.thinkingField } : {}),
-      ...(provider.authAdapter ? { authAdapter: provider.authAdapter } : {}),
-      ...(provider.transportAdapter ? { transportAdapter: provider.transportAdapter } : {}),
-      ...(provider.credentialRef ? { credentialRef: provider.credentialRef } : {}),
-    }),
-  )
+  .transform((provider): Provider => ({
+    id: provider.id,
+    ...(provider.preset ? { preset: provider.preset } : {}),
+    name: provider.name ?? provider.id,
+    url: provider.url ?? '',
+    backend: provider.backend ?? 'unknown',
+    ...(provider.apiKey ? { apiKey: provider.apiKey } : {}),
+    models: provider.models ?? [],
+    isActive: provider.isActive ?? false,
+    createdAt: provider.createdAt ?? new Date().toISOString(),
+    ...(provider.isLocal !== undefined ? { isLocal: provider.isLocal } : {}),
+    ...(provider.thinkingField ? { thinkingField: provider.thinkingField } : {}),
+    ...(provider.authAdapter ? { authAdapter: provider.authAdapter } : {}),
+    ...(provider.transportAdapter ? { transportAdapter: provider.transportAdapter } : {}),
+    ...(provider.credentialRef ? { credentialRef: provider.credentialRef } : {}),
+  }))
 
 const serverSchema = z.object({
   port: z.number().default(10369),

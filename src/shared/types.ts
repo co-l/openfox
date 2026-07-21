@@ -106,9 +106,7 @@ export type MessageRole = 'user' | 'assistant' | 'system' | 'tool'
 
 // Segment types for preserving streaming order
 export type MessageSegment =
-  | { type: 'text'; content: string }
-  | { type: 'thinking'; content: string }
-  | { type: 'tool_call'; toolCallId: string }
+  { type: 'text'; content: string } | { type: 'thinking'; content: string } | { type: 'tool_call'; toolCallId: string }
 
 export interface MessageStats {
   providerId: string
@@ -508,6 +506,7 @@ export interface ModelConfig {
   topP?: number
   topK?: number
   maxTokens?: number
+  compactionThreshold?: number
   supportsVision?: boolean
   // Per-model thinking configuration
   thinkingEnabled?: boolean
