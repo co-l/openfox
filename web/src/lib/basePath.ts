@@ -1,4 +1,4 @@
-function detectBasePath(): string {
+export function detectBasePath(): string {
   if (typeof document === 'undefined') return ''
 
   const script = Array.from(document.scripts).find((item) => {
