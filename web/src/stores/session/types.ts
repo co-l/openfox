@@ -42,6 +42,7 @@ export interface SessionState {
   currentSession: Session | null
   unreadSessionIds: string[]
   messages: Message[]
+  hiddenCount: number
   currentTodos: Todo[]
   contextState: ContextState | null
   subAgentContextStates: Record<string, ContextState>

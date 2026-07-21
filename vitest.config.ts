@@ -4,6 +4,7 @@ import path from 'path'
 export default defineConfig({
   resolve: {
     alias: {
+      '@': path.resolve(import.meta.dirname, 'web/src'),
       '@shared': path.resolve(import.meta.dirname, 'src/shared'),
     },
     // Both the root and web/ trees can end up with their own React copy

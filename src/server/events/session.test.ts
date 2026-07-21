@@ -6,7 +6,8 @@
 
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import Database from 'better-sqlite3'
-import { initEventStore } from './store.js'
+import { initEventStore, getEventStore } from './store.js'
+import { buildSnapshot } from './folding.js'
 import {
   emitSessionInitialized,
   emitUserMessage,
@@ -29,6 +30,7 @@ import {
   getSessionState,
   getCurrentContextWindowId,
   getCurrentWindowMessages,
+  getContextMessages,
   getReadFilesCache,
   isFileInCache,
 } from './session.js'
@@ -531,5 +533,127 @@ describe('getSessionState with missing session.initialized', () => {
     expect(state!.mode).toBe('planner')
     expect(state!.isRunning).toBe(false)
     expect(state!.messages).toBeDefined()
+  })
+})
+
+// ============================================================================
+// Snapshot-optimized loading (Criterion 6A)
+// ============================================================================
+
+describe('getSessionState — snapshot-optimized (getEventsSinceSnapshot)', () => {
+  it('should return all messages when snapshot exists with events after', () => {
+    const sessionId = 'snapshot-session-a'
+    initSession(sessionId, 'win-1')
+
+    // Emit several messages
+    emitUserMessage(sessionId, 'Hello', { contextWindowId: 'win-1' })
+    const msg1 = emitAssistantMessageStart(sessionId, { contextWindowId: 'win-1' })
+    emitMessageDelta(sessionId, msg1, 'Hi there')
+    emitMessageDone(sessionId, msg1)
+
+    // Simulate a snapshot being created (as happens in production)
+    const stateBeforeSnapshot = getSessionState(sessionId)
+    const eventStore = getEventStore()
+    const snapshot = buildSnapshot(stateBeforeSnapshot!, 5)
+    eventStore.append(sessionId, { type: 'turn.snapshot', data: snapshot })
+
+    // Emit more events after the snapshot
+    emitUserMessage(sessionId, 'World', { contextWindowId: 'win-1' })
+    const msg2 = emitAssistantMessageStart(sessionId, { contextWindowId: 'win-1' })
+    emitMessageDelta(sessionId, msg2, 'Hello back')
+    emitMessageDone(sessionId, msg2)
+
+    // getSessionState should return all messages from both snapshot and newer events
+    const state = getSessionState(sessionId)
+    expect(state).toBeDefined()
+    expect(state!.messages.length).toBeGreaterThanOrEqual(4)
+    const contents = state!.messages.map((m) => m.content)
+    expect(contents).toContain('Hello')
+    expect(contents).toContain('Hi there')
+    expect(contents).toContain('World')
+    expect(contents).toContain('Hello back')
+  })
+
+  it('should return correct state when no snapshot exists', () => {
+    const sessionId = 'snapshot-session-b'
+    initSession(sessionId, 'win-1')
+
+    emitUserMessage(sessionId, 'Message A', { contextWindowId: 'win-1' })
+    emitUserMessage(sessionId, 'Message B', { contextWindowId: 'win-1' })
+
+    const state = getSessionState(sessionId)
+    expect(state).toBeDefined()
+    expect(state!.messages.length).toBeGreaterThanOrEqual(2)
+  })
+
+  it('should return undefined for session with only snapshot but no session.initialized', () => {
+    const sessionId = 'snapshot-session-c'
+    const eventStore = getEventStore()
+
+    // Directly insert a snapshot without session.initialized
+    eventStore.append(sessionId, {
+      type: 'turn.snapshot',
+      data: {
+        mode: 'builder',
+        phase: 'build',
+        isRunning: false,
+        messages: [],
+        criteria: [],
+        metadataEntries: {},
+        contextState: {
+          currentTokens: 0,
+          maxTokens: 200000,
+          compactionCount: 0,
+          dangerZone: false,
+          canCompact: false,
+          dynamicContextChanged: false,
+        },
+        currentContextWindowId: 'win-1',
+        todos: [],
+        readFiles: [],
+        snapshotSeq: 1,
+        snapshotAt: Date.now(),
+        sessionInit: { projectId: 'proj-1', workdir: '/tmp', contextWindowId: 'win-1' },
+      },
+    })
+
+    const state = getSessionState(sessionId)
+    expect(state).toBeDefined()
+  })
+})
+
+describe('getContextMessages — snapshot-optimized (getEventsSinceSnapshot)', () => {
+  it('should return context messages when snapshot exists with events after', () => {
+    const sessionId = 'ctx-snapshot-a'
+    initSession(sessionId, 'win-1')
+
+    emitUserMessage(sessionId, 'Hello', { contextWindowId: 'win-1' })
+    const msg1 = emitAssistantMessageStart(sessionId, { contextWindowId: 'win-1' })
+    emitMessageDelta(sessionId, msg1, 'Hi there')
+    emitMessageDone(sessionId, msg1)
+
+    // Simulate snapshot
+    const eventStore = getEventStore()
+    const stateBeforeSnapshot = getSessionState(sessionId)
+    const snapshot = buildSnapshot(stateBeforeSnapshot!, 5)
+    eventStore.append(sessionId, { type: 'turn.snapshot', data: snapshot })
+
+    // Events after snapshot
+    emitUserMessage(sessionId, 'World', { contextWindowId: 'win-1' })
+    const msg2 = emitAssistantMessageStart(sessionId, { contextWindowId: 'win-1' })
+    emitMessageDelta(sessionId, msg2, 'Hello back')
+    emitMessageDone(sessionId, msg2)
+
+    const messages = getContextMessages(sessionId)
+    expect(messages.length).toBeGreaterThanOrEqual(4)
+    const contents = messages.map((m) => m.content)
+    expect(contents).toContain('Hello')
+    expect(contents).toContain('Hi there')
+    expect(contents).toContain('World')
+    expect(contents).toContain('Hello back')
+  })
+
+  it('should return empty array for non-existent session', () => {
+    expect(getContextMessages('nonexistent')).toEqual([])
   })
 })

@@ -170,6 +170,7 @@ export interface PendingQuestionPayload {
 export interface SessionStatePayload {
   session: Session
   messages: Message[] // All messages for this session
+  hiddenCount?: number // Number of older items not included due to maxVisibleItems
   pendingConfirmations: PendingPathConfirmationPayload[]
   pendingQuestions?: PendingQuestionPayload[]
   gitStatus?: GitStatusPayload // Current branch and diff, embedded on session load

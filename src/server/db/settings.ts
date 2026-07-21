@@ -111,3 +111,8 @@ export function getAllSettings(): Record<string, string> {
   }
   return result
 }
+
+export function getMaxVisibleItems(): number {
+  const setting = getSetting(SETTINGS_KEYS.DISPLAY_MAX_VISIBLE_ITEMS)
+  return setting ? parseInt(setting, 10) : 0
+}

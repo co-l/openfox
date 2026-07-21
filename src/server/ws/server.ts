@@ -10,7 +10,8 @@ import { handleTerminalMessage, unsubscribeAllFromTerminal } from './terminal.js
 import type { Config } from '../config.js'
 import type { LLMClientWithModel } from '../llm/client.js'
 import type { SessionManager } from '../session/index.js'
-import { getEventStore } from '../events/index.js'
+import { getEventStore, combineEventsWithSnapshot } from '../events/index.js'
+import { getMaxVisibleItems } from '../db/settings.js'
 
 import type { Message, Provider, ProviderBackend, StatsIdentity, Attachment } from '../../shared/types.js'
 import type { ProviderManager } from '../provider-manager.js'
@@ -623,8 +624,11 @@ export function createWebSocketServer(
     if (event.type === 'session_updated') {
       const updatedSession = event.session
       const eventStore = getEventStore()
-      const events = eventStore.getEvents(updatedSession.id)
-      const messages = buildMessagesFromStoredEvents(events)
+      const { snapshot, events: eventsSinceSnapshot } = eventStore.getEventsSinceSnapshot(updatedSession.id)
+      const events = combineEventsWithSnapshot(updatedSession.id, snapshot, eventsSinceSnapshot)
+
+      const maxVisible = getMaxVisibleItems()
+      const { messages, hiddenCount } = buildMessagesFromStoredEvents(events, maxVisible || undefined)
       const pendingConfirmations = foldPendingConfirmations(events)
       const pendingQuestions = getPendingQuestionsForSession(updatedSession.id)
 
@@ -648,7 +652,15 @@ export function createWebSocketServer(
       // Broadcast session.state immediately — synchronous, no await
       broadcastForSession(
         updatedSession.id,
-        createSessionStateMessage(updatedSession, messages, pendingConfirmations, pendingQuestions),
+        createSessionStateMessage(
+          updatedSession,
+          messages,
+          pendingConfirmations,
+          pendingQuestions,
+          undefined,
+          undefined,
+          hiddenCount,
+        ),
       )
 
       // Always send git.status after a session update to sync workspace/branch in the UI,

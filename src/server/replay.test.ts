@@ -29,7 +29,7 @@ function mountReplayRoute(
     const { buildMessagesFromStoredEvents } = await import('./events/folding.js')
     const eventStore = getEventStore()
     const events = eventStore.getEvents(sessionId)
-    const messages = buildMessagesFromStoredEvents(events)
+    const { messages } = buildMessagesFromStoredEvents(events)
 
     const msgIndex = messages.findIndex((m) => m.id === messageId)
     if (msgIndex === -1) {

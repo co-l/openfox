@@ -100,4 +100,5 @@ export {
   emitMetadataSet,
   truncateSessionMessages,
   getRecentUserPromptsForSession,
+  combineEventsWithSnapshot,
 } from './session.js'

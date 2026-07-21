@@ -195,6 +195,7 @@ export function handleServerMessage(
         sessions: mergeSessionIntoSummary(get().sessions, payload.session),
         unreadSessionIds: removeUnreadSessionId(get().unreadSessionIds, sessionId),
         messages: payload.messages,
+        hiddenCount: payload.hiddenCount ?? 0,
         currentTodos: [],
         pendingPathConfirmations: confs,
         crossSessionConfirmations: crossCleanup,

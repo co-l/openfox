@@ -123,15 +123,56 @@ export function applyTurnEventsToSnapshotMessages(
   return messages.map((msg) => ({ ...msg, isStreaming: msg.isStreaming ?? true }))
 }
 
-export function buildMessagesFromStoredEvents(events: StoredEvent[]): Message[] {
+export function buildMessagesFromStoredEvents(
+  events: StoredEvent[],
+  maxVisibleItems?: number,
+): { messages: Message[]; hiddenCount: number } {
+  // hiddenCount counts "user-facing messages" (distinct message.start IDs),
+  // not all rendered items. This is intentional: tool results and other
+  // expanded items are treated as belonging to their parent message, so
+  // truncation that removes a message also removes its children without
+  // inflating the hidden count.
   const snapshotEvent = [...events].reverse().find((event) => event.type === 'turn.snapshot')
   if (snapshotEvent) {
     const snapshot = snapshotEvent.data as SessionSnapshot
-    const snapshotMessages = snapshot.messages.map(snapshotMessageToMessage)
     const laterEvents = events.filter((event) => event.seq > snapshotEvent.seq)
-    return applyStoredMessageEvents(snapshotMessages, laterEvents)
+
+    // Count distinct messages from later events (message.start events, not all event types)
+    const laterMessageCount = new Set(
+      laterEvents.filter((e) => e.type === 'message.start').map((e) => (e.data as { messageId: string }).messageId),
+    ).size
+
+    // Total original messages before any truncation
+    const totalOriginal = snapshot.messages.length + laterMessageCount
+
+    // Apply maxVisibleItems: slice snapshot messages BEFORE deep-clone
+    let preSlice: SnapshotMessage[]
+    if (maxVisibleItems !== undefined && maxVisibleItems > 0 && snapshot.messages.length > maxVisibleItems) {
+      preSlice = snapshot.messages.slice(-maxVisibleItems)
+    } else {
+      preSlice = snapshot.messages
+    }
+
+    const snapshotMessages = preSlice.map(snapshotMessageToMessage)
+    const messages = applyStoredMessageEvents(snapshotMessages, laterEvents)
+
+    // If we need to further truncate after applying later events
+    if (maxVisibleItems !== undefined && maxVisibleItems > 0 && messages.length > maxVisibleItems) {
+      return { messages: messages.slice(-maxVisibleItems), hiddenCount: totalOriginal - maxVisibleItems }
+    }
+
+    // Compute hiddenCount from any pre-clone slicing
+    const hiddenCount =
+      maxVisibleItems !== undefined && maxVisibleItems > 0 && totalOriginal > maxVisibleItems
+        ? totalOriginal - maxVisibleItems
+        : 0
+    return { messages, hiddenCount }
   }
-  return applyStoredMessageEvents([], events)
+  const messages = applyStoredMessageEvents([], events)
+  if (maxVisibleItems !== undefined && maxVisibleItems > 0 && messages.length > maxVisibleItems) {
+    return { messages: messages.slice(-maxVisibleItems), hiddenCount: messages.length - maxVisibleItems }
+  }
+  return { messages, hiddenCount: 0 }
 }
 
 export function buildContextMessagesFromStoredEvents(

@@ -50,7 +50,7 @@ describe('apply-events.ts new handlers', () => {
         },
       ]
 
-      const messages = buildMessagesFromStoredEvents(events)
+      const { messages } = buildMessagesFromStoredEvents(events)
       const tc = messages[0]!.toolCalls![0]!
 
       expect(tc.streamingOutput).toHaveLength(2)
@@ -98,7 +98,7 @@ describe('apply-events.ts new handlers', () => {
         },
       ]
 
-      const messages = buildMessagesFromStoredEvents(events)
+      const { messages } = buildMessagesFromStoredEvents(events)
       const retries = (messages[0] as { formatRetries?: { attempt: number; maxAttempts: number }[] }).formatRetries
 
       expect(retries).toHaveLength(2)
@@ -119,7 +119,7 @@ describe('apply-events.ts new handlers', () => {
         },
       ]
 
-      const messages = buildMessagesFromStoredEvents(events)
+      const { messages } = buildMessagesFromStoredEvents(events)
       expect((messages[0] as { isComplete?: boolean; completeReason?: string }).isComplete).toBe(true)
       expect((messages[0] as { isComplete?: boolean; completeReason?: string }).completeReason).toBe('complete')
     })
@@ -181,7 +181,7 @@ describe('event folding', () => {
       },
     ]
 
-    expect(buildMessagesFromStoredEvents(events)).toEqual([
+    expect(buildMessagesFromStoredEvents(events).messages).toEqual([
       {
         id: 'm1',
         role: 'assistant',
@@ -564,7 +564,7 @@ describe('event folding', () => {
       },
     ]
 
-    const messages = buildMessagesFromStoredEvents(events)
+    const { messages } = buildMessagesFromStoredEvents(events)
     expect(messages).toHaveLength(2)
     expect(messages[0]!.id).toBe('msg-1')
     expect(messages[0]!.content).toBe('Hello')
@@ -617,7 +617,7 @@ describe('event folding', () => {
       },
     ]
 
-    const messages = buildMessagesFromStoredEvents(events)
+    const { messages } = buildMessagesFromStoredEvents(events)
     expect(messages).toHaveLength(1)
     expect(messages[0]!.toolCalls).toBeDefined()
     expect(messages[0]!.toolCalls![0]!.name).toBe('read_file')
@@ -694,7 +694,7 @@ describe('event folding', () => {
       },
     ]
 
-    expect(buildMessagesFromStoredEvents(events)).toEqual([
+    expect(buildMessagesFromStoredEvents(events).messages).toEqual([
       {
         id: 'msg-1',
         role: 'assistant',
@@ -786,7 +786,7 @@ describe('event folding', () => {
       },
     ]
 
-    expect(buildMessagesFromStoredEvents(events)).toEqual([
+    expect(buildMessagesFromStoredEvents(events).messages).toEqual([
       {
         id: 'msg-1',
         role: 'user',
@@ -2016,5 +2016,294 @@ describe('event folding', () => {
       // Currently: no-snapshot = [user, tool], snapshot = [tool, user] — this assertion fails
       expect(orderNoSnapshot).toEqual(orderWithSnapshot)
     })
+  })
+})
+
+// ============================================================================
+// buildMessagesFromStoredEvents — maxVisibleItems (Criterion 8C)
+// ============================================================================
+
+describe('buildMessagesFromStoredEvents with maxVisibleItems', () => {
+  const baseEvent = {
+    seq: 1,
+    sessionId: 'session-1',
+    timestamp: Date.parse('2024-01-01T00:00:00.000Z'),
+  }
+
+  it('should slice snapshot messages before deep-clone when maxVisibleItems > 0', () => {
+    const snapshotMessages = Array.from({ length: 100 }, (_, i) => ({
+      id: `snap-msg-${i + 1}`,
+      role: (i % 2 === 0 ? 'user' : 'assistant') as 'user' | 'assistant',
+      content: `Snapshot message ${i + 1}`,
+      timestamp: baseEvent.timestamp + i * 1000,
+    }))
+
+    const snapshotEvent = {
+      ...baseEvent,
+      seq: 1,
+      type: 'turn.snapshot' as const,
+      data: {
+        mode: 'builder' as const,
+        phase: 'build' as const,
+        isRunning: false,
+        messages: snapshotMessages,
+        criteria: [],
+        metadataEntries: {},
+        contextState: {
+          currentTokens: 0,
+          maxTokens: 200000,
+          compactionCount: 0,
+          dangerZone: false,
+          canCompact: false,
+          dynamicContextChanged: false,
+        },
+        currentContextWindowId: 'win-1',
+        todos: [],
+        readFiles: [],
+        snapshotSeq: 1,
+        snapshotAt: baseEvent.timestamp,
+      },
+    }
+
+    const result = buildMessagesFromStoredEvents([snapshotEvent], 10)
+
+    expect(result.messages).toHaveLength(10)
+    expect(result.messages[0]!.id).toBe('snap-msg-91')
+    expect(result.messages[9]!.id).toBe('snap-msg-100')
+    expect(result.hiddenCount).toBe(90)
+  })
+
+  it('should return all messages when maxVisibleItems is 0', () => {
+    const snapshotMessages = Array.from({ length: 5 }, (_, i) => ({
+      id: `snap-msg-${i + 1}`,
+      role: 'user' as const,
+      content: `Message ${i + 1}`,
+      timestamp: baseEvent.timestamp + i * 1000,
+    }))
+
+    const snapshotEvent = {
+      ...baseEvent,
+      seq: 1,
+      type: 'turn.snapshot' as const,
+      data: {
+        mode: 'builder' as const,
+        phase: 'build' as const,
+        isRunning: false,
+        messages: snapshotMessages,
+        criteria: [],
+        metadataEntries: {},
+        contextState: {
+          currentTokens: 0,
+          maxTokens: 200000,
+          compactionCount: 0,
+          dangerZone: false,
+          canCompact: false,
+          dynamicContextChanged: false,
+        },
+        currentContextWindowId: 'win-1',
+        todos: [],
+        readFiles: [],
+        snapshotSeq: 1,
+        snapshotAt: baseEvent.timestamp,
+      },
+    }
+
+    const result = buildMessagesFromStoredEvents([snapshotEvent], 0)
+
+    expect(result.messages).toHaveLength(5)
+    expect(result.hiddenCount).toBe(0)
+  })
+
+  it('should return all messages when maxVisibleItems is unset (undefined)', () => {
+    const snapshotMessages = Array.from({ length: 5 }, (_, i) => ({
+      id: `snap-msg-${i + 1}`,
+      role: 'user' as const,
+      content: `Message ${i + 1}`,
+      timestamp: baseEvent.timestamp + i * 1000,
+    }))
+
+    const snapshotEvent = {
+      ...baseEvent,
+      seq: 1,
+      type: 'turn.snapshot' as const,
+      data: {
+        mode: 'builder' as const,
+        phase: 'build' as const,
+        isRunning: false,
+        messages: snapshotMessages,
+        criteria: [],
+        metadataEntries: {},
+        contextState: {
+          currentTokens: 0,
+          maxTokens: 200000,
+          compactionCount: 0,
+          dangerZone: false,
+          canCompact: false,
+          dynamicContextChanged: false,
+        },
+        currentContextWindowId: 'win-1',
+        todos: [],
+        readFiles: [],
+        snapshotSeq: 1,
+        snapshotAt: baseEvent.timestamp,
+      },
+    }
+
+    const result = buildMessagesFromStoredEvents([snapshotEvent])
+
+    expect(result.messages).toHaveLength(5)
+    expect(result.hiddenCount).toBe(0)
+  })
+
+  it('should return correct hiddenCount when maxVisibleItems > messages.length', () => {
+    const snapshotMessages = Array.from({ length: 3 }, (_, i) => ({
+      id: `snap-msg-${i + 1}`,
+      role: 'user' as const,
+      content: `Message ${i + 1}`,
+      timestamp: baseEvent.timestamp + i * 1000,
+    }))
+
+    const snapshotEvent = {
+      ...baseEvent,
+      seq: 1,
+      type: 'turn.snapshot' as const,
+      data: {
+        mode: 'builder' as const,
+        phase: 'build' as const,
+        isRunning: false,
+        messages: snapshotMessages,
+        criteria: [],
+        metadataEntries: {},
+        contextState: {
+          currentTokens: 0,
+          maxTokens: 200000,
+          compactionCount: 0,
+          dangerZone: false,
+          canCompact: false,
+          dynamicContextChanged: false,
+        },
+        currentContextWindowId: 'win-1',
+        todos: [],
+        readFiles: [],
+        snapshotSeq: 1,
+        snapshotAt: baseEvent.timestamp,
+      },
+    }
+
+    const result = buildMessagesFromStoredEvents([snapshotEvent], 50)
+
+    expect(result.messages).toHaveLength(3)
+    expect(result.hiddenCount).toBe(0)
+  })
+
+  it('should include events after snapshot in the truncated result', () => {
+    const snapshotMessages = Array.from({ length: 10 }, (_, i) => ({
+      id: `snap-msg-${i + 1}`,
+      role: 'user' as const,
+      content: `Snapshot message ${i + 1}`,
+      timestamp: baseEvent.timestamp + i * 1000,
+    }))
+
+    const snapshotEvent = {
+      ...baseEvent,
+      seq: 10,
+      type: 'turn.snapshot' as const,
+      data: {
+        mode: 'builder' as const,
+        phase: 'build' as const,
+        isRunning: false,
+        messages: snapshotMessages,
+        criteria: [],
+        metadataEntries: {},
+        contextState: {
+          currentTokens: 0,
+          maxTokens: 200000,
+          compactionCount: 0,
+          dangerZone: false,
+          canCompact: false,
+          dynamicContextChanged: false,
+        },
+        currentContextWindowId: 'win-1',
+        todos: [],
+        readFiles: [],
+        snapshotSeq: 10,
+        snapshotAt: baseEvent.timestamp,
+      },
+    }
+
+    const laterEvent = {
+      ...baseEvent,
+      seq: 11,
+      type: 'message.start' as const,
+      data: { messageId: 'later-msg', role: 'user' as const, content: 'New message after snapshot' },
+    }
+    const laterDoneEvent = {
+      ...baseEvent,
+      seq: 12,
+      type: 'message.done' as const,
+      data: { messageId: 'later-msg' },
+    }
+
+    const result = buildMessagesFromStoredEvents([snapshotEvent, laterEvent, laterDoneEvent], 5)
+
+    expect(result.messages).toHaveLength(5)
+    // Should include the latest snapshot messages + any later events (all within the limit)
+    const contents = result.messages.map((m) => m.content)
+    expect(contents).toContain('New message after snapshot')
+    expect(result.hiddenCount).toBe(6) // 10 snap msgs + 1 later msg = 11 total, 11 - 5 = 6
+  })
+
+  it('should deep-clone only the retained messages when maxVisibleItems is set', () => {
+    // Create snapshot with messages that have complex nested structures
+    const snapshotMessages = Array.from({ length: 20 }, (_, i) => ({
+      id: `msg-${i + 1}`,
+      role: 'assistant' as const,
+      content: `Content ${i + 1}`,
+      timestamp: baseEvent.timestamp + i * 1000,
+      toolCalls: [
+        {
+          id: `tc-${i}`,
+          name: 'test_tool',
+          arguments: { key: 'value' },
+        },
+      ],
+      attachments: [{ id: `att-${i}`, filename: 'test.txt', mimeType: 'text/plain' as const, size: 100 }],
+    }))
+
+    const snapshotEvent = {
+      ...baseEvent,
+      seq: 1,
+      type: 'turn.snapshot' as const,
+      data: {
+        mode: 'builder' as const,
+        phase: 'build' as const,
+        isRunning: false,
+        messages: snapshotMessages,
+        criteria: [],
+        metadataEntries: {},
+        contextState: {
+          currentTokens: 0,
+          maxTokens: 200000,
+          compactionCount: 0,
+          dangerZone: false,
+          canCompact: false,
+          dynamicContextChanged: false,
+        },
+        currentContextWindowId: 'win-1',
+        todos: [],
+        readFiles: [],
+        snapshotSeq: 1,
+        snapshotAt: baseEvent.timestamp,
+      },
+    }
+
+    const result = buildMessagesFromStoredEvents([snapshotEvent], 3)
+
+    // Only 3 messages should be deep-cloned (not all 20)
+    expect(result.messages).toHaveLength(3)
+    expect(result.messages[0]!.id).toBe('msg-18')
+    expect(result.messages[0]!.toolCalls).toBeDefined()
+    expect(result.messages[0]!.toolCalls![0]!.id).toBe('tc-17')
+    expect(result.hiddenCount).toBe(17)
   })
 })

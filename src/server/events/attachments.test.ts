@@ -40,7 +40,7 @@ describe('Attachment Preservation in Event Folding', () => {
         },
       ]
 
-      const messages = buildMessagesFromStoredEvents(events)
+      const { messages } = buildMessagesFromStoredEvents(events)
 
       expect(messages).toHaveLength(1)
       const msg = messages[0]
@@ -72,7 +72,7 @@ describe('Attachment Preservation in Event Folding', () => {
         },
       ]
 
-      const messages = buildMessagesFromStoredEvents(events)
+      const { messages } = buildMessagesFromStoredEvents(events)
 
       expect(messages).toHaveLength(1)
       expect(messages[0]?.attachments).toBeUndefined()

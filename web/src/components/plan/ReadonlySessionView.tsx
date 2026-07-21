@@ -13,6 +13,7 @@ export function ReadonlySessionView() {
 
   const [session, setSession] = useState<Session | null>(null)
   const [messages, setMessages] = useState<Message[]>([])
+  const [hiddenCount, setHiddenCount] = useState(0)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
@@ -21,7 +22,7 @@ export function ReadonlySessionView() {
     setLoading(true)
     setError(null)
     try {
-      const res = await authFetch(`/api/sessions/${sessionId}`)
+      const res = await authFetch(`/api/sessions/${sessionId}?full=true`)
       if (!res.ok) {
         setError(`Failed to load session (${res.status})`)
         setLoading(false)
@@ -30,6 +31,7 @@ export function ReadonlySessionView() {
       const data = await res.json()
       setSession(data.session ?? null)
       setMessages((data.messages as Message[]) ?? [])
+      setHiddenCount((data.hiddenCount as number) ?? 0)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unknown error')
     } finally {
@@ -83,7 +85,9 @@ export function ReadonlySessionView() {
           <h1 className="text-sm font-medium text-text-primary truncate">
             {session?.metadata?.title ?? 'Session'} — Read-only view
           </h1>
-          <span className="text-xs text-text-muted whitespace-nowrap">{messages.length} messages</span>
+          <span className="text-xs text-text-muted whitespace-nowrap">
+            {messages.length} messages{hiddenCount > 0 ? ` (${hiddenCount} older hidden)` : ''}
+          </span>
         </div>
         <div className="flex items-center gap-2">
           <button

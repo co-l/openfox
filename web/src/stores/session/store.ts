@@ -124,6 +124,7 @@ export const useSessionStore = create<SessionState>((set, get) => {
     currentSession: null,
     unreadSessionIds: [],
     messages: [],
+    hiddenCount: 0,
     currentTodos: [],
     contextState: null,
     subAgentContextStates: {},
@@ -333,6 +334,7 @@ export const useSessionStore = create<SessionState>((set, get) => {
         set({
           currentSession: data.session,
           messages: loadedMessages,
+          hiddenCount: (data.hiddenCount as number | undefined) ?? 0,
           contextState: data.contextState,
           queuedMessages: (data.queueState as QueuedMessage[] | undefined) ?? [],
           pendingPathConfirmations: (data.pendingConfirmations ?? []) as PendingPathConfirmation[],
@@ -501,6 +503,7 @@ export const useSessionStore = create<SessionState>((set, get) => {
       set((state) => ({
         currentSession: null,
         messages: [],
+        hiddenCount: 0,
         currentTodos: [],
         contextState: null,
         restoredInput: null,
@@ -600,6 +603,9 @@ export const useSessionStore = create<SessionState>((set, get) => {
         if (data.session) {
           set({ currentSession: data.session })
         }
+        if (data.messages) {
+          set({ messages: data.messages, hiddenCount: (data.hiddenCount as number) ?? 0 })
+        }
       } catch (error) {
         console.error('Error switching mode:', error)
       }
@@ -665,6 +671,7 @@ export const useSessionStore = create<SessionState>((set, get) => {
         set({
           currentSession: data.session,
           messages: data.messages ?? [],
+          hiddenCount: (data.hiddenCount as number) ?? 0,
           contextState: data.contextState,
         })
         return data.session

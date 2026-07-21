@@ -9,7 +9,7 @@
 import type { LLMClientWithModel } from '../llm/client.js'
 import type { LLMMessage } from '../llm/types.js'
 import type { Session } from '../../shared/types.js'
-import type { StoredEvent, TurnEvent } from '../events/types.js'
+import type { StoredEvent, TurnEvent, SessionSnapshot } from '../events/types.js'
 import type { ProviderManager } from '../provider-manager.js'
 import type { ServerMessage } from '../../shared/protocol.js'
 import { logger } from '../utils/logger.js'
@@ -19,6 +19,8 @@ import { createSessionStateMessage } from '../ws/protocol.js'
 import { getPendingQuestionsForSession } from '../tools/index.js'
 import { getSessionMessageCount } from '../utils/session-utils.js'
 import { getRuntimeConfig } from '../runtime-config.js'
+import { combineEventsWithSnapshot } from '../events/index.js'
+import { getMaxVisibleItems } from '../db/settings.js'
 
 // ============================================================================
 // Ultra-Lightweight Prompt
@@ -175,7 +177,10 @@ export function needsNameGenerationCheck(
 
 export interface ApplyGeneratedSessionNameDeps {
   sessionManager: { getSession: (id: string) => Session | null }
-  eventStore: { getEvents: (sessionId: string) => StoredEvent[]; append: (sessionId: string, event: TurnEvent) => void }
+  eventStore: {
+    getEventsSinceSnapshot: (sessionId: string) => { snapshot: SessionSnapshot | undefined; events: StoredEvent[] }
+    append: (sessionId: string, event: TurnEvent) => void
+  }
   broadcastForSession: (sessionId: string, msg: ReturnType<typeof createSessionStateMessage>) => void
 }
 
@@ -187,13 +192,24 @@ export function applyGeneratedSessionName(sessionId: string, name: string, deps:
   })
   const updatedSession = deps.sessionManager.getSession(sessionId)
   if (updatedSession) {
-    const events = deps.eventStore.getEvents(sessionId)
-    const messages = buildMessagesFromStoredEvents(events)
+    const { snapshot, events: eventsSinceSnapshot } = deps.eventStore.getEventsSinceSnapshot(sessionId)
+    const events = combineEventsWithSnapshot(sessionId, snapshot, eventsSinceSnapshot)
+    const maxVisibleItems = getMaxVisibleItems()
+    const { messages, hiddenCount } = buildMessagesFromStoredEvents(events, maxVisibleItems || undefined)
     const pendingConfirmations = foldPendingConfirmations(events)
     const pendingQuestions = getPendingQuestionsForSession(sessionId)
+
     deps.broadcastForSession(
       sessionId,
-      createSessionStateMessage(updatedSession, messages, pendingConfirmations, pendingQuestions),
+      createSessionStateMessage(
+        updatedSession,
+        messages,
+        pendingConfirmations,
+        pendingQuestions,
+        undefined,
+        undefined,
+        hiddenCount,
+      ),
     )
   }
 }
@@ -206,7 +222,10 @@ export interface GenerateSessionNameForSessionDeps {
   sessionManager: { getSession: (id: string) => Session | null }
   providerManager: ProviderManager
   broadcastForSession: (sessionId: string, msg: ServerMessage) => void
-  eventStore: { getEvents: (sessionId: string) => StoredEvent[]; append: (sessionId: string, event: TurnEvent) => void }
+  eventStore: {
+    getEventsSinceSnapshot: (sessionId: string) => { snapshot: SessionSnapshot | undefined; events: StoredEvent[] }
+    append: (sessionId: string, event: TurnEvent) => void
+  }
   /** Optional factory to get an LLM client. When provided (e.g. from QueueProcessor),
    *  it's used instead of creating a new client via dynamic import. This ensures the
    *  mock LLM client is used in e2e tests (OPENFOX_MOCK_LLM=true). */

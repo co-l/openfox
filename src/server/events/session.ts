@@ -43,6 +43,22 @@ import {
   type FoldedSessionState,
 } from './folding.js'
 
+export function combineEventsWithSnapshot(
+  sessionId: string,
+  snapshot: import('./types.js').SessionSnapshot | undefined,
+  events: import('./types.js').StoredEvent[],
+): import('./types.js').StoredEvent[] {
+  if (!snapshot) return events
+  const snapshotEvent: import('./types.js').StoredEvent = {
+    seq: 0,
+    timestamp: snapshot.snapshotAt,
+    sessionId,
+    type: 'turn.snapshot',
+    data: snapshot,
+  }
+  return [snapshotEvent, ...events]
+}
+
 function toSnapshotMessage(message: import('../../shared/types.js').Message): SnapshotMessage {
   return {
     id: message.id,
@@ -70,16 +86,12 @@ export function getSessionState(sessionId: string, maxTokens?: number): FoldedSe
   const eventStore = getEventStore()
 
   // Check for the latest snapshot first
-  const latestSnapshotEvent = eventStore.getLatestSnapshot(sessionId)
-
-  // Get all events (snapshots + current window events)
-  const events = eventStore.getEvents(sessionId)
-
+  // Use snapshot-optimized loading
+  const { snapshot: latestSnapshot, events: rawEvents } = eventStore.getEventsSinceSnapshot(sessionId)
+  const events = combineEventsWithSnapshot(sessionId, latestSnapshot, rawEvents)
   if (events.length === 0) {
     return undefined
   }
-
-  // Find initial context window ID from session.initialized event
   let initialWindowId: string | undefined
   for (const event of events) {
     if (event.type === 'session.initialized') {
@@ -89,9 +101,6 @@ export function getSessionState(sessionId: string, maxTokens?: number): FoldedSe
     }
   }
 
-  // Fallback: extract from snapshot's sessionInit if session.initialized was cleaned up.
-  // Check ALL snapshots, not just the latest — the latest snapshot may not have
-  // sessionInit if session.initialized was already cleaned up before it was created.
   if (!initialWindowId) {
     for (const event of events) {
       if (event.type === 'turn.snapshot') {
@@ -104,11 +113,6 @@ export function getSessionState(sessionId: string, maxTokens?: number): FoldedSe
     }
   }
 
-  // Fallback: extract from snapshot's currentContextWindowId field.
-  // This handles sessions where both session.initialized and sessionInit
-  // were lost (e.g., consolidateSession deleted all early events including
-  // session.initialized, and snapshots were created without sessionInit).
-  // Every snapshot has currentContextWindowId which is a valid initialWindowId.
   if (!initialWindowId) {
     for (const event of events) {
       if (event.type === 'turn.snapshot') {
@@ -130,13 +134,13 @@ export function getSessionState(sessionId: string, maxTokens?: number): FoldedSe
   const effectiveMaxTokens = maxTokens ?? config.context.maxTokens
 
   // If we have a snapshot, use it as the base for messages and replay newer events
-  if (latestSnapshotEvent) {
+  if (latestSnapshot) {
     const state = foldSessionState(events, initialWindowId, effectiveMaxTokens)
 
     // Override folded messages with the latest snapshot plus replayed events.
     return {
       ...state,
-      messages: buildMessagesFromStoredEvents(events).map(toSnapshotMessage),
+      messages: buildMessagesFromStoredEvents(events).messages.map(toSnapshotMessage),
     }
   }
 
@@ -171,8 +175,8 @@ export function getContextMessages(sessionId: string): ContextMessage[] {
   // Get current context window ID from events (not from snapshot, as snapshot may be stale)
   const currentWindowId = getCurrentContextWindowId(sessionId)
   if (!currentWindowId) return []
-
-  const events = eventStore.getEvents(sessionId)
+  const { snapshot: ctxSnapshot, events: ctxRawEvents } = eventStore.getEventsSinceSnapshot(sessionId)
+  const events = combineEventsWithSnapshot(sessionId, ctxSnapshot, ctxRawEvents)
   if (events.length === 0) return []
 
   return buildContextMessagesFromEventHistory(events, currentWindowId, { includeVerifier: false })
