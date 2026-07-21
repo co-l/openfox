@@ -117,6 +117,7 @@ function createMockSessionManager(overrides?: Record<string, any>): SessionManag
     getCachedPrompt: vi.fn().mockReturnValue(undefined),
     setCachedPrompt: vi.fn(),
     getLspManager: vi.fn(),
+    getEffectiveWorkdir: vi.fn().mockReturnValue('/test'),
     drainAsapMessages: vi.fn().mockReturnValue([]),
     getCurrentWindowMessages: vi.fn().mockReturnValue([]),
     updateMessage: vi.fn(),

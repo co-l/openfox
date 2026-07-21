@@ -42,6 +42,10 @@ function makeContext(overrides: Record<string, unknown> = {}) {
   const sessionManager = {
     getSession: mockGetSession,
     getProject: mockGetProject,
+    getEffectiveWorkdir: vi.fn((id: string) => {
+      const session = mockGetSession(id)
+      return session?.workspace ?? '/tmp/project'
+    }),
     switchWorkspace: mockSwitchWorkspace,
     deleteWorkspace: mockDeleteWorkspace,
   }

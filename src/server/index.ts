@@ -416,8 +416,7 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
       const { updateSessionBranch } = await import('./db/sessions.js')
       const allSessions = sessionManager.listSessions()
       for (const s of allSessions) {
-        const effectiveWorkdir = s.workspace ?? s.workdir
-        if (effectiveWorkdir === project.workdir) {
+        if (sessionManager.getEffectiveWorkdir(s.id) === project.workdir) {
           updateSessionBranch(s.id, branch)
           sessionManager.emitBranchChange(s.id)
         }
@@ -447,8 +446,7 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
       const { updateSessionBranch } = await import('./db/sessions.js')
       const allSessions = sessionManager.listSessions()
       for (const s of allSessions) {
-        const effectiveWorkdir = s.workspace ?? s.workdir
-        if (effectiveWorkdir === project.workdir) {
+        if (sessionManager.getEffectiveWorkdir(s.id) === project.workdir) {
           updateSessionBranch(s.id, name)
           sessionManager.emitBranchChange(s.id)
         }
@@ -465,7 +463,7 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
   app.get('/api/sessions/:id/branches', async (req, res) => {
     const session = sessionManager.getSession(req.params.id)
     if (!session) return res.status(404).json({ error: 'Session not found' })
-    const effectiveWorkdir = session.workspace ?? session.workdir
+    const effectiveWorkdir = sessionManager.getEffectiveWorkdir(req.params.id)
     const { listBranches, getDefaultBranch } = await import('./git/workspace.js')
     const [branches, defaultBranch] = await Promise.all([
       listBranches(effectiveWorkdir),
@@ -480,7 +478,7 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
     if (!session) return res.status(404).json({ error: 'Session not found' })
     const { branch } = req.body
     if (!branch || typeof branch !== 'string') return res.status(400).json({ error: 'branch is required' })
-    const effectiveWorkdir = session.workspace ?? session.workdir
+    const effectiveWorkdir = sessionManager.getEffectiveWorkdir(req.params.id)
     const { checkoutBranch, validateRef } = await import('./git/workspace.js')
     const { updateSessionBranch } = await import('./db/sessions.js')
     try {
@@ -511,7 +509,7 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
     if (!session) return res.status(404).json({ error: 'Session not found' })
     const { name, sourceBranch } = req.body
     if (!name || typeof name !== 'string') return res.status(400).json({ error: 'name is required' })
-    const effectiveWorkdir = session.workspace ?? session.workdir
+    const effectiveWorkdir = sessionManager.getEffectiveWorkdir(req.params.id)
     const { validateRef } = await import('./git/workspace.js')
     const { updateSessionBranch } = await import('./db/sessions.js')
     try {

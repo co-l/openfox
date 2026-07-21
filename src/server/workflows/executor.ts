@@ -6,7 +6,7 @@
  * state ($done or $blocked) is reached.
  */
 
-import type { Session, ToolCall, ToolResult } from '../../shared/types.js'
+import type { ToolCall, ToolResult } from '../../shared/types.js'
 import type { OrchestratorOptions, OrchestratorResult, NextAction } from '../runner/types.js'
 import type {
   WorkflowDefinition,
@@ -86,9 +86,8 @@ export function formatCriteriaList(entries: import('../../shared/types.js').Meta
     .join('\n')
 }
 
-export async function formatModifiedFiles(session: Session): Promise<string> {
-  const effectiveWorkdir = session.workspace ?? session.workdir
-  return formatGitDiffFiles(effectiveWorkdir)
+export async function formatModifiedFiles(workdir: string): Promise<string> {
+  return formatGitDiffFiles(workdir)
 }
 
 export function resolveTemplate(template: string, ctx: TemplateContext): string {
@@ -333,14 +332,14 @@ export async function executeWorkflow(
     // Build template context
     const criteriaEntries = session.metadataEntries['criteria'] ?? []
     const templateCtx: TemplateContext = {
-      workdir: session.workspace ?? session.workdir,
+      workdir: sessionManager.getEffectiveWorkdir(sessionId),
       reason: buildReason(session.metadataEntries),
       verifierFindings: lastStepOutput['content'] ?? '',
       previousStepOutput: lastStepOutput['stdout'] ?? '',
       criteriaCount: criteriaEntries.length,
       pendingCount: criteriaEntries.filter((e) => e.status !== 'passed').length,
       criteriaList: formatCriteriaList(criteriaEntries),
-      modifiedFiles: await formatModifiedFiles(session),
+      modifiedFiles: await formatModifiedFiles(sessionManager.getEffectiveWorkdir(sessionId)),
       stepOutput: lastStepOutput,
     }
 
@@ -542,7 +541,12 @@ export async function executeWorkflow(
           )
         }
 
-        const result = await executeShellCommand(command, session.workspace ?? session.workdir, timeout, signal)
+        const result = await executeShellCommand(
+          command,
+          sessionManager.getEffectiveWorkdir(sessionId),
+          timeout,
+          signal,
+        )
 
         const output = [result.stdout, result.stderr].filter(Boolean).join('\n').trim()
         lastStepOutput = { stdout: result.stdout ?? '', stderr: result.stderr ?? '', exitCode: String(result.exitCode) }

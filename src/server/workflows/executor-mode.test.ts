@@ -103,6 +103,7 @@ describe('executeWorkflow mode changes', () => {
       })),
       setMode,
       setPhase,
+      getEffectiveWorkdir: vi.fn().mockReturnValue('/tmp/test'),
       addMessage: vi.fn(),
     }
 

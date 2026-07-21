@@ -182,7 +182,7 @@ export class SessionManager {
   async checkBranchConsistency(sessionId: string): Promise<string | null> {
     const session = this.getSession(sessionId)
     if (!session?.branch) return null
-    const actualBranch = await getGitBranch(session.workspace ?? session.workdir)
+    const actualBranch = await getGitBranch(this.getEffectiveWorkdir(sessionId))
     if (actualBranch && actualBranch !== session.branch) {
       return `Branch mismatch: session expects "${session.branch}" but workspace is on "${actualBranch}". The workspace branch was changed externally.`
     }
@@ -1057,8 +1057,7 @@ export class SessionManager {
    * Uses workspace path when active, otherwise the project workdir.
    */
   getLspManager(sessionId: string): LspManager {
-    const session = this.requireSession(sessionId)
-    const effectiveWorkdir = session.workspace ?? session.workdir
+    const effectiveWorkdir = this.getEffectiveWorkdir(sessionId)
     return getOrCreateLspManager(sessionId, effectiveWorkdir)
   }
 
@@ -1114,7 +1113,7 @@ export class SessionManager {
       if (target === 'original' && !session.workspace && !branch) return session
       if (target !== 'original' && session.workspace?.split('/').pop() === target && !branch) return session
       if (isBranchChangeOnly) {
-        const currentBranch = await getGitBranch(session.workspace ?? session.workdir)
+        const currentBranch = await getGitBranch(this.getEffectiveWorkdir(sessionId))
         if (currentBranch === branch) return session
       }
 

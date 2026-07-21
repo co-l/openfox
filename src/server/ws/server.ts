@@ -935,7 +935,7 @@ async function handleClientMessage(
 
       // Tab model: set active session for event routing
       client.activeSessionId = session.id
-      const effectiveWorkdir = session.workspace ?? session.workdir
+      const effectiveWorkdir = sessionManager.getEffectiveWorkdir(session.id)
       client.activeWorkdir = effectiveWorkdir
 
       // Send initial git status immediately

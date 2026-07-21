@@ -414,6 +414,7 @@ function createSessionManager(overrides: Record<string, unknown> = {}) {
     drainAsapMessages: vi.fn(() => []),
     drainCompletionMessages: vi.fn(() => []),
     clearMessageQueue: vi.fn(),
+    getEffectiveWorkdir: vi.fn(() => session.workdir),
     ...overrides,
   }
 

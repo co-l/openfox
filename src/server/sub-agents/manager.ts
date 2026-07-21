@@ -207,7 +207,7 @@ export async function executeSubAgent(options: SubAgentExecutionOptions): Promis
 
   // --- Load context for system prompt ---
 
-  const effectiveWorkdir = session.workspace ?? session.workdir
+  const effectiveWorkdir = sessionManager.getEffectiveWorkdir(session.id)
 
   const { content: instructionContent } = await getAllInstructions(effectiveWorkdir, session.projectId)
   const config = getRuntimeConfig()

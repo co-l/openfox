@@ -19,7 +19,6 @@ import {
   buildReason,
 } from './executor.js'
 import type { TemplateContext } from './executor.js'
-import type { Session } from '../../shared/types.js'
 
 // ============================================================================
 // Helpers
@@ -362,8 +361,7 @@ describe('formatModifiedFiles', () => {
   it('returns (none) outside a git repo', async () => {
     const tmp = mkdtempSync(join(tmpdir(), 'openfox-test-'))
     try {
-      const session = { workdir: tmp } as Session
-      expect(await formatModifiedFiles(session)).toBe('(none)')
+      expect(await formatModifiedFiles(tmp)).toBe('(none)')
     } finally {
       rmSync(tmp, { recursive: true, force: true })
     }
@@ -377,8 +375,7 @@ describe('formatModifiedFiles', () => {
       execSync('git config user.name test', { cwd: tmp, stdio: 'pipe' })
       writeFileSync(join(tmp, 'README.md'), '# hello')
       execSync('git add . && git commit -m init', { cwd: tmp, stdio: 'pipe' })
-      const session = { workdir: tmp } as Session
-      expect(await formatModifiedFiles(session)).toBe('(none)')
+      expect(await formatModifiedFiles(tmp)).toBe('(none)')
     } finally {
       rmSync(tmp, { recursive: true, force: true })
     }
@@ -394,8 +391,7 @@ describe('formatModifiedFiles', () => {
       execSync('git add . && git commit -m init', { cwd: tmp, stdio: 'pipe' })
       writeFileSync(join(tmp, 'existing.ts'), 'modified')
       writeFileSync(join(tmp, 'new.ts'), 'untracked')
-      const session = { workdir: tmp } as Session
-      const result = await formatModifiedFiles(session)
+      const result = await formatModifiedFiles(tmp)
       expect(result).toContain('existing.ts')
       expect(result).toContain('new.ts')
     } finally {
