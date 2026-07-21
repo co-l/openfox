@@ -125,8 +125,7 @@ export function PlanPanel({
       setAutoScroll(false)
       const element = document.querySelector(`[data-item-index="${index}"]`)
       if (element) {
-        element.scrollIntoView({ behavior: 'smooth', block: 'start' })
-        element.closest('[data-testid="chat-scroll-container"]')?.scrollBy(0, -80)
+        element.scrollIntoView({ behavior: 'smooth', block: 'center' })
       }
     },
     [setAutoScroll],
@@ -277,7 +276,7 @@ export function PlanPanel({
           isOpen={showMessageSearch}
           onClose={() => {
             setShowMessageSearch(false)
-            focusChatTextarea()
+            focusChatTextarea(true)
           }}
           displayItems={displayItems}
           onNavigate={handleTimelineNavigate}

@@ -1,6 +1,8 @@
 // @vitest-environment happy-dom
-import { describe, expect, it, vi } from 'vitest'
+import { describe, expect, it, vi, beforeEach } from 'vitest'
+import { act } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
+import { createRoot } from 'react-dom/client'
 
 vi.mock('../../stores/session', () => ({
   useSessionStore: (selector: (state: unknown) => unknown) =>
@@ -26,9 +28,13 @@ vi.mock('../../stores/commands', () => ({
   useCommandsStore: (selector?: (state: unknown) => unknown) => (selector ? selector({ items: [] }) : { items: [] }),
 }))
 
+const mockFetchWorkflows = vi.fn()
+const mockWorkflowsState = { defaults: [], userItems: [], fetchWorkflows: mockFetchWorkflows, getState: vi.fn() }
 vi.mock('../../stores/workflows', () => ({
-  useWorkflowsStore: (selector?: (state: unknown) => unknown) =>
-    selector ? selector({ fetchWorkflows: vi.fn() }) : { fetchWorkflows: vi.fn() },
+  useWorkflowsStore: Object.assign(
+    (selector?: (state: unknown) => unknown) => (selector ? selector(mockWorkflowsState) : mockWorkflowsState),
+    { getState: vi.fn(() => mockWorkflowsState) },
+  ),
 }))
 
 vi.mock('../../stores/settings', () => ({
@@ -67,9 +73,25 @@ vi.mock('./SessionHeader', () => ({
   SessionHeader: () => <div>SessionHeader</div>,
 }))
 
+let capturedMsgSearchOnClose: (() => void) | null = null
+let capturedMsgSearchOnNavigate: ((index: number) => void) | null = null
+
 vi.mock('./MessageSearchModal', () => ({
-  default: () => null,
-  MessageSearchModal: () => null,
+  default: (props: { onClose: () => void; onNavigate: (index: number) => void }) => {
+    capturedMsgSearchOnClose = props.onClose
+    capturedMsgSearchOnNavigate = props.onNavigate
+    return null
+  },
+  MessageSearchModal: (props: { onClose: () => void; onNavigate: (index: number) => void }) => {
+    capturedMsgSearchOnClose = props.onClose
+    capturedMsgSearchOnNavigate = props.onNavigate
+    return null
+  },
+}))
+
+const mockFocusChatTextarea = vi.fn()
+vi.mock('../../lib/focusChatTextarea', () => ({
+  focusChatTextarea: (...args: unknown[]) => mockFocusChatTextarea(...args),
 }))
 
 vi.mock('./ChatInput', () => ({
@@ -161,5 +183,70 @@ describe('PlanPanel — server-side truncation integration', () => {
       <PlanPanel rawMessages={[{ id: 'msg-1', role: 'user', content: 'Hi', timestamp: new Date().toISOString() }]} />,
     )
     expect(html).not.toContain('older items hidden')
+  })
+})
+
+describe('PlanPanel — message search navigation', () => {
+  beforeEach(() => {
+    capturedMsgSearchOnClose = null
+    capturedMsgSearchOnNavigate = null
+    mockFocusChatTextarea.mockClear()
+    document.body.innerHTML = ''
+  })
+
+  it('[AUTOMATED] MessageSearchModal onClose calls focusChatTextarea(true) — Criterion 0+4', async () => {
+    const container = document.createElement('div')
+    document.body.appendChild(container)
+    const root = createRoot(container)
+
+    await act(async () => {
+      root.render(<PlanPanel />)
+    })
+
+    const searchEvent = new KeyboardEvent('keydown', { key: 'f', metaKey: true, cancelable: true })
+    act(() => {
+      window.dispatchEvent(searchEvent)
+    })
+
+    expect(capturedMsgSearchOnClose).not.toBeNull()
+
+    capturedMsgSearchOnClose!()
+    expect(mockFocusChatTextarea).toHaveBeenCalledTimes(1)
+    expect(mockFocusChatTextarea).toHaveBeenCalledWith(true)
+  })
+
+  it('[AUTOMATED] handleTimelineNavigate uses scrollIntoView({block:"center",behavior:"smooth"}) without scrollBy — Criterion 1', async () => {
+    const container = document.createElement('div')
+    document.body.appendChild(container)
+    const root = createRoot(container)
+
+    await act(async () => {
+      root.render(<PlanPanel />)
+    })
+
+    const scrollContainer = document.createElement('div')
+    scrollContainer.setAttribute('data-testid', 'chat-scroll-container')
+    const target = document.createElement('div')
+    target.setAttribute('data-item-index', '0')
+    scrollContainer.appendChild(target)
+    document.body.appendChild(scrollContainer)
+
+    const scrollIntoViewMock = vi.fn()
+    target.scrollIntoView = scrollIntoViewMock
+    const scrollByMock = vi.fn()
+    scrollContainer.scrollBy = scrollByMock
+
+    const searchEvent = new KeyboardEvent('keydown', { key: 'f', metaKey: true, cancelable: true })
+    act(() => {
+      window.dispatchEvent(searchEvent)
+    })
+
+    expect(capturedMsgSearchOnNavigate).not.toBeNull()
+
+    capturedMsgSearchOnNavigate!(0)
+
+    expect(scrollIntoViewMock).toHaveBeenCalledTimes(1)
+    expect(scrollIntoViewMock).toHaveBeenCalledWith({ behavior: 'smooth', block: 'center' })
+    expect(scrollByMock).not.toHaveBeenCalled()
   })
 })
