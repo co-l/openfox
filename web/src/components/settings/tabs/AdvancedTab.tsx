@@ -1,9 +1,12 @@
 import { useEffect, useState, useCallback } from 'react'
 import { useLocation } from 'wouter'
+import { authFetch } from '../../../lib/api'
 import { Button } from '../../shared/Button'
+import { Input } from '../../shared/Input'
 import { Toggle } from '../../shared/Toggle'
 import { SETTINGS_KEYS } from '../../../stores/settings'
 import { useSettingsStoreState } from '../useSettingsStore'
+import { useTestButton } from '../../../hooks/useTestButton'
 import { RetryPatternsEditor, type RetryPatternsValue } from '../RetryPatternsEditor'
 import { useConfigStore } from '../../../stores/config'
 import { useUpdateStore } from '../../../stores/update'
@@ -25,6 +28,7 @@ export function AdvancedTab({ onClose }: { onClose: () => void }) {
 
   const [retryPatterns, setRetryPatterns] = useState<RetryPatternsValue>({ patterns: [], maxRetriesPerTurn: 10 })
   const [proxyUrl, setProxyUrl] = useState('')
+  const [proxyTestText, proxyTestError, proxyTestSuccess, testProxy] = useTestButton()
   const [showUpdateModal, setShowUpdateModal] = useState(false)
   const version = useConfigStore((state) => state.version)
   const updateStatus = useUpdateStore((state) => state.status)
@@ -80,6 +84,13 @@ export function AdvancedTab({ onClose }: { onClose: () => void }) {
   const handleProxyUrlChange = (value: string) => {
     setProxyUrl(value)
     setSetting(SETTINGS_KEYS.PROXY_URL, value)
+  }
+
+  function handleTestProxy() {
+    testProxy(async () => {
+      const res = await authFetch('/api/proxy/test', { method: 'POST' })
+      return res.json()
+    })
   }
 
   const handleToggleOpenInEditor = () => {
@@ -173,20 +184,27 @@ export function AdvancedTab({ onClose }: { onClose: () => void }) {
       />
       <hr className="border-border" />
       <div>
-        <h3 className="text-sm font-medium text-text-primary mb-3">Network</h3>
-        <div>
-          <label className="text-xs text-text-secondary block mb-1">HTTP Proxy</label>
-          <input
+        <h3 className="text-sm font-medium text-text-primary mb-3">HTTP Proxy</h3>
+        <p className="text-sm text-text-muted mb-3">
+          Proxy server for LLM API requests. Leave empty for direct connection.
+        </p>
+        <div className="flex gap-2 items-center">
+          <Input
             type="text"
             value={proxyUrl}
             onChange={(e) => handleProxyUrlChange(e.target.value)}
             placeholder="http://proxy:8080"
-            className="w-full px-3 py-2 bg-bg-primary border border-border rounded text-sm text-text-primary placeholder-text-muted focus:outline-none focus:border-accent-primary"
+            className="flex-1"
           />
-          <p className="text-xs text-text-muted mt-1">
-            Proxy server for LLM API requests. Leave empty for direct connection.
-          </p>
+          <Button
+            variant="secondary"
+            onClick={handleTestProxy}
+            style={proxyTestSuccess ? { color: 'rgb(63, 185, 80)' } : undefined}
+          >
+            {proxyTestText}
+          </Button>
         </div>
+        {proxyTestError && <p className="text-xs text-red-500 mt-1">{proxyTestError}</p>}
       </div>
       <hr className="border-border" />
       <div>
