@@ -19,7 +19,7 @@
 
   /* Webkit scrollbars (Chrome, Safari, Edge) */
   ::-webkit-scrollbar {
-    @apply w-1 h-1;
+    @apply w-2 h-2;
   }
 
   ::-webkit-scrollbar-track {
@@ -34,16 +34,26 @@
     @apply bg-text-muted;
   }
 
-  /* Firefox scrollbars - hover behavior */
+  /* Firefox scrollbars */
   @supports (scrollbar-width: thin) {
-    /* Thin + hidden by default; only thumb color changes on hover (constant width avoids layout shift) */
+    /* Thin + hidden by default */
     * {
       scrollbar-width: thin;
       scrollbar-color: transparent transparent;
     }
+    /* Show thumb color on hover/focus (width stays constant — avoids Chrome repaint) */
     *:hover,
     *:focus-within {
       scrollbar-color: rgb(var(--color-bg-tertiary) / 0.6) transparent;
+    }
+  }
+
+  /* Firefox only: widen scrollbar on hover for easier grabbing.
+     Chrome supports scrollbar-width too, but switching thin→auto triggers full repaint. */
+  @supports (-moz-appearance: none) {
+    *:hover,
+    *:focus-within {
+      scrollbar-width: auto;
     }
   }
 }
