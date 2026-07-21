@@ -483,7 +483,7 @@ export function ProviderSelector() {
   return (
     <div className="relative" ref={dropdownRef}>
       {isOpen && providers.length > 0 ? (
-        <div className="flex items-center gap-1 px-1.5 py-0.5 rounded bg-bg-tertiary">
+        <div className="flex items-center gap-1 px-1.5 py-0.5 rounded bg-bg-tertiary min-w-72">
           <SearchIcon className="w-3.5 h-3.5 text-text-muted flex-shrink-0" />
           <input
             ref={inputRef}
@@ -495,7 +495,7 @@ export function ProviderSelector() {
             }}
             onKeyDown={handleSearchKeyDown}
             placeholder="Search models..."
-            className="bg-transparent border-none outline-none text-sm text-text-primary w-28 placeholder:text-text-muted"
+            className="bg-transparent border-none outline-none text-sm text-text-primary w-full placeholder:text-text-muted"
           />
         </div>
       ) : (
