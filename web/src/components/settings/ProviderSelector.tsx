@@ -66,7 +66,7 @@ export function ProviderSelector() {
     ? (effectiveModel.split('/').pop()?.replace(/-/g, ' ') ?? effectiveModel)
     : 'No model'
   const isSessionScoped = !!(currentSession && sessionModel)
-  const differsFromDefault = isSessionScoped && sessionModel !== defaultModel
+  const differsFromDefault = isSessionScoped && defaultModel !== null && sessionModel !== defaultModel
 
   const [settingDefault, setSettingDefault] = useState(false)
 
@@ -349,7 +349,15 @@ export function ProviderSelector() {
           <span className="text-sm text-accent-error animate-pulse">LLM offline</span>
         ) : (
           <>
-            <span className="text-sm text-accent-primary">{shortModelName}</span>
+            <span className="text-sm text-accent-primary">
+              {activeProvider ? (
+                <>
+                  {activeProvider.name} • {shortModelName}
+                </>
+              ) : (
+                shortModelName
+              )}
+            </span>
             <span
               className={`text-xs px-1.5 py-0.5 rounded-full ${
                 activeProvider?.isLocal
@@ -379,7 +387,13 @@ export function ProviderSelector() {
         ) : (
           <>
             <span className={`text-sm ${differsFromDefault ? 'text-accent-primary italic' : 'text-accent-primary'}`}>
-              {shortModelName}
+              {activeProvider ? (
+                <>
+                  {activeProvider.name} • {shortModelName}
+                </>
+              ) : (
+                shortModelName
+              )}
             </span>
             {differsFromDefault && (
               <span className="text-xs text-text-muted ml-0.5" title="Session-scoped model (different from default)">
