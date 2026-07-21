@@ -5,6 +5,7 @@ import {
   type SoundEvent,
   type AgentType,
 } from '../stores/notifications'
+import { appUrl } from './basePath'
 
 // Audio cache: keyed by URL so custom sounds are also cached
 const audioCache = new Map<string, HTMLAudioElement>()
@@ -12,7 +13,7 @@ const audioCache = new Map<string, HTMLAudioElement>()
 function getAudio(url: string): HTMLAudioElement {
   let audio = audioCache.get(url)
   if (!audio) {
-    audio = new Audio(url)
+    audio = new Audio(appUrl(url))
     audio.volume = 0.5
     audioCache.set(url, audio)
   }
@@ -54,7 +55,7 @@ function sendBrowserNotification(event: SoundEvent) {
 
   new Notification(NOTIFICATION_TITLES[event], {
     body: NOTIFICATION_BODIES[event],
-    icon: '/fox.svg',
+    icon: appUrl('/fox.svg'),
     tag: `openfox-${event}`, // Prevents duplicate notifications
   })
 }

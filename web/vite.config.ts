@@ -6,6 +6,7 @@ import { createViteWatchOptions } from './vite-watch.js'
 import { existsSync } from 'fs'
 
 const baseConfig = defineConfig({
+  base: './',
   plugins: [
     react(),
     VitePWA({

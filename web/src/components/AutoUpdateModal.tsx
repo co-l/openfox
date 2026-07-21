@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { Modal } from './shared/Modal'
 import { authFetch } from '../lib/api'
+import { appUrl } from '../lib/basePath'
 
 type ModalState = 'ready' | 'updating' | 'restarting' | 'complete' | 'failed'
 
@@ -21,7 +22,7 @@ export function AutoUpdateModal({ isOpen, onClose, versionInfo }: AutoUpdateModa
   // Auto-fetch only once when modal opens and no versionInfo provided
   useEffect(() => {
     if (!isOpen || versionInfo) return
-    fetch('/api/auto-update/check')
+    fetch(appUrl('/api/auto-update/check'))
       .then((res) => res.json())
       .then((data) => {
         setModalVersionInfo({ current: data.current, latest: data.latest })

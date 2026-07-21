@@ -1,6 +1,7 @@
 import type { ClientMessage, ServerMessage, ClientMessageType } from '@shared/protocol.js'
 import { isServerMessage } from '@shared/protocol.js'
 import { generateUUID } from './uuid.js'
+import { appUrl } from './basePath.js'
 
 export type ConnectionStatus = 'connected' | 'disconnected' | 'reconnecting'
 type MessageHandler = (message: ServerMessage) => void
@@ -229,5 +230,5 @@ if (!port) {
         ? '443'
         : '80'
 }
-const wsUrl = `${protocol}//${window.location.hostname}:${port}/ws`
+const wsUrl = `${protocol}//${window.location.hostname}:${port}${appUrl('/ws')}`
 export const wsClient = new WebSocketClient(wsUrl)
