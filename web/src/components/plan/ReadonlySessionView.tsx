@@ -100,7 +100,7 @@ export function ReadonlySessionView() {
         </div>
       </div>
 
-      <div className="flex-1 overflow-y-auto print:overflow-visible">
+      <div className="flex-1 overflow-y-auto print:overflow-visible scrollbar-stable">
         <div className="pt-4">
           <ChatFeedItems
             displayItems={displayItems}

@@ -31,7 +31,7 @@ export function SessionLayout({
 
         {/* Session Sidebar - mobile: fixed overlay, desktop: flex item */}
         {criteriaSidebarOpen ? (
-          <aside className="hidden md:block w-[320px] shrink-0 border-l border-border p-4 overflow-y-auto bg-secondary">
+          <aside className="hidden md:block w-[320px] shrink-0 border-l border-border p-4 overflow-y-auto bg-secondary scrollbar-stable">
             <SessionSidebar messages={messages} workdir={session?.workspace ?? session?.workdir} />
           </aside>
         ) : (

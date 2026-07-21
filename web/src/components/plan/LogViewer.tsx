@@ -29,7 +29,7 @@ export const LogViewer = memo(function LogViewer({ title, logs, onClose, preClas
         />
       }
     >
-      <div ref={scrollRef} className="h-full overflow-y-auto">
+      <div ref={scrollRef} className="h-full overflow-y-auto scrollbar-stable">
         <LogRenderer logs={logs} preClassName={preClassName} />
       </div>
     </Modal>

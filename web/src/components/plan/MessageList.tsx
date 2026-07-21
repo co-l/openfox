@@ -61,7 +61,7 @@ export const MessageList = memo(function MessageList({
     <div
       ref={scrollContainerRef}
       data-testid="chat-scroll-container"
-      className="flex-1 min-w-0 overflow-y-auto relative bg-primary"
+      className="flex-1 min-w-0 overflow-y-auto relative bg-primary scrollbar-stable"
     >
       <div className="pt-4">
         {hiddenCount > 0 && (

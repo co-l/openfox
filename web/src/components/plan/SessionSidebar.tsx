@@ -75,7 +75,7 @@ export function SessionSidebar({ messages, workdir }: SessionSidebarProps) {
       )}
 
       {/* Metadata sections */}
-      <div className="flex flex-col flex-1 overflow-y-auto">
+      <div className="flex flex-col flex-1 overflow-y-auto scrollbar-stable">
         <div className="mt-4">
           <button
             onClick={() => setActiveMetadataKey('criteria')}

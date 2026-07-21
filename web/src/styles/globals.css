@@ -36,16 +36,23 @@
 
   /* Firefox scrollbars - hover behavior */
   @supports (scrollbar-width: thin) {
-    /* Thin + hidden by default, auto-width + visible on hover (Firefox widens auto scrollbars natively) */
+    /* Thin + hidden by default; only thumb color changes on hover (constant width avoids layout shift) */
     * {
       scrollbar-width: thin;
       scrollbar-color: transparent transparent;
     }
     *:hover,
     *:focus-within {
-      scrollbar-width: auto;
       scrollbar-color: rgb(var(--color-bg-tertiary) / 0.6) transparent;
     }
+  }
+}
+
+@layer utilities {
+  /* Reserve scrollbar gutter so content doesn't shift when scrollbar appears/disappears.
+     Apply to primary content scroll containers (chat feed, sidebars, log viewers, etc.). */
+  .scrollbar-stable {
+    scrollbar-gutter: stable;
   }
 }
 

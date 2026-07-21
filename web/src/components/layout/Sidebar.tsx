@@ -216,7 +216,7 @@ export function Sidebar({ projectId, isOpen = true, onClose }: SidebarProps) {
           />
         </Modal>
 
-        <div className="flex-1 overflow-y-auto">
+        <div className="flex-1 overflow-y-auto scrollbar-stable">
           {projectSessions.length === 0 ? (
             <div className="p-4 text-center text-text-muted text-xs">No sessions</div>
           ) : (
