@@ -28,6 +28,7 @@ export const SETTINGS_KEYS = {
   SEARCH_SEARXNG_API_KEY: 'search.searxngApiKey',
   TOOLS_USE_RTK: 'tools.useRtk',
   TOOLS_SHELL: 'tools.shell',
+  CONFIRM_ON_WORKSPACE_ACTIONS: 'tools.confirmOnWorkspaceActions',
 } as const
 
 export const SETTINGS_DEFAULTS: Record<string, string> = {
@@ -56,6 +57,7 @@ export const SETTINGS_DEFAULTS: Record<string, string> = {
   }),
   [SETTINGS_KEYS.TOOLS_USE_RTK]: 'false',
   [SETTINGS_KEYS.TOOLS_SHELL]: 'cmd',
+  [SETTINGS_KEYS.CONFIRM_ON_WORKSPACE_ACTIONS]: 'false',
 }
 
 export type SettingsKey = (typeof SETTINGS_KEYS)[keyof typeof SETTINGS_KEYS]

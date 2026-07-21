@@ -26,6 +26,16 @@ vi.mock('./path-security.js', () => ({
   },
 }))
 
+vi.mock('../db/settings.js', () => ({
+  getSetting: (key: string) => {
+    if (key === 'tools.confirmOnWorkspaceActions') return 'true'
+    return null
+  },
+  SETTINGS_KEYS: {
+    CONFIRM_ON_WORKSPACE_ACTIONS: 'tools.confirmOnWorkspaceActions',
+  },
+}))
+
 import { workspaceTool } from './workspace.js'
 
 function makeContext(overrides: Record<string, unknown> = {}) {

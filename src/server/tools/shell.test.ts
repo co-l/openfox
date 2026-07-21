@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { hasBackgroundAmpersand, runCommandTool, detectEscapePattern, detectGitMutation } from './shell.js'
+import { hasBackgroundAmpersand, runCommandTool, detectGitMutation } from './shell.js'
 import type { ToolContext } from './types.js'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -190,102 +190,6 @@ describe('runCommandTool truncation with ANSI codes', () => {
     expect(result.truncated).toBe(false)
     expect(result.output).toContain('[Exit code: 0]')
   }, 15000)
-})
-
-describe('detectEscapePattern', () => {
-  it('detects cd .. as escape', () => {
-    expect(detectEscapePattern('cd .. && ls')).toContain('cd')
-  })
-
-  it('detects cd / as escape', () => {
-    expect(detectEscapePattern('cd /tmp')).toContain('cd')
-  })
-
-  it('detects cd ~ as escape', () => {
-    expect(detectEscapePattern('cd ~/other-project')).toContain('cd')
-  })
-
-  it('detects git -C as escape', () => {
-    expect(detectEscapePattern('git -C /some/path status')).toContain('git -C')
-  })
-
-  it('detects GIT_DIR environment variable', () => {
-    expect(detectEscapePattern('GIT_DIR=/other/repo git log')).toContain('GIT_DIR')
-  })
-
-  it('detects git --work-tree', () => {
-    expect(detectEscapePattern('git --work-tree=/other/repo status')).toContain('--work-tree')
-  })
-
-  it('detects indirect cd escape via cd sub && cd ../..', () => {
-    expect(detectEscapePattern('cd sub && cd ../..')).toContain('cd')
-  })
-
-  it('detects cd with variable path containing ..', () => {
-    expect(detectEscapePattern('cd "$PWD/.."')).toContain('cd')
-  })
-
-  it('detects quoted escape patterns (prevents bypass)', () => {
-    expect(detectEscapePattern('cd ".." && ls')).toContain('cd')
-    expect(detectEscapePattern("cd '..' && ls")).toContain('cd')
-    expect(detectEscapePattern('cd "/etc"')).toContain('cd')
-    expect(detectEscapePattern("cd '/etc'")).toContain('cd')
-    expect(detectEscapePattern('cd "~"')).toContain('cd')
-  })
-
-  it('allows safe patterns', () => {
-    expect(detectEscapePattern('ls')).toBeNull()
-    expect(detectEscapePattern('cd src && npm run test')).toBeNull()
-    expect(detectEscapePattern('cat file.txt')).toBeNull()
-  })
-
-  it('detects cd with unquoted variable expansion', () => {
-    expect(detectEscapePattern('cd $HOME')).toContain('cd')
-  })
-
-  it('detects cd with quoted variable expansion', () => {
-    expect(detectEscapePattern('cd "$HOME"')).toContain('cd')
-  })
-
-  it('detects cd with brace variable expansion', () => {
-    expect(detectEscapePattern('cd ${HOME}/sensitive')).toContain('cd')
-  })
-
-  it('detects cd with command substitution $(...)', () => {
-    expect(detectEscapePattern('cd "$(printf /tmp)"')).toContain('cd')
-  })
-
-  it('detects cd with unquoted command substitution', () => {
-    expect(detectEscapePattern('cd $(mktemp -d)')).toContain('cd')
-  })
-
-  it('detects cd with backtick command substitution', () => {
-    expect(detectEscapePattern('cd `dirname $0`')).toContain('cd')
-  })
-
-  it('detects cd with variable in piped command', () => {
-    expect(detectEscapePattern('cd "$SOME_DIR" && cat file.txt')).toContain('cd')
-  })
-
-  it('detects cd with variable in chained command', () => {
-    expect(detectEscapePattern('cd "$HOME"; ls')).toContain('cd')
-  })
-
-  it('still allows cd to literal relative subdirectory', () => {
-    expect(detectEscapePattern('cd src/components')).toBeNull()
-  })
-
-  it('still allows cd with dot-prefixed relative path', () => {
-    expect(detectEscapePattern('cd ./src')).toBeNull()
-  })
-
-  it('allows cd to absolute path within workdir', () => {
-    // cd to the workdir itself or a subdirectory should not be flagged as escape
-    expect(detectEscapePattern('cd /home/conrad/dev/openfox && npm run test', '/home/conrad/dev/openfox')).toBeNull()
-    expect(
-      detectEscapePattern('cd /home/conrad/dev/openfox/src && npm run test', '/home/conrad/dev/openfox'),
-    ).toBeNull()
-  })
 })
 
 describe('detectGitMutation', () => {

@@ -261,6 +261,7 @@ export function ToolsTab() {
     getSetting(SETTINGS_KEYS.SEARCH_SEARXNG_URL)
     getSetting(SETTINGS_KEYS.SEARCH_SEARXNG_API_KEY)
     getSetting(SETTINGS_KEYS.TOOLS_USE_RTK)
+    getSetting(SETTINGS_KEYS.CONFIRM_ON_WORKSPACE_ACTIONS)
   }, [getSetting])
 
   useEffect(() => {
@@ -730,6 +731,31 @@ export function ToolsTab() {
               setSetting(
                 SETTINGS_KEYS.TOOLS_USE_RTK,
                 settings[SETTINGS_KEYS.TOOLS_USE_RTK] === 'true' ? 'false' : 'true',
+              )
+            }
+          />
+        </div>
+      </div>
+
+      <hr className="border-border" />
+
+      {/* ── Agent Confirmations Section ── */}
+      <div>
+        <h3 className="text-sm font-medium text-text-primary mb-3">Agent Confirmations</h3>
+        <p className="text-sm text-text-muted mb-3">
+          Require confirmation for workspace changes and git mutations. When disabled, the agent proceeds without
+          interruption.
+        </p>
+        <div className="flex items-center justify-between py-2">
+          <div className="flex-1">
+            <span className="text-sm text-text-primary">Confirm on workspace &amp; git actions</span>
+          </div>
+          <Toggle
+            enabled={settings[SETTINGS_KEYS.CONFIRM_ON_WORKSPACE_ACTIONS] === 'true'}
+            onClick={() =>
+              setSetting(
+                SETTINGS_KEYS.CONFIRM_ON_WORKSPACE_ACTIONS,
+                settings[SETTINGS_KEYS.CONFIRM_ON_WORKSPACE_ACTIONS] === 'true' ? 'false' : 'true',
               )
             }
           />

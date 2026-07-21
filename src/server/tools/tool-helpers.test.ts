@@ -18,6 +18,16 @@ vi.mock('./path-security.js', async (importOriginal) => {
   }
 })
 
+vi.mock('../db/settings.js', () => ({
+  getSetting: (key: string) => {
+    if (key === 'tools.confirmOnWorkspaceActions') return 'true'
+    return null
+  },
+  SETTINGS_KEYS: {
+    CONFIRM_ON_WORKSPACE_ACTIONS: 'tools.confirmOnWorkspaceActions',
+  },
+}))
+
 describe('createTool', () => {
   // Mock sessionManager for test context
   const mockSessionManager = {

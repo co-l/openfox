@@ -11,111 +11,6 @@ import { stripTailPipe } from './shell-tail.js'
 import { getSetting, SETTINGS_KEYS } from '../db/settings.js'
 
 /**
- * Patterns that escape the effective workspace directory.
- * Handles optional quotes around paths to prevent bypass via quoting.
- * Patterns match against a quote-stripped version of the command so that
- * cd "$HOME" (stripped → cd   $HOME) is not accidentally missed.
- */
-const ESCAPE_PATTERNS = [
-  /\bcd\s+['"]?(?:\.\.|\/|~)/,
-  /\bcd\s+\$/, // cd with variable expansion ($HOME, ${HOME})
-  /\bcd\s+\$\(/, // cd with command substitution $(...)
-  /\bcd\s+`/, // cd with backtick substitution
-  /\bgit\s+-C\s+/,
-  /GIT_DIR=/,
-  /\bgit\s+--work-tree[\s=]/,
-  /\bgit\s+--git-dir[\s=]/,
-]
-
-/**
- * Extract the directory argument from a `cd` command segment.
- * Returns the resolved absolute path or null if it can't be determined.
- */
-function extractCdTarget(segment: string): string | null {
-  const trimmed = segment.trim()
-  const match = trimmed.match(/^cd\s+(.+)$/)
-  if (!match) return null
-  return match[1]!.replace(/^['"]|['"]$/g, '').trim()
-}
-
-/**
- * Check if a `cd` target path is within the given workdir.
- * Only checks absolute paths (starting with /). Relative paths like `..` are
- * always considered escapes regardless of workdir.
- */
-function isCdTargetWithinWorkdir(cdTarget: string, workdir: string): boolean {
-  if (!cdTarget.startsWith('/')) return false
-  const resolvedTarget = resolve(cdTarget)
-  const normalizedWorkdir = resolve(workdir).replace(/\/+$/, '')
-  return resolvedTarget === normalizedWorkdir || resolvedTarget.startsWith(normalizedWorkdir + '/')
-}
-
-/**
- * Check if a command segment represents a cd to an absolute path that is
- * within the given workdir (and therefore not an escape).
- */
-function isCdToWithinWorkdir(segment: string, workdir: string): boolean {
-  const trimmed = segment.trim()
-  if (!/^cd\s+['"]?\//.test(trimmed)) return false
-  const cdTarget = extractCdTarget(trimmed)
-  return cdTarget !== null && isCdTargetWithinWorkdir(cdTarget, workdir)
-}
-
-/**
- * Check if a command contains workspace escape patterns.
- * Strips quotes globally so patterns like cd "$PWD/.." are caught (becomes cd $PWD/..).
- * Then checks individual segments against the original command for variable/substitution
- * patterns that are masked by quoted strings.
- *
- * @param command - The shell command to check
- * @param workdir - Optional working directory. When provided, `cd` to absolute paths
- *                  within this directory are NOT considered escapes.
- */
-export function detectEscapePattern(command: string, workdir?: string): string | null {
-  // Strip quotes to normalize paths before matching
-  const normalized = command.replace(/'[^']*'/g, ' ').replace(/"[^"]*"/g, ' ')
-  for (const pattern of ESCAPE_PATTERNS) {
-    const match = normalized.match(pattern)
-    if (match) {
-      const matched = match[0].trim()
-      // Defer cd /... decisions to segment-based check when workdir is available
-      if (workdir && (matched.startsWith('cd /') || matched.startsWith('cd "'))) {
-        // Check all segments — if the only cd-to-absolute is within workdir, skip this pattern
-        const segments = command.split(/[;&|]|&&|\|\|/)
-        const allCdsWithinWorkdir = segments.every(
-          (seg) => !/^cd\s+['"]?\//.test(seg.trim()) || isCdToWithinWorkdir(seg, workdir),
-        )
-        if (allCdsWithinWorkdir) continue
-      }
-      return matched
-    }
-  }
-  // Catch indirect escapes like cd sub && cd ../.. and cd "$PWD/.."
-  // Also catch variable expansion and command substitution in cd arguments.
-  // Works on the original command (not quote-stripped) so $HOME inside quotes
-  // is still visible.
-  const segments = command.split(/[;&|]|&&|\|\|/)
-  for (const segment of segments) {
-    const trimmed = segment.trim()
-    // Check if this segment does a cd to a parent/absolute/tilde path
-    if (
-      /^cd\s+.+\.\./.test(trimmed) ||
-      /^cd\s+['"]?\//.test(trimmed) ||
-      /^cd\s+['"]?~/.test(trimmed) ||
-      /^cd\s+['"]?\.\./.test(trimmed) ||
-      /^cd\s+.*\$\(/.test(trimmed) || // cd with $(...) substitution
-      /^cd\s+.*`/.test(trimmed) || // cd with backtick substitution
-      /^cd\s+.*\$\{?[A-Za-z_]/.test(trimmed) // cd with variable expansion
-    ) {
-      // If this is a cd to an absolute path and we have a workdir, check if it's within bounds
-      if (workdir && isCdToWithinWorkdir(trimmed, workdir)) continue
-      return trimmed
-    }
-  }
-  return null
-}
-
-/**
  * Check if a command performs a Git mutation that changes branches or workspace state.
  * Does NOT strip quotes — doing so would let git "checkout" main bypass detection.
  */
@@ -219,18 +114,6 @@ export const runCommandTool = createTool<RunCommandArgs>(
       return helpers.error(
         'Use background_process tool (action: "start") for background/long-running commands instead of \'&\'. See the tool description for details.',
       )
-    }
-
-    // Detect workspace escape patterns (cd ../.., git -C, GIT_DIR, etc.)
-    const escapeMatch = detectEscapePattern(args.command, context.workdir)
-    if (escapeMatch) {
-      const desc = `Command "${args.command}" contains workspace escape pattern "${escapeMatch}". Allow this command?`
-      const approved = await requestUserConfirmation(context, 'command', desc)
-      if (!approved) {
-        return helpers.error(
-          `User denied: command "${escapeMatch}" would escape the workspace. Use the workspace tool to switch workspaces directly.`,
-        )
-      }
     }
 
     // Detect Git mutations (checkout, switch, branch creation, etc.)

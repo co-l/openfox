@@ -260,6 +260,13 @@ describe('Shell Guards with User Confirmation', () => {
   it('blocks git checkout and requests user confirmation', async () => {
     client.clearEvents()
 
+    // Enable workspace/git confirmations for this test
+    await fetch(`${server.url}/api/settings/tools.confirmOnWorkspaceActions`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ value: 'true' }),
+    })
+
     // Send a git checkout command
     await client.send('chat.send', {
       content: 'Run "git checkout main" in the project directory',
@@ -282,6 +289,13 @@ describe('Shell Guards with User Confirmation', () => {
   it('blocks git push and requests user confirmation', async () => {
     client.clearEvents()
 
+    // Enable workspace/git confirmations for this test
+    await fetch(`${server.url}/api/settings/tools.confirmOnWorkspaceActions`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ value: 'true' }),
+    })
+
     await client.send('chat.send', {
       content: 'Run "git push" in the project directory',
     })
@@ -292,32 +306,6 @@ describe('Shell Guards with User Confirmation', () => {
     const payload = confirmEvent!.payload as { callId: string; paths: string[] }
     const session = client.getSession()!
     await answerPathConfirmation(server.url, session.id, payload.callId, true)
-  })
-
-  it('blocks workspace escape via cd .. and requests user confirmation', async () => {
-    client.clearEvents()
-
-    await client.send('chat.send', {
-      content: 'Run "cd .. && ls" in the project directory',
-    })
-
-    const confirmEvent = await client.waitFor('chat.path_confirmation', undefined, 3000).catch(() => null)
-    expect(confirmEvent).not.toBeNull()
-
-    const payload = confirmEvent!.payload as { callId: string; tool: string; reason: string }
-    expect(payload.tool).toBe('command')
-    expect(payload.reason).toBe('dangerous_command')
-  })
-
-  it('blocks git -C escape and requests user confirmation', async () => {
-    client.clearEvents()
-
-    await client.send('chat.send', {
-      content: 'Run "git -C /tmp status"',
-    })
-
-    const confirmEvent = await client.waitFor('chat.path_confirmation', undefined, 3000).catch(() => null)
-    expect(confirmEvent).not.toBeNull()
   })
 
   it('allows safe git commands without confirmation', async () => {
@@ -530,7 +518,8 @@ describe('Confirm-Path Session Binding', () => {
     const sessB = await createSession(server.url, { projectId: proj.id })
 
     // Create a pending confirmation for session A
-    const { registerPathConfirmation, hasPendingPathConfirmation } = await import('../src/server/tools/path-security.js')
+    const { registerPathConfirmation, hasPendingPathConfirmation } =
+      await import('../src/server/tools/path-security.js')
     const randomCallId = `cross-session-test-${randomUUID()}`
     registerPathConfirmation(randomCallId, ['/tmp/test'], sessA.id, 'read_file', '/tmp', 'outside_workdir')
     expect(hasPendingPathConfirmation(randomCallId)).toBe(true)
@@ -673,7 +662,8 @@ describe('Confirmation Event Persistence', () => {
     const sess = await createSession(server.url, { projectId: proj.id })
 
     // Trigger a shell guard to create a confirmation pending event
-    const { registerPathConfirmation, hasPendingPathConfirmation } = await import('../src/server/tools/path-security.js')
+    const { registerPathConfirmation, hasPendingPathConfirmation } =
+      await import('../src/server/tools/path-security.js')
     const callId = `persist-test-${randomUUID()}`
     registerPathConfirmation(callId, ['rm -rf /'], sess.id, 'run_command', '/tmp', 'dangerous_command')
     expect(hasPendingPathConfirmation(callId)).toBe(true)

@@ -74,9 +74,20 @@ export type ToolHandler<TArgs> = (args: TArgs, context: ToolContext, helpers: To
  * If context provides a signal (e.g. user cancel), the returned signal
  * triggers on whichever fires first.
  */
-export function requestUserConfirmation(context: ToolContext, toolLabel: string, desc: string): Promise<boolean> {
+export async function requestUserConfirmation(context: ToolContext, toolLabel: string, desc: string): Promise<boolean> {
   // In dangerous mode, auto-approve all shell guard confirmations
   if (context.dangerLevel === 'dangerous') return Promise.resolve(true)
+  // Skip workspace/git action confirmations if user opted out via settings
+  if (toolLabel === 'workspace' || toolLabel === 'command') {
+    try {
+      const { getSetting, SETTINGS_KEYS } = await import('../db/settings.js')
+      if (getSetting(SETTINGS_KEYS.CONFIRM_ON_WORKSPACE_ACTIONS) !== 'true') {
+        return Promise.resolve(true)
+      }
+    } catch {
+      // Settings DB not available (tests, early init) — fall through to normal flow
+    }
+  }
   // Sub-agent shortcut: skip confirmation dialogs since they don't render in the sub-agent bubble.
   // Already handled by dangerous check above; in normal mode, deny (fail closed).
   if (context.isSubAgent) return Promise.resolve(false)
