@@ -6,6 +6,7 @@ import { createViteWatchOptions } from './vite-watch.js'
 import { existsSync } from 'fs'
 
 const baseConfig = defineConfig({
+  base: './',
   plugins: [
     react(),
     VitePWA({
@@ -55,6 +56,10 @@ const baseConfig = defineConfig({
     watch: createViteWatchOptions(),
     // In dev mode, users access Vite directly (for HMR to work)
     // Vite proxies API/WS to the backend server
+    // Note: proxy rules match literal /api and /ws paths. When testing
+    // subpath deployments in dev mode (e.g. behind a reverse proxy),
+    // these rules won't match /<subpath>/api/... — use a production
+    // build behind the reverse proxy instead, or add custom rewrites.
     proxy: {
       '/api': {
         target: 'http://localhost:10469',

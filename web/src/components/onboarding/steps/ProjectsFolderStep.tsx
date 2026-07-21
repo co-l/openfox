@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { authFetch } from '../../../lib/api'
 import { DirectoryBrowser } from '../../shared/DirectoryBrowser'
+import { appUrl } from '../../../lib/basePath'
 
 interface ProjectsFolderStepProps {
   onNext: (data: { workdir: string }) => void
@@ -17,7 +18,7 @@ export function ProjectsFolderStep({ onNext }: ProjectsFolderStepProps) {
         if (data.workdir) {
           setWorkdir(data.workdir)
         } else {
-          fetch('/api/directories?path=' + encodeURIComponent('/home'))
+          fetch(appUrl('/api/directories?path=') + encodeURIComponent('/home'))
             .then((r) => r.json())
             .then((dirData) => {
               if (dirData.current) {
@@ -28,7 +29,7 @@ export function ProjectsFolderStep({ onNext }: ProjectsFolderStepProps) {
         }
       })
       .catch(() => {
-        fetch('/api/directories?path=' + encodeURIComponent('/home'))
+        fetch(appUrl('/api/directories?path=') + encodeURIComponent('/home'))
           .then((r) => r.json())
           .then((data) => {
             if (data.current) {

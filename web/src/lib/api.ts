@@ -1,3 +1,5 @@
+import { appUrl } from './basePath'
+
 export function getSessionToken(): string | null {
   return localStorage.getItem('openfox_token')
 }
@@ -9,7 +11,7 @@ export async function authFetch(url: string, options: RequestInit = {}): Promise
     ...(token ? { 'x-session-token': token } : {}),
   }
 
-  return fetch(url, { ...options, headers })
+  return fetch(appUrl(url), { ...options, headers })
 }
 
 export async function truncateSession(sessionId: string, messageIndex: number): Promise<boolean> {

@@ -1,4 +1,5 @@
 import { create } from 'zustand'
+import { appUrl } from '../lib/basePath'
 
 type UpdateStatus = 'idle' | 'checking' | 'upToDate' | 'available' | 'error'
 
@@ -18,7 +19,7 @@ export const useUpdateStore = create<UpdateState>((set, get) => ({
     if (!force && get().status === 'checking') return
     set({ status: 'checking' })
     try {
-      const res = await fetch(`/api/auto-update/check${force ? '?force=true' : ''}`)
+      const res = await fetch(appUrl(`/api/auto-update/check${force ? '?force=true' : ''}`))
       if (!res.ok) throw new Error(`HTTP ${res.status}`)
       const data = (await res.json()) as { isUpdateAvailable: boolean; current: string; latest: string }
       set({

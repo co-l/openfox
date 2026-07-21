@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import { authFetch } from '../../lib/api'
+import { appUrl } from '../../lib/basePath'
 import type { SessionSummary, Message } from '@shared/types.js'
 import type { QueuedMessage, PendingQuestionPayload } from '@shared/protocol.js'
 import { wsClient } from '../../lib/ws'
@@ -221,7 +222,7 @@ export const useSessionStore = create<SessionState>((set, get) => {
 
     submitPassword: async (password: string) => {
       try {
-        const res = await fetch('/api/auth/login', {
+        const res = await fetch(appUrl('/api/auth/login'), {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ password }),
