@@ -143,9 +143,6 @@ export const ToolCallDisplay = memo(function ToolCallDisplay({
         <span className="text-text-muted text-xs">{expanded ? '▼' : '▶'}</span>
       </button>
 
-      {/* Inline path confirmation for pending tools */}
-      {pendingConfirmation && <PathConfirmationButtons confirmation={pendingConfirmation} />}
-
       {expanded && (
         <div className="p-2 bg-primary border-t border-border space-y-2 min-w-0">
           {/* Specialized rendering for run_command with streaming output */}
@@ -369,6 +366,9 @@ export const ToolCallDisplay = memo(function ToolCallDisplay({
               <pre className="text-xs bg-bg-primary p-1.5 rounded text-accent-error break-words">{error}</pre>
             </div>
           )}
+
+          {/* Inline path confirmation for pending tools */}
+          {pendingConfirmation && <PathConfirmationButtons confirmation={pendingConfirmation} />}
         </div>
       )}
     </div>
