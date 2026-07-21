@@ -1,9 +1,12 @@
 import { useEffect, useState, useCallback } from 'react'
 import { useLocation } from 'wouter'
+import { authFetch } from '../../../lib/api'
 import { Button } from '../../shared/Button'
+import { Input } from '../../shared/Input'
 import { Toggle } from '../../shared/Toggle'
 import { SETTINGS_KEYS } from '../../../stores/settings'
 import { useSettingsStoreState } from '../useSettingsStore'
+import { useTestButton } from '../../../hooks/useTestButton'
 import { RetryPatternsEditor, type RetryPatternsValue } from '../RetryPatternsEditor'
 import { useConfigStore } from '../../../stores/config'
 import { useUpdateStore } from '../../../stores/update'
@@ -24,6 +27,8 @@ export function AdvancedTab({ onClose }: { onClose: () => void }) {
   })
 
   const [retryPatterns, setRetryPatterns] = useState<RetryPatternsValue>({ patterns: [], maxRetriesPerTurn: 10 })
+  const [proxyUrl, setProxyUrl] = useState('')
+  const [proxyTestText, proxyTestError, proxyTestSuccess, testProxy] = useTestButton()
   const [showUpdateModal, setShowUpdateModal] = useState(false)
   const version = useConfigStore((state) => state.version)
   const updateStatus = useUpdateStore((state) => state.status)
@@ -47,6 +52,7 @@ export function AdvancedTab({ onClose }: { onClose: () => void }) {
     getSetting(SETTINGS_KEYS.LLM_DYNAMIC_SYSTEM_PROMPT)
     getSetting(SETTINGS_KEYS.CACHE_WARMING)
     getSetting(SETTINGS_KEYS.RETRY_PATTERNS)
+    getSetting(SETTINGS_KEYS.PROXY_URL)
   }, [getSetting])
 
   useEffect(() => {
@@ -60,6 +66,13 @@ export function AdvancedTab({ onClose }: { onClose: () => void }) {
     }
   }, [settings])
 
+  useEffect(() => {
+    const raw = settings[SETTINGS_KEYS.PROXY_URL]
+    if (raw !== undefined) {
+      setProxyUrl(raw)
+    }
+  }, [settings])
+
   const handleRetryPatternsChange = useCallback(
     (value: RetryPatternsValue) => {
       setRetryPatterns(value)
@@ -67,6 +80,18 @@ export function AdvancedTab({ onClose }: { onClose: () => void }) {
     },
     [setSetting],
   )
+
+  const handleProxyUrlChange = (value: string) => {
+    setProxyUrl(value)
+    setSetting(SETTINGS_KEYS.PROXY_URL, value)
+  }
+
+  function handleTestProxy() {
+    testProxy(async () => {
+      const res = await authFetch('/api/proxy/test', { method: 'POST' })
+      return res.json()
+    })
+  }
 
   const handleToggleOpenInEditor = () => {
     const newValue = !localToggles.openInEditor
@@ -157,6 +182,30 @@ export function AdvancedTab({ onClose }: { onClose: () => void }) {
         onToggle={handleToggleCacheWarming}
         boldTitle
       />
+      <hr className="border-border" />
+      <div>
+        <h3 className="text-sm font-medium text-text-primary mb-3">HTTP Proxy</h3>
+        <p className="text-sm text-text-muted mb-3">
+          Proxy server for LLM API requests. Leave empty for direct connection.
+        </p>
+        <div className="flex gap-2 items-center">
+          <Input
+            type="text"
+            value={proxyUrl}
+            onChange={(e) => handleProxyUrlChange(e.target.value)}
+            placeholder="http://proxy:8080"
+            className="flex-1"
+          />
+          <Button
+            variant="secondary"
+            onClick={handleTestProxy}
+            style={proxyTestSuccess ? { color: 'rgb(63, 185, 80)' } : undefined}
+          >
+            {proxyTestText}
+          </Button>
+        </div>
+        {proxyTestError && <p className="text-xs text-red-500 mt-1">{proxyTestError}</p>}
+      </div>
       <hr className="border-border" />
       <div>
         <h3 className="text-sm font-medium text-text-primary mb-3">Auto-Retry Patterns</h3>

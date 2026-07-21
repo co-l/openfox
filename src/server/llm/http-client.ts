@@ -6,6 +6,7 @@ import type {
 } from './openai-types.js'
 import { logger } from '../utils/logger.js'
 import { LLMError } from '../utils/errors.js'
+import { proxyFetch } from './proxy.js'
 
 export interface HttpClientOptions {
   baseURL: string
@@ -38,7 +39,7 @@ export class OpenAIHttpClient {
     const bodyStr = JSON.stringify(params)
     logger.debug('HTTP request to LLM', { url, bodyKeys: Object.keys(params) })
 
-    const response = await fetch(url, {
+    const response = await proxyFetch(url, {
       method: 'POST',
       headers,
       body: bodyStr,

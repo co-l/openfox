@@ -13,6 +13,7 @@ import { initDatabase } from './db/index.js'
 import { initEventStore } from './events/index.js'
 import { detectModel, getLlmStatus, getBackendDisplayName } from './llm/index.js'
 import { buildModelsUrl } from './llm/url-utils.js'
+import { proxyFetch } from './llm/proxy.js'
 import { createMockLLMClient } from './llm/mock.js'
 import { createProviderManager, parseDefaultModelSelection } from './provider-manager.js'
 import { createToolRegistry, setMcpTools } from './tools/index.js'
@@ -1532,6 +1533,30 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
       }
 
       return res.status(400).json({ success: false, error: 'Invalid engine' })
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Connection failed'
+      if (error instanceof DOMException && error.name === 'AbortError') {
+        return res.status(400).json({ success: false, error: 'Connection timed out' })
+      }
+      return res.status(400).json({ success: false, error: message })
+    }
+  })
+
+  app.post('/api/proxy/test', async (_req, res) => {
+    const { getSetting, SETTINGS_KEYS } = await import('./db/settings.js')
+    const proxyUrl = getSetting(SETTINGS_KEYS.PROXY_URL)
+    if (!proxyUrl) {
+      return res.status(400).json({ success: false, error: 'No proxy URL configured' })
+    }
+
+    try {
+      const response = await proxyFetch('http://example.com', {
+        signal: AbortSignal.timeout(10000),
+      })
+      if (!response.ok) {
+        return res.status(400).json({ success: false, error: `Proxy returned HTTP ${response.status}` })
+      }
+      return res.json({ success: true, message: 'Proxy connection OK' })
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Connection failed'
       if (error instanceof DOMException && error.name === 'AbortError') {

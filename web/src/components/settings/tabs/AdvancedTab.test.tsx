@@ -20,6 +20,7 @@ vi.mock('../../stores/settings', () => ({
     LLM_DYNAMIC_SYSTEM_PROMPT: 'llm.dynamicSystemPrompt',
     CACHE_WARMING: 'cache.warming',
     RETRY_PATTERNS: 'agent.retryPatterns',
+    PROXY_URL: 'network.proxyUrl',
   },
   useSettingsStore: vi.fn((selector) => {
     const state = {
@@ -73,6 +74,17 @@ describe('AdvancedTab', () => {
   it('does not render search engine section', () => {
     const { container } = render(<AdvancedTab onClose={vi.fn()} />)
     expect(container.textContent).not.toContain('Search Engine')
+  })
+
+  it('renders the HTTP Proxy input', () => {
+    const { container } = render(<AdvancedTab onClose={vi.fn()} />)
+    expect(container.textContent).toContain('HTTP Proxy')
+    expect(container.textContent).toContain('Proxy server for LLM API requests')
+  })
+
+  it('renders the HTTP Proxy section', () => {
+    const { container } = render(<AdvancedTab onClose={vi.fn()} />)
+    expect(container.textContent).toContain('HTTP Proxy')
   })
 
   it('toggles Dynamic System Prompt on click', async () => {
