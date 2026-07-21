@@ -33,11 +33,11 @@ export function runGit(cwd: string, args: string[]): Promise<void> {
   })
 }
 
-function getServerMode(): 'development' | 'production' {
+export function getServerMode(): 'development' | 'production' {
   return process.env['OPENFOX_DEV'] === 'true' ? 'development' : 'production'
 }
 
-function getGlobalDataDir(): string {
+export function getGlobalDataDir(): string {
   const mode = getServerMode()
   const suffix = mode === 'development' ? '-dev' : ''
   const home = homedir()
@@ -51,7 +51,15 @@ function getGlobalDataDir(): string {
   }
 }
 
-export function getWorkspacesDir(projectName: string): string {
+export async function getWorkspacesDir(projectName: string, projectDir: string): Promise<string> {
+  const config = await loadWorkspaceConfig(projectDir)
+  if (config?.rootDir) {
+    return isAbsolute(config.rootDir) ? config.rootDir : resolve(projectDir, config.rootDir)
+  }
+  return join(getGlobalDataDir(), 'workspaces', projectName)
+}
+
+export function getDefaultGlobalWorkspacesDir(projectName: string): string {
   return join(getGlobalDataDir(), 'workspaces', projectName)
 }
 
@@ -198,8 +206,8 @@ export interface WorkspaceInfo {
   branch: string | null
 }
 
-export async function workspaceExists(projectName: string, name: string): Promise<boolean> {
-  const dir = getWorkspacesDir(projectName)
+export async function workspaceExists(projectName: string, name: string, projectDir: string): Promise<boolean> {
+  const dir = await getWorkspacesDir(projectName, projectDir)
   const wsPath = resolve(dir, name)
   const st = await statSafe(wsPath)
   if (!st?.isDirectory()) return false
@@ -208,8 +216,8 @@ export async function workspaceExists(projectName: string, name: string): Promis
   return gitSt?.isDirectory() ?? false
 }
 
-export async function listWorkspaces(projectName: string): Promise<WorkspaceInfo[]> {
-  const dir = getWorkspacesDir(projectName)
+export async function listWorkspaces(projectName: string, projectDir: string): Promise<WorkspaceInfo[]> {
+  const dir = await getWorkspacesDir(projectName, projectDir)
   try {
     const { readdir } = await import('node:fs/promises')
     const entries = await readdir(dir, { withFileTypes: true })
@@ -239,7 +247,7 @@ export async function ensureWorkspace(
   branch?: string,
   sourceBranch?: string,
 ): Promise<WorkspaceResult> {
-  const workspacesDir = getWorkspacesDir(projectName)
+  const workspacesDir = await getWorkspacesDir(projectName, projectDir)
   const wsPath = resolve(workspacesDir, name)
 
   await mkdir(workspacesDir, { recursive: true })
@@ -287,8 +295,8 @@ export async function ensureWorkspace(
   return { path: wsPath, name }
 }
 
-export async function deleteWorkspace(projectName: string, name: string): Promise<void> {
-  const dir = getWorkspacesDir(projectName)
+export async function deleteWorkspace(projectName: string, name: string, projectDir: string): Promise<void> {
+  const dir = await getWorkspacesDir(projectName, projectDir)
   const wsPath = resolve(dir, name)
   const st = await statSafe(wsPath)
   if (!st?.isDirectory()) {

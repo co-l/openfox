@@ -1058,7 +1058,7 @@ export class SessionManager {
     branch: string,
     sourceBranch?: string,
   ): Promise<void> {
-    const wsPath = resolve(getWorkspacesDir(projectName), workspaceName)
+    const wsPath = resolve(await getWorkspacesDir(projectName, projectDir), workspaceName)
     const currentBranch = await getGitBranch(wsPath)
     if (currentBranch !== branch) {
       try {
@@ -1139,7 +1139,7 @@ export class SessionManager {
         if (existingCreateLock) await existingCreateLock
 
         const createLockPromise = (async () => {
-          const exists = await workspaceExists(project.name, target)
+          const exists = await workspaceExists(project.name, target, project.workdir)
           if (!exists) {
             await ensureWorkspace(project.workdir, target, project.name, branch, sourceBranch)
           } else if (branch) {
@@ -1152,7 +1152,8 @@ export class SessionManager {
         } finally {
           this.workspaceCreationLocks.delete(createLockKey)
         }
-        const wsPath = resolve(getWorkspacesDir(project.name), target)
+        const wsDir = await getWorkspacesDir(project.name, project.workdir)
+        const wsPath = resolve(wsDir, target)
         updateSessionWorkdir(sessionId, project.workdir, wsPath)
       } else {
         // Branch-only change on the current workspace — no dev server stop or db update
@@ -1165,7 +1166,9 @@ export class SessionManager {
         logger.error('Error shutting down LSP for workspace switch', { sessionId, error: err })
       }
 
-      const effectiveWorkdir = target === 'original' ? project.workdir : resolve(getWorkspacesDir(project.name), target)
+      // Read the actual branch we're now on
+      const wsDirForBranch = await getWorkspacesDir(project.name, project.workdir)
+      const effectiveWorkdir = target === 'original' ? project.workdir : resolve(wsDirForBranch, target)
       const actualBranch = await getGitBranch(effectiveWorkdir)
 
       if (actualBranch) {
@@ -1252,14 +1255,15 @@ export class SessionManager {
       await this.switchWorkspace(sessionId, 'original')
     }
 
-    const effectivePath = resolve(getWorkspacesDir(project.name), target)
+    const wsDir = await getWorkspacesDir(project.name, project.workdir)
+    const effectivePath = resolve(wsDir, target)
     try {
       await devServerManager.stop(effectivePath)
     } catch {
       // ignore
     }
 
-    await deleteWorkspaceDir(project.name, target)
+    await deleteWorkspaceDir(project.name, target, project.workdir)
     const updated = this.requireSession(sessionId)
     this.emit({ type: 'session_updated', session: updated })
     return updated
