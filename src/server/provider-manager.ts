@@ -4,6 +4,7 @@ import { createTransportLLMClient } from './providers/adapters/transport-client.
 import { createLLMClient, clearModelCache, getModelProfile, type LLMClientWithModel } from './llm/index.js'
 import { logger } from './utils/logger.js'
 import { ensureVersionPrefix, stripVersionPrefix, buildModelsUrl } from './llm/url-utils.js'
+import { proxyFetch } from './llm/proxy.js'
 
 function normalizeModelId(s: string): string {
   return s.toLowerCase().replace(/[-_\s:.]+/g, '')
@@ -19,7 +20,7 @@ async function fetchModelsFromBackend(
   }
 
   try {
-    const response = await fetch(url, { method: 'GET', headers, signal: AbortSignal.timeout(10000) })
+    const response = await proxyFetch(url, { method: 'GET', headers, signal: AbortSignal.timeout(10000) })
     if (!response.ok) {
       logger.debug('Failed to fetch models', { url, status: response.status })
       return []
@@ -127,7 +128,7 @@ async function fetchOllamaModelsWithContext(baseUrl: string, _apiKey?: string): 
   const tagsUrl = `${baseUrl}/api/tags`
 
   try {
-    const tagsResponse = await fetch(tagsUrl, {
+    const tagsResponse = await proxyFetch(tagsUrl, {
       signal: AbortSignal.timeout(10000),
     })
 
@@ -146,7 +147,7 @@ async function fetchOllamaModelsWithContext(baseUrl: string, _apiKey?: string): 
     for (const model of tagsData.models) {
       try {
         const showUrl = `${baseUrl}/api/show`
-        const showResponse = await fetch(showUrl, {
+        const showResponse = await proxyFetch(showUrl, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ name: model.name, verbose: true }),
@@ -208,7 +209,7 @@ async function fetchLmStudioModelsWithContext(baseUrl: string, _apiKey?: string)
 
   try {
     logger.info('Fetching LM Studio native models', { url: nativeUrl })
-    const response = await fetch(nativeUrl, {
+    const response = await proxyFetch(nativeUrl, {
       signal: AbortSignal.timeout(10000),
     })
 

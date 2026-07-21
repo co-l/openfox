@@ -29,6 +29,7 @@ export const SETTINGS_KEYS = {
   TOOLS_USE_RTK: 'tools.useRtk',
   TOOLS_SHELL: 'tools.shell',
   CONFIRM_ON_WORKSPACE_ACTIONS: 'tools.confirmOnWorkspaceActions',
+  PROXY_URL: 'network.proxyUrl',
 } as const
 
 export const SETTINGS_DEFAULTS: Record<string, string> = {

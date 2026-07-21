@@ -24,6 +24,7 @@ export function AdvancedTab({ onClose }: { onClose: () => void }) {
   })
 
   const [retryPatterns, setRetryPatterns] = useState<RetryPatternsValue>({ patterns: [], maxRetriesPerTurn: 10 })
+  const [proxyUrl, setProxyUrl] = useState('')
   const [showUpdateModal, setShowUpdateModal] = useState(false)
   const version = useConfigStore((state) => state.version)
   const updateStatus = useUpdateStore((state) => state.status)
@@ -47,6 +48,7 @@ export function AdvancedTab({ onClose }: { onClose: () => void }) {
     getSetting(SETTINGS_KEYS.LLM_DYNAMIC_SYSTEM_PROMPT)
     getSetting(SETTINGS_KEYS.CACHE_WARMING)
     getSetting(SETTINGS_KEYS.RETRY_PATTERNS)
+    getSetting(SETTINGS_KEYS.PROXY_URL)
   }, [getSetting])
 
   useEffect(() => {
@@ -60,6 +62,13 @@ export function AdvancedTab({ onClose }: { onClose: () => void }) {
     }
   }, [settings])
 
+  useEffect(() => {
+    const raw = settings[SETTINGS_KEYS.PROXY_URL]
+    if (raw !== undefined) {
+      setProxyUrl(raw)
+    }
+  }, [settings])
+
   const handleRetryPatternsChange = useCallback(
     (value: RetryPatternsValue) => {
       setRetryPatterns(value)
@@ -67,6 +76,11 @@ export function AdvancedTab({ onClose }: { onClose: () => void }) {
     },
     [setSetting],
   )
+
+  const handleProxyUrlChange = (value: string) => {
+    setProxyUrl(value)
+    setSetting(SETTINGS_KEYS.PROXY_URL, value)
+  }
 
   const handleToggleOpenInEditor = () => {
     const newValue = !localToggles.openInEditor
@@ -157,6 +171,23 @@ export function AdvancedTab({ onClose }: { onClose: () => void }) {
         onToggle={handleToggleCacheWarming}
         boldTitle
       />
+      <hr className="border-border" />
+      <div>
+        <h3 className="text-sm font-medium text-text-primary mb-3">Network</h3>
+        <div>
+          <label className="text-xs text-text-secondary block mb-1">HTTP Proxy</label>
+          <input
+            type="text"
+            value={proxyUrl}
+            onChange={(e) => handleProxyUrlChange(e.target.value)}
+            placeholder="http://proxy:8080"
+            className="w-full px-3 py-2 bg-bg-primary border border-border rounded text-sm text-text-primary placeholder-text-muted focus:outline-none focus:border-accent-primary"
+          />
+          <p className="text-xs text-text-muted mt-1">
+            Proxy server for LLM API requests. Leave empty for direct connection.
+          </p>
+        </div>
+      </div>
       <hr className="border-border" />
       <div>
         <h3 className="text-sm font-medium text-text-primary mb-3">Auto-Retry Patterns</h3>
