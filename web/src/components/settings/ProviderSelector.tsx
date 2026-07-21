@@ -411,7 +411,8 @@ export function ProviderSelector() {
             const q = searchQuery.toLowerCase()
             const name = (m.name ?? '').toLowerCase()
             const id = m.id.toLowerCase()
-            return name.includes(q) || id.includes(q)
+            const idDisplay = id.replace(/-/g, ' ')
+            return name.includes(q) || id.includes(q) || idDisplay.includes(q)
           }),
         }))
         .filter((g) => g.models.length > 0)
@@ -428,7 +429,12 @@ export function ProviderSelector() {
       const q = query.toLowerCase()
       const matches = providers.flatMap((p) =>
         getVisibleModels(p)
-          .filter((m) => (m.name ?? '').toLowerCase().includes(q) || m.id.toLowerCase().includes(q))
+          .filter((m) => {
+            const n = (m.name ?? '').toLowerCase()
+            const i = m.id.toLowerCase()
+            const iDisplay = i.replace(/-/g, ' ')
+            return n.includes(q) || i.includes(q) || iDisplay.includes(q)
+          })
           .map((m) => ({ providerId: p.id, modelId: m.id })),
       )
       if (matches.length === 1) {
