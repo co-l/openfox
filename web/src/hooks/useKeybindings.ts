@@ -18,7 +18,7 @@ function isChord(binding: KeyBinding): binding is ChordBinding {
 
 function keyEventMatches(e: KeyboardEvent, key: string): boolean {
   if (key.length === 1 && /^[a-z]$/i.test(key)) {
-    return e.code === `Key${key.toUpperCase()}`
+    return e.key.toLowerCase() === key.toLowerCase()
   }
   if (key.length === 1 && /^[0-9]$/.test(key)) {
     return e.code === `Digit${key}`

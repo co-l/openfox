@@ -16,6 +16,7 @@ export type KeyBinding = DoublePressBinding | ChordBinding
 export interface KeybindingsConfig {
   terminalToggle: KeyBinding | null
   quickAction: KeyBinding | null
+  modelSelector: KeyBinding | null
   agentSwitching: (KeyBinding | null)[]
 }
 
@@ -24,6 +25,7 @@ export const KEYBINDINGS_SETTING_KEY = 'keybindings'
 export const DEFAULT_KEYBINDINGS: KeybindingsConfig = {
   terminalToggle: { type: 'double-press', key: 'Control', threshold: 300 },
   quickAction: { type: 'double-press', key: 'Shift', threshold: 300 },
+  modelSelector: { type: 'chord', key: 'm', modifiers: ['ctrl'] },
   agentSwitching: [
     { type: 'chord', key: '1', modifiers: ['ctrl'] },
     { type: 'chord', key: '2', modifiers: ['ctrl'] },
@@ -42,6 +44,7 @@ export function parseKeybindings(json: string | undefined | null): KeybindingsCo
     return {
       terminalToggle: orDefault('terminalToggle'),
       quickAction: orDefault('quickAction'),
+      modelSelector: orDefault('modelSelector'),
       agentSwitching: orDefault('agentSwitching'),
     }
   } catch {
@@ -51,7 +54,7 @@ export function parseKeybindings(json: string | undefined | null): KeybindingsCo
 
 export function getKeyFromEvent(e: KeyboardEvent): string {
   if (e.code.startsWith('Digit')) return e.code.slice(-1)
-  if (e.code.startsWith('Key')) return e.code.slice(3).toLowerCase()
+  if (/^[a-zA-Z]$/.test(e.key)) return e.key.toLowerCase()
   return e.key
 }
 

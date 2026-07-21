@@ -178,6 +178,12 @@ export function KeybindingsTab() {
       binding: config.quickAction,
       defaultBinding: DEFAULT_KEYBINDINGS.quickAction,
     },
+    {
+      id: 'modelSelector',
+      label: 'Select Model',
+      binding: config.modelSelector,
+      defaultBinding: DEFAULT_KEYBINDINGS.modelSelector,
+    },
     ...config.agentSwitching.map((b, i) => ({
       id: `agentSwitching.${i}`,
       label: `Switch to Agent ${i + 1}`,
@@ -201,6 +207,8 @@ export function KeybindingsTab() {
         updated.terminalToggle = value
       } else if (id === 'quickAction') {
         updated.quickAction = value
+      } else if (id === 'modelSelector') {
+        updated.modelSelector = value
       }
 
       setSetting(SETTINGS_KEYS.KEYBINDINGS, JSON.stringify(updated))
