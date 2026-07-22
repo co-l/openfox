@@ -272,11 +272,15 @@ describe('Error banner behavior', () => {
       status: 200,
     } as any)
 
-    useSessionStore.getState().loadSession('session-2')
+    await useSessionStore.getState().loadSession('session-2')
 
-    expect(useSessionStore.getState().currentSession).toBeNull()
+    expect(useSessionStore.getState().currentSession?.id).toBe('session-2')
     expect(useSessionStore.getState().error).toBeNull()
   })
+
+  // ============================================================================
+  // Criterion 4: Page reload clears error (covered by loadSession — same codepath)
+  // ============================================================================
 
   // ============================================================================
   // Criterion 5: session.state does NOT overwrite error
