@@ -2307,3 +2307,283 @@ describe('buildMessagesFromStoredEvents with maxVisibleItems', () => {
     expect(result.hiddenCount).toBe(17)
   })
 })
+
+// ============================================================================
+// foldSessionState — metadataEntries snapshot fallback merge
+// ============================================================================
+
+describe('foldSessionState metadataEntries snapshot fallback merge', () => {
+  const baseEvent = {
+    seq: 1,
+    sessionId: 'session-1',
+    timestamp: Date.parse('2024-01-01T00:00:00.000Z'),
+  }
+
+  const snapshotTimestamp = Date.parse('2024-01-01T00:00:00.000Z')
+  const postSnapshotTimestamp = Date.parse('2024-01-01T00:05:00.000Z')
+
+  it('preserves snapshot metadata entries when no post-snapshot metadata events exist', () => {
+    const events: StoredEvent[] = [
+      {
+        ...baseEvent,
+        seq: 1,
+        type: 'session.initialized',
+        data: { projectId: 'proj-1', workdir: '/tmp', contextWindowId: 'window-1' },
+      },
+      {
+        ...baseEvent,
+        seq: 2,
+        type: 'turn.snapshot',
+        data: {
+          mode: 'planner',
+          phase: 'plan',
+          isRunning: false,
+          messages: [],
+          criteria: [],
+          metadataEntries: {
+            criteria: [{ id: 'c1', description: 'Criterion from snapshot', status: 'pending' }],
+          },
+          contextState: {
+            currentTokens: 0,
+            maxTokens: 200000,
+            compactionCount: 0,
+            dangerZone: false,
+            canCompact: false,
+            dynamicContextChanged: false,
+          },
+          currentContextWindowId: 'window-1',
+          todos: [],
+          readFiles: [],
+          snapshotSeq: 1,
+          snapshotAt: snapshotTimestamp,
+        },
+      },
+    ]
+
+    const state = foldSessionState(events, 'window-1', 200000)
+
+    expect(state.metadataEntries).toEqual({
+      criteria: [{ id: 'c1', description: 'Criterion from snapshot', status: 'pending' }],
+    })
+  })
+
+  it('merges snapshot metadata entries with post-snapshot metadata.set events', () => {
+    const events: StoredEvent[] = [
+      {
+        ...baseEvent,
+        seq: 1,
+        type: 'session.initialized',
+        data: { projectId: 'proj-1', workdir: '/tmp', contextWindowId: 'window-1' },
+      },
+      {
+        ...baseEvent,
+        seq: 2,
+        type: 'turn.snapshot',
+        data: {
+          mode: 'planner',
+          phase: 'plan',
+          isRunning: false,
+          messages: [],
+          criteria: [],
+          metadataEntries: {
+            criteria: [{ id: 'c1', description: 'Original criterion from snapshot', status: 'pending' }],
+          },
+          contextState: {
+            currentTokens: 0,
+            maxTokens: 200000,
+            compactionCount: 0,
+            dangerZone: false,
+            canCompact: false,
+            dynamicContextChanged: false,
+          },
+          currentContextWindowId: 'window-1',
+          todos: [],
+          readFiles: [],
+          snapshotSeq: 1,
+          snapshotAt: snapshotTimestamp,
+        },
+      },
+      {
+        ...baseEvent,
+        seq: 3,
+        timestamp: postSnapshotTimestamp,
+        type: 'metadata.set',
+        data: {
+          key: 'test_cases',
+          entries: [{ id: 'tc1', description: 'Test case written post-snapshot', status: 'pending' }],
+        },
+      },
+      {
+        ...baseEvent,
+        seq: 4,
+        timestamp: postSnapshotTimestamp,
+        type: 'metadata.set',
+        data: {
+          key: 'review_findings',
+          entries: [{ id: 'rf1', description: 'Review finding written post-snapshot', status: 'pending' }],
+        },
+      },
+    ]
+
+    const state = foldSessionState(events, 'window-1', 200000)
+
+    // Snapshot's criteria must be preserved even though test_cases and review_findings
+    // were written post-snapshot (the old Object.keys(metadataEntries).length === 0
+    // guard would have skipped the fallback because metadataEntries was non-empty)
+    expect(state.metadataEntries).toEqual({
+      criteria: [{ id: 'c1', description: 'Original criterion from snapshot', status: 'pending' }],
+      test_cases: [{ id: 'tc1', description: 'Test case written post-snapshot', status: 'pending' }],
+      review_findings: [{ id: 'rf1', description: 'Review finding written post-snapshot', status: 'pending' }],
+    })
+  })
+
+  it('post-snapshot metadata.set overrides snapshot metadata entries for the same key', () => {
+    const events: StoredEvent[] = [
+      {
+        ...baseEvent,
+        seq: 1,
+        type: 'session.initialized',
+        data: { projectId: 'proj-1', workdir: '/tmp', contextWindowId: 'window-1' },
+      },
+      {
+        ...baseEvent,
+        seq: 2,
+        type: 'turn.snapshot',
+        data: {
+          mode: 'planner',
+          phase: 'plan',
+          isRunning: false,
+          messages: [],
+          criteria: [],
+          metadataEntries: {
+            criteria: [{ id: 'c1', description: 'Old status', status: 'pending' }],
+          },
+          contextState: {
+            currentTokens: 0,
+            maxTokens: 200000,
+            compactionCount: 0,
+            dangerZone: false,
+            canCompact: false,
+            dynamicContextChanged: false,
+          },
+          currentContextWindowId: 'window-1',
+          todos: [],
+          readFiles: [],
+          snapshotSeq: 1,
+          snapshotAt: snapshotTimestamp,
+        },
+      },
+      {
+        ...baseEvent,
+        seq: 3,
+        timestamp: postSnapshotTimestamp,
+        type: 'metadata.set',
+        data: {
+          key: 'criteria',
+          entries: [{ id: 'c1', description: 'Updated status', status: 'validated' }],
+        },
+      },
+    ]
+
+    const state = foldSessionState(events, 'window-1', 200000)
+
+    // Post-snapshot metadata.set for 'criteria' key should win over snapshot data
+    expect(state.metadataEntries).toEqual({
+      criteria: [{ id: 'c1', description: 'Updated status', status: 'validated' }],
+    })
+  })
+
+  it('handles snapshot with empty metadataEntries and post-snapshot metadata.set', () => {
+    const events: StoredEvent[] = [
+      {
+        ...baseEvent,
+        seq: 1,
+        type: 'session.initialized',
+        data: { projectId: 'proj-1', workdir: '/tmp', contextWindowId: 'window-1' },
+      },
+      {
+        ...baseEvent,
+        seq: 2,
+        type: 'turn.snapshot',
+        data: {
+          mode: 'planner',
+          phase: 'plan',
+          isRunning: false,
+          messages: [],
+          criteria: [],
+          metadataEntries: {},
+          contextState: {
+            currentTokens: 0,
+            maxTokens: 200000,
+            compactionCount: 0,
+            dangerZone: false,
+            canCompact: false,
+            dynamicContextChanged: false,
+          },
+          currentContextWindowId: 'window-1',
+          todos: [],
+          readFiles: [],
+          snapshotSeq: 1,
+          snapshotAt: snapshotTimestamp,
+        },
+      },
+      {
+        ...baseEvent,
+        seq: 3,
+        timestamp: postSnapshotTimestamp,
+        type: 'metadata.set',
+        data: {
+          key: 'criteria',
+          entries: [{ id: 'c1', description: 'Criterion set post-snapshot', status: 'pending' }],
+        },
+      },
+    ]
+
+    const state = foldSessionState(events, 'window-1', 200000)
+
+    expect(state.metadataEntries).toEqual({
+      criteria: [{ id: 'c1', description: 'Criterion set post-snapshot', status: 'pending' }],
+    })
+  })
+
+  it('handles snapshot without metadataEntries field (undefined)', () => {
+    const events: StoredEvent[] = [
+      {
+        ...baseEvent,
+        seq: 1,
+        type: 'session.initialized',
+        data: { projectId: 'proj-1', workdir: '/tmp', contextWindowId: 'window-1' },
+      },
+      {
+        ...baseEvent,
+        seq: 2,
+        type: 'turn.snapshot',
+        data: {
+          mode: 'planner',
+          phase: 'plan',
+          isRunning: false,
+          messages: [],
+          criteria: [],
+          contextState: {
+            currentTokens: 0,
+            maxTokens: 200000,
+            compactionCount: 0,
+            dangerZone: false,
+            canCompact: false,
+            dynamicContextChanged: false,
+          },
+          currentContextWindowId: 'window-1',
+          todos: [],
+          readFiles: [],
+          snapshotSeq: 1,
+          snapshotAt: snapshotTimestamp,
+        },
+      },
+    ]
+
+    const state = foldSessionState(events, 'window-1', 200000)
+
+    // foldMetadata returns {} by default; snapshot has no metadataEntries → result should be {}
+    expect(state.metadataEntries).toEqual({})
+  })
+})
