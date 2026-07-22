@@ -1,6 +1,7 @@
 import { Modal } from '../shared/SelfContainedModal'
 import type { TurnStats } from '../../lib/types'
 import { useAgentsStore } from '../../stores/agents'
+import { formatTime } from '../../lib/format-stats'
 
 interface TurnStatsModalProps {
   stats: TurnStats
@@ -24,7 +25,7 @@ export function TurnStatsModal({ stats: s, onClose }: TurnStatsModalProps) {
         </div>
 
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-          <StatCard label="Total Time" value={`${s.totalTime.toFixed(1)}s`} />
+          <StatCard label="Total Time" value={formatTime(s.totalTime)} />
           <StatCard
             label="Prefill"
             value={s.prefillTokens >= 1000 ? `${(s.prefillTokens / 1000).toFixed(1)}k` : String(s.prefillTokens)}

@@ -3,16 +3,10 @@ import type { TaskCompletedPayload } from '@shared/protocol.js'
 import { useWorkflowsStore } from '../../stores/workflows'
 import { hexToRgba } from '../../lib/colors'
 import { TaskCheckIcon } from '../shared/icons'
+import { formatTime } from '../../lib/format-stats'
 
 interface TaskCompletedCardProps {
   data: TaskCompletedPayload
-}
-
-function formatTime(seconds: number): string {
-  if (seconds < 60) return `${seconds}s`
-  const mins = Math.floor(seconds / 60)
-  const secs = Math.round(seconds % 60)
-  return secs > 0 ? `${mins}m ${secs}s` : `${mins}m`
 }
 
 function formatTokens(n: number): string {

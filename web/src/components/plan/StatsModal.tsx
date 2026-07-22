@@ -3,21 +3,12 @@ import { Modal } from '../shared/SelfContainedModal'
 import { DualSparkline } from '../shared/Sparkline'
 import { buildPerformanceChartData, buildResponseLogRows, type ResponseLogRow } from '@shared/stats-view.js'
 import type { CallStatsDataPoint, ModelSessionStats, SessionStats } from '@shared/types.js'
+import { formatTime } from '../../lib/format-stats'
 
 interface StatsModalProps {
   isOpen: boolean
   onClose: () => void
   stats: SessionStats
-}
-
-/**
- * Format seconds to human-readable time
- */
-function formatTime(seconds: number): string {
-  if (seconds < 60) return `${seconds.toFixed(1)}s`
-  const mins = Math.floor(seconds / 60)
-  const secs = seconds % 60
-  return `${mins}m ${secs.toFixed(0)}s`
 }
 
 /**
@@ -370,7 +361,7 @@ function ResponseRow({
         {formatTimestamp(row.timestamp)}
       </td>
       <td className="px-2 py-2 text-center text-text-muted align-middle whitespace-nowrap">
-        {row.totalTime.toFixed(1)}s
+        {formatTime(row.totalTime)}
       </td>
       <td className="px-2 py-2 text-center text-text-primary font-mono align-middle whitespace-nowrap">
         {contextSummary.replace(/ ctx$/, '')}
@@ -408,7 +399,7 @@ function CallDataPointRow({ dataPoint, index }: { dataPoint: CallStatsDataPoint;
           {formatTimestamp(dataPoint.timestamp)}
         </td>
         <td className="px-2 py-2 text-center text-text-muted align-middle whitespace-nowrap">
-          {dataPoint.totalTime.toFixed(1)}s
+          {formatTime(dataPoint.totalTime)}
         </td>
         <td className="px-2 py-2 text-center text-text-primary font-mono align-middle whitespace-nowrap">
           {formatTokens(dataPoint.promptTokens)}

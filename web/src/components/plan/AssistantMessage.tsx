@@ -10,6 +10,7 @@ import { CriteriaGroupDisplay, isCriterionTool } from '../shared/CriteriaGroupDi
 import { useSessionStore } from '../../stores/session'
 import { useAgentsStore, getAgentColor } from '../../stores/agents'
 import { InfoIcon, WarningSmallIcon } from '../shared/icons'
+import { formatTime } from '../../lib/format-stats'
 
 interface AssistantMessageProps {
   message: Message
@@ -245,11 +246,11 @@ export const AssistantMessage = memo(function AssistantMessage({
                   <span className="text-text-muted">·</span>
                   <span style={{ color: modeColor }}>{modeName}</span>
                   <span className="text-text-muted">·</span>
-                  <span>{stats.totalTime.toFixed(1)}s</span>
+                  <span>{formatTime(stats.totalTime)}</span>
                   {stats.toolTime > 0 && (
                     <>
                       <span className="text-text-muted">·</span>
-                      <span>{stats.toolTime.toFixed(1)}s tools</span>
+                      <span>{formatTime(stats.toolTime)} tools</span>
                     </>
                   )}
                   <span className="text-text-muted">·</span>
