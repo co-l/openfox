@@ -476,9 +476,9 @@ export function ChatInput({
               Send
             </button>
             <MoreMenu
-              onSendCommand={(content, agentMode, textareaContent, attachments) => {
+              onSendCommand={async (content, agentMode, textareaContent, attachments) => {
                 if (agentMode && sessionMode !== agentMode) {
-                  useSessionStore.getState().switchMode(agentMode)
+                  await useSessionStore.getState().switchMode(agentMode)
                 }
                 const combinedContent =
                   textareaContent && textareaContent.trim() ? `${textareaContent.trim()}\n\n${content}` : content

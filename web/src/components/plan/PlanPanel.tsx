@@ -253,7 +253,7 @@ export function PlanPanel({
                 ? `${textareaContent.trim()}\n\n${full.prompt}`
                 : full.prompt
               if (full.metadata.agentMode) {
-                useSessionStore.getState().switchMode(full.metadata.agentMode)
+                await useSessionStore.getState().switchMode(full.metadata.agentMode)
               }
               sendMessage(combinedContent, attachments?.length ? attachments : undefined, {
                 messageKind: 'command',
