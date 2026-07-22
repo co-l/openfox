@@ -210,6 +210,56 @@ describe('ProviderModal - thinkingLevel persistence', () => {
     }
   })
 
+  it('preserves previously-saved advanced parameters when reopening the modal', async () => {
+    const editProvider = {
+      id: 'test-provider',
+      name: 'Test Provider',
+      url: 'http://localhost:8000/v1',
+      backend: 'vllm' as const,
+      models: [
+        {
+          id: 'test-model',
+          contextWindow: 200000,
+          thinkingEnabled: true,
+          temperature: 0.42,
+          topP: 0.9,
+          topK: 40,
+          maxTokens: 2048,
+          compactionThreshold: 0.7,
+        },
+      ],
+    }
+
+    await new Promise<void>((resolve) => {
+      root.render(
+        <ProviderModal
+          isOpen={true}
+          onClose={vi.fn()}
+          onSave={onSaveMock as (provider: ProviderFormData) => void}
+          initialStep={2}
+          editProvider={editProvider}
+          editModelId="test-model"
+        />,
+      )
+      setTimeout(resolve, 200)
+    })
+
+    // Save immediately without touching any field — reopening the modal must not
+    // silently reset previously-persisted advanced parameters to undefined/defaults.
+    const saveButton = container.querySelector('[data-testid="provider-modal-save"]') as HTMLButtonElement | null
+    saveButton?.click()
+
+    expect(onSaveMock).toHaveBeenCalledTimes(1)
+    const savedData: ProviderFormData = onSaveMock.mock.calls[0]![0]!
+    const savedModel = savedData.models.find((m) => m.id === 'test-model')
+    expect(savedModel).toBeDefined()
+    expect(savedModel?.temperature).toBe(0.42)
+    expect(savedModel?.topP).toBe(0.9)
+    expect(savedModel?.topK).toBe(40)
+    expect(savedModel?.maxTokens).toBe(2048)
+    expect(savedModel?.compactionThreshold).toBe(0.7)
+  })
+
   it('does not reset form step when editProvider reference changes (parent re-render)', async () => {
     await new Promise<void>((resolve) => {
       root.render(

@@ -566,6 +566,11 @@ export function ProviderModal({
             defaultTopP: m.defaultTopP,
             defaultTopK: m.defaultTopK,
             defaultMaxTokens: m.defaultMaxTokens,
+            temperature: m.temperature,
+            topP: m.topP,
+            topK: m.topK,
+            maxTokens: m.maxTokens,
+            compactionThreshold: m.compactionThreshold,
           }
           if (m.selected) selected.add(m.id)
         }
