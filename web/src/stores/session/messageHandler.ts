@@ -207,7 +207,6 @@ export function handleServerMessage(
         crossSessionConfirmations: crossCleanup,
         sessionsWithPendingConfirmations: Object.keys(crossCleanup),
         pendingQuestions: payload.pendingQuestions ?? [],
-        error: null,
         ...(wasPendingCreate ? { pendingSessionCreate: payload.session.id } : {}),
       })
 
