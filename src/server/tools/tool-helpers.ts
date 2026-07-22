@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto'
-import { resolve, isAbsolute } from 'node:path'
+import { resolve } from 'node:path'
 import type { ToolResult } from '../../shared/types.js'
 import type { Tool, ToolContext } from './types.js'
 import type { LLMToolDefinition } from '../llm/types.js'
@@ -214,7 +214,7 @@ export function createTool<TArgs>(name: string, definition: LLMToolDefinition, h
 
       // Create helpers with timing closure
       const helpers: ToolHelpers = {
-        resolvePath: (path: string) => (isAbsolute(path) ? path : resolve(context.workdir, path)),
+        resolvePath: (path: string) => resolve(context.workdir, path),
 
         checkPathAccess: async (paths: string[], command?: string) => {
           if (context.onEvent) {
