@@ -11,6 +11,7 @@ import { RetryPatternsEditor, type RetryPatternsValue } from '../RetryPatternsEd
 import { useConfigStore } from '../../../stores/config'
 import { useUpdateStore } from '../../../stores/update'
 import { AutoUpdateModal } from '../../AutoUpdateModal'
+import { ChangelogModal } from '../../ChangelogModal'
 import { useAgentsStore } from '../../../stores/agents'
 
 export function AdvancedTab({ onClose }: { onClose: () => void }) {
@@ -33,6 +34,7 @@ export function AdvancedTab({ onClose }: { onClose: () => void }) {
   const [defaultAgentLoaded, setDefaultAgentLoaded] = useState(false)
   const [proxyTestText, proxyTestError, proxyTestSuccess, testProxy] = useTestButton()
   const [showUpdateModal, setShowUpdateModal] = useState(false)
+  const [showChangelogModal, setShowChangelogModal] = useState(false)
   const version = useConfigStore((state) => state.version)
   const updateStatus = useUpdateStore((state) => state.status)
   const latestVersion = useUpdateStore((state) => state.latest)
@@ -180,6 +182,23 @@ export function AdvancedTab({ onClose }: { onClose: () => void }) {
         </div>
       </div>
       <AutoUpdateModal isOpen={showUpdateModal} onClose={() => setShowUpdateModal(false)} versionInfo={versionInfo} />
+      <div className="flex items-center justify-between pt-2">
+        <button onClick={() => setShowChangelogModal(true)} className="text-sm text-accent-primary hover:underline">
+          View Changelog →
+        </button>
+        <label className="flex items-center gap-2 cursor-pointer">
+          <span className="text-xs text-text-muted">Show on update</span>
+          <Toggle
+            enabled={(settings[SETTINGS_KEYS.DISPLAY_SHOW_CHANGELOG_ON_UPDATE] ?? 'true') === 'true'}
+            onClick={() => {
+              const current = settings[SETTINGS_KEYS.DISPLAY_SHOW_CHANGELOG_ON_UPDATE] ?? 'true'
+              const newValue = current === 'true' ? 'false' : 'true'
+              setSetting(SETTINGS_KEYS.DISPLAY_SHOW_CHANGELOG_ON_UPDATE, newValue)
+            }}
+          />
+        </label>
+      </div>
+      <ChangelogModal isOpen={showChangelogModal} onClose={() => setShowChangelogModal(false)} />
       <hr className="border-border" />
       <div>
         <h3 className="text-sm font-medium text-text-primary mb-1">Default Agent</h3>

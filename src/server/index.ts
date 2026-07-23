@@ -216,7 +216,7 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
   // Auth middleware for all /api routes (except /api/health and /api/auth/login)
   const authMiddleware = async (req: express.Request, res: express.Response, next: express.NextFunction) => {
     const path = req.path
-    const publicPaths = ['/health', '/auth', '/auth/login', '/auto-update/check']
+    const publicPaths = ['/health', '/auth', '/auth/login', '/auto-update/check', '/changelog']
     if (publicPaths.includes(path)) {
       return next()
     }
@@ -237,6 +237,21 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
   // Health check (public)
   app.get('/api/health', (_req, res) => {
     res.json({ status: 'ok', timestamp: new Date().toISOString() })
+  })
+
+  // Changelog (public)
+  app.get('/api/changelog', async (_req, res) => {
+    try {
+      const fs = await import('node:fs')
+      const path = await import('node:path')
+      const { fileURLToPath } = await import('node:url')
+      const dirname = path.dirname(fileURLToPath(import.meta.url))
+      const changelogPath = path.resolve(dirname, '../../CHANGELOG.md')
+      const content = fs.readFileSync(changelogPath, 'utf-8')
+      res.json({ content })
+    } catch {
+      res.json({ content: '# Changelog\n\nUnable to load changelog.' })
+    }
   })
 
   // Auth status (public - tells frontend if auth is required)

@@ -30,6 +30,7 @@ import { PasswordModal } from './components/PasswordModal'
 import { OnboardingWizard } from './components/onboarding/OnboardingWizard'
 import { CrossSessionConfirmationBanner } from './components/shared/CrossSessionConfirmationBanner'
 import { UpdateBanner } from './components/UpdateBanner'
+import { ChangelogModal } from './components/ChangelogModal'
 
 function hasStoredToken(): boolean {
   if (typeof window === 'undefined') return false
@@ -234,6 +235,18 @@ function App() {
     return () => cleanup()
   }, [displaySettings[SETTINGS_KEYS.DISPLAY_THEME], displaySettings[SETTINGS_KEYS.DISPLAY_USER_PRESETS]])
 
+  const [showChangelog, setShowChangelog] = useState(false)
+
+  useEffect(() => {
+    const pending = localStorage.getItem('update_pending')
+    if (pending !== 'true') return
+    const setting = useSettingsStore.getState().settings[SETTINGS_KEYS.DISPLAY_SHOW_CHANGELOG_ON_UPDATE]
+    if (setting === undefined) return
+    if (setting !== 'false') {
+      setShowChangelog(true)
+    }
+  }, [displaySettings[SETTINGS_KEYS.DISPLAY_SHOW_CHANGELOG_ON_UPDATE]])
+
   const getInitialLeftSidebar = () => {
     const saved = localStorage.getItem('openfox:leftSidebar')
     return saved !== null ? saved === 'true' : true
@@ -365,6 +378,7 @@ function App() {
         </div>
       </div>
       <UpdateBanner />
+      <ChangelogModal isOpen={showChangelog} onClose={() => setShowChangelog(false)} />
     </>
   )
 }
