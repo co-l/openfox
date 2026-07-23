@@ -12,6 +12,7 @@ import { replayMessage, forkSession } from '../../lib/api.js'
 import { useSessionStore } from '../../stores/session.js'
 import { copyToClipboard } from '../../lib/clipboard.js'
 import { useLocation } from 'wouter'
+import { useContextMenu } from '../../hooks/useContextMenu'
 
 interface ChatMessageProps {
   message: Message
@@ -41,6 +42,7 @@ function UserMessage({ message, messageId, sessionId }: UserMessageProps) {
   const [forkError, setForkError] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
+  const { onContextMenu, contextMenu } = useContextMenu()
 
   const autoResize = useCallback(() => {
     const el = textareaRef.current
@@ -114,6 +116,7 @@ function UserMessage({ message, messageId, sessionId }: UserMessageProps) {
       className="flex justify-end items-start gap-1.5 feed-item"
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
+      onContextMenu={(e) => onContextMenu(e, !!sessionId && !!messageId)}
     >
       {!isSystemGenerated && (
         <div className={actionsClass}>
@@ -150,16 +153,6 @@ function UserMessage({ message, messageId, sessionId }: UserMessageProps) {
                 className="p-1 rounded hover:bg-bg-tertiary text-text-muted hover:text-text-primary disabled:opacity-50"
               >
                 <ReloadIcon className="w-3.5 h-3.5" />
-              </button>
-              <button
-                onClick={() => {
-                  void handleFork()
-                }}
-                title="Fork session from this message"
-                disabled={forkPending}
-                className="p-1 rounded hover:bg-bg-tertiary text-text-muted hover:text-text-primary disabled:opacity-50"
-              >
-                <BranchIcon className="w-3.5 h-3.5" />
               </button>
             </>
           )}
@@ -236,6 +229,19 @@ function UserMessage({ message, messageId, sessionId }: UserMessageProps) {
           </>
         )}
       </div>
+
+      {contextMenu([
+        {
+          label: 'Copy',
+          icon: <CopyIcon className="w-4 h-4" />,
+          onClick: () => void handleCopy(),
+        },
+        {
+          label: 'Fork session from here',
+          icon: <BranchIcon className="w-4 h-4" />,
+          onClick: () => void handleFork(),
+        },
+      ])}
     </div>
   )
 }

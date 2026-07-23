@@ -9,10 +9,12 @@ import { AskUserCard } from '../shared/AskUserCard'
 import { CriteriaGroupDisplay, isCriterionTool } from '../shared/CriteriaGroupDisplay'
 import { useSessionStore } from '../../stores/session'
 import { useAgentsStore, getAgentColor } from '../../stores/agents'
-import { BranchIcon, InfoIcon, WarningSmallIcon } from '../shared/icons'
+import { BranchIcon, CopyIcon, InfoIcon, WarningSmallIcon } from '../shared/icons'
 import { forkSession } from '../../lib/api.js'
 import { useLocation } from 'wouter'
 import { formatTime } from '../../lib/format-stats'
+import { copyToClipboard } from '../../lib/clipboard.js'
+import { useContextMenu } from '../../hooks/useContextMenu'
 
 interface AssistantMessageProps {
   message: Message
@@ -159,12 +161,16 @@ export const AssistantMessage = memo(function AssistantMessage({
   const rawElements = messageToElements(message, showStats)
   const filteredElements = showThinking ? rawElements : rawElements.filter((e) => e.type !== 'thinking')
   const elements = groupConsecutiveCriteria(filteredElements)
-  const [hovered, setHovered] = useState(false)
   const [forkPending, setForkPending] = useState(false)
   const [forkError, setForkError] = useState<string | null>(null)
   const [, navigate] = useLocation()
+  const { onContextMenu, contextMenu } = useContextMenu()
 
   if (elements.length === 0) return null
+
+  const handleCopy = () => {
+    void copyToClipboard(message.content)
+  }
 
   const handleFork = async () => {
     if (!sessionId || forkPending) return
@@ -179,13 +185,10 @@ export const AssistantMessage = memo(function AssistantMessage({
     }
   }
 
-  const actionsVisible = hovered && !message.isStreaming
-  const actionsClass = `flex items-center gap-0.5 self-start transition-[visibility,opacity] focus-within:visible focus-within:opacity-100 ${actionsVisible ? 'visible opacity-100' : 'invisible opacity-0'}`
-
   return (
-    <div className="feed-item" onMouseEnter={() => setHovered(true)} onMouseLeave={() => setHovered(false)}>
+    <div className="feed-item" onContextMenu={(e) => onContextMenu(e, !!sessionId)}>
       <div className="min-w-0">
-        {forkError && <p className="text-xs text-error mb-1 ml-0.5">{forkError}</p>}
+        {forkError && <p className="text-xs text-accent-error mb-1 ml-0.5">{forkError}</p>}
         {elements.map((element, i) => {
           switch (element.type) {
             case 'thinking':
@@ -318,20 +321,20 @@ export const AssistantMessage = memo(function AssistantMessage({
             <span>Response was truncated — the model ran out of output tokens.</span>
           </div>
         )}
-
-        <div className={actionsClass + ' mt-2'}>
-          <button
-            onClick={() => {
-              void handleFork()
-            }}
-            title="Fork session from this message"
-            disabled={forkPending}
-            className="p-1 rounded hover:bg-bg-tertiary text-text-muted hover:text-text-primary disabled:opacity-50"
-          >
-            <BranchIcon className="w-3.5 h-3.5" />
-          </button>
-        </div>
       </div>
+
+      {contextMenu([
+        {
+          label: 'Copy',
+          icon: <CopyIcon className="w-4 h-4" />,
+          onClick: () => handleCopy(),
+        },
+        {
+          label: 'Fork session from here',
+          icon: <BranchIcon className="w-4 h-4" />,
+          onClick: () => void handleFork(),
+        },
+      ])}
     </div>
   )
 })
