@@ -254,25 +254,30 @@ export function AdvancedTab({ onClose }: { onClose: () => void }) {
       />
       <hr className="border-border" />
       <div>
-        <h3 className="text-sm font-medium text-text-primary mb-3">HTTP Proxy</h3>
-        <p className="text-sm text-text-muted mb-3">
-          Proxy server for LLM API requests. Leave empty for direct connection.
-        </p>
-        <div className="flex gap-2 items-center">
-          <Input
-            type="text"
-            value={proxyUrl}
-            onChange={(e) => handleProxyUrlChange(e.target.value)}
-            placeholder="http://proxy:8080"
-            className="flex-1"
-          />
-          <Button
-            variant="secondary"
-            onClick={handleTestProxy}
-            style={proxyTestSuccess ? { color: 'rgb(63, 185, 80)' } : undefined}
-          >
-            {proxyTestText}
-          </Button>
+        <h3 className="text-sm font-medium text-text-primary mb-3">Network</h3>
+        <div>
+          <label className="text-xs text-text-secondary block mb-1">HTTP Proxy</label>
+          <div className="flex gap-2 items-center">
+            <Input
+              type="text"
+              value={proxyUrl}
+              onChange={(e) => handleProxyUrlChange(e.target.value)}
+              placeholder="http://proxy:8080"
+              className="flex-1"
+            />
+            <Button
+              variant="secondary"
+              onClick={handleTestProxy}
+              style={proxyTestSuccess ? { color: 'rgb(63, 185, 80)' } : undefined}
+            >
+              {proxyTestText}
+            </Button>
+          </div>
+          {proxyTestError && <p className="text-xs text-red-500 mt-1">{proxyTestError}</p>}
+          <p className="text-xs text-text-muted mt-1">
+            Proxy server all OpenFox network requests (AI, model fetching, web search, terminal). Leave empty for direct
+            connection.
+          </p>est button)
         </div>
         {proxyTestError && <p className="text-xs text-red-500 mt-1">{proxyTestError}</p>}
       </div>

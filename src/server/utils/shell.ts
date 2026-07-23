@@ -1,5 +1,6 @@
 import { spawn, type ChildProcess, type StdioOptions } from 'node:child_process'
 import { getPlatformShell } from './platform.js'
+import { getSetting, SETTINGS_KEYS } from '../db/settings.js'
 
 export function checkAborted(signal: AbortSignal | undefined): boolean {
   return !!signal?.aborted
@@ -20,10 +21,17 @@ export function spawnShell(command: string, options: SpawnShellOptions): ChildPr
   // passed verbatim.
   const isCmd = shell.command === 'cmd.exe'
   const args = isCmd ? ['/d', '/s', '/c', `"${command}"`] : [...shell.args, command]
+  const proxyUrl = getSetting(SETTINGS_KEYS.PROXY_URL)
+  const proxyEnv: Record<string, string> = {}
+  if (proxyUrl) {
+    proxyEnv['HTTP_PROXY'] = proxyUrl
+    proxyEnv['HTTPS_PROXY'] = proxyUrl
+  }
+
   return spawn(shell.command, args, {
     ...(isCmd ? { windowsVerbatimArguments: true } : {}),
     cwd: options.cwd,
-    env: { ...process.env },
+    env: { ...process.env, ...proxyEnv },
     stdio: options.stdio ?? ['ignore', 'pipe', 'pipe'],
     windowsHide: true,
     // detached is only useful for Unix process-group semantics; on win32 it

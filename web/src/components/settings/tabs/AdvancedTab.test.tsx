@@ -92,7 +92,7 @@ describe('AdvancedTab', () => {
   it('renders the HTTP Proxy input', () => {
     const { container } = render(<AdvancedTab onClose={vi.fn()} />)
     expect(container.textContent).toContain('HTTP Proxy')
-    expect(container.textContent).toContain('Proxy server for LLM API requests')
+    expect(container.textContent).toContain('Proxy server all OpenFox network requests')
   })
 
   it('renders the HTTP Proxy section', () => {
