@@ -22,6 +22,69 @@ describe('Theme System', () => {
         expect(token.defaultValue).toMatch(/^[\d ]+$/)
       })
     })
+
+    it('includes all 10 new theme tokens', () => {
+      const keys = THEME_TOKENS.map((t) => t.key)
+      expect(keys).toContain('color-text-heading')
+      expect(keys).toContain('color-text-bold')
+      expect(keys).toContain('color-text-code')
+      expect(keys).toContain('color-text-link')
+      expect(keys).toContain('color-bg-system')
+      expect(keys).toContain('color-border-system')
+      expect(keys).toContain('color-text-system')
+      expect(keys).toContain('color-text-thinking')
+      expect(keys).toContain('color-text-truncated')
+      expect(keys).toContain('color-text-tool-error')
+    })
+
+    it('new text tokens have category "text"', () => {
+      const textTokens = THEME_TOKENS.filter((t) =>
+        [
+          'color-text-heading',
+          'color-text-bold',
+          'color-text-code',
+          'color-text-link',
+          'color-text-system',
+          'color-text-thinking',
+          'color-text-truncated',
+          'color-text-tool-error',
+        ].includes(t.key),
+      )
+      textTokens.forEach((t) => {
+        expect(t.category).toBe('text')
+      })
+    })
+
+    it('new bg token has category "background"', () => {
+      const bgToken = THEME_TOKENS.find((t) => t.key === 'color-bg-system')
+      expect(bgToken?.category).toBe('background')
+    })
+
+    it('new border token has category "border"', () => {
+      const borderToken = THEME_TOKENS.find((t) => t.key === 'color-border-system')
+      expect(borderToken?.category).toBe('border')
+    })
+
+    it('new tokens have non-empty labels', () => {
+      const newKeys = [
+        'color-text-heading',
+        'color-text-bold',
+        'color-text-code',
+        'color-text-link',
+        'color-bg-system',
+        'color-border-system',
+        'color-text-system',
+        'color-text-thinking',
+        'color-text-truncated',
+        'color-text-tool-error',
+      ]
+      const newTokens = THEME_TOKENS.filter((t) => newKeys.includes(t.key))
+      expect(newTokens.length).toBe(10)
+      newTokens.forEach((t) => {
+        expect(t.label).toBeTruthy()
+        expect(typeof t.label).toBe('string')
+      })
+    })
   })
 
   describe('THEME_PRESETS', () => {
@@ -39,6 +102,38 @@ describe('Theme System', () => {
         THEME_TOKENS.forEach((token) => {
           expect(preset.tokens[token.key]).toBeTruthy()
         })
+      })
+    })
+
+    it('each preset has values for all 10 new tokens', () => {
+      const newKeys = [
+        'color-text-heading',
+        'color-text-bold',
+        'color-text-code',
+        'color-text-link',
+        'color-bg-system',
+        'color-border-system',
+        'color-text-system',
+        'color-text-thinking',
+        'color-text-truncated',
+        'color-text-tool-error',
+      ]
+      THEME_PRESETS.filter((p) => p.id !== 'system').forEach((preset) => {
+        newKeys.forEach((key) => {
+          expect(preset.tokens[key]).toBeTruthy()
+          expect(preset.tokens[key]).toMatch(/^[\d ]+$/)
+        })
+      })
+    })
+
+    it('each preset has distinct color values for new tokens per preset schema', () => {
+      const newKeys = ['color-text-heading', 'color-text-bold', 'color-text-code', 'color-text-link']
+      const darkPreset = THEME_PRESETS.find((p) => p.id === 'dark')
+      const lightPreset = THEME_PRESETS.find((p) => p.id === 'light')
+      expect(darkPreset).toBeDefined()
+      expect(lightPreset).toBeDefined()
+      newKeys.forEach((key) => {
+        expect(darkPreset!.tokens[key]).not.toBe(lightPreset!.tokens[key])
       })
     })
   })

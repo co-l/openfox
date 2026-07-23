@@ -34,7 +34,22 @@ const coreLangs: Array<string> = [
   'powershell',
 ]
 
-const themes = ['github-dark-default', 'vitesse-light', 'monokai', 'dracula', 'nord']
+const themes = [
+  'github-dark-default',
+  'vitesse-light',
+  'monokai',
+  'dracula',
+  'nord',
+  'everforest-light',
+  'rose-pine-dawn',
+  'synthwave-84',
+  'one-dark-pro',
+  'night-owl',
+  'catppuccin-mocha',
+  'rose-pine',
+  'kanagawa-wave',
+  'light-plus',
+]
 
 export const THEME_MAP: Record<string, string> = {
   dark: 'github-dark-default',
@@ -42,6 +57,15 @@ export const THEME_MAP: Record<string, string> = {
   monokai: 'monokai',
   dracula: 'dracula',
   nord: 'nord',
+  'rose-pine-dawn': 'rose-pine-dawn',
+  'everforest-light': 'everforest-light',
+  'synthwave-84': 'synthwave-84',
+  'one-dark-pro': 'one-dark-pro',
+  'night-owl': 'night-owl',
+  'catppuccin-mocha': 'catppuccin-mocha',
+  'rose-pine': 'rose-pine',
+  'kanagawa-wave': 'kanagawa-wave',
+  'light-plus': 'light-plus',
 }
 
 export function lineNumbersTransformer(): ShikiTransformer {
@@ -220,5 +244,21 @@ export const wrappedCodeStyle: React.CSSProperties = {
 export function useShikiTheme(): string {
   const currentPreset = useThemeStore((s) => s.currentPreset)
   const isCustom = useThemeStore((s) => s.isCustom)
-  return isCustom ? 'github-dark-default' : (THEME_MAP[currentPreset] ?? 'github-dark-default')
+  const basePreset = useThemeStore((s) => s.basePreset)
+  return resolveShikiTheme(currentPreset, isCustom, basePreset)
+}
+
+export function getShikiTheme(): string {
+  const { currentPreset, isCustom, basePreset } = useThemeStore.getState()
+  return resolveShikiTheme(currentPreset, isCustom, basePreset)
+}
+
+function resolveShikiTheme(currentPreset: string, isCustom: boolean, basePreset: string): string {
+  if (isCustom) {
+    if (basePreset && basePreset !== 'system' && THEME_MAP[basePreset]) {
+      return THEME_MAP[basePreset] ?? 'github-dark-default'
+    }
+    return 'github-dark-default'
+  }
+  return THEME_MAP[currentPreset] ?? 'github-dark-default'
 }

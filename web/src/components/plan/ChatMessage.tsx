@@ -140,21 +140,11 @@ function UserMessage({ message, messageId, sessionId }: UserMessageProps) {
 
       <div
         className={`max-w-[75%] ${editing ? 'w-full' : ''} rounded p-2 ${
-          isSystemGenerated
-            ? isCommand
-              ? 'bg-teal-500/10 border border-teal-500/30'
-              : isAutoPrompt
-                ? 'bg-slate-500/10 border border-slate-500/30'
-                : 'bg-amber-500/10 border border-amber-500/30'
-            : 'bg-accent-primary/15 text-text-primary'
+          isSystemGenerated ? 'bg-bg-system border border-border-system' : 'bg-accent-primary/15 text-text-primary'
         }`}
       >
         {isSystemGenerated && (
-          <span
-            className={`text-[10px] block mb-0.5 ${
-              isCommand ? 'text-teal-400' : isAutoPrompt ? 'text-slate-400' : 'text-amber-400'
-            }`}
-          >
+          <span className="text-[10px] block mb-0.5 text-text-system">
             {isCommand ? 'Command' : isAutoPrompt ? 'Auto' : 'System'}
           </span>
         )}
@@ -184,7 +174,7 @@ function UserMessage({ message, messageId, sessionId }: UserMessageProps) {
               disabled={pending}
               autoFocus
             />
-            {error && <p className="text-xs text-error">{error}</p>}
+            {error && <p className="text-xs text-accent-error">{error}</p>}
             <div className="flex justify-end gap-1">
               <button
                 onClick={handleEditCancel}
@@ -208,14 +198,8 @@ function UserMessage({ message, messageId, sessionId }: UserMessageProps) {
           </div>
         ) : (
           <>
-            {error && <p className="text-xs text-error mb-1">{error}</p>}
-            <div
-              className={`whitespace-pre-wrap break-words text-sm ${
-                isSystemGenerated
-                  ? `${isCommand ? 'text-teal-200' : isAutoPrompt ? 'text-slate-200' : 'text-amber-200 italic'}`
-                  : ''
-              }`}
-            >
+            {error && <p className="text-xs text-accent-error mb-1">{error}</p>}
+            <div className={`whitespace-pre-wrap break-words text-sm ${isSystemGenerated ? 'text-text-system' : ''}`}>
               {message.content}
             </div>
             {message.attachments && message.attachments.length > 0 && (
@@ -301,9 +285,9 @@ export const ChatMessage = memo(function ChatMessage({
   if (message.messageKind === 'correction' && message.isSystemGenerated) {
     return (
       <div className="flex justify-end feed-item">
-        <div className="max-w-[75%] rounded p-2 bg-amber-500/10 border border-amber-500/30">
-          <span className="text-[10px] block mb-0.5 text-amber-400">System</span>
-          <div className="whitespace-pre-wrap break-words text-sm text-amber-200 italic">{message.content}</div>
+        <div className="max-w-[75%] rounded p-2 bg-bg-system border border-border-system">
+          <span className="text-[10px] block mb-0.5 text-text-system">System</span>
+          <div className="whitespace-pre-wrap break-words text-sm text-text-system italic">{message.content}</div>
         </div>
       </div>
     )

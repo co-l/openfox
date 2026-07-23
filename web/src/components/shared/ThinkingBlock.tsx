@@ -10,7 +10,7 @@ export const ThinkingBlock = memo(function ThinkingBlock({ content, variant = 'd
   if (variant === 'labeled') {
     return (
       <div className="text-text-muted text-sm italic feed-item">
-        <span className="text-purple-400">thinking:</span>
+        <span className="text-text-thinking">thinking:</span>
         <div className="ml-1.5 mt-0.5 overflow-x-auto">
           <Markdown content={content} />
         </div>

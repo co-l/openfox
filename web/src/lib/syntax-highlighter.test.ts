@@ -75,4 +75,69 @@ describe('syntax-highlighter', () => {
 
     expect(mockLoadLanguage).toHaveBeenCalledTimes(1)
   })
+
+  describe('useShikiTheme', () => {
+    it('maps custom theme with light basePreset to vitesse-light', async () => {
+      const { useThemeStore } = await import('../stores/theme')
+      useThemeStore.setState({ isCustom: true, basePreset: 'light', currentPreset: 'light' })
+
+      const mod = await import('./syntax-highlighter')
+      const theme = mod.getShikiTheme()
+      expect(theme).toBe('vitesse-light')
+    })
+
+    it('maps custom theme with dark basePreset to github-dark-default', async () => {
+      const { useThemeStore } = await import('../stores/theme')
+      useThemeStore.setState({ isCustom: true, basePreset: 'dark', currentPreset: 'dark' })
+
+      const mod = await import('./syntax-highlighter')
+      const theme = mod.getShikiTheme()
+      expect(theme).toBe('github-dark-default')
+    })
+
+    it('maps custom theme with dracula basePreset to dracula', async () => {
+      const { useThemeStore } = await import('../stores/theme')
+      useThemeStore.setState({ isCustom: true, basePreset: 'dracula', currentPreset: 'dracula' })
+
+      const mod = await import('./syntax-highlighter')
+      const theme = mod.getShikiTheme()
+      expect(theme).toBe('dracula')
+    })
+
+    it('maps custom theme with monokai basePreset to monokai', async () => {
+      const { useThemeStore } = await import('../stores/theme')
+      useThemeStore.setState({ isCustom: true, basePreset: 'monokai', currentPreset: 'monokai' })
+
+      const mod = await import('./syntax-highlighter')
+      const theme = mod.getShikiTheme()
+      expect(theme).toBe('monokai')
+    })
+
+    it('maps custom theme with nord basePreset to nord', async () => {
+      const { useThemeStore } = await import('../stores/theme')
+      useThemeStore.setState({ isCustom: true, basePreset: 'nord', currentPreset: 'nord' })
+
+      const mod = await import('./syntax-highlighter')
+      const theme = mod.getShikiTheme()
+      expect(theme).toBe('nord')
+    })
+
+    it('falls back to github-dark-default for unknown basePreset', async () => {
+      const { useThemeStore } = await import('../stores/theme')
+      useThemeStore.setState({ isCustom: true, basePreset: '', currentPreset: 'dark' })
+
+      const mod = await import('./syntax-highlighter')
+      const theme = mod.getShikiTheme()
+      expect(theme).toBe('github-dark-default')
+    })
+
+    it('uses THEME_MAP for non-custom preset', async () => {
+      const { useThemeStore } = await import('../stores/theme')
+      useThemeStore.setState({ isCustom: false, currentPreset: 'monokai' })
+
+      const mod = await import('./syntax-highlighter')
+      const theme = mod.getShikiTheme()
+      expect(theme).toBe('monokai')
+    })
+  })
 })

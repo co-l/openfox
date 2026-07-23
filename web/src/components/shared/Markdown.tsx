@@ -67,8 +67,8 @@ const CodeBlock = memo(function CodeBlock({
 })
 
 function createMarkdownComponents(muted: boolean, showSyntaxHighlighting: boolean) {
-  const headingColor = muted ? 'text-text-muted' : 'text-sky-400'
-  const strongColor = muted ? 'text-text-secondary' : 'text-amber-400'
+  const headingColor = muted ? 'text-text-muted' : 'text-text-heading'
+  const strongColor = muted ? 'text-text-secondary' : 'text-text-bold'
 
   return {
     code({ className, children, ...props }: React.ComponentPropsWithoutRef<'code'>) {
@@ -76,7 +76,7 @@ function createMarkdownComponents(muted: boolean, showSyntaxHighlighting: boolea
       const isInline = !match && !String(children).includes('\n')
 
       if (isInline) {
-        const color = muted ? 'text-text-muted' : 'text-accent-secondary'
+        const color = muted ? 'text-text-muted' : 'text-text-code'
         return (
           <code className={`bg-bg-tertiary px-1 py-0.5 rounded ${color} font-mono text-xs`} {...props}>
             {children}
@@ -134,12 +134,7 @@ function createMarkdownComponents(muted: boolean, showSyntaxHighlighting: boolea
 
     a({ href, children }: { href?: string; children?: React.ReactNode }) {
       return (
-        <a
-          href={href}
-          className="text-accent-primary hover:underline text-sm"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
+        <a href={href} className="text-text-link hover:underline text-sm" target="_blank" rel="noopener noreferrer">
           {children}
         </a>
       )

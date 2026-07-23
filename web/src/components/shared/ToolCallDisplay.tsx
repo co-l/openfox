@@ -62,7 +62,7 @@ const statusConfig = {
   },
   interrupted: {
     icon: '✗',
-    color: 'text-red-400',
+    color: 'text-text-tool-error',
     animate: false,
   },
 }

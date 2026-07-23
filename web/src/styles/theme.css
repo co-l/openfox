@@ -16,4 +16,15 @@
   --color-accent-error: 248 81 73;
 
   --color-border: 40 46 54;
+
+  --color-text-heading: 56 189 248;
+  --color-text-bold: 251 191 36;
+  --color-text-code: 88 166 255;
+  --color-text-link: 88 166 255;
+  --color-bg-system: 40 35 28;
+  --color-border-system: 65 55 25;
+  --color-text-system: 253 230 138;
+  --color-text-thinking: 192 132 252;
+  --color-text-truncated: 251 191 36;
+  --color-text-tool-error: 248 81 73;
 }

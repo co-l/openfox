@@ -101,13 +101,17 @@ export const MessageList = memo(function MessageList({
       </div>
       <div className="px-2 md:px-4 pb-4">
         {error && (
-          <div className="feed-item bg-red-500/10 border border-red-500/50 rounded p-2">
+          <div className="feed-item bg-text-tool-error/10 border border-text-tool-error/50 rounded p-2">
             <div className="flex items-start justify-between gap-2">
               <div>
-                <div className="text-red-400 text-sm font-medium">{error.code}</div>
-                <div className="text-red-300 text-xs mt-0.5">{error.message}</div>
+                <div className="text-text-tool-error text-sm font-medium">{error.code}</div>
+                <div className="text-text-tool-error/80 text-xs mt-0.5">{error.message}</div>
               </div>
-              <CloseButton onClick={clearError} className="text-red-400 hover:text-red-300 p-0.5" size="sm" />
+              <CloseButton
+                onClick={clearError}
+                className="text-text-tool-error hover:text-text-tool-error/80 p-0.5"
+                size="sm"
+              />
             </div>
           </div>
         )}
