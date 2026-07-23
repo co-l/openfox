@@ -13,6 +13,10 @@ describe('parseKeybindings', () => {
     expect(config.quickAction).toEqual(DEFAULT_KEYBINDINGS.quickAction)
   })
 
+  it('includes criteriaSidebar in defaults', () => {
+    expect(DEFAULT_KEYBINDINGS.criteriaSidebar).toEqual({ type: 'chord', key: 'd', modifiers: ['ctrl'] })
+  })
+
   it('preserves explicit null (disabled shortcut) instead of restoring defaults', () => {
     const config = parseKeybindings(JSON.stringify({ terminalToggle: null, quickAction: null }))
     expect(config.terminalToggle).toBeNull()

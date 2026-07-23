@@ -200,7 +200,7 @@ describe('Header', () => {
 
     const { Header } = await import('./Header')
     const container = render(<Header onMenuClick={vi.fn()} />)
-    const btn = container.querySelector('[title="Toggle session list"]')
+    const btn = container.querySelector('[title^="Toggle session list"]')
     expect(btn).toBeTruthy()
   })
 
@@ -216,7 +216,7 @@ describe('Header', () => {
 
     const { Header } = await import('./Header')
     const container = render(<Header onMenuClick={vi.fn()} />)
-    const btn = container.querySelector('[title="Toggle session list"]')
+    const btn = container.querySelector('[title^="Toggle session list"]')
     expect(btn).toBeNull()
   })
 })

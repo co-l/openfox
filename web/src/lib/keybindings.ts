@@ -18,6 +18,7 @@ export interface KeybindingsConfig {
   quickAction: KeyBinding | null
   modelSelector: KeyBinding | null
   sessionSearch: KeyBinding | null
+  criteriaSidebar: KeyBinding | null
   agentSwitching: (KeyBinding | null)[]
 }
 
@@ -28,6 +29,7 @@ export const DEFAULT_KEYBINDINGS: KeybindingsConfig = {
   quickAction: { type: 'double-press', key: 'Shift', threshold: 300 },
   modelSelector: { type: 'chord', key: 'm', modifiers: ['ctrl'] },
   sessionSearch: { type: 'chord', key: 's', modifiers: ['ctrl'] },
+  criteriaSidebar: { type: 'chord', key: 'd', modifiers: ['ctrl'] },
   agentSwitching: [
     { type: 'chord', key: '1', modifiers: ['ctrl'] },
     { type: 'chord', key: '2', modifiers: ['ctrl'] },
@@ -48,6 +50,7 @@ export function parseKeybindings(json: string | undefined | null): KeybindingsCo
       quickAction: orDefault('quickAction'),
       modelSelector: orDefault('modelSelector'),
       sessionSearch: orDefault('sessionSearch'),
+      criteriaSidebar: orDefault('criteriaSidebar'),
       agentSwitching: orDefault('agentSwitching'),
     }
   } catch {

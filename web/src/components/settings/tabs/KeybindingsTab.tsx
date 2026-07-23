@@ -190,6 +190,12 @@ export function KeybindingsTab() {
       binding: config.sessionSearch,
       defaultBinding: DEFAULT_KEYBINDINGS.sessionSearch,
     },
+    {
+      id: 'criteriaSidebar',
+      label: 'Toggle Criteria Sidebar',
+      binding: config.criteriaSidebar,
+      defaultBinding: DEFAULT_KEYBINDINGS.criteriaSidebar,
+    },
     ...config.agentSwitching.map((b, i) => ({
       id: `agentSwitching.${i}`,
       label: `Switch to Agent ${i + 1}`,
@@ -217,6 +223,8 @@ export function KeybindingsTab() {
         updated.modelSelector = value
       } else if (id === 'sessionSearch') {
         updated.sessionSearch = value
+      } else if (id === 'criteriaSidebar') {
+        updated.criteriaSidebar = value
       }
 
       setSetting(SETTINGS_KEYS.KEYBINDINGS, JSON.stringify(updated))

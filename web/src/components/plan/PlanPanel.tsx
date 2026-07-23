@@ -160,6 +160,10 @@ export function PlanPanel({
     setShowQuickAction(true)
   })
 
+  useBinding(keybindings.criteriaSidebar, () => {
+    onCriteriaSidebarToggle?.()
+  })
+
   useAgentSwitchingBindings(keybindings.agentSwitching, topLevelAgents, (agentId) => {
     useSessionStore.getState().switchMode(agentId)
   })

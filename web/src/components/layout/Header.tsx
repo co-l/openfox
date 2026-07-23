@@ -7,6 +7,7 @@ import { useConfigStore } from '../../stores/config'
 import { useTerminalStore } from '../../stores/terminal'
 import { useUpdateStore } from '../../stores/update'
 import { useKeybindings, useBinding } from '../../hooks/useKeybindings'
+import { formatKeybinding } from '../../lib/keybindings'
 import { GlobalSettingsModal } from '../settings/GlobalSettingsModal'
 import { TerminalDrawer } from '../terminal/TerminalDrawer'
 import { ProjectDropdown } from './ProjectDropdown'
@@ -75,7 +76,11 @@ export function Header({ onMenuClick, onCriteriaToggle }: HeaderProps) {
           <button
             onClick={onMenuClick}
             className="flex-shrink-0 p-2.5 rounded hover:bg-bg-tertiary text-text-muted hover:text-text-primary transition-colors"
-            title="Toggle session list"
+            title={
+              keybindings.sessionSearch
+                ? `Toggle session list (${formatKeybinding(keybindings.sessionSearch)})`
+                : 'Toggle session list'
+            }
           >
             <MenuIcon />
           </button>
@@ -177,7 +182,11 @@ export function Header({ onMenuClick, onCriteriaToggle }: HeaderProps) {
           <button
             onClick={onCriteriaToggle}
             className="p-2.5 rounded hover:bg-bg-tertiary text-text-muted hover:text-text-primary transition-colors"
-            title="Toggle sidebar"
+            title={
+              keybindings.criteriaSidebar
+                ? `Toggle criteria sidebar (${formatKeybinding(keybindings.criteriaSidebar)})`
+                : 'Toggle criteria sidebar'
+            }
           >
             <MenuIcon />
           </button>

@@ -600,4 +600,72 @@ describe('Sidebar session search', () => {
     })
     expect(screen.getByText('Beta')).toBeTruthy()
   })
+
+  describe('Ctrl+S shortcut behavior', () => {
+    it('closes sidebar when search is already focused and Ctrl+S is pressed', async () => {
+      sessions = [
+        {
+          id: 's1',
+          projectId: 'project-1',
+          title: 'My session',
+          workdir: '/tmp/project',
+          mode: 'planner',
+          phase: 'plan',
+          isRunning: false,
+          createdAt: '2024-06-15T09:00:00Z',
+          updatedAt: '2024-06-15T10:00:00Z',
+          criteriaCount: 0,
+          criteriaCompleted: 0,
+          messageCount: 1,
+        },
+      ]
+      const onClose = vi.fn()
+      const { Sidebar } = await import('./Sidebar')
+      render(<Sidebar projectId="project-1" isOpen={true} onClose={onClose} />)
+
+      const searchInput = screen.getByPlaceholderText(/search/i) as HTMLInputElement
+      searchInput.focus()
+      expect(document.activeElement).toBe(searchInput)
+
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: 's', ctrlKey: true, bubbles: true }))
+
+      expect(onClose).toHaveBeenCalledTimes(1)
+    })
+
+    it('focuses search without closing sidebar when search is not focused and Ctrl+S is pressed', async () => {
+      sessions = [
+        {
+          id: 's1',
+          projectId: 'project-1',
+          title: 'My session',
+          workdir: '/tmp/project',
+          mode: 'planner',
+          phase: 'plan',
+          isRunning: false,
+          createdAt: '2024-06-15T09:00:00Z',
+          updatedAt: '2024-06-15T10:00:00Z',
+          criteriaCount: 0,
+          criteriaCompleted: 0,
+          messageCount: 1,
+        },
+      ]
+      const onClose = vi.fn()
+      const { Sidebar } = await import('./Sidebar')
+      render(<Sidebar projectId="project-1" isOpen={true} onClose={onClose} />)
+
+      // Focus something else so search is not focused
+      const searchInput = screen.getByPlaceholderText(/search/i) as HTMLInputElement
+      expect(searchInput).toBeTruthy()
+      // Click on the aside to move focus away from search
+      document.body.focus()
+      expect(document.activeElement).not.toBe(searchInput)
+
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: 's', ctrlKey: true, bubbles: true }))
+
+      // Should NOT close the sidebar
+      expect(onClose).not.toHaveBeenCalled()
+      // Search should now be focused
+      expect(document.activeElement).toBe(searchInput)
+    })
+  })
 })

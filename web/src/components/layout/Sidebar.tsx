@@ -51,6 +51,10 @@ export function Sidebar({ projectId, isOpen = true, onClose }: SidebarProps) {
 
   const keybindings = useKeybindings()
   useBinding(keybindings.sessionSearch, () => {
+    if (isOpen && document.activeElement === searchRef.current) {
+      onClose?.()
+      return
+    }
     if (!isOpen) {
       wasAutoOpenedRef.current = true
       onClose?.()
@@ -205,7 +209,6 @@ export function Sidebar({ projectId, isOpen = true, onClose }: SidebarProps) {
 
           fixed z-50 h-[calc(100vh-32px)]
           w-[300px] bg-secondary border-r border-border flex flex-col
-          transition-all duration-300 ease-in-out
           ${isOpen ? 'translate-x-0' : '-translate-x-full'}
         `}
       >
