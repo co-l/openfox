@@ -1,4 +1,4 @@
-import { memo } from 'react'
+import { memo, useState } from 'react'
 import type { Message, MessageSegment, ToolCall, PreparingToolCall } from '@shared/types.js'
 import { Markdown } from '../shared/Markdown'
 import { ThinkingBlock } from '../shared/ThinkingBlock'
@@ -9,7 +9,9 @@ import { AskUserCard } from '../shared/AskUserCard'
 import { CriteriaGroupDisplay, isCriterionTool } from '../shared/CriteriaGroupDisplay'
 import { useSessionStore } from '../../stores/session'
 import { useAgentsStore, getAgentColor } from '../../stores/agents'
-import { InfoIcon, WarningSmallIcon } from '../shared/icons'
+import { BranchIcon, InfoIcon, WarningSmallIcon } from '../shared/icons'
+import { forkSession } from '../../lib/api.js'
+import { useLocation } from 'wouter'
 import { formatTime } from '../../lib/format-stats'
 
 interface AssistantMessageProps {
@@ -17,6 +19,7 @@ interface AssistantMessageProps {
   showStats?: boolean
   showThinking?: boolean
   showVerboseToolOutput?: boolean
+  sessionId?: string
 }
 
 // Display element types for rendering
@@ -147,6 +150,7 @@ export const AssistantMessage = memo(function AssistantMessage({
   showStats = true,
   showThinking = true,
   showVerboseToolOutput = true,
+  sessionId,
 }: AssistantMessageProps) {
   const criteria = useSessionStore((state) => state.currentSession?.metadataEntries?.['criteria'])
   const agentDefaults = useAgentsStore((state) => state.defaults)
@@ -155,12 +159,33 @@ export const AssistantMessage = memo(function AssistantMessage({
   const rawElements = messageToElements(message, showStats)
   const filteredElements = showThinking ? rawElements : rawElements.filter((e) => e.type !== 'thinking')
   const elements = groupConsecutiveCriteria(filteredElements)
+  const [hovered, setHovered] = useState(false)
+  const [forkPending, setForkPending] = useState(false)
+  const [forkError, setForkError] = useState<string | null>(null)
+  const [, navigate] = useLocation()
 
   if (elements.length === 0) return null
 
+  const handleFork = async () => {
+    if (!sessionId || forkPending) return
+    setForkPending(true)
+    setForkError(null)
+    const result = await forkSession(sessionId, message.id)
+    setForkPending(false)
+    if (result?.session) {
+      navigate(`/p/${result.session.projectId}/s/${result.session.id}`)
+    } else {
+      setForkError('Failed to fork session')
+    }
+  }
+
+  const actionsVisible = hovered && !message.isStreaming
+  const actionsClass = `flex items-center gap-0.5 self-start transition-[visibility,opacity] focus-within:visible focus-within:opacity-100 ${actionsVisible ? 'visible opacity-100' : 'invisible opacity-0'}`
+
   return (
-    <div className="feed-item">
+    <div className="feed-item" onMouseEnter={() => setHovered(true)} onMouseLeave={() => setHovered(false)}>
       <div className="min-w-0">
+        {forkError && <p className="text-xs text-error mb-1 ml-0.5">{forkError}</p>}
         {elements.map((element, i) => {
           switch (element.type) {
             case 'thinking':
@@ -293,6 +318,19 @@ export const AssistantMessage = memo(function AssistantMessage({
             <span>Response was truncated — the model ran out of output tokens.</span>
           </div>
         )}
+
+        <div className={actionsClass + ' mt-2'}>
+          <button
+            onClick={() => {
+              void handleFork()
+            }}
+            title="Fork session from this message"
+            disabled={forkPending}
+            className="p-1 rounded hover:bg-bg-tertiary text-text-muted hover:text-text-primary disabled:opacity-50"
+          >
+            <BranchIcon className="w-3.5 h-3.5" />
+          </button>
+        </div>
       </div>
     </div>
   )

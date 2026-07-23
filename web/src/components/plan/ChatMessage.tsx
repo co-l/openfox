@@ -7,10 +7,11 @@ import { TaskCompletedCard } from './TaskCompletedCard'
 import { WorkflowStartedCard } from './WorkflowStartedCard'
 import { MessageAttachments } from '../shared/MessageAttachments.js'
 import { AutoPromptCard } from './AutoPromptCard'
-import { CheckIcon, CopyIcon, EditSmallIcon, ReloadIcon, XCloseIcon } from '../shared/icons'
-import { replayMessage } from '../../lib/api.js'
+import { CheckIcon, CopyIcon, EditSmallIcon, ReloadIcon, XCloseIcon, BranchIcon } from '../shared/icons'
+import { replayMessage, forkSession } from '../../lib/api.js'
 import { useSessionStore } from '../../stores/session.js'
 import { copyToClipboard } from '../../lib/clipboard.js'
+import { useLocation } from 'wouter'
 
 interface ChatMessageProps {
   message: Message
@@ -30,11 +31,14 @@ function UserMessage({ message, messageId, sessionId }: UserMessageProps) {
   const isCommand = message.messageKind === 'command'
   const isSystemGenerated = message.isSystemGenerated
   const loadSession = useSessionStore((s) => s.loadSession)
+  const [, navigate] = useLocation()
   const [hovered, setHovered] = useState(false)
   const [copied, setCopied] = useState(false)
   const [editing, setEditing] = useState(false)
   const [editContent, setEditContent] = useState(message.content)
   const [pending, setPending] = useState(false)
+  const [forkPending, setForkPending] = useState(false)
+  const [forkError, setForkError] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
 
@@ -52,6 +56,20 @@ function UserMessage({ message, messageId, sessionId }: UserMessageProps) {
       window.setTimeout(() => setCopied(false), 1500)
     } catch {
       // ignore
+    }
+  }
+
+  const handleFork = async () => {
+    if (!sessionId || !messageId || forkPending) return
+    setForkPending(true)
+    setForkError(null)
+    const result = await forkSession(sessionId, messageId)
+    setForkPending(false)
+    if (result?.session) {
+      const projectId = result.session.projectId
+      navigate(`/p/${projectId}/s/${result.session.id}`)
+    } else {
+      setForkError('Failed to fork session')
     }
   }
 
@@ -89,7 +107,7 @@ function UserMessage({ message, messageId, sessionId }: UserMessageProps) {
   }
 
   const actionsVisible = hovered && !editing && !pending
-  const actionsClass = `flex items-center gap-0.5 self-end transition-opacity focus-within:opacity-100 focus-within:pointer-events-auto ${actionsVisible ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'}`
+  const actionsClass = `flex items-center gap-0.5 self-end transition-[visibility,opacity] focus-within:visible focus-within:opacity-100 ${actionsVisible ? 'visible opacity-100' : 'invisible opacity-0'}`
 
   return (
     <div
@@ -132,6 +150,16 @@ function UserMessage({ message, messageId, sessionId }: UserMessageProps) {
                 className="p-1 rounded hover:bg-bg-tertiary text-text-muted hover:text-text-primary disabled:opacity-50"
               >
                 <ReloadIcon className="w-3.5 h-3.5" />
+              </button>
+              <button
+                onClick={() => {
+                  void handleFork()
+                }}
+                title="Fork session from this message"
+                disabled={forkPending}
+                className="p-1 rounded hover:bg-bg-tertiary text-text-muted hover:text-text-primary disabled:opacity-50"
+              >
+                <BranchIcon className="w-3.5 h-3.5" />
               </button>
             </>
           )}
@@ -198,7 +226,7 @@ function UserMessage({ message, messageId, sessionId }: UserMessageProps) {
           </div>
         ) : (
           <>
-            {error && <p className="text-xs text-accent-error mb-1">{error}</p>}
+            {(error || forkError) && <p className="text-xs text-accent-error mb-1">{error ?? forkError}</p>}
             <div className={`whitespace-pre-wrap break-words text-sm ${isSystemGenerated ? 'text-text-system' : ''}`}>
               {message.content}
             </div>

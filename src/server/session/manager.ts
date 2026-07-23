@@ -31,6 +31,7 @@ import {
   updateSessionCachedPrompt,
   updateSessionWorkdir,
   updateSessionBranch,
+  updateSessionMessageCount,
   getSessionCachedPrompt,
   type DangerLevel,
 } from '../db/sessions.js'
@@ -66,6 +67,7 @@ import {
   emitCriterionUpdated,
   emitMetadataSet,
   emitContextState,
+  getCurrentContextWindowId,
 } from '../events/index.js'
 import type { Message, CriterionStatus } from '../../shared/types.js'
 import { isInDangerZone, canCompact } from '../context/tokenizer.js'
@@ -238,6 +240,87 @@ export class SessionManager {
     this.emit({ type: 'session_created', session })
 
     return session
+  }
+
+  /**
+   * Fork a session from a specific message.
+   * Creates a new session with all messages up to (and including) the target message,
+   * preserving the conversation history. Copies the cached system prompt to avoid
+   * recomputation and marks the new session as warmed up for KV cache benefits.
+   *
+   * @param originalSessionId - Source session ID
+   * @param messageId - Target message ID to fork at
+   * @param title - Optional title for the new session (default: "Fork of <original title>")
+   * @returns The new session
+   * @throws Error if the original session or message is not found
+   */
+  forkSession(originalSessionId: string, messageId: string, title?: string): Session {
+    const originalSession = this.requireSession(originalSessionId)
+
+    const projectId = originalSession.projectId
+    const effectiveTitle = title ?? `Fork of ${originalSession.metadata?.title ?? 'Untitled'}`
+
+    const state = getSessionState(originalSessionId)
+    if (!state) throw new Error(`Session ${originalSessionId} has no state`)
+
+    const msgIndex = state.messages.findIndex((m) => m.id === messageId)
+    if (msgIndex === -1) throw new Error(`Message ${messageId} not found`)
+
+    const newSession = this.createSession(
+      projectId,
+      effectiveTitle,
+      originalSession.providerId,
+      originalSession.providerModel,
+      originalSession.workspace,
+    )
+    const newWindowId = getCurrentContextWindowId(newSession.id) ?? crypto.randomUUID()
+
+    const messages = state.messages.slice(0, msgIndex + 1)
+
+    const snapshot: import('../events/types.js').SessionSnapshot = {
+      mode: state.mode,
+      phase: state.phase,
+      isRunning: false,
+      messages: messages.map((m) => ({
+        ...m,
+        timestamp: typeof m.timestamp === 'string' ? new Date(m.timestamp).getTime() : m.timestamp,
+        contextWindowId: newWindowId,
+      })),
+      criteria: state.criteria,
+      metadataEntries: state.metadataEntries,
+      contextState: {
+        currentTokens: 0,
+        maxTokens: state.contextState.maxTokens,
+        compactionCount: 0,
+        dangerZone: false,
+        canCompact: false,
+        dynamicContextChanged: false,
+      },
+      currentContextWindowId: newWindowId,
+      todos: state.todos,
+      readFiles: state.readFiles,
+      snapshotSeq: 0,
+      snapshotAt: Date.now(),
+      sessionInit: {
+        projectId: originalSession.projectId,
+        workdir: originalSession.workdir,
+        contextWindowId: newWindowId,
+      },
+    }
+
+    const eventStore = getEventStore()
+    eventStore.append(newSession.id, { type: 'turn.snapshot', data: snapshot })
+    updateSessionMessageCount(newSession.id, messages.length)
+
+    const cached = getSessionCachedPrompt(originalSessionId)
+    if (cached) {
+      updateSessionCachedPrompt(newSession.id, cached.systemPrompt, cached.tools, cached.hash)
+      this.markWarmedUp(newSession.id)
+    }
+
+    this.emit({ type: 'session_updated', session: this.requireSession(newSession.id) })
+
+    return this.requireSession(newSession.id)
   }
 
   /**
