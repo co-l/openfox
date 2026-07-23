@@ -515,6 +515,7 @@ export const useSessionStore = create<SessionState>((set, get) => {
     },
 
     sendMessage: async (content, attachments, opts) => {
+      set({ error: null })
       const sessionId = get().currentSession?.id
       if (!sessionId) return
 
