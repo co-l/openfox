@@ -14,6 +14,7 @@ export const SETTINGS_KEYS = {
   DISPLAY_THEME: 'display.theme',
   DISPLAY_USER_PRESETS: 'display.userPresets',
   DISPLAY_FOLLOW_SYSTEM_THEME: 'display.followSystemTheme',
+  DISPLAY_SYSTEM_THEME_PREFS: 'display.systemThemePrefs',
   DISPLAY_SHOW_OPEN_IN_EDITOR: 'display.showOpenInEditorLinks',
   DISPLAY_MAX_VISIBLE_ITEMS: 'display.maxVisibleItems',
   LLM_DYNAMIC_SYSTEM_PROMPT: 'llm.dynamicSystemPrompt',

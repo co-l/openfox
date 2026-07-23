@@ -1,6 +1,11 @@
 {
   "tokens": [
-    { "key": "color-bg-primary", "category": "background", "label": "Primary Background", "defaultValue": "13 17 23" },
+    {
+      "key": "color-bg-primary",
+      "category": "background",
+      "label": "Primary Background",
+      "defaultValue": "13 17 23"
+    },
     {
       "key": "color-bg-secondary",
       "category": "background",
@@ -13,20 +18,90 @@
       "label": "Tertiary Background",
       "defaultValue": "33 38 45"
     },
-    { "key": "color-primary", "category": "surface", "label": "Primary Surface", "defaultValue": "10 10 10" },
-    { "key": "color-secondary", "category": "surface", "label": "Secondary Surface", "defaultValue": "20 20 20" },
-    { "key": "color-text-primary", "category": "text", "label": "Primary Text", "defaultValue": "139 148 158" },
-    { "key": "color-text-secondary", "category": "text", "label": "Secondary Text", "defaultValue": "139 148 158" },
-    { "key": "color-text-muted", "category": "text", "label": "Muted Text", "defaultValue": "72 79 88" },
-    { "key": "color-accent-primary", "category": "accent", "label": "Primary Accent", "defaultValue": "88 166 255" },
-    { "key": "color-accent-success", "category": "accent", "label": "Success Accent", "defaultValue": "63 185 80" },
-    { "key": "color-accent-warning", "category": "accent", "label": "Warning Accent", "defaultValue": "210 153 34" },
-    { "key": "color-accent-error", "category": "accent", "label": "Error Accent", "defaultValue": "248 81 73" },
-    { "key": "color-border", "category": "border", "label": "Border", "defaultValue": "48 53 60" },
-    { "key": "color-text-heading", "category": "text", "label": "Heading Text", "defaultValue": "56 189 248" },
-    { "key": "color-text-bold", "category": "text", "label": "Bold Text", "defaultValue": "251 191 36" },
-    { "key": "color-text-code", "category": "text", "label": "Inline Code Text", "defaultValue": "88 166 255" },
-    { "key": "color-text-link", "category": "text", "label": "Link Text", "defaultValue": "88 166 255" },
+    {
+      "key": "color-primary",
+      "category": "surface",
+      "label": "Primary Surface",
+      "defaultValue": "10 10 10"
+    },
+    {
+      "key": "color-secondary",
+      "category": "surface",
+      "label": "Secondary Surface",
+      "defaultValue": "20 20 20"
+    },
+    {
+      "key": "color-text-primary",
+      "category": "text",
+      "label": "Primary Text",
+      "defaultValue": "139 148 158"
+    },
+    {
+      "key": "color-text-secondary",
+      "category": "text",
+      "label": "Secondary Text",
+      "defaultValue": "139 148 158"
+    },
+    {
+      "key": "color-text-muted",
+      "category": "text",
+      "label": "Muted Text",
+      "defaultValue": "72 79 88"
+    },
+    {
+      "key": "color-accent-primary",
+      "category": "accent",
+      "label": "Primary Accent",
+      "defaultValue": "88 166 255"
+    },
+    {
+      "key": "color-accent-success",
+      "category": "accent",
+      "label": "Success Accent",
+      "defaultValue": "63 185 80"
+    },
+    {
+      "key": "color-accent-warning",
+      "category": "accent",
+      "label": "Warning Accent",
+      "defaultValue": "210 153 34"
+    },
+    {
+      "key": "color-accent-error",
+      "category": "accent",
+      "label": "Error Accent",
+      "defaultValue": "248 81 73"
+    },
+    {
+      "key": "color-border",
+      "category": "border",
+      "label": "Border",
+      "defaultValue": "48 53 60"
+    },
+    {
+      "key": "color-text-heading",
+      "category": "text",
+      "label": "Heading Text",
+      "defaultValue": "56 189 248"
+    },
+    {
+      "key": "color-text-bold",
+      "category": "text",
+      "label": "Bold Text",
+      "defaultValue": "251 191 36"
+    },
+    {
+      "key": "color-text-code",
+      "category": "text",
+      "label": "Inline Code Text",
+      "defaultValue": "88 166 255"
+    },
+    {
+      "key": "color-text-link",
+      "category": "text",
+      "label": "Link Text",
+      "defaultValue": "88 166 255"
+    },
     {
       "key": "color-bg-system",
       "category": "background",
@@ -39,10 +114,30 @@
       "label": "System Message Border",
       "defaultValue": "65 55 25"
     },
-    { "key": "color-text-system", "category": "text", "label": "System Message Text", "defaultValue": "253 230 138" },
-    { "key": "color-text-thinking", "category": "text", "label": "Thinking Label", "defaultValue": "192 132 252" },
-    { "key": "color-text-truncated", "category": "text", "label": "Truncation Warning", "defaultValue": "251 191 36" },
-    { "key": "color-text-tool-error", "category": "text", "label": "Tool Error Text", "defaultValue": "248 81 73" }
+    {
+      "key": "color-text-system",
+      "category": "text",
+      "label": "System Message Text",
+      "defaultValue": "253 230 138"
+    },
+    {
+      "key": "color-text-thinking",
+      "category": "text",
+      "label": "Thinking Label",
+      "defaultValue": "192 132 252"
+    },
+    {
+      "key": "color-text-truncated",
+      "category": "text",
+      "label": "Truncation Warning",
+      "defaultValue": "251 191 36"
+    },
+    {
+      "key": "color-text-tool-error",
+      "category": "text",
+      "label": "Tool Error Text",
+      "defaultValue": "248 81 73"
+    }
   ],
   "presets": [
     {
@@ -77,7 +172,8 @@
         "color-text-thinking": "192 132 252",
         "color-text-truncated": "251 191 36",
         "color-text-tool-error": "248 113 113"
-      }
+      },
+      "mode": "dark"
     },
     {
       "id": "light",
@@ -106,7 +202,8 @@
         "color-text-thinking": "147 51 234",
         "color-text-truncated": "217 119 6",
         "color-text-tool-error": "220 38 38"
-      }
+      },
+      "mode": "light"
     },
     {
       "id": "monokai",
@@ -135,7 +232,8 @@
         "color-text-thinking": "192 132 252",
         "color-text-truncated": "251 191 36",
         "color-text-tool-error": "248 113 113"
-      }
+      },
+      "mode": "dark"
     },
     {
       "id": "dracula",
@@ -164,7 +262,8 @@
         "color-text-thinking": "255 121 198",
         "color-text-truncated": "255 184 108",
         "color-text-tool-error": "255 85 85"
-      }
+      },
+      "mode": "dark"
     },
     {
       "id": "nord",
@@ -193,7 +292,8 @@
         "color-text-thinking": "184 142 173",
         "color-text-truncated": "235 203 139",
         "color-text-tool-error": "191 97 106"
-      }
+      },
+      "mode": "dark"
     },
     {
       "id": "rose-pine-dawn",
@@ -222,7 +322,8 @@
         "color-text-thinking": "145 117 186",
         "color-text-truncated": "234 157 84",
         "color-text-tool-error": "215 85 112"
-      }
+      },
+      "mode": "light"
     },
     {
       "id": "everforest-light",
@@ -251,7 +352,8 @@
         "color-text-thinking": "146 131 176",
         "color-text-truncated": "224 146 66",
         "color-text-tool-error": "203 97 80"
-      }
+      },
+      "mode": "light"
     },
     {
       "id": "synthwave-84",
@@ -280,7 +382,8 @@
         "color-text-thinking": "191 0 255",
         "color-text-truncated": "255 140 0",
         "color-text-tool-error": "255 0 60"
-      }
+      },
+      "mode": "dark"
     },
     {
       "id": "one-dark-pro",
@@ -309,7 +412,8 @@
         "color-text-thinking": "198 120 221",
         "color-text-truncated": "209 154 102",
         "color-text-tool-error": "224 108 117"
-      }
+      },
+      "mode": "dark"
     },
     {
       "id": "night-owl",
@@ -338,7 +442,8 @@
         "color-text-thinking": "199 146 234",
         "color-text-truncated": "247 140 108",
         "color-text-tool-error": "239 83 80"
-      }
+      },
+      "mode": "dark"
     },
     {
       "id": "catppuccin-mocha",
@@ -367,7 +472,8 @@
         "color-text-thinking": "203 166 247",
         "color-text-truncated": "249 226 175",
         "color-text-tool-error": "243 139 168"
-      }
+      },
+      "mode": "dark"
     },
     {
       "id": "rose-pine",
@@ -396,7 +502,8 @@
         "color-text-thinking": "196 167 231",
         "color-text-truncated": "246 193 119",
         "color-text-tool-error": "235 111 146"
-      }
+      },
+      "mode": "dark"
     },
     {
       "id": "kanagawa-wave",
@@ -425,7 +532,8 @@
         "color-text-thinking": "194 160 191",
         "color-text-truncated": "226 190 107",
         "color-text-tool-error": "227 116 102"
-      }
+      },
+      "mode": "dark"
     },
     {
       "id": "light-plus",
@@ -454,7 +562,8 @@
         "color-text-thinking": "130 50 180",
         "color-text-truncated": "178 110 0",
         "color-text-tool-error": "204 0 0"
-      }
+      },
+      "mode": "light"
     }
   ]
 }

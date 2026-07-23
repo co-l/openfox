@@ -91,7 +91,7 @@ export function DisplayTab() {
   return (
     <div className="space-y-6">
       <ThemePicker />
-      <div>
+      <div className="border-t border-border pt-4">
         <h3 className="text-sm font-medium text-text-primary mb-4">Feed Display</h3>
         <div className="space-y-4">
           {toggles.map(({ key, label, description }) => (
