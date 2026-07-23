@@ -274,7 +274,7 @@ export class SessionManager {
       originalSession.providerModel,
       originalSession.workspace,
     )
-    const newWindowId = getCurrentContextWindowId(newSession.id)!
+    const newWindowId = getCurrentContextWindowId(newSession.id) ?? crypto.randomUUID()
 
     const messages = state.messages.slice(0, msgIndex + 1)
 
@@ -298,7 +298,7 @@ export class SessionManager {
       },
       currentContextWindowId: newWindowId,
       todos: state.todos,
-      readFiles: [],
+      readFiles: state.readFiles,
       snapshotSeq: 0,
       snapshotAt: Date.now(),
       sessionInit: {

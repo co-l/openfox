@@ -37,6 +37,7 @@ function UserMessage({ message, messageId, sessionId }: UserMessageProps) {
   const [editing, setEditing] = useState(false)
   const [editContent, setEditContent] = useState(message.content)
   const [pending, setPending] = useState(false)
+  const [forkPending, setForkPending] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
 
@@ -58,11 +59,11 @@ function UserMessage({ message, messageId, sessionId }: UserMessageProps) {
   }
 
   const handleFork = async () => {
-    if (!sessionId || !messageId || pending) return
-    setPending(true)
+    if (!sessionId || !messageId || forkPending) return
+    setForkPending(true)
     setError(null)
     const result = await forkSession(sessionId, messageId)
-    setPending(false)
+    setForkPending(false)
     if (result?.session) {
       const projectId = result.session.projectId
       navigate(`/p/${projectId}/s/${result.session.id}`)
@@ -105,7 +106,7 @@ function UserMessage({ message, messageId, sessionId }: UserMessageProps) {
   }
 
   const actionsVisible = hovered && !editing && !pending
-  const actionsClass = `flex items-center gap-0.5 self-end transition-opacity focus-within:opacity-100 focus-within:pointer-events-auto ${actionsVisible ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'}`
+  const actionsClass = `flex items-center gap-0.5 self-end transition-opacity focus-within:opacity-100 ${actionsVisible ? 'opacity-100' : 'opacity-0'}`
 
   return (
     <div
@@ -154,7 +155,7 @@ function UserMessage({ message, messageId, sessionId }: UserMessageProps) {
                   void handleFork()
                 }}
                 title="Fork session from this message"
-                disabled={pending}
+                disabled={forkPending}
                 className="p-1 rounded hover:bg-bg-tertiary text-text-muted hover:text-text-primary disabled:opacity-50"
               >
                 <BranchIcon className="w-3.5 h-3.5" />

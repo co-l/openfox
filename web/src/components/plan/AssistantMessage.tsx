@@ -180,7 +180,7 @@ export const AssistantMessage = memo(function AssistantMessage({
   }
 
   const actionsVisible = hovered && !message.isStreaming
-  const actionsClass = `flex items-center gap-0.5 self-start transition-opacity focus-within:opacity-100 focus-within:pointer-events-auto ${actionsVisible ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'}`
+  const actionsClass = `flex items-center gap-0.5 self-start transition-opacity focus-within:opacity-100 ${actionsVisible ? 'opacity-100' : 'opacity-0'}`
 
   return (
     <div className="feed-item" onMouseEnter={() => setHovered(true)} onMouseLeave={() => setHovered(false)}>

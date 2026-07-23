@@ -655,5 +655,15 @@ describe('SessionManager', () => {
       const snapshotMessages = (snapshots[0]!.data as { messages: unknown[] }).messages
       expect(snapshotMessages).toHaveLength(2)
     })
+
+    it('works without a cached prompt on the original session', () => {
+      const original = manager.createSession(projectId)
+      const msg = manager.addMessage(original.id, { role: 'user', content: 'Hello', tokenCount: 10 })
+
+      const forked = manager.forkSession(original.id, msg.id)
+
+      expect(forked.messages).toHaveLength(1)
+      expect(manager.isWarmedUp(forked.id)).toBe(false)
+    })
   })
 })
