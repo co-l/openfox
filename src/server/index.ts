@@ -1323,6 +1323,37 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
     res.json({ success: true })
   })
 
+  // Fork: create a new session from a specific message
+  app.post('/api/sessions/:id/fork', async (req, res) => {
+    const sessionId = req.params.id as string
+    const session = sessionManager.getSession(sessionId)
+    if (!session) {
+      return res.status(404).json({ error: 'Session not found' })
+    }
+
+    const { messageId, title } = req.body
+    if (typeof messageId !== 'string' || !messageId) {
+      return res.status(400).json({ error: 'messageId is required' })
+    }
+    if (title !== undefined && typeof title !== 'string') {
+      return res.status(400).json({ error: 'title must be a string if provided' })
+    }
+
+    try {
+      const newSession = sessionManager.forkSession(sessionId, messageId, title)
+      return res.status(201).json({ session: newSession })
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err)
+      if (message.includes('not found')) {
+        return res.status(404).json({ error: message })
+      }
+      if (message.includes('not completed')) {
+        return res.status(400).json({ error: message })
+      }
+      return res.status(500).json({ error: message })
+    }
+  })
+
   // Chat operations (REST)
   app.post('/api/sessions/:id/chat', async (req, res) => {
     const sessionId = req.params.id

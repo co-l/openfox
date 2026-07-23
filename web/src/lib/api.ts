@@ -39,3 +39,25 @@ export async function replayMessage(sessionId: string, messageId: string, conten
     return false
   }
 }
+
+export interface ForkSessionResult {
+  session: import('@shared/types.js').Session
+}
+
+export async function forkSession(
+  sessionId: string,
+  messageId: string,
+  title?: string,
+): Promise<ForkSessionResult | null> {
+  try {
+    const res = await authFetch(`/api/sessions/${sessionId}/fork`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ messageId, ...(title !== undefined ? { title } : {}) }),
+    })
+    if (!res.ok) return null
+    return (await res.json()) as ForkSessionResult
+  } catch {
+    return null
+  }
+}

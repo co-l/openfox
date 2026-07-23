@@ -27,7 +27,7 @@ import { loadConfig } from '../config.js'
 import { closeDatabase, getDatabase, initDatabase } from '../db/index.js'
 import { createProject } from '../db/projects.js'
 import { getSession } from '../db/sessions.js'
-import { initEventStore, getCurrentContextWindowId, emitContextCompacted } from '../events/index.js'
+import { initEventStore, getCurrentContextWindowId, emitContextCompacted, getEventStore } from '../events/index.js'
 import { SessionManager } from './manager.js'
 
 // Mock provider manager
@@ -545,6 +545,128 @@ describe('SessionManager', () => {
 
       expect(getSession(s1.id)?.branch).toBe('feature-x')
       expect(getSession(s2.id)?.branch).toBe('feature-x')
+    })
+  })
+
+  describe('forkSession', () => {
+    it('forks a new session with all messages up to the target message', () => {
+      const original = manager.createSession(projectId)
+
+      // Add some messages
+      manager.addMessage(original.id, { role: 'user', content: 'First message', tokenCount: 10 })
+      const msg2 = manager.addMessage(original.id, { role: 'user', content: 'Second message', tokenCount: 10 })
+      manager.addMessage(original.id, { role: 'user', content: 'Third message', tokenCount: 10 })
+
+      const originalReloaded = manager.requireSession(original.id)
+      expect(originalReloaded.messages).toHaveLength(3)
+
+      // Fork from the second message
+      const forked = manager.forkSession(original.id, msg2.id)
+
+      // New session should have 2 messages (up to and including the second)
+      expect(forked.id).not.toBe(original.id)
+      expect(forked.messages).toHaveLength(2)
+      expect(forked.messages[0]?.content).toBe('First message')
+      expect(forked.messages[1]?.content).toBe('Second message')
+    })
+
+    it('copies cached system prompt to the forked session', async () => {
+      const { updateSessionCachedPrompt, getSessionCachedPrompt } = await import('../db/sessions.js')
+      const original = manager.createSession(projectId)
+
+      // Set a cached prompt on the original session
+      updateSessionCachedPrompt(
+        original.id,
+        'system prompt',
+        [{ type: 'function', function: { name: 'test', description: '', parameters: {} } }],
+        'hash123',
+      )
+
+      const msg = manager.addMessage(original.id, { role: 'user', content: 'Hello', tokenCount: 10 })
+
+      const forked = manager.forkSession(original.id, msg.id)
+
+      const cached = getSessionCachedPrompt(forked.id)
+      expect(cached).not.toBeNull()
+      expect(cached?.systemPrompt).toBe('system prompt')
+      expect(cached?.hash).toBe('hash123')
+    })
+
+    it('marks forked session as warmed up', async () => {
+      const { updateSessionCachedPrompt } = await import('../db/sessions.js')
+      const original = manager.createSession(projectId)
+      updateSessionCachedPrompt(original.id, 'sp', [], 'h')
+
+      const msg = manager.addMessage(original.id, { role: 'user', content: 'Hello', tokenCount: 10 })
+      const forked = manager.forkSession(original.id, msg.id)
+
+      expect(manager.isWarmedUp(forked.id)).toBe(true)
+    })
+
+    it('forks from an assistant message', () => {
+      const original = manager.createSession(projectId)
+
+      manager.addMessage(original.id, { role: 'user', content: 'Hello', tokenCount: 10 })
+
+      // Simulate an assistant message by using addMessage with a different role
+      const assistantMsg = manager.addMessage(original.id, { role: 'assistant', content: 'Hi there!', tokenCount: 50 })
+
+      // Fork from the assistant message
+      const forked = manager.forkSession(original.id, assistantMsg.id)
+
+      expect(forked.messages).toHaveLength(2)
+      expect(forked.messages[0]?.content).toBe('Hello')
+      expect(forked.messages[1]?.content).toBe('Hi there!')
+    })
+
+    it('throws error for non-existent messageId', () => {
+      const original = manager.createSession(projectId)
+
+      expect(() => manager.forkSession(original.id, 'non-existent-id')).toThrow('not found')
+    })
+
+    it('throws error for incomplete message (no message.done)', () => {
+      const original = manager.createSession(projectId)
+      const eventStore = getEventStore()
+
+      // Manually emit a message.start with no corresponding message.done
+      eventStore.append(original.id, {
+        type: 'message.start',
+        data: { messageId: 'incomplete-msg', role: 'user', content: 'Incomplete' },
+      })
+
+      expect(() => manager.forkSession(original.id, 'incomplete-msg')).toThrow('not completed')
+    })
+
+    it('preserves session metadata from the original', async () => {
+      const { updateSessionCachedPrompt } = await import('../db/sessions.js')
+      const original = manager.createSession(projectId, 'My Original Session', 'provider1', 'model1')
+
+      updateSessionCachedPrompt(original.id, 'sp', [], 'h')
+
+      const msg = manager.addMessage(original.id, { role: 'user', content: 'Hello', tokenCount: 10 })
+      const forked = manager.forkSession(original.id, msg.id)
+
+      expect(forked.metadata?.title).toBe('Fork of My Original Session')
+      expect(forked.providerId).toBe('provider1')
+      expect(forked.providerModel).toBe('model1')
+    })
+
+    it('copies events to the new session via EventStore', () => {
+      const original = manager.createSession(projectId)
+
+      manager.addMessage(original.id, { role: 'user', content: 'Hello', tokenCount: 10 })
+      const msg2 = manager.addMessage(original.id, { role: 'user', content: 'World', tokenCount: 10 })
+
+      const forked = manager.forkSession(original.id, msg2.id)
+
+      // Verify events were copied by checking we can get the context messages
+      const eventStore = getEventStore()
+      const forkedEvents = eventStore.getEvents(forked.id)
+
+      // Should have session.initialized + copied events (message.start, message.done for each)
+      const messageStarts = forkedEvents.filter((e) => e.type === 'message.start')
+      expect(messageStarts).toHaveLength(2)
     })
   })
 })

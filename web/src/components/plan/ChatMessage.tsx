@@ -7,10 +7,11 @@ import { TaskCompletedCard } from './TaskCompletedCard'
 import { WorkflowStartedCard } from './WorkflowStartedCard'
 import { MessageAttachments } from '../shared/MessageAttachments.js'
 import { AutoPromptCard } from './AutoPromptCard'
-import { CheckIcon, CopyIcon, EditSmallIcon, ReloadIcon, XCloseIcon } from '../shared/icons'
-import { replayMessage } from '../../lib/api.js'
+import { CheckIcon, CopyIcon, EditSmallIcon, ReloadIcon, XCloseIcon, BranchIcon } from '../shared/icons'
+import { replayMessage, forkSession } from '../../lib/api.js'
 import { useSessionStore } from '../../stores/session.js'
 import { copyToClipboard } from '../../lib/clipboard.js'
+import { useLocation } from 'wouter'
 
 interface ChatMessageProps {
   message: Message
@@ -30,6 +31,7 @@ function UserMessage({ message, messageId, sessionId }: UserMessageProps) {
   const isCommand = message.messageKind === 'command'
   const isSystemGenerated = message.isSystemGenerated
   const loadSession = useSessionStore((s) => s.loadSession)
+  const [, navigate] = useLocation()
   const [hovered, setHovered] = useState(false)
   const [copied, setCopied] = useState(false)
   const [editing, setEditing] = useState(false)
@@ -52,6 +54,20 @@ function UserMessage({ message, messageId, sessionId }: UserMessageProps) {
       window.setTimeout(() => setCopied(false), 1500)
     } catch {
       // ignore
+    }
+  }
+
+  const handleFork = async () => {
+    if (!sessionId || !messageId || pending) return
+    setPending(true)
+    setError(null)
+    const result = await forkSession(sessionId, messageId)
+    setPending(false)
+    if (result?.session) {
+      const projectId = result.session.projectId
+      navigate(`/p/${projectId}/s/${result.session.id}`)
+    } else {
+      setError('Failed to fork session')
     }
   }
 
@@ -132,6 +148,16 @@ function UserMessage({ message, messageId, sessionId }: UserMessageProps) {
                 className="p-1 rounded hover:bg-bg-tertiary text-text-muted hover:text-text-primary disabled:opacity-50"
               >
                 <ReloadIcon className="w-3.5 h-3.5" />
+              </button>
+              <button
+                onClick={() => {
+                  void handleFork()
+                }}
+                title="Fork session from this message"
+                disabled={pending}
+                className="p-1 rounded hover:bg-bg-tertiary text-text-muted hover:text-text-primary disabled:opacity-50"
+              >
+                <BranchIcon className="w-3.5 h-3.5" />
               </button>
             </>
           )}

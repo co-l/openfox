@@ -31,6 +31,7 @@ import {
   updateSessionCachedPrompt,
   updateSessionWorkdir,
   updateSessionBranch,
+  updateSessionMessageCount,
   getSessionCachedPrompt,
   type DangerLevel,
 } from '../db/sessions.js'
@@ -67,6 +68,7 @@ import {
   emitCriterionUpdated,
   emitMetadataSet,
   emitContextState,
+  getCurrentContextWindowId,
 } from '../events/index.js'
 import type { Message, CriterionStatus } from '../../shared/types.js'
 import { isInDangerZone, canCompact } from '../context/tokenizer.js'
@@ -239,6 +241,124 @@ export class SessionManager {
     this.emit({ type: 'session_created', session })
 
     return session
+  }
+
+  /**
+   * Fork a session from a specific message.
+   * Creates a new session with all messages up to (and including) the target message,
+   * preserving the conversation history. Copies the cached system prompt to avoid
+   * recomputation and marks the new session as warmed up for KV cache benefits.
+   *
+   * @param originalSessionId - Source session ID
+   * @param messageId - Target message ID to fork at
+   * @param title - Optional title for the new session (default: "Fork of <original title>")
+   * @returns The new session
+   * @throws Error if the original session or message is not found
+   */
+  forkSession(originalSessionId: string, messageId: string, title?: string): Session {
+    const originalSession = this.requireSession(originalSessionId)
+
+    const projectId = originalSession.projectId
+    const effectiveTitle = title ?? `Fork of ${originalSession.metadata?.title ?? 'Untitled'}`
+
+    // Find the message in the folded session state
+    const state = getSessionState(originalSessionId)
+    if (!state) throw new Error(`Session ${originalSessionId} has no state`)
+
+    const msgIndex = state.messages.findIndex((m) => m.id === messageId)
+    if (msgIndex === -1) throw new Error(`Message ${messageId} not found`)
+
+    // Create a new session
+    const newSession = this.createSession(
+      projectId,
+      effectiveTitle,
+      originalSession.providerId,
+      originalSession.providerModel,
+      originalSession.workspace,
+    )
+    const newWindowId = getCurrentContextWindowId(newSession.id)!
+
+    const eventStore = getEventStore()
+    const allEvents = eventStore.getEvents(originalSessionId)
+
+    // Check if the target message has raw events (not consolidated into snapshot)
+    const targetHasRawEvents = allEvents.some(
+      (e) => e.type === 'message.start' && (e.data as { messageId: string }).messageId === messageId,
+    )
+
+    if (targetHasRawEvents) {
+      // Non-consolidated path: copy raw events up to the target message
+      const doneEvent = allEvents.find(
+        (e) => e.type === 'message.done' && (e.data as { messageId: string }).messageId === messageId,
+      )
+      if (!doneEvent) throw new Error(`Message ${messageId} not completed`)
+
+      const forkSeq = doneEvent.seq
+      const eventsToCopy: { type: string; data: unknown }[] = []
+      let messageCount = 0
+
+      for (const event of allEvents) {
+        if (event.seq > forkSeq) break
+        if (event.type === 'session.initialized' || event.type === 'turn.snapshot') continue
+
+        const data = replaceContextWindowIds(event.data as Record<string, unknown>, newWindowId)
+        eventsToCopy.push({ type: event.type, data })
+
+        if (event.type === 'message.start') messageCount++
+      }
+
+      if (eventsToCopy.length > 0) {
+        eventStore.appendBatch(newSession.id, eventsToCopy as import('../events/types.js').TurnEvent[])
+      }
+      if (messageCount > 0) updateSessionMessageCount(newSession.id, messageCount)
+    } else {
+      // Consolidated path: build a snapshot from the truncated messages
+      const messages = state.messages.slice(0, msgIndex + 1)
+      const initEvent = allEvents.find((e) => e.type === 'session.initialized')
+      const initData = initEvent?.data as { projectId: string; workdir: string; contextWindowId: string } | undefined
+
+      const snapshot: import('../events/types.js').SessionSnapshot = {
+        mode: state.mode,
+        phase: state.phase,
+        isRunning: false,
+        messages: messages.map((m) => ({
+          ...m,
+          timestamp: typeof m.timestamp === 'string' ? new Date(m.timestamp).getTime() : m.timestamp,
+        })),
+        criteria: state.criteria,
+        metadataEntries: state.metadataEntries,
+        contextState: {
+          currentTokens: state.contextState.currentTokens,
+          maxTokens: state.contextState.maxTokens,
+          compactionCount: 0,
+          dangerZone: false,
+          canCompact: false,
+          dynamicContextChanged: false,
+        },
+        currentContextWindowId: newWindowId,
+        todos: state.todos,
+        readFiles: [],
+        snapshotSeq: 0,
+        snapshotAt: Date.now(),
+        sessionInit: initData
+          ? { ...initData, contextWindowId: newWindowId }
+          : { projectId, workdir: originalSession.workdir, contextWindowId: newWindowId },
+      }
+
+      eventStore.append(newSession.id, { type: 'turn.snapshot', data: snapshot })
+      updateSessionMessageCount(newSession.id, messages.length)
+    }
+
+    // Copy cached prompt to avoid recomputation
+    const cached = getSessionCachedPrompt(originalSessionId)
+    if (cached) {
+      updateSessionCachedPrompt(newSession.id, cached.systemPrompt, cached.tools, cached.hash)
+      this.markWarmedUp(newSession.id)
+    }
+
+    this.emit({ type: 'session_updated', session: this.requireSession(newSession.id) })
+
+    return this.requireSession(newSession.id)
   }
 
   /**
@@ -1396,4 +1516,34 @@ export class SessionManager {
           : null,
     }
   }
+}
+
+/**
+ * Deep-clone event data and replace contextWindowId, closedWindowId, and newWindowId
+ * with the new session's contextWindowId. This ensures message events copied from the
+ * original session reference the correct context window in the forked session.
+ */
+function replaceContextWindowIds(data: Record<string, unknown>, newWindowId: string): Record<string, unknown> {
+  if (typeof data !== 'object' || data === null) return data
+
+  const result: Record<string, unknown> = {}
+  for (const [key, value] of Object.entries(data)) {
+    if (key === 'contextWindowId') {
+      result[key] = newWindowId
+    } else if (key === 'closedWindowId' || key === 'newWindowId') {
+      result[key] = newWindowId
+    } else if (Array.isArray(value)) {
+      result[key] = value.map((item) => {
+        if (typeof item === 'object' && item !== null) {
+          return replaceContextWindowIds(item as Record<string, unknown>, newWindowId)
+        }
+        return item
+      })
+    } else if (typeof value === 'object' && value !== null) {
+      result[key] = replaceContextWindowIds(value as Record<string, unknown>, newWindowId)
+    } else {
+      result[key] = value
+    }
+  }
+  return result
 }

@@ -69,6 +69,7 @@ export const ChatFeedItems = memo(function ChatFeedItems({
                 showStats={showStats}
                 showThinking={showThinking}
                 showVerboseToolOutput={showVerboseToolOutput}
+                sessionId={sessionId ?? undefined}
               />
             </div>
           )
