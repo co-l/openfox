@@ -154,6 +154,11 @@ function runMigrations(db: Database.Database): void {
     db.exec(`ALTER TABLE projects ADD COLUMN is_starred INTEGER NOT NULL DEFAULT 0`)
   }
 
+  if (!projectColumnNames.includes('workspace_root_dir')) {
+    logger.info('Migrating projects table: adding workspace_root_dir column')
+    db.exec(`ALTER TABLE projects ADD COLUMN workspace_root_dir TEXT`)
+  }
+
   // Create events table for EventStore (single source of truth)
   // Note: EventStore creates this table with its own schema in initSchema()
   // We just ensure the index exists for the event_type column

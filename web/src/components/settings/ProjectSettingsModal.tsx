@@ -105,7 +105,7 @@ export function ProjectSettingsModal({ isOpen, onClose, project }: ProjectSettin
       : []
     await saveWsConfig(project.workdir, {
       ...(setup.length > 0 ? { setup } : {}),
-      ...(rootDir.trim() ? { rootDir: rootDir.trim() } : {}),
+      rootDir: rootDir.trim(),
     })
     setInstructionsDirty(false)
     setDangerLevelDirty(false)

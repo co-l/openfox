@@ -2,12 +2,17 @@ import { create } from 'zustand'
 import type { WorkspaceConfig } from '@shared/workspace.js'
 import { authFetch } from '../lib/api'
 
+/** API response shape — includes rootDir from DB alongside file-based config */
+interface WorkspaceConfigResponse extends WorkspaceConfig {
+  rootDir?: string
+}
+
 interface WorkspaceConfigStore {
-  config: WorkspaceConfig | null
+  config: WorkspaceConfigResponse | null
   loading: boolean
 
   fetchConfig: (workdir: string) => Promise<void>
-  saveConfig: (workdir: string, config: WorkspaceConfig) => Promise<void>
+  saveConfig: (workdir: string, config: WorkspaceConfigResponse) => Promise<void>
 }
 
 export const useWorkspaceConfigStore = create<WorkspaceConfigStore>()((set) => ({

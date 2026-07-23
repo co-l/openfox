@@ -9,6 +9,7 @@ export interface Project {
   customInstructions?: string // Project-specific instructions injected into prompts
   dangerLevel?: DangerLevel // Project default danger level for new sessions
   isStarred?: boolean // Whether the project is starred for quick access
+  workspaceRootDir?: string // Custom workspace root directory (user-specific, stored in DB)
   createdAt: string
   updatedAt: string
 }

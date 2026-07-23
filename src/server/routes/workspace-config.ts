@@ -4,6 +4,7 @@ import { constants } from 'node:fs'
 import { resolve, isAbsolute, join } from 'node:path'
 import { loadWorkspaceConfig, saveWorkspaceConfig } from '../git/workspace-config.js'
 import { getGlobalDataDir } from '../git/workspace.js'
+import { getProjectByWorkdir, updateProject } from '../db/projects.js'
 import { logger } from '../utils/logger.js'
 import type { WorkspaceConfig } from '../../shared/workspace.js'
 import { getRootDirBlockReason } from '../../shared/workspace.js'
@@ -66,7 +67,10 @@ export function createWorkspaceConfigRoutes(): Router {
     const workdir = req.query['workdir'] as string
     if (!workdir) return res.status(400).json({ error: 'workdir required' })
     const config = await loadWorkspaceConfig(workdir)
-    res.json({ config })
+    const project = getProjectByWorkdir(workdir)
+    const rootDir = project?.workspaceRootDir ?? undefined
+    if (!config && !rootDir) return res.json({ config: null })
+    res.json({ config: { ...config, rootDir } })
   })
 
   router.post('/config', async (req, res) => {
@@ -83,6 +87,7 @@ export function createWorkspaceConfigRoutes(): Router {
     if (Array.isArray(setup)) {
       config.setup = setup
     }
+    let savedRootDir: string | null | undefined // null=clear, string=set, undefined=skip
     if (typeof rootDir === 'string') {
       const trimmed = rootDir.trim()
       if (trimmed) {
@@ -102,12 +107,21 @@ export function createWorkspaceConfigRoutes(): Router {
           const writableErr = await validatePathWritable(resolvedPath)
           if (writableErr) return res.status(400).json({ error: writableErr })
         }
-        config.rootDir = trimmed
+        savedRootDir = trimmed
+      } else {
+        // Empty string — explicitly clear rootDir
+        savedRootDir = null
       }
     }
     try {
       await saveWorkspaceConfig(workdir, config)
-      res.json({ config })
+      if (savedRootDir !== undefined) {
+        const project = getProjectByWorkdir(workdir)
+        if (project) {
+          updateProject(project.id, { workspaceRootDir: savedRootDir })
+        }
+      }
+      res.json({ config: { ...config, rootDir: savedRootDir ?? undefined } })
     } catch (err) {
       res.status(500).json({ error: err instanceof Error ? err.message : 'Failed to save config' })
     }
@@ -153,8 +167,8 @@ export function createWorkspaceConfigRoutes(): Router {
 
     const workspaces: { name: string }[] = []
     try {
-      const currentConfig = await loadWorkspaceConfig(workdir)
-      const previousRootDir = currentConfig?.rootDir ? resolveRootDir(currentConfig.rootDir, workdir) : null
+      const project = getProjectByWorkdir(workdir)
+      const previousRootDir = project?.workspaceRootDir ? resolveRootDir(project.workspaceRootDir, workdir) : null
 
       if (previousRootDir && previousRootDir !== resolvedPath) {
         const orphans = await findOrphanedWorkspaces(previousRootDir)

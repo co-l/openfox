@@ -33,9 +33,14 @@ vi.mock('./workspace-config.js', () => ({
   loadWorkspaceConfig: vi.fn(),
 }))
 
+vi.mock('../db/projects.js', () => ({
+  getProjectByWorkdir: vi.fn(),
+}))
+
 import { spawn, execSync } from 'node:child_process'
 import { readFile, readdir, mkdir, stat } from 'node:fs/promises'
 import { loadWorkspaceConfig } from './workspace-config.js'
+import { getProjectByWorkdir } from '../db/projects.js'
 
 type MockProc = {
   stdout: { on: (event: string, cb: (d: Buffer) => void) => void }
@@ -107,41 +112,41 @@ describe('listBranches', () => {
 
 describe('getWorkspacesDir', () => {
   it('returns path under global data dir when rootDir is not configured', async () => {
-    vi.mocked(loadWorkspaceConfig).mockResolvedValue(null)
+    vi.mocked(getProjectByWorkdir).mockReturnValue(null)
     const dir = await getWorkspacesDir(PROJECT_NAME, CWD)
     expect(dir).toContain('workspaces')
     expect(dir).toContain(PROJECT_NAME)
   })
 
-  it('returns global fallback when config has no rootDir', async () => {
-    vi.mocked(loadWorkspaceConfig).mockResolvedValue({ setup: ['npm install'] })
+  it('returns global fallback when project has no workspaceRootDir', async () => {
+    vi.mocked(getProjectByWorkdir).mockReturnValue({ workspaceRootDir: undefined } as any)
     const dir = await getWorkspacesDir(PROJECT_NAME, CWD)
     expect(dir).toContain('workspaces')
     expect(dir).toContain(PROJECT_NAME)
   })
 
-  it('uses absolute rootDir directly from config', async () => {
-    vi.mocked(loadWorkspaceConfig).mockResolvedValue({ rootDir: '/custom/workspace/path' })
+  it('uses absolute rootDir directly from project', async () => {
+    vi.mocked(getProjectByWorkdir).mockReturnValue({ workspaceRootDir: '/custom/workspace/path' } as any)
     const dir = await getWorkspacesDir(PROJECT_NAME, CWD)
     expect(dir).toBe('/custom/workspace/path')
   })
 
   it('resolves relative rootDir against projectDir', async () => {
-    vi.mocked(loadWorkspaceConfig).mockResolvedValue({ rootDir: './my-workspaces' })
+    vi.mocked(getProjectByWorkdir).mockReturnValue({ workspaceRootDir: './my-workspaces' } as any)
     const dir = await getWorkspacesDir(PROJECT_NAME, CWD)
     expect(dir).toBe(resolve(CWD, 'my-workspaces'))
   })
 
   it('resolves parent-relative rootDir correctly', async () => {
-    vi.mocked(loadWorkspaceConfig).mockResolvedValue({ rootDir: '../shared-workspaces' })
+    vi.mocked(getProjectByWorkdir).mockReturnValue({ workspaceRootDir: '../shared-workspaces' } as any)
     const dir = await getWorkspacesDir(PROJECT_NAME, CWD)
     expect(dir).toBe(resolve(CWD, '../shared-workspaces'))
   })
 
-  it('calls loadWorkspaceConfig with projectDir', async () => {
-    vi.mocked(loadWorkspaceConfig).mockResolvedValue(null)
+  it('calls getProjectByWorkdir with projectDir', async () => {
+    vi.mocked(getProjectByWorkdir).mockReturnValue(null)
     await getWorkspacesDir(PROJECT_NAME, CWD)
-    expect(loadWorkspaceConfig).toHaveBeenCalledWith(CWD)
+    expect(getProjectByWorkdir).toHaveBeenCalledWith(CWD)
   })
 })
 
@@ -200,14 +205,12 @@ describe('ensureWorkspace', () => {
     expect(spawn).toHaveBeenCalledTimes(3)
   })
 
-  it('uses getDefaultBranch as source when requested branch does not exist', async () => {
+  it('creates branch from HEAD when requested branch does not exist', async () => {
     vi.mocked(spawn)
       .mockReturnValueOnce(makeMockProc('') as any) // git clone --shared
       .mockReturnValueOnce(makeMockProc('') as any) // validateRef (git check-ref-format)
       .mockReturnValueOnce(makeMockProc('', 'fatal: not a git repository', 128) as any) // git checkout fails
-      .mockReturnValueOnce(makeMockProc('') as any) // git fetch origin --no-tags --quiet (getDefaultBranch)
-      .mockReturnValueOnce(makeMockProc('refs/remotes/origin/main\n') as any) // git symbolic-ref origin/HEAD (getDefaultBranch)
-      .mockReturnValueOnce(makeMockProc('') as any) // git checkout -b succeeds
+      .mockReturnValueOnce(makeMockProc('') as any) // git checkout -b from HEAD succeeds
     vi.mocked(mkdir).mockResolvedValue(undefined)
     vi.mocked(stat)
       .mockResolvedValueOnce(null as any) // wsPath doesn't exist → triggers clone
@@ -216,6 +219,9 @@ describe('ensureWorkspace', () => {
 
     const result = await ensureWorkspace(CWD, 'my-experiment', PROJECT_NAME, 'new-feature')
     expect(result.name).toBe('my-experiment')
+    expect(spawn).toHaveBeenCalledTimes(4)
+    const lastCall = vi.mocked(spawn).mock.calls[3]
+    expect(lastCall?.[1]).toEqual(['checkout', '-b', 'new-feature'])
   })
 
   it('reuses existing workspace directory', async () => {

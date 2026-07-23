@@ -144,7 +144,7 @@ describe('ProjectSettingsModal', () => {
     )
   })
 
-  it('omits rootDir from saved config when field is empty', async () => {
+  it('sends empty rootDir when field is cleared', async () => {
     const user = userEvent.setup()
 
     render(<ProjectSettingsModal isOpen={true} onClose={vi.fn()} project={defaultProject} />)
@@ -155,10 +155,7 @@ describe('ProjectSettingsModal', () => {
     const saveBtn = screen.getByTestId('save-btn')
     await user.click(saveBtn)
 
-    expect(mockSaveConfig).toHaveBeenCalledWith(
-      defaultProject.workdir,
-      expect.not.objectContaining({ rootDir: expect.any(String) }),
-    )
+    expect(mockSaveConfig).toHaveBeenCalledWith(defaultProject.workdir, expect.objectContaining({ rootDir: '' }))
   })
 })
 

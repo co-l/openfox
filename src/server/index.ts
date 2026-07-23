@@ -2736,6 +2736,13 @@ export async function createServer(config: Config): Promise<void> {
     handle.close().then(() => process.exit(0))
   }
 
+  // Prevent crash on unhandled promise rejections — log and continue
+  process.on('unhandledRejection', (reason) => {
+    const errorInfo =
+      reason instanceof Error ? { message: reason.message, stack: reason.stack } : { message: String(reason) }
+    logger.error('Unhandled promise rejection', errorInfo)
+  })
+
   process.on('SIGINT', shutdown)
   process.on('SIGTERM', shutdown)
 }

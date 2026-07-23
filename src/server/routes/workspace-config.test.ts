@@ -1,9 +1,47 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest'
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import express from 'express'
 import { mkdir, rm, writeFile } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
 import { tmpdir } from 'node:os'
 import { createWorkspaceConfigRoutes } from './workspace-config.js'
+
+/**
+ * Simulates project DB records for route tests.
+ * Maps workdir → project data. Auto-creates entries on first access.
+ * updateProject uses a reverse lookup (id → workdir) to find the right record.
+ */
+const mockProjectById = new Map<string, string>() // projectId → workdir
+const mockProjectRecords = new Map<string, { workspaceRootDir?: string }>() // workdir → data
+
+vi.mock('../db/projects.js', () => ({
+  getProjectByWorkdir: vi.fn((workdir: string) => {
+    let record = mockProjectRecords.get(workdir)
+    if (!record) {
+      record = {}
+      mockProjectRecords.set(workdir, record)
+    }
+    mockProjectById.set('test-id', workdir)
+    return { id: 'test-id', workspaceRootDir: record.workspaceRootDir }
+  }),
+  updateProject: vi.fn((id: string, updates: { workspaceRootDir?: string | null }) => {
+    const workdir = mockProjectById.get(id)
+    if (workdir && updates.workspaceRootDir !== undefined) {
+      const record = mockProjectRecords.get(workdir)
+      if (record) {
+        if (updates.workspaceRootDir === null) {
+          delete record.workspaceRootDir
+        } else {
+          record.workspaceRootDir = updates.workspaceRootDir
+        }
+      }
+    }
+  }),
+}))
+
+beforeEach(() => {
+  mockProjectById.clear()
+  mockProjectRecords.clear()
+})
 
 interface ValidateResponse {
   exists: boolean

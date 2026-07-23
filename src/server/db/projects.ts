@@ -85,7 +85,12 @@ export function listProjects(): Project[] {
 
 export function updateProject(
   id: string,
-  updates: { name?: string; customInstructions?: string | null; dangerLevel?: DangerLevel | null },
+  updates: {
+    name?: string
+    customInstructions?: string | null
+    dangerLevel?: DangerLevel | null
+    workspaceRootDir?: string | null
+  },
 ): Project | null {
   const db = getDatabase()
   const now = new Date().toISOString()
@@ -106,6 +111,11 @@ export function updateProject(
   if (updates.dangerLevel !== undefined) {
     sets.push('danger_level = ?')
     values.push(updates.dangerLevel)
+  }
+
+  if (updates.workspaceRootDir !== undefined) {
+    sets.push('workspace_root_dir = ?')
+    values.push(updates.workspaceRootDir)
   }
 
   values.push(id)
@@ -149,6 +159,7 @@ interface ProjectRow {
   custom_instructions: string | null
   danger_level: string | null
   is_starred: number
+  workspace_root_dir: string | null
   created_at: string
   updated_at: string
 }
@@ -161,6 +172,7 @@ function rowToProject(row: ProjectRow): Project {
     ...(row.custom_instructions ? { customInstructions: row.custom_instructions } : {}),
     ...(row.danger_level ? { dangerLevel: row.danger_level as DangerLevel } : {}),
     isStarred: !!row.is_starred,
+    ...(row.workspace_root_dir ? { workspaceRootDir: row.workspace_root_dir } : {}),
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   }

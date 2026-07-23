@@ -37,7 +37,6 @@ import {
 import { getProject } from '../db/projects.js'
 import {
   ensureWorkspace,
-  getDefaultBranch,
   resolveAndValidateSourceBranch,
   validateRef,
   getGitBranch,
@@ -1059,9 +1058,19 @@ export class SessionManager {
       try {
         await validateRef(wsPath, branch)
         await runGit(wsPath, ['checkout', branch]).catch(async () => {
-          const sb = sourceBranch ?? (await getDefaultBranch(projectDir))
-          const validated = sourceBranch ? await resolveAndValidateSourceBranch(wsPath, sourceBranch, projectDir) : sb
-          await runGit(wsPath, ['checkout', '-b', branch, validated])
+          try {
+            if (sourceBranch) {
+              const validated = await resolveAndValidateSourceBranch(wsPath, sourceBranch, projectDir)
+              await runGit(wsPath, ['checkout', '-b', branch, validated])
+            } else {
+              // Create branch from current HEAD
+              await runGit(wsPath, ['checkout', '-b', branch])
+            }
+          } catch (innerErr) {
+            throw new Error(
+              `Failed to create branch "${branch}" in workspace "${workspaceName}": ${innerErr instanceof Error ? innerErr.message : String(innerErr)}`,
+            )
+          }
         })
       } catch (err) {
         throw new Error(

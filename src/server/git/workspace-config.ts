@@ -1,6 +1,7 @@
 import { readFile, writeFile, mkdir } from 'node:fs/promises'
 import { resolve, join } from 'node:path'
 import type { WorkspaceConfig } from '../../shared/workspace.js'
+import { getProjectByWorkdir, updateProject } from '../db/projects.js'
 
 const CONFIG_FILENAME = '.openfox/workspace.json'
 
@@ -15,7 +16,19 @@ export async function loadWorkspaceConfig(workdir: string): Promise<WorkspaceCon
     const parsed = JSON.parse(raw)
     const config: WorkspaceConfig = {}
     if (parsed.setup) config.setup = parsed.setup
-    if (parsed.rootDir) config.rootDir = parsed.rootDir
+
+    // Migration: copy legacy rootDir from file to DB if project exists
+    if (parsed.rootDir) {
+      const project = getProjectByWorkdir(workdir)
+      if (project && !project.workspaceRootDir) {
+        try {
+          updateProject(project.id, { workspaceRootDir: parsed.rootDir })
+        } catch {
+          // Non-critical — user can reconfigure rootDir via UI
+        }
+      }
+    }
+
     return Object.keys(config).length > 0 ? config : null
   } catch {
     return null

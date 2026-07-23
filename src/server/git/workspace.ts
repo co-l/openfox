@@ -5,6 +5,7 @@ import { homedir, platform } from 'node:os'
 import { logger } from '../utils/logger.js'
 import { gitSpawnEnv } from './env.js'
 import { loadWorkspaceConfig } from './workspace-config.js'
+import { getProjectByWorkdir } from '../db/projects.js'
 
 function captureStdout(cwd: string, args: string[]): Promise<string | null> {
   return new Promise((resolvePromise) => {
@@ -52,9 +53,11 @@ export function getGlobalDataDir(): string {
 }
 
 export async function getWorkspacesDir(projectName: string, projectDir: string): Promise<string> {
-  const config = await loadWorkspaceConfig(projectDir)
-  if (config?.rootDir) {
-    return isAbsolute(config.rootDir) ? config.rootDir : resolve(projectDir, config.rootDir)
+  const project = getProjectByWorkdir(projectDir)
+  if (project?.workspaceRootDir) {
+    return isAbsolute(project.workspaceRootDir)
+      ? project.workspaceRootDir
+      : resolve(projectDir, project.workspaceRootDir)
   }
   return join(getGlobalDataDir(), 'workspaces', projectName)
 }
@@ -279,10 +282,19 @@ export async function ensureWorkspace(
   if (branch) {
     await validateRef(wsPath, branch)
     await runGit(wsPath, ['checkout', branch]).catch(async () => {
-      const sb = sourceBranch
-        ? await resolveAndValidateSourceBranch(wsPath, sourceBranch, projectDir)
-        : await getDefaultBranch(projectDir)
-      await runGit(wsPath, ['checkout', '-b', branch, sb])
+      try {
+        if (sourceBranch) {
+          const sb = await resolveAndValidateSourceBranch(wsPath, sourceBranch, projectDir)
+          await runGit(wsPath, ['checkout', '-b', branch, sb])
+        } else {
+          // Create branch from current HEAD
+          await runGit(wsPath, ['checkout', '-b', branch])
+        }
+      } catch (innerErr) {
+        throw new Error(
+          `Failed to create branch "${branch}" in workspace: ${innerErr instanceof Error ? innerErr.message : String(innerErr)}`,
+        )
+      }
     })
   }
 
